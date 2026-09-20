@@ -24,38 +24,49 @@ fn intent(profile: &str) -> ReleaseIntentV1 {
     .unwrap()
 }
 
+fn envelope(i: &ReleaseIntentV1) -> ReleaseRunEnvelopeV1 {
+    ReleaseRunEnvelopeV1::new(ReleaseRunKindV1::Initial, sha('b'), i, None).unwrap()
+}
+fn tag_evidence() -> ProviderEvidenceV1 {
+    ProviderEvidenceV1::GitTag {
+        peeled_commit: sha('a'),
+    }
+}
 fn done_state(i: &ReleaseIntentV1) -> ReleaseExecutionStateV1 {
-    let mut st = ReleaseExecutionStateV1::pending(i);
+    let mut st = ReleaseExecutionStateV1::new(i, envelope(i)).unwrap();
     for o in &i.operations {
-        st.mark_attempting(o.id()).unwrap();
-        st.mark_terminal(o.id(), OperationOutcome::Published).unwrap();
+        st.apply(
+            o.id(),
+            &OperationEvent::Attempt {
+                proof: ProviderObservationV1::Absent.absent_proof().unwrap(),
+            },
+        )
+        .unwrap();
+        st.apply(
+            o.id(),
+            &OperationEvent::Confirmed {
+                evidence: ProviderObservationV1::Exact {
+                    evidence: tag_evidence(),
+                }
+                .exact_evidence()
+                .unwrap(),
+            },
+        )
+        .unwrap();
     }
     st
-}
-fn prov(i: &ReleaseIntentV1, profile: &str, intent_digest: IntentDigest) -> ReleaseRunProvenanceV1 {
-    ReleaseRunProvenanceV1::new(
-        ReleaseRunKindV1::Initial,
-        sha('b'),
-        sha('a'),
-        ReleaseProfileId::parse(profile).unwrap(),
-        intent_digest,
-    )
-    .clone_for(i)
-}
-trait CloneFor {
-    fn clone_for(self, i: &ReleaseIntentV1) -> Self;
-}
-impl CloneFor for ReleaseRunProvenanceV1 {
-    fn clone_for(self, _i: &ReleaseIntentV1) -> Self {
-        self
-    }
 }
 fn exact(i: &ReleaseIntentV1) -> Vec<ReleaseOperationObservationV1> {
     i.operations
         .iter()
-        .map(|o| ReleaseOperationObservationV1 {
-            operation: o.id().clone(),
-            observation: ProviderObservationV1::Exact,
+        .map(|o| {
+            ReleaseOperationObservationV1::new(
+                o.id().clone(),
+                ProviderObservationV1::Exact {
+                    evidence: tag_evidence(),
+                },
+            )
+            .unwrap()
         })
         .collect()
 }
@@ -74,25 +85,27 @@ fn profile_is_bound_into_the_intent_digest_and_cannot_be_relabelled() {
 }
 
 #[test]
-fn receipt_rejects_provenance_for_another_profile_or_intent() {
+fn receipt_rejects_a_state_whose_envelope_belongs_to_another_profile_or_intent() {
     let i = intent("production");
     let st = done_state(&i);
-    assert!(ReleaseReceiptV1::from_evidence(&i, &st, prov(&i, "production", i.digest().clone()), exact(&i)).is_ok());
-    let wrong_profile = ReleaseReceiptV1::from_evidence(&i, &st, prov(&i, "rehearsal", i.digest().clone()), exact(&i));
+    assert!(ReleaseReceiptV1::from_evidence(&i, &st, exact(&i)).is_ok());
+
+    // The envelope is derived from its intent, so a mismatch can only be
+    // forged on the wire -- and is then rejected on the way back in.
+    let mut forged = serde_json::to_value(&st).unwrap();
+    forged["envelope"]["profile"] = "rehearsal".into();
+    let forged: ReleaseExecutionStateV1 = serde_json::from_value(forged).unwrap();
     assert!(matches!(
-        wrong_profile,
-        Err(ReleaseReceiptError::InvalidProvenance(
-            ReleaseRunProvenanceError::MismatchedProfile
-        ))
+        ReleaseReceiptV1::from_evidence(&i, &forged, exact(&i)),
+        Err(ReleaseReceiptError::InvalidState(ReleaseStateError::InvalidEnvelope(
+            ReleaseRunEnvelopeError::MismatchedProfile
+        )))
     ));
+
     let other = intent("rehearsal");
-    let wrong_intent =
-        ReleaseReceiptV1::from_evidence(&i, &st, prov(&i, "production", other.digest().clone()), exact(&i));
     assert!(matches!(
-        wrong_intent,
-        Err(ReleaseReceiptError::InvalidProvenance(
-            ReleaseRunProvenanceError::MismatchedIntent
-        ))
+        ReleaseReceiptV1::from_evidence(&other, &st, exact(&i)),
+        Err(ReleaseReceiptError::InvalidState(ReleaseStateError::MismatchedIntent))
     ));
 }
 
@@ -100,28 +113,28 @@ fn receipt_rejects_provenance_for_another_profile_or_intent() {
 fn receipt_requires_a_complete_duplicate_free_exact_observation_roster() {
     let i = intent("production");
     let st = done_state(&i);
-    let p = || prov(&i, "production", i.digest().clone());
     assert!(matches!(
-        ReleaseReceiptV1::from_evidence(&i, &st, p(), vec![]),
+        ReleaseReceiptV1::from_evidence(&i, &st, vec![]),
         Err(ReleaseReceiptError::MismatchedObservationRoster)
     ));
     let mut dup = exact(&i);
     dup.extend(exact(&i));
     assert!(matches!(
-        ReleaseReceiptV1::from_evidence(&i, &st, p(), dup),
+        ReleaseReceiptV1::from_evidence(&i, &st, dup),
         Err(ReleaseReceiptError::DuplicateObservation { .. })
     ));
     for bad in [
         ProviderObservationV1::Absent,
-        ProviderObservationV1::Conflict,
-        ProviderObservationV1::Indeterminate,
+        ProviderObservationV1::Conflict {
+            reason: ProviderConflictReason::RemoteTagTargetDiffers,
+        },
+        ProviderObservationV1::Indeterminate {
+            cause: ProviderIndeterminateCause::CommandFailed,
+        },
     ] {
-        let obs = vec![ReleaseOperationObservationV1 {
-            operation: i.operations[0].id().clone(),
-            observation: bad,
-        }];
+        let obs = vec![ReleaseOperationObservationV1::new(i.operations[0].id().clone(), bad).unwrap()];
         assert!(matches!(
-            ReleaseReceiptV1::from_evidence(&i, &st, p(), obs),
+            ReleaseReceiptV1::from_evidence(&i, &st, obs),
             Err(ReleaseReceiptError::NonExactObservation { .. })
         ));
     }
@@ -130,18 +143,13 @@ fn receipt_requires_a_complete_duplicate_free_exact_observation_roster() {
 #[test]
 fn deserialized_receipt_rejects_nonexact_or_missing_observations() {
     let i = intent("production");
-    let r = ReleaseReceiptV1::from_evidence(
-        &i,
-        &done_state(&i),
-        prov(&i, "production", i.digest().clone()),
-        exact(&i),
-    )
-    .unwrap();
+    let r = ReleaseReceiptV1::from_evidence(&i, &done_state(&i), exact(&i)).unwrap();
     let good = serde_json::to_value(&r).unwrap();
     let roundtrip: ReleaseReceiptV1 = serde_json::from_value(good.clone()).unwrap();
     assert!(roundtrip.validate_for_intent(&i).is_ok());
     let mut nonexact = good.clone();
-    nonexact["observations"][0]["observation"]["kind"] = "indeterminate".into();
+    nonexact["observations"][0]["observation"] =
+        serde_json::json!({ "kind": "indeterminate", "cause": { "kind": "commandFailed" } });
     assert!(serde_json::from_value::<ReleaseReceiptV1>(nonexact).is_err());
     let mut missing = good;
     missing["observations"] = serde_json::json!([]);

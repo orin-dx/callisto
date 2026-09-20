@@ -9,12 +9,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use callisto_model::{
-    ApplyPermit, ArtifactSlotId, CanonicalTranscript, CommandOutput, CommandRunner, CommitSha, DepKind, Ecosystem,
-    ExecutionTrustProfileV1, GitHubRepository, GitHubRepositoryParseError, NpmAccess, OperationOutcome,
-    ProviderObservationV1, PublishOutcome, PublishTarget, RegistryBindingDigest, RegistryBindingId, RegistryKey,
-    ReleaseDecisionV1, ReleaseInputSnapshotV1, ReleaseIntentError, ReleaseIntentV1, ReleaseOperation,
-    ReleaseOperationId, ReleaseOperationObservationV1, ReleasePackageId, ReleasePackageInputV1, ReleaseProfileId,
-    SemanticInputDigest, SourceIdentity, TagName, Version,
+    AbsentProof, ApplyPermit, ArtifactSlotId, CanonicalTranscript, CommandOutput, CommandRunner, CommitSha, DepKind,
+    Ecosystem, ExactEvidence, ExecutionTrustProfileV1, GitHubRepository, GitHubRepositoryParseError, NpmAccess,
+    ProviderConflictReason, ProviderEvidenceV1, ProviderIndeterminateCause, ProviderObservationV1, PublishOutcome,
+    PublishTarget, RegistryBindingDigest, RegistryBindingId, RegistryKey, ReleaseDecisionV1, ReleaseInputSnapshotV1,
+    ReleaseIntentError, ReleaseIntentV1, ReleaseOperation, ReleaseOperationId, ReleaseOperationObservationV1,
+    ReleasePackageId, ReleasePackageInputV1, ReleaseProfileId, SemanticInputDigest, SourceIdentity, TagName, Version,
 };
 use callisto_vcs::{
     access::{GitCommitTrustEvidence, GitHeadDisposition},
@@ -179,14 +179,6 @@ enum RemoteTagObservation {
     Indeterminate,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-enum ForgeReleaseObservation {
-    Missing,
-    Exact,
-    Conflict,
-    Indeterminate,
-}
-
 /// Wall-clock deadlines for every command the release path issues. Without
 /// them one hung provider consumes the whole CI job budget; a breach surfaces
 /// as `CommandError::TimedOut` (E025) and, after `Attempting` is persisted,
@@ -214,13 +206,14 @@ pub(crate) mod timeouts {
     pub(crate) const LOCAL_GIT: Duration = Duration::from_secs(60);
 }
 
-/// What one pre-effect observation authorizes for an operation.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// What one pre-effect observation authorizes for an operation, carrying the
+/// proof token the state machine requires to act on it.
+#[derive(Debug)]
 pub(crate) enum ReleasePreflight {
     /// The effect has not happened and may be issued.
-    Proceed,
+    Proceed { proof: AbsentProof },
     /// The provider already holds exactly this operation's intended result.
-    AlreadySatisfied,
+    AlreadySatisfied { evidence: ExactEvidence },
 }
 
 /// Maps one observation to its pre-effect decision. `conflict` names the
@@ -230,13 +223,41 @@ fn preflight_from_observation(
     id: &ReleaseOperationId,
     conflict: RemoteConflict,
 ) -> Result<ReleasePreflight, GraphError> {
-    match observation {
-        ProviderObservationV1::Absent => Ok(ReleasePreflight::Proceed),
-        ProviderObservationV1::Exact => Ok(ReleasePreflight::AlreadySatisfied),
-        ProviderObservationV1::Conflict => Err(GraphError::ReleaseRemoteConflict { conflict }),
-        ProviderObservationV1::Indeterminate => Err(GraphError::ReleaseProviderIndeterminate {
+    match &observation {
+        ProviderObservationV1::Absent => Ok(ReleasePreflight::Proceed {
+            proof: observation
+                .absent_proof()
+                .expect("an absent observation mints an absent proof"),
+        }),
+        ProviderObservationV1::Exact { .. } => Ok(ReleasePreflight::AlreadySatisfied {
+            evidence: observation
+                .exact_evidence()
+                .expect("an exact observation mints its evidence"),
+        }),
+        ProviderObservationV1::Conflict { .. } => Err(GraphError::ReleaseRemoteConflict { conflict }),
+        ProviderObservationV1::Indeterminate { .. } => Err(GraphError::ReleaseProviderIndeterminate {
             operation: Box::new(id.clone()),
         }),
+    }
+}
+
+/// Requires that a post-effect observation is exact before the operation may
+/// be recorded as done.
+fn confirmed_evidence(
+    observation: ProviderObservationV1,
+    id: &ReleaseOperationId,
+    conflict: RemoteConflict,
+) -> Result<ExactEvidence, GraphError> {
+    match &observation {
+        ProviderObservationV1::Exact { .. } => Ok(observation
+            .exact_evidence()
+            .expect("an exact observation mints its evidence")),
+        ProviderObservationV1::Indeterminate { .. } => Err(GraphError::ReleaseProviderIndeterminate {
+            operation: Box::new(id.clone()),
+        }),
+        ProviderObservationV1::Absent | ProviderObservationV1::Conflict { .. } => {
+            Err(GraphError::ReleaseRemoteConflict { conflict })
+        }
     }
 }
 
@@ -244,7 +265,7 @@ fn preflight_from_observation(
 #[derive(Debug)]
 enum GitHubReleaseLookup {
     Absent,
-    Indeterminate,
+    Indeterminate { status: u16 },
     Found(serde_json::Value),
 }
 
@@ -323,15 +344,6 @@ impl ValidatedReleaseIntent<'_> {
 /// that it did not silently omit an operation.
 pub fn observe_release_operations(
     capability: &ValidatedReleaseIntent<'_>,
-) -> Result<Vec<ReleaseOperationObservationV1>, GraphError> {
-    observe_release_operations_with_artifacts(capability, None)
-}
-
-/// Collects provider observations using verified artifact bytes when the
-/// intent declares binary uploads. The verified capability prevents recovery
-/// from accepting a same-named remote asset with different bytes.
-pub fn observe_release_operations_with_artifacts(
-    capability: &ValidatedReleaseIntent<'_>,
     artifacts: Option<&VerifiedArtifactManifest<'_>>,
 ) -> Result<Vec<ReleaseOperationObservationV1>, GraphError> {
     capability
@@ -340,10 +352,11 @@ pub fn observe_release_operations_with_artifacts(
         .iter()
         .map(|operation| {
             capability.recheck_trust()?;
-            Ok(ReleaseOperationObservationV1 {
-                operation: operation.id().clone(),
-                observation: capability.observe_prepared(operation.id(), artifacts)?,
-            })
+            ReleaseOperationObservationV1::new(
+                operation.id().clone(),
+                capability.observe_prepared(operation.id(), artifacts)?,
+            )
+            .map_err(|source| GraphError::ReleaseProviderObservation { source })
         })
         .collect()
 }
@@ -539,29 +552,38 @@ impl ValidatedReleaseIntent<'_> {
                 // A registry version that already exists is a hard conflict,
                 // not an adopted success: only the recovery path may converge
                 // on an exact remote observation.
-                let exists = match id.package.ecosystem() {
-                    Ecosystem::Cargo => {
-                        self.cargo_version_is_published(package_name, version, registry.key.as_str())?
-                    }
-                    Ecosystem::Npm => {
-                        self.npm_version_is_published(package_name, version, registry.endpoint.as_deref())?
-                    }
-                    // PyPI's upload endpoint is not a query API, so there is
-                    // nothing to observe before the effect.
-                    Ecosystem::Pypi => false,
-                    _ => {
-                        return Err(GraphError::UnsupportedRelease {
-                            feature: UnsupportedReleaseFeature::Ecosystem,
-                        })
-                    }
-                };
-                if exists {
-                    Err(GraphError::ReleaseRegistryVersionExists {
+                match self.registry_observation(
+                    id.package.ecosystem(),
+                    package_name,
+                    version,
+                    registry.key.as_str(),
+                    registry.endpoint.as_deref(),
+                )? {
+                    ProviderObservationV1::Absent => Ok(ReleasePreflight::Proceed {
+                        proof: ProviderObservationV1::Absent
+                            .absent_proof()
+                            .expect("an absent observation mints an absent proof"),
+                    }),
+                    ProviderObservationV1::Exact { .. } => Err(GraphError::ReleaseRegistryVersionExists {
                         package: package_name.clone(),
                         version: version.clone(),
-                    })
-                } else {
-                    Ok(ReleasePreflight::Proceed)
+                    }),
+                    // PyPI's upload endpoint is not a query API, so there is
+                    // nothing to observe before the effect; the post-effect
+                    // confirmation is where it fails closed.
+                    ProviderObservationV1::Indeterminate {
+                        cause: ProviderIndeterminateCause::UnsupportedProvider,
+                    } => Ok(ReleasePreflight::Proceed {
+                        proof: ProviderObservationV1::Absent
+                            .absent_proof()
+                            .expect("an absent observation mints an absent proof"),
+                    }),
+                    ProviderObservationV1::Indeterminate { .. } => Err(GraphError::ReleaseProviderIndeterminate {
+                        operation: Box::new(id.clone()),
+                    }),
+                    ProviderObservationV1::Conflict { .. } => Err(GraphError::ReleaseRemoteConflict {
+                        conflict: RemoteConflict::RegistryVersionDiffers,
+                    }),
                 }
             }
             PreparedOperation::Tag {
@@ -582,12 +604,7 @@ impl ValidatedReleaseIntent<'_> {
                         requirement: ReleasePreconditionRequirement::GitHubRemote,
                     })?
                     .as_slug();
-                let observation = match self.observed_forge_release_target(tag, &repository)? {
-                    ForgeReleaseObservation::Missing => ProviderObservationV1::Absent,
-                    ForgeReleaseObservation::Exact => ProviderObservationV1::Exact,
-                    ForgeReleaseObservation::Conflict => ProviderObservationV1::Conflict,
-                    ForgeReleaseObservation::Indeterminate => ProviderObservationV1::Indeterminate,
-                };
+                let observation = self.observed_forge_release_target(tag, &repository)?;
                 preflight_from_observation(observation, id, RemoteConflict::ForgeReleaseDiffers)
             }
             PreparedOperation::ArtifactUpload { slot, tag } => {
@@ -615,7 +632,7 @@ impl ValidatedReleaseIntent<'_> {
         permit: &ApplyPermit,
         id: &ReleaseOperationId,
         artifacts: Option<&VerifiedArtifactManifest<'_>>,
-    ) -> Result<OperationOutcome, GraphError> {
+    ) -> Result<ExactEvidence, GraphError> {
         let operation = self.prepared_operation(id, "dispatch_prepared")?;
         match operation {
             PreparedOperation::RegistryPublish { .. } => self.dispatch_registry(permit, id, operation),
@@ -647,30 +664,13 @@ impl ValidatedReleaseIntent<'_> {
                 version,
                 registry,
                 ..
-            } => match id.package.ecosystem() {
-                Ecosystem::Cargo => Ok(
-                    if self.cargo_version_is_published(package_name, version, registry.key.as_str())? {
-                        ProviderObservationV1::Exact
-                    } else {
-                        ProviderObservationV1::Absent
-                    },
-                ),
-                Ecosystem::Npm => Ok(
-                    if self.npm_version_is_published(package_name, version, registry.endpoint.as_deref())? {
-                        ProviderObservationV1::Exact
-                    } else {
-                        ProviderObservationV1::Absent
-                    },
-                ),
-                // PyPI's upload endpoint is not a query API. Until its
-                // provider adapter can prove an exact version through the
-                // configured index, recovery must fail closed rather than
-                // attempting a second upload.
-                Ecosystem::Pypi => Ok(ProviderObservationV1::Indeterminate),
-                _ => Err(GraphError::UnsupportedRelease {
-                    feature: UnsupportedReleaseFeature::Ecosystem,
-                }),
-            },
+            } => self.registry_observation(
+                id.package.ecosystem(),
+                package_name,
+                version,
+                registry.key.as_str(),
+                registry.endpoint.as_deref(),
+            ),
             PreparedOperation::Tag {
                 name,
                 target,
@@ -685,12 +685,7 @@ impl ValidatedReleaseIntent<'_> {
                         requirement: ReleasePreconditionRequirement::GitHubRemote,
                     })?
                     .as_slug();
-                Ok(match self.observed_forge_release_target(tag, &repository)? {
-                    ForgeReleaseObservation::Missing => ProviderObservationV1::Absent,
-                    ForgeReleaseObservation::Exact => ProviderObservationV1::Exact,
-                    ForgeReleaseObservation::Conflict => ProviderObservationV1::Conflict,
-                    ForgeReleaseObservation::Indeterminate => ProviderObservationV1::Indeterminate,
-                })
+                self.observed_forge_release_target(tag, &repository)
             }
             PreparedOperation::ArtifactUpload { slot, tag } => self.observe_artifact_upload(slot, tag, artifacts),
         }
@@ -701,7 +696,7 @@ impl ValidatedReleaseIntent<'_> {
         _permit: &ApplyPermit,
         id: &ReleaseOperationId,
         prepared: &PreparedOperation,
-    ) -> Result<OperationOutcome, GraphError> {
+    ) -> Result<ExactEvidence, GraphError> {
         let PreparedOperation::RegistryPublish {
             package_dir,
             package_name,
@@ -814,19 +809,56 @@ impl ValidatedReleaseIntent<'_> {
             };
             require_registry_confirmation(is_published, package_name, version)?;
         }
-        match outcome {
-            PublishOutcome::Published => Ok(OperationOutcome::Published),
-            // The client's "already exists" text is not a receipt: a yanked
-            // version reads as absent to the registry, so only an exact
-            // observation of the version itself may satisfy the operation.
-            PublishOutcome::AlreadyPublished => match self.observe_prepared(id, None)? {
-                ProviderObservationV1::Exact => Ok(OperationOutcome::AlreadySatisfied),
-                _ => Err(GraphError::RegistryPublishUnconfirmed {
-                    package: package_name.clone(),
+        // Neither a zero exit nor the client's "already exists" text is a
+        // receipt: a yanked version reads as absent to the registry, so only
+        // an exact observation of the version itself may satisfy the
+        // operation, whatever the publish client reported.
+        self.observe_prepared(id, None)?
+            .exact_evidence()
+            .ok_or_else(|| GraphError::RegistryPublishUnconfirmed {
+                package: package_name.clone(),
+                version: version.clone(),
+            })
+    }
+
+    /// The one registry observation used by preflight, recovery, and
+    /// post-publish confirmation, so those three can never disagree.
+    fn registry_observation(
+        &self,
+        ecosystem: Ecosystem,
+        package_name: &str,
+        version: &Version,
+        registry_key: &str,
+        endpoint: Option<&str>,
+    ) -> Result<ProviderObservationV1, GraphError> {
+        let exists = match ecosystem {
+            Ecosystem::Cargo => self.cargo_version_is_published(package_name, version, registry_key)?,
+            Ecosystem::Npm => self.npm_version_is_published(package_name, version, endpoint)?,
+            // PyPI's upload endpoint is not a query API. Until its provider
+            // adapter can prove an exact version through the configured
+            // index, every caller must fail closed.
+            Ecosystem::Pypi => {
+                return Ok(ProviderObservationV1::Indeterminate {
+                    cause: ProviderIndeterminateCause::UnsupportedProvider,
+                })
+            }
+            _ => {
+                return Err(GraphError::UnsupportedRelease {
+                    feature: UnsupportedReleaseFeature::Ecosystem,
+                })
+            }
+        };
+        Ok(if exists {
+            ProviderObservationV1::Exact {
+                evidence: ProviderEvidenceV1::RegistryVersion {
                     version: version.clone(),
-                }),
-            },
-        }
+                    checksum: None,
+                    yanked: None,
+                },
+            }
+        } else {
+            ProviderObservationV1::Absent
+        })
     }
 }
 
@@ -983,7 +1015,7 @@ impl ValidatedReleaseIntent<'_> {
         name: &TagName,
         target: &CommitSha,
         annotation: &str,
-    ) -> Result<OperationOutcome, GraphError> {
+    ) -> Result<ExactEvidence, GraphError> {
         // The preflight observation already proved the remote absent. It leaves
         // exactly as prepared by a run whose push failed; only the push remains.
         if self.observed_local_tag(name)? == LocalTagObservation::Absent {
@@ -1017,15 +1049,11 @@ impl ValidatedReleaseIntent<'_> {
                 },
             });
         }
-        match self.tag_observation(name, target, annotation)? {
-            ProviderObservationV1::Exact => Ok(OperationOutcome::Published),
-            ProviderObservationV1::Indeterminate => Err(GraphError::ReleaseProviderIndeterminate {
-                operation: Box::new(id.clone()),
-            }),
-            _ => Err(GraphError::ReleaseRemoteConflict {
-                conflict: RemoteConflict::TagNotObservedAfterPush,
-            }),
-        }
+        confirmed_evidence(
+            self.tag_observation(name, target, annotation)?,
+            id,
+            RemoteConflict::TagNotObservedAfterPush,
+        )
     }
 
     /// The remote decides whether the tag operation is satisfied, but a local
@@ -1043,19 +1071,34 @@ impl ValidatedReleaseIntent<'_> {
                 target: observed,
                 annotation: observed_annotation,
             } if observed == *target && observed_annotation == annotation => {}
-            _ => return Ok(ProviderObservationV1::Conflict),
+            _ => {
+                return Ok(ProviderObservationV1::Conflict {
+                    reason: ProviderConflictReason::LocalTagDiffers,
+                })
+            }
         }
         Ok(match self.observed_remote_tag(name)? {
             RemoteTagObservation::Absent => ProviderObservationV1::Absent,
-            RemoteTagObservation::Annotated { target: observed } if observed == *target => ProviderObservationV1::Exact,
-            RemoteTagObservation::Annotated { .. } | RemoteTagObservation::Unannotated => {
-                ProviderObservationV1::Conflict
+            RemoteTagObservation::Annotated { target: observed } if observed == *target => {
+                ProviderObservationV1::Exact {
+                    evidence: ProviderEvidenceV1::GitTag {
+                        peeled_commit: observed,
+                    },
+                }
             }
-            RemoteTagObservation::Indeterminate => ProviderObservationV1::Indeterminate,
+            RemoteTagObservation::Annotated { .. } => ProviderObservationV1::Conflict {
+                reason: ProviderConflictReason::RemoteTagTargetDiffers,
+            },
+            RemoteTagObservation::Unannotated => ProviderObservationV1::Conflict {
+                reason: ProviderConflictReason::UnannotatedTag,
+            },
+            RemoteTagObservation::Indeterminate => ProviderObservationV1::Indeterminate {
+                cause: ProviderIndeterminateCause::CommandFailed,
+            },
         })
     }
 
-    fn dispatch_forge_release(&self, id: &ReleaseOperationId, tag: &TagName) -> Result<OperationOutcome, GraphError> {
+    fn dispatch_forge_release(&self, id: &ReleaseOperationId, tag: &TagName) -> Result<ExactEvidence, GraphError> {
         let remote = self.checked_git_remote()?;
         let repository = remote
             .github_repository
@@ -1086,17 +1129,11 @@ impl ValidatedReleaseIntent<'_> {
                 },
             });
         }
-        match self.observed_forge_release_target(tag, &repository)? {
-            ForgeReleaseObservation::Exact => Ok(OperationOutcome::Published),
-            ForgeReleaseObservation::Indeterminate => Err(GraphError::ReleaseProviderIndeterminate {
-                operation: Box::new(id.clone()),
-            }),
-            ForgeReleaseObservation::Missing | ForgeReleaseObservation::Conflict => {
-                Err(GraphError::ReleaseRemoteConflict {
-                    conflict: RemoteConflict::ForgeReleaseNotObservedAfterCreate,
-                })
-            }
-        }
+        confirmed_evidence(
+            self.observed_forge_release_target(tag, &repository)?,
+            id,
+            RemoteConflict::ForgeReleaseNotObservedAfterCreate,
+        )
     }
 
     fn dispatch_artifact_upload(
@@ -1105,25 +1142,17 @@ impl ValidatedReleaseIntent<'_> {
         slot: &ArtifactSlotId,
         tag: &TagName,
         artifacts: Option<&VerifiedArtifactManifest<'_>>,
-    ) -> Result<OperationOutcome, GraphError> {
+    ) -> Result<ExactEvidence, GraphError> {
         let artifacts = artifacts.ok_or(GraphError::ReleasePreconditionUnmet {
             requirement: ReleasePreconditionRequirement::VerifiedArtifactManifest,
         })?;
         let path = artifacts.path_for(slot)?;
         let repository = slot.attestation_policy.repository.as_slug();
-        match self.observed_forge_release_target(tag, &repository)? {
-            ForgeReleaseObservation::Exact => {}
-            ForgeReleaseObservation::Indeterminate => {
-                return Err(GraphError::ReleaseProviderIndeterminate {
-                    operation: Box::new(id.clone()),
-                })
-            }
-            ForgeReleaseObservation::Missing | ForgeReleaseObservation::Conflict => {
-                return Err(GraphError::ReleaseRemoteConflict {
-                    conflict: RemoteConflict::ForgeReleaseDiffers,
-                })
-            }
-        }
+        confirmed_evidence(
+            self.observed_forge_release_target(tag, &repository)?,
+            id,
+            RemoteConflict::ForgeReleaseDiffers,
+        )?;
         let path_argument = path.to_string_lossy();
         let args = [
             "release",
@@ -1146,18 +1175,11 @@ impl ValidatedReleaseIntent<'_> {
                 },
             });
         }
-        match self.observe_artifact_upload(slot, tag, Some(artifacts))? {
-            ProviderObservationV1::Exact => Ok(OperationOutcome::Published),
-            ProviderObservationV1::Conflict => Err(GraphError::ReleaseRemoteConflict {
-                conflict: RemoteConflict::ArtifactDiffers,
-            }),
-            ProviderObservationV1::Absent => Err(GraphError::ReleaseRemoteConflict {
-                conflict: RemoteConflict::ArtifactNotObservedAfterUpload,
-            }),
-            ProviderObservationV1::Indeterminate => Err(GraphError::ReleaseProviderIndeterminate {
-                operation: Box::new(id.clone()),
-            }),
-        }
+        confirmed_evidence(
+            self.observe_artifact_upload(slot, tag, Some(artifacts))?,
+            id,
+            RemoteConflict::ArtifactNotObservedAfterUpload,
+        )
     }
 
     fn observe_artifact_upload(
@@ -1167,13 +1189,19 @@ impl ValidatedReleaseIntent<'_> {
         artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<ProviderObservationV1, GraphError> {
         let Some(artifacts) = artifacts else {
-            return Ok(ProviderObservationV1::Indeterminate);
+            return Ok(ProviderObservationV1::Indeterminate {
+                cause: ProviderIndeterminateCause::ArtifactManifestUnavailable,
+            });
         };
         let entry = artifacts.entry_for(slot)?;
         let repository = slot.attestation_policy.repository.as_slug();
         let release = match self.github_release_by_tag(&repository, tag)? {
             GitHubReleaseLookup::Absent => return Ok(ProviderObservationV1::Absent),
-            GitHubReleaseLookup::Indeterminate => return Ok(ProviderObservationV1::Indeterminate),
+            GitHubReleaseLookup::Indeterminate { status } => {
+                return Ok(ProviderObservationV1::Indeterminate {
+                    cause: ProviderIndeterminateCause::ProviderStatus { status },
+                })
+            }
             GitHubReleaseLookup::Found(release) => release,
         };
         let assets = release
@@ -1200,12 +1228,21 @@ impl ValidatedReleaseIntent<'_> {
                 if asset.get("size").and_then(serde_json::Value::as_u64) == Some(entry.byte_length)
                     && asset.get("digest").and_then(serde_json::Value::as_str) == Some(digest.as_str())
                 {
-                    Ok(ProviderObservationV1::Exact)
+                    Ok(ProviderObservationV1::Exact {
+                        evidence: ProviderEvidenceV1::ArtifactUpload {
+                            byte_length: entry.byte_length,
+                            sha256: entry.digest.clone(),
+                        },
+                    })
                 } else {
-                    Ok(ProviderObservationV1::Conflict)
+                    Ok(ProviderObservationV1::Conflict {
+                        reason: ProviderConflictReason::ArtifactAssetDiffers,
+                    })
                 }
             }
-            _ => Ok(ProviderObservationV1::Conflict),
+            _ => Ok(ProviderObservationV1::Conflict {
+                reason: ProviderConflictReason::DuplicateArtifactAsset,
+            }),
         }
     }
 
@@ -1322,14 +1359,8 @@ impl ValidatedReleaseIntent<'_> {
             .runner
             .run_with_timeout("gh", &api_args, &self.prepared.root, timeouts::FORGE_API)?;
         let (status, body) = github_api_response("gh", &api_args, &observed)?;
-        if let Some(observation) = github_release_response_status(status) {
-            return Ok(match observation {
-                ProviderObservationV1::Absent => GitHubReleaseLookup::Absent,
-                ProviderObservationV1::Indeterminate => GitHubReleaseLookup::Indeterminate,
-                ProviderObservationV1::Exact | ProviderObservationV1::Conflict => unreachable!(
-                    "GitHub response status can only establish absence or indeterminacy before parsing its body"
-                ),
-            });
+        if let Some(lookup) = github_release_response_status(status) {
+            return Ok(lookup);
         }
         let value: serde_json::Value = serde_json::from_str(body).map_err(|error| GraphError::ReleaseCommand {
             program: "gh".to_string(),
@@ -1349,18 +1380,29 @@ impl ValidatedReleaseIntent<'_> {
         &self,
         tag: &TagName,
         repository: &str,
-    ) -> Result<ForgeReleaseObservation, GraphError> {
+    ) -> Result<ProviderObservationV1, GraphError> {
         let value = match self.github_release_by_tag(repository, tag)? {
-            GitHubReleaseLookup::Absent => return Ok(ForgeReleaseObservation::Missing),
-            GitHubReleaseLookup::Indeterminate => return Ok(ForgeReleaseObservation::Indeterminate),
+            GitHubReleaseLookup::Absent => return Ok(ProviderObservationV1::Absent),
+            GitHubReleaseLookup::Indeterminate { status } => {
+                return Ok(ProviderObservationV1::Indeterminate {
+                    cause: ProviderIndeterminateCause::ProviderStatus { status },
+                })
+            }
             GitHubReleaseLookup::Found(value) => value,
         };
-        let published = !value.get("draft").and_then(serde_json::Value::as_bool).unwrap_or(false);
+        let draft = value.get("draft").and_then(serde_json::Value::as_bool).unwrap_or(false);
         Ok(
-            if published && value.get("tag_name").and_then(serde_json::Value::as_str) == Some(tag.as_str()) {
-                ForgeReleaseObservation::Exact
+            if !draft && value.get("tag_name").and_then(serde_json::Value::as_str) == Some(tag.as_str()) {
+                ProviderObservationV1::Exact {
+                    evidence: ProviderEvidenceV1::ForgeRelease {
+                        tag_name: tag.clone(),
+                        draft,
+                    },
+                }
             } else {
-                ForgeReleaseObservation::Conflict
+                ProviderObservationV1::Conflict {
+                    reason: ProviderConflictReason::ForgeReleaseDiffers,
+                }
             },
         )
     }
@@ -1442,11 +1484,11 @@ fn github_api_response<'a>(
 /// proves absence; all other non-success statuses leave remote identity
 /// unknown. In particular, authentication, rate-limit, and server failures
 /// must never be reported as a conflicting release or asset.
-fn github_release_response_status(status: u16) -> Option<ProviderObservationV1> {
+fn github_release_response_status(status: u16) -> Option<GitHubReleaseLookup> {
     match status {
         200 => None,
-        404 => Some(ProviderObservationV1::Absent),
-        _ => Some(ProviderObservationV1::Indeterminate),
+        404 => Some(GitHubReleaseLookup::Absent),
+        other => Some(GitHubReleaseLookup::Indeterminate { status: other }),
     }
 }
 
@@ -2680,12 +2722,17 @@ mod tests {
 
     #[test]
     fn github_release_status_only_proves_absence_for_not_found() {
-        assert_eq!(github_release_response_status(200), None);
-        assert_eq!(github_release_response_status(404), Some(ProviderObservationV1::Absent));
+        assert!(github_release_response_status(200).is_none());
+        assert!(matches!(
+            github_release_response_status(404),
+            Some(GitHubReleaseLookup::Absent)
+        ));
         for status in [401, 403, 429, 500, 503] {
-            assert_eq!(
-                github_release_response_status(status),
-                Some(ProviderObservationV1::Indeterminate),
+            assert!(
+                matches!(
+                    github_release_response_status(status),
+                    Some(GitHubReleaseLookup::Indeterminate { status: found }) if found == status
+                ),
                 "HTTP {status} must not be reported as a conflicting remote release"
             );
         }
@@ -2803,10 +2850,10 @@ mod tests {
             format!("{object}\trefs/tags/{tag_name}\n{commit}\trefs/tags/{tag_name}^{{}}\n"),
         )
         .unwrap();
-        assert_eq!(
+        assert!(matches!(
             validated.preflight_prepared(&tag_id, None).unwrap(),
-            ReleasePreflight::AlreadySatisfied
-        );
+            ReleasePreflight::AlreadySatisfied { .. }
+        ));
     }
 
     #[test]

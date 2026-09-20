@@ -548,7 +548,25 @@ pub enum GraphError {
     )]
     ReleaseRecoveryUnresolved {
         operation: Box<callisto_model::ReleaseOperationId>,
-        observation: callisto_model::ProviderObservationV1,
+        observation: Box<callisto_model::ProviderObservationV1>,
+    },
+
+    #[error("release run envelope is not valid for this intent: {source}")]
+    #[diagnostic(
+        code(E178),
+        help("Re-plan the release intent, or run execute with the orchestration revision, profile and artifact manifest the intent was planned against.")
+    )]
+    ReleaseRunEnvelope {
+        source: callisto_model::ReleaseRunEnvelopeError,
+    },
+
+    #[error("provider observation is not usable as release evidence: {source}")]
+    #[diagnostic(
+        code(E177),
+        help("This is an internal callisto defect: a provider adapter produced evidence that does not belong to the operation's role. Report it with the full error detail.")
+    )]
+    ReleaseProviderObservation {
+        source: callisto_model::ProviderObservationError,
     },
 
     #[error("cannot dispatch release operation `{operation:?}` because its provider observation is indeterminate")]
@@ -647,6 +665,8 @@ pub enum RemoteConflict {
     ArtifactDiffers,
     #[error("an uploaded release asset was not observed afterward")]
     ArtifactNotObservedAfterUpload,
+    #[error("the registry holds this version but not the identity this intent authorized")]
+    RegistryVersionDiffers,
 }
 
 /// A release feature with no implemented dispatch for the given

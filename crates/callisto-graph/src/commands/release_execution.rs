@@ -7,7 +7,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use callisto_model::{
-    ApplyPermit, OperationState, ProviderObservationV1, ReleaseExecutionStateV1, ReleaseIntentV1, ReleaseOperationId,
+    ApplyPermit, OperationEvent, OperationState, ProviderObservationV1, ReleaseExecutionStateV1, ReleaseIntentV1,
+    ReleaseOperationId, ReleaseRunEnvelopeV1, ReleaseRunKindV1,
 };
 
 use crate::{
@@ -15,13 +16,16 @@ use crate::{
     GraphError,
 };
 
-use callisto_model::OperationOutcome;
-
 use super::release::{ReleasePreflight, ValidatedReleaseIntent};
 use super::release_artifacts::VerifiedArtifactManifest;
 use crate::error::ReleasePreconditionRequirement;
 
 /// Executes eligible operations one at a time with crash-safe state updates.
+///
+/// The run `envelope` was created and validated before this call, so the very
+/// first thing persisted already names the coordinator, release source,
+/// profile, intent, and artifact manifest of this run. State left behind by a
+/// different run is rejected rather than adopted.
 ///
 /// Each operation is observed once before `Attempting` is persisted, so a
 /// pre-effect failure leaves it `Pending`. `Attempting` is persisted only
@@ -32,74 +36,66 @@ pub fn execute_release<W: ReleaseStateWriter>(
     capability: &ValidatedReleaseIntent<'_>,
     store: &ReleaseStateStore<W>,
     permit: &ApplyPermit,
-) -> Result<ReleaseExecutionStateV1, GraphError> {
-    execute_release_with_artifacts(capability, store, permit, None)
-}
-
-/// Executes a release after requiring the exact artifact manifest whenever
-/// the intent declares compiled-binary slots.
-pub fn execute_release_with_artifacts<W: ReleaseStateWriter>(
-    capability: &ValidatedReleaseIntent<'_>,
-    store: &ReleaseStateStore<W>,
-    permit: &ApplyPermit,
+    envelope: &ReleaseRunEnvelopeV1,
     artifacts: Option<&VerifiedArtifactManifest<'_>>,
-) -> Result<ReleaseExecutionStateV1, GraphError> {
-    execute_release_with_artifacts_in_recovery(capability, store, permit, artifacts, false)
-}
-
-/// Executes one explicitly selected recovery run.
-///
-/// Unlike a normal execution, recovery may reconstruct a missing local
-/// journal from exact provider observations. The immutable intent remains the
-/// roster authority; no operation is inferred successful from an absent
-/// state file alone.
-pub fn execute_release_with_artifacts_in_recovery<W: ReleaseStateWriter>(
-    capability: &ValidatedReleaseIntent<'_>,
-    store: &ReleaseStateStore<W>,
-    permit: &ApplyPermit,
-    artifacts: Option<&VerifiedArtifactManifest<'_>>,
-    recovery: bool,
 ) -> Result<ReleaseExecutionStateV1, GraphError> {
     let intent = capability.intent();
     require_verified_artifact_manifest(intent, artifacts)?;
-    let (mut state, state_was_missing) = match store.load(intent)? {
+    envelope
+        .validate_for_intent(intent)
+        .map_err(|source| GraphError::ReleaseRunEnvelope { source })?;
+    let (mut state, state_was_missing) = match store.load(intent, envelope)? {
         Some(state) => (state, false),
         None => {
-            let state = ReleaseExecutionStateV1::pending(intent);
+            let state = ReleaseExecutionStateV1::new(intent, envelope.clone())
+                .map_err(|source| GraphError::ReleaseExecutionState { source })?;
             store.save(intent, &state, permit)?;
             (state, true)
         }
     };
-    if recovery && state_was_missing {
+    if envelope.kind() == ReleaseRunKindV1::Recovery && state_was_missing {
         reconstruct_missing_state(capability, store, permit, &mut state, artifacts)?;
     }
     recover_interrupted_operations(capability, store, permit, &mut state, artifacts)?;
     loop {
-        let Some(operation) = reconcile_release_execution(intent, &state)?.eligible().first().cloned() else {
+        let Some(operation) = reconcile_release_execution(intent, Some(&state))?
+            .eligible()
+            .first()
+            .cloned()
+        else {
             break;
         };
         capability.recheck_trust()?;
         // Observe before persisting `Attempting`: a conflict, indeterminate
         // provider, or failed observation raised here issued no effect, so the
         // operation must stay `Pending` and remain rerunnable.
-        let preflight = capability.preflight_prepared(&operation, artifacts)?;
-        state
-            .mark_attempting(&operation)
-            .map_err(|source| GraphError::ReleaseExecutionState { source })?;
-        let outcome = match preflight {
-            ReleasePreflight::AlreadySatisfied => OperationOutcome::AlreadySatisfied,
-            ReleasePreflight::Proceed => {
+        let event = match capability.preflight_prepared(&operation, artifacts)? {
+            ReleasePreflight::AlreadySatisfied { evidence } => OperationEvent::ObservedExactBeforeEffect { evidence },
+            ReleasePreflight::Proceed { proof } => {
+                apply(&mut state, &operation, &OperationEvent::Attempt { proof })?;
                 store.save(intent, &state, permit)?;
-                capability.dispatch_prepared(permit, &operation, artifacts)?
+                OperationEvent::Confirmed {
+                    evidence: capability.dispatch_prepared(permit, &operation, artifacts)?,
+                }
             }
         };
-        state
-            .mark_terminal(&operation, outcome)
-            .map_err(|source| GraphError::ReleaseExecutionState { source })?;
+        apply(&mut state, &operation, &event)?;
         store.save(intent, &state, permit)?;
     }
     require_terminal_success(intent, &state)?;
     Ok(state)
+}
+
+/// The single seam through which this executor changes durable state.
+fn apply(
+    state: &mut ReleaseExecutionStateV1,
+    operation: &ReleaseOperationId,
+    event: &OperationEvent,
+) -> Result<(), GraphError> {
+    state
+        .apply(operation, event)
+        .map(|_| ())
+        .map_err(|source| GraphError::ReleaseExecutionState { source })
 }
 
 /// Reconstructs only exact effects after an operator explicitly chose the
@@ -133,20 +129,21 @@ fn reconstruct_missing_operation(
     operation: &ReleaseOperationId,
     observation: ProviderObservationV1,
 ) -> Result<(), GraphError> {
-    match observation {
-        ProviderObservationV1::Exact => {
-            state
-                .mark_attempting(operation)
-                .map_err(|source| GraphError::ReleaseExecutionState { source })?;
-            state
-                .mark_terminal(operation, callisto_model::OperationOutcome::AlreadySatisfied)
-                .map_err(|source| GraphError::ReleaseExecutionState { source })
-        }
+    match &observation {
+        ProviderObservationV1::Exact { .. } => apply(
+            state,
+            operation,
+            &OperationEvent::AdoptedExact {
+                evidence: observation
+                    .exact_evidence()
+                    .expect("an exact observation mints its evidence"),
+            },
+        ),
         ProviderObservationV1::Absent => Ok(()),
-        ProviderObservationV1::Conflict | ProviderObservationV1::Indeterminate => {
+        ProviderObservationV1::Conflict { .. } | ProviderObservationV1::Indeterminate { .. } => {
             Err(GraphError::ReleaseRecoveryUnresolved {
                 operation: Box::new(operation.clone()),
-                observation,
+                observation: Box::new(observation),
             })
         }
     }
@@ -184,15 +181,13 @@ fn recover_interrupted_operation(
     operation: &ReleaseOperationId,
     observation: ProviderObservationV1,
 ) -> Result<(), GraphError> {
-    if observation != ProviderObservationV1::Exact {
+    let Some(evidence) = observation.exact_evidence() else {
         return Err(GraphError::ReleaseRecoveryUnresolved {
             operation: Box::new(operation.clone()),
-            observation,
+            observation: Box::new(observation),
         });
-    }
-    state
-        .mark_terminal(operation, callisto_model::OperationOutcome::AlreadySatisfied)
-        .map_err(|source| GraphError::ReleaseExecutionState { source })
+    };
+    apply(state, operation, &OperationEvent::RecoveredExact { evidence })
 }
 
 /// Refuses to report success until every operation has an observed terminal
@@ -275,11 +270,13 @@ impl ReconciledReleaseExecution {
 /// missing, failed, and blocked operations are never inferred as success.
 pub fn reconcile_release_execution(
     intent: &ReleaseIntentV1,
-    state: &ReleaseExecutionStateV1,
+    state: Option<&ReleaseExecutionStateV1>,
 ) -> Result<ReconciledReleaseExecution, GraphError> {
-    state
-        .validate_for_intent(intent)
-        .map_err(|source| GraphError::ReleaseExecutionState { source })?;
+    if let Some(state) = state {
+        state
+            .validate_for_intent(intent)
+            .map_err(|source| GraphError::ReleaseExecutionState { source })?;
+    }
 
     let prerequisites: BTreeMap<_, _> = intent
         .operations
@@ -290,7 +287,7 @@ pub fn reconcile_release_execution(
     let mut eligible = Vec::new();
     let mut satisfied = BTreeMap::new();
     for operation in &intent.operations {
-        if state.operation_state(operation.id()) != Some(OperationState::Pending) {
+        if operation_state(state, operation.id()) != Some(OperationState::Pending) {
             continue;
         }
         let mut on_path = BTreeSet::new();
@@ -303,10 +300,18 @@ pub fn reconcile_release_execution(
 
 /// `satisfied` memoizes each subtree's answer across the whole reconcile, so
 /// the walk is linear in the DAG rather than enumerating every path.
+/// A run with no journal yet has every operation `Pending`.
+fn operation_state(state: Option<&ReleaseExecutionStateV1>, id: &ReleaseOperationId) -> Option<OperationState> {
+    match state {
+        Some(state) => state.operation_state(id),
+        None => Some(OperationState::Pending),
+    }
+}
+
 fn prerequisites_satisfied_transitively(
     id: &ReleaseOperationId,
     prerequisites: &BTreeMap<ReleaseOperationId, Vec<ReleaseOperationId>>,
-    state: &ReleaseExecutionStateV1,
+    state: Option<&ReleaseExecutionStateV1>,
     on_path: &mut BTreeSet<ReleaseOperationId>,
     satisfied: &mut BTreeMap<ReleaseOperationId, bool>,
 ) -> bool {
@@ -323,7 +328,7 @@ fn prerequisites_satisfied_transitively(
     let result = prerequisites.get(id).is_some_and(|direct| {
         direct.iter().all(|prerequisite| {
             matches!(
-                state.operation_state(prerequisite),
+                operation_state(state, prerequisite),
                 Some(OperationState::Published | OperationState::AlreadySatisfied)
             ) && prerequisites_satisfied_transitively(prerequisite, prerequisites, state, on_path, satisfied)
         })
@@ -336,11 +341,15 @@ fn prerequisites_satisfied_transitively(
 #[cfg(test)]
 mod tests {
     use callisto_model::{
-        Ecosystem, ExecutionTrustProfileV1, OperationBlockReason, OperationOutcome, RegistryBindingDigest,
-        RegistryBindingId, ReleaseInputSnapshotV1, ReleaseOperation, ReleasePackageId, SourceIdentity, Version,
+        Ecosystem, ExecutionTrustProfileV1, OperationBlockReason, ProviderConflictReason, ProviderIndeterminateCause,
+        RegistryBindingDigest, RegistryBindingId, ReleaseInputSnapshotV1, ReleaseOperation, ReleasePackageId,
+        SourceIdentity, Version,
     };
 
     use super::*;
+    use crate::commands::release_test_support::{
+        already_satisfied_event, attempt_event, exact, pending_state, publish_operation, recovery_state,
+    };
 
     fn intent() -> ReleaseIntentV1 {
         let package = ReleasePackageId::new(Ecosystem::Cargo, "demo").unwrap();
@@ -490,25 +499,23 @@ mod tests {
     #[test]
     fn reconciliation_requires_transitive_exact_successes() {
         let intent = intent();
-        let mut state = ReleaseExecutionStateV1::pending(&intent);
+        let mut state = pending_state(&intent);
         let publish = intent.operations[0].id().clone();
         let tag = intent.operations[1].id().clone();
         let forge = intent.operations[2].id().clone();
 
         assert_eq!(
-            reconcile_release_execution(&intent, &state).unwrap().eligible(),
+            reconcile_release_execution(&intent, Some(&state)).unwrap().eligible(),
             std::slice::from_ref(&publish)
         );
-        state.mark_attempting(&publish).unwrap();
-        state.mark_terminal(&publish, OperationOutcome::Published).unwrap();
+        publish_operation(&mut state, &publish);
         assert_eq!(
-            reconcile_release_execution(&intent, &state).unwrap().eligible(),
+            reconcile_release_execution(&intent, Some(&state)).unwrap().eligible(),
             std::slice::from_ref(&tag)
         );
-        state.mark_attempting(&tag).unwrap();
-        state.mark_terminal(&tag, OperationOutcome::AlreadySatisfied).unwrap();
+        state.apply(&tag, &already_satisfied_event(&tag)).unwrap();
         assert_eq!(
-            reconcile_release_execution(&intent, &state).unwrap().eligible(),
+            reconcile_release_execution(&intent, Some(&state)).unwrap().eligible(),
             &[forge]
         );
     }
@@ -518,21 +525,21 @@ mod tests {
         let intent = intent();
         let publish = intent.operations[0].id().clone();
         let tag = intent.operations[1].id().clone();
-        let mut state = ReleaseExecutionStateV1::pending(&intent);
-        state.mark_attempting(&publish).unwrap();
-        assert!(reconcile_release_execution(&intent, &state)
+        let mut state = pending_state(&intent);
+        state.apply(&publish, &attempt_event()).unwrap();
+        assert!(reconcile_release_execution(&intent, Some(&state))
             .unwrap()
             .eligible()
             .is_empty());
         state
-            .mark_terminal(
+            .apply(
                 &publish,
-                OperationOutcome::Blocked {
+                &OperationEvent::Blocked {
                     reason: OperationBlockReason::IndeterminateAttempt,
                 },
             )
             .unwrap();
-        assert!(reconcile_release_execution(&intent, &state)
+        assert!(reconcile_release_execution(&intent, Some(&state))
             .unwrap()
             .eligible()
             .is_empty());
@@ -543,23 +550,22 @@ mod tests {
     fn interrupted_operation_converges_only_from_an_exact_provider_observation() {
         let intent = intent();
         let operation = intent.operations[0].id().clone();
-        let mut state = ReleaseExecutionStateV1::pending(&intent);
-        state.mark_attempting(&operation).unwrap();
+        let mut state = pending_state(&intent);
+        state.apply(&operation, &attempt_event()).unwrap();
 
-        recover_interrupted_operation(&mut state, &operation, ProviderObservationV1::Exact).unwrap();
-        assert_eq!(
-            state.operation_state(&operation),
-            Some(OperationState::AlreadySatisfied)
-        );
+        // An interrupted attempt that is now exact is our own effect landing,
+        // which is a different fact from a pre-existing one.
+        recover_interrupted_operation(&mut state, &operation, exact(&operation)).unwrap();
+        assert_eq!(state.operation_state(&operation), Some(OperationState::Published));
 
-        let mut unresolved = ReleaseExecutionStateV1::pending(&intent);
-        unresolved.mark_attempting(&operation).unwrap();
+        let mut unresolved = pending_state(&intent);
+        unresolved.apply(&operation, &attempt_event()).unwrap();
+        let error =
+            recover_interrupted_operation(&mut unresolved, &operation, ProviderObservationV1::Absent).unwrap_err();
         assert!(matches!(
-            recover_interrupted_operation(&mut unresolved, &operation, ProviderObservationV1::Absent),
-            Err(GraphError::ReleaseRecoveryUnresolved {
-                observation: ProviderObservationV1::Absent,
-                ..
-            })
+            error,
+            GraphError::ReleaseRecoveryUnresolved { ref observation, .. }
+                if **observation == ProviderObservationV1::Absent
         ));
         assert_eq!(unresolved.operation_state(&operation), Some(OperationState::Attempting));
     }
@@ -568,26 +574,41 @@ mod tests {
     fn missing_state_reconstruction_only_adopts_exact_provider_effects() {
         let intent = intent();
         let operation = intent.operations[0].id().clone();
-        let mut state = ReleaseExecutionStateV1::pending(&intent);
+        let mut state = recovery_state(&intent);
 
-        reconstruct_missing_operation(&mut state, &operation, ProviderObservationV1::Exact).unwrap();
+        reconstruct_missing_operation(&mut state, &operation, exact(&operation)).unwrap();
         assert_eq!(
             state.operation_state(&operation),
             Some(OperationState::AlreadySatisfied)
         );
 
-        let mut absent = ReleaseExecutionStateV1::pending(&intent);
+        let mut absent = recovery_state(&intent);
         reconstruct_missing_operation(&mut absent, &operation, ProviderObservationV1::Absent).unwrap();
         assert_eq!(absent.operation_state(&operation), Some(OperationState::Pending));
 
-        for observation in [ProviderObservationV1::Conflict, ProviderObservationV1::Indeterminate] {
-            let mut unresolved = ReleaseExecutionStateV1::pending(&intent);
+        for observation in [
+            ProviderObservationV1::Conflict {
+                reason: ProviderConflictReason::RemoteTagTargetDiffers,
+            },
+            ProviderObservationV1::Indeterminate {
+                cause: ProviderIndeterminateCause::CommandFailed,
+            },
+        ] {
+            let mut unresolved = recovery_state(&intent);
+            let error = reconstruct_missing_operation(&mut unresolved, &operation, observation.clone()).unwrap_err();
             assert!(matches!(
-                reconstruct_missing_operation(&mut unresolved, &operation, observation),
-                Err(GraphError::ReleaseRecoveryUnresolved { observation: found, .. }) if found == observation
+                error,
+                GraphError::ReleaseRecoveryUnresolved { observation: ref found, .. } if **found == observation
             ));
             assert_eq!(unresolved.operation_state(&operation), Some(OperationState::Pending));
         }
+
+        // A normal run has no adoption privilege at all.
+        let mut initial = pending_state(&intent);
+        assert!(matches!(
+            reconstruct_missing_operation(&mut initial, &operation, exact(&operation)),
+            Err(GraphError::ReleaseExecutionState { .. })
+        ));
     }
 
     #[test]
@@ -596,16 +617,15 @@ mod tests {
         let publish = intent.operations[0].id().clone();
         let tag = intent.operations[1].id().clone();
         let forge = intent.operations[2].id().clone();
-        let mut state = ReleaseExecutionStateV1::pending(&intent);
+        let mut state = pending_state(&intent);
 
         // The model state machine deliberately does not own DAG policy. This
         // represents a corrupted or legacy executor having recorded tag
         // success before its publish prerequisite. Reconciliation must still
         // fail closed for the forge operation.
-        state.mark_attempting(&tag).unwrap();
-        state.mark_terminal(&tag, OperationOutcome::Published).unwrap();
+        publish_operation(&mut state, &tag);
         assert_eq!(state.operation_state(&publish), Some(OperationState::Pending));
-        let reconciled = reconcile_release_execution(&intent, &state).unwrap();
+        let reconciled = reconcile_release_execution(&intent, Some(&state)).unwrap();
         assert_eq!(reconciled.eligible(), &[publish]);
         assert!(!reconciled.eligible().contains(&forge));
     }
@@ -613,8 +633,8 @@ mod tests {
     #[test]
     fn quiescent_incomplete_state_is_never_successful() {
         let intent = intent();
-        let mut state = ReleaseExecutionStateV1::pending(&intent);
-        state.mark_attempting(intent.operations[0].id()).unwrap();
+        let mut state = pending_state(&intent);
+        state.apply(intent.operations[0].id(), &attempt_event()).unwrap();
 
         assert!(matches!(
             require_terminal_success(&intent, &state),
@@ -625,11 +645,10 @@ mod tests {
     #[test]
     fn every_verified_terminal_success_allows_completion() {
         let intent = intent();
-        let mut state = ReleaseExecutionStateV1::pending(&intent);
+        let mut state = pending_state(&intent);
         for operation in &intent.operations {
-            state.mark_attempting(operation.id()).unwrap();
             state
-                .mark_terminal(operation.id(), OperationOutcome::AlreadySatisfied)
+                .apply(operation.id(), &already_satisfied_event(operation.id()))
                 .unwrap();
         }
 

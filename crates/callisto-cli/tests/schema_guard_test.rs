@@ -140,3 +140,22 @@ fn ac13_diagnostic_code_enum_gains_only_changelog_read_error() {
         "DiagnosticCode schema must gain exactly one new variant: ambiguous-package-name"
     );
 }
+
+/// The durable release wire types are versioned: a change to either shape
+/// without a `SCHEMA_VERSION` bump is a silent break for state and receipts
+/// written by an earlier release. Both are at version 2 (the run envelope
+/// moved inside the state, and receipt observations now carry evidence).
+#[test]
+fn durable_release_wire_shapes_match_their_schema_version() {
+    let receipt = run_schema("release-receipt");
+    let (req, props) = required_and_props(&receipt);
+    let expected = set(&["schemaVersion", "intentDigest", "envelope", "outcomes", "observations"]);
+    assert_eq!(req, expected);
+    assert_eq!(props, expected);
+
+    let state = run_schema("release-state");
+    let (req, props) = required_and_props(&state);
+    let expected = set(&["schemaVersion", "intentDigest", "envelope", "operations"]);
+    assert_eq!(req, expected);
+    assert_eq!(props, expected);
+}

@@ -9,15 +9,14 @@ use std::process::ExitCode;
 
 use callisto_graph::commands::{
     build_release_intent, build_release_intent_with_artifacts, derive_release_commit_decision,
-    derive_selected_release_decision, execute_release_with_artifacts_in_recovery,
-    observe_release_operations_with_artifacts, reconcile_release_execution,
+    derive_selected_release_decision, execute_release, observe_release_operations, reconcile_release_execution,
     validate_release_intent_with_state_directory, verify_artifact_manifest, ReleaseStateStore, VersionOptions,
 };
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_model::{
     ApplyPermit, ArtifactDigest, ArtifactManifestEntryV1, ArtifactManifestV1, ExecutionTrustProfileV1,
-    GitHubArtifactAttestationV1, ReleaseExecutionStateV1, ReleaseIntentV1, ReleasePackageId, ReleaseProfileId,
-    ReleaseReceiptV1, ReleaseRunKindV1, ReleaseRunProvenanceV1,
+    GitHubArtifactAttestationV1, ReleaseIntentV1, ReleasePackageId, ReleaseProfileId, ReleaseReceiptV1,
+    ReleaseRunEnvelopeV1, ReleaseRunKindV1,
 };
 
 use crate::cli::{
@@ -278,11 +277,10 @@ fn inspect(args: ReleaseInspectArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
 fn reconcile(args: ReleaseReconcileArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     let intent = read_intent(&args.intent)?;
     let state = match args.state {
-        Some(path) => ReleaseStateStore::new(path).load(&intent)?,
+        Some(path) => ReleaseStateStore::new(path).load_for_intent(&intent)?,
         None => None,
-    }
-    .unwrap_or_else(|| ReleaseExecutionStateV1::pending(&intent));
-    let report = reconcile_release_execution(&intent, &state)?;
+    };
+    let report = reconcile_release_execution(&intent, state.as_ref())?;
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), report.eligible())?,
         OutputFormat::Text => {
@@ -319,14 +317,6 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
             args.orchestration_revision
         ))
     })?;
-    let source = match &intent.snapshot.source {
-        callisto_model::SourceIdentity::GitCommit { sha } => sha.clone(),
-        callisto_model::SourceIdentity::HermeticContent { .. } => {
-            return Err(CliError::Other(
-                "release receipts require a Git commit release source".to_owned(),
-            ))
-        }
-    };
     callisto_model::atomic::probe_atomic_write(&args.receipt, &permit).map_err(|source| CliError::Io {
         source,
         path: Some(args.receipt.clone()),
@@ -359,20 +349,21 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
             ));
         }
     };
-    let mut provenance = ReleaseRunProvenanceV1::new(
+    // The run envelope is minted and cross-checked here, before the first
+    // effect, and is then the single authority for every fact it carries.
+    let envelope = ReleaseRunEnvelopeV1::new(
         if args.recovery {
             ReleaseRunKindV1::Recovery
         } else {
             ReleaseRunKindV1::Initial
         },
         orchestration_revision,
-        source,
-        selected_profile.clone(),
-        intent.digest().clone(),
-    );
-    if let Some(artifacts) = verified_artifacts.as_ref() {
-        provenance = provenance.with_artifact_manifest_digest(artifacts.manifest().digest());
-    }
+        &intent,
+        verified_artifacts
+            .as_ref()
+            .map(|artifacts| artifacts.manifest().digest()),
+    )
+    .map_err(|error| CliError::Other(format!("release run envelope is not valid for this intent: {error}")))?;
     let runner = CliCommandRunner;
     let source_global = source_global(global, args.source_root.as_deref());
     let source_workspace = load_workspace(&source_global, &runner)?;
@@ -407,18 +398,11 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
         Some(path) => ReleaseStateStore::new(path),
         None => ReleaseStateStore::default_for(&root, capability.intent())?,
     };
-    let state = execute_release_with_artifacts_in_recovery(
-        &capability,
-        &store,
-        &permit,
-        verified_artifacts.as_ref(),
-        args.recovery,
-    )?;
+    let state = execute_release(&capability, &store, &permit, &envelope, verified_artifacts.as_ref())?;
     let receipt = ReleaseReceiptV1::from_evidence(
         capability.intent(),
         &state,
-        provenance,
-        observe_release_operations_with_artifacts(&capability, verified_artifacts.as_ref())?,
+        observe_release_operations(&capability, verified_artifacts.as_ref())?,
     )
     .map_err(|error| CliError::Other(format!("cannot issue terminal release receipt: {error}")))?;
     write_receipt(&args.receipt, &receipt, &permit)?;

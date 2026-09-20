@@ -11,6 +11,7 @@ The goal is progressive loading: ~400 tokens here, then ~1500 tokens per topic f
 | `walk.rs`, config resolution, package overrides | `config-resolution.md`, `core-identity.md` |
 | `identity.rs`, PackageId, ecosystem matching | `core-identity.md` |
 | `error.rs`, adding or using error variants | `error-taxonomy.md` |
+| release execute/recover, receipts, provider observation | `release-lifecycle.md`, `error-taxonomy.md` |
 | publish pipeline, registry, PublishPlan | `ARCHITECTURE.md §9` (not yet in semantic-model) |
 | Implementing a specific track | `.claude/specs/<track>.json` only |
 | Starting fresh, no task assigned | `.claude/plans/ACTIVE.md` |
@@ -26,6 +27,7 @@ references them. The spec@1 is the authority; these files are the reference laye
 | `version-flow.md` | VersionPlan, PlannedBump, apply_version_plan, idempotency guard, Track B design |
 | `config-resolution.md` | ResolvedConfig, [[package]] vs [[package-set]], PackagePattern, specificity ordering |
 | `error-taxonomy.md` | All GraphError + ConfigError variants, E-codes, when to emit each |
+| `release-lifecycle.md` | Run envelope, evidence-carrying provider observation, operation transition table, release E-codes, wire versions |
 
 ## What Does NOT Live Here
 

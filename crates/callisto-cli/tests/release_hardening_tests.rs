@@ -163,7 +163,7 @@ fn p02_partial_provider_success_recovers_from_fresh_runner_without_republishing(
     assert!(git(e.root(), &["tag", "--list", "core-crate@0.2.0"]).contains("core-crate@0.2.0"));
     let r = e.receipt();
     eprintln!("P02 receipt: {}", serde_json::to_string_pretty(&r).unwrap());
-    assert_eq!(r["provenance"]["kind"], "recovery");
+    assert_eq!(r["envelope"]["kind"], "recovery");
 }
 
 #[test]
@@ -353,9 +353,9 @@ fn p11_receipt_is_bound_to_intent_and_provider_evidence() {
     let intent: serde_json::Value = serde_json::from_slice(&fs::read(&e.intent).unwrap()).unwrap();
     let r = e.receipt();
     eprintln!("P11 receipt: {}", serde_json::to_string_pretty(&r).unwrap());
-    assert_eq!(r["provenance"]["intentDigest"], intent["digest"]);
-    assert_eq!(r["provenance"]["profile"], "production");
-    assert_eq!(r["provenance"]["kind"], "initial");
+    assert_eq!(r["envelope"]["intentDigest"], intent["digest"]);
+    assert_eq!(r["envelope"]["profile"], "production");
+    assert_eq!(r["envelope"]["kind"], "initial");
     let ops = intent["operations"].as_array().unwrap().len();
     assert_eq!(r["observations"].as_array().unwrap().len(), ops);
     assert!(r["observations"]

@@ -308,8 +308,8 @@ fn newer_coordinator_executes_and_recovers_an_older_release_source() {
     let receipt: serde_json::Value =
         serde_json::from_slice(&fs::read(state.with_extension("receipt.json")).expect("initial receipt must exist"))
             .unwrap();
-    assert_eq!(receipt["provenance"]["orchestrationRevision"], coordinator_revision);
-    assert_eq!(receipt["provenance"]["releaseSourceRevision"], release_commit);
+    assert_eq!(receipt["envelope"]["orchestrationRevision"], coordinator_revision);
+    assert_eq!(receipt["envelope"]["releaseSourceRevision"], release_commit);
 
     fs::remove_file(&state).unwrap();
     fs::remove_file(state.with_extension("receipt.json")).unwrap();

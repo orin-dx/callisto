@@ -5,7 +5,9 @@
 
 use std::path::{Path, PathBuf};
 
-use callisto_model::{atomic::atomic_write, ApplyPermit, ReleaseExecutionStateV1, ReleaseIntentV1};
+use callisto_model::{
+    atomic::atomic_write, ApplyPermit, ReleaseExecutionStateV1, ReleaseIntentV1, ReleaseRunEnvelopeV1,
+};
 
 use crate::GraphError;
 
@@ -79,8 +81,23 @@ where
     }
 
     /// Loads state if it exists and rejects any state not exactly bound to
-    /// `intent`. A missing file is not evidence of a completed release.
-    pub fn load(&self, intent: &ReleaseIntentV1) -> Result<Option<ReleaseExecutionStateV1>, GraphError> {
+    /// `intent` and to this run's `envelope`. A missing file is not evidence
+    /// of a completed release.
+    pub fn load(
+        &self,
+        intent: &ReleaseIntentV1,
+        envelope: &ReleaseRunEnvelopeV1,
+    ) -> Result<Option<ReleaseExecutionStateV1>, GraphError> {
+        let Some(state) = self.read_state()? else {
+            return Ok(None);
+        };
+        state
+            .validate_for_run(intent, envelope)
+            .map_err(|source| GraphError::ReleaseExecutionState { source })?;
+        Ok(Some(state))
+    }
+
+    fn read_state(&self) -> Result<Option<ReleaseExecutionStateV1>, GraphError> {
         let content = match std::fs::read_to_string(&self.path) {
             Ok(content) => content,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -91,11 +108,20 @@ where
                 });
             }
         };
-        let state: ReleaseExecutionStateV1 =
-            serde_json::from_str(&content).map_err(|error| GraphError::ReleaseStateDecode {
+        serde_json::from_str(&content)
+            .map(Some)
+            .map_err(|error| GraphError::ReleaseStateDecode {
                 path: self.path.clone(),
                 message: error.to_string(),
-            })?;
+            })
+    }
+
+    /// Loads state bound to `intent` alone, for read-only inspection that has
+    /// no run envelope of its own.
+    pub fn load_for_intent(&self, intent: &ReleaseIntentV1) -> Result<Option<ReleaseExecutionStateV1>, GraphError> {
+        let Some(state) = self.read_state()? else {
+            return Ok(None);
+        };
         state
             .validate_for_intent(intent)
             .map_err(|source| GraphError::ReleaseExecutionState { source })?;
@@ -106,12 +132,14 @@ where
     pub fn load_or_initialize(
         &self,
         intent: &ReleaseIntentV1,
+        envelope: &ReleaseRunEnvelopeV1,
         permit: &ApplyPermit,
     ) -> Result<ReleaseExecutionStateV1, GraphError> {
-        if let Some(state) = self.load(intent)? {
+        if let Some(state) = self.load(intent, envelope)? {
             return Ok(state);
         }
-        let state = ReleaseExecutionStateV1::pending(intent);
+        let state = ReleaseExecutionStateV1::new(intent, envelope.clone())
+            .map_err(|source| GraphError::ReleaseExecutionState { source })?;
         self.save(intent, &state, permit)?;
         Ok(state)
     }
@@ -147,6 +175,7 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
+    use crate::commands::release_test_support::{attempt_event, envelope};
 
     fn intent(sha: char) -> ReleaseIntentV1 {
         let package = ReleasePackageId::new(Ecosystem::Cargo, "demo").unwrap();
@@ -180,8 +209,9 @@ mod tests {
         let store = ReleaseStateStore::new(directory.path().join("state.json"));
         let intent = intent('a');
         let permit = ApplyPermit::force_for_tests();
-        let initial = store.load_or_initialize(&intent, &permit).unwrap();
-        assert_eq!(store.load(&intent).unwrap(), Some(initial));
+        let run = envelope(&intent);
+        let initial = store.load_or_initialize(&intent, &run, &permit).unwrap();
+        assert_eq!(store.load(&intent, &run).unwrap(), Some(initial));
         assert!(std::fs::read_to_string(store.path()).unwrap().contains("intentDigest"));
     }
 
@@ -190,11 +220,45 @@ mod tests {
         let directory = tempdir().unwrap();
         let store = ReleaseStateStore::new(directory.path().join("state.json"));
         let permit = ApplyPermit::force_for_tests();
-        store.load_or_initialize(&intent('a'), &permit).unwrap();
+        let first = intent('a');
+        store.load_or_initialize(&first, &envelope(&first), &permit).unwrap();
+        let other = intent('b');
         assert!(matches!(
-            store.load(&intent('b')),
+            store.load(&other, &envelope(&other)),
             Err(GraphError::ReleaseExecutionState { .. })
         ));
+    }
+
+    /// State written by another run of the same intent must not be adopted:
+    /// the operator is told to use a fresh path instead.
+    #[test]
+    fn state_from_another_run_envelope_is_rejected_with_an_actionable_error() {
+        let directory = tempdir().unwrap();
+        let store = ReleaseStateStore::new(directory.path().join("state.json"));
+        let permit = ApplyPermit::force_for_tests();
+        let release_intent = intent('a');
+        store
+            .load_or_initialize(&release_intent, &envelope(&release_intent), &permit)
+            .unwrap();
+
+        let other_run = ReleaseRunEnvelopeV1::new(
+            callisto_model::ReleaseRunKindV1::Recovery,
+            callisto_model::CommitSha::parse(&"c".repeat(40)).unwrap(),
+            &release_intent,
+            None,
+        )
+        .unwrap();
+        let error = store.load(&release_intent, &other_run).unwrap_err();
+        assert!(
+            matches!(
+                error,
+                GraphError::ReleaseExecutionState {
+                    source: callisto_model::ReleaseStateError::MismatchedEnvelope
+                }
+            ),
+            "expected MismatchedEnvelope, got {error:?}"
+        );
+        assert!(error.to_string().contains("--state"), "{error}");
     }
 
     #[test]
@@ -222,7 +286,7 @@ mod tests {
         let store = ReleaseStateStore::with_writer(&path, FailBeforeRename);
         let permit = ApplyPermit::force_for_tests();
         assert!(matches!(
-            store.load_or_initialize(&intent('a'), &permit),
+            store.load_or_initialize(&intent('a'), &envelope(&intent('a')), &permit),
             Err(GraphError::ReleaseStateWrite { .. })
         ));
         assert_eq!(
@@ -238,16 +302,17 @@ mod tests {
         let permit = ApplyPermit::force_for_tests();
         let release_intent = intent('a');
         let production = ReleaseStateStore::new(&path);
-        let pending = production.load_or_initialize(&release_intent, &permit).unwrap();
+        let run = envelope(&release_intent);
+        let pending = production.load_or_initialize(&release_intent, &run, &permit).unwrap();
 
         let failing = ReleaseStateStore::with_writer(&path, FailBeforeRename);
         let operation = release_intent.operations[0].id().clone();
         let mut changed = pending.clone();
-        changed.mark_attempting(&operation).unwrap();
+        changed.apply(&operation, &attempt_event()).unwrap();
         assert!(matches!(
             failing.save(&release_intent, &changed, &permit),
             Err(GraphError::ReleaseStateWrite { .. })
         ));
-        assert_eq!(production.load(&release_intent).unwrap(), Some(pending));
+        assert_eq!(production.load(&release_intent, &run).unwrap(), Some(pending));
     }
 }
