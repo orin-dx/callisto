@@ -1,0 +1,140 @@
+{
+  "cli_version": "0.10.7-nightly.202609170627.0dda4e14f",
+  "checkpoint_id": "01M2Y8XVQ293R52G36YSRCE0YG",
+  "session_id": "a08620cc-8b37-45b5-b4b2-89a977aad490",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-20T02:04:40.552199Z",
+  "branch": "codex/release-recovery",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "87a073882f2c",
+  "checkpoint_transcript_start": 1945,
+  "transcript_lines_at_start": 1945,
+  "compact_transcript_start": 229,
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 14910,
+    "cache_read_tokens": 2235969,
+    "output_tokens": 6569,
+    "api_call_count": 4,
+    "subagent_tokens": {
+      "input_tokens": 202,
+      "cache_creation_tokens": 247324,
+      "cache_read_tokens": 15987084,
+      "output_tokens": 58163,
+      "api_call_count": 101
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01YCCAbwm7sztdDtLuczSzDN",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "48049d8543a5",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 466,
+        "end": 467,
+        "entry_ids": [
+          "64369af6-5a29-4372-9bc8-6e58a915ca54"
+        ],
+        "tool_use_id": "toolu_01YCCAbwm7sztdDtLuczSzDN"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01YCCAbwm7sztdDtLuczSzDN"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 37
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 4573,
+      "user_lines_removed": 196,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/plans/PR101-HARDENING/audit/pr101-arch.md": 60,
+        ".claude/plans/PR101-HARDENING/audit/pr101-config-cli.md": 80,
+        ".claude/plans/PR101-HARDENING/audit/pr101-core.md": 70,
+        ".claude/plans/PR101-HARDENING/audit/pr101-perf.md": 69,
+        ".claude/plans/PR101-HARDENING/audit/pr101-tests.md": 157,
+        ".claude/plans/PR101-HARDENING/audit/pr101-workflow.md": 78,
+        ".claude/plans/PR101-HARDENING/defects-and-red-tests.md": 23,
+        ".claude/plans/PR101-HARDENING/proposed-tests/cli_proposed_release_tests.rs": 1126,
+        ".claude/plans/PR101-HARDENING/proposed-tests/graph_proposed_config_tests.rs": 43,
+        ".claude/plans/PR101-HARDENING/proposed-tests/model_proposed_release_evidence.rs": 111,
+        ".claude/plans/PR101-HARDENING/w0-ledger.md": 67,
+        ".claude/semantic-model/release-lifecycle.md": 5,
+        ".claude/settings.local.json": 11,
+        ".claude/specs/SPEC-RELEASE-ENVELOPE-STATE.json": 368,
+        ".claude/specs/SPEC-RELEASE-EXECUTE-SURFACE.json": 287,
+        ".claude/specs/SPEC-RELEASE-PROVIDER-EXECUTOR.json": 262,
+        "crates/callisto-cli/tests/common/release_harness.rs": 395,
+        "crates/callisto-cli/tests/durable_release_e2e_tests.rs": 3,
+        "crates/callisto-cli/tests/provider_flag_contract_tests.rs": 414,
+        "crates/callisto-cli/tests/release_forge_publish_e2e_tests.rs": 8,
+        "crates/callisto-cli/tests/release_hardening_tests.rs": 3,
+        "crates/callisto-graph/src/commands/release/github.rs": 44,
+        "crates/callisto-graph/src/commands/release/provider/forge.rs": 119,
+        "crates/callisto-graph/src/commands/release/provider/registry/tests.rs": 155,
+        "crates/callisto-graph/src/commands/release/provider/tag.rs": 60,
+        "justfile": 11,
+        "testing/fixtures/providers/.gitattributes": 1,
+        "testing/fixtures/providers/crates-io/PROVENANCE.md": 7,
+        "testing/fixtures/providers/crates-io/sparse-index-200.http": 22,
+        "testing/fixtures/providers/crates-io/sparse-index-404.http": 17,
+        "testing/fixtures/providers/crates-io/sparse-index-yanked-line.json": 1,
+        "testing/fixtures/providers/git/PROVENANCE.md": 7,
+        "testing/fixtures/providers/git/ls-remote-annotated.txt": 2,
+        "testing/fixtures/providers/git/ls-remote-lightweight.txt": 1,
+        "testing/fixtures/providers/github/PROVENANCE.md": 11,
+        "testing/fixtures/providers/github/release-404.http": 24,
+        "testing/fixtures/providers/github/release-draft.http": 27,
+        "testing/fixtures/providers/github/release-list-page.http": 27,
+        "testing/fixtures/providers/github/release-prerelease.http": 27,
+        "testing/fixtures/providers/github/release-published.http": 27,
+        "testing/fixtures/providers/pypi/PROVENANCE.md": 6,
+        "testing/fixtures/providers/pypi/version-200.http": 28,
+        "testing/fixtures/providers/pypi/version-404.http": 26,
+        "testing/loopback_http.rs": 140,
+        "testing/refresh-provider-fixtures.sh": 141
+      },
+      "user_removed_per_file": {
+        "crates/callisto-cli/tests/common/release_harness.rs": 112,
+        "crates/callisto-cli/tests/release_forge_publish_e2e_tests.rs": 4,
+        "crates/callisto-cli/tests/release_hardening_tests.rs": 36,
+        "crates/callisto-graph/src/commands/release/provider/forge.rs": 24,
+        "crates/callisto-graph/src/commands/release/provider/registry/tests.rs": 16,
+        "crates/callisto-graph/src/commands/release/provider/tag.rs": 4
+      }
+    }
+  ]
+}
