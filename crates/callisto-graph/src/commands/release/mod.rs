@@ -1,16 +1,16 @@
 //! Fresh, graph-owned authorization for durable release intents.
 //!
 //! This module intentionally takes a root, locator, and runner rather than a
-//! [`Workspace`]. A workspace caches parsed manifests and config for a normal
+//! `Workspace`. A workspace caches parsed manifests and config for a normal
 //! command invocation; accepting one here would make a previously observed
 //! graph look current after the filesystem changed.
 //!
-//! The split is by responsibility: [`derive`] turns a decision into an
-//! immutable intent, [`binding`] canonicalizes every destination, [`provider`]
+//! The split is by responsibility: `derive` turns a decision into an
+//! immutable intent, `binding` canonicalizes every destination, `provider`
 //! is the port through which all remote facts and effects flow, and
-//! [`capability`] is the validated authorization the executor holds.
+//! `capability` is the validated authorization the executor holds.
 
-/// Reason carried by [`GraphError::ReleaseIntentStale`] (E124); real reasons are constructible only from this module.
+/// Reason carried by [`crate::GraphError::ReleaseIntentStale`] (E124); real reasons are constructible only from this module.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StaleReason {
     kind: StaleKind,
