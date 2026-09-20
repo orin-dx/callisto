@@ -4,7 +4,7 @@
 //! to the real tools, and the fakes are held to the captured provider bytes.
 //!
 //! A flag the code emits must appear in the real tool's own help; a tool that
-//! is not installed skips loudly (and fails under `CI` for gh, git, curl, cargo).
+//! is not installed skips loudly (and fails under `CI` for gh, git, npm, cargo).
 
 #[path = "common/release_harness.rs"]
 mod release_harness;
@@ -28,7 +28,7 @@ fn tool_available(tool: &str) -> bool {
     if run(tool, &["--version"]).is_some_and(|(ok, _)| ok) {
         return true;
     }
-    let required = matches!(tool, "gh" | "git" | "curl" | "cargo")
+    let required = matches!(tool, "gh" | "git" | "npm" | "cargo")
         && std::env::var_os("CI").is_some()
         && std::env::var_os("CALLISTO_ALLOW_MISSING_TOOLS").is_none();
     assert!(
@@ -61,7 +61,6 @@ fn help_lists(help: &str, flag: &str) -> bool {
 fn help_for(shape: &ToolShape) -> Option<String> {
     let mut args: Vec<&str> = shape.subcommand.to_vec();
     match shape.tool {
-        "curl" => return run("curl", &["--help", "all"]).map(|(_, text)| text),
         "git" => args.push("-h"),
         _ => args.push("--help"),
     }
@@ -120,11 +119,6 @@ fn every_emitted_gh_flag_exists_in_real_gh_help() {
 #[test]
 fn every_emitted_git_flag_exists_in_real_git_help() {
     check_tool("git");
-}
-
-#[test]
-fn every_emitted_curl_flag_exists_in_real_curl_help() {
-    check_tool("curl");
 }
 
 #[test]
@@ -375,7 +369,11 @@ fn every_fake_rejects_unknown_subcommands_and_flags_like_the_real_tool() {
             "unexpected argument '--dry-run' found",
         ),
         ("cargo", &["build"], "no such command: `build`"),
-        ("cargo", &["info", "callisto"], "no such command: `info`"),
+        (
+            "cargo",
+            &["info", "callisto@1.0.0", "--offline"],
+            "unexpected argument '--offline' found",
+        ),
         ("git", &["push", "--force", "origin", "v1"], "unknown option `-force'"),
         ("git", &["ls-remote", "--tags", "origin"], "unknown option `-tags'"),
     ];
@@ -404,7 +402,8 @@ fn the_argv_allow_list_check_flags_an_unlisted_flag_or_command() {
         "gh api --repo o/r x",
         "gh pr list",
         "cargo publish --manifest-path /x --locked",
-        "cargo info foo",
+        "cargo info foo --registry crates-io",
+        "cargo info foo --offline",
         "git -c tag.gpgSign=false tag -a -m msg --no-sign -- v1 abc",
         "git tag --force v1",
     ] {

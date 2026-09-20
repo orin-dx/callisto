@@ -200,6 +200,11 @@ natively.
 
 ## Python (PyPI) Authentication
 
+PyPI applies to `callisto publish` only. The durable release lifecycle
+(`callisto release plan` / `execute`, see `07-self-release-lifecycle.md`) refuses a PyPI publish
+target at plan time: pip cannot distinguish a missing project from an unreachable index, so a PyPI
+version can never be proved absent and a durable release could never confirm one.
+
 Python publishing uses `twine upload`. Twine reads credentials from two environment
 variables: `TWINE_USERNAME` (set to `__token__` when using a PyPI API token) and
 `TWINE_PASSWORD` (set to the API token value). Set these in the job environment before

@@ -24,27 +24,20 @@ pub mod loopback;
 
 pub use loopback::{fixtures, LoopbackRequest, LoopbackResponse, LoopbackServer};
 
-/// The loopback sparse index and PyPI endpoint the fixtures bind their registry
-/// to, so no end-to-end test can reach a real registry.
+/// The registry state one end-to-end fixture publishes into and observes from.
 ///
-/// One server per test binary; each fixture gets its own URL path prefix, whose
-/// token names the directory the fake `cargo publish` records versions into.
-/// The server answers from exactly those files, so "publish then observe" is
-/// one mechanism rather than two fakes agreeing by accident.
+/// Observation goes through the ecosystem package manager, so there is no
+/// server here: the fake `cargo publish` records the published version in a
+/// marker file and the fake `cargo info` answers from exactly that file, which
+/// makes "publish then observe" one mechanism rather than two fakes agreeing by
+/// accident. The knobs beside it are files too, because the fakes are separate
+/// processes.
 pub mod test_registry {
-    use super::{fixtures, BTreeMap, LoopbackResponse, LoopbackServer, Mutex, OnceLock, Path, PathBuf};
-
-    /// Any 64-character lowercase hex value satisfies the checksum contract;
-    /// the fixtures assert on presence, not on a particular digest.
-    const FIXTURE_CKSUM: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+    use super::{BTreeMap, Mutex, OnceLock, Path, PathBuf};
 
     struct Registry {
-        server: LoopbackServer,
         markers: Mutex<BTreeMap<String, PathBuf>>,
         tokens: Mutex<BTreeMap<PathBuf, String>>,
-        statuses: Mutex<BTreeMap<String, u16>>,
-        /// Per token: honest serves still to let through, then 404s to serve.
-        flaps: Mutex<BTreeMap<String, (usize, usize)>>,
         state: PathBuf,
     }
 
@@ -56,76 +49,12 @@ pub mod test_registry {
                 .tempdir()
                 .expect("registry state directory")
                 .keep();
-            let server = LoopbackServer::start(move |request| answer(&request.path));
             Registry {
-                server,
                 markers: Mutex::new(BTreeMap::new()),
                 tokens: Mutex::new(BTreeMap::new()),
-                statuses: Mutex::new(BTreeMap::new()),
-                flaps: Mutex::new(BTreeMap::new()),
                 state,
             }
         })
-    }
-
-    /// `/{token}/{index path...}/{name}` for cargo, `/{token}/pypi/{name}/{version}/json` for PyPI.
-    /// Bodies are the captured provider responses with names and versions substituted.
-    fn answer(path: &str) -> LoopbackResponse {
-        let segments: Vec<&str> = path.trim_start_matches('/').split('/').collect();
-        let Some(token) = segments.first().copied() else {
-            return LoopbackResponse::not_found();
-        };
-        if let Some(status) = registry().statuses.lock().unwrap().get(token).copied() {
-            return LoopbackResponse::new(status, "{}");
-        }
-        let Some(directory) = registry().markers.lock().unwrap().get(token).cloned() else {
-            return LoopbackResponse::not_found();
-        };
-        let pypi = segments.get(1) == Some(&"pypi");
-        let name = if pypi { segments.get(2) } else { segments.last() };
-        let published = name.and_then(|name| {
-            std::fs::read_to_string(directory.join(format!("published.{name}")))
-                .ok()
-                .map(|version| (*name, version))
-        });
-        // A real sparse index or CDN can serve a version from one edge and
-        // still answer 404 from another for a while. `set_registry_flap` arms
-        // that: once this token has served the version once, the next N reads
-        // answer 404 again.
-        if published.is_some() && spend_flap(token) {
-            return if pypi {
-                fixtures::pypi_not_found()
-            } else {
-                fixtures::crates_index_not_found()
-            };
-        }
-        match (published, pypi) {
-            (None, true) => fixtures::pypi_not_found(),
-            (None, false) => fixtures::crates_index_not_found(),
-            (Some((name, version)), true) => {
-                fixtures::pypi_version_response(name, version.trim(), FIXTURE_CKSUM, false)
-            }
-            (Some((name, version)), false) => {
-                fixtures::crates_index_response(name, &[(version.trim(), FIXTURE_CKSUM, false)])
-            }
-        }
-    }
-
-    /// Advances the armed flap by one read of a published version, and
-    /// returns whether this read must answer 404.
-    fn spend_flap(token: &str) -> bool {
-        let mut flaps = registry().flaps.lock().unwrap();
-        match flaps.get_mut(token) {
-            Some((honest, _)) if *honest > 0 => {
-                *honest -= 1;
-                false
-            }
-            Some((_, absent)) if *absent > 0 => {
-                *absent -= 1;
-                true
-            }
-            _ => false,
-        }
     }
 
     fn token_for(root: &Path) -> String {
@@ -142,57 +71,46 @@ pub mod test_registry {
         token
     }
 
-    /// The URL to bind `[registries.cratesIo]` to for a fixture at `root`.
-    pub fn registry_url(root: &Path) -> String {
-        format!("{}{}/", registry().server.base_url(), token_for(root))
-    }
-
-    /// The prefix the fake `cargo publish` writes `<prefix>.<crate>` under.
-    pub fn registry_marker(root: &Path) -> PathBuf {
+    fn directory(root: &Path) -> PathBuf {
         let token = token_for(root);
-        registry().markers.lock().unwrap()[&token].join("published")
+        registry().markers.lock().unwrap()[&token].clone()
     }
 
-    /// Every request path the registry served for the fixture at `root`, with
-    /// that fixture's URL prefix stripped.
-    pub fn registry_paths(root: &Path) -> Vec<String> {
-        let prefix = format!("/{}/", token_for(root));
-        registry()
-            .server
-            .paths()
-            .into_iter()
-            .filter_map(|path| path.strip_prefix(&prefix).map(|rest| format!("/{rest}")))
-            .collect()
+    /// The prefix the fake `cargo publish` writes `<prefix>.<crate>` under, and
+    /// the fake `cargo info` reads back.
+    pub fn registry_marker(root: &Path) -> PathBuf {
+        directory(root).join("published")
     }
 
     /// Arms index-propagation lag for `root`'s registry: the first
-    /// `honest_serves` reads of a published version answer normally, the next
-    /// `absent_responses` answer 404, and the honest answers then resume.
+    /// `honest_serves` observations of a published version answer normally, the
+    /// next `absent_responses` answer as if the version were absent, and the
+    /// honest answers then resume.
     ///
     /// `honest_serves` is what lets a test place the lag at a chosen stage --
-    /// `1` lets the post-publish confirmation succeed and puts the 404s on the
-    /// receipt pass, which is where a real CDN edge disagreement lands.
+    /// `1` lets the post-publish confirmation succeed and puts the absences on
+    /// the receipt pass, which is where a real index propagation delay lands.
     pub fn set_registry_flap(root: &Path, honest_serves: usize, absent_responses: usize) {
-        registry()
-            .flaps
-            .lock()
-            .unwrap()
-            .insert(token_for(root), (honest_serves, absent_responses));
+        std::fs::write(
+            directory(root).join("flap"),
+            format!("{honest_serves} {absent_responses}\n"),
+        )
+        .expect("flap state");
     }
 
-    /// Forces every answer for `root`'s registry to this status, or restores
-    /// the marker-backed answers with `None`.
-    pub fn set_registry_status(root: &Path, status: Option<u16>) {
-        let token = token_for(root);
-        let mut statuses = registry().statuses.lock().unwrap();
-        match status {
-            Some(status) => statuses.insert(token, status),
-            None => statuses.remove(&token),
-        };
+    /// Makes every observation for `root`'s registry fail the way an
+    /// unreachable index does, or restores the marker-backed answers.
+    pub fn set_registry_unreachable(root: &Path, unreachable: bool) {
+        let path = directory(root).join("unreachable");
+        if unreachable {
+            std::fs::write(&path, "1\n").expect("unreachable state");
+        } else {
+            drop(std::fs::remove_file(&path));
+        }
     }
 }
 
-pub use test_registry::{registry_marker, registry_paths, registry_url, set_registry_flap, set_registry_status};
+pub use test_registry::{registry_marker, set_registry_flap, set_registry_unreachable};
 
 pub fn git(root: &Path, args: &[&str]) -> String {
     let output = Command::new("git").args(args).current_dir(root).output().unwrap();
@@ -227,16 +145,6 @@ pub fn system_git() -> PathBuf {
                     .is_ok_and(|output| output.status.success())
         })
         .expect("a real Git executable must be available before installing the fixture PATH")
-}
-
-/// Binds the built-in `cratesIo` key to the loopback sparse index. A built-in
-/// registry key may carry a `url`, which is what makes an end-to-end
-/// observation possible without reaching crates.io.
-fn loopback_registry_block(root: &Path) -> String {
-    format!(
-        "\n[registries.cratesIo]\nkind = \"cargo\"\nurl = \"{}\"\n",
-        registry_url(root)
-    )
 }
 
 /// Builds the exact shape a merged release PR must have: its parent contains
@@ -293,9 +201,8 @@ pub fn release_commit_fixture_with_product_release(product_release: bool) -> (Te
     fs::write(
         config_path,
         format!(
-            "{config}{product_config}{registry}\n[[package]]\nmatch = \"cargo/core-crate\"\npublish-to = [\"crates-io\", \"github-release\"]\n{tag_template}",
+            "{config}{product_config}\n[[package]]\nmatch = \"cargo/core-crate\"\npublish-to = [\"crates-io\", \"github-release\"]\n{tag_template}",
             product_config = product_config.unwrap_or_default(),
-            registry = loopback_registry_block(root),
             tag_template = tag_template.unwrap_or_default(),
         ),
     )
@@ -398,11 +305,10 @@ pub fn fixed_group_release_commit_fixture() -> (TempDir, String) {
     fs::write(
         config_path,
         format!(
-            "{config}{registry}\n\
+            "{config}\n\
              [[package]]\nmatch = \"cargo/crate-a\"\npublish-to = [\"crates-io\"]\n\n\
              [[package]]\nmatch = \"cargo/crate-b\"\npublish-to = [\"crates-io\"]\n\n\
              [[fixed-group]]\nname = \"demo\"\nmembers = [\"crate-a\", \"crate-b\"]\n",
-            registry = loopback_registry_block(root),
         ),
     )
     .unwrap();
@@ -907,21 +813,14 @@ pub const TOOL_SHAPES: &[ToolShape] = &[
         flags: &["--quiet"],
     },
     ToolShape {
-        tool: "curl",
-        subcommand: &[],
-        flags: &[
-            "--silent",
-            "--show-error",
-            "--include",
-            "--max-time",
-            "--request",
-            "--url",
-        ],
-    },
-    ToolShape {
         tool: "cargo",
         subcommand: &["publish"],
         flags: &["--manifest-path", "--locked", "--registry"],
+    },
+    ToolShape {
+        tool: "cargo",
+        subcommand: &["info"],
+        flags: &["--registry"],
     },
     ToolShape {
         tool: "npm",
@@ -958,9 +857,22 @@ fn flag_patterns(tool: &str) -> String {
     }
 }
 
-/// The one fake `cargo`. Observation never shells to cargo, so `publish` is the
-/// only subcommand it models: it records the published version under
-/// `$CALLISTO_TEST_CARGO_MARKER.<crate>`, which is what the loopback sparse index serves from.
+/// The one fake `cargo`, modelling the two subcommands the release path emits.
+///
+/// `publish` records the published version under
+/// `$CALLISTO_TEST_CARGO_MARKER.<crate>`; `info` answers from exactly that
+/// file, in the real `cargo info` output shapes (exit 0 with a `version:` line,
+/// or exit 101 with cargo's "could not find" or "failed to load source" text).
+///
+/// Invoked without `--registry` it does what real cargo does -- answers from
+/// the local manifest, the D01 defect -- rather than refusing, so dropping
+/// `--registry` from the production argv breaks the end-to-end suite instead of
+/// being absorbed by a lenient fake.
+///
+/// `$CALLISTO_TEST_CARGO_MARKER`'s directory also holds the two knobs the
+/// fakes cannot receive in memory: `unreachable` forces the transport-failure
+/// shape, and `flap` (`<honest> <absent>` counters) makes a published version
+/// read as absent for a while, which is index-propagation lag.
 fn rig_cargo() -> String {
     let patterns = flag_patterns("cargo");
     format!(
@@ -969,21 +881,63 @@ printf 'cargo %s\n' "$*" >> "$CALLISTO_TEST_LOG"
 if [ -n "$CALLISTO_TEST_CARGO_CALLS" ]; then
   printf '%s|%s\n' "$PWD" "$*" >> "$CALLISTO_TEST_CARGO_CALLS"
 fi
-if [ "$1" != publish ]; then
-  printf 'error: no such command: `%s`\n' "$1" >&2
-  exit 1
-fi
+case "$1" in
+  publish|info) key=$1 ;;
+  *) printf 'error: no such command: `%s`\n' "$1" >&2; exit 1 ;;
+esac
 for a in "$@"; do
   case "$a" in
     -*)
       name=${{a%%=*}}
-      case "publish:$name" in
+      case "$key:$name" in
         {patterns}) ;;
         *) printf "error: unexpected argument '%s' found\n" "$a" >&2; exit 1 ;;
       esac
       ;;
   esac
 done
+state=$(dirname "$CALLISTO_TEST_CARGO_MARKER")
+registry=''
+prev=''
+for a in "$@"; do
+  if [ "$prev" = --registry ]; then registry=$a; fi
+  prev=$a
+done
+
+if [ "$key" = info ]; then
+  spec=$2
+  crate=${{spec%@*}}
+  want=${{spec#*@}}
+  if [ -z "$registry" ]; then
+    printf '%s\nversion: %s (from ./)\nlicense: unknown\n' "$crate" "$want"
+    exit 0
+  fi
+  if [ -f "$state/unreachable" ]; then
+    printf '    Updating `%s` index\n' "$registry" >&2
+    printf 'error: failed to load source for dependency `%s`\n\nCaused by:\n  unable to update registry `%s`\n' "$crate" "$registry" >&2
+    exit 101
+  fi
+  published=$(cat "$CALLISTO_TEST_CARGO_MARKER.$crate" 2>/dev/null)
+  serve=0
+  if [ "$published" = "$want" ]; then serve=1; fi
+  if [ "$serve" = 1 ] && [ -f "$state/flap" ]; then
+    read -r honest absent < "$state/flap"
+    if [ "${{honest:-0}}" -gt 0 ]; then
+      printf '%s %s\n' "$((honest - 1))" "${{absent:-0}}" > "$state/flap"
+    elif [ "${{absent:-0}}" -gt 0 ]; then
+      printf '0 %s\n' "$((absent - 1))" > "$state/flap"
+      serve=0
+    fi
+  fi
+  if [ "$serve" = 1 ]; then
+    printf '%s\nversion: %s (from registry `%s`)\nlicense: unknown\nrust-version: unknown\n' "$crate" "$want" "$registry"
+    exit 0
+  fi
+  printf '    Updating `%s` index\n' "$registry" >&2
+  printf 'error: could not find `%s` in registry `%s`\n' "$spec" "$registry" >&2
+  exit 101
+fi
+
 manifest=''
 prev=''
 for a in "$@"; do

@@ -15,10 +15,8 @@ pub(crate) mod timeouts {
 
     /// `cargo publish`, `npm publish`, `python -m build`, `twine upload`.
     pub(crate) const PUBLISH: Duration = Duration::from_secs(900);
-    /// The subprocess deadline around one registry query (`curl`, `npm view`).
+    /// The subprocess deadline around one registry query (`cargo info`, `npm view`).
     pub(crate) const REGISTRY_QUERY: Duration = Duration::from_secs(300);
-    /// `curl --max-time`: the HTTP request's own deadline, inside the above.
-    pub(crate) const HTTP_MAX_TIME: Duration = Duration::from_secs(60);
     /// `gh attestation verify`.
     pub(crate) const ATTESTATION_VERIFY: Duration = Duration::from_secs(120);
     /// `gh api`.
@@ -39,7 +37,7 @@ pub(crate) mod timeouts {
 pub(crate) mod programs {
     pub(crate) const GIT: &str = "git";
     pub(crate) const GH: &str = "gh";
-    pub(crate) const CURL: &str = "curl";
+    pub(crate) const CARGO: &str = "cargo";
     pub(crate) const NPM: &str = "npm";
     /// The remote whose push URL is the trusted release destination.
     pub(crate) const GIT_REMOTE: &str = "origin";

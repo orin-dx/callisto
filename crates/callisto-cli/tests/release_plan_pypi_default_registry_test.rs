@@ -1,5 +1,6 @@
-//! `release plan` for a PyPI target must not depend on a `[release]`
-//! profile section that non-self users do not have.
+//! Durable release does not support PyPI: pip cannot distinguish a missing
+//! project from an unreachable index, so a PyPI version can never be proved
+//! absent and no PyPI publish may be planned.
 
 use std::{fs, path::Path, process::Command};
 
@@ -66,7 +67,8 @@ fn fixture(manifest_path: &str, manifest: &str, package_match: &str, registry: &
     dir
 }
 
-fn plan_succeeds(dir: &tempfile::TempDir, package: &str) {
+/// `release plan` must refuse, name the reason, and leave no intent behind.
+fn plan_is_refused(dir: &tempfile::TempDir, package: &str) {
     let external = tempfile::tempdir().unwrap();
     let out = external.path().join("intent.json");
     let plan = callisto(
@@ -75,19 +77,30 @@ fn plan_succeeds(dir: &tempfile::TempDir, package: &str) {
     );
     let stdout = String::from_utf8_lossy(&plan.stdout);
     let stderr = String::from_utf8_lossy(&plan.stderr);
+    let printed = format!("{stdout}{stderr}");
     assert!(
-        plan.status.success() && out.exists(),
-        "release plan failed for {package}\nstdout: {stdout}\nstderr: {stderr}"
+        !plan.status.success(),
+        "release plan succeeded for {package}, which durable release cannot observe\nstdout: {stdout}\nstderr: {stderr}"
     );
+    assert!(printed.contains("E170"), "the refusal must be typed: {printed}");
+    assert!(
+        printed.contains("pip cannot distinguish") && printed.contains("unreachable index"),
+        "the refusal must say why PyPI cannot be observed: {printed}"
+    );
+    assert!(
+        printed.contains("publish it outside durable release"),
+        "the refusal must say how to proceed: {printed}"
+    );
+    assert!(!out.exists(), "a refused plan must not leave an intent file behind");
 }
 
 #[test]
-fn red_c2_release_plan_succeeds_for_pypi_target_without_release_profile() {
+fn a_pypi_publish_target_is_refused_at_plan_time_because_pip_cannot_prove_absence() {
     let dir = fixture(
         "pkg/pyproject.toml",
         "[project]\nname = \"demo\"\nversion = \"0.1.0\"\n",
         "pypi/demo",
         "pypi",
     );
-    plan_succeeds(&dir, "pypi/demo");
+    plan_is_refused(&dir, "pypi/demo");
 }

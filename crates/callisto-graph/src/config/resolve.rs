@@ -1410,16 +1410,17 @@ mod tests {
         assert!(
             matches!(
                 load(tmp.path()),
-                Err(ConfigError::InvalidProductRelease { ref detail }) if detail.contains("loopback")
+                Err(ConfigError::InvalidProductRelease { ref detail }) if detail.contains("must be https")
             ),
             "cleartext registry URL accepted: {:?}",
             load(tmp.path()).map(|_| ())
         );
     }
 
-    /// The loopback registry the release harness serves must keep loading.
+    /// There is no loopback exception: a cleartext registry is refused even
+    /// when it never leaves the host.
     #[test]
-    fn product_release_routes_accept_a_loopback_registry_url() {
+    fn product_release_routes_reject_a_cleartext_loopback_registry_url() {
         let tmp = tempfile::tempdir().expect("tempdir");
         fs::write(
             tmp.path().join("callisto.toml"),
@@ -1427,7 +1428,27 @@ mod tests {
         )
         .expect("write callisto.toml");
 
-        load(tmp.path()).expect("a loopback registry must stay loadable");
+        assert!(
+            matches!(
+                load(tmp.path()),
+                Err(ConfigError::InvalidProductRelease { ref detail }) if detail.contains("must be https")
+            ),
+            "cleartext loopback registry URL accepted: {:?}",
+            load(tmp.path()).map(|_| ())
+        );
+    }
+
+    /// An https registry route stays loadable.
+    #[test]
+    fn product_release_routes_accept_an_https_registry_url() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        fs::write(
+            tmp.path().join("callisto.toml"),
+            "[release]\nproduct-package = \"cargo/demo\"\nartifact-targets = [\n  \"aarch64-apple-darwin\",\n  \"x86_64-unknown-linux-gnu\",\n  \"x86_64-unknown-linux-musl\",\n  \"wasm32-wasip1\",\n]\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\nregistry-routes = { cratesIo = \"private-cargo\" }\n\n[registries.private-cargo]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index/\"\n",
+        )
+        .expect("write callisto.toml");
+
+        load(tmp.path()).expect("an https registry must stay loadable");
     }
 
     /// A route's logical key reaches argv and cross-profile comparison, so it

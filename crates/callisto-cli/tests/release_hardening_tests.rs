@@ -830,27 +830,41 @@ fn plan_fixed_group_intent(root: &Path, external: &Path, release_commit: &str) -
     intent
 }
 
-/// The D01 defect was `cargo info`: run inside the workspace it resolved the
-/// local manifest and reported the unpublished version as already published.
-/// Observation is now a request to the bound registry endpoint, so the property
-/// is asserted where it now lives -- on the request the registry received, and
-/// on cargo never being asked anything but to publish.
+/// The D01 defect was `cargo info` run without `--registry`: inside the
+/// workspace it resolves the local manifest and reports the unpublished
+/// version as already published. Observation is `cargo info` again -- so that
+/// registry resolution and credentials are the package manager's job -- and the
+/// property that makes it safe is asserted directly: every `cargo info` the
+/// release path issues names a registry explicitly, and it is issued from the
+/// workspace root where that registry is defined.
 #[test]
-fn red_d01_registry_observation_is_a_request_to_the_bound_endpoint_not_a_local_manifest_read() {
+fn red_d01_every_cargo_info_observation_names_a_registry_explicitly() {
     let e = RigEnv::single();
     let out = e.run(&[]);
     assert!(out.status.success(), "{}", stderr(&out));
 
-    let served = registry_paths(e.root());
+    let calls = e.rig.cargo_calls();
+    let info: Vec<&(String, String)> = calls.iter().filter(|(_, argv)| argv.starts_with("info ")).collect();
     assert!(
-        served.iter().any(|path| path == "/co/re/core-crate"),
-        "observation must be a sparse-index GET against the bound registry, got {served:?}"
+        !info.is_empty(),
+        "the registry must be observed through cargo, got {calls:?}"
     );
-    let cargo: Vec<String> = e.rig.cargo_calls().into_iter().map(|(_, argv)| argv).collect();
+    for (cwd, argv) in &info {
+        assert!(
+            argv.contains(" --registry "),
+            "`cargo {argv}` has no --registry, so it would answer from the local manifest"
+        );
+        assert_eq!(
+            std::fs::canonicalize(cwd).unwrap(),
+            std::fs::canonicalize(e.root()).unwrap(),
+            "observation must run from the workspace root whose config defines the registry"
+        );
+    }
     assert!(
-        !cargo.is_empty() && cargo.iter().all(|argv| argv.starts_with("publish ")),
-        "only the publish effect may shell to cargo; a client that resolves the local manifest \
-         must never decide what the registry holds, got {cargo:?}"
+        calls
+            .iter()
+            .all(|(_, argv)| argv.starts_with("info ") || argv.starts_with("publish ")),
+        "only observation and the publish effect may shell to cargo, got {calls:?}"
     );
     assert_eq!(
         e.rig.log_count("cargo publish"),
@@ -997,9 +1011,9 @@ fn red_d08_local_only_tag_is_pushed_to_the_remote_before_the_receipt() {
 #[test]
 fn red_c7_pre_effect_observation_failure_does_not_wedge_rerun() {
     let e = RigEnv::single();
-    // 401 proves neither presence nor absence and is not retryable, so it
-    // reaches the executor as a single indeterminate observation.
-    set_registry_status(e.root(), Some(401));
+    // An unreachable registry proves neither presence nor absence, so after
+    // the bounded retry it reaches the executor as an indeterminate answer.
+    set_registry_unreachable(e.root(), true);
     let first = e.run(&[]);
     assert!(!first.status.success());
     assert_eq!(
@@ -1007,7 +1021,7 @@ fn red_c7_pre_effect_observation_failure_does_not_wedge_rerun() {
         0,
         "no effect may run while observation fails"
     );
-    set_registry_status(e.root(), None);
+    set_registry_unreachable(e.root(), false);
     let second = e.run(&[]);
     assert!(
         second.status.success(),

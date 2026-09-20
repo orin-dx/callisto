@@ -42,26 +42,46 @@ never a conflict.
 Two tokens are mintable only from an observation: `AbsentProof` (from `Absent`)
 and `ExactEvidence` (from `Exact`).
 
-## Registry observation over the protocol (`provider/http.rs`, `provider/registry.rs`)
+## Registry observation through the package manager (`provider/registry.rs`)
 
-Observation never shells to a package-manager client that can resolve the local
-workspace. It is a credential-free `curl` GET through the bounded
-`CommandRunner`, against the profile-bound endpoint:
+Observation runs the ecosystem's own package manager -- the same tool and the
+same configuration the publish effect uses -- through the bounded
+`CommandRunner`, so registry resolution and authentication (private registries
+included) belong to the tool rather than to a credential-free reimplementation.
 
-- cargo: the sparse index, `{endpoint}/{1|2|3/a|ab/cd}/{name}` lowercased. A
-  cargo registry configured without the `sparse+` marker is a git index and
-  fails closed as `Indeterminate { UnsupportedProtocol }`. The built-in
-  `cratesIo` key is always sparse, and may carry a `url` to point it at another
-  http host (rehearsal, tests) under the usual validation and E197 rules.
-- PyPI: `{endpoint}/pypi/{pep503-name}/{version}/json`. PyPI is now observable,
-  so a PyPI publish can reach a receipt.
-- npm: still `npm view`, reporting `checksum: None` rather than inventing one.
+- cargo: `cargo info NAME@VERSION --registry REGISTRY`, run from the source
+  workspace root so that workspace's `.cargo/config.toml` registry definitions
+  and credentials apply. `--registry` is never omitted: without it `cargo info`
+  resolves the local workspace and reports an unpublished member's on-disk
+  version as published, which is the D01 defect. The logical `cratesIo` key maps
+  to cargo's built-in `crates-io` (`cargo_registry_name`).
+- npm: `npm view NAME@VERSION version --json`, reporting `checksum: None`
+  rather than inventing one.
+- PyPI: not observable. `can_observe_versions` is `false`, and
+  `require_observable_registry` refuses a PyPI publish target at plan time with
+  `ReleasePreconditionUnmet { ObservableRegistryClient }` (E170). pip cannot
+  prove absence: an unreachable index and a nonexistent project produce
+  identical output and exit code, `pip index versions` is experimental and hides
+  yanked releases, and a pinned yanked release installs with a warning.
 
-404 or a missing version line is `Absent`; a served, unyanked version is `Exact`
-with the index checksum and `yanked: Some(false)`; a served, yanked version is
-`Conflict { RegistryVersionYanked }` -- the defect `cargo info` hid by reading a
-yanked version as absent. Any other status, or a body that is not the index
-format, is indeterminate.
+Cargo classification (`classify_cargo_info`): exit 0 with a `version: VERSION`
+line for the requested version is `Exact` with `checksum: None, yanked: None`
+(`cargo info` reports neither, and the evidence does not invent them); exit 101
+whose stderr carries ``could not find `NAME@VERSION` `` is `Absent`; anything
+else -- another exit code, another message, or a zero exit with no matching
+version line -- is a transient `Indeterminate` under the retry policy, so an
+unreachable registry can never read as an absence.
+
+A **yanked** version reads as `Absent`, because `cargo info` answers "could not
+find" for one. This fails closed: the publish that follows is refused by the
+registry, and since only an `Exact` observation may satisfy an operation, the
+run ends in `RegistryPublishUnconfirmed`, never in a receipt.
+`ProviderConflictReason::RegistryVersionYanked` remains in the wire enum but no
+adapter currently produces it.
+
+Registry endpoints must be `https` (`registry_endpoint::canonical_registry_url`),
+with no loopback exception, enforced identically by config load (E197 family)
+and release binding (E126).
 
 ## Forge roles and DAG order (`provider/forge.rs`, `provider/artifact.rs`)
 
@@ -160,5 +180,5 @@ the wire shape, guarded by `crates/callisto-cli/tests/schema_guard_test.rs`.
 
 ## Provider contract tier
 
-Fake providers serve captured real responses (`testing/fixtures/providers/<provider>/`, provenance in each `PROVENANCE.md`; `LoopbackResponse::from_raw_http` and `loopback::fixtures` in `testing/loopback_http.rs` template names and versions into them), every fake rejects flags and subcommands outside `TOOL_SHAPES` in `tests/common/release_harness.rs`, and `provider_flag_contract_tests.rs` checks each emitted flag against the real tool's own help.
+Fake providers serve captured real responses and captured real command runs (`testing/fixtures/providers/<provider>/`, provenance in each `PROVENANCE.md`; `loopback::fixtures` in `testing/loopback_http.rs` reads the HTTP captures and the `.cmd` envelopes and templates names and versions into them), every fake rejects flags and subcommands outside `TOOL_SHAPES` in `tests/common/release_harness.rs`, and `provider_flag_contract_tests.rs` checks each emitted flag against the real tool's own help. The cargo observation is additionally tested against real `cargo info` over a hermetic local git registry served by `file://` (`provider/registry/tests.rs`).
 Refresh fixtures with `just provider-fixtures` (read-only GETs; review the diff, update `PROVENANCE.md`); `just provider-contract` re-fetches live and asserts shapes still match. Both are manual and network-dependent, not part of `just ci`.

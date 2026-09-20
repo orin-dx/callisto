@@ -83,14 +83,15 @@ impl LoopbackResponse {
 /// and the templates that substitute names, versions, tags and assets into
 /// their real shapes, so fakes serve provider bytes rather than a guess at them.
 pub mod fixtures {
-    use super::LoopbackResponse;
     use serde_json::Value;
 
-    pub const CRATES_INDEX_200: &str = include_str!("fixtures/providers/crates-io/sparse-index-200.http");
-    pub const CRATES_INDEX_404: &str = include_str!("fixtures/providers/crates-io/sparse-index-404.http");
-    pub const CRATES_YANKED_LINE: &str = include_str!("fixtures/providers/crates-io/sparse-index-yanked-line.json");
-    pub const PYPI_200: &str = include_str!("fixtures/providers/pypi/version-200.http");
-    pub const PYPI_404: &str = include_str!("fixtures/providers/pypi/version-404.http");
+    pub const CARGO_INFO_FOUND: &str = include_str!("fixtures/providers/cargo-info/found.cmd");
+    pub const CARGO_INFO_ABSENT_VERSION: &str = include_str!("fixtures/providers/cargo-info/absent-version.cmd");
+    pub const CARGO_INFO_UNKNOWN_CRATE: &str = include_str!("fixtures/providers/cargo-info/unknown-crate.cmd");
+    pub const CARGO_INFO_YANKED: &str = include_str!("fixtures/providers/cargo-info/yanked.cmd");
+    pub const CARGO_INFO_NETWORK_FAILURE: &str = include_str!("fixtures/providers/cargo-info/network-failure.cmd");
+    pub const NPM_VIEW_FOUND: &str = include_str!("fixtures/providers/npm-view/found.cmd");
+    pub const NPM_VIEW_MISSING: &str = include_str!("fixtures/providers/npm-view/missing.cmd");
     pub const GITHUB_RELEASE_PUBLISHED: &str = include_str!("fixtures/providers/github/release-published.http");
     pub const GITHUB_RELEASE_DRAFT: &str = include_str!("fixtures/providers/github/release-draft.http");
     pub const GITHUB_RELEASE_PRERELEASE: &str = include_str!("fixtures/providers/github/release-prerelease.http");
@@ -114,48 +115,40 @@ pub mod fixtures {
         split_raw_http(raw).1
     }
 
-    /// The captured sparse-index line, renamed and re-versioned.
-    pub fn crates_index_line(name: &str, version: &str, cksum: &str, yanked: bool) -> String {
-        let line = body_of(CRATES_INDEX_200)
-            .lines()
-            .next()
-            .expect("captured index has lines");
-        let mut entry: Value = serde_json::from_str(line).expect("captured index line is JSON");
-        entry["name"] = name.into();
-        entry["vers"] = version.into();
-        entry["cksum"] = cksum.into();
-        entry["yanked"] = yanked.into();
-        entry.to_string()
+    /// One captured command run: its exit code, stdout and stderr.
+    pub struct CapturedCommand {
+        pub exit_code: i32,
+        pub stdout: String,
+        pub stderr: String,
     }
 
-    /// A 200 sparse-index answer carrying the given `(version, cksum, yanked)` lines.
-    pub fn crates_index_response(name: &str, versions: &[(&str, &str, bool)]) -> LoopbackResponse {
-        let mut response = LoopbackResponse::from_raw_http(CRATES_INDEX_200);
-        response.body = versions
-            .iter()
-            .map(|(version, cksum, yanked)| format!("{}\n", crates_index_line(name, version, cksum, *yanked)))
-            .collect();
-        response
-    }
-
-    pub fn crates_index_not_found() -> LoopbackResponse {
-        LoopbackResponse::from_raw_http(CRATES_INDEX_404)
-    }
-
-    /// The captured PyPI version document with the first file's digest and yank flag replaced.
-    pub fn pypi_version_response(name: &str, version: &str, sha256: &str, yanked: bool) -> LoopbackResponse {
-        let mut response = LoopbackResponse::from_raw_http(PYPI_200);
-        let mut document: Value = serde_json::from_str(&response.body).expect("captured PyPI body is JSON");
-        document["info"]["name"] = name.into();
-        document["info"]["version"] = version.into();
-        document["urls"][0]["digests"]["sha256"] = sha256.into();
-        document["urls"][0]["yanked"] = yanked.into();
-        response.body = document.to_string();
-        response
-    }
-
-    pub fn pypi_not_found() -> LoopbackResponse {
-        LoopbackResponse::from_raw_http(PYPI_404)
+    /// Reads a `.cmd` fixture (`exit: N`, `--- stdout`, `--- stderr`).
+    pub fn captured_command(raw: &str) -> CapturedCommand {
+        let mut exit_code = 0;
+        let mut stdout = String::new();
+        let mut stderr = String::new();
+        let mut stream = 0_u8;
+        for line in raw.lines() {
+            match line {
+                "--- stdout" => stream = 1,
+                "--- stderr" => stream = 2,
+                _ if stream == 0 => {
+                    if let Some(code) = line.strip_prefix("exit: ") {
+                        exit_code = code.trim().parse().expect("captured exit code is a number");
+                    }
+                }
+                _ => {
+                    let target = if stream == 1 { &mut stdout } else { &mut stderr };
+                    target.push_str(line);
+                    target.push('\n');
+                }
+            }
+        }
+        CapturedCommand {
+            exit_code,
+            stdout,
+            stderr,
+        }
     }
 
     /// The captured GitHub release object with the fields the code reads replaced.

@@ -1,20 +1,11 @@
-//! The read-only HTTP seam every registry observation goes through.
+//! Raw HTTP response parsing for the forge lookups that go through
+//! `gh api --include`.
 //!
-//! Observation is a request to the bound registry endpoint, issued through the
-//! bounded [`CommandRunner`] with `curl`, never a package-manager client that
-//! resolves the local workspace. The response is kept whole -- status line,
-//! headers, body -- because the retry policy needs `Retry-After` and the
-//! rate-limit headers, and the classifier needs the exact status.
+//! The response is kept whole -- status line, headers, body -- because the
+//! retry policy needs `Retry-After` and the rate-limit headers, and the
+//! classifier needs the exact status.
 
-use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-use callisto_model::{CommandOutput, CommandRunner};
-
-use crate::error::CommandFailure;
-use crate::GraphError;
-
-use super::policy::{programs, timeouts};
 
 /// One parsed HTTP response.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -22,20 +13,6 @@ pub(crate) struct HttpResponse {
     pub(crate) status: u16,
     pub(crate) headers: Vec<(String, String)>,
     pub(crate) body: String,
-}
-
-/// Why no HTTP response was produced at all. Both shapes are transient by
-/// definition: neither proves presence nor absence.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum TransportFailure {
-    Timeout,
-    Unreachable,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum HttpOutcome {
-    Response(HttpResponse),
-    Transport(TransportFailure),
 }
 
 impl HttpResponse {
@@ -67,58 +44,9 @@ fn now_unix_seconds() -> u64 {
         .map_or(0, |elapsed| elapsed.as_secs())
 }
 
-/// Issues one credential-free GET. No `-L`: a redirect is a response to
-/// classify, not a destination to follow off the bound endpoint.
-pub(crate) fn http_get(runner: &dyn CommandRunner, cwd: &Path, url: &str) -> Result<HttpOutcome, GraphError> {
-    let max_time = timeouts::HTTP_MAX_TIME.as_secs().to_string();
-    let args = [
-        "--silent",
-        "--show-error",
-        "--include",
-        "--max-time",
-        max_time.as_str(),
-        "--request",
-        "GET",
-        "--url",
-        url,
-    ];
-    let output = runner.run_quiet(programs::CURL, &args, cwd, timeouts::REGISTRY_QUERY)?;
-    classify_curl_output(&args, &output)
-}
-
-/// curl exit codes that mean "no answer", split into the two shapes the
-/// indeterminate cause distinguishes. Any other non-zero exit is a real
-/// command failure and is raised, not silently retried.
-fn classify_curl_output(args: &[&str], output: &CommandOutput) -> Result<HttpOutcome, GraphError> {
-    if output.success() {
-        return parse_http_response(&output.stdout)
-            .map(HttpOutcome::Response)
-            .map_err(|detail| curl_failure(args, CommandFailure::MalformedOutput { detail }));
-    }
-    match output.exit_code {
-        Some(28) => Ok(HttpOutcome::Transport(TransportFailure::Timeout)),
-        Some(5 | 6 | 7 | 35 | 52 | 55 | 56) => Ok(HttpOutcome::Transport(TransportFailure::Unreachable)),
-        exit_code => Err(curl_failure(
-            args,
-            CommandFailure::NonZeroExit {
-                exit_code,
-                stderr: output.stderr.clone(),
-            },
-        )),
-    }
-}
-
-fn curl_failure(args: &[&str], failure: CommandFailure) -> GraphError {
-    GraphError::ReleaseCommand {
-        program: programs::CURL.to_owned(),
-        args: args.iter().map(ToString::to_string).collect(),
-        failure,
-    }
-}
-
-/// Parses a raw `curl --include` or `gh api --include` response. The last
-/// header block wins, so an interim `100 Continue` or a proxy preamble cannot
-/// be mistaken for the real status.
+/// Parses a raw `gh api --include` response. The last header block wins, so an
+/// interim `100 Continue` or a proxy preamble cannot be mistaken for the real
+/// status.
 pub(crate) fn parse_http_response(raw: &str) -> Result<HttpResponse, String> {
     let (headers, body) = raw
         .rsplit_once("\r\n\r\n")
@@ -252,26 +180,5 @@ mod tests {
             "a date already past must never produce a negative or huge wait"
         );
         assert_eq!(parse_retry_after("whenever", 0), None);
-    }
-
-    #[test]
-    fn curl_transport_exits_are_transient_and_other_exits_are_command_failures() {
-        let failed = |exit_code| CommandOutput {
-            exit_code: Some(exit_code),
-            stdout: String::new(),
-            stderr: "curl: failed".to_owned(),
-        };
-        assert_eq!(
-            classify_curl_output(&["--url"], &failed(28)),
-            Ok(HttpOutcome::Transport(TransportFailure::Timeout))
-        );
-        assert_eq!(
-            classify_curl_output(&["--url"], &failed(7)),
-            Ok(HttpOutcome::Transport(TransportFailure::Unreachable))
-        );
-        assert!(matches!(
-            classify_curl_output(&["--url"], &failed(2)),
-            Err(GraphError::ReleaseCommand { .. })
-        ));
     }
 }

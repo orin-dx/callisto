@@ -66,15 +66,12 @@ pub(crate) fn canonical_registry_url(raw: &str) -> Result<RegistryBindingV1, &'s
     if parsed.cannot_be_a_base() || parsed.host_str().is_none() {
         return Err("URL must have an authority");
     }
-    if !matches!(parsed.scheme(), "http" | "https") {
-        return Err("URL scheme must be http or https");
-    }
     // A registry endpoint receives a credential (`npm --registry`,
     // `twine --repository-url`, a cargo registry token), so cleartext is a
-    // credential disclosure. Loopback is the sole exception: it never leaves
-    // the host, and the release test harness serves a real registry there.
-    if parsed.scheme() == "http" && !is_loopback_host(parsed.host_str().expect("validated authority")) {
-        return Err("plain http is allowed only for loopback registries (127.0.0.1, ::1, localhost)");
+    // credential disclosure. There is no loopback exception: a test registry
+    // is reached through the package manager's own configuration instead.
+    if parsed.scheme() != "https" {
+        return Err("registry URL scheme must be https");
     }
     if !parsed.username().is_empty() || parsed.password().is_some() {
         return Err("userinfo is forbidden");
@@ -91,21 +88,6 @@ pub(crate) fn canonical_registry_url(raw: &str) -> Result<RegistryBindingV1, &'s
         effective_port: parsed.port_or_known_default(),
         path: parsed.path().to_string(),
     })
-}
-
-/// Whether a URL host names this machine. `url::Url::host_str` keeps an IPv6
-/// literal in its brackets, so they are stripped before parsing; every
-/// loopback address is accepted, not just `127.0.0.1`, because `127.0.0.2`
-/// and friends are equally local.
-fn is_loopback_host(host: &str) -> bool {
-    let address = host
-        .strip_prefix('[')
-        .and_then(|rest| rest.strip_suffix(']'))
-        .unwrap_or(host);
-    host.eq_ignore_ascii_case("localhost")
-        || address
-            .parse::<std::net::IpAddr>()
-            .is_ok_and(|address| address.is_loopback())
 }
 
 /// The URL a built-in registry key stands for when no `url` is configured.
@@ -128,51 +110,53 @@ pub(crate) fn registry_destination(key: &str, url: Option<&str>) -> Option<Regis
 mod tests {
     use super::*;
 
-    /// The loopback registry the release end-to-end harness serves is the one
-    /// endpoint a credential may cross in cleartext, because it never leaves
-    /// the host.
+    /// `npm --registry`, `twine --repository-url` and a cargo registry token
+    /// are sent to whatever endpoint they are given, so no `http://` registry
+    /// may be bound -- loopback included, since the exception only ever existed
+    /// to let a test harness serve a registry over the wire.
     #[test]
-    fn plain_http_is_accepted_only_for_loopback_hosts() {
+    fn plain_http_is_rejected_for_every_host_including_loopback() {
         for raw in [
+            "http://registry.example.com/",
+            "http://192.168.1.10:4873/",
             "http://127.0.0.1:8765/",
             "http://[::1]:8765/",
             "http://localhost:8765/simple/",
             "sparse+http://127.0.0.1:8765/index/",
-        ] {
-            assert!(
-                canonical_registry_url(raw).is_ok(),
-                "loopback registry must stay usable: {raw}"
-            );
-        }
-    }
-
-    /// `npm --registry` and `twine --repository-url` send a token to whatever
-    /// endpoint they are given, so a non-loopback `http://` registry is a
-    /// credential disclosure and must be refused before any publish.
-    #[test]
-    fn plain_http_is_rejected_for_every_other_host() {
-        for raw in [
-            "http://registry.example.com/",
-            "http://192.168.1.10:4873/",
-            "http://127.0.0.1.evil.example.com/",
             "sparse+http://nexus.internal/repository/crates/",
         ] {
             let reason = canonical_registry_url(raw).expect_err(&format!("cleartext registry accepted: {raw}"));
-            assert!(reason.contains("loopback"), "reason must name the rule: {reason}");
+            assert_eq!(reason, "registry URL scheme must be https");
         }
-        for raw in ["https://registry.example.com/", "https://nexus.internal/crates/"] {
+    }
+
+    #[test]
+    fn https_is_accepted_with_and_without_the_sparse_marker() {
+        for raw in [
+            "https://registry.example.com/",
+            "https://nexus.internal/crates/",
+            "sparse+https://nexus.internal/repository/crates/",
+            "https://[::1]:8765/",
+        ] {
             assert!(canonical_registry_url(raw).is_ok(), "https must stay accepted: {raw}");
+        }
+    }
+
+    #[test]
+    fn a_non_http_scheme_is_rejected_by_the_same_rule() {
+        for raw in ["ftp://registry.example.com/", "file:///tmp/index"] {
+            assert!(canonical_registry_url(raw).is_err(), "{raw} must be rejected");
         }
     }
 
     #[test]
     fn an_ipv6_endpoint_is_bracketed_exactly_once() {
         let binding = RegistryBindingV1 {
-            scheme: "http".to_owned(),
+            scheme: "https".to_owned(),
             host: "[::1]".to_owned(),
             effective_port: Some(8765),
             path: "/".to_owned(),
         };
-        assert_eq!(binding.endpoint(), "http://[::1]:8765/");
+        assert_eq!(binding.endpoint(), "https://[::1]:8765/");
     }
 }

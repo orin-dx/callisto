@@ -209,6 +209,7 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
         let mut publishes = Vec::new();
         for target in &package.publish_to {
             if target.ecosystem() == Some(id.ecosystem()) {
+                super::provider::registry::require_observable_registry(id.ecosystem())?;
                 let binding = prepared_registry_binding(workspace, target, profile_config)?;
                 let operation = ReleaseOperation::registry_publish(
                     id.clone(),

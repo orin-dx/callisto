@@ -228,7 +228,6 @@ fn provider_observation_enums_carry_exactly_their_declared_variants() {
         variants("ProviderIndeterminateCause"),
         set(&[
             "unsupportedProvider",
-            "unsupportedProtocol",
             "providerStatus",
             "commandFailed",
             "malformedResponse",

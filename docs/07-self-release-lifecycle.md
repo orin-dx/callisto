@@ -91,12 +91,34 @@ reachable only through an absent proof; adopting a pre-existing effect into a mi
 recovery-only privilege; "our attempt landed" (`Published`) is distinct from "it already existed"
 (`AlreadySatisfied`).
 
-Registry observation uses the registry protocol, not a local package-manager client: the crates.io
-sparse index and the PyPI JSON API, credential-free, against the profile-bound endpoint; npm uses
-`npm view`. A yanked version is a conflict. One bounded retry policy covers read-only observations
-only (registry HTTP, the GitHub release lookup, `git ls-remote`): HTTP 429, 5xx, a rate-limited 403,
-and curl timeouts are retried with backoff, honouring `Retry-After`. Effects are never blindly
-re-issued. Every outbound command has a deadline.
+Registry observation goes through the ecosystem's own package manager — the same tool and the same
+configuration the publish effect uses, so registry resolution and authentication (private
+registries included) are the tool's job rather than something Callisto reimplements. For cargo it is
+`cargo info NAME@VERSION --registry REGISTRY`, run from the source workspace root so the workspace's
+`.cargo/config.toml` registry definitions and credentials apply; `--registry` is never omitted,
+because without it `cargo info` answers from the local manifest. Exit 0 with a matching `version:`
+line is exact evidence (with no checksum and no yank claim: `cargo info` reports neither); exit 101
+with ``could not find `NAME@VERSION` `` is an absence; anything else, an unreachable registry
+included, is indeterminate and retried. For npm it is `npm view NAME@VERSION version --json`.
+
+A yanked version reads as absent, because `cargo info` cannot see yanks. That fails closed: the
+publish that follows is refused by the registry, and since only an exact observation may satisfy an
+operation, the run ends in the typed unconfirmed-publication error rather than in a receipt.
+
+PyPI is not supported by durable release. `pip` cannot prove a version absent — an unreachable
+index and a project that does not exist produce identical output and the same exit code,
+`pip index versions` is experimental and hides yanked releases, and a pinned yanked release
+installs with only a warning. A PyPI publish target is therefore refused at plan time (E170), with a
+message naming the reason and the alternatives: publish it outside durable release, or wait for a
+reliable PyPI observation.
+
+Registry endpoints must be `https`. There is no loopback exception, because an endpoint receives a
+credential.
+
+One bounded retry policy covers read-only observations only (the registry query, the GitHub release
+lookup, `git ls-remote`): HTTP 429, 5xx, a rate-limited 403, and command/transport failures are
+retried with backoff, honouring `Retry-After`. Effects are never blindly re-issued. Every outbound
+command has a deadline.
 
 The GitHub Release is created as a draft, assets are uploaded to the draft, and publishing is a
 separate last operation that depends on every upload, because a published release can be immutable

@@ -25,8 +25,9 @@ pub(crate) mod policy;
 pub(crate) mod registry;
 pub(crate) mod tag;
 
-/// The loopback HTTP server the protocol-level observation tests run against,
-/// shared verbatim with the CLI end-to-end harness so both exercise one server.
+/// The captured provider fixtures, and the loopback HTTP server the forge
+/// tests run against. Shared verbatim with the CLI end-to-end harness so both
+/// are held to the same captured bytes.
 #[cfg(test)]
 #[path = "../../../../../../testing/loopback_http.rs"]
 pub(crate) mod loopback;

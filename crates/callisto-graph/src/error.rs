@@ -724,6 +724,12 @@ pub enum ReleasePreconditionRequirement {
     VerifiedArtifactManifest,
     #[error("a provider that can observe what it publishes")]
     ObservableProvider,
+    #[error(
+        "a registry client that can prove a version absent; pip cannot distinguish a missing PyPI project \
+         from an unreachable index, so durable release does not support PyPI -- publish it outside durable \
+         release, or wait for a reliable PyPI observation"
+    )]
+    ObservableRegistryClient,
 }
 
 #[cfg(test)]

@@ -1,252 +1,423 @@
-//! Protocol-level observation tests against a loopback HTTP server.
+//! Registry observation tests.
 //!
-//! These run real `curl` against a real socket, so the request shape, the
-//! status handling, and the retry schedule are all exercised end to end
-//! without a package-manager fake standing in for the registry.
+//! The cargo cases run the *real* `cargo info` through the production
+//! observation code, against a hermetic local git registry served over
+//! `file://`. Nothing here reaches a network. The remaining cases feed the
+//! captured bytes of real `cargo info` and `npm view` runs (see
+//! `testing/fixtures/providers/*/PROVENANCE.md`) to the same classifier.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
-use callisto_model::{RegistryBindingDigest, RegistryKey, Version, VersionGrammar};
+use callisto_model::{ArtifactDigest, RegistryBindingDigest, RegistryKey, Version, VersionGrammar};
 
-use super::super::http::parse_http_response;
-use super::super::loopback::{fixtures, LoopbackResponse, LoopbackServer};
+use super::super::loopback::fixtures;
 use super::super::policy::tests::RecordingSleeper;
-use super::super::policy::OBSERVATION_MAX_ATTEMPTS;
 use super::*;
 use crate::commands::release::binding::PreparedRegistryBinding;
 use crate::commands::release::tests::RealGitRunner;
 
-const CKSUM: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+// --------------------------------------------------------------- the fixture
 
-fn operation(endpoint: &str, key: &str, protocol: RegistryProtocol) -> RegistryPublishOperation {
+/// The crate the hermetic registry serves, and the one the temporary workspace
+/// declares as its own unpublished member.
+const CRATE: &str = "core-crate";
+/// Served by the registry, not yanked.
+const PUBLISHED: &str = "0.1.0";
+/// Served by the registry, yanked.
+const YANKED: &str = "0.2.0";
+/// The temporary workspace member's on-disk version, absent from the registry.
+/// Observing it is the D01 regression: without `--registry`, `cargo info`
+/// answers from this manifest instead of from the registry.
+const LOCAL_ONLY: &str = "0.3.0";
+
+struct CargoFixture {
+    /// Holds the index, the downloads and the workspace for the process's life.
+    _root: tempfile::TempDir,
+    workspace: PathBuf,
+}
+
+/// Builds the registry and workspace once per test binary: every `cargo info`
+/// against a distinct index URL costs cargo a fresh cached clone, so the cases
+/// share one.
+fn fixture() -> &'static CargoFixture {
+    static FIXTURE: OnceLock<CargoFixture> = OnceLock::new();
+    FIXTURE.get_or_init(build_fixture)
+}
+
+fn run(program: &str, args: &[&str], cwd: &Path) {
+    let output = std::process::Command::new(program)
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .unwrap_or_else(|error| panic!("{program} must be runnable: {error}"));
+    assert!(
+        output.status.success(),
+        "{program} {args:?} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// One `.crate` file: cargo downloads and checksums it before printing an
+/// answer, so it must be a real gzipped tar of a real package directory.
+fn crate_file(work: &Path, downloads: &Path, version: &str) -> ArtifactDigest {
+    let staging = work.join(format!("stage-{version}"));
+    let package = staging.join(format!("{CRATE}-{version}"));
+    std::fs::create_dir_all(package.join("src")).unwrap();
+    std::fs::write(
+        package.join("Cargo.toml"),
+        format!("[package]\nname = \"{CRATE}\"\nversion = \"{version}\"\nedition = \"2021\"\n"),
+    )
+    .unwrap();
+    std::fs::write(package.join("src/lib.rs"), "\n").unwrap();
+    let target = downloads.join(CRATE).join(version);
+    std::fs::create_dir_all(&target).unwrap();
+    let archive = target.join("download");
+    run(
+        "tar",
+        &["czf", archive.to_str().unwrap(), &format!("{CRATE}-{version}")],
+        &staging,
+    );
+    ArtifactDigest::from_bytes(std::fs::read(&archive).unwrap())
+}
+
+fn build_fixture() -> CargoFixture {
+    let root = tempfile::Builder::new()
+        .prefix("callisto-cargo-registry-")
+        .tempdir()
+        .unwrap();
+    let base = root.path();
+    let index = base.join("index");
+    let downloads = base.join("downloads");
+    let workspace = base.join("workspace");
+    std::fs::create_dir_all(index.join("co/re")).unwrap();
+    std::fs::create_dir_all(workspace.join("src")).unwrap();
+    std::fs::create_dir_all(workspace.join(".cargo")).unwrap();
+
+    let published = crate_file(base, &downloads, PUBLISHED);
+    let yanked = crate_file(base, &downloads, YANKED);
+    std::fs::write(
+        index.join("config.json"),
+        format!(
+            "{{\"dl\":\"file://{downloads}\",\"api\":\"file://{downloads}\"}}\n",
+            downloads = downloads.display()
+        ),
+    )
+    .unwrap();
+    let entry = |version: &str, cksum: &ArtifactDigest, yanked: bool| {
+        format!(
+            "{{\"name\":\"{CRATE}\",\"vers\":\"{version}\",\"deps\":[],\"cksum\":\"{}\",\"features\":{{}},\"yanked\":{yanked}}}\n",
+            cksum.as_str()
+        )
+    };
+    std::fs::write(
+        index.join("co/re").join(CRATE),
+        format!(
+            "{}{}",
+            entry(PUBLISHED, &published, false),
+            entry(YANKED, &yanked, true)
+        ),
+    )
+    .unwrap();
+    run("git", &["init", "-q", "-b", "master", "."], &index);
+    run("git", &["add", "-A"], &index);
+    run(
+        "git",
+        &[
+            "-c",
+            "user.email=fixture@example.invalid",
+            "-c",
+            "user.name=fixture",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-qm",
+            "index",
+        ],
+        &index,
+    );
+
+    // A workspace member with the registry's crate name and a version the
+    // registry does not serve.
+    std::fs::write(
+        workspace.join("Cargo.toml"),
+        format!("[package]\nname = \"{CRATE}\"\nversion = \"{LOCAL_ONLY}\"\nedition = \"2021\"\n"),
+    )
+    .unwrap();
+    std::fs::write(workspace.join("src/lib.rs"), "\n").unwrap();
+    std::fs::write(
+        workspace.join(".cargo/config.toml"),
+        format!(
+            "[registries.testreg]\nindex = \"file://{index}\"\n\n[registries.unreachable]\nindex = \"file://{missing}\"\n",
+            index = index.display(),
+            missing = base.join("no-such-index").display(),
+        ),
+    )
+    .unwrap();
+
+    CargoFixture { _root: root, workspace }
+}
+
+fn operation(key: &str, package_name: &str, version: &str) -> RegistryPublishOperation {
     RegistryPublishOperation {
-        package_dir: std::path::PathBuf::from("."),
-        package_name: "core-crate".to_owned(),
-        version: Version::parse("0.2.0", VersionGrammar::SemVer).unwrap(),
+        package_dir: PathBuf::from("."),
+        package_name: package_name.to_owned(),
+        version: Version::parse(version, VersionGrammar::SemVer).unwrap(),
         registry: PreparedRegistryBinding {
             key: RegistryKey(key.to_owned()),
-            endpoint: Some(endpoint.to_owned()),
+            endpoint: None,
             identity: RegistryBindingDigest::from_normalized_binding(key.as_bytes()),
-            protocol,
         },
         npm_access: None,
         npm_tag: None,
     }
 }
 
-fn cargo_operation(endpoint: &str) -> RegistryPublishOperation {
-    operation(endpoint, RegistryKey::CRATES_IO, RegistryProtocol::CargoSparseIndex)
-}
-
-fn pypi_operation(endpoint: &str) -> RegistryPublishOperation {
-    operation(endpoint, "pypi", RegistryProtocol::Http)
-}
-
-/// Runs one observation against `server`, returning the answer and the waits
-/// the retry policy would have spent.
-fn observe(ecosystem: Ecosystem, operation: &RegistryPublishOperation) -> (ProviderObservationV1, Vec<Duration>) {
+/// Runs one full observation -- real `cargo info` under the production retry
+/// policy -- from the fixture workspace root, and reports the waits the policy
+/// would have spent.
+fn observe_cargo(operation: &RegistryPublishOperation) -> (ProviderObservationV1, Vec<std::time::Duration>) {
     let runner = RealGitRunner;
     let sleeper = RecordingSleeper::new();
-    let root = std::env::temp_dir();
-    let context = ProviderContext::new(&root, &runner, None).with_sleeper(&sleeper);
-    let observation = registry_observation(adapter_for(ecosystem).unwrap(), &context, operation).unwrap();
+    let workspace = fixture().workspace.clone();
+    let context = ProviderContext::new(&workspace, &runner, None).with_sleeper(&sleeper);
+    let observation = registry_observation(adapter_for(Ecosystem::Cargo).unwrap(), &context, operation).unwrap();
     (observation, sleeper.waits())
 }
 
-/// One line of the captured sparse-index shape, renamed and re-versioned.
-fn index_line(version: &str, yanked: bool) -> String {
-    fixtures::crates_index_line("core-crate", version, CKSUM, yanked)
-}
-
-fn at_version(mut operation: RegistryPublishOperation, version: &str) -> RegistryPublishOperation {
-    operation.version = Version::parse(version, VersionGrammar::SemVer).unwrap();
-    operation
-}
-
-#[test]
-fn the_sparse_index_path_follows_cargos_length_layout_and_lowercases() {
-    assert_eq!(sparse_index_path("a"), "1/a");
-    assert_eq!(sparse_index_path("ab"), "2/ab");
-    assert_eq!(sparse_index_path("abc"), "3/a/abc");
-    assert_eq!(sparse_index_path("Core-Crate"), "co/re/core-crate");
-}
-
-#[test]
-fn a_served_unyanked_version_is_exact_and_carries_the_index_checksum() {
-    let server = LoopbackServer::start(|_| {
-        LoopbackResponse::new(
-            200,
-            format!("{}\n{}\n", index_line("0.1.0", false), index_line("0.2.0", false)),
-        )
-    });
-    let (observation, waits) = observe(Ecosystem::Cargo, &cargo_operation(&server.base_url()));
-    assert_eq!(
-        observation,
-        ProviderObservationV1::Exact {
-            evidence: ProviderEvidenceV1::RegistryVersion {
-                version: Version::parse("0.2.0", VersionGrammar::SemVer).unwrap(),
-                checksum: Some(ArtifactDigest::parse(CKSUM).unwrap()),
-                yanked: Some(false),
-            }
-        }
-    );
-    assert!(waits.is_empty());
-    assert_eq!(server.paths(), vec!["/co/re/core-crate".to_owned()]);
-}
-
-#[test]
-fn a_version_missing_from_a_served_index_is_absent_not_indeterminate() {
-    let server = LoopbackServer::start(|_| LoopbackResponse::new(200, index_line("0.1.0", false)));
-    let (observation, _) = observe(Ecosystem::Cargo, &cargo_operation(&server.base_url()));
-    assert_eq!(observation, ProviderObservationV1::Absent);
-}
-
-#[test]
-fn an_unknown_crate_answered_with_not_found_is_absent() {
-    let server = LoopbackServer::start(|_| fixtures::crates_index_not_found());
-    let (observation, _) = observe(Ecosystem::Cargo, &cargo_operation(&server.base_url()));
-    assert_eq!(observation, ProviderObservationV1::Absent);
-}
-
-/// The defect this whole mechanism exists for: `cargo info` reports a yanked
-/// version as absent, which would let a release "confirm" a version nobody can
-/// depend on.
-#[test]
-fn a_yanked_version_is_a_conflict_not_an_absence() {
-    let server = LoopbackServer::start(|_| LoopbackResponse::new(200, index_line("0.2.0", true)));
-    let (observation, _) = observe(Ecosystem::Cargo, &cargo_operation(&server.base_url()));
-    assert_eq!(
-        observation,
-        ProviderObservationV1::Conflict {
-            reason: ProviderConflictReason::RegistryVersionYanked
-        }
-    );
-}
-
-#[test]
-fn a_body_that_is_not_the_index_format_is_malformed_not_absent() {
-    let server = LoopbackServer::start(|_| LoopbackResponse::new(200, "<html>proxy interception</html>"));
-    let (observation, _) = observe(Ecosystem::Cargo, &cargo_operation(&server.base_url()));
-    assert_eq!(
-        observation,
-        ProviderObservationV1::Indeterminate {
-            cause: ProviderIndeterminateCause::MalformedResponse
-        }
-    );
-}
-
-#[test]
-fn a_rate_limited_answer_is_retried_after_the_servers_own_delay_and_then_settles() {
-    let attempts = AtomicUsize::new(0);
-    let server = LoopbackServer::start(move |_| {
-        if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
-            LoopbackResponse::new(429, "slow down").with_header("retry-after", "11")
-        } else {
-            LoopbackResponse::new(200, index_line("0.2.0", false))
-        }
-    });
-    let (observation, waits) = observe(Ecosystem::Cargo, &cargo_operation(&server.base_url()));
-    assert!(matches!(observation, ProviderObservationV1::Exact { .. }));
-    assert_eq!(waits, vec![Duration::from_secs(11)]);
-    assert_eq!(server.paths().len(), 2);
-}
-
-#[test]
-fn a_persistent_server_error_exhausts_the_attempts_and_reports_its_status() {
-    let server = LoopbackServer::start(|_| LoopbackResponse::new(503, "unavailable"));
-    let (observation, waits) = observe(Ecosystem::Cargo, &cargo_operation(&server.base_url()));
-    assert_eq!(
-        observation,
-        ProviderObservationV1::Indeterminate {
-            cause: ProviderIndeterminateCause::ProviderStatus { status: 503 }
-        }
-    );
-    assert_eq!(server.paths().len(), usize::try_from(OBSERVATION_MAX_ATTEMPTS).unwrap());
-    assert_eq!(
-        waits,
-        vec![
-            Duration::from_secs(2),
-            Duration::from_secs(4),
-            Duration::from_secs(8),
-            Duration::from_secs(16)
-        ]
-    );
-}
-
-#[test]
-fn a_plain_forbidden_answer_settles_immediately_rather_than_burning_the_attempts() {
-    let server = LoopbackServer::start(|_| LoopbackResponse::new(403, "forbidden"));
-    let (observation, waits) = observe(Ecosystem::Cargo, &cargo_operation(&server.base_url()));
-    assert_eq!(
-        observation,
-        ProviderObservationV1::Indeterminate {
-            cause: ProviderIndeterminateCause::ProviderStatus { status: 403 }
-        }
-    );
-    assert_eq!(server.paths().len(), 1);
-    assert!(waits.is_empty());
-}
-
-#[test]
-fn a_cargo_git_index_fails_closed_with_the_unsupported_protocol_cause() {
-    let operation = operation(
-        "https://github.example.invalid/index",
-        "private-cargo",
-        RegistryProtocol::CargoGitIndex,
-    );
-    let (observation, _) = observe(Ecosystem::Cargo, &operation);
-    assert_eq!(
-        observation,
-        ProviderObservationV1::Indeterminate {
-            cause: ProviderIndeterminateCause::UnsupportedProtocol
+fn exact_without_checksum(version: &str) -> ProviderObservationV1 {
+    ProviderObservationV1::Exact {
+        evidence: ProviderEvidenceV1::RegistryVersion {
+            version: Version::parse(version, VersionGrammar::SemVer).unwrap(),
+            checksum: None,
+            yanked: None,
         },
-        "a git index must never be guessed at over HTTP"
-    );
+    }
 }
 
+// ------------------------------------------- real cargo against a real index
+
 #[test]
-fn pypi_observes_its_json_endpoint_and_reports_the_first_files_digest() {
-    let server = LoopbackServer::start(|_| fixtures::pypi_version_response("core-crate", "0.2.0", CKSUM, false));
-    let (observation, _) = observe(Ecosystem::Pypi, &pypi_operation(&server.base_url()));
+fn a_version_the_registry_serves_is_exact_with_no_checksum_or_yank_claim() {
+    let (observation, waits) = observe_cargo(&operation("testreg", CRATE, PUBLISHED));
     assert_eq!(
         observation,
-        ProviderObservationV1::Exact {
-            evidence: ProviderEvidenceV1::RegistryVersion {
-                version: Version::parse("0.2.0", VersionGrammar::SemVer).unwrap(),
-                checksum: Some(ArtifactDigest::parse(CKSUM).unwrap()),
-                yanked: Some(false),
-            }
-        }
+        exact_without_checksum(PUBLISHED),
+        "`cargo info` reports neither the index checksum nor the yank flag, so the evidence must claim neither"
     );
-    assert_eq!(server.paths(), vec!["/pypi/core-crate/0.2.0/json".to_owned()]);
+    assert!(waits.is_empty(), "a settled answer must not be retried");
 }
 
 #[test]
-fn pypi_reports_not_found_as_absent_and_a_yanked_file_as_a_conflict() {
-    let server = LoopbackServer::start(|_| fixtures::pypi_not_found());
-    let (observation, _) = observe(Ecosystem::Pypi, &pypi_operation(&server.base_url()));
+fn a_version_the_registry_does_not_serve_is_absent() {
+    let (observation, _) = observe_cargo(&operation("testreg", CRATE, "9.9.9"));
     assert_eq!(observation, ProviderObservationV1::Absent);
+}
 
-    let yanked = LoopbackServer::start(|_| fixtures::pypi_version_response("core-crate", "0.2.0", CKSUM, true));
-    let (observation, _) = observe(Ecosystem::Pypi, &pypi_operation(&yanked.base_url()));
+#[test]
+fn a_crate_the_registry_has_never_heard_of_is_absent() {
+    let (observation, _) = observe_cargo(&operation("testreg", "core-crate-no-such-crate-zz", "1.0.0"));
+    assert_eq!(observation, ProviderObservationV1::Absent);
+}
+
+/// Real `cargo info` answers "could not find" for a yanked version exactly as
+/// it does for one that never existed, so the observation is `Absent`. That
+/// fails closed, not open: the publish that follows is refused by the registry
+/// and, since only an `Exact` observation may satisfy an operation, the run
+/// ends in `RegistryPublishUnconfirmed` rather than in a receipt.
+#[test]
+fn a_yanked_version_reads_as_absent_because_cargo_info_cannot_see_yanks() {
+    let (observation, _) = observe_cargo(&operation("testreg", CRATE, YANKED));
+    assert_eq!(observation, ProviderObservationV1::Absent);
+}
+
+/// D01: `cargo info` without `--registry` resolves the local workspace and
+/// reports its on-disk version as published. The observation always passes
+/// `--registry`, so the member's own version is still absent from the registry.
+#[test]
+fn a_local_workspace_member_of_the_same_name_is_not_read_as_a_published_version() {
+    let (observation, _) = observe_cargo(&operation("testreg", CRATE, LOCAL_ONLY));
     assert_eq!(
         observation,
-        ProviderObservationV1::Conflict {
-            reason: ProviderConflictReason::RegistryVersionYanked
+        ProviderObservationV1::Absent,
+        "the local manifest must never decide what the registry holds"
+    );
+}
+
+#[test]
+fn an_unreachable_registry_is_indeterminate_and_never_absent() {
+    let (observation, waits) = observe_cargo(&operation("unreachable", CRATE, PUBLISHED));
+    assert_eq!(
+        observation,
+        ProviderObservationV1::Indeterminate {
+            cause: ProviderIndeterminateCause::CommandFailed
+        },
+        "a registry that cannot be reached proves nothing; reading it as an absence would authorize a publish"
+    );
+    assert_eq!(waits.len(), 4, "the transient answer must exhaust the bounded retry");
+}
+
+/// The argv is the whole defence against the local-manifest read, so it is
+/// asserted on its own rather than only through its effects.
+#[test]
+fn the_observation_argv_always_names_a_registry() {
+    assert_eq!(
+        cargo_info_args("core-crate@0.2.0", "crates-io"),
+        ["info", "core-crate@0.2.0", "--registry", "crates-io"]
+    );
+    assert_eq!(
+        cargo_registry_name(&RegistryKey(RegistryKey::CRATES_IO.to_owned())),
+        "crates-io",
+        "callisto's logical cratesIo key is cargo's built-in crates-io registry"
+    );
+    assert_eq!(
+        cargo_registry_name(&RegistryKey("private-cargo".to_owned())),
+        "private-cargo"
+    );
+}
+
+// ------------------------------- captured real bytes fed to the classifier
+
+fn classify(raw: &str, spec: &str, version: &str) -> Attempt<ProviderObservationV1> {
+    let captured = fixtures::captured_command(raw);
+    let output = CommandOutput {
+        exit_code: Some(captured.exit_code),
+        stdout: captured.stdout,
+        stderr: captured.stderr,
+    };
+    classify_cargo_info(&output, spec, &Version::parse(version, VersionGrammar::SemVer).unwrap())
+}
+
+fn settled_value(attempt: Attempt<ProviderObservationV1>) -> ProviderObservationV1 {
+    match attempt {
+        Attempt::Settled(observation) => observation,
+        other => panic!("expected a settled observation, got {other:?}"),
+    }
+}
+
+#[test]
+fn the_captured_found_run_is_exact_for_the_version_it_names() {
+    assert_eq!(
+        settled_value(classify(fixtures::CARGO_INFO_FOUND, "serde@1.0.0", "1.0.0")),
+        exact_without_checksum("1.0.0")
+    );
+}
+
+/// The captured found run prints `version: 1.0.0 (latest ...)`; a different
+/// requested version must not match that line.
+#[test]
+fn the_captured_found_run_does_not_satisfy_another_version() {
+    assert_eq!(
+        classify(fixtures::CARGO_INFO_FOUND, "serde@1.0.229", "1.0.229"),
+        Attempt::Transient {
+            value: ProviderObservationV1::Indeterminate {
+                cause: ProviderIndeterminateCause::MalformedResponse
+            },
+            retry_after: None
         }
     );
 }
 
-/// A PyPI publish must be able to reach a receipt: an adapter that declares no
-/// version query can never confirm one.
 #[test]
-fn every_registry_adapter_declares_an_observable_version() {
-    for ecosystem in [Ecosystem::Cargo, Ecosystem::Npm, Ecosystem::Pypi] {
-        assert!(
-            adapter_for(ecosystem).unwrap().can_observe_versions(),
-            "{ecosystem:?} must be able to prove an exact published version"
+fn the_captured_absent_unknown_and_yanked_runs_are_all_absent() {
+    for (raw, spec, version) in [
+        (
+            fixtures::CARGO_INFO_ABSENT_VERSION,
+            "serde@0.0.0-definitely-not",
+            "0.0.0-definitely-not",
+        ),
+        (
+            fixtures::CARGO_INFO_UNKNOWN_CRATE,
+            "callisto-model-no-such-crate-zz@1.0.0",
+            "1.0.0",
+        ),
+        (fixtures::CARGO_INFO_YANKED, "chacha20@0.10.1", "0.10.1"),
+    ] {
+        assert_eq!(
+            settled_value(classify(raw, spec, version)),
+            ProviderObservationV1::Absent,
+            "captured run for {spec} must be absent"
         );
+    }
+}
+
+/// The captured network failure exits 101 like the three above, so only the
+/// exact "could not find" phrase may be read as an absence.
+#[test]
+fn the_captured_network_failure_is_transient_not_absent() {
+    assert_eq!(
+        classify(fixtures::CARGO_INFO_NETWORK_FAILURE, "serde@1.0.0", "1.0.0"),
+        Attempt::Transient {
+            value: ProviderObservationV1::Indeterminate {
+                cause: ProviderIndeterminateCause::CommandFailed
+            },
+            retry_after: None
+        }
+    );
+}
+
+#[test]
+fn the_captured_absent_run_of_one_crate_does_not_answer_for_another() {
+    assert_eq!(
+        classify(fixtures::CARGO_INFO_ABSENT_VERSION, "other-crate@1.0.0", "1.0.0"),
+        Attempt::Transient {
+            value: ProviderObservationV1::Indeterminate {
+                cause: ProviderIndeterminateCause::CommandFailed
+            },
+            retry_after: None
+        },
+        "an answer about a different spec proves nothing about this one"
+    );
+}
+
+/// `npm view` is unchanged, and the captured runs are what its classification
+/// is held to.
+#[test]
+fn the_captured_npm_view_runs_are_exact_and_absent() {
+    let found = fixtures::captured_command(fixtures::NPM_VIEW_FOUND);
+    assert_eq!(found.exit_code, 0);
+    assert_eq!(found.stdout.trim(), "\"1.3.0\"");
+    let missing = fixtures::captured_command(fixtures::NPM_VIEW_MISSING);
+    assert_eq!(missing.exit_code, 1);
+    assert!(
+        format!("{}{}", missing.stdout, missing.stderr)
+            .to_ascii_lowercase()
+            .contains("e404"),
+        "the npm absence classifier keys on E404: {missing:?}",
+        missing = missing.stderr
+    );
+}
+
+// ----------------------------------------------------- adapter capabilities
+
+/// pip cannot prove a PyPI version absent, so the PyPI adapter says so and the
+/// plan-time gate refuses the publish rather than letting it reach an effect it
+/// could never confirm.
+#[test]
+fn pypi_is_not_observable_and_is_refused_at_plan_time() {
+    assert!(!adapter_for(Ecosystem::Pypi).unwrap().can_observe_versions());
+    let error = require_observable_registry(Ecosystem::Pypi).unwrap_err();
+    let rendered = error.to_string();
+    assert!(
+        matches!(
+            error,
+            GraphError::ReleasePreconditionUnmet {
+                requirement: ReleasePreconditionRequirement::ObservableRegistryClient
+            }
+        ),
+        "expected the observable-registry precondition, got {error:?}"
+    );
+    assert!(
+        rendered.contains("pip cannot distinguish") && rendered.contains("unreachable index"),
+        "the refusal must say why PyPI cannot be observed: {rendered}"
+    );
+}
+
+#[test]
+fn cargo_and_npm_are_observable_and_pass_the_plan_time_gate() {
+    for ecosystem in [Ecosystem::Cargo, Ecosystem::Npm] {
+        assert!(adapter_for(ecosystem).unwrap().can_observe_versions());
+        assert!(require_observable_registry(ecosystem).is_ok());
     }
 }
 
@@ -258,146 +429,4 @@ fn an_ecosystem_with_no_registry_adapter_is_unsupported() {
             feature: UnsupportedReleaseFeature::Ecosystem
         })
     ));
-}
-
-// Captured provider bytes (testing/fixtures/providers) fed to the production parsers.
-
-fn exact(version: &str, checksum: &str) -> ProviderObservationV1 {
-    ProviderObservationV1::Exact {
-        evidence: ProviderEvidenceV1::RegistryVersion {
-            version: Version::parse(version, VersionGrammar::SemVer).unwrap(),
-            checksum: Some(ArtifactDigest::parse(checksum).unwrap()),
-            yanked: Some(false),
-        },
-    }
-}
-
-fn observed(attempt: Attempt<ProviderObservationV1>) -> ProviderObservationV1 {
-    match attempt {
-        Attempt::Settled(observation) => observation,
-        other => panic!("expected a settled observation, got {other:?}"),
-    }
-}
-
-#[test]
-fn the_captured_crates_io_response_parses_and_a_listed_version_is_exact() {
-    let response = parse_http_response(fixtures::CRATES_INDEX_200).unwrap();
-    assert_eq!(response.status, 200);
-    assert_eq!(response.header("content-type"), Some("text/plain"));
-    assert_eq!(response.body.lines().count(), 3);
-    let operation = at_version(cargo_operation("http://unused/"), "0.3.2");
-    assert_eq!(
-        observed(classify_sparse_index(&response.body, &operation)),
-        exact(
-            "0.3.2",
-            "1d139face3a57e64cca892588fcb27693dce30c39aff26841ab3c6ef22d4b151"
-        )
-    );
-}
-
-#[test]
-fn a_version_the_captured_index_does_not_list_is_absent() {
-    let response = parse_http_response(fixtures::CRATES_INDEX_200).unwrap();
-    let operation = at_version(cargo_operation("http://unused/"), "9.9.9");
-    assert_eq!(
-        observed(classify_sparse_index(&response.body, &operation)),
-        ProviderObservationV1::Absent
-    );
-}
-
-#[test]
-fn the_captured_yanked_line_is_a_yanked_conflict() {
-    let operation = at_version(cargo_operation("http://unused/"), "0.10.1");
-    assert_eq!(
-        observed(classify_sparse_index(fixtures::CRATES_YANKED_LINE, &operation)),
-        ProviderObservationV1::Conflict {
-            reason: ProviderConflictReason::RegistryVersionYanked
-        }
-    );
-}
-
-#[test]
-fn a_truncated_captured_index_line_is_malformed_not_absent() {
-    let line = fixtures::CRATES_YANKED_LINE;
-    let operation = at_version(cargo_operation("http://unused/"), "0.10.1");
-    assert_eq!(
-        observed(classify_sparse_index(&line[..line.len() / 2], &operation)),
-        ProviderObservationV1::Indeterminate {
-            cause: ProviderIndeterminateCause::MalformedResponse
-        }
-    );
-}
-
-#[test]
-fn the_captured_registry_answers_are_observed_end_to_end_over_the_wire() {
-    let listed = LoopbackServer::start(|_| LoopbackResponse::from_raw_http(fixtures::CRATES_INDEX_200));
-    let (observation, _) = observe(
-        Ecosystem::Cargo,
-        &at_version(cargo_operation(&listed.base_url()), "0.3.1"),
-    );
-    assert_eq!(
-        observation,
-        exact(
-            "0.3.1",
-            "17d477c63225dccaf4de0d0e6d576192d372c8ce8da95100ab97b9132e0c74e2"
-        )
-    );
-    let missing = LoopbackServer::start(|_| LoopbackResponse::from_raw_http(fixtures::CRATES_INDEX_404));
-    assert_eq!(
-        observe(Ecosystem::Cargo, &cargo_operation(&missing.base_url())).0,
-        ProviderObservationV1::Absent
-    );
-    let pypi_missing = LoopbackServer::start(|_| LoopbackResponse::from_raw_http(fixtures::PYPI_404));
-    assert_eq!(
-        observe(Ecosystem::Pypi, &pypi_operation(&pypi_missing.base_url())).0,
-        ProviderObservationV1::Absent
-    );
-}
-
-#[test]
-fn the_captured_pypi_document_is_exact_yanked_or_malformed() {
-    let response = parse_http_response(fixtures::PYPI_200).unwrap();
-    assert_eq!(response.status, 200);
-    let operation = at_version(pypi_operation("http://unused/"), "2.31.0");
-    assert_eq!(
-        observed(classify_pypi_version(&response.body, &operation)),
-        exact(
-            "2.31.0",
-            "58cd2187c01e70e6e26505bca751777aa9f2ee0b7f4300988b709f44e013003f"
-        )
-    );
-
-    let mut yanked: serde_json::Value = serde_json::from_str(&response.body).unwrap();
-    yanked["urls"][1]["yanked"] = true.into();
-    assert_eq!(
-        observed(classify_pypi_version(&yanked.to_string(), &operation)),
-        ProviderObservationV1::Conflict {
-            reason: ProviderConflictReason::RegistryVersionYanked
-        }
-    );
-
-    let mut no_files: serde_json::Value = serde_json::from_str(&response.body).unwrap();
-    no_files["urls"] = serde_json::json!([]);
-    assert_eq!(
-        observed(classify_pypi_version(&no_files.to_string(), &operation)),
-        ProviderObservationV1::Indeterminate {
-            cause: ProviderIndeterminateCause::RegistryVersionUnverified
-        }
-    );
-
-    let mut malformed: serde_json::Value = serde_json::from_str(&response.body).unwrap();
-    malformed.as_object_mut().unwrap().remove("urls");
-    assert_eq!(
-        observed(classify_pypi_version(&malformed.to_string(), &operation)),
-        ProviderObservationV1::Indeterminate {
-            cause: ProviderIndeterminateCause::MalformedResponse
-        }
-    );
-}
-
-#[test]
-fn the_captured_not_found_responses_report_status_404() {
-    for raw in [fixtures::CRATES_INDEX_404, fixtures::PYPI_404] {
-        assert_eq!(parse_http_response(raw).unwrap().status, 404);
-    }
 }
