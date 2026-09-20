@@ -139,3 +139,8 @@ role). An intent from an earlier version is rejected by
 `callisto::release_intent_schema_unsupported`, which names re-planning as the
 fix. `callisto schema --type release-receipt|release-state` publishes
 the wire shape, guarded by `crates/callisto-cli/tests/schema_guard_test.rs`.
+
+## Provider contract tier
+
+Fake providers serve captured real responses (`testing/fixtures/providers/<provider>/`, provenance in each `PROVENANCE.md`; `LoopbackResponse::from_raw_http` and `loopback::fixtures` in `testing/loopback_http.rs` template names and versions into them), every fake rejects flags and subcommands outside `TOOL_SHAPES` in `tests/common/release_harness.rs`, and `provider_flag_contract_tests.rs` checks each emitted flag against the real tool's own help.
+Refresh fixtures with `just provider-fixtures` (read-only GETs; review the diff, update `PROVENANCE.md`); `just provider-contract` re-fetches live and asserts shapes still match. Both are manual and network-dependent, not part of `just ci`.

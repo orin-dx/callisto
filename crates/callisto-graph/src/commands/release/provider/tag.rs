@@ -178,9 +178,19 @@ fn observed_remote_tag(
             retry_after: None,
         });
     }
+    classify_ls_remote(&observed.stdout, &reference, &peeled, &args).map(Attempt::Settled)
+}
+
+/// Reads `ls-remote` output for `reference` and its peeled `^{}` form.
+fn classify_ls_remote(
+    stdout: &str,
+    reference: &str,
+    peeled: &str,
+    args: &[&str],
+) -> Result<RemoteTagObservation, GraphError> {
     let mut tag_object = None;
     let mut peeled_commit = None;
-    for line in observed.stdout.lines() {
+    for line in stdout.lines() {
         let Some((sha, found)) = line.split_once('\t') else {
             continue;
         };
@@ -191,10 +201,10 @@ fn observed_remote_tag(
         }
     }
     let Some(sha) = peeled_commit.or(tag_object) else {
-        return Ok(Attempt::Settled(RemoteTagObservation::Absent));
+        return Ok(RemoteTagObservation::Absent);
     };
     if peeled_commit.is_none() {
-        return Ok(Attempt::Settled(RemoteTagObservation::Unannotated));
+        return Ok(RemoteTagObservation::Unannotated);
     }
     let target = CommitSha::parse(sha.trim()).map_err(|error| GraphError::ReleaseCommand {
         program: "git".to_string(),
@@ -203,7 +213,7 @@ fn observed_remote_tag(
             detail: error.to_string(),
         },
     })?;
-    Ok(Attempt::Settled(RemoteTagObservation::Annotated { target }))
+    Ok(RemoteTagObservation::Annotated { target })
 }
 
 fn observed_local_tag(context: &ProviderContext<'_>, name: &TagName) -> Result<LocalTagObservation, GraphError> {
@@ -266,4 +276,50 @@ fn observed_local_tag(context: &ProviderContext<'_>, name: &TagName) -> Result<L
         target,
         annotation: annotation.to_string(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::loopback::fixtures;
+    use super::*;
+
+    fn classify(captured: &str, tag: &str) -> Result<RemoteTagObservation, GraphError> {
+        let reference = format!("refs/tags/{tag}");
+        let peeled = format!("{reference}^{{}}");
+        classify_ls_remote(captured, &reference, &peeled, &["ls-remote"])
+    }
+
+    #[test]
+    fn a_captured_annotated_tag_resolves_to_its_peeled_commit() {
+        assert_eq!(
+            classify(fixtures::LS_REMOTE_ANNOTATED, "callisto-changelog@0.3.1").unwrap(),
+            RemoteTagObservation::Annotated {
+                target: CommitSha::parse("caf945cc9d5a11a71c57f419d1a73d0627c1756b").unwrap()
+            }
+        );
+    }
+
+    #[test]
+    fn a_captured_lightweight_tag_is_unannotated() {
+        assert_eq!(
+            classify(fixtures::LS_REMOTE_LIGHTWEIGHT, "callisto-vcs@0.2.0").unwrap(),
+            RemoteTagObservation::Unannotated
+        );
+    }
+
+    #[test]
+    fn captured_empty_output_is_an_absent_tag_and_garbled_output_is_not() {
+        assert_eq!(
+            classify(fixtures::LS_REMOTE_ABSENT, "callisto-no-such-tag").unwrap(),
+            RemoteTagObservation::Absent
+        );
+        let garbled = fixtures::LS_REMOTE_ANNOTATED.replace("caf945cc9d5a11a71c57f419d1a73d0627c1756b", "not-a-sha");
+        assert!(matches!(
+            classify(&garbled, "callisto-changelog@0.3.1"),
+            Err(GraphError::ReleaseCommand {
+                failure: CommandFailure::MalformedOutput { .. },
+                ..
+            })
+        ));
+    }
 }

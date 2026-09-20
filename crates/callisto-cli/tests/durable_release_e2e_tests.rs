@@ -112,6 +112,7 @@ fn merged_release_commit_executes_exactly_once_through_real_cli() {
     assert!(git(root, &["tag", "--list", "core-crate@0.2.0"]).contains("core-crate@0.2.0"));
     let effects = fs::read_to_string(&log).unwrap();
     assert!(effects.contains("cargo publish"));
+    assert_argv_within_allowlists(&log, &git_trace);
     assert!(effects.contains("git push"));
     assert!(effects.contains("gh release create"));
     assert!(
@@ -208,6 +209,7 @@ fn product_artifacts_are_uploaded_once_and_recovered_from_provider_observation()
         "provider-observed recovery must never upload an existing product artifact again"
     );
     assert!(state.with_extension("receipt.json").exists());
+    assert_argv_within_allowlists(&log, &git_trace);
 }
 
 #[test]
@@ -280,6 +282,7 @@ fn explicit_recovery_reconstructs_missing_state_from_remote_evidence() {
         );
     }
     assert!(state.with_extension("receipt.json").exists());
+    assert_argv_within_allowlists(&log, &git_trace);
 }
 
 #[test]

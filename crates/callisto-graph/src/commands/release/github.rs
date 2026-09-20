@@ -219,4 +219,48 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn the_captured_gh_output_parses_with_its_status_headers_and_body() {
+        use super::super::provider::loopback::fixtures;
+        let output = CommandOutput {
+            exit_code: Some(0),
+            stdout: fixtures::GITHUB_RELEASE_PUBLISHED.to_owned(),
+            stderr: String::new(),
+        };
+        let response = github_api_response("gh", &["api"], &output).unwrap();
+        assert_eq!(response.status, 200);
+        assert_eq!(response.header("content-type"), Some("application/json; charset=utf-8"));
+        let release: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+        assert_eq!(release["tag_name"], "v2.101.0");
+        assert_eq!(release["draft"], false);
+        assert_eq!(release["immutable"], true);
+        assert_eq!(release["assets"].as_array().unwrap().len(), 2);
+        assert!(release["assets"][0]["digest"].as_str().unwrap().starts_with("sha256:"));
+
+        let missing = CommandOutput {
+            exit_code: Some(1),
+            stdout: fixtures::GITHUB_RELEASE_404.to_owned(),
+            stderr: "gh: Not Found (HTTP 404)".to_owned(),
+        };
+        assert_eq!(github_api_response("gh", &["api"], &missing).unwrap().status, 404);
+    }
+
+    #[test]
+    fn a_truncated_captured_response_is_malformed_not_a_release() {
+        use super::super::provider::loopback::fixtures;
+        let truncated = &fixtures::GITHUB_RELEASE_PUBLISHED[..200];
+        let output = CommandOutput {
+            exit_code: Some(0),
+            stdout: truncated.to_owned(),
+            stderr: String::new(),
+        };
+        assert!(matches!(
+            github_api_response("gh", &["api"], &output),
+            Err(GraphError::ReleaseCommand {
+                failure: CommandFailure::MalformedOutput { .. },
+                ..
+            })
+        ));
+    }
 }

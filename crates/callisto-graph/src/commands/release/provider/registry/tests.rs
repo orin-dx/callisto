@@ -9,7 +9,8 @@ use std::time::Duration;
 
 use callisto_model::{RegistryBindingDigest, RegistryKey, Version, VersionGrammar};
 
-use super::super::loopback::{LoopbackResponse, LoopbackServer};
+use super::super::http::parse_http_response;
+use super::super::loopback::{fixtures, LoopbackResponse, LoopbackServer};
 use super::super::policy::tests::RecordingSleeper;
 use super::super::policy::OBSERVATION_MAX_ATTEMPTS;
 use super::*;
@@ -53,8 +54,14 @@ fn observe(ecosystem: Ecosystem, operation: &RegistryPublishOperation) -> (Provi
     (observation, sleeper.waits())
 }
 
+/// One line of the captured sparse-index shape, renamed and re-versioned.
 fn index_line(version: &str, yanked: bool) -> String {
-    format!("{{\"name\":\"core-crate\",\"vers\":\"{version}\",\"cksum\":\"{CKSUM}\",\"yanked\":{yanked}}}")
+    fixtures::crates_index_line("core-crate", version, CKSUM, yanked)
+}
+
+fn at_version(mut operation: RegistryPublishOperation, version: &str) -> RegistryPublishOperation {
+    operation.version = Version::parse(version, VersionGrammar::SemVer).unwrap();
+    operation
 }
 
 #[test]
@@ -97,7 +104,7 @@ fn a_version_missing_from_a_served_index_is_absent_not_indeterminate() {
 
 #[test]
 fn an_unknown_crate_answered_with_not_found_is_absent() {
-    let server = LoopbackServer::start(|_| LoopbackResponse::not_found());
+    let server = LoopbackServer::start(|_| fixtures::crates_index_not_found());
     let (observation, _) = observe(Ecosystem::Cargo, &cargo_operation(&server.base_url()));
     assert_eq!(observation, ProviderObservationV1::Absent);
 }
@@ -200,12 +207,7 @@ fn a_cargo_git_index_fails_closed_with_the_unsupported_protocol_cause() {
 
 #[test]
 fn pypi_observes_its_json_endpoint_and_reports_the_first_files_digest() {
-    let server = LoopbackServer::start(|_| {
-        LoopbackResponse::new(
-            200,
-            format!("{{\"urls\":[{{\"yanked\":false,\"digests\":{{\"sha256\":\"{CKSUM}\"}}}}]}}"),
-        )
-    });
+    let server = LoopbackServer::start(|_| fixtures::pypi_version_response("core-crate", "0.2.0", CKSUM, false));
     let (observation, _) = observe(Ecosystem::Pypi, &pypi_operation(&server.base_url()));
     assert_eq!(
         observation,
@@ -222,16 +224,11 @@ fn pypi_observes_its_json_endpoint_and_reports_the_first_files_digest() {
 
 #[test]
 fn pypi_reports_not_found_as_absent_and_a_yanked_file_as_a_conflict() {
-    let server = LoopbackServer::start(|_| LoopbackResponse::not_found());
+    let server = LoopbackServer::start(|_| fixtures::pypi_not_found());
     let (observation, _) = observe(Ecosystem::Pypi, &pypi_operation(&server.base_url()));
     assert_eq!(observation, ProviderObservationV1::Absent);
 
-    let yanked = LoopbackServer::start(|_| {
-        LoopbackResponse::new(
-            200,
-            format!("{{\"urls\":[{{\"yanked\":true,\"digests\":{{\"sha256\":\"{CKSUM}\"}}}}]}}"),
-        )
-    });
+    let yanked = LoopbackServer::start(|_| fixtures::pypi_version_response("core-crate", "0.2.0", CKSUM, true));
     let (observation, _) = observe(Ecosystem::Pypi, &pypi_operation(&yanked.base_url()));
     assert_eq!(
         observation,
@@ -261,4 +258,146 @@ fn an_ecosystem_with_no_registry_adapter_is_unsupported() {
             feature: UnsupportedReleaseFeature::Ecosystem
         })
     ));
+}
+
+// Captured provider bytes (testing/fixtures/providers) fed to the production parsers.
+
+fn exact(version: &str, checksum: &str) -> ProviderObservationV1 {
+    ProviderObservationV1::Exact {
+        evidence: ProviderEvidenceV1::RegistryVersion {
+            version: Version::parse(version, VersionGrammar::SemVer).unwrap(),
+            checksum: Some(ArtifactDigest::parse(checksum).unwrap()),
+            yanked: Some(false),
+        },
+    }
+}
+
+fn observed(attempt: Attempt<ProviderObservationV1>) -> ProviderObservationV1 {
+    match attempt {
+        Attempt::Settled(observation) => observation,
+        other => panic!("expected a settled observation, got {other:?}"),
+    }
+}
+
+#[test]
+fn the_captured_crates_io_response_parses_and_a_listed_version_is_exact() {
+    let response = parse_http_response(fixtures::CRATES_INDEX_200).unwrap();
+    assert_eq!(response.status, 200);
+    assert_eq!(response.header("content-type"), Some("text/plain"));
+    assert_eq!(response.body.lines().count(), 3);
+    let operation = at_version(cargo_operation("http://unused/"), "0.3.2");
+    assert_eq!(
+        observed(classify_sparse_index(&response.body, &operation)),
+        exact(
+            "0.3.2",
+            "1d139face3a57e64cca892588fcb27693dce30c39aff26841ab3c6ef22d4b151"
+        )
+    );
+}
+
+#[test]
+fn a_version_the_captured_index_does_not_list_is_absent() {
+    let response = parse_http_response(fixtures::CRATES_INDEX_200).unwrap();
+    let operation = at_version(cargo_operation("http://unused/"), "9.9.9");
+    assert_eq!(
+        observed(classify_sparse_index(&response.body, &operation)),
+        ProviderObservationV1::Absent
+    );
+}
+
+#[test]
+fn the_captured_yanked_line_is_a_yanked_conflict() {
+    let operation = at_version(cargo_operation("http://unused/"), "0.10.1");
+    assert_eq!(
+        observed(classify_sparse_index(fixtures::CRATES_YANKED_LINE, &operation)),
+        ProviderObservationV1::Conflict {
+            reason: ProviderConflictReason::RegistryVersionYanked
+        }
+    );
+}
+
+#[test]
+fn a_truncated_captured_index_line_is_malformed_not_absent() {
+    let line = fixtures::CRATES_YANKED_LINE;
+    let operation = at_version(cargo_operation("http://unused/"), "0.10.1");
+    assert_eq!(
+        observed(classify_sparse_index(&line[..line.len() / 2], &operation)),
+        ProviderObservationV1::Indeterminate {
+            cause: ProviderIndeterminateCause::MalformedResponse
+        }
+    );
+}
+
+#[test]
+fn the_captured_registry_answers_are_observed_end_to_end_over_the_wire() {
+    let listed = LoopbackServer::start(|_| LoopbackResponse::from_raw_http(fixtures::CRATES_INDEX_200));
+    let (observation, _) = observe(
+        Ecosystem::Cargo,
+        &at_version(cargo_operation(&listed.base_url()), "0.3.1"),
+    );
+    assert_eq!(
+        observation,
+        exact(
+            "0.3.1",
+            "17d477c63225dccaf4de0d0e6d576192d372c8ce8da95100ab97b9132e0c74e2"
+        )
+    );
+    let missing = LoopbackServer::start(|_| LoopbackResponse::from_raw_http(fixtures::CRATES_INDEX_404));
+    assert_eq!(
+        observe(Ecosystem::Cargo, &cargo_operation(&missing.base_url())).0,
+        ProviderObservationV1::Absent
+    );
+    let pypi_missing = LoopbackServer::start(|_| LoopbackResponse::from_raw_http(fixtures::PYPI_404));
+    assert_eq!(
+        observe(Ecosystem::Pypi, &pypi_operation(&pypi_missing.base_url())).0,
+        ProviderObservationV1::Absent
+    );
+}
+
+#[test]
+fn the_captured_pypi_document_is_exact_yanked_or_malformed() {
+    let response = parse_http_response(fixtures::PYPI_200).unwrap();
+    assert_eq!(response.status, 200);
+    let operation = at_version(pypi_operation("http://unused/"), "2.31.0");
+    assert_eq!(
+        observed(classify_pypi_version(&response.body, &operation)),
+        exact(
+            "2.31.0",
+            "58cd2187c01e70e6e26505bca751777aa9f2ee0b7f4300988b709f44e013003f"
+        )
+    );
+
+    let mut yanked: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+    yanked["urls"][1]["yanked"] = true.into();
+    assert_eq!(
+        observed(classify_pypi_version(&yanked.to_string(), &operation)),
+        ProviderObservationV1::Conflict {
+            reason: ProviderConflictReason::RegistryVersionYanked
+        }
+    );
+
+    let mut no_files: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+    no_files["urls"] = serde_json::json!([]);
+    assert_eq!(
+        observed(classify_pypi_version(&no_files.to_string(), &operation)),
+        ProviderObservationV1::Indeterminate {
+            cause: ProviderIndeterminateCause::RegistryVersionUnverified
+        }
+    );
+
+    let mut malformed: serde_json::Value = serde_json::from_str(&response.body).unwrap();
+    malformed.as_object_mut().unwrap().remove("urls");
+    assert_eq!(
+        observed(classify_pypi_version(&malformed.to_string(), &operation)),
+        ProviderObservationV1::Indeterminate {
+            cause: ProviderIndeterminateCause::MalformedResponse
+        }
+    );
+}
+
+#[test]
+fn the_captured_not_found_responses_report_status_404() {
+    for raw in [fixtures::CRATES_INDEX_404, fixtures::PYPI_404] {
+        assert_eq!(parse_http_response(raw).unwrap().status, 404);
+    }
 }

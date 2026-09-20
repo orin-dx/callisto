@@ -1,9 +1,11 @@
 //! Shared black-box release harness: real git fixtures plus fake `cargo`,
 //! `gh` and `git` programs installed on PATH.
 //!
-//! The legacy fakes (`fake_publishers`) are deliberately permissive and are
-//! kept for the durable-release tests that depend on them. The `Rig` fakes
-//! model the real tools (see `Realism`) and are opt-in per defect.
+//! Every fake is strict: it accepts only the invocation shapes in `TOOL_SHAPES`
+//! and answers with responses templated from the captured provider fixtures
+//! under `testing/fixtures/providers/`. The same table drives the real-tool
+//! flag contract (`provider_flag_contract_tests.rs`) and
+//! `assert_argv_within_allowlists`.
 #![cfg(unix)]
 #![allow(dead_code, unused_imports)]
 
@@ -20,7 +22,7 @@ use tempfile::TempDir;
 #[path = "../../../../testing/loopback_http.rs"]
 pub mod loopback;
 
-pub use loopback::{LoopbackRequest, LoopbackResponse, LoopbackServer};
+pub use loopback::{fixtures, LoopbackRequest, LoopbackResponse, LoopbackServer};
 
 /// The loopback sparse index and PyPI endpoint the fixtures bind their registry
 /// to, so no end-to-end test can reach a real registry.
@@ -30,7 +32,7 @@ pub use loopback::{LoopbackRequest, LoopbackResponse, LoopbackServer};
 /// The server answers from exactly those files, so "publish then observe" is
 /// one mechanism rather than two fakes agreeing by accident.
 pub mod test_registry {
-    use super::{BTreeMap, LoopbackResponse, LoopbackServer, Mutex, OnceLock, Path, PathBuf};
+    use super::{fixtures, BTreeMap, LoopbackResponse, LoopbackServer, Mutex, OnceLock, Path, PathBuf};
 
     /// Any 64-character lowercase hex value satisfies the checksum contract;
     /// the fixtures assert on presence, not on a particular digest.
@@ -64,9 +66,10 @@ pub mod test_registry {
     }
 
     /// `/{token}/{index path...}/{name}` for cargo, `/{token}/pypi/{name}/{version}/json` for PyPI.
+    /// Bodies are the captured provider responses with names and versions substituted.
     fn answer(path: &str) -> LoopbackResponse {
-        let mut segments = path.trim_start_matches('/').split('/');
-        let Some(token) = segments.next() else {
+        let segments: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+        let Some(token) = segments.first().copied() else {
             return LoopbackResponse::not_found();
         };
         if let Some(status) = registry().statuses.lock().unwrap().get(token).copied() {
@@ -75,17 +78,23 @@ pub mod test_registry {
         let Some(directory) = registry().markers.lock().unwrap().get(token).cloned() else {
             return LoopbackResponse::not_found();
         };
-        let Some(name) = segments.next_back() else {
-            return LoopbackResponse::not_found();
-        };
-        let Ok(version) = std::fs::read_to_string(directory.join(format!("published.{name}"))) else {
-            return LoopbackResponse::not_found();
-        };
-        let version = version.trim();
-        LoopbackResponse::new(
-            200,
-            format!("{{\"name\":\"{name}\",\"vers\":\"{version}\",\"cksum\":\"{FIXTURE_CKSUM}\",\"yanked\":false}}\n"),
-        )
+        let pypi = segments.get(1) == Some(&"pypi");
+        let name = if pypi { segments.get(2) } else { segments.last() };
+        let published = name.and_then(|name| {
+            std::fs::read_to_string(directory.join(format!("published.{name}")))
+                .ok()
+                .map(|version| (*name, version))
+        });
+        match (published, pypi) {
+            (None, true) => fixtures::pypi_not_found(),
+            (None, false) => fixtures::crates_index_not_found(),
+            (Some((name, version)), true) => {
+                fixtures::pypi_version_response(name, version.trim(), FIXTURE_CKSUM, false)
+            }
+            (Some((name, version)), false) => {
+                fixtures::crates_index_response(name, &[(version.trim(), FIXTURE_CKSUM, false)])
+            }
+        }
     }
 
     fn token_for(root: &Path) -> String {
@@ -560,30 +569,26 @@ pub fn fake_publishers(
     };
     fs::write(
         bin.join("cargo"),
-        RIG_CARGO.replacen("#!/bin/sh\n", &format!("#!/bin/sh\n{preset}"), 1),
+        rig_cargo().replacen("#!/bin/sh\n", &format!("#!/bin/sh\n{preset}"), 1),
     )
     .unwrap();
     fs::write(
         bin.join("git"),
         format!(
-            "#!/bin/sh\nprintf 'git %s\\n' \"$*\" >> \"$CALLISTO_TEST_GIT_TRACE\"\n{FAKE_GIT_REMOTE_TAGS}\nif [ \"$1\" = push ]; then\n  printf 'git %s\\n' \"$*\" >> \"$CALLISTO_TEST_LOG\"\n  record_pushed_tag \"$3\"\n  exit 0\nfi\nexec \"$CALLISTO_TEST_REAL_GIT\" \"$@\"\n"
+            "#!/bin/sh\nprintf 'git %s\\n' \"$*\" >> \"$CALLISTO_TEST_GIT_TRACE\"\n{FAKE_GIT_REMOTE_TAGS}\nif [ \"$1\" = push ]; then\n  no_flags_allowed \"$@\"\n  printf 'git %s\\n' \"$*\" >> \"$CALLISTO_TEST_LOG\"\n  record_pushed_tag \"$3\"\n  exit 0\nfi\nexec \"$CALLISTO_TEST_REAL_GIT\" \"$@\"\n"
         ),
     )
     .unwrap();
     fs::write(
         bin.join("gh"),
-        format!(
-            "#!/bin/sh\n\
-             printf 'gh %s\\n' \"$*\" >> \"$CALLISTO_TEST_LOG\"\n\
-             CALLISTO_TEST_FORGE_COMMITISH=${{CALLISTO_TEST_FORGE_COMMITISH:-{release_commit}}}\n\
-             {FAKE_GH_FORGE}\n\
-             if [ \"$1\" = attestation ] && [ \"$2\" = verify ]; then\n  exit 0\nfi\n\
-             if [ \"$1\" = api ]; then\n  for a in \"$@\"; do endpoint=$a; done\n  gh_api \"$endpoint\"\n  exit 0\nfi\n\
-             if [ \"$1\" = release ]; then\n  shift\n  gh_release \"$@\"\nfi\n\
-             exit 0\n"
+        rig_gh().replacen(
+            "#!/bin/sh\n",
+            &format!("#!/bin/sh\nCALLISTO_TEST_FORGE_COMMITISH=${{CALLISTO_TEST_FORGE_COMMITISH:-{release_commit}}}\n"),
+            1,
         ),
     )
     .unwrap();
+    write_fixture_templates(&bin);
     for program in [bin.join("cargo"), bin.join("git"), bin.join("gh")] {
         fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
     }
@@ -762,86 +767,304 @@ pub fn execute_product(
 // red test isolates exactly the realism it needs.
 // ---------------------------------------------------------------------
 
-/// The one fake `cargo`. Observation no longer shells to cargo at all, so the
-/// only thing this models is `publish`: it records the published version under
-/// `$CALLISTO_TEST_CARGO_MARKER.<crate>`, which is exactly what the loopback
-/// sparse index serves from.
-const RIG_CARGO: &str = r#"#!/bin/sh
+/// One external command shape the release path may emit, and the flags it may
+/// pass. Anything outside this table is rejected by the fakes, flagged by
+/// `assert_argv_within_allowlists`, and checked against the real tool's own help
+/// by the flag contract tests.
+pub struct ToolShape {
+    pub tool: &'static str,
+    pub subcommand: &'static [&'static str],
+    pub flags: &'static [&'static str],
+}
+
+pub const TOOL_SHAPES: &[ToolShape] = &[
+    ToolShape {
+        tool: "gh",
+        subcommand: &["api"],
+        flags: &["--include", "--method"],
+    },
+    ToolShape {
+        tool: "gh",
+        subcommand: &["release", "create"],
+        flags: &["--repo", "--verify-tag", "--draft", "--generate-notes", "--prerelease"],
+    },
+    ToolShape {
+        tool: "gh",
+        subcommand: &["release", "edit"],
+        flags: &["--repo", "--draft"],
+    },
+    ToolShape {
+        tool: "gh",
+        subcommand: &["release", "upload"],
+        flags: &["--repo"],
+    },
+    ToolShape {
+        tool: "gh",
+        subcommand: &["attestation", "verify"],
+        flags: &[
+            "--repo",
+            "--signer-workflow",
+            "--signer-digest",
+            "--source-digest",
+            "--deny-self-hosted-runners",
+        ],
+    },
+    ToolShape {
+        tool: "git",
+        subcommand: &["ls-remote"],
+        flags: &[],
+    },
+    ToolShape {
+        tool: "git",
+        subcommand: &["push"],
+        flags: &[],
+    },
+    ToolShape {
+        tool: "git",
+        subcommand: &["tag"],
+        flags: &["-a", "-m", "--no-sign", "--"],
+    },
+    ToolShape {
+        tool: "git",
+        subcommand: &["rev-parse"],
+        flags: &[
+            "--verify",
+            "--quiet",
+            "--show-toplevel",
+            "--show-object-format",
+            "--is-shallow-repository",
+        ],
+    },
+    ToolShape {
+        tool: "git",
+        subcommand: &["for-each-ref"],
+        flags: &["--format"],
+    },
+    ToolShape {
+        tool: "git",
+        subcommand: &["--version"],
+        flags: &[],
+    },
+    ToolShape {
+        tool: "git",
+        subcommand: &["remote", "get-url"],
+        flags: &["--push"],
+    },
+    ToolShape {
+        tool: "git",
+        subcommand: &["status"],
+        flags: &["--porcelain", "-z", "--untracked-files", "--ignored"],
+    },
+    ToolShape {
+        tool: "git",
+        subcommand: &["symbolic-ref"],
+        flags: &["--quiet"],
+    },
+    ToolShape {
+        tool: "curl",
+        subcommand: &[],
+        flags: &[
+            "--silent",
+            "--show-error",
+            "--include",
+            "--max-time",
+            "--request",
+            "--url",
+        ],
+    },
+    ToolShape {
+        tool: "cargo",
+        subcommand: &["publish"],
+        flags: &["--manifest-path", "--locked", "--registry"],
+    },
+    ToolShape {
+        tool: "npm",
+        subcommand: &["view"],
+        flags: &["--json", "--registry"],
+    },
+    ToolShape {
+        tool: "npm",
+        subcommand: &["publish"],
+        flags: &["--workspace", "--tag", "--access", "--registry"],
+    },
+];
+
+pub fn tool_shape(tool: &str, subcommand: &[&str]) -> Option<&'static ToolShape> {
+    TOOL_SHAPES
+        .iter()
+        .find(|shape| shape.tool == tool && shape.subcommand == subcommand)
+}
+
+/// A shell `case` pattern (`key:--flag|key:--flag`) for every flag of `tool`'s shapes.
+fn flag_patterns(tool: &str) -> String {
+    let patterns: Vec<String> = TOOL_SHAPES
+        .iter()
+        .filter(|shape| shape.tool == tool)
+        .flat_map(|shape| {
+            let key = shape.subcommand.join("-");
+            shape.flags.iter().map(move |flag| format!("{key}:{flag}"))
+        })
+        .collect();
+    if patterns.is_empty() {
+        "__none__".to_owned()
+    } else {
+        patterns.join("|")
+    }
+}
+
+/// The one fake `cargo`. Observation never shells to cargo, so `publish` is the
+/// only subcommand it models: it records the published version under
+/// `$CALLISTO_TEST_CARGO_MARKER.<crate>`, which is what the loopback sparse index serves from.
+fn rig_cargo() -> String {
+    let patterns = flag_patterns("cargo");
+    format!(
+        r#"#!/bin/sh
 printf 'cargo %s\n' "$*" >> "$CALLISTO_TEST_LOG"
 if [ -n "$CALLISTO_TEST_CARGO_CALLS" ]; then
   printf '%s|%s\n' "$PWD" "$*" >> "$CALLISTO_TEST_CARGO_CALLS"
 fi
-if [ "$1" = publish ]; then
-  manifest=''
-  prev=''
-  for a in "$@"; do
-    if [ "$prev" = --manifest-path ]; then manifest=$a; fi
-    prev=$a
-  done
-  name=$(grep -m1 '^name = ' "$manifest" | cut -d'"' -f2)
-  version=$(grep -m1 '^version = ' "$manifest" | cut -d'"' -f2)
-  if [ "$CALLISTO_TEST_CARGO_TARGET" = 1 ]; then
-    mkdir -p "$PWD/target/package"
-    : > "$PWD/target/package/x"
-  fi
-  if [ -n "$CALLISTO_TEST_CARGO_PUBLISH_EXIT" ]; then
-    printf '%s\n' "$CALLISTO_TEST_CARGO_PUBLISH_STDERR" >&2
-    exit "$CALLISTO_TEST_CARGO_PUBLISH_EXIT"
-  fi
-  if [ -n "$CALLISTO_TEST_CARGO_PUBLISH_SLEEP" ]; then
-    sleep "$CALLISTO_TEST_CARGO_PUBLISH_SLEEP"
-  fi
-  printf '%s\n' "$version" > "$CALLISTO_TEST_CARGO_MARKER.$name"
-  exit 0
-fi
-exit 0
-"#;
-
-const RIG_GH: &str = r#"#!/bin/sh
-printf 'gh %s\n' "$*" >> "$CALLISTO_TEST_LOG"
-printf '%s\n' "$*" >> "$CALLISTO_TEST_GH_CALLS"
-reject() {
-  printf 'unknown flag: %s\n' "$1" >&2
+if [ "$1" != publish ]; then
+  printf 'error: no such command: `%s`\n' "$1" >&2
   exit 1
-}
-if [ "$CALLISTO_TEST_GH_STRICT" = 1 ]; then
-  cmd=$1
-  first=1
-  for a in "$@"; do
-    if [ "$first" = 1 ]; then first=0; continue; fi
-    case "$a" in
-      -*)
-        case "$cmd:$a" in
-          api:--include|api:-i|api:--method|api:-X|api:--header|api:-H|api:--field|api:-F|api:--raw-field|api:-f|api:--jq|api:-q|api:--paginate|api:--silent|api:--slurp|api:--hostname|api:--input|api:--cache|api:--template|api:-t|api:--verbose) ;;
-          release:--repo|release:-R|release:--verify-tag|release:--generate-notes|release:-g|release:--target|release:--title|release:-t|release:--notes|release:-n|release:--notes-file|release:-F|release:--draft|release:--draft=false|release:--draft=true|release:-d|release:--prerelease|release:-p|release:--latest|release:--clobber|release:--discussion-category|release:--notes-start-tag|release:--fail-on-no-commits) ;;
-          api:*|release:*) reject "$a" ;;
-        esac
-        ;;
-    esac
-  done
 fi
-if [ "$1" = attestation ] && [ "$2" = verify ]; then
-  exit 0
+for a in "$@"; do
+  case "$a" in
+    -*)
+      name=${{a%%=*}}
+      case "publish:$name" in
+        {patterns}) ;;
+        *) printf "error: unexpected argument '%s' found\n" "$a" >&2; exit 1 ;;
+      esac
+      ;;
+  esac
+done
+manifest=''
+prev=''
+for a in "$@"; do
+  if [ "$prev" = --manifest-path ]; then manifest=$a; fi
+  prev=$a
+done
+name=$(grep -m1 '^name = ' "$manifest" | cut -d'"' -f2)
+version=$(grep -m1 '^version = ' "$manifest" | cut -d'"' -f2)
+if [ "$CALLISTO_TEST_CARGO_TARGET" = 1 ]; then
+  mkdir -p "$PWD/target/package"
+  : > "$PWD/target/package/x"
 fi
-if [ "$1" = api ]; then
-  for a in "$@"; do endpoint=$a; done
-  gh_api "$endpoint"
-  exit 0
+if [ -n "$CALLISTO_TEST_CARGO_PUBLISH_EXIT" ]; then
+  printf '%s\n' "$CALLISTO_TEST_CARGO_PUBLISH_STDERR" >&2
+  exit "$CALLISTO_TEST_CARGO_PUBLISH_EXIT"
 fi
-if [ "$1" = release ]; then
-  shift
-  gh_release "$@"
+if [ -n "$CALLISTO_TEST_CARGO_PUBLISH_SLEEP" ]; then
+  sleep "$CALLISTO_TEST_CARGO_PUBLISH_SLEEP"
 fi
+printf '%s\n' "$version" > "$CALLISTO_TEST_CARGO_MARKER.$name"
 exit 0
-"#;
+"#
+    )
+}
 
-/// The GitHub Releases model both fake `gh` programs share.
+/// `gh` accepting only the shapes in `TOOL_SHAPES`, with cobra-style errors for the rest.
+fn rig_gh() -> String {
+    let patterns = flag_patterns("gh");
+    format!(
+        r#"#!/bin/sh
+fx=$(dirname "$0")/fixtures
+printf 'gh %s\n' "$*" >> "$CALLISTO_TEST_LOG"
+if [ -n "$CALLISTO_TEST_GH_CALLS" ]; then printf '%s\n' "$*" >> "$CALLISTO_TEST_GH_CALLS"; fi
+{FAKE_GH_FORGE}
+case "$1" in
+  api) key=api ;;
+  release)
+    case "$2" in
+      create|edit|upload) key=release-$2 ;;
+      *) printf 'unknown command "%s" for "gh release"\n' "$2" >&2; exit 1 ;;
+    esac
+    ;;
+  attestation)
+    case "$2" in
+      verify) key=attestation-verify ;;
+      *) printf 'unknown command "%s" for "gh attestation"\n' "$2" >&2; exit 1 ;;
+    esac
+    ;;
+  *) printf 'unknown command "%s" for "gh"\n' "$1" >&2; exit 1 ;;
+esac
+for a in "$@"; do
+  case "$a" in
+    -*)
+      name=${{a%%=*}}
+      case "$key:$name" in
+        {patterns}) ;;
+        *) printf 'unknown flag: %s\n' "$a" >&2; exit 1 ;;
+      esac
+      ;;
+  esac
+done
+case "$key" in
+  attestation-verify) exit 0 ;;
+  api)
+    for a in "$@"; do endpoint=$a; done
+    gh_api "$endpoint"
+    exit $?
+    ;;
+  release-*)
+    action=${{key#release-}}
+    shift 2
+    gh_release "$action" "$@"
+    ;;
+esac
+exit 0
+"#
+    )
+}
+
+/// A `gh` that answers every API read with the real 401 shape. Used to prove an
+/// unauthenticated forge fails closed; any non-`api` command is unknown to it.
+pub fn unauthorized_gh() -> &'static str {
+    "#!/bin/sh\nprintf 'gh %s\\n' \"$*\" >> \"$CALLISTO_TEST_LOG\"\nif [ \"$1\" = api ]; then\n  printf 'HTTP/2.0 401 Unauthorized\\n\\n{\"message\":\"Bad credentials\",\"status\":\"401\"}'\n  printf 'gh: Bad credentials (HTTP 401)\\n' >&2\n  exit 1\nfi\nprintf 'unknown command \"%s\" for \"gh\"\\n' \"$1\" >&2\nexit 1\n"
+}
+
+/// Writes the captured-response templates the fake `gh` renders from.
+fn write_fixture_templates(bin: &Path) {
+    let dir = bin.join("fixtures");
+    fs::create_dir_all(&dir).unwrap();
+    let head = |raw: &str| fixtures::split_raw_http(raw).0.to_owned();
+    fs::write(dir.join("gh-200.head"), head(fixtures::GITHUB_RELEASE_PUBLISHED)).unwrap();
+    fs::write(dir.join("gh-list.head"), head(fixtures::GITHUB_RELEASE_LIST)).unwrap();
+    fs::write(dir.join("gh-404.head"), head(fixtures::GITHUB_RELEASE_404)).unwrap();
+    fs::write(dir.join("gh-404.body"), fixtures::body_of(fixtures::GITHUB_RELEASE_404)).unwrap();
+    let mut release = fixtures::github_release(
+        "@@TAG@@",
+        false,
+        false,
+        "@@COMMITISH@@",
+        &[("@@NAME@@", 0, "@@DIGEST@@")],
+    );
+    let mut asset = release["assets"][0].clone();
+    asset["size"] = "@@SIZE@@".into();
+    release["draft"] = "@@DRAFT@@".into();
+    release["prerelease"] = "@@PRERELEASE@@".into();
+    release["assets"] = "@@ASSETS@@".into();
+    let release = release
+        .to_string()
+        .replace("\"@@DRAFT@@\"", "@@DRAFT@@")
+        .replace("\"@@PRERELEASE@@\"", "@@PRERELEASE@@")
+        .replace("\"@@ASSETS@@\"", "[@@ASSETS@@]");
+    fs::write(dir.join("release.tmpl"), release).unwrap();
+    fs::write(
+        dir.join("asset.tmpl"),
+        asset.to_string().replace("\"@@SIZE@@\"", "@@SIZE@@"),
+    )
+    .unwrap();
+}
+
+/// The GitHub Releases model the fake `gh` shares across harnesses.
 ///
 /// It reproduces the three facts the provider depends on: a release starts as
 /// a draft, `GET /releases/tags/{tag}` does not serve drafts, and the list
 /// endpoint does (paginated). `$CALLISTO_TEST_FORGE_MARKER` holds `draft` or
 /// `published`; an empty marker is a pre-existing published release, which is
-/// how a test seeds one directly.
+/// how a test seeds one directly. Bodies are `$fx/release.tmpl` and
+/// `$fx/asset.tmpl` (the captured release shape) with values substituted.
 const FAKE_GH_FORGE: &str = r#"
 forge_state() {
   if [ ! -f "$CALLISTO_TEST_FORGE_MARKER" ]; then printf 'absent'; return; fi
@@ -850,12 +1073,18 @@ forge_state() {
     *) printf 'published' ;;
   esac
 }
+render_release() {
+  tag=$1; draft=$2; pre=$3; assets=$4
+  sed -e "s|@@TAG@@|$tag|g" -e "s|@@COMMITISH@@|$CALLISTO_TEST_FORGE_COMMITISH|g" \
+    -e "s|@@DRAFT@@|$draft|g" -e "s|@@PRERELEASE@@|$pre|g" -e "s|@@ASSETS@@|$assets|g" "$fx/release.tmpl"
+}
 release_json() {
   assets=''
   comma=''
   if [ -f "$CALLISTO_TEST_ARTIFACT_MARKER" ]; then
     while IFS='|' read -r asset size digest; do
-      assets="${assets}${comma}{\"name\":\"${asset}\",\"size\":${size},\"digest\":\"sha256:${digest}\",\"state\":\"uploaded\"}"
+      rendered=$(sed -e "s|@@NAME@@|$asset|g" -e "s|@@SIZE@@|$size|g" -e "s|@@DIGEST@@|$digest|g" "$fx/asset.tmpl")
+      assets="${assets}${comma}${rendered}"
       comma=','
     done < "$CALLISTO_TEST_ARTIFACT_MARKER"
   fi
@@ -863,28 +1092,27 @@ release_json() {
   if [ "$(forge_state)" = draft ]; then draft=true; fi
   pre=false
   if [ -f "$CALLISTO_TEST_FORGE_MARKER.prerelease" ]; then pre=true; fi
-  printf '{"tag_name":"%s","draft":%s,"prerelease":%s,"immutable":true,"target_commitish":"%s","assets":[%s]}' \
-    "$CALLISTO_TEST_FORGE_TAG" "$draft" "$pre" "$CALLISTO_TEST_FORGE_COMMITISH" "$assets"
+  render_release "$CALLISTO_TEST_FORGE_TAG" "$draft" "$pre" "$assets"
 }
-http_ok() { printf '%s\n\n%s\n' 'HTTP/1.1 200 OK' "$1"; }
-http_404() { printf '%s\n\n%s\n' 'HTTP/1.1 404 Not Found' '{}'; }
+http_ok() { cat "$fx/$1"; printf '%s' "$2"; }
+http_404() { cat "$fx/gh-404.head" "$fx/gh-404.body"; printf 'gh: Not Found (HTTP 404)\n' >&2; return 1; }
 gh_api() {
   endpoint=$1
   state=$(forge_state)
   case "$endpoint" in
     */releases/tags/*)
-      if [ "$state" = published ]; then http_ok "$(release_json)"; else http_404; fi
+      if [ "$state" = published ]; then http_ok gh-200.head "$(release_json)"; else http_404; fi
       ;;
     *'/releases?'*)
       page=${endpoint##*page=}
-      if [ "$state" = absent ]; then http_ok '[]'; return; fi
+      if [ "$state" = absent ]; then http_ok gh-list.head '[]'; return; fi
       listed=${CALLISTO_TEST_FORGE_PAGE:-1}
       if [ "$page" = "$listed" ]; then
-        http_ok "[$(release_json)]"
+        http_ok gh-list.head "[$(release_json)]"
       elif [ "$page" -lt "$listed" ]; then
-        http_ok '[{"tag_name":"unrelated@0.0.1","draft":false,"prerelease":false,"immutable":true,"assets":[]}]'
+        http_ok gh-list.head "[$(render_release 'unrelated@0.0.1' false false '')]"
       else
-        http_ok '[]'
+        http_ok gh-list.head '[]'
       fi
       ;;
     *) http_404 ;;
@@ -913,6 +1141,7 @@ gh_release() {
       ;;
     upload)
       [ -f "$CALLISTO_TEST_FORGE_MARKER" ] || { printf 'release not found\n' >&2; exit 1; }
+      # $1 is the tag, $2 the asset path.
       asset=$2
       name=$(basename "$asset")
       size=$(wc -c < "$asset" | tr -d ' ')
@@ -925,11 +1154,21 @@ gh_release() {
 
 /// Fake remote tag storage shared by both fake `git` programs: `git push`
 /// records the pushed tag exactly as `ls-remote` would report it (the tag
-/// object plus its peeled commit), and `ls-remote` answers from that record.
-/// Real git is used instead wherever the rig points at a real bare remote.
+/// object plus its peeled commit, the captured `ls-remote` line shape), and
+/// `ls-remote` answers from that record. Real git is used instead wherever the
+/// rig points at a real bare remote. `push` and `ls-remote` take no flags.
 const FAKE_GIT_REMOTE_TAGS: &str = r#"
 store="$CALLISTO_TEST_GIT_TRACE.remote-tags"
 tab=$(printf '\t')
+no_flags_allowed() {
+  first=$1
+  shift
+  for a in "$@"; do
+    case "$a" in
+      -*) printf "error: unknown option \`%s'\n" "${a#-}" >&2; printf 'usage: git %s <remote> <ref>...\n' "$first" >&2; exit 129 ;;
+    esac
+  done
+}
 record_pushed_tag() {
   obj=$("$CALLISTO_TEST_REAL_GIT" rev-parse "refs/tags/$1" 2>/dev/null) || return 0
   commit=$("$CALLISTO_TEST_REAL_GIT" rev-parse "refs/tags/$1^{commit}" 2>/dev/null) || return 0
@@ -937,6 +1176,7 @@ record_pushed_tag() {
   printf '%s%srefs/tags/%s^{}\n' "$commit" "$tab" "$1" >> "$store"
 }
 if [ "$1" = ls-remote ]; then
+  no_flags_allowed "$@"
   shift
   shift
   [ -f "$store" ] || exit 0
@@ -968,6 +1208,7 @@ fi
 
 const RIG_GIT_TAIL: &str = r#"
 if [ "$1" = push ]; then
+  no_flags_allowed "$@"
   printf 'git %s\n' "$*" >> "$CALLISTO_TEST_LOG"
   if [ "$CALLISTO_TEST_PUSH" = fail ]; then
     printf 'fatal: unable to access remote\n' >&2
@@ -983,8 +1224,53 @@ fn rig_git() -> String {
     format!("{RIG_GIT}{FAKE_GIT_REMOTE_TAGS}{RIG_GIT_TAIL}")
 }
 
-fn rig_gh() -> String {
-    RIG_GH.replacen("#!/bin/sh\n", &format!("#!/bin/sh\n{FAKE_GH_FORGE}"), 1)
+/// Fails unless every external command the run logged is a `TOOL_SHAPES`
+/// invocation: a known subcommand carrying only flags its shape lists. `log` is
+/// `$CALLISTO_TEST_LOG` (cargo, gh, git push) and `git_trace` every git call.
+pub fn assert_argv_within_allowlists(log: &Path, git_trace: &Path) {
+    let mut violations = Vec::new();
+    for path in [log, git_trace] {
+        for line in fs::read_to_string(path).unwrap_or_default().lines() {
+            argv_violations(line, &mut violations);
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "external commands outside the allow-lists:\n{}",
+        violations.join("\n")
+    );
+}
+
+pub fn argv_violations(line: &str, violations: &mut Vec<String>) {
+    let mut words: Vec<&str> = line.split_whitespace().collect();
+    if words.is_empty() {
+        return;
+    }
+    let tool = words.remove(0);
+    if tool == "git" {
+        while matches!(words.first(), Some(&"-c" | &"-C")) {
+            words.drain(..2.min(words.len()));
+        }
+    }
+    let matched = [2, 1]
+        .into_iter()
+        .filter(|len| words.len() >= *len)
+        .find_map(|len| tool_shape(tool, &words[..len]).map(|shape| (shape, len)));
+    let Some((shape, len)) = matched else {
+        violations.push(format!("no allow-list entry for: {line}"));
+        return;
+    };
+    for word in &words[len..] {
+        if word.starts_with('-') && word.len() > 1 {
+            let name = word.split('=').next().unwrap();
+            if !shape.flags.contains(&name) {
+                violations.push(format!(
+                    "flag `{name}` is not allowed for `{tool} {}`: {line}",
+                    words[..len].join(" ")
+                ));
+            }
+        }
+    }
 }
 
 /// Fake `cargo`/`gh`/`git` on a private PATH directory plus the env that
@@ -1004,10 +1290,11 @@ impl Rig {
         use std::os::unix::fs::PermissionsExt;
         let bin = external.join("rig-bin");
         fs::create_dir_all(&bin).unwrap();
-        for (name, body) in [("cargo", RIG_CARGO.to_owned()), ("gh", rig_gh()), ("git", rig_git())] {
+        for (name, body) in [("cargo", rig_cargo()), ("gh", rig_gh()), ("git", rig_git())] {
             fs::write(bin.join(name), body).unwrap();
             fs::set_permissions(bin.join(name), fs::Permissions::from_mode(0o755)).unwrap();
         }
+        write_fixture_templates(&bin);
         let mut rig = Self {
             log: external.join("external-effects.log"),
             forge_marker: external.join("forge-release-created"),
@@ -1030,10 +1317,6 @@ impl Rig {
     /// `cargo publish` leaves `target/package/` in its working directory.
     pub fn real_cargo_target_dir(&mut self) -> &mut Self {
         self.set("CALLISTO_TEST_CARGO_TARGET", "1")
-    }
-    /// `gh api` and `gh release` reject flags the real subcommands do not define.
-    pub fn strict_gh(&mut self) -> &mut Self {
-        self.set("CALLISTO_TEST_GH_STRICT", "1")
     }
     /// A release created without `--target` reports the default branch as `target_commitish`.
     pub fn forge_default_branch(&mut self, branch: &str) -> &mut Self {

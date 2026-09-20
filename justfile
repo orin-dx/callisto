@@ -49,6 +49,17 @@ test-ci:
 release-workflow-behavior:
     bash .github/tests/release-workflow-behavior/run.sh
 
+# Re-captures the real provider responses under testing/fixtures/providers with
+# read-only network GETs. Manual: review the diff and update PROVENANCE.md.
+provider-fixtures:
+    bash testing/refresh-provider-fixtures.sh
+
+# Manual and network-dependent, so deliberately not part of `ci`: re-fetches the
+# live providers and asserts each fixture's SHAPE (status code, JSON key paths,
+# ls-remote line kinds) still matches; content is never compared.
+provider-contract:
+    bash testing/refresh-provider-fixtures.sh --check
+
 # Run Clippy lints (warnings treated as errors) as a single workspace invocation.
 # Moon's per-project `cargo clippy -p $project` tasks all lock the same shared
 # target/ dir, so running them one-per-project serializes on Cargo's own build

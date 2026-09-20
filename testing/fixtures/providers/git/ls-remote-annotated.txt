@@ -1,0 +1,2 @@
+d0ca6e3eeae2576ca3cae8012411b0e33aa00f03	refs/tags/callisto-changelog@0.3.1
+caf945cc9d5a11a71c57f419d1a73d0627c1756b	refs/tags/callisto-changelog@0.3.1^{}

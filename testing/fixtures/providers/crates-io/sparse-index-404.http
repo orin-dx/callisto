@@ -1,0 +1,17 @@
+HTTP/2 404 
+x-amz-request-id: 4VTTTVYZSDZ01R7A
+x-amz-id-2: L4HH8UrXnD1HaGF2Q+60m9ZEWFsVChZhfc63Evr6shDktFSoO8G9m9+/yc10IsmazWtbx2kixESTK45aY+CuzH33h/zWUrRF
+content-type: application/xml
+server: AmazonS3
+accept-ranges: bytes
+age: 0
+date: Sun, 20 Sep 2026 01:47:20 GMT
+via: 1.1 varnish
+x-served-by: cache-bur-kbur8200162-BUR
+x-cache: MISS
+x-cache-hits: 0
+x-timer: S1789868841.780830,VS0,VE53
+content-length: 328
+
+<?xml version="1.0" encoding="UTF-8"?>
+<Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message><Key>ca/ll/callisto-model-no-such-crate-zz</Key><RequestId>4VTTTVYZSDZ01R7A</RequestId><HostId>L4HH8UrXnD1HaGF2Q+60m9ZEWFsVChZhfc63Evr6shDktFSoO8G9m9+/yc10IsmazWtbx2kixESTK45aY+CuzH33h/zWUrRF</HostId></Error>

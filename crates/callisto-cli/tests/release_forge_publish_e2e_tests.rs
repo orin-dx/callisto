@@ -61,8 +61,7 @@ impl ProductRun {
         let intent = plan_product_intent(&root, external.path(), &release_commit);
         let artifacts = create_product_artifacts(external.path());
         let manifest = artifact_manifest(&root, &intent, &artifacts, external.path());
-        let mut rig = Rig::new(external.path(), &release_commit);
-        rig.strict_gh();
+        let rig = Rig::new(external.path(), &release_commit);
         Self {
             state: external.path().join("release-state.json"),
             root,
@@ -93,6 +92,10 @@ impl ProductRun {
             .into_iter()
             .filter(|call| call.starts_with("release "))
             .collect()
+    }
+
+    fn assert_argv_allowed(&self) {
+        assert_argv_within_allowlists(&self.rig.log, &self.rig.git_trace);
     }
 
     fn drop_journal(&self) {
@@ -159,6 +162,7 @@ fn a_release_is_drafted_then_filled_then_published_in_that_order() {
         !effects.iter().any(|call| call.contains("--clobber")),
         "an upload must never overwrite a differing asset: {effects:?}"
     );
+    run.assert_argv_allowed();
 }
 
 /// The window this whole change exists to close: if the process dies after the
@@ -191,6 +195,7 @@ fn recovery_of_a_half_filled_draft_uploads_the_rest_and_then_publishes() {
         index_of(&effects, "release edit") > index_of(&effects, "release upload"),
         "publication still comes last on a recovery run: {effects:?}"
     );
+    run.assert_argv_allowed();
 }
 
 #[test]
@@ -311,8 +316,7 @@ fn a_release_with_no_artifacts_is_still_published() {
     let root = dir.path();
     let intent = plan_intent(root, external.path(), &release_commit);
     let state = external.path().join("release-state.json");
-    let mut rig = Rig::new(external.path(), &release_commit);
-    rig.strict_gh();
+    let rig = Rig::new(external.path(), &release_commit);
 
     let output = execute_rig(root, &intent, &state, &rig, "core-crate@0.2.0", &[], None);
     assert!(

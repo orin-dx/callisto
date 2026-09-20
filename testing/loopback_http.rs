@@ -51,6 +51,146 @@ impl LoopbackResponse {
     pub fn not_found() -> Self {
         Self::new(404, "{}")
     }
+
+    /// Serves a captured `--include` response: its status, its real headers
+    /// (minus framing the server writes itself) and its body.
+    pub fn from_raw_http(raw: &str) -> Self {
+        let (head, body) = fixtures::split_raw_http(raw);
+        let mut lines = head.lines();
+        let status = lines
+            .next()
+            .and_then(|line| line.split_whitespace().nth(1))
+            .and_then(|code| code.parse().ok())
+            .expect("captured response starts with an HTTP status line");
+        let headers = lines
+            .filter_map(|line| line.trim_end_matches('\r').split_once(':'))
+            .filter(|(name, _)| {
+                !["content-length", "connection", "transfer-encoding", "content-encoding"]
+                    .iter()
+                    .any(|framing| name.eq_ignore_ascii_case(framing))
+            })
+            .map(|(name, value)| (name.trim().to_owned(), value.trim().to_owned()))
+            .collect();
+        Self {
+            status,
+            headers,
+            body: body.to_owned(),
+        }
+    }
+}
+
+/// Captured provider responses (see `testing/fixtures/providers/*/PROVENANCE.md`)
+/// and the templates that substitute names, versions, tags and assets into
+/// their real shapes, so fakes serve provider bytes rather than a guess at them.
+pub mod fixtures {
+    use super::LoopbackResponse;
+    use serde_json::Value;
+
+    pub const CRATES_INDEX_200: &str = include_str!("fixtures/providers/crates-io/sparse-index-200.http");
+    pub const CRATES_INDEX_404: &str = include_str!("fixtures/providers/crates-io/sparse-index-404.http");
+    pub const CRATES_YANKED_LINE: &str = include_str!("fixtures/providers/crates-io/sparse-index-yanked-line.json");
+    pub const PYPI_200: &str = include_str!("fixtures/providers/pypi/version-200.http");
+    pub const PYPI_404: &str = include_str!("fixtures/providers/pypi/version-404.http");
+    pub const GITHUB_RELEASE_PUBLISHED: &str = include_str!("fixtures/providers/github/release-published.http");
+    pub const GITHUB_RELEASE_DRAFT: &str = include_str!("fixtures/providers/github/release-draft.http");
+    pub const GITHUB_RELEASE_PRERELEASE: &str = include_str!("fixtures/providers/github/release-prerelease.http");
+    pub const GITHUB_RELEASE_LIST: &str = include_str!("fixtures/providers/github/release-list-page.http");
+    pub const GITHUB_RELEASE_404: &str = include_str!("fixtures/providers/github/release-404.http");
+    pub const LS_REMOTE_ANNOTATED: &str = include_str!("fixtures/providers/git/ls-remote-annotated.txt");
+    pub const LS_REMOTE_LIGHTWEIGHT: &str = include_str!("fixtures/providers/git/ls-remote-lightweight.txt");
+    pub const LS_REMOTE_ABSENT: &str = include_str!("fixtures/providers/git/ls-remote-absent.txt");
+
+    /// The header block (through the blank line) and the body of a raw response.
+    pub fn split_raw_http(raw: &str) -> (&str, &str) {
+        let split = raw
+            .find("\r\n\r\n")
+            .map(|at| at + 4)
+            .or_else(|| raw.find("\n\n").map(|at| at + 2))
+            .expect("captured response has a blank line after its headers");
+        raw.split_at(split)
+    }
+
+    pub fn body_of(raw: &str) -> &str {
+        split_raw_http(raw).1
+    }
+
+    /// The captured sparse-index line, renamed and re-versioned.
+    pub fn crates_index_line(name: &str, version: &str, cksum: &str, yanked: bool) -> String {
+        let line = body_of(CRATES_INDEX_200)
+            .lines()
+            .next()
+            .expect("captured index has lines");
+        let mut entry: Value = serde_json::from_str(line).expect("captured index line is JSON");
+        entry["name"] = name.into();
+        entry["vers"] = version.into();
+        entry["cksum"] = cksum.into();
+        entry["yanked"] = yanked.into();
+        entry.to_string()
+    }
+
+    /// A 200 sparse-index answer carrying the given `(version, cksum, yanked)` lines.
+    pub fn crates_index_response(name: &str, versions: &[(&str, &str, bool)]) -> LoopbackResponse {
+        let mut response = LoopbackResponse::from_raw_http(CRATES_INDEX_200);
+        response.body = versions
+            .iter()
+            .map(|(version, cksum, yanked)| format!("{}\n", crates_index_line(name, version, cksum, *yanked)))
+            .collect();
+        response
+    }
+
+    pub fn crates_index_not_found() -> LoopbackResponse {
+        LoopbackResponse::from_raw_http(CRATES_INDEX_404)
+    }
+
+    /// The captured PyPI version document with the first file's digest and yank flag replaced.
+    pub fn pypi_version_response(name: &str, version: &str, sha256: &str, yanked: bool) -> LoopbackResponse {
+        let mut response = LoopbackResponse::from_raw_http(PYPI_200);
+        let mut document: Value = serde_json::from_str(&response.body).expect("captured PyPI body is JSON");
+        document["info"]["name"] = name.into();
+        document["info"]["version"] = version.into();
+        document["urls"][0]["digests"]["sha256"] = sha256.into();
+        document["urls"][0]["yanked"] = yanked.into();
+        response.body = document.to_string();
+        response
+    }
+
+    pub fn pypi_not_found() -> LoopbackResponse {
+        LoopbackResponse::from_raw_http(PYPI_404)
+    }
+
+    /// The captured GitHub release object with the fields the code reads replaced.
+    /// `assets` are `(name, size, digest)`; each is stamped onto the captured asset shape.
+    pub fn github_release(
+        tag: &str,
+        draft: bool,
+        prerelease: bool,
+        target_commitish: &str,
+        assets: &[(&str, u64, &str)],
+    ) -> Value {
+        let mut release: Value =
+            serde_json::from_str(body_of(GITHUB_RELEASE_PUBLISHED)).expect("captured release is JSON");
+        let asset_shape = release["assets"][0].clone();
+        release["tag_name"] = tag.into();
+        release["draft"] = draft.into();
+        release["prerelease"] = prerelease.into();
+        release["target_commitish"] = target_commitish.into();
+        release["assets"] = assets
+            .iter()
+            .map(|(name, size, digest)| {
+                let mut asset = asset_shape.clone();
+                asset["name"] = (*name).into();
+                asset["size"] = (*size).into();
+                asset["digest"] = format!("sha256:{digest}").into();
+                asset
+            })
+            .collect();
+        release
+    }
+
+    /// What `gh api --include` prints for a 200 carrying `body`: the captured status line and headers, then the body.
+    pub fn gh_api_stdout(body: &str) -> String {
+        format!("{}{body}", split_raw_http(GITHUB_RELEASE_PUBLISHED).0)
+    }
 }
 
 /// A running server. Dropping it leaves the accept thread alive for the rest

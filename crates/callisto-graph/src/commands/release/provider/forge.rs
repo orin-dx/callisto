@@ -246,63 +246,80 @@ mod tests {
 
     use callisto_model::{CommandError, CommandOutput, CommandRunner};
 
+    use super::super::loopback::fixtures;
     use super::super::policy::tests::RecordingSleeper;
     use super::*;
 
-    /// A `gh` that answers only the two read endpoints, from a canned map of
-    /// endpoint substring to JSON body.
+    /// A `gh` that answers only the two read endpoints with raw `gh api
+    /// --include` stdout: a tag-endpoint answer (or the captured 404) and one
+    /// answer per list page (an empty array past the last).
     struct ScriptedGh {
-        tag_endpoint_body: Option<String>,
+        tag_endpoint: Option<String>,
         pages: Vec<String>,
     }
 
     impl CommandRunner for ScriptedGh {
         fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
             assert_eq!(program, "gh");
+            assert!(!args.contains(&"--repo"), "`gh api` defines no --repo: {args:?}");
             let endpoint = args.last().copied().unwrap_or_default();
-            let body = if endpoint.contains("/releases/tags/") {
-                self.tag_endpoint_body.clone()
+            let stdout = if endpoint.contains("/releases/tags/") {
+                self.tag_endpoint.clone()
             } else {
                 let page: usize = endpoint
                     .rsplit_once("page=")
                     .map(|(_, page)| page.parse().expect("page number"))
                     .expect("list endpoint carries a page");
-                Some(self.pages.get(page - 1).cloned().unwrap_or_else(|| "[]".to_owned()))
+                Some(
+                    self.pages
+                        .get(page - 1)
+                        .cloned()
+                        .unwrap_or_else(|| fixtures::gh_api_stdout("[]")),
+                )
             };
-            Ok(match body {
-                Some(body) => CommandOutput {
+            Ok(match stdout {
+                Some(stdout) => CommandOutput {
                     exit_code: Some(0),
-                    stdout: format!("HTTP/1.1 200 OK\n\n{body}\n"),
+                    stdout,
                     stderr: String::new(),
                 },
                 None => CommandOutput {
                     exit_code: Some(1),
-                    stdout: "HTTP/1.1 404 Not Found\n\n{}\n".to_owned(),
-                    stderr: String::new(),
+                    stdout: fixtures::GITHUB_RELEASE_404.to_owned(),
+                    stderr: "gh: Not Found (HTTP 404)".to_owned(),
                 },
             })
         }
     }
 
     fn release_json(tag: &str, draft: bool, prerelease: bool) -> String {
-        format!(
-            "{{\"tag_name\":\"{tag}\",\"draft\":{draft},\"prerelease\":{prerelease},\"immutable\":true,\"assets\":[]}}"
-        )
+        fixtures::github_release(tag, draft, prerelease, "main", &[]).to_string()
     }
 
-    fn observe(runner: &ScriptedGh, prerelease: bool, policy: Draft) -> ProviderObservationV1 {
+    fn served(body: &str) -> Option<String> {
+        Some(fixtures::gh_api_stdout(body))
+    }
+
+    fn observe_tag(runner: &ScriptedGh, tag: &str, prerelease: bool, policy: Draft) -> ProviderObservationV1 {
         let sleeper = RecordingSleeper::new();
         let root = std::env::temp_dir();
         let context = ProviderContext::new(&root, runner, None).with_sleeper(&sleeper);
-        let tag = TagName::new_unchecked("callisto@0.2.0".to_owned());
+        let tag = TagName::new_unchecked(tag.to_owned());
         observed_forge_release(&context, &tag, prerelease, "example/core-crate", policy).unwrap()
+    }
+
+    fn observe(runner: &ScriptedGh, prerelease: bool, policy: Draft) -> ProviderObservationV1 {
+        observe_tag(runner, "callisto@0.2.0", prerelease, policy)
     }
 
     #[test]
     fn a_draft_is_found_through_the_list_endpoint_and_is_not_yet_published() {
         let runner = ScriptedGh {
-            tag_endpoint_body: None,
-            pages: vec![format!("[{}]", release_json("callisto@0.2.0", true, false))],
+            tag_endpoint: None,
+            pages: vec![fixtures::gh_api_stdout(&format!(
+                "[{}]",
+                release_json("callisto@0.2.0", true, false)
+            ))],
         };
         assert!(matches!(
             observe(&runner, false, Draft::Either),
@@ -322,7 +339,7 @@ mod tests {
     #[test]
     fn a_published_release_satisfies_both_forge_roles() {
         let runner = ScriptedGh {
-            tag_endpoint_body: Some(release_json("callisto@0.2.0", false, false)),
+            tag_endpoint: served(&release_json("callisto@0.2.0", false, false)),
             pages: vec![],
         };
         for policy in [Draft::Either, Draft::PublishedOnly] {
@@ -338,7 +355,7 @@ mod tests {
     #[test]
     fn a_release_whose_prerelease_flag_disagrees_with_the_version_is_a_conflict() {
         let runner = ScriptedGh {
-            tag_endpoint_body: Some(release_json("callisto@0.2.0", false, false)),
+            tag_endpoint: served(&release_json("callisto@0.2.0", false, false)),
             pages: vec![],
         };
         assert!(matches!(
@@ -352,10 +369,10 @@ mod tests {
     #[test]
     fn the_list_scan_pages_until_it_finds_the_draft() {
         let runner = ScriptedGh {
-            tag_endpoint_body: None,
+            tag_endpoint: None,
             pages: vec![
-                format!("[{}]", release_json("unrelated@0.0.1", false, false)),
-                format!("[{}]", release_json("callisto@0.2.0", true, true)),
+                fixtures::gh_api_stdout(&format!("[{}]", release_json("unrelated@0.0.1", false, false))),
+                fixtures::gh_api_stdout(&format!("[{}]", release_json("callisto@0.2.0", true, true))),
             ],
         };
         assert!(matches!(
@@ -369,11 +386,89 @@ mod tests {
     #[test]
     fn an_exhausted_bounded_scan_reports_absence_rather_than_paging_forever() {
         let runner = ScriptedGh {
-            tag_endpoint_body: None,
+            tag_endpoint: None,
             pages: vec![],
         };
         assert!(matches!(
             observe(&runner, false, Draft::Either),
+            ProviderObservationV1::Absent
+        ));
+    }
+
+    // Raw captured GitHub responses, headers included (testing/fixtures/providers/github).
+
+    const CAPTURED_TAG: &str = "v2.101.0";
+
+    fn draft_body() -> String {
+        format!("[{}]", fixtures::body_of(fixtures::GITHUB_RELEASE_DRAFT).trim())
+    }
+
+    #[test]
+    fn the_captured_published_release_is_exact_and_not_a_draft() {
+        let runner = ScriptedGh {
+            tag_endpoint: Some(fixtures::GITHUB_RELEASE_PUBLISHED.to_owned()),
+            pages: vec![],
+        };
+        for policy in [Draft::Either, Draft::PublishedOnly] {
+            assert!(matches!(
+                observe_tag(&runner, CAPTURED_TAG, false, policy),
+                ProviderObservationV1::Exact {
+                    evidence: ProviderEvidenceV1::ForgeRelease { draft: false, .. }
+                }
+            ));
+        }
+    }
+
+    #[test]
+    fn the_captured_release_shape_under_a_draft_flag_is_a_draft_only_the_list_serves() {
+        let runner = ScriptedGh {
+            tag_endpoint: None,
+            pages: vec![fixtures::gh_api_stdout(&draft_body())],
+        };
+        assert!(matches!(
+            observe_tag(&runner, CAPTURED_TAG, false, Draft::Either),
+            ProviderObservationV1::Exact {
+                evidence: ProviderEvidenceV1::ForgeRelease { draft: true, .. }
+            }
+        ));
+        assert!(matches!(
+            observe_tag(&runner, CAPTURED_TAG, false, Draft::PublishedOnly),
+            ProviderObservationV1::Absent
+        ));
+    }
+
+    #[test]
+    fn the_captured_release_shape_under_a_prerelease_flag_conflicts_with_a_stable_version() {
+        let runner = ScriptedGh {
+            tag_endpoint: Some(fixtures::GITHUB_RELEASE_PRERELEASE.to_owned()),
+            pages: vec![],
+        };
+        assert!(matches!(
+            observe_tag(&runner, CAPTURED_TAG, false, Draft::Either),
+            ProviderObservationV1::Conflict {
+                reason: ProviderConflictReason::ForgeReleasePrereleaseDiffers
+            }
+        ));
+        assert!(matches!(
+            observe_tag(&runner, CAPTURED_TAG, true, Draft::Either),
+            ProviderObservationV1::Exact { .. }
+        ));
+    }
+
+    #[test]
+    fn the_captured_list_page_finds_a_listed_tag_and_reports_an_unlisted_one_absent() {
+        let listed: serde_json::Value = serde_json::from_str(fixtures::body_of(fixtures::GITHUB_RELEASE_LIST)).unwrap();
+        let tag = listed[1]["tag_name"].as_str().unwrap().to_owned();
+        let runner = ScriptedGh {
+            tag_endpoint: None,
+            pages: vec![fixtures::GITHUB_RELEASE_LIST.to_owned()],
+        };
+        assert!(matches!(
+            observe_tag(&runner, &tag, false, Draft::Either),
+            ProviderObservationV1::Exact { .. }
+        ));
+        assert!(matches!(
+            observe_tag(&runner, "callisto-no-such-tag", false, Draft::Either),
             ProviderObservationV1::Absent
         ));
     }
