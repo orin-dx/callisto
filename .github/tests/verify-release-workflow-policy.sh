@@ -41,6 +41,204 @@ def walk(node):
             yield from walk(v)
 
 
+def _tokens(expr):
+    pat = re.compile(r"\s*(?:(&&|\|\||==|!=|!|\(|\))|'((?:[^']|'')*)'|([A-Za-z_][\w.\-]*))")
+    pos, out = 0, []
+    expr = expr.strip()
+    while pos < len(expr):
+        m = pat.match(expr, pos)
+        if not m:
+            raise ValueError(f"unsupported expression syntax near {expr[pos:]!r}")
+        pos = m.end()
+        out.append(("op", m.group(1)) if m.group(1) else ("str", m.group(2).replace("''", "'")) if m.group(2) is not None else ("id", m.group(3)))
+    return out
+
+
+def _truthy(v):
+    return v not in (None, "", False, 0)
+
+
+def _loose_eq(a, b):
+    norm = lambda v: "" if v is None else str(v).lower() if not isinstance(v, bool) else str(v).lower()
+    return norm(a) == norm(b)
+
+
+def eval_if(expr, ctx):
+    """GitHub expression subset: && || == != ! ( ), string literals, contexts, always()."""
+    toks, i = _tokens(expr), 0
+
+    def peek():
+        return toks[i] if i < len(toks) else (None, None)
+
+    def take():
+        nonlocal i
+        i += 1
+        return toks[i - 1]
+
+    def primary():
+        kind, val = take()
+        if (kind, val) == ("op", "("):
+            v = orx()
+            if take() != ("op", ")"):
+                raise ValueError("unbalanced parenthesis")
+            return v
+        if kind == "str":
+            return val
+        if kind == "id":
+            if peek() == ("op", "("):
+                take()
+                if take() != ("op", ")"):
+                    raise ValueError("function arguments unsupported")
+                if val == "always":
+                    return True
+                raise ValueError(f"status function {val}() unsupported by the scheduler check")
+            return ctx(val)
+        raise ValueError(f"unexpected token {val!r}")
+
+    def unary():
+        if peek() == ("op", "!"):
+            take()
+            return not _truthy(unary())
+        return primary()
+
+    def eq():
+        v = unary()
+        while peek() in (("op", "=="), ("op", "!=")):
+            op = take()[1]
+            r = unary()
+            v = _loose_eq(v, r) if op == "==" else not _loose_eq(v, r)
+        return v
+
+    def andx():
+        v = eq()
+        while peek() == ("op", "&&"):
+            take()
+            r = eq()
+            v = r if _truthy(v) else v
+        return v
+
+    def orx():
+        v = andx()
+        while peek() == ("op", "||"):
+            take()
+            r = andx()
+            v = v if _truthy(v) else r
+        return v
+
+    v = orx()
+    if i != len(toks):
+        raise ValueError("trailing tokens in expression")
+    return v
+
+
+def _needs(job):
+    n = job.get("needs") or []
+    return [n] if isinstance(n, str) else list(n)
+
+
+def schedule(jobs, event, ref, inputs, results, outputs):
+    """Which jobs run under GitHub's rules: no status function means an implicit
+    success() over every transitive ancestor, and a skipped ancestor fails it."""
+    ran, res, outs = {}, {}, {}
+
+    def ancestors(name, seen=None):
+        seen = set() if seen is None else seen
+        for n in _needs(jobs[name]):
+            if n not in seen:
+                seen.add(n)
+                ancestors(n, seen)
+        return seen
+
+    def order():
+        done, seq = set(), []
+        while len(seq) < len(jobs):
+            for n, j in jobs.items():
+                if n not in done and all(d in done for d in _needs(j)):
+                    done.add(n)
+                    seq.append(n)
+        return seq
+
+    for name in order():
+        job = jobs[name]
+        cond = job.get("if")
+        cond = re.sub(r"\s+", " ", str(cond)).strip() if cond is not None else None
+
+        def ctx(path):
+            parts = path.split(".")
+            if path == "github.event_name":
+                return event
+            if path == "github.ref":
+                return ref
+            if parts[0] == "inputs":
+                return inputs.get(parts[1])
+            if parts[0] == "needs" and parts[2] == "result":
+                return res.get(parts[1], "skipped")
+            if parts[0] == "needs" and parts[2] == "outputs":
+                return outs.get(parts[1], {}).get(parts[3], "") if ran.get(parts[1]) else ""
+            raise ValueError(f"unsupported context {path}")
+
+        has_status = cond is not None and re.search(r"\b(always|success|failure|cancelled)\(\)", cond)
+        if has_status:
+            run = _truthy(eval_if(cond, ctx))
+        else:
+            run = all(res.get(a) == "success" for a in ancestors(name)) and (cond is None or _truthy(eval_if(cond, ctx)))
+        ran[name] = run
+        res[name] = results.get(name, "success") if run else "skipped"
+        outs[name] = outputs.get(name, {}) if run else {}
+    return {n for n, r in ran.items() if r}
+
+
+MAIN = "refs/heads/main"
+_SHA = "a" * 40
+_GATES = {"verify", "recovery-checks", "release-candidate"}
+# (scenario, event, ref, inputs, results, outputs, expected jobs that run)
+SCENARIOS = [
+    ("push: release PR merge with artifacts", "push", MAIN, {}, {},
+     {"release-candidate": {"is_release_pr": "true"}, "plan": {"has_artifacts": "true"}},
+     _GATES - {"recovery-checks"} | {"plan", "build-artifact", "build", "execute"}),
+    ("push: release PR merge without artifacts", "push", MAIN, {}, {},
+     {"release-candidate": {"is_release_pr": "true"}, "plan": {"has_artifacts": "false"}},
+     _GATES - {"recovery-checks"} | {"plan", "execute"}),
+    ("push: ordinary commit opens the release PR", "push", MAIN, {}, {},
+     {"release-candidate": {"is_release_pr": "false"}},
+     _GATES - {"recovery-checks"} | {"version-pr"}),
+    ("dispatch: recovery of a merged release", "workflow_dispatch", MAIN, {"release_source_sha": _SHA}, {},
+     {"release-candidate": {"is_release_pr": "true"}, "plan": {"has_artifacts": "true"}},
+     _GATES - {"verify"} | {"plan", "build-artifact", "build", "execute"}),
+    ("dispatch: recovery of an unmanaged commit", "workflow_dispatch", MAIN, {"release_source_sha": _SHA}, {},
+     {"release-candidate": {"is_release_pr": "false"}},
+     _GATES - {"verify"}),
+    ("dispatch without a source sha acts like a push", "workflow_dispatch", MAIN, {}, {},
+     {"release-candidate": {"is_release_pr": "false"}},
+     _GATES - {"recovery-checks"} | {"version-pr"}),
+    ("dispatch from a non-main ref", "workflow_dispatch", "refs/heads/topic", {"release_source_sha": _SHA}, {}, {},
+     {"recovery-checks"}),
+    ("push: verify fails", "push", MAIN, {}, {"verify": "failure"}, {}, {"verify"}),
+    ("push: plan fails", "push", MAIN, {}, {"plan": "failure"},
+     {"release-candidate": {"is_release_pr": "true"}},
+     _GATES - {"recovery-checks"} | {"plan"}),
+    ("push: an artifact build fails", "push", MAIN, {}, {"build-artifact": "failure"},
+     {"release-candidate": {"is_release_pr": "true"}, "plan": {"has_artifacts": "true"}},
+     _GATES - {"recovery-checks"} | {"plan", "build-artifact"}),
+    ("push: assembly fails", "push", MAIN, {}, {"build": "failure"},
+     {"release-candidate": {"is_release_pr": "true"}, "plan": {"has_artifacts": "true"}},
+     _GATES - {"recovery-checks"} | {"plan", "build-artifact", "build"}),
+]
+
+
+def schedule_errors(jobs):
+    errs = []
+    for name, event, ref, inputs, results, outputs, expected in SCENARIOS:
+        try:
+            got = schedule(jobs, event, ref, inputs, results, outputs)
+        except (ValueError, KeyError) as e:
+            errs.append(f"schedule scenario {name!r} could not be evaluated: {e}")
+            continue
+        if got != expected:
+            errs.append(f"schedule scenario {name!r}: expected {sorted(expected)}, would run {sorted(got)}")
+    return errs
+
+
 def check(path):
     errs = []
     text = open(path).read()
@@ -130,6 +328,7 @@ def check(path):
     for name, job in jobs.items():
         if job.get("needs") and not re.search(r"\balways\(\)", str(job.get("if", ""))):
             errs.append(f"job {name} depends on a gated job and must use always() in its if")
+    errs += schedule_errors(jobs)
     ba = re.sub(r"\s+", " ", str(jobs.get("build-artifact", {}).get("if", "")))
     if "needs.plan.result == 'success'" not in ba:
         errs.append("build-artifact must require needs.plan.result == 'success'")
