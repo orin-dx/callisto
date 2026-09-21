@@ -193,7 +193,11 @@ jobs:
   plan:
     name: Derive ephemeral intent from the merged release commit
     needs: release-candidate
-    if: needs.release-candidate.outputs.is_release_pr == 'true'
+    # always(): release-candidate's own ancestors include a gate that is skipped
+    # by design, and a skipped ancestor silently skips any job without a status function.
+    if: >-
+      always() && needs.release-candidate.result == 'success' &&
+      needs.release-candidate.outputs.is_release_pr == 'true'
     timeout-minutes: 20
     runs-on: ubuntu-latest
     permissions:
@@ -250,7 +254,7 @@ jobs:
   build-artifact:
     name: Build ${{ matrix.target }} from the intent-bound source tree
     needs: [plan, release-candidate]
-    if: needs.plan.outputs.has_artifacts == 'true'
+    if: always() && needs.plan.result == 'success' && needs.plan.outputs.has_artifacts == 'true'
     timeout-minutes: 45
     strategy:
       fail-fast: false
