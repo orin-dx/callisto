@@ -1,0 +1,119 @@
+{
+  "cli_version": "0.10.7-nightly.202609170627.0dda4e14f",
+  "checkpoint_id": "01M30YF0G4V1C3G0KHSBE06NW9",
+  "session_id": "a08620cc-8b37-45b5-b4b2-89a977aad490",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-21T02:59:31.051147Z",
+  "branch": "fix/release-handoff-checksum-and-receipt",
+  "checkpoints_count": 4,
+  "save_step_count": 5,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "a015fcfd4ef5",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 990,
+    "cache_creation_tokens": 6229275,
+    "cache_read_tokens": 223937230,
+    "output_tokens": 589029,
+    "api_call_count": 453,
+    "subagent_tokens": {
+      "input_tokens": 224,
+      "cache_creation_tokens": 316808,
+      "cache_read_tokens": 20383239,
+      "output_tokens": 114741,
+      "api_call_count": 112
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01YCCAbwm7sztdDtLuczSzDN",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "48049d8543a5",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 466,
+        "end": 467,
+        "entry_ids": [
+          "64369af6-5a29-4372-9bc8-6e58a915ca54"
+        ],
+        "tool_use_id": "toolu_01YCCAbwm7sztdDtLuczSzDN"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01YCCAbwm7sztdDtLuczSzDN"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 77
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 13,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.local.json": 11
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 13,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.local.json": 11
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 13,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.local.json": 11
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 13,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.local.json": 11
+      }
+    }
+  ]
+}
