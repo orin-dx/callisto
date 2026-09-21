@@ -954,3 +954,13 @@ How do we fix it?
 ---
 
 merged 102
+
+---
+
+<task-notification>
+<task-id>bvckq084d</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a08620cc-8b37-45b5-b4b2-89a977aad490/tasks/bvckq084d.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the release run on main and re-check the release PR" completed (exit code 0)</summary>
+</task-notification>
