@@ -234,7 +234,8 @@ jobs:
             --from-release-commit "$RELEASE_SOURCE_SHA" \
             --decision "$GITHUB_WORKSPACE/release-source/.callisto/release-decision.json" \
             --out "$handoff_dir/release-intent.json"
-          shasum -a 256 "$handoff_dir/release-intent.json" > "$handoff_dir/release-intent.json.sha256"
+          # Relative name: the consumers verify from a different runner OS and RUNNER_TEMP.
+          (cd "$handoff_dir" && shasum -a 256 release-intent.json > release-intent.json.sha256)
       - name: Read declared artifact slot count
         id: slots
         run: |
@@ -482,7 +483,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: release-receipt
+          # Per attempt: a re-run must not collide with the failed attempt's upload.
+          name: release-receipt-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/callisto-release-state/${{ github.run_id }}
           if-no-files-found: ignore
           retention-days: 7
