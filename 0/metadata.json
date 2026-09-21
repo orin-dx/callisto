@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.10.7-nightly.202609200623.81a05d785",
+  "checkpoint_id": "01M32Y823KGY6K2WC7ZZ6377D8",
+  "session_id": "e2fe6504-b7f2-430b-a234-1e8197320f97",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-21T21:34:13.061228Z",
+  "branch": "probe/tag-push-identity",
+  "checkpoints_count": 30,
+  "files_touched": [
+    ".github/workflows/zz-tag-probe.yml"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "8fd12aa2896c",
+  "checkpoint_transcript_start": 1581,
+  "transcript_lines_at_start": 1581,
+  "compact_transcript_start": 220,
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 5594,
+    "cache_read_tokens": 1666568,
+    "output_tokens": 3369,
+    "api_call_count": 5
+  },
+  "session_metrics": {
+    "turn_count": 44
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-21T21:34:13.00869Z",
+    "agent_lines": 21,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 21,
+    "total_lines_changed": 22,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
