@@ -122,8 +122,17 @@ def check(path):
         errs.append("is_release_pr=true must be set in exactly one place")
     plan = jobs.get("plan", {})
     cond = re.sub(r"\s+", " ", str(plan.get("if", ""))).strip()
-    if cond != "needs.release-candidate.outputs.is_release_pr == 'true'" or plan.get("needs") != "release-candidate":
-        errs.append("plan must run only when release-candidate says is_release_pr == 'true'")
+    if cond != "always() && needs.release-candidate.result == 'success' && needs.release-candidate.outputs.is_release_pr == 'true'" or plan.get("needs") != "release-candidate":
+        errs.append("plan must run only when release-candidate succeeded and says is_release_pr == 'true'")
+    # release-candidate descends from two mutually exclusive gates, one always
+    # skipped. GitHub skips any job whose transitive ancestor was skipped unless
+    # its own `if` has a status function, so every dependent job needs one.
+    for name, job in jobs.items():
+        if job.get("needs") and not re.search(r"\balways\(\)", str(job.get("if", ""))):
+            errs.append(f"job {name} depends on a gated job and must use always() in its if")
+    ba = re.sub(r"\s+", " ", str(jobs.get("build-artifact", {}).get("if", "")))
+    if "needs.plan.result == 'success'" not in ba:
+        errs.append("build-artifact must require needs.plan.result == 'success'")
     ex = jobs.get("execute", {})
     if not re.search(r"needs\.plan\.result == 'success'", str(ex.get("if", ""))):
         errs.append("execute must require needs.plan.result == 'success'")
@@ -265,8 +274,14 @@ def mutants(text):
         "dispatch sha regex weakened": sub("^[0-9a-f]{40}$", "^.+$"),
         "resolved-sha equality dropped": sub('if [[ "$resolved_sha" != "$release_source_sha" ]]', 'if false'),
         "execute loses plan success": sub("always() && needs.plan.result == 'success' &&", "always() &&"),
-        "plan runs always": sub("    needs: release-candidate\n    if: needs.release-candidate.outputs.is_release_pr == 'true'\n    timeout-minutes: 20",
-            "    needs: release-candidate\n    if: always()\n    timeout-minutes: 20"),
+        "plan runs always": sub("      always() && needs.release-candidate.result == 'success' &&\n      needs.release-candidate.outputs.is_release_pr == 'true'\n    timeout-minutes: 20",
+            "      always()\n    timeout-minutes: 20"),
+        "plan loses always": sub("      always() && needs.release-candidate.result == 'success' &&\n      needs.release-candidate.outputs.is_release_pr == 'true'\n    timeout-minutes: 20",
+            "      needs.release-candidate.outputs.is_release_pr == 'true'\n    timeout-minutes: 20"),
+        "build-artifact loses always": sub("if: always() && needs.plan.result == 'success' && needs.plan.outputs.has_artifacts == 'true'",
+            "if: needs.plan.outputs.has_artifacts == 'true'"),
+        "build-artifact loses plan success": sub("if: always() && needs.plan.result == 'success' && needs.plan.outputs.has_artifacts == 'true'",
+            "if: always() && needs.plan.outputs.has_artifacts == 'true'"),
         "execute checks out moving ref": after("\n  execute:\n", "ref: ${{ needs.release-candidate.outputs.release_source_sha }}", "ref: main"),
         "handoff step disabled": sub("      - name: Verify same-run handoff before credentials\n", "      - name: Verify same-run handoff before credentials\n        if: false\n"),
         "handoff step renamed away": sub("Verify same-run handoff before credentials", "Handoff"),
