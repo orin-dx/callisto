@@ -3,7 +3,7 @@
   "checkpoint_id": "01M32NFMXWSZSC021CM10XR2E6",
   "strategy": "manual-commit",
   "branch": "fix/release-handoff-checksum-and-receipt",
-  "checkpoints_count": 8,
+  "checkpoints_count": 22,
   "files_touched": [
     ".github/tests/verify-release-workflow-policy.sh",
     ".github/workflows/callisto-release.yml"
@@ -15,14 +15,27 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": "/0/prompt.txt"
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": "/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 200800,
-    "cache_creation_tokens": 0,
-    "cache_read_tokens": 6784768,
-    "output_tokens": 45540,
-    "api_call_count": 78,
-    "subagent_tokens_complete": true
+    "input_tokens": 200984,
+    "cache_creation_tokens": 209549,
+    "cache_read_tokens": 21723474,
+    "output_tokens": 127561,
+    "api_call_count": 170,
+    "subagent_tokens": {
+      "input_tokens": 10,
+      "cache_creation_tokens": 24551,
+      "cache_read_tokens": 0,
+      "output_tokens": 325,
+      "api_call_count": 1
+    }
   }
 }

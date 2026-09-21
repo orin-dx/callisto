@@ -1,0 +1,318 @@
+I need some help in fixing callisto. Another AI agent tried and just made a mess of it. Some context:
+
+
+
+<pasted_content id="354f">
+Callisto self-release: full handoff
+
+Repo /Users/gabe/Projects/callisto, remote orin-dx/callisto (public, org plan free). Rust workspace using just/moon. Facts from before this session come from a compacted summary and memory files. The full transcript is /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/a08620cc-8b37-45b5-b4b2-89a977aad490.jsonl.
+
+1. Current state (2026-09-21)
+
+- 0.8.0 is NOT released. No callisto@0.8.0 or other 0.8.0 tags, no 0.8.0 GitHub Release, and no callisto-model@0.8.0 on crates.io. Verified. crates.io is at 0.5.0.
+- main is at fdca9cd8.
+  - #103 merged.
+  - Its push run 35554928923 succeeded and correctly opened no release PR.
+  - Release PR #99 (c5578e6a, GitHub-verified signed) is the merged 0.8.0 bump: 10 crates 0.7.2 to 0.8.0, fixed group workspace, 24 files.
+- PR #104 (fix/release-handoff-checksum-and-receipt, head 2c934407) has 12/12 required checks green. It is waiting on a code-owner review or the owner's bypass. I do not merge; the owner does.
+- Next steps, in order:
+  a. The owner merges #104.
+  b. Wait for the push run on the merge commit to finish. It shares the concurrency group release-${{ github.sha }} with a dispatch on that sha, and a second pending run in the group cancels the first.
+  c. Confirm with the owner, then dispatch once: gh workflow run callisto-release.yml --ref main -f release_source_sha=c5578e6a63754b54575b3ac7518cc1753e443393. This runs release execute --recovery.
+  d. Watch every job.
+  e. Declare done only when registry versions, tags, the GitHub Release, the receipt and the source commit agree.
+- Verification commands:
+  - git ls-remote --tags origin 'refs/tags/callisto@0.8.0'
+  - cargo info callisto-model@0.8.0 --registry crates-io
+  - gh release list
+- The owner is (rightly) angry: the first real release run silently did nothing because of a bug I wrote. Do not declare anything fixed before it is verified end to end.
+
+2. Repo and settings facts (verified)
+
+- Ruleset 22292852 on main: 12 required checks, 1 approving code-owner review, signed commits, linear history, bypass actor user 116747 (castrog). No tag rules. Default workflow token is read, and jobs declare explicit permissions.
+- Secrets: org secrets CARGO_REGISTRY_TOKEN and NPM_TOKEN are visible to the repo. The environment release exists with no rules or secrets, and execute does not use it. Immutable releases are disabled.
+- Local actionlint: use -ignore='\$/.+'. The uses: $/.github/actions/... self-repo syntax is valid on GitHub, but actionlint 1.7.12 rejects it.
+- Licenses: 7 crates FSL-1.1-MIT, 3 MIT (model, vcs, format).
+
+3. History, in order
+
+3a. Baseline: last published 0.5.0
+
+4a1f58e6 (#16, 2026-08-26). 82 commits on main since. Sources: git log 4a1f58e6..origin/main and the per-crate CHANGELOG.md files. Release PRs:
+- 0.6.0 = #51 (7444599d, 2026-09-05). The first attempt d1a57926 was reverted by #50, and #52 dropped "durable" from the wording before #51 landed.
+- 0.7.0 = #55 (Sep 11).
+- 0.7.1 = #89 (Sep 12).
+- 0.7.2 = #93 (Sep 12).
+- 0.8.0 = #99 (Sep 20).
+
+None of 0.6.0 to 0.8.0 was ever published. No tags and no crates exist for them. Per-attempt failure outcomes for 0.6 to 0.7.2 were not verified this session.
+
+3b. 0.6.0 (Aug 27 to Sep 5)
+
+- Publish pipeline fixes:
+  - filter-plan command plus PublishPlan::is_empty() and CreatedTag.isFloatingMajor (#29).
+  - Skip an npm main package when its platform dependency fails to publish (#23).
+  - --package ecosystem collisions and unvalidated platform dependencies (#24).
+  - A dev-only publish cycle no longer un-orders unrelated dev-dependencies (#25).
+  - Live-log credential redaction, consolidated jq spawns, Windows binary extraction (#30).
+  - Tag force-push scoping, an empty-plan gate, and tags/release for survivors on partial publish failure (#31).
+  - Force-push tags so the floating major alias moves (#18).
+  - Git-version compatibility check wired up (#17).
+  - crates.io fallback in setup-callisto's binary install (#22).
+  - --skip-publish-precheck (#27).
+- Release PR ownership:
+  - Callisto owns release PR decisions with forge snapshot verification (#46).
+  - camelCase serialization fix (#47).
+  - v2 types with staged_changes_since and a new callisto release-pr commit-plan command.
+  - The action commits through GitHub's forge API instead of git push, so GITHUB_TOKEN never needs workflow-write permission (98f45f60, ab4a9f8f, 61540682, 3d4b1aa6).
+- Durable attested release execution (#39): the foundation that #101 later rebuilt.
+- Hardening and CI: durable release PR workflow hardened (#43), action pin verifier made runner-portable (#41), orin-dx/actions/setup-rust adopted (#20), RUSTSEC-2026-0269 (wasmtime, dev-only) ignored (#38), action dependency bumps (#40, #42).
+- Docs and specs: release trust and recovery track specs (#32), README/publish flow docs (#33, #35), security review gaps resolved (#36), floating-tag follow-up closed (#21), 2026-08-12 workspace audit closed out (#19).
+
+3c. 0.7.0 (Sep 8 to 11): audit-driven refactor and correctness batch
+
+- Release-trust redesign (#54):
+  - callisto version --emit-decision <path> persists the computed release decision.
+  - callisto release plan --from-release-commit now requires --decision <path> and verifies the merged commit's diff against it, instead of re-deriving changesets from git history.
+  - The old re-derivation rejected any fixed-group cascade release where a sibling was bumped that the deleted changeset never named.
+  - This is what lets plan accept #99.
+  - #56 rejects decisions with divergent target versions within a fixed or linked group.
+- Correctness bugs fixed:
+  - Stale group member crashed or corrupted cascade convergence (#59, #64, #74). fixed_group_target read a stale member's missing slot and corrupted the shared version.
+  - changed_since_last_tag walked the whole repo instead of the package's paths (#64).
+  - Tag template divergence (#64).
+  - Ord/Eq violations: ReleaseOperationId::Ord dropped attestation_policy for artifact uploads, and ArtifactSlotId had the same inconsistency (#64, #74).
+  - Cargo.toml with CRLF line endings was silently rewritten to LF on any write (435c05a1).
+  - Poetry-style version specs and negated workspace globs were silently dropped from the graph (#75).
+  - Release executor used the wrong registry-publish and tag-creation argv; the disused PublishOrchestrator was deleted (#60).
+- Errors that named the wrong cause (#76, #78, #79 to #82):
+  - Lock acquisition failures were all reported as "another release holds the lock".
+  - Unsupported-ecosystem and identity parse errors were collapsed into AmbiguousName.
+  - --package name:severity help omitted none.
+  - Registry-publish propagation lag now has its own error.
+  - GraphError::ReleaseIntentStale (E124) became a struct variant with real reasons, and 44 legacy_unclassified() sites were reclassified across four PRs.
+- Audit patterns A to H, i.e. dead abstractions deleted and duplicated logic unified:
+  - Zero-caller traits and flags removed: PackageIdentityResolver, ChangesetStorage, ManifestCstEditor, ReleaseEffectAdapter, ReportPresenter, RawMoonYml, --skip-publish-precheck.
+  - Derive-once fixes across status, validate, tag, publish.
+  - Shared redaction, glob and diagnostics code, a shared canonical-manifest reader, batched writes to a shared root Cargo.toml, and unified bump arithmetic and PublishTarget capability logic.
+- Parse, don't validate (#62): GitHubRepository::parse and TagName::parse replace ad hoc checks. This is a behavior change at a security boundary: GitHubAttestationPolicyV1 now rejects embedded whitespace, a leading or trailing -, and more than one /. list_tags skips tag refs that fail the check.
+- --strict-graph: it had no flag on snapshot/tag. Both now accept it (abort_on_crosscheck_failures).
+- Performance: identity resolution memoized (#68). git cat-file --batch replaces 2N git show spawns in release-commit verification (#73).
+- ConfigProvenance: governed by <key> = <value> lines render in callisto version text output (#77). render_version and render_diagnostics gained a cfg parameter.
+- Release PR body: grouped by change instead of by package, ordered by severity, and no longer hidden behind an outer collapsible (#83, #84). A real 10-package PR body was 629 lines before.
+- Dependencies: gix 0.86 to 0.87 to drop the fully-yanked bisync transitive dependency (#69).
+
+3d. 0.7.1 and 0.7.2 (Sep 11 to 12): fixes found by failed release attempts
+
+- 0.7.1:
+  - Cargo.lock is refreshed during version bumps, to stop dirtying the release worktree (#85).
+  - A Cargo publish is confirmed on the registry before being marked done (#86).
+  - That confirmation retries with backoff (#87).
+- 0.7.2:
+  - The release build job's artifact upload was dropping the handoff files (#90).
+  - The execute job now has git-push credentials for its release tag (#91).
+  - The registry-confirmation ecosystem gate was extracted into one testable source of truth, along with the last two regression-coverage gaps (#92).
+- Failure classes listed in the incident memory: stale intent, lockfile drift, hidden artifacts, Git credentials, in-worktree artifact downloads, a yanked dependency.
+
+3e. Incident 2026-09-16 and owner requirements
+
+Report: .claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md.
+- Merging a verified managed release PR authorizes automatic publication. No Environment approval and no second human click.
+- A merged but unpublished version must be recoverable without inventing a newer version.
+- Orchestration SHA (the workflow revision) and release-source SHA (the merged release commit) are distinct identities, and both are recorded.
+- A rerun of an old Actions run does not consume later workflow fixes. Recovery is a new workflow_dispatch.
+- Earlier run 34702634375 attempt 4 failed in Supply Chain Audit before any release job ran. Do not rerun it. #97 (Sep 16) restored the dependency audit baseline.
+- Claude invented the mandatory Environment reviewer while drafting specs and later misattributed it to the user. PR #95 (removes environment-policy but retained environment: release) is not on main; its status was not verified. Closed unmerged PR: chore/remove-release-environment-approval.
+- Required agent behavior from that incident:
+  - Verify platform semantics before recommending an action.
+  - Search sibling lifecycle modes (plan, build, execute, rerun, recovery, partial resume) before closing a fix.
+  - Treat PR merge and green CI as intermediate evidence.
+  - Use behavioral workflow tests, not YAML line checks.
+
+3f. Sep 12 to 20: pre-#101 fixes now in 0.8.0
+
+- #94: execute's handoff artifacts are downloaded outside the workspace, because a dirty worktree fails the release-trust check.
+- #96: artifact retention raised from 1 to 7 days.
+- #97: dependency audit baseline restored.
+- #98: taiki-e/install-action bump.
+- #100: layered licensing, FSL and MIT. It replaced the previous licences on the 0.5.0 crates, which one review reported as AGPL-3.0-only or MIT OR Apache-2.0. I did not verify that claim. Whether #100 has a changeset was not checked.
+
+3g. PR #101 hardening (audit to merge, Sep 17 to 20)
+
+Origin codex/release-recovery, base 4d05e40d, "make Callisto self-release recoverable".
+- The audit:
+  - The owner asked for an adversarial analysis covering architecture, semantic model, performance, bugs, corner cases and coverage, with black-box tests.
+  - It found 3 P0s confirmed live, plus about 60 other findings.
+  - It incorporated the Codex findings: publish-then-reject on a bad orchestration revision, target_commitish, DAG cost, profile authority split, coverage gaps.
+  - Defect IDs D01-D08, C2-C8, P20, F1-F4. Map and closure matrix are in .claude/plans/PR101-HARDENING/.
+  - Direction: fix by root pattern, not spot patches, and do the deferred structural work.
+- Model (crates/callisto-model/src/{release,release_observation,release_transition}.rs):
+  - Evidence-carrying ProviderObservationV1 = Absent | Exact{evidence} | Conflict{reason} | Indeterminate{cause}.
+  - ReleaseRunEnvelopeV1 is persisted before any effect.
+  - One pure OperationState transition table. Attempting is reachable only via an absent-proof.
+  - New ForgePublish role.
+  - ReleasePackageId::new validates names. npm grammar corrected against a corpus of 8,014 real names: legacy uppercase and scoped ./_ leading are allowed.
+- Graph (crates/callisto-graph/src/commands/):
+  - Split the 2,900-line release.rs into release/{mod,capability,derive,binding,github}.rs and release/provider/{mod,registry,tag,forge,artifact,policy,http}.rs.
+  - ReleaseProvider port with one provider table (Registry, GitTag, ForgeRelease, ArtifactUpload, ForgePublish).
+  - release_execution.rs is generic over ReleaseProviderSet. It observes before persisting Attempting, sweeps every Pending op in a recovery run, and memoizes reconcile.
+  - Bounded retry: 5 attempts, backoff 2/4/8/16 s, Retry-After clamped to 300 s. Per-command deadlines live in timeouts.
+  - release_simulator.rs is a fault-injection simulator: 1,197 scenarios, 6 invariants.
+  - registry_endpoint.rs restricts endpoints to https.
+- Registry observation goes through the package manager, not curl:
+  - cargo: cargo info NAME@VER --registry X, run from the workspace root.
+  - npm: npm view.
+  - PyPI is refused at plan time because pip cannot distinguish a missing project from an unreachable index.
+  - cargo info cannot see yanked versions. That reads Absent, and the publish is then refused, so it fails closed. A network failure is not treated as Absent.
+- GitHub Release flow: created as a draft, assets uploaded to the draft, then a separate ForgePublish op last. All uploads are prerequisites of the publish in the dependency graph.
+- CLI (crates/callisto-cli/src/commands/release.rs): validate before effects, receipt probe, typed errors, plan tolerates a source without [release] (zero slots plus a notice).
+- Test tiers: captured real provider fixtures in testing/fixtures/providers (refresh with just provider-fixtures, check with just provider-contract), strict fakes, real-tool flag contract tests, target-table drift checks.
+- Workflows and tooling:
+  - just ci includes coverage at a 90 gate. ci-fast was removed.
+  - Workflows call just/moon.
+  - The installer has a verification input: require | fallback (default) | skip.
+  - .github/tests/verify-release-workflow-policy.sh is a parsed-YAML policy check with a --self-test mutant suite (25 mutants then, 30 now). verify-release-workflow-contract.sh is its companion.
+  - Just recipes: zizmor, release-workflow-checks, workflow-contracts.
+- Error codes: E170 capability gate, E173 stranded Attempting, E174 existing version in a non-recovery run, E198 unknown profile, E051 release trust found an ignored path outside its allowlist.
+- Known deliberate behavior:
+  - Same-runner rerun after a crash between the Attempting save and the effect gives E173. A fresh-runner recovery resolves it.
+  - A lightweight remote tag counts as a conflict.
+  - The isolation rule is pairwise only when no production profile exists.
+  - version-pr keeps contents: write.
+- Docs and specs:
+  - docs/07-self-release-lifecycle.md
+  - docs/specs/SPEC-SELF-RELEASE-LIFECYCLE.json
+  - .claude/semantic-model/release-lifecycle.md
+  - .claude/specs/SPEC-RELEASE-LIFECYCLE-HARDENING.json (44 criteria, 14 marked [JC] awaiting owner acceptance)
+  - .changeset/release-product-artifacts.md
+- Owner decisions:
+  - Product tag callisto@{version} is intentional. The earlier callisto-cli@* tags need migration or lookup compatibility, not a revert.
+  - Registry observation uses the package manager.
+  - https only, no http and no loopback exception.
+  - PyPI refused at plan time is fine.
+  - Installer verification is configurable in three modes.
+  - Cargo must build in minutes.
+  - No red-green testing, and keep token spend lean.
+  - Declined for now: concurrency.queue: max (actionlint 1.7.12 rejects the key), a checksum-based already-published rerun path, plan-publish blocking vs warning in callisto-validate, optional token rotation.
+- Research that informed the calls: changesets and nx treat already-published as success/skip; knope retries 5 times with Retry-After; release-please uses a label state machine; taiki-e/install-action has a fallback mode with SHA256.
+- Gate before push (2026-09-19):
+  - just ci exit 0 in about 7 min: 1,544 tests, coverage 92.33% vs the 90 gate.
+  - An independent review found no P0. Its fixes were committed: reconstruct sweep, lag-tolerant receipt, stderr redaction, package-name validation, policy pins for the signed-commit requirement.
+- Build and process problems:
+  - Cargo slowness. Builds took hours because target/debug/deps held 1.72M .o files from macOS split-debuginfo. Fixed by a local git-excluded .cargo/config.toml with split-debuginfo=off, a wipe of target/debug, and one invocation shape (-p callisto-cli -p callisto-graph -p callisto-model or --workspace). A cold build is about 31 s. I wrongly treated the slowness as normal for hours.
+  - Wasted effort. A 24-agent spec pipeline (69 min, 2.7M tokens) failed its own gates. A RED suite of 22 #[ignore]d tests was built before the owner said to stop red-green.
+  - Mistakes fixed in-flight:
+    - git add -u skipped the new registry_endpoint.rs, fixed via fixup and autosquash.
+    - The pre-commit hook fmt-checks the whole tree, so another agent's unformatted files blocked commits.
+    - Rustdoc intra-doc links broke after the module split, fixed by just ci.
+    - 8 stale callisto-action tests that failed on main too were deleted.
+    - A licence-mismatch finding of mine was a stale-base artifact and I withdrew it.
+    - The npm validator wrongly rejected legacy names, fixed as above.
+
+3h. Sep 20: shipping
+
+- #101 merged (279e3236) after a rebase and 12/12 hosted checks.
+- Transient failure: extractions/setup-just hit a GitHub releases API 500. #102 (2d949520) replaced 8 uses with taiki-e/install-action@c3ec0de9… # v2, tool: just@1.58.0. My first wait loop exited early because it allowed zero checks. It now requires more than 5.
+- Release PR #99 merged at 02:00:59Z (Sep 21 UTC). It triggered run 35552753450, which showed "success" but skipped plan, build-artifact, build, execute and version-pr.
+
+4. The failed release: two bugs
+
+Bug 1: skipped ancestor (mine; fixed by #103, merged)
+
+- Cause: release-candidate sits behind two exclusive gate jobs (verify on push, recovery-checks on dispatch), one always skipped. It uses always(), so it runs. GitHub skips any job with a skipped transitive ancestor unless its own if contains a status function. plan and build-artifact had none, so the chain to execute was skipped on both the push path and the dispatch path.
+- Evidence: release-candidate had correctly set is_release_pr=true. PR #99 was merged from callisto/version-packages and the commit was verified. Earlier non-release runs (35551491179, 35537902908) looked healthy because version-pr has always(). Refs: actions/runner#2205, community discussion #45058.
+- Why it wasn't caught: the policy checks were text-only, execute had never run in hosted CI, and the hosted preflight jobs don't touch this graph.
+- Fix:
+  - always() plus an explicit needs.X.result == 'success' on plan and build-artifact.
+  - Policy rule: every job with needs must contain always().
+  - New scheduler in the policy script. It evaluates each job's real if: under GitHub's implicit-success()-over-transitive-ancestors rule across 11 trigger and failure scenarios, and it rejects the c5578e6a workflow.
+  - 4 mutants added.
+
+Bug 2: cross-runner checksum (found by an independent bug-hunter review; fixed by #104, open)
+
+- Cause: plan (Ubuntu) ran shasum -a 256 "$handoff_dir/release-intent.json" > ....sha256, which records the absolute path under its own RUNNER_TEMP. The macos-14 build-artifact leg verifies from a different RUNNER_TEMP, so "Verify handoff" fails with No such file or directory, and build and execute would be skipped. I reproduced it locally.
+- Why it wasn't caught: Ubuntu legs and execute only pass because Ubuntu runners share a RUNNER_TEMP, and release-artifact-preflight skips that step.
+- Fix:
+  - (cd "$handoff_dir" && shasum -a 256 release-intent.json > release-intent.json.sha256).
+  - The policy script now runs plan's checksum line, moves the files as another runner would, and runs the build job's verify line.
+  - The execute receipt upload is now named release-receipt-attempt-${{ github.run_attempt }}. The old fixed name would collide on a re-run of a failed attempt (upload-artifact overwrite: false). That collision is inferred from the action's documented semantics, not observed.
+  - 2 mutants added, 30 total, all rejected. just workflow-contracts, just zizmor and actionlint pass locally.
+
+5. Verified fine (independent review plus my checks)
+
+- Real local callisto release plan on c5578e6a: 24 ops (9 registry publish, 9 tag, 1 forge release draft, 4 asset uploads, 1 forge publish) and 4 artifact slots for callisto-cli@0.8.0:
+  - aarch64-apple-darwin.tar.gz
+  - x86_64-unknown-linux-gnu.tar.gz
+  - x86_64-unknown-linux-musl.tar.gz
+  - callisto-moon.wasm (wasm32-wasip1)
+  - The attestation policy is repo orin-dx/callisto, workflow .github/workflows/callisto-release.yml, workflowCommit = orchestration sha.
+- Artifact layout matches across plan, build-artifact, build, execute. The multi-path upload's least common ancestor is _temp, so release-build/release-intent and release-build/release-artifacts line up. There are no absolute paths in intent.json or manifest.json.
+- Attestation verification was checked against a real workflow_dispatch attestation with the same gh attestation verify flags. For a dispatch on main, the orchestration sha equals GITHUB_SHA.
+- Publish path:
+  - Checkout persist-credentials uses includeIf in a temp file, so no worktree files appear. Only target/ is ignored, and it is allowlisted.
+  - All 9 crates pass cargo package --locked with the verify build. Only callisto-model was dry-run published ("aborting upload due to dry run").
+  - Every inter-crate dependency is ^0.8.0, so nothing needs an unpublished 0.6/0.7.
+- Draft asset digest: probed on the real API with a throwaway draft zz-probe-digest-20260920. digest: sha256:… (matching local), size and state: uploaded were present on the first read. The by-tag endpoint returns 404 for drafts; the provider uses the list endpoint. The draft is deleted and no tag was created.
+- Recovery on a never-started release: every provider's observe returns Absent, and reconstruct_missing_operation maps Absent to Ok(()), so ops proceed as normal dispatch.
+- recovery-checks scripts: they pass on a depth-1 clone. The CI job with the same tooling already passes on hosted.
+
+6. Unverified risks
+
+- CARGO_REGISTRY_TOKEN: unknown whether it is valid for the account that owns all 9 crates (castrog, single owner each). If not, the first op (callisto-model) fails with nothing published.
+- FSL-1.1-MIT: new on crates.io. The crates.io licence parser (spdx 0.13.5) knows the identifier, but nobody has published it. Publish order is callisto-model (MIT) first, then the FSL crates. A rejection would leave a partial release, which recovery handles.
+- Re-runs: "Re-run failed jobs" reuses the old workflow file, so any workflow fix needs a fresh dispatch.
+- Never exercised on hosted: plan, build-artifact, build and execute for a real release, and the macOS attestation.
+- Cosmetic: gh release create --generate-notes will pick an odd previous tag because tags are per crate. Only callisto-cli gets a GitHub Release (config publish-to).
+
+7. Open items
+
+- Unpublished 0.6.0 to 0.7.2. Version PRs #51, #55, #89, #93 merged with no tags and no crates. The 0.8.0 release publishes 0.8.0 only. Backfill is the owner's call.
+- Release notes. Changelog entries for 0.6.0 to 0.7.2 describe versions nobody can install. Behavior breaks between 0.5.0 and 0.8.0:
+  - Repository and tag identity tightening (0.7.0).
+  - Attestation policy rejects more repository strings (0.7.0).
+  - --strict-graph now exists on snapshot/tag (0.7.0).
+  - callisto release plan --from-release-commit requires --decision (0.7.0).
+  - https-only registries and PyPI refusal (0.8.0).
+  - Re-plan intents from earlier versions (0.8.0).
+  - Licence change to FSL-1.1-MIT for most crates (0.8.0).
+- --skip-publish-precheck was advertised in the 0.6.0 changelog and removed in 0.7.0, where it was called "parsed and immediately discarded". A grep of crates/ finds zero code references now. The only remaining reference is .claude/specs/SPEC-RELEASE-PLAN-DURABILITY-001B.json.
+- Branch and worktree cleanup (requested, NOT done). Local branches classified against origin/main:
+  - 50 already in main.
+  - 39 squash-merged PRs with differing local commits.
+  - 1 closed unmerged PR: chore/remove-release-environment-approval.
+  - 27 with no PR and unique commits:
+    - entire/c5578e6-e3b0c4 (+11; never delete entire/* branches).
+    - smoke-test-next-release (+3).
+    - about 22 worktree-agent-* (+1 each, 2026-09-09), including "fix(model): stop dropping attestation_policy from ReleaseOpe…" and "fix(graph): guard against stale fixed-group members in casca…".
+    - spike/relpr-stale-managed (+1).
+    - codex-release-trust-specs (+3) and codex/005-doc-authority-v2 (+11), both 2026-08-29.
+  - Commit contents were not inspected, and .claude/worktrees/* dirty state wasn't checked. Whether Codex work should be brought in is undecided.
+  - Also delete the stale remote branches callisto/version-packages--addd0f0941cd… and --c1adbf37269f…, after confirming with the owner.
+- Owner items: re-pin Swatinem/rust-cache@v2 inside orin-dx/actions setup-rust, and the bot-PR check-approval setting for the managed release PR. Both of these have no decision recorded.
+- Spec: the 14 [JC] criteria await owner acceptance.
+- Memory: project_pr101_hardening_state.md is stale. It says the PR is unpushed and needs updating with the state above.
+
+8. Rules the owner has set
+
+- Build and test:
+  - No red-green or RED-first ceremony. Lean tokens.
+  - Validate each fix individually, and run one workspace test run at gates.
+  - Never run parallel builders, and never pkill or kill processes you didn't start.
+  - Use one cargo invocation shape.
+  - Scoped iteration is a single cargo test -p <crate> / cargo clippy -p <crate>, not moon run <project>:test.
+- Repo hygiene:
+  - Never git checkout -- Cargo.lock. A diff means investigate.
+  - Check git status --short | grep '^??' before committing, because git add -u skips new files.
+  - After a bug fix, grep for sibling copies of the same defect and unify or explicitly record them.
+  - Terse comments: one short line, and only for a non-obvious why. No emojis in docs.
+  - Local runs may hit E051 from the owner's Entire hook writing .entire/logs/. Remove it before running plan.
+  - In zsh, quote globs like --include='*.rs'. An unquoted glob aborts the command.
+- Reporting and process:
+  - Verify platform semantics before recommending anything that depends on them.
+  - Keep verified facts, inferences and open questions separate.
+  - Do not attribute requirements to the owner without provenance.
+  - Route commit and PR narration through the courier plugin agents. The last five commits and PR bodies were freehand, which breaks that rule.
+  - Diagnose environment issues with a falsifiable test.
+  - Iterate review loops in the foreground.
+  - Never report completion while the registry or tags still show the old release.
+</pasted_content id="354f">
