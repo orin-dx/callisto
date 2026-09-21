@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.10.7-nightly.202609200623.81a05d785",
+  "checkpoint_id": "01M32Y6F3TC3EGN4GBMC2JSCJD",
+  "session_id": "e2fe6504-b7f2-430b-a234-1e8197320f97",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-21T21:33:19.780827Z",
+  "branch": "probe/tag-push-identity",
+  "checkpoints_count": 30,
+  "save_step_count": 1,
+  "files_touched": [
+    ".github/tests/verify-release-workflow-policy.sh",
+    ".github/workflows/callisto-release.yml"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "8fd12aa2896c",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 322,
+    "cache_creation_tokens": 270406,
+    "cache_read_tokens": 34570888,
+    "output_tokens": 133880,
+    "api_call_count": 161
+  },
+  "session_metrics": {
+    "turn_count": 44
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-21T21:33:19.715918Z",
+    "agent_lines": 2,
+    "agent_removed": 2,
+    "human_added": 3,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 5,
+    "total_lines_changed": 8,
+    "agent_percentage": 50,
+    "metric_version": 2
+  }
+}

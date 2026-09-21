@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.10.7-nightly.202609200623.81a05d785",
+  "checkpoint_id": "01M32Y6F3TC3EGN4GBMC2JSCJD",
+  "strategy": "manual-commit",
+  "branch": "probe/tag-push-identity",
+  "checkpoints_count": 30,
+  "files_touched": [
+    ".github/tests/verify-release-workflow-policy.sh",
+    ".github/workflows/callisto-release.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 322,
+    "cache_creation_tokens": 270406,
+    "cache_read_tokens": 34570888,
+    "output_tokens": 133880,
+    "api_call_count": 161
+  }
+}
