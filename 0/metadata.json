@@ -1,0 +1,78 @@
+{
+  "cli_version": "0.10.7-nightly.202609200623.81a05d785",
+  "checkpoint_id": "01M32NFMXWSZSC021CM10XR2E6",
+  "session_id": "01a0c4e9-4a8c-7452-bee3-d6994988ae7a",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-21T19:01:03.217672Z",
+  "branch": "fix/release-handoff-checksum-and-receipt",
+  "checkpoints_count": 8,
+  "save_step_count": 2,
+  "files_touched": [
+    ".github/tests/verify-release-workflow-policy.sh",
+    ".github/workflows/callisto-release.yml"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-luna",
+  "turn_id": "21dd079dc175",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 200800,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 6784768,
+    "output_tokens": 45540,
+    "api_call_count": 78,
+    "subagent_tokens_complete": true
+  },
+  "session_metrics": {
+    "turn_count": 8
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-21T19:01:03.170504Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 33,
+    "human_modified": 3,
+    "human_removed": 0,
+    "total_committed": 33,
+    "total_lines_changed": 36,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 13,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.local.json": 11
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 49,
+      "user_lines_removed": 3,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.local.json": 11,
+        ".github/tests/verify-release-workflow-policy.sh": 28,
+        ".github/workflows/callisto-release.yml": 8
+      },
+      "user_removed_per_file": {
+        ".github/tests/verify-release-workflow-policy.sh": 1,
+        ".github/workflows/callisto-release.yml": 2
+      }
+    }
+  ]
+}
