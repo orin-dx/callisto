@@ -1,5 +1,9 @@
 # callisto-graph
 
+## 0.8.0
+
+- Released together with the `workspace` fixed group.
+
 ## 0.7.2
 
 - **Extract the registry-confirmation ecosystem gate into a single, testable source of truth**

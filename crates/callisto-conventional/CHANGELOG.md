@@ -1,5 +1,9 @@
 # callisto-conventional
 
+## 0.8.0
+
+- Released together with the `workspace` fixed group.
+
 ## 0.7.2
 
 - Released together with the `workspace` fixed group.
