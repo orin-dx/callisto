@@ -239,6 +239,57 @@ def schedule_errors(jobs):
     return errs
 
 
+def handoff_roundtrip_errors(jobs):
+    """Run the plan job's checksum line, move the files to another directory as a
+    different runner would, and run the build job's verify line against them."""
+    def step_run(job, name):
+        for s in jobs.get(job, {}).get("steps", []):
+            if s.get("name") == name:
+                return s.get("run", "")
+        return ""
+
+    def pick(script, *needles):
+        hits = [ln.strip() for ln in script.splitlines() if all(n in ln for n in needles)]
+        return hits[0] if len(hits) == 1 else None
+
+    write = pick(step_run("plan", "Derive and hash intent"), "shasum -a 256", ".sha256", ">")
+    verify = pick(step_run("build-artifact", "Verify handoff"), "shasum -a 256 -c")
+    if not write or not verify:
+        return ["handoff checksum write/verify lines could not be located for the round-trip check"]
+    with tempfile.TemporaryDirectory() as tmp:
+        src, dst = os.path.join(tmp, "plan-runner", "release-intent"), os.path.join(tmp, "build-runner", "release-intent")
+        os.makedirs(src)
+        os.makedirs(dst)
+        with open(os.path.join(src, "release-intent.json"), "w") as f:
+            f.write('{"schemaVersion":3}\n')
+        subprocess.run(["bash", "-c", "set -euo pipefail; " + write], check=True, env={**os.environ, "handoff_dir": src})
+        for n in ("release-intent.json", "release-intent.json.sha256"):
+            shutil.copy(os.path.join(src, n), os.path.join(dst, n))
+        shutil.rmtree(src)
+        r = subprocess.run(["bash", "-c", "set -euo pipefail; " + verify], env={**os.environ, "handoff_dir": dst}, capture_output=True, text=True)
+    if r.returncode != 0:
+        return ["intent checksum written by plan does not verify from a different directory (absolute path recorded?)"]
+    return []
+
+
+def slots_probe_errors(jobs):
+    """Run the plan job's slot-count step against an unreadable intent. An empty
+    has_artifacts matches neither downstream guard, so every later job skips on a green run."""
+    script = next((s.get("run", "") for s in jobs.get("plan", {}).get("steps", []) if s.get("id") == "slots"), "")
+    if not script:
+        return ["plan's slot-count step could not be located"]
+    with tempfile.TemporaryDirectory() as tmp:
+        out = os.path.join(tmp, "github_output")
+        open(out, "w").close()
+        env = {**os.environ, "RUNNER_TEMP": os.path.join(tmp, "absent"), "GITHUB_OUTPUT": out}
+        result = subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True)
+        wrote = open(out).read().strip()
+    if result.returncode == 0:
+        return [f"plan's slot-count step exits 0 when the intent cannot be read (wrote {wrote!r}); "
+                "every downstream job would skip on a green run"]
+    return []
+
+
 def check(path):
     errs = []
     text = open(path).read()
@@ -329,6 +380,8 @@ def check(path):
         if job.get("needs") and not re.search(r"\balways\(\)", str(job.get("if", ""))):
             errs.append(f"job {name} depends on a gated job and must use always() in its if")
     errs += schedule_errors(jobs)
+    errs += handoff_roundtrip_errors(jobs)
+    errs += slots_probe_errors(jobs)
     ba = re.sub(r"\s+", " ", str(jobs.get("build-artifact", {}).get("if", "")))
     if "needs.plan.result == 'success'" not in ba:
         errs.append("build-artifact must require needs.plan.result == 'success'")
@@ -351,6 +404,9 @@ def check(path):
             errs.append("handoff verification step must be unconditional, fail-closed, and run the sha256 and cmp checks")
         if not sec or hand[0] > min(sec):
             errs.append("handoff verification must precede the first step that references secrets")
+    up = [s for s in steps if str(s.get("uses", "")).startswith("actions/upload-artifact@") and str((s.get("with") or {}).get("name", "")).startswith("release-receipt")]
+    if len(up) != 1 or "github.run_attempt" not in str(up[0]["with"]["name"]):
+        errs.append("execute must upload exactly one receipt artifact named per github.run_attempt so an earlier attempt's receipt is not shadowed")
     return errs
 
 
@@ -482,6 +538,17 @@ def mutants(text):
         "build-artifact loses plan success": sub("if: always() && needs.plan.result == 'success' && needs.plan.outputs.has_artifacts == 'true'",
             "if: always() && needs.plan.outputs.has_artifacts == 'true'"),
         "execute checks out moving ref": after("\n  execute:\n", "ref: ${{ needs.release-candidate.outputs.release_source_sha }}", "ref: main"),
+        "slot probe swallows a jq failure": sub(
+            '          has_artifacts=$(jq \'.artifactSlots | length > 0\' "${RUNNER_TEMP}/release-intent/release-intent.json")\n'
+            '          case "$has_artifacts" in\n'
+            '            true|false) ;;\n'
+            '            *) echo "::error::artifact slot probe returned \'$has_artifacts\'"; exit 1 ;;\n'
+            '          esac\n'
+            '          echo "has_artifacts=$has_artifacts" >> "$GITHUB_OUTPUT"\n',
+            '          echo "has_artifacts=$(jq \'.artifactSlots | length > 0\' "${RUNNER_TEMP}/release-intent/release-intent.json")" >> "$GITHUB_OUTPUT"\n'),
+        "checksum records absolute path": sub('(cd "$handoff_dir" && shasum -a 256 release-intent.json > release-intent.json.sha256)',
+            'shasum -a 256 "$handoff_dir/release-intent.json" > "$handoff_dir/release-intent.json.sha256"'),
+        "receipt name not per attempt": sub("name: release-receipt-attempt-${{ github.run_attempt }}", "name: release-receipt"),
         "handoff step disabled": sub("      - name: Verify same-run handoff before credentials\n", "      - name: Verify same-run handoff before credentials\n        if: false\n"),
         "handoff step renamed away": sub("Verify same-run handoff before credentials", "Handoff"),
         "handoff continue-on-error": sub("      - name: Verify same-run handoff before credentials\n        env:", "      - name: Verify same-run handoff before credentials\n        continue-on-error: true\n        env:"),
