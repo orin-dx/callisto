@@ -466,12 +466,34 @@ impl GitRepository {
                 .map_err(|e| VcsError::Git(format!("Invalid SHA: {e}")))?;
 
             if let Some(msg) = message {
+                // A tag object with no `tagger` line is invalid: `git tag -a` refuses to
+                // write one, and GitHub's receive-pack rejects the push that carries it.
+                let target_commit;
+                let tagger = match self.repo.committer() {
+                    Some(Ok(signature)) => signature,
+                    Some(Err(e)) => {
+                        return Err(VcsError::Git(format!("invalid committer identity for tag: {e}")));
+                    }
+                    // No configured identity: attribute the tag to whoever committed
+                    // what it points at, rather than inventing one.
+                    None => {
+                        target_commit = self
+                            .repo
+                            .find_object(oid)
+                            .map_err(|e| VcsError::Git(format!("could not read tag target: {e}")))?
+                            .try_into_commit()
+                            .map_err(|e| VcsError::Git(format!("tag target is not a commit: {e}")))?;
+                        target_commit
+                            .committer()
+                            .map_err(|e| VcsError::Git(format!("could not read target committer: {e}")))?
+                    }
+                };
                 self.repo
                     .tag(
                         name,
                         oid,
                         gix::object::Kind::Commit,
-                        None,
+                        Some(tagger),
                         msg,
                         gix::refs::transaction::PreviousValue::MustNotExist,
                     )
@@ -749,6 +771,81 @@ mod tests {
         run_git(root, &["config", "user.name", "Test"]);
         run_git(root, &["config", "commit.gpgsign", "false"]);
         run_git(root, &["config", "tag.gpgsign", "false"]);
+    }
+
+    /// A tag object with no `tagger` line is what `git fsck` calls
+    /// `missingTaggerEntry`; GitHub's receive-pack rejects the push carrying it.
+    #[test]
+    fn native_annotated_tag_records_a_tagger() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        init_repo(root);
+        std::fs::write(root.join("f.txt"), "hello\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "initial commit"]);
+        let head = head_sha(root);
+
+        let repo = GitRepository::discover(root).unwrap();
+        repo.create_tag(
+            "v9.9.9",
+            &head,
+            Some("release"),
+            TagSignPolicy::ForceUnsigned,
+            &callisto_model::ApplyPermit::force_for_tests(),
+        )
+        .unwrap();
+
+        assert!(
+            tag_object(root, "v9.9.9").contains("\ntagger "),
+            "tag object must carry a tagger line"
+        );
+    }
+
+    /// The release runner's checkout has no `user.name`/`user.email`; the tag
+    /// must still be well formed rather than silently taggerless.
+    #[test]
+    fn native_annotated_tag_records_a_tagger_without_configured_identity() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        init_repo(root);
+        std::fs::write(root.join("f.txt"), "hello\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "initial commit"]);
+        let head = head_sha(root);
+        run_git(root, &["config", "--unset", "user.email"]);
+        run_git(root, &["config", "--unset", "user.name"]);
+
+        let repo = GitRepository::discover(root).unwrap();
+        repo.create_tag(
+            "v9.9.10",
+            &head,
+            Some("release"),
+            TagSignPolicy::ForceUnsigned,
+            &callisto_model::ApplyPermit::force_for_tests(),
+        )
+        .unwrap();
+
+        let object = tag_object(root, "v9.9.10");
+        assert!(object.contains("\ntagger "), "got: {object}");
+    }
+
+    fn head_sha(root: &Path) -> CommitSha {
+        let out = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        CommitSha::parse(String::from_utf8_lossy(&out.stdout).trim()).unwrap()
+    }
+
+    fn tag_object(root: &Path, name: &str) -> String {
+        let out = std::process::Command::new("git")
+            .args(["cat-file", "-p", name])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git cat-file failed for {name}");
+        String::from_utf8_lossy(&out.stdout).into_owned()
     }
 
     #[test]
