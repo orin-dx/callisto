@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Once;
 
+use fs2::FileExt;
 use moon_pdk_test_utils::{create_empty_moon_sandbox, ExecuteExtensionInput, RegisterExtensionInput};
 
 static BUILD_WASM: Once = Once::new();
@@ -39,6 +40,25 @@ fn resolve_wasm_file() {
     BUILD_WASM.call_once_force(|_| {
         let root = workspace_root();
         let built = root.join("target/wasm32-wasip1/debug/callisto_moon.wasm");
+
+        // Cross-process guard: nextest runs each test in its own process, so
+        // the in-process `Once` above only stops races within one binary.
+        // `just test`/`test-ci`/`coverage` pre-build this artifact so the
+        // common case below never contends, but a bare `cargo nextest run`
+        // (or `-p callisto-moon --test moon_wasm_sandbox`) still spawns one
+        // process per test, and without this lock they'd race the same
+        // `cargo rustc` invocation against the same shared target dir.
+        fs::create_dir_all(built.parent().expect("wasm target path has a parent")).ok();
+        let lock_path = root.join("target/.callisto-moon-wasm-build.lock");
+        let lock_file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&lock_path)
+            .expect("failed to open wasm build lock file");
+        lock_file
+            .lock_exclusive()
+            .expect("failed to acquire cross-process wasm build lock");
 
         let is_valid = built.exists() && built.metadata().map(|m| m.len() > 100).unwrap_or(false);
         if !is_valid {

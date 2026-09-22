@@ -122,3 +122,7 @@ tempfile = { workspace = true }
 # to the newer patch. Pin the transitive resolution back to the last
 # version where the default features still include it.
 http-cache-reqwest = "=1.0.0-alpha.6"
+# Cross-process build guard for tests/moon_wasm_sandbox.rs's resolve_wasm_file:
+# nextest runs each test in its own process, so an in-process Once can't stop
+# concurrent processes from racing to (re)build the shared wasm artifact.
+fs2 = { workspace = true }

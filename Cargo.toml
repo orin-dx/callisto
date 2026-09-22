@@ -50,6 +50,34 @@ codegen-units = 1
 # Ship without the symbol table: ~15% smaller binaries, no debug info either way.
 strip = true
 
+# callisto-moon's wasm sandbox tests run a real wasmtime/cranelift JIT
+# compile of the test module on every invocation. Unoptimized (dev-profile)
+# cranelift/regalloc2 code is dramatically slower at that actual JIT work,
+# so these dependency crates alone get opt-level 3 even under `dev`/`test`
+# builds; our own workspace crates stay unoptimized for fast iteration.
+[profile.dev.package.cranelift-codegen]
+opt-level = 3
+[profile.dev.package.cranelift-codegen-shared]
+opt-level = 3
+[profile.dev.package.cranelift-frontend]
+opt-level = 3
+[profile.dev.package.cranelift-entity]
+opt-level = 3
+[profile.dev.package.cranelift-bforest]
+opt-level = 3
+[profile.dev.package.cranelift-bitset]
+opt-level = 3
+[profile.dev.package.cranelift-control]
+opt-level = 3
+[profile.dev.package.cranelift-native]
+opt-level = 3
+[profile.dev.package.cranelift-assembler-x64]
+opt-level = 3
+[profile.dev.package.regalloc2]
+opt-level = 3
+[profile.dev.package.wasmtime-internal-cranelift]
+opt-level = 3
+
 # Centralized workspace lints (stable since Rust 1.74)
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -77,7 +77,22 @@ pub(crate) struct ThreadSleeper;
 
 impl Sleeper for ThreadSleeper {
     fn sleep(&self, duration: Duration) {
-        std::thread::sleep(duration);
+        std::thread::sleep(scaled_for_tests(duration));
+    }
+}
+
+/// Test-only escape hatch, mirroring cargo's own `__CARGO_TEST_*` vars: CLI
+/// e2e tests drive the real binary and can't inject a `Sleeper`, so
+/// `__CALLISTO_TEST_SLEEP_SCALE` (e.g. "0") lets the test harness collapse
+/// real backoff waits without weakening the unit tests that assert on the
+/// schedule itself via `RecordingSleeper`. Never set outside tests.
+fn scaled_for_tests(duration: Duration) -> Duration {
+    match std::env::var("__CALLISTO_TEST_SLEEP_SCALE") {
+        Ok(raw) => match raw.parse::<f64>() {
+            Ok(scale) if scale.is_finite() && scale >= 0.0 => duration.mul_f64(scale),
+            _ => duration,
+        },
+        Err(_) => duration,
     }
 }
 
