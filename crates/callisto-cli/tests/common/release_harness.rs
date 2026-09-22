@@ -122,9 +122,7 @@ pub fn git(root: &Path, args: &[&str]) -> String {
     String::from_utf8(output.stdout).unwrap().trim().to_owned()
 }
 
-/// Test-only, underscore-prefixed like cargo's own `__CARGO_TEST_*`: collapses
-/// `ThreadSleeper`'s real backoff waits (see `provider/policy.rs`) to nothing,
-/// since these e2e tests drive the real binary and can't inject a `Sleeper`.
+/// Skips real backoff waits in the spawned binary.
 const NO_BACKOFF_SLEEP: (&str, &str) = ("__CALLISTO_TEST_SLEEP_SCALE", "0");
 
 pub fn callisto(root: &Path, args: &[&str]) -> Output {

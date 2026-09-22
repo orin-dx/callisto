@@ -51,8 +51,6 @@ fn execute_raw(
         .env("CALLISTO_TEST_FORGE_TAG", forge_tag)
         .env("CALLISTO_TEST_CARGO_MARKER", registry_marker(root))
         .env("CALLISTO_TEST_REAL_GIT", system_git())
-        // Test-only: collapses ThreadSleeper's real backoff waits (see
-        // provider/policy.rs's __CALLISTO_TEST_SLEEP_SCALE).
         .env("__CALLISTO_TEST_SLEEP_SCALE", "0");
     command.output().unwrap()
 }

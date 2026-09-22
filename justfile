@@ -10,13 +10,8 @@ build:
 build-release:
     cargo build --release -p callisto-cli
 
-# Builds the moon extension's wasm32-wasip1 cdylib once, at the exact path
-# tests/moon_wasm_sandbox.rs's resolve_wasm_file() expects
-# (target/wasm32-wasip1/debug/callisto_moon.wasm). Nextest runs each test in
-# its own process, so without this the in-test fallback build races itself
-# across every moon_wasm_sandbox.rs test process.
+# Prebuilds the wasm moon_wasm_sandbox.rs loads, so test processes don't race to build it.
 build-moon-wasm:
-    rustup target add wasm32-wasip1 2>/dev/null || true
     cargo rustc -p callisto-moon --lib --target wasm32-wasip1 --features pdk --crate-type cdylib
 
 # Run unit, integration, doctests, and E2E tests. This intentionally uses the

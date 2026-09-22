@@ -41,13 +41,7 @@ fn resolve_wasm_file() {
         let root = workspace_root();
         let built = root.join("target/wasm32-wasip1/debug/callisto_moon.wasm");
 
-        // Cross-process guard: nextest runs each test in its own process, so
-        // the in-process `Once` above only stops races within one binary.
-        // `just test`/`test-ci`/`coverage` pre-build this artifact so the
-        // common case below never contends, but a bare `cargo nextest run`
-        // (or `-p callisto-moon --test moon_wasm_sandbox`) still spawns one
-        // process per test, and without this lock they'd race the same
-        // `cargo rustc` invocation against the same shared target dir.
+        // nextest runs one process per test; the `Once` above can't stop them racing.
         fs::create_dir_all(built.parent().expect("wasm target path has a parent")).ok();
         let lock_path = root.join("target/.callisto-moon-wasm-build.lock");
         let lock_file = fs::OpenOptions::new()

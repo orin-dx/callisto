@@ -50,11 +50,7 @@ codegen-units = 1
 # Ship without the symbol table: ~15% smaller binaries, no debug info either way.
 strip = true
 
-# callisto-moon's wasm sandbox tests run a real wasmtime/cranelift JIT
-# compile of the test module on every invocation. Unoptimized (dev-profile)
-# cranelift/regalloc2 code is dramatically slower at that actual JIT work,
-# so these dependency crates alone get opt-level 3 even under `dev`/`test`
-# builds; our own workspace crates stay unoptimized for fast iteration.
+# Optimized cranelift halves the moon wasm tests' first JIT compile.
 [profile.dev.package.cranelift-codegen]
 opt-level = 3
 [profile.dev.package.cranelift-codegen-shared]
