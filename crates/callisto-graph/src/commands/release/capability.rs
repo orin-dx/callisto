@@ -5,8 +5,7 @@ use std::path::Path;
 
 use callisto_model::{
     AbsentProof, ApplyPermit, CommandRunner, ExactEvidence, ExecutionTrustProfileV1, ProviderObservationV1,
-    ReleaseDecisionV1, ReleaseIntentError, ReleaseIntentV1, ReleaseOperationId, ReleaseOperationObservationV1,
-    ReleaseProfileId, SourceIdentity,
+    ReleaseDecisionV1, ReleaseIntentError, ReleaseIntentV1, ReleaseOperationId, ReleaseProfileId, SourceIdentity,
 };
 use callisto_vcs::{
     access::{GitCommitTrustEvidence, GitHeadDisposition},
@@ -137,22 +136,6 @@ impl ReleaseProviderSet for ValidatedReleaseIntent<'_> {
         )
     }
 
-    fn observe_settled(
-        &self,
-        id: &ReleaseOperationId,
-        artifacts: Option<&VerifiedArtifactManifest<'_>>,
-    ) -> Result<ProviderObservationV1, GraphError> {
-        let operation = self.prepared_operation(id)?;
-        checked_provider_for(operation)?.observe_settled(
-            &self.context(),
-            &ProviderRequest {
-                id,
-                operation,
-                artifacts,
-            },
-        )
-    }
-
     fn publish(
         &self,
         permit: &ApplyPermit,
@@ -171,38 +154,6 @@ impl ReleaseProviderSet for ValidatedReleaseIntent<'_> {
             &EffectAuthorization { permit, proof },
         )
     }
-}
-
-/// Collects one fresh, exact-provider observation for every operation in the
-/// immutable intent.
-///
-/// A terminal receipt is deliberately built from this result rather than from
-/// local execution state. The caller must reject any non-exact result; this
-/// function preserves the complete roster so receipt construction can prove
-/// that it did not silently omit an operation.
-///
-/// The observation is the lag-tolerant one
-/// ([`ReleaseProviderSet::observe_settled`]): the effects are expected to have
-/// landed by now, so a registry index that has not propagated yet is retried
-/// rather than reported absent. A receipt that was rejected for that reason
-/// left a fully published release with no receipt, and the rerun that follows
-/// a push release is not a recovery run, so it could only fail with E174.
-pub fn observe_release_operations<P: ReleaseProviderSet + ?Sized>(
-    capability: &P,
-    artifacts: Option<&VerifiedArtifactManifest<'_>>,
-) -> Result<Vec<ReleaseOperationObservationV1>, GraphError> {
-    ReleaseProviderSet::intent(capability)
-        .operations
-        .iter()
-        .map(|operation| {
-            capability.recheck_trust()?;
-            ReleaseOperationObservationV1::new(
-                operation.id().clone(),
-                capability.observe_settled(operation.id(), artifacts)?,
-            )
-            .map_err(|source| GraphError::ReleaseProviderObservation { source })
-        })
-        .collect()
 }
 
 /// Builds a release intent from a fresh root-bound observation.

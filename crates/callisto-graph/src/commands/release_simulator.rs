@@ -28,9 +28,7 @@ use crate::commands::release::provider::preflight_from_observation;
 use crate::commands::release_artifacts::VerifiedArtifactManifest;
 use crate::commands::release_execution::execute_release;
 use crate::commands::release_test_support::{envelope_of_kind, evidence_for};
-use crate::commands::{
-    observe_release_operations, ReleasePreflight, ReleaseProviderSet, ReleaseStateStore, ReleaseStateWriter,
-};
+use crate::commands::{ReleasePreflight, ReleaseProviderSet, ReleaseStateStore, ReleaseStateWriter};
 use crate::error::{CommandFailure, RemoteConflict};
 use crate::GraphError;
 
@@ -342,6 +340,8 @@ struct SimWorld {
     lagged_ever: RefCell<BTreeSet<ReleaseOperationId>>,
     /// Set while this run is a recovery run that started with no journal.
     lost_journal_recovery: Cell<bool>,
+    /// Provider calls made while issuing the last receipt; must stay zero.
+    calls_after_execution: Cell<usize>,
     sabotage: Sabotage,
 }
 
@@ -377,6 +377,7 @@ impl SimWorld {
             order_violations: RefCell::new(Vec::new()),
             lagged_ever: RefCell::new(BTreeSet::new()),
             lost_journal_recovery: Cell::new(false),
+            calls_after_execution: Cell::new(0),
             sabotage,
         }
     }
@@ -739,6 +740,13 @@ enum Violation {
         operation: Box<ReleaseOperationId>,
         state: Option<OperationState>,
     },
+    ReceiptEvidenceDisagreesWithWorld {
+        operation: Box<ReleaseOperationId>,
+        receipt: Option<ProviderObservationV1>,
+    },
+    ProviderCallAfterExecution {
+        calls: usize,
+    },
     DuplicateLanding {
         operation: Box<ReleaseOperationId>,
     },
@@ -766,6 +774,7 @@ struct ScenarioRun {
     world: SimWorld,
     context: Rc<SimContext>,
     outcomes: Vec<RunOutcome>,
+    receipt: Option<ReleaseReceiptV1>,
 }
 
 /// One end-to-end simulated release, including the operator's reruns.
@@ -785,6 +794,7 @@ fn run_scenario(
     let recovery = envelope_of_kind(intent, ReleaseRunKindV1::Recovery);
 
     let mut outcomes = Vec::new();
+    let mut receipt = None;
     for run in 0..=MAX_RERUNS {
         context.run.set(run);
         context.crashed.set(false);
@@ -811,11 +821,14 @@ fn run_scenario(
         let store = ReleaseStateStore::with_writer(state_path, writer);
         let result = execute_and_receipt(&world, &store, manifest, envelope);
         let detail = match &result {
-            Ok(()) => "receipted".to_owned(),
+            Ok(_) => "receipted".to_owned(),
             Err(failure) => format!("{failure:?}"),
         };
         let outcome = match result {
-            Ok(()) => RunOutcome::Receipted,
+            Ok(issued) => {
+                receipt = Some(issued);
+                RunOutcome::Receipted
+            }
             Err(_) if context.crashed.get() => RunOutcome::Crashed,
             Err(_) => RunOutcome::Failed,
         };
@@ -832,6 +845,7 @@ fn run_scenario(
         world,
         context,
         outcomes,
+        receipt,
     }
 }
 
@@ -841,27 +855,26 @@ fn run_scenario(
 #[derive(Debug)]
 enum RunFailure {
     Execution(Box<GraphError>),
-    Observation(Box<GraphError>),
     Receipt(Box<callisto_model::ReleaseReceiptError>),
 }
 
-/// The production success path in full: execute, then observe every operation
-/// afresh, then issue the terminal receipt. Nothing short of a receipt counts.
+/// The production success path in full: execute, then issue the terminal
+/// receipt from the returned state. Nothing short of a receipt counts.
 fn execute_and_receipt(
     world: &SimWorld,
     store: &ReleaseStateStore<SimWriter>,
     manifest: &ArtifactManifestV1,
     envelope: &ReleaseRunEnvelopeV1,
-) -> Result<(), RunFailure> {
+) -> Result<ReleaseReceiptV1, RunFailure> {
     let permit = ApplyPermit::force_for_tests();
     let artifacts = VerifiedArtifactManifest::for_tests(manifest, PathBuf::from("/simulated"));
     let state = execute_release(world, store, &permit, envelope, Some(&artifacts))
         .map_err(|error| RunFailure::Execution(Box::new(error)))?;
-    let observations = observe_release_operations(world, Some(&artifacts))
-        .map_err(|error| RunFailure::Observation(Box::new(error)))?;
-    ReleaseReceiptV1::from_evidence(&world.intent, &state, observations)
-        .map_err(|error| RunFailure::Receipt(Box::new(error)))?;
-    Ok(())
+    let calls = world.provider_calls.get();
+    let receipt =
+        ReleaseReceiptV1::from_state(&world.intent, &state).map_err(|error| RunFailure::Receipt(Box::new(error)))?;
+    world.calls_after_execution.set(world.provider_calls.get() - calls);
+    Ok(receipt)
 }
 
 // ---------------------------------------------------------------------------
@@ -920,9 +933,37 @@ fn check_invariants(intent: &ReleaseIntentV1, run: &ScenarioRun, mode: Mode) -> 
                 });
             }
         }
+        check_receipt_matches_world(intent, run)?;
     }
 
     check_convergence(intent, run, mode, &durable)
+}
+
+/// I7: the receipt is issued from persisted state alone, with no provider
+/// call, and records exactly the evidence of the effect the world holds.
+fn check_receipt_matches_world(intent: &ReleaseIntentV1, run: &ScenarioRun) -> Result<(), Violation> {
+    let calls = run.world.calls_after_execution.get();
+    if calls != 0 {
+        return Err(Violation::ProviderCallAfterExecution { calls });
+    }
+    let receipt = run.receipt.as_ref();
+    for operation in &intent.operations {
+        let id = operation.id();
+        let recorded = receipt.and_then(|receipt| receipt.observation(id)).cloned();
+        let held = match run.world.remote.borrow().get(id) {
+            Some(Remote::Landed { evidence }) => Some(ProviderObservationV1::Exact {
+                evidence: evidence.clone(),
+            }),
+            _ => None,
+        };
+        if recorded.is_none() || recorded != held {
+            return Err(Violation::ReceiptEvidenceDisagreesWithWorld {
+                operation: Box::new(id.clone()),
+                receipt: recorded,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// How one scenario ended, tallied so the enumeration can prove it exercised
@@ -1150,9 +1191,9 @@ fn faults(dimensions: &Dimensions) -> Vec<Fault> {
 }
 
 /// Crash-and-fault pairs are sampled on a fixed stride rather than run in
-/// full. The full product is 3248 pairs, which runs clean but costs about 35
-/// seconds; a stride of 3 keeps the suite near 12 seconds. The sample is a
-/// deterministic slice of the same enumeration, and its size is asserted.
+/// full. The full product is 2520 pairs; a stride of 3 keeps the suite fast.
+/// The sample is a deterministic slice of the same enumeration, and its size
+/// is asserted.
 const PAIR_STRIDE: usize = 3;
 
 fn scenarios(dimensions: &Dimensions) -> (Vec<Scenario>, usize, usize, usize) {
@@ -1267,7 +1308,7 @@ fn the_release_executor_survives_every_enumerated_crash_and_provider_fault() {
     assert_eq!(intent.operations.len(), 9, "the simulated intent lost an operation");
     assert!(singles_crash >= 50, "crash points shrank to {singles_crash}");
     assert!(singles_fault >= 40, "fault points shrank to {singles_fault}");
-    assert!(pairs >= 1000, "the pair sample shrank to {pairs}");
+    assert!(pairs >= 800, "the pair sample shrank to {pairs}");
 
     let mut converged = 0usize;
     let mut conflicted = 0usize;
@@ -1300,8 +1341,8 @@ fn the_release_executor_survives_every_enumerated_crash_and_provider_fault() {
         fresh_unresolved, 0,
         "a fresh recovery runner failed to resolve a scenario"
     );
-    assert!(converged >= 1400, "too few scenarios converged: {converged}");
-    assert!(conflicted >= 500, "too few conflict scenarios: {conflicted}");
+    assert!(converged >= 1200, "too few scenarios converged: {converged}");
+    assert!(conflicted >= 300, "too few conflict scenarios: {conflicted}");
     assert!(
         stranded >= 200,
         "the stranded-attempt path was barely exercised: {stranded}"
@@ -1317,8 +1358,9 @@ fn the_checker_reports_a_duplicate_landing_against_a_lying_provider() {
     let (intent, manifest) = simulator_intent();
     let directory = tempfile::tempdir().unwrap();
     let state_path = directory.path().join("release-state.json");
+    // Death right after the first effect lands forces the fresh rerun.
     let scenario = Scenario {
-        crash: None,
+        crash: Some(CrashPoint::ProviderCall { at: 1 }),
         fault: None,
     };
     let run = run_scenario(
@@ -1358,6 +1400,7 @@ fn the_checker_reports_an_effect_that_precedes_its_prerequisite() {
         world,
         context,
         outcomes: vec![RunOutcome::Failed],
+        receipt: None,
     };
 
     let violation = check_invariants(&intent, &run, Mode::SameRunner).unwrap_err();
@@ -1396,6 +1439,49 @@ fn the_checker_reports_a_receipt_whose_effects_never_landed() {
     assert!(
         matches!(violation, Violation::ReceiptWithoutLandedEffect { .. }),
         "expected ReceiptWithoutLandedEffect, got {violation:?}"
+    );
+}
+
+/// A receipt whose evidence differs from what the world holds must be caught:
+/// persisted evidence is the only thing a receipt reports.
+#[test]
+fn the_checker_reports_a_receipt_whose_evidence_the_world_does_not_hold() {
+    let (intent, manifest) = simulator_intent();
+    let directory = tempfile::tempdir().unwrap();
+    let state_path = directory.path().join("release-state.json");
+    let scenario = Scenario {
+        crash: None,
+        fault: None,
+    };
+    let run = run_scenario(
+        &intent,
+        &manifest,
+        &state_path,
+        scenario,
+        Mode::SameRunner,
+        Sabotage::default(),
+    );
+    assert_eq!(run.outcomes, vec![RunOutcome::Receipted]);
+    let tag = intent
+        .operations
+        .iter()
+        .find(|operation| operation.id().role == callisto_model::ReleaseOperationRole::Tag)
+        .unwrap()
+        .id()
+        .clone();
+    run.world.remote.borrow_mut().insert(
+        tag,
+        Remote::Landed {
+            evidence: ProviderEvidenceV1::GitTag {
+                peeled_commit: CommitSha::parse(&"c".repeat(40)).unwrap(),
+            },
+        },
+    );
+
+    let violation = check_invariants(&intent, &run, Mode::SameRunner).unwrap_err();
+    assert!(
+        matches!(violation, Violation::ReceiptEvidenceDisagreesWithWorld { .. }),
+        "expected ReceiptEvidenceDisagreesWithWorld, got {violation:?}"
     );
 }
 
@@ -1525,13 +1611,14 @@ fn a_recovery_run_interrupted_mid_reconstruction_resumes_from_the_same_state() {
 
     // Run 1: the same journal, recovery again, with the fault budget spent.
     context.run.set(FAULT_ARMED_RUNS);
-    execute_and_receipt(&world, &store_for(&context), &manifest, &recovery)
+    let receipt = execute_and_receipt(&world, &store_for(&context), &manifest, &recovery)
         .expect("a recovery rerun from the interrupted state must converge");
 
     let run = ScenarioRun {
         world,
         context,
         outcomes: vec![RunOutcome::Failed, RunOutcome::Receipted],
+        receipt: Some(receipt),
     };
     if let Err(violation) = check_invariants(&intent, &run, Mode::SameRunner) {
         panic!(

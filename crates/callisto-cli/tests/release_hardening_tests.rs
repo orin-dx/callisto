@@ -366,6 +366,19 @@ fn p11_receipt_is_bound_to_intent_and_provider_evidence() {
         .unwrap()
         .iter()
         .all(|o| o["observation"]["kind"] == "exact"));
+    let state: serde_json::Value = serde_json::from_slice(&fs::read(&e.state).unwrap()).unwrap();
+    for entry in state["operations"].as_array().unwrap() {
+        let observed = r["observations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|o| o["operation"] == entry["operation"])
+            .unwrap();
+        assert_eq!(
+            observed["observation"]["evidence"], entry["evidence"],
+            "receipt evidence must be the evidence persisted in state"
+        );
+    }
 }
 
 fn product_manifest(e: &Env) -> (PathBuf, PathBuf) {
@@ -494,18 +507,22 @@ fn p14_recovery_with_a_conflicting_existing_tag_fails_closed() {
 }
 
 #[test]
-fn p15_receipt_requires_fresh_provider_evidence_not_local_state() {
+fn p15_receipt_is_issued_from_persisted_state_without_reobserving() {
     let e = Env::new(false);
     assert!(e.run(&[]).status.success());
+    let first = e.receipt();
     fs::remove_file(e.state.with_extension("receipt.json")).unwrap();
-    // local journal still says everything succeeded; the forge release vanishes
+    // A provider read that now disagrees must not matter: nothing is re-observed.
     fs::remove_file(&e.forge_marker).unwrap();
+    let (gh, cargo) = (count(&e.log, "gh "), count(&e.log, "cargo "));
     let out = e.run(&[]);
-    assert!(
-        !out.status.success(),
-        "receipt must not be issued from a stale local journal"
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(e.receipt(), first, "the receipt is a pure function of the journal");
+    assert_eq!(
+        (count(&e.log, "gh "), count(&e.log, "cargo ")),
+        (gh, cargo),
+        "a terminal journal must issue its receipt with no provider call"
     );
-    assert!(!e.state.with_extension("receipt.json").exists());
 }
 
 #[test]
@@ -1078,20 +1095,12 @@ fn c5_already_exists_text_without_registry_observation_is_not_success() {
 }
 
 /// F3: a sparse index that has not finished propagating must not cost a fully
-/// published release its receipt.
-///
-/// The receipt pass observes every operation afresh. Before the fix it used
-/// the plain observation, so a 404 served right after a successful publish was
-/// read as "absent" and the receipt was refused -- after every crate, tag and
-/// release had already been created. The rerun that follows a push release
-/// carries no `--recovery`, so it could only end in E174.
+/// published release its receipt: the post-publish confirmation treats a 404
+/// as lag and retries.
 #[test]
-fn a_lagging_registry_after_publication_still_yields_a_receipt() {
+fn a_lagging_registry_at_confirmation_still_yields_a_receipt() {
     let e = RigEnv::single();
-    // The post-publish confirmation gets its honest answer; the next two
-    // reads -- the receipt pass -- answer 404, which it must treat as lag
-    // rather than as an answer.
-    set_registry_flap(e.root(), 1, 2);
+    set_registry_flap(e.root(), 0, 2);
     let out = e.run(&[]);
     assert!(
         out.status.success(),
@@ -1110,15 +1119,29 @@ fn a_lagging_registry_after_publication_still_yields_a_receipt() {
     );
 }
 
-/// The other half of the same rule: tolerating lag must not turn a registry
-/// that never serves the version into a success. A receipt still requires a
-/// fresh exact observation of every operation.
+/// Once confirmation recorded exact evidence, no later registry read can red
+/// the release: the receipt is built from the persisted evidence.
+#[test]
+fn a_registry_read_failing_after_confirmation_cannot_cost_the_receipt() {
+    let e = RigEnv::single();
+    set_registry_flap(e.root(), 1, 1_000);
+    let out = e.run(&[]);
+    assert!(
+        out.status.success(),
+        "a read after confirmation reached the receipt; codes {:?}: {}",
+        diagnostic_codes(&out),
+        stderr(&out)
+    );
+    assert!(e.receipt_path().exists());
+}
+
+/// Tolerating lag must not turn a registry that never serves the version into
+/// a success: confirmation still requires an exact observation.
 #[test]
 fn a_registry_that_never_serves_the_version_yields_no_receipt() {
     let e = RigEnv::single();
-    // More 404s than the bounded retry policy will ever ask for, armed once
-    // the publish itself has been confirmed.
-    set_registry_flap(e.root(), 1, 1_000);
+    // More 404s than the bounded retry policy will ever ask for.
+    set_registry_flap(e.root(), 0, 1_000);
     let out = e.run(&[]);
     assert!(
         !out.status.success(),

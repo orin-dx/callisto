@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use callisto_model::{
     ApplyPermit, OperationEvent, OperationState, ProviderObservationV1, ReleaseExecutionStateV1, ReleaseIntentV1,
-    ReleaseOperationId, ReleaseRunEnvelopeV1, ReleaseRunKindV1,
+    ReleaseOperationId, ReleaseRunEnvelopeV1, ReleaseRunKindV1, ReleaseStateError,
 };
 
 use crate::{
@@ -109,7 +109,10 @@ fn apply(
     state
         .apply(operation, event)
         .map(|_| ())
-        .map_err(|source| GraphError::ReleaseExecutionState { source })
+        .map_err(|source| match source {
+            ReleaseStateError::EvidenceRejected(source) => GraphError::ReleaseProviderObservation { source },
+            source => GraphError::ReleaseExecutionState { source },
+        })
 }
 
 /// Reconstructs only exact effects after an operator explicitly chose the
