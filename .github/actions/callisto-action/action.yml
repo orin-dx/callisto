@@ -55,9 +55,6 @@ outputs:
   publishedPackages:
     description: 'Always an empty JSON array'
     value: '[]'
-  nativeMatrix:
-    description: 'Native build matrix preview'
-    value: ${{ steps.version-pr.outputs.nativeMatrix }}
 runs:
   using: composite
   steps:
