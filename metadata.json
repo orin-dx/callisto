@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.11.1-nightly.202609221728.e2db95f836",
+  "checkpoint_id": "01M359XAB952BNBM1CMAKZVYE5",
+  "strategy": "manual-commit",
+  "branch": "refactor/release-cuts",
+  "checkpoints_count": 4,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 5342,
+    "cache_read_tokens": 4529374,
+    "output_tokens": 2743,
+    "api_call_count": 5,
+    "subagent_tokens": {
+      "input_tokens": 266,
+      "cache_creation_tokens": 399505,
+      "cache_read_tokens": 13432130,
+      "output_tokens": 32166,
+      "api_call_count": 133
+    }
+  }
+}
