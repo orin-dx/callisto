@@ -207,25 +207,7 @@ pub fn npm_publish_argv(
     access: Option<NpmAccess>,
     registry: Option<&str>,
 ) -> Argv {
-    let mut extra: Vec<String> = Vec::new();
-    if let Some(t) = tag {
-        extra.push("--tag".to_string());
-        extra.push(t.to_string());
-    }
-    if let Some(access) = access {
-        extra.push("--access".to_string());
-        extra.push(
-            match access {
-                NpmAccess::Public => "public",
-                NpmAccess::Restricted => "restricted",
-            }
-            .to_string(),
-        );
-    }
-    if let Some(reg) = registry {
-        extra.push("--registry".to_string());
-        extra.push(reg.to_string());
-    }
+    let extra = npm_publish_flags(tag, access, registry);
 
     let (program, mut args, cwd) = match package_manager {
         NpmPackageManager::Pnpm => (
@@ -266,6 +248,54 @@ pub fn npm_publish_argv(
         program: program.to_string(),
         args,
         cwd,
+    }
+}
+
+/// `--tag`/`--access`/`--registry`, shared by every npm-ecosystem publish argv.
+fn npm_publish_flags(tag: Option<&str>, access: Option<NpmAccess>, registry: Option<&str>) -> Vec<String> {
+    let mut extra: Vec<String> = Vec::new();
+    if let Some(t) = tag {
+        extra.push("--tag".to_string());
+        extra.push(t.to_string());
+    }
+    if let Some(access) = access {
+        extra.push("--access".to_string());
+        extra.push(
+            match access {
+                NpmAccess::Public => "public",
+                NpmAccess::Restricted => "restricted",
+            }
+            .to_string(),
+        );
+    }
+    if let Some(reg) = registry {
+        extra.push("--registry".to_string());
+        extra.push(reg.to_string());
+    }
+    extra
+}
+
+/// Publishes the package in `package_dir` by path: `npm publish <dir>` from the
+/// workspace root, whatever the package manager. pnpm `--filter`, yarn
+/// `workspace`, and npm `--workspace` select only workspace members, and an npm
+/// platform package directory usually is not one. The path is absolute, so it
+/// cannot be read as an option.
+pub fn npm_publish_directory_argv(
+    workspace_root: &Path,
+    package_dir: &Path,
+    tag: Option<&str>,
+    access: Option<NpmAccess>,
+    registry: Option<&str>,
+) -> Argv {
+    let mut args = vec![
+        "publish".to_string(),
+        workspace_root.join(package_dir).to_string_lossy().into_owned(),
+    ];
+    args.extend(npm_publish_flags(tag, access, registry));
+    Argv {
+        program: "npm".to_string(),
+        args,
+        cwd: workspace_root.to_path_buf(),
     }
 }
 

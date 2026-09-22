@@ -25,10 +25,20 @@ use crate::{DependencyResolver, GraphError, VersionPlan, Workspace};
 /// [`derive_release_commit_decision`]), independently reimplementing this
 /// mapping at each call site is exactly the kind of duplicated derivation
 /// that drifts -- so it lives here once instead.
-pub(crate) fn release_package_ids(package: &Package) -> Result<Vec<ReleasePackageId>, GraphError> {
+pub(crate) fn release_package_ids(
+    identity: &crate::IdentityIndex,
+    package: &Package,
+) -> Result<Vec<ReleasePackageId>, GraphError> {
     package
         .canonical_manifests()
-        .map(|manifest| ReleasePackageId::new(manifest.ecosystem(), package.id.name()))
+        .map(|manifest| {
+            let ecosystem = manifest.ecosystem();
+            // A Case D package's manifests may declare different names.
+            let name = identity
+                .native_name(&package.id, ecosystem)
+                .unwrap_or(package.id.name());
+            ReleasePackageId::new(ecosystem, name)
+        })
         .collect::<Result<Vec<_>, _>>()
         .map_err(GraphError::from)
 }
@@ -43,7 +53,7 @@ pub fn derive_release_decision<R: callisto_model::CommandRunner, D: DependencyRe
 ) -> Result<ReleaseDecisionV1, GraphError> {
     let mut package_ids = std::collections::BTreeMap::new();
     for package in workspace.graph.packages() {
-        let ids = release_package_ids(package)?;
+        let ids = release_package_ids(&workspace.identity, package)?;
         package_ids.insert(package.id.clone(), ids);
     }
 
@@ -143,13 +153,17 @@ fn fixed_group_of<R: callisto_model::CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     id: &ReleasePackageId,
 ) -> Option<callisto_model::GroupName> {
-    let package = callisto_model::PackageId::parse(&id.to_string()).ok()?;
+    // By release identity, not name: a Case D package's npm name can differ from its id.
+    let package = workspace
+        .graph
+        .packages()
+        .find(|package| release_package_ids(&workspace.identity, package).is_ok_and(|ids| ids.contains(id)))?;
     workspace
         .config
         .groups
         .fixed_of
         .iter()
-        .find(|(member, _)| member.matches(&package))
+        .find(|(member, _)| member.matches(&package.id))
         .map(|(_, group)| group.clone())
 }
 
@@ -293,7 +307,7 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
     let mut observed = std::collections::BTreeSet::new();
     let mut manifest_index = 0usize;
     for package in workspace.graph.packages() {
-        let package_ids = release_package_ids(package)?;
+        let package_ids = release_package_ids(&workspace.identity, package)?;
         let package_is_claimed = package_ids.iter().any(|id| claimed.contains_key(id));
         if package_is_claimed {
             let changelog = package.changelog.as_ref().ok_or(GraphError::ReleasePreconditionUnmet {

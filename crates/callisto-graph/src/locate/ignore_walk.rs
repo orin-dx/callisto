@@ -34,7 +34,12 @@ impl IgnoreWalkLocator {
 
 impl ProjectLocator for IgnoreWalkLocator {
     fn projects(&self) -> Result<Vec<ProjectRoot>, LocateError> {
+        Ok(self.projects_and_platform_candidates()?.0)
+    }
+
+    fn projects_and_platform_candidates(&self) -> Result<(Vec<ProjectRoot>, Vec<ProjectRoot>), LocateError> {
         let mut results = Vec::new();
+        let mut platform_candidates = Vec::new();
         let cargo_membership = membership::read_cargo_membership(&self.root);
         let npm_membership = membership::read_npm_membership(&self.root);
         let python_membership = membership::read_python_membership(&self.root);
@@ -96,19 +101,23 @@ impl ProjectLocator for IgnoreWalkLocator {
                     Ecosystem::Pypi => python_membership.admits(&rel, is_root),
                     _ => false,
                 };
+                let id = PackageId::parse(&name).unwrap_or_else(|_| PackageId::Bare(name.clone()));
+                let project = ProjectRoot {
+                    id,
+                    path: rel,
+                    ecosystem,
+                };
                 if admitted {
-                    let id = PackageId::parse(&name).unwrap_or_else(|_| PackageId::Bare(name.clone()));
-                    results.push(ProjectRoot {
-                        id,
-                        path: rel,
-                        ecosystem,
-                    });
+                    results.push(project);
+                } else if ecosystem == Ecosystem::Npm && callisto_manifests::npm_role_from_source(&content).is_some() {
+                    platform_candidates.push(project);
                 }
             }
         }
 
         results.sort_by(|a, b| (&a.path, a.ecosystem).cmp(&(&b.path, b.ecosystem)));
-        Ok(results)
+        platform_candidates.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok((results, platform_candidates))
     }
 }
 

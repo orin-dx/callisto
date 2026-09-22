@@ -74,7 +74,7 @@ impl ManifestWalkResolver {
         cfg: &ResolvedConfig,
         manifest_cache: &RefCell<BTreeMap<PathBuf, Arc<dyn Manifest>>>,
     ) -> Result<Self, GraphError> {
-        let projects = locator.projects()?;
+        let (projects, platform_candidates) = locator.projects_and_platform_candidates()?;
 
         let ctx = OpenContext::for_workspace_root(root);
 
@@ -101,7 +101,13 @@ impl ManifestWalkResolver {
                 .push((proj.ecosystem, proj.id.clone()));
         }
 
+        let attached_platforms =
+            platform_owners(&by_path, &platform_candidates, manifest_cache, &ctx, &mut diagnostics);
+
         for (rel_path, mut list) in by_path {
+            if attached_platforms.contains_key(&rel_path) {
+                continue;
+            }
             // Explicit precedence: Cargo (0) > Npm (1) > Pypi (2) > others.
             // Do NOT rely on enum discriminant order -- sort by this named
             // priority function so the precedence survives future variant
@@ -289,6 +295,22 @@ impl ManifestWalkResolver {
             }
         }
 
+        // After the loop so the owner's id is final (post-promotion).
+        for (platform_dir, (owner_dir, name, role)) in attached_platforms {
+            let manifest_rel = platform_dir.join("package.json");
+            let owner = package_manifest_decls.iter_mut().find(|(_, (path, decls))| {
+                *path == owner_dir && decls.iter().any(|d| d.format == ManifestFormat::PackageJson)
+            });
+            let (Some((owner_id, (_, decls))), Ok(decl)) = (
+                owner,
+                ManifestDecl::new(manifest_rel.clone(), role.clone(), ManifestFormat::PackageJson),
+            ) else {
+                continue;
+            };
+            decls.push(decl);
+            index.platform.insert(name, (owner_id.clone(), manifest_rel, role));
+        }
+
         let cfg = cfg.with_promoted_siblings(promoted_siblings);
 
         // Tracks, per cfg.package_sets entry (by index), whether it matched at
@@ -302,7 +324,8 @@ impl ManifestWalkResolver {
         for (id, (rel_path, decls)) in package_manifest_decls {
             let ch_path = rel_path.join("CHANGELOG.md");
             let mut publish_to = Vec::new();
-            for decl in &decls {
+            // Attached platform manifests publish as their owner's platform operations, not as targets.
+            for decl in decls.iter().filter(|d| d.role == ManifestRole::Canonical) {
                 if let Ok(editor) = open_cached(manifest_cache, decl, &ctx) {
                     for target in editor.publish_targets() {
                         if target != PublishTarget::None && !publish_to.contains(&target) {
@@ -543,6 +566,107 @@ impl ManifestWalkResolver {
             diagnostics,
         })
     }
+}
+
+/// §M.6.1 Case E: maps each npm-only platform package directory (`os`+`cpu`)
+/// to the owner directory whose `package.json` names it in `optionalDependencies`,
+/// plus the platform's own name and role. `non_members` are platform packages
+/// outside the npm workspace, attachable but otherwise not discovered. A member
+/// platform named by no owner, or by more than one, stays its own package with a
+/// diagnostic.
+fn platform_owners(
+    by_path: &BTreeMap<PathBuf, Vec<(Ecosystem, PackageId)>>,
+    non_members: &[callisto_model::ProjectRoot],
+    manifest_cache: &RefCell<BTreeMap<PathBuf, Arc<dyn Manifest>>>,
+    ctx: &OpenContext<'_>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> BTreeMap<PathBuf, (PathBuf, String, ManifestRole)> {
+    let open_npm = |rel_path: &Path| {
+        let decl = ManifestDecl::new(
+            rel_path.join("package.json"),
+            ManifestRole::Canonical,
+            ManifestFormat::PackageJson,
+        )
+        .ok()?;
+        open_cached(manifest_cache, &decl, ctx).ok()
+    };
+    let platform_role = |manifest: &Arc<dyn Manifest>| match manifest.npm_role()? {
+        callisto_manifests::NpmRole::Platform { platform, arch, abi } => {
+            Some(ManifestRole::Platform { platform, arch, abi })
+        }
+    };
+
+    let mut platforms = Vec::new();
+    let mut owners_of: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
+    for (rel_path, list) in by_path {
+        let Some((_, id)) = list.iter().find(|(eco, _)| *eco == Ecosystem::Npm) else {
+            continue;
+        };
+        let Some(manifest) = open_npm(rel_path) else {
+            continue;
+        };
+        // A platform manifest sharing its directory with another ecosystem is Case D:
+        // it already belongs to that directory's package.
+        match platform_role(&manifest) {
+            Some(role) if list.len() == 1 => platforms.push((rel_path.clone(), id.name().to_string(), role, true)),
+            _ => {
+                for dep in manifest.iter_dependencies() {
+                    if dep.kind == callisto_model::DepKind::Optional {
+                        owners_of.entry(dep.name).or_default().push(rel_path.clone());
+                    }
+                }
+            }
+        }
+    }
+    for candidate in non_members {
+        if by_path.contains_key(&candidate.path) {
+            continue;
+        }
+        if let Some(role) = open_npm(&candidate.path).as_ref().and_then(platform_role) {
+            platforms.push((candidate.path.clone(), candidate.id.name().to_string(), role, false));
+        }
+    }
+
+    let mut attached = BTreeMap::new();
+    for (rel_path, name, role, member) in platforms {
+        match owners_of.get(&name).map(Vec::as_slice) {
+            Some([owner]) => {
+                attached.insert(rel_path, (owner.clone(), name, role));
+            }
+            None if !member => {}
+            owners => {
+                let reason = match owners {
+                    Some(owners) => format!(
+                        "is named in the optionalDependencies of {} packages ({})",
+                        owners.len(),
+                        owners
+                            .iter()
+                            .map(|p| p.display().to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                    None => "is not named in any npm package's optionalDependencies".to_string(),
+                };
+                diagnostics.push(Diagnostic {
+                    code: DiagnosticCode::PlatformPackageWithoutOwner,
+                    severity: DiagnosticSeverity::Warning,
+                    message: format!(
+                        "npm platform package `{name}` {reason}; {}",
+                        if member {
+                            "it is released as its own package instead of as a platform manifest of its owner"
+                        } else {
+                            "it is outside the npm workspace, so it is not released at all"
+                        }
+                    ),
+                    package: None,
+                    path: Some(rel_path.join("package.json")),
+                    escalated_by: None,
+                    governed_by: None,
+                });
+            }
+        }
+    }
+    attached
 }
 
 /// Explicit ecosystem precedence for primary-ID selection when a single

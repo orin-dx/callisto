@@ -133,6 +133,7 @@ fn ac13_diagnostic_code_enum_gains_only_changelog_read_error() {
         "duplicate-platform-triple",
         "changelog-read-error",
         "ambiguous-package-name",
+        "platform-package-without-owner",
     ]);
 
     assert_eq!(
@@ -185,6 +186,7 @@ fn release_operation_roles_carry_exactly_their_declared_variants() {
             "forgeRelease",
             "artifactUpload",
             "forgePublish",
+            "platformPublish",
         ])
     );
 }
