@@ -105,12 +105,13 @@ A yanked version reads as absent, because `cargo info` cannot see yanks. That fa
 publish that follows is refused by the registry, and since only an exact observation may satisfy an
 operation, the run ends in the typed unconfirmed-publication error rather than in a receipt.
 
-PyPI is not supported by durable release. `pip` cannot prove a version absent — an unreachable
-index and a project that does not exist produce identical output and the same exit code,
-`pip index versions` is experimental and hides yanked releases, and a pinned yanked release
-installs with only a warning. A PyPI publish target is therefore refused at plan time (E170), with a
-message naming the reason and the alternatives: publish it outside durable release, or wait for a
-reliable PyPI observation.
+PyPI is observed through the index, not `pip`: `curl -sS -i` against the PEP 691 JSON simple index
+(`https://pypi.org/simple/<project>/`, or the configured private index). A file for the version is
+exact, 404 or no matching file is absent, and a transport failure is indeterminate, never absent.
+A yanked file reads as absent, so a publish over a yanked version fails closed, mirroring cargo.
+`pip` was never usable here: an unreachable index and a missing project give it identical output,
+and `pip index versions` hides yanks. A private index that ignores the JSON `Accept` header and
+serves PEP 503 HTML is indeterminate; the JSON simple index is required.
 
 Registry endpoints must be `https`. There is no loopback exception, because an endpoint receives a
 credential.

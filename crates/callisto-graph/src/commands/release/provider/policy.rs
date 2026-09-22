@@ -15,7 +15,7 @@ pub(crate) mod timeouts {
 
     /// `cargo publish`, `npm publish`, `python -m build`, `twine upload`.
     pub(crate) const PUBLISH: Duration = Duration::from_secs(900);
-    /// The subprocess deadline around one registry query (`cargo info`, `npm view`).
+    /// The subprocess deadline around one registry query (`cargo info`, `npm view`, `curl` PyPI simple index).
     pub(crate) const REGISTRY_QUERY: Duration = Duration::from_secs(300);
     /// `gh attestation verify`.
     pub(crate) const ATTESTATION_VERIFY: Duration = Duration::from_secs(120);
@@ -39,6 +39,8 @@ pub(crate) mod programs {
     pub(crate) const GH: &str = "gh";
     pub(crate) const CARGO: &str = "cargo";
     pub(crate) const NPM: &str = "npm";
+    /// The PyPI simple-index observation query (`curl -sS -i`).
+    pub(crate) const CURL: &str = "curl";
     /// The remote whose push URL is the trusted release destination.
     pub(crate) const GIT_REMOTE: &str = "origin";
 }

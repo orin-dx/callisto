@@ -97,6 +97,9 @@ pub mod fixtures {
     pub const GITHUB_RELEASE_PRERELEASE: &str = include_str!("fixtures/providers/github/release-prerelease.http");
     pub const GITHUB_RELEASE_LIST: &str = include_str!("fixtures/providers/github/release-list-page.http");
     pub const GITHUB_RELEASE_404: &str = include_str!("fixtures/providers/github/release-404.http");
+    pub const PYPI_SIMPLE_FOUND: &str = include_str!("fixtures/providers/pypi-simple/found.http");
+    pub const PYPI_SIMPLE_YANKED: &str = include_str!("fixtures/providers/pypi-simple/yanked.http");
+    pub const PYPI_SIMPLE_ABSENT: &str = include_str!("fixtures/providers/pypi-simple/absent.http");
     pub const LS_REMOTE_ANNOTATED: &str = include_str!("fixtures/providers/git/ls-remote-annotated.txt");
     pub const LS_REMOTE_LIGHTWEIGHT: &str = include_str!("fixtures/providers/git/ls-remote-lightweight.txt");
     pub const LS_REMOTE_ABSENT: &str = include_str!("fixtures/providers/git/ls-remote-absent.txt");

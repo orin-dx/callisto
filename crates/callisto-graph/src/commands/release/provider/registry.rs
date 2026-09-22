@@ -1,14 +1,15 @@
 //! The registry-publish role: one adapter per ecosystem, selected once.
 
 use callisto_model::{
-    CommandOutput, Ecosystem, ExactEvidence, ProviderEvidenceV1, ProviderIndeterminateCause, ProviderObservationV1,
-    PublishOutcome, RegistryError, RegistryKey, Version,
+    normalize_pypi_project_name, CommandOutput, Ecosystem, ExactEvidence, ProviderEvidenceV1,
+    ProviderIndeterminateCause, ProviderObservationV1, PublishOutcome, RegistryError, RegistryKey, Version,
 };
 
 use crate::commands::registry_argv;
 use crate::error::{CommandFailure, ReleasePreconditionRequirement, RemoteConflict, UnsupportedReleaseFeature};
 use crate::GraphError;
 
+use super::http::parse_http_response;
 use super::policy::{self, programs, require_registry_confirmation, timeouts, Attempt};
 use super::{
     wrong_role, EffectAuthorization, PreparedOperation, ProviderCapabilities, ProviderContext, ProviderRequest,
@@ -432,26 +433,142 @@ impl RegistryEcosystem for NpmRegistry {
 
 struct PypiRegistry;
 
+/// PyPI's own PEP 691 JSON simple index, not `pip`: `pip index versions` is
+/// experimental and hides yanked releases, and an unreachable index and a
+/// missing project both look like "no versions found" to it. The index itself
+/// answers plainly -- 200 with a `files[]` entry naming the version, or 404 --
+/// so observation goes straight to `https://pypi.org/simple/<project>/`
+/// (or the configured private index) over `curl`, never through `pip`.
+const PYPI_DEFAULT_SIMPLE_INDEX: &str = "https://pypi.org/simple";
+
+/// PEP 691: the versioned JSON media type, so the index cannot fall back to
+/// the legacy HTML page a bare GET would otherwise serve.
+const PYPI_SIMPLE_ACCEPT: &str = "application/vnd.pypi.simple.v1+json";
+
+/// The project's simple-index URL: the configured private index if one is
+/// bound (already https-validated in `binding.rs`), else the public default.
+fn pypi_simple_index_url(endpoint: Option<&str>, package_name: &str) -> String {
+    let base = endpoint.unwrap_or(PYPI_DEFAULT_SIMPLE_INDEX);
+    let project = normalize_pypi_project_name(package_name);
+    format!("{}/{project}/", base.trim_end_matches('/'))
+}
+
+/// One file entry of a PEP 691 JSON simple-index response -- only the fields
+/// the observation reads.
+#[derive(serde::Deserialize)]
+struct PypiSimpleFile {
+    filename: String,
+    /// `false` when not yanked, or a (possibly empty) reason string when it is.
+    #[serde(default)]
+    yanked: Option<serde_json::Value>,
+}
+
+#[derive(serde::Deserialize)]
+struct PypiSimpleIndex {
+    files: Vec<PypiSimpleFile>,
+}
+
+impl PypiSimpleFile {
+    fn is_yanked(&self) -> bool {
+        !matches!(self.yanked, None | Some(serde_json::Value::Bool(false)))
+    }
+}
+
+/// The version segment of a simple-index filename, or `None` for an extension
+/// this parser does not recognize (a legacy installer, say).
+///
+/// A wheel's distribution segment is PEP 427-escaped to underscores only, so
+/// splitting on `-` unambiguously yields `version` second. A PEP 440 version
+/// never itself contains a hyphen, so an sdist's *last* `-` is always the
+/// name/version boundary regardless of how the distribution name is spelled.
+fn pypi_simple_file_version(filename: &str) -> Option<&str> {
+    if let Some(stem) = filename.strip_suffix(".whl") {
+        return stem.split('-').nth(1);
+    }
+    [".tar.gz", ".tar.bz2", ".tar.xz", ".tar.Z", ".zip"]
+        .into_iter()
+        .find_map(|ext| filename.strip_suffix(ext))
+        .and_then(|stem| stem.rsplit_once('-'))
+        .map(|(_, version)| version)
+}
+
+/// Whether a simple-index file's filename names exactly the requested version.
+fn pypi_simple_file_matches(file: &PypiSimpleFile, version: &Version) -> bool {
+    pypi_simple_file_version(&file.filename).is_some_and(|candidate| {
+        Version::parse(candidate, version.grammar())
+            .is_ok_and(|candidate| candidate.compare(version) == Ok(std::cmp::Ordering::Equal))
+    })
+}
+
+/// Classifies a parsed 200 body: the matching file's yank status decides the
+/// answer, mirroring cargo's yanked-is-absent rationale above -- a yanked
+/// release is not the version this intent authorized, so it fails closed.
+fn classify_pypi_simple_body(body: &str, version: &Version) -> Attempt<ProviderObservationV1> {
+    let Ok(index) = serde_json::from_str::<PypiSimpleIndex>(body) else {
+        return transient(ProviderIndeterminateCause::MalformedResponse, None);
+    };
+    let matching = index
+        .files
+        .iter()
+        .filter(|file| pypi_simple_file_matches(file, version));
+    let mut matched = false;
+    for file in matching {
+        if file.is_yanked() {
+            return settled(ProviderObservationV1::Absent);
+        }
+        matched = true;
+    }
+    if !matched {
+        return settled(ProviderObservationV1::Absent);
+    }
+    settled(ProviderObservationV1::Exact {
+        evidence: ProviderEvidenceV1::RegistryVersion {
+            version: version.clone(),
+            checksum: None,
+            yanked: Some(false),
+        },
+    })
+}
+
+/// Classifies one `curl -sS -i` run against the simple index. A private index
+/// that ignores `Accept` and serves its legacy HTML page fails the JSON parse
+/// inside [`classify_pypi_simple_body`] and reads as `MalformedResponse`, same
+/// as any other body PEP 691 JSON parsing cannot make sense of.
+fn classify_pypi_simple(output: &CommandOutput, version: &Version) -> Attempt<ProviderObservationV1> {
+    let response = match parse_http_response(&output.stdout) {
+        Ok(response) => response,
+        Err(_) if !output.success() => return transient(ProviderIndeterminateCause::CommandFailed, None),
+        Err(_) => return transient(ProviderIndeterminateCause::MalformedResponse, None),
+    };
+    match response.status {
+        200 => classify_pypi_simple_body(&response.body, version),
+        404 => settled(ProviderObservationV1::Absent),
+        _ => transient(ProviderIndeterminateCause::MalformedResponse, None),
+    }
+}
+
 impl RegistryEcosystem for PypiRegistry {
-    /// pip cannot prove a PyPI version absent: an unreachable index and a
-    /// project that does not exist produce the same message and the same exit
-    /// code, `pip index versions` is experimental and hides yanked releases,
-    /// and a pinned yanked release installs with only a warning. Declaring the
-    /// truth here is what makes [`require_observable_registry`] refuse a PyPI
-    /// publish at plan time rather than letting one reach a receipt it cannot
-    /// support.
+    /// PyPI's own JSON simple index (PEP 691) answers exactly like every
+    /// other registry: 200 with the version present or absent, 404 for an
+    /// unknown project. `pip` cannot observe this; `curl` against the index
+    /// directly can.
     fn can_observe_versions(&self) -> bool {
-        false
+        true
     }
 
     fn observe_once(
         &self,
-        _context: &ProviderContext<'_>,
-        _operation: &RegistryPublishOperation,
+        context: &ProviderContext<'_>,
+        operation: &RegistryPublishOperation,
     ) -> Result<Attempt<ProviderObservationV1>, GraphError> {
-        Ok(settled(ProviderObservationV1::Indeterminate {
-            cause: ProviderIndeterminateCause::UnsupportedProvider,
-        }))
+        let url = pypi_simple_index_url(operation.registry.endpoint.as_deref(), &operation.package_name);
+        let accept_header = format!("Accept: {PYPI_SIMPLE_ACCEPT}");
+        let args = ["-sS", "-i", "-H", accept_header.as_str(), url.as_str()];
+        let output =
+            context
+                .runner()
+                .run_with_timeout(programs::CURL, &args, context.root(), timeouts::REGISTRY_QUERY)?;
+        Ok(classify_pypi_simple(&output, &operation.version))
     }
 
     fn publish(

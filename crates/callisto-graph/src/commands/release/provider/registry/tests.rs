@@ -389,34 +389,201 @@ fn the_captured_npm_view_runs_are_exact_and_absent() {
     );
 }
 
-// ----------------------------------------------------- adapter capabilities
+// --------------------------------------- captured real pypi bytes: registry
 
-/// pip cannot prove a PyPI version absent, so the PyPI adapter says so and the
-/// plan-time gate refuses the publish rather than letting it reach an effect it
-/// could never confirm.
+fn pep440(version: &str) -> Version {
+    Version::parse(version, VersionGrammar::Pep440).unwrap()
+}
+
+fn curl_output(raw: &str) -> CommandOutput {
+    CommandOutput {
+        exit_code: Some(0),
+        stdout: raw.to_owned(),
+        stderr: String::new(),
+    }
+}
+
+fn exact_pypi(version: &str) -> ProviderObservationV1 {
+    ProviderObservationV1::Exact {
+        evidence: ProviderEvidenceV1::RegistryVersion {
+            version: pep440(version),
+            checksum: None,
+            yanked: Some(false),
+        },
+    }
+}
+
 #[test]
-fn pypi_is_not_observable_and_is_refused_at_plan_time() {
-    assert!(!adapter_for(Ecosystem::Pypi).unwrap().can_observe_versions());
-    let error = require_observable_registry(Ecosystem::Pypi).unwrap_err();
-    let rendered = error.to_string();
-    assert!(
-        matches!(
-            error,
-            GraphError::ReleasePreconditionUnmet {
-                requirement: ReleasePreconditionRequirement::ObservableRegistryClient
-            }
-        ),
-        "expected the observable-registry precondition, got {error:?}"
-    );
-    assert!(
-        rendered.contains("pip cannot distinguish") && rendered.contains("unreachable index"),
-        "the refusal must say why PyPI cannot be observed: {rendered}"
+fn the_captured_pypi_found_run_is_exact_for_the_version_it_names() {
+    assert_eq!(
+        settled_value(classify_pypi_simple(
+            &curl_output(fixtures::PYPI_SIMPLE_FOUND),
+            &pep440("2.3.0")
+        )),
+        exact_pypi("2.3.0")
     );
 }
 
 #[test]
-fn cargo_and_npm_are_observable_and_pass_the_plan_time_gate() {
-    for ecosystem in [Ecosystem::Cargo, Ecosystem::Npm] {
+fn the_captured_pypi_found_run_does_not_satisfy_an_unpublished_version() {
+    assert_eq!(
+        settled_value(classify_pypi_simple(
+            &curl_output(fixtures::PYPI_SIMPLE_FOUND),
+            &pep440("9.9.9")
+        )),
+        ProviderObservationV1::Absent
+    );
+}
+
+/// PyPI yanks every file of a release together, but the classifier checks the
+/// matched file(s) rather than assuming that -- either way this must fail
+/// closed: a yanked version is not the version this intent authorized.
+#[test]
+fn the_captured_yanked_run_reads_as_absent_not_exact() {
+    assert_eq!(
+        settled_value(classify_pypi_simple(
+            &curl_output(fixtures::PYPI_SIMPLE_YANKED),
+            &pep440("1.1.0")
+        )),
+        ProviderObservationV1::Absent,
+        "a yanked release must fail closed, not report the version as published"
+    );
+}
+
+#[test]
+fn the_captured_yanked_runs_index_still_answers_exact_for_an_unyanked_sibling_version() {
+    assert_eq!(
+        settled_value(classify_pypi_simple(
+            &curl_output(fixtures::PYPI_SIMPLE_YANKED),
+            &pep440("1.2.0")
+        )),
+        exact_pypi("1.2.0"),
+        "one yanked release must not poison observation of another version in the same index"
+    );
+}
+
+/// Also exercises a legacy `.zip` sdist and a PEP 440 dev-release filename
+/// (`pluggy-0.4.0.zip`, `pluggy-1.0.0.dev0*`), both served by this fixture.
+#[test]
+fn the_captured_yanked_runs_index_reads_a_dev_release_and_a_legacy_zip_sdist() {
+    assert_eq!(
+        settled_value(classify_pypi_simple(
+            &curl_output(fixtures::PYPI_SIMPLE_YANKED),
+            &pep440("0.4.0")
+        )),
+        exact_pypi("0.4.0")
+    );
+    assert_eq!(
+        settled_value(classify_pypi_simple(
+            &curl_output(fixtures::PYPI_SIMPLE_YANKED),
+            &pep440("1.0.0.dev0")
+        )),
+        exact_pypi("1.0.0.dev0")
+    );
+}
+
+#[test]
+fn the_captured_pypi_absent_run_is_absent() {
+    assert_eq!(
+        settled_value(classify_pypi_simple(
+            &curl_output(fixtures::PYPI_SIMPLE_ABSENT),
+            &pep440("1.0.0")
+        )),
+        ProviderObservationV1::Absent
+    );
+}
+
+#[test]
+fn a_curl_transport_failure_with_no_parseable_response_is_transient_command_failed() {
+    let output = CommandOutput {
+        exit_code: Some(6),
+        stdout: String::new(),
+        stderr: "curl: (6) Could not resolve host: pypi.org".to_owned(),
+    };
+    assert_eq!(
+        classify_pypi_simple(&output, &pep440("1.0.0")),
+        Attempt::Transient {
+            value: ProviderObservationV1::Indeterminate {
+                cause: ProviderIndeterminateCause::CommandFailed
+            },
+            retry_after: None
+        }
+    );
+}
+
+#[test]
+fn an_unexpected_status_is_transient_malformed_response() {
+    let output = curl_output("HTTP/1.1 500 Internal Server Error\r\ncontent-type: text/plain\r\n\r\noops");
+    assert_eq!(
+        classify_pypi_simple(&output, &pep440("1.0.0")),
+        Attempt::Transient {
+            value: ProviderObservationV1::Indeterminate {
+                cause: ProviderIndeterminateCause::MalformedResponse
+            },
+            retry_after: None
+        }
+    );
+}
+
+/// A private index that ignores `Accept` and serves its legacy HTML page
+/// fails the JSON parse and must not be misread as an answer either way.
+#[test]
+fn a_private_index_serving_html_instead_of_json_is_transient_malformed_response() {
+    let output = curl_output("HTTP/1.1 200 OK\r\ncontent-type: text/html\r\n\r\n<html><body>not json</body></html>");
+    assert_eq!(
+        classify_pypi_simple(&output, &pep440("1.0.0")),
+        Attempt::Transient {
+            value: ProviderObservationV1::Indeterminate {
+                cause: ProviderIndeterminateCause::MalformedResponse
+            },
+            retry_after: None
+        }
+    );
+}
+
+#[test]
+fn simple_file_version_reads_wheels_sdists_and_legacy_zips() {
+    assert_eq!(
+        pypi_simple_file_version("iniconfig-2.3.0-py3-none-any.whl"),
+        Some("2.3.0")
+    );
+    assert_eq!(pypi_simple_file_version("iniconfig-2.3.0.tar.gz"), Some("2.3.0"));
+    assert_eq!(pypi_simple_file_version("pluggy-0.4.0.zip"), Some("0.4.0"));
+    assert_eq!(
+        pypi_simple_file_version("pluggy-1.0.0.dev0-py2.py3-none-any.whl"),
+        Some("1.0.0.dev0")
+    );
+    assert_eq!(
+        pypi_simple_file_version("my-package-1.0.0.tar.gz"),
+        Some("1.0.0"),
+        "a PEP 440 version never contains a hyphen, so the last `-` is always the name/version boundary"
+    );
+    assert_eq!(
+        pypi_simple_file_version("iniconfig-2.3.0.egg"),
+        None,
+        "an unrecognized extension must not be guessed at"
+    );
+}
+
+#[test]
+fn the_simple_index_url_uses_the_default_endpoint_and_the_normalized_project_name() {
+    assert_eq!(
+        pypi_simple_index_url(None, "My.Package"),
+        "https://pypi.org/simple/my-package/"
+    );
+    assert_eq!(
+        pypi_simple_index_url(Some("https://pypi.example.com/simple"), "My.Package"),
+        "https://pypi.example.com/simple/my-package/"
+    );
+}
+
+// ----------------------------------------------------- adapter capabilities
+
+/// PyPI's own JSON simple index answers like any other registry, so all three
+/// implemented ecosystems pass the plan-time observability gate.
+#[test]
+fn cargo_npm_and_pypi_are_observable_and_pass_the_plan_time_gate() {
+    for ecosystem in [Ecosystem::Cargo, Ecosystem::Npm, Ecosystem::Pypi] {
         assert!(adapter_for(ecosystem).unwrap().can_observe_versions());
         assert!(require_observable_registry(ecosystem).is_ok());
     }
