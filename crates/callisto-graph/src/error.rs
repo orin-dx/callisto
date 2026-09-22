@@ -511,6 +511,15 @@ pub enum GraphError {
         requirement: ReleasePreconditionRequirement,
     },
 
+    #[error("asset `{asset}` is built by `{package}`, which is not part of this release")]
+    #[diagnostic(
+        code(E179),
+        help(
+            "Release `{package}` in the same run: add a changeset for it, or put it in the product's [[fixed-group]]."
+        )
+    )]
+    ReleaseArtifactOwnerNotReleased { asset: String, package: String },
+
     #[error("internal release invariant violated: {detail}")]
     #[diagnostic(
         code(E171),

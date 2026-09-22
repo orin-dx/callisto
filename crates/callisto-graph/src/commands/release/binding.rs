@@ -338,7 +338,7 @@ mod tests {
         let (dir, runner) = super::super::tests::fixture();
         std::fs::write(
             dir.path().join("callisto.toml"),
-            "[release]\nproduct-package = \"cargo/release-fixture\"\nartifact-targets = [\n  \"aarch64-apple-darwin\",\n  \"x86_64-unknown-linux-gnu\",\n  \"x86_64-unknown-linux-musl\",\n  \"wasm32-wasip1\",\n]\n\n[release.profiles.rehearsal]\nforge-repository = \"example/rehearsal\"\nregistry-routes = { cratesIo = \"rehearsal-cargo\" }\n\n[registries.rehearsal-cargo]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index\"\n\n[[package]]\nmatch = \"release-fixture\"\npublish-to = [\"crates-io\"]\n",
+            "[release]\nproduct-package = \"cargo/release-fixture\"\n\n[[release.artifact]]\npackage = \"cargo/release-fixture\"\ntarget = \"aarch64-apple-darwin\"\nasset-name = \"callisto-aarch64-apple-darwin.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/release-fixture\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"callisto-x86_64-unknown-linux-gnu.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/release-fixture\"\ntarget = \"x86_64-unknown-linux-musl\"\nasset-name = \"callisto-x86_64-unknown-linux-musl.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/release-fixture\"\ntarget = \"wasm32-wasip1\"\nasset-name = \"callisto-moon.wasm\"\n\n[release.profiles.rehearsal]\nforge-repository = \"example/rehearsal\"\nregistry-routes = { cratesIo = \"rehearsal-cargo\" }\n\n[registries.rehearsal-cargo]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index\"\n\n[[package]]\nmatch = \"release-fixture\"\npublish-to = [\"crates-io\"]\n",
         )
         .unwrap();
         let locator = crate::IgnoreWalkLocator::new(dir.path());
