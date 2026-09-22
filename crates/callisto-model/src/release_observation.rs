@@ -100,8 +100,7 @@ pub enum ProviderConflictReason {
 #[serde(rename_all = "camelCase", tag = "kind", deny_unknown_fields)]
 #[non_exhaustive]
 pub enum ProviderIndeterminateCause {
-    /// No client for this provider can prove a version present or absent
-    /// (pip cannot distinguish a missing PyPI project from an unreachable index).
+    /// No client for this provider can prove a version present or absent.
     UnsupportedProvider,
     /// The provider answered with a status that proves neither presence nor absence.
     ProviderStatus {

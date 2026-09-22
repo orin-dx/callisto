@@ -1,6 +1,7 @@
-//! Durable release does not support PyPI: pip cannot distinguish a missing
-//! project from an unreachable index, so a PyPI version can never be proved
-//! absent and no PyPI publish may be planned.
+//! PyPI's own JSON simple index (PEP 691) answers a version query directly --
+//! 200 with the version present or absent, 404 for an unknown project -- so
+//! durable release observes it over `curl`, never through `pip`, and `release
+//! plan` no longer refuses a PyPI publish target at plan time.
 
 use std::{fs, path::Path, process::Command};
 
@@ -67,40 +68,40 @@ fn fixture(manifest_path: &str, manifest: &str, package_match: &str, registry: &
     dir
 }
 
-/// `release plan` must refuse, name the reason, and leave no intent behind.
-fn plan_is_refused(dir: &tempfile::TempDir, package: &str) {
-    let external = tempfile::tempdir().unwrap();
-    let out = external.path().join("intent.json");
-    let plan = callisto(
-        dir.path(),
-        &["release", "plan", "--package", package, "--out", out.to_str().unwrap()],
-    );
-    let stdout = String::from_utf8_lossy(&plan.stdout);
-    let stderr = String::from_utf8_lossy(&plan.stderr);
-    let printed = format!("{stdout}{stderr}");
-    assert!(
-        !plan.status.success(),
-        "release plan succeeded for {package}, which durable release cannot observe\nstdout: {stdout}\nstderr: {stderr}"
-    );
-    assert!(printed.contains("E170"), "the refusal must be typed: {printed}");
-    assert!(
-        printed.contains("pip cannot distinguish") && printed.contains("unreachable index"),
-        "the refusal must say why PyPI cannot be observed: {printed}"
-    );
-    assert!(
-        printed.contains("publish it outside durable release"),
-        "the refusal must say how to proceed: {printed}"
-    );
-    assert!(!out.exists(), "a refused plan must not leave an intent file behind");
-}
-
+/// `release plan` derives a registry-observability precondition purely from
+/// the ecosystem, with no network call: it must succeed for a PyPI target the
+/// same way it does for cargo or npm, and leave a real intent behind.
 #[test]
-fn a_pypi_publish_target_is_refused_at_plan_time_because_pip_cannot_prove_absence() {
+fn a_pypi_publish_target_is_planned_like_any_other_observable_registry() {
     let dir = fixture(
         "pkg/pyproject.toml",
         "[project]\nname = \"demo\"\nversion = \"0.1.0\"\n",
         "pypi/demo",
         "pypi",
     );
-    plan_is_refused(&dir, "pypi/demo");
+    let external = tempfile::tempdir().unwrap();
+    let out = external.path().join("intent.json");
+    let plan = callisto(
+        dir.path(),
+        &[
+            "release",
+            "plan",
+            "--package",
+            "pypi/demo",
+            "--out",
+            out.to_str().unwrap(),
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&plan.stdout);
+    let stderr = String::from_utf8_lossy(&plan.stderr);
+    assert!(
+        plan.status.success(),
+        "release plan failed for a PyPI target, which durable release can now observe\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(out.exists(), "a successful plan must leave an intent file behind");
+    let intent = fs::read_to_string(&out).unwrap();
+    assert!(
+        intent.contains("pypi/demo"),
+        "the intent must name the planned package: {intent}"
+    );
 }

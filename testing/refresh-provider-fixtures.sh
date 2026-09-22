@@ -17,11 +17,11 @@ if [[ ${1:-} == --check ]]; then
   out=$(mktemp -d)
 fi
 
-for tool in cargo npm gh git jq; do
+for tool in cargo npm gh git jq curl; do
   command -v "$tool" >/dev/null || { echo "missing required tool: $tool" >&2; exit 2; }
 done
 
-mkdir -p "$out"/{cargo-info,npm-view,github,git}
+mkdir -p "$out"/{cargo-info,npm-view,github,git,pypi-simple}
 
 # Splits a raw HTTP response into $1.head (through the blank line) and $1.body.
 split_http() {
@@ -108,6 +108,27 @@ gh api --include repos/cli/cli/releases/tags/callisto-no-such-tag >"$work/nf" 2>
 split_http "$work/nf"
 drop_headers "$work/nf.head" "^content-length:|$ACCOUNT_HEADERS"
 cat "$work/nf.head" "$work/nf.body" >"$out/github/release-404.http"
+
+# --- PyPI simple index via curl ---------------------------------------------
+PYPI_VOLATILE='^date:|^etag:|^x-served-by:|^x-cache:|^x-cache-hits:|^x-timer:|^x-pypi-last-serial:|^content-length:'
+pypi_simple() { curl -sS -i -H 'Accept: application/vnd.pypi.simple.v1+json' "https://pypi.org/simple/$1/" >"$work/$2"; }
+
+pypi_simple iniconfig found
+split_http "$work/found"
+drop_headers "$work/found.head" "$PYPI_VOLATILE"
+cat "$work/found.head" "$work/found.body" >"$out/pypi-simple/found.http"
+
+pypi_simple pluggy yanked
+split_http "$work/yanked"
+drop_headers "$work/yanked.head" "$PYPI_VOLATILE"
+cat "$work/yanked.head" "$work/yanked.body" >"$out/pypi-simple/yanked.http"
+grep -q '"yanked": *"' "$out/pypi-simple/yanked.http" \
+  || { echo "pluggy 1.1.0 is no longer yanked; pick another yanked fixture project" >&2; exit 1; }
+
+pypi_simple callisto-definitely-not-a-real-package-xyz-404 absent
+split_http "$work/absent"
+drop_headers "$work/absent.head" "$PYPI_VOLATILE"
+cat "$work/absent.head" "$work/absent.body" >"$out/pypi-simple/absent.http"
 
 # --- git ls-remote ----------------------------------------------------------
 remote=https://github.com/orin-dx/callisto.git

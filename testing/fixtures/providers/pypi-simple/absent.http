@@ -1,0 +1,20 @@
+HTTP/2 404 
+access-control-allow-headers: Content-Type, If-Match, If-Modified-Since, If-None-Match, If-Unmodified-Since
+server: gunicorn
+access-control-max-age: 86400
+referrer-policy: origin-when-cross-origin
+content-security-policy: default-src 'none'; sandbox allow-top-navigation
+access-control-allow-origin: *
+access-control-expose-headers: X-PyPI-Last-Serial
+content-type: text/plain; charset=UTF-8
+access-control-allow-methods: GET
+accept-ranges: bytes
+vary: Accept-Encoding
+strict-transport-security: max-age=31536000; includeSubDomains; preload
+x-frame-options: deny
+x-xss-protection: 1; mode=block
+x-content-type-options: nosniff
+x-permitted-cross-domain-policies: none
+permissions-policy: publickey-credentials-create=(self),publickey-credentials-get=(self),accelerometer=(),ambient-light-sensor=(),autoplay=(),battery=(),camera=(),display-capture=(),document-domain=(),encrypted-media=(),execution-while-not-rendered=(),execution-while-out-of-viewport=(),fullscreen=(),gamepad=(),geolocation=(),gyroscope=(),hid=(),identity-credentials-get=(),idle-detection=(),local-fonts=(),magnetometer=(),microphone=(),midi=(),otp-credentials=(),payment=(),picture-in-picture=(),screen-wake-lock=(),serial=(),speaker-selection=(),storage-access=(),usb=(),web-share=(),xr-spatial-tracking=()
+
+404 Not Found
