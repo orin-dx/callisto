@@ -60,6 +60,7 @@ impl ProviderEvidenceV1 {
                 (!draft).then_some(()).ok_or(EvidenceRejection::DraftRelease)
             }
             (Self::RegistryVersion { .. }, ReleaseOperationRole::RegistryPublish { .. })
+            | (Self::RegistryVersion { .. }, ReleaseOperationRole::PlatformPublish { .. })
             | (Self::GitTag { .. }, ReleaseOperationRole::Tag)
             | (Self::ForgeRelease { .. }, ReleaseOperationRole::ForgeRelease)
             | (Self::ArtifactUpload { .. }, ReleaseOperationRole::ArtifactUpload { .. }) => Ok(()),

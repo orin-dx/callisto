@@ -11,6 +11,11 @@ pub use root::find_workspace_root;
 
 pub trait ProjectLocator: Send + Sync {
     fn projects(&self) -> Result<Vec<ProjectRoot>, LocateError>;
+    /// `projects()`, plus npm platform packages (`os`+`cpu`) outside the npm
+    /// workspace's membership: candidates for §M.6.1 Case E attachment only.
+    fn projects_and_platform_candidates(&self) -> Result<(Vec<ProjectRoot>, Vec<ProjectRoot>), LocateError> {
+        Ok((self.projects()?, Vec::new()))
+    }
     fn declared_edges(&self) -> Option<Vec<DeclaredEdge>> {
         None
     }

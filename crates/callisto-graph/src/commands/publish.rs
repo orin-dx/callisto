@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::path::Path;
 
 use callisto_model::{
     CommandRunner, CratePublish, DepKind, Ecosystem, NpmMainPublish, PackageId, PublishPlan, PublishTarget,
@@ -302,6 +303,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
     // not-yet-implemented targets) — that distinction is exactly what the
     // --package precise-error and depends_on_platforms checks need.
     let mut dispatched_ids: std::collections::HashSet<PackageId> = std::collections::HashSet::new();
+    let mut attached_owner: std::collections::HashMap<String, PackageId> = std::collections::HashMap::new();
 
     for id in &topo_ids {
         let pkg = match pkg_map.get(id) {
@@ -404,10 +406,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                 }
             }
 
-            let is_platform_pkg = pkg
-                .manifests
-                .iter()
-                .any(|m| matches!(m.role, callisto_model::ManifestRole::Platform { .. }));
+            let is_platform_pkg = is_platform_package(pkg);
 
             // Resolve the package directory (relative to workspace root) from
             // the first manifest path. All manifests for a package share the
@@ -474,24 +473,29 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                         access,
                     });
                 } else {
-                    let platform_deps: Vec<String> = ws
+                    let mut platform_deps: Vec<String> = ws
                         .graph
                         .dependencies_of(&pkg.id)
-                        .filter(|edge| {
-                            pkg_map
-                                .get(&edge.to)
-                                .map(|p| {
-                                    p.manifests
-                                        .iter()
-                                        .any(|m| matches!(m.role, callisto_model::ManifestRole::Platform { .. }))
-                                })
-                                .unwrap_or(false)
-                        })
+                        .filter(|edge| pkg_map.get(&edge.to).is_some_and(|p| is_platform_package(p)))
                         .map(|edge| edge.to.name().to_string())
                         .collect();
+                    for (name, manifest) in ws.identity.attached_platforms(pkg) {
+                        npm_platform_packages.push(callisto_model::NpmPublish {
+                            name: name.to_string(),
+                            version: ver.clone(),
+                            publish_to: callisto_model::RegistryKey(callisto_model::RegistryKey::NPM.to_string()),
+                            package_dir: manifest.parent().map(Path::to_path_buf).unwrap_or_default(),
+                            registry: npm_registry_url.clone(),
+                            tag: tag.clone(),
+                            access,
+                        });
+                        platform_deps.push(name.to_string());
+                        attached_owner.insert(name.to_string(), pkg.id.clone());
+                    }
 
                     dispatched_ids.insert(pkg.id.clone());
                     npm_main_packages.push(NpmMainPublish {
+                        // Known gap: a differing Case D npm name is lost; this legacy plan keys entries by name.
                         name: pkg.id.name().to_string(),
                         version: ver.clone(),
                         publish_to: callisto_model::RegistryKey(callisto_model::RegistryKey::NPM.to_string()),
@@ -596,7 +600,10 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
         };
         rust_crates.retain(|c| keep(Ecosystem::Cargo, &c.name));
         npm_main_packages.retain(|c| keep(Ecosystem::Npm, &c.name));
-        npm_platform_packages.retain(|c| keep(Ecosystem::Npm, &c.name));
+        npm_platform_packages.retain(|c| match attached_owner.get(&c.name) {
+            Some(owner) => resolved.contains(owner),
+            None => keep(Ecosystem::Npm, &c.name),
+        });
         pypi_packages.retain(|c| keep(Ecosystem::Pypi, &c.name));
         releases.retain(|r| resolved.iter().any(|id| id.matches(&r.package)));
 
@@ -652,6 +659,15 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
         pypi_packages,
         releases,
         diagnostics,
+    })
+}
+
+/// A package that is itself an npm platform package (its own package.json has
+/// `os`+`cpu`). An owner's attached (Case E) platform manifests do not count.
+fn is_platform_package(pkg: &callisto_model::Package) -> bool {
+    pkg.manifests.iter().any(|m| {
+        matches!(m.role, callisto_model::ManifestRole::Platform { .. })
+            && pkg.canonical_manifests().any(|c| c.path == m.path)
     })
 }
 

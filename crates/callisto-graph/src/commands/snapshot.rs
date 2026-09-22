@@ -122,11 +122,14 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
         }
     }
 
+    let (platform_writes, optional_dep_updates) =
+        crate::commands::version::platform_version_writes(ws, &snapshot_versions)?;
+
     let plan = VersionPlan {
         bumps: plan_bumps,
         rewrites,
-        platform_writes: Vec::new(),
-        optional_dep_updates: Vec::new(),
+        platform_writes,
+        optional_dep_updates,
         changelog_writes: Vec::new(),
         consumed_changesets: Vec::new(),
         pre_state_update: None,

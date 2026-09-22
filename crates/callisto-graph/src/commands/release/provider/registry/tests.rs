@@ -170,6 +170,7 @@ fn operation(key: &str, package_name: &str, version: &str) -> RegistryPublishOpe
         },
         npm_access: None,
         npm_tag: None,
+        by_directory: false,
     }
 }
 
@@ -596,4 +597,68 @@ fn an_ecosystem_with_no_registry_adapter_is_unsupported() {
             feature: UnsupportedReleaseFeature::Ecosystem
         })
     ));
+}
+
+/// Records every command and answers success, so a publish argv can be read back.
+struct RecordingRunner(std::sync::Mutex<Vec<(String, Vec<String>, PathBuf)>>);
+
+impl callisto_model::CommandRunner for RecordingRunner {
+    fn run(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: &Path,
+    ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+        self.0.lock().unwrap().push((
+            program.to_owned(),
+            args.iter().map(|arg| (*arg).to_owned()).collect(),
+            cwd.to_path_buf(),
+        ));
+        Ok(callisto_model::CommandOutput {
+            exit_code: Some(0),
+            stdout: String::new(),
+            stderr: String::new(),
+        })
+    }
+}
+
+/// A platform package outside the workspace globs cannot be selected by name
+/// (`pnpm --filter` answers "No projects matched"), so it is published by path
+/// with npm, even in a pnpm workspace.
+#[test]
+fn a_platform_package_is_published_by_directory_with_npm() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("pnpm-lock.yaml"), "").unwrap();
+    let runner = RecordingRunner(std::sync::Mutex::new(Vec::new()));
+    let context = ProviderContext::new(root.path(), &runner, None);
+    let mut platform = operation("npm", "@s/cli-linux-x64-gnu", "1.0.0");
+    platform.package_dir = PathBuf::from("packages/cli/npm/linux-x64-gnu");
+    platform.npm_access = Some(callisto_model::NpmAccess::Public);
+    platform.by_directory = true;
+
+    adapter_for(Ecosystem::Npm)
+        .unwrap()
+        .publish(&context, &platform)
+        .unwrap();
+    let dir = root.path().join("packages/cli/npm/linux-x64-gnu");
+    assert_eq!(
+        runner.0.lock().unwrap().as_slice(),
+        [(
+            "npm".to_owned(),
+            vec![
+                "publish".to_owned(),
+                dir.to_string_lossy().into_owned(),
+                "--access".to_owned(),
+                "public".to_owned()
+            ],
+            root.path().to_path_buf(),
+        )]
+    );
+
+    // The owner is a workspace member and keeps its package manager's by-name form.
+    runner.0.lock().unwrap().clear();
+    let owner = operation("npm", "@s/cli", "1.0.0");
+    adapter_for(Ecosystem::Npm).unwrap().publish(&context, &owner).unwrap();
+    assert_eq!(runner.0.lock().unwrap()[0].0, "pnpm");
+    assert!(runner.0.lock().unwrap()[0].1.contains(&"--filter=@s/cli".to_owned()));
 }

@@ -52,7 +52,7 @@ const FAULT_ARMED_RUNS: usize = 2;
 // ---------------------------------------------------------------------------
 
 /// Two packages covering every operation role, wired with the production DAG
-/// order: registry -> tag -> draft release -> every upload -> publication.
+/// order: platform -> registry -> tag -> draft release -> every upload -> publication.
 fn simulator_intent() -> (ReleaseIntentV1, ArtifactManifestV1) {
     let version = Version::semver(1, 2, 3);
     let registry = RegistryBindingId::new(
@@ -96,7 +96,27 @@ fn simulator_intent() -> (ReleaseIntentV1, ArtifactManifestV1) {
         ],
     )
     .unwrap();
-    let beta_registry = ReleaseOperation::registry_publish(beta.clone(), version.clone(), registry, vec![]).unwrap();
+    let beta_platform = ReleaseOperation::new(
+        ReleaseOperationId::platform_publish(
+            beta.clone(),
+            version.clone(),
+            registry.clone(),
+            callisto_model::PlatformPackageV1::new(
+                ReleasePackageId::new(Ecosystem::Npm, "beta-linux-x64-gnu").unwrap(),
+                "beta/npm/linux-x64-gnu",
+            )
+            .unwrap(),
+        ),
+        vec![],
+    )
+    .unwrap();
+    let beta_registry = ReleaseOperation::registry_publish(
+        beta.clone(),
+        version.clone(),
+        registry,
+        vec![beta_platform.id().clone()],
+    )
+    .unwrap();
     let beta_tag = ReleaseOperation::tag(beta.clone(), version.clone(), vec![beta_registry.id().clone()]).unwrap();
 
     let decision = ReleaseDecisionV1::new(vec![
@@ -112,17 +132,24 @@ fn simulator_intent() -> (ReleaseIntentV1, ArtifactManifestV1) {
         },
     ])
     .unwrap();
-    let mut operations = vec![
+    let operations = vec![
         alpha_registry,
         alpha_tag,
         alpha_draft,
         linux_upload,
         macos_upload,
         alpha_publish,
+        beta_platform,
         beta_registry,
         beta_tag,
     ];
-    operations.sort_by(|left, right| left.id().cmp(right.id()));
+    let operations = crate::commands::release::canonical_operation_order(
+        operations
+            .into_iter()
+            .map(|operation| (operation.id().clone(), operation))
+            .collect(),
+    )
+    .unwrap();
     let mut slots = vec![linux, macos];
     slots.sort();
     let intent = ReleaseIntentV1::new(
@@ -499,8 +526,11 @@ impl ReleaseProviderSet for SimWorld {
         // preflight: only the recovery reconstruction path may converge on an
         // exact registry observation. Modelling that here is what makes a
         // still-`Pending` registry operation a wedge rather than a no-op.
-        if matches!(id.role, callisto_model::ReleaseOperationRole::RegistryPublish { .. })
-            && matches!(observation, ProviderObservationV1::Exact { .. })
+        if matches!(
+            id.role,
+            callisto_model::ReleaseOperationRole::RegistryPublish { .. }
+                | callisto_model::ReleaseOperationRole::PlatformPublish { .. }
+        ) && matches!(observation, ProviderObservationV1::Exact { .. })
         {
             return Err(GraphError::ReleaseRegistryVersionExists {
                 package: id.package.name().to_owned(),
@@ -584,7 +614,8 @@ fn tag_of(observation: &ProviderObservationV1) -> ObservationTag {
 
 fn conflict_reason_for(id: &ReleaseOperationId) -> ProviderConflictReason {
     match &id.role {
-        callisto_model::ReleaseOperationRole::RegistryPublish { .. } => ProviderConflictReason::RegistryVersionYanked,
+        callisto_model::ReleaseOperationRole::RegistryPublish { .. }
+        | callisto_model::ReleaseOperationRole::PlatformPublish { .. } => ProviderConflictReason::RegistryVersionYanked,
         callisto_model::ReleaseOperationRole::Tag => ProviderConflictReason::RemoteTagTargetDiffers,
         callisto_model::ReleaseOperationRole::ForgeRelease | callisto_model::ReleaseOperationRole::ForgePublish => {
             ProviderConflictReason::ForgeReleaseDiffers
@@ -595,7 +626,8 @@ fn conflict_reason_for(id: &ReleaseOperationId) -> ProviderConflictReason {
 
 fn remote_conflict_for(id: &ReleaseOperationId) -> RemoteConflict {
     match &id.role {
-        callisto_model::ReleaseOperationRole::RegistryPublish { .. } => RemoteConflict::RegistryVersionDiffers,
+        callisto_model::ReleaseOperationRole::RegistryPublish { .. }
+        | callisto_model::ReleaseOperationRole::PlatformPublish { .. } => RemoteConflict::RegistryVersionDiffers,
         callisto_model::ReleaseOperationRole::Tag => RemoteConflict::TagTargetDiffers,
         callisto_model::ReleaseOperationRole::ForgeRelease => RemoteConflict::ForgeReleaseDiffers,
         callisto_model::ReleaseOperationRole::ForgePublish => RemoteConflict::ForgeReleaseNotObservedAfterPublish,
@@ -1171,6 +1203,9 @@ fn label(id: &ReleaseOperationId) -> String {
         callisto_model::ReleaseOperationRole::ForgeRelease => "draft".to_owned(),
         callisto_model::ReleaseOperationRole::ForgePublish => "publish".to_owned(),
         callisto_model::ReleaseOperationRole::ArtifactUpload { slot } => format!("upload({})", slot.asset_name),
+        callisto_model::ReleaseOperationRole::PlatformPublish { platform, .. } => {
+            format!("platform({})", platform.name().name())
+        }
     };
     format!("{}/{role}", id.package.name())
 }
@@ -1229,7 +1264,7 @@ fn the_release_executor_survives_every_enumerated_crash_and_provider_fault() {
     );
 
     // A regression that silently shrinks the enumeration must fail here.
-    assert_eq!(intent.operations.len(), 8, "the simulated intent lost an operation");
+    assert_eq!(intent.operations.len(), 9, "the simulated intent lost an operation");
     assert!(singles_crash >= 50, "crash points shrank to {singles_crash}");
     assert!(singles_fault >= 40, "fault points shrank to {singles_fault}");
     assert!(pairs >= 1000, "the pair sample shrank to {pairs}");

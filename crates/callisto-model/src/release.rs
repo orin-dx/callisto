@@ -960,6 +960,68 @@ pub enum ReleaseOperationRole {
     /// Publishes the draft created by [`Self::ForgeRelease`], only after every
     /// artifact upload of that release has been confirmed.
     ForgePublish,
+    /// Publishes one npm platform package (§M.6.1 Case E) of the operation's
+    /// owning package, by directory. It is not a package of its own, so it has
+    /// no tag, forge release, or decision entry.
+    PlatformPublish {
+        #[serde(flatten)]
+        registry: RegistryBindingId,
+        platform: PlatformPackageV1,
+    },
+}
+
+/// The npm platform package a [`ReleaseOperationRole::PlatformPublish`] publishes:
+/// its own npm name and its workspace-relative directory.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PlatformPackageV1 {
+    name: ReleasePackageId,
+    directory: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PlatformPackageV1Wire {
+    name: ReleasePackageId,
+    directory: String,
+}
+
+impl<'de> Deserialize<'de> for PlatformPackageV1 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = PlatformPackageV1Wire::deserialize(deserializer)?;
+        Self::new(wire.name, wire.directory).map_err(serde::de::Error::custom)
+    }
+}
+
+impl PlatformPackageV1 {
+    /// An npm package name and a relative, forward-slash directory with no `..`
+    /// component and no leading `-`, so it can be passed to a client as a path.
+    pub fn new(name: ReleasePackageId, directory: impl Into<String>) -> Result<Self, ReleaseOperationError> {
+        let directory = directory.into();
+        let safe_directory = !directory.is_empty()
+            && !directory.starts_with(['/', '-'])
+            && directory
+                .split('/')
+                .all(|part| !part.is_empty() && part != "." && part != "..")
+            && directory
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/' | b'@'));
+        if name.ecosystem() != Ecosystem::Npm || !safe_directory {
+            return Err(ReleaseOperationError::UnsafePlatformPackage);
+        }
+        Ok(Self { name, directory })
+    }
+
+    pub fn name(&self) -> &ReleasePackageId {
+        &self.name
+    }
+
+    pub fn directory(&self) -> &str {
+        &self.directory
+    }
 }
 
 #[derive(Deserialize)]
@@ -977,6 +1039,13 @@ enum ReleaseOperationRoleWire {
         slot: ArtifactSlotId,
     },
     ForgePublish,
+    PlatformPublish {
+        #[serde(rename = "registryKey")]
+        registry_key: String,
+        #[serde(rename = "bindingDigest")]
+        binding_digest: RegistryBindingDigest,
+        platform: PlatformPackageV1,
+    },
 }
 
 impl<'de> Deserialize<'de> for ReleaseOperationRole {
@@ -995,6 +1064,13 @@ impl<'de> Deserialize<'de> for ReleaseOperationRole {
             ReleaseOperationRoleWire::ForgeRelease => Ok(Self::ForgeRelease),
             ReleaseOperationRoleWire::ArtifactUpload { slot } => Ok(Self::ArtifactUpload { slot }),
             ReleaseOperationRoleWire::ForgePublish => Ok(Self::ForgePublish),
+            ReleaseOperationRoleWire::PlatformPublish {
+                registry_key,
+                binding_digest,
+                platform,
+            } => RegistryBindingId::new(registry_key, binding_digest)
+                .map(|registry| Self::PlatformPublish { registry, platform })
+                .map_err(serde::de::Error::custom),
         }
     }
 }
@@ -1003,7 +1079,11 @@ impl ReleaseOperationRole {
     fn artifact_slot(&self) -> Option<&ArtifactSlotId> {
         match self {
             Self::ArtifactUpload { slot } => Some(slot),
-            Self::RegistryPublish { .. } | Self::Tag | Self::ForgeRelease | Self::ForgePublish => None,
+            Self::RegistryPublish { .. }
+            | Self::Tag
+            | Self::ForgeRelease
+            | Self::ForgePublish
+            | Self::PlatformPublish { .. } => None,
         }
     }
 }
@@ -1078,6 +1158,21 @@ impl ReleaseOperationId {
         Self {
             package,
             role: ReleaseOperationRole::ForgePublish,
+            version,
+        }
+    }
+
+    /// `owner` and `version` are the owning package's, which is what puts the
+    /// operation inside the release decision.
+    pub fn platform_publish(
+        owner: ReleasePackageId,
+        version: Version,
+        registry: RegistryBindingId,
+        platform: PlatformPackageV1,
+    ) -> Self {
+        Self {
+            package: owner,
+            role: ReleaseOperationRole::PlatformPublish { registry, platform },
             version,
         }
     }
@@ -1205,6 +1300,8 @@ pub enum ReleaseOperationError {
     DuplicatePrerequisite { id: Box<ReleaseOperationId> },
     #[error("artifact upload operation identity must match its slot package and version")]
     MismatchedArtifactSlot,
+    #[error("platform package must be an npm name with a safe relative directory")]
+    UnsafePlatformPackage,
 }
 
 /// The one workflow whose runs may attest release artifacts; CI asserts the file exists here.
@@ -1554,7 +1651,8 @@ impl<'de> Deserialize<'de> for ReleaseIntentV1 {
 impl ReleaseIntentV1 {
     /// 3 adds the `forgePublish` role: publication is its own operation after
     /// every artifact upload, so a version-2 intent's DAG is not executable here.
-    pub const SCHEMA_VERSION: u8 = 3;
+    /// 4 adds the `platformPublish` role, which an earlier reader cannot execute.
+    pub const SCHEMA_VERSION: u8 = 4;
 
     pub fn new(
         profile: ReleaseProfileId,
@@ -1709,6 +1807,13 @@ fn operation_id_text(id: &ReleaseOperationId) -> String {
             slot.version.render(),
         ),
         ReleaseOperationRole::ForgePublish => "forge-publish".to_string(),
+        ReleaseOperationRole::PlatformPublish { registry, platform } => format!(
+            "platform-publish:{}:{}:{}:{}",
+            registry.registry_key().as_str(),
+            registry.binding_digest().as_str(),
+            platform.name(),
+            platform.directory(),
+        ),
     };
     format!("{}|{}|{}", id.package, role, id.version.render())
 }
@@ -2601,11 +2706,13 @@ mod tests {
     /// would report it.
     fn evidence_for(id: &ReleaseOperationId) -> ProviderEvidenceV1 {
         match &id.role {
-            ReleaseOperationRole::RegistryPublish { .. } => ProviderEvidenceV1::RegistryVersion {
-                version: id.version.clone(),
-                checksum: None,
-                yanked: None,
-            },
+            ReleaseOperationRole::RegistryPublish { .. } | ReleaseOperationRole::PlatformPublish { .. } => {
+                ProviderEvidenceV1::RegistryVersion {
+                    version: id.version.clone(),
+                    checksum: None,
+                    yanked: None,
+                }
+            }
             ReleaseOperationRole::Tag => ProviderEvidenceV1::GitTag {
                 peeled_commit: CommitSha::parse(&"a".repeat(40)).unwrap(),
             },
@@ -3215,6 +3322,37 @@ mod tests {
             DecisionDigest::from_transcript(&decision).as_str(),
             IntentDigest::from_transcript(&intent).as_str()
         );
+    }
+
+    #[test]
+    fn platform_publish_round_trips_under_its_owner_and_rejects_unsafe_platforms() {
+        let owner = ReleasePackageId::parse("npm/@s/cli").unwrap();
+        let platform = PlatformPackageV1::new(
+            ReleasePackageId::parse("npm/@s/cli-linux-x64-gnu").unwrap(),
+            "packages/cli/npm/linux-x64-gnu",
+        )
+        .unwrap();
+        let id = ReleaseOperationId::platform_publish(
+            owner.clone(),
+            Version::semver(1, 2, 3),
+            registry_binding("npm"),
+            platform,
+        );
+        assert_eq!(id.package, owner);
+        let wire = serde_json::to_value(&id).unwrap();
+        assert_eq!(wire["role"]["kind"], "platformPublish");
+        assert_eq!(wire["role"]["platform"]["directory"], "packages/cli/npm/linux-x64-gnu");
+        assert_eq!(serde_json::from_value::<ReleaseOperationId>(wire.clone()).unwrap(), id);
+
+        for directory in ["", "/abs", "-flag", "a/../b", "a//b", "./a", "a b"] {
+            let mut bad = wire.clone();
+            bad["role"]["platform"]["directory"] = directory.into();
+            assert!(
+                serde_json::from_value::<ReleaseOperationId>(bad).is_err(),
+                "{directory:?}"
+            );
+        }
+        assert!(PlatformPackageV1::new(ReleasePackageId::parse("cargo/x").unwrap(), "x").is_err());
     }
 
     #[test]
