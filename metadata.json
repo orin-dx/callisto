@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.11.1-nightly.202609221728.e2db95f836",
+  "checkpoint_id": "01M35GV111W4PMEDETSHZ0Q9PF",
+  "strategy": "manual-commit",
+  "branch": "fix/release-trust-ignored",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 92,
+    "cache_creation_tokens": 65457,
+    "cache_read_tokens": 6763564,
+    "output_tokens": 27936,
+    "api_call_count": 46,
+    "subagent_tokens": {
+      "input_tokens": 66,
+      "cache_creation_tokens": 160931,
+      "cache_read_tokens": 3229507,
+      "output_tokens": 1334,
+      "api_call_count": 33
+    }
+  }
+}

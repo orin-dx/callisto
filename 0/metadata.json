@@ -1,0 +1,89 @@
+{
+  "cli_version": "0.11.1-nightly.202609221728.e2db95f836",
+  "checkpoint_id": "01M35GV111W4PMEDETSHZ0Q9PF",
+  "session_id": "e2fe6504-b7f2-430b-a234-1e8197320f97",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-22T21:37:37.900402Z",
+  "branch": "fix/release-trust-ignored",
+  "checkpoints_count": 3,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "411f48222482",
+  "checkpoint_transcript_start": 6059,
+  "transcript_lines_at_start": 6059,
+  "compact_transcript_start": 772,
+  "token_usage": {
+    "input_tokens": 92,
+    "cache_creation_tokens": 65457,
+    "cache_read_tokens": 6763564,
+    "output_tokens": 27936,
+    "api_call_count": 46,
+    "subagent_tokens": {
+      "input_tokens": 66,
+      "cache_creation_tokens": 160931,
+      "cache_read_tokens": 3229507,
+      "output_tokens": 1334,
+      "api_call_count": 33
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01CUpXW5NHBVQ34MSDhwtUdJ",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "update-config"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "2ccbbfeade1e",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 4245,
+        "end": 4246,
+        "entry_ids": [
+          "05bffd7a-fbc9-46e0-8e50-0f765596178c"
+        ],
+        "tool_use_id": "toolu_01CUpXW5NHBVQ34MSDhwtUdJ"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01CUpXW5NHBVQ34MSDhwtUdJ"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: update-config",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 9
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 39,
+      "user_lines_removed": 107,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.local.json": 12,
+        "crates/callisto-cli/tests/common/release_harness.rs": 1,
+        "crates/callisto-vcs/src/access.rs": 1,
+        "crates/callisto-vcs/src/shell.rs": 23
+      },
+      "user_removed_per_file": {
+        "crates/callisto-cli/tests/common/release_harness.rs": 1,
+        "crates/callisto-vcs/src/access.rs": 17,
+        "crates/callisto-vcs/src/shell.rs": 89
+      }
+    }
+  ]
+}
