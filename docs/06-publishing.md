@@ -129,7 +129,7 @@ No `.cargo/credentials` setup step is needed; cargo recognizes the environment v
 
 ## Python (PyPI) Authentication
 
-The durable release lifecycle (`callisto release plan` / `execute`, see `07-self-release-lifecycle.md`) observes PyPI through the PEP 691 JSON simple index, not pip, so a PyPI version can be proved present, absent or yanked before and after a publish.
+The durable release (`callisto release plan`/`execute`, see `07-self-release-lifecycle.md`) checks PyPI versions via the PEP 691 JSON simple index.
 
 Python publishing uses `twine upload`. Twine reads credentials from two environment variables: `TWINE_USERNAME` (set to `__token__` when using a PyPI API token) and `TWINE_PASSWORD` (set to the API token value). Set these in the job environment before the Callisto release action runs:
 
