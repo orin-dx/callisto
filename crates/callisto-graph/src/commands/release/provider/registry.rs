@@ -253,8 +253,12 @@ pub(crate) fn cargo_registry_name(key: &RegistryKey) -> &str {
 /// workspace and reports an unpublished member's on-disk version as published
 /// (`version: X (from ./)`), which is the defect this observation exists to
 /// avoid; with it, cargo reads only the named registry.
-fn cargo_info_args<'a>(spec: &'a str, registry: &'a str) -> [&'a str; 4] {
-    ["info", spec, "--registry", registry]
+///
+/// `net.retry=0` must precede `info` (cargo ignores it after the subcommand):
+/// callisto's bounded retry owns retrying, and cargo's own backoff inside each
+/// attempt made an unreachable registry take ~11s per attempt.
+fn cargo_info_args<'a>(spec: &'a str, registry: &'a str) -> [&'a str; 6] {
+    ["--config", "net.retry=0", "info", spec, "--registry", registry]
 }
 
 impl RegistryEcosystem for CargoRegistry {
@@ -364,7 +368,9 @@ impl RegistryEcosystem for NpmRegistry {
         operation: &RegistryPublishOperation,
     ) -> Result<Attempt<ProviderObservationV1>, GraphError> {
         let spec = format!("{}@{}", operation.package_name, operation.version.render());
-        let mut args = vec!["view", spec.as_str(), "--json"];
+        // Callisto's bounded retry owns retrying; npm's own fetch retries made an
+        // unreachable registry take ~70s per attempt.
+        let mut args = vec!["view", spec.as_str(), "--json", "--fetch-retries=0"];
         if let Some(registry) = operation.registry.endpoint.as_deref() {
             args.extend(["--registry", registry]);
         }

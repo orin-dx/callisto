@@ -844,11 +844,20 @@ fn red_d01_every_cargo_info_observation_names_a_registry_explicitly() {
     assert!(out.status.success(), "{}", stderr(&out));
 
     let calls = e.rig.cargo_calls();
-    let info: Vec<&(String, String)> = calls.iter().filter(|(_, argv)| argv.starts_with("info ")).collect();
+    let info: Vec<&(String, String)> = calls
+        .iter()
+        .filter(|(_, argv)| argv.split_whitespace().any(|word| word == "info"))
+        .collect();
     assert!(
         !info.is_empty(),
         "the registry must be observed through cargo, got {calls:?}"
     );
+    for (_, argv) in &info {
+        assert!(
+            argv.starts_with("--config net.retry=0 info "),
+            "callisto's bounded retry owns retrying; cargo's own retry must be off: {argv}"
+        );
+    }
     for (cwd, argv) in &info {
         assert!(
             argv.contains(" --registry "),
@@ -863,7 +872,7 @@ fn red_d01_every_cargo_info_observation_names_a_registry_explicitly() {
     assert!(
         calls
             .iter()
-            .all(|(_, argv)| argv.starts_with("info ") || argv.starts_with("publish ")),
+            .all(|(_, argv)| argv.starts_with("--config net.retry=0 info ") || argv.starts_with("publish ")),
         "only observation and the publish effect may shell to cargo, got {calls:?}"
     );
     assert_eq!(

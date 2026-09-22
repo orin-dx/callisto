@@ -820,12 +820,12 @@ pub const TOOL_SHAPES: &[ToolShape] = &[
     ToolShape {
         tool: "cargo",
         subcommand: &["info"],
-        flags: &["--registry"],
+        flags: &["--registry", "--config"],
     },
     ToolShape {
         tool: "npm",
         subcommand: &["view"],
-        flags: &["--json", "--registry"],
+        flags: &["--json", "--registry", "--fetch-retries"],
     },
     ToolShape {
         tool: "npm",
@@ -881,6 +881,8 @@ printf 'cargo %s\n' "$*" >> "$CALLISTO_TEST_LOG"
 if [ -n "$CALLISTO_TEST_CARGO_CALLS" ]; then
   printf '%s|%s\n' "$PWD" "$*" >> "$CALLISTO_TEST_CARGO_CALLS"
 fi
+# Real cargo takes global `--config KEY=VALUE` before the subcommand.
+while [ "$1" = "--config" ]; do shift 2; done
 case "$1" in
   publish|info) key=$1 ;;
   *) printf 'error: no such command: `%s`\n' "$1" >&2; exit 1 ;;
@@ -1249,6 +1251,11 @@ pub fn argv_violations(line: &str, violations: &mut Vec<String>) {
     let tool = words.remove(0);
     if tool == "git" {
         while matches!(words.first(), Some(&"-c" | &"-C")) {
+            words.drain(..2.min(words.len()));
+        }
+    }
+    if tool == "cargo" {
+        while words.first() == Some(&"--config") {
             words.drain(..2.min(words.len()));
         }
     }
