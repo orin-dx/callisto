@@ -57,12 +57,12 @@ included) belong to the tool rather than to a credential-free reimplementation.
   to cargo's built-in `crates-io` (`cargo_registry_name`).
 - npm: `npm view NAME@VERSION version --json`, reporting `checksum: None`
   rather than inventing one.
-- PyPI: not observable. `can_observe_versions` is `false`, and
-  `require_observable_registry` refuses a PyPI publish target at plan time with
-  `ReleasePreconditionUnmet { ObservableRegistryClient }` (E170). pip cannot
-  prove absence: an unreachable index and a nonexistent project produce
-  identical output and exit code, `pip index versions` is experimental and hides
-  yanked releases, and a pinned yanked release installs with a warning.
+- PyPI: `curl -sS -i` against the PEP 691 JSON simple index (not pip, which
+  cannot tell a missing project from an unreachable index). 200 + matching file
+  is `Exact`; a yanked file, no match, or 404 is `Absent` (fail closed, like
+  cargo); transport failure or a non-JSON (PEP 503 HTML) body is
+  `Indeterminate`. Parsed with the same `http::parse_http_response` as `gh api
+  --include`.
 
 Cargo classification (`classify_cargo_info`): exit 0 with a `version: VERSION`
 line for the requested version is `Exact` with `checksum: None, yanked: None`
