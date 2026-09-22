@@ -25,6 +25,7 @@ Observation runs the ecosystem's own package manager -- the same tool and the sa
 
 - cargo: `cargo info NAME@VERSION --registry REGISTRY`, run from the source workspace root so that workspace's `.cargo/config.toml` registry definitions and credentials apply. `--registry` is never omitted: without it `cargo info` resolves the local workspace and reports an unpublished member's on-disk version as published, which is the D01 defect. The logical `cratesIo` key maps to cargo's built-in `crates-io` (`cargo_registry_name`).
 - npm: `npm view NAME@VERSION version --json`, reporting `checksum: None` rather than inventing one.
+- npm platform packages (`os`/`cpu` set, listed in an owner's `optionalDependencies`) get a `PlatformPublish { registry, platform }` operation, published by directory before their owner.
 - PyPI: `curl -sS -i` against the PEP 691 JSON simple index (not pip, which cannot tell a missing project from an unreachable index). 200 + matching file is `Exact`; a yanked file, no match, or 404 is `Absent` (fail closed, like cargo); transport failure or a non-JSON (PEP 503 HTML) body is `Indeterminate`. Parsed with the same `http::parse_http_response` as `gh api --include`.
 
 Cargo classification (`classify_cargo_info`): exit 0 with a `version: VERSION` line for the requested version is `Exact` with `checksum: None, yanked: None` (`cargo info` reports neither, and the evidence does not invent them); exit 101 whose stderr carries ``could not find `NAME@VERSION` `` is `Absent`; anything else -- another exit code, another message, or a zero exit with no matching version line -- is a transient `Indeterminate` under the retry policy, so an unreachable registry can never read as an absence.
@@ -72,8 +73,7 @@ A package is a dependency-graph node: versioned, cascaded, tagged, published. An
 | Attempting | `EffectFailedAndAbsent { AbsentProof }` | any | Failed |
 | Pending/Attempting | `Blocked { reason }` | any | Blocked |
 
-Consequences: `Attempting` is unreachable without a proven-absent provider;
-adopting a pre-existing effect into a missing journal is a recovery-only privilege; "our attempt landed" (`Published`) is distinct from "it already existed" (`AlreadySatisfied`); terminal states absorb every event.
+Consequences: `Attempting` is unreachable without a proven-absent provider; adopting a pre-existing effect into a missing journal is a recovery-only privilege; "our attempt landed" (`Published`) is distinct from "it already existed" (`AlreadySatisfied`); terminal states absorb every event.
 
 ## Fault-injection simulator (`commands/release_simulator.rs`)
 
@@ -94,7 +94,7 @@ Asserted after every scenario: a receipt only over landed effects and a durable 
 
 ## Wire versions
 
-`ReleaseExecutionStateV1::SCHEMA_VERSION` and `ReleaseReceiptV1::SCHEMA_VERSION` are both `2`; `ReleaseIntentV1::SCHEMA_VERSION` is `3` (the `forgePublish` role). An intent from an earlier version is rejected by `callisto::release_intent_schema_unsupported`, which names re-planning as the fix. `callisto schema --type release-receipt|release-state` publishes the wire shape, guarded by `crates/callisto-cli/tests/schema_guard_test.rs`.
+`ReleaseExecutionStateV1::SCHEMA_VERSION` and `ReleaseReceiptV1::SCHEMA_VERSION` are both `2`; `ReleaseIntentV1::SCHEMA_VERSION` is `4` (the `platformPublish` role). An intent from an earlier version is rejected by `callisto::release_intent_schema_unsupported`, which names re-planning as the fix. `callisto schema --type release-receipt|release-state` publishes the wire shape, guarded by `crates/callisto-cli/tests/schema_guard_test.rs`.
 
 ## Provider contract tier
 
