@@ -173,6 +173,10 @@ pub enum DiagnosticCode {
     /// packages across different ecosystems (e.g. `cargo/foo` and `npm/foo`) -- the entry
     /// cannot be resolved to a single target without an ecosystem prefix.
     AmbiguousPackageName,
+    /// An npm platform package (`os`+`cpu`) is not named in exactly one other npm package's
+    /// `optionalDependencies`, so it cannot be attached to an owner (§M.6.1 Case E) and is
+    /// treated as its own package.
+    PlatformPackageWithoutOwner,
 }
 
 #[cfg(test)]

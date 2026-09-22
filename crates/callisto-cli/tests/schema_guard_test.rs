@@ -133,6 +133,7 @@ fn ac13_diagnostic_code_enum_gains_only_changelog_read_error() {
         "duplicate-platform-triple",
         "changelog-read-error",
         "ambiguous-package-name",
+        "platform-package-without-owner",
     ]);
 
     assert_eq!(

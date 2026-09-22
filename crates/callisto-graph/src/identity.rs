@@ -565,6 +565,17 @@ impl IdentityIndex {
         id.display_name()
     }
 
+    /// §M.6.1 Case E: the platform manifests attached to `owner` from their own
+    /// directories, as (npm name, manifest path). Excludes a Case D platform
+    /// manifest that is also one of `owner`'s canonical manifests.
+    pub fn attached_platforms<'a>(
+        &'a self,
+        owner: &'a callisto_model::Package,
+    ) -> impl Iterator<Item = (&'a str, &'a Path)> + 'a {
+        self.platforms_of(&owner.id)
+            .filter(|(_, path)| !owner.canonical_manifests().any(|m| m.path == *path))
+    }
+
     pub fn platforms_of(&self, owner: &PackageId) -> impl Iterator<Item = (&str, &Path)> {
         let mut results = Vec::new();
         for (name, (plat_owner, path, _role)) in &self.platform {
