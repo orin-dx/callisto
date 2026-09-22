@@ -30,19 +30,6 @@ const RECORD_SEP: char = '\u{1e}';
 /// `git log --format=` output.
 const FIELD_SEP: char = '\u{1f}';
 
-/// Closed release policy for ignored worktree artifacts. Repository ignore
-/// rules are not authority to omit arbitrary release input from trust.
-const RELEASE_IGNORED_ALLOWLIST: &[&str] = &[
-    ".DS_Store",
-    "target/",
-    "bin/",
-    ".moon/cache/",
-    ".moon/docker/",
-    ".claude/worktrees/",
-    "mutants.out/",
-    "lcov.info",
-];
-
 /// Shells `git` subcommands via a [`CommandRunner`] to implement
 /// [`GitDataSource`]. See the module docs for the consolidation this
 /// replaces.
@@ -102,7 +89,7 @@ impl<'r> ShellGit<'r> {
     }
 
     /// Returns explicit, fresh Git trust evidence for a durable release.
-    /// Errors deliberately omit raw stderr and worktree path text.
+    /// Errors omit raw stderr; ignored paths (build output) are allowed.
     pub fn observe_git_commit_trust(&self) -> Result<GitCommitTrustEvidence, VcsError> {
         let root = self.runner.run("git", &["rev-parse", "--show-toplevel"], &self.root)?;
         if !root.success() {
@@ -157,13 +144,7 @@ impl<'r> ShellGit<'r> {
 
         let status = self.runner.run(
             "git",
-            &[
-                "status",
-                "--porcelain=v1",
-                "-z",
-                "--untracked-files=all",
-                "--ignored=matching",
-            ],
+            &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
             &self.root,
         )?;
         if !status.success() {
@@ -171,13 +152,9 @@ impl<'r> ShellGit<'r> {
                 "could not inspect the worktree for release trust".to_string(),
             ));
         }
+        check_release_worktree_status(&status.stdout)?;
 
-        Ok(GitCommitTrustEvidence::new(
-            canonical_root,
-            head,
-            head_disposition,
-            parse_release_worktree_status(&status.stdout)?,
-        ))
+        Ok(GitCommitTrustEvidence::new(canonical_root, head, head_disposition))
     }
 }
 
@@ -262,42 +239,15 @@ fn canonical_git_root(raw_root: &str) -> Result<PathBuf, VcsError> {
     })
 }
 
-fn parse_release_worktree_status(status: &str) -> Result<Vec<PathBuf>, VcsError> {
-    let mut allowed_ignored_paths = Vec::new();
-    for record in status.split('\0').filter(|record| !record.is_empty()) {
-        let Some(path) = record.strip_prefix("!! ") else {
-            return Err(VcsError::Git(
-                "release trust requires a worktree with no tracked or untracked files".to_string(),
-            ));
-        };
-        let path = PathBuf::from(path);
-        if !is_release_ignored_path_allowed(&path) {
-            return Err(VcsError::Git(
-                "release trust found an ignored path outside its fixed allowlist".to_string(),
-            ));
-        }
-        allowed_ignored_paths.push(path);
+/// Ignored paths are build output and never block; tracked or untracked changes do.
+fn check_release_worktree_status(status: &str) -> Result<(), VcsError> {
+    match status.split('\0').find(|record| !record.is_empty()) {
+        None => Ok(()),
+        Some(record) => Err(VcsError::Git(format!(
+            "release trust requires a clean worktree; found `{}`",
+            record.get(3..).unwrap_or(record)
+        ))),
     }
-    allowed_ignored_paths.sort();
-    allowed_ignored_paths.dedup();
-    Ok(allowed_ignored_paths)
-}
-
-fn is_release_ignored_path_allowed(path: &Path) -> bool {
-    if path.is_absolute()
-        || path
-            .components()
-            .any(|component| !matches!(component, std::path::Component::Normal(_)))
-    {
-        return false;
-    }
-    let rendered = path.to_string_lossy().replace('\\', "/");
-    RELEASE_IGNORED_ALLOWLIST.iter().any(|allowed| {
-        allowed.strip_suffix('/').map_or_else(
-            || rendered == *allowed,
-            |directory| rendered == directory || rendered.starts_with(&format!("{directory}/")),
-        )
-    })
 }
 
 impl GitDataSource for ShellGit<'_> {
@@ -560,22 +510,18 @@ mod tests {
                 stderr: String::new(),
             }),
             ["symbolic-ref", "--quiet", "HEAD"] => Ok(ok("refs/heads/main\n")),
-            ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=matching"] => Ok(ok(status.clone())),
+            ["status", "--porcelain=v1", "-z", "--untracked-files=all"] => Ok(ok(status.clone())),
             other => panic!("unexpected Git trust command: {other:?}"),
         })
     }
 
     #[test]
-    fn git_commit_trust_evidence_is_root_bound_and_allows_only_fixed_ignored_paths() {
+    fn git_commit_trust_evidence_is_root_bound() {
         let temp = tempfile::tempdir().unwrap();
         let expected_root = dunce::canonicalize(temp.path()).unwrap();
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
-            response: trust_response(
-                temp.path().to_path_buf(),
-                "!! target/debug/callisto\0!! .moon/cache/state\0".to_string(),
-                true,
-            ),
+            response: trust_response(temp.path().to_path_buf(), String::new(), true),
         };
         let git = ShellGit::new(&runner, temp.path());
 
@@ -584,13 +530,6 @@ mod tests {
         assert_eq!(evidence.canonical_root(), expected_root);
         assert_eq!(evidence.head().as_str(), "a".repeat(40));
         assert_eq!(evidence.head_disposition(), GitHeadDisposition::Detached);
-        assert_eq!(
-            evidence.allowed_ignored_paths(),
-            &[
-                PathBuf::from(".moon/cache/state"),
-                PathBuf::from("target/debug/callisto")
-            ]
-        );
     }
 
     #[test]
@@ -606,27 +545,22 @@ mod tests {
             .observe_git_commit_trust()
             .expect_err("untracked source must reject trust");
 
-        assert!(matches!(error, VcsError::Git(message) if message.contains("no tracked or untracked files")));
+        assert!(
+            matches!(error, VcsError::Git(message) if message.contains("clean worktree; found `release-input.txt`"))
+        );
     }
 
     #[test]
-    fn git_commit_trust_rejects_ignored_paths_outside_fixed_allowlist() {
+    fn git_commit_trust_names_a_modified_tracked_file() {
         let temp = tempfile::tempdir().unwrap();
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
-            response: trust_response(
-                temp.path().to_path_buf(),
-                "!! callisto-schema.json\0".to_string(),
-                false,
-            ),
+            response: trust_response(temp.path().to_path_buf(), " M Cargo.toml\0".to_string(), true),
         };
-        let git = ShellGit::new(&runner, temp.path());
-
-        let error = git
+        let error = ShellGit::new(&runner, temp.path())
             .observe_git_commit_trust()
-            .expect_err("ignored generated input must not be silently accepted");
-
-        assert!(matches!(error, VcsError::Git(message) if message.contains("fixed allowlist")));
+            .expect_err("modified tracked source must reject trust");
+        assert!(matches!(error, VcsError::Git(message) if message.contains("found `Cargo.toml`")));
     }
 
     #[test]
