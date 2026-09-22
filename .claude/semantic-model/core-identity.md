@@ -82,3 +82,28 @@ A `Bare` PackageId in `cfg.packages` that matches packages in >1 ecosystem emits
 `[[package-set]]` rules are exempt — multi-ecosystem is their explicit purpose.
 
 See `.claude/specs/track-e-specificity.json` for the full testable acceptance criteria.
+
+## npm platform packages -- Case E (`walk.rs::platform_owners`)
+
+A `package.json` with `os`+`cpu` (`NpmRole::Platform`) whose `name` appears in exactly one
+other npm package's `optionalDependencies` is a `ManifestRole::Platform` manifest of that
+owner, never a `Package` (spec §M.6.1, invariant 20: never tagged). The owner signal is
+`optionalDependencies`, so napi addons and esbuild-style native CLIs behave the same.
+
+- Discovery also considers platform dirs outside the npm workspace globs
+  (`ProjectLocator::projects_and_platform_candidates`); those attach or stay invisible.
+- A workspace-member platform with zero or several owners stays its own package and gets
+  `platform-package-without-owner`. Never guess an owner.
+- A platform `package.json` sharing a directory with a `Cargo.toml` is Case D: it already
+  belongs to that directory's package and is not re-attached.
+- `IdentityIndex::platform` maps the platform's own name to its owner;
+  `IdentityIndex::attached_platforms(owner)` excludes Case D platform manifests.
+- Versioning: `commands::version::platform_version_writes` (version + snapshot) writes the
+  owner's target version into each attached platform manifest (and any `[[fixed-group]]`
+  platform member) and updates the owner's `optionalDependencies` pins. No fixed group needed.
+- A Case D package's per-ecosystem release identity is each manifest's own native name
+  (`release_package_ids`), not `PackageId::name()`.
+- Open: the durable `release` path does not publish attached platform packages yet.
+  `ReleaseIntentV1::new` rejects any operation whose package is not a decision entry
+  (`OperationOutsideDecision`), so a synthetic platform `ReleasePackageId` needs a
+  decision-model change first.
