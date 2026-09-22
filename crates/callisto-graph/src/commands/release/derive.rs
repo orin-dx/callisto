@@ -138,7 +138,7 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
         // dedup defensively -- `release_package_ids` maps every canonical
         // manifest, and two manifests sharing an ecosystem would otherwise
         // select/push the same identity twice.
-        for id in crate::commands::release_decision::release_package_ids(package)?
+        for id in crate::commands::release_decision::release_package_ids(&workspace.identity, package)?
             .into_iter()
             .collect::<BTreeSet<_>>()
         {
@@ -461,7 +461,7 @@ fn require_product_package_publishes_to_forge<R: CommandRunner, D: DependencyRes
 ) -> Result<(), GraphError> {
     let mut found = false;
     for package in workspace.graph.packages() {
-        let is_product = crate::commands::release_decision::release_package_ids(package)?
+        let is_product = crate::commands::release_decision::release_package_ids(&workspace.identity, package)?
             .iter()
             .any(|id| product.matches(&package.id) && product.ecosystem() == Some(id.ecosystem()));
         if !is_product {

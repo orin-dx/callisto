@@ -508,6 +508,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
 
                     dispatched_ids.insert(pkg.id.clone());
                     npm_main_packages.push(NpmMainPublish {
+                        // Known gap: a differing Case D npm name is lost; this legacy plan keys entries by name.
                         name: pkg.id.name().to_string(),
                         version: ver.clone(),
                         publish_to: callisto_model::RegistryKey(callisto_model::RegistryKey::NPM.to_string()),

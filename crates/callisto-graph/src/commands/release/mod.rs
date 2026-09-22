@@ -287,6 +287,41 @@ pub(crate) mod tests {
         );
     }
 
+    /// A Case D package's npm identity is its package.json `name`, not the crate name.
+    #[test]
+    fn case_d_npm_release_identity_uses_the_package_json_name() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"addon\"\nversion = \"1.2.3\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"name":"@s/addon","version":"1.2.3"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("callisto.toml"),
+            "[[package]]\nmatch = \"addon\"\npublish-to = []\n",
+        )
+        .unwrap();
+        let runner = RealGitRunner;
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let workspace = Workspace::load(dir.path().to_path_buf(), &locator, &runner).unwrap();
+        let package = workspace.graph.packages().next().unwrap();
+        assert_eq!(workspace.graph.packages().count(), 1);
+
+        let ids = crate::commands::release_decision::release_package_ids(&workspace.identity, package).unwrap();
+        assert_eq!(
+            ids.into_iter().collect::<std::collections::BTreeSet<_>>(),
+            std::collections::BTreeSet::from([
+                ReleasePackageId::new(Ecosystem::Cargo, "addon").unwrap(),
+                ReleasePackageId::new(Ecosystem::Npm, "@s/addon").unwrap(),
+            ]),
+        );
+    }
+
     #[test]
     fn fresh_validation_rejects_manifest_change() {
         let (dir, runner) = fixture();
