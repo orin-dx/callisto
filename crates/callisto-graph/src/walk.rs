@@ -324,7 +324,8 @@ impl ManifestWalkResolver {
         for (id, (rel_path, decls)) in package_manifest_decls {
             let ch_path = rel_path.join("CHANGELOG.md");
             let mut publish_to = Vec::new();
-            for decl in &decls {
+            // Attached platform manifests publish as their owner's platform operations, not as targets.
+            for decl in decls.iter().filter(|d| d.role == ManifestRole::Canonical) {
                 if let Ok(editor) = open_cached(manifest_cache, decl, &ctx) {
                     for target in editor.publish_targets() {
                         if target != PublishTarget::None && !publish_to.contains(&target) {

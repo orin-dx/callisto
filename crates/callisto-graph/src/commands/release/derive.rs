@@ -7,9 +7,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use callisto_model::{
     ArtifactSlotId, CanonicalTranscript, CommandRunner, CommitSha, DepKind, ExecutionTrustProfileV1, GitHubRepository,
-    PublishTarget, RegistryBindingDigest, RegistryBindingId, ReleaseDecisionV1, ReleaseInputSnapshotV1,
-    ReleaseIntentV1, ReleaseOperation, ReleaseOperationId, ReleasePackageId, ReleasePackageInputV1, ReleaseProfileId,
-    SemanticInputDigest, SourceIdentity, Version,
+    PlatformPackageV1, PublishTarget, RegistryBindingDigest, RegistryBindingId, ReleaseDecisionV1,
+    ReleaseInputSnapshotV1, ReleaseIntentV1, ReleaseOperation, ReleaseOperationId, ReleasePackageId,
+    ReleasePackageInputV1, ReleaseProfileId, SemanticInputDigest, SourceIdentity, Version,
 };
 
 use crate::config::ReleaseProfileConfig;
@@ -182,6 +182,8 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
     let mut operations = BTreeMap::<ReleaseOperationId, ReleaseOperation>::new();
     let mut prepared = BTreeMap::<ReleaseOperationId, PreparedOperation>::new();
     let mut publishes_by_package = BTreeMap::<ReleasePackageId, Vec<ReleaseOperationId>>::new();
+    // Owner registry publish -> its platform publishes, which must land first.
+    let mut platforms_by_publish = BTreeMap::<ReleaseOperationId, Vec<ReleaseOperationId>>::new();
     let mut tag_by_package = BTreeMap::<ReleasePackageId, ReleaseOperationId>::new();
     let mut forge_by_package = BTreeMap::<ReleasePackageId, ReleaseOperationId>::new();
 
@@ -210,12 +212,9 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
             if target.ecosystem() == Some(id.ecosystem()) {
                 super::provider::registry::require_observable_registry(id.ecosystem())?;
                 let binding = prepared_registry_binding(workspace, target, profile_config)?;
-                let operation = ReleaseOperation::registry_publish(
-                    id.clone(),
-                    version.clone(),
-                    RegistryBindingId::new(binding.key.as_str(), binding.identity.clone())?,
-                    Vec::new(),
-                )?;
+                let binding_id = RegistryBindingId::new(binding.key.as_str(), binding.identity.clone())?;
+                let operation =
+                    ReleaseOperation::registry_publish(id.clone(), version.clone(), binding_id.clone(), Vec::new())?;
                 // A durable registry operation must have one exact endpoint
                 // binding. The model-level operation identity currently has
                 // only a registry key, so reject a second target that would
@@ -227,6 +226,47 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
                         reason: ReleaseSelectionInvalidReason::DuplicateRegistryTarget,
                     });
                 }
+                let npm_access = match target {
+                    PublishTarget::Npm { access, .. } => *access,
+                    _ => None,
+                };
+                let npm_tag = matches!(target, PublishTarget::Npm { .. })
+                    .then(|| version.is_prerelease().then_some("next".to_string()))
+                    .flatten();
+                if matches!(target, PublishTarget::Npm { .. }) {
+                    let mut platform_ids = Vec::new();
+                    for (name, manifest) in workspace.identity.attached_platforms(package) {
+                        let directory = manifest.parent().unwrap_or(std::path::Path::new(""));
+                        let platform = PlatformPackageV1::new(
+                            ReleasePackageId::new(callisto_model::Ecosystem::Npm, name)?,
+                            directory.to_string_lossy().replace('\\', "/"),
+                        )?;
+                        let platform_operation = ReleaseOperation::new(
+                            callisto_model::ReleaseOperationId::platform_publish(
+                                id.clone(),
+                                version.clone(),
+                                binding_id.clone(),
+                                platform,
+                            ),
+                            Vec::new(),
+                        )?;
+                        prepared.insert(
+                            platform_operation.id().clone(),
+                            PreparedOperation::RegistryPublish(RegistryPublishOperation {
+                                package_dir: directory.to_path_buf(),
+                                package_name: name.to_string(),
+                                version: version.clone(),
+                                registry: prepared_registry_binding(workspace, target, profile_config)?,
+                                npm_access,
+                                npm_tag: npm_tag.clone(),
+                                by_directory: true,
+                            }),
+                        );
+                        platform_ids.push(platform_operation.id().clone());
+                        operations.insert(platform_operation.id().clone(), platform_operation);
+                    }
+                    platforms_by_publish.insert(operation.id().clone(), platform_ids);
+                }
                 prepared.insert(
                     operation.id().clone(),
                     PreparedOperation::RegistryPublish(RegistryPublishOperation {
@@ -234,13 +274,9 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
                         package_name: id.name().to_string(),
                         version: version.clone(),
                         registry: binding,
-                        npm_access: match target {
-                            PublishTarget::Npm { access, .. } => *access,
-                            _ => None,
-                        },
-                        npm_tag: matches!(target, PublishTarget::Npm { .. })
-                            .then(|| version.is_prerelease().then_some("next".to_string()))
-                            .flatten(),
+                        npm_access,
+                        npm_tag,
+                        by_directory: false,
                     }),
                 );
                 publishes.push(operation.id().clone());
@@ -275,7 +311,9 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
         }
         for publish_id in publishes_by_package.get(id).into_iter().flatten() {
             let operation = operations.get(publish_id).expect("publish operation was constructed");
-            let replacement = ReleaseOperation::new(operation.id().clone(), prerequisites.iter().cloned().collect())?;
+            let mut prerequisites = prerequisites.clone();
+            prerequisites.extend(platforms_by_publish.get(publish_id).into_iter().flatten().cloned());
+            let replacement = ReleaseOperation::new(operation.id().clone(), prerequisites.into_iter().collect())?;
             operations.insert(publish_id.clone(), replacement);
         }
     }
@@ -554,7 +592,7 @@ fn release_trigger_text(trigger: callisto_model::ReleaseTrigger) -> &'static str
     }
 }
 
-fn canonical_operation_order(
+pub(crate) fn canonical_operation_order(
     operations: BTreeMap<ReleaseOperationId, ReleaseOperation>,
 ) -> Result<Vec<ReleaseOperation>, GraphError> {
     let mut remaining: BTreeMap<_, usize> = operations

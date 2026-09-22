@@ -52,6 +52,8 @@ pub(crate) struct RegistryPublishOperation {
     pub(crate) registry: PreparedRegistryBinding,
     pub(crate) npm_access: Option<NpmAccess>,
     pub(crate) npm_tag: Option<String>,
+    /// Publish `package_dir` by path rather than selecting a workspace member by name.
+    pub(crate) by_directory: bool,
 }
 
 #[derive(Debug)]

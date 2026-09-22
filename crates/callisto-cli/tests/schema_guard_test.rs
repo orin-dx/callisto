@@ -186,6 +186,7 @@ fn release_operation_roles_carry_exactly_their_declared_variants() {
             "forgeRelease",
             "artifactUpload",
             "forgePublish",
+            "platformPublish",
         ])
     );
 }

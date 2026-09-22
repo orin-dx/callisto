@@ -35,11 +35,13 @@ pub(crate) fn recovery_state(intent: &ReleaseIntentV1) -> ReleaseExecutionStateV
 /// Role-matching evidence, as a real provider adapter would report it.
 pub(crate) fn evidence_for(id: &ReleaseOperationId) -> ProviderEvidenceV1 {
     match &id.role {
-        ReleaseOperationRole::RegistryPublish { .. } => ProviderEvidenceV1::RegistryVersion {
-            version: id.version.clone(),
-            checksum: None,
-            yanked: None,
-        },
+        ReleaseOperationRole::RegistryPublish { .. } | ReleaseOperationRole::PlatformPublish { .. } => {
+            ProviderEvidenceV1::RegistryVersion {
+                version: id.version.clone(),
+                checksum: None,
+                yanked: None,
+            }
+        }
         ReleaseOperationRole::Tag => ProviderEvidenceV1::GitTag {
             peeled_commit: CommitSha::parse(&"a".repeat(40)).unwrap(),
         },

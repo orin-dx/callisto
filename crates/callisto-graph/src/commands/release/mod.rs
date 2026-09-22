@@ -72,6 +72,8 @@ pub use capability::{
     build_release_intent, build_release_intent_with_artifacts, observe_release_operations, validate_release_intent,
     validate_release_intent_with_state_directory, ValidatedReleaseIntent,
 };
+#[cfg(test)]
+pub(crate) use derive::canonical_operation_order;
 pub use derive::ArtifactBuildPolicy;
 pub(crate) use provider::policy::timeouts;
 pub use provider::{ReleasePreflight, ReleaseProviderSet};
@@ -319,6 +321,158 @@ pub(crate) mod tests {
                 ReleasePackageId::new(Ecosystem::Cargo, "addon").unwrap(),
                 ReleasePackageId::new(Ecosystem::Npm, "@s/addon").unwrap(),
             ]),
+        );
+    }
+
+    /// oxc-react-docgen's shape: an npm owner whose platform packages live in
+    /// `npm/<platform>` directories outside the pnpm workspace globs.
+    fn platform_owner_fixture() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let write = |rel: &str, body: &str| {
+            let path = dir.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, body).unwrap();
+        };
+        write("pnpm-workspace.yaml", "packages:\n  - \"packages/*\"\n");
+        write("pnpm-lock.yaml", "lockfileVersion: '9.0'\n");
+        write(
+            "packages/cli/package.json",
+            r#"{"name":"@s/cli","version":"0.1.0","publishConfig":{"access":"public"},"optionalDependencies":{"@s/cli-darwin-arm64":"0.1.0","@s/cli-linux-x64-gnu":"0.1.0"}}"#,
+        );
+        for (suffix, os, cpu) in [("darwin-arm64", "darwin", "arm64"), ("linux-x64-gnu", "linux", "x64")] {
+            write(
+                &format!("packages/cli/npm/{suffix}/package.json"),
+                &format!(r#"{{"name":"@s/cli-{suffix}","version":"0.1.0","os":["{os}"],"cpu":["{cpu}"]}}"#),
+            );
+        }
+        write("callisto.toml", "");
+        for args in [
+            ["init", "-q"].as_slice(),
+            ["config", "user.email", "test@example.com"].as_slice(),
+            ["config", "user.name", "Test"].as_slice(),
+            ["config", "commit.gpgsign", "false"].as_slice(),
+            ["remote", "add", "origin", "https://github.com/example/platforms.git"].as_slice(),
+            ["add", "."].as_slice(),
+            ["commit", "-q", "-m", "fixture"].as_slice(),
+            ["checkout", "--detach", "-q", "HEAD"].as_slice(),
+        ] {
+            assert!(std::process::Command::new("git")
+                .args(args)
+                .current_dir(dir.path())
+                .status()
+                .unwrap()
+                .success());
+        }
+        dir
+    }
+
+    /// §M.6.1 Case E: each attached platform package is one `PlatformPublish`
+    /// under its owner, published by directory before the owner, with no tag,
+    /// forge, or artifact operation of its own.
+    #[test]
+    fn platform_packages_publish_by_directory_before_their_owner() {
+        let dir = platform_owner_fixture();
+        let runner = RealGitRunner;
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let root = capability::canonical_root(dir.path()).unwrap();
+        let workspace = Workspace::load(root, &locator, &runner).unwrap();
+        let owner = ReleasePackageId::new(Ecosystem::Npm, "@s/cli").unwrap();
+        let version = Version::parse("0.1.0", VersionGrammar::SemVer).unwrap();
+        let decision = ReleaseDecisionV1::new(vec![callisto_model::ReleaseDecisionEntry {
+            package: owner.clone(),
+            target_version: version.clone(),
+            reasons: vec![callisto_model::ReleaseInclusionReason::ExplicitSelection],
+        }])
+        .unwrap();
+        let source = capability::observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
+        let (intent, prepared) = derive::derive_release_intent_with_prepared(
+            &workspace,
+            &decision,
+            ReleaseProfileId::production(),
+            source,
+            ExecutionTrustProfileV1::GitCommit,
+            None,
+        )
+        .unwrap();
+
+        let role_of = |operation: &callisto_model::ReleaseOperation| operation.id().role.clone();
+        let platforms: Vec<_> = intent
+            .operations
+            .iter()
+            .filter(|operation| {
+                matches!(
+                    role_of(operation),
+                    callisto_model::ReleaseOperationRole::PlatformPublish { .. }
+                )
+            })
+            .collect();
+        assert_eq!(platforms.len(), 2);
+        let publish = intent
+            .operations
+            .iter()
+            .find(|operation| {
+                matches!(
+                    role_of(operation),
+                    callisto_model::ReleaseOperationRole::RegistryPublish { .. }
+                )
+            })
+            .unwrap();
+        for platform in &platforms {
+            assert_eq!(
+                platform.id().package,
+                owner,
+                "a platform publish is authorized as its owner"
+            );
+            assert!(publish.prerequisites().contains(platform.id()));
+            let PreparedOperation::RegistryPublish(prepared) = &prepared.operations[platform.id()] else {
+                panic!("a platform publish must route to the registry provider");
+            };
+            assert!(prepared.by_directory);
+            assert!(prepared.package_dir.starts_with("packages/cli/npm"));
+            assert_eq!(prepared.npm_access, Some(callisto_model::NpmAccess::Public));
+        }
+        assert_eq!(
+            intent
+                .operations
+                .iter()
+                .filter(|operation| operation.id().role == callisto_model::ReleaseOperationRole::Tag)
+                .count(),
+            1,
+            "only the owner is tagged"
+        );
+        assert_eq!(
+            intent.operations.len(),
+            4,
+            "two platforms, the owner publish, the owner tag"
+        );
+
+        // One platform failing leaves its sibling runnable and the owner blocked.
+        let mut state = crate::commands::release_test_support::pending_state(&intent);
+        let eligible = crate::commands::reconcile_release_execution(&intent, Some(&state)).unwrap();
+        assert_eq!(
+            eligible.eligible(),
+            [platforms[0].id().clone(), platforms[1].id().clone()]
+        );
+        state
+            .apply(
+                platforms[0].id(),
+                &crate::commands::release_test_support::attempt_event(),
+            )
+            .unwrap();
+        state
+            .apply(
+                platforms[0].id(),
+                &callisto_model::OperationEvent::Blocked {
+                    reason: callisto_model::OperationBlockReason::IndeterminateAttempt,
+                },
+            )
+            .unwrap();
+        crate::commands::release_test_support::publish_operation(&mut state, platforms[1].id());
+        let eligible = crate::commands::reconcile_release_execution(&intent, Some(&state)).unwrap();
+        assert!(
+            eligible.eligible().is_empty(),
+            "the owner must not publish: {:?}",
+            eligible.eligible()
         );
     }
 

@@ -402,6 +402,16 @@ impl RegistryEcosystem for NpmRegistry {
         context: &ProviderContext<'_>,
         operation: &RegistryPublishOperation,
     ) -> Result<CommandOutput, GraphError> {
+        if operation.by_directory {
+            let argv = registry_argv::npm_publish_directory_argv(
+                context.root(),
+                &operation.package_dir,
+                operation.npm_tag.as_deref(),
+                operation.npm_access,
+                operation.registry.endpoint.as_deref(),
+            );
+            return run_argv(context, &argv);
+        }
         let package_manager = registry_argv::detect_npm_package_manager(context.root());
         let argv = registry_argv::npm_publish_argv(
             context.root(),
