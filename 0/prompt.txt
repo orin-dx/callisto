@@ -1,0 +1,1 @@
+No external consumers, start with what makes most sense. Use agent teams with the most appropriate model and effort for quality and token efficiency. Communicate succinctly without unecessary wordy prose. Parallelize where no conflict will exist. Evaluate the architecture and semantic models before starting. Adjust as needed.
