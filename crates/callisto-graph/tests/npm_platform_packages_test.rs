@@ -353,3 +353,23 @@ fn snapshot_versions_attached_platforms_too() {
     assert_eq!(napi_writes.len(), PLATFORMS.len());
     assert!(napi_writes.iter().all(|w| &w.version == snapshot));
 }
+
+#[test]
+fn legacy_publish_plan_does_not_treat_an_owner_as_a_platform_dependency() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    build_fixture(root);
+    write(
+        root,
+        "packages/plugin/package.json",
+        r#"{"name":"@s/plugin","version":"0.1.0","dependencies":{"@s/napi":"0.1.0"}}"#,
+    );
+    let ws = load(root);
+    let plan = callisto_graph::commands::plan_publish(&ws, &Default::default()).expect("plan_publish must succeed");
+    let plugin = plan.npm_main_packages.iter().find(|p| p.name == "@s/plugin").unwrap();
+    assert!(
+        plugin.depends_on_platforms.is_empty(),
+        "{:?}",
+        plugin.depends_on_platforms
+    );
+}

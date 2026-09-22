@@ -406,11 +406,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                 }
             }
 
-            // An owner's attached (Case E) platform manifests do not make it a platform package.
-            let is_platform_pkg = pkg.manifests.iter().any(|m| {
-                matches!(m.role, callisto_model::ManifestRole::Platform { .. })
-                    && pkg.canonical_manifests().any(|c| c.path == m.path)
-            });
+            let is_platform_pkg = is_platform_package(pkg);
 
             // Resolve the package directory (relative to workspace root) from
             // the first manifest path. All manifests for a package share the
@@ -480,16 +476,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                     let mut platform_deps: Vec<String> = ws
                         .graph
                         .dependencies_of(&pkg.id)
-                        .filter(|edge| {
-                            pkg_map
-                                .get(&edge.to)
-                                .map(|p| {
-                                    p.manifests
-                                        .iter()
-                                        .any(|m| matches!(m.role, callisto_model::ManifestRole::Platform { .. }))
-                                })
-                                .unwrap_or(false)
-                        })
+                        .filter(|edge| pkg_map.get(&edge.to).is_some_and(|p| is_platform_package(p)))
                         .map(|edge| edge.to.name().to_string())
                         .collect();
                     for (name, manifest) in ws.identity.attached_platforms(pkg) {
@@ -672,6 +659,15 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
         pypi_packages,
         releases,
         diagnostics,
+    })
+}
+
+/// A package that is itself an npm platform package (its own package.json has
+/// `os`+`cpu`). An owner's attached (Case E) platform manifests do not count.
+fn is_platform_package(pkg: &callisto_model::Package) -> bool {
+    pkg.manifests.iter().any(|m| {
+        matches!(m.role, callisto_model::ManifestRole::Platform { .. })
+            && pkg.canonical_manifests().any(|c| c.path == m.path)
     })
 }
 
