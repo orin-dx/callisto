@@ -16,6 +16,13 @@ WASM_INSTALLER = ".github/actions/setup-callisto-wasm/action.yml"
 COORDINATOR_CONST_SRC = "crates/callisto-model/src/release.rs"
 CONTENTS_WRITE = {"execute", "version-pr"}  # version-pr commits the managed branch via the forge API
 OIDC_JOBS = {"build-artifact"}
+# Deny-by-default: every `write` scope a job may hold, named explicitly. A scope
+# absent here is rejected, so a new write permission cannot be added unnoticed.
+ALLOWED_WRITES = {
+    "version-pr": {"contents", "pull-requests"},
+    "build-artifact": {"attestations", "id-token"},
+    "execute": {"contents"},
+}
 
 
 def load(path):
@@ -90,6 +97,12 @@ def eval_if(expr, ctx):
                     raise ValueError("function arguments unsupported")
                 if val == "always":
                     return True
+                # No scenario models run-level cancellation, so cancelled() is
+                # False and `!cancelled()` schedules exactly like always().
+                if val == "cancelled":
+                    return False
+                if val in ("success", "failure"):
+                    return ctx(f"__status__.{val}")
                 raise ValueError(f"status function {val}() unsupported by the scheduler check")
             return ctx(val)
         raise ValueError(f"unexpected token {val!r}")
@@ -322,6 +335,8 @@ def check(path):
                 errs.append(f"{name}: {scope}: write not allowed")
             if level == "write-all":
                 errs.append(f"{name}: write-all")
+            if level == "write" and scope not in ALLOWED_WRITES.get(name, set()):
+                errs.append(f"{name}: {scope}: write is not in that job's allowed write scopes")
         if any(isinstance(n, dict) and "environment" in n for n in walk(job)):
             errs.append(f"{name}: environment key forbidden (merge is the approval)")
         t = job.get("timeout-minutes")
@@ -376,8 +391,8 @@ def check(path):
     # skipped. GitHub skips any job whose transitive ancestor was skipped unless
     # its own `if` has a status function, so every dependent job needs one.
     for name, job in jobs.items():
-        if job.get("needs") and not re.search(r"\balways\(\)", str(job.get("if", ""))):
-            errs.append(f"job {name} depends on a gated job and must use always() in its if")
+        if job.get("needs") and not re.search(r"\b(always|success|failure|cancelled)\(\)", str(job.get("if", ""))):
+            errs.append(f"job {name} depends on a gated job and must use a status function in its if")
     errs += schedule_errors(jobs)
     errs += handoff_roundtrip_errors(jobs)
     errs += slots_probe_errors(jobs)
@@ -385,6 +400,11 @@ def check(path):
     if "needs.plan.result == 'success'" not in ba:
         errs.append("build-artifact must require needs.plan.result == 'success'")
     ex = jobs.get("execute", {})
+    # always() runs a job even when the run is cancelled (GitHub's own docs).
+    # execute is the only irreversible job, so Cancel must actually stop it.
+    ex_if = re.sub(r"\s+", " ", str(ex.get("if", "")))
+    if "!cancelled()" not in ex_if or re.search(r"\balways\(\)", ex_if):
+        errs.append("execute must gate on !cancelled(), not always(): cancelling a run must stop the publish")
     if not re.search(r"needs\.plan\.result == 'success'", str(ex.get("if", ""))):
         errs.append("execute must require needs.plan.result == 'success'")
     if set(ex.get("needs", [])) != {"plan", "build", "release-candidate"}:
@@ -524,7 +544,11 @@ def mutants(text):
         "verified requirement dropped": sub('if [[ "$prs" == 1 && "$verified" == true ]]', 'if [[ "$prs" == 1 ]]'),
         "dispatch sha regex weakened": sub("^[0-9a-f]{40}$", "^.+$"),
         "resolved-sha equality dropped": sub('if [[ "$resolved_sha" != "$release_source_sha" ]]', 'if false'),
-        "execute loses plan success": sub("always() && needs.plan.result == 'success' &&", "always() &&"),
+        "execute loses its status function": sub("      !cancelled() && needs.plan.result == 'success' &&",
+            "      needs.plan.result == 'success' &&"),
+        "execute runs when cancelled": sub("      !cancelled() && needs.plan.result == 'success' &&",
+            "      always() && needs.plan.result == 'success' &&"),
+        "execute loses plan success": sub("!cancelled() && needs.plan.result == 'success' &&", "!cancelled() &&"),
         "plan runs always": sub("      always() && needs.release-candidate.result == 'success' &&\n      needs.release-candidate.outputs.is_release_pr == 'true'\n    timeout-minutes: 20",
             "      always()\n    timeout-minutes: 20"),
         "plan loses always": sub("      always() && needs.release-candidate.result == 'success' &&\n      needs.release-candidate.outputs.is_release_pr == 'true'\n    timeout-minutes: 20",
@@ -551,6 +575,8 @@ def mutants(text):
         "verified query dropped": sub("--jq '.commit.verification.verified'", "--jq '.sha'"),
         "secret in build-artifact": sub("          CALLISTO_RELEASE_ARTIFACT_KIND: ${{ matrix.kind }}\n",
             "          CALLISTO_RELEASE_ARTIFACT_KIND: ${{ matrix.kind }}\n          LEAK: ${{ secrets.LEAK }}\n"),
+        "undeclared write scope on plan": sub("    permissions:\n      contents: read\n    outputs:\n      has_artifacts:",
+            "    permissions:\n      contents: read\n      packages: write\n    outputs:\n      has_artifacts:"),
         "contents: write in plan": after("\n  plan:\n", "      contents: read", "      contents: write"),
         "environment on execute": sub("    name: Execute approved release\n",
             "    name: Execute approved release\n    environment: release\n"),

@@ -54,8 +54,6 @@ decision_kind=$(jq -r '.action.kind' <<< "$decision")
 case "$decision_kind" in
   noop)
     echo 'hasChangesets=false' >> "$GITHUB_OUTPUT"
-    matrix=$(callisto matrix --format json | jq -c '[.platformTargets[].targets[]] | unique_by(.artifactName)')
-    echo "nativeMatrix=$matrix" >> "$GITHUB_OUTPUT"
     echo '::notice::No changesets. This action does not publish, tag, download artifacts, or create releases; use the durable repository workflow.'
     exit 0
     ;;

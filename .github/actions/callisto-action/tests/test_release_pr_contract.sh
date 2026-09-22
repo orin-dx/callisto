@@ -132,6 +132,8 @@ STUBS
 
   printf '%s\n---calls---\n' "$code"
   cat "$calls_file"
+  printf '%s\n' '---outputs---'
+  cat "$output_file"
   rm -f "$calls_file" "$output_file" "$harness" "$verify_count_file"
 }
 
@@ -156,7 +158,8 @@ if [[ "$output" != 0$'\n'* ]] \
   || [[ "$output" != *"gh api -X POST repos/orin-dx/callisto/git/refs -f ref=refs/heads/callisto/version-packages -f sha=$default_new_sha"* ]] \
   || [[ "$output" != *"gh api -X DELETE repos/orin-dx/callisto/git/refs/heads/callisto/version-packages--staging"* ]] \
   || [[ "$output" != *'gh pr create --head callisto/version-packages --base main'* ]] \
-  || [[ "$output" == *'git push'* ]]; then
+  || [[ "$output" == *'git push'* ]] \
+  || [[ "$output" == *'nativeMatrix'* ]]; then
   echo "FAIL: executes Callisto create decision through the forge commit API with three mutation-boundary checks: $output"
   fail=1
 else
@@ -169,7 +172,8 @@ if [[ "$output" != 0$'\n'* ]] \
   || [[ "$output" != *"gh api -X PATCH repos/orin-dx/callisto/git/refs/heads/callisto/version-packages -f sha=$default_new_sha -F force=true"* ]] \
   || [[ "$output" != *'gh pr edit 42'* ]] \
   || [[ "$output" == *'gh pr create'* ]] \
-  || [[ "$output" == *'git push'* ]]; then
+  || [[ "$output" == *'git push'* ]] \
+  || [[ "$output" == *'nativeMatrix'* ]]; then
   echo "FAIL: executes Callisto update decision through the forge commit API: $output"
   fail=1
 else
@@ -181,7 +185,8 @@ if [[ "$output" != 0$'\n'* ]] \
   || [[ "$output" != *"gh api -X PATCH repos/orin-dx/callisto/git/refs/heads/$fallback_branch"* ]] \
   || [[ "$output" != *'gh pr edit 99'* ]] \
   || [[ "$output" == *'gh pr create'* ]] \
-  || [[ "$output" == *'git push'* ]]; then
+  || [[ "$output" == *'git push'* ]] \
+  || [[ "$output" == *'nativeMatrix'* ]]; then
   echo "FAIL: retains a Callisto-selected SHA-suffixed replacement branch and updates it in place: $output"
   fail=1
 else
@@ -193,7 +198,8 @@ if [[ "$output" != 0$'\n'* ]] \
   || [[ "$output" == *'git push'* ]] \
   || [[ "$output" == *'gh api'* ]] \
   || [[ "$output" == *'gh pr create'* ]] \
-  || [[ "$output" == *'gh pr edit'* ]]; then
+  || [[ "$output" == *'gh pr edit'* ]] \
+  || [[ "$output" == *'nativeMatrix'* ]]; then
   echo "FAIL: no-op decision must stop before mutation: $output"
   fail=1
 else
