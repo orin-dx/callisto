@@ -1,0 +1,1 @@
+Our changesets should also be succint and devoid of AI slop and wordy prose. Same with PR descriptions and docs
