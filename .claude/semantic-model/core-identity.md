@@ -103,7 +103,11 @@ owner, never a `Package` (spec §M.6.1, invariant 20: never tagged). The owner s
   platform member) and updates the owner's `optionalDependencies` pins. No fixed group needed.
 - A Case D package's per-ecosystem release identity is each manifest's own native name
   (`release_package_ids`), not `PackageId::name()`.
-- Open: the durable `release` path does not publish attached platform packages yet.
-  `ReleaseIntentV1::new` rejects any operation whose package is not a decision entry
-  (`OperationOutsideDecision`), so a synthetic platform `ReleasePackageId` needs a
-  decision-model change first.
+- Release: `derive` emits one `ReleaseOperationRole::PlatformPublish { registry, platform }` per
+  attached platform of each selected owner with an npm target. Its id's package/version are the
+  owner's, so it passes `validate_operation_roster`; it is never in `selected`, so it gets no tag,
+  forge, or artifact op. Every platform op is a prerequisite of the owner's `RegistryPublish`.
+  It routes to the registry provider (`npm view <platform>@<version>`), publishing by directory
+  (`npm_publish_directory_argv`: `npm publish <abs dir>` for every package manager).
+  `ReleaseIntentV1::SCHEMA_VERSION` = 4 for this role.
+- Attached platform manifests contribute no `publish_to` targets to their owner (walk.rs).
