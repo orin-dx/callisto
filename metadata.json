@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.11.1-nightly.202609221728.e2db95f836",
+  "checkpoint_id": "01M35A6STB6B3QXFAFZY6ZJJ8V",
+  "strategy": "manual-commit",
+  "branch": "fix/publish-to-keeps-npm-access",
+  "checkpoints_count": 4,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 14295,
+    "cache_read_tokens": 9161699,
+    "output_tokens": 6463,
+    "api_call_count": 10,
+    "subagent_tokens": {
+      "input_tokens": 52,
+      "cache_creation_tokens": 28416,
+      "cache_read_tokens": 3773898,
+      "output_tokens": 3814,
+      "api_call_count": 26
+    }
+  }
+}
