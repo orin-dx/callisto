@@ -48,23 +48,21 @@ Each configured profile also declares `registry-routes`, mapping a logical packa
 
 ## Recovering an older release
 
-Recovery of a release-source commit that is no longer a branch tip is an assisted procedure, not automation. Two platform facts block the unattended path.
+Recovering a commit that is no longer a branch tip needs two manual steps.
 
-**Tags the workflow cannot push (`E180`).** GitHub refuses a `GITHUB_TOKEN` push of any ref whose `.github/workflows/` differs from every branch tip, and no job permission grants the `workflows` scope. `E180` names the first refused tag and its commit; the run stops there, and every other tag of the release is refused the same way. Push all the release's tags yourself with a non-App credential (a PAT or deploy key), as annotated tags at the release-source commit, with the annotation Callisto writes, then dispatch recovery:
+**E180: the workflow can't push tags.** GitHub rejects a `GITHUB_TOKEN` tag push when the tagged commit's workflows differ from every branch tip. Push every tag of the release yourself (PAT or deploy key), then dispatch recovery:
 
 ```sh
-SHA=<full release-source sha>
-git tag -a "<tag>" -m "Release <tag>" "$SHA"   # once per tag of the release
+SHA=<release-source sha>
+git tag -a "<tag>" -m "Release <tag>" "$SHA"   # each tag of the release
 git push origin "<tag>"
 gh workflow run callisto-release.yml --ref main -f release_source_sha="$SHA"
 ```
 
-Recovery observes each pushed tag as already satisfied and continues.
-
-**Assets that differ (`ArtifactAssetDiffers`).** Rebuilt tarballs are not byte-reproducible, so a recovery run that rebuilds artifacts reads assets uploaded by an earlier attempt as conflicting. Artifact observation treats a missing asset as absent, so delete the mismatched assets and dispatch again:
+**`ArtifactAssetDiffers`: rebuilt assets don't match.** Rebuilt tarballs aren't byte-identical. Delete the mismatched assets and dispatch again:
 
 ```sh
-gh release delete-asset "<release tag>" "<asset name>" --yes   # once per mismatched asset
+gh release delete-asset "<release tag>" "<asset>" --yes   # each mismatched asset
 gh workflow run callisto-release.yml --ref main -f release_source_sha="$SHA"
 ```
 
@@ -78,7 +76,7 @@ Registry observation goes through the ecosystem's own package manager — the sa
 
 A yanked version reads as absent, because `cargo info` cannot see yanks. That fails closed: the publish that follows is refused by the registry, and since only an exact observation may satisfy an operation, the run ends in the typed unconfirmed-publication error rather than in a receipt.
 
-PyPI is observed through the index, not `pip`: `curl -sS -i` against the PEP 691 JSON simple index (`https://pypi.org/simple/<project>/`, or the configured private index). A file for the version is exact, 404 or no matching file is absent, and a transport failure is indeterminate, never absent. A yanked file reads as absent, so a publish over a yanked version fails closed, mirroring cargo. `pip` was never usable here: an unreachable index and a missing project give it identical output, and `pip index versions` hides yanks. A private index that ignores the JSON `Accept` header and serves PEP 503 HTML is indeterminate; the JSON simple index is required.
+PyPI versions are checked with `curl` against the PEP 691 JSON simple index (`https://pypi.org/simple/<project>/` or the configured private index), not `pip`, which can't tell a missing project from an unreachable index. A matching file is exact; 404 or no match is absent; a transport failure or non-JSON (PEP 503 HTML) response is indeterminate. Yanked files count as absent, so publishing over a yanked version fails closed.
 
 Registry endpoints must be `https`. There is no loopback exception, because an endpoint receives a credential.
 
