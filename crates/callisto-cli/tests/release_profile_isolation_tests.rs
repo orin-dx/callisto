@@ -3,7 +3,7 @@
 
 use std::{fs, path::Path, process::Command};
 
-const HEAD: &str = "[release]\nproduct-package = \"cargo/core-crate\"\nartifact-targets = [\"aarch64-apple-darwin\",\"x86_64-unknown-linux-gnu\",\"x86_64-unknown-linux-musl\",\"wasm32-wasip1\"]\n";
+const HEAD: &str = "[release]\nproduct-package = \"cargo/core-crate\"\n\n[[release.artifact]]\npackage = \"cargo/core-crate\"\ntarget = \"aarch64-apple-darwin\"\nasset-name = \"callisto-aarch64-apple-darwin.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/core-crate\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"callisto-x86_64-unknown-linux-gnu.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/core-crate\"\ntarget = \"x86_64-unknown-linux-musl\"\nasset-name = \"callisto-x86_64-unknown-linux-musl.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/core-crate\"\ntarget = \"wasm32-wasip1\"\nasset-name = \"callisto-moon.wasm\"\n";
 
 fn git(root: &Path, args: &[&str]) {
     let output = Command::new("git").args(args).current_dir(root).output().unwrap();
