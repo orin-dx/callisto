@@ -1,0 +1,9 @@
+Is there a better way to architect and handle this? How do other tools do this? Are we doing something novel? Are we overengineering it?
+
+---
+
+Let's avoid the overengineering and trying to cram what doesn't match together. Lets learn from others but still ship something better
+
+---
+
+Let's avoid the overengineering and trying to cram what doesn't match together. Lets learn from others but still ship something better. Lets address the gaps in wiring and architecture comprehensively with agent teams and workflows using the most appropriate model and effort for quality but avoiding token overuse. Communicate across in extremely succinct language. Avoid AI slop and wordy prose, it's unecessary. But succinct and to the point in ALL COMMUNICATION, to me and to agents. Give the required information and nothing wasteful.
