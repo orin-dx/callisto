@@ -188,6 +188,11 @@ effect a lagging index still reports absent, which only the provider can refuse.
 - `E177` provider observation unusable as evidence (role mismatch; internal defect).
 - `E178` run envelope invalid for this intent.
 - `E179` an artifact's `package` is not part of this release (user config, not a defect).
+- `E180` tag push refused by GitHub's App workflow guard (`GITHUB_TOKEN` pushing a
+  commit whose `.github/workflows/` differs from every branch tip, i.e. recovery of
+  an older release). Detected from the push stderr in `provider/tag.rs::push_tag`;
+  any other push failure stays `E164`. Remedy: push the tag with a non-App
+  credential, then re-run recovery.
 
 ## Wire versions
 
