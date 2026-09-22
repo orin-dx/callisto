@@ -1,6 +1,6 @@
 # Agent guide
 
-Rules for AI agents working in this repo. `CLAUDE.md` imports this file.
+Rules for AI agents working in this repo.
 
 ## Crates
 
