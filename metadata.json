@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.11.1-nightly.202609221728.e2db95f836",
+  "checkpoint_id": "01M359QA8A7BJMPPDP3Z5PF3Z0",
+  "strategy": "manual-commit",
+  "branch": "test/conventional-proptest-seeds",
+  "checkpoints_count": 4,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1060,
+    "cache_creation_tokens": 2837166,
+    "cache_read_tokens": 250409446,
+    "output_tokens": 429343,
+    "api_call_count": 526
+  }
+}
