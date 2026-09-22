@@ -187,6 +187,7 @@ effect a lagging index still reports absent, which only the provider can refuse.
 - `E176` provider indeterminate before dispatch.
 - `E177` provider observation unusable as evidence (role mismatch; internal defect).
 - `E178` run envelope invalid for this intent.
+- `E179` an artifact's `package` is not part of this release (user config, not a defect).
 
 ## Wire versions
 

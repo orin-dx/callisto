@@ -382,11 +382,9 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
                         artifact.package.matches(&pkg.id) && artifact.package.ecosystem() == Some(candidate.ecosystem())
                     })
                     .map(|(candidate, (_, owner_version))| (candidate.clone(), owner_version.clone()))
-                    .ok_or_else(|| GraphError::ReleaseInvariant {
-                        detail: format!(
-                            "artifact `{}` names package `{}`, which is absent from this release",
-                            artifact.asset_name, artifact.package
-                        ),
+                    .ok_or_else(|| GraphError::ReleaseArtifactOwnerNotReleased {
+                        asset: artifact.asset_name.clone(),
+                        package: artifact.package.to_string(),
                     })?;
                 let slot = ArtifactSlotId::new(
                     owner_id.clone(),
