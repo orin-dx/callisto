@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use callisto_model::release::is_safe_artifact_component;
 use callisto_model::{
     ConfigKey, Ecosystem, GitHubRepository, PackageId, PublishTarget, RegistryKey, ReleaseProfileId, ReleaseTrigger,
     Severity, TagTemplate,
@@ -48,7 +49,7 @@ pub struct ResolvedConfig {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProductReleaseConfig {
     pub package: PackageId,
-    pub artifact_targets: Vec<String>,
+    pub artifacts: Vec<ProductArtifactConfig>,
     pub profiles: BTreeMap<ReleaseProfileId, ReleaseProfileConfig>,
 }
 
@@ -150,40 +151,59 @@ pub struct RegistryConfig {
     pub url: Option<String>,
 }
 
-/// The single (target, asset name) table; CI's policy check compares every workflow and script copy to it.
-pub const PRODUCT_ARTIFACT_TARGETS: [(&str, &str); 4] = [
-    ("aarch64-apple-darwin", "callisto-aarch64-apple-darwin.tar.gz"),
-    ("x86_64-unknown-linux-gnu", "callisto-x86_64-unknown-linux-gnu.tar.gz"),
-    ("x86_64-unknown-linux-musl", "callisto-x86_64-unknown-linux-musl.tar.gz"),
-    ("wasm32-wasip1", "callisto-moon.wasm"),
-];
-
-/// The externally stable asset name for a supported product target.
-pub fn product_asset_name(target: &str) -> Option<&'static str> {
-    PRODUCT_ARTIFACT_TARGETS
-        .iter()
-        .find(|(candidate, _)| *candidate == target)
-        .map(|(_, asset)| *asset)
+/// One declared release artifact. `target` is opaque -- Callisto passes it to
+/// whatever builds the bytes and never parses it -- and `asset_name` is the
+/// externally stable name the artifact is published under.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProductArtifactConfig {
+    /// The package whose build produces these bytes. Need not be the product.
+    pub package: PackageId,
+    pub target: String,
+    pub asset_name: String,
 }
 
-fn resolve_product_release(raw: RawProductReleaseConfig) -> Result<ProductReleaseConfig, ConfigError> {
-    let package = PackageId::parse(&raw.product_package).map_err(|_error| ConfigError::InvalidProductRelease {
-        detail: "product-package must be an ecosystem-qualified package identity".to_owned(),
+/// Both `product-package` and every `[[release.artifact]] package` must name one
+/// ecosystem-qualified identity; one parser so the two cannot drift.
+fn parse_qualified_package(value: &str, key: &str) -> Result<PackageId, ConfigError> {
+    let package = PackageId::parse(value).map_err(|_error| ConfigError::InvalidProductRelease {
+        detail: format!("{key} must be an ecosystem-qualified package identity"),
     })?;
     if package.ecosystem().is_none() {
         return Err(ConfigError::InvalidProductRelease {
-            detail: "product-package must be an ecosystem-qualified package identity".to_owned(),
+            detail: format!("{key} must be an ecosystem-qualified package identity"),
         });
     }
-    if raw.artifact_targets.len() != PRODUCT_ARTIFACT_TARGETS.len()
-        || raw
-            .artifact_targets
-            .iter()
-            .any(|target| product_asset_name(target).is_none())
-        || raw.artifact_targets.iter().collect::<BTreeSet<_>>().len() != PRODUCT_ARTIFACT_TARGETS.len()
-    {
+    Ok(package)
+}
+
+fn resolve_product_release(raw: RawProductReleaseConfig) -> Result<ProductReleaseConfig, ConfigError> {
+    let package = parse_qualified_package(&raw.product_package, "product-package")?;
+    if raw.artifact.is_empty() {
         return Err(ConfigError::InvalidProductRelease {
-            detail: "artifact-targets must contain each supported product target exactly once".to_owned(),
+            detail: "a [release] section must declare at least one [[release.artifact]]".to_owned(),
+        });
+    }
+    let mut artifacts = Vec::with_capacity(raw.artifact.len());
+    let mut seen_assets = BTreeSet::new();
+    for entry in &raw.artifact {
+        let package = parse_qualified_package(&entry.package, "[[release.artifact]] package")?;
+        if !is_safe_artifact_component(&entry.target) || !is_safe_artifact_component(&entry.asset_name) {
+            return Err(ConfigError::InvalidProductRelease {
+                detail: format!(
+                    "artifact target `{}` and asset-name `{}` must each be a single safe path component",
+                    entry.target, entry.asset_name
+                ),
+            });
+        }
+        if !seen_assets.insert(entry.asset_name.clone()) {
+            return Err(ConfigError::InvalidProductRelease {
+                detail: format!("asset-name `{}` is declared more than once", entry.asset_name),
+            });
+        }
+        artifacts.push(ProductArtifactConfig {
+            package,
+            target: entry.target.clone(),
+            asset_name: entry.asset_name.clone(),
         });
     }
     let profiles = raw
@@ -209,10 +229,7 @@ fn resolve_product_release(raw: RawProductReleaseConfig) -> Result<ProductReleas
     }
     Ok(ProductReleaseConfig {
         package,
-        artifact_targets: PRODUCT_ARTIFACT_TARGETS
-            .iter()
-            .map(|(target, _)| (*target).to_owned())
-            .collect(),
+        artifacts,
         profiles,
     })
 }
@@ -1341,7 +1358,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         fs::write(
             tmp.path().join("callisto.toml"),
-            "[release]\nproduct-package = \"cargo/demo\"\nartifact-targets = [\n  \"aarch64-apple-darwin\",\n  \"x86_64-unknown-linux-gnu\",\n  \"x86_64-unknown-linux-musl\",\n  \"wasm32-wasip1\",\n]\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\n\n[release.profiles.rehearsal]\nforge-repository = \"orin-dx/callisto-rehearsal\"\n",
+            "[release]\nproduct-package = \"cargo/demo\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"aarch64-apple-darwin\"\nasset-name = \"callisto-aarch64-apple-darwin.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"callisto-x86_64-unknown-linux-gnu.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-musl\"\nasset-name = \"callisto-x86_64-unknown-linux-musl.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"wasm32-wasip1\"\nasset-name = \"callisto-moon.wasm\"\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\n\n[release.profiles.rehearsal]\nforge-repository = \"orin-dx/callisto-rehearsal\"\n",
         )
         .expect("write callisto.toml");
 
@@ -1370,7 +1387,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         fs::write(
             tmp.path().join("callisto.toml"),
-            "[release]\nproduct-package = \"cargo/demo\"\nartifact-targets = [\n  \"aarch64-apple-darwin\",\n  \"x86_64-unknown-linux-gnu\",\n  \"x86_64-unknown-linux-musl\",\n  \"wasm32-wasip1\",\n]\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\n\n[release.profiles.rehearsal]\nforge-repository = \"orin-dx/callisto\"\n",
+            "[release]\nproduct-package = \"cargo/demo\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"aarch64-apple-darwin\"\nasset-name = \"callisto-aarch64-apple-darwin.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"callisto-x86_64-unknown-linux-gnu.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-musl\"\nasset-name = \"callisto-x86_64-unknown-linux-musl.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"wasm32-wasip1\"\nasset-name = \"callisto-moon.wasm\"\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\n\n[release.profiles.rehearsal]\nforge-repository = \"orin-dx/callisto\"\n",
         )
         .expect("write callisto.toml");
 
@@ -1385,7 +1402,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         fs::write(
             tmp.path().join("callisto.toml"),
-            "[release]\nproduct-package = \"cargo/demo\"\nartifact-targets = [\n  \"aarch64-apple-darwin\",\n  \"x86_64-unknown-linux-gnu\",\n  \"x86_64-unknown-linux-musl\",\n  \"wasm32-wasip1\",\n]\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\nregistry-routes = { cratesIo = \"private-cargo\" }\n\n[release.profiles.rehearsal]\nforge-repository = \"orin-dx/callisto-rehearsal\"\nregistry-routes = { cratesIo = \"private-cargo\" }\n\n[registries.private-cargo]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index\"\n",
+            "[release]\nproduct-package = \"cargo/demo\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"aarch64-apple-darwin\"\nasset-name = \"callisto-aarch64-apple-darwin.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"callisto-x86_64-unknown-linux-gnu.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-musl\"\nasset-name = \"callisto-x86_64-unknown-linux-musl.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"wasm32-wasip1\"\nasset-name = \"callisto-moon.wasm\"\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\nregistry-routes = { cratesIo = \"private-cargo\" }\n\n[release.profiles.rehearsal]\nforge-repository = \"orin-dx/callisto-rehearsal\"\nregistry-routes = { cratesIo = \"private-cargo\" }\n\n[registries.private-cargo]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index\"\n",
         )
         .expect("write callisto.toml");
 
@@ -1403,7 +1420,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         fs::write(
             tmp.path().join("callisto.toml"),
-            "[release]\nproduct-package = \"cargo/demo\"\nartifact-targets = [\n  \"aarch64-apple-darwin\",\n  \"x86_64-unknown-linux-gnu\",\n  \"x86_64-unknown-linux-musl\",\n  \"wasm32-wasip1\",\n]\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\nregistry-routes = { cratesIo = \"private-cargo\" }\n\n[registries.private-cargo]\nkind = \"cargo\"\nurl = \"http://registry.example.test/index\"\n",
+            "[release]\nproduct-package = \"cargo/demo\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"aarch64-apple-darwin\"\nasset-name = \"callisto-aarch64-apple-darwin.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"callisto-x86_64-unknown-linux-gnu.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-musl\"\nasset-name = \"callisto-x86_64-unknown-linux-musl.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"wasm32-wasip1\"\nasset-name = \"callisto-moon.wasm\"\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\nregistry-routes = { cratesIo = \"private-cargo\" }\n\n[registries.private-cargo]\nkind = \"cargo\"\nurl = \"http://registry.example.test/index\"\n",
         )
         .expect("write callisto.toml");
 
@@ -1424,7 +1441,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         fs::write(
             tmp.path().join("callisto.toml"),
-            "[release]\nproduct-package = \"cargo/demo\"\nartifact-targets = [\n  \"aarch64-apple-darwin\",\n  \"x86_64-unknown-linux-gnu\",\n  \"x86_64-unknown-linux-musl\",\n  \"wasm32-wasip1\",\n]\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\nregistry-routes = { cratesIo = \"private-cargo\" }\n\n[registries.private-cargo]\nkind = \"cargo\"\nurl = \"http://127.0.0.1:8765/index/\"\n",
+            "[release]\nproduct-package = \"cargo/demo\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"aarch64-apple-darwin\"\nasset-name = \"callisto-aarch64-apple-darwin.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"callisto-x86_64-unknown-linux-gnu.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-musl\"\nasset-name = \"callisto-x86_64-unknown-linux-musl.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"wasm32-wasip1\"\nasset-name = \"callisto-moon.wasm\"\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\nregistry-routes = { cratesIo = \"private-cargo\" }\n\n[registries.private-cargo]\nkind = \"cargo\"\nurl = \"http://127.0.0.1:8765/index/\"\n",
         )
         .expect("write callisto.toml");
 
@@ -1444,7 +1461,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         fs::write(
             tmp.path().join("callisto.toml"),
-            "[release]\nproduct-package = \"cargo/demo\"\nartifact-targets = [\n  \"aarch64-apple-darwin\",\n  \"x86_64-unknown-linux-gnu\",\n  \"x86_64-unknown-linux-musl\",\n  \"wasm32-wasip1\",\n]\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\nregistry-routes = { cratesIo = \"private-cargo\" }\n\n[registries.private-cargo]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index/\"\n",
+            "[release]\nproduct-package = \"cargo/demo\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"aarch64-apple-darwin\"\nasset-name = \"callisto-aarch64-apple-darwin.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"callisto-x86_64-unknown-linux-gnu.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-musl\"\nasset-name = \"callisto-x86_64-unknown-linux-musl.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"wasm32-wasip1\"\nasset-name = \"callisto-moon.wasm\"\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\nregistry-routes = { cratesIo = \"private-cargo\" }\n\n[registries.private-cargo]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index/\"\n",
         )
         .expect("write callisto.toml");
 
@@ -1458,7 +1475,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         fs::write(
             tmp.path().join("callisto.toml"),
-            "[release]\nproduct-package = \"cargo/demo\"\nartifact-targets = [\n  \"aarch64-apple-darwin\",\n  \"x86_64-unknown-linux-gnu\",\n  \"x86_64-unknown-linux-musl\",\n  \"wasm32-wasip1\",\n]\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\nregistry-routes = { \"--registry\" = \"private-cargo\" }\n\n[registries.private-cargo]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index\"\n",
+            "[release]\nproduct-package = \"cargo/demo\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"aarch64-apple-darwin\"\nasset-name = \"callisto-aarch64-apple-darwin.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"callisto-x86_64-unknown-linux-gnu.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-musl\"\nasset-name = \"callisto-x86_64-unknown-linux-musl.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"wasm32-wasip1\"\nasset-name = \"callisto-moon.wasm\"\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\nregistry-routes = { \"--registry\" = \"private-cargo\" }\n\n[registries.private-cargo]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index\"\n",
         )
         .expect("write callisto.toml");
 

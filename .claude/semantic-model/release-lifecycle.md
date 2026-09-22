@@ -110,6 +110,25 @@ including when there are none.
   uploaded; an immutable release refuses that upload as a typed command failure
   rather than letting the release be reported complete.
 
+## Artifact ownership (`config/resolve.rs`, `commands/release/derive.rs`)
+
+A package is a dependency-graph node: versioned, cascaded, tagged, published.
+An artifact is a rendering of *(package, version, target)* into bytes. It has no
+tag, changelog or version of its own; it inherits them from its package.
+
+- `[[release.artifact]]` declares `package`, an opaque `target` Callisto never
+  parses, and a stable `asset-name`. Nothing about a product is compiled in.
+- `ArtifactSlotId.package` is the package whose build produced the bytes, which
+  need not be the product. Every slot still attaches to the product's one
+  GitHub Release (the product's `ForgeRelease`/`ForgePublish`).
+- `ArtifactSlotOutsideDecision` requires the owning package in the decision at
+  the slot's version. `--package` narrowing therefore keeps every member of a
+  selected package's `[[fixed-group]]` (membership from config, since the
+  selected member's own reason is usually `Changeset`).
+- Building is delegated. Callisto models the outputs and where they go, not how
+  each ecosystem cross-compiles. napi platform packages and Python wheels go to
+  their registries (publish path), not to `[release]`.
+
 ## Bounded retry (`provider/policy.rs`)
 
 `retry_observation` wraps read-only observations only -- registry HTTP, the

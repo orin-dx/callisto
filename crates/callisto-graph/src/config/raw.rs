@@ -31,11 +31,24 @@ pub struct RawConfig {
 pub struct RawProductReleaseConfig {
     #[serde(rename = "product-package")]
     pub product_package: String,
-    #[serde(rename = "artifact-targets")]
-    pub artifact_targets: Vec<String>,
+    /// Binary artifacts attached to the product's forge release. Each names the
+    /// package that builds it, so an artifact need not come from the product.
+    #[serde(default)]
+    pub artifact: Vec<RawArtifactConfig>,
     /// Credential-free forge destinations keyed by release profile. Registry
     /// credentials are deliberately excluded from repository configuration.
     pub profiles: Option<BTreeMap<String, RawReleaseProfileConfig>>,
+}
+
+/// One declared release artifact. `target` is opaque to Callisto: it is passed
+/// through to whatever builds the bytes, never parsed.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawArtifactConfig {
+    pub package: String,
+    pub target: String,
+    #[serde(rename = "asset-name")]
+    pub asset_name: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]

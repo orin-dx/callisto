@@ -1333,7 +1333,7 @@ fn is_safe_workflow_path(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/'))
 }
 
-fn is_safe_artifact_component(value: &str) -> bool {
+pub fn is_safe_artifact_component(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 255
         && !value.contains("..")
@@ -1575,13 +1575,17 @@ impl ReleaseIntentV1 {
         if artifact_slots.windows(2).any(|pair| pair[0] == pair[1]) {
             return Err(ReleaseIntentError::DuplicateArtifactSlot);
         }
-        if artifact_slots.iter().any(|slot| {
+        if let Some(slot) = artifact_slots.iter().find(|slot| {
             !decision
                 .entries
                 .iter()
                 .any(|entry| entry.package == slot.package && entry.target_version == slot.version)
         }) {
-            return Err(ReleaseIntentError::ArtifactSlotOutsideDecision);
+            return Err(ReleaseIntentError::ArtifactSlotOutsideDecision {
+                package: slot.package.to_string(),
+                version: slot.version.to_string(),
+                asset: slot.asset_name.clone(),
+            });
         }
         validate_artifact_upload_roster(&operations, &artifact_slots)?;
         let digest = digest_intent(
@@ -1797,8 +1801,15 @@ pub enum ReleaseIntentError {
     OperationOutsideDecision { id: Box<ReleaseOperationId> },
     #[error("release intent repeats an artifact slot")]
     DuplicateArtifactSlot,
-    #[error("artifact slot is not authorized by the embedded release decision")]
-    ArtifactSlotOutsideDecision,
+    #[error(
+        "asset `{asset}` is built by `{package}@{version}`, which is not in this release; \
+         release it too, or put it in the product's [[fixed-group]]"
+    )]
+    ArtifactSlotOutsideDecision {
+        package: String,
+        version: String,
+        asset: String,
+    },
     #[error("artifact upload operations must exactly match the declared artifact slots")]
     MismatchedArtifactUploadRoster,
     #[error("release operations are not in canonical order")]

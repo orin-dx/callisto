@@ -12,7 +12,6 @@ use callisto_model::{
     SemanticInputDigest, SourceIdentity, Version,
 };
 
-use crate::config::resolve::product_asset_name;
 use crate::config::ReleaseProfileConfig;
 use crate::error::{ReleasePreconditionRequirement, ReleaseSelectionInvalidReason, UnsupportedReleaseFeature};
 use crate::{DependencyResolver, GraphError, Workspace};
@@ -353,7 +352,7 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
     let mut uploads_by_package = BTreeMap::<ReleasePackageId, Vec<ReleaseOperationId>>::new();
     if let (Some(product), Some(policy)) = (&workspace.config.product_release, artifact_policy) {
         require_product_package_publishes_to_forge(workspace, &product.package)?;
-        for (id, (package, version)) in &selected {
+        for (id, (package, _)) in &selected {
             // Workspace package identities may remain bare even when a
             // policy intentionally qualifies the product by ecosystem. Use
             // the model's compatibility relation and retain the explicit
@@ -373,13 +372,27 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
                     })
                 }
             };
-            for target in &product.artifact_targets {
-                let asset_name = product_asset_name(target).expect("validated product target");
+            for artifact in &product.artifacts {
+                // The slot names the package whose build produced the bytes, which
+                // need not be the product -- a plugin can ship on the product's
+                // release. Every slot still attaches to the product's one release.
+                let (owner_id, owner_version) = selected
+                    .iter()
+                    .find(|(candidate, (pkg, _))| {
+                        artifact.package.matches(&pkg.id) && artifact.package.ecosystem() == Some(candidate.ecosystem())
+                    })
+                    .map(|(candidate, (_, owner_version))| (candidate.clone(), owner_version.clone()))
+                    .ok_or_else(|| GraphError::ReleaseInvariant {
+                        detail: format!(
+                            "artifact `{}` names package `{}`, which is absent from this release",
+                            artifact.asset_name, artifact.package
+                        ),
+                    })?;
                 let slot = ArtifactSlotId::new(
-                    id.clone(),
-                    version.clone(),
-                    target,
-                    asset_name,
+                    owner_id.clone(),
+                    owner_version.clone(),
+                    &artifact.target,
+                    artifact.asset_name.clone(),
                     policy.repository.clone(),
                     policy.workflow_path.clone(),
                     policy.workflow_commit.clone(),
@@ -393,11 +406,11 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
                     PreparedOperation::ArtifactUpload(ArtifactUploadOperation {
                         slot: slot.clone(),
                         tag: tag.clone(),
-                        prerelease: version.is_prerelease(),
+                        prerelease: owner_version.is_prerelease(),
                     }),
                 );
                 uploads_by_package
-                    .entry(id.clone())
+                    .entry(owner_id.clone())
                     .or_default()
                     .push(operation.id().clone());
                 operations.insert(operation.id().clone(), operation);
@@ -645,24 +658,6 @@ fn push_registry_binding(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn product_asset_names_are_target_qualified_and_complete() {
-        assert_eq!(
-            product_asset_name("aarch64-apple-darwin"),
-            Some("callisto-aarch64-apple-darwin.tar.gz")
-        );
-        assert_eq!(
-            product_asset_name("x86_64-unknown-linux-gnu"),
-            Some("callisto-x86_64-unknown-linux-gnu.tar.gz")
-        );
-        assert_eq!(
-            product_asset_name("x86_64-unknown-linux-musl"),
-            Some("callisto-x86_64-unknown-linux-musl.tar.gz")
-        );
-        assert_eq!(product_asset_name("wasm32-wasip1"), Some("callisto-moon.wasm"));
-        assert_eq!(product_asset_name("unsupported"), None);
-    }
 
     #[test]
     fn comments_in_callisto_toml_do_not_change_semantic_release_inputs() {

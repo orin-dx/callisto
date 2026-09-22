@@ -8,7 +8,6 @@ exec python3 - "$@" <<'PY'
 import json, os, re, shutil, subprocess, sys, tempfile
 
 DEFAULT = ".github/workflows/callisto-release.yml"
-TABLE_SRC = "crates/callisto-graph/src/config/resolve.rs"
 CONFIG = "callisto.toml"
 CI_WORKFLOW = ".github/workflows/callisto-ci.yml"
 BUILD_SCRIPT = ".github/scripts/build-release-artifact.sh"
@@ -416,31 +415,26 @@ def matrix_pairs(path, job):
 
 
 def table_agreement(paths):
-    """Every hand-copied target/asset table must equal the Rust table."""
+    """Every hand-copied target/asset table must equal callisto.toml's [[release.artifact]]."""
     errs = []
-    rust_text = open(paths["rust"]).read()
-    block = re.search(r"PRODUCT_ARTIFACT_TARGETS:[^=]*=\s*\[(.*?)\];", rust_text, re.S)
-    if not block:
-        return [f"{paths['rust']}: PRODUCT_ARTIFACT_TARGETS table not found"]
-    rust = set(re.findall(r'\("([^"]+)",\s*"([^"]+)"\)', block.group(1)))
-    rust_targets = {t for t, _ in rust}
+    try:
+        import tomllib
+        with open(paths["config"], "rb") as f:
+            declared = tomllib.load(f).get("release", {}).get("artifact", [])
+        rust = {(a["target"], a["asset-name"]) for a in declared}
+    except ImportError:  # python < 3.11: read the artifact tables by text
+        text = open(paths["config"]).read()
+        rust = set(re.findall(r'target\s*=\s*"([^"]+)"\s*\nasset-name\s*=\s*"([^"]+)"', text))
+    if not rust:
+        return [f"{paths['config']}: no [[release.artifact]] target/asset-name pairs found"]
     rust_assets = {a for _, a in rust}
 
     def compare(label, found):
         for t, a in sorted(rust - found):
-            errs.append(f"{label}: missing ({t}, {a}) present in {paths['rust']}")
+            errs.append(f"{label}: missing ({t}, {a}) declared in {paths['config']}")
         for t, a in sorted(found - rust):
-            errs.append(f"{label}: ({t}, {a}) disagrees with {paths['rust']}")
+            errs.append(f"{label}: ({t}, {a}) disagrees with {paths['config']}")
 
-    try:
-        import tomllib
-        with open(paths["config"], "rb") as f:
-            configured = set(tomllib.load(f)["release"]["artifact-targets"])
-    except ImportError:  # python < 3.11: read the one array by text
-        body = re.search(r"^artifact-targets\s*=\s*\[(.*?)\]", open(paths["config"]).read(), re.S | re.M)
-        configured = set(re.findall(r'"([^"]+)"', body.group(1))) if body else set()
-    if configured != rust_targets:
-        errs.append(f"{paths['config']}: artifact-targets {sorted(configured)} disagrees with {paths['rust']} {sorted(rust_targets)}")
     compare(f"{paths['release']} build-artifact matrix", matrix_pairs(paths["release"], "build-artifact"))
     ci = load(paths["ci"])
     ci_pairs = set()
@@ -454,11 +448,11 @@ def table_agreement(paths):
     installer = open(paths["installer"]).read()
     for asset in set(re.findall(r'ASSET_NAME="([^"]+)"', installer)):
         if asset not in rust_assets:
-            errs.append(f"{paths['installer']}: asset {asset} disagrees with {paths['rust']}")
+            errs.append(f"{paths['installer']}: asset {asset} disagrees with {paths['config']}")
     wasm = open(paths["wasm_installer"]).read()
     for asset in set(re.findall(r"releases/[^\s\"]*/(callisto-[A-Za-z0-9._-]+)", wasm)):
         if asset not in rust_assets:
-            errs.append(f"{paths['wasm_installer']}: asset {asset} disagrees with {paths['rust']}")
+            errs.append(f"{paths['wasm_installer']}: asset {asset} disagrees with {paths['config']}")
     return errs
 
 
@@ -480,7 +474,7 @@ def coordinator_path_agreement(path, src):
 
 
 def default_paths(release=DEFAULT):
-    return {"rust": TABLE_SRC, "config": CONFIG, "release": release, "ci": CI_WORKFLOW,
+    return {"config": CONFIG, "release": release, "ci": CI_WORKFLOW,
             "script": BUILD_SCRIPT, "installer": INSTALLER, "wasm_installer": WASM_INSTALLER}
 
 
@@ -500,7 +494,9 @@ def table_mutants(d):
             ("target dropped from ci matrix", "ci", "          - id: wasm-wasi\n            runner: ubuntu-latest\n            target: wasm32-wasip1\n            asset: callisto-moon.wasm\n            kind: wasm\n", ""),
             ("asset renamed in build script", "script", "cli:aarch64-apple-darwin:callisto-aarch64-apple-darwin.tar.gz", "cli:aarch64-apple-darwin:callisto-arm.tar.gz"),
             ("asset renamed in installer", "installer", 'ASSET_NAME="callisto-aarch64-apple-darwin.tar.gz"', 'ASSET_NAME="callisto-macos.tar.gz"'),
-            ("target dropped from callisto.toml", "config", '    "wasm32-wasip1",\n', ""),
+            ("artifact dropped from callisto.toml", "config",
+             '[[release.artifact]]\npackage = "cargo/callisto-moon"\ntarget = "wasm32-wasip1"\nasset-name = "callisto-moon.wasm"\n', ""),
+            ("asset renamed in callisto.toml", "config", 'asset-name = "callisto-moon.wasm"', 'asset-name = "callisto-plugin.wasm"'),
         ):
             text = open(base[key]).read()
             if old not in text:

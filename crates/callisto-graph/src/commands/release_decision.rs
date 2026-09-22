@@ -116,6 +116,14 @@ pub fn derive_selected_release_decision<R: callisto_model::CommandRunner, D: Dep
         })
         .collect::<std::collections::BTreeSet<_>>();
 
+    // Fixed groups version in lockstep, so selecting any member releases the whole
+    // group. Read membership from config: the selected member's own reason is often
+    // `Changeset`, so the group id never appears on it.
+    let fixed_groups = selected
+        .iter()
+        .filter_map(|selection| fixed_group_of(workspace, selection))
+        .collect::<std::collections::BTreeSet<_>>();
+
     let entries = complete
         .entries
         .into_iter()
@@ -124,9 +132,25 @@ pub fn derive_selected_release_decision<R: callisto_model::CommandRunner, D: Dep
                 || entry.reasons.iter().any(|reason| {
                     matches!(reason, ReleaseInclusionReason::LinkedGroup { group_id } if linked_groups.contains(group_id))
                 })
+                || fixed_group_of(workspace, &entry.package).is_some_and(|group| fixed_groups.contains(&group))
         })
         .collect();
     ReleaseDecisionV1::new(entries).map_err(GraphError::from)
+}
+
+/// The fixed group a release package belongs to, per `[[fixed-group]]` config.
+fn fixed_group_of<R: callisto_model::CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    id: &ReleasePackageId,
+) -> Option<callisto_model::GroupName> {
+    let package = callisto_model::PackageId::parse(&id.to_string()).ok()?;
+    workspace
+        .config
+        .groups
+        .fixed_of
+        .iter()
+        .find(|(member, _)| member.matches(&package))
+        .map(|(_, group)| group.clone())
 }
 
 /// Verifies the release roster a merged release commit claims, against a
@@ -1239,6 +1263,63 @@ mod tests {
     /// `derive_release_decision` produces a real, non-empty roster instead
     /// of failing on `ReleaseDecisionError::EmptyRoster` before the
     /// selection-validation logic under test ever runs.
+    /// Fixed groups version in lockstep: narrowing to one member must keep its
+    /// siblings, or a sibling's release artifact fails ArtifactSlotOutsideDecision
+    /// and a bumped sibling is left unpublished (the 0.6-0.7 failure shape).
+    #[test]
+    fn selecting_one_fixed_group_member_retains_its_lockstep_siblings() {
+        let runner = CountingBatchRunner {
+            release_commit: "a".repeat(40),
+            parent: "b".repeat(40),
+            decision_json: String::new(),
+            name_status: String::new(),
+            blobs: std::collections::BTreeMap::new(),
+            run_calls: std::sync::Mutex::new(Vec::new()),
+            batch_calls: std::sync::Mutex::new(0),
+        };
+        let mut workspace = fixture_workspace(
+            &runner,
+            vec![cargo_package("cli"), cargo_package("plugin"), cargo_package("other")],
+        );
+        let group = callisto_model::GroupName("workspace".to_string());
+        for name in ["cli", "plugin"] {
+            workspace.config.groups.fixed_of.insert(
+                callisto_model::PackageId::parse(&format!("cargo:{name}")).unwrap(),
+                group.clone(),
+            );
+        }
+        let bump = |name: &str, reason: BumpReason| crate::PlannedBump {
+            package: callisto_model::PackageId::parse(&format!("cargo:{name}")).unwrap(),
+            from: Version::semver(1, 0, 0),
+            to: Version::semver(1, 1, 0),
+            severity: callisto_model::Severity::Minor,
+            governed_by: None,
+            reason: Some(reason),
+            writes: vec![],
+        };
+        let plan = VersionPlan {
+            bumps: vec![
+                bump("cli", BumpReason::Changeset { changesets: vec![] }),
+                bump("plugin", BumpReason::FixedGroupUnion { group: group.clone() }),
+                bump("other", BumpReason::Changeset { changesets: vec![] }),
+            ],
+            ..Default::default()
+        };
+        let cli = ReleasePackageId::new(Ecosystem::Cargo, "cli").unwrap();
+
+        let decision = derive_selected_release_decision(&workspace, &plan, &[cli]).unwrap();
+
+        let released: Vec<String> = decision.entries.iter().map(|e| e.package.to_string()).collect();
+        assert!(
+            released.iter().any(|p| p.ends_with("plugin")),
+            "fixed sibling dropped: {released:?}"
+        );
+        assert!(
+            !released.iter().any(|p| p.ends_with("other")),
+            "unrelated package kept: {released:?}"
+        );
+    }
+
     fn plan_bumping(package_name: &str) -> VersionPlan {
         VersionPlan {
             bumps: vec![crate::PlannedBump {
