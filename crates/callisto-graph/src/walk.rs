@@ -415,7 +415,22 @@ impl ManifestWalkResolver {
                         }
                     }
                 }
-                publish_to = override_targets.to_vec();
+                // The override replaces *which* targets the package publishes
+                // to, but must not silently drop manifest-derived fields
+                // (npm publishConfig.access/registry) the config itself
+                // didn't set -- config wins when explicit, manifest fills gaps.
+                publish_to = override_targets
+                    .iter()
+                    .map(|target| {
+                        let manifest_target = target
+                            .ecosystem()
+                            .and_then(|eco| publish_to.iter().find(|m| m.ecosystem() == Some(eco)));
+                        match manifest_target {
+                            Some(manifest_target) => target.clone().merge_manifest_gaps(manifest_target),
+                            None => target.clone(),
+                        }
+                    })
+                    .collect();
             }
 
             let pkg = Package {
