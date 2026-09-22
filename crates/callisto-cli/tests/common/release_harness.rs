@@ -812,7 +812,7 @@ pub const TOOL_SHAPES: &[ToolShape] = &[
     ToolShape {
         tool: "git",
         subcommand: &["status"],
-        flags: &["--porcelain", "-z", "--untracked-files", "--ignored"],
+        flags: &["--porcelain", "-z", "--untracked-files"],
     },
     ToolShape {
         tool: "git",
