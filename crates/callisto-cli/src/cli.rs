@@ -69,7 +69,7 @@ pub enum Command {
     /// Filter a publish plan down to what a publish report confirms
     /// actually succeeded, dropping anything that failed.
     FilterPlan(FilterPlanArgs),
-    /// Create, inspect, reconcile, or execute durable release intents.
+    /// Create, inspect, or execute durable release intents.
     #[command(subcommand)]
     Release(ReleaseArgs),
     /// Decide the next managed release-pull-request operation from a forge snapshot.
@@ -262,10 +262,8 @@ pub struct FilterPlanArgs {
 pub enum ReleaseArgs {
     /// Create a read-only durable release intent from exact package selections.
     Plan(ReleasePlanArgs),
-    /// Display a durable intent, manifest, state, or receipt without recomputing it.
+    /// Display a durable intent, manifest, or receipt without recomputing it.
     Inspect(ReleaseInspectArgs),
-    /// Report which pending operations are eligible without changing release state.
-    Reconcile(ReleaseReconcileArgs),
     /// Create the exact artifact manifest for a completed intent-bound build.
     ArtifactManifest(ReleaseArtifactManifestArgs),
     /// Execute a previously approved intent. This is the only durable mutation route.
@@ -371,19 +369,9 @@ pub struct ReleasePlanArgs {
 
 #[derive(Args, Clone, Debug)]
 pub struct ReleaseInspectArgs {
-    /// Explicit path to an intent, artifact manifest, state, or receipt JSON document.
+    /// Explicit path to an intent, artifact manifest, or receipt JSON document.
     #[arg(long, value_name = "FILE")]
     pub input: PathBuf,
-}
-
-#[derive(Args, Clone, Debug)]
-pub struct ReleaseReconcileArgs {
-    /// Explicit path to the durable release intent JSON document.
-    #[arg(long, value_name = "FILE")]
-    pub intent: PathBuf,
-    /// Explicit state path. If omitted, reconciliation reports the initialized state.
-    #[arg(long, value_name = "FILE")]
-    pub state: Option<PathBuf>,
 }
 
 #[derive(Args, Clone, Debug)]
@@ -415,9 +403,6 @@ pub struct ReleaseExecuteArgs {
     /// Required with --artifact-manifest; it is never inferred from the checkout.
     #[arg(long, value_name = "DIR", requires = "artifact_manifest")]
     pub artifact_dir: Option<PathBuf>,
-    /// Explicit durable state path. If omitted, state is stored outside the checkout.
-    #[arg(long, value_name = "FILE")]
-    pub state: Option<PathBuf>,
     /// Write the terminal, provider-observed receipt to this explicit path.
     /// A release is not reported successful until this receipt is written.
     #[arg(long, value_name = "FILE")]
@@ -428,10 +413,6 @@ pub struct ReleaseExecuteArgs {
     /// Credential-free target profile identity recorded in the receipt.
     #[arg(long, default_value = callisto_model::ReleaseProfileId::PRODUCTION, value_name = "PROFILE")]
     pub profile: String,
-    /// Record this explicitly selected run as recovery of a historic merged
-    /// release source. It never changes the coordinator revision.
-    #[arg(long)]
-    pub recovery: bool,
 }
 
 /// Arguments for the `completions` command.

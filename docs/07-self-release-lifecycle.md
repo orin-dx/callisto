@@ -36,11 +36,11 @@ A recovery is a new run using current orchestration and an explicit full release
 
 The orchestration revision is the SHA of the run itself (`github.sha`), never the moving tip of `main`, because attestations are stamped with the run's SHA. The release path runs on `main` only. A recovery dispatch is gated by `recovery-checks` (credential-free release workflow contract and policy checks), not the full `verify` job, so an unrelated failure on `main` cannot block publishing an already merged release.
 
-A push-triggered release whose `execute` job fails after publishing cannot be fixed by re-running that job: the rerun gets a fresh runner without `--recovery`, so every already-published registry operation is refused with `E174` by design, and a different artifact is never adopted silently. The supported path is a `workflow_dispatch` with the `release_source_sha` input, which runs a `Recovery`-kind run that reconstructs progress from provider observation.
+Every run is the same kind of run. A push-triggered release whose `execute` job fails partway is fixed by "Re-run failed jobs": the rerun starts from nothing, observes each provider, adopts every operation that is already exactly done (printing one warning line per registry version it skips), and performs the rest. A different object at the same identity is a conflict, never adopted. Execution state is in memory only; nothing is persisted between runs.
 
-The run envelope (kind `Initial` or `Recovery`, orchestration revision, release-source revision, profile, intent digest, artifact-manifest digest) is derived from the intent by one constructor, so profile, source revision, and intent digest have no second authority. It is validated across fields (source revision equals the intent's Git source; the manifest digest is present exactly when the intent declares artifact slots; the orchestration revision equals every slot's attestation workflow commit) and persisted inside the execution state before the first effect. The receipt is built from that envelope plus the exact provider evidence each operation persisted when it succeeded; nothing is re-observed after the effects. State left by a different run is rejected.
+The run envelope (orchestration revision, release-source revision, profile, intent digest, artifact-manifest digest) is derived from the intent by one constructor, so profile, source revision, and intent digest have no second authority. It is validated across fields (source revision equals the intent's Git source; the manifest digest is present exactly when the intent declares artifact slots; the orchestration revision equals every slot's attestation workflow commit) before the first effect. The receipt is built from that envelope plus the exact provider evidence each operation recorded when it succeeded; nothing is re-observed after the effects.
 
-The immutable run envelope and provider observations are recovery authority. A local state file is useful crash evidence, but cannot prove what a registry, Git remote, or forge contains.
+Provider observations are the only authority on what a registry, Git remote, or forge contains.
 
 The selected release profile is part of the immutable intent digest, not just a receipt label. The production profile declares its GitHub forge destination in `callisto.toml`; planning rejects an artifact repository that differs from that destination, and execution rejects a profile that does not match its intent. An unconfigured profile fails before it writes an intent or dispatches an effect.
 
@@ -50,7 +50,7 @@ Each configured profile also declares `registry-routes`, mapping a logical packa
 
 Recovering a commit that is no longer a branch tip needs two manual steps.
 
-**E180: the workflow can't push tags.** GitHub rejects a `GITHUB_TOKEN` tag push when the tagged commit's workflows differ from every branch tip. Push every tag of the release yourself (PAT or deploy key), then dispatch recovery:
+**E180: the workflow can't push tags.** GitHub rejects a `GITHUB_TOKEN` tag push when the tagged commit's workflows differ from every branch tip. Push every tag of the release yourself (PAT or deploy key), then dispatch the release for that SHA:
 
 ```sh
 SHA=<release-source sha>
@@ -70,7 +70,7 @@ gh workflow run callisto-release.yml --ref main -f release_source_sha="$SHA"
 
 Before an effect, Callisto observes the provider. An operation is one of absent, exact success, conflict, or indeterminate. Exact success carries typed per-role evidence: registry version with checksum and yanked flag, tag peeled commit, forge release tag and draft flag, asset size and sha256. Conflict reasons and indeterminate causes are closed enums; an authentication, rate-limit, or transport failure is always indeterminate, never a conflict. Exact success becomes `AlreadySatisfied`; Callisto must not publish the same version merely to learn whether it exists. Conflict and indeterminate observations fail closed with an actionable diagnostic.
 
-A single pure transition table is the only way an operation's state changes. `Attempting` is reachable only through an absent proof; adopting a pre-existing effect into a missing journal is a recovery-only privilege; "our attempt landed" (`Published`) is distinct from "it already existed" (`AlreadySatisfied`).
+A single pure transition table is the only way an operation's state changes. `Attempting` is reachable only through an absent proof; "our attempt landed" (`Published`) is distinct from "it already existed" (`AlreadySatisfied`).
 
 Registry observation goes through the ecosystem's own package manager — the same tool and the same configuration the publish effect uses, so registry resolution and authentication (private registries included) are the tool's job rather than something Callisto reimplements. For cargo it is `cargo info NAME@VERSION --registry REGISTRY`, run from the source workspace root so the workspace's `.cargo/config.toml` registry definitions and credentials apply; `--registry` is never omitted, because without it `cargo info` answers from the local manifest. Exit 0 with a matching `version:` line is exact evidence (with no checksum and no yank claim: `cargo info` reports neither); exit 101 with ``could not find `NAME@VERSION` `` is an absence; anything else, an unreachable registry included, is indeterminate and retried. For npm it is `npm view NAME@VERSION version --json`.
 
@@ -88,9 +88,9 @@ The release succeeds only when every operation is provider-observed as exact suc
 
 ## Workflow boundary
 
-GitHub Actions schedules jobs, supplies two isolated checkouts, transports artifacts, and injects credentials only into execute. Callisto owns source validation, provenance, plan derivation, provider observation, transition selection, resume, terminality, receipt creation, and artifact validation. Workflow shell must not reimplement those semantics.
+GitHub Actions schedules jobs, supplies two isolated checkouts, transports artifacts, and injects credentials only into execute. Callisto owns source validation, provenance, plan derivation, provider observation, transition selection, terminality, receipt creation, and artifact validation. Workflow shell must not reimplement those semantics.
 
-All transient intent, state, downloaded artifacts, and build output live under `RUNNER_TEMP`, not inside a source checkout. Build and plan have no registry credentials or provider-write token.
+All transient intent, receipt, downloaded artifacts, and build output live under `RUNNER_TEMP`, not inside a source checkout. Build and plan have no registry credentials or provider-write token.
 
 ## Product assets and rehearsal
 
@@ -110,8 +110,8 @@ Callisto publishes Cargo crates to crates.io and product assets to GitHub Releas
 
 The provider contract tier keeps the fakes honest: fake providers serve captured real responses (`testing/fixtures/providers`, provenance recorded per provider), every fake rejects flags and subcommands outside the real tools' shapes, and a test checks each emitted flag against the real tool's own help. `just provider-fixtures` refreshes fixtures and `just provider-contract` re-fetches live to assert shapes still match; both are manual and network-dependent.
 
-A deterministic fault-injection simulator drives the real release executor against an in-memory provider world, crashing at every persistence point and injecting each provider outcome, then asserts the lifecycle invariants after each run.
+A deterministic fault-injection simulator drives the real release executor against an in-memory provider world, crashing at every provider call and injecting each provider outcome, then asserts the lifecycle invariants after each run.
 
-The hermetic provider harness is the rehearsal boundary until the project deliberately adopts an isolated registry as a product requirement. It exercises the same CLI lifecycle, separate source worktrees, provider observation, artifact validation, failure recovery, and fresh-runner state reconstruction without publishing a package or introducing a second distribution service.
+The hermetic provider harness is the rehearsal boundary until the project deliberately adopts an isolated registry as a product requirement. It exercises the same CLI lifecycle, separate source worktrees, provider observation, artifact validation, and fresh reruns that adopt landed effects without publishing a package or introducing a second distribution service.
 
 The private `orin-dx/callisto-rehearsal` repository remains reserved for future forge-level experiments. Do not add `[release.profiles.rehearsal]` or registry credentials while the product has no isolated-registry requirement: a configured profile that cannot prove persistent provider behavior would create false confidence rather than release safety.

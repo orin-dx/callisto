@@ -1,35 +1,25 @@
 //! Release fixtures shared by this crate's unit tests.
 //!
-//! Every durable state now needs a validated run envelope and every state
-//! change needs a proof token, so the tests build both here rather than in
-//! each module.
+//! Every state needs a validated run envelope and every state change needs a
+//! proof token, so the tests build both here rather than in each module.
 
 use callisto_model::{
     ArtifactDigest, CommitSha, OperationEvent, ProviderEvidenceV1, ProviderObservationV1, ReleaseExecutionStateV1,
-    ReleaseIntentV1, ReleaseOperationId, ReleaseOperationRole, ReleaseRunEnvelopeV1, ReleaseRunKindV1, TagName,
+    ReleaseIntentV1, ReleaseOperationId, ReleaseOperationRole, ReleaseRunEnvelopeV1, TagName,
 };
 
-pub(crate) fn envelope_of_kind(intent: &ReleaseIntentV1, kind: ReleaseRunKindV1) -> ReleaseRunEnvelopeV1 {
+pub(crate) fn envelope(intent: &ReleaseIntentV1) -> ReleaseRunEnvelopeV1 {
     let orchestration = intent
         .artifact_slots
         .first()
         .map(|slot| slot.attestation_policy.workflow_commit.clone())
         .unwrap_or_else(|| CommitSha::parse(&"b".repeat(40)).unwrap());
     let manifest = (!intent.artifact_slots.is_empty()).then(|| ArtifactDigest::from_bytes(b"manifest"));
-    ReleaseRunEnvelopeV1::new(kind, orchestration, intent, manifest).expect("fixture envelope matches its intent")
-}
-
-pub(crate) fn envelope(intent: &ReleaseIntentV1) -> ReleaseRunEnvelopeV1 {
-    envelope_of_kind(intent, ReleaseRunKindV1::Initial)
+    ReleaseRunEnvelopeV1::new(orchestration, intent, manifest).expect("fixture envelope matches its intent")
 }
 
 pub(crate) fn pending_state(intent: &ReleaseIntentV1) -> ReleaseExecutionStateV1 {
     ReleaseExecutionStateV1::new(intent, envelope(intent)).expect("fixture state matches its intent")
-}
-
-pub(crate) fn recovery_state(intent: &ReleaseIntentV1) -> ReleaseExecutionStateV1 {
-    ReleaseExecutionStateV1::new(intent, envelope_of_kind(intent, ReleaseRunKindV1::Recovery))
-        .expect("fixture state matches its intent")
 }
 
 /// Role-matching evidence, as a real provider adapter would report it.

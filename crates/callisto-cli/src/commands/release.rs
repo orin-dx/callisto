@@ -9,19 +9,19 @@ use std::process::ExitCode;
 
 use callisto_graph::commands::{
     build_release_intent, build_release_intent_with_artifacts, derive_release_commit_decision,
-    derive_selected_release_decision, execute_release, reconcile_release_execution,
-    validate_release_intent_with_state_directory, verify_artifact_manifest, ReleaseStateStore, VersionOptions,
+    derive_selected_release_decision, execute_release, validate_release_intent, verify_artifact_manifest,
+    VersionOptions,
 };
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_model::{
     ApplyPermit, ArtifactDigest, ArtifactManifestEntryV1, ArtifactManifestV1, ExecutionTrustProfileV1,
     GitHubArtifactAttestationV1, ReleaseIntentV1, ReleasePackageId, ReleaseProfileId, ReleaseReceiptV1,
-    ReleaseRunEnvelopeV1, ReleaseRunKindV1,
+    ReleaseRunEnvelopeV1,
 };
 
 use crate::cli::{
     GlobalArgs, OutputFormat, ReleaseArgs, ReleaseArtifactManifestArgs, ReleaseExecuteArgs, ReleaseInspectArgs,
-    ReleasePlanArgs, ReleaseReconcileArgs,
+    ReleasePlanArgs,
 };
 use crate::error::CliError;
 use crate::output::{log_line, write_json};
@@ -32,7 +32,6 @@ pub fn handle(args: ReleaseArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
     match args {
         ReleaseArgs::Plan(args) => plan(args, global),
         ReleaseArgs::Inspect(args) => inspect(args, global),
-        ReleaseArgs::Reconcile(args) => reconcile(args, global),
         ReleaseArgs::ArtifactManifest(args) => artifact_manifest(args, global),
         ReleaseArgs::Execute(args) => execute(args, global),
     }
@@ -269,24 +268,6 @@ fn inspect(args: ReleaseInspectArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
     Ok(ExitCode::SUCCESS)
 }
 
-fn reconcile(args: ReleaseReconcileArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
-    let intent = read_intent(&args.intent)?;
-    let state = match args.state {
-        Some(path) => ReleaseStateStore::new(path).load_for_intent(&intent)?,
-        None => None,
-    };
-    let report = reconcile_release_execution(&intent, state.as_ref())?;
-    match global.format {
-        OutputFormat::Json => write_json(&mut std::io::stdout(), report.eligible())?,
-        OutputFormat::Text => {
-            for operation in report.eligible() {
-                println!("eligible: {operation:?}");
-            }
-        }
-    }
-    Ok(ExitCode::SUCCESS)
-}
-
 fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     // Every input is validated and the receipt destination probed before the first effect, so a
     // late failure cannot leave published crates, tags or releases without a receipt.
@@ -337,11 +318,6 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
     // The run envelope is minted and cross-checked here, before the first
     // effect, and is then the single authority for every fact it carries.
     let envelope = ReleaseRunEnvelopeV1::new(
-        if args.recovery {
-            ReleaseRunKindV1::Recovery
-        } else {
-            ReleaseRunKindV1::Initial
-        },
         orchestration_revision,
         &intent,
         verified_artifacts
@@ -376,14 +352,8 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
     // from a subdirectory must reach the same root, not the process cwd.
     let root = source_workspace.root.clone();
     let locator = IgnoreWalkLocator::new(&root);
-    let explicit_state_directory = args.state.as_deref().map(state_directory_of);
-    let capability =
-        validate_release_intent_with_state_directory(&root, &locator, &runner, explicit_state_directory, intent)?;
-    let store = match args.state {
-        Some(path) => ReleaseStateStore::new(path),
-        None => ReleaseStateStore::default_for(&root, capability.intent())?,
-    };
-    let state = execute_release(&capability, &store, &permit, &envelope, verified_artifacts.as_ref())?;
+    let capability = validate_release_intent(&root, &locator, &runner, intent)?;
+    let state = execute_release(&capability, &permit, &envelope, verified_artifacts.as_ref())?;
     let receipt =
         ReleaseReceiptV1::from_state(capability.intent(), &state).map_err(|error| CliError::ReleaseReceiptIssue {
             detail: error.to_string(),
@@ -391,24 +361,9 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
     write_receipt(&args.receipt, &receipt, &permit)?;
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &receipt)?,
-        OutputFormat::Text => println!(
-            "Release receipt saved to {} (execution state: {})",
-            args.receipt.display(),
-            store.path().display()
-        ),
+        OutputFormat::Text => println!("Release receipt saved to {}", args.receipt.display()),
     }
     Ok(ExitCode::SUCCESS)
-}
-
-/// The directory an explicit `--state` path names. `Path::parent` of a bare
-/// filename is `Some("")`, which every later join silently resolves against
-/// the process cwd -- so a bare `--state release.json` would put the workspace
-/// lock somewhere other than the workspace.
-fn state_directory_of(state: &std::path::Path) -> &std::path::Path {
-    match state.parent() {
-        Some(parent) if !parent.as_os_str().is_empty() => parent,
-        _ => std::path::Path::new("."),
-    }
 }
 
 fn source_global(global: &GlobalArgs, source_root: Option<&std::path::Path>) -> GlobalArgs {
@@ -470,21 +425,4 @@ fn write_receipt(path: &std::path::Path, receipt: &ReleaseReceiptV1, permit: &Ap
         source,
         path: Some(path.to_path_buf()),
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::state_directory_of;
-    use std::path::Path;
-
-    /// `Path::parent` answers `Some("")` for a bare filename. An empty path is
-    /// not a directory any join can be reasoned about, so it is normalized to
-    /// `.` before it becomes the workspace lock's base directory.
-    #[test]
-    fn a_bare_state_filename_yields_the_current_directory() {
-        assert_eq!(state_directory_of(Path::new("release-state.json")), Path::new("."));
-        assert_eq!(state_directory_of(Path::new("state/run.json")), Path::new("state"));
-        assert_eq!(state_directory_of(Path::new("/tmp/run.json")), Path::new("/tmp"));
-        assert_eq!(state_directory_of(Path::new("/")), Path::new("."));
-    }
 }

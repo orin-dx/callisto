@@ -12,8 +12,8 @@ use crate::GraphError;
 use super::http::parse_http_response;
 use super::policy::{self, programs, require_registry_confirmation, timeouts, Attempt};
 use super::{
-    wrong_role, EffectAuthorization, PreparedOperation, ProviderCapabilities, ProviderContext, ProviderRequest,
-    RegistryPublishOperation, ReleasePreflight, ReleaseProvider,
+    preflight_from_observation, wrong_role, EffectAuthorization, PreparedOperation, ProviderCapabilities,
+    ProviderContext, ProviderRequest, RegistryPublishOperation, ReleasePreflight, ReleaseProvider,
 };
 
 pub(crate) struct RegistryProvider;
@@ -46,27 +46,13 @@ impl ReleaseProvider for RegistryProvider {
         context: &ProviderContext<'_>,
         request: &ProviderRequest<'_>,
     ) -> Result<ReleasePreflight, GraphError> {
-        let operation = registry_operation(request)?;
-        // A registry version that already exists is a hard conflict, not an
-        // adopted success: only the recovery path may converge on an exact
-        // remote observation.
         match self.observe(context, request)? {
-            ProviderObservationV1::Absent => Ok(proceed()),
-            ProviderObservationV1::Exact { .. } => Err(GraphError::ReleaseRegistryVersionExists {
-                package: operation.package_name.clone(),
-                version: operation.version.clone(),
-            }),
             // A registry with no query API at all has nothing to observe
             // before the effect; the post-effect confirmation fails closed.
             ProviderObservationV1::Indeterminate {
                 cause: ProviderIndeterminateCause::UnsupportedProvider,
             } => Ok(proceed()),
-            ProviderObservationV1::Indeterminate { .. } => Err(GraphError::ReleaseProviderIndeterminate {
-                operation: Box::new(request.id.clone()),
-            }),
-            ProviderObservationV1::Conflict { .. } => Err(GraphError::ReleaseRemoteConflict {
-                conflict: self.preflight_conflict(),
-            }),
+            observation => preflight_from_observation(observation, request.id, self.preflight_conflict()),
         }
     }
 
@@ -120,8 +106,8 @@ fn registry_operation<'a>(request: &ProviderRequest<'a>) -> Result<&'a RegistryP
     }
 }
 
-/// The one registry observation used by preflight, recovery, and post-publish
-/// confirmation, so those three can never disagree.
+/// The one registry observation used by preflight and post-publish
+/// confirmation, so the two can never disagree.
 fn registry_observation(
     adapter: &'static dyn RegistryEcosystem,
     context: &ProviderContext<'_>,

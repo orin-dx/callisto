@@ -131,10 +131,10 @@ pub enum CliError {
     )]
     ReleasePlanDryRun,
 
-    #[error("release execute cannot run with --dry-run; use release reconcile for a read-only readiness check")]
+    #[error("release execute cannot run with --dry-run")]
     #[diagnostic(
         code(callisto::release_execute_dry_run),
-        help("use `callisto release reconcile` for a read-only readiness check")
+        help("remove --dry-run; release execute has no read-only mode")
     )]
     ReleaseExecuteDryRun,
 
@@ -261,7 +261,7 @@ pub enum CliError {
     #[error("release run envelope is not valid for this intent: {detail}")]
     #[diagnostic(
         code(callisto::release_envelope_invalid),
-        help("re-check the orchestration revision, recovery flag and artifact manifest against the intent")
+        help("re-check the orchestration revision and artifact manifest against the intent")
     )]
     ReleaseEnvelopeInvalid { detail: String },
 
@@ -275,7 +275,7 @@ pub enum CliError {
     #[error("cannot issue terminal release receipt: {detail}")]
     #[diagnostic(
         code(callisto::release_receipt_issue_failed),
-        help("run `callisto release reconcile` to inspect the execution state before retrying")
+        help("re-run `callisto release execute`; it adopts effects that already landed")
     )]
     ReleaseReceiptIssue { detail: String },
 

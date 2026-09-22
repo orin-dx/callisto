@@ -7,10 +7,7 @@ use callisto_model::{
     AbsentProof, ApplyPermit, CommandRunner, ExactEvidence, ExecutionTrustProfileV1, ProviderObservationV1,
     ReleaseDecisionV1, ReleaseIntentError, ReleaseIntentV1, ReleaseOperationId, ReleaseProfileId, SourceIdentity,
 };
-use callisto_vcs::{
-    access::{GitCommitTrustEvidence, GitHeadDisposition},
-    release_lock::ReleaseWorkspaceLock,
-};
+use callisto_vcs::access::{GitCommitTrustEvidence, GitHeadDisposition};
 
 use crate::error::ReleasePreconditionRequirement;
 use crate::{DependencyResolver, GraphError, ProjectLocator, Workspace};
@@ -35,7 +32,6 @@ pub(crate) struct PreparedReleaseInputs {
     pub(crate) source: SourceIdentity,
     trust: GitCommitTrustEvidence,
     git_remote: Option<PreparedGitRemote>,
-    _lock: ReleaseWorkspaceLock,
     pub(crate) operations: BTreeMap<ReleaseOperationId, PreparedOperation>,
 }
 
@@ -219,32 +215,9 @@ pub fn validate_release_intent<'a, L: ProjectLocator, R: CommandRunner>(
     runner: &'a R,
     received: ReleaseIntentV1,
 ) -> Result<ValidatedReleaseIntent<'a>, GraphError> {
-    validate_release_intent_with_state_directory(root, locator, runner, None, received)
-}
-
-/// Validates an intent while placing its workspace lock under an explicit
-/// caller-owned state directory.
-///
-/// CI callers that supply an explicit durable state file must use its parent
-/// here as well.  Otherwise validation would still depend on the runner's
-/// implicit platform state location, defeating hermetic job handoff.
-pub fn validate_release_intent_with_state_directory<'a, L: ProjectLocator, R: CommandRunner>(
-    root: &Path,
-    locator: &L,
-    runner: &'a R,
-    state_directory: Option<&Path>,
-    received: ReleaseIntentV1,
-) -> Result<ValidatedReleaseIntent<'a>, GraphError> {
     let root = canonical_root(root)?;
     let workspace = Workspace::load(root.clone(), locator, runner)?;
-    let initial_trust = observe_git_trust(&workspace, received.trust_profile)?;
-    let lock = ReleaseWorkspaceLock::acquire(&root, state_directory)?;
     let trust = observe_git_trust(&workspace, received.trust_profile)?;
-    if trust.identity() != initial_trust.identity() {
-        return Err(GraphError::ReleaseIntentStale {
-            reason: StaleReason::trust_evidence_changed(),
-        });
-    }
     let source = source_from_trust(&trust);
     let artifact_policy = artifact_policy_from_intent(&received)?;
     let (expected, prepared) = derive_release_intent_with_prepared(
@@ -274,7 +247,6 @@ pub fn validate_release_intent_with_state_directory<'a, L: ProjectLocator, R: Co
             source,
             trust: final_trust,
             git_remote: prepared.git_remote,
-            _lock: lock,
             operations: prepared.operations,
         },
         intent: received,
