@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.11.1-nightly.202609221728.e2db95f836",
+  "checkpoint_id": "01M35B6SFPMDX9CCNGKDNQHRFY",
+  "strategy": "manual-commit",
+  "branch": "docs/unwrap-markdown",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1168,
+    "cache_creation_tokens": 2956417,
+    "cache_read_tokens": 296463299,
+    "output_tokens": 467356,
+    "api_call_count": 580
+  }
+}
