@@ -6,8 +6,9 @@
 
 use std::path::{Path, PathBuf};
 
+use callisto_graph::commands::{plan_version, VersionOptions};
 use callisto_graph::locate::IgnoreWalkLocator;
-use callisto_graph::{DependencyResolver, Workspace};
+use callisto_graph::{DependencyResolver, NoInference, Workspace};
 use callisto_model::{CommandError, CommandOutput, CommandRunner, DiagnosticCode, ManifestRole, PackageId};
 
 struct NoopRunner;
@@ -275,4 +276,80 @@ fn legacy_publish_plan_lists_attached_platforms_under_their_owner() {
             ))
             .collect::<Vec<_>>(),
     );
+}
+
+fn changeset(root: &Path, body: &str) {
+    write(root, ".changeset/bump.md", body);
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "changeset"]);
+}
+
+#[test]
+fn platform_versions_follow_the_owner_without_a_fixed_group() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    build_fixture(root);
+    changeset(root, "---\n\"@s/cli\": minor\n---\n\nfeat.\n");
+    let ws = load(root);
+
+    let opts = VersionOptions {
+        strict: false,
+        strict_graph: false,
+        allow_empty_changesets: true,
+    };
+    let plan = plan_version(&ws, &NoInference, &opts).expect("plan_version must succeed");
+
+    let target = "0.2.0".to_string();
+    let bumped: Vec<_> = plan.bumps.iter().map(|b| b.package.name().to_string()).collect();
+    assert_eq!(bumped, ["@s/cli"], "platform packages are not bumped as packages");
+
+    let mut writes: Vec<_> = plan
+        .platform_writes
+        .iter()
+        .map(|w| (w.manifest.clone(), w.version.render().to_string()))
+        .collect();
+    writes.sort();
+    assert_eq!(
+        writes,
+        PLATFORMS
+            .iter()
+            .map(|(suffix, ..)| (
+                PathBuf::from(format!("packages/cli/npm/{suffix}/package.json")),
+                target.clone()
+            ))
+            .collect::<Vec<_>>(),
+    );
+
+    assert_eq!(plan.optional_dep_updates.len(), 1);
+    let update = &plan.optional_dep_updates[0];
+    assert_eq!(update.manifest, Path::new("packages/cli/package.json"));
+    let mut pins: Vec<_> = update
+        .updates
+        .iter()
+        .map(|(n, v)| (n.clone(), v.render().to_string()))
+        .collect();
+    pins.sort();
+    assert_eq!(
+        pins,
+        PLATFORMS
+            .iter()
+            .map(|(suffix, ..)| (format!("@s/cli-{suffix}"), target.clone()))
+            .collect::<Vec<_>>(),
+    );
+}
+
+#[test]
+fn snapshot_versions_attached_platforms_too() {
+    let tmp = tempfile::tempdir().unwrap();
+    build_fixture(tmp.path());
+    let ws = load(tmp.path());
+    let (plan, _) = callisto_graph::commands::plan_snapshot(&ws, "canary").expect("plan_snapshot must succeed");
+    let snapshot = &plan.bumps.iter().find(|b| b.package.name() == "@s/napi").unwrap().to;
+    let napi_writes: Vec<_> = plan
+        .platform_writes
+        .iter()
+        .filter(|w| w.manifest.starts_with("packages/napi"))
+        .collect();
+    assert_eq!(napi_writes.len(), PLATFORMS.len());
+    assert!(napi_writes.iter().all(|w| &w.version == snapshot));
 }

@@ -274,57 +274,8 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         (None, None)
     };
 
-    let bump_by_pkg: std::collections::BTreeMap<callisto_model::PackageId, &PlannedBump> =
-        bumps.iter().map(|b| (b.package.clone(), b)).collect();
-
-    let open_ctx = OpenContext::for_workspace_root(&ws.root);
-
-    let mut platform_writes = Vec::new();
-    let mut optional_dep_map: std::collections::BTreeMap<std::path::PathBuf, Vec<(String, callisto_model::Version)>> =
-        std::collections::BTreeMap::new();
-    for group in ws.config.groups.fixed.values() {
-        for member in group.members(GroupMemberKind::PlatformManifest) {
-            let GroupMember::PlatformManifest { owner, path, name, .. } = member else {
-                continue;
-            };
-            let Some(bump) = bump_by_pkg.get(owner) else {
-                continue;
-            };
-            let fmt = callisto_model::ManifestFormat::from_path(path)?;
-            let decl = callisto_model::ManifestDecl::new(path.clone(), ManifestRole::Canonical, fmt)?;
-            let handle = open(&decl, &open_ctx)?;
-            let current = handle.current_version()?;
-            platform_writes.push(PlatformWrite {
-                manifest: path.clone(),
-                version: bump.to.clone(),
-                from: current,
-            });
-
-            if let Some(owner_pkg) = pkg_map.get(owner) {
-                if let Some(owner_decl) = owner_pkg.canonical_manifests().next() {
-                    let owner_fmt = callisto_model::ManifestFormat::from_path(&owner_decl.path)?;
-                    let owner_manifest_decl =
-                        callisto_model::ManifestDecl::new(owner_decl.path.clone(), ManifestRole::Canonical, owner_fmt)?;
-                    // Cached: owner manifest is shared across every platform target under it.
-                    let owner_handle =
-                        crate::manifest_cache::open_cached(&ws.manifest_cache, &owner_manifest_decl, &open_ctx)?;
-                    let has_matching_optional_dep = owner_handle
-                        .iter_dependencies()
-                        .any(|dep| dep.kind == callisto_model::DepKind::Optional && &dep.name == name);
-                    if has_matching_optional_dep {
-                        optional_dep_map
-                            .entry(owner_decl.path.clone())
-                            .or_default()
-                            .push((name.clone(), bump.to.clone()));
-                    }
-                }
-            }
-        }
-    }
-    let optional_dep_updates: Vec<crate::plan::OptionalDepUpdate> = optional_dep_map
-        .into_iter()
-        .map(|(manifest, updates)| crate::plan::OptionalDepUpdate { manifest, updates })
-        .collect();
+    let targets = bumps.iter().map(|b| (b.package.clone(), b.to.clone())).collect();
+    let (platform_writes, optional_dep_updates) = platform_version_writes(ws, &targets)?;
 
     Ok(VersionPlan {
         bumps,
@@ -339,6 +290,80 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         observed_versions: base_versions,
         diagnostics,
     })
+}
+
+/// Platform manifest version writes and owner `optionalDependencies` pin updates
+/// for every owner with a target version in `targets`. Sources: each owner's
+/// attached (§M.6.1 Case E) platform manifests, plus `[[fixed-group]]`
+/// platform members.
+pub(crate) fn platform_version_writes<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+    targets: &std::collections::BTreeMap<callisto_model::PackageId, callisto_model::Version>,
+) -> Result<(Vec<PlatformWrite>, Vec<crate::plan::OptionalDepUpdate>), GraphError> {
+    let open_ctx = OpenContext::for_workspace_root(&ws.root);
+    let pkg_map: HashMap<_, _> = ws.graph.packages().map(|p| (&p.id, p)).collect();
+
+    let mut members: Vec<(&callisto_model::PackageId, &std::path::Path, &str)> = Vec::new();
+    for pkg in ws.graph.packages() {
+        members.extend(
+            ws.identity
+                .attached_platforms(pkg)
+                .map(|(name, path)| (&pkg.id, path, name)),
+        );
+    }
+    for group in ws.config.groups.fixed.values() {
+        for member in group.members(GroupMemberKind::PlatformManifest) {
+            if let GroupMember::PlatformManifest { owner, path, name, .. } = member {
+                members.push((owner, path, name));
+            }
+        }
+    }
+
+    let mut seen = HashSet::new();
+    let mut platform_writes = Vec::new();
+    let mut optional_dep_map: std::collections::BTreeMap<std::path::PathBuf, Vec<(String, callisto_model::Version)>> =
+        std::collections::BTreeMap::new();
+    for (owner, path, name) in members {
+        let Some(to) = targets.get(owner) else {
+            continue;
+        };
+        if !seen.insert(path) {
+            continue;
+        }
+        let fmt = callisto_model::ManifestFormat::from_path(path)?;
+        let decl = callisto_model::ManifestDecl::new(path, ManifestRole::Canonical, fmt)?;
+        let handle = open(&decl, &open_ctx)?;
+        let current = handle.current_version()?;
+        platform_writes.push(PlatformWrite {
+            manifest: path.to_path_buf(),
+            version: to.clone(),
+            from: current,
+        });
+
+        // A Case D owner declares its platforms in package.json, not Cargo.toml.
+        for owner_decl in pkg_map.get(owner).into_iter().flat_map(|p| p.canonical_manifests()) {
+            let owner_fmt = callisto_model::ManifestFormat::from_path(&owner_decl.path)?;
+            let owner_manifest_decl =
+                callisto_model::ManifestDecl::new(owner_decl.path.clone(), ManifestRole::Canonical, owner_fmt)?;
+            // Cached: owner manifest is shared across every platform target under it.
+            let owner_handle = crate::manifest_cache::open_cached(&ws.manifest_cache, &owner_manifest_decl, &open_ctx)?;
+            if owner_handle
+                .iter_dependencies()
+                .any(|dep| dep.kind == callisto_model::DepKind::Optional && dep.name == name)
+            {
+                optional_dep_map
+                    .entry(owner_decl.path.clone())
+                    .or_default()
+                    .push((name.to_string(), to.clone()));
+                break;
+            }
+        }
+    }
+    let optional_dep_updates = optional_dep_map
+        .into_iter()
+        .map(|(manifest, updates)| crate::plan::OptionalDepUpdate { manifest, updates })
+        .collect();
+    Ok((platform_writes, optional_dep_updates))
 }
 
 #[cfg(test)]
