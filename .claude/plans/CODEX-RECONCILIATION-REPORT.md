@@ -23,7 +23,7 @@ PR #36 made this same call independently (its SPEC-001 diff: *"This is an archit
 | Job split (001) | Forbids (wrong) | Owns (right) | Adopt PR #36's direction |
 | Digest/canonicalization detail (001 AC-001) | SHA-256 + `olpc-cjson`, explicit field-omission rules, explicit non-self-reference statement | JCS-based, similarly explicit but independently derived | Keep ours — more implementation-ready, same rigor |
 | `SignaturePolicy`/`ProvenancePolicy` enforcement point (002 AC-004/005) | Type exists, no required placement or enforcement — your MEDIUM finding | Names the release report as consumer, adds explicit `mode`/`failure` semantics | Adopt PR #36's shape |
-| Requirement-authority gap (all 6 specs) | Every round says "leave `linked_requirement` as-is, repo-wide gap, out of scope" | Adds `.claude/specs/INDEX.md` making accepted specs themselves normative, plus `status`/`owner_track`/`last_verified_revision`/`depends_on` metadata fields | Adopt PR #36's `INDEX.md` and metadata convention across all 6 specs |
+| Requirement-authority gap (all 6 specs) | Every round says "leave `linked_requirement` as-is, repo-wide gap, out of scope" | Adds `docs/specs/INDEX.md` making accepted specs themselves normative, plus `status`/`owner_track`/`last_verified_revision`/`depends_on` metadata fields | Adopt PR #36's `INDEX.md` and metadata convention across all 6 specs |
 | 004 precision (exact CLI flags, exact exception-record schema, deny.toml's real ignore count) | 4 rounds of `canon:exit-gate`-verified precision (caught: invalid `-f` flag placement, wrong ignore count of 11 vs. real 17, undefined exception schema) | Lighter touch, doesn't carry this precision | Keep ours |
 | **001 AC-002/AC-005 stale-plan fallback** (your HIGH finding) | Not fixed | **Also not fixed** — PR #36's diff doesn't touch AC-002 or AC-005 | Neither branch had this; being fixed now (see §3) |
 | **004 audit-db-checkout consistency** (your HIGH finding) | Not fixed | Touches AC-001's wording but still records the revision via a separate `git rev-parse HEAD` against the advisory-db checkout, not tied to what `cargo-deny` itself scanned | Neither branch fully closes this; being fixed now (see §3) — **flag if you think PR #36's version already closes this, we may be misreading their diff** |
@@ -47,7 +47,7 @@ Four `canon:drafter` agents (opus, high effort) are rewriting 001/002/003/004 to
 
 - Does our job-split reasoning (§1) hold, or is there a lighter-weight mechanism we're missing?
 - For 004's audit-db-checkout consistency: does PR #36's version actually close this, or were we right that it doesn't? (We may be misreading their diff — worth an independent read.)
-- Is `.claude/specs/INDEX.md`'s conflict-resolution rule ("first reproduce the behavior against the revision named by the current-description material... do not preserve known contradictions merely to retain a narrative") sufficient, or does it need more teeth given how many rounds of contradiction we've already found by hand?
+- Is `docs/specs/INDEX.md`'s conflict-resolution rule ("first reproduce the behavior against the revision named by the current-description material... do not preserve known contradictions merely to retain a narrative") sufficient, or does it need more teeth given how many rounds of contradiction we've already found by hand?
 - Anything in PR #36 we're wrongly deferring to, or wrongly keeping our own version over, that you'd weigh differently?
 
 This is still spec-only — no implementation has started on any of these six tracks.

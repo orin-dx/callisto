@@ -1,6 +1,6 @@
 # PR 101 hardening track
 
-Status: all audited defects and the agreed structural work are implemented, committed on codex/release-recovery and gated by `just ci`. Hosted CI and a GitHub dry run of the release workflow are still pending. Nothing here is accepted by the owner; the current-description material is docs/07-self-release-lifecycle.md, docs/specs/SPEC-SELF-RELEASE-LIFECYCLE.json, .claude/semantic-model/release-lifecycle.md, and the proposed contract is .claude/specs/SPEC-RELEASE-LIFECYCLE-HARDENING.json.
+Status: all audited defects and the agreed structural work are implemented, committed on codex/release-recovery and gated by `just ci`. Hosted CI and a GitHub dry run of the release workflow are still pending. Nothing here is accepted by the owner; the current-description material is docs/07-self-release-lifecycle.md, docs/specs/SPEC-SELF-RELEASE-LIFECYCLE.json, .claude/semantic-model/release-lifecycle.md, and the proposed contract is docs/specs/SPEC-RELEASE-LIFECYCLE-HARDENING.json.
 
 ## Needs the owner
 

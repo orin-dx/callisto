@@ -14,7 +14,7 @@
   "acceptance_criteria": [
     {
       "id": "AC-001",
-      "criterion": "A concise authority index at .claude/specs/INDEX.md states that accepted .claude/specs artifacts are top-level normative requirements (they do not require a separate REQ-* file); docs/01-spec.md is normative only where it explicitly says so; docs/00-design.md explains rationale; semantic models describe verified current implementation; plans describe intended work and status; handoffs are historical context. It specifies the conflict-resolution and correction path. Existing dangling linked_requirement fields are a repository-wide migration concern and are not created by this track.",
+      "criterion": "A concise authority index at docs/specs/INDEX.md states that accepted docs/specs artifacts are top-level normative requirements (they do not require a separate REQ-* file); docs/01-spec.md is normative only where it explicitly says so; docs/00-design.md explains rationale; semantic models describe verified current implementation; plans describe intended work and status; handoffs are historical context. It specifies the conflict-resolution and correction path. Existing dangling linked_requirement fields are a repository-wide migration concern and are not created by this track.",
       "is_error_case": false
     },
     {
@@ -29,7 +29,7 @@
     },
     {
       "id": "AC-004",
-      "criterion": "A lightweight documentation check, runnable through the project task runner, applies only to documents designated as current-description material: docs/00-design.md and .claude/semantic-model/*.md. It rejects a newly added assertion matching the documented current-behavior marker unless the same section contains verified_revision or an explicit link to an accepted spec/current implementation. It reports rather than rewrites legacy material and explicitly excludes .claude/specs/, .claude/plans/, handoffs, and historical sections from enforcement.",
+      "criterion": "A lightweight documentation check, runnable through the project task runner, applies only to documents designated as current-description material: docs/00-design.md and .claude/semantic-model/*.md. It rejects a newly added assertion matching the documented current-behavior marker unless the same section contains verified_revision or an explicit link to an accepted spec/current implementation. It reports rather than rewrites legacy material and explicitly excludes docs/specs/, .claude/plans/, handoffs, and historical sections from enforcement.",
       "is_error_case": true
     }
   ]

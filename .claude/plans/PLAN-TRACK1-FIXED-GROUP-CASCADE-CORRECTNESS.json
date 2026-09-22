@@ -8,7 +8,7 @@
     "tempfile",
     "real git subprocess fixtures"
   ],
-  "spec_file_path": ".claude/specs/SPEC-TRACK1-FIXED-GROUP-CASCADE-CORRECTNESS.json",
+  "spec_file_path": "docs/specs/SPEC-TRACK1-FIXED-GROUP-CASCADE-CORRECTNESS.json",
   "spec_hash": "sha256:5050ccacc14ab9b144a88e934dbadde003e480251a50227cc011a8b32249306e",
   "linked_requirement": "REQ-TRACK1-FIXED-GROUP-CASCADE-CORRECTNESS",
   "linked_spec": "SPEC-TRACK1-FIXED-GROUP-CASCADE-CORRECTNESS",

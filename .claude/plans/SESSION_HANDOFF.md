@@ -136,7 +136,7 @@ weren't found.
 - Memory index: `~/.claude/projects/-Users-gabe-Projects-callisto/memory/MEMORY.md` — read this at
   the start of any new session on this repo.
 - Active-work ledger: `.claude/plans/ACTIVE.md` — update it once this handoff's next step is decided.
-- Specs (SPEC-001 through SPEC-004): `.claude/specs/`
+- Specs (SPEC-001 through SPEC-004): `docs/specs/`
 - Plans: `.claude/plans/track-*-plan.json`
 - Semantic model (progressive-load reference docs): `.claude/semantic-model/INDEX.md`
 - Audit report (durable): the Artifact URL in §1, plus the memory file

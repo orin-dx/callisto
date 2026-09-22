@@ -4,13 +4,13 @@
 
 ### Track B: Idempotent `apply_version_plan` — DONE
 
-Spec: `.claude/specs/track-b-idempotent-apply.json`
+Spec: `docs/specs/track-b-idempotent-apply.json`
 Implementation: `crates/callisto-graph/src/apply.rs`
 Exit-gate: PASS. All 6 apply tests green, `just ci` exits 0.
 
 ### Track E: PackageId Specificity + Cross-Ecosystem Diagnostic — DONE
 
-Spec: `.claude/specs/track-e-specificity.json`
+Spec: `docs/specs/track-e-specificity.json`
 Implementation: `crates/callisto-graph/src/walk.rs`, `crates/callisto-model/src/diagnostic.rs`, `crates/callisto-graph/src/aggregate.rs`
 Exit-gate: PASS (2nd attempt). 620 tests, clippy clean, AC-1 through AC-11 verified.
 Commits: T1 ce20787, T2 6cb3130, T3a f408845, T3b+T4 c0fdc96, post-gate fixes f8f168c
@@ -19,14 +19,14 @@ Commits: T1 ce20787, T2 6cb3130, T3a f408845, T3b+T4 c0fdc96, post-gate fixes f8
 
 ### Track F: resolve_package_config Extraction — DONE
 
-Spec: `.claude/specs/track-f-resolution-extraction.json`
+Spec: `docs/specs/track-f-resolution-extraction.json`
 Implementation: `crates/callisto-graph/src/config/resolve.rs`, `src/walk.rs`, `src/aggregate.rs`
 Exit-gate: PASS (high confidence, mutation-tested). 627 tests, clippy clean, AC-F1 through AC-F9 verified.
 Commits: T1a+T1b+T1c c53a7e7, T3a+T3b dccf070
 
 ### Track G: callisto matrix (napi + maturin auto-discovery) — DONE
 
-Spec: `.claude/specs/track-g-matrix-napi-maturin.json` (7 canon rounds, 4 vector-challenger rounds)
+Spec: `docs/specs/track-g-matrix-napi-maturin.json` (7 canon rounds, 4 vector-challenger rounds)
 Plan: `.claude/plans/track-g-matrix-napi-maturin.plan.json` (24 tasks)
 Exit-gate: PASS. 24 tasks implemented, all reviewed, 3 gaps found and fixed post-exit-gate
 (stale docs, missing `callisto schema` arm, missing assertion). `just ci` green.
@@ -34,7 +34,7 @@ Commits: eb5d6b4 (spec+plan) through 5164971 (action.yml wiring), then d18dc92 (
 
 ### Track: Manifest trait mutate/persist split (SPEC-MANIFEST-PERSIST-001, "Spec A") — DONE
 
-Spec: `.claude/specs/SPEC-MANIFEST-PERSIST-001.json` (21 acceptance criteria, AC-001 through AC-020 + AC-011b)
+Spec: `docs/specs/SPEC-MANIFEST-PERSIST-001.json` (21 acceptance criteria, AC-001 through AC-020 + AC-011b)
 Plan: `.claude/plans/manifest-persist-001-plan.json` (25 tasks: T01a-T21c)
 Origin: one of the 2 remaining HIGH-severity performance findings from the post-Track-G audit
 (apply_version_plan's redundant per-entry open+parse+persist cycles). Scoped down from an original
@@ -57,7 +57,7 @@ Commits: 7883c3b (trait promotion) through d7ec596 (T20), fix 235ab55 (clippy), 
 
 ### Track: apply_version_plan write-batching (SPEC-APPLY-BATCH-002, "Spec B") — DONE
 
-Spec: `.claude/specs/SPEC-APPLY-BATCH-002.json` (18 acceptance criteria, AC-001 through AC-018)
+Spec: `docs/specs/SPEC-APPLY-BATCH-002.json` (18 acceptance criteria, AC-001 through AC-018)
 Plan: `.claude/plans/apply-batch-002-plan.json` (12 tasks: T01-T08, T07c, T07b, T10, T11, T13)
 Origin: the deferred second half of the post-Track-G audit's redundant-open/persist performance
 finding — the actual batching/grouping win Spec A was groundwork for.
@@ -107,7 +107,7 @@ code found already-written in a dirty working tree gets the SAME rigor as freshl
 
 ### Track 3a/3b1: Workspace-Membership Filtering + Identity-Promotion Core — DONE
 
-Spec: `.claude/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` (34 AC), `.claude/specs/SPEC-TRACK3B1-IDENTITY-PROMOTION-CORE.json` (27 AC)
+Spec: `docs/specs/SPEC-TRACK3A-WORKSPACE-MEMBERSHIP.json` (34 AC), `docs/specs/SPEC-TRACK3B1-IDENTITY-PROMOTION-CORE.json` (27 AC)
 Plan: `.claude/plans/PLAN-TRACK3B1-IDENTITY-PROMOTION-CORE.json` (22 tasks, T01a–T17)
 Implementation: `crates/callisto-graph/src/locate/{membership,ignore_walk}.rs` (Cargo/npm/pnpm workspace membership filtering, 45 tasks), `crates/callisto-graph/src/{identity,walk}.rs` (ecosystem-prefixed identity resolution, disjoint cross-ecosystem promotion, `resolve_native_with_fallback` silent-fallback removal).
 This is the master remediation plan's "Track 3b–e" (identity/ecosystem resolution hardening) — all four originally-confirmed live bugs fixed: `IgnoreWalkLocator::projects()` now filters by Cargo/npm/pnpm membership globs; `IdentityIndex.prefixed` populated; `package_manifest_decls` disambiguates same-named cross-ecosystem packages via promotion instead of erroring; `resolve_native_with_fallback`'s silent cross-ecosystem match removed.
@@ -126,7 +126,7 @@ Commits: `7122d37`, `2e441fa`.
 
 ### Track 1: Fixed-Group Cascade Correctness — DONE
 
-Spec: `.claude/specs/SPEC-TRACK1-FIXED-GROUP-CASCADE-CORRECTNESS.json` (16 AC — AC-001–013 plus AC-007b/AC-010b/AC-014)
+Spec: `docs/specs/SPEC-TRACK1-FIXED-GROUP-CASCADE-CORRECTNESS.json` (16 AC — AC-001–013 plus AC-007b/AC-010b/AC-014)
 Plan: `.claude/plans/PLAN-TRACK1-FIXED-GROUP-CASCADE-CORRECTNESS.json` (12 tasks, 4 batches)
 Fixes three confirmed-live bugs: (1) fixed-group siblings bumped independently from their own base version instead of converging on a shared group-aligned target — fixed via a new Fixed-group convergence block in `solve_cascade` (`cascade.rs`), structurally mirroring the pre-existing Linked-group block; (2) `pre_mutation_checks` (divergence/napi-drift detection, already implemented and unit-tested) was never called from any command — now wired into `plan_version`'s real orchestration, with diagnostics merged and divergence errors aborting; (3) `GraphError::ConflictingGroupMembership` was declared but never constructed — now detected in `GroupTable::resolve` via a single map spanning both Fixed and Linked groups.
 Spec passed canon-exit-gate on the 4th attempt — round 1 caught a misdiagnosed fix location (the original spec targeted `raise()`'s sibling loop, which the gate proved unreachable for the seed-path scenario; corrected to the new `solve_cascade` block), round 2 found an over-scoped dedup requirement that traced out as not load-bearing and was removed, rounds 3–4 found a borrow-checker error, an incomplete test-file enumeration, and a nonexistent `VersionGrammar` variant.
@@ -141,7 +141,7 @@ Commits: `bb9d3aa` (CascadeInput.tags) through `a7e5526` (T12), spec/plan commit
 
 ### Track 2: Platform-Manifest / optionalDependencies Writes — DONE
 
-Spec: `.claude/specs/SPEC-TRACK2-PLATFORM-MANIFEST-WRITES.json` (16 AC — AC-001–013 plus AC-002b/AC-007b/AC-012b)
+Spec: `docs/specs/SPEC-TRACK2-PLATFORM-MANIFEST-WRITES.json` (16 AC — AC-001–013 plus AC-002b/AC-007b/AC-012b)
 Plan: `.claude/plans/PLAN-TRACK2-PLATFORM-MANIFEST-WRITES.json` (8 tasks)
 Confirmed via adversarial audit that a prior ungated commit (`2d53001`) had wired the *consumption* side (`apply_version_plan` writing `platform_writes`/`optional_dep_updates` to disk) but the *planning logic* deciding what goes into those fields was never built, and had two dormant bugs (lockfile-staging blind spot; missing precondition check risking silent overwrite). This track built the missing planning logic in `plan_version` (reads each Fixed group's `GroupMember::PlatformManifest` siblings, opens the manifest via the same `OpenContext`/`ManifestRole::Canonical` pattern `apply_version_plan` already uses, emits `PlatformWrite`/`OptionalDepUpdate` entries tracking the owner's real bump) and fixed both consumption-side bugs (`active_ecosystems` now also derives from these two fields; `platform_writes`' dispatch loop gained the same current==from/current==target/else precondition the sibling bump loops already had, via a new `PlatformWrite.from` field).
 Spec passed canon-exit-gate on the 3rd attempt (caught a false npm-lockfile-refresh claim, an underspecified `OpenContext` derivation that would break workspace-inherited-version Cargo/maturin crates, two criteria asserting on non-observable state). Plan passed vector-challenger with 3 fixes (a missing `bump_by_pkg` construction step, an unspecified owner-manifest resolution mechanism for dual-published packages, incomplete AC-008 error-case coverage).
@@ -160,7 +160,7 @@ Two independent, single-function bugs in `cascade.rs`, sequenced adjacent to Tra
 
 **Bug 2 — cross-ecosystem rewrite keys built from the wrong identity.** Dependency-spec rewrite keys in `solve_cascade` were built from `PackageId::name()` instead of the dependent's ecosystem-native identity, so a cross-ecosystem rewrite onto a dual-identity (napi-style) package targeted the wrong manifest key — confirmed live, crashed `callisto version` outright on an ordinary Cargo+npm co-located package with `ManifestError::DependencyNotFound`. Initially mis-tiered in the master plan as a narrow single-function fix; direct investigation found it genuinely required `CascadeInput`/`Workspace` field-threading comparable to Track 1's `tags` field (Layer 1/Layer 2 isolation blocks a naive fix using `ws.graph.identity()` directly, since `identity()` is an inherent method not on the `DependencyResolver` trait bound — both functions needing it are generic over `D`). Escalated to full canon pipeline per user decision.
 
-Spec: `.claude/specs/SPEC-TRACK9-CASCADE-REWRITE-KEY-CORRECTNESS.json` (7 AC — AC-001–007). Passed canon-exit-gate on the 3rd attempt — round 1 caught the `ws.graph.identity()` compile-error design flaw described above (reverted to a genuine new owned `Workspace.identity: IdentityIndex` field); round 2 found two more gaps from that same fix (18 unaccounted-for `Workspace` struct-literal test sites across 6 files; a now-contradictory AC-004 exception clause).
+Spec: `docs/specs/SPEC-TRACK9-CASCADE-REWRITE-KEY-CORRECTNESS.json` (7 AC — AC-001–007). Passed canon-exit-gate on the 3rd attempt — round 1 caught the `ws.graph.identity()` compile-error design flaw described above (reverted to a genuine new owned `Workspace.identity: IdentityIndex` field); round 2 found two more gaps from that same fix (18 unaccounted-for `Workspace` struct-literal test sites across 6 files; a now-contradictory AC-004 exception clause).
 Plan: `.claude/plans/PLAN-TRACK9-CASCADE-REWRITE-KEY-CORRECTNESS.json` (6 tasks). Passed vector-challenger on the 2nd round — round 1 found a drifted file:line citation (T2's 8th `CascadeInput` test literal) and a process-contract conflict (T4's revert-probe wording would have falsely tripped `lambda:implementer`'s stop-on-unexpected-green rule); both fixed directly in the plan JSON before implementation.
 Implementation: `identity: &'a IdentityIndex` threaded through `CascadeInput`, owned `identity: IdentityIndex` added to `Workspace` (populated in `Workspace::load` via `graph.identity().clone()`), `solve_cascade`'s `RewriteKey.name` now resolves via `input.identity.native_name(&edge.to, eco)` with a `PackageId::name()` fallback when no cross-ecosystem registration exists.
 Exit-gate (implementation): full `callisto-graph` suite 471 passed / 0 failed; `cargo fmt --check` and `cargo clippy --workspace --all-targets -- -D warnings` clean across the whole workspace.
@@ -170,7 +170,7 @@ Commits: `f265ff0d` (T1, Workspace.identity + 18 test sites) through `ca2aa550` 
 
 Four confirmed-live bugs in the release pipeline's CLI-to-Action contract: (1) the shipped Action script's `status --check` exit-code branching treated exit 0 as "has changesets" (dead code — the CLI's `--check` contract was already correct: 1=pending, 2=none-pending, never 0) while the real pending case (exit 1) fell into an error-abort branch, making release-PR creation unreachable on every real run; (2) `main.rs`'s doc comment describing this contract was itself stale; (3) `callisto tag` reported a fabricated `sha` (the requested target, not the tag's real existing target) when a tag already existed at a different commit, in both apply and `--dry-run` modes; (4) `plan_publish` never populated `ReleaseEntry.changelog_section`, hardcoding `None` despite the already-implemented `extract_section` having zero call sites.
 
-Spec: `.claude/specs/SPEC-TRACK4-RELEASE-PIPELINE-CONTRACT-CORRECTNESS.json` (16 AC). Passed canon-exit-gate on the 5th attempt after unusually heavy adversarial review — round 1 (self-audit) caught missing dry-run/resolve_commit-failure handling and a falsified empty-changelog-section edge case; round 2 caught the dry-run path bypassing the whole tag-sha fix entirely plus an exit-code-0 hole in the Action script; round 3 caught an invented "Info" severity tier (`DiagnosticSeverity` only has Warning/Error), a serde `skip_serializing_if`/null mismatch, and an unconstructible test fixture; round 4 found the changelog-path derivation ignored the already-resolved, user-overridable `Package.changelog` field that `callisto version`'s write side already uses. User consulted at the round-3/4 boundary per canon-exit-gate's own 3-retry escalation threshold; chose one final targeted fix over escalation, since both remaining blockers traced to one root cause.
+Spec: `docs/specs/SPEC-TRACK4-RELEASE-PIPELINE-CONTRACT-CORRECTNESS.json` (16 AC). Passed canon-exit-gate on the 5th attempt after unusually heavy adversarial review — round 1 (self-audit) caught missing dry-run/resolve_commit-failure handling and a falsified empty-changelog-section edge case; round 2 caught the dry-run path bypassing the whole tag-sha fix entirely plus an exit-code-0 hole in the Action script; round 3 caught an invented "Info" severity tier (`DiagnosticSeverity` only has Warning/Error), a serde `skip_serializing_if`/null mismatch, and an unconstructible test fixture; round 4 found the changelog-path derivation ignored the already-resolved, user-overridable `Package.changelog` field that `callisto version`'s write side already uses. User consulted at the round-3/4 boundary per canon-exit-gate's own 3-retry escalation threshold; chose one final targeted fix over escalation, since both remaining blockers traced to one root cause.
 Plan: `.claude/plans/PLAN-TRACK4-RELEASE-PIPELINE-CONTRACT-CORRECTNESS.json` (10 tasks). Passed vector-challenger on the 1st round after live-code re-verification of every cited symbol.
 Exit-gate (implementation): `callisto-graph` 484 passed, `callisto-model` 87 passed, `callisto-cli` 109 passed, all 0 failed; fmt/clippy clean on every touched crate at every task. Two sibling-fixture regressions surfaced by full-suite verification during T3 (stub `CommandRunner`s in `tags_tests.rs` simulating an already-existing tag had no response for the new `resolve_commit` call) — caught and fixed in the same commit, not deferred.
 Commits: `2e6f25c5` (T1) through `926c2af4` (T10, final task).
@@ -190,7 +190,7 @@ Every fix verified across all crates that construct or consume the touched repor
 
 Three confirmed-live gaps: (1) `pr_body.rs` never called `callisto_changelog::render_section`, hand-rolling its own Markdown instead of reusing the spec's "one render function, three consumers" design; (2) `ChangeSource::Commit` (inference-driven bumps) and `ChangeSource::NewGroupMember` (fixed-group new-member joins) were both declared but never constructed anywhere; (3) `ChangelogInput.entries` never unioned multiple contributing causes for one package in one run (a changeset + cascade + peer-escalation on the same bump silently dropped all but the changeset-sourced entry).
 
-Spec: `.claude/specs/SPEC-TRACK5-CHANGELOG-PR-BODY-CONSOLIDATION.json` (7 AC — AC-001–007). Passed canon-exit-gate on the 5th attempt after the heaviest adversarial review of this session — round 1 (self-audit) caught an invented grep check, a false universal-fallback claim, and two unconstrained `severity` fields; round 2 caught a direct AC-001/AC-002 contradiction (delete vs. retain the same fallback match) and an AC-004/AC-005 arithmetic collision; round 3 found AC-004's test fixture was mechanically unconstructible without pinning both fixed-group members to an identical starting manifest version (else `cascade.rs`'s convergence block silently overwrites the fixture's asserted `BumpReason`) — user consulted at this 3-retry threshold, chose one more targeted fix over escalation; round 4 found a fresh AC-003/AC-004 contradiction introduced by round 3's own fix, plus AC-004's fixture was *still* unconstructible; round 5 found one final unreachable-state defect in AC-006's test method (`PlannedBump.reason: None` is provably unreachable through `plan_version`). Rounds 4 and 5 each wrote their own exact fix text and explicitly recommended human escalation over another automated round; both fixes were applied directly and independently verified against live code rather than dispatching further gate cycles, given their narrowness and precision.
+Spec: `docs/specs/SPEC-TRACK5-CHANGELOG-PR-BODY-CONSOLIDATION.json` (7 AC — AC-001–007). Passed canon-exit-gate on the 5th attempt after the heaviest adversarial review of this session — round 1 (self-audit) caught an invented grep check, a false universal-fallback claim, and two unconstrained `severity` fields; round 2 caught a direct AC-001/AC-002 contradiction (delete vs. retain the same fallback match) and an AC-004/AC-005 arithmetic collision; round 3 found AC-004's test fixture was mechanically unconstructible without pinning both fixed-group members to an identical starting manifest version (else `cascade.rs`'s convergence block silently overwrites the fixture's asserted `BumpReason`) — user consulted at this 3-retry threshold, chose one more targeted fix over escalation; round 4 found a fresh AC-003/AC-004 contradiction introduced by round 3's own fix, plus AC-004's fixture was *still* unconstructible; round 5 found one final unreachable-state defect in AC-006's test method (`PlannedBump.reason: None` is provably unreachable through `plan_version`). Rounds 4 and 5 each wrote their own exact fix text and explicitly recommended human escalation over another automated round; both fixes were applied directly and independently verified against live code rather than dispatching further gate cycles, given their narrowness and precision.
 Plan: `.claude/plans/PLAN-TRACK5-CHANGELOG-PR-BODY-CONSOLIDATION.json` (8 tasks, T1–T8). Passed vector-challenger on the 1st round (one advisory fix: T1's regression-pin framing). Tasks deliberately resequenced from the user's rough ordering (AC-003 → AC-005 → AC-004, not AC-003 → AC-004 → AC-005) since AC-004's fixture depends on AC-005's union logic already existing.
 Implementation: `Aggregation.inference_commits: BTreeMap<PackageId, Vec<(CommitSha, String)>>` added to retain `InferenceOutcome.commits` (`aggregate.rs`) otherwise discarded when `BumpReason::Inference` is constructed; `version.rs`'s reason-to-`ChangeSource` match extracted into a standalone `map_reason_to_change_source` helper, reused from both the changeset-present and no-changeset branches so a package with both gets a union of entries; `GroupCheckOutcome.new_members` wired to append a `ChangeSource::NewGroupMember` entry as the last entry for fresh fixed-group members; `pr_body.rs` now tries `render_section` first per package (using the same `ChangelogWrite` data `version.rs` already builds), falling through to the hand-rolled per-`BumpReason` match only on `Err(..)` or no matching write, with an explicit `_No changelog entries available._` literal for the `reason: None` case.
 Exit-gate (implementation): `callisto-graph` full suite green throughout every task (0 failed), fmt/clippy clean on every commit; `callisto-cli`/`callisto-model` build clean against the changed public surface.
@@ -361,7 +361,7 @@ Full detail and diagnosis process in memory: `project_git_fixture_hermeticity_ga
 
 ### SPEC-006: Native CI Artifact Placement — DONE (PR #15, merged)
 
-`artifact_name_for_package_platform` (`callisto-graph/src/matrix.rs`) replaces triple-based naming with napi-rs's `<name>-<platform>-<arch>[-<abi>]` convention, fixes a same-triple artifactName collision, and sanitizes `/` in scoped npm names. `callisto-action` gained a placement loop (downloads + places each `nativeMatrix` artifact before `publish`), guarded inside `INPUT_PUBLISH`. Also: both CI workflows now route every step through `just` (no raw `cargo`/`moon`); added `just coverage`/`just coverage-per-crate` gates (90%); closed real coverage gaps across all 10 crates to clear that gate. Spec: `.claude/specs/SPEC-006-native-artifact-placement.json`.
+`artifact_name_for_package_platform` (`callisto-graph/src/matrix.rs`) replaces triple-based naming with napi-rs's `<name>-<platform>-<arch>[-<abi>]` convention, fixes a same-triple artifactName collision, and sanitizes `/` in scoped npm names. `callisto-action` gained a placement loop (downloads + places each `nativeMatrix` artifact before `publish`), guarded inside `INPUT_PUBLISH`. Also: both CI workflows now route every step through `just` (no raw `cargo`/`moon`); added `just coverage`/`just coverage-per-crate` gates (90%); closed real coverage gaps across all 10 crates to clear that gate. Spec: `docs/specs/SPEC-006-native-artifact-placement.json`.
 
 Known deferred gaps (documented, not oversights): `add.rs`'s interactive wizard (needs pty harness), `snapshot`/`tag`'s `--strict` crosscheck branch (needs real moon-declared-edge infra), `render/attribution.rs` (needs a `ResolvedConfig` fixture, no public constructor exists), `publish`'s real non-dry-run path (needs `CommandRunner` injection).
 
@@ -377,7 +377,7 @@ Confirmed live in PR #16's own release run: `callisto-action`'s tag-push step (`
 
 ### PLAN-RELEASE-PR-API-COMMIT-015: Release-PR executor retires `git push` — DONE
 
-Spec: `.claude/specs/SPEC-RELEASE-PR-DECISION-014.json`. Plan: `.claude/plans/PLAN-RELEASE-PR-API-COMMIT-015.json` (T00-T05, all complete; plan's own `status` field was left at `in-progress` after the work shipped -- corrected here, this entry is that correction).
+Spec: `docs/specs/SPEC-RELEASE-PR-DECISION-014.json`. Plan: `.claude/plans/PLAN-RELEASE-PR-API-COMMIT-015.json` (T00-T05, all complete; plan's own `status` field was left at `in-progress` after the work shipped -- corrected here, this entry is that correction).
 
 Root cause: the built-in `GITHUB_TOKEN` cannot push a ref whose diff touches `.github/workflows/*` on a public repo (confirmed via GitHub Actions run 33679599559). The managed release-PR branch's `git push` therefore broke every time `main`'s own workflow files changed after the branch was cut, and the prior mitigation (closing the stale PR and opening a new SHA-suffixed one) caused real PR churn. Spike (T00) confirmed empirically against the real repo that a GraphQL `createCommitOnBranch` (restricted to non-workflow paths, parented on the current base commit) followed by a plain REST ref move is not treated as a workflow write by GitHub's restriction, unlike `git push` or `createCommitOnBranch`'s own `fileChanges`.
 
@@ -385,7 +385,7 @@ Implementation: `ReleasePrActionV2`/`ReleasePrSnapshotV2`/`ReleasePrCommitPlanV1
 
 ### PR 101 release-lifecycle hardening (branch codex/release-recovery) — IMPLEMENTED, hosted CI pending
 
-Spec: `.claude/specs/SPEC-RELEASE-LIFECYCLE-HARDENING.json` (proposed; the three earlier design drafts failed their exit gate and were replaced). Plan/audit record: `.claude/plans/PR101-HARDENING/` (README.md, closure-matrix.md, defects-and-red-tests.md). Current description: `docs/07-self-release-lifecycle.md`, `.claude/semantic-model/release-lifecycle.md`. All audited defects (D01-D08, P20, C2-C8) and the agreed structural work (run envelope, one transition table, provider port, protocol-level registry and tag observation, draft-upload-publish GitHub Release, checked workflow adapter, contract tier, fault-injection simulator, target-table drift check) are implemented and gated by `just ci`; an independent review's F1-F4 and top-10 items were fixed in bd630b06 and 7063b6f7. Pending: hosted CI, a GitHub dry run of the workflow, and owner items (rust-cache pin in orin-dx/actions, bot-PR check policy, installer attestation default, token rotation, acceptance of the [JC] criteria). Deferred: data-driven `[release]` catalog, workspace-hack crate, npm evidence beyond `npm view`, Blocked/EffectFailedAndAbsent outside tests.
+Spec: `docs/specs/SPEC-RELEASE-LIFECYCLE-HARDENING.json` (proposed; the three earlier design drafts failed their exit gate and were replaced). Plan/audit record: `.claude/plans/PR101-HARDENING/` (README.md, closure-matrix.md, defects-and-red-tests.md). Current description: `docs/07-self-release-lifecycle.md`, `.claude/semantic-model/release-lifecycle.md`. All audited defects (D01-D08, P20, C2-C8) and the agreed structural work (run envelope, one transition table, provider port, protocol-level registry and tag observation, draft-upload-publish GitHub Release, checked workflow adapter, contract tier, fault-injection simulator, target-table drift check) are implemented and gated by `just ci`; an independent review's F1-F4 and top-10 items were fixed in bd630b06 and 7063b6f7. Pending: hosted CI, a GitHub dry run of the workflow, and owner items (rust-cache pin in orin-dx/actions, bot-PR check policy, installer attestation default, token rotation, acceptance of the [JC] criteria). Deferred: data-driven `[release]` catalog, workspace-hack crate, npm evidence beyond `npm view`, Blocked/EffectFailedAndAbsent outside tests.
 
 ### 2026-08-12 workspace audit — CLOSED
 
@@ -395,7 +395,7 @@ All 8 critical/high findings were fixed the same session they were found (see ab
 
 ## Pipeline Protocol (follow for every track, in order)
 
-1. `canon:canon-drafter` — write spec@1 to `.claude/specs/`
+1. `canon:canon-drafter` — write spec@1 to `docs/specs/`
 2. `canon:canon-auditor` — must pass before continuing
 3. `canon:canon-exit-gate` — must pass before continuing
 4. `vector:vector-planner` — produce plan@1 with exact red tests

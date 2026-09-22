@@ -17,7 +17,7 @@ This document is a factual handoff, not a defense of prior work. It states what'
 
 ## What's spec-only, and why it's stuck
 
-Six other specs (`SPEC-RELEASE-PLAN-DURABILITY-001A/001B/001C`, `SPEC-RELEASE-SOURCE-PROVENANCE-002`, `SPEC-GITHUB-RELEASE-HARDENING-003`, `SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004`, `SPEC-RELEASE-LANE-POLICY-006`) exist in `.claude/specs/` but have never passed `canon:exit-gate` (an adversarial spec-quality check) after 5-6 rounds of revision each. The failures stopped being wording/precision issues several rounds ago and are now real architecture questions. Three are worth flagging explicitly because they're genuine bugs, not spec nitpicks:
+Six other specs (`SPEC-RELEASE-PLAN-DURABILITY-001A/001B/001C`, `SPEC-RELEASE-SOURCE-PROVENANCE-002`, `SPEC-GITHUB-RELEASE-HARDENING-003`, `SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004`, `SPEC-RELEASE-LANE-POLICY-006`) exist in `docs/specs/` but have never passed `canon:exit-gate` (an adversarial spec-quality check) after 5-6 rounds of revision each. The failures stopped being wording/precision issues several rounds ago and are now real architecture questions. Three are worth flagging explicitly because they're genuine bugs, not spec nitpicks:
 
 ### 1. Real dependency-cycle problem in 001A
 
@@ -51,7 +51,7 @@ Full blocker text for all of these is in this session's transcript / the `canon:
 006 (lane policy) — independent
 ```
 
-`.claude/specs/INDEX.md` establishes accepted specs as top-level normative requirements (no `linked_requirement`/`REQ-*` backing files exist repo-wide — that's an intentional, documented convention, not an oversight).
+`docs/specs/INDEX.md` establishes accepted specs as top-level normative requirements (no `linked_requirement`/`REQ-*` backing files exist repo-wide — that's an intentional, documented convention, not an oversight).
 
 ---
 

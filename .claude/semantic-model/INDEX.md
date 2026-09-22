@@ -13,7 +13,7 @@ The goal is progressive loading: ~400 tokens here, then ~1500 tokens per topic f
 | `error.rs`, adding or using error variants | `error-taxonomy.md` |
 | release execute/recover, receipts, provider observation | `release-lifecycle.md`, `error-taxonomy.md` |
 | publish pipeline, registry, PublishPlan | `ARCHITECTURE.md §9` (not yet in semantic-model) |
-| Implementing a specific track | `.claude/specs/<track>.json` only |
+| Implementing a specific track | `docs/specs/<track>.json` only |
 | Starting fresh, no task assigned | `.claude/plans/ACTIVE.md` |
 
 Do NOT load semantic-model files when implementing a track unless the spec explicitly
@@ -32,7 +32,7 @@ references them. The spec@1 is the authority; these files are the reference laye
 ## What Does NOT Live Here
 
 - Source code — read it directly from the crate
-- Spec@1 artifacts — live in `.claude/specs/`
+- Spec@1 artifacts — live in `docs/specs/`
 - Active task tracking — lives in `.claude/plans/ACTIVE.md`
 - User preferences — lives in the memory directory
 - Prose design docs — live in `docs/` (treat as human reference, not invariant source)
