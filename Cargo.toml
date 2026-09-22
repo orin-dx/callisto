@@ -47,6 +47,8 @@ url = "2.5.8"
 lto = true
 opt-level = 3
 codegen-units = 1
+# Ship without the symbol table: ~15% smaller binaries, no debug info either way.
+strip = true
 
 # Centralized workspace lints (stable since Rust 1.74)
 [workspace.lints.rust]
