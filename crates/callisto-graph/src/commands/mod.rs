@@ -26,7 +26,7 @@ pub use matrix::{matrix, MatrixOptions};
 pub use pr_body::{compose_pr_body, PrBodyOptions};
 pub use publish::{filter_plan_by_report, plan_publish, PublishOptions};
 pub use release::{
-    build_release_intent, build_release_intent_with_artifacts, observe_release_operations, validate_release_intent,
+    build_release_intent, build_release_intent_with_artifacts, validate_release_intent,
     validate_release_intent_with_state_directory, ArtifactBuildPolicy, ReleasePreflight, ReleaseProviderSet,
     ValidatedReleaseIntent,
 };

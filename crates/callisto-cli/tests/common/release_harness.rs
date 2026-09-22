@@ -88,8 +88,8 @@ pub mod test_registry {
     /// honest answers then resume.
     ///
     /// `honest_serves` is what lets a test place the lag at a chosen stage --
-    /// `1` lets the post-publish confirmation succeed and puts the absences on
-    /// the receipt pass, which is where a real index propagation delay lands.
+    /// `0` puts the absences on the post-publish confirmation, `1` on any read
+    /// after it.
     pub fn set_registry_flap(root: &Path, honest_serves: usize, absent_responses: usize) {
         std::fs::write(
             directory(root).join("flap"),

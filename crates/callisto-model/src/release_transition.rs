@@ -55,6 +55,17 @@ pub enum OperationEventKind {
 }
 
 impl OperationEvent {
+    /// The exact evidence this event carries, if it is a success event.
+    pub fn exact_evidence(&self) -> Option<&ExactEvidence> {
+        match self {
+            Self::ObservedExactBeforeEffect { evidence }
+            | Self::AdoptedExact { evidence }
+            | Self::Confirmed { evidence }
+            | Self::RecoveredExact { evidence } => Some(evidence),
+            Self::Attempt { .. } | Self::EffectFailedAndAbsent { .. } | Self::Blocked { .. } => None,
+        }
+    }
+
     pub fn kind(&self) -> OperationEventKind {
         match self {
             Self::Attempt { .. } => OperationEventKind::Attempt,

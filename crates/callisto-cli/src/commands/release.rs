@@ -9,7 +9,7 @@ use std::process::ExitCode;
 
 use callisto_graph::commands::{
     build_release_intent, build_release_intent_with_artifacts, derive_release_commit_decision,
-    derive_selected_release_decision, execute_release, observe_release_operations, reconcile_release_execution,
+    derive_selected_release_decision, execute_release, reconcile_release_execution,
     validate_release_intent_with_state_directory, verify_artifact_manifest, ReleaseStateStore, VersionOptions,
 };
 use callisto_graph::locate::IgnoreWalkLocator;
@@ -384,14 +384,10 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
         None => ReleaseStateStore::default_for(&root, capability.intent())?,
     };
     let state = execute_release(&capability, &store, &permit, &envelope, verified_artifacts.as_ref())?;
-    let receipt = ReleaseReceiptV1::from_evidence(
-        capability.intent(),
-        &state,
-        observe_release_operations(&capability, verified_artifacts.as_ref())?,
-    )
-    .map_err(|error| CliError::ReleaseReceiptIssue {
-        detail: error.to_string(),
-    })?;
+    let receipt =
+        ReleaseReceiptV1::from_state(capability.intent(), &state).map_err(|error| CliError::ReleaseReceiptIssue {
+            detail: error.to_string(),
+        })?;
     write_receipt(&args.receipt, &receipt, &permit)?;
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &receipt)?,

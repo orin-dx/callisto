@@ -144,8 +144,8 @@ fn ac13_diagnostic_code_enum_gains_only_changelog_read_error() {
 
 /// The durable release wire types are versioned: a change to either shape
 /// without a `SCHEMA_VERSION` bump is a silent break for state and receipts
-/// written by an earlier release. Both are at version 2 (the run envelope
-/// moved inside the state, and receipt observations now carry evidence).
+/// written by an earlier release. The receipt is at version 2; the state is
+/// at version 3 (each successful operation persists its exact evidence).
 #[test]
 fn durable_release_wire_shapes_match_their_schema_version() {
     let receipt = run_schema("release-receipt");
@@ -159,6 +159,9 @@ fn durable_release_wire_shapes_match_their_schema_version() {
     let expected = set(&["schemaVersion", "intentDigest", "envelope", "operations"]);
     assert_eq!(req, expected);
     assert_eq!(props, expected);
+    let (req, props) = required_and_props(&state["definitions"]["OperationStateEntryV1"]);
+    assert_eq!(req, set(&["operation", "state"]));
+    assert_eq!(props, set(&["operation", "state", "evidence"]));
 }
 
 /// The operation role is the durable DAG's vocabulary: a persisted state or

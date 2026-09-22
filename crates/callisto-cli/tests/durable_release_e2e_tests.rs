@@ -121,7 +121,7 @@ fn merged_release_commit_executes_exactly_once_through_real_cli() {
     );
     assert!(
         state.with_extension("receipt.json").exists(),
-        "a successful release must persist a provider-observed terminal receipt"
+        "a successful release must persist a terminal receipt"
     );
 
     let second = execute(root, &intent, &state, &bin, &log, &forge_marker, &git_trace);
@@ -135,7 +135,7 @@ fn merged_release_commit_executes_exactly_once_through_real_cli() {
         assert_eq!(
             after_second_execute.matches(effect).count(),
             effects.matches(effect).count(),
-            "a second execute may re-observe providers for its receipt, but must not repeat `{effect}`"
+            "a second execute must not repeat `{effect}`"
         );
     }
 }
