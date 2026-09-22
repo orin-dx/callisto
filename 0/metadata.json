@@ -1,0 +1,184 @@
+{
+  "cli_version": "0.10.7-nightly.202609200623.81a05d785",
+  "checkpoint_id": "01M350WFH1ND6W1HV4GFRR89DW",
+  "session_id": "e2fe6504-b7f2-430b-a234-1e8197320f97",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-22T16:58:48.031774Z",
+  "branch": "docs/road-to-v1",
+  "checkpoints_count": 22,
+  "save_step_count": 13,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "turn_id": "b74885bb810b",
+  "checkpoint_transcript_start": 2221,
+  "transcript_lines_at_start": 2221,
+  "compact_transcript_start": 313,
+  "token_usage": {
+    "input_tokens": 186,
+    "cache_creation_tokens": 1564078,
+    "cache_read_tokens": 43004663,
+    "output_tokens": 99646,
+    "api_call_count": 93,
+    "subagent_tokens": {
+      "input_tokens": 60,
+      "cache_creation_tokens": 68966,
+      "cache_read_tokens": 406527,
+      "output_tokens": 4772,
+      "api_call_count": 11
+    }
+  },
+  "session_metrics": {
+    "turn_count": 88
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 126,
+      "user_lines_removed": 31,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.local.json": 11,
+        "callisto.toml": 6,
+        "crates/callisto-graph/src/commands/release/derive.rs": 42,
+        "crates/callisto-graph/src/config/raw.rs": 12,
+        "crates/callisto-graph/src/config/resolve.rs": 53
+      },
+      "user_removed_per_file": {
+        "callisto.toml": 1,
+        "crates/callisto-graph/src/commands/release/derive.rs": 4,
+        "crates/callisto-graph/src/config/resolve.rs": 26
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 13,
+      "user_lines_removed": 0,
+      "agent_lines_added": 113,
+      "agent_lines_removed": 31,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.local.json": 11
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 13,
+      "user_lines_removed": 0,
+      "agent_lines_added": 113,
+      "agent_lines_removed": 31,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.local.json": 11
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 13,
+      "user_lines_removed": 0,
+      "agent_lines_added": 113,
+      "agent_lines_removed": 31,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.local.json": 11
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 13,
+      "user_lines_removed": 0,
+      "agent_lines_added": 113,
+      "agent_lines_removed": 31,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.local.json": 11
+      }
+    },
+    {
+      "checkpoint_number": 7,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 8,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 9,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 10,
+      "user_lines_added": 13,
+      "user_lines_removed": 0,
+      "agent_lines_added": 113,
+      "agent_lines_removed": 31,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.local.json": 11
+      }
+    },
+    {
+      "checkpoint_number": 11,
+      "user_lines_added": 13,
+      "user_lines_removed": 0,
+      "agent_lines_added": 113,
+      "agent_lines_removed": 31,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.local.json": 11
+      }
+    },
+    {
+      "checkpoint_number": 12,
+      "user_lines_added": 13,
+      "user_lines_removed": 0,
+      "agent_lines_added": 113,
+      "agent_lines_removed": 31,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.local.json": 11
+      }
+    },
+    {
+      "checkpoint_number": 13,
+      "user_lines_added": 13,
+      "user_lines_removed": 0,
+      "agent_lines_added": 113,
+      "agent_lines_removed": 31,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.local.json": 11
+      }
+    },
+    {
+      "checkpoint_number": 14,
+      "user_lines_added": 204,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/plans/ROAD-TO-V1.md": 191,
+        ".claude/settings.local.json": 11
+      }
+    }
+  ]
+}
