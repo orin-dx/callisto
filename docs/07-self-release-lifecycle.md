@@ -76,6 +76,37 @@ endpoint digest are part of the release operation and package fingerprint. A con
 cannot fall back to an un-routed production registry, and two profiles cannot share a forge or
 configured registry destination.
 
+## Recovering an older release
+
+Recovery of a release-source commit that is no longer a branch tip is an assisted procedure, not
+automation. Two platform facts block the unattended path.
+
+**Tags the workflow cannot push (`E180`).** GitHub refuses a `GITHUB_TOKEN` push of any ref whose
+`.github/workflows/` differs from every branch tip, and no job permission grants the `workflows`
+scope. `E180` names the first refused tag and its commit; the run stops there, and every other tag
+of the release is refused the same way. Push all the release's tags yourself with a non-App
+credential (a PAT or deploy key), as annotated tags at the release-source commit, with the
+annotation Callisto writes, then dispatch recovery:
+
+```sh
+SHA=<full release-source sha>
+git tag -a "<tag>" -m "Release <tag>" "$SHA"   # once per tag of the release
+git push origin "<tag>"
+gh workflow run callisto-release.yml --ref main -f release_source_sha="$SHA"
+```
+
+Recovery observes each pushed tag as already satisfied and continues.
+
+**Assets that differ (`ArtifactAssetDiffers`).** Rebuilt tarballs are not byte-reproducible, so a
+recovery run that rebuilds artifacts reads assets uploaded by an earlier attempt as conflicting.
+Artifact observation treats a missing asset as absent, so delete the mismatched assets and dispatch
+again:
+
+```sh
+gh release delete-asset "<release tag>" "<asset name>" --yes   # once per mismatched asset
+gh workflow run callisto-release.yml --ref main -f release_source_sha="$SHA"
+```
+
 ## Execution
 
 Before an effect, Callisto observes the provider. An operation is one of absent, exact success,
