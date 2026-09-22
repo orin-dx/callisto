@@ -10,10 +10,14 @@ build:
 build-release:
     cargo build --release -p callisto-cli
 
+# Prebuilds the wasm moon_wasm_sandbox.rs loads, so test processes don't race to build it.
+build-moon-wasm:
+    cargo rustc -p callisto-moon --lib --target wasm32-wasip1 --features pdk --crate-type cdylib
+
 # Run unit, integration, doctests, and E2E tests. This intentionally uses the
 # same Nextest command as CI: a runner/configuration failure must never be
 # mistaken for a passing Moon fallback.
-test:
+test: build-moon-wasm
     cargo nextest run --workspace --all-features
     cargo test --doc --all-features
 
@@ -39,7 +43,7 @@ test-release-action-binary:
 
 # CI variant of `test`: emits Nextest's JUnit report under target/nextest/ci
 # for the trusted PR reporter. Keep the everyday local command artifact-free.
-test-ci:
+test-ci: build-moon-wasm
     cargo nextest run --workspace --all-features --profile ci
     cargo test --doc --all-features
 
@@ -142,7 +146,7 @@ wasm-check:
 # percentage, and a failed CI gate must say what developers need to improve.
 # Unset means informational only; `just ci` and CI both call `just coverage 90`,
 # so a CI coverage failure always reproduces locally with the same invocation.
-coverage threshold="":
+coverage threshold="": build-moon-wasm
     #!/usr/bin/env bash
     set -euo pipefail
     args=(--all-features --lcov --output-path lcov.info --ignore-filename-regex '_pdk\.rs$')

@@ -122,10 +122,14 @@ pub fn git(root: &Path, args: &[&str]) -> String {
     String::from_utf8(output.stdout).unwrap().trim().to_owned()
 }
 
+/// Skips real backoff waits in the spawned binary.
+const NO_BACKOFF_SLEEP: (&str, &str) = ("__CALLISTO_TEST_SLEEP_SCALE", "0");
+
 pub fn callisto(root: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_callisto"))
         .args(["--format", "json", "--cwd", root.to_str().unwrap()])
         .args(args)
+        .env(NO_BACKOFF_SLEEP.0, NO_BACKOFF_SLEEP.1)
         .output()
         .expect("callisto binary should be invocable")
 }
@@ -616,6 +620,7 @@ pub fn execute_with_recovery(
         .env("CALLISTO_TEST_FORGE_TAG", "core-crate@0.2.0")
         .env("CALLISTO_TEST_CARGO_MARKER", registry_marker(root))
         .env("CALLISTO_TEST_REAL_GIT", system_git())
+        .env(NO_BACKOFF_SLEEP.0, NO_BACKOFF_SLEEP.1)
         .output()
         .expect("release execute should run")
 }
@@ -661,6 +666,7 @@ pub fn execute_from_coordinator(
         .env("CALLISTO_TEST_FORGE_TAG", "core-crate@0.2.0")
         .env("CALLISTO_TEST_CARGO_MARKER", registry_marker(source))
         .env("CALLISTO_TEST_REAL_GIT", system_git())
+        .env(NO_BACKOFF_SLEEP.0, NO_BACKOFF_SLEEP.1)
         .output()
         .expect("cross-worktree release execute should run")
 }
@@ -709,6 +715,7 @@ pub fn execute_product(
         .env("CALLISTO_TEST_FORGE_TAG", "callisto@0.2.0")
         .env("CALLISTO_TEST_CARGO_MARKER", registry_marker(root))
         .env("CALLISTO_TEST_REAL_GIT", system_git())
+        .env(NO_BACKOFF_SLEEP.0, NO_BACKOFF_SLEEP.1)
         .output()
         .expect("product release execute should run")
 }
@@ -1435,7 +1442,8 @@ pub fn execute_rig_in(
         )
         .env("CALLISTO_TEST_FORGE_TAG", forge_tag)
         .env("CALLISTO_TEST_CARGO_MARKER", registry_marker(root))
-        .env("CALLISTO_TEST_REAL_GIT", system_git());
+        .env("CALLISTO_TEST_REAL_GIT", system_git())
+        .env(NO_BACKOFF_SLEEP.0, NO_BACKOFF_SLEEP.1);
     for (key, value) in &rig.env {
         command.env(key, value);
     }

@@ -77,7 +77,18 @@ pub(crate) struct ThreadSleeper;
 
 impl Sleeper for ThreadSleeper {
     fn sleep(&self, duration: Duration) {
-        std::thread::sleep(duration);
+        std::thread::sleep(scaled_for_tests(duration));
+    }
+}
+
+/// Test-only, like cargo's `__CARGO_TEST_*`: e2e tests can't inject a `Sleeper`.
+fn scaled_for_tests(duration: Duration) -> Duration {
+    match std::env::var("__CALLISTO_TEST_SLEEP_SCALE") {
+        Ok(raw) => match raw.parse::<f64>() {
+            Ok(scale) if scale.is_finite() && scale >= 0.0 => duration.mul_f64(scale),
+            _ => duration,
+        },
+        Err(_) => duration,
     }
 }
 

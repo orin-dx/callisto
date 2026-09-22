@@ -573,6 +573,7 @@ dependencies = [
  "callisto-graph",
  "callisto-model",
  "extism-pdk",
+ "fs2",
  "gix-hash",
  "gix-odb 0.83.0",
  "gix-ref 0.66.0",

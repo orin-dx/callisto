@@ -50,7 +50,8 @@ fn execute_raw(
         .env("CALLISTO_TEST_ARTIFACT_MARKER", p.log.with_extension("artifact-marker"))
         .env("CALLISTO_TEST_FORGE_TAG", forge_tag)
         .env("CALLISTO_TEST_CARGO_MARKER", registry_marker(root))
-        .env("CALLISTO_TEST_REAL_GIT", system_git());
+        .env("CALLISTO_TEST_REAL_GIT", system_git())
+        .env("__CALLISTO_TEST_SLEEP_SCALE", "0");
     command.output().unwrap()
 }
 
@@ -445,6 +446,7 @@ fn p13_concurrent_execute_publishes_at_most_once() {
             // slow publish so the two processes overlap
             .env("CALLISTO_TEST_CARGO_PUBLISH_SLEEP", "3")
             .env("CALLISTO_TEST_REAL_GIT", system_git())
+            .env("__CALLISTO_TEST_SLEEP_SCALE", "0")
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()

@@ -122,3 +122,5 @@ tempfile = { workspace = true }
 # to the newer patch. Pin the transitive resolution back to the last
 # version where the default features still include it.
 http-cache-reqwest = "=1.0.0-alpha.6"
+# Cross-process wasm build lock; nextest runs one process per test.
+fs2 = { workspace = true }
