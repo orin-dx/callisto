@@ -399,8 +399,10 @@ jobs:
     name: Execute approved release
     needs: [plan, build, release-candidate]
     # Artifact-less sources skip build; a failed or cancelled build must still block.
+    # !cancelled() not always(): a status function still defeats the skipped-ancestor
+    # rule, but cancelling the run must stop the one irreversible job.
     if: >-
-      always() && needs.plan.result == 'success' &&
+      !cancelled() && needs.plan.result == 'success' &&
       (needs.plan.outputs.has_artifacts == 'false' || needs.build.result == 'success')
     timeout-minutes: 60
     concurrency:
