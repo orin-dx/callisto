@@ -1660,6 +1660,160 @@ fn unscoped_npm_package_with_explicit_public_access_produces_public_access_in_pl
     );
 }
 
+// ---- [[package]] publish-to = ["npm"] override must not drop publishConfig.access ----
+
+/// An explicit `[[package]] publish-to = ["npm"]` override replaces *which*
+/// targets a package publishes to, but before this fix it also replaced the
+/// whole `PublishTarget::Npm` payload with `{ registry: None, access: None }`
+/// -- silently dropping `publishConfig.access` read from package.json. The
+/// package here is deliberately unscoped ("oxc-react-docgen") so the
+/// `@scope`-implies-public fallback heuristic in `plan_publish` cannot
+/// accidentally mask the bug: without the fix, access ends up `None`, not
+/// `Public`.
+#[test]
+fn publish_to_override_preserves_explicit_publish_config_access() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+    use callisto_model::NpmAccess;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    std::fs::write(
+        root.join("package.json"),
+        r#"{"name":"oxc-react-docgen","version":"0.1.0","publishConfig":{"access":"public"}}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("callisto.toml"),
+        "[[package]]\nmatch = \"oxc-react-docgen\"\npublish-to = [\"npm\"]\n",
+    )
+    .unwrap();
+    init_git_repo(root);
+
+    let runner = DummyRunner;
+    let locator = IgnoreWalkLocator::new(root);
+    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load");
+    let plan = plan_publish(&ws, &PublishOptions::default()).expect("plan_publish");
+
+    assert_eq!(plan.npm_main_packages.len(), 1, "expected one npm_main_packages entry");
+    assert_eq!(
+        plan.npm_main_packages[0].access,
+        Some(NpmAccess::Public),
+        "publish-to = [\"npm\"] override must not drop publishConfig.access:\"public\" \
+         (this is the exact field npm_publish_flags/npm_publish_directory_argv turn into \
+         `--access public`); got: {:?}",
+        plan.npm_main_packages[0].access
+    );
+}
+
+/// Sibling of the above: when there is no `publishConfig` at all, the same
+/// `publish-to = ["npm"]` override must leave `access` at `None` (unscoped
+/// package, no operator intent to merge in) -- the merge only fills gaps
+/// from data that actually exists, it never invents access.
+#[test]
+fn publish_to_override_without_publish_config_leaves_access_unset() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    std::fs::write(root.join("package.json"), r#"{"name":"my-lib","version":"0.1.0"}"#).unwrap();
+    std::fs::write(
+        root.join("callisto.toml"),
+        "[[package]]\nmatch = \"my-lib\"\npublish-to = [\"npm\"]\n",
+    )
+    .unwrap();
+    init_git_repo(root);
+
+    let runner = DummyRunner;
+    let locator = IgnoreWalkLocator::new(root);
+    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load");
+    let plan = plan_publish(&ws, &PublishOptions::default()).expect("plan_publish");
+
+    assert_eq!(plan.npm_main_packages.len(), 1);
+    assert_eq!(
+        plan.npm_main_packages[0].access, None,
+        "with no publishConfig.access to merge in, override must leave access unset; got: {:?}",
+        plan.npm_main_packages[0].access
+    );
+}
+
+/// The oxc-react-docgen shape: an unscoped owner package (`oxc-react-docgen`)
+/// with `publishConfig.access: "public"`, and a napi platform package
+/// attached under it via `optionalDependencies` + `os`/`cpu` constraints
+/// (`@oxc-react-docgen/darwin-arm64`, itself scoped). `plan_publish` reuses
+/// the owner's resolved `access` for every attached platform package
+/// (`commands/publish.rs`, the `for (name, manifest) in
+/// ws.identity.attached_platforms(pkg)` loop) -- so an owner-level
+/// `publish-to = ["npm"]` override that drops the owner's access silently
+/// breaks the scoped platform package's first publish too (npm defaults
+/// scoped packages to `restricted`).
+#[test]
+fn publish_to_override_on_owner_propagates_access_to_attached_platform_packages() {
+    use callisto_graph::commands::{plan_publish, PublishOptions};
+    use callisto_model::NpmAccess;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    std::fs::write(
+        root.join("package.json"),
+        r#"{"name":"workspace-root","version":"0.0.0","private":true}"#,
+    )
+    .unwrap();
+    std::fs::write(root.join("pnpm-workspace.yaml"), "packages:\n  - \"packages/*\"\n").unwrap();
+
+    std::fs::create_dir_all(root.join("packages/lib")).unwrap();
+    std::fs::write(
+        root.join("packages/lib/package.json"),
+        r#"{"name":"oxc-react-docgen","version":"0.1.0","optionalDependencies":{"@oxc-react-docgen/darwin-arm64":"0.1.0"},"publishConfig":{"access":"public"}}"#,
+    )
+    .unwrap();
+
+    std::fs::create_dir_all(root.join("packages/lib/npm/darwin-arm64")).unwrap();
+    std::fs::write(
+        root.join("packages/lib/npm/darwin-arm64/package.json"),
+        r#"{"name":"@oxc-react-docgen/darwin-arm64","version":"0.1.0","os":["darwin"],"cpu":["arm64"],"main":"index.js"}"#,
+    )
+    .unwrap();
+
+    std::fs::write(
+        root.join("callisto.toml"),
+        "[[package]]\nmatch = \"oxc-react-docgen\"\npublish-to = [\"npm\"]\n",
+    )
+    .unwrap();
+    init_git_repo(root);
+
+    let runner = DummyRunner;
+    let locator = IgnoreWalkLocator::new(root);
+    let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load");
+    let plan = plan_publish(&ws, &PublishOptions::default()).expect("plan_publish");
+
+    assert_eq!(
+        plan.npm_main_packages.len(),
+        1,
+        "expected the owner in npm_main_packages"
+    );
+    assert_eq!(
+        plan.npm_main_packages[0].access,
+        Some(NpmAccess::Public),
+        "owner's publishConfig.access must survive the override; got: {:?}",
+        plan.npm_main_packages[0].access
+    );
+
+    assert_eq!(
+        plan.npm_platform_packages.len(),
+        1,
+        "expected the attached platform package in npm_platform_packages"
+    );
+    assert_eq!(
+        plan.npm_platform_packages[0].access,
+        Some(NpmAccess::Public),
+        "attached platform package must inherit the owner's (merged) access; got: {:?}",
+        plan.npm_platform_packages[0].access
+    );
+}
+
 // ---- [[package-set]]: bulk config-override via glob pattern ----
 
 /// When `callisto.toml` contains `[[package-set]] match = "pkg-*" publish-to = ["none"]`,

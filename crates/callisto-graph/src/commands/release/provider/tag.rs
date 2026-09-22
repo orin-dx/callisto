@@ -1,7 +1,9 @@
 //! The tag role: a local annotated tag plus the push that makes it remote.
 
+use std::path::Path;
+
 use callisto_model::{
-    CommitSha, ExactEvidence, ProviderConflictReason, ProviderEvidenceV1, ProviderIndeterminateCause,
+    CommandRunner, CommitSha, ExactEvidence, ProviderConflictReason, ProviderEvidenceV1, ProviderIndeterminateCause,
     ProviderObservationV1, TagName,
 };
 use callisto_vcs::{GitAccess, GitDataSource, TagSignPolicy};
@@ -85,27 +87,44 @@ impl ReleaseProvider for TagProvider {
             )?;
         }
         let remote_endpoint = context.checked_git_remote()?.endpoint.clone();
-        let push_args = ["push", remote_endpoint.as_str(), operation.name.as_str()];
-        let pushed =
-            context
-                .runner()
-                .run_with_timeout(programs::GIT, &push_args, context.root(), timeouts::GIT_PUSH)?;
-        if pushed.exit_code != Some(0) {
-            return Err(GraphError::ReleaseCommand {
-                program: programs::GIT.to_string(),
-                args: push_args.iter().map(ToString::to_string).collect(),
-                failure: CommandFailure::NonZeroExit {
-                    exit_code: pushed.exit_code,
-                    stderr: pushed.stderr,
-                },
-            });
-        }
+        push_tag(context.runner(), context.root(), &remote_endpoint, operation)?;
         confirmed_evidence(
             tag_observation(context, operation)?,
             request.id,
             RemoteConflict::TagNotObservedAfterPush,
         )
     }
+}
+
+/// GitHub's refusal when an App token pushes a ref whose tree's workflows
+/// differ from every branch tip.
+const WORKFLOW_GUARD_REFUSAL: &str = "refusing to allow a GitHub App to create or update workflow";
+
+fn push_tag(
+    runner: &dyn CommandRunner,
+    root: &Path,
+    endpoint: &str,
+    operation: &TagOperation,
+) -> Result<(), GraphError> {
+    let push_args = ["push", endpoint, operation.name.as_str()];
+    let pushed = runner.run_with_timeout(programs::GIT, &push_args, root, timeouts::GIT_PUSH)?;
+    if pushed.exit_code == Some(0) {
+        return Ok(());
+    }
+    if pushed.stderr.contains(WORKFLOW_GUARD_REFUSAL) {
+        return Err(GraphError::ReleaseTagPushRefusedWorkflowGuard {
+            tag: operation.name.as_str().to_owned(),
+            target: operation.target.as_str().to_owned(),
+        });
+    }
+    Err(GraphError::ReleaseCommand {
+        program: programs::GIT.to_string(),
+        args: push_args.iter().map(ToString::to_string).collect(),
+        failure: CommandFailure::NonZeroExit {
+            exit_code: pushed.exit_code,
+            stderr: pushed.stderr,
+        },
+    })
 }
 
 fn tag_operation<'a>(request: &ProviderRequest<'a>) -> Result<&'a TagOperation, GraphError> {
@@ -323,6 +342,75 @@ mod tests {
                 failure: CommandFailure::MalformedOutput { .. },
                 ..
             })
+        ));
+    }
+
+    struct FailedPush(&'static str);
+
+    impl CommandRunner for FailedPush {
+        fn run(
+            &self,
+            program: &str,
+            args: &[&str],
+            _cwd: &Path,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            assert_eq!((program, args.first().copied()), ("git", Some("push")));
+            Ok(callisto_model::CommandOutput {
+                exit_code: Some(1),
+                stdout: String::new(),
+                stderr: self.0.to_owned(),
+            })
+        }
+    }
+
+    const TARGET: &str = "caf945cc9d5a11a71c57f419d1a73d0627c1756b";
+
+    fn push(stderr: &'static str) -> GraphError {
+        let operation = TagOperation {
+            name: TagName::new_unchecked("callisto@0.8.0".to_owned()),
+            target: CommitSha::parse(TARGET).unwrap(),
+            annotation: "callisto@0.8.0".to_owned(),
+        };
+        push_tag(
+            &FailedPush(stderr),
+            &std::env::temp_dir(),
+            "https://github.com/orin-dx/callisto",
+            &operation,
+        )
+        .unwrap_err()
+    }
+
+    #[test]
+    fn the_github_app_workflow_guard_refusal_is_its_own_diagnostic() {
+        let error = push(
+            "To https://github.com/orin-dx/callisto\n \
+             ! [remote rejected] callisto@0.8.0 -> callisto@0.8.0 (refusing to allow a GitHub App to create \
+             or update workflow `.github/workflows/release.yml` without `workflows` permission)\n\
+             error: failed to push some refs to 'https://github.com/orin-dx/callisto'\n",
+        );
+        assert_eq!(
+            error,
+            GraphError::ReleaseTagPushRefusedWorkflowGuard {
+                tag: "callisto@0.8.0".to_owned(),
+                target: TARGET.to_owned(),
+            }
+        );
+        assert_eq!(
+            miette::Diagnostic::code(&error).map(|code| code.to_string()).as_deref(),
+            Some("E180")
+        );
+        let help = miette::Diagnostic::help(&error).unwrap().to_string();
+        assert!(help.contains("callisto@0.8.0") && help.contains(TARGET), "{help}");
+    }
+
+    #[test]
+    fn any_other_push_failure_stays_a_release_command_failure() {
+        assert!(matches!(
+            push("fatal: unable to access 'https://github.com/orin-dx/callisto/': Could not resolve host\n"),
+            GraphError::ReleaseCommand {
+                failure: CommandFailure::NonZeroExit { .. },
+                ..
+            }
         ));
     }
 }

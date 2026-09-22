@@ -520,6 +520,21 @@ pub enum GraphError {
     )]
     ReleaseArtifactOwnerNotReleased { asset: String, package: String },
 
+    #[error(
+        "the remote refused tag `{tag}` at {target}: a GitHub App token cannot push a commit whose \
+         .github/workflows/ differs from every branch tip"
+    )]
+    #[diagnostic(
+        code(E180),
+        help(
+            "This happens when releasing a commit that is not a branch tip (for example, recovering \
+             an older release) with GITHUB_TOKEN, which cannot be granted the `workflows` scope. \
+             Push tag `{tag}`, and every other tag of this release, as an annotated tag at \
+             {target} with a non-App credential (a PAT or deploy key), then re-run recovery."
+        )
+    )]
+    ReleaseTagPushRefusedWorkflowGuard { tag: String, target: String },
+
     #[error("internal release invariant violated: {detail}")]
     #[diagnostic(
         code(E171),

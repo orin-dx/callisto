@@ -162,6 +162,30 @@ impl PublishTarget {
         }
     }
 
+    /// Fills gaps left by a `[[package]]`/`[[package-set]]` `publish-to`
+    /// override with the manifest-derived target for the same ecosystem --
+    /// e.g. npm's `publishConfig.access`/`registry`, which an override
+    /// naming only `"npm"` doesn't itself specify. Fields the override
+    /// *does* set are never touched: config wins when explicit, the
+    /// manifest only fills what the override left blank. Other ecosystems
+    /// (`Pypi.index`, `NuGet.source`) have no manifest reader populating
+    /// them yet, so there is nothing to fill in for them today.
+    pub fn merge_manifest_gaps(self, manifest_derived: &PublishTarget) -> PublishTarget {
+        match (self, manifest_derived) {
+            (
+                PublishTarget::Npm { registry, access },
+                PublishTarget::Npm {
+                    registry: manifest_registry,
+                    access: manifest_access,
+                },
+            ) => PublishTarget::Npm {
+                registry: registry.or_else(|| manifest_registry.clone()),
+                access: access.or(*manifest_access),
+            },
+            (target, _) => target,
+        }
+    }
+
     /// Whether this target has a real dispatch implementation today.
     ///
     /// `PublishTarget` and `Ecosystem` are not 1:1: `GitHubRelease` is a VCS
