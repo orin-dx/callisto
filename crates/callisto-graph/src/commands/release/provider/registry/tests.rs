@@ -264,7 +264,14 @@ fn an_unreachable_registry_is_indeterminate_and_never_absent() {
 fn the_observation_argv_always_names_a_registry() {
     assert_eq!(
         cargo_info_args("core-crate@0.2.0", "crates-io"),
-        ["info", "core-crate@0.2.0", "--registry", "crates-io"]
+        [
+            "--config",
+            "net.retry=0",
+            "info",
+            "core-crate@0.2.0",
+            "--registry",
+            "crates-io"
+        ]
     );
     assert_eq!(
         cargo_registry_name(&RegistryKey(RegistryKey::CRATES_IO.to_owned())),
