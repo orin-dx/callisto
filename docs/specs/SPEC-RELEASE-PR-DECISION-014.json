@@ -2,19 +2,19 @@
   "id": "SPEC-RELEASE-PR-DECISION-014",
   "status": "draft",
   "owner_track": "release-security",
-  "depends_on": ["SPEC-RELEASE-INTERFACES-013"],
+  "depends_on": ["SPEC-RELEASE-LIFECYCLE-HARDENING"],
   "purpose": "Move managed release-pull-request policy from the GitHub composite-action shell script into a typed, provider-neutral Callisto decision boundary.",
   "scope": "The credential-free observation, deterministic decision, CLI JSON interface, GitHub snapshot collector, thin GitHub executor, and black-box contract tests for creating, updating, superseding, and retaining a Callisto-managed release PR.",
   "non_goals": [
     "Making a GitHub pull request or its metadata release authority after merge.",
     "Putting forge tokens, raw credentials, shell commands, or arbitrary GitHub API responses in durable release intent/state/receipt records.",
-    "Changing the merged-release-commit authority, artifact, or execute contracts from SPEC-RELEASE-INTERFACES-013."
+    "Changing the merged-release-commit authority, artifact, or execute contracts from SPEC-RELEASE-LIFECYCLE-HARDENING."
   ],
   "architecture": {
     "observation": "The action gathers a small, credential-free snapshot of the configured repository's open managed PRs and branch workflow-delta facts. Callisto validates that snapshot against explicit configured base/release branch identity; it never accepts caller-side preselection of an existing PR.",
     "decision": "Callisto determines whether pending changesets require no PR, a new canonical PR, an update of exactly one canonical or SHA-suffixed managed PR, or a replacement PR. The decision names exact expected PR number/branch facts so the executor can detect a race before mutation.",
     "execution": "The composite action invokes `callisto release-pr decide`, then only executes the returned operation: version from the current base, stage the resulting worktree changes as a `callisto release-pr commit-plan` and materialize it on a deterministic staging branch via the forge's `createCommitOnBranch` commit API, verify the staged commit's tree is byte-identical to the local `git write-tree` result, move the real managed branch's ref onto that verified commit via a plain REST ref update, create or edit the named PR, and always delete the staging ref afterward. There is no local Git commit or `git push` anywhere in this path. It may render a body, manage a configured label, and re-observe expected state, but it does not independently choose an operation or branch.",
-    "authority": "This is pre-merge collaboration policy, not durable release authority. After merge, SPEC-RELEASE-EXECUTION-FOUNDATION-007's parent-to-commit validation remains the sole release authority."
+    "authority": "This is pre-merge collaboration policy, not durable release authority. After merge, the verified managed release merge remains the sole release authority (SPEC-SELF-RELEASE-LIFECYCLE SRL-01)."
   },
   "acceptance_criteria": [
     {

@@ -1,6 +1,8 @@
 {
   "id": "SPEC-GITHUB-RELEASE-HARDENING-003",
-  "status": "proposed",
+  "status": "superseded",
+  "superseded_by": "SPEC-RELEASE-LIFECYCLE-HARDENING",
+  "revision_note": "Superseded: workflow permissions, pinning and job split are specified by SPEC-RELEASE-LIFECYCLE-HARDENING; AC-001/AC-004's Environment reviewer gate contradicts SRL-01.",
   "owner_track": "release-security",
   "last_verified_revision": "59023bd3286650394af37bc34bd688b51dba3d92",
   "depends_on": [

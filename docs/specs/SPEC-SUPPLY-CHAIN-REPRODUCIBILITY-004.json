@@ -1,6 +1,7 @@
 {
   "id": "SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004",
-  "status": "proposed",
+  "status": "abandoned",
+  "revision_note": "Abandoned: audit reproducibility records and expiring exception records were never built; the bisync finding (AC-003) was resolved by the gix 0.87 bump.",
   "owner_track": "release-security",
   "last_verified_revision": "931a5b2eb79b1a0fa85cf04c9df62750e59a6bcc",
   "depends_on": [],

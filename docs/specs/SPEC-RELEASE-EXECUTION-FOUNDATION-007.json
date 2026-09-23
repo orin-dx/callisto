@@ -1,6 +1,7 @@
 {
   "id": "SPEC-RELEASE-EXECUTION-FOUNDATION-007",
-  "status": "draft",
+  "status": "superseded",
+  "superseded_by": "SPEC-SELF-RELEASE-LIFECYCLE",
   "owner_track": "release-security",
   "last_verified_revision": "289001ec",
   "depends_on": [],
@@ -46,5 +47,5 @@
     {"id":"AC-007","criterion":"The migration adds release plan, inspect, execute, and reconcile. Until legacy commands are removed in a documented breaking release, they are preview-only and cannot publish, tag, push, or create a forge release. GitHub execution is a workflow-level, Environment-gated job consuming exact intent/artifact files and hashes.","is_error_case":true}
   ],
   "reasoning": "The earlier single foundation spec mixed several layers and allowed generic digest fields to stand in for semantic authority. These decisions separate what is approved, what is observed, what is prepared, and what is executed, while supporting source crates and compiled GitHub assets safely in the same release.",
-  "revision_note": "Rewritten after implementation and adversarial review exposed three architectural gaps: generic snapshot fingerprints could contain raw configuration data, registry identity collapsed distinct endpoints, and the validated capability did not retain exact future effect inputs."
+  "revision_note": "Superseded: the umbrella design shipped via 008-014 and is now governed by SPEC-SELF-RELEASE-LIFECYCLE; AC-007's Environment-gated execute job contradicts SRL-01."
 }

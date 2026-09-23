@@ -1,6 +1,8 @@
 {
   "id": "SPEC-RELEASE-PLAN-DURABILITY-001A",
-  "status": "proposed",
+  "status": "superseded",
+  "superseded_by": "SPEC-RELEASE-INTENT-MODEL-009",
+  "revision_note": "Superseded: PublishPlanEnvelope was never built; ReleaseIntentV1 (SPEC-RELEASE-INTENT-MODEL-009) is the durable release record.",
   "owner_track": "release-security",
   "last_verified_revision": "39b250aed4ddd6c5cbf10c3b53c14186e7256246",
   "depends_on": [],
