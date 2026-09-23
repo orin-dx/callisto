@@ -28,7 +28,7 @@
     },
     {
       "id": "AC-003",
-      "criterion": "Authorization requires a clean worktree before the capability is issued. 'Clean' means Git reports no staged, unstaged, unmerged, or untracked file under the repository worktree. An ignored file is clean only when its safe relative path matches Callisto's fixed, versioned harmless-artifact allowlist; arbitrary repository .gitignore rules never grant release-trust authority. A path outside the canonical root, an allowlist mismatch, an error while determining status, or an ambiguous repository layout fails closed. Diagnostics identify the policy condition and safe relative paths where available, but do not retain raw command output in durable data.",
+      "criterion": "Authorization requires a clean worktree before the capability is issued. 'Clean' means Git status, queried without ignored entries, reports no staged, unstaged, unmerged, or untracked file under the repository worktree. Every path the repository's ignore rules exclude, such as build output, is allowed and never blocks; there is no fixed ignored-path allowlist. A tracked modification or an untracked non-ignored file fails closed with a diagnostic naming its relative path. A path outside the canonical root, an error while determining status, or an ambiguous repository layout fails closed. Diagnostics do not retain raw command output in durable data.",
       "is_error_case": true
     },
     {
@@ -57,5 +57,6 @@
     "Use a maintained cross-platform file-lock crate only if it provides process-lifetime exclusive locking with explicit acquisition errors. Keep the dependency in callisto-vcs or a lower permitted layer; do not introduce Tokio or Rayon for this ordered, lock-held path.",
     "A future closed-root byte observer may add HermeticContent under a separate schema/profile version. It must not weaken the GitCommit behavior specified here."
   ],
-  "reasoning": "A Git commit only becomes a release trust boundary when the executor proves it is operating at the approved checkout and prevents its own concurrent release processes from racing. A local lock improves coordination; mandatory fresh observation preserves correctness when another tool changes the workspace."
+  "reasoning": "A Git commit only becomes a release trust boundary when the executor proves it is operating at the approved checkout and prevents its own concurrent release processes from racing. A local lock improves coordination; mandatory fresh observation preserves correctness when another tool changes the workspace.",
+  "revision_note": "Revised for PR #120: release trust allows every gitignored path; tracked modifications and untracked non-ignored files still block, naming the path."
 }
