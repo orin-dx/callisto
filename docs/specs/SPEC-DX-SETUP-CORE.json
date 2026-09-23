@@ -1,0 +1,197 @@
+{
+  "id": "SPEC-DX-SETUP-CORE",
+  "purpose": "Define callisto init's first-run detection, intent questions, non-interactive flag surface, config write (including the profiles-table removal), pre-write preview, existing-config error, and --dry-run behavior.",
+  "scope": "First run of callisto init against a workspace with no callisto.toml: fact detection, the versioning-mode/ship-binaries/product-package/forge-repository/artifact-target-triple questions, non-interactive flags, the [release] schema (forge-repository directly under [release]; no [release.profiles]/registry-routes -- schema owned by SPEC-DX-CONFIG-RELEASE-SCHEMA), the pre-write preview derived from config::resolve(RawConfig), the written config's contents, the existing-callisto.toml error, .changeset/ scaffolding, global --dry-run, and their error cases. Depends on SPEC-DX-RELEASE-CLI for the release --dry-run plan-derivation output the preview reuses, and on SPEC-DX-CONFIG-RELEASE-SCHEMA for the [release] table shape (AC-009, AC-023) and for config::resolve(RawConfig)'s existence (AC-005). Workflow-file generation and callisto-action's mode input are SPEC-DX-SETUP-WORKFLOW's territory, not this spec's.",
+  "non_goals": [
+    "Workflow-file generation, its content, path, and no-overwrite rule, and callisto-action's mode input -- SPEC-DX-SETUP-WORKFLOW's territory.",
+    "Release command internals / the release verb's own flag surface and CI-split mechanics -- SPEC-DX-RELEASE-CLI's territory.",
+    "Correctness/bug-fix ports unrelated to init's own scaffolding (publish/plan-publish/tag/filter-plan removal, plan_publish-vs-derive.rs behavior gaps, release-trigger, attestation source_commit, etc.) -- belong to other specs already delegated elsewhere.",
+    "Non-GitHub forges.",
+    "Rerun/drift-reconciliation behavior when callisto.toml already exists -- this spec covers first-run scaffolding only; an existing config is a hard error (AC-008).",
+    "A tag-convention intent question, or any intent category beyond versioning mode, ship-binaries/artifact targets, product-package disambiguation, and forge-repository -- not part of this slice's question set.",
+    "Non-interactive flag spelling beyond the flags named in this spec's non-interactive criteria -- any other flag's exact name is left to implementation.",
+    "The [release] schema's shape, its load-time [release.profiles.production] migration, config::resolve(RawConfig)'s internal validation rules, CLI --profile removal, and the ReleaseIntentV1 schema-version bump -- SPEC-DX-CONFIG-RELEASE-SCHEMA's territory; this spec's AC-005/AC-009/AC-023 consume that spec's output but do not define it."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-001",
+      "criterion": "Running callisto init with no callisto.toml present in the workspace root prints, before any question is asked, the detected ecosystems, package list, the git remote URL resolved via the origin-binding helper, existing version tags per package as reported by TagIndex::build, and which packages produce a binary artifact.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-002",
+      "criterion": "init asks a versioning-mode question (fixed vs independent) in every interactive run.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-002a",
+      "criterion": "When a flag corresponding to one of this spec's questions (--versioning for AC-002; --artifact-target, --forge-repository, or --product-package for AC-003/AC-003a/AC-003b/AC-003c; --workflow for SPEC-DX-SETUP-WORKFLOW's generate-workflow question) is supplied on a TTY without --yes, its value pre-answers that question and the question is not presented; any question whose corresponding flag was not supplied is still asked interactively.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-003",
+      "criterion": "init asks 'Ship binaries as GitHub release assets? (y/N)' only when at least one workspace package produces a binary; when no package produces a binary, this question is never presented. Answering no (or accepting the N default) results in no [release] table being written.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-003a",
+      "criterion": "When more than one workspace package produces a binary and the operator answered yes to AC-003, init asks which package is the product package (interactive) or requires --product-package (non-interactive, AC-014a); when exactly one binary-producing package exists, it is used as the product package without a question.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-003b",
+      "criterion": "init asks a forge-repository question only after the operator answers yes to AC-003. When the workspace's origin remote parses as a GitHub owner/repo identity, init pre-fills the question with that value and, in interactive mode, asks the operator to confirm or override it; when the origin remote does not parse as a GitHub identity, no pre-filled value is offered and interactive mode asks with no default (non-interactive mode still requires --forge-repository per AC-014a). A forge-repository value -- interactive or via --forge-repository -- that does not parse as an owner/repo GitHub identity errors naming the invalid value, without writing any file. A forge-repository value that differs from the detected origin remote is accepted; init prints a warning line naming both the configured forge-repository and the detected origin remote. When AC-003 was answered no or never presented, this question is never presented.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-003c",
+      "criterion": "When AC-003 is answered yes, init asks for artifact target triples as a comma-separated list. When rustc is present on PATH, each entered triple is validated against rustc --print target-list's output and an unrecognized triple errors naming that triple, without writing any file; when rustc is absent, entered triples are accepted without validation. Submitting an empty list re-asks the question rather than proceeding.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-004",
+      "criterion": "init asks no question other than: versioning mode (AC-002); ship-binaries (AC-003), with its follow-ups product-package (AC-003a, only when >1 binary package), forge-repository confirm (AC-003b, only when shipping binaries), and artifact-target triples (AC-003c, only when shipping binaries); generate-workflow (y/N, SPEC-DX-SETUP-WORKFLOW); and the final preview confirm (Y/n, AC-006). A question whose flag was supplied per AC-002a is skipped rather than asked. The detected origin remote is never itself turned into a question or an editable default value, except forge-repository's pre-filled value under AC-003b, which is the one stated exception.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-005",
+      "criterion": "After answers are collected (interactive) or supplied (non-interactive) and before any file is written, init derives an in-memory ResolvedConfig from the answers via config::resolve(RawConfig) (defined in SPEC-DX-CONFIG-RELEASE-SCHEMA), and prints the same preview that config::resolve's plan-derivation function would print for callisto release --dry-run run against that in-memory config and current repository state, without writing callisto.toml and re-reading it.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-006",
+      "criterion": "Declining or aborting at the preview step leaves the filesystem unchanged: no callisto.toml, .changeset/README.md, or workflow file is created or modified.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-007",
+      "criterion": "When the versioning-mode answer is fixed, the written callisto.toml contains exactly one [[fixed-group]] entry with name = \"all\" listing every workspace package as an ecosystem-qualified id (for example cargo/name), excluding platform-manifest packages, and no [[linked-group]] entry; when the answer is independent, the written callisto.toml contains no [[fixed-group]] and no [[linked-group]] entry. In both cases the file contains no [cascade], [changesets], or [init] table.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-008",
+      "criterion": "Running callisto init against a workspace that already has a callisto.toml errors with a message stating the workspace is already initialized, writes nothing, and does not read or apply an existing [init] table.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-009",
+      "criterion": "When a binary product package was configured, the written config contains [release] with product-package, forge-repository written directly under [release] (schema owned by SPEC-DX-CONFIG-RELEASE-SCHEMA) set to the AC-003b answer, and one [[release.artifact]] entry per configured artifact target per bin name (AC-009a), each with package equal to the product package, target equal to one of the AC-003c triples, and asset-name derived as <bin-name>-<triple>.tar.gz (.zip when the triple contains \"windows\") rather than asked; when AC-003 was answered no, the [release] table, forge-repository key, and [[release.artifact]] entries are absent entirely.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-009a",
+      "criterion": "The <bin-name> component of an artifact's asset-name is derived, never asked: for a Cargo package, the name of its first declared [[bin]] target, or the package name when it declares none explicitly (relying on src/main.rs); for an npm package, the package name when package.json's bin is a string, or each key of bin when it is an object; for a PyPI package, each key under [project.scripts]. A package with more than one bin name produces one [[release.artifact]] entry per bin name per configured target.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-010",
+      "criterion": "The written config contains no key whose value equals a documented schema default for that key, except a package's tag-template key written under AC-012's continuity exception.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-011",
+      "criterion": "init resolves the bound remote the same way prepared_git_remote/canonical_git_remote does: it errors, naming the missing origin remote as the required fix, whenever no remote named origin exists -- including when the repository has zero remotes -- regardless of how many other remotes exist.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-011a",
+      "criterion": "When an origin remote exists but canonical_git_remote rejects its URL, init errors showing that rejection's reason. In every other case (an origin remote exists with a URL canonical_git_remote accepts), init binds to it without error.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-011b",
+      "criterion": "Running callisto init outside a Git repository (no .git found) errors stating the workspace is not a Git repository, before any question is asked.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-012",
+      "criterion": "Tag-template convention detection matches each package against the workspace's raw tag list (git tag -l) using each of four candidate templates -- {name}@{version} (default), {name}-v{version}, {name}-{version}, v{version} -- via TagTemplate::parse; a package matches a template when at least one tag in the raw list parses successfully under that template with the package's name and a valid version. When a package matches exactly one non-default template (subject to AC-012b for v{version}), init writes that package's tag-template key to the matching template string, as a continuity exception to AC-010, using the highest-version matching tag to populate the preview.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-012a",
+      "criterion": "When a package matches more than one tag-template convention (including v{version}, subject to AC-012b), init errors listing each matching convention with its matched tags, and naming the tag-template / previous-tag-templates config keys the operator can use to disambiguate, instead of silently picking one.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-012b",
+      "criterion": "v{version} counts as a tag-template match for a package only when it is the sole workspace package matching it; when two or more packages each match v{version}, init errors listing every package that matched it, instead of silently applying it to one or all of them.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-013",
+      "criterion": "Non-interactive invocation requires --yes whenever stdin is not a TTY; when --yes is omitted under a non-TTY stdin, init errors naming --yes and the currently-missing required flags, without writing any file.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-013a",
+      "criterion": "Given --yes, init requires --versioning <fixed|independent>; when omitted, init errors naming --versioning as missing, without writing any file.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-014",
+      "criterion": "Given --yes and at least one binary-producing package, supplying one or more repeatable --artifact-target opts the run into shipping binaries; omitting --artifact-target entirely opts out, and no [release] table is written.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-014a",
+      "criterion": "When --artifact-target is supplied, --forge-repository is required and its omission errors naming --forge-repository as missing; when more than one binary-producing package exists, --product-package is also required and its omission errors naming --product-package as missing.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-014b",
+      "criterion": "A malformed target triple -- one that fails rustc target-list validation when rustc is present, or that is supplied as an empty string -- given via a repeated --artifact-target, or the same triple given more than once, errors naming the offending triple, without writing any file.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-014c",
+      "criterion": "Supplying --artifact-target when the workspace has zero binary-producing packages errors stating that no package produces a binary artifact, without writing any file.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-014d",
+      "criterion": "Supplying --product-package naming a package absent from the workspace, or present but not binary-producing, errors naming that package as invalid, without writing any file.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-015",
+      "criterion": "Non-interactive invocation with every required input supplied (--yes, --versioning, and when artifacts are opted in: --artifact-target, --forge-repository, and --product-package if more than one binary package exists) writes the same callisto.toml content and prints the same preview content as the equivalent interactive answers would produce, emits no prompts, and does not block on stdin. Workflow generation defaults to not generated unless --workflow is supplied (SPEC-DX-SETUP-WORKFLOW).",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-019",
+      "criterion": "For a workspace where TagIndex::build reports a package's existing tag matching its resolved version, the printed preview excludes that package from the first release rather than proposing to republish its current version.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-020",
+      "criterion": "A Cargo package is detected as binary-producing only when it declares a [[bin]] target or has src/main.rs; an npm package only when package.json has a bin field; a PyPI package only when pyproject.toml has [project.scripts]. A library-only package in any ecosystem is never presented as binary-producing.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-021",
+      "criterion": "Running init with a global --dry-run flag performs fact detection, question collection, and preview exactly as a normal run, then exits without creating or modifying callisto.toml, any workflow file, or any .changeset/ file, regardless of whether the preview step would otherwise have written.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-021a",
+      "criterion": "A normal (non-dry-run) init run that completes the preview confirmation creates .changeset/README.md when it does not already exist, in addition to writing callisto.toml; when .changeset/README.md already exists, init leaves its contents unmodified and does not error.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-023",
+      "criterion": "callisto.toml written by init never contains a [release.profiles] table or a registry-routes key anywhere; forge-repository is written directly under [release], per the schema SPEC-DX-CONFIG-RELEASE-SCHEMA defines. Loading an existing callisto.toml that still uses the legacy [release.profiles.production] shape is SPEC-DX-CONFIG-RELEASE-SCHEMA's migration behavior (its AC-002/AC-003), not retested here.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-024",
+      "criterion": "RawConfig retains an ignored/deprecated init field so a callisto.toml carrying an existing [init] table (from the removed InitDiff/[init]-reconcile flow) still parses successfully; init never writes an [init] table and never reads one to alter its behavior.",
+      "is_error_case": false
+    }
+  ],
+  "linked_requirement": "REQ-DX-V1",
+  "revision_note": "Applied the SPEC-DX-SETUP-CORE section of GATE2-FIXES.md. (1) Split the [release] schema, its [release.profiles.production] migration, config::resolve(RawConfig)'s validation, CLI --profile removal, and the ReleaseIntentV1 schema bump into a new sibling spec, SPEC-DX-CONFIG-RELEASE-SCHEMA; AC-005/AC-009/AC-023 now reference it instead of restating its shape, and the corresponding non_goals bullet and the old 'more than one [release.profiles.*] entry' non_goal (now handled as an explicit error case in the new spec, not deferred) were replaced. (2) Added AC-003c: an interactive artifact target-triple question after a yes ship-binaries answer, validated against `rustc --print target-list` when rustc is present, empty input re-asks. (3) Reworded AC-002 to 'every interactive run' and added AC-002a: any question whose corresponding flag is supplied on a TTY without --yes is pre-answered and skipped; AC-004's closed question list now names AC-003c and the AC-002a skip rule. (4) Rewrote AC-012/AC-012a and added AC-012b: tag-template source is now stated as the raw `git tag -l` list matched via TagTemplate::parse, 'package matches' is defined explicitly, the 'checked in this order' priority language is dropped since all four templates are unordered candidates, and v{version} now requires exclusivity across packages (single-match only) with its own error when ambiguous. (5) Added AC-009a: explicit bin-name derivation rules (Cargo first [[bin]] or package name, npm bin string/object, PyPI [project.scripts] keys) feeding AC-009's asset-name, including one artifact per bin per target for multi-bin packages. (6) AC-007 now requires fixed-group members to be ecosystem-qualified ids and excludes platform-manifest packages. (7) Added explicit error-case criteria the gate flagged as missing: AC-011b (not a Git repository), the non-GitHub-origin and forge-repository-mismatch-is-a-warning behavior folded into AC-003b, an invalid-forge-repository-string error also folded into AC-003b, AC-014b (malformed/duplicate target triple), AC-014c (--artifact-target with no binary package), AC-014d (unknown/non-binary --product-package). (8) AC-021a now states .changeset/README.md is skipped, not overwritten, when it already exists.",
+  "reasoning": "Re-verified against origin/main alongside the GATE2-FIXES.md text: crates/callisto-graph/src/tags.rs (fetch_all_tags reads the full raw tag list via GitAccess::list_tags(None), i.e. `git tag -l` semantics, before any per-template filtering -- grounds AC-012's 'raw tag list' framing) and crates/callisto-model/src/tag.rs (TagTemplate::parse, default template {name}@{version}). AC-003c's rustc validation and the bin-name rules (AC-009a) are stated as owner-supplied defaults per GATE2-FIXES.md, not independently re-derived from source, since no existing init implementation exists yet to ground them against. AC-007's 'ecosystem-qualified id, platform manifests excluded' and the fixed-group 'all' member format follow the same owner-supplied default. Schema-ownership boundary with SPEC-DX-CONFIG-RELEASE-SCHEMA verified by re-reading crates/callisto-graph/src/config/raw.rs and resolve.rs directly: the profiles/registry-routes fields this spec no longer describes are exactly the fields the sibling spec's AC-001-AC-006 govern.",
+  "spec_file_path": "docs/specs/SPEC-DX-SETUP-CORE.json",
+  "status": "design"
+}

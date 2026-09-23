@@ -1,0 +1,83 @@
+{
+  "id": "SPEC-DX-CORRECTNESS-PARITY",
+  "purpose": "release/derive.rs (the path release plan/release execute actually run) is missing checks that commands/publish.rs::plan_publish (preview-only) already has, and diverges from it in cycle handling, registry validation, npm access defaulting, release notes, and package selection. This spec makes release/derive.rs a strict behavioral superset of plan_publish for these cases.",
+  "scope": "release/derive.rs's publish-plan derivation; release_decision.rs's derive_selected_release_decision and ReleaseSelectionInvalidReason; crate::toposort's shared dev-cycle edge filter; commands/release/binding.rs::prepared_registry_binding and registry_endpoint.rs::canonical_registry_url as the single registry-trust validator; registry_argv.rs's npm default-access helper; ForgeReleaseOperation.notes derivation and fallback; PublishTarget::is_implemented() enforcement in plan derivation.",
+  "non_goals": [
+    "CLI command naming, --help text, hidden-vs-shown subcommand list (SPEC-DX-RELEASE-CLI family).",
+    "commit-inference gating by release_trigger (SPEC-DX-CORRECTNESS-TRIGGER).",
+    "Attestation/manifest source_commit and workflow_commit provenance (SPEC-DX-CORRECTNESS-PROVENANCE-PINS).",
+    "CI pre-flight exit-code and default-feature coverage (SPEC-DX-CORRECTNESS-CI).",
+    "Real local-registry e2e tests (SPEC-DX-CORRECTNESS-E2E).",
+    "Whether a package's current version needs releasing (ReleaseInclusionReason::UnreleasedVersion) -- owned by SPEC-DX-RELEASE-COMMAND; this spec only requires derive.rs not to add or drop packages from that selection."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "criterion": "Given a selected npm package with a runtime or optional dependency edge to a standalone workspace package carrying a Platform manifest, where that platform package is absent from the release decision and its current version is unreleased, release/derive.rs's plan derivation fails with GraphError::ReleaseSelectionInvalid{reason: ReleaseSelectionInvalidReason::PlatformDependencyNotSelected} -- a new enum variant added alongside Duplicate/NotInPlan/DuplicateRegistryTarget in callisto-graph/src/error.rs, not commands/publish.rs::plan_publish's separate MissingPlatformDependency error.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-1b",
+      "criterion": "Given the same dependency shape as AC-1 but the platform package's current version is already released (has a matching tag), release/derive.rs's plan derivation succeeds without requiring the platform package to be separately selected."
+    },
+    {
+      "id": "AC-2",
+      "criterion": "Given a dependency graph where two packages form a cycle only through dev-dependency edges, release/derive.rs's DAG build succeeds and orders them, instead of failing with a cycle error -- using callisto-graph/src/toposort.rs::toposort_with_edge_filter with the same dev-dependency edge filter that commands/publish.rs::publish_order uses."
+    },
+    {
+      "id": "AC-3",
+      "criterion": "Given a graph containing a mixed cycle where one edge is a runtime dependency and another is dev-only, release/derive.rs's DAG build (via toposort_with_edge_filter) still fails with a cycle error -- only the dev-only edge is excluded from cycle detection, not the runtime edge.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-4",
+      "criterion": "Given an npm package whose package.json publishConfig.registry is an https URL that does not exactly match a url on an npm-kind entry in callisto.toml's [registries] table, release/derive.rs's plan derivation rejects it with GraphError::UntrustedNpmRegistry via commands/release/binding.rs::prepared_registry_binding -- the single shared validator both release/derive.rs and commands/publish.rs call, after publish.rs's own duplicate inline check is deleted.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-5",
+      "criterion": "Given an npm package whose publishConfig.registry is a non-https URL (e.g. http://), prepared_registry_binding rejects it via registry_endpoint.rs::canonical_registry_url's scheme check with GraphError::UnsafeRegistryBinding, checked before host matching, even if the host would otherwise be approved; a matching-host but non-https override is never reachable as UntrustedNpmRegistry.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-6",
+      "criterion": "Given a scoped (@scope/name) npm package configured to publish with no explicit --access flag and no publishConfig.access set, release/derive.rs's derived plan defaults that package's PublishTarget::Npm access to public, using a shared npm_default_access(name, explicit) -> Option<NpmAccess> helper in registry_argv.rs that both release/derive.rs and commands/registry_argv.rs::npm_publish_flags call for the same input; the defaulted access value is part of the operation's target_fingerprint. The same default applies when the package is dispatched as a PlatformPublish prerequisite (AC-1b)."
+    },
+    {
+      "id": "AC-7",
+      "criterion": "For a GitHub forge release, release/derive.rs's plan derivation sets a new ForgeReleaseOperation.notes: ReleaseNotes field (ReleaseNotes::Section(String) | ReleaseNotes::Generated{reason: NotesFallback}) in commands/release/provider/mod.rs, computed via a shared changelog-notes function performing the same CHANGELOG.md section extraction as commands/publish.rs::resolve_changelog_section; the release effect passes --notes-file when notes is Section and falls back to gh release's --generate-notes when notes is Generated. notes is derived text and is excluded from the release intent digest -- it does not affect rerun/adoption identity."
+    },
+    {
+      "id": "AC-8",
+      "criterion": "Given a package with a configured changelog path where the file is missing, has no matching version heading, or the matched section is empty, release/derive.rs's plan derivation sets notes to ReleaseNotes::Generated{reason} with reason one of NotesFallback::FileMissing, ::SectionMissing, or ::SectionEmpty respectively, rather than failing the plan; the release effect falls back to gh release's --generate-notes and prints `notes: using generated notes (<reason>)` to stderr naming the package.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-9",
+      "criterion": "Given an unreadable (not merely missing) changelog file, release/derive.rs's plan derivation sets notes to ReleaseNotes::Generated{reason: NotesFallback::Unreadable} rather than aborting the plan; the release effect falls back to --generate-notes and prints the same stderr notice pattern as AC-8 with a reason distinguishing this read-failure case.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-10",
+      "criterion": "release_decision.rs::derive_selected_release_decision accepts package selectors as exact ecosystem/name strings only (no bare-name or prefix matching); a name that resolves in the workspace but does not appear in the derived plan fails with GraphError::ReleaseSelectionInvalid{reason: ReleaseSelectionInvalidReason::NotARelease} when the package is not a release candidate at all, or ::NoDispatchableTarget when it is a release candidate but has nothing to dispatch -- replacing the current single NotInPlan variant with this two-way distinction, matching commands/publish.rs's existing NotInPlanReason split."
+    },
+    {
+      "id": "AC-11",
+      "criterion": "Given a package configured with a PublishTarget where PublishTarget::is_implemented() returns false, release/derive.rs's plan derivation fails with GraphError::PublishTargetNotImplemented{package, target} and produces no plan -- it does not degrade to a Warning diagnostic and skip that target.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-12",
+      "criterion": "Given a fixed set of packages selected by release_decision.rs's ReleaseInclusionReason::UnreleasedVersion check, release/derive.rs's plan derivation produces exactly one plan entry per selected package (excluding platform prerequisites folded per AC-1/AC-1b) -- it never adds a package absent from that selection or silently drops a selected package from the derived plan."
+    },
+    {
+      "id": "AC-13",
+      "criterion": "Re-running release execute over an already-published release, where every selected operation's target state already matches (e.g. the tag and registry version already exist), resolves each operation's preflight to AlreadySatisfied and re-dispatches none of them; the receipt records AlreadySatisfied for every operation in the plan, not only a subset.",
+      "is_error_case": true
+    }
+  ],
+  "linked_requirement": "REQ-DX-V1",
+  "reasoning": "Grounded against origin/fix/release-run-simplify@9be31095: ReleaseSelectionInvalidReason (error.rs:678-685) confirmed to currently have only {Duplicate, NotInPlan, DuplicateRegistryTarget} -- PlatformDependencyNotSelected, NotARelease, NoDispatchableTarget are new variants. ForgeReleaseOperation (provider/mod.rs:66-70) confirmed to have only {tag, prerelease}, no notes field. prepared_registry_binding (binding.rs:42) and canonical_registry_url (registry_endpoint.rs:63) confirmed as the existing single-validator target, with canonical_registry_url's scheme check running before host-match. crate::toposort (toposort.rs: toposort_impl, toposort_with_edge_filter) confirmed to exist as the natural shared-filter target. registry_argv.rs's npm_publish_flags/npm_publish_argv confirmed to exist with inline access handling but no npm_default_access helper -- this spec adds it. PublishTarget::is_implemented (ecosystem.rs:197) and Ecosystem::is_implemented (ecosystem.rs:81, matches Cargo|Npm|Pypi) confirmed to exist already; AC-11 requires derive.rs to consult it and fail hard rather than degrade. Added AC-1b to make the release-already-published exemption in AC-1's rationale testable rather than left implicit.",
+  "spec_file_path": "docs/specs/SPEC-DX-CORRECTNESS-PARITY.json",
+  "status": "design"
+}

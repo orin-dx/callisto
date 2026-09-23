@@ -1,0 +1,43 @@
+{
+  "id": "SPEC-DX-CLI-SURFACE",
+  "purpose": "Defines callisto-cli's discoverable command inventory (`--help` listing), the hiding of plumbing subcommands consumers still call, and TTY-aware colour/table and schema-version rendering, grounding REQ-DX-V1's '8 visible commands, no jargon, script-safe output' outcomes.",
+  "scope": "`callisto --help` output (command count, one-line help text, disabled `help` subcommand); which subcommands remain callable but hidden from help listings; the single colour/table on-off decision applied by `anstream::AutoStream` across all commands' text-format output; and the ban on schema-version strings in `--format text` output. Depends on SPEC-DX-RELEASE-COMMAND for the `release` command's existence and SPEC-DX-STATUS-ADD for `validate`'s removal (both affect what this spec's `--help` count and hidden-subcommand list enumerate).",
+  "linked_requirement": "REQ-DX-V1",
+  "non_goals": [
+    "Whether `release`, `status`, or `add` perform their described operations correctly -- SPEC-DX-RELEASE-COMMAND and SPEC-DX-STATUS-ADD.",
+    "`validate`'s removal itself -- SPEC-DX-STATUS-ADD.",
+    "Non-GitHub forge support.",
+    "`release-pr`'s own decide/verify/commit-plan contract -- SPEC-RELEASE-PR-DECISION-014."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-01",
+      "criterion": "`callisto --help` lists exactly 8 commands -- init, add, status, version, release, pre, snapshot, completions -- each with exactly one plain-language help line. The `release` command's help line contains no internal jargon (e.g. it reads as a plain description of publishing packages with unreleased changes, not 'Create, inspect, or execute durable release intents'); no listed command's help line contains 'durable release intent', 'forge snapshot', 'coordinator revision', 'schema v', or comparable internal terminology."
+    },
+    {
+      "id": "AC-02",
+      "criterion": "Clap's automatic `help` subcommand is disabled (`Command::disable_help_subcommand(true)` or equivalent): `callisto help` and `callisto help <command>` fail to parse as unrecognized subcommands. `-h`/`--help` on the root command and on every subcommand still work.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-03",
+      "criterion": "`matrix`, `schema`, `compose-pr-body`, `release plan`, `release inspect`, `release artifact-manifest`, `release execute`, `release-pr decide`, `release-pr verify`, and `release-pr commit-plan` remain fully callable but do not appear in `callisto --help`'s or `callisto release --help`'s listed subcommands."
+    },
+    {
+      "id": "AC-04",
+      "criterion": "`callisto status` and `callisto release --dry-run` text-format output renders with ANSI colour (via `anstream::AutoStream` given an explicit `ColorChoice`) and box-drawing table formatting whenever: `NO_COLOR` is unset or empty, and either `CLICOLOR_FORCE` or `FORCE_COLOR` is set (`ColorChoice::Always`), or neither is set and stdout is a TTY (anstream's own auto-detection). Colour and table rendering are one decision, never applied independently."
+    },
+    {
+      "id": "AC-05",
+      "criterion": "Every command's text-format output contains no ANSI escape codes and no box-drawing table characters whenever `NO_COLOR` is set to any non-empty value, regardless of `CLICOLOR_FORCE`/`FORCE_COLOR` (`ColorChoice::Never`), or whenever `NO_COLOR` is unset, neither `CLICOLOR_FORCE` nor `FORCE_COLOR` is set, and stdout is not a TTY.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-06",
+      "criterion": "No command's default (`--format text`) output matches the regex `schema v\\d+`; such version metadata appears only under `--format json`, except `callisto schema`'s own output, which is exempt from this ban in both formats."
+    }
+  ],
+  "reasoning": "Grounded against origin/fix/release-run-simplify (HEAD 9be31095): crates/callisto-cli/src/cli.rs's doc comments give the exact current one-line help text for each of the 8 retained commands, confirming `release`'s current text ('Create, inspect, or execute durable release intents.') contains the banned phrase 'durable release intents' and must be rewritten, motivating AC-01's explicit callout; grep for anstream across crates/ found only the Cargo.toml dependency declaration (`anstream = \"0.6\"`) and no call site, confirming AC-04/AC-05 describe target behavior to be implemented, not a correction of existing behavior -- consistent with anstream::AutoStream's documented FORCE_COLOR blind spot cited in GATE2-FIXES.md, which is why ColorChoice is computed explicitly rather than left to AutoStream's own environment probing. AC-06's regex and callisto-schema exemption are the owner's stated defaults (GATE2-FIXES.md), recorded as such.",
+  "spec_file_path": "docs/specs/SPEC-DX-CLI-SURFACE.json",
+  "status": "design"
+}
