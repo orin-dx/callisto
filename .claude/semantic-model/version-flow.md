@@ -96,4 +96,4 @@ on disk is correct but may not be staged in git. Pushing it to modified_paths en
 - `WorkspaceCargoResolver::workspace_version()` — cargo.rs, returns `Result<Option<Version>, ManifestError>`
 - Three RED tests in apply.rs test module — see `.claude/plans/ACTIVE.md` for names
 
-See `.claude/specs/track-b-idempotent-apply.json` for the full testable acceptance criteria.
+See `docs/specs/track-b-idempotent-apply.json` for the full testable acceptance criteria.

@@ -4,7 +4,7 @@
   "id": "PLAN-RELEASE-PR-API-COMMIT-015",
   "status": "complete",
   "goal": "Replace the release-PR executor's local `git push` with a forge-commit-API sequence (commit-plan, deterministic staging branch, tree-equality check, REST ref move) so the built-in GITHUB_TOKEN never needs `.github/workflows/*` write permission on any ref, removing the SHA-suffixed-replacement-branch fallback and the PR churn it caused.",
-  "specs": [{"id": "SPEC-RELEASE-PR-DECISION-014", "file": ".claude/specs/SPEC-RELEASE-PR-DECISION-014.json"}],
+  "specs": [{"id": "SPEC-RELEASE-PR-DECISION-014", "file": "docs/specs/SPEC-RELEASE-PR-DECISION-014.json"}],
   "steps": [
     {
       "id": "T00",
@@ -58,7 +58,7 @@
       "status": "complete",
       "depends_on": ["T01", "T02", "T03", "T04"],
       "description": "Update SPEC-RELEASE-PR-DECISION-014.json and SPEC-RELEASE-INTERFACES-013.json to describe the forge-commit-API architecture and drop Supersede language; add this plan; update docs/06-publishing.md and ARCHITECTURE.md to remove SHA-suffixed-fallback/git-push language; add changesets for callisto-model, callisto-cli, and callisto-vcs.",
-      "verify": ["python3 -m json.tool .claude/specs/SPEC-RELEASE-PR-DECISION-014.json", "python3 -m json.tool .claude/specs/SPEC-RELEASE-INTERFACES-013.json"],
+      "verify": ["python3 -m json.tool docs/specs/SPEC-RELEASE-PR-DECISION-014.json", "python3 -m json.tool docs/specs/SPEC-RELEASE-INTERFACES-013.json"],
       "commit": "docs(release-pr): document forge-commit-api release-pr executor (a1f1ebcc)"
     }
   ],

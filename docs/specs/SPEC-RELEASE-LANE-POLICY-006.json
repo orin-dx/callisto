@@ -1,6 +1,7 @@
 {
   "id": "SPEC-RELEASE-LANE-POLICY-006",
-  "status": "proposed",
+  "status": "abandoned",
+  "revision_note": "Abandoned: the release-lane policy and its tests were never built and no later spec replaces it.",
   "owner_track": "release-security",
   "last_verified_revision": "931a5b2eb79b1a0fa85cf04c9df62750e59a6bcc",
   "depends_on": [],

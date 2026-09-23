@@ -1,6 +1,6 @@
 {
   "artifact_type": "plan@1",
-  "spec_file_path": ".claude/specs/SPEC-MANIFEST-PERSIST-001.json",
+  "spec_file_path": "docs/specs/SPEC-MANIFEST-PERSIST-001.json",
   "linked_spec": "SPEC-MANIFEST-PERSIST-001",
   "red_phase_waived_tasks": [
     "T01b",

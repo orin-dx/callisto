@@ -1,6 +1,8 @@
 {
   "id": "SPEC-RELEASE-PLAN-DURABILITY-001C",
-  "status": "proposed",
+  "status": "superseded",
+  "superseded_by": "SPEC-RELEASE-LIFECYCLE-HARDENING",
+  "revision_note": "Superseded: the envelope_digest plan/execute topology was never built; the plan/build/execute release workflow is specified by SPEC-RELEASE-LIFECYCLE-HARDENING.",
   "owner_track": "release-security",
   "last_verified_revision": "39b250aed4ddd6c5cbf10c3b53c14186e7256246",
   "depends_on": ["SPEC-RELEASE-PLAN-DURABILITY-001A", "SPEC-RELEASE-PLAN-DURABILITY-001B"],

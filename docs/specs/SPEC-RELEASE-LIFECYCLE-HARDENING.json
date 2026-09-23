@@ -8,7 +8,6 @@
     "SPEC-RELEASE-INTENT-MODEL-009",
     "SPEC-RELEASE-TRUST-010",
     "SPEC-RELEASE-CAPABILITY-011",
-    "SPEC-RELEASE-EXECUTION-012",
     "SPEC-ARCH-RELEASE-ERROR-TAXONOMY"
   ],
   "purpose": "Describe, as testable criteria, the release-lifecycle contract as implemented on branch codex/release-recovery (PR 101): run envelope, provider observation and evidence, the transition table, the provider port, protocol-level registry, tag and forge observation, retry and deadlines, validation before effects, canonical destinations, redaction, the workflow adapter policy, and the verification tiers that keep them honest.",

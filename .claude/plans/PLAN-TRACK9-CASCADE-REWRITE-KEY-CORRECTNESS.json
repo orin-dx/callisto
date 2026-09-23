@@ -3,7 +3,7 @@
   "architecture": "Thread identity: &'a IdentityIndex through CascadeInput and an owned identity: IdentityIndex through Workspace (populated once in Workspace::load from graph.identity()), following the exact precedent of Track 1's tags: &TagIndex field. Both fields are added as scaffolding first, with mechanical fixups at every existing struct-literal construction site, then solve_cascade's single RewriteKey.name expression is changed to look up input.identity.native_name(&edge.to, eco) with a PackageId::name() fallback when no cross-ecosystem registration exists. Verification proceeds bottom-up: a dual-identity test and a fallback/regression test through the real run_cascade call path, a full-suite regression pass, and a real on-disk end-to-end apply_version_plan test.",
   "tech_stack": ["Rust", "cargo", "callisto-graph crate", "callisto-model crate"],
   "linked_requirement": "REQ-TRACK9-CASCADE-REWRITE-KEY-CORRECTNESS",
-  "spec_file_path": ".claude/specs/SPEC-TRACK9-CASCADE-REWRITE-KEY-CORRECTNESS.json",
+  "spec_file_path": "docs/specs/SPEC-TRACK9-CASCADE-REWRITE-KEY-CORRECTNESS.json",
   "spec_hash": "sha256:d4575f86242b4a8d0b1ffe6529e42a64d171b929c8d776153fbff1c7f4101199",
   "tasks": [
     {

@@ -1,113 +1,58 @@
-# Callisto AI Agent Guidelines (`AGENTS.md`)
+# Agent guide
 
-Architecture, engineering invariants, and task-runner workflows for AI agents (Antigravity, Claude, Cursor, Copilot, Codex) working in this repo.
+Rules for AI agents working in this repo.
 
----
+## Crates
 
-## 1. Repository Architecture & Crate Layers
+| Crate | License | Depends on |
+| --- | --- | --- |
+| callisto-model | MIT | none |
+| callisto-format | MIT | model |
+| callisto-vcs | MIT | model |
+| callisto-manifests | FSL-1.1-MIT | model |
+| callisto-conventional | FSL-1.1-MIT | model |
+| callisto-changelog | FSL-1.1-MIT | model |
+| callisto-graph | FSL-1.1-MIT | model, vcs, manifests, format, changelog, conventional |
+| callisto-cli | FSL-1.1-MIT | all of the above |
+| callisto-moon | FSL-1.1-MIT | model, graph |
+| callisto-fixtures | FSL-1.1-MIT | model (dev-only) |
 
-Callisto is a fast, polyglot monorepo versioning and release management engine written in Rust. It is divided into 10 workspace crates structured in strict architectural layers:
+- MIT crates must never depend on FSL crates.
+- Check with `grep -H "^license" crates/*/Cargo.toml` after adding or moving a crate.
 
-```text
-┌────────────────────────────────────────────────────────────────────────┐
-│                        CALLISTO CRATE LAYERS                           │
-├───────────────────────────────────┬────────────────────────────────────┤
-│ LAYER & CRATE                     │ LICENSE & PURPOSE                  │
-├───────────────────────────────────┼────────────────────────────────────┤
-│ Layer 1: callisto-model           │ MIT                                │
-│          callisto-format          │ Domain primitives, SemVer grammars │
-├───────────────────────────────────┼────────────────────────────────────┤
-│ Layer 1.5: callisto-vcs           │ MIT                                │
-│                                   │ Native Git integration             │
-├───────────────────────────────────┼────────────────────────────────────┤
-│ Layer 2: callisto-manifests       │ FSL-1.1-MIT                        │
-│          callisto-conventional    │ AST manifest editors, changeset    │
-│          callisto-changelog       │ markdown parser/writer             │
-├───────────────────────────────────┼────────────────────────────────────┤
-│ Layer 3: callisto-graph           │ FSL-1.1-MIT                        │
-│                                   │ Dependency DAG solver & cascades   │
-├───────────────────────────────────┼────────────────────────────────────┤
-│ Layer 4: callisto-cli             │ FSL-1.1-MIT                        │
-│          callisto-moon            │ Standalone CLI & Moon WASM plugin  │
-├───────────────────────────────────┼────────────────────────────────────┤
-│ Dev:     callisto-fixtures        │ FSL-1.1-MIT — dev-only byte-compat │
-│                                   │ test corpus                        │
-└───────────────────────────────────┴────────────────────────────────────┘
-```
+## Commands
 
-> **CRITICAL RULE (Layer Licensing Boundaries)**: MIT foundation crates (`callisto-model`, `callisto-format`, `callisto-vcs`) MUST NOT depend on FSL product crates. This table reflects each crate's actual `Cargo.toml` `license` field — reverify with `grep -H "^license" crates/*/Cargo.toml` if crates are added or moved.
+- Full pipeline: `just ci` (includes the 90% coverage gate). `just test`, `just lint`, `just fmt`.
+- Scoped iteration: one `cargo test -p <crate>` or `cargo clippy -p <crate> --all-targets --all-features -- -D warnings` at a time.
+  - Not `moon run <project>:test`: its per-project fan-out serializes on `target/`'s build lock.
+  - Never run cargo builds in parallel.
+- Changesets: `callisto add --package <crate>:<bump> --summary "..."` (non-interactive).
+- Never `git checkout -- Cargo.lock` as cleanup. A lockfile diff means investigate, not discard.
 
----
+## Invariants
 
-## 2. Primary Task Runners & Verification Pipelines
+1. Safe Rust only: `unsafe_code = "forbid"`.
+2. Manifest edits preserve format: `toml_edit` for TOML; JSON keeps key order and fingerprinted indentation. No regex or line edits.
+3. File writes go through `callisto_model::atomic::atomic_write`.
+4. User-facing errors derive `miette::Diagnostic` with a code and a fix.
+5. No emojis in docs or code.
 
-Always use `just` or `moon` task runners for building, testing, linting, and formatting. Do not invent manual cargo command combinations when task runners exist.
+## Fixing bugs
 
-### Primary Command Reference
+- Grep for structurally identical code (same algorithm, other file, ecosystem or mode). A sibling with the same defect is in scope now.
+- N copies of one logic: unify to one implementation rather than patching each.
+- A deliberately deferred sibling gets an explicit record: changeset note, tracked follow-up or code comment.
+- A new shared helper migrates every call site in the same change, or the rest are tracked.
 
-| Action                            | Primary Task Runner Command | Moon Engine Command                                                  |
-| :-------------------------------- | :-------------------------- | :------------------------------------------------------------------- |
-| **Run Full Verification CI**      | `just ci`                   | `moon run :format-check && moon run :lint && moon run :test`         |
-| **Run Test Suite**                | `just test`                 | `moon run :test`                                                     |
-| **Check Clippy Lints**            | `just lint`                 | `moon run :lint`                                                     |
-| **Check Formatting**              | `just fmt-check`            | `moon run :format-check`                                             |
-| **Format Code**                   | `just fmt`                  | `moon run :format`                                                   |
-| **Verify WASM Cross-Compilation** | `just wasm-check`           | `cargo check -p callisto-moon --target wasm32-wasip1 --features pdk` |
+## Specs and plans
 
----
+- Specs (`spec@1`) live in `docs/specs/`; plans (`plan@1`) in `docs/projects/`.
+- Delete a plan once its work ships. Keep a spec while it describes current behavior.
+- A requirement the owner didn't state is a judgment call. Get owner confirmation before it gates anything.
 
-## 3. Strict Engineering Invariants
+## Writing
 
-Agents modifying Callisto code MUST enforce the following 6 engineering invariants:
-
-### 1. Safe Rust Only (`unsafe_code = "forbid"`)
-- `unsafe` code blocks are strictly forbidden across all 10 workspace crates.
-
-### 2. Concrete Syntax Tree (CST) Format Preservation
-- NEVER use regular expressions or line-based string replace for manifest editing (`Cargo.toml`, `package.json`, `pyproject.toml`).
-- **TOML Editing**: Must use `toml_edit` to manipulate CST elements, preserving user comments, key order, and whitespace.
-- **JSON Editing**: Must fingerprint indentation style (`IndentStyle::Tabs` vs `IndentStyle::Spaces(N)`) and preserve key insertion order using `serde_json`.
-
-### 3. Crash-Safe Atomic Disk Writes
-- All manifest and configuration edits MUST go through `callisto_model::atomic::atomic_write`. (`callisto_manifests::atomic::atomic_write` remains a backward-compatible re-export of the same function.)
-- Writes create a `NamedTempFile` in the target file's parent directory, flush data to disk, and atomically replace the target file via `fs::rename`.
-
-### 4. Rich Diagnostic Cards (`miette`)
-- User-facing CLI errors MUST derive `miette::Diagnostic` with explicit error codes, clear error cards, and actionable remediation suggestions.
-
-### 5. No Emoji Directive in Documentation & Code
-- Documentation (`README.md`, `CONTRIBUTING.md`, `ARCHITECTURE.md`) and code comments MUST remain clean, technical, scannable, and devoid of emojis or AI bot filler phrases.
-
-### 6. Sibling-Gap Discipline (Unify, Don't Patch)
-- A fix is not done when the reported instance is patched. Before closing any bug fix or duplication fix: grep for structurally identical code elsewhere in the workspace (same algorithm, different file/ecosystem/mode — not just the same literal string).
-- If N copies of the same logic exist, prefer unifying into one implementation over patching each copy in place. Patching N copies leaves N places for the next bug to hide; unifying to N=1 removes the class of bug, not just the instance.
-- If a sibling instance is found but deliberately deferred, record it explicitly (changeset note, tracked follow-up, or code comment) — silent deferral is how the same pattern gets "found" again in a future audit and counted as new.
-- When a new shared helper/trait/abstraction is added specifically to replace duplicated logic, migrate every existing call site in the same change, or explicitly track the ones left un-migrated. A helper nobody is required to call, or an architecture recommendation nobody is required to act on, is not a fix.
-
----
-
-## 4. Changeset CLI Execution Modes
-
-When generating changesets using Callisto CLI (`callisto add`):
-
-- **Interactive Human Mode (Terminal TTY)**: Launches the 5-step interactive `dialoguer` wizard (Package Selection -> Major Bump Selection -> Minor Bump Selection -> Summary Input -> Confirmation Preview).
-- **Non-Interactive Agent/CI Mode**: Bypasses the wizard completely using explicit CLI flags:
-  ```bash
-  callisto add --package callisto-cli:minor --summary "Add feature description"
-  ```
-
----
-
-## 5. Preferred Modern CLI Tools Directive
-
-Agents executing shell operations or terminal commands MUST prioritize modern CLI tools over legacy POSIX/Unix shell builtins:
-
-- **Code & Pattern Search**: `ripgrep` (`rg`) over `grep`
-- **File Discovery**: `fd` over `find`
-- **Interactive Filtering**: `fzf` for selection menus
-- **File & Code Viewing**: `bat` over `cat`
-- **Directory Navigation**: `zoxide` (`z`) over `cd`
-- **Diff Inspection**: `delta` over `diff` / `git diff`
-- **Directory Formatting**: `eza` over `ls`
-- **JSON Processing**: `jq` for stream & file transformations
-- **GitHub Workflow & API**: `gh` CLI for GitHub release, PR, and repo management
+- Succinct: short sentences, bullets, tables. No backstory, hedging or filler.
+- Never hard-wrap Markdown or PR bodies: one line per paragraph.
+- Code comments: one short line, only for a non-obvious why.
+- No claude.ai session links in commits, PRs or files.

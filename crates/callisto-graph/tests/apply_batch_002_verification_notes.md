@@ -1,6 +1,6 @@
 # SPEC-APPLY-BATCH-002 post-T07 verification notes
 
-Recorded evidence for AC-008, AC-009, AC-013, AC-017 (see .claude/specs/SPEC-APPLY-BATCH-002.json), confirmed after T07's batching restructuring landed.
+Recorded evidence for AC-008, AC-009, AC-013, AC-017 (see docs/specs/SPEC-APPLY-BATCH-002.json), confirmed after T07's batching restructuring landed.
 
 ## AC-009 / AC-008: full regression suite
 

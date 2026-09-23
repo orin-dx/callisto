@@ -10,7 +10,7 @@
     "jq",
     "GitHub Actions"
   ],
-  "spec_file_path": ".claude/specs/SPEC-005-release-entry-is-prerelease.json",
+  "spec_file_path": "docs/specs/SPEC-005-release-entry-is-prerelease.json",
   "spec_hash": "sha256:5217011e7d8615e8a49f8b7cb2aed232369e97e19f32d52fd0d5edf5eef6361b",
   "linked_requirement": "REQ-008",
   "linked_spec": "SPEC-005",

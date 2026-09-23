@@ -1,7 +1,7 @@
 {
   "id": "PLAN-006",
   "spec_id": "SPEC-006",
-  "spec_file_path": "/Users/gabe/Projects/callisto/.claude/specs/SPEC-006-native-artifact-placement.json",
+  "spec_file_path": "/Users/gabe/Projects/callisto/docs/specs/SPEC-006-native-artifact-placement.json",
   "spec_hash": "sha256:39b12cfda98b61dc7cc1c2dec4a4e2e48c1739df868367c53b8753de7e2578be",
   "linked_requirement": "REQ-001",
   "batches": [
@@ -22,7 +22,7 @@
     },
     {
       "id": "batch-docs",
-      "description": "Markdown doc corrections in ARCHITECTURE.md and .claude/specs/callisto-matrix.md, verified by direct grep against exact strings (no test runner involved).",
+      "description": "Markdown doc corrections in ARCHITECTURE.md and docs/specs/callisto-matrix.md, verified by direct grep against exact strings (no test runner involved).",
       "task_ids": [
         "DOC-1",
         "DOC-2"
@@ -161,17 +161,17 @@
     {
       "id": "DOC-2",
       "batch_id": "batch-docs",
-      "description": "Update .claude/specs/callisto-matrix.md \u00a76.2's standalone cross-job reference snippet to pin gh run download to $GITHUB_RUN_ID and mkdir -p \"$DIR\" first, and add a note that callisto-action users don't need to write this themselves.",
+      "description": "Update docs/specs/callisto-matrix.md \u00a76.2's standalone cross-job reference snippet to pin gh run download to $GITHUB_RUN_ID and mkdir -p \"$DIR\" first, and add a note that callisto-action users don't need to write this themselves.",
       "covers_criteria": [
         "AC-011"
       ],
       "file_paths": [
-        ".claude/specs/callisto-matrix.md"
+        "docs/specs/callisto-matrix.md"
       ],
       "failing_test": {
         "description": "Grep the current \u00a76.2 snippet and surrounding prose for the pinned/normalized form and the cross-reference note, none of which exist yet."
       },
-      "test_command": "grep -c 'gh run download \"\\$GITHUB_RUN_ID\" --name \"\\$ARTIFACT\" --dir \"\\$DIR\"' /Users/gabe/Projects/callisto/.claude/specs/callisto-matrix.md; grep -c 'mkdir -p \"\\$DIR\"' /Users/gabe/Projects/callisto/.claude/specs/callisto-matrix.md; grep -c 'callisto-action performs equivalent placement automatically' /Users/gabe/Projects/callisto/.claude/specs/callisto-matrix.md",
+      "test_command": "grep -c 'gh run download \"\\$GITHUB_RUN_ID\" --name \"\\$ARTIFACT\" --dir \"\\$DIR\"' /Users/gabe/Projects/callisto/docs/specs/callisto-matrix.md; grep -c 'mkdir -p \"\\$DIR\"' /Users/gabe/Projects/callisto/docs/specs/callisto-matrix.md; grep -c 'callisto-action performs equivalent placement automatically' /Users/gabe/Projects/callisto/docs/specs/callisto-matrix.md",
       "expected_failure_output": "0\n0\n0\n(none of the three strings are present yet; the current snippet at lines 309-318 uses an unpinned `gh run download --name \"$ARTIFACT\" --dir \"$DIR\"` with no mkdir -p and no cross-reference note)",
       "implementation": {
         "description": "Replace the fenced yaml block at lines 309-318 (under '### 6.2 Artifact routing -- placement before publish') with the version below, and append one sentence of prose immediately after the closing fence.",
@@ -180,7 +180,7 @@
           "Immediately after the closing ``` fence, add a new paragraph: 'Consumers using callisto-action for publishing do not need to write this snippet themselves -- callisto-action performs equivalent placement automatically, in-step, once nativeMatrix is non-empty and publish is enabled.'"
         ]
       },
-      "verify_command": "grep -c 'gh run download \"\\$GITHUB_RUN_ID\" --name \"\\$ARTIFACT\" --dir \"\\$DIR\"' /Users/gabe/Projects/callisto/.claude/specs/callisto-matrix.md; grep -c 'mkdir -p \"\\$DIR\"' /Users/gabe/Projects/callisto/.claude/specs/callisto-matrix.md; grep -c 'callisto-action performs equivalent placement automatically' /Users/gabe/Projects/callisto/.claude/specs/callisto-matrix.md; awk '/mkdir -p \"\\$DIR\"/{m=NR} /gh run download \"\\$GITHUB_RUN_ID\"/{g=NR} END{print (m>0 && g>0 && m<g) ? \"true\" : \"false\"}' /Users/gabe/Projects/callisto/.claude/specs/callisto-matrix.md",
+      "verify_command": "grep -c 'gh run download \"\\$GITHUB_RUN_ID\" --name \"\\$ARTIFACT\" --dir \"\\$DIR\"' /Users/gabe/Projects/callisto/docs/specs/callisto-matrix.md; grep -c 'mkdir -p \"\\$DIR\"' /Users/gabe/Projects/callisto/docs/specs/callisto-matrix.md; grep -c 'callisto-action performs equivalent placement automatically' /Users/gabe/Projects/callisto/docs/specs/callisto-matrix.md; awk '/mkdir -p \"\\$DIR\"/{m=NR} /gh run download \"\\$GITHUB_RUN_ID\"/{g=NR} END{print (m>0 && g>0 && m<g) ? \"true\" : \"false\"}' /Users/gabe/Projects/callisto/docs/specs/callisto-matrix.md",
       "expected_pass_output": "1\n1\n1\ntrue",
       "commit_message": "docs(matrix): pin \u00a76.2's cross-job placement snippet to the current run and note callisto-action's automatic handling",
       "notes": []

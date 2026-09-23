@@ -4,7 +4,7 @@
   "id": "PLAN-RELEASE-PR-DECISION-014",
   "status": "draft",
   "goal": "Implement typed Callisto-owned release-PR decisions and make the GitHub composite action a verified executor.",
-  "specs": [{"id": "SPEC-RELEASE-PR-DECISION-014", "file": ".claude/specs/SPEC-RELEASE-PR-DECISION-014.json", "sha256": "dab8bf395b38414581d73e73ae89c470c14999a225c084d93abd76789afcdf42"}],
+  "specs": [{"id": "SPEC-RELEASE-PR-DECISION-014", "file": "docs/specs/SPEC-RELEASE-PR-DECISION-014.json", "sha256": "dab8bf395b38414581d73e73ae89c470c14999a225c084d93abd76789afcdf42"}],
   "steps": [
     {"id": "T01", "kind": "model", "description": "Add strict versioned release-PR snapshot/config/decision types and pure deterministic decision derivation in callisto-model.", "verify": ["moon run callisto-model:test", "just fmt-check", "just lint"], "commit": "feat(model): define release PR decisions"},
     {"id": "T02", "kind": "cli", "depends_on": ["T01"], "description": "Add read-only `callisto release-pr decide`, loading workspace status and rendering its typed decision as JSON.", "verify": ["moon run callisto-cli:test", "just fmt-check", "just lint"], "commit": "feat(cli): decide managed release PR operations"},

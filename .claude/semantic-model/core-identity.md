@@ -72,7 +72,7 @@ Fix 1 — Specificity ordering in `[[package]]` rule application (`walk.rs`): Wh
 
 Fix 2 — Cross-ecosystem diagnostic (`walk.rs`, after packages loop): A `Bare` PackageId in `cfg.packages` that matches packages in >1 ecosystem emits one diagnostic. `[[package-set]]` rules are exempt — multi-ecosystem is their explicit purpose.
 
-See `.claude/specs/track-e-specificity.json` for the full testable acceptance criteria.
+See `docs/specs/track-e-specificity.json` for the full testable acceptance criteria.
 
 ## npm platform packages -- Case E (`walk.rs::platform_owners`)
 

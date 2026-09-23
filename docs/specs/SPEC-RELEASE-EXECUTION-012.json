@@ -1,6 +1,7 @@
 {
   "id": "SPEC-RELEASE-EXECUTION-012",
-  "status": "draft",
+  "status": "superseded",
+  "superseded_by": "SPEC-RELEASE-LIFECYCLE-HARDENING",
   "owner_track": "release-security",
   "last_verified_revision": "289001ec",
   "depends_on": [
@@ -72,5 +73,5 @@
     "The durable model may hold RegistryBindingId and ArtifactDigest, while endpoint parsing/canonicalization and provider clients remain in graph/effect-layer crates so Layer 1 does not gain network/config dependencies.",
     "The whole-state atomic rewrite is intentionally preferred to an append-only log at workspace-release scale: interruption readers always receive a complete parseable file."
   ],
-  "revision_note": "Split from umbrella SPEC-RELEASE-EXECUTION-FOUNDATION-007 after adversarial review established that prepared authority, recovery evidence, and binary artifacts need explicit contracts before real effects are introduced."
+  "revision_note": "Superseded: the executor was built and is re-specified as implemented by SPEC-RELEASE-LIFECYCLE-HARDENING; AC-003's no-retry, fresh-attempt-only recovery contradicts its Recovery runs and bounded observation retry."
 }
