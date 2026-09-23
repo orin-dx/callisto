@@ -1005,7 +1005,7 @@ fn a_lagging_registry_at_confirmation_still_yields_a_receipt() {
 }
 
 /// Once confirmation recorded exact evidence, no later registry read can red
-/// the release: the receipt is built from the persisted evidence.
+/// the release: the receipt is built from the evidence recorded in memory.
 #[test]
 fn a_registry_read_failing_after_confirmation_cannot_cost_the_receipt() {
     let e = RigEnv::single();
