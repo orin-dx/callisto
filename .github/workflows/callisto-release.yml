@@ -40,7 +40,7 @@ jobs:
           source: local
 
       - name: Install just
-        uses: taiki-e/install-action@c3ec0de9ae7f1019cea21aa96aa0a895b9552063 # v2
+        uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab # v2
         with:
           tool: just@1.58.0
 
@@ -51,7 +51,7 @@ jobs:
         run: just lint
 
       - name: Install release verification tools
-        uses: taiki-e/install-action@c3ec0de9ae7f1019cea21aa96aa0a895b9552063 # v2
+        uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab # v2
         with:
           tool: cargo-nextest,ripgrep
 
@@ -62,7 +62,7 @@ jobs:
         run: just wasm-check
 
       - name: Install cargo-deny
-        uses: taiki-e/install-action@c3ec0de9ae7f1019cea21aa96aa0a895b9552063 # v2
+        uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab # v2
         with:
           tool: cargo-deny
 
@@ -84,11 +84,11 @@ jobs:
         with:
           persist-credentials: false
       - name: Install ripgrep
-        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2
+        uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab # v2
         with:
           tool: ripgrep
       - name: Install just
-        uses: taiki-e/install-action@c3ec0de9ae7f1019cea21aa96aa0a895b9552063 # v2
+        uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab # v2
         with:
           tool: just@1.58.0
       - name: Verify release workflow contracts
