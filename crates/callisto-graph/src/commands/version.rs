@@ -1526,6 +1526,12 @@ mod tests {
             "[package]\nname = \"pkg-a\"\nversion = \"1.0.0\"\n",
         )
         .unwrap();
+        // release-trigger = auto: this test's FixedInference must actually run.
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[package]]\nmatch = \"pkg-a\"\nrelease-trigger = \"auto\"\n",
+        )
+        .unwrap();
         commit_all(root, "add package");
 
         let sha_recent = callisto_model::CommitSha::parse(&"a".repeat(40)).unwrap();
@@ -1584,6 +1590,12 @@ mod tests {
         std::fs::write(
             root.join("pkg-a/Cargo.toml"),
             "[package]\nname = \"pkg-a\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        // release-trigger = auto: this test's FixedInference must actually run.
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[package]]\nmatch = \"pkg-a\"\nrelease-trigger = \"auto\"\n",
         )
         .unwrap();
         commit_all(root, "add package");
@@ -1713,6 +1725,13 @@ mod tests {
         std::fs::write(
             root.join(".changeset/pkg-a-patch.md"),
             "---\n\"pkg-a\": patch\n---\n\nSmall fix.\n",
+        )
+        .unwrap();
+        // release-trigger = auto: this test's FixedInference must actually run
+        // alongside the pending changeset.
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[package]]\nmatch = \"pkg-a\"\nrelease-trigger = \"auto\"\n",
         )
         .unwrap();
         commit_all(root, "add package and changeset");
