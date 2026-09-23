@@ -381,6 +381,7 @@ impl RegistryEcosystem for NpmRegistry {
             let argv = registry_argv::npm_publish_directory_argv(
                 context.root(),
                 &operation.package_dir,
+                &operation.package_name,
                 operation.npm_tag.as_deref(),
                 operation.npm_access,
                 operation.registry.endpoint.as_deref(),

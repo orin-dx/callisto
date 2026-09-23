@@ -1074,6 +1074,41 @@ fn a_rerun_after_a_crate_is_already_published_completes_with_a_receipt() {
     );
 }
 
+/// AC-13: rerunning a fully published release dispatches nothing and the receipt
+/// records `AlreadySatisfied` for every operation.
+#[test]
+fn ac13_rerun_of_a_fully_published_release_is_already_satisfied_everywhere() {
+    let (intent, manifest) = simulator_intent();
+    let context = Rc::new(SimContext::default());
+    let scenario = Scenario {
+        crash: None,
+        fault: None,
+    };
+    let world = SimWorld::new(intent.clone(), scenario, Rc::clone(&context), false);
+    for operation in &intent.operations {
+        world.land(operation.id());
+    }
+
+    let run = run_world(world, context, &manifest);
+    assert_eq!(
+        run.outcomes,
+        vec![RunOutcome::Receipted],
+        "{}",
+        trace_lines(&run.context)
+    );
+    assert_eq!(
+        run.world.landings.borrow().len(),
+        intent.operations.len(),
+        "no operation may be dispatched again"
+    );
+    let receipt = serde_json::to_value(run.receipt.expect("a receipt")).unwrap();
+    let outcomes = receipt["outcomes"].as_array().unwrap();
+    assert_eq!(outcomes.len(), intent.operations.len());
+    for outcome in outcomes {
+        assert_eq!(outcome["outcome"]["kind"], "alreadySatisfied", "{outcome}");
+    }
+}
+
 /// A provider that keeps answering `Absent` about an effect it already served
 /// makes a rerun issue that effect a second time. The checker must report it,
 /// and the exception for genuine registry lag must not excuse it: nothing in

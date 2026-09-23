@@ -40,7 +40,7 @@ Publication is the last forge step, because GitHub releases can be immutable: on
 
 `Tag` -> `ForgeRelease` (create as draft) -> every `ArtifactUpload` -> `ForgePublish`. `ForgePublish` depends on the draft and on *every* upload of that release, including when there are none.
 
-- `ForgeRelease` effect: `gh release create TAG --repo R --verify-tag --draft --generate-notes`, plus `--prerelease` when the released version has a semver pre-release part (`Version::is_prerelease()`, the same source as the npm `next` dist-tag).
+- `ForgeRelease` effect: `gh release create TAG --repo R --verify-tag --draft`, with `--notes-file` holding the package's `## VERSION` changelog section, or `--generate-notes` plus a `notes: using generated notes (<reason>) for <package>` stderr line when none is usable (`ReleaseNotes`, derived at execution and outside the intent digest), plus `--prerelease` when the released version has a semver pre-release part (`Version::is_prerelease()`, the same source as the npm `next` dist-tag).
 - `ForgePublish` effect: `gh release edit TAG --repo R --draft=false`.
 - Lookup: `GET /releases/tags/{tag}` omits drafts, so a 404 there is followed by a bounded scan of `GET /releases?per_page=100&page=N` (at most 10 pages). Both roles and the upload role share this one lookup.
 - `ForgeRelease` is `Exact` for a draft or a published release; `ForgePublish` is `Exact` only when `draft: false` and `Absent` while still a draft. A release whose tag matches but whose `prerelease` flag disagrees with the version is `Conflict { ForgeReleasePrereleaseDiffers }`.

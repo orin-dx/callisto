@@ -89,7 +89,14 @@ pub fn prepend(
     })
 }
 
+/// The non-empty `## {version}` section body, trimmed.
 pub fn extract_section<'a>(changelog: &'a str, version: &Version) -> Option<&'a str> {
+    find_section(changelog, version).filter(|section| !section.is_empty())
+}
+
+/// The trimmed `## {version}` section body, empty when the heading has no content;
+/// `None` only when the heading is absent.
+pub fn find_section<'a>(changelog: &'a str, version: &Version) -> Option<&'a str> {
     let target_heading = format!("## {}", version.render());
     let mut start_byte = None;
 
@@ -118,12 +125,7 @@ pub fn extract_section<'a>(changelog: &'a str, version: &Version) -> Option<&'a 
         line_offset += line.len();
     }
 
-    let raw_section = slice_after[..end.min(slice_after.len())].trim();
-    if raw_section.is_empty() {
-        None
-    } else {
-        Some(raw_section)
-    }
+    Some(slice_after[..end.min(slice_after.len())].trim())
 }
 
 #[cfg(test)]
@@ -169,6 +171,16 @@ mod tests {
         let extracted = extract_section(changelog, &v1_1).unwrap();
         assert!(extracted.contains("### Minor Changes"));
         assert!(extracted.contains("- Feature"));
+    }
+
+    #[test]
+    fn find_section_tells_an_empty_section_from_a_missing_heading() {
+        let changelog = "# my-pkg\n\n## 1.1.0\n\n## 1.0.0\n\n- Initial\n";
+        let v1_1 = Version::parse("1.1.0", VersionGrammar::SemVer).unwrap();
+        let v2 = Version::parse("2.0.0", VersionGrammar::SemVer).unwrap();
+        assert_eq!(find_section(changelog, &v1_1), Some(""));
+        assert_eq!(extract_section(changelog, &v1_1), None);
+        assert_eq!(find_section(changelog, &v2), None);
     }
 
     /// Regression test for the drifted local `atomic_write` that only synced the

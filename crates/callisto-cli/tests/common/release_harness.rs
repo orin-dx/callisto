@@ -699,7 +699,14 @@ pub const TOOL_SHAPES: &[ToolShape] = &[
     ToolShape {
         tool: "gh",
         subcommand: &["release", "create"],
-        flags: &["--repo", "--verify-tag", "--draft", "--generate-notes", "--prerelease"],
+        flags: &[
+            "--repo",
+            "--verify-tag",
+            "--draft",
+            "--generate-notes",
+            "--notes-file",
+            "--prerelease",
+        ],
     },
     ToolShape {
         tool: "gh",

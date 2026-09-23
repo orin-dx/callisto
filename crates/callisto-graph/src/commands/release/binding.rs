@@ -6,8 +6,8 @@
 use std::path::Path;
 
 use callisto_model::{
-    CanonicalTranscript, CommandRunner, GitHubRepository, GitHubRepositoryParseError, PublishTarget,
-    RegistryBindingDigest, RegistryKey, SemanticInputDigest,
+    CanonicalTranscript, CommandRunner, Ecosystem, GitHubRepository, GitHubRepositoryParseError, PackageId,
+    PublishTarget, RegistryBindingDigest, RegistryKey, SemanticInputDigest,
 };
 
 use crate::config::ReleaseProfileConfig;
@@ -39,10 +39,14 @@ pub(crate) struct PreparedGitRemote {
     pub(crate) github_repository: Option<GitHubRepository>,
 }
 
+/// The single registry-trust validator: routes `target`, rejects a non-https or
+/// credentialed URL, and rejects an npm `publishConfig.registry` override (package-
+/// controlled data) unless it matches a `url` on an npm-kind `[registries]` entry.
 pub(crate) fn prepared_registry_binding<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     target: &PublishTarget,
     profile: Option<&ReleaseProfileConfig>,
+    package: &PackageId,
 ) -> Result<PreparedRegistryBinding, GraphError> {
     let logical_key = target.registry_key().ok_or_else(|| GraphError::ReleaseInvariant {
         detail: format!("publish target `{}` has no registry key", target.config_str()),
@@ -97,10 +101,33 @@ pub(crate) fn prepared_registry_binding<R: CommandRunner, D: DependencyResolver>
         });
     };
     let binding = canonical_registry_binding(key.as_str(), raw)?;
+    if explicit.is_some()
+        && matches!(target, PublishTarget::Npm { .. })
+        && !is_approved_npm_registry(workspace, &binding)
+    {
+        return Err(GraphError::UntrustedNpmRegistry {
+            package: package.clone(),
+            url: raw.to_owned(),
+        });
+    }
     Ok(PreparedRegistryBinding {
         key,
         endpoint: Some(binding.endpoint()),
         identity: binding.digest(),
+    })
+}
+
+fn is_approved_npm_registry<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    binding: &RegistryBindingV1,
+) -> bool {
+    workspace.config.registries.values().any(|registry| {
+        registry.kind == Ecosystem::Npm
+            && registry
+                .url
+                .as_deref()
+                .and_then(|url| canonical_registry_url(url).ok())
+                .is_some_and(|approved| approved == *binding)
     })
 }
 
@@ -350,8 +377,57 @@ mod tests {
             .and_then(|release| release.profile(&callisto_model::ReleaseProfileId::parse("rehearsal").unwrap()))
             .unwrap();
 
-        let binding = prepared_registry_binding(&workspace, &PublishTarget::CratesIo, Some(profile)).unwrap();
+        let package = PackageId::parse("release-fixture").unwrap();
+        let binding = prepared_registry_binding(&workspace, &PublishTarget::CratesIo, Some(profile), &package).unwrap();
         assert_eq!(binding.key.as_str(), "rehearsal-cargo");
         assert_eq!(binding.endpoint.as_deref(), Some("https://registry.example.test/index"));
+    }
+
+    fn npm_workspace(registries: &str) -> (tempfile::TempDir, super::super::tests::RealGitRunner) {
+        let (dir, runner) = super::super::tests::fixture();
+        std::fs::write(dir.path().join("callisto.toml"), registries).unwrap();
+        (dir, runner)
+    }
+
+    fn npm_binding(registries: &str, url: &str) -> Result<PreparedRegistryBinding, GraphError> {
+        let (dir, runner) = npm_workspace(registries);
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let workspace = Workspace::load(dir.path().to_path_buf(), &locator, &runner).unwrap();
+        let target = PublishTarget::Npm {
+            registry: Some(url.to_owned()),
+            access: None,
+        };
+        prepared_registry_binding(&workspace, &target, None, &PackageId::parse("lib").unwrap())
+    }
+
+    const CORP: &str = "[registries.corp]\nkind = \"npm\"\nurl = \"https://npm.corp.example/\"\n";
+
+    /// AC-4: only an npm override matching a configured npm registry is trusted.
+    #[test]
+    fn ac4_npm_override_must_match_a_configured_npm_registry() {
+        assert!(npm_binding(CORP, "https://npm.corp.example/").is_ok());
+        for untrusted in ["https://npm.evil.example/", "https://npm.corp.example/other/"] {
+            assert!(
+                matches!(
+                    npm_binding(CORP, untrusted),
+                    Err(GraphError::UntrustedNpmRegistry { .. })
+                ),
+                "{untrusted}"
+            );
+        }
+        let cargo_kind = "[registries.corp]\nkind = \"cargo\"\nurl = \"https://npm.corp.example/\"\n";
+        assert!(matches!(
+            npm_binding(cargo_kind, "https://npm.corp.example/"),
+            Err(GraphError::UntrustedNpmRegistry { .. })
+        ));
+    }
+
+    /// AC-5: the scheme check runs first, so a cleartext approved host is unsafe, not untrusted.
+    #[test]
+    fn ac5_non_https_npm_override_is_unsafe_before_host_matching() {
+        assert!(matches!(
+            npm_binding(CORP, "http://npm.corp.example/"),
+            Err(GraphError::UnsafeRegistryBinding { .. })
+        ));
     }
 }
