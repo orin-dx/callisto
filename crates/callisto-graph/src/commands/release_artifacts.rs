@@ -319,6 +319,37 @@ mod tests {
         assert!(calls[0].1.contains(&"--deny-self-hosted-runners".to_owned()));
     }
 
+    /// AC-17: `--source-digest` pins to the orchestration revision
+    /// (`attestation.source_commit`), never the release source -- a
+    /// recovery rerun's manifest binds GitHub's attested source digest to
+    /// the coordinator workflow's commit, not the older release checkout.
+    #[test]
+    fn verify_github_attestation_passes_orchestration_revision_not_release_source() {
+        let directory = tempdir().unwrap();
+        let bytes = b"trusted artifact";
+        fs::write(directory.path().join("artifact.tar.gz"), bytes).unwrap();
+        let intent = intent_with_slot(slot("artifact.tar.gz"));
+        let release_source = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let orchestration_revision = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        assert_ne!(
+            release_source, orchestration_revision,
+            "fixture must exercise diverging commits"
+        );
+        let manifest = manifest_for(&intent, ArtifactDigest::from_bytes(bytes), bytes.len() as u64);
+        let runner = RecordingRunner::default();
+
+        verify_artifact_manifest(&intent, &manifest, directory.path(), &runner).unwrap();
+        let calls = runner.calls.lock().unwrap();
+        assert!(calls[0]
+            .1
+            .windows(2)
+            .any(|args| args == ["--source-digest", orchestration_revision]));
+        assert!(!calls[0]
+            .1
+            .windows(2)
+            .any(|args| args == ["--source-digest", release_source]));
+    }
+
     #[test]
     fn rejects_changed_artifact_without_attestation_lookup() {
         let directory = tempdir().unwrap();
