@@ -8,7 +8,7 @@
     "SPEC-RELEASE-EXECUTION-012"
   ],
   "purpose": "Expose the release architecture through a clear CLI and portable CI contract, and migrate Callisto's GitHub Actions release workflow to an artifact-bound, Environment-gated execution job without preserving legacy mutation bypasses.",
-  "scope": "The release CLI command family, legacy-command transition, user-facing state-path and artifact inputs, GitHub Actions plan/build/execute topology, managed release-PR continuity, workflow permissions and action pinning, and documentation needed to operate the new flow. Provider-neutral planning, capability validation, state, and effects are owned by predecessor specs and consumed here.",
+  "scope": "The release CLI command family, legacy-command transition, user-facing artifact inputs, GitHub Actions plan/build/execute topology, managed release-PR continuity, workflow permissions and action pinning, and documentation needed to operate the new flow. Provider-neutral planning, capability validation, state, and effects are owned by predecessor specs and consumed here.",
   "non_goals": [
     "Making GitHub Actions the only supported CI provider or moving core release authority into workflow shell scripts.",
     "Allowing a command-line flag, environment variable, CI cache, inline JSON, or workflow input to bypass release intent validation, Git trust, artifact verification, or ApplyPermit.",
@@ -16,24 +16,23 @@
   ],
   "command_contract": {
     "release plan": "Read-only. Local use derives a decision from exact qualified package selections. CI uses an explicit merged-release-commit mode to interpret the immutable parent-to-merged Callisto release-PR delta, verify the consumed changesets and version/changelog closure, and embed the result in a transient intent. It does not rerun changeset planning after merge and it neither publishes, tags, pushes, nor creates a forge release.",
-    "release inspect": "Read-only. Displays an intent, artifact manifest, state, or receipt with their binding and readiness checks; it does not recompute an unapproved intent as a side effect.",
-    "release execute": "The sole production mutation entry point. It consumes explicit intent and, when needed, artifact-manifest inputs, validates them, obtains a fresh ValidatedReleaseIntent and ApplyPermit, and runs the coordinator from SPEC-RELEASE-EXECUTION-012.",
-    "release reconcile": "Read-only. Consumes explicit intent/state inputs and performs exact provider observations to report recoverability; it never publishes, tags, pushes, or creates a forge release."
+    "release inspect": "Read-only. Displays an intent, artifact manifest, or receipt with their binding and readiness checks; it does not recompute an unapproved intent as a side effect.",
+    "release execute": "The sole production mutation entry point. It consumes explicit intent and, when needed, artifact-manifest inputs, validates them, obtains a fresh ValidatedReleaseIntent and ApplyPermit, and runs the coordinator from SPEC-RELEASE-EXECUTION-012."
   },
   "acceptance_criteria": [
     {
       "id": "AC-001",
-      "criterion": "Callisto exposes `release plan`, `release inspect`, `release execute`, and `release reconcile` as explicitly named commands or an equally explicit namespaced interface with the four contracts above. `release plan` requires repeated exact qualified package selections or one named documented configuration-selection mode and embeds the resulting decision in the intent. `release execute` requires an explicit intent file path; it never searches the checkout, falls back to a default plan, accepts an inline JSON authority string, accepts a new selection, or recomputes a plan after validation fails. It accepts an explicit artifact-manifest path when the intent declares binary slots, and an optional explicit state path; omitting the latter uses SPEC-RELEASE-EXECUTION-012's outside-checkout default. Parse, trust, binding, capability, artifact, attestation, or state validation failures exit non-zero before credentials or mutating adapters are reached.",
+      "criterion": "Callisto exposes `release plan`, `release inspect`, and `release execute` as explicitly named commands or an equally explicit namespaced interface with the three contracts above. `release plan` requires repeated exact qualified package selections or one named documented configuration-selection mode and embeds the resulting decision in the intent. `release execute` requires an explicit intent file path; it never searches the checkout, falls back to a default plan, accepts an inline JSON authority string, accepts a new selection, or recomputes a plan after validation fails. It accepts an explicit artifact-manifest path when the intent declares binary slots, and takes no state path: execution state is in memory only (SPEC-RELEASE-EXECUTION-012). Parse, trust, binding, capability, artifact, or attestation validation failures exit non-zero before credentials or mutating adapters are reached.",
       "is_error_case": true
     },
     {
       "id": "AC-002",
-      "criterion": "`release plan`, `release inspect`, and `release reconcile` are structurally read-only: their reachable command paths cannot call registry publish, Git tag/push, forge-release creation, or any provider effect adapter. `release execute` is structurally the only production CLI route that can acquire an ApplyPermit and dispatch those adapters. Integration tests invoke every command against recording adapters and assert the exact allowed effect set, including that each error path dispatches none.",
+      "criterion": "`release plan` and `release inspect` are structurally read-only: their reachable command paths cannot call registry publish, Git tag/push, forge-release creation, or any provider effect adapter. `release execute` is structurally the only production CLI route that can acquire an ApplyPermit and dispatch those adapters. Integration tests invoke every command against recording adapters and assert the exact allowed effect set, including that each error path dispatches none.",
       "is_error_case": true
     },
     {
       "id": "AC-003",
-      "criterion": "During the documented migration window, `plan-publish`, `publish`, `tag --plan`, and `filter-plan` remain available only as clearly labelled read-only compatibility previews. They may render proposed operations but cannot publish, tag, push, write release state, create a forge release, or acquire ApplyPermit. Their help and diagnostics name `release plan`, `release execute`, or `release reconcile` as the replacement as appropriate. A separately documented breaking release removes the legacy commands rather than silently restoring their mutation behavior.",
+      "criterion": "During the documented migration window, `plan-publish`, `publish`, `tag --plan`, and `filter-plan` remain available only as clearly labelled read-only compatibility previews. They may render proposed operations but cannot publish, tag, push, write release state, create a forge release, or acquire ApplyPermit. Their help and diagnostics name `release plan` or `release execute` as the replacement as appropriate. A separately documented breaking release removes the legacy commands rather than silently restoring their mutation behavior.",
       "is_error_case": true
     },
     {
@@ -53,14 +52,14 @@
     },
     {
       "id": "AC-007",
-      "criterion": "The CLI reference and release-operation documentation provide one end-to-end local and CI recovery flow: create intent from a clean detached checkout; inspect it; build/produce the intent-bound artifact manifest when binaries are declared; execute with an optional explicit state path; reconcile after interruption. Documentation distinguishes source crate publishes from compiled binary uploads, explains that local default state is outside the checkout, and never instructs users to commit state or use GitHub cache for release authority/recovery.",
+      "criterion": "The CLI reference and release-operation documentation provide one end-to-end local and CI recovery flow: create intent from a clean detached checkout; inspect it; build/produce the intent-bound artifact manifest when binaries are declared; execute; after an interruption, rerun execute, which adopts every effect that already landed. Documentation distinguishes source crate publishes from compiled binary uploads, explains that execution state is never persisted, and never instructs users to use GitHub cache for release authority/recovery.",
       "is_error_case": false
     }
   ],
   "implementation_notes": [
     "The composite action may be retained for non-privileged setup or read-only operations, but it cannot by itself enforce the plan/build/Environment-gated job boundary. The repository workflow must express that boundary.",
     "The artifact handoff is transport, not approval. The execute job repeats cryptographic and semantic binding checks in the Callisto CLI before adapter construction. GitHub artifact attestations prove build provenance for the binary bytes; the intent and manifest additionally prove those bytes are the assets this release approved.",
-    "Other CI providers can implement the same explicit-file contract: immutable intent digest, exact source checkout, manifest-plus-byte verification, state artifact, and a separately protected execute credential boundary."
+    "Other CI providers can implement the same explicit-file contract: immutable intent digest, exact source checkout, manifest-plus-byte verification, and a separately protected execute credential boundary."
   ],
-  "revision_note": "Superseded: the CLI and workflow surface is re-specified as implemented by SPEC-RELEASE-LIFECYCLE-HARDENING; AC-005's required-reviewer Environment contradicts SRL-01 and the workflow policy check; managed release-PR behavior lives in SPEC-RELEASE-PR-DECISION-014."
+  "revision_note": "Superseded: the CLI and workflow surface is re-specified as implemented by SPEC-RELEASE-LIFECYCLE-HARDENING; AC-005's required-reviewer Environment contradicts SRL-01 and the workflow policy check; managed release-PR behavior lives in SPEC-RELEASE-PR-DECISION-014. Revised for PR #124: every run adopts already-landed effects, execution state is in memory only, and the receipt is built from recorded state evidence."
 }
