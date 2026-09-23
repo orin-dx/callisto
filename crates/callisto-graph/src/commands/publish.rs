@@ -224,7 +224,8 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
             // which silently dropped `PublishTarget::NuGet`/`GitHubRelease` on
             // the floor with no diagnostic. The three targets with a real
             // dispatch implementation get their own arm below; every other
-            // target (today: `NuGet`, `GitHubRelease`; tomorrow: any new
+            // target (today: `NuGet`, and `GitHubRelease`, which only the release
+            // path dispatches; tomorrow: any new
             // `PublishTarget` variant added without a dispatch arm here) falls
             // through to `PublishTarget::is_implemented()`, so "does this
             // target get a `PublishTargetNotImplemented` diagnostic" is
@@ -238,7 +239,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
             // True once at least one configured target has a real dispatch
             // implementation. Drives the release-tag/ReleaseEntry gate below —
             // a package configured only with not-yet-implemented targets
-            // (NuGet, GitHubRelease) must not get a ReleaseEntry claiming a
+            // (NuGet) or only GitHubRelease must not get a ReleaseEntry claiming a
             // release happened when nothing was actually publishable.
             let mut has_dispatchable_target = false;
 

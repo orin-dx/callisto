@@ -8,4 +8,5 @@ Release planning now rejects an untrusted or non-https npm `publishConfig.regist
 
 Breaking:
 - `--package` for a package with no pending release fails with "nothing pending to release"; one with no publish target fails with "no publish target"; a name not in the workspace is an unknown package.
+- `release plan` fails with E199 for a `publish-to` target it cannot dispatch (NuGet) instead of skipping it.
 - `callisto_graph::commands::registry_argv::npm_publish_directory_argv` takes the package name.

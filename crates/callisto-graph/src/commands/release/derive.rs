@@ -226,6 +226,12 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
 
         let mut publishes = Vec::new();
         for target in &package.publish_to {
+            if !target.is_implemented() {
+                return Err(GraphError::PublishTargetNotImplemented {
+                    package: id.clone(),
+                    target: target.config_str(),
+                });
+            }
             if target.ecosystem() == Some(id.ecosystem()) {
                 super::provider::registry::require_observable_registry(id.ecosystem())?;
                 let binding = prepared_registry_binding(workspace, target, profile_config, &package.id)?;
@@ -1094,6 +1100,83 @@ mod tests {
             fingerprint("@s/lib", Some(NpmAccess::Public))
         );
         assert_ne!(fingerprint("lib", None), fingerprint("lib", Some(NpmAccess::Public)));
+    }
+
+    /// The loaded graph with every package's `publish_to` replaced; config
+    /// load itself rejects a target no workspace manifest can carry.
+    struct Retargeted {
+        packages: Vec<callisto_model::Package>,
+        edges: Vec<callisto_model::DepEdge>,
+    }
+
+    impl DependencyResolver for Retargeted {
+        fn packages(&self) -> impl Iterator<Item = &callisto_model::Package> {
+            self.packages.iter()
+        }
+
+        fn dependencies_of(&self, id: &callisto_model::PackageId) -> impl Iterator<Item = &callisto_model::DepEdge> {
+            self.edges.iter().filter(move |edge| &edge.from == id)
+        }
+
+        fn dependents_of(&self, id: &callisto_model::PackageId) -> impl Iterator<Item = &callisto_model::DepEdge> {
+            self.edges.iter().filter(move |edge| &edge.to == id)
+        }
+    }
+
+    /// AC-11: an undispatchable target fails derivation instead of being skipped.
+    #[test]
+    fn ac11_unimplemented_publish_target_fails_derivation() {
+        let dir = repo(&[
+            (
+                "Cargo.toml",
+                "[package]\nname = \"core\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+            ),
+            (
+                "callisto.toml",
+                "[[package]]\nmatch = \"core\"\npublish-to = [\"crates-io\"]\n",
+            ),
+        ]);
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let root = super::super::capability::canonical_root(dir.path()).unwrap();
+        let loaded = Workspace::load(root.clone(), &locator, &RealGitRunner).unwrap();
+        let packages = loaded
+            .graph
+            .packages()
+            .cloned()
+            .map(|mut package| {
+                package.publish_to.push(PublishTarget::NuGet { source: None });
+                package
+            })
+            .collect();
+        let workspace = Workspace {
+            root,
+            config: crate::config::load(dir.path()).unwrap(),
+            graph: Retargeted {
+                packages,
+                edges: Vec::new(),
+            },
+            tags: std::cell::OnceCell::new(),
+            git: std::cell::OnceCell::new(),
+            runner: &RealGitRunner,
+            manifest_cache: Default::default(),
+            identity: crate::IdentityIndex::default(),
+        };
+        let source = super::super::capability::observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
+        let error = derive_release_inputs(
+            &workspace,
+            &cargo_release(&["core"]),
+            &ReleaseProfileId::production(),
+            source,
+            None,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                GraphError::PublishTargetNotImplemented { package, target: "nuget" } if package.name() == "core"
+            ),
+            "{error:?}"
+        );
     }
 
     fn forge_notes(prepared: &BTreeMap<ReleaseOperationId, PreparedOperation>) -> ReleaseNotes {

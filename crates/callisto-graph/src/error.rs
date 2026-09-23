@@ -580,6 +580,16 @@ pub enum GraphError {
         )
     )]
     ReleaseProfileUnknown { profile: String },
+
+    #[error("package `{package}` configures publish-to = [\"{target}\"], which release cannot dispatch yet")]
+    #[diagnostic(
+        code(E199),
+        help("Remove the target from `publish-to` for this package, or publish it outside `callisto release`.")
+    )]
+    PublishTargetNotImplemented {
+        package: callisto_model::ReleasePackageId,
+        target: &'static str,
+    },
 }
 
 /// Why a workspace package that a `--package` filter named is nonetheless

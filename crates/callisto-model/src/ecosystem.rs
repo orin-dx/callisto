@@ -189,15 +189,14 @@ impl PublishTarget {
     /// Whether this target has a real dispatch implementation today.
     ///
     /// `PublishTarget` and `Ecosystem` are not 1:1: `GitHubRelease` is a VCS
-    /// release action with no backing package `Ecosystem` at all, and `None`
-    /// is the "not configured to publish" sentinel, not a real target --
-    /// neither can defer to `Ecosystem::is_implemented()`. Every other
+    /// release action with no backing package `Ecosystem` (the release path
+    /// dispatches it), and `None` is the "not configured to publish" sentinel,
+    /// not a real target -- neither can defer to `Ecosystem::is_implemented()`. Every other
     /// variant carries a package ecosystem ([`Self::ecosystem`]) and defers
     /// to that ecosystem's own implementedness.
     pub fn is_implemented(&self) -> bool {
         match self {
-            PublishTarget::None => true,
-            PublishTarget::GitHubRelease => false,
+            PublishTarget::None | PublishTarget::GitHubRelease => true,
             PublishTarget::CratesIo
             | PublishTarget::Npm { .. }
             | PublishTarget::Pypi { .. }
@@ -350,7 +349,7 @@ mod tests {
         .is_implemented());
         assert!(PublishTarget::Pypi { index: None }.is_implemented());
         assert!(!PublishTarget::NuGet { source: None }.is_implemented());
-        assert!(!PublishTarget::GitHubRelease.is_implemented());
+        assert!(PublishTarget::GitHubRelease.is_implemented());
         // `None` is vacuously "implemented" -- there is nothing to dispatch,
         // so it must never trip a `PublishTargetNotImplemented` diagnostic.
         assert!(PublishTarget::None.is_implemented());
