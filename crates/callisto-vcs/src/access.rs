@@ -40,21 +40,14 @@ pub struct GitCommitTrustEvidence {
     canonical_root: PathBuf,
     head: CommitSha,
     head_disposition: GitHeadDisposition,
-    allowed_ignored_paths: Vec<PathBuf>,
 }
 
 impl GitCommitTrustEvidence {
-    pub(crate) fn new(
-        canonical_root: PathBuf,
-        head: CommitSha,
-        head_disposition: GitHeadDisposition,
-        allowed_ignored_paths: Vec<PathBuf>,
-    ) -> Self {
+    pub(crate) fn new(canonical_root: PathBuf, head: CommitSha, head_disposition: GitHeadDisposition) -> Self {
         Self {
             canonical_root,
             head,
             head_disposition,
-            allowed_ignored_paths,
         }
     }
 
@@ -70,16 +63,7 @@ impl GitCommitTrustEvidence {
         self.head_disposition
     }
 
-    pub fn allowed_ignored_paths(&self) -> &[PathBuf] {
-        &self.allowed_ignored_paths
-    }
-
     /// The checkout facts a durable release intent is bound to.
-    ///
-    /// Deliberately excludes `allowed_ignored_paths`: a publish client
-    /// legitimately creates ignored build output (`target/`) mid-release, and
-    /// that list changing is not a change of checkout identity. Non-allowlisted
-    /// worktree changes are still rejected when the evidence is observed.
     pub fn identity(&self) -> GitCommitTrustIdentity<'_> {
         GitCommitTrustIdentity {
             canonical_root: &self.canonical_root,

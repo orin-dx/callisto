@@ -83,6 +83,10 @@ The version-PR action never receives this token. It only creates or updates a re
 
 If your execute job already calls `actions/setup-node` and sets `registry-url`, Pattern B works because `setup-node` wrote the `.npmrc`. Do not add `NODE_AUTH_TOKEN` to a job that does not run `setup-node` with `registry-url`.
 
+### Provenance
+
+Publish npm packages with provenance from GitHub Actions: give the execute job `permissions: id-token: write` and set `NPM_CONFIG_PROVENANCE: "true"` in its env. npm then attests each package to the workflow run and commit; Callisto needs no flag.
+
 ---
 
 ## npm Platform/Main Package Publishing
