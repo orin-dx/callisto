@@ -1,0 +1,79 @@
+{
+  "id": "SPEC-DX-RELEASE-COMMAND",
+  "purpose": "Adds a bare `callisto release` command that publishes every package with an unreleased version through the existing durable-intent machinery in one invocation, composing `execute_release` (crates/callisto-graph/src/commands/release_execution.rs) as the sole effect route, and removes the superseded top-level commands it replaces.",
+  "scope": "The `release` top-level flag surface (no subcommand): `--dry-run`, `--package <ecosystem/name>` (repeatable), `--receipt <path>`, `--format`; automatic package/version selection via a new `ReleaseInclusionReason::UnreleasedVersion`; the no-op, missing-credential, dirty-worktree, and artifact-slot/platform-package stop conditions; receipt path and content; removal of `publish`, `plan-publish`, `tag`, and `filter-plan`; and migration of `crates/callisto-moon/src/extension_pdk.rs`'s `plan-publish`/`plan_publish` dispatch arm. Excludes `release plan`/`inspect`/`artifact-manifest`/`execute` visibility and hiding (SPEC-DX-CLI-SURFACE), `--help` text and colour/table rendering (SPEC-DX-CLI-SURFACE), `status`/`add` and `validate`'s removal (SPEC-DX-STATUS-ADD), and plan-derivation correctness rules beyond the single shared caller path (SPEC-DX-RELEASE-CORRECTNESS).",
+  "linked_requirement": "REQ-DX-V1",
+  "non_goals": [
+    "Porting plan_publish's correctness checks (MissingPlatformDependency, dev-dependency cycle tolerance, npm registry allowlist, default --access public, changelog-derived release notes, --only selection, release-trigger honoring) -- tracked as SPEC-DX-RELEASE-CORRECTNESS.",
+    "`release plan`/`inspect`/`artifact-manifest`/`execute` subcommand visibility in `--help` -- SPEC-DX-CLI-SURFACE.",
+    "`validate` removal and its diagnostics folding into `status --check` -- SPEC-DX-STATUS-ADD.",
+    "callisto-action's and callisto-validate action's own workflow YAML wiring beyond the CLI commands they invoke.",
+    "Non-GitHub forge support.",
+    "Real local-registry (npm/cargo/PyPI) e2e publish tests."
+  ],
+  "api_surface": [
+    {
+      "name": "execute_release",
+      "signature": "pub fn execute_release<P: ReleaseProviderSet + ?Sized>(capability: &P, permit: &ApplyPermit, envelope: &ReleaseRunEnvelopeV1, artifacts: Option<&VerifiedArtifactManifest<'_>>) -> Result<ReleaseExecutionStateV1, GraphError>",
+      "description": "crates/callisto-graph/src/commands/release_execution.rs:25. Bare `callisto release`'s only effect route; the command builds the envelope and permit and calls this exactly as `release execute` does."
+    },
+    {
+      "name": "ReleaseInclusionReason::UnreleasedVersion",
+      "signature": "enum variant added to ReleaseInclusionReason (crates/callisto-model/src/release.rs)",
+      "description": "New variant marking a package included in a ReleaseDecisionV1 because its current version has no matching entry in the canonical TagIndex (crates/callisto-vcs/src/lib.rs), not because of a changeset, group, or cascade. Adding it bumps ReleaseDecisionV1::SCHEMA_VERSION (currently 1, crates/callisto-model/src/release.rs:609) to 2."
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-01",
+      "criterion": "`callisto release` with no flags, run on any branch with a clean worktree, environment credentials present, and a workspace declaring no `[[release.artifact]]` slots and no napi/maturin platform-manifest packages, publishes every package whose current version has no entry in the canonical TagIndex: registry publish, git tag, and forge release for each. Detached HEAD is not required; the recorded source commit is HEAD's commit at invocation."
+    },
+    {
+      "id": "AC-02",
+      "criterion": "`callisto release --dry-run`, run on any branch and regardless of worktree cleanliness or artifact-slot/platform-package declarations, prints the full release plan, requires no ApplyPermit, and performs no registry publish, tag, or forge-release effect."
+    },
+    {
+      "id": "AC-03",
+      "criterion": "`callisto release` and `callisto release --dry-run` accept `--package <ecosystem/name>` (repeatable) to restrict selection to named packages; with no `--package` given, selection is every package carrying `ReleaseInclusionReason::UnreleasedVersion` in the derived `ReleaseDecisionV1`. `--from-release-commit` is not accepted by bare `release`; it remains exclusive to the hidden `release plan` subcommand."
+    },
+    {
+      "id": "AC-04",
+      "criterion": "`callisto release --dry-run`'s printed plan lists exactly the packages, versions, and operations that a following `callisto release` on the same repository state performs. Both derive from the same plan-derivation function through exactly one caller path; the `plan_publish`/`derive.rs` duplication this spec inherits is resolved."
+    },
+    {
+      "id": "AC-05",
+      "criterion": "`callisto release`, run in a workspace declaring one or more `[[release.artifact]]` slots or one or more napi/maturin platform-manifest packages, exits non-zero before any effect and names the CI plan/build/execute route (`release plan`, `release artifact-manifest`, `release execute`) as the required path for that workspace. `--dry-run` still succeeds per AC-02.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-06",
+      "criterion": "`callisto release`, run against a workspace where every package already has a tag matching its current version, exits 0, prints exactly `Nothing to release.`, and performs no registry publish, tag, or forge-release effect."
+    },
+    {
+      "id": "AC-07",
+      "criterion": "Before any registry publish, tag, or forge-release effect for any package, `callisto release` checks each selected package's operation kind for its required credential: cargo needs `CARGO_REGISTRY_TOKEN` set or a `cargo login` credentials file present; npm needs `NODE_AUTH_TOKEN` or `NPM_TOKEN` set, an auth line in the user or project `.npmrc`, or `ACTIONS_ID_TOKEN_REQUEST_URL` set (OIDC trusted publishing); PyPI needs `TWINE_PASSWORD` set or OIDC; the GitHub forge release needs `GH_TOKEN`/`GITHUB_TOKEN` set or `gh auth status` succeeding. A missing credential for any selected package's required kind exits non-zero before any effect for any package, and the error names the specific missing credential.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-08",
+      "criterion": "`callisto release`, run against a dirty worktree -- one or more tracked files with uncommitted modifications, or one or more untracked files not covered by `.gitignore` -- exits non-zero before any effect, and the error identifies the dirty worktree as the reason. Ignored untracked files do not count as dirty (parity with PR #120's release-trust check). This revises SPEC-RELEASE-TRUST-010 AC-002's detached-HEAD acceptance requirement only; AC-002's other clauses (commit-format rejection, symbolic-HEAD rejection) and AC-005 (re-observation before each effect) are unaffected.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-09",
+      "criterion": "A local (non-CI) `callisto release` run's recorded orchestration revision equals its source commit. The receipt is written to `--receipt <path>` when given, else to `<platform state dir>/callisto/<repo-hash>/<intent-digest>/receipt.json` (e.g. `$XDG_STATE_HOME` on Linux); the default path is never inside the git worktree."
+    },
+    {
+      "id": "AC-10",
+      "criterion": "`callisto publish`, `callisto plan-publish`, `callisto tag`, and `callisto filter-plan` are removed: invoking any of them fails to parse (clap 'unrecognized subcommand' or equivalent), not merely absent from `--help`.",
+      "is_error_case": true
+    },
+    {
+      "id": "AC-11",
+      "criterion": "`crates/callisto-moon/src/extension_pdk.rs`'s `\"plan-publish\" | \"plan_publish\"` dispatch arm (currently calling `callisto_graph::commands::publish::plan_publish`) is removed or repointed at the surviving shared plan-derivation function from AC-04; no dispatch arm in that file calls the removed `publish::plan_publish`."
+    }
+  ],
+  "reasoning": "Grounded against origin/fix/release-run-simplify (HEAD 9be31095) via git show: crates/callisto-cli/src/cli.rs confirms ReleaseArgs today has only Plan/Inspect/ArtifactManifest/Execute (no bare-execute mode yet, so AC-01..09 describe new behavior) and confirms Publish/PlanPublish/Tag/FilterPlan commands still exist (AC-10 describes pending removal); crates/callisto-graph/src/commands/release_execution.rs:25 gives execute_release's real signature; crates/callisto-model/src/release.rs:609 confirms ReleaseDecisionV1::SCHEMA_VERSION = 1 today, supporting the API surface note that adding UnreleasedVersion bumps it; crates/callisto-model/src/registry.rs:125-142 confirms only NPM_TOKEN/TWINE_PASSWORD/CARGO_REGISTRY_TOKEN/GITHUB_TOKEN/GH_TOKEN are read today -- AC-07's NODE_AUTH_TOKEN, .npmrc, and OIDC checks are new target behavior per the owner's fix list, not already-implemented; crates/callisto-moon/src/extension_pdk.rs:56-63 confirms the exact plan-publish dispatch arm AC-11 requires migrated; .claude/specs/SPEC-RELEASE-TRUST-010.json AC-002 confirms the exact detached-HEAD clause AC-08 supersedes, and AC-005's re-observation clause is untouched. AC-05's artifact-slot-or-platform-package gating and AC-08's dirty-worktree definition are the owner's stated defaults (GATE2-FIXES.md), not independently re-derived -- recorded here as such, not as confirmed current behavior.",
+  "spec_file_path": "docs/specs/SPEC-DX-RELEASE-COMMAND.json",
+  "status": "design"
+}

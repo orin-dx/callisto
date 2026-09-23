@@ -8,6 +8,23 @@ When sources conflict, first reproduce the behavior against the revision named b
 
 Legacy `linked_requirement: REQ-*` references have no backing requirement files. New specifications must not add them.
 
+## Design (REQ-DX-V1, not yet built)
+
+Build order: correctness → config schema → release command → CLI surface → status/add → setup core → setup workflow (simple, then matrix).
+
+- `SPEC-DX-CORRECTNESS-PARITY`: release plan gains every `plan-publish` check.
+- `SPEC-DX-CORRECTNESS-TRIGGER`: `release-trigger` gates commit inference.
+- `SPEC-DX-CORRECTNESS-PROVENANCE-PINS`: regression tests for manifest vs attestation commits.
+- `SPEC-DX-CORRECTNESS-CI`: validate stops hiding failures; CI tests the shipped feature set.
+- `SPEC-DX-CORRECTNESS-E2E`: publish tests against real local registries.
+- `SPEC-DX-CONFIG-RELEASE-SCHEMA`: `[release] forge-repository`; profiles removed.
+- `SPEC-DX-RELEASE-COMMAND`: `callisto release` and `--dry-run`; legacy publish commands removed.
+- `SPEC-DX-CLI-SURFACE`: 8 visible commands, plain help, colour and tables.
+- `SPEC-DX-STATUS-ADD`: status shows planned bumps; `status --check` replaces `validate`; `add` modes.
+- `SPEC-DX-SETUP-CORE`: `init` detects facts, asks intent, writes minimal config, previews.
+- `SPEC-DX-SETUP-WORKFLOW-SIMPLE`: generated two-job workflow; callisto-action `mode`.
+- `SPEC-DX-SETUP-WORKFLOW-MATRIX`: generated plan/build/execute workflow for napi and binaries.
+
 ## Current
 
 Release lifecycle:

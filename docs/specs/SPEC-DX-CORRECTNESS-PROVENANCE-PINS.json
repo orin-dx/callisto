@@ -1,0 +1,24 @@
+{
+  "id": "SPEC-DX-CORRECTNESS-PROVENANCE-PINS",
+  "purpose": "ArtifactManifestV1's provenance fields already implement the intended design: the top-level source_commit records the release source (the immutable intent snapshot), while each entry's attestation.source_commit and attestation.workflow_commit record the orchestration revision that GitHub signs as the workflow run source -- distinct fields for distinct facts, which recovery-dispatch reruns depend on since they build an older release checkout with current coordinator workflow code. This spec adds regression tests pinning that both facts stay correct and distinct as the codebase changes.",
+  "scope": "ArtifactManifestV1::new and ::validate_for_intent (callisto-model/src/release.rs) and verify_github_attestation (callisto-graph/src/commands/release_artifacts.rs), covered by fixtures where the release source commit and the orchestration revision commit differ.",
+  "non_goals": [
+    "Changing ArtifactManifestV1's field semantics or verify_github_attestation's --source-digest argument -- both already implement the intended design.",
+    "release/derive.rs plan-derivation parity items (SPEC-DX-CORRECTNESS-PARITY)."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-16",
+      "criterion": "On every release run, including a rerun of an older release commit via a release_source_sha dispatch, the top-level ArtifactManifestV1.source_commit equals intent.snapshot.source's commit -- never the orchestration revision. A regression test uses a fixture where the release source commit and the orchestration revision differ and asserts ArtifactManifestV1::new produces a manifest whose source_commit is the release source commit."
+    },
+    {
+      "id": "AC-17",
+      "criterion": "Each manifest entry's attestation.source_commit and attestation.workflow_commit equal the orchestration revision (entry.slot.attestation_policy.workflow_commit), as ArtifactManifestV1::new's MismatchedAttestation check already enforces, and verify_github_attestation keeps passing --source-digest = attestation.source_commit to gh attestation verify. A regression test asserts that a manifest entry whose attestation.source_commit is set to the release source commit instead of the orchestration revision (when the two differ) is rejected by ArtifactManifestV1::new with ArtifactManifestError::MismatchedAttestation.",
+      "is_error_case": true
+    }
+  ],
+  "linked_requirement": "REQ-DX-V1",
+  "reasoning": "Grounded against origin/fix/release-run-simplify@9be31095: ArtifactManifestV1::new (release.rs) already checks entry.attestation.source_commit != entry.slot.attestation_policy.workflow_commit as one of the MismatchedAttestation conditions, and sets the top-level source_commit from intent.snapshot.source's GitCommit sha -- confirming the two fields are already correctly separated. GitHubArtifactAttestationV1's doc comment (release.rs:1448-1452) states this separation is intentional: recovery intentionally builds an older release checkout with current coordinator workflow code. AC-16/17 are regression pins on existing correct behavior, not fixes for a defect.",
+  "spec_file_path": "docs/specs/SPEC-DX-CORRECTNESS-PROVENANCE-PINS.json",
+  "status": "design"
+}

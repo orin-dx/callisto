@@ -1,0 +1,65 @@
+{
+  "id": "SPEC-DX-SETUP-WORKFLOW-MATRIX",
+  "purpose": "Define callisto init's generated GitHub Actions release workflow for workspaces with a build-matrix need: the plan/build/execute job sequence, the build job's matrix construction from callisto matrix and from [[release.artifact]] slots, the per-target build and artifact-placement commands, and callisto matrix's own extension to enumerate cargo release-artifact entries.",
+  "scope": "Workflow generation for a workspace configuring napi platform packages (per IdentityIndex::attached_platforms) or [[release.artifact]] slots: the plan job, the build job's matrix construction and per-target build/upload commands, the artifact-placement step, and the execute job's commands. Reuses SPEC-DX-SETUP-WORKFLOW-SIMPLE's file path, no-overwrite/dry-run rule, --workflow/--no-workflow mutual exclusivity, mode input, and per-job permission/secret model rather than redefining them. Depends on SPEC-DX-SETUP-WORKFLOW-SIMPLE for those shared mechanics, on SPEC-DX-SETUP-CORE for the triggering question/flags and the ResolvedConfig facts that route generation here instead of to SPEC-DX-SETUP-WORKFLOW-SIMPLE, and on SPEC-DX-RELEASE-CLI for the callisto release plan, callisto release artifact-manifest, and callisto release execute subcommands this spec's jobs invoke. Depends on callisto matrix's report schema (crates/callisto-model/src/matrix.rs's MatrixReport/PlatformTargetGroup/PlatformTarget) for the platformTargets shape AC-002's flattening query reads.",
+  "non_goals": [
+    "The no-build-matrix two-job shape, file path, no-overwrite/dry-run rule, mode input definition, and per-job permissions/secrets -- SPEC-DX-SETUP-WORKFLOW-SIMPLE's territory, reused here by reference rather than redefined.",
+    "init's detection, questions, non-interactive flags, and config write -- SPEC-DX-SETUP-CORE's territory.",
+    "callisto release plan/artifact-manifest/execute's own flag surface, exit codes, and output schema beyond the exact command lines this spec's jobs run -- SPEC-DX-RELEASE-CLI's territory.",
+    "A maturin build path: the build-job matrix query filters platformTargets to kind==\"napi\" only (AC-002); no job is generated for maturin platform packages.",
+    "Non-GitHub forges or CI systems.",
+    "A recovery-job, coordinator-job, or any SHA-based release-candidate-detection step -- explicitly excluded by design; callisto release's own execution-time idempotency is relied on instead."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-001",
+      "criterion": "The generated file's plan job runs callisto release plan to produce the release intent consumed by the build and execute jobs.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-002",
+      "criterion": "The build job's matrix is populated by flattening callisto matrix --format json output with .platformTargets[] | select(.kind==\"napi\") | .targets[]; each resulting matrix entry's job declares runs-on: <entry.hostRunner> and passes --use-cross to its build command when entry.useCross is true.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-003",
+      "criterion": "Each napi matrix entry's build job runs napi build --platform --release --target <entry.triple> and includes an artifact-upload step for the resulting build output.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-004",
+      "criterion": "The build job's matrix additionally includes one entry per [[release.artifact]] slot from the release intent's artifactSlots; each such entry's job runs cargo build --release --target <triple> and archives the result to that slot's configured asset name.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-005",
+      "criterion": "callisto matrix --format json's platformTargets output includes an entry for each configured [[release.artifact]] cargo binary, sourced from the workspace's resolved [[release.artifact]] config, alongside its existing napi and maturin entries.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-006",
+      "criterion": "An artifact-placement step (napi artifacts) runs after all build jobs complete and before the execute job starts, placing napi build outputs for the execute job to consume.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-007",
+      "criterion": "The execute job runs callisto release artifact-manifest followed by callisto release execute, in that order.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-008",
+      "criterion": "The build-matrix generated file also contains a version-pr job invoking callisto-action with mode omitted or set to version-pr, matching SPEC-DX-SETUP-WORKFLOW-SIMPLE AC-004's version-pr job.",
+      "is_error_case": false
+    },
+    {
+      "id": "AC-008a",
+      "criterion": "The build-matrix generated file contains no recovery-job, coordinator-job, or SHA-based release-candidate-detection step, and applies no commit-SHA gating; the 40-line cap from SPEC-DX-SETUP-WORKFLOW-SIMPLE AC-004 does not apply to this generated file.",
+      "is_error_case": false
+    }
+  ],
+  "linked_requirement": "REQ-DX-V1",
+  "revision_note": "Split from SPEC-DX-SETUP-WORKFLOW per GATE2-FIXES.md's SPEC-DX-SETUP-WORKFLOW section into the build-matrix half; the no-build-matrix half moved to SPEC-DX-SETUP-WORKFLOW-SIMPLE, which this spec now depends on for path/no-overwrite/mode-input/permissions/secrets rather than re-specifying them. Content changes, each an owner judgment call recorded here: (1) The former single plan-job description (populated from callisto matrix --format json) is replaced with two distinct steps per GATE2-FIXES.md: the plan job now runs callisto release plan (AC-001), while the build job's matrix is separately populated by flattening callisto matrix --format json (AC-002) -- these are not the same command, and the prior draft conflated them. (2) AC-002's flattening query (.platformTargets[] | select(.kind==\"napi\") | .targets[]), runs-on: hostRunner, and --use-cross: useCross wiring are taken verbatim from GATE2-FIXES.md; the kind==\"napi\" filter is literal, so maturin is recorded as a non-goal rather than silently unhandled -- consistent with the original spec's silence on maturin. (3) New AC-004: [[release.artifact]] slots are a second, independent source for the build matrix (from the release intent's artifactSlots), built with cargo build --release --target <triple> and archived to the slot's asset name -- distinct from the napi-sourced entries. (4) New AC-005: GATE2-FIXES.md's parenthetical 'callisto matrix gains cargo [[release.artifact]] entries (criterion)' is interpreted as extending callisto matrix's own platformTargets output to enumerate configured [[release.artifact]] cargo binaries -- a judgment call on ambiguous phrasing, since the alternative reading (folding AC-004's artifactSlots source into matrix's schema) was rejected because GATE2-FIXES.md lists artifactSlots and this extension as two separate clauses. This one field addition is called out as an explicit exception to the 'callisto matrix's own output schema is out of scope' boundary this spec otherwise holds, because AC-002's flattening query would otherwise miss cargo release-artifact targets entirely. (5) New AC-007: the execute job's exact two-command sequence (callisto release artifact-manifest then callisto release execute) is taken verbatim from GATE2-FIXES.md; the two subcommands' own behavior is left to SPEC-DX-RELEASE-CLI as a non-goal, consistent with this spec's existing boundary.",
+  "reasoning": "No api_surface: interface is generated YAML content, not a callable signature. MatrixReport/PlatformTargetGroup/PlatformTarget field names (platformTargets, kind, targets, hostRunner, useCross, triple) confirmed via git show origin/main:crates/callisto-model/src/matrix.rs; napi/maturin are the only two PlatformTargetKind variants today, with no cargo/[[release.artifact]] representation yet, which is what AC-005 adds. callisto matrix's own command signature confirmed via git show origin/main:crates/callisto-graph/src/commands/matrix.rs.",
+  "spec_file_path": "docs/specs/SPEC-DX-SETUP-WORKFLOW-MATRIX.json",
+  "status": "design"
+}

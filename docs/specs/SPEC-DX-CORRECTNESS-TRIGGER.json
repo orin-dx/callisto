@@ -1,0 +1,24 @@
+{
+  "id": "SPEC-DX-CORRECTNESS-TRIGGER",
+  "purpose": "callisto-model::Package's release_trigger field is resolved per-package from config (config/resolve.rs, walk.rs:382-383) but aggregate.rs's call site invokes commit-based severity inference unconditionally for every package regardless of that field's value. This spec wires release_trigger to actually gate the inference call.",
+  "scope": "The inference.infer(pkg, git, window) call site in callisto-graph/src/aggregate.rs, gated on the package's resolved ReleaseTrigger.",
+  "non_goals": [
+    "Removing the commit-inference feature itself -- it is opt-in (non-default, not compiled into the shipped binary) and unrelated to this fix.",
+    "Changing how release_trigger is resolved from config -- config/resolve.rs and walk.rs already do this correctly and are unaffected.",
+    "release/derive.rs plan-derivation parity items (SPEC-DX-CORRECTNESS-PARITY)."
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-14",
+      "criterion": "For a package whose resolved release_trigger is ReleaseTrigger::Changeset (the default, callisto-model/src/package.rs:264), commit-based severity inference (aggregate.rs's inference.infer(pkg, git, window) call, callisto-graph/src/infer.rs) is not invoked for that package even when the inference feature is compiled in; the package's severity comes only from pending changesets."
+    },
+    {
+      "id": "AC-15",
+      "criterion": "For a package whose resolved release_trigger is ReleaseTrigger::Auto, commit-based severity inference still runs and can raise that package's severity above what pending changesets alone would produce, unchanged from current behavior."
+    }
+  ],
+  "linked_requirement": "REQ-DX-V1",
+  "reasoning": "Grounded against origin/fix/release-run-simplify@9be31095. release_trigger already has per-package override tests (per_package_config_test.rs: per_package_release_trigger_auto_is_applied) confirming resolution works; the defect is solely that aggregate.rs:203's inference call site ignores the resolved value. This is a small, surgical gate at one call site, not a redesign of the inference feature.",
+  "spec_file_path": "docs/specs/SPEC-DX-CORRECTNESS-TRIGGER.json",
+  "status": "design"
+}
