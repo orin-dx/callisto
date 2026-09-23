@@ -47,6 +47,13 @@ test-ci: build-moon-wasm
     cargo nextest run --workspace --all-features --profile ci
     cargo test --doc --all-features
 
+# Compiles and runs the callisto-cli test suite under the shipped binary's
+# default features only (no --all-features, no inference), so a bug reachable
+# only in that build is caught here instead of only under --all-features.
+test-ci-default-features:
+    cargo nextest run -p callisto-cli
+    cargo test --doc -p callisto-cli
+
 # Execute the release lifecycle at the real CLI boundary with fake registry,
 # Git, forge, and attestation providers. This is deliberately separate from
 # broad workspace tests so PR CI makes the release behavior evidence visible.
@@ -230,4 +237,4 @@ workflow-contracts: release-workflow-checks
 # Every check CI runs except actionlint (Docker) and the binary-dependent
 # release-PR decide contract and artifact preflight build. CI runs them as
 # parallel jobs (callisto-ci.yml); locally they run in sequence.
-ci: fmt-check lint test audit doc-check wasm-check zizmor workflow-contracts release-workflow-behavior (coverage "90")
+ci: fmt-check lint test test-ci-default-features audit doc-check wasm-check zizmor workflow-contracts release-workflow-behavior (coverage "90")

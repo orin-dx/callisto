@@ -21,7 +21,7 @@ runs:
         CLICOLOR_FORCE: "1"
       run: |
         echo "::group::Simulating Release Publish Plan"
-        callisto plan-publish --format text || true
+        callisto plan-publish --format text
         echo "::endgroup::"
 
     - name: Render PR Release Pre-Flight Summary
