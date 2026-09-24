@@ -46,10 +46,9 @@ require_line "$build_artifact" '          bash .github/scripts/build-release-art
 require_line "$build_artifact" '            target: aarch64-apple-darwin' 'the product matrix must build macOS ARM64'
 require_line "$build_artifact" '            target: x86_64-unknown-linux-gnu' 'the product matrix must build glibc Linux x86_64'
 require_line "$build_artifact" '            target: x86_64-unknown-linux-musl' 'the product matrix must build musl Linux x86_64'
-require_line "$build_artifact" '            target: wasm32-wasip1' 'the product matrix must build the WASI plugin'
 
 build="$(job_block build execute)"
-require_line "$build" '          callisto release artifact-manifest --intent "${RUNNER_TEMP}/release-intent/release-intent.json" --artifact-dir "${RUNNER_TEMP}/release-artifacts" --out "${RUNNER_TEMP}/release-artifacts/manifest.json"' 'assembly must create the exact four-slot artifact manifest'
+require_line "$build" '          callisto release artifact-manifest --intent "${RUNNER_TEMP}/release-intent/release-intent.json" --artifact-dir "${RUNNER_TEMP}/release-artifacts" --out "${RUNNER_TEMP}/release-artifacts/manifest.json"' 'assembly must create the exact three-slot artifact manifest'
 
 plan="$(job_block plan build-artifact)"
 require_line "$plan" '          ref: ${{ needs.release-candidate.outputs.orchestration_sha }}' 'planning must use one resolved current orchestration revision'
@@ -96,9 +95,8 @@ fi
 if ! rg -Fqx '          - id: macos-arm64' "$ci_workflow" \
   || ! rg -Fqx '            target: aarch64-apple-darwin' "$ci_workflow" \
   || ! rg -Fqx '            target: x86_64-unknown-linux-gnu' "$ci_workflow" \
-  || ! rg -Fqx '            target: x86_64-unknown-linux-musl' "$ci_workflow" \
-  || ! rg -Fqx '            target: wasm32-wasip1' "$ci_workflow"; then
-  printf 'workflow contract failed: artifact preflight must cover all four product targets\n' >&2
+  || ! rg -Fqx '            target: x86_64-unknown-linux-musl' "$ci_workflow"; then
+  printf 'workflow contract failed: artifact preflight must cover all three product targets\n' >&2
   exit 1
 fi
 
@@ -110,7 +108,7 @@ if rg -n '^  environment-policy:$|^    environment: release$' "$workflow" > /dev
   exit 1
 fi
 
-if rg -U 'run: \|(?s:.*?)\$\{\{ inputs\.' .github/actions/setup-callisto/action.yml .github/actions/setup-callisto-wasm/action.yml > /dev/null; then
+if rg -U 'run: \|(?s:.*?)\$\{\{ inputs\.' .github/actions/setup-callisto/action.yml > /dev/null; then
   printf 'workflow contract failed: composite-action inputs must enter shell through named environment variables\n' >&2
   exit 1
 fi

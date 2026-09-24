@@ -19,12 +19,7 @@ write_stub() {
 }
 
 write_stub rustup 'printf "rustup %s\\n" "$*" >> "$CALLISTO_TEST_LOG"'
-write_stub cargo '
-printf "cargo %s\\n" "$*" >> "$CALLISTO_TEST_LOG"
-if [[ "$1" == "rustc" ]]; then
-  mkdir -p "$PWD/target/wasm32-wasip1/release"
-  printf wasm > "$PWD/target/wasm32-wasip1/release/callisto_moon.wasm"
-fi'
+write_stub cargo 'printf "cargo %s\\n" "$*" >> "$CALLISTO_TEST_LOG"'
 write_stub cross '
 printf "cross %s\\n" "$*" >> "$CALLISTO_TEST_LOG"
 mkdir -p "$PWD/target/x86_64-unknown-linux-musl/release"
@@ -62,12 +57,9 @@ run_supported() {
 run_supported cli aarch64-apple-darwin callisto-aarch64-apple-darwin.tar.gz
 run_supported cli x86_64-unknown-linux-gnu callisto-x86_64-unknown-linux-gnu.tar.gz
 run_supported cross x86_64-unknown-linux-musl callisto-x86_64-unknown-linux-musl.tar.gz
-run_supported wasm wasm32-wasip1 callisto-moon.wasm
 
 rg -F 'cargo install cross --locked --version 0.2.5' "$log" > /dev/null
 rg -F 'cross build --locked --release -p callisto-cli --target x86_64-unknown-linux-musl' "$log" > /dev/null
-rg -F 'cargo rustc --locked --release -p callisto-moon --target wasm32-wasip1' "$log" > /dev/null
-rg -F -- '--features pdk --crate-type cdylib' "$log" > /dev/null
 
 if CALLISTO_RELEASE_ARTIFACT_KIND=cli \
   CALLISTO_RELEASE_ARTIFACT_TARGET=wasm32-wasip1 \
@@ -77,6 +69,18 @@ if CALLISTO_RELEASE_ARTIFACT_KIND=cli \
   PATH="$bin_dir:$PATH" \
   bash .github/scripts/build-release-artifact.sh; then
   printf 'unsupported release artifact tuple unexpectedly succeeded\n' >&2
+  exit 1
+fi
+
+# The moon plugin artifact was removed; its old tuple must stay rejected.
+if CALLISTO_RELEASE_ARTIFACT_KIND=wasm \
+  CALLISTO_RELEASE_ARTIFACT_TARGET=wasm32-wasip1 \
+  CALLISTO_RELEASE_ARTIFACT_ASSET=callisto-moon.wasm \
+  CALLISTO_RELEASE_SOURCE_ROOT="$source_root" \
+  CALLISTO_RELEASE_ARTIFACT_DIR="$root/removed" \
+  PATH="$bin_dir:$PATH" \
+  bash .github/scripts/build-release-artifact.sh; then
+  printf 'removed wasm release artifact tuple unexpectedly succeeded\n' >&2
   exit 1
 fi
 

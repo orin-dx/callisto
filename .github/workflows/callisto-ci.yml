@@ -62,7 +62,6 @@ jobs:
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
         with:
           components: rustfmt
-          targets: wasm32-wasip1
       - run: just fmt-check
 
   clippy:
@@ -80,12 +79,11 @@ jobs:
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
         with:
           components: clippy
-          targets: wasm32-wasip1
       - run: just lint
       - run: just doc-check
 
   test:
-    name: Test Suite & WASM Check (${{ matrix.os }})
+    name: Test Suite (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -101,8 +99,6 @@ jobs:
           tool: just@1.58.0
       - uses: moonrepo/setup-toolchain@261c62cb5b0f580c7be7c8cd0f023a2e96756095 # v0
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
-        with:
-          targets: wasm32-wasip1
       - uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab # v2
         with:
           tool: cargo-nextest
@@ -134,7 +130,6 @@ jobs:
       - run: just release-workflow-behavior
       - name: Verify Release-PR action against the real callisto binary
         run: bash .github/actions/callisto-action/tests/test_release_pr_decide_binary_contract.sh
-      - run: just wasm-check
 
   test-default-features:
     name: Test Suite (Default Features)
@@ -175,11 +170,6 @@ jobs:
             target: x86_64-unknown-linux-musl
             asset: callisto-x86_64-unknown-linux-musl.tar.gz
             kind: cross
-          - id: wasm-wasi
-            runner: ubuntu-latest
-            target: wasm32-wasip1
-            asset: callisto-moon.wasm
-            kind: wasm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -209,11 +199,9 @@ jobs:
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
         with:
           components: llvm-tools-preview
-          targets: wasm32-wasip1
       - uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab # v2
         with:
           tool: cargo-llvm-cov
-      - run: just wasm-check
       - run: just coverage 90
       # Non-blocking for now: the workspace-total gate above can pass while
       # a small crate is far below threshold (a few large crates dominate
@@ -234,8 +222,6 @@ jobs:
           tool: just@1.58.0
       - uses: moonrepo/setup-toolchain@261c62cb5b0f580c7be7c8cd0f023a2e96756095 # v0
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
-        with:
-          targets: wasm32-wasip1
       - uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab # v2
         with:
           tool: cargo-deny
