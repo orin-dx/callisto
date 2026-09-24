@@ -646,10 +646,10 @@ pub enum GraphError {
     )]
     InitWorkflowExists { path: PathBuf },
 
-    #[error("could not resolve tag `callisto@{version}` on orin-dx/callisto")]
+    #[error("couldn't resolve callisto@{version} to a commit on orin-dx/callisto")]
     #[diagnostic(
         code(E201),
-        help("check network connectivity to github.com, or that callisto@{version} is a published tag")
+        help("check network access to github.com, or run `callisto init --no-workflow` to skip workflow generation")
     )]
     InitWorkflowVersionUnresolved { version: String },
 

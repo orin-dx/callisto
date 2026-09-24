@@ -27,7 +27,7 @@ pub fn load_workspace<'a>(
 }
 
 /// The workspace root above `--cwd`, after checking `git` is supported.
-pub fn workspace_root(global: &GlobalArgs, runner: &CliCommandRunner) -> Result<PathBuf, CliError> {
+pub fn workspace_root(global: &GlobalArgs, runner: &dyn CommandRunner) -> Result<PathBuf, CliError> {
     let start = dunce::canonicalize(&global.cwd).map_err(|source| CliError::Io {
         source,
         path: Some(global.cwd.clone()),

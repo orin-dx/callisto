@@ -8,7 +8,7 @@ use callisto_graph::commands::init::{
 };
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_graph::GraphError;
-use callisto_model::{ApplyPermit, InitReport, SCHEMA_VERSION};
+use callisto_model::{ApplyPermit, CommandRunner, InitReport, SCHEMA_VERSION};
 use dialoguer::{Confirm, Input, Select};
 
 use crate::cli::{GlobalArgs, InitArgs, InitVersioning, OutputFormat};
@@ -86,22 +86,23 @@ pub fn handle(args: InitArgs, global: &GlobalArgs) -> Result<ExitCode, CliError>
         &mut TerminalPrompter,
         &mut std::io::stdout(),
         &mut std::io::stderr(),
+        &CliCommandRunner,
     )
 }
 
-/// `init` against explicit terminal state, prompter, and output streams.
-pub fn run(
+/// `init` against explicit terminal state, prompter, output streams, and command runner.
+pub fn run<R: CommandRunner>(
     args: InitArgs,
     global: &GlobalArgs,
     interactive: bool,
     prompter: &mut dyn Prompter,
     out: &mut dyn Write,
     err: &mut dyn Write,
+    runner: &R,
 ) -> Result<ExitCode, CliError> {
-    let runner = CliCommandRunner;
-    let root = workspace_root(global, &runner)?;
+    let root = workspace_root(global, runner)?;
     let locator = IgnoreWalkLocator::new(&root);
-    let facts = scaffold::detect(&root, &locator, &runner)?;
+    let facts = scaffold::detect(&root, &locator, runner)?;
     let json = global.format == OutputFormat::Json;
     // JSON keeps stdout for the report.
     let human: &mut dyn Write = if json { &mut *err } else { &mut *out };
@@ -122,7 +123,7 @@ pub fn run(
         }
     }
     let prompting = interactive && !args.yes;
-    let answers = collect_answers(&args, &facts, prompting, prompter, &runner)?;
+    let answers = collect_answers(&args, &facts, prompting, prompter, runner)?;
 
     let mut diagnostics = Vec::new();
     let want_workflow = match scaffold::workflow_matrix_reason(&facts, &answers) {
@@ -153,9 +154,9 @@ pub fn run(
     };
     let workflow = if want_workflow {
         scaffold::ensure_workflow_absent(&facts.root)?;
-        let branch = scaffold::default_branch(&runner, &facts.root);
+        let branch = scaffold::default_branch(runner, &facts.root);
         let version = env!("CARGO_PKG_VERSION");
-        let commit = scaffold::resolve_release_commit(&runner, &facts.root, version)?;
+        let commit = scaffold::resolve_release_commit(runner, &facts.root, version)?;
         Some(scaffold::render_workflow(&facts, &branch, &commit, version))
     } else {
         None
@@ -163,7 +164,7 @@ pub fn run(
 
     let config = scaffold::render_config(&facts, &answers);
     let plan = if facts.has_commit {
-        Some(scaffold::preview(&facts, &config, &locator, &runner)?)
+        Some(scaffold::preview(&facts, &config, &locator, runner)?)
     } else {
         None
     };
@@ -250,12 +251,12 @@ fn missing(flag: &'static str) -> CliError {
     CliError::InitMissingFlags { missing: vec![flag] }
 }
 
-fn collect_answers(
+fn collect_answers<R: CommandRunner>(
     args: &InitArgs,
     facts: &InitFacts,
     prompting: bool,
     prompter: &mut dyn Prompter,
-    runner: &CliCommandRunner,
+    runner: &R,
 ) -> Result<InitAnswers, CliError> {
     let versioning = match args.versioning {
         Some(InitVersioning::Fixed) => Versioning::Fixed,
@@ -345,6 +346,8 @@ mod tests {
     use std::collections::VecDeque;
     use std::path::Path;
     use std::rc::Rc;
+
+    use callisto_model::{CommandError, CommandOutput};
 
     use super::*;
 
@@ -481,6 +484,17 @@ mod tests {
     }
 
     fn run_init(root: &Path, args: InitArgs, interactive: bool, answers: Vec<Answer>, dry_run: bool) -> Run {
+        run_init_with_runner(root, args, interactive, answers, dry_run, &CliCommandRunner)
+    }
+
+    fn run_init_with_runner<R: CommandRunner>(
+        root: &Path,
+        args: InitArgs,
+        interactive: bool,
+        answers: Vec<Answer>,
+        dry_run: bool,
+        runner: &R,
+    ) -> Run {
         let out = Shared::default();
         let err = Shared::default();
         let mut prompter = Scripted::new(answers, &out);
@@ -491,6 +505,7 @@ mod tests {
             &mut prompter,
             &mut out.clone(),
             &mut err.clone(),
+            runner,
         );
         Run {
             result,
@@ -917,6 +932,7 @@ mod tests {
             &mut Scripted::new(vec![], &out),
             &mut out.clone(),
             &mut err.clone(),
+            &CliCommandRunner,
         )
         .unwrap();
         let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
@@ -929,22 +945,79 @@ mod tests {
         std::fs::read_to_string(root.join(".github/workflows/release.yml")).unwrap()
     }
 
+    /// Delegates every call to the real `CliCommandRunner`, except `git
+    /// ls-remote` (used only to resolve `callisto@<version>`'s commit),
+    /// answered from canned output -- keeps these tests network-free without
+    /// faking the many other git calls `run()` legitimately makes against
+    /// each test's own temp repository.
+    struct FakeLsRemote {
+        stdout: &'static str,
+    }
+
+    impl CommandRunner for FakeLsRemote {
+        fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
+            CliCommandRunner.run(program, args, cwd)
+        }
+        fn run_with_timeout(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+            timeout: std::time::Duration,
+        ) -> Result<CommandOutput, CommandError> {
+            CliCommandRunner.run_with_timeout(program, args, cwd, timeout)
+        }
+        fn run_quiet(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+            timeout: std::time::Duration,
+        ) -> Result<CommandOutput, CommandError> {
+            if program == "git" && args.first() == Some(&"ls-remote") {
+                return Ok(CommandOutput {
+                    exit_code: Some(0),
+                    stdout: self.stdout.to_owned(),
+                    stderr: String::new(),
+                });
+            }
+            CliCommandRunner.run_quiet(program, args, cwd, timeout)
+        }
+        fn run_with_stdin(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+            stdin: &[u8],
+        ) -> Result<CommandOutput, CommandError> {
+            CliCommandRunner.run_with_stdin(program, args, cwd, stdin)
+        }
+    }
+
+    const FAKE_COMMIT: &str = "cccccccccccccccccccccccccccccccccccccccc";
+
+    fn fake_ls_remote(version: &str) -> FakeLsRemote {
+        FakeLsRemote {
+            stdout: Box::leak(
+                format!(
+                    "{FAKE_COMMIT}\trefs/tags/callisto@{version}\n{FAKE_COMMIT}\trefs/tags/callisto@{version}^{{}}\n"
+                )
+                .into_boxed_str(),
+            ),
+        }
+    }
+
     // AC-001, AC-002: answering yes to the interactive question writes the generated workflow.
-    //
-    // `run()` has no injectable CommandRunner, so this exercises a real
-    // `git ls-remote` against orin-dx/callisto's own public remote (read-only,
-    // no auth, same call production `callisto init --workflow` makes) rather
-    // than a fake one; resolve_release_commit's parsing itself is covered
-    // network-free in callisto-graph's own tests.
     #[test]
     fn interactive_workflow_confirm_writes_the_generated_file() {
         let dir = workspace(0);
-        let run = run_init(
+        let run = run_init_with_runner(
             dir.path(),
             InitArgs::default(),
             true,
             vec![Answer::Select(0), Answer::Confirm(true), Answer::Confirm(true)],
             false,
+            &fake_ls_remote(env!("CARGO_PKG_VERSION")),
         );
         run.result.unwrap();
         assert_eq!(
@@ -953,24 +1026,12 @@ mod tests {
         );
         assert_eq!(run.prompter.asked[1].1.as_deref(), Some("false"), "defaults to N");
         let workflow = workflow_file(dir.path());
-        let pin_prefix = "uses: orin-dx/callisto/.github/actions/callisto-action@";
-        let pin_line = workflow
-            .lines()
-            .find(|line| line.contains(pin_prefix))
-            .unwrap_or_else(|| panic!("no callisto-action uses: line in:\n{workflow}"));
-        let commit = pin_line
-            .split(pin_prefix)
-            .nth(1)
-            .and_then(|rest| rest.split_whitespace().next())
-            .unwrap();
-        assert_eq!(commit.len(), 40, "not a commit SHA: `{commit}` in `{pin_line}`");
         assert!(
-            commit.chars().all(|c| c.is_ascii_hexdigit()),
-            "`{commit}` in `{pin_line}`"
-        );
-        assert!(
-            pin_line.contains(&format!("# callisto@{}", env!("CARGO_PKG_VERSION"))),
-            "{pin_line}"
+            workflow.contains(&format!(
+                "uses: orin-dx/callisto/.github/actions/callisto-action@{FAKE_COMMIT} # callisto@{}",
+                env!("CARGO_PKG_VERSION")
+            )),
+            "{workflow}"
         );
         assert!(workflow.contains("with: {mode: version-pr}"));
         assert!(workflow.contains("with: {mode: release}"));
@@ -985,8 +1046,40 @@ mod tests {
             workflow: true,
             ..yes(InitVersioning::Independent)
         };
-        run_init(dir.path(), args, false, vec![], false).result.unwrap();
+        run_init_with_runner(
+            dir.path(),
+            args,
+            false,
+            vec![],
+            false,
+            &fake_ls_remote(env!("CARGO_PKG_VERSION")),
+        )
+        .result
+        .unwrap();
         assert!(dir.path().join(".github/workflows/release.yml").exists());
+    }
+
+    // AC-004: an unresolvable tag (offline, or an unreleased version) errors clearly, naming the fix.
+    #[test]
+    fn unresolvable_version_errors_naming_the_fix() {
+        let dir = workspace(0);
+        let empty = FakeLsRemote { stdout: "" };
+        let args = InitArgs {
+            workflow: true,
+            ..yes(InitVersioning::Independent)
+        };
+        let run = run_init_with_runner(dir.path(), args, false, vec![], false, &empty);
+        let error = run.result.unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                CliError::Graph(GraphError::InitWorkflowVersionUnresolved { .. })
+            ),
+            "{error}"
+        );
+        assert!(error.to_string().contains("couldn't resolve"), "{error}");
+        assert!(error.to_string().contains(env!("CARGO_PKG_VERSION")), "{error}");
+        assert!(!dir.path().join(".github/workflows/release.yml").exists());
     }
 
     // AC-001a: declining interactively, `--no-workflow`, and `--yes` with neither flag all write nothing.
@@ -1106,6 +1199,7 @@ mod tests {
             &mut Scripted::new(vec![], &out),
             &mut out.clone(),
             &mut err.clone(),
+            &CliCommandRunner,
         )
         .unwrap();
         let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
