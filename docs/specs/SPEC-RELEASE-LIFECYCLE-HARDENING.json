@@ -237,7 +237,7 @@
     },
     {
       "id": "AC-044",
-      "criterion": "[EC] Release errors are typed variants (E-codes are not reused for unrelated failures); release modules never discard error sources; stale-intent constructors are private to fresh re-observation; E124 reapproval guidance is unique to E124. Source: crates/callisto-graph/src/error.rs, crates/callisto-graph/tests/architecture.rs. Tests: release_modules_never_discard_error_sources, release_intent_stale_is_constructed_only_by_fresh_reobservation, stale_reason_constructors_are_module_private, reapprove_guidance_belongs_to_e124_only.",
+      "criterion": "[EC] Release errors are typed variants (E-codes are not reused for unrelated failures); release modules never discard error sources; stale-intent constructors are private to fresh re-observation; E124 reapproval guidance is unique to E124. Source: crates/callisto-graph/src/error.rs, crates/callisto-graph/tests/architecture.rs. Tests: release_modules_never_discard_error_sources, release_intent_stale_is_constructed_only_by_fresh_reobservation, stale_reason_constructors_are_module_private.",
       "is_error_case": false
     }
   ],
