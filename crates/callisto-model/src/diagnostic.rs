@@ -70,6 +70,8 @@ pub struct Diagnostic {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DiagnosticSeverity {
+    /// Advisory only; never fails a command.
+    Info,
     Warning,
     Error,
 }
@@ -181,6 +183,9 @@ pub enum DiagnosticCode {
     /// workflow for the workspace's shape (maturin platform builds, or platform packages
     /// with no `napi.targets`).
     WorkflowGenerationUnsupported,
+    /// `callisto init` wrote a release workflow: a merge to the named default branch
+    /// publishes, so that branch should require pull requests and reviews.
+    WorkflowMergePublishes,
 }
 
 #[cfg(test)]

@@ -26,6 +26,24 @@ Before the first effect it checks one credential per operation kind and names th
 
 ---
 
+## Generated workflows
+
+`callisto init --workflow` (or answering yes to its question) writes `.github/workflows/callisto-release.yml`. That is the path `release plan` binds artifact attestations to, so keep the name. Init never overwrites an existing file.
+
+- Simple shape (no `[[release.artifact]]` slots, no napi platform packages): a `version-pr` job keeps the release PR current, and a `release` job runs `callisto release` on every push to the default branch. That is a no-op until the merged release PR leaves an untagged version.
+- Build-matrix shape (artifact slots or napi platform packages): `version-pr`, then `plan` → `build` → `execute`. `plan` runs only when the pushed commit writes `.callisto/release-decision.json`. `build` has one matrix job per napi target from `callisto matrix` and one per artifact slot, and attests the slot assets. `execute` places the napi builds (`napi artifacts`), writes the artifact manifest, and runs `callisto release execute`.
+- Maturin builds, and platform packages without `napi.targets`, get no generated workflow.
+
+The default branch is the approval boundary: a merge to it publishes. Protect it with a rule that requires pull requests and reviews (GitHub → Settings → Rules). Init prints this reminder after writing the file.
+
+Limits of the build-matrix shape:
+
+- `napi build` runs in the napi package's directory. When the Rust crate lives elsewhere (for example `packages/napi` with the crate in `crates/binding`), add `--manifest-path` to that step.
+- `napi artifacts` writes `.node` files into the checkout, and `release execute` refuses a dirty worktree, so `*.node` must be gitignored.
+- Artifact slots build the package's `bin` targets with `cargo build --release --locked`. Any other build (a `cdylib`, custom features) needs a hand-edited step.
+
+---
+
 ## Repository durable-release workflow
 
 Callisto's own `.github/workflows/callisto-release.yml` separates release work into four authority boundaries. A push with pending changesets creates or updates the release PR. That PR versions manifests and changelogs and removes only the changesets it consumed. Nothing is removed from `main` until that PR is merged.

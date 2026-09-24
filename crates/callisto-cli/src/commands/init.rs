@@ -33,6 +33,12 @@ pub const NO_COMMITS: &str =
 fn workflow_unsupported_note(reason: scaffold::WorkflowUnsupported) -> String {
     format!("Skipping GitHub Actions workflow generation: {reason}.")
 }
+/// Printed once a generated workflow is written: a merge to `branch` is the release approval.
+fn merge_publishes_note(branch: &str) -> String {
+    format!(
+        "Merging to `{branch}` publishes: require pull requests and reviews on `{branch}` (GitHub → Settings → Rules)."
+    )
+}
 const VERSIONING_CHOICES: [&str; 2] = [
     "independent: each package has its own version",
     "fixed: every package shares one version",
@@ -162,7 +168,8 @@ pub fn run<R: CommandRunner>(
             let branch = scaffold::default_branch(runner, &facts.root);
             let version = env!("CARGO_PKG_VERSION");
             let commit = scaffold::resolve_release_commit(runner, &facts.root, version)?;
-            Some(scaffold::render_workflow(&facts, shape, &branch, &commit, version))
+            let content = scaffold::render_workflow(&facts, shape, &branch, &commit, version);
+            Some((content, branch))
         }
         None => None,
     };
@@ -181,7 +188,7 @@ pub fn run<R: CommandRunner>(
         }
         None => writeln!(human, "{NO_COMMITS}")?,
     }
-    if let Some(workflow) = &workflow {
+    if let Some((workflow, _)) = &workflow {
         writeln!(
             human,
             "\n{}:\n{workflow}",
@@ -204,8 +211,19 @@ pub fn run<R: CommandRunner>(
         }
         let permit = ApplyPermit::granted_unless_dry_run(false).expect("non-dry-run permits writes");
         let report = scaffold::write(&facts.root, &config, &permit)?;
-        if let Some(workflow) = &workflow {
+        if let Some((workflow, branch)) = &workflow {
             scaffold::write_workflow(&facts.root, workflow, &permit)?;
+            let note = merge_publishes_note(branch);
+            writeln!(human, "{note}")?;
+            diagnostics.push(callisto_model::Diagnostic {
+                code: callisto_model::DiagnosticCode::WorkflowMergePublishes,
+                severity: callisto_model::DiagnosticSeverity::Info,
+                message: note,
+                package: None,
+                path: None,
+                escalated_by: None,
+                governed_by: None,
+            });
         }
         report
     };
@@ -1069,6 +1087,67 @@ mod tests {
         .result
         .unwrap();
         assert!(dir.path().join(".github/workflows/callisto-release.yml").exists());
+    }
+
+    // Writing a workflow prints that a merge to the default branch publishes, and records it
+    // as an info diagnostic; a dry run writes nothing and says nothing.
+    #[test]
+    fn written_workflow_notes_that_merging_publishes() {
+        let note =
+            "Merging to `main` publishes: require pull requests and reviews on `main` (GitHub → Settings → Rules).";
+        let args = || InitArgs {
+            workflow: true,
+            ..yes(InitVersioning::Independent)
+        };
+        let text = workspace(0);
+        let run = run_init_with_runner(
+            text.path(),
+            args(),
+            false,
+            vec![],
+            false,
+            &fake_ls_remote(env!("CARGO_PKG_VERSION")),
+        );
+        run.result.unwrap();
+        assert!(run.out.contains(&format!("{note}\n")), "{}", run.out);
+
+        let dir = workspace(0);
+        let out = Shared::default();
+        let err = Shared::default();
+        run_with_json(dir.path(), args(), false, &out, &err);
+        assert!(err.text().contains(note), "{}", err.text());
+        let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
+        let diagnostics = report["diagnostics"].as_array().unwrap();
+        assert_eq!(diagnostics.len(), 1, "{report}");
+        assert_eq!(diagnostics[0]["code"], "workflow-merge-publishes");
+        assert_eq!(diagnostics[0]["severity"], "info");
+        assert_eq!(diagnostics[0]["message"], note);
+
+        let dry = workspace(0);
+        let out = Shared::default();
+        let err = Shared::default();
+        run_with_json(dry.path(), args(), true, &out, &err);
+        assert!(!err.text().contains("Merging to"), "{}", err.text());
+        let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
+        assert!(
+            report
+                .get("diagnostics")
+                .is_none_or(|d| d.as_array().unwrap().is_empty()),
+            "{report}"
+        );
+    }
+
+    fn run_with_json(root: &Path, args: InitArgs, dry_run: bool, out: &Shared, err: &Shared) {
+        run(
+            args,
+            &global(root, OutputFormat::Json, dry_run),
+            false,
+            &mut Scripted::new(vec![], out),
+            &mut out.clone(),
+            &mut err.clone(),
+            &fake_ls_remote(env!("CARGO_PKG_VERSION")),
+        )
+        .unwrap();
     }
 
     // AC-004: an unresolvable tag (offline, or an unreleased version) errors clearly, naming the fix.

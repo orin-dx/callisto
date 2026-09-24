@@ -86,11 +86,12 @@ fn ac13_diagnostic_code_enum_gains_only_changelog_read_error() {
         "ambiguous-package-name",
         "platform-package-without-owner",
         "workflow-generation-unsupported",
+        "workflow-merge-publishes",
     ]);
 
     assert_eq!(
         variants, expected,
-        "DiagnosticCode schema must gain exactly one new variant: workflow-generation-unsupported"
+        "DiagnosticCode schema must gain exactly two new variants: workflow-generation-unsupported and workflow-merge-publishes"
     );
 }
 
