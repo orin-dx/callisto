@@ -184,7 +184,7 @@ pub struct InitArgs {
     /// The GitHub repository (`owner/repo`) binaries are released to.
     #[arg(long, value_name = "OWNER/REPO")]
     pub forge_repository: Option<String>,
-    /// Generate `.github/workflows/release.yml`.
+    /// Generate `.github/workflows/callisto-release.yml`.
     #[arg(long)]
     pub workflow: bool,
     /// Do not generate a GitHub Actions release workflow.

@@ -529,7 +529,7 @@ mod tests {
     fn nothing_written(root: &Path) -> bool {
         !root.join("callisto.toml").exists()
             && !root.join(".changeset").exists()
-            && !root.join(".github/workflows/release.yml").exists()
+            && !root.join(".github/workflows/callisto-release.yml").exists()
     }
 
     // AC-001, AC-002, AC-004, AC-021a: facts precede the only questions: versioning and the write confirm.
@@ -942,7 +942,7 @@ mod tests {
     }
 
     fn workflow_file(root: &Path) -> String {
-        std::fs::read_to_string(root.join(".github/workflows/release.yml")).unwrap()
+        std::fs::read_to_string(root.join(".github/workflows/callisto-release.yml")).unwrap()
     }
 
     /// Delegates every call to the real `CliCommandRunner`, except `git
@@ -1035,7 +1035,11 @@ mod tests {
         );
         assert!(workflow.contains("with: {mode: version-pr}"));
         assert!(workflow.contains("with: {mode: release}"));
-        assert!(run.out.contains(".github/workflows/release.yml:"), "{}", run.out);
+        assert!(
+            run.out.contains(".github/workflows/callisto-release.yml:"),
+            "{}",
+            run.out
+        );
     }
 
     // AC-001: `--workflow` generates without asking, even non-interactively.
@@ -1056,7 +1060,7 @@ mod tests {
         )
         .result
         .unwrap();
-        assert!(dir.path().join(".github/workflows/release.yml").exists());
+        assert!(dir.path().join(".github/workflows/callisto-release.yml").exists());
     }
 
     // AC-004: an unresolvable tag (offline, or an unreleased version) errors clearly, naming the fix.
@@ -1079,7 +1083,7 @@ mod tests {
         );
         assert!(error.to_string().contains("couldn't resolve"), "{error}");
         assert!(error.to_string().contains(env!("CARGO_PKG_VERSION")), "{error}");
-        assert!(!dir.path().join(".github/workflows/release.yml").exists());
+        assert!(!dir.path().join(".github/workflows/callisto-release.yml").exists());
     }
 
     // AC-001a: declining interactively, `--no-workflow`, and `--yes` with neither flag all write nothing.
@@ -1094,7 +1098,7 @@ mod tests {
             false,
         );
         run.result.unwrap();
-        assert!(!declined.path().join(".github/workflows/release.yml").exists());
+        assert!(!declined.path().join(".github/workflows/callisto-release.yml").exists());
 
         let no_flag = workspace(0);
         let args = InitArgs {
@@ -1104,7 +1108,7 @@ mod tests {
         let run = run_init(no_flag.path(), args, false, vec![], false);
         run.result.unwrap();
         assert!(run.prompter.prompts().is_empty());
-        assert!(!no_flag.path().join(".github/workflows/release.yml").exists());
+        assert!(!no_flag.path().join(".github/workflows/callisto-release.yml").exists());
 
         let default_yes = workspace(0);
         run_init(
@@ -1116,7 +1120,10 @@ mod tests {
         )
         .result
         .unwrap();
-        assert!(!default_yes.path().join(".github/workflows/release.yml").exists());
+        assert!(!default_yes
+            .path()
+            .join(".github/workflows/callisto-release.yml")
+            .exists());
     }
 
     // AC-002a: an existing workflow file errors before the preview, in both normal and --dry-run runs.
@@ -1125,7 +1132,7 @@ mod tests {
         for dry_run in [false, true] {
             let dir = workspace(0);
             std::fs::create_dir_all(dir.path().join(".github/workflows")).unwrap();
-            std::fs::write(dir.path().join(".github/workflows/release.yml"), "mine\n").unwrap();
+            std::fs::write(dir.path().join(".github/workflows/callisto-release.yml"), "mine\n").unwrap();
             let args = InitArgs {
                 workflow: true,
                 ..yes(InitVersioning::Independent)
@@ -1140,7 +1147,7 @@ mod tests {
             assert!(!run.out.contains("First release preview"), "{}", run.out);
             assert!(!run.out.contains("callisto.toml:"), "{}", run.out);
             assert_eq!(
-                std::fs::read_to_string(dir.path().join(".github/workflows/release.yml")).unwrap(),
+                std::fs::read_to_string(dir.path().join(".github/workflows/callisto-release.yml")).unwrap(),
                 "mine\n"
             );
             assert!(!dir.path().join("callisto.toml").exists());
@@ -1183,7 +1190,7 @@ mod tests {
             "{}",
             run.out
         );
-        assert!(!dir.path().join(".github/workflows/release.yml").exists());
+        assert!(!dir.path().join(".github/workflows/callisto-release.yml").exists());
     }
 
     // The skip note also lands in InitReport.diagnostics, so a --format json caller sees it too.

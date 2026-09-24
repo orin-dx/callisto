@@ -525,9 +525,10 @@ pub fn empty_config() -> &'static str {
     CONFIG_HEADER
 }
 
-/// Path `init` writes a generated GitHub Actions release workflow to.
+/// Path `init` writes a generated GitHub Actions release workflow to: the one
+/// workflow `release plan` binds artifact attestations to.
 pub fn workflow_path(root: &Path) -> PathBuf {
-    root.join(".github/workflows/release.yml")
+    root.join(callisto_model::RELEASE_COORDINATOR_WORKFLOW_PATH)
 }
 
 /// Why a workspace needs the build-matrix workflow (SPEC-DX-SETUP-WORKFLOW-MATRIX,
@@ -1334,7 +1335,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let workflows_dir = dir.path().join(".github/workflows");
         std::fs::create_dir_all(&workflows_dir).unwrap();
-        let path = workflows_dir.join("release.yml");
+        let path = workflows_dir.join("callisto-release.yml");
         std::fs::write(&path, &workflow).unwrap();
 
         match std::process::Command::new("actionlint").arg(&path).output() {
@@ -1525,7 +1526,7 @@ mod tests {
         let permit = ApplyPermit::force_for_tests();
         assert_eq!(
             workflow_path(dir.path()),
-            dir.path().join(".github/workflows/release.yml")
+            dir.path().join(".github/workflows/callisto-release.yml")
         );
         ensure_workflow_absent(dir.path()).unwrap();
         write_workflow(dir.path(), "content\n", &permit).unwrap();
