@@ -106,15 +106,27 @@ jobs:
         with:
           tool: cargo-nextest
       - name: Install Verdaccio (real-registry npm e2e coverage)
-        run: npm install -g verdaccio@6.10.4
+        run: npm install -g verdaccio@6.10.4 # zizmor: ignore[adhoc-packages] pinned to an exact upstream release; a CI-only test-registry tool, not a shipped or lockfile-tracked dependency.
       - name: Install pypiserver (real-registry PyPI e2e coverage)
         # A venv, not --user: its bin/ always carries a `python` executable
         # regardless of the base interpreter's own name (pypi_publish_argv
         # hardcodes `python`, not `python3`), alongside pinned pypi-server
         # and twine -- one directory, same layout on both runner OSes.
+        # legacy-cgi: pypiserver 2.4.0 (its latest release) imports the
+        # stdlib `cgi` module, removed in Python 3.13 (PEP 594); macOS
+        # runners' `python3` is already past that line, so without this
+        # pypi-server crashes on startup with ModuleNotFoundError before
+        # ever binding its port. A no-op on a Python that still has the
+        # real stdlib module (verified: the real one still wins the import).
+        # gunicorn: the test passes `--server gunicorn` to pypi-server --
+        # every other backend (the `auto` default's `wsgiref` fallback,
+        # `paste`, gevent's `pywsgi`) resolves the bind address via
+        # `socket.getfqdn()` before listening, measured to take 12-35s on a
+        # machine exhibiting the same slow-reverse-DNS symptom the CI macOS
+        # runner hit; gunicorn has no such call and measured under 1s.
         run: |
           python3 -m venv "$RUNNER_TEMP/pypi-e2e-venv"
-          "$RUNNER_TEMP/pypi-e2e-venv/bin/pip" install pypiserver==2.4.0 twine==6.2.0 build==1.4.4
+          "$RUNNER_TEMP/pypi-e2e-venv/bin/pip" install pypiserver==2.4.0 twine==6.2.0 build==1.4.4 legacy-cgi==2.6.3 gunicorn==26.2.0
           echo "$RUNNER_TEMP/pypi-e2e-venv/bin" >> "$GITHUB_PATH"
       - run: just test-ci
       - run: just release-workflow-behavior

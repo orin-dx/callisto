@@ -74,9 +74,18 @@ fn free_loopback_port() -> u16 {
 }
 
 /// A spawned server process, killed on drop so a panicking assertion never
-/// leaks it past the test.
+/// leaks it past the test. `log_path` is its combined stdout+stderr, written
+/// to a file rather than piped so a chatty server can never fill an
+/// undrained pipe and deadlock the test.
 struct ServerGuard {
     child: Child,
+    log_path: PathBuf,
+}
+
+impl ServerGuard {
+    fn log(&self) -> String {
+        fs::read_to_string(&self.log_path).unwrap_or_default()
+    }
 }
 
 impl Drop for ServerGuard {
@@ -86,17 +95,39 @@ impl Drop for ServerGuard {
     }
 }
 
-/// Blocks until `port` accepts a loopback TCP connection, or panics after `timeout`.
-fn wait_for_port(port: u16, timeout: Duration) {
+/// Redirects a spawned command's stdout and stderr to one combined log file
+/// under `dir`/`name`, so a startup crash is diagnosable instead of silent.
+fn log_to_file(command: &mut Command, dir: &Path, name: &str) -> PathBuf {
+    let log_path = dir.join(name);
+    let file = fs::File::create(&log_path).expect("server log file must be creatable");
+    let file_for_stderr = file.try_clone().expect("log file handle must be cloneable");
+    command.stdin(Stdio::null()).stdout(file).stderr(file_for_stderr);
+    log_path
+}
+
+/// Blocks until `port` accepts a loopback TCP connection, or panics after
+/// `timeout` -- including the server's captured output in the panic message
+/// either way, and its exit status if it already died. Checking `try_wait`
+/// first means a server that crashes at startup fails fast with its real
+/// error instead of spinning out the whole timeout with no evidence.
+fn wait_for_port(guard: &mut ServerGuard, port: u16, timeout: Duration) {
     let deadline = Instant::now() + timeout;
     loop {
         if TcpStream::connect(("127.0.0.1", port)).is_ok() {
             return;
         }
-        assert!(
-            Instant::now() < deadline,
-            "server on 127.0.0.1:{port} never became reachable within {timeout:?}"
-        );
+        if let Ok(Some(status)) = guard.child.try_wait() {
+            panic!(
+                "server exited with {status} before binding 127.0.0.1:{port}; output:\n{}",
+                guard.log()
+            );
+        }
+        if Instant::now() >= deadline {
+            panic!(
+                "server on 127.0.0.1:{port} never became reachable within {timeout:?}; output:\n{}",
+                guard.log()
+            );
+        }
         std::thread::sleep(Duration::from_millis(100));
     }
 }
@@ -134,16 +165,13 @@ fn start_verdaccio(external: &Path) -> (ServerGuard, u16) {
     )
     .unwrap();
     let port = free_loopback_port();
-    let child = Command::new("verdaccio")
-        .args(["-c", "config.yaml", "-l", &format!("127.0.0.1:{port}")])
-        .current_dir(&config_dir)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("verdaccio must be spawnable");
-    let guard = ServerGuard { child };
-    wait_for_port(port, Duration::from_secs(20));
+    let mut command = Command::new("verdaccio");
+    command.args(["-c", "config.yaml", "-l", &format!("127.0.0.1:{port}")]);
+    command.current_dir(&config_dir);
+    let log_path = log_to_file(&mut command, external, "verdaccio.log");
+    let child = command.spawn().expect("verdaccio must be spawnable");
+    let mut guard = ServerGuard { child, log_path };
+    wait_for_port(&mut guard, port, Duration::from_secs(20));
     (guard, port)
 }
 
@@ -326,31 +354,41 @@ fn python_module_importable(module: &str) -> bool {
 /// authentication fully disabled (`-a . -P .`, its own documented way to
 /// allow anonymous browsing and uploads) and `--disable-fallback`, so a
 /// lookup for an unknown project 404s instead of proxying to real PyPI.
+///
+/// `--server gunicorn`: pypiserver's default `auto` backend selection falls
+/// through to `wsgiref` when nothing else is installed, and `wsgiref`
+/// (like `paste` and gevent's `pywsgi`, also measured) resolves the bind
+/// address via `socket.getfqdn()` before it starts listening -- a reverse
+/// DNS lookup that measured 12-35s on a real machine exhibiting the same
+/// symptom as the CI macOS runner, against sub-second on Linux. `gunicorn`
+/// has no such call anywhere in its source (grepped) and measured
+/// consistently under 1s across repeated runs here; it forks a worker and
+/// terminates both master and worker cleanly on the one SIGTERM `ServerGuard`
+/// sends the master PID.
 fn start_pypiserver(external: &Path) -> (ServerGuard, u16) {
     let packages_dir = external.join("pypiserver-packages");
     fs::create_dir_all(&packages_dir).unwrap();
     let port = free_loopback_port();
-    let child = Command::new("pypi-server")
-        .args([
-            "run",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            &port.to_string(),
-            "--authenticate",
-            ".",
-            "--passwords",
-            ".",
-            "--disable-fallback",
-            packages_dir.to_str().unwrap(),
-        ])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("pypi-server must be spawnable");
-    let guard = ServerGuard { child };
-    wait_for_port(port, Duration::from_secs(20));
+    let mut command = Command::new("pypi-server");
+    command.args([
+        "run",
+        "--server",
+        "gunicorn",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        &port.to_string(),
+        "--authenticate",
+        ".",
+        "--passwords",
+        ".",
+        "--disable-fallback",
+        packages_dir.to_str().unwrap(),
+    ]);
+    let log_path = log_to_file(&mut command, external, "pypiserver.log");
+    let child = command.spawn().expect("pypi-server must be spawnable");
+    let mut guard = ServerGuard { child, log_path };
+    wait_for_port(&mut guard, port, Duration::from_secs(20));
     (guard, port)
 }
 
