@@ -25,6 +25,9 @@ pub const PRODUCT_PROMPT: &str = "Which package is the product whose binaries sh
 pub const FORGE_PROMPT: &str = "GitHub repository to release to (owner/repo)";
 pub const TARGETS_PROMPT: &str = "Artifact target triples (comma-separated)";
 pub const WRITE_PROMPT: &str = "Write callisto.toml?";
+/// Printed instead of the preview when the repository has no commit to plan from.
+pub const NO_COMMITS: &str =
+    "No commits yet: commit, then run `callisto release --dry-run` to preview the first release.";
 const VERSIONING_CHOICES: [&str; 2] = [
     "independent: each package has its own version",
     "fixed: every package shares one version",
@@ -111,13 +114,22 @@ pub fn run(
         }
     }
     let prompting = interactive && !args.yes;
-    let answers = collect_answers(&args, &facts, prompting, prompter, human, &runner)?;
+    let answers = collect_answers(&args, &facts, prompting, prompter, &runner)?;
 
     let config = scaffold::render_config(&facts, &answers);
-    let plan = scaffold::preview(&facts, &config, &locator, &runner)?;
+    let plan = if facts.has_commit {
+        Some(scaffold::preview(&facts, &config, &locator, &runner)?)
+    } else {
+        None
+    };
     writeln!(human, "\ncallisto.toml:\n{config}")?;
-    writeln!(human, "First release preview (`callisto release --dry-run`):")?;
-    super::release::write_release_preview(plan.as_ref(), OutputFormat::Text, human)?;
+    match plan {
+        Some(plan) => {
+            writeln!(human, "First release preview (`callisto release --dry-run`):")?;
+            super::release::write_release_preview(plan.as_ref(), OutputFormat::Text, human)?;
+        }
+        None => writeln!(human, "{NO_COMMITS}")?,
+    }
 
     let report = if global.dry_run {
         InitReport {
@@ -186,7 +198,6 @@ fn collect_answers(
     facts: &InitFacts,
     prompting: bool,
     prompter: &mut dyn Prompter,
-    human: &mut dyn Write,
     runner: &CliCommandRunner,
 ) -> Result<InitAnswers, CliError> {
     let versioning = match args.versioning {
@@ -234,21 +245,13 @@ fn collect_answers(
     };
 
     let forge_repository = match &args.forge_repository {
-        Some(value) => scaffold::parse_forge_repository(value)?,
+        Some(value) => scaffold::forge_repository(facts, value)?,
         None if prompting => {
             let detected = facts.origin_repository.as_ref().map(|repository| repository.as_slug());
-            scaffold::parse_forge_repository(&prompter.input(FORGE_PROMPT, detected.as_deref())?)?
+            scaffold::forge_repository(facts, &prompter.input(FORGE_PROMPT, detected.as_deref())?)?
         }
         None => return Err(missing("--forge-repository")),
     };
-    if facts.origin_repository.as_ref() != Some(&forge_repository) {
-        writeln!(
-            human,
-            "warning: forge-repository `{}` differs from the origin remote `{}`",
-            forge_repository.as_slug(),
-            facts.origin
-        )?;
-    }
 
     let targets = if args.artifact_targets.is_empty() {
         loop {
@@ -553,7 +556,6 @@ mod tests {
         let written = config(dir.path());
         assert!(written.contains("[release]\nproduct-package = \"cargo/tool\"\nforge-repository = \"example/tools\""));
         assert!(written.contains("asset-name = \"tool-x86_64-pc-windows-msvc.zip\""));
-        assert!(!run.out.contains("warning"), "{}", run.out);
         assert!(
             run.out.contains("upload tool-x86_64-unknown-linux-gnu.tar.gz"),
             "{}",
@@ -561,10 +563,9 @@ mod tests {
         );
     }
 
-    // AC-003b: a differing forge repository warns; an invalid one errors without writing.
-    // The release plan (E175) then refuses the mismatch, so the preview fails and nothing is written.
+    // AC-003b: a forge repository other than origin's, or an invalid one, errors up front without writing.
     #[test]
-    fn forge_repository_mismatch_warns_and_invalid_errors() {
+    fn forge_repository_mismatch_and_invalid_error() {
         let dir = workspace(1);
         let run = run_init(
             dir.path(),
@@ -579,18 +580,17 @@ mod tests {
             vec![],
             false,
         );
-        assert!(matches!(
-            run.result.unwrap_err(),
-            CliError::Graph(GraphError::ReleaseArtifactRepositoryMismatch { .. })
-        ));
-        assert!(nothing_written(dir.path()));
+        let error = run.result.unwrap_err();
         assert!(
-            run.out.contains(
-                "warning: forge-repository `other/tools` differs from the origin remote `https://github.com/example/tools.git`"
-            ),
-            "{}",
-            run.out
+            matches!(&error, CliError::Graph(GraphError::InitForgeRepositoryMismatch { .. })),
+            "{error}"
         );
+        assert_eq!(
+            error.to_string(),
+            "forge repository `other/tools` does not match the origin remote `https://github.com/example/tools.git`"
+        );
+        assert!(!run.out.contains("First release preview"), "{}", run.out);
+        assert!(nothing_written(dir.path()));
 
         let run = run_init(
             dir.path(),
@@ -794,6 +794,26 @@ mod tests {
             text.replace(interactive_dir.path().to_str().unwrap(), "")
         };
         assert_eq!(preview(&interactive.out), preview(&flags.out));
+    }
+
+    // A repository with no commit gets the config and a note instead of a preview.
+    #[test]
+    fn no_commits_skips_the_preview_and_still_writes() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+        callisto_fixtures::git::init_repo(root);
+        git(root, &["remote", "add", "origin", "https://github.com/example/app.git"]);
+        let run = run_init(root, yes(InitVersioning::Independent), false, vec![], false);
+        assert_eq!(run.result.unwrap(), ExitCode::SUCCESS);
+        assert!(run.out.contains(NO_COMMITS), "{}", run.out);
+        assert!(!run.out.contains("First release preview"), "{}", run.out);
+        assert_eq!(config(root), "# callisto configuration\n");
+        assert!(root.join(".changeset/README.md").exists());
     }
 
     // AC-021: --dry-run detects, asks, and previews, then writes nothing.

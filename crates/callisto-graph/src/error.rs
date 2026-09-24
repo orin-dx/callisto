@@ -610,6 +610,13 @@ pub enum GraphError {
     #[diagnostic(code(E195), help("Use the GitHub `owner/repo` the product releases to."))]
     InitInvalidForgeRepository { value: String, reason: String },
 
+    #[error("forge repository `{configured}` does not match the origin remote `{origin}`")]
+    #[diagnostic(
+        code(E187),
+        help("The release plan requires [release].forge-repository to be origin's GitHub repository. Use that `owner/repo`, or point origin at the repository binaries release to.")
+    )]
+    InitForgeRepositoryMismatch { configured: String, origin: String },
+
     #[error("artifact target `{triple}` is invalid: {reason}")]
     #[diagnostic(
         code(E196),

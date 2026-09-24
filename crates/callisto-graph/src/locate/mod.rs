@@ -28,9 +28,10 @@ pub enum LocateError {
     #[diagnostic(
         code(E030),
         help(
-            "No workspace root found. Ensure the directory tree contains a workspace manifest: \
-             Cargo.toml with [workspace], package.json with a workspaces field, \
-             pnpm-workspace.yaml, or a .moon directory."
+            "No workspace root found. Ensure the directory tree contains a workspace manifest \
+             (Cargo.toml with [workspace], package.json with a workspaces field, \
+             pnpm-workspace.yaml, or a .moon directory) or a package manifest \
+             (Cargo.toml with [package], package.json, or pyproject.toml)."
         )
     )]
     WorkspaceRootNotFound { start: PathBuf },

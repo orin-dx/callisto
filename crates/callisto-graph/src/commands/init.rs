@@ -79,6 +79,8 @@ pub struct InitFacts {
     pub origin_repository: Option<GitHubRepository>,
     /// Non-default tag templates to write, keyed by qualified package id.
     pub tag_templates: BTreeMap<String, String>,
+    /// `false` in a repository with no commit yet, where no release can be planned.
+    pub has_commit: bool,
 }
 
 impl InitFacts {
@@ -161,6 +163,12 @@ pub fn detect<L: ProjectLocator, R: CommandRunner>(
         return Err(GraphError::InitNotGitRepository { root });
     }
     let origin = optional_git_remote(&root, runner)?.ok_or(GraphError::InitOriginMissing)?;
+    let head = runner.run_with_timeout(
+        programs::GIT,
+        &["rev-parse", "--verify", "--quiet", "HEAD"],
+        &root,
+        timeouts::LOCAL_GIT,
+    )?;
 
     let discovered = Workspace::load(root.clone(), locator, runner)?;
     let tag_templates = detect_tag_templates(&discovered)?;
@@ -171,6 +179,7 @@ pub fn detect<L: ProjectLocator, R: CommandRunner>(
         origin: origin.endpoint.clone(),
         origin_repository: origin.github_repository.clone(),
         tag_templates,
+        has_commit: head.exit_code == Some(0),
     };
     let config = resolve_config_text(
         &root,
@@ -402,16 +411,23 @@ pub fn preview<L: ProjectLocator, R: CommandRunner>(
     plan_workspace_release(&workspace, &[], LocalReleaseSource::Preview)
 }
 
-/// Rejects an invalid forge repository answer.
+/// Parses a forge repository answer, which the release plan requires to be `origin`'s GitHub repository.
 ///
 /// # Errors
 ///
-/// `value` is not a GitHub `owner/repo`.
-pub fn parse_forge_repository(value: &str) -> Result<GitHubRepository, GraphError> {
-    GitHubRepository::parse(value.trim()).map_err(|error| GraphError::InitInvalidForgeRepository {
+/// `value` is not a GitHub `owner/repo`, or is not `origin`'s.
+pub fn forge_repository(facts: &InitFacts, value: &str) -> Result<GitHubRepository, GraphError> {
+    let repository = GitHubRepository::parse(value.trim()).map_err(|error| GraphError::InitInvalidForgeRepository {
         value: value.to_owned(),
         reason: error.to_string(),
-    })
+    })?;
+    if facts.origin_repository.as_ref() != Some(&repository) {
+        return Err(GraphError::InitForgeRepositoryMismatch {
+            configured: repository.as_slug(),
+            origin: facts.origin.clone(),
+        });
+    }
+    Ok(repository)
 }
 
 /// Target triples `rustc` knows, or `None` when `rustc` is unavailable.
@@ -595,6 +611,7 @@ mod tests {
         let ids: Vec<&str> = facts.packages.iter().map(|package| package.id.as_str()).collect();
         assert_eq!(ids, ["cargo/app", "cargo/core", "npm/web"]);
         assert_eq!(facts.origin, ORIGIN);
+        assert!(facts.has_commit);
         assert_eq!(facts.origin_repository.as_ref().unwrap().as_slug(), "example/tools");
         assert_eq!(
             package(&facts, "cargo/app").last_tag.as_ref().map(TagName::as_str),
@@ -780,6 +797,7 @@ mod tests {
             origin: ORIGIN.to_owned(),
             origin_repository: GitHubRepository::parse("example/tools").ok(),
             tag_templates: BTreeMap::new(),
+            has_commit: true,
         }
     }
 
@@ -913,13 +931,33 @@ mod tests {
 
     // AC-003b
     #[test]
-    fn forge_repository_must_be_owner_repo() {
+    fn forge_repository_must_be_origins_owner_repo() {
+        let facts = facts_for_render();
         assert_eq!(
-            parse_forge_repository("Example/Tools").unwrap().as_slug(),
+            forge_repository(&facts, "Example/Tools").unwrap().as_slug(),
             "example/tools"
         );
-        let error = parse_forge_repository("not a repo").unwrap_err();
+        let error = forge_repository(&facts, "not a repo").unwrap_err();
         assert!(error.to_string().contains("`not a repo`"), "{error}");
+
+        let error = forge_repository(&facts, "other/tools").unwrap_err();
+        assert!(
+            matches!(&error, GraphError::InitForgeRepositoryMismatch { configured, origin }
+                if configured == "other/tools" && origin == ORIGIN),
+            "{error}"
+        );
+        assert!(error.to_string().contains("`other/tools`") && error.to_string().contains(ORIGIN));
+        let help = miette::Diagnostic::help(&error).unwrap().to_string();
+        assert!(help.contains("release plan requires"), "{help}");
+
+        let non_github = InitFacts {
+            origin_repository: None,
+            ..facts
+        };
+        assert!(matches!(
+            forge_repository(&non_github, "example/tools").unwrap_err(),
+            GraphError::InitForgeRepositoryMismatch { .. }
+        ));
     }
 
     struct NoRustc;
