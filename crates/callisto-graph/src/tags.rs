@@ -21,7 +21,7 @@ use crate::resolver::DependencyResolver;
 /// every package (see [`TagIndex::build`]) instead of once per package,
 /// important on `wasm32` where each `CommandRunner` call is a full Extism
 /// round-trip.
-fn fetch_all_tags(git: &GitAccess<'_>) -> Result<Vec<String>, GraphError> {
+pub(crate) fn fetch_all_tags(git: &GitAccess<'_>) -> Result<Vec<String>, GraphError> {
     let tags = git.list_tags(None)?;
     Ok(tags.into_iter().map(|t| t.as_str().to_string()).collect())
 }

@@ -480,6 +480,18 @@ impl Manifest for PackageJson {
     fn npm_role(&self) -> Option<NpmRole> {
         npm_role_from_doc(&self.doc)
     }
+
+    fn bin_names(&self) -> Vec<String> {
+        match self.doc.get("bin") {
+            // npm installs a string `bin` under the unscoped package name.
+            Some(Value::String(_)) => npm_package_name(&self.doc)
+                .map(|name| name.rsplit('/').next().unwrap_or(name).to_string())
+                .into_iter()
+                .collect(),
+            Some(Value::Object(bins)) => bins.keys().cloned().collect(),
+            _ => Vec::new(),
+        }
+    }
 }
 
 fn parse_npm_spec_str(s: &str, ws_kind: Option<WorkspaceKind>) -> DepSpec {
@@ -623,6 +635,20 @@ mod tests {
             npm_workspace_kind: None,
         };
         PackageJson::open(&decl, &ctx).unwrap()
+    }
+
+    #[test]
+    fn bin_names_read_string_and_object_bin_fields() {
+        let dir = tempdir().unwrap();
+        let library = open_manifest(&dir, r#"{"name":"lib","version":"1.0.0"}"#);
+        assert!(library.bin_names().is_empty());
+        let string = open_manifest(&dir, r#"{"name":"@scope/tool","version":"1.0.0","bin":"cli.js"}"#);
+        assert_eq!(string.bin_names(), ["tool"]);
+        let object = open_manifest(
+            &dir,
+            r#"{"name":"tools","version":"1.0.0","bin":{"alpha":"a.js","beta":"b.js"}}"#,
+        );
+        assert_eq!(object.bin_names(), ["alpha", "beta"]);
     }
 
     #[test]

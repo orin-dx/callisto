@@ -132,6 +132,10 @@ pub trait Manifest: Send + Sync {
     fn npm_role(&self) -> Option<NpmRole> {
         None
     }
+    /// Executable names this package builds; empty for a library-only package.
+    fn bin_names(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// Context passed to open() to supply workspace-wide inheritance facts.

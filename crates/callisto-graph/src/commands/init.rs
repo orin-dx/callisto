@@ -1,185 +1,996 @@
-use std::collections::BTreeSet;
+//! `callisto init`: first-run fact detection, config rendering, preview, and scaffolding.
 
-use callisto_model::{ApplyPermit, CommandRunner, Ecosystem, InitDiff, InitReport, SCHEMA_VERSION};
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 
+use callisto_model::{
+    ApplyPermit, CommandRunner, Ecosystem, GitHubRepository, InitReport, PublishTarget, TagName, TagTemplate, Version,
+    SCHEMA_VERSION,
+};
+
+use crate::commands::release::{
+    canonical_root, is_platform_package, optional_git_remote, plan_workspace_release, programs, timeouts,
+    LocalReleasePlan, LocalReleaseSource,
+};
 use crate::config::raw::RawConfig;
 use crate::error::{ConfigError, GraphError};
-use crate::resolver::DependencyResolver;
-use crate::Workspace;
+use crate::{DependencyResolver, ProjectLocator, ResolvedConfig, Workspace};
 
-/// Options for the `init` command; controls whether detected ecosystem drift is written back to `callisto.toml`.
-#[derive(Clone, Debug, Default)]
-pub struct InitOptions {
-    /// Non-interactive confirmation. On a first run this has no effect
-    /// (scaffolding an absent `callisto.toml` is always a direct write; the
-    /// CLI's own interactive confirm-or-abort prompt gates that decision
-    /// before this function is ever called). On a re-run with drift
-    /// detected against the recorded workspace state, `yes` gates applying
-    /// it: `false` reports the diff without touching any file, `true`
-    /// writes it (docs/00-design.md §18 Q5.4 mechanism 1).
-    ///
-    /// Orthogonal to the `ApplyPermit` [`init`] takes: `yes: true` with no
-    /// permit means "consented to applying the drift, but this is a dry
-    /// run" -- the outcome is reported and nothing is written.
-    pub yes: bool,
-}
-
-fn io_err(e: std::io::Error) -> GraphError {
-    GraphError::Command(callisto_model::CommandError::Io {
-        program: "fs".to_string(),
-        message: e.to_string(),
-    })
-}
-
-/// Ecosystems the discovered workspace currently contains, deduplicated and
-/// ordered by `Ecosystem`'s own `Ord` (stable regardless of manifest-walk
-/// order).
-fn discovered_ecosystems<D: DependencyResolver>(graph: &D) -> BTreeSet<Ecosystem> {
-    graph
-        .packages()
-        .flat_map(|p| p.canonical_manifests())
-        .map(|m| m.ecosystem())
-        .collect()
-}
-
-/// Ecosystems recorded in an existing `callisto.toml`'s `[init]` bookkeeping
-/// section (§18 Q5.4 mechanism 1's reconcile baseline). Unrecognized prefix
-/// strings are ignored rather than treated as a hard parse error — bookkeeping
-/// drift here should never block a command whose entire job is "helpfully
-/// tell the user what changed."
-fn recorded_ecosystems(content: &str) -> BTreeSet<Ecosystem> {
-    toml::from_str::<RawConfig>(content)
-        .ok()
-        .and_then(|raw| raw.init)
-        .and_then(|init| init.ecosystems)
-        .unwrap_or_default()
-        .iter()
-        .filter_map(|s| Ecosystem::from_prefix(s))
-        .collect()
-}
-
-/// Renders the sorted `[init]` ecosystems array as TOML source, e.g.
-/// `["cargo", "npm"]`.
-fn render_ecosystems_array(ecosystems: &BTreeSet<Ecosystem>) -> String {
-    let items: Vec<String> = ecosystems.iter().map(|e| format!("\"{}\"", e.prefix())).collect();
-    format!("[{}]", items.join(", "))
-}
-
-/// Writes (or rewrites) the `[init]` table's `ecosystems` key in an existing
-/// `callisto.toml` document via a CST edit, so every other key — including
-/// ones the user hand-edited — survives byte-for-byte (§13 invariant 21's
-/// "membership changes are only ever written via an explicit, reviewable
-/// flow" reasoning applies equally to this bookkeeping key).
-fn set_recorded_ecosystems(content: &str, ecosystems: &BTreeSet<Ecosystem>) -> Result<String, GraphError> {
-    let mut doc: toml_edit::DocumentMut = content.parse().map_err(|e: toml_edit::TomlError| {
-        GraphError::Config(ConfigError::ParseToml {
-            path: "callisto.toml".into(),
-            message: e.to_string(),
-        })
-    })?;
-
-    if doc.get("init").and_then(|i| i.as_table()).is_none() {
-        doc["init"] = toml_edit::Item::Table(toml_edit::Table::new());
-    }
-    let mut array = toml_edit::Array::new();
-    for e in ecosystems {
-        array.push(e.prefix());
-    }
-    doc["init"]["ecosystems"] = toml_edit::value(array);
-
-    Ok(doc.to_string())
-}
-
-/// Scaffolds `callisto.toml` and `.changeset/`, or reconciles an existing
-/// config against the workspace's currently-discovered ecosystems.
-///
-/// `permit` and [`InitOptions::yes`] are independent gates: `yes` answers
-/// "should detected drift be applied?"; `permit` answers "may anything be
-/// written at all?". `--yes --dry-run` takes the apply *branch* while
-/// writing nothing -- the returned [`InitReport`] describes what would
-/// happen, exactly as `version --dry-run` reports its unapplied plan.
-///
-/// Every computation runs under a dry run too, including the TOML
-/// re-render in `set_recorded_ecosystems`, so a config that would fail to
-/// parse on a real run fails the dry run instead of reporting a false
-/// preview.
-///
-/// # Errors
-///
-/// `Err(GraphError::Config(...))` if `callisto.toml` can't be read/parsed,
-/// or the ecosystem-list TOML edit fails. `Err` wrapping an I/O error on
-/// write failures.
-pub fn init<R: CommandRunner, D: DependencyResolver>(
-    ws: &Workspace<'_, R, D>,
-    opts: &InitOptions,
-    permit: Option<&ApplyPermit>,
-) -> Result<InitReport, GraphError> {
-    let config_path = ws.root.join("callisto.toml");
-    let discovered = discovered_ecosystems(&ws.graph);
-    let mut initialized = false;
-    let mut diff = InitDiff::default();
-
-    if !config_path.exists() {
-        // First run: nothing recorded yet to diff against, so this is a
-        // direct write, not a reconcile-apply.
-        let content = format!(
-            "# callisto configuration\n\n[changesets]\ndir = \".changeset\"\n\n\
-[cascade]\nmode = \"out-of-range\"\nbump-severity = \"patch\"\npeer-escalation = true\npreserve-npm-ranges = true\n\n\
-[init]\necosystems = {}\n",
-            render_ecosystems_array(&discovered)
-        );
-        if let Some(permit) = permit {
-            callisto_manifests::atomic::atomic_write(&config_path, &content, permit).map_err(io_err)?;
-        }
-        initialized = true;
-    } else {
-        let existing = std::fs::read_to_string(&config_path).map_err(|e| {
-            GraphError::Config(ConfigError::Read {
-                path: config_path.clone(),
-                message: e.to_string(),
-            })
-        })?;
-        let recorded = recorded_ecosystems(&existing);
-        let new_ecosystems: Vec<Ecosystem> = discovered.difference(&recorded).copied().collect();
-
-        if !new_ecosystems.is_empty() {
-            diff.new_ecosystems = new_ecosystems;
-
-            if opts.yes {
-                let reconciled: BTreeSet<Ecosystem> = recorded.union(&discovered).copied().collect();
-                let updated = set_recorded_ecosystems(&existing, &reconciled)?;
-                if let Some(permit) = permit {
-                    callisto_manifests::atomic::atomic_write(&config_path, &updated, permit).map_err(io_err)?;
-                }
-                diff.applied = true;
-            }
-            // else: the diff is reported above without applying it. Note this
-            // is a *separate* no-write path from `permit: None`; `init`
-            // without `--yes` reports drift on a real run too.
-        }
-    }
-
-    let cs_dir = ws.root.join(".changeset");
-    if let Some(permit) = permit {
-        if !cs_dir.exists() {
-            std::fs::create_dir_all(&cs_dir).map_err(io_err)?;
-        }
-        let readme_path = cs_dir.join("README.md");
-        if !readme_path.exists() {
-            let readme_content = r#"# Changesets
+/// Content of the scaffolded `.changeset/README.md`.
+pub const CHANGESET_README: &str = "# Changesets
 
 This directory contains markdown changeset files generated by Callisto CLI (`callisto add`).
 Each changeset describes a package version bump and associated release summary.
-"#;
-            callisto_manifests::atomic::atomic_write(&readme_path, readme_content, permit).map_err(io_err)?;
+";
+
+const CONFIG_HEADER: &str = "# callisto configuration\n";
+const DEFAULT_TAG_CONVENTION: &str = "{name}@{version}";
+const SHARED_TAG_CONVENTION: &str = "v{version}";
+const TAG_CONVENTIONS: [&str; 4] = [
+    DEFAULT_TAG_CONVENTION,
+    "{name}-v{version}",
+    "{name}-{version}",
+    SHARED_TAG_CONVENTION,
+];
+
+/// How packages version relative to each other.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Versioning {
+    /// Every package shares one version (`[[fixed-group]] name = "all"`).
+    Fixed,
+    Independent,
+}
+
+/// One discovered workspace package.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InitPackage {
+    /// Ecosystem-qualified id, e.g. `cargo/app`.
+    pub id: String,
+    pub version: Version,
+    /// Executables the package builds; empty for a library.
+    pub bin_names: Vec<String>,
+    /// Latest release tag under the package's detected convention.
+    pub last_tag: Option<TagName>,
+    /// Detected `publish-to` targets (`none` omitted).
+    pub publish_to: Vec<String>,
+    /// A napi/maturin platform package: never grouped or shipped.
+    pub platform: bool,
+}
+
+impl InitPackage {
+    pub fn is_binary(&self) -> bool {
+        !self.platform && !self.bin_names.is_empty()
+    }
+
+    fn name(&self) -> &str {
+        self.id.split_once('/').map_or(self.id.as_str(), |(_, name)| name)
+    }
+}
+
+/// Everything `init` detects before asking a question.
+#[derive(Clone, Debug)]
+pub struct InitFacts {
+    pub root: PathBuf,
+    pub ecosystems: BTreeSet<Ecosystem>,
+    pub packages: Vec<InitPackage>,
+    /// Canonical `origin` push URL.
+    pub origin: String,
+    /// `origin` as a GitHub `owner/repo`, when it is one.
+    pub origin_repository: Option<GitHubRepository>,
+    /// Non-default tag templates to write, keyed by qualified package id.
+    pub tag_templates: BTreeMap<String, String>,
+}
+
+impl InitFacts {
+    pub fn binary_packages(&self) -> impl Iterator<Item = &InitPackage> {
+        self.packages.iter().filter(|package| package.is_binary())
+    }
+
+    /// Resolves `name` (qualified or bare) to a binary-producing package.
+    pub fn product_package(&self, name: &str) -> Result<&InitPackage, GraphError> {
+        let invalid = |reason| GraphError::InitInvalidProductPackage {
+            package: name.to_owned(),
+            reason,
+            candidates: self.binary_packages().map(|package| package.id.clone()).collect(),
+        };
+        let found: Vec<&InitPackage> = match self.packages.iter().find(|package| package.id == name) {
+            Some(package) => vec![package],
+            None => self.packages.iter().filter(|package| package.name() == name).collect(),
+        };
+        match found.as_slice() {
+            [package] if package.is_binary() => Ok(package),
+            [_] => Err(invalid("it does not produce a binary artifact")),
+            _ => Err(invalid("it is not a workspace package")),
+        }
+    }
+}
+
+/// Opt-in to shipping binaries as GitHub release assets.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BinaryRelease {
+    /// Qualified id of the product package.
+    pub product: String,
+    pub forge_repository: GitHubRepository,
+    pub targets: Vec<String>,
+}
+
+/// The operator's intent; everything else is detected.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InitAnswers {
+    pub versioning: Versioning,
+    pub binaries: Option<BinaryRelease>,
+}
+
+fn io_err(error: std::io::Error) -> GraphError {
+    GraphError::Command(callisto_model::CommandError::Io {
+        program: "fs".to_string(),
+        message: error.to_string(),
+    })
+}
+
+fn ensure_uninitialized(root: &Path) -> Result<(), GraphError> {
+    let path = root.join("callisto.toml");
+    if path.exists() {
+        return Err(GraphError::InitAlreadyInitialized { path });
+    }
+    Ok(())
+}
+
+fn qualified_id(package: &callisto_model::Package) -> String {
+    match package.canonical_manifests().next() {
+        Some(manifest) => format!("{}/{}", manifest.ecosystem().prefix(), package.id.name()),
+        None => package.id.display_name(),
+    }
+}
+
+/// Detects the workspace facts `init` reports and builds on.
+///
+/// # Errors
+///
+/// An existing `callisto.toml`, no Git repository, no usable `origin`, or an
+/// ambiguous tag convention.
+pub fn detect<L: ProjectLocator, R: CommandRunner>(
+    root: &Path,
+    locator: &L,
+    runner: &R,
+) -> Result<InitFacts, GraphError> {
+    let root = canonical_root(root)?;
+    ensure_uninitialized(&root)?;
+    let git_dir = runner.run_with_timeout(programs::GIT, &["rev-parse", "--git-dir"], &root, timeouts::LOCAL_GIT)?;
+    if git_dir.exit_code != Some(0) {
+        return Err(GraphError::InitNotGitRepository { root });
+    }
+    let origin = optional_git_remote(&root, runner)?.ok_or(GraphError::InitOriginMissing)?;
+
+    let discovered = Workspace::load(root.clone(), locator, runner)?;
+    let tag_templates = detect_tag_templates(&discovered)?;
+    let templates_only = InitFacts {
+        root: root.clone(),
+        ecosystems: BTreeSet::new(),
+        packages: Vec::new(),
+        origin: origin.endpoint.clone(),
+        origin_repository: origin.github_repository.clone(),
+        tag_templates,
+    };
+    let config = resolve_config_text(
+        &root,
+        &render_config(
+            &templates_only,
+            &InitAnswers {
+                versioning: Versioning::Independent,
+                binaries: None,
+            },
+        ),
+    )?;
+    let workspace = Workspace::load_with_config(root.clone(), config, locator, runner)?;
+    let tags = workspace.tags()?;
+    let versions = workspace.base_versions()?;
+    let ctx = callisto_manifests::OpenContext::for_workspace_root(&workspace.root);
+
+    let mut packages = Vec::new();
+    for package in workspace.graph.packages() {
+        let mut bin_names = Vec::new();
+        for decl in package.canonical_manifests() {
+            let manifest = crate::manifest_cache::open_cached(&workspace.manifest_cache, decl, &ctx)?;
+            bin_names.extend(manifest.bin_names());
+        }
+        packages.push(InitPackage {
+            id: qualified_id(package),
+            version: versions[&package.id].clone(),
+            bin_names,
+            last_tag: tags.last_tag(&package.id).map(|tag| tag.name.clone()),
+            publish_to: package
+                .publish_to
+                .iter()
+                .map(|target| target.config_str().to_owned())
+                .filter(|target| target != PublishTarget::None.config_str())
+                .collect(),
+            platform: is_platform_package(package),
+        });
+    }
+    packages.sort_by(|a, b| a.id.cmp(&b.id));
+    let ecosystems = workspace
+        .graph
+        .packages()
+        .flat_map(|package| package.canonical_manifests())
+        .map(|manifest| manifest.ecosystem())
+        .collect();
+
+    Ok(InitFacts {
+        ecosystems,
+        packages,
+        ..templates_only
+    })
+}
+
+/// One tag convention a package's existing tags follow.
+struct TagMatch {
+    convention: &'static str,
+    template: String,
+    tags: Vec<String>,
+}
+
+/// Matches each package's tags against the candidate conventions; returns the non-default ones to write.
+fn detect_tag_templates<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+) -> Result<BTreeMap<String, String>, GraphError> {
+    let all_tags = crate::tags::fetch_all_tags(workspace.git_access())?;
+    let mut matches: BTreeMap<String, Vec<TagMatch>> = BTreeMap::new();
+    for package in workspace
+        .graph
+        .packages()
+        .filter(|package| !is_platform_package(package))
+    {
+        let grammar = package.version_grammar()?;
+        for convention in TAG_CONVENTIONS {
+            let rendered = if convention == DEFAULT_TAG_CONVENTION {
+                TagTemplate::default_for(&package.id).as_str()
+            } else {
+                convention.replace("{name}", package.id.name())
+            };
+            let Ok(template) = TagTemplate::parse(&rendered) else {
+                continue;
+            };
+            // A leading digit keeps `{name}-{version}` from claiming `{name}-v1.0.0` under PEP 440.
+            let tags: Vec<String> = all_tags
+                .iter()
+                .filter(|tag| {
+                    template.extract_version_str(tag).is_some_and(|version| {
+                        version.starts_with(|c: char| c.is_ascii_digit()) && Version::parse(version, grammar).is_ok()
+                    })
+                })
+                .cloned()
+                .collect();
+            if !tags.is_empty() {
+                matches.entry(qualified_id(package)).or_default().push(TagMatch {
+                    convention,
+                    template: rendered,
+                    tags,
+                });
+            }
         }
     }
 
+    let shared: Vec<String> = matches
+        .iter()
+        .filter(|(_, found)| found.iter().any(|found| found.convention == SHARED_TAG_CONVENTION))
+        .map(|(package, _)| package.clone())
+        .collect();
+    if shared.len() > 1 {
+        return Err(GraphError::InitSharedVersionTag { packages: shared });
+    }
+
+    let mut templates = BTreeMap::new();
+    for (package, found) in matches {
+        match found.as_slice() {
+            [only] => {
+                if only.convention != DEFAULT_TAG_CONVENTION {
+                    templates.insert(package, only.template.clone());
+                }
+            }
+            _ => {
+                return Err(GraphError::InitTagTemplateAmbiguous {
+                    package,
+                    matches: found
+                        .iter()
+                        .map(|found| format!("`{}` ({})", found.template, found.tags.join(", ")))
+                        .collect(),
+                })
+            }
+        }
+    }
+    Ok(templates)
+}
+
+/// Renders `callisto.toml` from the answers: only answered intent and tag continuity, never defaults.
+pub fn render_config(facts: &InitFacts, answers: &InitAnswers) -> String {
+    use toml_edit::{value, Array, ArrayOfTables, DocumentMut, Item, Table};
+
+    let mut doc = DocumentMut::new();
+    if answers.versioning == Versioning::Fixed {
+        let members: Array = facts
+            .packages
+            .iter()
+            .filter(|package| !package.platform)
+            .map(|package| package.id.as_str())
+            .collect();
+        if !members.is_empty() {
+            let mut group = Table::new();
+            group["name"] = value("all");
+            group["members"] = value(members);
+            let mut groups = ArrayOfTables::new();
+            groups.push(group);
+            doc["fixed-group"] = Item::ArrayOfTables(groups);
+        }
+    }
+    let mut rules: BTreeMap<&str, Table> = BTreeMap::new();
+    for (package, template) in &facts.tag_templates {
+        rules.entry(package).or_default()["tag-template"] = value(template.as_str());
+    }
+    let product = answers
+        .binaries
+        .as_ref()
+        .and_then(|release| facts.packages.iter().find(|package| package.id == release.product));
+    if let Some(product) = product {
+        // Artifact slots derive only for a product that publishes to github-release.
+        let publish_to: Array = product
+            .publish_to
+            .iter()
+            .map(String::as_str)
+            .chain([PublishTarget::GitHubRelease.config_str()])
+            .collect();
+        rules.entry(&product.id).or_default()["publish-to"] = value(publish_to);
+    }
+    if !rules.is_empty() {
+        let mut tables = ArrayOfTables::new();
+        for (package, rule) in rules {
+            let mut table = Table::new();
+            table["match"] = value(package);
+            table.extend(rule);
+            tables.push(table);
+        }
+        doc["package"] = Item::ArrayOfTables(tables);
+    }
+    if let Some(release) = &answers.binaries {
+        let bin_names = product.map(|package| package.bin_names.as_slice()).unwrap_or_default();
+        let mut table = Table::new();
+        table["product-package"] = value(release.product.as_str());
+        table["forge-repository"] = value(release.forge_repository.as_slug());
+        let mut artifacts = ArrayOfTables::new();
+        for target in &release.targets {
+            for bin in bin_names {
+                let extension = if target.contains("windows") { "zip" } else { "tar.gz" };
+                let mut artifact = Table::new();
+                artifact["package"] = value(release.product.as_str());
+                artifact["target"] = value(target.as_str());
+                artifact["asset-name"] = value(format!("{bin}-{target}.{extension}"));
+                artifacts.push(artifact);
+            }
+        }
+        table["artifact"] = Item::ArrayOfTables(artifacts);
+        doc["release"] = Item::Table(table);
+    }
+    let body = doc.to_string();
+    if body.is_empty() {
+        CONFIG_HEADER.to_owned()
+    } else {
+        format!("{CONFIG_HEADER}\n{body}")
+    }
+}
+
+fn resolve_config_text(root: &Path, text: &str) -> Result<ResolvedConfig, GraphError> {
+    let raw = toml::from_str::<RawConfig>(text).map_err(|error| ConfigError::ParseToml {
+        path: root.join("callisto.toml"),
+        message: error.to_string(),
+    })?;
+    Ok(crate::config::resolve(root, raw)?)
+}
+
+/// The first release `config` would produce, from the plan behind `release --dry-run`.
+///
+/// # Errors
+///
+/// `config` fails to resolve, or the release plan cannot be derived.
+pub fn preview<L: ProjectLocator, R: CommandRunner>(
+    facts: &InitFacts,
+    config: &str,
+    locator: &L,
+    runner: &R,
+) -> Result<Option<LocalReleasePlan>, GraphError> {
+    let resolved = resolve_config_text(&facts.root, config)?;
+    let workspace = Workspace::load_with_config(facts.root.clone(), resolved, locator, runner)?;
+    plan_workspace_release(&workspace, &[], LocalReleaseSource::Preview)
+}
+
+/// Rejects an invalid forge repository answer.
+///
+/// # Errors
+///
+/// `value` is not a GitHub `owner/repo`.
+pub fn parse_forge_repository(value: &str) -> Result<GitHubRepository, GraphError> {
+    GitHubRepository::parse(value.trim()).map_err(|error| GraphError::InitInvalidForgeRepository {
+        value: value.to_owned(),
+        reason: error.to_string(),
+    })
+}
+
+/// Target triples `rustc` knows, or `None` when `rustc` is unavailable.
+pub fn known_target_triples<R: CommandRunner>(runner: &R, root: &Path) -> Option<BTreeSet<String>> {
+    let output = runner.run("rustc", &["--print", "target-list"], root).ok()?;
+    if output.exit_code != Some(0) {
+        return None;
+    }
+    Some(
+        output
+            .stdout
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_owned)
+            .collect(),
+    )
+}
+
+/// Validates artifact target triples against `known` (skipped when `None`).
+///
+/// # Errors
+///
+/// An empty, repeated, or unknown triple.
+pub fn validate_targets(targets: &[String], known: Option<&BTreeSet<String>>) -> Result<Vec<String>, GraphError> {
+    let mut seen = BTreeSet::new();
+    for target in targets {
+        let invalid = |reason| GraphError::InitInvalidTargetTriple {
+            triple: target.clone(),
+            reason,
+        };
+        if target.trim().is_empty() {
+            return Err(invalid("it is empty"));
+        }
+        if !seen.insert(target.as_str()) {
+            return Err(invalid("it is given more than once"));
+        }
+        if known.is_some_and(|known| !known.contains(target)) {
+            return Err(invalid("`rustc --print target-list` does not list it"));
+        }
+    }
+    Ok(targets.to_vec())
+}
+
+/// Writes `callisto.toml` and, when absent, `.changeset/README.md`.
+///
+/// # Errors
+///
+/// `callisto.toml` already exists, or a write fails.
+pub fn write(root: &Path, config: &str, permit: &ApplyPermit) -> Result<InitReport, GraphError> {
+    ensure_uninitialized(root)?;
+    let config_path = root.join("callisto.toml");
+    callisto_model::atomic::atomic_write(&config_path, config, permit).map_err(io_err)?;
+    write_changeset_readme(root, permit)?;
     Ok(InitReport {
         schema_version: SCHEMA_VERSION,
-        initialized,
+        initialized: true,
         config_path,
-        diff,
+        config: config.to_owned(),
         diagnostics: Vec::new(),
     })
+}
+
+/// Creates `.changeset/README.md` unless it already exists.
+///
+/// # Errors
+///
+/// A directory or file write fails.
+pub fn write_changeset_readme(root: &Path, permit: &ApplyPermit) -> Result<(), GraphError> {
+    let readme = root.join(".changeset/README.md");
+    if readme.exists() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(root.join(".changeset")).map_err(io_err)?;
+    callisto_model::atomic::atomic_write(&readme, CHANGESET_README, permit).map_err(io_err)
+}
+
+/// The config `write` would produce for `root` with no answers: a header only.
+pub fn empty_config() -> &'static str {
+    CONFIG_HEADER
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use callisto_model::{CommandError, CommandOutput};
+
+    use super::*;
+    use crate::commands::release::tests::RealGitRunner;
+    use crate::IgnoreWalkLocator;
+
+    const ORIGIN: &str = "https://github.com/example/tools.git";
+
+    fn git(root: &Path, args: &[&str]) {
+        let status = std::process::Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {args:?}");
+    }
+
+    fn repo(files: &[(&str, &str)], origin: Option<&str>) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        for (path, content) in files {
+            let path = dir.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, content).unwrap();
+        }
+        git(dir.path(), &["init", "-q", "-b", "main"]);
+        git(dir.path(), &["config", "user.email", "test@example.com"]);
+        git(dir.path(), &["config", "user.name", "Test"]);
+        git(dir.path(), &["config", "commit.gpgsign", "false"]);
+        git(dir.path(), &["config", "tag.gpgsign", "false"]);
+        if let Some(origin) = origin {
+            git(dir.path(), &["remote", "add", "origin", origin]);
+        }
+        git(dir.path(), &["add", "."]);
+        git(dir.path(), &["commit", "-q", "-m", "fixture"]);
+        dir
+    }
+
+    fn tag(root: &Path, name: &str) {
+        git(root, &["tag", name]);
+    }
+
+    fn cargo(name: &str, version: &str) -> String {
+        format!("[package]\nname = \"{name}\"\nversion = \"{version}\"\nedition = \"2021\"\n")
+    }
+
+    /// A Cargo binary `app`, a Cargo library `core`, and an npm library `web`.
+    fn workspace() -> tempfile::TempDir {
+        repo(
+            &[
+                (
+                    "Cargo.toml",
+                    "[workspace]\nmembers = [\"app\", \"core\"]\nresolver = \"2\"\n",
+                ),
+                ("app/Cargo.toml", &cargo("app", "1.0.0")),
+                ("app/src/main.rs", "fn main() {}\n"),
+                ("core/Cargo.toml", &cargo("core", "1.0.0")),
+                ("core/src/lib.rs", "\n"),
+                ("web/package.json", r#"{"name":"web","version":"2.0.0"}"#),
+            ],
+            Some(ORIGIN),
+        )
+    }
+
+    fn detect_in(root: &Path) -> Result<InitFacts, GraphError> {
+        detect(root, &IgnoreWalkLocator::new(root), &RealGitRunner)
+    }
+
+    fn package<'a>(facts: &'a InitFacts, id: &str) -> &'a InitPackage {
+        facts.packages.iter().find(|package| package.id == id).unwrap()
+    }
+
+    fn release(targets: &[&str]) -> InitAnswers {
+        InitAnswers {
+            versioning: Versioning::Independent,
+            binaries: Some(BinaryRelease {
+                product: "cargo/app".to_owned(),
+                forge_repository: GitHubRepository::parse("example/tools").unwrap(),
+                targets: targets.iter().map(|target| (*target).to_owned()).collect(),
+            }),
+        }
+    }
+
+    const INDEPENDENT: InitAnswers = InitAnswers {
+        versioning: Versioning::Independent,
+        binaries: None,
+    };
+
+    // AC-001, AC-020: facts report ecosystems, packages, origin, tags, and binaries.
+    #[test]
+    fn detect_reports_workspace_facts() {
+        let dir = workspace();
+        tag(dir.path(), "app@0.9.0");
+        let facts = detect_in(dir.path()).unwrap();
+        assert_eq!(facts.ecosystems, BTreeSet::from([Ecosystem::Cargo, Ecosystem::Npm]));
+        let ids: Vec<&str> = facts.packages.iter().map(|package| package.id.as_str()).collect();
+        assert_eq!(ids, ["cargo/app", "cargo/core", "npm/web"]);
+        assert_eq!(facts.origin, ORIGIN);
+        assert_eq!(facts.origin_repository.as_ref().unwrap().as_slug(), "example/tools");
+        assert_eq!(
+            package(&facts, "cargo/app").last_tag.as_ref().map(TagName::as_str),
+            Some("app@0.9.0")
+        );
+        assert_eq!(package(&facts, "cargo/core").last_tag, None);
+        assert_eq!(package(&facts, "cargo/app").bin_names, ["app"]);
+        let binaries: Vec<&str> = facts.binary_packages().map(|package| package.id.as_str()).collect();
+        assert_eq!(binaries, ["cargo/app"]);
+    }
+
+    // AC-020: npm `bin` and PyPI `[project.scripts]` make a package binary-producing.
+    #[test]
+    fn npm_bin_and_pypi_scripts_are_binaries() {
+        let dir = repo(
+            &[
+                ("cli/package.json", r#"{"name":"cli","version":"1.0.0","bin":{"cli":"cli.js"}}"#),
+                (
+                    "py/pyproject.toml",
+                    "[project]\nname = \"pytool\"\nversion = \"1.0.0\"\n\n[project.scripts]\npytool = \"pytool:main\"\n",
+                ),
+                ("lib/pyproject.toml", "[project]\nname = \"pylib\"\nversion = \"1.0.0\"\n"),
+            ],
+            Some(ORIGIN),
+        );
+        let facts = detect_in(dir.path()).unwrap();
+        let binaries: Vec<&str> = facts.binary_packages().map(|package| package.id.as_str()).collect();
+        assert_eq!(binaries, ["npm/cli", "pypi/pytool"]);
+    }
+
+    // AC-008, AC-024: an existing config is an error, and its [init] table is never read.
+    #[test]
+    fn existing_config_is_already_initialized() {
+        let dir = workspace();
+        let config = "[init]\necosystems = [\"cargo\"]\n";
+        std::fs::write(dir.path().join("callisto.toml"), config).unwrap();
+        let error = detect_in(dir.path()).unwrap_err();
+        assert!(matches!(error, GraphError::InitAlreadyInitialized { .. }), "{error}");
+        assert!(error.to_string().contains("already initialized"));
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("callisto.toml")).unwrap(),
+            config
+        );
+        assert!(crate::config::load(dir.path()).is_ok(), "[init] still parses");
+        let permit = ApplyPermit::force_for_tests();
+        assert!(matches!(
+            write(dir.path(), empty_config(), &permit).unwrap_err(),
+            GraphError::InitAlreadyInitialized { .. }
+        ));
+    }
+
+    // AC-011b
+    #[test]
+    fn outside_git_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), cargo("app", "1.0.0")).unwrap();
+        let error = detect_in(dir.path()).unwrap_err();
+        assert!(matches!(error, GraphError::InitNotGitRepository { .. }), "{error}");
+        assert!(error.to_string().contains("not a Git repository"));
+    }
+
+    // AC-011: no `origin` errors, with zero remotes or only other remotes.
+    #[test]
+    fn missing_origin_is_an_error() {
+        let files = [("Cargo.toml", cargo("app", "1.0.0"))];
+        let files: Vec<(&str, &str)> = files.iter().map(|(path, body)| (*path, body.as_str())).collect();
+        let none = repo(&files, None);
+        let other = repo(&files, None);
+        git(other.path(), &["remote", "add", "upstream", ORIGIN]);
+        git(other.path(), &["remote", "add", "fork", ORIGIN]);
+        for dir in [none, other] {
+            let error = detect_in(dir.path()).unwrap_err();
+            assert!(matches!(error, GraphError::InitOriginMissing), "{error}");
+            assert!(error.to_string().contains("origin"));
+            assert!(format!("{:?}", miette::Diagnostic::help(&error).unwrap().to_string())
+                .contains("git remote add origin"));
+        }
+    }
+
+    // AC-011a: a rejected origin URL shows the rejection; an accepted non-GitHub one binds.
+    #[test]
+    fn origin_url_is_canonicalized() {
+        let files = [("Cargo.toml", cargo("app", "1.0.0"))];
+        let files: Vec<(&str, &str)> = files.iter().map(|(path, body)| (*path, body.as_str())).collect();
+        let rejected = repo(&files, Some("https://user:secret@github.com/example/tools.git"));
+        let error = detect_in(rejected.path()).unwrap_err();
+        assert!(
+            matches!(error, GraphError::UnsafeGitRemote { reason } if reason.contains("credentials")),
+            "{error}"
+        );
+
+        let gitlab = repo(&files, Some("git@gitlab.com:example/tools.git"));
+        let facts = detect_in(gitlab.path()).unwrap();
+        assert_eq!(facts.origin, "ssh://git@gitlab.com/example/tools.git");
+        assert_eq!(facts.origin_repository, None);
+    }
+
+    // AC-012: exactly one non-default convention is written; the default never is.
+    #[test]
+    fn a_single_non_default_convention_becomes_a_tag_template() {
+        let dir = workspace();
+        tag(dir.path(), "app-v1.0.0");
+        tag(dir.path(), "app-v0.9.0");
+        tag(dir.path(), "core@1.0.0");
+        tag(dir.path(), "web-2.0.0");
+        let facts = detect_in(dir.path()).unwrap();
+        assert_eq!(
+            facts.tag_templates,
+            BTreeMap::from([
+                ("cargo/app".to_owned(), "app-v{version}".to_owned()),
+                ("npm/web".to_owned(), "web-{version}".to_owned()),
+            ])
+        );
+        assert_eq!(
+            package(&facts, "cargo/app").last_tag.as_ref().map(TagName::as_str),
+            Some("app-v1.0.0")
+        );
+        let config = render_config(&facts, &INDEPENDENT);
+        assert!(config.contains("[[package]]\nmatch = \"cargo/app\"\ntag-template = \"app-v{version}\"\n"));
+        assert!(!config.contains("core"), "default convention is not written:\n{config}");
+    }
+
+    // AC-012: a sole `v{version}` package gets that template.
+    #[test]
+    fn a_sole_v_tag_package_gets_the_v_template() {
+        let single = repo(&[("Cargo.toml", &cargo("app", "1.0.0"))], Some(ORIGIN));
+        tag(single.path(), "v1.0.0");
+        let facts = detect_in(single.path()).unwrap();
+        assert_eq!(
+            facts.tag_templates,
+            BTreeMap::from([("cargo/app".to_owned(), "v{version}".to_owned())])
+        );
+    }
+
+    // AC-012a
+    #[test]
+    fn several_conventions_for_one_package_are_ambiguous() {
+        let dir = workspace();
+        tag(dir.path(), "app@1.0.0");
+        tag(dir.path(), "app-v1.1.0");
+        let error = detect_in(dir.path()).unwrap_err();
+        let GraphError::InitTagTemplateAmbiguous { package, matches } = &error else {
+            panic!("{error}");
+        };
+        assert_eq!(package, "cargo/app");
+        assert_eq!(
+            matches,
+            &["`app@{version}` (app@1.0.0)", "`app-v{version}` (app-v1.1.0)"]
+        );
+        let help = miette::Diagnostic::help(&error).unwrap().to_string();
+        assert!(help.contains("tag-template") && help.contains("previous-tag-templates"));
+    }
+
+    // AC-012b
+    #[test]
+    fn a_v_tag_shared_by_several_packages_is_an_error() {
+        let dir = workspace();
+        tag(dir.path(), "v1.0.0");
+        let error = detect_in(dir.path()).unwrap_err();
+        let GraphError::InitSharedVersionTag { packages } = &error else {
+            panic!("{error}");
+        };
+        assert_eq!(packages, &["cargo/app", "cargo/core", "npm/web"]);
+    }
+
+    fn facts_for_render() -> InitFacts {
+        let package = |id: &str, bins: &[&str], platform| InitPackage {
+            id: id.to_owned(),
+            version: Version::parse("1.0.0", callisto_model::VersionGrammar::SemVer).unwrap(),
+            bin_names: bins.iter().map(|bin| (*bin).to_owned()).collect(),
+            last_tag: None,
+            publish_to: vec!["crates-io".to_owned()],
+            platform,
+        };
+        InitFacts {
+            root: PathBuf::from("/ws"),
+            ecosystems: BTreeSet::from([Ecosystem::Cargo, Ecosystem::Npm]),
+            packages: vec![
+                package("cargo/app", &["app", "appctl"], false),
+                package("cargo/core", &[], false),
+                package("npm/web-linux-x64-gnu", &[], true),
+            ],
+            origin: ORIGIN.to_owned(),
+            origin_repository: GitHubRepository::parse("example/tools").ok(),
+            tag_templates: BTreeMap::new(),
+        }
+    }
+
+    fn parse(config: &str) -> toml::Table {
+        toml::from_str(config).unwrap()
+    }
+
+    // AC-007, AC-010
+    #[test]
+    fn fixed_versioning_writes_one_all_group_of_qualified_non_platform_members() {
+        let facts = facts_for_render();
+        let fixed = parse(&render_config(
+            &facts,
+            &InitAnswers {
+                versioning: Versioning::Fixed,
+                binaries: None,
+            },
+        ));
+        let groups = fixed["fixed-group"].as_array().unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0]["name"].as_str(), Some("all"));
+        assert_eq!(
+            groups[0]["members"],
+            toml::Value::Array(vec!["cargo/app".into(), "cargo/core".into()])
+        );
+        let keys: Vec<&String> = fixed.keys().collect();
+        assert_eq!(keys, ["fixed-group"]);
+
+        let independent = render_config(&facts, &INDEPENDENT);
+        assert_eq!(independent, "# callisto configuration\n");
+        assert!(parse(&independent).is_empty());
+    }
+
+    // AC-009, AC-009a, AC-023: one artifact per target per bin; no profiles or registry-routes.
+    #[test]
+    fn shipping_binaries_writes_release_and_artifacts() {
+        let config = render_config(
+            &facts_for_render(),
+            &release(&["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]),
+        );
+        let doc = parse(&config);
+        let release_table = doc["release"].as_table().unwrap();
+        assert_eq!(release_table["product-package"].as_str(), Some("cargo/app"));
+        assert_eq!(release_table["forge-repository"].as_str(), Some("example/tools"));
+        let assets: Vec<(&str, &str, &str)> = release_table["artifact"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|artifact| {
+                (
+                    artifact["package"].as_str().unwrap(),
+                    artifact["target"].as_str().unwrap(),
+                    artifact["asset-name"].as_str().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            assets,
+            [
+                (
+                    "cargo/app",
+                    "x86_64-unknown-linux-gnu",
+                    "app-x86_64-unknown-linux-gnu.tar.gz"
+                ),
+                (
+                    "cargo/app",
+                    "x86_64-unknown-linux-gnu",
+                    "appctl-x86_64-unknown-linux-gnu.tar.gz"
+                ),
+                ("cargo/app", "x86_64-pc-windows-msvc", "app-x86_64-pc-windows-msvc.zip"),
+                (
+                    "cargo/app",
+                    "x86_64-pc-windows-msvc",
+                    "appctl-x86_64-pc-windows-msvc.zip"
+                ),
+            ]
+        );
+        let rules = doc["package"].as_array().unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0]["match"].as_str(), Some("cargo/app"));
+        assert_eq!(
+            rules[0]["publish-to"],
+            toml::Value::Array(vec!["crates-io".into(), "github-release".into()])
+        );
+        assert!(!config.contains("profiles") && !config.contains("registry-routes"));
+        assert!(resolve_config_text(Path::new("/ws"), &config).is_ok());
+    }
+
+    // AC-005, AC-019: the preview is the release plan for the in-memory config, excluding tagged versions.
+    #[test]
+    fn preview_matches_release_dry_run_without_writing() {
+        let dir = workspace();
+        tag(dir.path(), "core@1.0.0");
+        let facts = detect_in(dir.path()).unwrap();
+        let config = render_config(&facts, &INDEPENDENT);
+        let locator = IgnoreWalkLocator::new(dir.path());
+        let preview = preview(&facts, &config, &locator, &RealGitRunner).unwrap().unwrap();
+        assert!(!dir.path().join("callisto.toml").exists());
+        let released: Vec<String> = preview
+            .intent
+            .decision
+            .entries
+            .iter()
+            .map(|entry| entry.package.to_string())
+            .collect();
+        assert!(!released.iter().any(|package| package.contains("core")), "{released:?}");
+        assert!(released.iter().any(|package| package.contains("app")), "{released:?}");
+
+        std::fs::write(dir.path().join("callisto.toml"), &config).unwrap();
+        let dry_run =
+            crate::commands::plan_local_release(dir.path(), &locator, &RealGitRunner, &[], LocalReleaseSource::Preview)
+                .unwrap()
+                .unwrap();
+        assert_eq!(preview, dry_run);
+    }
+
+    // AC-005: a binary release previews through the same plan function.
+    #[test]
+    fn preview_includes_artifact_uploads() {
+        let dir = workspace();
+        let facts = detect_in(dir.path()).unwrap();
+        let config = render_config(&facts, &release(&["x86_64-unknown-linux-gnu"]));
+        let plan = preview(&facts, &config, &IgnoreWalkLocator::new(dir.path()), &RealGitRunner)
+            .unwrap()
+            .unwrap();
+        assert!(plan.intent.operations.iter().any(|operation| matches!(
+            operation.id().role,
+            callisto_model::ReleaseOperationRole::ArtifactUpload { .. }
+        )));
+    }
+
+    // AC-003b
+    #[test]
+    fn forge_repository_must_be_owner_repo() {
+        assert_eq!(
+            parse_forge_repository("Example/Tools").unwrap().as_slug(),
+            "example/tools"
+        );
+        let error = parse_forge_repository("not a repo").unwrap_err();
+        assert!(error.to_string().contains("`not a repo`"), "{error}");
+    }
+
+    struct NoRustc;
+    impl CommandRunner for NoRustc {
+        fn run(&self, program: &str, _: &[&str], _: &Path) -> Result<CommandOutput, CommandError> {
+            Err(CommandError::NotFound {
+                program: program.to_owned(),
+            })
+        }
+    }
+
+    // AC-003c, AC-014b
+    #[test]
+    fn targets_are_validated_against_rustc_when_present() {
+        let known = BTreeSet::from(["x86_64-unknown-linux-gnu".to_owned()]);
+        let targets = |values: &[&str]| values.iter().map(|value| (*value).to_owned()).collect::<Vec<_>>();
+        assert!(validate_targets(&targets(&["x86_64-unknown-linux-gnu"]), Some(&known)).is_ok());
+        for (bad, offending) in [
+            (targets(&["made-up-triple"]), "made-up-triple"),
+            (
+                targets(&["x86_64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]),
+                "x86_64-unknown-linux-gnu",
+            ),
+            (targets(&[""]), ""),
+        ] {
+            let error = validate_targets(&bad, Some(&known)).unwrap_err();
+            assert!(
+                matches!(&error, GraphError::InitInvalidTargetTriple { triple, .. } if triple == offending),
+                "{error}"
+            );
+        }
+        assert!(validate_targets(&targets(&["made-up-triple"]), None).is_ok());
+        assert_eq!(known_target_triples(&NoRustc, Path::new(".")), None);
+        let real = known_target_triples(&RealGitRunner, Path::new(".")).expect("rustc is on PATH");
+        assert!(real.contains("x86_64-unknown-linux-gnu"));
+    }
+
+    // AC-014d
+    #[test]
+    fn product_package_must_be_a_binary_workspace_package() {
+        let facts = facts_for_render();
+        assert_eq!(facts.product_package("app").unwrap().id, "cargo/app");
+        assert_eq!(facts.product_package("cargo/app").unwrap().id, "cargo/app");
+        for name in ["cargo/core", "missing"] {
+            let error = facts.product_package(name).unwrap_err();
+            assert!(
+                matches!(&error, GraphError::InitInvalidProductPackage { package, .. } if package == name),
+                "{error}"
+            );
+        }
+    }
+
+    // AC-021a
+    #[test]
+    fn write_creates_the_readme_only_when_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let permit = ApplyPermit::force_for_tests();
+        let report = write(dir.path(), empty_config(), &permit).unwrap();
+        assert!(report.initialized);
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(".changeset/README.md")).unwrap(),
+            CHANGESET_README
+        );
+
+        let kept = tempfile::tempdir().unwrap();
+        std::fs::create_dir(kept.path().join(".changeset")).unwrap();
+        std::fs::write(kept.path().join(".changeset/README.md"), "mine\n").unwrap();
+        write(kept.path(), empty_config(), &permit).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(kept.path().join(".changeset/README.md")).unwrap(),
+            "mine\n"
+        );
+    }
 }

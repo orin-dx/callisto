@@ -115,43 +115,20 @@ pub fn execute_extension(input: moon_pdk_api::ExecuteExtensionInput) -> ExecuteE
 pub fn initialize_extension(
     input: moon_pdk_api::InitializeExtensionInput,
 ) -> Result<moon_pdk_api::InitializeExtensionOutput, LocateError> {
-    use callisto_graph::commands::init::{init, InitOptions};
+    use callisto_graph::commands::init;
 
-    // moon's real `InitializeExtensionInput` (= `InitializePluginInput`) only
-    // carries `context: MoonContext` — there is no `confirmed`/`yes` flag in
-    // the real protocol (that was a callisto-only field on the old, locally
-    // invented type). `InitOptions.yes` now gates `init`'s reconcile-apply
-    // path (docs/00-design.md §18 Q5.4 mechanism 1): on a first run it has
-    // no effect (scaffolding an absent `callisto.toml` is always a direct
-    // write), and on a re-run it decides whether detected drift (e.g. a
-    // newly-appeared ecosystem) is written or only reported. There is no
-    // host-side prompt surface here to relay a diff through, so defaulting
-    // to `true` — auto-applying reconcile drift — is the closest behavior-
-    // preserving choice to the old unconditional-write behavior.
+    // moon offers no prompts, so this scaffolds the answer-free config: independent versioning, no binaries.
     let root = input.context.workspace_root.to_path_buf();
+    // Always a real write: this host surface has no --dry-run equivalent.
+    let permit = callisto_model::ApplyPermit::granted_unless_dry_run(false).expect("non-dry-run permits writes");
+    let graph_err = |e| LocateError::Graph(Box::new(e));
     let runner = crate::runner::MoonCommandRunner;
     let locator = crate::locator::MoonProjectLocator::new(&runner, root.clone())?;
-    let ws = callisto_graph::Workspace::load(root, &locator, &runner).map_err(|e| LocateError::Graph(Box::new(e)))?;
-    let opts = InitOptions { yes: true };
-
-    // Run callisto's existing init-detection/scaffolding logic. moon's real
-    // `InitializeExtensionOutput` (= `InitializePluginOutput`) has no field
-    // that can carry an arbitrary `InitReport` (schema version, config path,
-    // diagnostics) — its shape is specifically for describing settings to
-    // inject into moon's own toolchain config and prompts to ask the user,
-    // neither of which callisto's `InitReport` maps onto cleanly. We still
-    // run `init` for its side effects (scaffolding `callisto.toml` /
-    // `.changeset`) and to propagate any error, but intentionally discard
-    // the returned `InitReport` rather than inventing new output fields
-    // moon doesn't expect. All fields below are therefore sensible defaults:
-    // callisto has no hosted config/docs URL to advertise, no moon toolchain
-    // settings to pre-populate, and no interactive prompts to ask.
-    // This host surface has no `--dry-run` equivalent -- a moon extension
-    // initialization is always a real scaffolding write -- so the permit is
-    // granted unconditionally here rather than derived from a user flag. It
-    // still goes through the one sanctioned constructor.
-    let permit = callisto_model::ApplyPermit::granted_unless_dry_run(false);
-    let _report = init(&ws, &opts, permit.as_ref()).map_err(|e| LocateError::Graph(Box::new(e)))?;
+    callisto_graph::Workspace::load(root.clone(), &locator, &runner).map_err(graph_err)?;
+    if !root.join("callisto.toml").exists() {
+        init::write(&root, init::empty_config(), &permit).map_err(graph_err)?;
+    }
+    init::write_changeset_readme(&root, &permit).map_err(graph_err)?;
 
     Ok(moon_pdk_api::InitializeExtensionOutput {
         config_url: None,

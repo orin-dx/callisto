@@ -41,7 +41,7 @@ fn fixture(manifest_path: &str, manifest: &str, package_match: &str, registry: &
     fs::write(root.join(manifest_path), manifest).unwrap();
     git(root, &["add", "."]);
     git(root, &["commit", "-m", "initial"]);
-    let init = callisto(root, &["init", "--yes"]);
+    let init = callisto(root, &["init", "--yes", "--versioning", "independent"]);
     assert!(
         init.status.success(),
         "init failed: {}",

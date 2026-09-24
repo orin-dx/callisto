@@ -210,7 +210,7 @@ fn npm_registry_release_fixture(package_name: &str) -> (tempfile::TempDir, Strin
     git(root, &["add", "."]);
     git(root, &["commit", "-m", "initial workspace"]);
 
-    let init = callisto(root, &["init", "--yes"]);
+    let init = callisto(root, &["init", "--yes", "--versioning", "independent"]);
     assert!(init.status.success(), "init failed: {}", stderr_of(&init));
     let config_path = root.join("callisto.toml");
     let config = fs::read_to_string(&config_path).unwrap();

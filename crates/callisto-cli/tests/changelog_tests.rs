@@ -2,7 +2,7 @@ mod common;
 
 use std::fs;
 
-use callisto_cli::cli::{AddArgs, GlobalArgs, InitArgs, OutputFormat, VersionArgs};
+use callisto_cli::cli::{AddArgs, GlobalArgs, OutputFormat, VersionArgs};
 use callisto_cli::commands;
 
 use common::setup_polyglot_git_repo;
@@ -23,7 +23,7 @@ fn test_changelog_content_uses_real_changeset_summary() {
         dry_run: false,
     };
 
-    commands::init::handle(InitArgs { yes: true }, &global).unwrap();
+    callisto_fixtures::scaffold_callisto(&global.cwd);
 
     commands::add::handle(
         AddArgs {
@@ -78,7 +78,7 @@ fn test_changelog_content_includes_all_changeset_summaries() {
         dry_run: false,
     };
 
-    commands::init::handle(InitArgs { yes: true }, &global).unwrap();
+    callisto_fixtures::scaffold_callisto(&global.cwd);
 
     commands::add::handle(
         AddArgs {

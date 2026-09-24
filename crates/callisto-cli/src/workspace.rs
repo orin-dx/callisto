@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use callisto_graph::infer::SeverityInference;
 use callisto_graph::locate::{find_workspace_root, IgnoreWalkLocator};
@@ -21,14 +21,19 @@ pub fn load_workspace<'a>(
     global: &GlobalArgs,
     runner: &'a CliCommandRunner,
 ) -> Result<Workspace<'a, CliCommandRunner, ManifestWalkResolver>, CliError> {
+    let root = workspace_root(global, runner)?;
+    let locator = IgnoreWalkLocator::new(&root);
+    Ok(Workspace::load(root, &locator, runner)?)
+}
+
+/// The workspace root above `--cwd`, after checking `git` is supported.
+pub fn workspace_root(global: &GlobalArgs, runner: &CliCommandRunner) -> Result<PathBuf, CliError> {
     let start = dunce::canonicalize(&global.cwd).map_err(|source| CliError::Io {
         source,
         path: Some(global.cwd.clone()),
     })?;
     ensure_git_supported(runner, &start)?;
-    let root = find_workspace_root(&start)?;
-    let locator = IgnoreWalkLocator::new(&root);
-    Ok(Workspace::load(root, &locator, runner)?)
+    Ok(find_workspace_root(&start)?)
 }
 
 /// Selects the concrete `SeverityInference` impl at compile time, milestone-gated by the

@@ -70,15 +70,20 @@ pub(crate) mod provider;
 
 use super::release_artifacts;
 
+pub(crate) use binding::optional_git_remote;
+pub(crate) use capability::canonical_root;
 pub use capability::{
     build_release_intent, build_release_intent_with_artifacts, validate_local_release_intent, validate_release_intent,
     ValidatedReleaseIntent,
 };
 #[cfg(test)]
 pub(crate) use derive::canonical_operation_order;
+pub(crate) use derive::is_platform_package;
 pub use derive::ArtifactBuildPolicy;
-pub use local::{ci_release_route, plan_local_release, CiReleaseRoute, LocalReleasePlan, LocalReleaseSource};
-pub(crate) use provider::policy::timeouts;
+pub use local::{
+    ci_release_route, plan_local_release, plan_workspace_release, CiReleaseRoute, LocalReleasePlan, LocalReleaseSource,
+};
+pub(crate) use provider::policy::{programs, timeouts};
 pub use provider::registry::cargo_registry_name;
 pub use provider::{ReleasePreflight, ReleaseProviderSet};
 

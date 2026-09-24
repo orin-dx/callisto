@@ -3,7 +3,7 @@ mod common;
 use std::fs;
 use std::process::Command;
 
-use callisto_cli::cli::{AddArgs, GlobalArgs, InitArgs, OutputFormat, PreArgs, VersionArgs};
+use callisto_cli::cli::{AddArgs, GlobalArgs, OutputFormat, PreArgs, VersionArgs};
 use callisto_cli::commands;
 
 use common::setup_polyglot_git_repo;
@@ -96,7 +96,7 @@ fn test_malformed_pre_json_returns_error_not_silent_normal_release() {
         dry_run: false,
     };
 
-    commands::init::handle(InitArgs { yes: true }, &global).unwrap();
+    callisto_fixtures::scaffold_callisto(&global.cwd);
 
     commands::add::handle(
         AddArgs {

@@ -10,7 +10,7 @@ use std::process::ExitCode;
 use callisto_graph::commands::{
     build_release_intent, build_release_intent_with_artifacts, ci_release_route, derive_release_commit_decision,
     derive_selected_release_decision, execute_release, plan_local_release, validate_local_release_intent,
-    validate_release_intent, verify_artifact_manifest, LocalReleaseSource, VersionOptions,
+    validate_release_intent, verify_artifact_manifest, LocalReleasePlan, LocalReleaseSource, VersionOptions,
 };
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_model::{
@@ -58,22 +58,8 @@ fn release(
     let root = workspace.root.clone();
     let locator = IgnoreWalkLocator::new(&root);
     if global.dry_run {
-        match plan_local_release(&root, &locator, &runner, &selections, LocalReleaseSource::Preview)? {
-            None => print_nothing_to_release(global)?,
-            Some(plan) => {
-                match global.format {
-                    OutputFormat::Json => write_json(&mut std::io::stdout(), &plan.intent)?,
-                    OutputFormat::Text => {
-                        use std::io::Write as _;
-                        let mut out = crate::color::stdout();
-                        write!(out, "{}", render_release_plan(&plan.intent, crate::color::enabled()))?;
-                    }
-                }
-                if plan.tags_unbound {
-                    eprintln!("{TAGS_UNBOUND_NOTE}");
-                }
-            }
-        }
+        let plan = plan_local_release(&root, &locator, &runner, &selections, LocalReleaseSource::Preview)?;
+        write_release_preview(plan.as_ref(), global.format, &mut std::io::stdout())?;
         return Ok(ExitCode::SUCCESS);
     }
     if let Some(route) = ci_release_route(&workspace)? {
@@ -138,6 +124,26 @@ fn release(
         ),
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// Writes a `release --dry-run` preview of `plan`; `init` shows the same one.
+pub(crate) fn write_release_preview(
+    plan: Option<&LocalReleasePlan>,
+    format: OutputFormat,
+    out: &mut dyn std::io::Write,
+) -> Result<(), CliError> {
+    match (plan, format) {
+        (None, OutputFormat::Json) => write_json(&mut &mut *out, &serde_json::json!({ "nothingToRelease": true }))?,
+        (None, OutputFormat::Text) => writeln!(out, "{NOTHING_TO_RELEASE}")?,
+        (Some(plan), OutputFormat::Json) => write_json(&mut &mut *out, &plan.intent)?,
+        (Some(plan), OutputFormat::Text) => {
+            write!(out, "{}", render_release_plan(&plan.intent, crate::color::enabled()))?
+        }
+    }
+    if plan.is_some_and(|plan| plan.tags_unbound) {
+        eprintln!("{TAGS_UNBOUND_NOTE}");
+    }
+    Ok(())
 }
 
 fn print_nothing_to_release(global: &GlobalArgs) -> Result<(), CliError> {

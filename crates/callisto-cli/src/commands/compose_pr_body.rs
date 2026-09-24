@@ -80,7 +80,7 @@ mod tests {
             dry_run: false,
         };
 
-        crate::commands::init::handle(crate::cli::InitArgs { yes: true }, &global).unwrap();
+        callisto_fixtures::scaffold_callisto(&global.cwd);
         crate::commands::add::handle(
             crate::cli::AddArgs {
                 packages: vec!["pkg-a:patch".to_string()],

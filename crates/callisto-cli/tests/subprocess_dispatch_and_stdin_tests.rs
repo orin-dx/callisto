@@ -36,7 +36,21 @@ fn subprocess_lifecycle_exercises_every_main_dispatch_arm() {
             .unwrap_or_else(|e| panic!("failed to spawn callisto {args:?}: {e}"))
     };
 
-    let init = run(&["--cwd", &root_str, "--format", "json", "init", "--yes"]);
+    Command::new("git")
+        .args(["remote", "add", "origin", "https://github.com/example/core-crate.git"])
+        .current_dir(root)
+        .status()
+        .unwrap();
+    let init = run(&[
+        "--cwd",
+        &root_str,
+        "--format",
+        "json",
+        "init",
+        "--yes",
+        "--versioning",
+        "independent",
+    ]);
     assert!(
         init.status.success(),
         "init failed: {}",
@@ -74,11 +88,6 @@ fn subprocess_lifecycle_exercises_every_main_dispatch_arm() {
         String::from_utf8_lossy(&validate.stderr)
     );
 
-    Command::new("git")
-        .args(["remote", "add", "origin", "https://github.com/example/core-crate.git"])
-        .current_dir(root)
-        .status()
-        .unwrap();
     // `--dry-run` so release never attempts a real network call.
     let release = run(&["--cwd", &root_str, "--format", "json", "--dry-run", "release"]);
     assert!(
@@ -148,8 +157,22 @@ fn compose_pr_body_existing_body_dash_reads_from_stdin() {
     let root = dir.path();
     let root_str = root.to_string_lossy().to_string();
 
+    Command::new("git")
+        .args(["remote", "add", "origin", "https://github.com/example/core-crate.git"])
+        .current_dir(root)
+        .status()
+        .unwrap();
     let init = Command::new(bin())
-        .args(["--cwd", &root_str, "--format", "json", "init", "--yes"])
+        .args([
+            "--cwd",
+            &root_str,
+            "--format",
+            "json",
+            "init",
+            "--yes",
+            "--versioning",
+            "independent",
+        ])
         .output()
         .unwrap();
     assert!(init.status.success());

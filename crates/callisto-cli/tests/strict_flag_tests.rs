@@ -81,7 +81,7 @@ fn make_git_workspace(tmp: &TempDir) -> GlobalArgs {
     };
 
     // Initialize callisto.toml.
-    commands::init::handle(callisto_cli::cli::InitArgs { yes: true }, &global).unwrap();
+    callisto_fixtures::scaffold_callisto(&global.cwd);
 
     // git add + commit so HEAD exists (snapshot needs HEAD SHA).
     drop(

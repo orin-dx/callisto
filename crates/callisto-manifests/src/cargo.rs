@@ -220,6 +220,27 @@ impl Manifest for CargoToml {
         self.role.clone()
     }
 
+    fn bin_names(&self) -> Vec<String> {
+        let Some(package) = cargo_package_name(&self.document) else {
+            return Vec::new();
+        };
+        if let Some(first) = self
+            .document
+            .get("bin")
+            .and_then(|bin| bin.as_array_of_tables())
+            .and_then(|bins| bins.iter().next())
+        {
+            let name = first.get("name").and_then(|name| name.as_str()).unwrap_or(package);
+            return vec![name.to_string()];
+        }
+        let main = self.absolute.parent().map(|dir| dir.join("src/main.rs"));
+        if main.is_some_and(|main| main.is_file()) {
+            vec![package.to_string()]
+        } else {
+            Vec::new()
+        }
+    }
+
     fn package_name(&self) -> Result<String, ManifestError> {
         let name = cargo_package_name(&self.document).ok_or_else(|| ManifestError::MissingField {
             path: self.path.clone(),
@@ -730,6 +751,31 @@ mod tests {
     fn cargo_package_name_reads_package_name() {
         let doc: toml_edit::DocumentMut = "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\n".parse().unwrap();
         assert_eq!(cargo_package_name(&doc), Some("my-crate"));
+    }
+
+    fn open_cargo(dir: &std::path::Path, content: &str) -> CargoToml {
+        fs::write(dir.join("Cargo.toml"), content).unwrap();
+        let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir,
+            cargo_workspace: None,
+            npm_workspace_kind: None,
+        };
+        CargoToml::open(&decl, &ctx).unwrap()
+    }
+
+    #[test]
+    fn bin_names_follow_first_bin_target_then_src_main() {
+        let package = "[package]\nname = \"app\"\nversion = \"1.0.0\"\n";
+        let dir = tempdir().unwrap();
+        assert!(open_cargo(dir.path(), package).bin_names().is_empty(), "library-only");
+
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(dir.path().join("src/main.rs"), "fn main() {}\n").unwrap();
+        assert_eq!(open_cargo(dir.path(), package).bin_names(), ["app"]);
+
+        let bins = format!("{package}\n[[bin]]\nname = \"first\"\n\n[[bin]]\nname = \"second\"\n");
+        assert_eq!(open_cargo(dir.path(), &bins).bin_names(), ["first"]);
     }
 
     #[test]
