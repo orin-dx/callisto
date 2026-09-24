@@ -49,6 +49,8 @@ pub fn init_repo(root: &Path) {
     run_git(root, &["config", "user.name", "Test"]);
     run_git(root, &["config", "commit.gpgsign", "false"]);
     run_git(root, &["config", "tag.gpgsign", "false"]);
+    run_git(root, &["config", "gc.auto", "0"]);
+    run_git(root, &["config", "maintenance.auto", "false"]);
 }
 
 #[cfg(test)]

@@ -78,7 +78,8 @@ fn collect(root: &Path, dir: &Path, entries: &mut BTreeMap<PathBuf, u64>) {
                 bytes.hash(&mut hasher);
                 let rel = path.strip_prefix(root).unwrap_or(&path).to_path_buf();
                 let rel_str = rel.to_string_lossy();
-                if rel_str.contains(".git/") && rel_str.ends_with(".lock") {
+                // Background auto-gc repacks `.git/objects` asynchronously; refs and index still catch real writes.
+                if (rel_str.contains(".git/") && rel_str.ends_with(".lock")) || rel_str.contains(".git/objects/") {
                     continue;
                 }
                 let _prev = entries.insert(rel, hasher.finish());
