@@ -638,6 +638,13 @@ pub enum GraphError {
         reason: &'static str,
         candidates: Vec<String>,
     },
+
+    #[error("`{}` already exists; init refuses to overwrite a generated workflow", .path.display())]
+    #[diagnostic(
+        code(E200),
+        help("Remove or edit the existing file directly; `callisto init` never merges into it.")
+    )]
+    InitWorkflowExists { path: PathBuf },
 }
 
 /// Source of a [`GraphError::ReleaseCommand`] (E164) failure: either the
