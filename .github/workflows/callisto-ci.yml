@@ -82,6 +82,7 @@ jobs:
           components: clippy
           targets: wasm32-wasip1
       - run: just lint
+      - run: just doc-check
 
   test:
     name: Test Suite & WASM Check (${{ matrix.os }})
