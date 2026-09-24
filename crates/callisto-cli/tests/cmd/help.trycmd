@@ -5,20 +5,14 @@ Changesets-style version and release manager for Rust workspaces
 Usage: callisto [OPTIONS] <COMMAND>
 
 Commands:
-  add              Create a new changeset describing pending package changes
-  status           Show the workspace's pending changesets and diagnostics
-  matrix           Print the workspace's native-build target matrix as JSON or a table
-  version          Consume pending changesets and bump package versions accordingly
-  pre              Manage prerelease mode for the workspace
-  validate         Check that changesets and the dependency graph are well-formed
-  snapshot         Apply a temporary, non-persistent version bump for a snapshot release
-  init             Scaffold Callisto configuration in the current workspace
-  compose-pr-body  Generate a pull request body summarizing pending release changes
-  release          Publish every package whose current version has not been released yet
-  release-pr       Decide the next managed release-pull-request operation from a forge snapshot
-  completions      Generate shell completion scripts
-  schema           Print the JSON schema for a report type
-  help             Print this message or the help of the given subcommand(s)
+  add          Create a new changeset describing pending package changes
+  status       Show the workspace's pending changesets and diagnostics
+  version      Consume pending changesets and bump package versions accordingly
+  pre          Manage prerelease mode for the workspace
+  snapshot     Apply a temporary, non-persistent version bump for a snapshot release
+  init         Scaffold Callisto configuration in the current workspace
+  release      Publish every package whose current version has not been released yet
+  completions  Generate shell completion scripts
 
 Options:
       --format <FORMAT>  Output format for command results [default: text] [possible values: text, json]

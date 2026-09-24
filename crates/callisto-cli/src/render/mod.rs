@@ -28,22 +28,54 @@ pub fn render_diagnostics<W: io::Write>(
     Ok(())
 }
 
-pub fn render_status<W: io::Write>(report: &StatusReport, w: &mut W) -> io::Result<()> {
-    writeln!(w, "Status (schema v{}):", report.schema_version)?;
-    for pkg in &report.packages {
-        let severity = pkg
-            .pending_severity
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "none".to_string());
-        writeln!(
-            w,
-            "  {} {} (pending: {})",
-            pkg.package.display_name(),
-            pkg.current_version.raw(),
-            severity
-        )?;
+/// `use_color` is the one color/table decision ([`crate::color::enabled`]):
+/// box-drawing table formatting renders only alongside color, never independently.
+pub fn render_status<W: io::Write>(report: &StatusReport, use_color: bool, w: &mut W) -> io::Result<()> {
+    writeln!(w, "Status:")?;
+    if use_color {
+        render_status_table(report, w)?;
+    } else {
+        for pkg in &report.packages {
+            writeln!(
+                w,
+                "  {} {} (pending: {})",
+                pkg.package.display_name(),
+                pkg.current_version.raw(),
+                status_severity_label(pkg)
+            )?;
+        }
     }
     render_diagnostics(&report.diagnostics, None, w)
+}
+
+fn status_severity_label(pkg: &callisto_model::StatusPackageRecord) -> String {
+    pkg.pending_severity
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "none".to_string())
+}
+
+fn render_status_table<W: io::Write>(report: &StatusReport, w: &mut W) -> io::Result<()> {
+    use comfy_table::{presets::UTF8_FULL, Cell, Color, Table};
+
+    let mut table = Table::new();
+    // Our `use_color` gate is the sole authority -- never let comfy-table's own
+    // TTY probe override it, so a forced/piped stdout still renders styled.
+    table.force_no_tty().enforce_styling();
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec!["Package", "Version", "Pending"]);
+    for pkg in &report.packages {
+        let severity = status_severity_label(pkg);
+        let cell = match pkg.pending_severity {
+            Some(_) => Cell::new(severity).fg(Color::Yellow),
+            None => Cell::new(severity).fg(Color::DarkGrey),
+        };
+        table.add_row(vec![
+            Cell::new(pkg.package.display_name()),
+            Cell::new(pkg.current_version.raw()),
+            cell,
+        ]);
+    }
+    writeln!(w, "{table}")
 }
 
 /// `cfg` is the resolved config that produced `report`: §13 invariant 28
@@ -53,7 +85,7 @@ pub fn render_status<W: io::Write>(report: &StatusReport, w: &mut W) -> io::Resu
 /// that line needs (`callisto-graph` deliberately carries only the `ConfigKey`
 /// in the report itself; see `render::attribution`).
 pub fn render_version<W: io::Write>(report: &VersionReport, cfg: &ResolvedConfig, w: &mut W) -> io::Result<()> {
-    writeln!(w, "Version Plan (schema v{}):", report.schema_version)?;
+    writeln!(w, "Version Plan:")?;
     for bump in &report.bumps {
         writeln!(
             w,
@@ -133,7 +165,7 @@ pub fn render_init<W: io::Write>(report: &InitReport, w: &mut W) -> io::Result<(
 }
 
 pub fn render_matrix<W: io::Write>(report: &callisto_model::MatrixReport, w: &mut W) -> io::Result<()> {
-    writeln!(w, "Matrix (schema v{}):", report.schema_version)?;
+    writeln!(w, "Matrix:")?;
 
     if report.platform_targets.is_empty() && report.runtime_versions.is_empty() {
         writeln!(w, "  (no platform targets or runtime-version constraints declared)")?;
@@ -204,7 +236,7 @@ mod tests {
             diagnostics: vec![],
         };
         let mut out = Vec::new();
-        render_status(&report, &mut out).unwrap();
+        render_status(&report, false, &mut out).unwrap();
         let text = String::from_utf8(out).unwrap();
         assert!(
             !text.contains("Some("),
@@ -492,5 +524,91 @@ mod tests {
             text.contains("governed by [validation].allow-empty-changesets = false (default)"),
             "governed diagnostic must be followed by its attribution line; got:\n{text}"
         );
+    }
+
+    /// AC-04: `use_color: true` renders `status` with box-drawing table characters.
+    #[test]
+    fn render_status_with_color_renders_box_drawing_table() {
+        let report = StatusReport {
+            schema_version: callisto_model::SCHEMA_VERSION,
+            has_changesets: true,
+            packages: vec![status_pkg("crate-a", Some(Severity::Minor), vec!["cs-001"])],
+            diagnostics: vec![],
+        };
+        let mut out = Vec::new();
+        render_status(&report, true, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains('\u{2502}'), "expected a box-drawing char in:\n{text}");
+        assert!(text.contains("crate-a") && text.contains("minor"), "got:\n{text}");
+    }
+
+    /// AC-05: `use_color: false` never emits box-drawing characters, regardless of report content.
+    #[test]
+    fn render_status_without_color_has_no_box_drawing_chars() {
+        let report = StatusReport {
+            schema_version: callisto_model::SCHEMA_VERSION,
+            has_changesets: true,
+            packages: vec![status_pkg("crate-a", Some(Severity::Minor), vec!["cs-001"])],
+            diagnostics: vec![],
+        };
+        let mut out = Vec::new();
+        render_status(&report, false, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            !text.chars().any(|c| ('\u{2500}'..='\u{257F}').contains(&c)),
+            "got:\n{text}"
+        );
+    }
+
+    /// AC-06: no text-format renderer emits `schema v\d+` (that's `callisto schema`'s exemption alone).
+    #[test]
+    fn no_renderer_emits_schema_version_text() {
+        let schema_v_regex = |text: &str| {
+            text.match_indices("schema v")
+                .any(|(i, m)| text[i + m.len()..].chars().next().is_some_and(|c| c.is_ascii_digit()))
+        };
+
+        let mut out = Vec::new();
+        render_status(
+            &StatusReport {
+                schema_version: 7,
+                has_changesets: false,
+                packages: vec![],
+                diagnostics: vec![],
+            },
+            false,
+            &mut out,
+        )
+        .unwrap();
+        assert!(!schema_v_regex(&String::from_utf8(out).unwrap()));
+
+        let mut out = Vec::new();
+        render_matrix(
+            &callisto_model::MatrixReport {
+                schema_version: 7,
+                platform_targets: Default::default(),
+                runtime_versions: Default::default(),
+                diagnostics: vec![],
+            },
+            &mut out,
+        )
+        .unwrap();
+        assert!(!schema_v_regex(&String::from_utf8(out).unwrap()));
+
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = callisto_graph::config::load(tmp.path()).unwrap();
+        let mut out = Vec::new();
+        render_version(
+            &VersionReport {
+                schema_version: 7,
+                bumps: vec![],
+                lockfile_refresh_results: None,
+                diagnostics: vec![],
+            },
+            &cfg,
+            &mut out,
+        )
+        .unwrap();
+        assert!(!schema_v_regex(&String::from_utf8(out).unwrap()));
     }
 }
