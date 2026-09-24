@@ -17,7 +17,6 @@ pub mod cascade;
 pub mod changed;
 pub mod commands;
 pub mod config;
-pub mod crosscheck;
 pub mod error;
 pub mod groups;
 pub mod identity;
@@ -42,7 +41,7 @@ pub use cascade::{
 pub use config::{load as load_config, resolve as resolve_config, GroupDef, GroupTable, ResolvedConfig};
 pub use error::{ConfigError, GraphError};
 pub use groups::{fixed_group_target, pre_mutation_checks, GroupCheckOutcome};
-pub use identity::{IdentityIndex, IdentityResolver};
+pub use identity::IdentityIndex;
 pub use infer::{InferenceOutcome, InferenceWindowSpec, NoInference, SeverityInference};
 pub use locate::{find_workspace_root, IgnoreWalkLocator, LocateError, ProjectLocator};
 pub use napi::{napi_drift, role_to_triple, triple_to_role, NapiTargetsIndex};

@@ -10,14 +10,10 @@ build:
 build-release:
     cargo build --release -p callisto-cli
 
-# Prebuilds the wasm moon_wasm_sandbox.rs loads, so test processes don't race to build it.
-build-moon-wasm:
-    cargo rustc -p callisto-moon --lib --target wasm32-wasip1 --features pdk --crate-type cdylib
-
 # Run unit, integration, doctests, and E2E tests. This intentionally uses the
 # same Nextest command as CI: a runner/configuration failure must never be
 # mistaken for a passing Moon fallback.
-test: build-moon-wasm
+test:
     cargo nextest run --workspace --all-features
     cargo test --doc --all-features
 
@@ -121,25 +117,7 @@ fuzz target="parse_package_id":
 doc-check:
     RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace
 
-# Verify Moon WASM plugin cross-compilation target and build the real
-# cdylib. The black-box Extism/wasmtime sandbox test (tests/moon_wasm_sandbox.rs)
-# is NOT re-run here: `just test`'s workspace-wide nextest run already builds
-# and executes it (moon_pdk_test_utils is an unconditional dev-dependency, not
-# gated by the `pdk` feature), so running it again via `cargo test` here would
-# be a third full execution of the same suite once `coverage` runs it a second
-# time under instrumentation -- pure redundant runtime, not extra coverage.
-wasm-check:
-    rustup target add wasm32-wasip1 2>/dev/null || true
-    cargo check -p callisto-moon --target wasm32-wasip1 --features pdk
-    cargo rustc -p callisto-moon --lib --target wasm32-wasip1 --features pdk --crate-type cdylib
-
-# Generate code coverage report via cargo-llvm-cov. `_pdk.rs`-suffixed files
-# are excluded: they contain code that only executes inside a real
-# wasm32-wasip1 Extism host (see e.g. crates/callisto-moon/src/runner_pdk.rs's
-# module doc comment) -- black-box tested via tests/moon_wasm_sandbox.rs, but
-# invisible to native coverage instrumentation by construction, not a real
-# testing gap. Any file matching this naming convention is understood to
-# document its own exclusion this way.
+# Generate code coverage report via cargo-llvm-cov.
 #
 # Optional `threshold`: when set, fails if total line coverage drops below
 # it (--fail-under-lines). The human-readable summary is always emitted
@@ -147,14 +125,14 @@ wasm-check:
 # percentage, and a failed CI gate must say what developers need to improve.
 # Unset means informational only; `just ci` and CI both call `just coverage 90`,
 # so a CI coverage failure always reproduces locally with the same invocation.
-coverage threshold="": build-moon-wasm
+coverage threshold="":
     #!/usr/bin/env bash
     set -euo pipefail
-    args=(--all-features --lcov --output-path lcov.info --ignore-filename-regex '_pdk\.rs$')
+    args=(--all-features --lcov --output-path lcov.info)
     cargo llvm-cov "${args[@]}"
-    cargo llvm-cov report --summary-only --ignore-filename-regex '_pdk\.rs$'
+    cargo llvm-cov report --summary-only
     if [[ -n "{{threshold}}" ]]; then
-      cargo llvm-cov report --summary-only --ignore-filename-regex '_pdk\.rs$' --fail-under-lines "{{threshold}}"
+      cargo llvm-cov report --summary-only --fail-under-lines "{{threshold}}"
     fi
 
 # Check per-crate line coverage against a threshold (default 90%). The
@@ -166,7 +144,7 @@ coverage threshold="": build-moon-wasm
 coverage-per-crate threshold="90":
     #!/usr/bin/env bash
     set -euo pipefail
-    cargo llvm-cov report --json --summary-only --ignore-filename-regex '_pdk\.rs$' > /tmp/callisto-cov-summary.json
+    cargo llvm-cov report --json --summary-only > /tmp/callisto-cov-summary.json
     report=$(jq -r '
         .data[0].files[]
         | select(.filename | test("/crates/"))
@@ -227,9 +205,8 @@ workflow-contracts: release-workflow-checks
     env PATH=/usr/bin:/bin bash .github/actions/callisto-action/tests/test_release_contract.sh
     bash .github/actions/setup-callisto/tests/test_download_extraction_format.sh
     bash .github/actions/setup-callisto/tests/test_crates_io_fallback.sh
-    bash .github/actions/setup-callisto-wasm/tests/test_verification_modes.sh
 
 # Every check CI runs except actionlint (Docker) and the binary-dependent
 # release-PR decide contract and artifact preflight build. CI runs them as
 # parallel jobs (callisto-ci.yml); locally they run in sequence.
-ci: fmt-check lint test test-ci-default-features audit doc-check wasm-check zizmor workflow-contracts release-workflow-behavior (coverage "90")
+ci: fmt-check lint test test-ci-default-features audit doc-check zizmor workflow-contracts release-workflow-behavior (coverage "90")

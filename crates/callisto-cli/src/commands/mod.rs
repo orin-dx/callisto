@@ -39,10 +39,10 @@ pub(crate) fn read_json_arg(arg: &str) -> Result<String, crate::error::CliError>
 /// diagnostic that is `Error` severity afterward.
 ///
 /// Used by `snapshot`, which must abort *before* touching any
-/// files/tags on a crosscheck failure -- unlike `status`/`validate`/`version`,
+/// files/tags on an error diagnostic -- unlike `status`/`validate`/`version`,
 /// which fold escalated diagnostics into their report and gate on exit code
 /// instead of an `Err`.
-pub(crate) fn abort_on_crosscheck_failures(
+pub(crate) fn abort_on_graph_errors(
     diagnostics: &[callisto_model::Diagnostic],
     strict: bool,
     strict_graph: bool,
@@ -60,7 +60,7 @@ pub(crate) fn abort_on_crosscheck_failures(
         Ok(())
     } else {
         Err(crate::error::CliError::Other(format!(
-            "--strict/--strict-graph: workspace graph has crosscheck failures:\n{}",
+            "--strict/--strict-graph: workspace graph has error diagnostics:\n{}",
             messages.join("\n")
         )))
     }
@@ -70,13 +70,13 @@ pub(crate) fn abort_on_crosscheck_failures(
 mod tests {
     use callisto_model::{Diagnostic, DiagnosticCode, DiagnosticSeverity, StrictFlag};
 
-    use super::abort_on_crosscheck_failures;
+    use super::abort_on_graph_errors;
 
     fn strict_graph_diagnostic() -> Diagnostic {
         Diagnostic {
-            code: DiagnosticCode::GraphEdgeDisagreement,
+            code: DiagnosticCode::RangeNotRoundTrippable,
             severity: DiagnosticSeverity::Warning,
-            message: "moon declares a -> b but no manifest declares it".to_string(),
+            message: "graph warning a -> b".to_string(),
             package: None,
             path: None,
             escalated_by: Some(StrictFlag::StrictGraph),
@@ -89,7 +89,7 @@ mod tests {
     #[test]
     fn neither_flag_leaves_warning_diagnostics_unescalated() {
         let diags = vec![strict_graph_diagnostic()];
-        assert!(abort_on_crosscheck_failures(&diags, false, false).is_ok());
+        assert!(abort_on_graph_errors(&diags, false, false).is_ok());
     }
 
     /// This is the bug fix under test: previously `snapshot` hardcoded
@@ -101,8 +101,8 @@ mod tests {
     #[test]
     fn strict_graph_alone_now_escalates_graph_diagnostics() {
         let diags = vec![strict_graph_diagnostic()];
-        let err = abort_on_crosscheck_failures(&diags, false, true).unwrap_err();
-        assert!(err.to_string().contains("moon declares a -> b"));
+        let err = abort_on_graph_errors(&diags, false, true).unwrap_err();
+        assert!(err.to_string().contains("graph warning a -> b"));
     }
 
     /// `--strict` alone still escalates `StrictGraph`-tagged diagnostics too
@@ -111,6 +111,6 @@ mod tests {
     #[test]
     fn strict_alone_still_escalates_graph_diagnostics() {
         let diags = vec![strict_graph_diagnostic()];
-        assert!(abort_on_crosscheck_failures(&diags, true, false).is_err());
+        assert!(abort_on_graph_errors(&diags, true, false).is_err());
     }
 }

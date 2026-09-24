@@ -322,8 +322,7 @@ mod tests {
 
     /// Spec: `TagIndex::build` must fetch the raw tag list exactly once per
     /// build, not once per package -- each `CommandRunner` round-trip is a
-    /// full Extism guest<->host context switch on the wasm32/moon path, so
-    /// N packages must not cost N round-trips.
+    /// subprocess spawn, so N packages must not cost N round-trips.
     #[test]
     fn test_tag_index_build_batches_tag_fetch_across_packages() {
         let dir = non_repo_dir();

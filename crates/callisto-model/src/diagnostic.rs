@@ -114,9 +114,6 @@ pub enum DiagnosticCode {
     /// Reserved for a pre-v0.3 milestone gate on napi platform coordination; not emitted by
     /// any current code path now that coordination has shipped.
     NapiCoordinationNotYetSupported,
-    /// moon's declared project-graph edges and callisto's own manifest-derived dependency
-    /// graph disagree about whether an edge exists, in either direction.
-    GraphEdgeDisagreement,
     /// A dependency range spec's coverage of the new version is known (it covers or doesn't),
     /// but the mechanical rewrite of that range string toward the new version failed — e.g. a
     /// compound, wildcard, or prerelease-clause range no ecosystem's round-trip rewriter

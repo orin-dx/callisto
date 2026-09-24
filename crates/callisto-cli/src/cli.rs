@@ -157,8 +157,7 @@ pub struct SnapshotArgs {
     /// Tag to append to the snapshot version (e.g. a commit SHA or branch name).
     #[arg(long)]
     pub tag: String,
-    /// Abort if the workspace graph contains crosscheck failures or other
-    /// error-severity diagnostics.
+    /// Abort if the workspace graph contains error-severity diagnostics.
     #[arg(long)]
     pub strict: bool,
     /// Treat dependency-graph warnings as errors.

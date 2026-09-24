@@ -57,7 +57,7 @@ pub trait CommandRunner: Send + Sync {
     ///
     /// The default implementation returns [`CommandError::Unsupported`]:
     /// the great majority of [`CommandRunner`] implementors in this
-    /// workspace (test doubles, `moon`'s own dispatch, etc.) never pipe
+    /// workspace (test doubles, etc.) never pipe
     /// stdin to a child process, so they don't need to implement this --
     /// only a real subprocess-backed runner used for such a call should
     /// override it.

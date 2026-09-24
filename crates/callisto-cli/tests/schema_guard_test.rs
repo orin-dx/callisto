@@ -68,7 +68,6 @@ fn ac13_diagnostic_code_enum_gains_only_changelog_read_error() {
         "napi-target-added-not-in-members",
         "napi-target-removed-still-on-disk",
         "napi-coordination-not-yet-supported",
-        "graph-edge-disagreement",
         "range-not-round-trippable",
         "catalog-spec-not-rewritten",
         "tag-glob-non-version-match",

@@ -1,17 +1,10 @@
 /// Tests for the `--strict` flag on `callisto snapshot`.
 ///
 /// The command must abort with a `CliError` when `--strict` is passed and
-/// the workspace graph contains crosscheck failures (diagnostics whose
-/// `escalated_by` field is `StrictFlag::Strict` or `StrictFlag::StrictGraph`,
-/// promoted to `DiagnosticSeverity::Error` under strict mode).
-///
-/// Because creating a real crosscheck failure requires moon-declared edges that
-/// disagree with manifest edges (a moon-specific infra concern), these tests
-/// use a simpler strategy: verify that `--strict` with a *clean* graph does not
-/// abort (exit code 0), and that a `Diagnostic` with `Error` severity produced
-/// by a mocked graph triggers the abort path.  The graph-level crosscheck unit
-/// tests in `callisto-graph/src/crosscheck.rs` already prove the diagnostic
-/// production logic; these tests prove the CLI abort-on-error contract.
+/// the workspace graph contains diagnostics escalated to
+/// `DiagnosticSeverity::Error` under strict mode. The escalation unit tests in
+/// `callisto-cli/src/commands/mod.rs` prove the abort path; these tests prove a
+/// clean graph does not abort.
 ///
 use std::fs;
 use std::process::ExitCode;
@@ -170,7 +163,7 @@ fn test_version_no_strict_no_changesets_succeeds() {
 // Snapshot --strict tests
 // ---------------------------------------------------------------------------
 
-/// `callisto snapshot --strict` on a workspace with no crosscheck failures
+/// `callisto snapshot --strict` on a workspace with no error diagnostics
 /// must succeed (return Ok with ExitCode::SUCCESS).
 ///
 /// A clean graph has no `Error`-severity diagnostics even after escalation, so
