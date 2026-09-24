@@ -142,10 +142,9 @@ fn ac13_diagnostic_code_enum_gains_only_changelog_read_error() {
     );
 }
 
-/// The durable release wire types are versioned: a change to either shape
-/// without a `SCHEMA_VERSION` bump is a silent break for state and receipts
-/// written by an earlier release. Both are at version 2 (the run envelope
-/// moved inside the state, and receipt observations now carry evidence).
+/// The receipt is versioned: a change to its shape without a `SCHEMA_VERSION`
+/// bump is a silent break for receipts written by an earlier release. The
+/// receipt is at version 2 and its run envelope at version 2 (no run kind).
 #[test]
 fn durable_release_wire_shapes_match_their_schema_version() {
     let receipt = run_schema("release-receipt");
@@ -154,20 +153,26 @@ fn durable_release_wire_shapes_match_their_schema_version() {
     assert_eq!(req, expected);
     assert_eq!(props, expected);
 
-    let state = run_schema("release-state");
-    let (req, props) = required_and_props(&state);
-    let expected = set(&["schemaVersion", "intentDigest", "envelope", "operations"]);
+    let (req, props) = required_and_props(&receipt["definitions"]["ReleaseRunEnvelopeV1"]);
+    let mut expected = set(&[
+        "schemaVersion",
+        "orchestrationRevision",
+        "releaseSourceRevision",
+        "profile",
+        "intentDigest",
+    ]);
     assert_eq!(req, expected);
+    expected.insert("artifactManifestDigest".to_owned());
     assert_eq!(props, expected);
 }
 
-/// The operation role is the durable DAG's vocabulary: a persisted state or
-/// receipt names every operation by it. `forgePublish` is the role that makes
-/// publication the last forge step, after every `artifactUpload`.
+/// The operation role is the durable DAG's vocabulary: a receipt names every
+/// operation by it. `forgePublish` is the role that makes publication the last
+/// forge step, after every `artifactUpload`.
 #[test]
 fn release_operation_roles_carry_exactly_their_declared_variants() {
-    let state = run_schema("release-state");
-    let variants: BTreeSet<String> = state["definitions"]["ReleaseOperationRole"]["oneOf"]
+    let receipt = run_schema("release-receipt");
+    let variants: BTreeSet<String> = receipt["definitions"]["ReleaseOperationRole"]["oneOf"]
         .as_array()
         .unwrap()
         .iter()
@@ -191,7 +196,7 @@ fn release_operation_roles_carry_exactly_their_declared_variants() {
     );
 }
 
-/// Both observation enums are closed and persisted in receipts and state, so a
+/// Both observation enums are closed and persisted in receipts, so a
 /// reader from an earlier release must be able to name every value it can meet.
 /// Adding one is intentional and belongs here; losing one silently is not.
 #[test]

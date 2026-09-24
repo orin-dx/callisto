@@ -13,7 +13,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256};
 
-use crate::release_observation::{ProviderObservationV1, ReleaseOperationObservationV1};
+use crate::release_observation::{
+    ProviderEvidenceV1, ProviderObservationError, ProviderObservationV1, ReleaseOperationObservationV1,
+};
 use crate::release_transition::OperationEvent;
 use crate::{CommitSha, Ecosystem, PackageId, RegistryKey, Version, VersionGrammar};
 
@@ -1964,18 +1966,6 @@ pub enum OperationOutcome {
     Blocked { reason: OperationBlockReason },
 }
 
-/// The lifecycle entry point that produced a release run.
-///
-/// Both modes use the same intent and provider-observation rules. `Recovery`
-/// exists so an operator cannot disguise a merged-but-unpublished release as
-/// a normal versioning run.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub enum ReleaseRunKindV1 {
-    Initial,
-    Recovery,
-}
-
 /// A normalized, credential-free release profile identity.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, JsonSchema)]
 #[schemars(with = "String")]
@@ -2027,18 +2017,16 @@ impl<'de> Deserialize<'de> for ReleaseProfileId {
 }
 
 /// The immutable identity of one release run, created and validated before
-/// the first effect and persisted inside the execution state.
+/// the first effect and recorded in the receipt.
 ///
 /// Every field is derived from the intent and the verified artifact manifest
 /// rather than asserted by a caller, so no fact here has a second authority.
-/// The revisions are intentionally separate even when equal: a recovery must
-/// prove both the current coordinator it used and the historic merged source
-/// it is releasing.
+/// The revisions are intentionally separate even when equal: a run may release
+/// an older merged source with the current coordinator.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReleaseRunEnvelopeV1 {
     schema_version: u8,
-    kind: ReleaseRunKindV1,
     orchestration_revision: CommitSha,
     release_source_revision: CommitSha,
     profile: ReleaseProfileId,
@@ -2051,7 +2039,6 @@ pub struct ReleaseRunEnvelopeV1 {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ReleaseRunEnvelopeV1Wire {
     schema_version: u8,
-    kind: ReleaseRunKindV1,
     orchestration_revision: CommitSha,
     release_source_revision: CommitSha,
     profile: ReleaseProfileId,
@@ -2073,7 +2060,6 @@ impl<'de> Deserialize<'de> for ReleaseRunEnvelopeV1 {
         }
         Ok(Self {
             schema_version: wire.schema_version,
-            kind: wire.kind,
             orchestration_revision: wire.orchestration_revision,
             release_source_revision: wire.release_source_revision,
             profile: wire.profile,
@@ -2084,14 +2070,13 @@ impl<'de> Deserialize<'de> for ReleaseRunEnvelopeV1 {
 }
 
 impl ReleaseRunEnvelopeV1 {
-    pub const SCHEMA_VERSION: u8 = 1;
+    pub const SCHEMA_VERSION: u8 = 2;
 
     /// The only constructor. Profile, source revision, and intent digest are
-    /// read out of `intent`; only the run kind, the coordinator revision, and
-    /// the verified manifest digest come from the caller, and all three are
-    /// cross-checked against the intent here, before any effect.
+    /// read out of `intent`; only the coordinator revision and the verified
+    /// manifest digest come from the caller, and both are cross-checked
+    /// against the intent here, before any effect.
     pub fn new(
-        kind: ReleaseRunKindV1,
         orchestration_revision: CommitSha,
         intent: &ReleaseIntentV1,
         artifact_manifest_digest: Option<ArtifactDigest>,
@@ -2102,7 +2087,6 @@ impl ReleaseRunEnvelopeV1 {
         };
         let envelope = Self {
             schema_version: Self::SCHEMA_VERSION,
-            kind,
             orchestration_revision,
             release_source_revision,
             profile: intent.profile.clone(),
@@ -2111,10 +2095,6 @@ impl ReleaseRunEnvelopeV1 {
         };
         envelope.validate_for_intent(intent)?;
         Ok(envelope)
-    }
-
-    pub fn kind(&self) -> ReleaseRunKindV1 {
-        self.kind
     }
 
     pub fn orchestration_revision(&self) -> &CommitSha {
@@ -2194,76 +2174,15 @@ pub enum ReleaseRunEnvelopeError {
     MismatchedOrchestrationRevision,
 }
 
-/// Crash-safe state for an intent-bound execution. Pending and Attempting are nonterminal.
+/// In-memory state for one intent-bound execution. Pending and Attempting are
+/// nonterminal. Each successful operation keeps the exact provider evidence
+/// that moved it there, so a receipt is derived from this state alone.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReleaseExecutionStateV1 {
-    schema_version: u8,
     intent_digest: IntentDigest,
     envelope: ReleaseRunEnvelopeV1,
     operations: BTreeMap<ReleaseOperationId, OperationState>,
-}
-
-/// The on-wire shape deliberately uses entries rather than a JSON object: a
-/// JSON object cannot express an exact `ReleaseOperationId` key and parsers
-/// commonly discard duplicate keys before domain validation sees them.
-#[derive(Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ReleaseExecutionStateV1Wire {
-    schema_version: u8,
-    intent_digest: IntentDigest,
-    envelope: ReleaseRunEnvelopeV1,
-    operations: Vec<OperationStateEntryV1>,
-}
-
-#[derive(Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct OperationStateEntryV1 {
-    operation: ReleaseOperationId,
-    state: OperationState,
-}
-
-impl Serialize for ReleaseExecutionStateV1 {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        ReleaseExecutionStateV1Wire {
-            schema_version: self.schema_version,
-            intent_digest: self.intent_digest.clone(),
-            envelope: self.envelope.clone(),
-            operations: self
-                .operations
-                .iter()
-                .map(|(operation, state)| OperationStateEntryV1 {
-                    operation: operation.clone(),
-                    state: *state,
-                })
-                .collect(),
-        }
-        .serialize(serializer)
-    }
-}
-
-/// Delegated by hand: a container-level `#[schemars(with = ...)]` is ignored by
-/// the derive, which would publish the in-memory shape instead of the wire.
-impl JsonSchema for ReleaseExecutionStateV1 {
-    fn schema_name() -> String {
-        "ReleaseExecutionStateV1".to_owned()
-    }
-
-    fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
-        ReleaseExecutionStateV1Wire::json_schema(generator)
-    }
-}
-
-impl<'de> Deserialize<'de> for ReleaseExecutionStateV1 {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = ReleaseExecutionStateV1Wire::deserialize(deserializer)?;
-        Self::from_wire(wire).map_err(serde::de::Error::custom)
-    }
+    evidence: BTreeMap<ReleaseOperationId, ProviderEvidenceV1>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -2277,9 +2196,14 @@ pub enum OperationState {
     Blocked { reason: OperationBlockReason },
 }
 
-impl ReleaseExecutionStateV1 {
-    pub const SCHEMA_VERSION: u8 = 2;
+impl OperationState {
+    /// `Published` or `AlreadySatisfied`: the states that carry exact evidence.
+    pub fn is_success(self) -> bool {
+        matches!(self, Self::Published | Self::AlreadySatisfied)
+    }
+}
 
+impl ReleaseExecutionStateV1 {
     /// Starts execution for exactly the roster authorized by `intent`, under
     /// the run envelope that was validated before any effect. There is no way
     /// to create a state without an envelope.
@@ -2288,7 +2212,6 @@ impl ReleaseExecutionStateV1 {
             .validate_for_intent(intent)
             .map_err(ReleaseStateError::InvalidEnvelope)?;
         Ok(Self {
-            schema_version: Self::SCHEMA_VERSION,
             intent_digest: intent.digest.clone(),
             envelope,
             operations: intent
@@ -2296,6 +2219,7 @@ impl ReleaseExecutionStateV1 {
                 .iter()
                 .map(|operation| (operation.id.clone(), OperationState::Pending))
                 .collect(),
+            evidence: BTreeMap::new(),
         })
     }
 
@@ -2303,22 +2227,14 @@ impl ReleaseExecutionStateV1 {
         &self.intent_digest
     }
 
-    /// The run this state belongs to: the single authority for kind,
-    /// coordinator revision, release source, profile, and manifest digest.
+    /// The run this state belongs to: the single authority for coordinator
+    /// revision, release source, profile, and manifest digest.
     pub fn envelope(&self) -> &ReleaseRunEnvelopeV1 {
         &self.envelope
     }
 
     /// Validates that this state belongs to this exact intent and operation roster.
-    ///
-    /// Resume and reconciliation must call this before treating any state as
-    /// evidence or before making a remote/VCS mutation.
     pub fn validate_for_intent(&self, intent: &ReleaseIntentV1) -> Result<(), ReleaseStateError> {
-        if self.schema_version != Self::SCHEMA_VERSION {
-            return Err(ReleaseStateError::UnsupportedSchema {
-                found: self.schema_version,
-            });
-        }
         if self.intent_digest != intent.digest {
             return Err(ReleaseStateError::MismatchedIntent);
         }
@@ -2333,90 +2249,74 @@ impl ReleaseExecutionStateV1 {
         Ok(())
     }
 
-    /// Validates this state against the run currently executing. A state left
-    /// behind by a different run is never adopted silently.
-    pub fn validate_for_run(
-        &self,
-        intent: &ReleaseIntentV1,
-        envelope: &ReleaseRunEnvelopeV1,
-    ) -> Result<(), ReleaseStateError> {
-        self.validate_for_intent(intent)?;
-        if &self.envelope != envelope {
-            return Err(ReleaseStateError::MismatchedEnvelope);
-        }
-        Ok(())
-    }
-
-    /// Returns the persisted state for an exact operation identity.
+    /// Returns the state for an exact operation identity.
     pub fn operation_state(&self, id: &ReleaseOperationId) -> Option<OperationState> {
         self.operations.get(id).copied()
     }
 
-    fn from_wire(wire: ReleaseExecutionStateV1Wire) -> Result<Self, ReleaseStateError> {
-        if wire.schema_version != Self::SCHEMA_VERSION {
-            return Err(ReleaseStateError::UnsupportedSchema {
-                found: wire.schema_version,
-            });
-        }
-        let mut operations = BTreeMap::new();
-        for entry in wire.operations {
-            if operations.insert(entry.operation.clone(), entry.state).is_some() {
-                return Err(ReleaseStateError::DuplicateOperation {
-                    id: Box::new(entry.operation),
-                });
-            }
-        }
-        Ok(Self {
-            schema_version: wire.schema_version,
-            intent_digest: wire.intent_digest,
-            envelope: wire.envelope,
-            operations,
-        })
+    /// The exact evidence recorded when `id` reached a successful state.
+    pub fn operation_evidence(&self, id: &ReleaseOperationId) -> Option<&ProviderEvidenceV1> {
+        self.evidence.get(id)
     }
 
-    /// The only way an operation's state ever changes. The run kind comes from
-    /// this state's own envelope, never from a caller.
+    /// The only way an operation's state ever changes.
     pub fn apply(
         &mut self,
         id: &ReleaseOperationId,
         event: &OperationEvent,
     ) -> Result<OperationState, ReleaseStateError> {
-        let run_kind = self.envelope.kind();
         let state = self
             .operations
             .get_mut(id)
             .ok_or_else(|| ReleaseStateError::UnknownOperation {
                 id: Box::new(id.clone()),
             })?;
-        let next = crate::release_transition::transition(*state, event, run_kind).map_err(|source| {
+        let next = crate::release_transition::transition(*state, event).map_err(|source| {
             ReleaseStateError::InvalidTransition {
                 id: Box::new(id.clone()),
                 source,
             }
         })?;
+        let proof = if next.is_success() {
+            let proof = event
+                .exact_evidence()
+                .ok_or_else(|| ReleaseStateError::MissingEvidence {
+                    id: Box::new(id.clone()),
+                })?;
+            check_evidence_role(id, proof.evidence())?;
+            Some(proof.evidence().clone())
+        } else {
+            None
+        };
         *state = next;
+        if let Some(proof) = proof {
+            self.evidence.insert(id.clone(), proof);
+        }
         Ok(next)
     }
+}
+
+/// Evidence recorded for an operation must belong to that operation's role.
+fn check_evidence_role(id: &ReleaseOperationId, evidence: &ProviderEvidenceV1) -> Result<(), ReleaseStateError> {
+    ReleaseOperationObservationV1::new(
+        id.clone(),
+        ProviderObservationV1::Exact {
+            evidence: evidence.clone(),
+        },
+    )
+    .map(|_| ())
+    .map_err(ReleaseStateError::EvidenceRejected)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ReleaseStateError {
-    #[error("unsupported release execution state schema version {found}")]
-    UnsupportedSchema { found: u8 },
     #[error("release state is bound to a different intent")]
     MismatchedIntent,
     #[error("release state operation roster differs from the bound intent")]
     MismatchedOperationRoster,
-    #[error(
-        "release state at this path belongs to a different release run; \
-         pass a new --state path or remove the stale state file before retrying"
-    )]
-    MismatchedEnvelope,
     #[error("release state carries an invalid run envelope: {0}")]
     InvalidEnvelope(ReleaseRunEnvelopeError),
-    #[error("release state contains duplicate operation `{id:?}`")]
-    DuplicateOperation { id: Box<ReleaseOperationId> },
     #[error("release state does not contain operation `{id:?}`")]
     UnknownOperation { id: Box<ReleaseOperationId> },
     #[error("operation `{id:?}`: {source}")]
@@ -2424,6 +2324,10 @@ pub enum ReleaseStateError {
         id: Box<ReleaseOperationId>,
         source: crate::release_transition::InvalidTransition,
     },
+    #[error("successful release operation `{id:?}` carries no provider evidence")]
+    MissingEvidence { id: Box<ReleaseOperationId> },
+    #[error("release state evidence rejected: {0}")]
+    EvidenceRejected(ProviderObservationError),
 }
 
 /// A terminal receipt derived only from a complete execution state.
@@ -2506,21 +2410,17 @@ impl<'de> Deserialize<'de> for ReleaseReceiptV1 {
 impl ReleaseReceiptV1 {
     pub const SCHEMA_VERSION: u8 = 2;
 
-    /// Constructs a receipt only when the terminal state and fresh provider
-    /// evidence agree on every operation in `intent`.
+    /// Constructs a receipt from a terminal state alone: every operation must
+    /// be successful, and its recorded evidence becomes its observation.
     ///
     /// The run envelope comes from the state, which was created and validated
     /// before the first effect; nothing is assembled after the fact here.
-    pub fn from_evidence(
-        intent: &ReleaseIntentV1,
-        state: &ReleaseExecutionStateV1,
-        observations: impl IntoIterator<Item = ReleaseOperationObservationV1>,
-    ) -> Result<Self, ReleaseReceiptError> {
+    pub fn from_state(intent: &ReleaseIntentV1, state: &ReleaseExecutionStateV1) -> Result<Self, ReleaseReceiptError> {
         state
             .validate_for_intent(intent)
             .map_err(ReleaseReceiptError::InvalidState)?;
-        let envelope = state.envelope().clone();
         let mut outcomes = BTreeMap::new();
+        let mut observations = BTreeMap::new();
         for (id, operation_state) in &state.operations {
             let outcome = match operation_state {
                 OperationState::Published => OperationOutcome::Published,
@@ -2536,35 +2436,26 @@ impl ReleaseReceiptV1 {
                     });
                 }
             };
+            let evidence = state.operation_evidence(id).cloned().ok_or_else(|| {
+                ReleaseReceiptError::InvalidState(ReleaseStateError::MissingEvidence {
+                    id: Box::new(id.clone()),
+                })
+            })?;
             outcomes.insert(id.clone(), outcome);
-        }
-        let mut observed = BTreeMap::new();
-        for entry in observations {
-            let (operation, observation) = entry.into_parts();
-            if !observation.is_terminal_success() {
-                return Err(ReleaseReceiptError::NonExactObservation {
-                    id: Box::new(operation),
-                    observation: Box::new(observation),
-                });
-            }
-            if observed.insert(operation.clone(), observation).is_some() {
-                return Err(ReleaseReceiptError::DuplicateObservation {
-                    id: Box::new(operation),
-                });
-            }
-        }
-        let expected: BTreeSet<_> = intent.operations.iter().map(|operation| operation.id.clone()).collect();
-        let actual: BTreeSet<_> = observed.keys().cloned().collect();
-        if actual != expected {
-            return Err(ReleaseReceiptError::MismatchedObservationRoster);
+            observations.insert(id.clone(), ProviderObservationV1::Exact { evidence });
         }
         Ok(Self {
             schema_version: Self::SCHEMA_VERSION,
             intent_digest: state.intent_digest.clone(),
-            envelope,
+            envelope: state.envelope().clone(),
             outcomes,
-            observations: observed,
+            observations,
         })
+    }
+
+    /// The exact provider observation this receipt records for `id`.
+    pub fn observation(&self, id: &ReleaseOperationId) -> Option<&ProviderObservationV1> {
+        self.observations.get(id)
     }
 
     pub fn intent_digest(&self) -> &IntentDigest {
@@ -2685,7 +2576,7 @@ pub enum ReleaseReceiptError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::release_observation::{ProviderEvidenceV1, ProviderIndeterminateCause};
+    use crate::release_observation::ProviderEvidenceV1;
     use crate::Ecosystem;
 
     fn test_envelope(intent: &ReleaseIntentV1) -> ReleaseRunEnvelopeV1 {
@@ -2695,7 +2586,7 @@ mod tests {
             .map(|slot| slot.attestation_policy.workflow_commit.clone())
             .unwrap_or_else(|| CommitSha::parse(&"b".repeat(40)).unwrap());
         let manifest = (!intent.artifact_slots.is_empty()).then(|| ArtifactDigest::from_bytes(b"manifest"));
-        ReleaseRunEnvelopeV1::new(ReleaseRunKindV1::Initial, orchestration, intent, manifest).unwrap()
+        ReleaseRunEnvelopeV1::new(orchestration, intent, manifest).unwrap()
     }
 
     fn pending_state(intent: &ReleaseIntentV1) -> ReleaseExecutionStateV1 {
@@ -2753,19 +2644,6 @@ mod tests {
     fn publish_operation(state: &mut ReleaseExecutionStateV1, id: &ReleaseOperationId) {
         state.apply(id, &attempt_event()).unwrap();
         state.apply(id, &confirmed_event(id)).unwrap();
-    }
-
-    fn receipt_from_exact_observations(
-        intent: &ReleaseIntentV1,
-        state: &ReleaseExecutionStateV1,
-    ) -> Result<ReleaseReceiptV1, ReleaseReceiptError> {
-        ReleaseReceiptV1::from_evidence(
-            intent,
-            state,
-            intent.operations.iter().map(|operation| {
-                ReleaseOperationObservationV1::new(operation.id().clone(), exact_observation(operation.id())).unwrap()
-            }),
-        )
     }
 
     /// `rename_all` on an internally-tagged enum only renames the `kind`
@@ -3484,11 +3362,11 @@ mod tests {
         )
         .unwrap();
         let pending = pending_state(&intent);
-        assert!(receipt_from_exact_observations(&intent, &pending).is_err());
+        assert!(ReleaseReceiptV1::from_state(&intent, &pending).is_err());
 
         let mut complete = pending;
         publish_operation(&mut complete, operation.id());
-        let receipt = receipt_from_exact_observations(&intent, &complete).unwrap();
+        let receipt = ReleaseReceiptV1::from_state(&intent, &complete).unwrap();
         assert_eq!(receipt.intent_digest(), intent.digest());
 
         let mut failed = pending_state(&intent);
@@ -3502,27 +3380,50 @@ mod tests {
             )
             .unwrap();
         assert!(matches!(
-            receipt_from_exact_observations(&intent, &failed),
+            ReleaseReceiptV1::from_state(&intent, &failed),
             Err(ReleaseReceiptError::NonSuccessfulOperation { .. })
         ));
-        assert!(matches!(
-            ReleaseReceiptV1::from_evidence(
-                &intent,
-                &complete,
-                [ReleaseOperationObservationV1::new(
-                    operation.id().clone(),
-                    ProviderObservationV1::Indeterminate {
-                        cause: ProviderIndeterminateCause::CommandFailed,
-                    },
-                )
-                .unwrap()],
-            ),
-            Err(ReleaseReceiptError::NonExactObservation { .. })
-        ));
+        assert_eq!(
+            receipt.observation(operation.id()),
+            Some(&exact_observation(operation.id())),
+            "the receipt must record the evidence persisted at confirmation"
+        );
     }
 
     #[test]
-    fn state_and_receipt_wire_reject_unknown_schema_and_duplicate_operations() {
+    fn apply_rejects_success_evidence_of_another_role() {
+        let operation = ReleaseOperation::registry_publish(
+            ReleasePackageId::parse("cargo/callisto-model").unwrap(),
+            Version::semver(1, 2, 3),
+            registry_binding("cratesIo"),
+            vec![],
+        )
+        .unwrap();
+        let intent = test_intent(
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("c".repeat(40)).unwrap(), vec![]),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![operation.clone()],
+        )
+        .unwrap();
+        let mut state = pending_state(&intent);
+        let tag_evidence = ProviderObservationV1::Exact {
+            evidence: ProviderEvidenceV1::GitTag {
+                peeled_commit: CommitSha::parse(&"a".repeat(40)).unwrap(),
+            },
+        };
+        let event = OperationEvent::ObservedExactBeforeEffect {
+            evidence: tag_evidence.exact_evidence().unwrap(),
+        };
+        assert!(matches!(
+            state.apply(operation.id(), &event),
+            Err(ReleaseStateError::EvidenceRejected(_))
+        ));
+        assert_eq!(state.operation_state(operation.id()), Some(OperationState::Pending));
+        assert_eq!(state.operation_evidence(operation.id()), None);
+    }
+
+    #[test]
+    fn receipt_wire_rejects_unknown_schema() {
         let operation = ReleaseOperation::registry_publish(
             ReleasePackageId::parse("cargo/callisto-model").unwrap(),
             Version::semver(1, 2, 3),
@@ -3536,19 +3437,9 @@ mod tests {
             vec![operation.clone()],
         )
         .unwrap();
-        let state = pending_state(&intent);
-        let mut state_wire = serde_json::to_value(&state).unwrap();
-        state_wire["unexpected"] = serde_json::Value::Bool(true);
-        assert!(serde_json::from_value::<ReleaseExecutionStateV1>(state_wire).is_err());
-
-        let mut duplicate_state = serde_json::to_value(&state).unwrap();
-        let duplicate = duplicate_state["operations"][0].clone();
-        duplicate_state["operations"].as_array_mut().unwrap().push(duplicate);
-        assert!(serde_json::from_value::<ReleaseExecutionStateV1>(duplicate_state).is_err());
-
-        let mut complete = state;
+        let mut complete = pending_state(&intent);
         publish_operation(&mut complete, operation.id());
-        let receipt = receipt_from_exact_observations(&intent, &complete).unwrap();
+        let receipt = ReleaseReceiptV1::from_state(&intent, &complete).unwrap();
         let mut receipt_wire = serde_json::to_value(receipt).unwrap();
         receipt_wire["schemaVersion"] = serde_json::Value::from(9);
         assert!(serde_json::from_value::<ReleaseReceiptV1>(receipt_wire).is_err());
@@ -3576,17 +3467,10 @@ mod tests {
             state.validate_for_intent(&different_digest),
             Err(ReleaseStateError::MismatchedIntent)
         ));
-        let mut wrong_roster_wire = serde_json::to_value(&state).unwrap();
-        wrong_roster_wire["operations"][0]["operation"] = serde_json::to_value(different_operation.id()).unwrap();
-        let wrong_roster = serde_json::from_value::<ReleaseExecutionStateV1>(wrong_roster_wire).unwrap();
-        assert!(matches!(
-            wrong_roster.validate_for_intent(&first),
-            Err(ReleaseStateError::MismatchedOperationRoster)
-        ));
 
         let mut complete = state;
         publish_operation(&mut complete, operation.id());
-        let receipt = receipt_from_exact_observations(&first, &complete).unwrap();
+        let receipt = ReleaseReceiptV1::from_state(&first, &complete).unwrap();
         assert!(matches!(
             receipt.validate_for_intent(&different_digest),
             Err(ReleaseReceiptError::MismatchedIntent)

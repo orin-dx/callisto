@@ -120,21 +120,6 @@ pub trait ReleaseProviderSet {
         artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<ProviderObservationV1, GraphError>;
 
-    /// A fresh observation made after the effect was expected to land, used to
-    /// build the terminal receipt. A registry index that has not propagated
-    /// yet is retried rather than reported absent, under the same bounded
-    /// policy the post-publish confirmation uses.
-    ///
-    /// It cannot make a receipt easier to obtain: every operation still needs
-    /// a fresh `Exact`.
-    fn observe_settled(
-        &self,
-        id: &ReleaseOperationId,
-        artifacts: Option<&VerifiedArtifactManifest<'_>>,
-    ) -> Result<ProviderObservationV1, GraphError> {
-        self.observe(id, artifacts)
-    }
-
     /// Issues the one mutating action for this operation and confirms it.
     /// `proof` is only obtainable from an `Absent` pre-effect observation.
     fn publish(
@@ -253,21 +238,6 @@ pub(crate) trait ReleaseProvider {
         request: &ProviderRequest<'_>,
         effect: &EffectAuthorization<'_>,
     ) -> Result<ExactEvidence, GraphError>;
-
-    /// The same observation, made when the effect is believed to have landed
-    /// already, so a provider whose index propagates asynchronously may treat
-    /// an absence as lag and retry instead of answering `Absent`.
-    ///
-    /// This never widens what counts as success -- only `Exact` ever is -- it
-    /// only stops a lagging index being mistaken for a missing effect. Roles
-    /// whose providers answer synchronously reuse [`Self::observe`].
-    fn observe_settled(
-        &self,
-        context: &ProviderContext<'_>,
-        request: &ProviderRequest<'_>,
-    ) -> Result<ProviderObservationV1, GraphError> {
-        self.observe(context, request)
-    }
 
     /// The disagreement this role reports when a pre-effect observation is
     /// neither absent nor exactly the intended result.

@@ -88,8 +88,8 @@ pub mod test_registry {
     /// honest answers then resume.
     ///
     /// `honest_serves` is what lets a test place the lag at a chosen stage --
-    /// `1` lets the post-publish confirmation succeed and puts the absences on
-    /// the receipt pass, which is where a real index propagation delay lands.
+    /// `0` puts the absences on the post-publish confirmation, `1` on any read
+    /// after it.
     pub fn set_registry_flap(root: &Path, honest_serves: usize, absent_responses: usize) {
         std::fs::write(
             directory(root).join("flap"),
@@ -551,29 +551,6 @@ pub fn fake_publishers(
     (bin, log, forge_marker, git_trace)
 }
 
-pub fn execute(
-    root: &Path,
-    intent: &Path,
-    state: &Path,
-    bin: &Path,
-    log: &Path,
-    forge_marker: &Path,
-    git_trace: &Path,
-) -> Output {
-    execute_with_recovery(
-        root,
-        intent,
-        state,
-        FakePublishers {
-            bin,
-            log,
-            forge_marker,
-            git_trace,
-        },
-        false,
-    )
-}
-
 #[derive(Clone, Copy)]
 pub struct FakePublishers<'a> {
     pub bin: &'a Path,
@@ -582,13 +559,7 @@ pub struct FakePublishers<'a> {
     pub git_trace: &'a Path,
 }
 
-pub fn execute_with_recovery(
-    root: &Path,
-    intent: &Path,
-    state: &Path,
-    publishers: FakePublishers<'_>,
-    recovery: bool,
-) -> Output {
+pub fn execute(root: &Path, intent: &Path, receipt: &Path, publishers: FakePublishers<'_>) -> Output {
     let path = format!("{}:{}", publishers.bin.display(), std::env::var("PATH").unwrap());
     let mut command = Command::new(env!("CARGO_BIN_EXE_callisto"));
     command
@@ -598,16 +569,11 @@ pub fn execute_with_recovery(
             "execute",
             "--intent",
             intent.to_str().unwrap(),
-            "--state",
-            state.to_str().unwrap(),
             "--receipt",
-            state.with_extension("receipt.json").to_str().unwrap(),
+            receipt.to_str().unwrap(),
             "--orchestration-revision",
             &git(root, &["rev-parse", "HEAD"]),
         ]);
-    if recovery {
-        command.arg("--recovery");
-    }
     command
         .env("PATH", path)
         .env("CALLISTO_TEST_LOG", publishers.log)
@@ -629,9 +595,8 @@ pub fn execute_from_coordinator(
     coordinator: &Path,
     source: &Path,
     intent: &Path,
-    state: &Path,
+    receipt: &Path,
     publishers: FakePublishers<'_>,
-    recovery: bool,
 ) -> Output {
     let path = format!("{}:{}", publishers.bin.display(), std::env::var("PATH").unwrap());
     let mut command = Command::new(env!("CARGO_BIN_EXE_callisto"));
@@ -644,16 +609,11 @@ pub fn execute_from_coordinator(
             source.to_str().unwrap(),
             "--intent",
             intent.to_str().unwrap(),
-            "--state",
-            state.to_str().unwrap(),
             "--receipt",
-            state.with_extension("receipt.json").to_str().unwrap(),
+            receipt.to_str().unwrap(),
             "--orchestration-revision",
             &git(coordinator, &["rev-parse", "HEAD"]),
         ]);
-    if recovery {
-        command.arg("--recovery");
-    }
     command
         .env("PATH", path)
         .env("CALLISTO_TEST_LOG", publishers.log)
@@ -676,9 +636,8 @@ pub fn execute_product(
     intent: &Path,
     manifest: &Path,
     artifacts: &Path,
-    state: &Path,
+    receipt: &Path,
     publishers: FakePublishers<'_>,
-    recovery: bool,
 ) -> Output {
     let path = format!("{}:{}", publishers.bin.display(), std::env::var("PATH").unwrap());
     let mut command = Command::new(env!("CARGO_BIN_EXE_callisto"));
@@ -693,16 +652,11 @@ pub fn execute_product(
             manifest.to_str().unwrap(),
             "--artifact-dir",
             artifacts.to_str().unwrap(),
-            "--state",
-            state.to_str().unwrap(),
             "--receipt",
-            state.with_extension("receipt.json").to_str().unwrap(),
+            receipt.to_str().unwrap(),
             "--orchestration-revision",
             &git(root, &["rev-parse", "HEAD"]),
         ]);
-    if recovery {
-        command.arg("--recovery");
-    }
     command
         .env("PATH", path)
         .env("CALLISTO_TEST_LOG", publishers.log)
@@ -1384,26 +1338,22 @@ pub fn bare_remote(dir: &Path) -> PathBuf {
 pub fn execute_rig(
     root: &Path,
     intent: &Path,
-    state: &Path,
+    receipt: &Path,
     rig: &Rig,
     forge_tag: &str,
     extra: &[&str],
     orchestration: Option<&str>,
 ) -> Output {
-    execute_rig_in(root, root, None, intent, state, rig, forge_tag, extra, orchestration)
+    execute_rig_in(root, root, intent, receipt, rig, forge_tag, extra, orchestration)
 }
 
-/// The same run, with `--cwd` and the process's own working directory chosen
-/// separately from the fixture root: `cwd` is what the operator typed, and
-/// `process_cwd` is where they typed it, which is what a relative `--state`
-/// path resolves against.
+/// The same run with `--cwd` chosen separately from the fixture root.
 #[allow(clippy::too_many_arguments)]
 pub fn execute_rig_in(
     root: &Path,
     cwd: &Path,
-    process_cwd: Option<&Path>,
     intent: &Path,
-    state: &Path,
+    receipt: &Path,
     rig: &Rig,
     forge_tag: &str,
     extra: &[&str],
@@ -1412,9 +1362,6 @@ pub fn execute_rig_in(
     let path = format!("{}:{}", rig.bin.display(), std::env::var("PATH").unwrap());
     let head = git(root, &["rev-parse", "HEAD"]);
     let mut command = Command::new(env!("CARGO_BIN_EXE_callisto"));
-    if let Some(process_cwd) = process_cwd {
-        command.current_dir(process_cwd);
-    }
     command
         .args(["--format", "json", "--cwd", cwd.to_str().unwrap()])
         .args([
@@ -1422,10 +1369,8 @@ pub fn execute_rig_in(
             "execute",
             "--intent",
             intent.to_str().unwrap(),
-            "--state",
-            state.to_str().unwrap(),
             "--receipt",
-            state.with_extension("receipt.json").to_str().unwrap(),
+            receipt.to_str().unwrap(),
             "--orchestration-revision",
             orchestration.unwrap_or(&head),
         ])

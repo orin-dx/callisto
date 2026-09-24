@@ -4,12 +4,12 @@ The three structural authorities of a durable release run. All three live in `ca
 
 ## Run envelope (`release.rs`)
 
-`ReleaseRunEnvelopeV1` is the immutable identity of one run: kind (`Initial`/`Recovery`), orchestration revision, release-source revision, profile, intent digest, artifact-manifest digest.
+`ReleaseRunEnvelopeV1` is the immutable identity of one run: orchestration revision, release-source revision, profile, intent digest, artifact-manifest digest. There is one run kind.
 
-- One constructor, `ReleaseRunEnvelopeV1::new(kind, orchestration_revision, intent, manifest_digest)`. Profile, source revision, and intent digest are read out of the intent, so they have no second authority and cannot be asserted by a caller.
+- One constructor, `ReleaseRunEnvelopeV1::new(orchestration_revision, intent, manifest_digest)`. Profile, source revision, and intent digest are read out of the intent, so they have no second authority and cannot be asserted by a caller.
 - Cross-field rules, enforced before the first effect: source revision equals the intent's Git source; manifest digest is `Some` exactly when the intent declares artifact slots; the orchestration revision equals every slot's attestation `workflow_commit`.
-- It is persisted **inside** `ReleaseExecutionStateV1`, whose only constructor is `new(intent, envelope)`. The receipt is built from the state's envelope plus fresh observations — nothing is assembled after the effects.
-- `validate_for_run` rejects state left by a different run (`ReleaseStateError::MismatchedEnvelope`, message names `--state`).
+- It is held **inside** `ReleaseExecutionStateV1`, whose only constructor is `new(intent, envelope)`. The state is in memory only: it is never persisted or loaded, and every run (including a CI "Re-run failed jobs") starts from all-`Pending`. The receipt is built from the state alone (`ReleaseReceiptV1::from_state`): its envelope plus the `ProviderEvidenceV1` each operation recorded on reaching `Published`/`AlreadySatisfied`. Nothing re-observes providers after the effects.
+- `execute_release` observes each operation once before any effect: `Exact` becomes `AlreadySatisfied` for every role (a registry version it adopts prints one `warning: <package> <version> is already published; skipping` line), `Absent` is published and confirmed, `Conflict` is E167 and `Indeterminate` is E176.
 
 ## Observation and evidence (`release_observation.rs`)
 
@@ -61,40 +61,36 @@ A package is a dependency-graph node: versioned, cascaded, tagged, published. An
 
 ## Transition table (`release_transition.rs`)
 
-`transition(current, event, run_kind)` is the only place an `OperationState` is computed; `ReleaseExecutionStateV1::apply` is the only mutator and takes the run kind from its own envelope. The whole legal edge set:
+`transition(current, event)` is the only place an `OperationState` is computed; `ReleaseExecutionStateV1::apply` is the only mutator. The whole legal edge set:
 
-| From | Event | Kind | To |
-|---|---|---|---|
-| Pending | `Attempt { AbsentProof }` | any | Attempting |
-| Pending | `ObservedExactBeforeEffect { ExactEvidence }` | any | AlreadySatisfied |
-| Pending | `AdoptedExact { ExactEvidence }` | Recovery | AlreadySatisfied |
-| Attempting | `Confirmed { ExactEvidence }` | any | Published |
-| Attempting | `RecoveredExact { ExactEvidence }` | any | Published |
-| Attempting | `EffectFailedAndAbsent { AbsentProof }` | any | Failed |
-| Pending/Attempting | `Blocked { reason }` | any | Blocked |
+| From | Event | To |
+|---|---|---|
+| Pending | `Attempt { AbsentProof }` | Attempting |
+| Pending | `ObservedExactBeforeEffect { ExactEvidence }` | AlreadySatisfied |
+| Attempting | `Confirmed { ExactEvidence }` | Published |
+| Attempting | `EffectFailedAndAbsent { AbsentProof }` | Failed |
+| Pending/Attempting | `Blocked { reason }` | Blocked |
 
-Consequences: `Attempting` is unreachable without a proven-absent provider; adopting a pre-existing effect into a missing journal is a recovery-only privilege; "our attempt landed" (`Published`) is distinct from "it already existed" (`AlreadySatisfied`); terminal states absorb every event.
+Consequences: `Attempting` is unreachable without a proven-absent provider; "our attempt landed" (`Published`) is distinct from "it already existed" (`AlreadySatisfied`); terminal states absorb every event.
 
 ## Fault-injection simulator (`commands/release_simulator.rs`)
 
-A deterministic in-crate simulator drives the real `execute_release` plus the receipt path against an in-memory provider set and state writer, enumerating every crash point (each provider call, each save before and after) and every provider fault (indeterminate, conflict, effect-fails-before-landing, effect-lands-then-error, registry lag), then reruns as both the same runner and a fresh-journal recovery runner.
+A deterministic in-crate simulator drives the real `execute_release` plus `ReleaseReceiptV1::from_state` against an in-memory provider set, enumerating every crash point (each provider call) and every provider fault (indeterminate, conflict, effect-fails-before-landing, effect-lands-then-error, registry lag), plus every crash-and-fault pair, with each rerun starting fresh.
 
-Asserted after every scenario: a receipt only over landed effects and a durable all-success journal; no effect re-issued for an operation already landed; no effect landing before every prerequisite; `Attempting` persisted only after an `Absent` observation in the same run; nothing downstream of an observed conflict landing; and convergence within three clean reruns -- except a same-runner rerun facing a persisted `Attempting` the provider does not hold, which is E173's deliberate refusal to re-dispatch, and a lost-journal recovery run re-issuing an effect a lagging index still reports absent, which only the provider can refuse.
+Asserted after every scenario: a receipt only over landed effects, issued with no provider call and recording exactly the evidence the world holds; no effect re-issued for an operation already landed; no effect landing before every prerequisite; nothing downstream of an observed conflict landing; and convergence within three clean reruns -- except a rerun re-issuing an effect a lagging index still reports absent, which only the provider can refuse.
 
 ## E-codes
 
 - `E172` release execution incomplete (non-terminal operations remain).
-- `E173` recovery unresolved: an `Attempting` or adopted operation is absent, conflicting, or indeterminate. Do not retry the effect.
-- `E174` registry version already exists at preflight.
 - `E176` provider indeterminate before dispatch.
-- `E177` provider observation unusable as evidence (role mismatch; internal defect).
+- `E177` provider evidence does not belong to the operation's role, raised when the state would record it (internal defect).
 - `E178` run envelope invalid for this intent.
 - `E179` an artifact's `package` is not part of this release (user config, not a defect).
-- `E180` tag push refused by GitHub's App workflow guard (`GITHUB_TOKEN` pushing a commit whose `.github/workflows/` differs from every branch tip, i.e. recovery of an older release). Detected from the push stderr in `provider/tag.rs::push_tag`; any other push failure stays `E164`. Remedy: push the tag with a non-App credential, then re-run recovery.
+- `E180` tag push refused by GitHub's App workflow guard (`GITHUB_TOKEN` pushing a commit whose `.github/workflows/` differs from every branch tip, i.e. releasing an older source). Detected from the push stderr in `provider/tag.rs::push_tag`; any other push failure stays `E164`. Remedy: push the tag with a non-App credential, then re-run the release.
 
 ## Wire versions
 
-`ReleaseExecutionStateV1::SCHEMA_VERSION` and `ReleaseReceiptV1::SCHEMA_VERSION` are both `2`; `ReleaseIntentV1::SCHEMA_VERSION` is `4` (the `platformPublish` role). An intent from an earlier version is rejected by `callisto::release_intent_schema_unsupported`, which names re-planning as the fix. `callisto schema --type release-receipt|release-state` publishes the wire shape, guarded by `crates/callisto-cli/tests/schema_guard_test.rs`.
+`ReleaseExecutionStateV1` has no wire shape. `ReleaseReceiptV1::SCHEMA_VERSION` is `2`; its `ReleaseRunEnvelopeV1::SCHEMA_VERSION` is `2` (the run `kind` was removed); `ReleaseIntentV1::SCHEMA_VERSION` is `4` (the `platformPublish` role). An intent from an earlier version is rejected by `callisto::release_intent_schema_unsupported`, which names re-planning as the fix. `callisto schema --type release-receipt` publishes the wire shape, guarded by `crates/callisto-cli/tests/schema_guard_test.rs`.
 
 ## Provider contract tier
 

@@ -3,34 +3,32 @@
 //! The executor's ordering hazards were found by reading and then pinned by a
 //! hand-written test each time. This drives the production
 //! [`execute_release`](super::release_execution::execute_release) against a
-//! simulated world that crashes at every persistence point and injects every
+//! simulated world that crashes at every provider call and injects every
 //! provider outcome, then asserts the lifecycle invariants after each run.
+//! Every rerun starts fresh, as it does on a new CI runner.
 //!
 //! Nothing here is random and nothing reads a clock: a scenario is a pair of
 //! integers plus a fault kind, and the whole enumeration is a nested loop.
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use callisto_model::{
     AbsentProof, ApplyPermit, ArtifactDigest, ArtifactManifestEntryV1, ArtifactManifestV1, ArtifactSlotId, CommitSha,
-    Ecosystem, ExactEvidence, ExecutionTrustProfileV1, GitHubArtifactAttestationV1, GitHubRepository, OperationState,
+    Ecosystem, ExactEvidence, ExecutionTrustProfileV1, GitHubArtifactAttestationV1, GitHubRepository,
     ProviderConflictReason, ProviderEvidenceV1, ProviderIndeterminateCause, ProviderObservationV1,
-    RegistryBindingDigest, RegistryBindingId, ReleaseDecisionEntry, ReleaseDecisionV1, ReleaseExecutionStateV1,
-    ReleaseInclusionReason, ReleaseInputSnapshotV1, ReleaseIntentV1, ReleaseOperation, ReleaseOperationId,
-    ReleasePackageId, ReleaseProfileId, ReleaseReceiptV1, ReleaseRunEnvelopeV1, ReleaseRunKindV1, SourceIdentity,
-    Version,
+    RegistryBindingDigest, RegistryBindingId, ReleaseDecisionEntry, ReleaseDecisionV1, ReleaseInclusionReason,
+    ReleaseInputSnapshotV1, ReleaseIntentV1, ReleaseOperation, ReleaseOperationId, ReleasePackageId, ReleaseProfileId,
+    ReleaseReceiptV1, SourceIdentity, Version,
 };
 
 use crate::commands::release::provider::preflight_from_observation;
 use crate::commands::release_artifacts::VerifiedArtifactManifest;
 use crate::commands::release_execution::execute_release;
-use crate::commands::release_test_support::{envelope_of_kind, evidence_for};
-use crate::commands::{
-    observe_release_operations, ReleasePreflight, ReleaseProviderSet, ReleaseStateStore, ReleaseStateWriter,
-};
+use crate::commands::release_test_support::{envelope, evidence_for};
+use crate::commands::{ReleasePreflight, ReleaseProviderSet};
 use crate::error::{CommandFailure, RemoteConflict};
 use crate::GraphError;
 
@@ -226,27 +224,12 @@ struct Fault {
     at: usize,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CrashPoint {
-    /// Process death at the `at`-th provider call. An effect lands first: the
-    /// harmless variant is already covered by `EffectFailsBeforeLanding`.
-    ProviderCall { at: usize },
-    /// Process death at the `at`-th durable save, before or after it lands.
-    Save { at: usize, after: bool },
-}
-
+/// `crash` is process death at that provider call of the first run. An effect
+/// lands first: the harmless variant is already covered by `EffectFailsBeforeLanding`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Scenario {
-    crash: Option<CrashPoint>,
+    crash: Option<usize>,
     fault: Option<Fault>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Mode {
-    /// The operator reruns with the persisted state and the same envelope.
-    SameRunner,
-    /// The operator reruns elsewhere: no local state, a recovery envelope.
-    FreshRunner,
 }
 
 // ---------------------------------------------------------------------------
@@ -261,14 +244,10 @@ enum ObservationTag {
     Indeterminate,
 }
 
-/// Every field is read by an operator through the `{:?}` trace a failing
-/// scenario prints, which dead-code analysis deliberately does not see.
-#[allow(dead_code)]
 #[derive(Clone, Debug)]
 enum TraceEvent {
     RunStart {
         run: usize,
-        kind: ReleaseRunKindV1,
     },
     Observed {
         run: usize,
@@ -280,10 +259,6 @@ enum TraceEvent {
         id: ReleaseOperationId,
         landed: bool,
     },
-    Saved {
-        run: usize,
-        states: BTreeMap<ReleaseOperationId, OperationState>,
-    },
     Crashed {
         run: usize,
     },
@@ -293,7 +268,7 @@ enum TraceEvent {
     },
 }
 
-/// State shared between the simulated world and the simulated disk.
+/// State shared between the simulated world and the scenario driver.
 #[derive(Debug, Default)]
 struct SimContext {
     run: Cell<usize>,
@@ -340,24 +315,15 @@ struct SimWorld {
     order_violations: RefCell<Vec<(ReleaseOperationId, ReleaseOperationId)>>,
     /// Operations whose landing was ever hidden by injected registry lag.
     lagged_ever: RefCell<BTreeSet<ReleaseOperationId>>,
-    /// Set while this run is a recovery run that started with no journal.
-    lost_journal_recovery: Cell<bool>,
-    sabotage: Sabotage,
-}
-
-/// Deliberate defects injected into the world or the disk, used only to prove
-/// the invariant checker reports what it claims to report.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-struct Sabotage {
+    /// Provider calls made while issuing the last receipt; must stay zero.
+    calls_after_execution: Cell<usize>,
     /// Every observation outside a post-effect confirmation answers `Absent`
-    /// about an effect the world already holds.
+    /// about an effect the world already holds. Used only to prove the checker.
     lying_provider: bool,
-    /// The writer accepts every save and persists none of them.
-    lose_saves: bool,
 }
 
 impl SimWorld {
-    fn new(intent: ReleaseIntentV1, scenario: Scenario, context: Rc<SimContext>, sabotage: Sabotage) -> Self {
+    fn new(intent: ReleaseIntentV1, scenario: Scenario, context: Rc<SimContext>, lying_provider: bool) -> Self {
         let remote = intent
             .operations
             .iter()
@@ -376,8 +342,8 @@ impl SimWorld {
             duplicate_landings: RefCell::new(Vec::new()),
             order_violations: RefCell::new(Vec::new()),
             lagged_ever: RefCell::new(BTreeSet::new()),
-            lost_journal_recovery: Cell::new(false),
-            sabotage,
+            calls_after_execution: Cell::new(0),
+            lying_provider,
         }
     }
 
@@ -389,7 +355,7 @@ impl SimWorld {
     fn take_provider_call(&self) -> Option<()> {
         let index = self.provider_calls.get();
         self.provider_calls.set(index + 1);
-        if self.context.run.get() == 0 && self.scenario.crash == Some(CrashPoint::ProviderCall { at: index }) {
+        if self.context.run.get() == 0 && self.scenario.crash == Some(index) {
             return None;
         }
         Some(())
@@ -445,7 +411,7 @@ impl SimWorld {
             Remote::Absent => ProviderObservationV1::Absent,
             Remote::Conflicting { reason } => ProviderObservationV1::Conflict { reason },
             Remote::Landed { evidence } => {
-                if self.sabotage.lying_provider && !confirming {
+                if self.lying_provider && !confirming {
                     return ProviderObservationV1::Absent;
                 }
                 let mut lag = self.lag.borrow_mut();
@@ -482,15 +448,14 @@ impl SimWorld {
 
     /// The single narrow exception to I2, encoded deliberately.
     ///
-    /// A recovery run whose journal was lost, facing an index that is still
-    /// serving the pre-publication answer, has observed nothing but `Absent`
-    /// for this operation and cannot distinguish lag from a missing effect.
-    /// Re-issuing there is the provider's job to refuse -- which the world
-    /// does, and the single-landing check above asserts. Every other
-    /// re-issue, including one caused by a provider that simply lies, is a
-    /// violation.
+    /// A rerun facing an index that is still serving the pre-publication
+    /// answer has observed nothing but `Absent` for this operation and cannot
+    /// distinguish lag from a missing effect. Re-issuing there is the
+    /// provider's job to refuse -- which the world does, and the
+    /// single-landing check asserts. Every other re-issue, including one
+    /// caused by a provider that simply lies, is a violation.
     fn excused_duplicate(&self, id: &ReleaseOperationId) -> bool {
-        self.lost_journal_recovery.get() && self.lagged_ever.borrow().contains(id)
+        self.lagged_ever.borrow().contains(id)
     }
 
     fn check_prerequisites(&self, id: &ReleaseOperationId) {
@@ -521,23 +486,7 @@ impl ReleaseProviderSet for SimWorld {
         id: &ReleaseOperationId,
         _artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<ReleasePreflight, GraphError> {
-        let observation = self.observe_internal(id)?;
-        // The production registry provider refuses to adopt a live version at
-        // preflight: only the recovery reconstruction path may converge on an
-        // exact registry observation. Modelling that here is what makes a
-        // still-`Pending` registry operation a wedge rather than a no-op.
-        if matches!(
-            id.role,
-            callisto_model::ReleaseOperationRole::RegistryPublish { .. }
-                | callisto_model::ReleaseOperationRole::PlatformPublish { .. }
-        ) && matches!(observation, ProviderObservationV1::Exact { .. })
-        {
-            return Err(GraphError::ReleaseRegistryVersionExists {
-                package: id.package.name().to_owned(),
-                version: id.version.clone(),
-            });
-        }
-        preflight_from_observation(observation, id, remote_conflict_for(id))
+        preflight_from_observation(self.observe_internal(id)?, id, remote_conflict_for(id))
     }
 
     fn observe(
@@ -647,77 +596,6 @@ fn command_failure(stderr: &str) -> GraphError {
 }
 
 // ---------------------------------------------------------------------------
-// The simulated disk
-// ---------------------------------------------------------------------------
-
-/// A real-file writer that records every durable save and can stop writing at
-/// a chosen point, retaining exactly what was saved before it.
-struct SimWriter {
-    context: Rc<SimContext>,
-    operations: Vec<ReleaseOperationId>,
-    saves: Cell<usize>,
-    crash: Option<CrashPoint>,
-    sabotage: Sabotage,
-}
-
-impl SimWriter {
-    fn new(
-        context: Rc<SimContext>,
-        operations: Vec<ReleaseOperationId>,
-        crash: Option<CrashPoint>,
-        sabotage: Sabotage,
-    ) -> Self {
-        Self {
-            context,
-            operations,
-            saves: Cell::new(0),
-            crash,
-            sabotage,
-        }
-    }
-
-    fn record(&self, content: &str) {
-        let state: ReleaseExecutionStateV1 = serde_json::from_str(content).expect("state round-trips");
-        let states = self
-            .operations
-            .iter()
-            .filter_map(|id| state.operation_state(id).map(|value| (id.clone(), value)))
-            .collect();
-        self.context.push(TraceEvent::Saved {
-            run: self.context.run.get(),
-            states,
-        });
-    }
-}
-
-impl ReleaseStateWriter for SimWriter {
-    fn write(&self, path: &Path, content: &str, _permit: &ApplyPermit) -> std::io::Result<()> {
-        let index = self.saves.get();
-        self.saves.set(index + 1);
-        let crash_here = |after: bool| self.crash == Some(CrashPoint::Save { at: index, after });
-        if crash_here(false) {
-            self.context.crashed.set(true);
-            self.context.push(TraceEvent::Crashed {
-                run: self.context.run.get(),
-            });
-            return Err(std::io::Error::other("simulated process death before the save"));
-        }
-        if !self.sabotage.lose_saves {
-            std::fs::write(path, content)?;
-            self.record(content);
-        }
-        if crash_here(true) {
-            self.context.crashed.set(true);
-            self.context.push(TraceEvent::Crashed {
-                run: self.context.run.get(),
-            });
-            return Err(std::io::Error::other("simulated process death after the save"));
-        }
-        Ok(())
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Running one scenario
 // ---------------------------------------------------------------------------
 
@@ -735,9 +613,12 @@ enum Violation {
     ReceiptWithoutLandedEffect {
         operation: Box<ReleaseOperationId>,
     },
-    ReceiptWithNonSuccessState {
+    ReceiptEvidenceDisagreesWithWorld {
         operation: Box<ReleaseOperationId>,
-        state: Option<OperationState>,
+        receipt: Option<ProviderObservationV1>,
+    },
+    ProviderCallAfterExecution {
+        calls: usize,
     },
     DuplicateLanding {
         operation: Box<ReleaseOperationId>,
@@ -748,10 +629,6 @@ enum Violation {
     EffectBeforePrerequisite {
         operation: Box<ReleaseOperationId>,
         prerequisite: Box<ReleaseOperationId>,
-    },
-    AttemptingWithoutAbsentObservation {
-        operation: Box<ReleaseOperationId>,
-        run: usize,
     },
     NoConvergence {
         outcomes: Vec<RunOutcome>,
@@ -766,56 +643,33 @@ struct ScenarioRun {
     world: SimWorld,
     context: Rc<SimContext>,
     outcomes: Vec<RunOutcome>,
+    receipt: Option<ReleaseReceiptV1>,
 }
 
 /// One end-to-end simulated release, including the operator's reruns.
-fn run_scenario(
-    intent: &ReleaseIntentV1,
-    manifest: &ArtifactManifestV1,
-    state_path: &Path,
-    scenario: Scenario,
-    mode: Mode,
-    sabotage: Sabotage,
-) -> ScenarioRun {
-    std::fs::remove_file(state_path).ok();
+fn run_scenario(intent: &ReleaseIntentV1, manifest: &ArtifactManifestV1, scenario: Scenario) -> ScenarioRun {
     let context = Rc::new(SimContext::default());
-    let world = SimWorld::new(intent.clone(), scenario, Rc::clone(&context), sabotage);
-    let operations: Vec<_> = intent.operations.iter().map(|op| op.id().clone()).collect();
-    let initial = envelope_of_kind(intent, ReleaseRunKindV1::Initial);
-    let recovery = envelope_of_kind(intent, ReleaseRunKindV1::Recovery);
+    let world = SimWorld::new(intent.clone(), scenario, Rc::clone(&context), false);
+    run_world(world, context, manifest)
+}
 
+fn run_world(world: SimWorld, context: Rc<SimContext>, manifest: &ArtifactManifestV1) -> ScenarioRun {
     let mut outcomes = Vec::new();
+    let mut receipt = None;
     for run in 0..=MAX_RERUNS {
         context.run.set(run);
         context.crashed.set(false);
-        let envelope = if run == 0 {
-            &initial
-        } else {
-            match mode {
-                Mode::SameRunner => &initial,
-                Mode::FreshRunner => {
-                    std::fs::remove_file(state_path).ok();
-                    &recovery
-                }
-            }
-        };
-        world
-            .lost_journal_recovery
-            .set(envelope.kind() == ReleaseRunKindV1::Recovery && !state_path.exists());
-        context.push(TraceEvent::RunStart {
-            run,
-            kind: envelope.kind(),
-        });
-        let crash = (run == 0).then_some(scenario.crash).flatten();
-        let writer = SimWriter::new(Rc::clone(&context), operations.clone(), crash, sabotage);
-        let store = ReleaseStateStore::with_writer(state_path, writer);
-        let result = execute_and_receipt(&world, &store, manifest, envelope);
+        context.push(TraceEvent::RunStart { run });
+        let result = execute_and_receipt(&world, manifest);
         let detail = match &result {
-            Ok(()) => "receipted".to_owned(),
+            Ok(_) => "receipted".to_owned(),
             Err(failure) => format!("{failure:?}"),
         };
         let outcome = match result {
-            Ok(()) => RunOutcome::Receipted,
+            Ok(issued) => {
+                receipt = Some(issued);
+                RunOutcome::Receipted
+            }
             Err(_) if context.crashed.get() => RunOutcome::Crashed,
             Err(_) => RunOutcome::Failed,
         };
@@ -832,6 +686,7 @@ fn run_scenario(
         world,
         context,
         outcomes,
+        receipt,
     }
 }
 
@@ -841,34 +696,28 @@ fn run_scenario(
 #[derive(Debug)]
 enum RunFailure {
     Execution(Box<GraphError>),
-    Observation(Box<GraphError>),
     Receipt(Box<callisto_model::ReleaseReceiptError>),
 }
 
-/// The production success path in full: execute, then observe every operation
-/// afresh, then issue the terminal receipt. Nothing short of a receipt counts.
-fn execute_and_receipt(
-    world: &SimWorld,
-    store: &ReleaseStateStore<SimWriter>,
-    manifest: &ArtifactManifestV1,
-    envelope: &ReleaseRunEnvelopeV1,
-) -> Result<(), RunFailure> {
+/// The production success path in full: execute, then issue the terminal
+/// receipt from the returned state. Nothing short of a receipt counts.
+fn execute_and_receipt(world: &SimWorld, manifest: &ArtifactManifestV1) -> Result<ReleaseReceiptV1, RunFailure> {
     let permit = ApplyPermit::force_for_tests();
     let artifacts = VerifiedArtifactManifest::for_tests(manifest, PathBuf::from("/simulated"));
-    let state = execute_release(world, store, &permit, envelope, Some(&artifacts))
+    let state = execute_release(world, &permit, &envelope(&world.intent), Some(&artifacts))
         .map_err(|error| RunFailure::Execution(Box::new(error)))?;
-    let observations = observe_release_operations(world, Some(&artifacts))
-        .map_err(|error| RunFailure::Observation(Box::new(error)))?;
-    ReleaseReceiptV1::from_evidence(&world.intent, &state, observations)
-        .map_err(|error| RunFailure::Receipt(Box::new(error)))?;
-    Ok(())
+    let calls = world.provider_calls.get();
+    let receipt =
+        ReleaseReceiptV1::from_state(&world.intent, &state).map_err(|error| RunFailure::Receipt(Box::new(error)))?;
+    world.calls_after_execution.set(world.provider_calls.get() - calls);
+    Ok(receipt)
 }
 
 // ---------------------------------------------------------------------------
 // Invariants
 // ---------------------------------------------------------------------------
 
-fn check_invariants(intent: &ReleaseIntentV1, run: &ScenarioRun, mode: Mode) -> Result<Classification, Violation> {
+fn check_invariants(intent: &ReleaseIntentV1, run: &ScenarioRun) -> Result<Classification, Violation> {
     let world = &run.world;
 
     // I2: no effect is issued for an operation that already landed.
@@ -894,35 +743,46 @@ fn check_invariants(intent: &ReleaseIntentV1, run: &ScenarioRun, mode: Mode) -> 
         });
     }
 
-    // I5: `Attempting` is persisted only after an absent observation of that
-    // operation in the same run.
-    check_attempting_is_earned(&run.context.trace.borrow())?;
-
-    // I1 and I6: a receipt is produced only when the world really holds every
-    // effect and the persisted journal has no non-terminal operation left.
-    let durable = durable_states(&run.context.trace.borrow());
+    // I1: a receipt is produced only when the world really holds every effect.
     if run.outcomes.last() == Some(&RunOutcome::Receipted) {
         for operation in &intent.operations {
-            let id = operation.id();
-            let state = durable.get(id).copied();
-            if !matches!(
-                state,
-                Some(OperationState::Published | OperationState::AlreadySatisfied)
-            ) {
-                return Err(Violation::ReceiptWithNonSuccessState {
-                    operation: Box::new(id.clone()),
-                    state,
-                });
-            }
-            if !world.already_landed(id) {
+            if !world.already_landed(operation.id()) {
                 return Err(Violation::ReceiptWithoutLandedEffect {
-                    operation: Box::new(id.clone()),
+                    operation: Box::new(operation.id().clone()),
                 });
             }
         }
+        check_receipt_matches_world(intent, run)?;
     }
 
-    check_convergence(intent, run, mode, &durable)
+    check_convergence(intent, run)
+}
+
+/// I5: the receipt is issued from execution state alone, with no provider
+/// call, and records exactly the evidence of the effect the world holds.
+fn check_receipt_matches_world(intent: &ReleaseIntentV1, run: &ScenarioRun) -> Result<(), Violation> {
+    let calls = run.world.calls_after_execution.get();
+    if calls != 0 {
+        return Err(Violation::ProviderCallAfterExecution { calls });
+    }
+    let receipt = run.receipt.as_ref();
+    for operation in &intent.operations {
+        let id = operation.id();
+        let recorded = receipt.and_then(|receipt| receipt.observation(id)).cloned();
+        let held = match run.world.remote.borrow().get(id) {
+            Some(Remote::Landed { evidence }) => Some(ProviderObservationV1::Exact {
+                evidence: evidence.clone(),
+            }),
+            _ => None,
+        };
+        if recorded.is_none() || recorded != held {
+            return Err(Violation::ReceiptEvidenceDisagreesWithWorld {
+                operation: Box::new(id.clone()),
+                receipt: recorded,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// How one scenario ended, tallied so the enumeration can prove it exercised
@@ -931,29 +791,11 @@ fn check_invariants(intent: &ReleaseIntentV1, run: &ScenarioRun, mode: Mode) -> 
 struct Classification {
     converged: bool,
     conflicted: bool,
-    stranded: bool,
 }
 
-/// What the last save actually left on disk. An operation the journal never
-/// mentioned is `Pending`, which is what a reader of that file would conclude.
-fn durable_states(trace: &[TraceEvent]) -> BTreeMap<ReleaseOperationId, OperationState> {
-    trace
-        .iter()
-        .rev()
-        .find_map(|event| match event {
-            TraceEvent::Saved { states, .. } => Some(states.clone()),
-            _ => None,
-        })
-        .unwrap_or_default()
-}
-
-/// I3: convergence, and the two documented exceptions to it.
-fn check_convergence(
-    intent: &ReleaseIntentV1,
-    run: &ScenarioRun,
-    mode: Mode,
-    durable: &BTreeMap<ReleaseOperationId, OperationState>,
-) -> Result<Classification, Violation> {
+/// I3: every scenario converges within the reruns, unless a permanent
+/// conflict surfaced -- and then nothing downstream of it lands.
+fn check_convergence(intent: &ReleaseIntentV1, run: &ScenarioRun) -> Result<Classification, Violation> {
     let converged = run.outcomes.last() == Some(&RunOutcome::Receipted);
     // Whether a conflict actually surfaced, not whether one was scheduled: a
     // crash can consume the run before the scheduled call is ever made.
@@ -970,20 +812,17 @@ fn check_convergence(
         if converged {
             return Err(Violation::ConvergedDespitePermanentConflict);
         }
-        // Once a conflict has been observed, nothing downstream of it may be
-        // issued. Effects that landed before the conflict surfaced are not
+        // Effects that landed before the conflict surfaced are not
         // implicated, so this walks the trace rather than the end state.
         check_nothing_lands_after_a_conflict(intent, &run.context.trace.borrow())?;
         return Ok(Classification {
+            converged: false,
             conflicted: true,
-            ..Classification::default()
         });
     }
-    let stranded = stranded_attempt(&run.world, mode, durable);
-    if converged || stranded {
+    if converged {
         return Ok(Classification {
-            converged,
-            stranded,
+            converged: true,
             conflicted: false,
         });
     }
@@ -1013,20 +852,6 @@ fn check_nothing_lands_after_a_conflict(intent: &ReleaseIntentV1, trace: &[Trace
     Ok(())
 }
 
-/// The one non-convergence the production design chooses deliberately, E173.
-///
-/// `Attempting` is never downgraded to `Pending`: an absent provider cannot
-/// prove that the interrupted request did not take effect, so a same-runner
-/// rerun refuses to re-dispatch and waits for a human. This encodes that
-/// documented behavior instead of hiding it, and holds only for the same
-/// runner -- a fresh-journal recovery run is still required to converge.
-fn stranded_attempt(world: &SimWorld, mode: Mode, durable: &BTreeMap<ReleaseOperationId, OperationState>) -> bool {
-    mode == Mode::SameRunner
-        && durable
-            .iter()
-            .any(|(id, state)| *state == OperationState::Attempting && !world.already_landed(id))
-}
-
 fn dependents_of(intent: &ReleaseIntentV1, roots: &BTreeSet<ReleaseOperationId>) -> BTreeSet<ReleaseOperationId> {
     let mut closure = roots.clone();
     // The intent is a DAG in canonical order; one pass per operation converges.
@@ -1044,41 +869,6 @@ fn dependents_of(intent: &ReleaseIntentV1, roots: &BTreeSet<ReleaseOperationId>)
     closure.difference(roots).cloned().collect()
 }
 
-fn check_attempting_is_earned(trace: &[TraceEvent]) -> Result<(), Violation> {
-    let mut run = 0usize;
-    let mut absent_this_run: BTreeSet<ReleaseOperationId> = BTreeSet::new();
-    let mut previous: BTreeMap<ReleaseOperationId, OperationState> = BTreeMap::new();
-    for event in trace {
-        match event {
-            TraceEvent::RunStart { run: index, .. } => {
-                run = *index;
-                absent_this_run.clear();
-                previous.clear();
-            }
-            TraceEvent::Observed { id, tag, .. } => {
-                if *tag == ObservationTag::Absent {
-                    absent_this_run.insert(id.clone());
-                }
-            }
-            TraceEvent::Saved { states, .. } => {
-                for (id, state) in states {
-                    let newly_attempting =
-                        *state == OperationState::Attempting && previous.get(id) != Some(&OperationState::Attempting);
-                    if newly_attempting && !absent_this_run.contains(id) {
-                        return Err(Violation::AttemptingWithoutAbsentObservation {
-                            operation: Box::new(id.clone()),
-                            run,
-                        });
-                    }
-                }
-                previous = states.clone();
-            }
-            _ => {}
-        }
-    }
-    Ok(())
-}
-
 // ---------------------------------------------------------------------------
 // Enumeration
 // ---------------------------------------------------------------------------
@@ -1088,50 +878,27 @@ struct Dimensions {
     observations: usize,
     effects: usize,
     provider_calls: usize,
-    saves: usize,
 }
 
-fn measure(intent: &ReleaseIntentV1, manifest: &ArtifactManifestV1, state_path: &Path) -> Dimensions {
+fn measure(intent: &ReleaseIntentV1, manifest: &ArtifactManifestV1) -> Dimensions {
     let run = run_scenario(
         intent,
         manifest,
-        state_path,
         Scenario {
             crash: None,
             fault: None,
         },
-        Mode::SameRunner,
-        Sabotage::default(),
     );
     assert_eq!(
         run.outcomes,
         vec![RunOutcome::Receipted],
         "the fault-free baseline must reach a receipt in one run"
     );
-    let saves = run
-        .context
-        .trace
-        .borrow()
-        .iter()
-        .filter(|event| matches!(event, TraceEvent::Saved { .. }))
-        .count();
     Dimensions {
         observations: run.world.observation_calls.get(),
         effects: run.world.effect_calls.get(),
         provider_calls: run.world.provider_calls.get(),
-        saves,
     }
-}
-
-fn crash_points(dimensions: &Dimensions) -> Vec<CrashPoint> {
-    let mut points: Vec<_> = (0..dimensions.provider_calls)
-        .map(|at| CrashPoint::ProviderCall { at })
-        .collect();
-    for at in 0..dimensions.saves {
-        points.push(CrashPoint::Save { at, after: false });
-        points.push(CrashPoint::Save { at, after: true });
-    }
-    points
 }
 
 fn faults(dimensions: &Dimensions) -> Vec<Fault> {
@@ -1149,14 +916,9 @@ fn faults(dimensions: &Dimensions) -> Vec<Fault> {
     all
 }
 
-/// Crash-and-fault pairs are sampled on a fixed stride rather than run in
-/// full. The full product is 3248 pairs, which runs clean but costs about 35
-/// seconds; a stride of 3 keeps the suite near 12 seconds. The sample is a
-/// deterministic slice of the same enumeration, and its size is asserted.
-const PAIR_STRIDE: usize = 3;
-
+/// Every crash point, every fault, and every crash-and-fault pair.
 fn scenarios(dimensions: &Dimensions) -> (Vec<Scenario>, usize, usize, usize) {
-    let crashes = crash_points(dimensions);
+    let crashes: Vec<usize> = (0..dimensions.provider_calls).collect();
     let faults = faults(dimensions);
     let mut all = Vec::new();
     for crash in &crashes {
@@ -1171,28 +933,16 @@ fn scenarios(dimensions: &Dimensions) -> (Vec<Scenario>, usize, usize, usize) {
             fault: Some(*fault),
         });
     }
-    let singles_crash = crashes.len();
-    let singles_fault = faults.len();
-    let mut pairs = 0;
-    for (index, (crash, fault)) in crashes
-        .iter()
-        .flat_map(|crash| faults.iter().map(move |fault| (crash, fault)))
-        .enumerate()
-    {
-        if index % PAIR_STRIDE != 0 {
-            continue;
+    for crash in &crashes {
+        for fault in &faults {
+            all.push(Scenario {
+                crash: Some(*crash),
+                fault: Some(*fault),
+            });
         }
-        pairs += 1;
-        all.push(Scenario {
-            crash: Some(*crash),
-            fault: Some(*fault),
-        });
     }
-    (all, singles_crash, singles_fault, pairs)
-}
-
-fn describe(scenario: Scenario, mode: Mode) -> String {
-    format!("mode={mode:?} crash={:?} fault={:?}", scenario.crash, scenario.fault)
+    let pairs = crashes.len() * faults.len();
+    (all, crashes.len(), faults.len(), pairs)
 }
 
 /// A short, stable name for one operation, so a failing trace is readable.
@@ -1216,19 +966,11 @@ fn trace_lines(context: &SimContext) -> String {
         .borrow()
         .iter()
         .map(|event| match event {
-            TraceEvent::RunStart { run, kind } => format!("  run {run} start {kind:?}"),
+            TraceEvent::RunStart { run } => format!("  run {run} start"),
             TraceEvent::Observed { run, id, tag } => format!("  run {run} observe {} -> {tag:?}", label(id)),
             TraceEvent::Effect { run, id, landed } => {
                 format!("  run {run} effect  {} landed={landed}", label(id))
             }
-            TraceEvent::Saved { run, states } => format!(
-                "  run {run} save    {}",
-                states
-                    .iter()
-                    .map(|(id, state)| format!("{}={state:?}", label(id)))
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            ),
             TraceEvent::Crashed { run } => format!("  run {run} CRASH"),
             TraceEvent::RunEnd { run, outcome } => format!("  run {run} end {outcome}"),
         })
@@ -1243,96 +985,111 @@ fn trace_lines(context: &SimContext) -> String {
 #[test]
 fn the_release_executor_survives_every_enumerated_crash_and_provider_fault() {
     let (intent, manifest) = simulator_intent();
-    let directory = tempfile::tempdir().unwrap();
-    let state_path = directory.path().join("release-state.json");
-    let dimensions = measure(&intent, &manifest, &state_path);
+    let dimensions = measure(&intent, &manifest);
     let (all, singles_crash, singles_fault, pairs) = scenarios(&dimensions);
 
     println!(
-        "RELEASE_SIM operations={} observations={} effects={} provider_calls={} saves={}",
+        "RELEASE_SIM operations={} observations={} effects={} provider_calls={} scenarios={} \
+         crash_singles={singles_crash} fault_singles={singles_fault} pairs={pairs}",
         intent.operations.len(),
         dimensions.observations,
         dimensions.effects,
         dimensions.provider_calls,
-        dimensions.saves
-    );
-    println!(
-        "RELEASE_SIM scenarios crash_singles={singles_crash} fault_singles={singles_fault} \
-         pairs_sampled={pairs} stride={PAIR_STRIDE} total={} executions={}",
         all.len(),
-        all.len() * 2
     );
 
     // A regression that silently shrinks the enumeration must fail here.
     assert_eq!(intent.operations.len(), 9, "the simulated intent lost an operation");
-    assert!(singles_crash >= 50, "crash points shrank to {singles_crash}");
+    assert!(singles_crash >= 18, "crash points shrank to {singles_crash}");
     assert!(singles_fault >= 40, "fault points shrank to {singles_fault}");
-    assert!(pairs >= 1000, "the pair sample shrank to {pairs}");
+    assert!(pairs >= 800, "the pair enumeration shrank to {pairs}");
 
     let mut converged = 0usize;
     let mut conflicted = 0usize;
-    let mut stranded = 0usize;
-    let mut fresh_unresolved = 0usize;
     for scenario in all {
-        for mode in [Mode::SameRunner, Mode::FreshRunner] {
-            let run = run_scenario(&intent, &manifest, &state_path, scenario, mode, Sabotage::default());
-            let classification = match check_invariants(&intent, &run, mode) {
-                Ok(classification) => classification,
-                Err(violation) => panic!(
-                    "release invariant violated: {violation:?}\nscenario: {}\ntrace:\n{}",
-                    describe(scenario, mode),
-                    trace_lines(&run.context)
-                ),
-            };
-            converged += usize::from(classification.converged);
-            conflicted += usize::from(classification.conflicted);
-            stranded += usize::from(classification.stranded);
-            if mode == Mode::FreshRunner && !classification.converged && !classification.conflicted {
-                fresh_unresolved += 1;
-            }
-        }
+        let run = run_scenario(&intent, &manifest, scenario);
+        let classification = match check_invariants(&intent, &run) {
+            Ok(classification) => classification,
+            Err(violation) => panic!(
+                "release invariant violated: {violation:?}\nscenario: {scenario:?}\ntrace:\n{}",
+                trace_lines(&run.context)
+            ),
+        };
+        converged += usize::from(classification.converged);
+        conflicted += usize::from(classification.conflicted);
     }
-    println!("RELEASE_SIM outcomes converged={converged} conflicted={conflicted} stranded={stranded}");
-
-    // A fresh-journal recovery runner has no stranding excuse: every scenario
-    // it faces either converges or is a permanent conflict.
-    assert_eq!(
-        fresh_unresolved, 0,
-        "a fresh recovery runner failed to resolve a scenario"
-    );
-    assert!(converged >= 1400, "too few scenarios converged: {converged}");
-    assert!(conflicted >= 500, "too few conflict scenarios: {conflicted}");
-    assert!(
-        stranded >= 200,
-        "the stranded-attempt path was barely exercised: {stranded}"
-    );
+    println!("RELEASE_SIM outcomes converged={converged} conflicted={conflicted}");
+    assert!(converged >= 700, "too few scenarios converged: {converged}");
+    assert!(conflicted >= 150, "too few conflict scenarios: {conflicted}");
 }
 
-/// A provider that keeps answering `Absent` about an effect it already served
-/// makes a fresh recovery runner issue that effect a second time. The checker
-/// must report it, and the exception for genuine registry lag must not excuse
-/// it: nothing in this scenario ever lagged.
+/// A rerun after the registry version already landed adopts it, issues no
+/// second publish, and completes with a receipt.
 #[test]
-fn the_checker_reports_a_duplicate_landing_against_a_lying_provider() {
+fn a_rerun_after_a_crate_is_already_published_completes_with_a_receipt() {
     let (intent, manifest) = simulator_intent();
-    let directory = tempfile::tempdir().unwrap();
-    let state_path = directory.path().join("release-state.json");
+    let context = Rc::new(SimContext::default());
     let scenario = Scenario {
         crash: None,
         fault: None,
     };
-    let run = run_scenario(
-        &intent,
-        &manifest,
-        &state_path,
-        scenario,
-        Mode::FreshRunner,
-        Sabotage {
-            lying_provider: true,
-            lose_saves: false,
-        },
+    let world = SimWorld::new(intent.clone(), scenario, Rc::clone(&context), false);
+    let registry = intent
+        .operations
+        .iter()
+        .find(|operation| {
+            matches!(
+                operation.id().role,
+                callisto_model::ReleaseOperationRole::RegistryPublish { .. }
+            )
+        })
+        .unwrap()
+        .id()
+        .clone();
+    for prerequisite in intent
+        .operations
+        .iter()
+        .find(|operation| operation.id() == &registry)
+        .unwrap()
+        .prerequisites()
+    {
+        world.land(prerequisite);
+    }
+    world.land(&registry);
+
+    let run = run_world(world, context, &manifest);
+    assert_eq!(
+        run.outcomes,
+        vec![RunOutcome::Receipted],
+        "{}",
+        trace_lines(&run.context)
     );
-    let violation = check_invariants(&intent, &run, Mode::FreshRunner).unwrap_err();
+    if let Err(violation) = check_invariants(&intent, &run) {
+        panic!("{violation:?}\n{}", trace_lines(&run.context));
+    }
+    assert_eq!(
+        run.world.landings.borrow().iter().filter(|id| **id == registry).count(),
+        1,
+        "the already-published version must not be published again"
+    );
+}
+
+/// A provider that keeps answering `Absent` about an effect it already served
+/// makes a rerun issue that effect a second time. The checker must report it,
+/// and the exception for genuine registry lag must not excuse it: nothing in
+/// this scenario ever lagged.
+#[test]
+fn the_checker_reports_a_duplicate_landing_against_a_lying_provider() {
+    let (intent, manifest) = simulator_intent();
+    // Death right after the first effect lands forces the rerun.
+    let scenario = Scenario {
+        crash: Some(1),
+        fault: None,
+    };
+    let context = Rc::new(SimContext::default());
+    let world = SimWorld::new(intent.clone(), scenario, Rc::clone(&context), true);
+    let run = run_world(world, context, &manifest);
+    let violation = check_invariants(&intent, &run).unwrap_err();
     assert!(
         matches!(violation, Violation::DuplicateLanding { .. }),
         "expected DuplicateLanding, got {violation:?}"
@@ -1348,7 +1105,7 @@ fn the_checker_reports_an_effect_that_precedes_its_prerequisite() {
         fault: None,
     };
     let context = Rc::new(SimContext::default());
-    let world = SimWorld::new(intent.clone(), scenario, Rc::clone(&context), Sabotage::default());
+    let world = SimWorld::new(intent.clone(), scenario, Rc::clone(&context), false);
     let permit = ApplyPermit::force_for_tests();
     let artifacts = VerifiedArtifactManifest::for_tests(&manifest, PathBuf::from("/simulated"));
     let proof = ProviderObservationV1::Absent.absent_proof().unwrap();
@@ -1358,9 +1115,10 @@ fn the_checker_reports_an_effect_that_precedes_its_prerequisite() {
         world,
         context,
         outcomes: vec![RunOutcome::Failed],
+        receipt: None,
     };
 
-    let violation = check_invariants(&intent, &run, Mode::SameRunner).unwrap_err();
+    let violation = check_invariants(&intent, &run).unwrap_err();
     assert!(
         matches!(violation, Violation::EffectBeforePrerequisite { .. }),
         "expected EffectBeforePrerequisite, got {violation:?}"
@@ -1372,176 +1130,54 @@ fn the_checker_reports_an_effect_that_precedes_its_prerequisite() {
 #[test]
 fn the_checker_reports_a_receipt_whose_effects_never_landed() {
     let (intent, manifest) = simulator_intent();
-    let directory = tempfile::tempdir().unwrap();
-    let state_path = directory.path().join("release-state.json");
     let scenario = Scenario {
         crash: None,
         fault: None,
     };
-    let run = run_scenario(
-        &intent,
-        &manifest,
-        &state_path,
-        scenario,
-        Mode::SameRunner,
-        Sabotage::default(),
-    );
+    let run = run_scenario(&intent, &manifest, scenario);
     assert_eq!(run.outcomes, vec![RunOutcome::Receipted]);
     run.world
         .remote
         .borrow_mut()
         .insert(intent.operations[0].id().clone(), Remote::Absent);
 
-    let violation = check_invariants(&intent, &run, Mode::SameRunner).unwrap_err();
+    let violation = check_invariants(&intent, &run).unwrap_err();
     assert!(
         matches!(violation, Violation::ReceiptWithoutLandedEffect { .. }),
         "expected ReceiptWithoutLandedEffect, got {violation:?}"
     );
 }
 
-/// A writer that accepts every save and persists none of them produces a
-/// receipt over a journal no operator could ever read back.
+/// A receipt whose evidence differs from what the world holds must be caught:
+/// execution state is the only thing a receipt reports.
 #[test]
-fn the_checker_reports_a_receipt_over_a_journal_that_was_never_written() {
+fn the_checker_reports_a_receipt_whose_evidence_the_world_does_not_hold() {
     let (intent, manifest) = simulator_intent();
-    let directory = tempfile::tempdir().unwrap();
-    let state_path = directory.path().join("release-state.json");
     let scenario = Scenario {
         crash: None,
         fault: None,
     };
-    let run = run_scenario(
-        &intent,
-        &manifest,
-        &state_path,
-        scenario,
-        Mode::SameRunner,
-        Sabotage {
-            lying_provider: false,
-            lose_saves: true,
-        },
-    );
-    assert!(!state_path.exists(), "the sabotaged writer persisted nothing");
-    let violation = check_invariants(&intent, &run, Mode::SameRunner).unwrap_err();
-    assert!(
-        matches!(violation, Violation::ReceiptWithNonSuccessState { .. }),
-        "expected ReceiptWithNonSuccessState, got {violation:?}"
-    );
-}
-
-/// A journal that records `Attempting` with no absent observation behind it is
-/// exactly the ordering defect this simulator exists to catch.
-#[test]
-fn the_checker_reports_attempting_persisted_before_any_observation() {
-    let id = simulator_intent().0.operations[0].id().clone();
-    let trace = vec![
-        TraceEvent::RunStart {
-            run: 0,
-            kind: ReleaseRunKindV1::Initial,
-        },
-        TraceEvent::Saved {
-            run: 0,
-            states: BTreeMap::from([(id.clone(), OperationState::Attempting)]),
-        },
-    ];
-    let violation = check_attempting_is_earned(&trace).unwrap_err();
-    assert!(
-        matches!(violation, Violation::AttemptingWithoutAbsentObservation { .. }),
-        "expected AttemptingWithoutAbsentObservation, got {violation:?}"
-    );
-    // The same trace with the observation in front of it is legal.
-    let mut legal = trace.clone();
-    legal.insert(
-        1,
-        TraceEvent::Observed {
-            run: 0,
-            id,
-            tag: ObservationTag::Absent,
-        },
-    );
-    assert!(check_attempting_is_earned(&legal).is_ok());
-}
-
-/// F1: a recovery run that dies partway through reconstruction must remain
-/// resumable from the state file it left behind.
-///
-/// Reconstruction is the only path that adopts an effect an earlier run
-/// already landed. When it is interrupted, the operations it never reached
-/// stay `Pending` in a state file that now exists -- and a `Pending` registry
-/// operation whose version is live is a hard `E174`, not a conflict any rerun
-/// can resolve. So the sweep must run on every recovery run, not only on one
-/// that started with no state at all.
-#[test]
-fn a_recovery_run_interrupted_mid_reconstruction_resumes_from_the_same_state() {
-    let (intent, manifest) = simulator_intent();
-    let directory = tempfile::tempdir().unwrap();
-    let state_path = directory.path().join("release-state.json");
-    let context = Rc::new(SimContext::default());
-    let scenario = Scenario {
-        crash: None,
-        fault: Some(Fault {
-            kind: FaultKind::ObserveIndeterminate,
-            at: 1,
-        }),
-    };
-    let world = SimWorld::new(intent.clone(), scenario, Rc::clone(&context), Sabotage::default());
-    // Every effect of an earlier run is already out there; only the journal was lost.
-    for operation in &intent.operations {
-        world.land(operation.id());
-    }
-    world.lost_journal_recovery.set(true);
-    let recovery = envelope_of_kind(&intent, ReleaseRunKindV1::Recovery);
-    let operations: Vec<_> = intent.operations.iter().map(|op| op.id().clone()).collect();
-    let store_for = |context: &Rc<SimContext>| {
-        ReleaseStateStore::with_writer(
-            &state_path,
-            SimWriter::new(Rc::clone(context), operations.clone(), None, Sabotage::default()),
-        )
-    };
-
-    // Run 0: recovery with no journal, stopped partway through reconstruction.
-    context.run.set(0);
-    let interrupted = execute_and_receipt(&world, &store_for(&context), &manifest, &recovery);
-    assert!(
-        interrupted.is_err(),
-        "the injected indeterminate observation must stop reconstruction"
-    );
-    assert!(state_path.exists(), "the interrupted run must leave its journal behind");
-    let partial = durable_states(&context.trace.borrow());
-    let pending: Vec<_> = operations
+    let run = run_scenario(&intent, &manifest, scenario);
+    assert_eq!(run.outcomes, vec![RunOutcome::Receipted]);
+    let tag = intent
+        .operations
         .iter()
-        .filter(|id| partial.get(*id).copied().unwrap_or(OperationState::Pending) == OperationState::Pending)
-        .collect();
-    assert!(
-        partial.values().any(|state| *state == OperationState::AlreadySatisfied),
-        "reconstruction adopted nothing, so this scenario proves nothing: {partial:?}"
-    );
-    assert!(
-        pending
-            .iter()
-            .any(|id| matches!(id.role, callisto_model::ReleaseOperationRole::RegistryPublish { .. })),
-        "a live registry operation must be left pending -- that is the E174 wedge: {partial:?}"
+        .find(|operation| operation.id().role == callisto_model::ReleaseOperationRole::Tag)
+        .unwrap()
+        .id()
+        .clone();
+    run.world.remote.borrow_mut().insert(
+        tag,
+        Remote::Landed {
+            evidence: ProviderEvidenceV1::GitTag {
+                peeled_commit: CommitSha::parse(&"c".repeat(40)).unwrap(),
+            },
+        },
     );
 
-    // Run 1: the same journal, recovery again, with the fault budget spent.
-    context.run.set(FAULT_ARMED_RUNS);
-    execute_and_receipt(&world, &store_for(&context), &manifest, &recovery)
-        .expect("a recovery rerun from the interrupted state must converge");
-
-    let run = ScenarioRun {
-        world,
-        context,
-        outcomes: vec![RunOutcome::Failed, RunOutcome::Receipted],
-    };
-    if let Err(violation) = check_invariants(&intent, &run, Mode::SameRunner) {
-        panic!(
-            "release invariant violated: {violation:?}\ntrace:\n{}",
-            trace_lines(&run.context)
-        );
-    }
-    assert_eq!(
-        run.world.landings.borrow().len(),
-        intent.operations.len(),
-        "recovery re-issued an effect that was already landed"
+    let violation = check_invariants(&intent, &run).unwrap_err();
+    assert!(
+        matches!(violation, Violation::ReceiptEvidenceDisagreesWithWorld { .. }),
+        "expected ReceiptEvidenceDisagreesWithWorld, got {violation:?}"
     );
 }

@@ -69,8 +69,7 @@ pub(crate) mod provider;
 use super::release_artifacts;
 
 pub use capability::{
-    build_release_intent, build_release_intent_with_artifacts, observe_release_operations, validate_release_intent,
-    validate_release_intent_with_state_directory, ValidatedReleaseIntent,
+    build_release_intent, build_release_intent_with_artifacts, validate_release_intent, ValidatedReleaseIntent,
 };
 #[cfg(test)]
 pub(crate) use derive::canonical_operation_order;
@@ -448,9 +447,8 @@ pub(crate) mod tests {
 
         // One platform failing leaves its sibling runnable and the owner blocked.
         let mut state = crate::commands::release_test_support::pending_state(&intent);
-        let eligible = crate::commands::reconcile_release_execution(&intent, Some(&state)).unwrap();
         assert_eq!(
-            eligible.eligible(),
+            crate::commands::release_execution::eligible_operations(&intent, &state),
             [platforms[0].id().clone(), platforms[1].id().clone()]
         );
         state
@@ -468,18 +466,13 @@ pub(crate) mod tests {
             )
             .unwrap();
         crate::commands::release_test_support::publish_operation(&mut state, platforms[1].id());
-        let eligible = crate::commands::reconcile_release_execution(&intent, Some(&state)).unwrap();
-        assert!(
-            eligible.eligible().is_empty(),
-            "the owner must not publish: {:?}",
-            eligible.eligible()
-        );
+        let eligible = crate::commands::release_execution::eligible_operations(&intent, &state);
+        assert!(eligible.is_empty(), "the owner must not publish: {eligible:?}");
     }
 
     #[test]
     fn fresh_validation_rejects_manifest_change() {
         let (dir, runner) = fixture();
-        let state_dir = tempfile::tempdir().unwrap();
         let locator = crate::IgnoreWalkLocator::new(dir.path());
         let intent = build_release_intent(
             dir.path(),
@@ -490,29 +483,20 @@ pub(crate) mod tests {
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
-        validate_release_intent_with_state_directory(
-            dir.path(),
-            &locator,
-            &runner,
-            Some(state_dir.path()),
-            intent.clone(),
-        )
-        .unwrap();
+        validate_release_intent(dir.path(), &locator, &runner, intent.clone()).unwrap();
         std::fs::write(
             dir.path().join("Cargo.toml"),
             "[package]\nname = \"release-fixture\"\nversion = \"1.2.4\"\nedition = \"2021\"\n",
         )
         .unwrap();
-        let error =
-            validate_release_intent_with_state_directory(dir.path(), &locator, &runner, Some(state_dir.path()), intent)
-                .expect_err("a dirty checkout cannot produce Git commit trust evidence");
+        let error = validate_release_intent(dir.path(), &locator, &runner, intent)
+            .expect_err("a dirty checkout cannot produce Git commit trust evidence");
         assert!(matches!(error, GraphError::Vcs(_)));
     }
 
     #[test]
     fn prepared_capability_retains_exact_tag_and_registry_inputs() {
         let (dir, runner) = fixture();
-        let state_dir = tempfile::tempdir().unwrap();
         let locator = crate::IgnoreWalkLocator::new(dir.path());
         let intent = build_release_intent(
             dir.path(),
@@ -523,9 +507,7 @@ pub(crate) mod tests {
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
-        let validated =
-            validate_release_intent_with_state_directory(dir.path(), &locator, &runner, Some(state_dir.path()), intent)
-                .unwrap();
+        let validated = validate_release_intent(dir.path(), &locator, &runner, intent).unwrap();
         let inputs = validated.prepared();
         assert!(inputs.root.is_absolute());
         assert!(matches!(&inputs.source, SourceIdentity::GitCommit { .. }));
@@ -581,9 +563,7 @@ pub(crate) mod tests {
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
-        let validated =
-            validate_release_intent_with_state_directory(dir.path(), &locator, &runner, Some(state_dir.path()), intent)
-                .unwrap();
+        let validated = validate_release_intent(dir.path(), &locator, &runner, intent).unwrap();
         let tag_id = ReleaseProviderSet::intent(&validated)
             .operations
             .iter()
@@ -639,9 +619,7 @@ pub(crate) mod tests {
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
-        let validated =
-            validate_release_intent_with_state_directory(dir.path(), &locator, &runner, Some(state_dir.path()), intent)
-                .unwrap();
+        let validated = validate_release_intent(dir.path(), &locator, &runner, intent).unwrap();
         let tag_id = ReleaseProviderSet::intent(&validated)
             .operations
             .iter()

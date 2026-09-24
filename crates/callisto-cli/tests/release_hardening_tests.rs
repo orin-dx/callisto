@@ -19,7 +19,7 @@ use tempfile::TempDir;
 fn execute_raw(
     root: &Path,
     intent: &Path,
-    state: &Path,
+    receipt: &Path,
     p: FakePublishers<'_>,
     forge_tag: &str,
     extra: &[&str],
@@ -35,10 +35,8 @@ fn execute_raw(
             "execute",
             "--intent",
             intent.to_str().unwrap(),
-            "--state",
-            state.to_str().unwrap(),
             "--receipt",
-            state.with_extension("receipt.json").to_str().unwrap(),
+            receipt.to_str().unwrap(),
             "--orchestration-revision",
             orchestration.unwrap_or(&head),
         ])
@@ -64,7 +62,7 @@ struct Env {
     release_commit: String,
     external: TempDir,
     intent: PathBuf,
-    state: PathBuf,
+    receipt: PathBuf,
     bin: PathBuf,
     log: PathBuf,
     forge_marker: PathBuf,
@@ -83,14 +81,14 @@ impl Env {
         } else {
             plan_intent(dir.path(), external.path(), &release_commit)
         };
-        let state = external.path().join("release-state.json");
+        let receipt = external.path().join("release-receipt.json");
         let (bin, log, forge_marker, git_trace) = fake_publishers(external.path(), &release_commit, false);
         Self {
             _dir: dir,
             release_commit,
             external,
             intent,
-            state,
+            receipt,
             bin,
             log,
             forge_marker,
@@ -112,7 +110,7 @@ impl Env {
         execute_raw(
             self.root(),
             &self.intent,
-            &self.state,
+            &self.receipt,
             self.p(),
             "core-crate@0.2.0",
             extra,
@@ -120,7 +118,7 @@ impl Env {
         )
     }
     fn receipt(&self) -> serde_json::Value {
-        serde_json::from_slice(&fs::read(self.state.with_extension("receipt.json")).unwrap()).unwrap()
+        serde_json::from_slice(&fs::read(&self.receipt).unwrap()).unwrap()
     }
 }
 fn stderr(o: &Output) -> String {
@@ -128,62 +126,48 @@ fn stderr(o: &Output) -> String {
 }
 
 #[test]
-fn p01_stranded_attempting_is_nonzero_and_repeats_no_effect() {
+fn p01_rerun_after_a_failed_publish_publishes_and_issues_a_receipt() {
     let e = Env::new(false);
-    // first run: publish fails -> Attempting is stranded
     drop(fake_publishers(e.external.path(), &e.release_commit, true));
     let first = e.run(&[]);
     assert!(!first.status.success());
     assert_eq!(count(&e.log, "cargo publish"), 1);
-    // provider is now "healthy" but the effect's outcome is unknown
+    assert!(!e.receipt.exists());
+    // The registry never received the version, so a rerun publishes it.
     drop(fake_publishers(e.external.path(), &e.release_commit, false));
     let second = e.run(&[]);
-    assert!(
-        !second.status.success(),
-        "stranded Attempting must never resume into success: {}",
-        stderr(&second)
-    );
-    assert_eq!(count(&e.log, "cargo publish"), 1, "no second publish");
-    assert!(!e.state.with_extension("receipt.json").exists());
-    assert!(fs::read_to_string(&e.state).unwrap().contains("attempting"));
-    assert!(
-        stderr(&second).contains("E173"),
-        "typed unresolved-attempt diagnostic expected: {}",
-        stderr(&second)
-    );
+    assert!(second.status.success(), "{}", stderr(&second));
+    assert_eq!(count(&e.log, "cargo publish"), 2);
+    assert!(e.receipt.exists());
 }
 
 #[test]
-fn p02_partial_provider_success_recovers_from_fresh_runner_without_republishing() {
+fn p02_rerun_after_a_crate_is_already_published_completes_and_issues_a_receipt() {
     let e = Env::new(false);
-    // the registry already serves this version
+    // An earlier run published the crate and died before tagging.
     let marker = registry_marker(e.root());
     fs::write(marker.with_file_name("published.core-crate"), "0.2.0\n").unwrap();
-    let out = e.run(&["--recovery"]);
+    let out = e.run(&[]);
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(count(&e.log, "cargo publish"), 0);
     assert_eq!(count(&e.log, "gh release create"), 1);
     assert!(git(e.root(), &["tag", "--list", "core-crate@0.2.0"]).contains("core-crate@0.2.0"));
-    let r = e.receipt();
-    eprintln!("P02 receipt: {}", serde_json::to_string_pretty(&r).unwrap());
-    assert_eq!(r["envelope"]["kind"], "recovery");
-}
-
-#[test]
-fn p03_lost_state_without_recovery_flag_never_republishes() {
-    let e = Env::new(false);
-    assert!(e.run(&[]).status.success());
-    fs::remove_file(&e.state).unwrap();
-    fs::remove_file(e.state.with_extension("receipt.json")).unwrap();
-    let before = count(&e.log, "cargo publish");
-    let out = e.run(&[]);
-    assert!(
-        !out.status.success(),
-        "normal run with lost state must not silently reconstruct: {}",
+    assert_eq!(
+        stderr(&out)
+            .matches("warning: cargo/core-crate 0.2.0 is already published; skipping")
+            .count(),
+        1,
+        "{}",
         stderr(&out)
     );
-    assert_eq!(count(&e.log, "cargo publish"), before);
-    assert!(!e.state.with_extension("receipt.json").exists());
+    let r = e.receipt();
+    let registry = r["outcomes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|o| o["operation"]["role"]["kind"] == "registryPublish")
+        .unwrap();
+    assert_eq!(registry["outcome"]["kind"], "alreadySatisfied");
 }
 
 #[test]
@@ -195,7 +179,7 @@ fn p04_tampered_profile_in_intent_is_rejected_before_any_effect() {
     let out = e.run(&["--profile", "rehearsal"]);
     assert!(!out.status.success(), "relabelled profile must break the intent digest");
     assert!(!e.log.exists() || count(&e.log, "cargo publish") == 0);
-    assert!(!e.state.exists());
+    assert!(!e.receipt.exists());
 }
 
 #[test]
@@ -212,7 +196,7 @@ fn red_d05_malformed_orchestration_revision_is_rejected_before_any_effect() {
     let out = execute_raw(
         e.root(),
         &e.intent,
-        &e.state,
+        &e.receipt,
         e.p(),
         "core-crate@0.2.0",
         &[],
@@ -319,18 +303,17 @@ fn c4_source_without_release_section_plans_and_ignores_artifact_flags() {
 fn p09_indeterminate_forge_observation_fails_closed() {
     let e = Env::new(false);
     assert!(e.run(&[]).status.success());
-    fs::remove_file(&e.state).unwrap();
-    fs::remove_file(e.state.with_extension("receipt.json")).unwrap();
+    fs::remove_file(&e.receipt).unwrap();
     // gh now answers 401 for API reads
     fs::write(e.bin.join("gh"), unauthorized_gh()).unwrap();
     let before_create = count(&e.log, "gh release create");
-    let out = e.run(&["--recovery"]);
+    let out = e.run(&[]);
     assert!(!out.status.success());
     assert_eq!(count(&e.log, "gh release create"), before_create);
-    assert!(!e.state.with_extension("receipt.json").exists());
+    assert!(!e.receipt.exists());
     assert!(
-        stderr(&out).contains("E173"),
-        "indeterminate observation must surface E173: {}",
+        stderr(&out).contains("E176"),
+        "indeterminate observation must surface E176: {}",
         stderr(&out)
     );
 }
@@ -345,7 +328,7 @@ fn p10_conflicting_local_tag_fails_closed_and_issues_no_receipt() {
     let out = e.run(&[]);
     assert!(!out.status.success());
     assert_eq!(count(&e.log, "gh release create"), 0);
-    assert!(!e.state.with_extension("receipt.json").exists());
+    assert!(!e.receipt.exists());
     eprintln!("P10 publish count = {}", count(&e.log, "cargo publish"));
 }
 
@@ -358,7 +341,7 @@ fn p11_receipt_is_bound_to_intent_and_provider_evidence() {
     eprintln!("P11 receipt: {}", serde_json::to_string_pretty(&r).unwrap());
     assert_eq!(r["envelope"]["intentDigest"], intent["digest"]);
     assert_eq!(r["envelope"]["profile"], "production");
-    assert_eq!(r["envelope"]["kind"], "initial");
+    assert!(r["envelope"].get("kind").is_none());
     let ops = intent["operations"].as_array().unwrap().len();
     assert_eq!(r["observations"].as_array().unwrap().len(), ops);
     assert!(r["observations"]
@@ -402,7 +385,7 @@ fn p12_tampered_missing_or_swapped_artifacts_reject_before_any_effect() {
                 fs::write(&manifest, serde_json::to_vec(&m).unwrap()).unwrap();
             }
         }
-        let out = execute_product(e.root(), &e.intent, &manifest, &artifacts, &e.state, e.p(), false);
+        let out = execute_product(e.root(), &e.intent, &manifest, &artifacts, &e.receipt, e.p());
         assert!(!out.status.success(), "{case}: must fail");
         assert_eq!(
             count(&e.log, "cargo publish"),
@@ -415,63 +398,10 @@ fn p12_tampered_missing_or_swapped_artifacts_reject_before_any_effect() {
 }
 
 #[test]
-fn p13_concurrent_execute_publishes_at_most_once() {
-    let e = Env::new(false);
-    let spawn = |e: &Env| {
-        let path = format!("{}:{}", e.bin.display(), std::env::var("PATH").unwrap());
-        Command::new(env!("CARGO_BIN_EXE_callisto"))
-            .args([
-                "--format",
-                "json",
-                "--cwd",
-                e.root().to_str().unwrap(),
-                "release",
-                "execute",
-                "--intent",
-                e.intent.to_str().unwrap(),
-                "--state",
-                e.state.to_str().unwrap(),
-                "--receipt",
-                e.state.with_extension("receipt.json").to_str().unwrap(),
-                "--orchestration-revision",
-                &git(e.root(), &["rev-parse", "HEAD"]),
-            ])
-            .env("PATH", path)
-            .env("CALLISTO_TEST_LOG", &e.log)
-            .env("CALLISTO_TEST_GIT_TRACE", &e.git_trace)
-            .env("CALLISTO_TEST_FORGE_MARKER", &e.forge_marker)
-            .env("CALLISTO_TEST_ARTIFACT_MARKER", e.log.with_extension("artifact-marker"))
-            .env("CALLISTO_TEST_FORGE_TAG", "core-crate@0.2.0")
-            .env("CALLISTO_TEST_CARGO_MARKER", registry_marker(e.root()))
-            // slow publish so the two processes overlap
-            .env("CALLISTO_TEST_CARGO_PUBLISH_SLEEP", "3")
-            .env("CALLISTO_TEST_REAL_GIT", system_git())
-            .env("__CALLISTO_TEST_SLEEP_SCALE", "0")
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .unwrap()
-    };
-    let a = spawn(&e);
-    std::thread::sleep(std::time::Duration::from_millis(700));
-    let b = spawn(&e);
-    let (ao, bo) = (a.wait_with_output().unwrap(), b.wait_with_output().unwrap());
-    eprintln!(
-        "P13 a={:?} b={:?} b-stderr={}",
-        ao.status.code(),
-        bo.status.code(),
-        String::from_utf8_lossy(&bo.stderr)
-    );
-    assert_eq!(count(&e.log, "cargo publish"), 1);
-    assert!(ao.status.success() ^ bo.status.success() || (ao.status.success() && bo.status.success()));
-}
-
-#[test]
-fn p14_recovery_with_a_conflicting_existing_tag_fails_closed() {
+fn p14_rerun_with_a_conflicting_existing_tag_fails_closed() {
     let e = Env::new(false);
     assert!(e.run(&[]).status.success());
-    fs::remove_file(&e.state).unwrap();
-    fs::remove_file(e.state.with_extension("receipt.json")).unwrap();
+    fs::remove_file(&e.receipt).unwrap();
     git(
         e.root(),
         &[
@@ -484,38 +414,22 @@ fn p14_recovery_with_a_conflicting_existing_tag_fails_closed() {
             "HEAD^",
         ],
     );
-    let out = e.run(&["--recovery"]);
+    let out = e.run(&[]);
     assert!(
         !out.status.success(),
         "a tag pointing at another commit is a conflict, not an exact success"
     );
-    assert!(stderr(&out).contains("E173"), "{}", stderr(&out));
-    assert!(!e.state.with_extension("receipt.json").exists());
-}
-
-#[test]
-fn p15_receipt_requires_fresh_provider_evidence_not_local_state() {
-    let e = Env::new(false);
-    assert!(e.run(&[]).status.success());
-    fs::remove_file(e.state.with_extension("receipt.json")).unwrap();
-    // local journal still says everything succeeded; the forge release vanishes
-    fs::remove_file(&e.forge_marker).unwrap();
-    let out = e.run(&[]);
-    assert!(
-        !out.status.success(),
-        "receipt must not be issued from a stale local journal"
-    );
-    assert!(!e.state.with_extension("receipt.json").exists());
+    assert!(stderr(&out).contains("E167"), "{}", stderr(&out));
+    assert!(!e.receipt.exists());
 }
 
 #[test]
 fn p16_remote_asset_with_same_size_but_different_digest_is_a_conflict() {
     let e = Env::new(true);
     let (artifacts, manifest) = product_manifest(&e);
-    let first = execute_product(e.root(), &e.intent, &manifest, &artifacts, &e.state, e.p(), false);
+    let first = execute_product(e.root(), &e.intent, &manifest, &artifacts, &e.receipt, e.p());
     assert!(first.status.success(), "{}", stderr(&first));
-    fs::remove_file(&e.state).unwrap();
-    fs::remove_file(e.state.with_extension("receipt.json")).unwrap();
+    fs::remove_file(&e.receipt).unwrap();
     let marker = e.log.with_extension("artifact-marker");
     let tampered: Vec<String> = fs::read_to_string(&marker)
         .unwrap()
@@ -534,28 +448,11 @@ fn p16_remote_asset_with_same_size_but_different_digest_is_a_conflict() {
         .collect();
     fs::write(&marker, tampered.join("\n") + "\n").unwrap();
     let uploads = count(&e.log, "gh release upload");
-    let out = execute_product(e.root(), &e.intent, &manifest, &artifacts, &e.state, e.p(), true);
+    let out = execute_product(e.root(), &e.intent, &manifest, &artifacts, &e.receipt, e.p());
     assert!(!out.status.success(), "a differing remote asset must not be adopted");
-    assert!(stderr(&out).contains("E173"), "{}", stderr(&out));
+    assert!(stderr(&out).contains("E167"), "{}", stderr(&out));
     assert_eq!(count(&e.log, "gh release upload"), uploads);
-    assert!(!e.state.with_extension("receipt.json").exists());
-}
-
-#[test]
-fn p17_tampered_failed_state_reports_incomplete_release_e172() {
-    let e = Env::new(false);
-    drop(fake_publishers(e.external.path(), &e.release_commit, true));
-    assert!(!e.run(&[]).status.success());
-    drop(fake_publishers(e.external.path(), &e.release_commit, false));
-    let tampered = fs::read_to_string(&e.state)
-        .unwrap()
-        .replace("\"attempting\"", "\"failed\"");
-    fs::write(&e.state, tampered).unwrap();
-    let out = e.run(&[]);
-    assert!(!out.status.success());
-    assert!(stderr(&out).contains("E172"), "{}", stderr(&out));
-    assert!(!e.state.with_extension("receipt.json").exists());
-    assert_eq!(count(&e.log, "cargo publish"), 1);
+    assert!(!e.receipt.exists());
 }
 
 #[test]
@@ -692,7 +589,7 @@ fn p23_plan_and_execute_leave_source_and_coordinator_worktrees_clean() {
         git(coordinator, &["status", "--porcelain", "--untracked-files=all"]),
         ""
     );
-    let state = external.path().join("release-state.json");
+    let receipt = external.path().join("release-receipt.json");
     let (bin, log, forge_marker, git_trace) = fake_publishers(external.path(), &release_commit, false);
     let p = FakePublishers {
         bin: &bin,
@@ -700,7 +597,7 @@ fn p23_plan_and_execute_leave_source_and_coordinator_worktrees_clean() {
         forge_marker: &forge_marker,
         git_trace: &git_trace,
     };
-    let out = execute_from_coordinator(coordinator, source, &intent, &state, p, false);
+    let out = execute_from_coordinator(coordinator, source, &intent, &receipt, p);
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(git(source, &["status", "--porcelain", "--untracked-files=all"]), "");
     assert_eq!(
@@ -717,7 +614,7 @@ struct RigEnv {
     dir: TempDir,
     external: TempDir,
     intent: PathBuf,
-    state: PathBuf,
+    receipt: PathBuf,
     rig: Rig,
     forge_tag: &'static str,
 }
@@ -731,7 +628,7 @@ impl RigEnv {
     ) -> Self {
         let external = tempfile::tempdir().unwrap();
         let intent = intent(dir.path(), external.path(), &release_commit);
-        let state = external.path().join("release-state.json");
+        let receipt = external.path().join("release-receipt.json");
         let rig = Rig::new(external.path(), &release_commit);
         // Real repositories ignore `target/`; without this the fake cargo's build output would show as untracked.
         let exclude = dir.path().join(".git/info/exclude");
@@ -742,7 +639,7 @@ impl RigEnv {
             dir,
             external,
             intent,
-            state,
+            receipt,
             rig,
             forge_tag,
         }
@@ -766,7 +663,7 @@ impl RigEnv {
         execute_rig(
             self.root(),
             &self.intent,
-            &self.state,
+            &self.receipt,
             &self.rig,
             self.forge_tag,
             extra,
@@ -774,11 +671,10 @@ impl RigEnv {
         )
     }
     fn receipt_path(&self) -> PathBuf {
-        self.state.with_extension("receipt.json")
+        self.receipt.clone()
     }
-    fn forget_state(&self) {
-        fs::remove_file(&self.state).ok();
-        fs::remove_file(self.receipt_path()).ok();
+    fn forget_receipt(&self) {
+        fs::remove_file(&self.receipt).ok();
     }
     fn product_inputs(&self) -> (PathBuf, PathBuf) {
         let artifacts = create_product_artifacts(self.external.path());
@@ -799,17 +695,13 @@ impl RigEnv {
         assert!(made.status.success(), "{}", stderr(&made));
         (artifacts, manifest)
     }
-    fn run_product(&self, artifacts: &Path, manifest: &Path, recovery: bool) -> Output {
-        let mut extra = vec![
+    fn run_product(&self, artifacts: &Path, manifest: &Path) -> Output {
+        self.run(&[
             "--artifact-manifest",
             manifest.to_str().unwrap(),
             "--artifact-dir",
             artifacts.to_str().unwrap(),
-        ];
-        if recovery {
-            extra.push("--recovery");
-        }
-        self.run(&extra)
+        ])
     }
 }
 
@@ -903,7 +795,7 @@ fn red_d03_normal_run_succeeds_when_forge_reports_default_branch_as_target() {
     let mut e = RigEnv::product();
     e.rig.forge_default_branch("main");
     let (artifacts, manifest) = e.product_inputs();
-    let out = e.run_product(&artifacts, &manifest, false);
+    let out = e.run_product(&artifacts, &manifest);
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(e.rig.log_count("gh release create"), 1);
     assert_eq!(
@@ -915,23 +807,23 @@ fn red_d03_normal_run_succeeds_when_forge_reports_default_branch_as_target() {
 }
 
 #[test]
-fn red_d03_recovery_run_succeeds_and_uploads_assets_when_forge_reports_default_branch() {
+fn red_d03_rerun_succeeds_and_uploads_assets_when_forge_reports_default_branch() {
     let mut e = RigEnv::product();
     let (artifacts, manifest) = e.product_inputs();
     // Complete run against a forge that reports the SHA (the only shape the permissive fake can satisfy today).
-    let first = e.run_product(&artifacts, &manifest, false);
+    let first = e.run_product(&artifacts, &manifest);
     assert!(first.status.success(), "setup run failed: {}", stderr(&first));
-    e.forget_state();
+    e.forget_receipt();
     // The forge release now exists but its assets are gone, and it reports the default branch.
     fs::remove_file(e.rig.log.with_extension("artifact-marker")).unwrap();
     e.rig.forge_default_branch("main");
     let uploads = e.rig.log_count("gh release upload");
-    let out = e.run_product(&artifacts, &manifest, true);
+    let out = e.run_product(&artifacts, &manifest);
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(
         e.rig.log_count("gh release upload"),
         uploads + 4,
-        "recovery must upload the missing assets"
+        "a rerun must upload the missing assets"
     );
     assert!(e.receipt_path().exists());
 }
@@ -1004,9 +896,9 @@ fn red_d08_local_only_tag_is_pushed_to_the_remote_before_the_receipt() {
         git(e.root(), &["tag", "--list", "core-crate@0.2.0"]).contains("core-crate@0.2.0"),
         "setup: the local tag must exist"
     );
-    e.forget_state();
+    e.forget_receipt();
     e.rig.real_git_push(&bare, "https://github.com/example/core-crate.git");
-    let second = e.run(&["--recovery"]);
+    let second = e.run(&[]);
     let remote_tags = git(&bare, &["tag", "--list", "core-crate@0.2.0"]);
     assert!(
         !e.receipt_path().exists() || remote_tags.contains("core-crate@0.2.0"),
@@ -1016,6 +908,16 @@ fn red_d08_local_only_tag_is_pushed_to_the_remote_before_the_receipt() {
     assert!(
         remote_tags.contains("core-crate@0.2.0"),
         "the tag must reach the remote"
+    );
+    assert_eq!(
+        e.rig.log_count("cargo publish"),
+        1,
+        "the published crate is adopted, not republished"
+    );
+    assert!(
+        stderr(&second).contains("already published; skipping"),
+        "{}",
+        stderr(&second)
     );
 }
 
@@ -1078,20 +980,12 @@ fn c5_already_exists_text_without_registry_observation_is_not_success() {
 }
 
 /// F3: a sparse index that has not finished propagating must not cost a fully
-/// published release its receipt.
-///
-/// The receipt pass observes every operation afresh. Before the fix it used
-/// the plain observation, so a 404 served right after a successful publish was
-/// read as "absent" and the receipt was refused -- after every crate, tag and
-/// release had already been created. The rerun that follows a push release
-/// carries no `--recovery`, so it could only end in E174.
+/// published release its receipt: the post-publish confirmation treats a 404
+/// as lag and retries.
 #[test]
-fn a_lagging_registry_after_publication_still_yields_a_receipt() {
+fn a_lagging_registry_at_confirmation_still_yields_a_receipt() {
     let e = RigEnv::single();
-    // The post-publish confirmation gets its honest answer; the next two
-    // reads -- the receipt pass -- answer 404, which it must treat as lag
-    // rather than as an answer.
-    set_registry_flap(e.root(), 1, 2);
+    set_registry_flap(e.root(), 0, 2);
     let out = e.run(&[]);
     assert!(
         out.status.success(),
@@ -1110,15 +1004,29 @@ fn a_lagging_registry_after_publication_still_yields_a_receipt() {
     );
 }
 
-/// The other half of the same rule: tolerating lag must not turn a registry
-/// that never serves the version into a success. A receipt still requires a
-/// fresh exact observation of every operation.
+/// Once confirmation recorded exact evidence, no later registry read can red
+/// the release: the receipt is built from the evidence recorded in memory.
+#[test]
+fn a_registry_read_failing_after_confirmation_cannot_cost_the_receipt() {
+    let e = RigEnv::single();
+    set_registry_flap(e.root(), 1, 1_000);
+    let out = e.run(&[]);
+    assert!(
+        out.status.success(),
+        "a read after confirmation reached the receipt; codes {:?}: {}",
+        diagnostic_codes(&out),
+        stderr(&out)
+    );
+    assert!(e.receipt_path().exists());
+}
+
+/// Tolerating lag must not turn a registry that never serves the version into
+/// a success: confirmation still requires an exact observation.
 #[test]
 fn a_registry_that_never_serves_the_version_yields_no_receipt() {
     let e = RigEnv::single();
-    // More 404s than the bounded retry policy will ever ask for, armed once
-    // the publish itself has been confirmed.
-    set_registry_flap(e.root(), 1, 1_000);
+    // More 404s than the bounded retry policy will ever ask for.
+    set_registry_flap(e.root(), 0, 1_000);
     let out = e.run(&[]);
     assert!(
         !out.status.success(),
@@ -1143,9 +1051,8 @@ fn execute_resolves_the_same_workspace_root_as_plan_from_a_subdirectory() {
     let out = execute_rig_in(
         e.root(),
         &subdirectory,
-        None,
         &e.intent,
-        &e.state,
+        &e.receipt,
         &e.rig,
         e.forge_tag,
         &[],
@@ -1158,40 +1065,4 @@ fn execute_resolves_the_same_workspace_root_as_plan_from_a_subdirectory() {
         stderr(&out)
     );
     assert!(e.receipt_path().exists(), "the subdirectory run must issue its receipt");
-}
-
-/// A bare `--state release-state.json` names a file in the process's own
-/// working directory. Its directory is `Some("")`, which is not a directory
-/// any later join can use meaningfully, so the state and its workspace lock
-/// must still land there and the run must complete.
-#[test]
-fn a_bare_relative_state_path_resolves_against_the_process_working_directory() {
-    let e = RigEnv::single();
-    let elsewhere = tempfile::tempdir().unwrap();
-    let head = git(e.root(), &["rev-parse", "HEAD"]);
-    let out = execute_rig_in(
-        e.root(),
-        e.root(),
-        Some(elsewhere.path()),
-        &e.intent,
-        Path::new("bare-release-state.json"),
-        &e.rig,
-        e.forge_tag,
-        &[],
-        Some(&head),
-    );
-    assert!(
-        out.status.success(),
-        "a bare --state path failed; codes {:?}: {}",
-        diagnostic_codes(&out),
-        stderr(&out)
-    );
-    assert!(
-        elsewhere.path().join("bare-release-state.json").exists(),
-        "the state file must land in the process working directory"
-    );
-    assert!(
-        elsewhere.path().join("callisto/release-locks").is_dir(),
-        "the workspace lock must live beside the state file it guards, not in an unrelated tree"
-    );
 }

@@ -309,30 +309,12 @@ pub enum GraphError {
     #[error("release execution state is invalid: {source}")]
     #[diagnostic(
         code(E127),
-        help("Regenerate the release intent or remove the invalid state file; no release operation was authorized.")
+        help("Regenerate the release intent; no release operation was authorized.")
     )]
     ReleaseExecutionState {
         #[source]
         source: callisto_model::ReleaseStateError,
     },
-
-    #[error("cannot read release execution state `{}`: {message}", .path.display())]
-    #[diagnostic(code(E128), help("Ensure the explicit release state path is readable."))]
-    ReleaseStateRead { path: PathBuf, message: String },
-
-    #[error("release execution state `{}` is not valid JSON: {message}", .path.display())]
-    #[diagnostic(
-        code(E129),
-        help("Restore the state file from a known-good receipt or start a new release intent; it was not treated as success.")
-    )]
-    ReleaseStateDecode { path: PathBuf, message: String },
-
-    #[error("cannot persist release execution state `{}`: {message}", .path.display())]
-    #[diagnostic(
-        code(E130),
-        help("Resolve the local filesystem error before any remote release effect is attempted.")
-    )]
-    ReleaseStateWrite { path: PathBuf, message: String },
 
     #[error("ecosystem `{}` has no canonical manifest format for identity resolution", .ecosystem.prefix())]
     #[diagnostic(
@@ -530,7 +512,7 @@ pub enum GraphError {
             "This happens when releasing a commit that is not a branch tip (for example, recovering \
              an older release) with GITHUB_TOKEN, which cannot be granted the `workflows` scope. \
              Push tag `{tag}`, and every other tag of this release, as an annotated tag at \
-             {target} with a non-App credential (a PAT or deploy key), then re-run recovery."
+             {target} with a non-App credential (a PAT or deploy key), then re-run the release."
         )
     )]
     ReleaseTagPushRefusedWorkflowGuard { tag: String, target: String },
@@ -561,20 +543,6 @@ pub enum GraphError {
         remote: callisto_model::GitHubRepository,
     },
 
-    #[error(
-        "cannot safely resume release operation `{operation:?}` because its provider observation is {observation:?}"
-    )]
-    #[diagnostic(
-        code(E173),
-        help(
-            "Do not retry this effect. Resolve the provider state or add an exact provider observer before resuming the immutable release intent."
-        )
-    )]
-    ReleaseRecoveryUnresolved {
-        operation: Box<callisto_model::ReleaseOperationId>,
-        observation: Box<callisto_model::ProviderObservationV1>,
-    },
-
     #[error("release run envelope is not valid for this intent: {source}")]
     #[diagnostic(
         code(E178),
@@ -602,18 +570,6 @@ pub enum GraphError {
     )]
     ReleaseProviderIndeterminate {
         operation: Box<callisto_model::ReleaseOperationId>,
-    },
-
-    #[error("registry version already exists for `{package}` at {version}")]
-    #[diagnostic(
-        code(E174),
-        help(
-            "Do not publish this version again. Verify the release history and choose an explicitly selected recovery run only if the immutable intent matches the existing release."
-        )
-    )]
-    ReleaseRegistryVersionExists {
-        package: String,
-        version: callisto_model::Version,
     },
 
     #[error("release profile `{profile}` is not configured")]

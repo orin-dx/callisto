@@ -98,10 +98,17 @@ fn merged_release_commit_executes_exactly_once_through_real_cli() {
     let external = tempfile::tempdir().unwrap();
     let root = dir.path();
     let intent = plan_intent(root, external.path(), &release_commit);
-    let state = external.path().join("release-state.json");
+    let receipt = external.path().join("release-receipt.json");
     let (bin, log, forge_marker, git_trace) = fake_publishers(external.path(), &release_commit, false);
 
-    let first = execute(root, &intent, &state, &bin, &log, &forge_marker, &git_trace);
+    let publishers = FakePublishers {
+        bin: &bin,
+        log: &log,
+        forge_marker: &forge_marker,
+        git_trace: &git_trace,
+    };
+
+    let first = execute(root, &intent, &receipt, publishers);
     assert!(
         first.status.success(),
         "release execute failed: {}\nGit command trace:\n{}\nEffect trace:\n{}",
@@ -115,19 +122,12 @@ fn merged_release_commit_executes_exactly_once_through_real_cli() {
     assert_argv_within_allowlists(&log, &git_trace);
     assert!(effects.contains("git push"));
     assert!(effects.contains("gh release create"));
-    assert!(
-        state.exists(),
-        "durable execution state must be persisted outside implicit memory"
-    );
-    assert!(
-        state.with_extension("receipt.json").exists(),
-        "a successful release must persist a provider-observed terminal receipt"
-    );
+    assert!(receipt.exists(), "a successful release must persist a terminal receipt");
 
-    let second = execute(root, &intent, &state, &bin, &log, &forge_marker, &git_trace);
+    let second = execute(root, &intent, &receipt, publishers);
     assert!(
         second.status.success(),
-        "a completed release must reconcile without retrying effects: {}",
+        "a completed release must be adopted without retrying effects: {}",
         String::from_utf8_lossy(&second.stderr)
     );
     let after_second_execute = fs::read_to_string(&log).unwrap();
@@ -135,7 +135,7 @@ fn merged_release_commit_executes_exactly_once_through_real_cli() {
         assert_eq!(
             after_second_execute.matches(effect).count(),
             effects.matches(effect).count(),
-            "a second execute may re-observe providers for its receipt, but must not repeat `{effect}`"
+            "a second execute must not repeat `{effect}`"
         );
     }
 }
@@ -166,7 +166,7 @@ fn product_artifacts_are_uploaded_once_and_recovered_from_provider_observation()
         "artifact manifest creation failed: {}",
         String::from_utf8_lossy(&create_manifest.stderr)
     );
-    let state = external.path().join("release-state.json");
+    let receipt = external.path().join("release-receipt.json");
     let (bin, log, forge_marker, git_trace) = fake_publishers(external.path(), &release_commit, false);
     let publishers = FakePublishers {
         bin: &bin,
@@ -175,7 +175,7 @@ fn product_artifacts_are_uploaded_once_and_recovered_from_provider_observation()
         git_trace: &git_trace,
     };
 
-    let first = execute_product(root, &intent, &manifest, &artifacts, &state, publishers, false);
+    let first = execute_product(root, &intent, &manifest, &artifacts, &receipt, publishers);
     assert!(
         first.status.success(),
         "product release execution failed: {}\n{}",
@@ -193,107 +193,59 @@ fn product_artifacts_are_uploaded_once_and_recovered_from_provider_observation()
     assert!(!effects.contains(".hidden-metadata"));
     assert!(!effects.contains("nested/unlisted-artifact"));
 
-    fs::remove_file(&state).unwrap();
-    fs::remove_file(state.with_extension("receipt.json")).unwrap();
-    let recovered = execute_product(root, &intent, &manifest, &artifacts, &state, publishers, true);
+    fs::remove_file(&receipt).unwrap();
+    let recovered = execute_product(root, &intent, &manifest, &artifacts, &receipt, publishers);
     assert!(
         recovered.status.success(),
-        "fresh-state product recovery failed: {}\n{}",
+        "product rerun failed: {}\n{}",
         String::from_utf8_lossy(&recovered.stderr),
         fs::read_to_string(&log).unwrap_or_else(|_| "<no effect trace>".to_owned()),
     );
-    let after_recovery = fs::read_to_string(&log).unwrap();
+    let after_rerun = fs::read_to_string(&log).unwrap();
     assert_eq!(
-        after_recovery.matches("gh release upload").count(),
+        after_rerun.matches("gh release upload").count(),
         PRODUCT_ASSETS.len(),
-        "provider-observed recovery must never upload an existing product artifact again"
+        "a rerun must never upload an existing product artifact again"
     );
-    assert!(state.with_extension("receipt.json").exists());
+    assert!(receipt.exists());
     assert_argv_within_allowlists(&log, &git_trace);
 }
 
 #[test]
-fn failed_publish_persists_indeterminate_attempt_and_never_tags() {
+fn failed_publish_fails_the_run_and_never_tags() {
     let (dir, release_commit) = release_commit_fixture();
     let external = tempfile::tempdir().unwrap();
     let root = dir.path();
     let intent = plan_intent(root, external.path(), &release_commit);
-    let state = external.path().join("release-state.json");
+    let receipt = external.path().join("release-receipt.json");
     let (bin, log, forge_marker, git_trace) = fake_publishers(external.path(), &release_commit, true);
 
-    let output = execute(root, &intent, &state, &bin, &log, &forge_marker, &git_trace);
+    let publishers = FakePublishers {
+        bin: &bin,
+        log: &log,
+        forge_marker: &forge_marker,
+        git_trace: &git_trace,
+    };
+
+    let output = execute(root, &intent, &receipt, publishers);
     assert!(
         !output.status.success(),
         "a failed registry publish must fail release execution"
     );
     assert!(fs::read_to_string(&log).unwrap().contains("cargo publish"));
     assert!(git(root, &["tag", "--list", "core-crate@0.2.0"]).is_empty());
-    let state_json = fs::read_to_string(state).unwrap();
-    assert!(
-        state_json.contains("attempting"),
-        "the executor must preserve an indeterminate attempt for reconciliation instead of inferring success"
-    );
+    assert!(!receipt.exists());
 }
 
 #[test]
-fn explicit_recovery_reconstructs_missing_state_from_remote_evidence() {
-    let (dir, release_commit) = release_commit_fixture();
-    let external = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    let intent = plan_intent(root, external.path(), &release_commit);
-    let state = external.path().join("release-state.json");
-    let (bin, log, forge_marker, git_trace) = fake_publishers(external.path(), &release_commit, false);
-
-    let first = execute(root, &intent, &state, &bin, &log, &forge_marker, &git_trace);
-    assert!(
-        first.status.success(),
-        "initial execution must establish remote state: {}\n{}\n{}",
-        String::from_utf8_lossy(&first.stderr),
-        fs::read_to_string(&git_trace).unwrap_or_else(|_| "<no git trace>".to_owned()),
-        fs::read_to_string(&log).unwrap_or_else(|_| "<no effect trace>".to_owned()),
-    );
-    fs::remove_file(&state).unwrap();
-    fs::remove_file(state.with_extension("receipt.json")).unwrap();
-    let effects = fs::read_to_string(&log).unwrap();
-
-    let recovered = execute_with_recovery(
-        root,
-        &intent,
-        &state,
-        FakePublishers {
-            bin: &bin,
-            log: &log,
-            forge_marker: &forge_marker,
-            git_trace: &git_trace,
-        },
-        true,
-    );
-    assert!(
-        recovered.status.success(),
-        "explicit recovery must reconstruct a missing local journal from exact provider state: {}",
-        String::from_utf8_lossy(&recovered.stderr)
-    );
-    let after_recovery = fs::read_to_string(&log).unwrap();
-    for effect in ["cargo publish", "git push", "gh release create"] {
-        assert_eq!(
-            after_recovery.matches(effect).count(),
-            effects.matches(effect).count(),
-            "recovery must not repeat `{effect}` after provider reconstruction"
-        );
-    }
-    assert!(state.with_extension("receipt.json").exists());
-    assert_argv_within_allowlists(&log, &git_trace);
-}
-
-#[test]
-fn newer_coordinator_executes_and_recovers_an_older_release_source() {
+fn newer_coordinator_executes_and_reruns_an_older_release_source() {
     let (source_dir, release_commit) = release_commit_fixture();
     let source = source_dir.path();
     let (coordinator_dir, coordinator_revision) = coordinator_checkout(source, &release_commit);
     let coordinator = coordinator_dir.path();
     let external = tempfile::tempdir().unwrap();
     let intent = plan_intent_from_source(coordinator, source, external.path(), &release_commit);
-    let state = external.path().join("release-state.json");
+    let receipt = external.path().join("release-receipt.json");
     let (bin, log, forge_marker, git_trace) = fake_publishers(external.path(), &release_commit, false);
     let publishers = FakePublishers {
         bin: &bin,
@@ -302,33 +254,31 @@ fn newer_coordinator_executes_and_recovers_an_older_release_source() {
         git_trace: &git_trace,
     };
 
-    let first = execute_from_coordinator(coordinator, source, &intent, &state, publishers, false);
+    let first = execute_from_coordinator(coordinator, source, &intent, &receipt, publishers);
     assert!(
         first.status.success(),
         "new coordinator execution failed: {}",
         String::from_utf8_lossy(&first.stderr)
     );
-    let receipt: serde_json::Value =
-        serde_json::from_slice(&fs::read(state.with_extension("receipt.json")).expect("initial receipt must exist"))
-            .unwrap();
-    assert_eq!(receipt["envelope"]["orchestrationRevision"], coordinator_revision);
-    assert_eq!(receipt["envelope"]["releaseSourceRevision"], release_commit);
+    let issued: serde_json::Value =
+        serde_json::from_slice(&fs::read(&receipt).expect("initial receipt must exist")).unwrap();
+    assert_eq!(issued["envelope"]["orchestrationRevision"], coordinator_revision);
+    assert_eq!(issued["envelope"]["releaseSourceRevision"], release_commit);
 
-    fs::remove_file(&state).unwrap();
-    fs::remove_file(state.with_extension("receipt.json")).unwrap();
+    fs::remove_file(&receipt).unwrap();
     let effects = fs::read_to_string(&log).unwrap();
-    let recovered = execute_from_coordinator(coordinator, source, &intent, &state, publishers, true);
+    let recovered = execute_from_coordinator(coordinator, source, &intent, &receipt, publishers);
     assert!(
         recovered.status.success(),
-        "new coordinator recovery failed: {}",
+        "new coordinator rerun failed: {}",
         String::from_utf8_lossy(&recovered.stderr)
     );
-    let after_recovery = fs::read_to_string(&log).unwrap();
+    let after_rerun = fs::read_to_string(&log).unwrap();
     for effect in ["cargo publish", "git push", "gh release create"] {
         assert_eq!(
-            after_recovery.matches(effect).count(),
+            after_rerun.matches(effect).count(),
             effects.matches(effect).count(),
-            "recovery must observe the old source's remote effects instead of repeating `{effect}`"
+            "a rerun must observe the old source's remote effects instead of repeating `{effect}`"
         );
     }
 }
@@ -339,7 +289,7 @@ fn changed_checkout_after_planning_never_reaches_a_publish_boundary() {
     let external = tempfile::tempdir().unwrap();
     let root = dir.path();
     let intent = plan_intent(root, external.path(), &release_commit);
-    let state = external.path().join("release-state.json");
+    let receipt = external.path().join("release-receipt.json");
     let (bin, log, forge_marker, git_trace) = fake_publishers(external.path(), &release_commit, false);
 
     // This simulates a checkout which changed after plan approval but before
@@ -351,7 +301,13 @@ fn changed_checkout_after_planning_never_reaches_a_publish_boundary() {
     )
     .unwrap();
 
-    let output = execute(root, &intent, &state, &bin, &log, &forge_marker, &git_trace);
+    let publishers = FakePublishers {
+        bin: &bin,
+        log: &log,
+        forge_marker: &forge_marker,
+        git_trace: &git_trace,
+    };
+    let output = execute(root, &intent, &receipt, publishers);
     assert!(
         !output.status.success(),
         "a changed checkout must invalidate the approved release intent"
@@ -361,10 +317,7 @@ fn changed_checkout_after_planning_never_reaches_a_publish_boundary() {
         "intent validation must fail before any external release side effect"
     );
     assert!(git(root, &["tag", "--list", "core-crate@0.2.0"]).is_empty());
-    assert!(
-        !state.exists(),
-        "an invalid intent must not initialize execution state as though work began"
-    );
+    assert!(!receipt.exists());
 }
 
 /// A decision file that deserializes cleanly (its digest matches its own

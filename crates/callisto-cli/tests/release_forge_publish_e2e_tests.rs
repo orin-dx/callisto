@@ -49,7 +49,7 @@ struct ProductRun {
     intent: std::path::PathBuf,
     manifest: std::path::PathBuf,
     artifacts: std::path::PathBuf,
-    state: std::path::PathBuf,
+    receipt: std::path::PathBuf,
     rig: Rig,
 }
 
@@ -63,7 +63,7 @@ impl ProductRun {
         let manifest = artifact_manifest(&root, &intent, &artifacts, external.path());
         let rig = Rig::new(external.path(), &release_commit);
         Self {
-            state: external.path().join("release-state.json"),
+            receipt: external.path().join("release-receipt.json"),
             root,
             intent,
             manifest,
@@ -82,7 +82,15 @@ impl ProductRun {
             self.artifacts.to_str().unwrap(),
         ];
         args.extend_from_slice(extra);
-        execute_rig(&self.root, &self.intent, &self.state, &self.rig, FORGE_TAG, &args, None)
+        execute_rig(
+            &self.root,
+            &self.intent,
+            &self.receipt,
+            &self.rig,
+            FORGE_TAG,
+            &args,
+            None,
+        )
     }
 
     /// Every mutating `gh release` invocation, in the order it was issued.
@@ -98,12 +106,8 @@ impl ProductRun {
         assert_argv_within_allowlists(&self.rig.log, &self.rig.git_trace);
     }
 
-    fn drop_journal(&self) {
-        fs::remove_file(&self.state).unwrap();
-        let receipt = self.state.with_extension("receipt.json");
-        if receipt.exists() {
-            fs::remove_file(receipt).unwrap();
-        }
+    fn drop_receipt(&self) {
+        fs::remove_file(&self.receipt).unwrap();
     }
 }
 
@@ -169,15 +173,15 @@ fn a_release_is_drafted_then_filled_then_published_in_that_order() {
 /// draft exists but before its assets are attached, a rerun must fill the
 /// draft and publish it, not leave a published, incomplete release behind.
 #[test]
-fn recovery_of_a_half_filled_draft_uploads_the_rest_and_then_publishes() {
+fn a_rerun_over_a_half_filled_draft_uploads_the_rest_and_then_publishes() {
     let run = ProductRun::new();
     // A draft carrying no assets: exactly what an interrupted run leaves.
     fs::write(&run.rig.forge_marker, "draft").unwrap();
 
-    let output = run.execute(&["--recovery"]);
+    let output = run.execute(&[]);
     assert!(
         output.status.success(),
-        "recovery from an existing draft failed: {}\n{:?}",
+        "a rerun over an existing draft failed: {}\n{:?}",
         stderr_of(&output),
         run.rig.gh_calls()
     );
@@ -193,7 +197,7 @@ fn recovery_of_a_half_filled_draft_uploads_the_rest_and_then_publishes() {
     );
     assert!(
         index_of(&effects, "release edit") > index_of(&effects, "release upload"),
-        "publication still comes last on a recovery run: {effects:?}"
+        "publication still comes last on a rerun: {effects:?}"
     );
     run.assert_argv_allowed();
 }
@@ -205,19 +209,19 @@ fn a_release_already_published_with_every_asset_is_already_satisfied() {
     assert!(first.status.success(), "{}", stderr_of(&first));
     let before = run.release_effects();
 
-    run.drop_journal();
-    let second = run.execute(&["--recovery"]);
+    run.drop_receipt();
+    let second = run.execute(&[]);
     assert!(
         second.status.success(),
-        "recovery over a complete release failed: {}",
+        "a rerun over a complete release failed: {}",
         stderr_of(&second)
     );
     assert_eq!(
         run.release_effects(),
         before,
-        "a complete release must be reconstructed from observation, with no effect re-issued"
+        "a complete release must be adopted from observation, with no effect re-issued"
     );
-    assert!(run.state.with_extension("receipt.json").exists());
+    assert!(run.receipt.exists());
 }
 
 /// A published release missing an asset is an absent upload, not a conflict:
@@ -237,12 +241,12 @@ fn a_published_release_missing_an_asset_re_uploads_only_that_asset() {
     let dropped = assets.lines().next().unwrap().to_owned();
     fs::write(&marker, format!("{}\n", kept.join("\n"))).unwrap();
 
-    run.drop_journal();
+    run.drop_receipt();
     let before = run.release_effects().len();
-    let recovered = run.execute(&["--recovery"]);
+    let recovered = run.execute(&[]);
     assert!(
         recovered.status.success(),
-        "recovery of a missing asset failed: {}",
+        "a rerun over a missing asset failed: {}",
         stderr_of(&recovered)
     );
     let after: Vec<String> = run.release_effects().into_iter().skip(before).collect();
@@ -266,7 +270,7 @@ fn a_draft_listed_on_the_second_page_is_found_and_never_recreated() {
     fs::write(&run.rig.forge_marker, "draft").unwrap();
     run.rig.set("CALLISTO_TEST_FORGE_PAGE", "2");
 
-    let output = run.execute(&["--recovery"]);
+    let output = run.execute(&[]);
     assert!(
         output.status.success(),
         "a draft on page 2 must still be observed: {}\n{:?}",
@@ -315,10 +319,10 @@ fn a_release_with_no_artifacts_is_still_published() {
     let external = tempfile::tempdir().unwrap();
     let root = dir.path();
     let intent = plan_intent(root, external.path(), &release_commit);
-    let state = external.path().join("release-state.json");
+    let receipt = external.path().join("release-receipt.json");
     let rig = Rig::new(external.path(), &release_commit);
 
-    let output = execute_rig(root, &intent, &state, &rig, "core-crate@0.2.0", &[], None);
+    let output = execute_rig(root, &intent, &receipt, &rig, "core-crate@0.2.0", &[], None);
     assert!(
         output.status.success(),
         "zero-artifact release execution failed: {}\n{:?}",

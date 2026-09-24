@@ -2,8 +2,8 @@ use std::process::ExitCode;
 
 use callisto_format::{Changeset, PreState};
 use callisto_model::{
-    InitReport, MatrixReport, PublishPlan, ReleaseExecutionStateV1, ReleaseReceiptV1, SnapshotReport, StatusReport,
-    TagReport, ValidateReport, VersionReport,
+    InitReport, MatrixReport, PublishPlan, ReleaseReceiptV1, SnapshotReport, StatusReport, TagReport, ValidateReport,
+    VersionReport,
 };
 use schemars::schema_for;
 
@@ -23,10 +23,9 @@ pub fn handle(args: SchemaArgs, _global: &GlobalArgs) -> Result<ExitCode, CliErr
         "pre" => schema_for!(PreState),
         "matrix" => schema_for!(MatrixReport),
         "release-receipt" => schema_for!(ReleaseReceiptV1),
-        "release-state" => schema_for!(ReleaseExecutionStateV1),
         other => {
             return Err(CliError::Other(format!(
-                "Unknown schema target type `{other}`. Supported types: status, version, snapshot, validate, tag, init, plan-publish, changeset, pre, matrix, release-receipt, release-state"
+                "Unknown schema target type `{other}`. Supported types: status, version, snapshot, validate, tag, init, plan-publish, changeset, pre, matrix, release-receipt"
             )));
         }
     };

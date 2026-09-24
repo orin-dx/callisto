@@ -5,13 +5,9 @@ use std::path::Path;
 
 use callisto_model::{
     AbsentProof, ApplyPermit, CommandRunner, ExactEvidence, ExecutionTrustProfileV1, ProviderObservationV1,
-    ReleaseDecisionV1, ReleaseIntentError, ReleaseIntentV1, ReleaseOperationId, ReleaseOperationObservationV1,
-    ReleaseProfileId, SourceIdentity,
+    ReleaseDecisionV1, ReleaseIntentError, ReleaseIntentV1, ReleaseOperationId, ReleaseProfileId, SourceIdentity,
 };
-use callisto_vcs::{
-    access::{GitCommitTrustEvidence, GitHeadDisposition},
-    release_lock::ReleaseWorkspaceLock,
-};
+use callisto_vcs::access::{GitCommitTrustEvidence, GitHeadDisposition};
 
 use crate::error::ReleasePreconditionRequirement;
 use crate::{DependencyResolver, GraphError, ProjectLocator, Workspace};
@@ -36,7 +32,6 @@ pub(crate) struct PreparedReleaseInputs {
     pub(crate) source: SourceIdentity,
     trust: GitCommitTrustEvidence,
     git_remote: Option<PreparedGitRemote>,
-    _lock: ReleaseWorkspaceLock,
     pub(crate) operations: BTreeMap<ReleaseOperationId, PreparedOperation>,
 }
 
@@ -137,22 +132,6 @@ impl ReleaseProviderSet for ValidatedReleaseIntent<'_> {
         )
     }
 
-    fn observe_settled(
-        &self,
-        id: &ReleaseOperationId,
-        artifacts: Option<&VerifiedArtifactManifest<'_>>,
-    ) -> Result<ProviderObservationV1, GraphError> {
-        let operation = self.prepared_operation(id)?;
-        checked_provider_for(operation)?.observe_settled(
-            &self.context(),
-            &ProviderRequest {
-                id,
-                operation,
-                artifacts,
-            },
-        )
-    }
-
     fn publish(
         &self,
         permit: &ApplyPermit,
@@ -171,38 +150,6 @@ impl ReleaseProviderSet for ValidatedReleaseIntent<'_> {
             &EffectAuthorization { permit, proof },
         )
     }
-}
-
-/// Collects one fresh, exact-provider observation for every operation in the
-/// immutable intent.
-///
-/// A terminal receipt is deliberately built from this result rather than from
-/// local execution state. The caller must reject any non-exact result; this
-/// function preserves the complete roster so receipt construction can prove
-/// that it did not silently omit an operation.
-///
-/// The observation is the lag-tolerant one
-/// ([`ReleaseProviderSet::observe_settled`]): the effects are expected to have
-/// landed by now, so a registry index that has not propagated yet is retried
-/// rather than reported absent. A receipt that was rejected for that reason
-/// left a fully published release with no receipt, and the rerun that follows
-/// a push release is not a recovery run, so it could only fail with E174.
-pub fn observe_release_operations<P: ReleaseProviderSet + ?Sized>(
-    capability: &P,
-    artifacts: Option<&VerifiedArtifactManifest<'_>>,
-) -> Result<Vec<ReleaseOperationObservationV1>, GraphError> {
-    ReleaseProviderSet::intent(capability)
-        .operations
-        .iter()
-        .map(|operation| {
-            capability.recheck_trust()?;
-            ReleaseOperationObservationV1::new(
-                operation.id().clone(),
-                capability.observe_settled(operation.id(), artifacts)?,
-            )
-            .map_err(|source| GraphError::ReleaseProviderObservation { source })
-        })
-        .collect()
 }
 
 /// Builds a release intent from a fresh root-bound observation.
@@ -268,32 +215,9 @@ pub fn validate_release_intent<'a, L: ProjectLocator, R: CommandRunner>(
     runner: &'a R,
     received: ReleaseIntentV1,
 ) -> Result<ValidatedReleaseIntent<'a>, GraphError> {
-    validate_release_intent_with_state_directory(root, locator, runner, None, received)
-}
-
-/// Validates an intent while placing its workspace lock under an explicit
-/// caller-owned state directory.
-///
-/// CI callers that supply an explicit durable state file must use its parent
-/// here as well.  Otherwise validation would still depend on the runner's
-/// implicit platform state location, defeating hermetic job handoff.
-pub fn validate_release_intent_with_state_directory<'a, L: ProjectLocator, R: CommandRunner>(
-    root: &Path,
-    locator: &L,
-    runner: &'a R,
-    state_directory: Option<&Path>,
-    received: ReleaseIntentV1,
-) -> Result<ValidatedReleaseIntent<'a>, GraphError> {
     let root = canonical_root(root)?;
     let workspace = Workspace::load(root.clone(), locator, runner)?;
-    let initial_trust = observe_git_trust(&workspace, received.trust_profile)?;
-    let lock = ReleaseWorkspaceLock::acquire(&root, state_directory)?;
     let trust = observe_git_trust(&workspace, received.trust_profile)?;
-    if trust.identity() != initial_trust.identity() {
-        return Err(GraphError::ReleaseIntentStale {
-            reason: StaleReason::trust_evidence_changed(),
-        });
-    }
     let source = source_from_trust(&trust);
     let artifact_policy = artifact_policy_from_intent(&received)?;
     let (expected, prepared) = derive_release_intent_with_prepared(
@@ -323,7 +247,6 @@ pub fn validate_release_intent_with_state_directory<'a, L: ProjectLocator, R: Co
             source,
             trust: final_trust,
             git_remote: prepared.git_remote,
-            _lock: lock,
             operations: prepared.operations,
         },
         intent: received,

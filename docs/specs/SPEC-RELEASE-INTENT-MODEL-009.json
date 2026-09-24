@@ -4,7 +4,7 @@
   "owner_track": "release-security",
   "depends_on": ["SPEC-RELEASE-EXECUTION-FOUNDATION-007", "SPEC-RELEASE-DECISION-008"],
   "purpose": "Define the typed, serializable, credential-free ReleaseIntentV1 that preserves an approved ReleaseDecisionV1 across process and CI boundaries. In CI, graph derives that decision from the immutable merged Callisto release-PR delta rather than a separately managed decision file. The intent is a semantic contract, not a serialized PublishPlan or a bag of generic fingerprints.",
-  "scope": "Layer-1 durable identity and digest types; typed semantic snapshot projections; registry/tag/forge binding identities; exact operation DAG; artifact-slot declarations; canonical encoding and fail-closed validation. Fresh graph observation, workspace locking, private prepared inputs, state/receipts, provider observation/effects, and CLI/action cutover are intentionally separate successor work.",
+  "scope": "Layer-1 durable identity and digest types; typed semantic snapshot projections; registry/tag/forge binding identities; exact operation DAG; artifact-slot declarations; canonical encoding and fail-closed validation. Fresh graph observation, private prepared inputs, state/receipts, provider observation/effects, and CLI/action cutover are intentionally separate successor work.",
   "non_goals": [
     "Placing package discovery, config resolution, URL parsing, workspace access, group solving, or graph validation in callisto-model.",
     "Persisting raw registry endpoints, URL userinfo, query strings, fragments, credentials, HTTP headers, raw configuration bytes, command lines, provider stderr, arbitrary errors, local filesystem paths, or Debug-rendered values in an intent or its digest inputs.",
@@ -71,6 +71,7 @@
     "Retain the existing versioned length-prefixed transcript approach rather than introduce JSON canonicalization unless independent cross-language digest recomputation becomes an explicit requirement. The format must be documented and test-vector-backed.",
     "Use BTree collections or defined sorted vectors for durable ordering. If existing enum Ord conflicts with its canonical serialized identity, implement a dedicated canonical sort key; do not rely on declaration order.",
     "Use miette for transient diagnostics and closed safe data structures for persistence. Do not persist miette reports or arbitrary provider errors.",
-    "The successor graph-capability spec will construct an opaque non-Serialize/non-Clone ValidatedReleaseIntent from this durable intent, freshly re-observed workspace state, Git evidence, a workspace lock, and operation-specific private prepared inputs."
-  ]
+    "The successor graph-capability spec will construct an opaque non-Serialize/non-Clone ValidatedReleaseIntent from this durable intent, freshly re-observed workspace state, Git evidence, and operation-specific private prepared inputs."
+  ],
+  "revision_note": "Revised for PR #124: every run adopts already-landed effects, execution state is in memory only, and the receipt is built from recorded state evidence."
 }

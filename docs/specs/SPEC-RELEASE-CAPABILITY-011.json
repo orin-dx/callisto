@@ -19,7 +19,7 @@
   "acceptance_criteria": [
     {
       "id": "AC-001",
-      "criterion": "callisto-graph creates a release observation only from a canonical workspace root while holding the GitCommitTrustEvidence and ReleaseWorkspaceLock required by SPEC-RELEASE-TRUST-010. It re-runs the normal configuration resolution, package discovery, linked-group/cascade/prerelease policy resolution, and dependency analysis from disk; it never trusts a caller-provided workspace, selection, package list, endpoint, source SHA, or previously cached Workspace interior state as fresh evidence.",
+      "criterion": "callisto-graph creates a release observation only from a canonical workspace root while holding the GitCommitTrustEvidence required by SPEC-RELEASE-TRUST-010. It re-runs the normal configuration resolution, package discovery, linked-group/cascade/prerelease policy resolution, and dependency analysis from disk; it never trusts a caller-provided workspace, selection, package list, endpoint, source SHA, or previously cached Workspace interior state as fresh evidence.",
       "is_error_case": true
     },
     {
@@ -34,7 +34,7 @@
     },
     {
       "id": "AC-004",
-      "criterion": "On an exact match, graph returns ValidatedReleaseIntent. This type is defined in callisto-graph, is non-Clone and non-Serialize/non-Deserialize, has no public constructor, and keeps its fields private. It owns the matching ReleaseIntentV1, GitCommitTrustEvidence, ReleaseWorkspaceLock, canonical root, and a complete BTreeMap keyed by ReleaseOperationId of private PreparedOperation values. It may expose the durable intent for inspection but exposes no raw prepared operation value or authority to alter it.",
+      "criterion": "On an exact match, graph returns ValidatedReleaseIntent. This type is defined in callisto-graph, is non-Clone and non-Serialize/non-Deserialize, has no public constructor, and keeps its fields private. It owns the matching ReleaseIntentV1, GitCommitTrustEvidence, canonical root, and a complete BTreeMap keyed by ReleaseOperationId of private PreparedOperation values. It may expose the durable intent for inspection but exposes no raw prepared operation value or authority to alter it.",
       "is_error_case": false
     },
     {
@@ -44,7 +44,7 @@
     },
     {
       "id": "AC-006",
-      "criterion": "Effect-dispatch APIs accept a ValidatedReleaseIntent reference plus ApplyPermit and select prepared operations only by exact ReleaseOperationId. They neither accept PublishPlan nor consult mutable workspace configuration to reconstruct package paths, endpoints, tags, versions, or prerequisites. A capability can be used only while its lock/trust evidence remains valid; the executor invokes the effect-time recheck from SPEC-RELEASE-TRUST-010 before dispatching each operation.",
+      "criterion": "Effect-dispatch APIs accept a ValidatedReleaseIntent reference plus ApplyPermit and select prepared operations only by exact ReleaseOperationId. They neither accept PublishPlan nor consult mutable workspace configuration to reconstruct package paths, endpoints, tags, versions, or prerequisites. A capability can be used only while its trust evidence remains valid; the executor invokes the effect-time recheck from SPEC-RELEASE-TRUST-010 before dispatching each operation.",
       "is_error_case": true
     },
     {
@@ -63,5 +63,6 @@
     "Use BTreeMap/BTreeSet and explicit Ord implementations for durable and scheduling order. Do not use PackageId::matches for release-operation identity: it intentionally supports a bare-name wildcard and is not an exact authorization predicate.",
     "Workspace currently contains interior caches. Fresh authorization should construct or invalidate an observation boundary rather than claiming a pre-existing cached graph is current."
   ],
-  "reasoning": "The durable intent records what was approved. It is intentionally not sufficient to perform effects: filesystem locations, endpoints, and clients are mutable operational inputs. A graph-private, freshly observed capability bridges that gap without serializing secrets or allowing an old plan path to regain authority."
+  "reasoning": "The durable intent records what was approved. It is intentionally not sufficient to perform effects: filesystem locations, endpoints, and clients are mutable operational inputs. A graph-private, freshly observed capability bridges that gap without serializing secrets or allowing an old plan path to regain authority.",
+  "revision_note": "Revised for PR #124: every run adopts already-landed effects, execution state is in memory only, and the receipt is built from recorded state evidence."
 }
