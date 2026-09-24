@@ -6,7 +6,7 @@ mod common;
 use std::fs;
 use std::process::ExitCode;
 
-use callisto_cli::cli::{AddArgs, GlobalArgs, InitArgs, OutputFormat, StatusArgs};
+use callisto_cli::cli::{AddArgs, GlobalArgs, OutputFormat, StatusArgs};
 use callisto_cli::commands;
 
 use common::setup_polyglot_git_repo;
@@ -33,7 +33,7 @@ fn test_status_check_clean_workspace_exits_ok() {
     let root = dir.path();
     let global = global(root);
 
-    commands::init::handle(InitArgs { yes: true }, &global).unwrap();
+    callisto_fixtures::scaffold_callisto(&global.cwd);
 
     commands::add::handle(
         AddArgs {
@@ -60,7 +60,7 @@ fn test_status_check_malformed_changeset_exits_failure() {
     let root = dir.path();
     let global = global(root);
 
-    commands::init::handle(InitArgs { yes: true }, &global).unwrap();
+    callisto_fixtures::scaffold_callisto(&global.cwd);
 
     // A changeset naming an unknown package -- an Error-severity diagnostic
     // `validate` used to catch as `UnknownPackage`.
@@ -88,7 +88,7 @@ fn test_add_unknown_package_name_returns_error() {
     let root = dir.path();
     let global = global(root);
 
-    commands::init::handle(InitArgs { yes: true }, &global).unwrap();
+    callisto_fixtures::scaffold_callisto(&global.cwd);
 
     // "completely-unknown-pkg" is not in the workspace (workspace has "core-crate" and "@myorg/web-app")
     let result = commands::add::handle(
