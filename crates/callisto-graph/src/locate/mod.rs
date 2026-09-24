@@ -24,17 +24,24 @@ pub trait ProjectLocator: Send + Sync {
 #[derive(Clone, Debug, thiserror::Error, miette::Diagnostic, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum LocateError {
-    #[error("workspace root not found starting from `{start}`")]
+    #[error("workspace root not found between `{}` and the Git repository root `{}`", .start.display(), .toplevel.display())]
     #[diagnostic(
         code(E030),
         help(
-            "No workspace root found. Ensure the directory tree contains a workspace manifest \
+            "Callisto never searches above the Git repository root. Add a workspace manifest \
              (Cargo.toml with [workspace], package.json with a workspaces field, \
              pnpm-workspace.yaml, or a .moon directory) or a package manifest \
-             (Cargo.toml with [package], package.json, or pyproject.toml)."
+             (Cargo.toml with [package], package.json, or pyproject.toml) inside the repository."
         )
     )]
-    WorkspaceRootNotFound { start: PathBuf },
+    WorkspaceRootNotFound { start: PathBuf, toplevel: PathBuf },
+
+    #[error("`{}` is not inside a Git repository", .start.display())]
+    #[diagnostic(
+        code(E058),
+        help("Callisto needs a Git repository: run `git init` in the workspace root.")
+    )]
+    NotAGitRepository { start: PathBuf },
 
     #[error("failed to walk filesystem under `{path}`: {message}")]
     #[diagnostic(code(E031))]

@@ -270,6 +270,7 @@ fn snapshot_dry_run_text_output_has_dry_run_marker() {
 #[test]
 fn pre_exit_without_pre_json_returns_io_error() {
     let dir = tempdir().unwrap();
+    std::fs::create_dir(dir.path().join(".git")).unwrap();
     let root = dir.path();
 
     // A minimal workspace root marker satisfies `find_workspace_root`.

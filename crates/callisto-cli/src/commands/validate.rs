@@ -43,6 +43,7 @@ mod tests {
     /// `Error` diagnostic (`UnknownPackage`), not a parse-time failure.
     fn seed_workspace_with_unknown_package_changeset() -> tempfile::TempDir {
         let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(tmp.path().join(".git")).unwrap();
         let root = tmp.path();
         std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
         std::fs::write(root.join("callisto.toml"), "").unwrap();
@@ -68,6 +69,7 @@ mod tests {
     #[test]
     fn handle_text_format_reports_clean_workspace_as_success() {
         let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(tmp.path().join(".git")).unwrap();
         let root = tmp.path();
         std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
         std::fs::write(root.join("callisto.toml"), "").unwrap();

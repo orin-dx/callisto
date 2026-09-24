@@ -92,6 +92,7 @@ fn matrix_napi_and_maturin_share_triple_derivation() {
     use std::process::Command;
 
     let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir(tmp.path().join(".git")).unwrap();
     let root = tmp.path();
     std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
     std::fs::write(root.join("callisto.toml"), "").unwrap();
@@ -161,6 +162,7 @@ fn matrix_runtime_versions_npm_python_and_dual_manifest() {
     use std::process::Command;
 
     let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir(tmp.path().join(".git")).unwrap();
     let root = tmp.path();
     std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
     std::fs::write(root.join("callisto.toml"), "").unwrap();
@@ -233,6 +235,7 @@ fn matrix_package_filter_and_unknown_package_via_binary() {
     use std::process::Command;
 
     let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir(tmp.path().join(".git")).unwrap();
     let root = tmp.path();
     std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
     std::fs::write(root.join("callisto.toml"), "").unwrap();
@@ -308,6 +311,7 @@ fn matrix_orders_keys_lexicographically_across_three_packages() {
     use std::process::Command;
 
     let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir(tmp.path().join(".git")).unwrap();
     let root = tmp.path();
     std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
     std::fs::write(root.join("callisto.toml"), "").unwrap();
@@ -382,6 +386,7 @@ fn matrix_empty_workspace_produces_exact_empty_report_shape() {
     use std::process::Command;
 
     let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir(tmp.path().join(".git")).unwrap();
     let root = tmp.path();
     std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
     std::fs::write(root.join("callisto.toml"), "").unwrap();
@@ -414,6 +419,7 @@ fn matrix_unrecognised_triple_end_to_end_diagnostic_contract() {
     use std::process::Command;
 
     let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir(tmp.path().join(".git")).unwrap();
     let root = tmp.path();
     std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
     std::fs::write(root.join("callisto.toml"), "").unwrap();
@@ -488,6 +494,7 @@ fn matrix_text_format_and_bare_invocation_match_and_are_non_json() {
     use std::process::Command;
 
     let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir(tmp.path().join(".git")).unwrap();
     let root = tmp.path();
     std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
     std::fs::write(root.join("callisto.toml"), "").unwrap();
@@ -530,6 +537,7 @@ fn matrix_text_format_and_bare_invocation_match_and_are_non_json() {
 
 fn base_workspace() -> tempfile::TempDir {
     let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir(tmp.path().join(".git")).unwrap();
     std::fs::write(
         tmp.path().join("Cargo.toml"),
         "[workspace]\nmembers = []\nresolver = \"2\"\n",
