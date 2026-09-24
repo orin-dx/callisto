@@ -60,7 +60,7 @@ Only the `execute` job may receive `CARGO_REGISTRY_TOKEN`, `NPM_TOKEN`, or `TWIN
 
 Progress is derived from provider observation (registry, remote tag, forge release, assets), and binary assets are published to the GitHub Release. A green workflow is still not proof that a release exists; use the release receipt and independent provider checks as the completion evidence.
 
-`callisto-action` is now a compatibility version-PR action only. Its former `publish` and `create_github_release` inputs are ignored; it never publishes, tags, downloads artifacts, or creates a forge release. The repository durable workflow is the supported release path.
+`callisto-action` has two modes: `mode: version-pr` (default) opens or updates the release PR; `mode: release` installs callisto and runs `callisto release`. Its former `publish` and `create_github_release` inputs are ignored. Workspaces with artifact slots or platform packages release through the plan/build/execute workflow instead.
 
 The binding self-release contract, implementation batches, and cutover evidence are in [`SPEC-SELF-RELEASE-LIFECYCLE`](specs/SPEC-SELF-RELEASE-LIFECYCLE.json) and its [`implementation plan`](projects/SPEC-SELF-RELEASE-LIFECYCLE.json).
 
