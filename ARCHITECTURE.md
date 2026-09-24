@@ -480,7 +480,7 @@ Every Pull Request runs the standalone [`.github/actions/callisto-validate/actio
 1. **Package Discovery Guard**: Verifies all workspace crates and packages are accounted for in `callisto.toml`.
 2. **Schema & Config Health**: Validates `callisto.toml` fields and types.
 3. **Changeset Syntax Integrity**: Verifies `.changeset/*.md` frontmatter and package IDs.
-4. **Pre-Flight Release Simulation**: Simulates `callisto plan-publish` topological DAG sorting to ensure zero cyclic dependencies before PR merge.
+4. **Pre-Flight Release Simulation**: Runs `callisto release --dry-run`, which derives the full release plan (publish order, tags, GitHub releases) without any effect.
 
 ### Ultra-Fast Local Git Hooks (`pre-commit` & `pre-push`)
 
@@ -579,9 +579,9 @@ Callisto's core engine is decoupled from GitHub Actions. All versioning, status 
 ├───────────────────────────────────┬────────────────────────────────────┤
 │ CLI / BUILD SYSTEM INTERFACE      │ OUTPUT FORMAT                      │
 ├───────────────────────────────────┼────────────────────────────────────┤
-│ callisto plan-publish             │ Hermetic JSON                      │
+│ callisto release --dry-run        │ Hermetic JSON release intent       │
 │ callisto status                   │ Struct/JSON workspace state        │
-│ callisto tag                      │ Native Git refs or build outputs   │
+│ callisto release                  │ Registry, git tag, forge effects   │
 │ callisto matrix                   │ Keyed JSON object, any CI runner   │
 └───────────────────────────────────┴────────────────────────────────────┘
 ```
@@ -609,7 +609,7 @@ callisto_release_plan(
 
 ### Guarantees for Non-GitHub Environments
 
-1. **Zero Network / API Lock-in**: `callisto status`, `callisto plan-publish`, and `callisto matrix` operate entirely on local workspace files and write to stdout/JSON. They run identically inside Bazel sandboxes, Nix flakes, GitLab CI, Buildkite, and Jenkins.
+1. **Zero Network / API Lock-in**: `callisto status`, `callisto release --dry-run`, and `callisto matrix` operate entirely on local workspace files and write to stdout/JSON. They run identically inside Bazel sandboxes, Nix flakes, GitLab CI, Buildkite, and Jenkins.
 2. **Hermetic File Inputs**: Accepts explicit `--cwd` and `--config` overrides to run inside isolated build tool sandboxes without relying on global environment variables.
 3. **Thin Adapter Seams**: GitHub Actions ([`callisto-action`](.github/actions/callisto-action/action.yml)), Moon WASM ([`callisto-moon`](crates/callisto-moon)), and Bazel (`rules_callisto`) are thin adapter layers wrapping the same core Rust CLI engine.
 

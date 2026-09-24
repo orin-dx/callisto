@@ -162,12 +162,12 @@ pub fn build_release_intent<L: ProjectLocator, R: CommandRunner>(
 ) -> Result<ReleaseIntentV1, GraphError> {
     let root = canonical_root(root)?;
     let workspace = Workspace::load(root.clone(), locator, runner)?;
-    let source = observe_source(&workspace, trust_profile)?;
+    let source = observe_source(&workspace, trust_profile, ReleaseCheckout::Detached)?;
     let intent = derive_release_intent(&workspace, decision, source.clone(), trust_profile, None)?;
 
     // Recheck after all input reads. A concurrent edit or checkout cannot be
     // authorized merely because it happened after the first check.
-    if observe_source(&workspace, trust_profile)? != source {
+    if observe_source(&workspace, trust_profile, ReleaseCheckout::Detached)? != source {
         return Err(GraphError::ReleaseIntentStale {
             reason: StaleReason::source_identity_changed(),
         });
@@ -188,7 +188,7 @@ pub fn build_release_intent_with_artifacts<L: ProjectLocator, R: CommandRunner>(
 ) -> Result<ReleaseIntentV1, GraphError> {
     let root = canonical_root(root)?;
     let workspace = Workspace::load(root.clone(), locator, runner)?;
-    let source = observe_source(&workspace, trust_profile)?;
+    let source = observe_source(&workspace, trust_profile, ReleaseCheckout::Detached)?;
     let intent = derive_release_intent(
         &workspace,
         decision,
@@ -196,7 +196,7 @@ pub fn build_release_intent_with_artifacts<L: ProjectLocator, R: CommandRunner>(
         trust_profile,
         Some(&artifact_policy),
     )?;
-    if observe_source(&workspace, trust_profile)? != source {
+    if observe_source(&workspace, trust_profile, ReleaseCheckout::Detached)? != source {
         return Err(GraphError::ReleaseIntentStale {
             reason: StaleReason::source_identity_changed(),
         });
@@ -212,9 +212,29 @@ pub fn validate_release_intent<'a, L: ProjectLocator, R: CommandRunner>(
     runner: &'a R,
     received: ReleaseIntentV1,
 ) -> Result<ValidatedReleaseIntent<'a>, GraphError> {
+    validate_intent(root, locator, runner, received, ReleaseCheckout::Detached)
+}
+
+/// [`validate_release_intent`] for a local `callisto release`, which may run on any branch.
+pub fn validate_local_release_intent<'a, L: ProjectLocator, R: CommandRunner>(
+    root: &Path,
+    locator: &L,
+    runner: &'a R,
+    received: ReleaseIntentV1,
+) -> Result<ValidatedReleaseIntent<'a>, GraphError> {
+    validate_intent(root, locator, runner, received, ReleaseCheckout::AnyHead)
+}
+
+fn validate_intent<'a, L: ProjectLocator, R: CommandRunner>(
+    root: &Path,
+    locator: &L,
+    runner: &'a R,
+    received: ReleaseIntentV1,
+    checkout: ReleaseCheckout,
+) -> Result<ValidatedReleaseIntent<'a>, GraphError> {
     let root = canonical_root(root)?;
     let workspace = Workspace::load(root.clone(), locator, runner)?;
-    let trust = observe_git_trust(&workspace, received.trust_profile)?;
+    let trust = observe_git_trust(&workspace, received.trust_profile, checkout)?;
     let source = source_from_trust(&trust);
     let artifact_policy = artifact_policy_from_intent(&received)?;
     let (expected, prepared) = derive_release_intent_with_prepared(
@@ -224,7 +244,7 @@ pub fn validate_release_intent<'a, L: ProjectLocator, R: CommandRunner>(
         received.trust_profile,
         artifact_policy.as_ref(),
     )?;
-    let final_trust = observe_git_trust(&workspace, received.trust_profile)?;
+    let final_trust = observe_git_trust(&workspace, received.trust_profile, checkout)?;
     if expected != received || final_trust.identity() != trust.identity() {
         return Err(GraphError::ReleaseIntentStale {
             reason: StaleReason::intent_differs_from_fresh_derivation(),
@@ -257,16 +277,31 @@ pub(crate) fn canonical_root(root: &Path) -> Result<std::path::PathBuf, GraphErr
     })
 }
 
+/// Which checkout a release may run from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ReleaseCheckout {
+    /// The exact detached commit a CI intent is planned and executed from.
+    Detached,
+    /// A local checkout on any branch; the source is HEAD's commit.
+    AnyHead,
+}
+
 pub(crate) fn observe_source<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     trust_profile: ExecutionTrustProfileV1,
+    checkout: ReleaseCheckout,
 ) -> Result<SourceIdentity, GraphError> {
-    Ok(source_from_trust(&observe_git_trust(workspace, trust_profile)?))
+    Ok(source_from_trust(&observe_git_trust(
+        workspace,
+        trust_profile,
+        checkout,
+    )?))
 }
 
 fn observe_git_trust<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     trust_profile: ExecutionTrustProfileV1,
+    checkout: ReleaseCheckout,
 ) -> Result<GitCommitTrustEvidence, GraphError> {
     if !matches!(trust_profile, ExecutionTrustProfileV1::GitCommit) {
         return Err(ReleaseIntentError::UnsupportedTrustProfile.into());
@@ -277,7 +312,7 @@ fn observe_git_trust<R: CommandRunner, D: DependencyResolver>(
             requirement: ReleasePreconditionRequirement::CanonicalRootMatchesWorkspace,
         });
     }
-    if evidence.head_disposition() != GitHeadDisposition::Detached {
+    if checkout == ReleaseCheckout::Detached && evidence.head_disposition() != GitHeadDisposition::Detached {
         return Err(GraphError::ReleasePreconditionUnmet {
             requirement: ReleasePreconditionRequirement::DetachedHead,
         });

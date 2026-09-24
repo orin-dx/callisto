@@ -12,7 +12,7 @@ use std::fs;
 use std::process::Command;
 
 use callisto_cli::cli::{
-    AddArgs, GlobalArgs, InitArgs, OutputFormat, PreArgs, PublishArgs, SnapshotArgs, TagArgs, VersionArgs,
+    AddArgs, GlobalArgs, InitArgs, OutputFormat, PreArgs, ReleaseCommandArgs, SnapshotArgs, VersionArgs,
 };
 use callisto_cli::commands;
 use callisto_fixtures::dry_run::assert_no_disk_mutation;
@@ -79,16 +79,6 @@ fn seed_initialized_workspace(root: &std::path::Path) {
     .unwrap();
     git(root, &["add", "."]);
     git(root, &["commit", "-m", "Seed changesets"]);
-}
-
-/// Builds a publish plan from the real workspace, so the package identities in
-/// it are exactly the ones the tag index knows about.
-fn publish_plan_json(root: &std::path::Path) -> String {
-    let runner = callisto_cli::CliCommandRunner;
-    let ws = callisto_cli::workspace::load_workspace(&global(root, false), &runner).unwrap();
-    let plan =
-        callisto_graph::commands::plan_publish(&ws, &callisto_graph::commands::PublishOptions::default()).unwrap();
-    serde_json::to_string(&plan).unwrap()
 }
 
 #[test]
@@ -238,36 +228,28 @@ fn init_dry_run_writes_nothing_on_reconcile_with_yes() {
     });
 }
 
+/// AC-02: `release --dry-run` on a dirty worktree prints the plan and changes nothing.
 #[test]
-fn tag_dry_run_writes_nothing() {
+fn release_dry_run_writes_nothing() {
     let dir = setup_repo();
     let root = dir.path();
     seed_initialized_workspace(root);
-
-    let plan = publish_plan_json(root);
+    git(
+        root,
+        &["remote", "add", "origin", "https://github.com/example/core-crate.git"],
+    );
+    fs::write(root.join("untracked.txt"), "dirty\n").unwrap();
 
     assert_no_disk_mutation(root, || {
-        commands::tag::handle(
-            TagArgs {
-                plan,
-                floating_major: true,
-                strict: false,
-                strict_graph: false,
+        commands::release::handle(
+            ReleaseCommandArgs {
+                command: None,
+                packages: vec![],
+                receipt: None,
             },
             &global(root, true),
         )
         .unwrap();
-    });
-}
-
-#[test]
-fn publish_dry_run_writes_nothing() {
-    let dir = setup_repo();
-    let root = dir.path();
-    seed_initialized_workspace(root);
-
-    assert_no_disk_mutation(root, || {
-        commands::publish::handle(PublishArgs { only: vec![] }, &global(root, true)).unwrap();
     });
 }
 
@@ -303,50 +285,6 @@ fn snapshot_dry_run_text_output_has_dry_run_marker() {
     assert!(
         text.contains("[DRY-RUN]"),
         "snapshot --dry-run text output should contain [DRY-RUN], got: {text:?}"
-    );
-}
-
-/// `tag --dry-run --format text` must not claim tags were created when none
-/// were. The output should indicate dry-run mode rather than asserting "Created
-/// Tags:".
-#[test]
-fn tag_dry_run_text_output_does_not_say_created_tags() {
-    let dir = setup_repo();
-    let root = dir.path();
-    seed_initialized_workspace(root);
-
-    let plan_json = publish_plan_json(root);
-    let plan_file = root.join("plan.json");
-    fs::write(&plan_file, &plan_json).unwrap();
-
-    let out = Command::new(env!("CARGO_BIN_EXE_callisto"))
-        .args([
-            "--format",
-            "text",
-            "--dry-run",
-            "--cwd",
-            root.to_str().unwrap(),
-            "tag",
-            "--plan",
-            plan_file.to_str().unwrap(),
-        ])
-        .output()
-        .expect("callisto binary should be invocable");
-
-    assert!(
-        out.status.success(),
-        "tag --dry-run should exit 0; stderr: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-
-    let text = String::from_utf8(out.stdout).expect("stdout is UTF-8");
-    assert!(
-        !text.contains("Created Tags:"),
-        "tag --dry-run text output must not say 'Created Tags:', got: {text:?}"
-    );
-    assert!(
-        text.contains("Tag preview only; no Git tags were created."),
-        "tag --dry-run must remain a compatibility preview, got: {text:?}"
     );
 }
 

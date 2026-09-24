@@ -4,6 +4,28 @@ This document covers authentication setup for registry publishing, with particul
 
 ---
 
+## Local release: `callisto release`
+
+`callisto release` publishes every package whose current version has no tag yet: registry publish, git tag, and GitHub release for each. It runs on any branch and records HEAD's commit as the source.
+
+- `callisto release --dry-run` prints the plan and performs no effect. It works anywhere, including on a dirty worktree.
+- `--package <ecosystem/name>` (repeatable) restricts the run to named unreleased packages.
+- It refuses a dirty worktree: a tracked modification or an untracked file not covered by `.gitignore`. Ignored files never count.
+- It prints `Nothing to release.` and exits 0 when every package is already tagged.
+- The receipt goes to `--receipt <file>`, else `<state dir>/callisto/<repo-hash>/<intent-digest>/receipt.json` (`$XDG_STATE_HOME`, else `~/.local/state`; `~/Library/Application Support` on macOS). Never inside the checkout.
+- A workspace with `[[release.artifact]]` slots or napi/maturin platform packages must release from CI: `callisto release plan`, `release artifact-manifest`, `release execute`.
+
+Before the first effect it checks one credential per operation kind and names the one that is missing:
+
+| Operation | Accepted credential |
+|---|---|
+| cargo publish | `CARGO_REGISTRY_TOKEN`, or a `cargo login` credentials file |
+| npm publish | `NODE_AUTH_TOKEN`, `NPM_TOKEN`, an auth line in `~/.npmrc` or the project `.npmrc`, or OIDC (`ACTIONS_ID_TOKEN_REQUEST_URL`) |
+| PyPI publish | `TWINE_PASSWORD`, or OIDC |
+| GitHub release | `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth status` succeeding |
+
+---
+
 ## Repository durable-release workflow
 
 Callisto's own `.github/workflows/callisto-release.yml` separates release work into four authority boundaries. A push with pending changesets creates or updates the release PR. That PR versions manifests and changelogs and removes only the changesets it consumed. Nothing is removed from `main` until that PR is merged.
@@ -99,22 +121,11 @@ A napi-rs (or maturin) native package publishes as **N platform-specific package
 
 ### What happens when a platform package fails
 
-If a platform package fails to publish in the same run, its dependent main package is **skipped, not attempted** — publishing it anyway would ship `optionalDependencies` pointing at a version that was never uploaded. The skipped entry appears in the publish report as:
-
-```json
-{
-  "package": "npm/my-lib",
-  "status": "failed",
-  "errorKind": "dependencyFailed",
-  "error": "skipped: platform dependency failed to publish: my-lib-linux-x64-gnu"
-}
-```
-
-`dependencyFailed` means exactly this — the main package was never attempted, because a declared platform dependency failed to publish *in this same run*. It is not itself a registry error. **Remediation:** fix whatever made the platform package fail, then re-run `callisto publish` — it is idempotent and will skip anything already uploaded.
+Each platform publish is a prerequisite of its owner's publish. If one fails, the main package is never attempted, so no `optionalDependencies` point at a version that was never uploaded. Fix the cause and re-run the release: it adopts every effect that already landed and performs the rest.
 
 ### What happens when a platform dependency is missing entirely
 
-Before any registry call is made, `callisto plan-publish` cross-checks every main package's declared platform dependencies against what actually ended up in the plan. A dependency is allowed to be absent only if it's already published (its on-disk version already matches its last release tag). Otherwise — a misconfigured platform package with no npm publish target, or one excluded via `--package` — planning fails outright with a `MissingPlatformDependency` error naming the main package and the missing dependency, before anything is published.
+Planning refuses a selection that leaves out an unreleased platform package a selected npm package depends on (`ReleaseSelectionInvalid`, "select it too"), before anything is published.
 
 ---
 

@@ -123,7 +123,7 @@ pub(crate) fn build_extension_output(
 /// `exit_code` is always `1` -- every call site is a hard failure branch.
 ///
 /// Pulled out of `execute_extension` (`extension_pdk.rs`), whose five
-/// failure branches (locator error, `Workspace::load` error, `plan_publish`
+/// failure branches (locator error, `Workspace::load` error, `release`
 /// error, `validate` error, `status` error) all hand-built this exact struct
 /// literal verbatim.
 #[cfg(any(feature = "pdk", test))]
@@ -144,9 +144,8 @@ pub(crate) fn error_output(json_val: serde_json::Value, e: &impl std::fmt::Displ
 /// real wasm32 Extism host (see `runner.rs`'s `pdk`-feature impl).
 ///
 /// NOTE: resolves *which* name to dispatch on, doesn't validate it.
-/// `execute_extension`'s `match` treats any unrecognized name
-/// (`"plan-publish"`/`"plan_publish"`, `"validate"`) the same as no
-/// subcommand -- silently falls back to `status`, same as empty `args`.
+/// `execute_extension`'s `match` treats any name other than `"release"`
+/// and `"validate"` the same as no subcommand -- silently falls back to `status`, same as empty `args`.
 /// No distinct "unrecognized subcommand" error path exists yet.
 #[cfg(feature = "pdk")]
 pub(crate) fn resolve_subcommand(args: &[String]) -> &str {
@@ -254,8 +253,8 @@ mod tests {
     fn resolve_subcommand_uses_first_arg_when_present() {
         assert_eq!(resolve_subcommand(&["validate".to_string()]), "validate");
         assert_eq!(
-            resolve_subcommand(&["plan-publish".to_string(), "--extra".to_string()]),
-            "plan-publish"
+            resolve_subcommand(&["release".to_string(), "--extra".to_string()]),
+            "release"
         );
     }
 

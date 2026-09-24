@@ -9,7 +9,7 @@ Standalone command-line interface for Callisto monorepo versioning and release m
 - `callisto add`: Interactively or non-interactively record changesets.
 - `callisto version`: Consume changesets, bump package versions, and update changelogs.
 - `callisto status`: Inspect workspace release status.
-- `callisto plan-publish`: Compute topological publish order.
+- `callisto release`: Publish every package with an unreleased version (`--dry-run` previews the plan).
 - `callisto compose-pr-body`: Render rich GitHub Pull Request descriptions.
 
 ## License

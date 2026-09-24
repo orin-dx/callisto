@@ -8,7 +8,7 @@ Polyglot dependency DAG solver, cascade propagator, and publish planner for Call
 
 - Topological sorting of workspace packages for publication order.
 - Dependency cascade resolution (propagating major/minor bumps downstream).
-- Release plan composition (`plan-publish`) and PR description formatting (`compose-pr-body`).
+- Release plan derivation (`plan_local_release`, `build_release_intent`) and PR description formatting (`compose-pr-body`).
 
 ## License
 

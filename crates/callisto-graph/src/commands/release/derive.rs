@@ -21,9 +21,17 @@ use super::provider::{
     ArtifactUploadOperation, ForgePublishOperation, ForgeReleaseOperation, PreparedOperation, RegistryPublishOperation,
     TagOperation,
 };
-use crate::commands::publish::is_platform_package;
 use crate::commands::registry_argv::npm_default_access;
 use crate::toposort::PublishEdgeFilter;
+
+/// A package that is itself an npm platform package (its own package.json has
+/// `os`+`cpu`). An owner's attached (Case E) platform manifests do not count.
+pub(crate) fn is_platform_package(pkg: &callisto_model::Package) -> bool {
+    pkg.manifests.iter().any(|m| {
+        matches!(m.role, callisto_model::ManifestRole::Platform { .. })
+            && pkg.canonical_manifests().any(|c| c.path == m.path)
+    })
+}
 
 /// Coordinator-owned identity used to bind a product artifact to the exact
 /// workflow revision that built it. This is distinct from a historic release
@@ -298,7 +306,7 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
     }
 
     // Replace each publish leaf with prerequisites from selected dependency
-    // packages, ordered by the same edge filter `plan_publish` uses.
+    // packages, ordered by the shared publish edge filter.
     for (id, (package, _)) in &selected {
         let mut prerequisites = BTreeSet::new();
         for edge in workspace.graph.dependencies_of(&package.id) {
@@ -756,7 +764,12 @@ mod tests {
         let locator = crate::IgnoreWalkLocator::new(dir.path());
         let root = super::super::capability::canonical_root(dir.path()).unwrap();
         let workspace = Workspace::load(root.clone(), &locator, &runner).unwrap();
-        let source = super::super::capability::observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
+        let source = super::super::capability::observe_source(
+            &workspace,
+            ExecutionTrustProfileV1::GitCommit,
+            super::super::capability::ReleaseCheckout::Detached,
+        )
+        .unwrap();
         let (before_snapshot, before_operations, _, _, _) =
             derive_release_inputs(&workspace, &super::super::tests::decision(), source.clone(), None).unwrap();
 
@@ -780,7 +793,12 @@ mod tests {
         let locator = crate::IgnoreWalkLocator::new(dir.path());
         let root = super::super::capability::canonical_root(dir.path()).unwrap();
         let clean = Workspace::load(root.clone(), &locator, &runner).unwrap();
-        let source = super::super::capability::observe_source(&clean, ExecutionTrustProfileV1::GitCommit).unwrap();
+        let source = super::super::capability::observe_source(
+            &clean,
+            ExecutionTrustProfileV1::GitCommit,
+            super::super::capability::ReleaseCheckout::Detached,
+        )
+        .unwrap();
         std::fs::write(
             root.join("callisto.toml"),
             "[release]\nproduct-package = \"cargo/release-fixture\"\n\n[[release.artifact]]\npackage = \"cargo/release-fixture\"\ntarget = \"t\"\nasset-name = \"a.tar.gz\"\n",
@@ -849,7 +867,12 @@ mod tests {
         let locator = crate::IgnoreWalkLocator::new(dir.path());
         let root = super::super::capability::canonical_root(dir.path()).unwrap();
         let workspace = Workspace::load(root, &locator, &RealGitRunner).unwrap();
-        let source = super::super::capability::observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
+        let source = super::super::capability::observe_source(
+            &workspace,
+            ExecutionTrustProfileV1::GitCommit,
+            super::super::capability::ReleaseCheckout::Detached,
+        )
+        .unwrap();
         derive_release_inputs(&workspace, decision, source, None)
     }
 
@@ -1057,7 +1080,12 @@ mod tests {
         let locator = crate::IgnoreWalkLocator::new(dir.path());
         let root = super::super::capability::canonical_root(dir.path()).unwrap();
         let workspace = Workspace::load(root, &locator, &RealGitRunner).unwrap();
-        let source = super::super::capability::observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
+        let source = super::super::capability::observe_source(
+            &workspace,
+            ExecutionTrustProfileV1::GitCommit,
+            super::super::capability::ReleaseCheckout::Detached,
+        )
+        .unwrap();
         let (_, _, prepared, _, _) = derive_release_inputs(
             &workspace,
             &release(&[(Ecosystem::Npm, "@s/lib", "1.0.0")]),
@@ -1150,7 +1178,12 @@ mod tests {
             manifest_cache: Default::default(),
             identity: crate::IdentityIndex::default(),
         };
-        let source = super::super::capability::observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
+        let source = super::super::capability::observe_source(
+            &workspace,
+            ExecutionTrustProfileV1::GitCommit,
+            super::super::capability::ReleaseCheckout::Detached,
+        )
+        .unwrap();
         let error = derive_release_inputs(&workspace, &cargo_release(&["core"]), source, None).unwrap_err();
         assert!(
             matches!(
@@ -1196,7 +1229,12 @@ mod tests {
         let locator = crate::IgnoreWalkLocator::new(dir.path());
         let root = super::super::capability::canonical_root(dir.path()).unwrap();
         let workspace = Workspace::load(root, &locator, &RealGitRunner).unwrap();
-        let source = super::super::capability::observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
+        let source = super::super::capability::observe_source(
+            &workspace,
+            ExecutionTrustProfileV1::GitCommit,
+            super::super::capability::ReleaseCheckout::Detached,
+        )
+        .unwrap();
         std::fs::write(dir.path().join("CHANGELOG.md"), "# core\n\n## 1.0.0\n\n").unwrap();
         let (after_snapshot, after_operations, after_prepared, _, _) =
             derive_release_inputs(&workspace, &decision, source, None).unwrap();

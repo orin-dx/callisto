@@ -74,7 +74,7 @@ pub struct Workspace<'a, R: CommandRunner, D: DependencyResolver = ManifestWalkR
     /// `CommandRunner` shell round-trip when unavailable), so simpler
     /// than `tags` -- no `Result` to thread through. Consolidates what
     /// were multiple independent `GitAccess::discover` calls within one
-    /// command invocation (`plan_publish`'s head_sha resolution,
+    /// command invocation (local release's head_sha resolution,
     /// `TagIndex::build` via [`Workspace::tags`]) into one shared
     /// discovery. `pub` so tests can hand-construct a `Workspace` with a
     /// pre-seeded value, bypassing discovery.

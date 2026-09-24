@@ -30,11 +30,7 @@ impl Report for PublishPlan {
     }
 }
 
-/// Publish execution report output from `callisto publish --format json`
-/// (non-dry-run only). Distinct from [`PublishPlan`], which describes what
-/// *would* be published (used both by `plan-publish` and by `publish
-/// --dry-run`); [`PublishReport`] instead records what actually happened for
-/// every package `publish` attempted to send to its registry.
+/// Legacy per-package publish report shape; no CLI command emits it since `publish` was removed (type removal deferred).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PublishReport {
@@ -583,7 +579,7 @@ mod validate_report_tests {
     }
 }
 
-/// Tag report output from `callisto tag --format json`.
+/// Legacy tag report shape; no CLI command emits it since `tag` was removed (type removal deferred).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TagReport {

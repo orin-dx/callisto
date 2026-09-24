@@ -321,7 +321,7 @@ impl Manifest for PackageJson {
             .map(|s| s.to_string());
         // Read `publishConfig.access` to propagate the operator's explicit
         // access intent. npm's `--access` CLI flag overrides publishConfig.access,
-        // so callisto must read it here and honour it in plan_publish rather than
+        // so callisto must read it here and honour it in release planning rather than
         // blindly passing `--access public` for all scoped packages. Any value
         // other than the two npm recognises (including absence) is `None`,
         // not an error -- an unrecognised value here isn't this layer's job

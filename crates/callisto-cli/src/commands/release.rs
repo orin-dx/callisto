@@ -1,16 +1,16 @@
-//! Durable release interfaces (plan and execute).
+//! Release interfaces: bare `release` (local), and the CI plan/execute route.
 //!
-//! Planning accepts only exact package identities. It never accepts an inline
-//! intent or searches for an authority file. `execute` is the only durable
-//! mutation route and requires an explicit intent, receipt, and orchestration
-//! revision; there is no permissive fallback to the legacy publish/tag path.
+//! Bare `release` publishes every unreleased package through the same
+//! `execute_release` route as `release execute`. The CI route accepts only
+//! exact package identities and explicit intent, receipt, and orchestration
+//! revision paths.
 
 use std::process::ExitCode;
 
 use callisto_graph::commands::{
-    build_release_intent, build_release_intent_with_artifacts, derive_release_commit_decision,
-    derive_selected_release_decision, execute_release, validate_release_intent, verify_artifact_manifest,
-    VersionOptions,
+    build_release_intent, build_release_intent_with_artifacts, ci_release_route, derive_release_commit_decision,
+    derive_selected_release_decision, execute_release, plan_local_release, validate_local_release_intent,
+    validate_release_intent, verify_artifact_manifest, LocalReleaseSource, VersionOptions,
 };
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_model::{
@@ -19,21 +19,214 @@ use callisto_model::{
 };
 
 use crate::cli::{
-    GlobalArgs, OutputFormat, ReleaseArgs, ReleaseArtifactManifestArgs, ReleaseExecuteArgs, ReleaseInspectArgs,
-    ReleasePlanArgs,
+    GlobalArgs, OutputFormat, ReleaseArgs, ReleaseArtifactManifestArgs, ReleaseCommandArgs, ReleaseExecuteArgs,
+    ReleaseInspectArgs, ReleasePlanArgs,
 };
 use crate::error::CliError;
 use crate::output::{log_line, write_json};
 use crate::runner::CliCommandRunner;
 use crate::workspace::{load_workspace, select_inference};
 
-pub fn handle(args: ReleaseArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
-    match args {
-        ReleaseArgs::Plan(args) => plan(args, global),
-        ReleaseArgs::Inspect(args) => inspect(args, global),
-        ReleaseArgs::ArtifactManifest(args) => artifact_manifest(args, global),
-        ReleaseArgs::Execute(args) => execute(args, global),
+pub fn handle(args: ReleaseCommandArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
+    match args.command {
+        None => release(&args.packages, args.receipt, global),
+        Some(ReleaseArgs::Plan(args)) => plan(args, global),
+        Some(ReleaseArgs::Inspect(args)) => inspect(args, global),
+        Some(ReleaseArgs::ArtifactManifest(args)) => artifact_manifest(args, global),
+        Some(ReleaseArgs::Execute(args)) => execute(args, global),
     }
+}
+
+/// Exact stdout when no package has an unreleased version.
+pub const NOTHING_TO_RELEASE: &str = "Nothing to release.";
+
+fn release(
+    packages: &[String],
+    receipt: Option<std::path::PathBuf>,
+    global: &GlobalArgs,
+) -> Result<ExitCode, CliError> {
+    let selections = parse_selections(packages)?;
+    let runner = CliCommandRunner;
+    let workspace = load_workspace(global, &runner)?;
+    let root = workspace.root.clone();
+    let locator = IgnoreWalkLocator::new(&root);
+    if global.dry_run {
+        match plan_local_release(&root, &locator, &runner, &selections, LocalReleaseSource::Preview)? {
+            None => print_nothing_to_release(global)?,
+            Some(intent) => match global.format {
+                OutputFormat::Json => write_json(&mut std::io::stdout(), &intent)?,
+                OutputFormat::Text => print!("{}", render_release_plan(&intent)),
+            },
+        }
+        return Ok(ExitCode::SUCCESS);
+    }
+    if let Some(route) = ci_release_route(&workspace)? {
+        return Err(CliError::ReleaseRequiresCiRoute {
+            reason: route.to_string(),
+        });
+    }
+    let Some(intent) = plan_local_release(&root, &locator, &runner, &selections, LocalReleaseSource::Trusted)? else {
+        print_nothing_to_release(global)?;
+        return Ok(ExitCode::SUCCESS);
+    };
+    let var = |name: &str| std::env::var(name).ok();
+    // Status only: `gh auth status` prints account details this command must not echo.
+    let gh_authenticated = || {
+        std::process::Command::new("gh")
+            .args(["auth", "status"])
+            .current_dir(&root)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    };
+    super::release_credentials::check(
+        &intent,
+        &super::release_credentials::CredentialSources {
+            var: &var,
+            home: home_dir(),
+            root: &root,
+            gh_authenticated: &gh_authenticated,
+        },
+    )?;
+    let receipt = match receipt {
+        Some(path) => path,
+        None => default_receipt_path(&root, &intent, &var)?,
+    };
+    let permit = ApplyPermit::granted_unless_dry_run(false).expect("non-dry-run permits writes");
+    callisto_model::atomic::probe_atomic_write(&receipt, &permit).map_err(|source| CliError::Io {
+        source,
+        path: Some(receipt.clone()),
+    })?;
+    let callisto_model::SourceIdentity::GitCommit { sha } = &intent.snapshot.source else {
+        return Err(CliError::ReleaseEnvelopeInvalid {
+            detail: "a local release source must be a Git commit".to_owned(),
+        });
+    };
+    // A local run is its own orchestration, so both revisions are the source commit.
+    let envelope =
+        ReleaseRunEnvelopeV1::new(sha.clone(), &intent, None).map_err(|error| CliError::ReleaseEnvelopeInvalid {
+            detail: error.to_string(),
+        })?;
+    let capability = validate_local_release_intent(&root, &locator, &runner, intent)?;
+    let state = execute_release(&capability, &permit, &envelope, None)?;
+    let receipt_document =
+        ReleaseReceiptV1::from_state(capability.intent(), &state).map_err(|error| CliError::ReleaseReceiptIssue {
+            detail: error.to_string(),
+        })?;
+    write_receipt(&receipt, &receipt_document, &permit)?;
+    match global.format {
+        OutputFormat::Json => write_json(&mut std::io::stdout(), &receipt_document)?,
+        OutputFormat::Text => println!(
+            "Released {} package(s); receipt saved to {}",
+            capability.intent().decision.entries.len(),
+            receipt.display()
+        ),
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn print_nothing_to_release(global: &GlobalArgs) -> Result<(), CliError> {
+    match global.format {
+        OutputFormat::Json => write_json(&mut std::io::stdout(), &serde_json::json!({ "nothingToRelease": true }))?,
+        OutputFormat::Text => println!("{NOTHING_TO_RELEASE}"),
+    }
+    Ok(())
+}
+
+fn parse_selections(packages: &[String]) -> Result<Vec<ReleasePackageId>, CliError> {
+    packages
+        .iter()
+        .map(|raw| {
+            ReleasePackageId::parse(raw).map_err(|error| CliError::ReleasePackageInvalid {
+                raw: raw.clone(),
+                detail: error.to_string(),
+            })
+        })
+        .collect()
+}
+
+/// Human-readable plan: each package and version, then its operations.
+fn render_release_plan(intent: &ReleaseIntentV1) -> String {
+    let mut out = String::from("Release plan:\n");
+    for entry in &intent.decision.entries {
+        out.push_str(&format!("  {} {}\n", entry.package, entry.target_version));
+        for operation in intent.operations.iter().filter(|op| op.id().package == entry.package) {
+            let step = match &operation.id().role {
+                callisto_model::ReleaseOperationRole::RegistryPublish { registry } => {
+                    format!("publish to {}", registry.registry_key().as_str())
+                }
+                callisto_model::ReleaseOperationRole::PlatformPublish { registry, platform } => {
+                    format!("publish {} to {}", platform.name(), registry.registry_key().as_str())
+                }
+                callisto_model::ReleaseOperationRole::Tag => "create git tag".to_owned(),
+                callisto_model::ReleaseOperationRole::ForgeRelease => "create GitHub release draft".to_owned(),
+                callisto_model::ReleaseOperationRole::ArtifactUpload { slot } => {
+                    format!("upload {}", slot.asset_name)
+                }
+                callisto_model::ReleaseOperationRole::ForgePublish => "publish GitHub release".to_owned(),
+            };
+            out.push_str(&format!("    - {step}\n"));
+        }
+    }
+    out
+}
+
+fn home_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .filter(|home| !home.is_empty())
+        .map(std::path::PathBuf::from)
+}
+
+/// `<platform state dir>/callisto/<repo-hash>/<intent-digest>/receipt.json`, never inside `root`.
+fn default_receipt_path(
+    root: &std::path::Path,
+    intent: &ReleaseIntentV1,
+    var: &dyn Fn(&str) -> Option<String>,
+) -> Result<std::path::PathBuf, CliError> {
+    let state = state_dir(var, home_dir()).ok_or_else(|| CliError::ReleaseReceiptLocation {
+        detail: "no platform state directory (set XDG_STATE_HOME or HOME)".to_owned(),
+    })?;
+    let path = receipt_path_in(&state, root, intent);
+    if path.starts_with(root) {
+        return Err(CliError::ReleaseReceiptLocation {
+            detail: format!("the state directory `{}` is inside the repository", state.display()),
+        });
+    }
+    Ok(path)
+}
+
+fn receipt_path_in(state: &std::path::Path, root: &std::path::Path, intent: &ReleaseIntentV1) -> std::path::PathBuf {
+    use sha2::Digest as _;
+    let repo_hash = format!("{:x}", sha2::Sha256::digest(root.to_string_lossy().as_bytes()));
+    state
+        .join("callisto")
+        .join(&repo_hash[..16])
+        .join(intent.digest().to_string())
+        .join("receipt.json")
+}
+
+/// `$XDG_STATE_HOME`, else the platform default for per-user state.
+fn state_dir(var: &dyn Fn(&str) -> Option<String>, home: Option<std::path::PathBuf>) -> Option<std::path::PathBuf> {
+    if let Some(xdg) = var("XDG_STATE_HOME")
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.is_absolute())
+    {
+        return Some(xdg);
+    }
+    if cfg!(windows) {
+        if let Some(local) = var("LOCALAPPDATA").filter(|value| !value.is_empty()) {
+            return Some(std::path::PathBuf::from(local));
+        }
+    }
+    let home = home?;
+    Some(if cfg!(target_os = "macos") {
+        home.join("Library").join("Application Support")
+    } else {
+        home.join(".local").join("state")
+    })
 }
 
 fn artifact_manifest(args: ReleaseArtifactManifestArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
@@ -157,16 +350,7 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
             derive_release_commit_decision(&workspace, &commit, &decision_path)?
         }
         None => {
-            let selections = args
-                .packages
-                .iter()
-                .map(|raw| {
-                    ReleasePackageId::parse(raw).map_err(|error| CliError::ReleasePackageInvalid {
-                        raw: raw.clone(),
-                        detail: error.to_string(),
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()?;
+            let selections = parse_selections(&args.packages)?;
             let inference = select_inference();
             let version_plan =
                 callisto_graph::commands::plan_version(&workspace, &inference, &VersionOptions::default())?;
@@ -407,4 +591,92 @@ fn write_receipt(path: &std::path::Path, receipt: &ReleaseReceiptV1, permit: &Ap
         source,
         path: Some(path.to_path_buf()),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    use super::*;
+
+    fn sample() -> ReleaseIntentV1 {
+        super::super::release_credentials::tests::intent(callisto_model::Ecosystem::Cargo, "cratesIo", true)
+    }
+
+    fn vars(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<String> {
+        move |name| {
+            pairs
+                .iter()
+                .find(|(key, _)| *key == name)
+                .map(|(_, value)| value.to_string())
+        }
+    }
+
+    #[test]
+    fn state_dir_prefers_absolute_xdg_state_home() {
+        let home = Some(PathBuf::from("/home/u"));
+        assert_eq!(
+            state_dir(&vars(&[("XDG_STATE_HOME", "/state")]), home.clone()),
+            Some(PathBuf::from("/state"))
+        );
+        let fallback = state_dir(&vars(&[("XDG_STATE_HOME", "relative")]), home.clone()).unwrap();
+        assert!(fallback.starts_with("/home/u"), "{}", fallback.display());
+        assert_eq!(state_dir(&vars(&[]), None), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_state_dir_defaults_to_local_state() {
+        assert_eq!(
+            state_dir(&vars(&[]), Some(PathBuf::from("/home/u"))),
+            Some(PathBuf::from("/home/u/.local/state"))
+        );
+    }
+
+    #[test]
+    fn receipt_path_is_keyed_by_repository_and_intent() {
+        let intent = sample();
+        let path = receipt_path_in(Path::new("/state"), Path::new("/repo/a"), &intent);
+        let parts: Vec<_> = path.iter().map(|part| part.to_string_lossy().into_owned()).collect();
+        assert_eq!(parts[..3], ["/", "state", "callisto"]);
+        assert_eq!(parts[3].len(), 16);
+        assert_eq!(parts[4], intent.digest().to_string());
+        assert_eq!(parts[5], "receipt.json");
+        assert_ne!(
+            receipt_path_in(Path::new("/state"), Path::new("/repo/b"), &intent),
+            path,
+            "each repository gets its own directory"
+        );
+    }
+
+    #[test]
+    fn default_receipt_path_refuses_a_state_dir_inside_the_worktree() {
+        let intent = sample();
+        let root = tempfile::tempdir().unwrap();
+        let inside = root.path().join("state").to_string_lossy().into_owned();
+        let var = move |name: &str| (name == "XDG_STATE_HOME").then(|| inside.clone());
+        assert!(matches!(
+            default_receipt_path(root.path(), &intent, &var),
+            Err(CliError::ReleaseReceiptLocation { .. })
+        ));
+        let outside = tempfile::tempdir().unwrap();
+        let outside_path = outside.path().to_string_lossy().into_owned();
+        let var = move |name: &str| (name == "XDG_STATE_HOME").then(|| outside_path.clone());
+        let path = default_receipt_path(root.path(), &intent, &var).unwrap();
+        assert!(path.starts_with(outside.path()) && !path.starts_with(root.path()));
+    }
+
+    #[test]
+    fn plan_text_lists_each_package_version_and_operation() {
+        let intent = sample();
+        let text = render_release_plan(&intent);
+        assert!(text.starts_with("Release plan:\n"), "{text}");
+        for entry in &intent.decision.entries {
+            assert!(
+                text.contains(&format!("  {} {}\n", entry.package, entry.target_version)),
+                "{text}"
+            );
+        }
+        assert_eq!(text.matches("    - ").count(), intent.operations.len(), "{text}");
+    }
 }

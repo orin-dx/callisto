@@ -1,4 +1,4 @@
-//! The one changelog-section reader behind release notes and `plan_publish`.
+//! The one changelog-section reader behind release notes.
 
 use std::path::Path;
 
@@ -6,33 +6,16 @@ use callisto_model::Version;
 
 use super::provider::{NotesFallback, ReleaseNotes};
 
-/// Why no usable changelog section was read; `io` holds a read failure other than not-found.
-#[derive(Debug)]
-pub(crate) struct ChangelogSectionError {
-    pub(crate) reason: NotesFallback,
-    pub(crate) io: Option<std::io::Error>,
-}
-
 /// The non-empty `## {version}` section of the changelog at `root.join(changelog)`.
-pub(crate) fn changelog_section(
-    root: &Path,
-    changelog: &Path,
-    version: &Version,
-) -> Result<String, ChangelogSectionError> {
-    let fallback = |reason| ChangelogSectionError { reason, io: None };
+fn changelog_section(root: &Path, changelog: &Path, version: &Version) -> Result<String, NotesFallback> {
     let content = match std::fs::read_to_string(root.join(changelog)) {
         Ok(content) => content,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Err(fallback(NotesFallback::FileMissing)),
-        Err(error) => {
-            return Err(ChangelogSectionError {
-                reason: NotesFallback::Unreadable,
-                io: Some(error),
-            })
-        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Err(NotesFallback::FileMissing),
+        Err(_) => return Err(NotesFallback::Unreadable),
     };
     match callisto_changelog::find_section(&content, version) {
-        None => Err(fallback(NotesFallback::SectionMissing)),
-        Some("") => Err(fallback(NotesFallback::SectionEmpty)),
+        None => Err(NotesFallback::SectionMissing),
+        Some("") => Err(NotesFallback::SectionEmpty),
         Some(section) => Ok(section.to_owned()),
     }
 }
@@ -46,7 +29,7 @@ pub(crate) fn release_notes(root: &Path, changelog: Option<&Path>, version: &Ver
     };
     match changelog_section(root, changelog, version) {
         Ok(section) => ReleaseNotes::Section(section),
-        Err(error) => ReleaseNotes::Generated { reason: error.reason },
+        Err(reason) => ReleaseNotes::Generated { reason },
     }
 }
 

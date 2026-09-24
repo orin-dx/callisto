@@ -1,26 +1,23 @@
 pub mod add;
 pub mod completions;
 pub mod compose_pr_body;
-pub mod filter_plan;
 pub mod init;
 pub mod matrix;
-pub mod plan_publish;
 pub mod pre;
-pub mod publish;
 pub mod release;
+mod release_credentials;
 pub mod release_pr;
 pub mod schema;
 pub mod snapshot;
 pub mod status;
-pub mod tag;
 pub mod validate;
 pub mod version;
 
 /// Reads `arg` as a JSON document: a literal `-` reads from stdin, a value
 /// starting with `{` is treated as inline JSON, anything else is read as a
 /// file path. Shared by every command that accepts a report/plan as either
-/// a file, inline JSON, or piped stdin (`tag --plan`, `filter-plan --plan`,
-/// `filter-plan --report`).
+/// a file, inline JSON, or piped stdin (`release-pr verify --decision`,
+/// `--snapshot`).
 pub(crate) fn read_json_arg(arg: &str) -> Result<String, crate::error::CliError> {
     if arg == "-" {
         let mut buf = String::new();
@@ -42,7 +39,7 @@ pub(crate) fn read_json_arg(arg: &str) -> Result<String, crate::error::CliError>
 /// `strict_graph` alone escalates only the latter) and errors out naming every
 /// diagnostic that is `Error` severity afterward.
 ///
-/// Shared by `snapshot` and `tag`, which must abort *before* touching any
+/// Used by `snapshot`, which must abort *before* touching any
 /// files/tags on a crosscheck failure -- unlike `status`/`validate`/`version`,
 /// which fold escalated diagnostics into their report and gate on exit code
 /// instead of an `Err`.
@@ -89,7 +86,7 @@ mod tests {
     }
 
     /// Neither flag set: a `StrictGraph`-tagged warning stays a warning, so
-    /// `snapshot`/`tag` must proceed rather than abort.
+    /// `snapshot` must proceed rather than abort.
     #[test]
     fn neither_flag_leaves_warning_diagnostics_unescalated() {
         let diags = vec![strict_graph_diagnostic()];

@@ -42,6 +42,7 @@ pub fn execute_extension(input: moon_pdk_api::ExecuteExtensionInput) -> ExecuteE
         }
     };
 
+    let release_root = root.clone();
     let ws = match callisto_graph::Workspace::load(root, &locator, &runner) {
         Ok(ws) => ws,
         Err(e) => {
@@ -53,10 +54,11 @@ pub fn execute_extension(input: moon_pdk_api::ExecuteExtensionInput) -> ExecuteE
     let subcmd = resolve_subcommand(&input.args);
 
     match subcmd {
-        "plan-publish" | "plan_publish" => {
-            use callisto_graph::commands::publish::{plan_publish, PublishOptions};
-            match plan_publish(&ws, &PublishOptions::default()) {
-                Ok(report) => build_extension_output(serde_json::to_value(&report), 0),
+        "release" => {
+            use callisto_graph::commands::{plan_local_release, LocalReleaseSource};
+            match plan_local_release(&release_root, &locator, &runner, &[], LocalReleaseSource::Preview) {
+                Ok(Some(intent)) => build_extension_output(serde_json::to_value(&intent), 0),
+                Ok(None) => build_extension_output(Ok(serde_json::json!({ "nothingToRelease": true })), 0),
                 Err(e) => {
                     let json_val = format_graph_error_json(&e);
                     error_output(json_val, &e)

@@ -20,8 +20,8 @@ runs:
         FORCE_COLOR: "1"
         CLICOLOR_FORCE: "1"
       run: |
-        echo "::group::Simulating Release Publish Plan"
-        callisto plan-publish --format text
+        echo "::group::Simulating Release Plan"
+        callisto release --dry-run --format text
         echo "::endgroup::"
 
     - name: Render PR Release Pre-Flight Summary

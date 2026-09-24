@@ -58,20 +58,10 @@ pub enum Command {
     Snapshot(SnapshotArgs),
     /// Scaffold Callisto configuration in the current workspace.
     Init(InitArgs),
-    /// Compute which packages are ready to publish and print the publish plan.
-    PlanPublish(PlanPublishArgs),
-    /// Publish ready packages to their ecosystem registries via native CLI tools.
-    Publish(PublishArgs),
     /// Generate a pull request body summarizing pending release changes.
     ComposePrBody(ComposePrBodyArgs),
-    /// Create git tags for packages in a publish plan.
-    Tag(TagArgs),
-    /// Filter a publish plan down to what a publish report confirms
-    /// actually succeeded, dropping anything that failed.
-    FilterPlan(FilterPlanArgs),
-    /// Create, inspect, or execute durable release intents.
-    #[command(subcommand)]
-    Release(ReleaseArgs),
+    /// Publish every package whose current version has not been released yet.
+    Release(ReleaseCommandArgs),
     /// Decide the next managed release-pull-request operation from a forge snapshot.
     #[command(subcommand)]
     ReleasePr(ReleasePrArgs),
@@ -84,7 +74,7 @@ pub enum Command {
 /// Arguments for the `schema` command.
 #[derive(Args, Clone, Debug, Default)]
 pub struct SchemaArgs {
-    /// Report type to print the schema for (status, version, snapshot, validate, tag, init, plan-publish, changeset, pre, matrix); defaults to status.
+    /// Report type to print the schema for (status, version, snapshot, validate, init, changeset, pre, matrix, release-receipt); defaults to status.
     #[arg(long = "type", value_name = "TYPE")]
     pub target_type: Option<String>,
 }
@@ -200,23 +190,6 @@ pub struct InitArgs {
     pub yes: bool,
 }
 
-/// Arguments for the `plan-publish` command.
-#[derive(Args, Clone, Debug, Default)]
-pub struct PlanPublishArgs {
-    /// Plan only the named package(s). Repeatable: `--package foo --package bar`.
-    #[arg(long = "package", value_name = "NAME")]
-    pub only: Vec<String>,
-}
-
-/// Arguments for the `publish` command.
-#[derive(Args, Clone, Debug, Default)]
-pub struct PublishArgs {
-    /// Publish only the named package(s). Repeatable: `--package foo --package bar`.
-    /// When omitted, all packages in the plan are published.
-    #[arg(long = "package", value_name = "NAME")]
-    pub only: Vec<String>,
-}
-
 /// Arguments for the `compose-pr-body` command.
 #[derive(Args, Clone, Debug)]
 pub struct ComposePrBodyArgs {
@@ -228,36 +201,21 @@ pub struct ComposePrBodyArgs {
     pub branch: Option<String>,
 }
 
-/// Arguments for the `tag` command.
+/// Arguments for the `release` command.
 #[derive(Args, Clone, Debug)]
-pub struct TagArgs {
-    /// Path to a publish plan JSON file, inline JSON, or `-` to read it from stdin.
-    #[arg(long, value_name = "FILE|-")]
-    pub plan: String,
-    /// Also move a floating major-version tag (e.g. `v1`) to point at the new tag.
-    #[arg(long)]
-    pub floating_major: bool,
-    /// Abort if the workspace graph contains crosscheck failures or other
-    /// error-severity diagnostics.
-    #[arg(long)]
-    pub strict: bool,
-    /// Treat dependency-graph warnings as errors.
-    #[arg(long)]
-    pub strict_graph: bool,
+#[command(args_conflicts_with_subcommands = true)]
+pub struct ReleaseCommandArgs {
+    #[command(subcommand)]
+    pub command: Option<ReleaseArgs>,
+    /// Release only this exact qualified package, for example `cargo/callisto-cli`. Repeatable.
+    #[arg(long = "package", value_name = "ECOSYSTEM/NAME")]
+    pub packages: Vec<String>,
+    /// Write the release receipt here instead of the platform state directory.
+    #[arg(long, value_name = "FILE")]
+    pub receipt: Option<PathBuf>,
 }
 
-/// Arguments for the `filter-plan` command.
-#[derive(Args, Clone, Debug)]
-pub struct FilterPlanArgs {
-    /// Path to a publish plan JSON file, inline JSON, or `-` to read it from stdin.
-    #[arg(long, value_name = "FILE|-")]
-    pub plan: String,
-    /// Path to a publish report JSON file, inline JSON, or `-` to read it from stdin.
-    #[arg(long, value_name = "FILE|-")]
-    pub report: String,
-}
-
-/// Durable release subcommands.
+/// Durable release subcommands for the CI plan/build/execute route.
 #[derive(Subcommand, Clone, Debug)]
 pub enum ReleaseArgs {
     /// Create a read-only durable release intent from exact package selections.
@@ -519,6 +477,61 @@ mod tests {
             "manifest.json",
         ])
         .is_ok());
+    }
+
+    /// SPEC-DX-RELEASE-COMMAND AC-10: the legacy publish commands no longer parse.
+    #[test]
+    fn legacy_publish_commands_are_unrecognized() {
+        use clap::Parser;
+
+        for args in [
+            vec!["callisto", "publish"],
+            vec!["callisto", "plan-publish"],
+            vec!["callisto", "tag", "--plan", "plan.json"],
+            vec!["callisto", "filter-plan", "--plan", "p.json", "--report", "r.json"],
+        ] {
+            let error = Cli::try_parse_from(&args)
+                .err()
+                .unwrap_or_else(|| panic!("{args:?} parsed"));
+            assert_eq!(error.kind(), clap::error::ErrorKind::InvalidSubcommand, "{args:?}");
+        }
+    }
+
+    /// SPEC-DX-RELEASE-COMMAND AC-03: bare release takes repeatable `--package`, not `--from-release-commit`.
+    #[test]
+    fn bare_release_accepts_packages_and_rejects_release_commit() {
+        use clap::Parser;
+
+        let cli = Cli::try_parse_from([
+            "callisto",
+            "release",
+            "--dry-run",
+            "--package",
+            "cargo/a",
+            "--package",
+            "npm/b",
+            "--receipt",
+            "/tmp/receipt.json",
+        ])
+        .unwrap();
+        assert!(cli.global.dry_run);
+        let Command::Release(args) = cli.command else {
+            panic!("expected release");
+        };
+        assert!(args.command.is_none());
+        assert_eq!(args.packages, ["cargo/a", "npm/b"]);
+        assert_eq!(args.receipt, Some(PathBuf::from("/tmp/receipt.json")));
+
+        let bare = Cli::try_parse_from(["callisto", "release"]).unwrap();
+        assert!(matches!(
+            bare.command,
+            Command::Release(ReleaseCommandArgs { command: None, .. })
+        ));
+
+        assert!(Cli::try_parse_from(["callisto", "release", "--from-release-commit", &"a".repeat(40)]).is_err());
+        assert!(
+            Cli::try_parse_from(["callisto", "release", "--package", "cargo/a", "inspect", "--input", "x"]).is_err()
+        );
     }
 
     /// AC-006/AC-007 (parse slice): `callisto matrix --package foo` parses

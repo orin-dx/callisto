@@ -1,14 +1,8 @@
 //! AC-13 guard: none of this track's fixes may change any report struct's field shape,
 //! except where a task's explicit scope is the shape change itself. Permitted schema
-//! deltas: the additive DiagnosticCode::ChangelogReadError variant, TagReport/
-//! CreatedTag's field-shape fix (docs/01-spec.md §M.12.6: `tags` not `createdTags`,
-//! plus `CreatedTag::already_existed`), the additive required field
-//! `ReleaseEntry.isPrerelease` (SPEC-005: computed from `Version::is_prerelease()`,
-//! never re-derived from the tag string), and the additive optional field
-//! `CreatedTag.isFloatingMajor` (distinguishes a floating major-version alias from
-//! an immutable per-version release tag; `#[serde(default)]`, so it appears in
-//! `properties` but not `required`). Expected sets below were captured from
-//! `callisto schema` against the live repository after those intentional changes.
+//! deltas: the additive DiagnosticCode::ChangelogReadError variant. The `tag` and
+//! `plan-publish` report schemas left with their commands. Expected sets below were
+//! captured from `callisto schema` against the live repository.
 
 use std::collections::BTreeSet;
 use std::process::Command;
@@ -44,19 +38,6 @@ fn set(items: &[&str]) -> BTreeSet<String> {
 
 #[test]
 fn ac13_report_struct_field_shapes_are_unchanged() {
-    let tag_schema = run_schema("tag");
-    let (req, props) = required_and_props(&tag_schema);
-    assert_eq!(req, set(&["tags", "schemaVersion"]));
-    assert_eq!(props, set(&["tags", "diagnostics", "schemaVersion"]));
-
-    let created_tag = &tag_schema["definitions"]["CreatedTag"];
-    let (req, props) = required_and_props(created_tag);
-    assert_eq!(req, set(&["alreadyExisted", "package", "sha", "tagName"]));
-    assert_eq!(
-        props,
-        set(&["alreadyExisted", "isFloatingMajor", "package", "sha", "tagName"])
-    );
-
     let status_schema = run_schema("status");
     let (req, props) = required_and_props(&status_schema);
     assert_eq!(req, set(&["hasChangesets", "packages", "schemaVersion"]));
@@ -64,45 +45,12 @@ fn ac13_report_struct_field_shapes_are_unchanged() {
         props,
         set(&["diagnostics", "hasChangesets", "packages", "schemaVersion"])
     );
-
-    let plan_schema = run_schema("plan-publish");
-    let (req, props) = required_and_props(&plan_schema);
-    assert_eq!(
-        req,
-        set(&[
-            "npmMainPackages",
-            "npmPlatformPackages",
-            "releases",
-            "rustCrates",
-            "schemaVersion"
-        ])
-    );
-    assert_eq!(
-        props,
-        set(&[
-            "diagnostics",
-            "npmMainPackages",
-            "npmPlatformPackages",
-            "pypiPackages",
-            "releases",
-            "rustCrates",
-            "schemaVersion"
-        ])
-    );
-
-    let release_entry = &plan_schema["definitions"]["ReleaseEntry"];
-    let (req, props) = required_and_props(release_entry);
-    assert_eq!(req, set(&["isPrerelease", "package", "sha", "tagName"]));
-    assert_eq!(
-        props,
-        set(&["changelogSection", "isPrerelease", "package", "sha", "tagName"])
-    );
 }
 
 #[test]
 fn ac13_diagnostic_code_enum_gains_only_changelog_read_error() {
-    let tag_schema = run_schema("tag");
-    let variants: BTreeSet<String> = tag_schema["definitions"]["DiagnosticCode"]["oneOf"]
+    let status_schema = run_schema("status");
+    let variants: BTreeSet<String> = status_schema["definitions"]["DiagnosticCode"]["oneOf"]
         .as_array()
         .unwrap()
         .iter()

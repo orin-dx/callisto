@@ -541,10 +541,21 @@ pub enum ReleaseInclusionReason {
     Changeset,
     Inference,
     ExplicitSelection,
-    LinkedGroup { group_id: String },
-    FixedGroup { group_id: String },
-    Cascade { from: ReleasePackageId, edge_kind: String },
-    PreReleasePolicy { policy_id: String },
+    LinkedGroup {
+        group_id: String,
+    },
+    FixedGroup {
+        group_id: String,
+    },
+    Cascade {
+        from: ReleasePackageId,
+        edge_kind: String,
+    },
+    PreReleasePolicy {
+        policy_id: String,
+    },
+    /// The package's current version has no tag yet.
+    UnreleasedVersion,
 }
 
 /// One exact package and version authorized by a release decision.
@@ -606,7 +617,7 @@ impl<'de> Deserialize<'de> for ReleaseDecisionV1 {
 }
 
 impl ReleaseDecisionV1 {
-    pub const SCHEMA_VERSION: u8 = 1;
+    pub const SCHEMA_VERSION: u8 = 2;
 
     /// Creates a canonical decision or rejects an ambiguous release roster.
     #[allow(clippy::result_large_err)]
@@ -2826,6 +2837,34 @@ mod tests {
         assert!(
             result.is_err(),
             "expected divergent group targets to be rejected on deserialize"
+        );
+    }
+
+    #[test]
+    fn unreleased_version_reason_is_decision_schema_two() {
+        assert_eq!(ReleaseDecisionV1::SCHEMA_VERSION, 2);
+        assert_eq!(
+            serde_json::to_value(ReleaseInclusionReason::UnreleasedVersion).unwrap(),
+            serde_json::json!({ "kind": "unreleasedVersion" })
+        );
+        let decision = ReleaseDecisionV1::new(vec![ReleaseDecisionEntry {
+            package: ReleasePackageId::new(Ecosystem::Cargo, "demo").unwrap(),
+            target_version: Version::semver(1, 0, 0),
+            reasons: vec![ReleaseInclusionReason::UnreleasedVersion],
+        }])
+        .unwrap();
+        let mut wire = serde_json::to_value(&decision).unwrap();
+        assert_eq!(
+            serde_json::from_value::<ReleaseDecisionV1>(wire.clone()).unwrap(),
+            decision
+        );
+        wire["schemaVersion"] = serde_json::json!(1);
+        let error = serde_json::from_value::<ReleaseDecisionV1>(wire)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("unsupported release decision schema version 1"),
+            "{error}"
         );
     }
 

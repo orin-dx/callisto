@@ -21,7 +21,7 @@ pub enum NpmAccess {
     Restricted,
 }
 
-/// Complete publish plan output for plan-publish command.
+/// Legacy publish plan shape; no CLI command emits it since `plan-publish` was removed (type removal deferred).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PublishPlan {

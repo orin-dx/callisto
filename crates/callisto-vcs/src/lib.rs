@@ -97,7 +97,7 @@ pub fn compile_tag_glob(pattern: &str) -> Result<globset::GlobMatcher, VcsError>
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TagSignPolicy {
     /// Let the repository's own Git config decide -- the right default for
-    /// a human-run `callisto tag`.
+    /// a human-run tag.
     RespectRepoConfig,
     /// Always pass `--no-sign`, regardless of `tag.gpgSign`/`commit.gpgsign`.
     /// Some CI contexts set those globally (for commit signing) with no

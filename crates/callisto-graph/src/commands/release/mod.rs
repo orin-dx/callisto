@@ -64,19 +64,20 @@ mod binding;
 mod capability;
 mod derive;
 mod github;
+mod local;
 mod notes;
 pub(crate) mod provider;
 
 use super::release_artifacts;
 
-pub(crate) use binding::prepared_registry_binding;
 pub use capability::{
-    build_release_intent, build_release_intent_with_artifacts, validate_release_intent, ValidatedReleaseIntent,
+    build_release_intent, build_release_intent_with_artifacts, validate_local_release_intent, validate_release_intent,
+    ValidatedReleaseIntent,
 };
 #[cfg(test)]
 pub(crate) use derive::canonical_operation_order;
 pub use derive::ArtifactBuildPolicy;
-pub(crate) use notes::changelog_section;
+pub use local::{ci_release_route, plan_local_release, CiReleaseRoute, LocalReleaseSource};
 pub(crate) use provider::policy::timeouts;
 pub use provider::{ReleasePreflight, ReleaseProviderSet};
 
@@ -385,7 +386,12 @@ pub(crate) mod tests {
             reasons: vec![callisto_model::ReleaseInclusionReason::ExplicitSelection],
         }])
         .unwrap();
-        let source = capability::observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
+        let source = capability::observe_source(
+            &workspace,
+            ExecutionTrustProfileV1::GitCommit,
+            super::capability::ReleaseCheckout::Detached,
+        )
+        .unwrap();
         let (intent, prepared) = derive::derive_release_intent_with_prepared(
             &workspace,
             &decision,

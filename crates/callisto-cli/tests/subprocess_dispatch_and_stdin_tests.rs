@@ -22,7 +22,7 @@ fn bin() -> &'static str {
 
 /// Drives one full lifecycle through the real binary so every subcommand's
 /// `main.rs` dispatch arm actually executes: init, status, version, validate,
-/// plan-publish, publish (dry-run), compose-pr-body, and completions.
+/// release (dry-run), compose-pr-body, and completions.
 #[test]
 fn subprocess_lifecycle_exercises_every_main_dispatch_arm() {
     let dir = setup_polyglot_git_repo();
@@ -74,19 +74,17 @@ fn subprocess_lifecycle_exercises_every_main_dispatch_arm() {
         String::from_utf8_lossy(&validate.stderr)
     );
 
-    let plan_publish = run(&["--cwd", &root_str, "--format", "json", "plan-publish"]);
+    Command::new("git")
+        .args(["remote", "add", "origin", "https://github.com/example/core-crate.git"])
+        .current_dir(root)
+        .status()
+        .unwrap();
+    // `--dry-run` so release never attempts a real network call.
+    let release = run(&["--cwd", &root_str, "--format", "json", "--dry-run", "release"]);
     assert!(
-        plan_publish.status.success(),
-        "plan-publish failed: {}",
-        String::from_utf8_lossy(&plan_publish.stderr)
-    );
-
-    // `--dry-run` so publish never attempts a real network call.
-    let publish = run(&["--cwd", &root_str, "--format", "json", "--dry-run", "publish"]);
-    assert!(
-        publish.status.success(),
-        "publish --dry-run failed: {}",
-        String::from_utf8_lossy(&publish.stderr)
+        release.status.success(),
+        "release --dry-run failed: {}",
+        String::from_utf8_lossy(&release.stderr)
     );
 
     let compose = run(&["--cwd", &root_str, "--format", "json", "compose-pr-body"]);
@@ -140,55 +138,6 @@ fn subprocess_lifecycle_exercises_every_main_dispatch_arm() {
         String::from_utf8_lossy(&completions.stderr)
     );
     assert!(!completions.stdout.is_empty(), "completions must print a script");
-}
-
-/// `callisto tag --plan -` must read the publish plan from stdin.
-#[test]
-fn tag_plan_dash_reads_from_stdin() {
-    let dir = setup_polyglot_git_repo();
-    let root = dir.path();
-    let root_str = root.to_string_lossy().to_string();
-
-    let init = Command::new(bin())
-        .args(["--cwd", &root_str, "--format", "json", "init", "--yes"])
-        .output()
-        .unwrap();
-    assert!(init.status.success());
-
-    let plan_json = serde_json::json!({
-        "schemaVersion": 1,
-        "rustCrates": [],
-        "npmPlatformPackages": [],
-        "npmMainPackages": [],
-        "releases": []
-    })
-    .to_string();
-
-    let mut child = Command::new(bin())
-        .args([
-            "--cwd",
-            &root_str,
-            "--format",
-            "json",
-            "--dry-run",
-            "tag",
-            "--plan",
-            "-",
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-
-    child.stdin.take().unwrap().write_all(plan_json.as_bytes()).unwrap();
-
-    let output = child.wait_with_output().unwrap();
-    assert!(
-        output.status.success(),
-        "tag --plan - failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
 }
 
 /// `callisto compose-pr-body --existing-body -` must read the existing PR

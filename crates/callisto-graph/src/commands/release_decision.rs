@@ -1,7 +1,6 @@
 //! Deterministic, graph-owned release roster decisions.
 //!
-//! This is deliberately separate from `PublishPlan`: it records the exact
-//! package/version authority that later intent construction consumes, without
+//! It records the exact package/version authority that later intent construction consumes, without
 //! exposing a mutation route.
 
 use callisto_model::{
@@ -46,7 +45,7 @@ pub(crate) fn release_package_ids(
 /// Derives the durable roster from a freshly computed version plan.
 ///
 /// The caller supplies the plan from the same workspace observation; this
-/// function never inspects `PublishPlan` or a caller-provided release roster.
+/// function never inspects a caller-provided release roster.
 pub fn derive_release_decision<R: callisto_model::CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     plan: &VersionPlan,
@@ -163,6 +162,86 @@ pub fn derive_selected_release_decision<R: callisto_model::CommandRunner, D: Dep
         })
         .collect();
     ReleaseDecisionV1::new(entries).map_err(GraphError::from)
+}
+
+/// Derives the roster of every publishable package whose current version has
+/// no tag in the canonical [`crate::TagIndex`], each with
+/// [`ReleaseInclusionReason::UnreleasedVersion`].
+///
+/// A non-empty `selections` restricts the roster to exactly those identities,
+/// each of which must be unreleased and publishable. `None` means nothing is
+/// unreleased.
+pub fn derive_unreleased_decision<R: callisto_model::CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    selections: &[ReleasePackageId],
+) -> Result<Option<ReleaseDecisionV1>, GraphError> {
+    let versions = workspace.base_versions()?;
+    let tags = workspace.tags()?;
+    let mut entries = Vec::new();
+    for package in workspace.graph.packages() {
+        if !has_dispatchable_target(package) {
+            continue;
+        }
+        let version = versions.get(&package.id).ok_or_else(|| GraphError::ReleaseInvariant {
+            detail: format!("package `{}` has no base version", package.id.display_name()),
+        })?;
+        let released = tags.contains_tag(&tags.template(&package.id).render(version).to_string())
+            || tags.last_tag(&package.id).is_some_and(|tag| &tag.version == version);
+        if released {
+            continue;
+        }
+        for id in release_package_ids(&workspace.identity, package)? {
+            entries.push(ReleaseDecisionEntry {
+                package: id,
+                target_version: version.clone(),
+                reasons: vec![ReleaseInclusionReason::UnreleasedVersion],
+            });
+        }
+    }
+
+    let mut seen = std::collections::BTreeSet::new();
+    for selection in selections {
+        if !seen.insert(selection) {
+            return Err(GraphError::ReleaseSelectionInvalid {
+                package: selection.clone(),
+                reason: ReleaseSelectionInvalidReason::Duplicate,
+            });
+        }
+        let Some(package) = workspace_package(workspace, selection) else {
+            return Err(GraphError::UnknownPackage {
+                id: callisto_model::PackageId::Prefixed {
+                    ecosystem: selection.ecosystem(),
+                    name: selection.name().to_string(),
+                },
+            });
+        };
+        if !has_dispatchable_target(package) {
+            return Err(GraphError::ReleaseSelectionInvalid {
+                package: selection.clone(),
+                reason: ReleaseSelectionInvalidReason::NoDispatchableTarget,
+            });
+        }
+        if !entries.iter().any(|entry| &entry.package == selection) {
+            return Err(GraphError::ReleaseSelectionInvalid {
+                package: selection.clone(),
+                reason: ReleaseSelectionInvalidReason::NotARelease,
+            });
+        }
+    }
+    if !selections.is_empty() {
+        entries.retain(|entry| seen.contains(&entry.package));
+    }
+    if entries.is_empty() {
+        return Ok(None);
+    }
+    ReleaseDecisionV1::new(entries).map(Some).map_err(GraphError::from)
+}
+
+fn has_dispatchable_target(package: &Package) -> bool {
+    package
+        .publish_to
+        .iter()
+        .any(|target| !matches!(target, callisto_model::PublishTarget::None))
 }
 
 /// The workspace package with this exact release identity.

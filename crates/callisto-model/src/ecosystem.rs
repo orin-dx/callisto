@@ -96,7 +96,7 @@ pub enum PublishTarget {
         /// distinct from an explicit `"public"`, which a bare bool couldn't
         /// represent (both collapsed to `false`, silently dropping an
         /// unscoped package's explicit `"public"` setting). When `Some`,
-        /// `plan_publish` passes the corresponding `--access` flag rather
+        /// release planning passes the corresponding `--access` flag rather
         /// than falling back to the `@scope/name`-implies-public heuristic.
         access: Option<NpmAccess>,
     },

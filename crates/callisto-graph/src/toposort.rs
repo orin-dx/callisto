@@ -115,7 +115,7 @@ pub const PUBLISH_ORDERING_KINDS: &[DepKind] = &[DepKind::Runtime, DepKind::Buil
 /// `Dev` edge inside a cyclic component is dropped; a `Dev` edge anywhere else
 /// still orders. A cycle that survives with every `Dev` edge excluded is a real
 /// `Runtime`/`Build`/`Optional` cycle and fails construction with
-/// [`GraphError::Cycle`]. Shared by `plan_publish` and release derivation.
+/// [`GraphError::Cycle`]. Used by release derivation.
 pub struct PublishEdgeFilter {
     dev_cycles: Vec<HashSet<PackageId>>,
 }

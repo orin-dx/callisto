@@ -13,12 +13,8 @@ Commands:
   validate         Check that changesets and the dependency graph are well-formed
   snapshot         Apply a temporary, non-persistent version bump for a snapshot release
   init             Scaffold Callisto configuration in the current workspace
-  plan-publish     Compute which packages are ready to publish and print the publish plan
-  publish          Publish ready packages to their ecosystem registries via native CLI tools
   compose-pr-body  Generate a pull request body summarizing pending release changes
-  tag              Create git tags for packages in a publish plan
-  filter-plan      Filter a publish plan down to what a publish report confirms actually succeeded, dropping anything that failed
-  release          Create, inspect, or execute durable release intents
+  release          Publish every package whose current version has not been released yet
   release-pr       Decide the next managed release-pull-request operation from a forge snapshot
   completions      Generate shell completion scripts
   schema           Print the JSON schema for a report type

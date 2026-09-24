@@ -105,8 +105,8 @@ pub struct TagIndex {
     pre_cursor: BTreeMap<PackageId, Option<CommitSha>>,
     /// The full, unfiltered raw tag list fetched once during `build` (see
     /// `fetch_all_tags`), kept around so callers checking whether a specific
-    /// tag name already exists (e.g. `create_tags_with_options`, once per
-    /// release) can consult this in-memory set instead of re-querying `git`
+    /// tag name already exists (e.g. the unreleased-version check, once per
+    /// package) can consult this in-memory set instead of re-querying `git`
     /// once per check.
     all_tags: std::collections::BTreeSet<String>,
     pub diagnostics: Vec<Diagnostic>,
@@ -128,7 +128,7 @@ impl TagIndex {
         // discoveries / N host round-trips for N packages). `git` is shared
         // with the caller rather than discovered fresh here, so a single
         // `Workspace`-scoped command that also needs git for other reasons
-        // (e.g. `plan_publish`'s head_sha resolution) doesn't pay for a
+        // (e.g. local release's head_sha resolution) doesn't pay for a
         // second discovery.
         let all_tags = fetch_all_tags(git)?;
         let all_tags_set: std::collections::BTreeSet<String> = all_tags.iter().cloned().collect();
@@ -190,7 +190,7 @@ impl TagIndex {
 
     /// Returns whether `tag_name` is present in the raw tag list fetched
     /// during `build` -- an exact match, not a glob. Lets callers checking
-    /// tag existence once per release (e.g. `create_tags_with_options`)
+    /// tag existence once per package (e.g. `derive_unreleased_decision`)
     /// consult this in-memory set instead of shelling out to `git` again
     /// for each one.
     pub fn contains_tag(&self, tag_name: &str) -> bool {
