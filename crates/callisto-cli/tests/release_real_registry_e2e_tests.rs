@@ -22,17 +22,21 @@
 //! hardcodes the public simple index when `endpoint` is `None` (see the PyPI
 //! note below).
 //!
-//! PyPI (AC-22) has no counterpart here. `registry_argv::pypi_publish_argv`
-//! unconditionally appends `--skip-existing` to the twine upload argv; twine
-//! 5 and newer's `verify_feature_capability` refuses to run at all when that
-//! flag is set against any repository URL other than `https://upload.pypi.org/` or
-//! `https://test.pypi.org/` (`UnsupportedConfiguration`). Confirmed live
-//! against a real local `pypiserver` with real `python -m build` + `twine`:
-//! the upload never reaches the wire. This blocks real-registry PyPI e2e
-//! coverage -- and blocks any callisto user publishing to a private PyPI
-//! index with a current twine -- until `--skip-existing` becomes conditional
-//! on the target registry. Tracked as a follow-up rather than worked around
-//! here.
+//! PyPI (AC-22) drives `registry_argv::pypi_publish_argv` directly (the exact
+//! production build-then-upload argv, including `--repository-url` for a
+//! private index) rather than through `callisto release execute`: that CLI
+//! path routes a registry through `PreparedRegistryBinding`, whose
+//! `canonical_registry_url` rejects non-https with no loopback exception --
+//! by design (see SPEC-DX-CORRECTNESS-PARITY AC-4/AC-5) -- so a callisto
+//! registry binding can never target a local `http://127.0.0.1` test index.
+//! Calling `pypi_publish_argv` directly stays on the same side of that line
+//! as the npm test above: real registry, real package-manager config
+//! (`--repository-url`, not `.pypirc`), zero callisto-side registry binding.
+//! `pypi_publish_argv` used to unconditionally append `--skip-existing`,
+//! which twine 5 and newer refuses to run at all against a non-warehouse
+//! repository URL (`UnsupportedConfiguration`) -- fixed to be conditional;
+//! see the `fix(publish)` commit on this branch and the `pypi_publish_argv_*`
+//! `--skip-existing` tests in `registry_argv.rs`.
 
 #[path = "common/release_harness.rs"]
 mod release_harness;
@@ -43,6 +47,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+use callisto_graph::commands::registry_argv::{pypi_publish_argv, Argv};
+use callisto_model::{Version, VersionGrammar};
 use release_harness::*;
 
 /// Finds `program` on `PATH`, the way a shell would. Never panics, so a test
@@ -297,5 +303,162 @@ fn npm_publish_against_a_real_verdaccio_registry_is_retrievable_afterward() {
     assert!(
         git(&bare, &["tag", "--list", &tag]).contains(&tag),
         "the release tag must reach the remote"
+    );
+}
+
+// --------------------------------------------------------------------- pypi
+
+/// Whether `python` can `import module` -- the actual precondition for
+/// `pypi_publish_argv`'s `python -m build` step, not just a `python` binary
+/// existing. `pypi_publish_argv` hardcodes the program name `python` (not
+/// `python3`), so that's exactly what's probed here.
+fn python_module_importable(module: &str) -> bool {
+    Command::new("python")
+        .args(["-c", &format!("import {module}")])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+/// Starts a real local `pypiserver` on an ephemeral loopback port with
+/// authentication fully disabled (`-a . -P .`, its own documented way to
+/// allow anonymous browsing and uploads) and `--disable-fallback`, so a
+/// lookup for an unknown project 404s instead of proxying to real PyPI.
+fn start_pypiserver(external: &Path) -> (ServerGuard, u16) {
+    let packages_dir = external.join("pypiserver-packages");
+    fs::create_dir_all(&packages_dir).unwrap();
+    let port = free_loopback_port();
+    let child = Command::new("pypi-server")
+        .args([
+            "run",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            &port.to_string(),
+            "--authenticate",
+            ".",
+            "--passwords",
+            ".",
+            "--disable-fallback",
+            packages_dir.to_str().unwrap(),
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("pypi-server must be spawnable");
+    let guard = ServerGuard { child };
+    wait_for_port(port, Duration::from_secs(20));
+    (guard, port)
+}
+
+const PYPI_PACKAGE: &str = "callisto-e2e-probe";
+const PYPI_VERSION: &str = "0.1.0";
+
+/// A minimal real Python source distribution: just enough for `python -m
+/// build --sdist --wheel` to produce real, installable artifacts.
+fn pypi_package_fixture(root: &Path, package_name: &str, version: &str) {
+    fs::write(
+        root.join("pyproject.toml"),
+        format!(
+            "[build-system]\nrequires = [\"setuptools>=61.0\"]\nbuild-backend = \"setuptools.build_meta\"\n\n\
+             [project]\nname = \"{package_name}\"\nversion = \"{version}\"\ndescription = \"e2e probe\"\n\
+             requires-python = \">=3.8\"\n"
+        ),
+    )
+    .unwrap();
+    let module_dir = root.join(package_name.replace('-', "_"));
+    fs::create_dir_all(&module_dir).unwrap();
+    fs::write(module_dir.join("__init__.py"), "\n").unwrap();
+}
+
+/// Runs an `Argv` exactly as the production `run_argv` does (see
+/// `provider/registry.rs`), just without a `CommandRunner` in the way.
+fn run_argv(argv: &Argv, extra_env: &[(&str, &str)]) -> std::process::Output {
+    let mut command = Command::new(&argv.program);
+    command.args(&argv.args).current_dir(&argv.cwd).stdin(Stdio::null());
+    for (key, value) in extra_env {
+        command.env(key, value);
+    }
+    command.output().unwrap_or_else(|error| {
+        panic!(
+            "{} {:?} (cwd {}) must be runnable: {error}",
+            argv.program,
+            argv.args,
+            argv.cwd.display()
+        )
+    })
+}
+
+/// AC-22: a real pypiserver registry, `registry_argv::pypi_publish_argv`'s
+/// exact production build-then-upload argv (including `--repository-url`,
+/// callisto's own package-manager-config routing, not a registry binding),
+/// and an assertion against the registry's own simple index afterward -- not
+/// just the upload's exit code.
+#[test]
+fn pypi_publish_against_a_real_pypiserver_registry_is_retrievable_afterward() {
+    if find_on_path("pypi-server").is_none() {
+        eprintln!("SKIPPED pypi real-registry e2e: `pypi-server` is not installed");
+        return;
+    }
+    if find_on_path("python").is_none() {
+        eprintln!("SKIPPED pypi real-registry e2e: `python` is not on PATH (pypi_publish_argv hardcodes it)");
+        return;
+    }
+    if !python_module_importable("build") || find_on_path("twine").is_none() {
+        eprintln!("SKIPPED pypi real-registry e2e: the `build` module or `twine` is not installed");
+        return;
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    pypi_package_fixture(root, PYPI_PACKAGE, PYPI_VERSION);
+
+    let external = tempfile::tempdir().unwrap();
+    let (_pypiserver_guard, port) = start_pypiserver(external.path());
+    let index = format!("http://127.0.0.1:{port}");
+
+    let version = Version::parse(PYPI_VERSION, VersionGrammar::SemVer).unwrap();
+    let steps = pypi_publish_argv(root, Path::new(""), PYPI_PACKAGE, &version, Some(index.as_str()));
+    let [build, upload] = steps.as_slice() else {
+        panic!("pypi_publish_argv must return exactly a build and an upload step");
+    };
+    assert!(
+        upload.args.contains(&"--repository-url".to_string()) && upload.args.contains(&index),
+        "twine must be routed via --repository-url, not a callisto registry binding: {:?}",
+        upload.args
+    );
+
+    let built = run_argv(build, &[]);
+    assert!(
+        built.status.success(),
+        "python -m build failed: {}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+
+    // pypiserver's `-a . -P .` disables authentication entirely, but twine's
+    // own client still refuses to run with no credentials configured at
+    // all -- the package manager's own config, same as npm's dummy
+    // `_authToken` above, not a callisto concern.
+    let uploaded = run_argv(
+        upload,
+        &[("TWINE_USERNAME", "callisto-e2e"), ("TWINE_PASSWORD", "callisto-e2e")],
+    );
+    assert!(
+        uploaded.status.success(),
+        "twine upload failed: {}",
+        String::from_utf8_lossy(&uploaded.stderr)
+    );
+
+    // Independent verification against the registry itself: the published
+    // version must be visible in pypiserver's own PEP 691 JSON simple index,
+    // not just inferred from twine's exit code.
+    let simple_index = curl_get(&format!("http://127.0.0.1:{port}/simple/{PYPI_PACKAGE}/"));
+    assert!(
+        simple_index.contains(&format!("{PYPI_PACKAGE}-{PYPI_VERSION}"))
+            || simple_index.contains(&format!("{}-{PYPI_VERSION}", PYPI_PACKAGE.replace('-', "_"))),
+        "published version must be retrievable from the registry's own simple index: {simple_index}"
     );
 }
