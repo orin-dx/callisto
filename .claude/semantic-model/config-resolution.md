@@ -22,6 +22,12 @@ pub struct ResolvedConfig {
 }
 ```
 
+## Load and resolve
+
+`config::load(root)` reads and parses `callisto.toml` (absent means empty) into `RawConfig`, then calls `config::resolve(root, RawConfig)`, which does all validation and defaulting. Callers holding an in-memory `RawConfig` call `resolve` directly.
+
+`[release]`: `product-package`, `forge-repository` (`owner/repo`, optional at load, required to plan: E198), `[[release.artifact]]`. Legacy `[release.profiles.production].forge-repository` migrates when the top-level key is absent; both set and different, or any other profile name, is E197. Legacy `registry-routes` is parsed and ignored. `[init]` still parses; `resolve` ignores it.
+
 ## PackageConfig
 
 The override payload applied to a matched package:

@@ -4,9 +4,9 @@ The three structural authorities of a durable release run. All three live in `ca
 
 ## Run envelope (`release.rs`)
 
-`ReleaseRunEnvelopeV1` is the immutable identity of one run: orchestration revision, release-source revision, profile, intent digest, artifact-manifest digest. There is one run kind.
+`ReleaseRunEnvelopeV1` is the immutable identity of one run: orchestration revision, release-source revision, intent digest, artifact-manifest digest. There is one run kind and one destination (`[release].forge-repository`).
 
-- One constructor, `ReleaseRunEnvelopeV1::new(orchestration_revision, intent, manifest_digest)`. Profile, source revision, and intent digest are read out of the intent, so they have no second authority and cannot be asserted by a caller.
+- One constructor, `ReleaseRunEnvelopeV1::new(orchestration_revision, intent, manifest_digest)`. Source revision and intent digest are read out of the intent, so they have no second authority and cannot be asserted by a caller.
 - Cross-field rules, enforced before the first effect: source revision equals the intent's Git source; manifest digest is `Some` exactly when the intent declares artifact slots; the orchestration revision equals every slot's attestation `workflow_commit`.
 - It is held **inside** `ReleaseExecutionStateV1`, whose only constructor is `new(intent, envelope)`. The state is in memory only: it is never persisted or loaded, and every run (including a CI "Re-run failed jobs") starts from all-`Pending`. The receipt is built from the state alone (`ReleaseReceiptV1::from_state`): its envelope plus the `ProviderEvidenceV1` each operation recorded on reaching `Published`/`AlreadySatisfied`. Nothing re-observes providers after the effects.
 - `execute_release` observes each operation once before any effect: `Exact` becomes `AlreadySatisfied` for every role (a registry version it adopts prints one `warning: <package> <version> is already published; skipping` line), `Absent` is published and confirmed, `Conflict` is E167 and `Indeterminate` is E176.
@@ -32,7 +32,7 @@ Cargo classification (`classify_cargo_info`): exit 0 with a `version: VERSION` l
 
 A **yanked** version reads as `Absent`, because `cargo info` answers "could not find" for one. This fails closed: the publish that follows is refused by the registry, and since only an `Exact` observation may satisfy an operation, the run ends in `RegistryPublishUnconfirmed`, never in a receipt. `ProviderConflictReason::RegistryVersionYanked` remains in the wire enum but no adapter currently produces it.
 
-Registry endpoints must be `https` (`registry_endpoint::canonical_registry_url`), with no loopback exception, enforced identically by config load (E197 family) and release binding (E126).
+Registry endpoints must be `https` (`registry_endpoint::canonical_registry_url`), with no loopback exception, enforced by release binding (E126). A publish target binds its own registry key directly; there is no per-profile route.
 
 ## Forge roles and DAG order (`provider/forge.rs`, `provider/artifact.rs`)
 
@@ -90,7 +90,7 @@ Asserted after every scenario: a receipt only over landed effects, issued with n
 
 ## Wire versions
 
-`ReleaseExecutionStateV1` has no wire shape. `ReleaseReceiptV1::SCHEMA_VERSION` is `2`; its `ReleaseRunEnvelopeV1::SCHEMA_VERSION` is `2` (the run `kind` was removed); `ReleaseIntentV1::SCHEMA_VERSION` is `4` (the `platformPublish` role). An intent from an earlier version is rejected by `callisto::release_intent_schema_unsupported`, which names re-planning as the fix. `callisto schema --type release-receipt` publishes the wire shape, guarded by `crates/callisto-cli/tests/schema_guard_test.rs`.
+`ReleaseExecutionStateV1` has no wire shape. `ReleaseReceiptV1::SCHEMA_VERSION` is `2`; its `ReleaseRunEnvelopeV1::SCHEMA_VERSION` is `3` (run `kind`, then `profile`, removed); `ReleaseIntentV1::SCHEMA_VERSION` is `5` (`profile` removed). An intent from an earlier version is rejected by `callisto::release_intent_schema_unsupported`, which names re-planning as the fix. `callisto schema --type release-receipt` publishes the wire shape, guarded by `crates/callisto-cli/tests/schema_guard_test.rs`.
 
 ## Provider contract tier
 

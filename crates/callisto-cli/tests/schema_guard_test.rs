@@ -144,7 +144,7 @@ fn ac13_diagnostic_code_enum_gains_only_changelog_read_error() {
 
 /// The receipt is versioned: a change to its shape without a `SCHEMA_VERSION`
 /// bump is a silent break for receipts written by an earlier release. The
-/// receipt is at version 2 and its run envelope at version 2 (no run kind).
+/// receipt is at version 2 and its run envelope at version 3 (no run kind, no profile).
 #[test]
 fn durable_release_wire_shapes_match_their_schema_version() {
     let receipt = run_schema("release-receipt");
@@ -158,7 +158,6 @@ fn durable_release_wire_shapes_match_their_schema_version() {
         "schemaVersion",
         "orchestrationRevision",
         "releaseSourceRevision",
-        "profile",
         "intentDigest",
     ]);
     assert_eq!(req, expected);

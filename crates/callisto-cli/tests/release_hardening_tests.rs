@@ -171,23 +171,18 @@ fn p02_rerun_after_a_crate_is_already_published_completes_and_issues_a_receipt()
 }
 
 #[test]
-fn p04_tampered_profile_in_intent_is_rejected_before_any_effect() {
+fn p04_intent_carrying_a_profile_is_rejected_before_any_effect() {
     let e = Env::new(false);
     let mut v: serde_json::Value = serde_json::from_slice(&fs::read(&e.intent).unwrap()).unwrap();
-    v["profile"] = serde_json::Value::from("rehearsal");
+    v["profile"] = serde_json::Value::from("production");
     fs::write(&e.intent, serde_json::to_vec_pretty(&v).unwrap()).unwrap();
-    let out = e.run(&["--profile", "rehearsal"]);
-    assert!(!out.status.success(), "relabelled profile must break the intent digest");
+    let out = e.run(&[]);
+    assert!(
+        !out.status.success(),
+        "an intent field outside the schema must be rejected"
+    );
     assert!(!e.log.exists() || count(&e.log, "cargo publish") == 0);
     assert!(!e.receipt.exists());
-}
-
-#[test]
-fn p05_execute_profile_must_match_intent_profile() {
-    let e = Env::new(false);
-    let out = e.run(&["--profile", "rehearsal"]);
-    assert!(!out.status.success());
-    assert!(!e.log.exists());
 }
 
 #[test]
@@ -236,39 +231,6 @@ fn p07_plan_rejects_abbreviated_and_unknown_release_sha() {
         assert!(!r.status.success(), "{bad} must be rejected");
         assert!(!out_path.exists());
     }
-}
-
-#[test]
-fn red_d06_unconfigured_profile_without_product_release_is_rejected() {
-    let (dir, release_commit) = release_commit_fixture();
-    let external = tempfile::tempdir().unwrap();
-    let out_path = external.path().join("i.json");
-    let r = callisto(
-        dir.path(),
-        &[
-            "release",
-            "plan",
-            "--profile",
-            "does-not-exist",
-            "--from-release-commit",
-            &release_commit,
-            "--decision",
-            DECISION_PATH,
-            "--out",
-            out_path.to_str().unwrap(),
-        ],
-    );
-    eprintln!(
-        "P08 status={:?} intent_written={} stderr={}",
-        r.status.code(),
-        out_path.exists(),
-        String::from_utf8_lossy(&r.stderr)
-    );
-    assert!(
-        !r.status.success(),
-        "unconfigured profile must fail before writing intent"
-    );
-    assert!(!out_path.exists());
 }
 
 #[test]
@@ -340,7 +302,7 @@ fn p11_receipt_is_bound_to_intent_and_provider_evidence() {
     let r = e.receipt();
     eprintln!("P11 receipt: {}", serde_json::to_string_pretty(&r).unwrap());
     assert_eq!(r["envelope"]["intentDigest"], intent["digest"]);
-    assert_eq!(r["envelope"]["profile"], "production");
+    assert!(r["envelope"].get("profile").is_none());
     assert!(r["envelope"].get("kind").is_none());
     let ops = intent["operations"].as_array().unwrap().len();
     assert_eq!(r["observations"].as_array().unwrap().len(), ops);
@@ -487,7 +449,7 @@ fn p18_plan_rejects_artifact_repository_that_differs_from_the_git_remote() {
 }
 
 #[test]
-fn p19_plan_rejects_artifact_repository_that_differs_from_profile_destination() {
+fn p19_plan_rejects_artifact_repository_that_differs_from_forge_repository() {
     let (dir, release_commit) = product_release_commit_fixture();
     let external = tempfile::tempdir().unwrap();
     let intent = external.path().join("i.json");
@@ -509,7 +471,11 @@ fn p19_plan_rejects_artifact_repository_that_differs_from_profile_destination() 
         ],
     );
     assert!(!r.status.success());
-    assert!(stderr(&r).contains("targets forge repository"), "{}", stderr(&r));
+    let err = stderr(&r);
+    assert!(
+        err.contains("`example/core-crate`") && err.contains("`example/elsewhere`") && !err.contains("profile"),
+        "{err}"
+    );
     assert!(!intent.exists());
 }
 

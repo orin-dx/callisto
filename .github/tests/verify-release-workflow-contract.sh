@@ -55,7 +55,7 @@ plan="$(job_block plan build-artifact)"
 require_line "$plan" '          ref: ${{ needs.release-candidate.outputs.orchestration_sha }}' 'planning must use one resolved current orchestration revision'
 require_line "$plan" '          path: release-source' 'planning must check out the explicit release source separately'
 require_line "$plan" '          ORCHESTRATION_SHA: ${{ needs.release-candidate.outputs.orchestration_sha }}' 'planning must pass the coordinator revision through an environment variable'
-require_line "$plan" '            --orchestration-revision "$ORCHESTRATION_SHA" --artifact-repository "$GITHUB_REPOSITORY" \' 'planning must bind the production profile and current coordinator without shell interpolation'
+require_line "$plan" '            --orchestration-revision "$ORCHESTRATION_SHA" --artifact-repository "$GITHUB_REPOSITORY" \' 'planning must bind the current coordinator without shell interpolation'
 require_line "$plan" '            --from-release-commit "$RELEASE_SOURCE_SHA" \' 'planning must bind the exact release source checkout'
 
 execute="$(sed -n '/^  execute:$/,$p' "$workflow")"
@@ -65,7 +65,7 @@ require_line "$execute" '          path: ${{ runner.temp }}/release-intent' 'exe
 require_line "$execute" '          path: ${{ runner.temp }}/release-build' 'execute must download release-build outside the workspace -- callisto release execute re-checks release trust before every dispatch, which fails closed on any untracked file in the worktree'
 require_line "$execute" '          path: release-source' 'execute must use an explicit release-source checkout'
 require_line "$execute" '          ORCHESTRATION_SHA: ${{ needs.release-candidate.outputs.orchestration_sha }}' 'execution must pass the coordinator revision through an environment variable'
-require_line "$execute" '          args=(--source-root "$GITHUB_WORKSPACE/release-source" --intent "$intent_dir/release-intent.json" --receipt "$receipt_dir/release-receipt.json" --orchestration-revision "$ORCHESTRATION_SHA" --profile production)' 'execute must pass the explicit source checkout, coordinator revision, and mandatory receipt path to the current Callisto coordinator'
+require_line "$execute" '          args=(--source-root "$GITHUB_WORKSPACE/release-source" --intent "$intent_dir/release-intent.json" --receipt "$receipt_dir/release-receipt.json" --orchestration-revision "$ORCHESTRATION_SHA")' 'execute must pass the explicit source checkout, coordinator revision, and mandatory receipt path to the current Callisto coordinator'
 
 ci_workflow=.github/workflows/callisto-ci.yml
 checkout_count=$(rg -n 'uses: actions/checkout@' "$ci_workflow" | wc -l)

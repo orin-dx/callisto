@@ -10,7 +10,6 @@ fn tag_intent() -> ReleaseIntentV1 {
     let package = ReleasePackageId::parse("cargo/demo").unwrap();
     let version = Version::semver(1, 2, 3);
     ReleaseIntentV1::new(
-        ReleaseProfileId::production(),
         ReleaseDecisionV1::new(vec![ReleaseDecisionEntry {
             package: package.clone(),
             target_version: version.clone(),
@@ -40,7 +39,6 @@ fn slotted_intent() -> (ReleaseIntentV1, ArtifactSlotId) {
     )
     .unwrap();
     let intent = ReleaseIntentV1::new(
-        ReleaseProfileId::production(),
         ReleaseDecisionV1::new(vec![ReleaseDecisionEntry {
             package,
             target_version: version,
@@ -215,14 +213,9 @@ fn envelope_rejects_each_cross_field_mismatch() {
     ));
     assert!(ReleaseRunEnvelopeV1::new(sha('b'), &slotted, Some(ArtifactDigest::from_bytes(b"manifest"))).is_ok());
 
-    // Profile, intent digest, and release source are read out of the intent,
+    // Intent digest and release source are read out of the intent,
     // so they can only disagree if forged on the wire.
     for (field, value, expected) in [
-        (
-            "profile",
-            serde_json::json!("rehearsal"),
-            ReleaseRunEnvelopeError::MismatchedProfile,
-        ),
         (
             "intentDigest",
             serde_json::json!("0".repeat(64)),

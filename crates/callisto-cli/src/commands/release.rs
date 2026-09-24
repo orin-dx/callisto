@@ -15,8 +15,7 @@ use callisto_graph::commands::{
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_model::{
     ApplyPermit, ArtifactDigest, ArtifactManifestEntryV1, ArtifactManifestV1, ExecutionTrustProfileV1,
-    GitHubArtifactAttestationV1, ReleaseIntentV1, ReleasePackageId, ReleaseProfileId, ReleaseReceiptV1,
-    ReleaseRunEnvelopeV1,
+    GitHubArtifactAttestationV1, ReleaseIntentV1, ReleasePackageId, ReleaseReceiptV1, ReleaseRunEnvelopeV1,
 };
 
 use crate::cli::{
@@ -117,10 +116,6 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
         return Err(CliError::ReleasePlanDryRun);
     }
     let runner = CliCommandRunner;
-    let profile = ReleaseProfileId::parse(&args.profile).map_err(|error| CliError::ReleaseProfileInvalid {
-        profile: args.profile.clone(),
-        detail: error.to_string(),
-    })?;
     let source_global = source_global(global, args.source_root.as_deref());
     let workspace = load_workspace(&source_global, &runner)?;
     let decision = match args.from_release_commit.as_deref() {
@@ -197,18 +192,17 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
                     detail: error.to_string(),
                 }
             })?;
-            // Profile existence is validated by the graph; only the destination match lives here.
+            // A missing forge-repository is the graph's error; only the match lives here.
             if let Some(configured) = workspace
                 .config
                 .product_release
                 .as_ref()
-                .and_then(|release| release.profile(&profile))
-                .filter(|configured| configured.forge_repository != repository)
+                .and_then(|release| release.forge_repository.as_ref())
+                .filter(|configured| **configured != repository)
             {
-                return Err(CliError::ReleaseProfileRepositoryMismatch {
-                    profile: profile.as_str().to_owned(),
-                    configured: configured.forge_repository.as_slug().to_string(),
-                    requested: repository.as_slug().to_string(),
+                return Err(CliError::ReleaseForgeRepositoryMismatch {
+                    configured: configured.as_slug(),
+                    requested: repository.as_slug(),
                 });
             }
             build_release_intent_with_artifacts(
@@ -216,7 +210,6 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
                 &locator,
                 &runner,
                 &decision,
-                profile.clone(),
                 ExecutionTrustProfileV1::GitCommit,
                 callisto_graph::commands::ArtifactBuildPolicy {
                     repository,
@@ -241,7 +234,6 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
                 &locator,
                 &runner,
                 &decision,
-                profile,
                 ExecutionTrustProfileV1::GitCommit,
             )?
         }
@@ -273,16 +265,6 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
     // late failure cannot leave published crates, tags or releases without a receipt.
     let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).ok_or(CliError::ReleaseExecuteDryRun)?;
     let intent = read_intent(&args.intent)?;
-    let selected_profile = ReleaseProfileId::parse(&args.profile).map_err(|error| CliError::ReleaseProfileInvalid {
-        profile: args.profile.clone(),
-        detail: error.to_string(),
-    })?;
-    if selected_profile != intent.profile {
-        return Err(CliError::ReleaseProfileMismatch {
-            selected: selected_profile.as_str().to_owned(),
-            intent: intent.profile.as_str().to_owned(),
-        });
-    }
     let orchestration_revision = callisto_model::CommitSha::parse(&args.orchestration_revision).map_err(|error| {
         CliError::ReleaseOrchestrationRevisionInvalid {
             revision: args.orchestration_revision.clone(),
@@ -330,21 +312,21 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
     let runner = CliCommandRunner;
     let source_global = source_global(global, args.source_root.as_deref());
     let source_workspace = load_workspace(&source_global, &runner)?;
-    // Profile existence is validated by the graph during intent validation; only the destination match lives here.
-    if let Some(configured_profile) = source_workspace
+    // A missing forge-repository is the graph's error during intent validation; only the match lives here.
+    if let Some(configured) = source_workspace
         .config
         .product_release
         .as_ref()
-        .and_then(|release| release.profile(&selected_profile))
+        .and_then(|release| release.forge_repository.as_ref())
     {
-        if intent
+        if let Some(slot) = intent
             .artifact_slots
             .iter()
-            .any(|slot| slot.attestation_policy.repository != configured_profile.forge_repository)
+            .find(|slot| slot.attestation_policy.repository != *configured)
         {
-            return Err(CliError::ReleaseArtifactDestinationMismatch {
-                profile: selected_profile.as_str().to_owned(),
-                repository: configured_profile.forge_repository.as_slug().to_string(),
+            return Err(CliError::ReleaseForgeRepositoryMismatch {
+                configured: configured.as_slug(),
+                requested: slot.attestation_policy.repository.as_slug(),
             });
         }
     }

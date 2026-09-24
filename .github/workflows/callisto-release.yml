@@ -229,7 +229,7 @@ jobs:
           set -euo pipefail
           handoff_dir="${RUNNER_TEMP}/release-intent"
           mkdir -p "$handoff_dir"
-          callisto release plan --profile production --source-root "$GITHUB_WORKSPACE/release-source" \
+          callisto release plan --source-root "$GITHUB_WORKSPACE/release-source" \
             --orchestration-revision "$ORCHESTRATION_SHA" --artifact-repository "$GITHUB_REPOSITORY" \
             --from-release-commit "$RELEASE_SOURCE_SHA" \
             --decision "$GITHUB_WORKSPACE/release-source/.callisto/release-decision.json" \
@@ -466,7 +466,7 @@ jobs:
           build_dir="${RUNNER_TEMP}/release-build"
           receipt_dir="${RUNNER_TEMP}/callisto-release-receipt/${GITHUB_RUN_ID}"
           mkdir -p "$receipt_dir"
-          args=(--source-root "$GITHUB_WORKSPACE/release-source" --intent "$intent_dir/release-intent.json" --receipt "$receipt_dir/release-receipt.json" --orchestration-revision "$ORCHESTRATION_SHA" --profile production)
+          args=(--source-root "$GITHUB_WORKSPACE/release-source" --intent "$intent_dir/release-intent.json" --receipt "$receipt_dir/release-receipt.json" --orchestration-revision "$ORCHESTRATION_SHA")
           if [[ -f "$build_dir/release-artifacts/manifest.json" ]]; then
             args+=(--artifact-manifest "$build_dir/release-artifacts/manifest.json" --artifact-dir "$build_dir/release-artifacts")
           fi

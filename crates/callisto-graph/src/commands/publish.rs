@@ -257,7 +257,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                         // from `publishConfig` in package.json.
                         if npm_registry_url.is_none() {
                             if registry.is_some() {
-                                crate::commands::release::prepared_registry_binding(ws, target, None, &pkg.id)?;
+                                crate::commands::release::prepared_registry_binding(ws, target, &pkg.id)?;
                             }
                             npm_registry_url = registry.clone();
                             npm_access = *access;

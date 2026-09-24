@@ -11,22 +11,6 @@ fn load_config_at(p: &std::path::Path) -> Result<callisto_graph::ResolvedConfig,
     callisto_graph::load_config(p)
 }
 
-#[test]
-fn profiles_sharing_a_registry_endpoint_under_different_keys_are_rejected() {
-    let e = load("[release.profiles.production]\nforge-repository=\"o/a\"\nregistry-routes={cratesIo=\"one\"}\n[release.profiles.rehearsal]\nforge-repository=\"o/b\"\nregistry-routes={cratesIo=\"two\"}\n[registries.one]\nkind=\"cargo\"\nurl=\"https://r.example.test/index\"\n[registries.two]\nkind=\"cargo\"\nurl=\"https://r.example.test/index\"\n");
-    assert!(e.is_err(), "same endpoint under two keys is a shared destination");
-}
-#[test]
-fn route_to_unknown_registry_is_rejected() {
-    assert!(
-        load("[release.profiles.production]\nforge-repository=\"o/a\"\nregistry-routes={cratesIo=\"missing\"}\n")
-            .is_err()
-    );
-}
-#[test]
-fn custom_registry_route_without_url_is_rejected() {
-    assert!(load("[release.profiles.production]\nforge-repository=\"o/a\"\nregistry-routes={cratesIo=\"one\"}\n[registries.one]\nkind=\"cargo\"\n").is_err());
-}
 fn artifact(package: &str, target: &str, asset: &str) -> String {
     format!("[[release.artifact]]\npackage = \"{package}\"\ntarget = \"{target}\"\nasset-name = \"{asset}\"\n")
 }
@@ -79,6 +63,16 @@ fn invalid_artifact_declarations_are_rejected() {
 fn invalid_profile_name_or_forge_repository_is_rejected() {
     assert!(load("[release.profiles.\"bad/name\"]\nforge-repository=\"o/a\"\n").is_err());
     assert!(load("[release.profiles.production]\nforge-repository=\"not a repo\"\n").is_err());
+    let d = tempfile::tempdir().unwrap();
+    fs::write(
+        d.path().join("callisto.toml"),
+        release(&format!(
+            "forge-repository = \"not a repo\"\n{}",
+            artifact("cargo/demo", "a", "ok.tar.gz")
+        )),
+    )
+    .unwrap();
+    assert!(load_config_at(d.path()).is_err());
 }
 #[test]
 fn red_d07_product_package_must_be_ecosystem_qualified() {

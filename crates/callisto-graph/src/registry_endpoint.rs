@@ -101,11 +101,6 @@ pub(crate) fn builtin_registry_url(key: &str) -> Option<&'static str> {
     }
 }
 
-/// The canonical destination of a registry: its configured URL, else its built-in one.
-pub(crate) fn registry_destination(key: &str, url: Option<&str>) -> Option<RegistryBindingV1> {
-    canonical_registry_url(url.or_else(|| builtin_registry_url(key))?).ok()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
