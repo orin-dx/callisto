@@ -176,10 +176,10 @@ pub enum DiagnosticCode {
     /// `optionalDependencies`, so it cannot be attached to an owner (§M.6.1 Case E) and is
     /// treated as its own package.
     PlatformPackageWithoutOwner,
-    /// `callisto init` skipped GitHub Actions workflow generation because the workspace needs
-    /// the build-matrix workflow (napi/maturin platform packages, or `[[release.artifact]]`
-    /// slots), which `init` does not yet generate.
-    WorkflowGenerationNeedsMatrix,
+    /// `callisto init` skipped GitHub Actions workflow generation because it generates no
+    /// workflow for the workspace's shape (maturin platform builds, or platform packages
+    /// with no `napi.targets`).
+    WorkflowGenerationUnsupported,
 }
 
 #[cfg(test)]

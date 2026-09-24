@@ -32,13 +32,14 @@ impl Report for MatrixReport {
     }
 }
 
-/// One package's native-build target group (napi or maturin -- never both;
-/// see GraphError::ConflictingPlatformTargetSources).
+/// One package's build target group: napi, maturin, or cargo `[[release.artifact]]`
+/// binaries -- never more than one (see GraphError::ConflictingPlatformTargetSources).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PlatformTargetGroup {
     pub kind: PlatformTargetKind,
-    /// Raw manifest field name ("napi.targets" or "[tool.maturin].targets"),
+    /// Raw manifest field name ("napi.targets", "[tool.maturin].targets", or
+    /// "[[release.artifact]]"),
     /// used for audit output only -- not a filesystem path.
     pub source: String,
     /// Sorted ascending by triple string before serialization (AC-009).
@@ -51,6 +52,8 @@ pub struct PlatformTargetGroup {
 pub enum PlatformTargetKind {
     Napi,
     Maturin,
+    /// A cargo binary configured as a `[[release.artifact]]`.
+    Cargo,
 }
 
 /// One platform build target within a PlatformTargetGroup. No `rid` field
@@ -64,6 +67,7 @@ pub struct PlatformTarget {
     pub abi: Option<String>,
     pub host_runner: String,
     pub use_cross: bool,
+    /// For a cargo `[[release.artifact]]` entry, its configured asset name.
     pub artifact_name: String,
     /// Workspace-root-relative.
     pub package_dir: String,

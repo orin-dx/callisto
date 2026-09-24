@@ -178,6 +178,13 @@ pub enum GraphError {
         maturin_source: &'static str,
     },
 
+    #[error("package `{package}` declares platform targets via `{source_field}` and ships `[[release.artifact]]` binaries; only one is allowed")]
+    #[diagnostic(
+        code(E203),
+        help("Build the native addon and the release binaries from separate packages, or drop one of the two declarations.")
+    )]
+    PlatformTargetsWithReleaseArtifacts { package: PackageId, source_field: String },
+
     #[error(
         "package `{package}` configures publish-to target `{target}` (ecosystem `{}`), but its detected ecosystem is `{}`",
         .target_ecosystem.prefix(),
@@ -653,14 +660,12 @@ pub enum GraphError {
     )]
     InitWorkflowVersionUnresolved { version: String },
 
-    #[error(
-        "callisto init cannot generate a workflow yet: build-matrix workflow generation is not supported ({reason})"
-    )]
+    #[error("callisto init cannot generate a release workflow for this workspace: {reason}")]
     #[diagnostic(
         code(E202),
-        help("omit --workflow for this workspace; SPEC-DX-SETUP-WORKFLOW-MATRIX will add matrix-workflow generation")
+        help("omit --workflow and write .github/workflows/callisto-release.yml by hand")
     )]
-    InitWorkflowNeedsMatrix { reason: String },
+    InitWorkflowUnsupported { reason: String },
 }
 
 /// Source of a [`GraphError::ReleaseCommand`] (E164) failure: either the
