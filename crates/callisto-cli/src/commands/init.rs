@@ -124,6 +124,7 @@ pub fn run(
     let prompting = interactive && !args.yes;
     let answers = collect_answers(&args, &facts, prompting, prompter, &runner)?;
 
+    let mut diagnostics = Vec::new();
     let want_workflow = match scaffold::workflow_matrix_reason(&facts, &answers) {
         Some(reason) if args.workflow => {
             return Err(GraphError::InitWorkflowNeedsMatrix {
@@ -132,7 +133,17 @@ pub fn run(
             .into());
         }
         Some(reason) => {
-            writeln!(human, "{}", workflow_needs_matrix_note(reason))?;
+            let note = workflow_needs_matrix_note(reason);
+            writeln!(human, "{note}")?;
+            diagnostics.push(callisto_model::Diagnostic {
+                code: callisto_model::DiagnosticCode::WorkflowGenerationNeedsMatrix,
+                severity: callisto_model::DiagnosticSeverity::Warning,
+                message: note,
+                package: None,
+                path: None,
+                escalated_by: None,
+                governed_by: None,
+            });
             false
         }
         None if args.workflow => true,
@@ -172,7 +183,7 @@ pub fn run(
         )?;
     }
 
-    let report = if global.dry_run {
+    let mut report = if global.dry_run {
         InitReport {
             schema_version: SCHEMA_VERSION,
             initialized: false,
@@ -192,6 +203,7 @@ pub fn run(
         }
         report
     };
+    report.diagnostics.extend(diagnostics);
     if json {
         write_json(&mut &mut *out, &report)?;
     } else {
@@ -1079,6 +1091,35 @@ mod tests {
             run.out
         );
         assert!(!dir.path().join(".github/workflows/release.yml").exists());
+    }
+
+    // The skip note also lands in InitReport.diagnostics, so a --format json caller sees it too.
+    #[test]
+    fn shipping_binaries_skip_note_is_a_json_diagnostic() {
+        let dir = workspace(1);
+        let out = Shared::default();
+        let err = Shared::default();
+        run(
+            with_targets(&["x86_64-unknown-linux-gnu"]),
+            &global(dir.path(), OutputFormat::Json, false),
+            false,
+            &mut Scripted::new(vec![], &out),
+            &mut out.clone(),
+            &mut err.clone(),
+        )
+        .unwrap();
+        let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
+        let diagnostics = report["diagnostics"].as_array().unwrap();
+        assert_eq!(diagnostics.len(), 1, "{report}");
+        assert_eq!(diagnostics[0]["code"], "workflow-generation-needs-matrix");
+        assert_eq!(diagnostics[0]["severity"], "warning");
+        assert!(
+            diagnostics[0]["message"]
+                .as_str()
+                .unwrap()
+                .contains("ships release artifacts"),
+            "{report}"
+        );
     }
 
     // Passing --workflow explicitly for a workspace that needs the build matrix errors,

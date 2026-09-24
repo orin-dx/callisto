@@ -85,11 +85,12 @@ fn ac13_diagnostic_code_enum_gains_only_changelog_read_error() {
         "changelog-read-error",
         "ambiguous-package-name",
         "platform-package-without-owner",
+        "workflow-generation-needs-matrix",
     ]);
 
     assert_eq!(
         variants, expected,
-        "DiagnosticCode schema must gain exactly one new variant: ambiguous-package-name"
+        "DiagnosticCode schema must gain exactly one new variant: workflow-generation-needs-matrix"
     );
 }
 
