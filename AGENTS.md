@@ -14,7 +14,6 @@ Rules for AI agents working in this repo.
 | callisto-changelog | FSL-1.1-MIT | model |
 | callisto-graph | FSL-1.1-MIT | model, vcs, manifests, format, changelog, conventional |
 | callisto-cli | FSL-1.1-MIT | all of the above |
-| callisto-moon | FSL-1.1-MIT | model, graph |
 | callisto-fixtures | FSL-1.1-MIT | model (dev-only) |
 
 - MIT crates must never depend on FSL crates.

@@ -30,7 +30,7 @@ Callisto processes monorepo release workflows through a deterministic 5-stage pi
 %%{init: {'theme': 'base', 'themeVariables': {'lineColor': '#64748b', 'edgeLabelBackground': '#f8fafc', 'fontFamily': 'ui-sans-serif, system-ui, sans-serif'}}}%%
 flowchart TB
     subgraph Stage1 ["Stage 1 — Discovery & Identity"]
-        PL(["ProjectLocator<br/>(IgnoreWalk / Moon)"]) --> IR(["IdentityResolver<br/>(Canonical PackageId)"])
+        PL(["ProjectLocator<br/>(IgnoreWalk)"]) --> IR(["IdentityIndex<br/>(Canonical PackageId)"])
     end
 
     subgraph Stage2 ["Stage 2 — Manifest & VCS Ingestion"]
@@ -68,14 +68,13 @@ flowchart TB
 
 ## 3. Workspace Crate Topography & Layer Isolation
 
-Callisto is structured into 10 workspace crates organized across 4 strict layer boundaries to enforce acyclic dependencies:
+Callisto is structured into 9 workspace crates organized across 4 strict layer boundaries to enforce acyclic dependencies:
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'lineColor': '#64748b', 'edgeLabelBackground': '#f8fafc', 'fontFamily': 'ui-sans-serif, system-ui, sans-serif'}}}%%
 flowchart TB
     subgraph Layer4 ["Layer 4 — User Interfaces & Extensions"]
         CLI(["callisto-cli<br/>(CLI Binary & Diagnostics)"])
-        Moon(["callisto-moon<br/>(Moon WASM PDK Extension)"])
     end
 
     subgraph Layer3 ["Layer 3 — Resolution & Graph Solver"]
@@ -95,7 +94,6 @@ flowchart TB
     end
 
     CLI --> Graph
-    Moon --> Graph
     Graph --> Manifests
     Graph --> VCS
     Graph --> Format
@@ -122,10 +120,9 @@ flowchart TB
 | `callisto-conventional` | FSL-1.1-MIT | Layer 1 | Conventional commit parsing and severity classification | `thiserror` |
 | `callisto-changelog` | FSL-1.1-MIT | Layer 1 | Sectioned Markdown changelog rendering | `callisto-model`, `thiserror`, `miette` |
 | `callisto-manifests` | FSL-1.1-MIT | Layer 2 | Format-preserving manifest AST editing (atomic writes live in `callisto-model`, §5) | `toml_edit`, `serde_json`, `indexmap` |
-| `callisto-vcs` | MIT | Layer 2 | Git operations via `gix` (native, non-wasm32) with `ShellGit` fallback | `gix`, `globset` |
+| `callisto-vcs` | MIT | Layer 2 | Git operations via native `gix` with `ShellGit` fallback | `gix`, `globset` |
 | `callisto-graph` | FSL-1.1-MIT | Layer 3 | Dependency DAG construction, Tarjan SCC cycle detection, cascade engine | `petgraph`, `ignore` |
 | `callisto-cli` | FSL-1.1-MIT | Layer 4 | Standalone CLI binary, colored diff previews, `miette` error reporting | `clap`, `miette`, `anstream`, `similar` |
-| `callisto-moon` | FSL-1.1-MIT | Layer 4 | Moon extension host integration and WASM compilation target | `extism-pdk` (`wasm32-wasip1`) |
 | `callisto-fixtures` | FSL-1.1-MIT | Dev | Multi-ecosystem corpus and in-memory test doubles | Dev-only test helpers |
 
 **"Layer 1" is a dependency-depth tier here, not a license tier.** The diagram above groups
@@ -263,7 +260,7 @@ flowchart TD
 
 ## 7. In-Process VCS Engine (`callisto-vcs`)
 
-`callisto-vcs` provides Git operations through a dual-backend design: a native `gix` (gitoxide) backend for non-WASM targets, and a `ShellGit` backend that shells out to the real `git` binary for portability and WASM fallback.
+`callisto-vcs` provides Git operations through a dual-backend design: a native `gix` (gitoxide) backend, and a `ShellGit` backend that shells out to the real `git` binary as a fallback.
 
 ### Key VCS Capabilities
 
@@ -280,16 +277,10 @@ flowchart TD
 
 ```rust
 pub struct GitAccess<'r> {
-    native: Option<GitRepository>,  // None on wasm32 or outside a repo
+    native: Option<GitRepository>,  // None outside a repo
     shell: ShellGit<'r>,            // always available via CommandRunner
 }
 ```
-
-### WASM Target Constraints
-
-`gix` depends on POSIX signal handlers (`gix-tempfile` -> `signal-hook-registry`), which are unsupported on `wasm32-wasip1`. `GitRepository::discover` always returns `Err` on that target (via a compile-time feature gate), so `GitAccess` automatically routes all operations through `ShellGit`, which calls `git` via the Extism host bridge.
-
-Note: a 2026 probe confirmed that `gix` object reads fail with `ENOSYS` on WASM even with the signal-hook dependency removed. The shell-git fallback is therefore the production code path for the Moon WASM plugin.
 
 ---
 
@@ -301,11 +292,6 @@ Callisto decouples core algorithms from platform-specific I/O using four core tr
 // 1. Locate workspace project roots
 pub trait ProjectLocator: Send + Sync {
     fn projects(&self) -> Result<Vec<ProjectRoot>, LocateError>;
-    // Non-authoritative cross-check only (moon's declared project-graph edges);
-    // default impl returns None. Overridden by MoonProjectLocator.
-    fn declared_edges(&self) -> Option<Vec<DeclaredEdge>> {
-        None
-    }
 }
 
 // 2. Command execution abstraction
@@ -348,9 +334,9 @@ pub trait DependencyResolver: Send + Sync {
 }
 ```
 
-### Moon WASM Plugin Binding (`callisto-moon`)
+### moon integration
 
-`callisto-moon` compiles Callisto into a `wasm32-wasip1` plugin using `extism-pdk`. Moon loads `callisto-moon.wasm` inside Extism, passing host environment queries through Extism FFI exports (`#[plugin_fn]`).
+moon runs `callisto` as an ordinary task command. The binary is installed through proto with the TOML plugin at [`proto/callisto.toml`](proto/callisto.toml), which downloads the `callisto-<triple>.tar.gz` release asset.
 
 ---
 
@@ -371,7 +357,7 @@ sequenceDiagram
     participant GH as GitHub API (gh CLI)
 
     Runner->>Verify: push / workflow_dispatch
-    Verify->>Verify: format · lint · test · WASM check · cargo-deny audit
+    Verify->>Verify: format · lint · test · cargo-deny audit
     alt CI Fails
         Verify-->>Runner: Exit 1 — Job 2 cancelled
     else CI Passes
@@ -436,24 +422,13 @@ the Action.
 CI calls `just coverage 90` (`callisto-ci.yml`'s `coverage` job, a required check in `validate`'s
 `needs` list), so a coverage-gate failure always reproduces locally with that exact invocation, no
 raw `cargo llvm-cov` flags improvised separately in the workflow YAML. With `threshold` omitted
-(`just coverage`), the run is unthresholded/informational -- `--ignore-filename-regex '_pdk\.rs$'`
-is always applied regardless (see the naming convention note below). `just ci` runs it with the same
+(`just coverage`), the run is unthresholded/informational. `just ci` runs it with the same
 threshold of 90 that CI enforces. A PR that
 regresses total line coverage below 90% fails CI, not just informationally. The
 baseline at the time this gate was added was 90.40%, leaving a thin ~0.4-point margin -- a
 deliberate choice to catch essentially any regression, at the cost of the gate being more sensitive
 to normal coverage fluctuation than a wider margin would be. This is also the only place the
-workspace compiles and tests under `--all-features` together (`just test`/`just wasm-check` cover
-default features plus `callisto-moon`'s `pdk` feature separately, never combined).
-
-`_pdk.rs`-suffixed files (e.g. `crates/callisto-moon/src/runner_pdk.rs`,
-`crates/callisto-moon/src/extension_pdk.rs`) are excluded from every coverage command via that
-naming convention: they contain code that only executes inside a real wasm32-wasip1 Extism host
-(black-box tested via `tests/moon_wasm_sandbox.rs`), invisible to native `cargo-llvm-cov`
-instrumentation by construction, not a real testing gap. `#[coverage(off)]`, the closer Rust-native
-equivalent, remains nightly-only unstable (confirmed against stable `rustc`, and against the still-
-open tracking issue rust-lang/rust#84605) -- worth revisiting if this crate ever adopts a nightly
-toolchain for coverage specifically, but file-level exclusion is what works on stable today.
+workspace compiles and tests under `--all-features` together.
 
 The workspace-total gate can pass while a single small crate is far below threshold -- a few
 large crates (`callisto-graph` alone is ~15,000 of the workspace's ~26,000 covered lines) dominate
@@ -461,13 +436,11 @@ the total, so a badly-undertested small crate barely moves it. `just coverage-pe
 (default 90) reuses the same profile data to compute and gate on each crate's own line coverage
 independently; `coverage`'s CI job runs it non-blocking (a `::warning::` annotation, not a failed
 check) until the pre-existing per-crate gaps are closed, at which point it should be promoted to a
-required check. `callisto-moon` was the worst offender (70.89%) before the `_pdk.rs` split above;
-its true native-testable coverage is 92.0%, already above the 90% bar.
+required check.
 
 ### Diagnostic Problem Matchers & Toolchain Isolation
 
 - **Inline PR Annotations**: Registered [`.github/callisto-problem-matcher.json`](.github/callisto-problem-matcher.json) in `setup-callisto`. Automatically highlights invalid `.changeset/*.md` syntax or missing package IDs as inline callouts on PR diff lines.
-- **Pre-installed Toolchain Targets**: All toolchain setup steps declare `targets: wasm32-wasip1` up-front alongside `rustfmt` and `clippy`. This prevents parallel `rustup` download race conditions when Moon executes 10 crate tasks in parallel.
 - **Unbuffered Stream Output & UI Accordions**: Long-running shell commands use `::group::` and `::endgroup::` annotations for foldable UI accordions, streaming stdout and stderr live to the runner console.
 
 ---
@@ -611,7 +584,7 @@ callisto_release_plan(
 
 1. **Zero Network / API Lock-in**: `callisto status`, `callisto release --dry-run`, and `callisto matrix` operate entirely on local workspace files and write to stdout/JSON. They run identically inside Bazel sandboxes, Nix flakes, GitLab CI, Buildkite, and Jenkins.
 2. **Hermetic File Inputs**: Accepts explicit `--cwd` and `--config` overrides to run inside isolated build tool sandboxes without relying on global environment variables.
-3. **Thin Adapter Seams**: GitHub Actions ([`callisto-action`](.github/actions/callisto-action/action.yml)), Moon WASM ([`callisto-moon`](crates/callisto-moon)), and Bazel (`rules_callisto`) are thin adapter layers wrapping the same core Rust CLI engine.
+3. **Thin Adapter Seams**: GitHub Actions ([`callisto-action`](.github/actions/callisto-action/action.yml)), moon (via [proto](proto/callisto.toml)), and Bazel (`rules_callisto`) are thin adapter layers wrapping the same core Rust CLI engine.
 
 ---
 

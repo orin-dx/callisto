@@ -1,0 +1,21 @@
+# proto plugin: installs the callisto CLI from GitHub release assets.
+# .prototools: [plugins.tools] callisto = "https://raw.githubusercontent.com/orin-dx/callisto/main/proto/callisto.toml"
+name = "callisto"
+type = "cli"
+
+[platform.macos]
+archs = ["aarch64"]
+download-file = "callisto-{arch}-apple-darwin.tar.gz"
+exe-path = "callisto"
+
+[platform.linux]
+archs = ["x86_64"]
+download-file = "callisto-{arch}-unknown-linux-{libc}.tar.gz"
+exe-path = "callisto"
+
+[install]
+download-url = "https://github.com/orin-dx/callisto/releases/download/callisto@{version}/{download_file}"
+
+[resolve]
+git-url = "https://github.com/orin-dx/callisto"
+version-pattern = "^callisto@(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)(?:-(?<pre>[0-9A-Za-z.-]+))?$"

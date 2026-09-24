@@ -17,7 +17,6 @@ By participating in this project, you agree to abide by the [Code of Conduct](./
 ### Prerequisites
 
 - **Rust Toolchain**: `stable` channel (managed via `rustup`).
-- **WebAssembly Target**: `wasm32-wasip1` (for `callisto-moon` PDK plugin verification).
 - **Moon / Proto** (Recommended): Primary monorepo task runner.
 - **Just** (Recommended): Command runner for quick workspace recipes.
 
@@ -31,8 +30,7 @@ By participating in this project, you agree to abide by the [Code of Conduct](./
 git clone https://github.com/orin-dx/callisto.git
 cd callisto
 
-# Add WASM cross-compilation target & install local Git hooks
-rustup target add wasm32-wasip1
+# Install local Git hooks
 just hooks
 
 # Run full local CI pipeline via Just & Moon
@@ -57,13 +55,12 @@ Callisto uses `just` as its canonical developer command runner, delegating works
 
 | Action | Canonical Command | Description |
 | :--- | :--- | :--- |
-| **Run Full Verification CI** | `just ci` | Runs formatting, Clippy lints, unit/integration tests, audit, and WASM target checks |
+| **Run Full Verification CI** | `just ci` | Runs formatting, Clippy lints, unit/integration tests, and audit |
 | **Run Test Suite** | `just test` | Runs unit, integration, doctests, and E2E lifecycle test suites |
 | **Check Clippy Lints** | `just lint` | Runs Clippy lints with `-D warnings` across all workspace crates |
 | **Check Code Formatting** | `just fmt-check` | Verifies code formatting compliance |
 | **Format Code** | `just fmt` | Applies `cargo fmt` formatting automatically |
 | **Check Security Advisories** | `just audit` | Runs `cargo deny check advisories` security check |
-| **Verify WASM Target** | `just wasm-check` | Verifies `wasm32-wasip1` cross-compilation target |
 
 ---
 

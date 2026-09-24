@@ -122,7 +122,7 @@
     },
     {
       "id": "AC-016",
-      "criterion": "Running `just ci` after all other criteria in this spec are satisfied reports all phases green (formatting, Clippy with -D warnings, Moon unit/integration tests including callisto-graph's apply_version_plan test suite, and the WASM target check).",
+      "criterion": "[SUPERSEDED 2026-09-24: callisto-moon and the wasm32-wasip1 asset were removed; moon uses the CLI via proto] Running `just ci` after all other criteria in this spec are satisfied reports all phases green (formatting, Clippy with -D warnings, Moon unit/integration tests including callisto-graph's apply_version_plan test suite, and the WASM target check).",
       "is_error_case": false
     },
     {

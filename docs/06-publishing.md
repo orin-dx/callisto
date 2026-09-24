@@ -226,10 +226,10 @@ jobs:
 
 ### Installer verification
 
-`setup-callisto` and `setup-callisto-wasm` verify a downloaded prebuilt asset with `gh attestation verify` (repository `orin-dx/callisto`, signer workflow `.github/workflows/callisto-release.yml`, using the job's `github.token`) before extracting or using it, and extract only the `callisto` binary from the archive. The `verification` input selects the behavior:
+`setup-callisto` verifies a downloaded prebuilt asset with `gh attestation verify` (repository `orin-dx/callisto`, signer workflow `.github/workflows/callisto-release.yml`, using the job's `github.token`) before extracting or using it, and extract only the `callisto` binary from the archive. The `verification` input selects the behavior:
 
 - `require`: verification failure or a missing `gh` aborts the step; the asset is never run.
-- `fallback` (default): on failure or missing `gh`, warn, delete the asset and install from crates.io (version pinned to the requested tag; unpinned only for `latest`). The unverified asset is never run. For `setup-callisto-wasm`, which has no source-install alternative, `fallback` behaves like `require`.
+- `fallback` (default): on failure or missing `gh`, warn, delete the asset and install from crates.io (version pinned to the requested tag; unpinned only for `latest`). The unverified asset is never run.
 - `skip`: no verification; warn and use the asset.
 
 Any other value fails immediately. `fallback` is the default because releases built before the first attested release carry no attestation, so `require` would hard-fail existing users; a tampered asset is never run in `require` or `fallback`.

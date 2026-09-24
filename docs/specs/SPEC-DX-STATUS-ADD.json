@@ -29,7 +29,7 @@
     },
     {
       "id": "AC-05",
-      "criterion": "`crates/callisto-moon/src/extension_pdk.rs`'s `\"validate\"` dispatch arm (currently calling `callisto_graph::commands::validate::validate`) is removed or repointed at `status`'s check path; no dispatch arm in that file calls the removed `validate::validate`."
+      "criterion": "[SUPERSEDED 2026-09-24: callisto-moon and the wasm32-wasip1 asset were removed; moon uses the CLI via proto] `crates/callisto-moon/src/extension_pdk.rs`'s `\"validate\"` dispatch arm (currently calling `callisto_graph::commands::validate::validate`) is removed or repointed at `status`'s check path; no dispatch arm in that file calls the removed `validate::validate`."
     },
     {
       "id": "AC-06",

@@ -1,5 +1,7 @@
 # callisto — polyglot version coordination for Cargo, npm, and PyPI monorepos
 
+> **moon extension removed (2026-09-24):** `callisto-moon`, `MoonProjectLocator`, `ProjectLocator::declared_edges`, the declared-edge cross-check (`DeclaredEdge`, `GraphEdgeDisagreement`) and the `LocateError::Moon*` variants no longer exist. moon runs the `callisto` CLI installed through proto (`proto/callisto.toml`). Sections describing them are historical.
+
 **Status:** IMPLEMENTED & VERIFIED (Canonical Spec)
 **Date:** 2026-07-24
 **Repo:** `github.com/orin-dx/callisto`

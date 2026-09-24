@@ -49,7 +49,7 @@
     },
     {
       "id": "SRL-10",
-      "criterion": "The production release plan includes attested binary asset slots for aarch64-apple-darwin, x86_64-unknown-linux-gnu, x86_64-unknown-linux-musl, and wasm32-wasip1; the product-level GitHub Release is created as a draft, each validated asset is uploaded to the draft, and publishing the release is a separate last operation depending on every upload."
+      "criterion": "[SUPERSEDED 2026-09-24 in part: the wasm32-wasip1 slot was removed with callisto-moon] The production release plan includes attested binary asset slots for aarch64-apple-darwin, x86_64-unknown-linux-gnu, x86_64-unknown-linux-musl, and wasm32-wasip1; the product-level GitHub Release is created as a draft, each validated asset is uploaded to the draft, and publishing the release is a separate last operation depending on every upload."
     },
     {
       "id": "SRL-11",
