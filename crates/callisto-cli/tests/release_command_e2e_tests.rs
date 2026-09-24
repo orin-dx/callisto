@@ -296,3 +296,94 @@ fn legacy_publish_commands_fail_to_parse() {
         );
     }
 }
+
+/// Rewrites the release commit's committed decision to `schema_version` and returns the new commit.
+fn release_commit_with_decision_schema(root: &Path, schema_version: u8) -> String {
+    let path = root.join(DECISION_PATH);
+    let mut decision: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    decision["schemaVersion"] = serde_json::json!(schema_version);
+    fs::write(&path, serde_json::to_string_pretty(&decision).unwrap() + "\n").unwrap();
+    git(root, &["add", DECISION_PATH]);
+    git(root, &["commit", "-q", "--amend", "--no-edit"]);
+    git(root, &["rev-parse", "HEAD"])
+}
+
+/// A release PR opened by an earlier build commits a schema-1 decision; it must still plan and execute.
+#[test]
+fn a_committed_v1_decision_still_plans_and_executes() {
+    let (dir, _) = release_commit_fixture();
+    let root = dir.path();
+    let release_commit = release_commit_with_decision_schema(root, 1);
+    let rig = Rig::new(&release_commit);
+
+    let intent = plan_intent(root, rig.external.path(), &release_commit);
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&intent).unwrap()).unwrap();
+    assert_eq!(value["decision"]["schemaVersion"], 2, "writers emit the current schema");
+
+    let receipt = rig.external.path().join("receipt.json");
+    let out = execute(
+        root,
+        &intent,
+        &receipt,
+        FakePublishers {
+            bin: &rig.bin,
+            log: &rig.log,
+            forge_marker: &rig.forge_marker,
+            git_trace: &rig.git_trace,
+        },
+    );
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(receipt.is_file());
+}
+
+/// An unknown decision schema is refused and the error names the version found.
+#[test]
+fn an_unknown_decision_schema_is_rejected_by_version() {
+    let (dir, _) = release_commit_fixture();
+    let root = dir.path();
+    let release_commit = release_commit_with_decision_schema(root, 3);
+    let external = tempfile::tempdir().unwrap();
+    let out = callisto(
+        root,
+        &[
+            "release",
+            "plan",
+            "--from-release-commit",
+            &release_commit,
+            "--decision",
+            DECISION_PATH,
+            "--out",
+            external.path().join("intent.json").to_str().unwrap(),
+        ],
+    );
+    assert!(!out.status.success());
+    assert!(stderr(&out).contains("schema version 3"), "{}", stderr(&out));
+    assert!(!external.path().join("intent.json").exists());
+}
+
+/// Item 7: a preview without `origin` still prints the plan, with tags noted as unbound.
+#[test]
+fn dry_run_without_origin_notes_unbound_tags() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    git(root, &["remote", "remove", "origin"]);
+    let rig = Rig::new(&release_commit);
+
+    let preview = rig.run(root, &["--format", "text", "--dry-run", "release"], &[]);
+    assert!(preview.status.success(), "{}", stderr(&preview));
+    let text = String::from_utf8_lossy(&preview.stdout);
+    assert!(
+        text.contains("cargo/core-crate 0.2.0") && text.contains("create git tag"),
+        "{text}"
+    );
+    assert_eq!(
+        stderr(&preview).matches("tag operations are unbound").count(),
+        1,
+        "{}",
+        stderr(&preview)
+    );
+
+    let run = rig.run(root, &["release"], CREDENTIALS);
+    assert!(!run.status.success());
+    assert_no_effects(&rig, root);
+}

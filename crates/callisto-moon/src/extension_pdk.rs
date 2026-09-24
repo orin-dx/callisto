@@ -57,7 +57,7 @@ pub fn execute_extension(input: moon_pdk_api::ExecuteExtensionInput) -> ExecuteE
         "release" => {
             use callisto_graph::commands::{plan_local_release, LocalReleaseSource};
             match plan_local_release(&release_root, &locator, &runner, &[], LocalReleaseSource::Preview) {
-                Ok(Some(intent)) => build_extension_output(serde_json::to_value(&intent), 0),
+                Ok(Some(plan)) => build_extension_output(serde_json::to_value(&plan.intent), 0),
                 Ok(None) => build_extension_output(Ok(serde_json::json!({ "nothingToRelease": true })), 0),
                 Err(e) => {
                     let json_val = format_graph_error_json(&e);

@@ -8,7 +8,7 @@ This document covers authentication setup for registry publishing, with particul
 
 `callisto release` publishes every package whose current version has no tag yet: registry publish, git tag, and GitHub release for each. It runs on any branch and records HEAD's commit as the source.
 
-- `callisto release --dry-run` prints the plan and performs no effect. It works anywhere, including on a dirty worktree.
+- `callisto release --dry-run` prints the plan and performs no effect. It works anywhere, including on a dirty worktree or without an `origin` remote (tags are then noted as unbound).
 - `--package <ecosystem/name>` (repeatable) restricts the run to named unreleased packages.
 - It refuses a dirty worktree: a tracked modification or an untracked file not covered by `.gitignore`. Ignored files never count.
 - It prints `Nothing to release.` and exits 0 when every package is already tagged.

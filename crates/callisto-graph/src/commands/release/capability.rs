@@ -15,6 +15,7 @@ use crate::{DependencyResolver, GraphError, ProjectLocator, Workspace};
 use super::binding::{recheck_git_remote, PreparedGitRemote};
 use super::derive::{
     artifact_policy_from_intent, derive_release_intent, derive_release_intent_with_prepared, ArtifactBuildPolicy,
+    GitRemoteRequirement,
 };
 use super::provider::{
     checked_provider_for, EffectAuthorization, PreparedOperation, ProviderContext, ProviderRequest, ReleasePreflight,
@@ -163,7 +164,14 @@ pub fn build_release_intent<L: ProjectLocator, R: CommandRunner>(
     let root = canonical_root(root)?;
     let workspace = Workspace::load(root.clone(), locator, runner)?;
     let source = observe_source(&workspace, trust_profile, ReleaseCheckout::Detached)?;
-    let intent = derive_release_intent(&workspace, decision, source.clone(), trust_profile, None)?;
+    let intent = derive_release_intent(
+        &workspace,
+        decision,
+        source.clone(),
+        trust_profile,
+        None,
+        GitRemoteRequirement::Required,
+    )?;
 
     // Recheck after all input reads. A concurrent edit or checkout cannot be
     // authorized merely because it happened after the first check.
@@ -195,6 +203,7 @@ pub fn build_release_intent_with_artifacts<L: ProjectLocator, R: CommandRunner>(
         source.clone(),
         trust_profile,
         Some(&artifact_policy),
+        GitRemoteRequirement::Required,
     )?;
     if observe_source(&workspace, trust_profile, ReleaseCheckout::Detached)? != source {
         return Err(GraphError::ReleaseIntentStale {

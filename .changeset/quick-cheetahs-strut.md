@@ -10,4 +10,4 @@ Breaking:
 - Removed `callisto publish`, `plan-publish`, `tag` (including `--floating-major`), and `filter-plan`. Use `callisto release` or `callisto release --dry-run`.
 - Removed `schema --type tag` and `schema --type plan-publish`.
 - Removed graph `plan_publish`, `filter_plan_by_report`, `create_tags`; moon extension `plan-publish` is now `release`.
-- Release decision schema is now 2 (adds `unreleasedVersion`); decisions from earlier builds are rejected.
+- Release decisions are written as schema 2 (adds `unreleasedVersion`). Schema 1 files still read; an earlier build cannot read a schema-2 decision.

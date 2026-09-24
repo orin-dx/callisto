@@ -23,8 +23,8 @@ pub use matrix::{matrix, MatrixOptions};
 pub use pr_body::{compose_pr_body, PrBodyOptions};
 pub use release::{
     build_release_intent, build_release_intent_with_artifacts, ci_release_route, plan_local_release,
-    validate_local_release_intent, validate_release_intent, ArtifactBuildPolicy, CiReleaseRoute, LocalReleaseSource,
-    ReleasePreflight, ReleaseProviderSet, ValidatedReleaseIntent,
+    validate_local_release_intent, validate_release_intent, ArtifactBuildPolicy, CiReleaseRoute, LocalReleasePlan,
+    LocalReleaseSource, ReleasePreflight, ReleaseProviderSet, ValidatedReleaseIntent,
 };
 pub use release_artifacts::{verify_artifact_manifest, VerifiedArtifactManifest};
 pub use release_decision::{

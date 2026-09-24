@@ -8,8 +8,9 @@ use callisto_vcs::GitDataSource;
 
 use crate::{DependencyResolver, GraphError, ProjectLocator, Workspace};
 
+use super::binding::optional_git_remote;
 use super::capability::{canonical_root, observe_source, ReleaseCheckout};
-use super::derive::{derive_release_intent, ArtifactBuildPolicy};
+use super::derive::{derive_release_intent, ArtifactBuildPolicy, GitRemoteRequirement};
 use super::StaleReason;
 
 /// How a local release observes its source commit.
@@ -70,6 +71,14 @@ pub fn ci_release_route<R: CommandRunner, D: DependencyResolver>(
         }))
 }
 
+/// A derived local release.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LocalReleasePlan {
+    pub intent: ReleaseIntentV1,
+    /// A preview only: `origin` has no push URL, so tags carry no remote and a run would refuse.
+    pub tags_unbound: bool,
+}
+
 /// Derives the intent for every unreleased package (or exactly `selections`).
 ///
 /// This is the one plan derivation behind both `callisto release --dry-run`
@@ -80,7 +89,7 @@ pub fn plan_local_release<L: ProjectLocator, R: CommandRunner>(
     runner: &R,
     selections: &[ReleasePackageId],
     mode: LocalReleaseSource,
-) -> Result<Option<ReleaseIntentV1>, GraphError> {
+) -> Result<Option<LocalReleasePlan>, GraphError> {
     let root = canonical_root(root)?;
     let workspace = Workspace::load(root, locator, runner)?;
     let Some(decision) = crate::commands::derive_unreleased_decision(&workspace, selections)? else {
@@ -104,13 +113,30 @@ pub fn plan_local_release<L: ProjectLocator, R: CommandRunner>(
         }
         _ => None,
     };
-    let intent = derive_release_intent(&workspace, &decision, source.clone(), profile, artifact_policy.as_ref())?;
+    let remote = match mode {
+        LocalReleaseSource::Preview => GitRemoteRequirement::OptionalForPreview,
+        LocalReleaseSource::Trusted => GitRemoteRequirement::Required,
+    };
+    let intent = derive_release_intent(
+        &workspace,
+        &decision,
+        source.clone(),
+        profile,
+        artifact_policy.as_ref(),
+        remote,
+    )?;
+    let tags_unbound = mode == LocalReleaseSource::Preview
+        && intent
+            .operations
+            .iter()
+            .any(|operation| operation.id().role == callisto_model::ReleaseOperationRole::Tag)
+        && optional_git_remote(&workspace.root, workspace.runner)?.is_none();
     if mode == LocalReleaseSource::Trusted && observe_source(&workspace, profile, ReleaseCheckout::AnyHead)? != source {
         return Err(GraphError::ReleaseIntentStale {
             reason: StaleReason::source_identity_changed(),
         });
     }
-    Ok(Some(intent))
+    Ok(Some(LocalReleasePlan { intent, tags_unbound }))
 }
 
 #[cfg(test)]
@@ -144,6 +170,47 @@ mod tests {
             selections,
             mode,
         )
+        .map(|plan| plan.map(|plan| plan.intent))
+    }
+
+    #[test]
+    fn preview_without_origin_leaves_tags_unbound_and_the_run_refuses() {
+        let (dir, _) = fixture();
+        git(dir.path(), &["remote", "remove", "origin"]);
+        let preview = plan_local_release(
+            dir.path(),
+            &crate::IgnoreWalkLocator::new(dir.path()),
+            &RealGitRunner,
+            &[],
+            LocalReleaseSource::Preview,
+        )
+        .unwrap()
+        .expect("unreleased");
+        assert!(preview.tags_unbound);
+        assert!(preview
+            .intent
+            .operations
+            .iter()
+            .any(|operation| operation.id().role == callisto_model::ReleaseOperationRole::Tag));
+        assert!(matches!(
+            plan(dir.path(), &[], LocalReleaseSource::Trusted).unwrap_err(),
+            GraphError::UnsafeGitRemote { .. }
+        ));
+    }
+
+    #[test]
+    fn preview_with_origin_binds_tags() {
+        let (dir, _) = fixture();
+        let preview = plan_local_release(
+            dir.path(),
+            &crate::IgnoreWalkLocator::new(dir.path()),
+            &RealGitRunner,
+            &[],
+            LocalReleaseSource::Preview,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(!preview.tags_unbound);
     }
 
     fn fixture_id() -> ReleasePackageId {

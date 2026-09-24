@@ -582,6 +582,17 @@ pub(crate) fn check_schema_version<E: serde::de::Error>(found: u8, expected: u8,
     Ok(())
 }
 
+/// Accepts every decision schema in [`ReleaseDecisionV1::READABLE_SCHEMA_VERSIONS`].
+fn check_decision_schema_version<E: serde::de::Error>(found: u8, type_name: &str) -> Result<(), E> {
+    if ReleaseDecisionV1::READABLE_SCHEMA_VERSIONS.contains(&found) {
+        return Ok(());
+    }
+    Err(E::custom(format!(
+        "unsupported {type_name} schema version {found}; this build reads versions {:?}",
+        ReleaseDecisionV1::READABLE_SCHEMA_VERSIONS
+    )))
+}
+
 /// Credential-free, deterministic release authority derived by callisto-graph.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -605,7 +616,7 @@ impl<'de> Deserialize<'de> for ReleaseDecisionV1 {
         D: Deserializer<'de>,
     {
         let wire = ReleaseDecisionV1Wire::deserialize(deserializer)?;
-        check_schema_version::<D::Error>(wire.schema_version, Self::SCHEMA_VERSION, "release decision")?;
+        check_decision_schema_version::<D::Error>(wire.schema_version, "release decision")?;
         let decision = Self::new(wire.entries).map_err(serde::de::Error::custom)?;
         if decision.digest != wire.digest {
             return Err(serde::de::Error::custom(
@@ -618,6 +629,8 @@ impl<'de> Deserialize<'de> for ReleaseDecisionV1 {
 
 impl ReleaseDecisionV1 {
     pub const SCHEMA_VERSION: u8 = 2;
+    /// Version 1 differs only in lacking `unreleasedVersion`, so a committed v1 decision still reads.
+    pub const READABLE_SCHEMA_VERSIONS: [u8; 2] = [1, 2];
 
     /// Creates a canonical decision or rejects an ambiguous release roster.
     #[allow(clippy::result_large_err)]
@@ -1625,11 +1638,7 @@ impl<'de> Deserialize<'de> for ReleaseIntentV1 {
     {
         let wire = ReleaseIntentV1Wire::deserialize(deserializer)?;
         check_schema_version::<D::Error>(wire.schema_version, Self::SCHEMA_VERSION, "release intent")?;
-        check_schema_version::<D::Error>(
-            wire.decision.schema_version,
-            ReleaseDecisionV1::SCHEMA_VERSION,
-            "release intent",
-        )?;
+        check_decision_schema_version::<D::Error>(wire.decision.schema_version, "release intent")?;
         check_schema_version::<D::Error>(
             wire.snapshot.schema_version,
             ReleaseInputSnapshotV1::SCHEMA_VERSION,
@@ -2858,14 +2867,25 @@ mod tests {
             serde_json::from_value::<ReleaseDecisionV1>(wire.clone()).unwrap(),
             decision
         );
-        wire["schemaVersion"] = serde_json::json!(1);
+        wire["schemaVersion"] = serde_json::json!(3);
         let error = serde_json::from_value::<ReleaseDecisionV1>(wire)
             .unwrap_err()
             .to_string();
         assert!(
-            error.contains("unsupported release decision schema version 1"),
+            error.contains("unsupported release decision schema version 3"),
             "{error}"
         );
+    }
+
+    #[test]
+    fn committed_v1_decision_file_still_reads_and_writes_as_v2() {
+        let raw = include_str!("../tests/fixtures/release-decision-v1-0.8.0.json");
+        let value: serde_json::Value = serde_json::from_str(raw).unwrap();
+        assert_eq!(value["schemaVersion"], 1);
+        let decision: ReleaseDecisionV1 = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(decision.entries.len(), value["entries"].as_array().unwrap().len());
+        assert_eq!(decision.digest.to_string(), value["digest"].as_str().unwrap());
+        assert_eq!(serde_json::to_value(&decision).unwrap()["schemaVersion"], 2);
     }
 
     #[test]

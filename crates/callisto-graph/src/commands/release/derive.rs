@@ -15,7 +15,7 @@ use callisto_model::{
 use crate::error::{ReleasePreconditionRequirement, ReleaseSelectionInvalidReason, UnsupportedReleaseFeature};
 use crate::{DependencyResolver, GraphError, Workspace};
 
-use super::binding::{prepared_git_remote, prepared_registry_binding, PreparedGitRemote};
+use super::binding::{optional_git_remote, prepared_git_remote, prepared_registry_binding, PreparedGitRemote};
 use super::notes::release_notes;
 use super::provider::{
     ArtifactUploadOperation, ForgePublishOperation, ForgeReleaseOperation, PreparedOperation, RegistryPublishOperation,
@@ -56,14 +56,24 @@ pub(crate) struct PreparedDerivation {
     pub(crate) git_remote: Option<PreparedGitRemote>,
 }
 
+/// Whether a missing `origin` push URL fails derivation or leaves tags unbound.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum GitRemoteRequirement {
+    Required,
+    /// A preview only: tag operations are derived without a remote identity.
+    OptionalForPreview,
+}
+
 pub(crate) fn derive_release_intent<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     decision: &ReleaseDecisionV1,
     source: SourceIdentity,
     trust_profile: ExecutionTrustProfileV1,
     artifact_policy: Option<&ArtifactBuildPolicy>,
+    remote: GitRemoteRequirement,
 ) -> Result<ReleaseIntentV1, GraphError> {
-    let (snapshot, operations, _, _, slots) = derive_release_inputs(workspace, decision, source, artifact_policy)?;
+    let (snapshot, operations, _, _, slots) =
+        derive_release_inputs_with(workspace, decision, source, artifact_policy, remote)?;
     Ok(ReleaseIntentV1::new(
         decision.clone(),
         snapshot,
@@ -119,6 +129,22 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
     source: SourceIdentity,
     artifact_policy: Option<&ArtifactBuildPolicy>,
 ) -> Result<DerivedReleaseInputs, GraphError> {
+    derive_release_inputs_with(
+        workspace,
+        decision,
+        source,
+        artifact_policy,
+        GitRemoteRequirement::Required,
+    )
+}
+
+fn derive_release_inputs_with<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    decision: &ReleaseDecisionV1,
+    source: SourceIdentity,
+    artifact_policy: Option<&ArtifactBuildPolicy>,
+    remote: GitRemoteRequirement,
+) -> Result<DerivedReleaseInputs, GraphError> {
     if workspace
         .config
         .product_release
@@ -172,9 +198,11 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
             .iter()
             .any(|target| !matches!(target, PublishTarget::None))
     });
-    let git_remote = requires_git_remote
-        .then(|| prepared_git_remote(&workspace.root, workspace.runner))
-        .transpose()?;
+    let git_remote = match (requires_git_remote, remote) {
+        (false, _) => None,
+        (true, GitRemoteRequirement::Required) => Some(prepared_git_remote(&workspace.root, workspace.runner)?),
+        (true, GitRemoteRequirement::OptionalForPreview) => optional_git_remote(&workspace.root, workspace.runner)?,
+    };
     if let Some(policy) = artifact_policy {
         let remote = git_remote
             .as_ref()

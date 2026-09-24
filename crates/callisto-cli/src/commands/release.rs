@@ -37,6 +37,10 @@ pub fn handle(args: ReleaseCommandArgs, global: &GlobalArgs) -> Result<ExitCode,
     }
 }
 
+/// Stderr note when a preview's tags have no `origin` to push to.
+pub const TAGS_UNBOUND_NOTE: &str =
+    "note: `origin` has no push URL, so tag operations are unbound; `callisto release` will refuse until one is set";
+
 /// Exact stdout when no package has an unreleased version.
 pub const NOTHING_TO_RELEASE: &str = "Nothing to release.";
 
@@ -53,10 +57,15 @@ fn release(
     if global.dry_run {
         match plan_local_release(&root, &locator, &runner, &selections, LocalReleaseSource::Preview)? {
             None => print_nothing_to_release(global)?,
-            Some(intent) => match global.format {
-                OutputFormat::Json => write_json(&mut std::io::stdout(), &intent)?,
-                OutputFormat::Text => print!("{}", render_release_plan(&intent)),
-            },
+            Some(plan) => {
+                match global.format {
+                    OutputFormat::Json => write_json(&mut std::io::stdout(), &plan.intent)?,
+                    OutputFormat::Text => print!("{}", render_release_plan(&plan.intent)),
+                }
+                if plan.tags_unbound {
+                    eprintln!("{TAGS_UNBOUND_NOTE}");
+                }
+            }
         }
         return Ok(ExitCode::SUCCESS);
     }
@@ -65,7 +74,9 @@ fn release(
             reason: route.to_string(),
         });
     }
-    let Some(intent) = plan_local_release(&root, &locator, &runner, &selections, LocalReleaseSource::Trusted)? else {
+    let Some(intent) =
+        plan_local_release(&root, &locator, &runner, &selections, LocalReleaseSource::Trusted)?.map(|plan| plan.intent)
+    else {
         print_nothing_to_release(global)?;
         return Ok(ExitCode::SUCCESS);
     };
