@@ -84,17 +84,24 @@ else
   echo 'PASS: run-release fills published/publishedPackages from published registry/platform outcomes only'
 fi
 
-# AC-005: callisto-action's own environment-setup step must not use the `$/`
-# self-repository syntax, since it is invoked externally from other repos.
+# AC-005: callisto-action's own environment setup must not use `$/` or an
+# external owner/repo/path@ref for its sibling setup-callisto -- both resolve
+# against whatever ref invoked *this* action, which may not exist verbatim in
+# setup-callisto's own history. It must call the sibling script directly by
+# github.action_path instead, so it always uses its own checked-out ref.
 action_contents="$(<"$action_dir/action.yml")"
-if [[ "$action_contents" == *'uses: $/.github/actions/setup-callisto'* ]]; then
-  echo 'FAIL: callisto-action must not reference setup-callisto via $/ (repo-local only)'
+if [[ "$action_contents" == *'uses: $/.github/actions/setup-callisto'* ]] \
+  || [[ "$action_contents" == *'uses: orin-dx/callisto/.github/actions/setup-callisto@'* ]]; then
+  echo 'FAIL: callisto-action must not reference setup-callisto via `uses:` at all (ref-ambiguous)'
   fail=1
-elif [[ "$action_contents" != *'uses: orin-dx/callisto/.github/actions/setup-callisto@'* ]]; then
-  echo 'FAIL: callisto-action must reference setup-callisto by its full external path'
+elif [[ "$action_contents" != *'"${{ github.action_path }}/../setup-callisto/scripts/install-callisto.sh"'* ]]; then
+  echo 'FAIL: callisto-action must call setup-callisto/scripts/install-callisto.sh by github.action_path'
+  fail=1
+elif [[ ! -f "$action_dir/../setup-callisto/scripts/install-callisto.sh" ]]; then
+  echo 'FAIL: the sibling install-callisto.sh script callisto-action calls into does not exist'
   fail=1
 else
-  echo 'PASS: setup-callisto is referenced by its full external, pinned path'
+  echo 'PASS: setup-callisto is called by github.action_path, not a ref-ambiguous uses:'
 fi
 
 # AC-003, AC-003a, AC-003c: the mode input, its default, and both scripts are wired.

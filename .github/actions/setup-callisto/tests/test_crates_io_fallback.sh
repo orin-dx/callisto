@@ -8,20 +8,19 @@
 # the whole time. This proves the new crates.io fallback is actually tried,
 # in the right order, with the right args, before the git-source fallback.
 set -u
-ACTION_YML="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/action.yml"
+INSTALL_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/install-callisto.sh"
 
 extract_snippet() {
-  # Starts after the TAG_NAME="${{ inputs.version || 'latest' }}" line (raw
-  # GitHub Actions expression syntax, not valid bash on its own) -- the
-  # caller sets TAG_NAME directly instead. Uses explicit line numbers, not a
-  # `fi`-pattern range, because the block contains a nested if/elif/fi (OS
-  # detection) before the outer if/elif/elif/else/fi this test targets --
-  # a pattern-based range would stop at the first (inner) `fi` it finds.
+  # Starts after the TAG_NAME assignment line -- the caller sets TAG_NAME
+  # directly instead. Uses explicit line numbers, not a `fi`-pattern range,
+  # because the block contains a nested if/elif/fi (OS detection) before the
+  # outer if/elif/elif/else/fi this test targets -- a pattern-based range
+  # would stop at the first (inner) `fi` it finds.
   local start end
-  start=$(grep -n '# Detect OS platform architecture for pre-built binaries' "$ACTION_YML" | head -1 | cut -d: -f1)
-  end=$(grep -n 'CALLISTO_BIN_DIR" >> \$GITHUB_PATH' "$ACTION_YML" | head -1 | cut -d: -f1)
+  start=$(grep -n '# Detect OS platform architecture for pre-built binaries' "$INSTALL_SCRIPT" | head -1 | cut -d: -f1)
+  end=$(grep -n 'CALLISTO_BIN_DIR" >> \$GITHUB_PATH' "$INSTALL_SCRIPT" | head -1 | cut -d: -f1)
   end=$((end - 1))
-  sed -n "${start},${end}p" "$ACTION_YML"
+  sed -n "${start},${end}p" "$INSTALL_SCRIPT"
 }
 
 run_case() {
