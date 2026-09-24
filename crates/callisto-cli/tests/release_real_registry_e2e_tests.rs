@@ -336,18 +336,30 @@ fn npm_publish_against_a_real_verdaccio_registry_is_retrievable_afterward() {
 
 // --------------------------------------------------------------------- pypi
 
-/// Whether `python` can `import module` -- the actual precondition for
-/// `pypi_publish_argv`'s `python -m build` step, not just a `python` binary
-/// existing. `pypi_publish_argv` hardcodes the program name `python` (not
-/// `python3`), so that's exactly what's probed here.
-fn python_module_importable(module: &str) -> bool {
-    Command::new("python")
+/// Whether `interpreter` can `import module` -- the actual precondition for
+/// `pypi_publish_argv`'s `python -m build` step, not just the interpreter
+/// binary existing.
+fn python_module_importable(interpreter: &str, module: &str) -> bool {
+    Command::new(interpreter)
         .args(["-c", &format!("import {module}")])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
         .is_ok_and(|status| status.success())
+}
+
+/// Mirrors `pypi_publish_argv`'s own interpreter resolution (`python3` first,
+/// `python` as a fallback), so this test skips exactly when the production
+/// code would fail to resolve one.
+fn resolved_python() -> Option<&'static str> {
+    if find_on_path("python3").is_some() {
+        Some("python3")
+    } else if find_on_path("python").is_some() {
+        Some("python")
+    } else {
+        None
+    }
 }
 
 /// Starts a real local `pypiserver` on an ephemeral loopback port with
@@ -441,11 +453,11 @@ fn pypi_publish_against_a_real_pypiserver_registry_is_retrievable_afterward() {
         eprintln!("SKIPPED pypi real-registry e2e: `pypi-server` is not installed");
         return;
     }
-    if find_on_path("python").is_none() {
-        eprintln!("SKIPPED pypi real-registry e2e: `python` is not on PATH (pypi_publish_argv hardcodes it)");
+    let Some(interpreter) = resolved_python() else {
+        eprintln!("SKIPPED pypi real-registry e2e: neither `python3` nor `python` is on PATH");
         return;
-    }
-    if !python_module_importable("build") || find_on_path("twine").is_none() {
+    };
+    if !python_module_importable(interpreter, "build") || find_on_path("twine").is_none() {
         eprintln!("SKIPPED pypi real-registry e2e: the `build` module or `twine` is not installed");
         return;
     }
@@ -459,7 +471,7 @@ fn pypi_publish_against_a_real_pypiserver_registry_is_retrievable_afterward() {
     let index = format!("http://127.0.0.1:{port}");
 
     let version = Version::parse(PYPI_VERSION, VersionGrammar::SemVer).unwrap();
-    let steps = pypi_publish_argv(root, Path::new(""), PYPI_PACKAGE, &version, Some(index.as_str()));
+    let steps = pypi_publish_argv(root, Path::new(""), PYPI_PACKAGE, &version, Some(index.as_str())).unwrap();
     let [build, upload] = steps.as_slice() else {
         panic!("pypi_publish_argv must return exactly a build and an upload step");
     };

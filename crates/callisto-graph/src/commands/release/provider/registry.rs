@@ -558,7 +558,7 @@ impl RegistryEcosystem for PypiRegistry {
             &operation.package_name,
             &operation.version,
             operation.registry.endpoint.as_deref(),
-        );
+        )?;
         let [build, upload] = steps.as_slice() else {
             return Err(GraphError::ReleaseInvariant {
                 detail: "pypi_publish_argv did not return exactly a build and an upload step".to_string(),

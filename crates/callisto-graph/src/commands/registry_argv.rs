@@ -10,10 +10,11 @@
 //! see the durable release executor's single production publish path.
 //!
 //! A small amount of local filesystem reading happens here (the Cargo
-//! on-disk version check, npm package-manager detection from lockfiles) --
-//! that's "gathering the facts needed to build the right argv", not
-//! executing a publish. It never shells out.
+//! on-disk version check, npm package-manager detection from lockfiles, the
+//! PyPI interpreter's PATH lookup) -- that's "gathering the facts needed to
+//! build the right argv", not executing a publish. It never shells out.
 
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -22,7 +23,7 @@ use callisto_model::{
     normalize_pypi_package_name, CommandOutput, Ecosystem, NpmAccess, PackageId, PublishOutcome, RegistryError, Version,
 };
 
-use crate::error::GraphError;
+use crate::error::{GraphError, ReleasePreconditionRequirement};
 
 /// Default fallback wait (seconds) when a registry does not supply a
 /// `retry_after` value and the classifier cannot parse one from output.
@@ -354,16 +355,21 @@ fn twine_accepts_skip_existing(index: Option<&str>) -> bool {
 /// `index: Some` inserts `--repository-url <url>` before the glob, to target
 /// a private index (Nexus/Artifactory PyPI proxy, or a local test registry)
 /// instead of public PyPI.
+///
+/// The build step's interpreter comes from [`resolve_python_interpreter`] --
+/// `python3` first, `python` as a fallback -- rather than a hardcoded
+/// `python`, since many systems (macOS, Debian) ship no bare `python`.
 pub fn pypi_publish_argv(
     workspace_root: &Path,
     package_dir: &Path,
     package_name: &str,
     version: &Version,
     index: Option<&str>,
-) -> Vec<Argv> {
+) -> Result<Vec<Argv>, GraphError> {
+    let interpreter = resolve_python_interpreter(std::env::var_os("PATH").as_deref())?;
     let cwd = workspace_root.join(package_dir);
     let build = Argv {
-        program: "python".to_string(),
+        program: interpreter.to_string(),
         args: vec![
             "-m".to_string(),
             "build".to_string(),
@@ -392,7 +398,33 @@ pub fn pypi_publish_argv(
         cwd,
     };
 
-    vec![build, upload]
+    Ok(vec![build, upload])
+}
+
+/// Resolves the interpreter for the PyPI build step's `python -m build`:
+/// prefers `python3` -- the only name macOS and Debian systems guarantee --
+/// and falls back to bare `python` for systems that only ship that. Errors
+/// naming both when neither is on `path_value`.
+///
+/// `path_value` is injected rather than read from `$PATH` directly so tests
+/// can exercise both resolutions and the error without mutating process-wide
+/// environment state.
+fn resolve_python_interpreter(path_value: Option<&OsStr>) -> Result<&'static str, GraphError> {
+    if exists_on_path("python3", path_value) {
+        Ok("python3")
+    } else if exists_on_path("python", path_value) {
+        Ok("python")
+    } else {
+        Err(GraphError::ReleasePreconditionUnmet {
+            requirement: ReleasePreconditionRequirement::PythonInterpreterOnPath,
+        })
+    }
+}
+
+/// Whether `program` exists as a file in some directory of `path_value` --
+/// PATH-lookup semantics, without ever spawning it.
+fn exists_on_path(program: &str, path_value: Option<&OsStr>) -> bool {
+    path_value.is_some_and(|path| std::env::split_paths(path).any(|dir| dir.join(program).is_file()))
 }
 
 // ---- shared output-classification helpers --------------------------------
@@ -811,11 +843,16 @@ mod tests {
             "My.Pkg",
             &v("1.2.3"),
             None,
-        );
+        )
+        .unwrap();
         assert_eq!(argvs.len(), 2);
 
         let build = &argvs[0];
-        assert_eq!(build.program, "python");
+        assert!(
+            build.program == "python3" || build.program == "python",
+            "{}",
+            build.program
+        );
         assert_eq!(
             build.args,
             vec!["-m", "build", "--sdist", "--wheel", "--outdir", "dist/"]
@@ -836,7 +873,8 @@ mod tests {
             "my-pkg",
             &v("1.0.0"),
             Some("https://pypi.example.com/simple"),
-        );
+        )
+        .unwrap();
         assert_eq!(
             argvs[1].args,
             vec![
@@ -859,7 +897,8 @@ mod tests {
             "my-pkg",
             &v("1.0.0"),
             Some("http://127.0.0.1:4873/"),
-        );
+        )
+        .unwrap();
         assert!(
             !argvs[1].args.contains(&"--skip-existing".to_string()),
             "{:?}",
@@ -879,13 +918,55 @@ mod tests {
                 "my-pkg",
                 &v("1.0.0"),
                 Some(warehouse),
-            );
+            )
+            .unwrap();
             assert!(
                 argvs[1].args.contains(&"--skip-existing".to_string()),
                 "{warehouse}: {:?}",
                 argvs[1].args
             );
         }
+    }
+
+    #[test]
+    fn resolve_python_interpreter_prefers_python3_over_python() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("python3"), "").unwrap();
+        std::fs::write(dir.path().join("python"), "").unwrap();
+        let path = std::env::join_paths([dir.path()]).unwrap();
+
+        assert_eq!(resolve_python_interpreter(Some(&path)).unwrap(), "python3");
+    }
+
+    #[test]
+    fn resolve_python_interpreter_falls_back_to_python() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("python"), "").unwrap();
+        let path = std::env::join_paths([dir.path()]).unwrap();
+
+        assert_eq!(resolve_python_interpreter(Some(&path)).unwrap(), "python");
+    }
+
+    #[test]
+    fn resolve_python_interpreter_errors_naming_both_when_neither_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = std::env::join_paths([dir.path()]).unwrap();
+
+        let err = resolve_python_interpreter(Some(&path)).unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("python3"), "{message}");
+        assert!(message.contains("python"), "{message}");
+    }
+
+    #[test]
+    fn resolve_python_interpreter_errors_when_path_is_unset() {
+        let err = resolve_python_interpreter(None).unwrap_err();
+        assert!(matches!(
+            err,
+            GraphError::ReleasePreconditionUnmet {
+                requirement: ReleasePreconditionRequirement::PythonInterpreterOnPath
+            }
+        ));
     }
 
     // ---------------------------------------------------------- classification
