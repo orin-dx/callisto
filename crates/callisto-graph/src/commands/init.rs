@@ -938,6 +938,8 @@ pub fn render_workflow(facts: &InitFacts, shape: WorkflowShape, branch: &str, co
     }
     if facts.ecosystems.contains(&Ecosystem::Npm) {
         secrets.push("NPM_TOKEN: ${{ secrets.NPM_TOKEN }}".to_owned());
+        // Uses the job's id-token: write; npm publishes no provenance without it.
+        secrets.push("NPM_CONFIG_PROVENANCE: \"true\"".to_owned());
     }
     if facts.ecosystems.contains(&Ecosystem::Pypi) {
         secrets.push("PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}".to_owned());
@@ -1557,6 +1559,7 @@ mod tests {
             "{workflow}"
         );
         assert!(!workflow.contains("NPM_TOKEN"), "{workflow}");
+        assert!(!workflow.contains("NPM_CONFIG_PROVENANCE"), "{workflow}");
         assert!(!workflow.contains("PYPI_TOKEN"), "{workflow}");
         for absent in ["needs:", "recovery", "coordinator", "github.sha", "release_source_sha"] {
             assert!(!workflow.contains(absent), "`{absent}` present:\n{workflow}");
@@ -1572,11 +1575,17 @@ mod tests {
         for secret in ["CARGO_REGISTRY_TOKEN", "NPM_TOKEN", "PYPI_TOKEN"] {
             assert!(all.contains(secret), "{all}");
         }
+        assert!(all.contains("          NPM_CONFIG_PROVENANCE: \"true\"\n"), "{all}");
         assert!(all.lines().count() <= 40, "{}", all.lines().count());
 
         facts.ecosystems = BTreeSet::from([Ecosystem::Go]);
         let none = render_workflow_0_8_0(&facts, "main");
-        for secret in ["CARGO_REGISTRY_TOKEN", "NPM_TOKEN", "PYPI_TOKEN"] {
+        for secret in [
+            "CARGO_REGISTRY_TOKEN",
+            "NPM_TOKEN",
+            "PYPI_TOKEN",
+            "NPM_CONFIG_PROVENANCE",
+        ] {
             assert!(!none.contains(secret), "{none}");
         }
         assert!(none.contains("GH_TOKEN: ${{ github.token }}"), "{none}");
@@ -1777,7 +1786,26 @@ mod tests {
             "{execute}"
         );
         assert!(execute.contains("NPM_TOKEN: ${{ secrets.NPM_TOKEN }}"), "{execute}");
+        assert!(execute.contains("id-token: write"), "{execute}");
+        assert!(
+            execute.contains("          NPM_CONFIG_PROVENANCE: \"true\"\n"),
+            "{execute}"
+        );
         assert!(!workflow.contains("PYPI_TOKEN"), "{workflow}");
+    }
+
+    // npm provenance is requested only when the workspace has an npm package.
+    #[test]
+    fn matrix_workflow_requests_npm_provenance_only_for_npm_workspaces() {
+        let cargo_only = render_workflow(
+            &cargo_only_facts(),
+            WorkflowShape::BuildMatrix,
+            "main",
+            FAKE_COMMIT,
+            "0.8.0",
+        );
+        assert!(!cargo_only.contains("NPM_CONFIG_PROVENANCE"), "{cargo_only}");
+        assert!(render_matrix_workflow().contains("NPM_CONFIG_PROVENANCE: \"true\""));
     }
 
     // AC-008: the version-pr job matches the simple workflow's.

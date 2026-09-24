@@ -98,7 +98,8 @@ pub enum DiagnosticCode {
     EmptySummary,
     /// A changeset entry names a package that isn't in the workspace (e.g. removed since the
     /// changeset was written) — the changeset stays on disk rather than being silently
-    /// consumed, since deleting it would erase a still-unresolved entry.
+    /// consumed, since deleting it would erase a still-unresolved entry. `callisto matrix`
+    /// also emits it for a cargo `[[release.artifact]]` naming no workspace cargo package.
     UnknownPackage,
     /// A changeset entry's package name does not parse as a valid `PackageId` at all.
     InvalidPackageName,

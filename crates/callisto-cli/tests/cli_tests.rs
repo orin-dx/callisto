@@ -272,6 +272,44 @@ fn matrix_lists_release_artifact_cargo_binaries_beside_napi_targets() {
     assert_eq!(targets[1]["packageName"], "tool");
 }
 
+/// A cargo `[[release.artifact]]` naming no workspace package is a warning, not a silent drop.
+#[test]
+fn matrix_warns_on_a_release_artifact_with_an_unknown_package() {
+    use std::process::Command;
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir(tmp.path().join(".git")).unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
+    std::fs::write(
+        root.join("callisto.toml"),
+        "[release]\nproduct-package = \"cargo/missing\"\nforge-repository = \"example/tool\"\n\n\
+         [[release.artifact]]\npackage = \"cargo/missing\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"missing.tar.gz\"\n",
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_callisto"))
+        .args(["--cwd", &root.to_string_lossy(), "--format", "json", "matrix"])
+        .output()
+        .expect("failed to spawn callisto binary");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["platformTargets"], serde_json::json!({}));
+    let diagnostics = json["diagnostics"].as_array().unwrap();
+    assert_eq!(diagnostics.len(), 1, "{json}");
+    assert_eq!(diagnostics[0]["code"], "unknown-package");
+    assert_eq!(diagnostics[0]["severity"], "warning");
+    let message = diagnostics[0]["message"].as_str().unwrap();
+    assert!(
+        message.contains("cargo/missing") && message.contains("missing.tar.gz"),
+        "{message}"
+    );
+}
+
 /// AC-004, AC-005, AC-005b: npm-only, python-only, and dual-manifest
 /// packages each produce the exact runtimeVersions shape the spec pins.
 #[test]

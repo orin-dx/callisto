@@ -1,4 +1,4 @@
-use callisto_model::{CommandRunner, MatrixReport, PackageId};
+use callisto_model::{CommandRunner, Diagnostic, DiagnosticCode, DiagnosticSeverity, MatrixReport, PackageId};
 
 use crate::error::GraphError;
 use crate::matrix::{add_release_artifact_groups, build_matrix_report, MatrixPackageInput, ReleaseArtifactInput};
@@ -42,7 +42,8 @@ pub fn matrix<R: CommandRunner, D: DependencyResolver>(
         .collect();
 
     let mut report = build_matrix_report(&inputs)?;
-    let artifacts: Vec<ReleaseArtifactInput> = ws
+    let mut artifacts = Vec::new();
+    for artifact in ws
         .config
         .product_release
         .iter()
@@ -53,26 +54,40 @@ pub fn matrix<R: CommandRunner, D: DependencyResolver>(
                 .as_deref()
                 .is_none_or(|name| artifact.package.name() == name)
         })
-        .filter_map(|artifact| {
-            let (package, manifest) = all_packages.iter().find_map(|package| {
-                let manifest = package
-                    .canonical_manifests()
-                    .find(|manifest| manifest.ecosystem() == callisto_model::Ecosystem::Cargo)?;
-                (package.id.name() == artifact.package.name()).then_some((package, manifest))
-            })?;
-            Some(ReleaseArtifactInput {
-                id: package.id.clone(),
-                name: package.id.name().to_string(),
-                dir_rel: manifest
-                    .path
-                    .parent()
-                    .map(|dir| dir.to_string_lossy().to_string())
-                    .unwrap_or_default(),
-                target: artifact.target.clone(),
-                asset_name: artifact.asset_name.clone(),
-            })
-        })
-        .collect();
+    {
+        let resolved = all_packages.iter().find_map(|package| {
+            let manifest = package
+                .canonical_manifests()
+                .find(|manifest| manifest.ecosystem() == callisto_model::Ecosystem::Cargo)?;
+            (package.id.name() == artifact.package.name()).then_some((package, manifest))
+        });
+        let Some((package, manifest)) = resolved else {
+            report.diagnostics.push(Diagnostic {
+                code: DiagnosticCode::UnknownPackage,
+                severity: DiagnosticSeverity::Warning,
+                message: format!(
+                    "`[[release.artifact]]` package `{}` (asset `{}`) is not a cargo package in this workspace; it has no matrix entry",
+                    artifact.package, artifact.asset_name
+                ),
+                package: Some(artifact.package.clone()),
+                path: None,
+                escalated_by: None,
+                governed_by: None,
+            });
+            continue;
+        };
+        artifacts.push(ReleaseArtifactInput {
+            id: package.id.clone(),
+            name: package.id.name().to_string(),
+            dir_rel: manifest
+                .path
+                .parent()
+                .map(|dir| dir.to_string_lossy().to_string())
+                .unwrap_or_default(),
+            target: artifact.target.clone(),
+            asset_name: artifact.asset_name.clone(),
+        });
+    }
     add_release_artifact_groups(&mut report, &artifacts)?;
     Ok(report)
 }
