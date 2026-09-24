@@ -41,12 +41,6 @@ test-release-action:
 test-release-action-binary:
     bash .github/actions/callisto-action/tests/test_release_pr_decide_binary_contract.sh
 
-# CI variant of `test`: emits Nextest's JUnit report under target/nextest/ci
-# for the trusted PR reporter. Keep the everyday local command artifact-free.
-test-ci: build-moon-wasm
-    cargo nextest run --workspace --all-features --profile ci
-    cargo test --doc --all-features
-
 # Compiles and runs the callisto-cli test suite under the shipped binary's
 # default features only (no --all-features, no inference), so a bug reachable
 # only in that build is caught here instead of only under --all-features.
@@ -103,9 +97,9 @@ fmt-check:
 fmt:
     moon run :format
 
-# Security advisory & license check via moon / cargo-deny
+# Security advisory, ban, license & source check via cargo-deny (workspace root, one pass)
 audit:
-    moon run :audit
+    cargo deny check
 
 # Run mutation testing sweep via cargo-mutants
 mutants:

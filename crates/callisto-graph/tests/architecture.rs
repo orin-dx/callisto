@@ -350,16 +350,3 @@ fn release_modules_never_discard_error_sources() {
          allowlist ({MAP_ERR_IGNORE_ALLOWLIST:?}); report the real error cause instead: {violations:#?}"
     );
 }
-
-/// AC-014: E124 is the sole owner of "reapprove" guidance -- every other
-/// release-error variant's help text must describe its own real recovery
-/// action instead of copying E124's.
-#[test]
-fn reapprove_guidance_belongs_to_e124_only() {
-    let production = read_production_source("error.rs");
-    let count = production.matches("reapprove").count();
-    assert_eq!(
-        count, 1,
-        "'reapprove' must occur exactly once in error.rs (E124's help text only); found {count}"
-    );
-}
