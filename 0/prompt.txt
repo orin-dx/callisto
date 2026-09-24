@@ -1,0 +1,110 @@
+So we have everything planned out? Just need to launch agent teams and workflows with the right model and effort for quality and token efficiency?
+
+---
+
+Please resolve conflicts in #124 and #125
+
+---
+
+Do we need to merge #124 first? Can we do this work in a git branch stack?
+
+---
+
+We don't use graphite but GH has stacking support
+
+---
+
+yes, start it
+
+---
+
+Keep goig on the stack please
+
+---
+
+Everything done?
+
+---
+
+keep going on the stack
+
+---
+
+Pickup the work you were doing
+
+---
+
+Looks like we have some merge conflicts
+
+---
+
+The is what GH is saying:
+
+
+
+<pasted_content id="354f">
+Resolve Conflicts with CLI
+
+Use the gh stack CLI to resolve conflicts within your stack of branches.
+Step 1 Checkout the stack of branches locally.
+
+gh stack checkout 127
+Step 2 Rebase the stack with changes from the base branch.
+
+gh stack rebase
+Step 3 Fix any conflicts and commit the result.
+
+See Resolving a merge conflict for step-by-step instructions on resolving merge conflicts.
+
+Step 4 Push the changes.
+
+gh stack push
+</pasted_content id="354f">
+
+---
+
+keep going on the stack
+
+---
+
+done?\\
+
+---
+
+Pickup the work that is left please
+
+---
+
+Looks like #126 and above in the stack have conflicts. How can that happen in a stack???
+
+---
+
+How can I merge the stack locally with an admin override? The web UI doesn't allow me to do so?
+
+---
+
+keep going on the stack
+
+---
+
+Would merging the PRs help if I changed from just squash?
+
+---
+
+Looks like the top of our stack is not passing CI, right?
+
+---
+
+Pickup where you were interrupted
+
+---
+
+Well, I closed my laptop so something was interrupted. Nice to hear it's resumed
+
+---
+
+keep going on the stack
+
+---
+
+keep going on the stack
