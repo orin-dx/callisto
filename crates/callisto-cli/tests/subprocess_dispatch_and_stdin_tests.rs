@@ -5,8 +5,8 @@
 //!    x::handle(...)`) -- these live in the binary crate, not the library, so
 //!    they are only exercised by spawning `callisto` itself, never by calling
 //!    `commands::x::handle()` in-process.
-//! 2. The `--plan -` / `--existing-body -` "read from stdin" branches on
-//!    `tag` and `compose-pr-body` -- `std::io::stdin()` reads the real
+//! 2. The `--existing-body -` "read from stdin" branch on
+//!    `compose-pr-body` -- `std::io::stdin()` reads the real
 //!    process stdin, which an in-process unit test cannot redirect.
 
 mod common;

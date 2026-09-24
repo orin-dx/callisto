@@ -93,7 +93,7 @@ mod tests {
         assert!(abort_on_crosscheck_failures(&diags, false, false).is_ok());
     }
 
-    /// This is the bug fix under test: previously `snapshot`/`tag` hardcoded
+    /// This is the bug fix under test: previously `snapshot` hardcoded
     /// `escalate(&mut diags, true, true)`, reachable only from behind an
     /// `if args.strict` gate -- `--strict-graph` alone had no field to carry
     /// it and no way to trigger escalation on its own. Now `strict_graph:

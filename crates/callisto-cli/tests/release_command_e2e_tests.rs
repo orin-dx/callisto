@@ -23,8 +23,12 @@ struct Rig {
 
 impl Rig {
     fn new(release_commit: &str) -> Self {
+        Self::with_cargo_failure(release_commit, false)
+    }
+
+    fn with_cargo_failure(release_commit: &str, fail_cargo_publish: bool) -> Self {
         let external = tempfile::tempdir().unwrap();
-        let (bin, log, forge_marker, git_trace) = fake_publishers(external.path(), release_commit, false);
+        let (bin, log, forge_marker, git_trace) = fake_publishers(external.path(), release_commit, fail_cargo_publish);
         fs::create_dir_all(external.path().join("home")).unwrap();
         Rig {
             external,
@@ -386,4 +390,39 @@ fn dry_run_without_origin_notes_unbound_tags() {
     let run = rig.run(root, &["release"], CREDENTIALS);
     assert!(!run.status.success());
     assert_no_effects(&rig, root);
+}
+
+/// L1: a mid-run failure writes no receipt; the rerun adopts what landed and writes one.
+#[test]
+fn a_failed_run_writes_no_receipt_and_a_rerun_completes() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let failing = Rig::with_cargo_failure(&release_commit, true);
+    let out = failing.run(root, &["release"], CREDENTIALS);
+    assert!(!out.status.success());
+    assert!(receipts(&failing.state()).is_empty(), "no receipt for a partial run");
+
+    let rig = Rig::new(&release_commit);
+    let rerun = rig.run(root, &["--format", "json", "release"], CREDENTIALS);
+    assert!(rerun.status.success(), "{}", stderr(&rerun));
+    assert_eq!(receipts(&rig.state()).len(), 1);
+}
+
+fn receipts(dir: &Path) -> Vec<std::path::PathBuf> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .flat_map(|entry| {
+            let path = entry.path();
+            if path.is_dir() {
+                receipts(&path)
+            } else if path.file_name().is_some_and(|name| name == "receipt.json") {
+                vec![path]
+            } else {
+                Vec::new()
+            }
+        })
+        .collect()
 }

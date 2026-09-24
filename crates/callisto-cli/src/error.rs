@@ -286,11 +286,11 @@ pub enum CliError {
     #[diagnostic(code(callisto::release_credential_missing), help("{fix}"))]
     ReleaseCredentialMissing {
         package: String,
-        credential: &'static str,
-        fix: &'static str,
+        credential: String,
+        fix: String,
     },
 
-    #[error("cannot choose a default release receipt location: {detail}")]
+    #[error("invalid release receipt location: {detail}")]
     #[diagnostic(
         code(callisto::release_receipt_location),
         help("pass `--receipt <file>` outside the repository")

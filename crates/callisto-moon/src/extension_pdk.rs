@@ -53,6 +53,15 @@ pub fn execute_extension(input: moon_pdk_api::ExecuteExtensionInput) -> ExecuteE
 
     let subcmd = resolve_subcommand(&input.args);
 
+    if let Some(replacement) = crate::extension::removed_subcommand(subcmd) {
+        let message = format!("`{subcmd}` was removed; use `{replacement}`");
+        let json_val = serde_json::json!({
+            "schemaVersion": callisto_model::SCHEMA_VERSION,
+            "error": { "code": "E_REMOVED_SUBCOMMAND", "message": message }
+        });
+        return error_output(json_val, &message);
+    }
+
     match subcmd {
         "release" => {
             use callisto_graph::commands::{plan_local_release, LocalReleaseSource};

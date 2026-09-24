@@ -77,6 +77,8 @@ pub struct LocalReleasePlan {
     pub intent: ReleaseIntentV1,
     /// A preview only: `origin` has no push URL, so tags carry no remote and a run would refuse.
     pub tags_unbound: bool,
+    /// Absolute directory of every released package, for per-package credential lookup.
+    pub package_dirs: std::collections::BTreeMap<ReleasePackageId, std::path::PathBuf>,
 }
 
 /// Derives the intent for every unreleased package (or exactly `selections`).
@@ -136,7 +138,19 @@ pub fn plan_local_release<L: ProjectLocator, R: CommandRunner>(
             reason: StaleReason::source_identity_changed(),
         });
     }
-    Ok(Some(LocalReleasePlan { intent, tags_unbound }))
+    let mut package_dirs = std::collections::BTreeMap::new();
+    for package in workspace.graph.packages() {
+        for id in crate::commands::release_decision::release_package_ids(&workspace.identity, package)? {
+            if intent.decision.entries.iter().any(|entry| entry.package == id) {
+                package_dirs.insert(id, workspace.root.join(super::derive::package_dir(package)?));
+            }
+        }
+    }
+    Ok(Some(LocalReleasePlan {
+        intent,
+        tags_unbound,
+        package_dirs,
+    }))
 }
 
 #[cfg(test)]
@@ -341,6 +355,60 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    fn grouped_repo(kind: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"a\", \"b\", \"c\"]\n",
+        )
+        .unwrap();
+        for name in ["a", "b", "c"] {
+            std::fs::create_dir_all(root.join(name)).unwrap();
+            std::fs::write(
+                root.join(name).join("Cargo.toml"),
+                format!("[package]\nname = \"{name}\"\nversion = \"1.0.0\"\nedition = \"2021\"\n"),
+            )
+            .unwrap();
+        }
+        std::fs::write(
+            root.join("callisto.toml"),
+            format!("[[{kind}-group]]\nname = \"g\"\nmembers = [\"a\", \"b\"]\n\n[[package]]\nmatch = \"*\"\npublish-to = [\"crates-io\"]\n"),
+        )
+        .unwrap();
+        for args in [
+            ["init", "-q"].as_slice(),
+            ["config", "user.email", "test@example.com"].as_slice(),
+            ["config", "user.name", "Test"].as_slice(),
+            ["config", "commit.gpgsign", "false"].as_slice(),
+            ["remote", "add", "origin", "https://github.com/example/grouped.git"].as_slice(),
+            ["add", "."].as_slice(),
+            ["commit", "-q", "-m", "fixture"].as_slice(),
+        ] {
+            git(root, args);
+        }
+        dir
+    }
+
+    /// M1: `--package` keeps every fixed- or linked-group member, as the CI route does.
+    #[test]
+    fn package_selection_expands_fixed_and_linked_groups() {
+        for kind in ["fixed", "linked"] {
+            let dir = grouped_repo(kind);
+            let id = |name| ReleasePackageId::new(Ecosystem::Cargo, name).unwrap();
+            let intent = plan(dir.path(), &[id("a")], LocalReleaseSource::Preview)
+                .unwrap()
+                .unwrap();
+            let packages: Vec<_> = intent
+                .decision
+                .entries
+                .iter()
+                .map(|entry| entry.package.clone())
+                .collect();
+            assert_eq!(packages, [id("a"), id("b")], "{kind}");
+        }
     }
 
     fn route(root: &Path) -> Option<CiReleaseRoute> {

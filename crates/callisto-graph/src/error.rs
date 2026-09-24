@@ -662,8 +662,8 @@ pub enum ReleaseSelectionInvalidReason {
     NoDispatchableTarget,
     #[error("the package has a duplicate registry target")]
     DuplicateRegistryTarget,
-    #[error("it is an unreleased platform package a selected npm package depends on; select it too")]
-    PlatformDependencyNotSelected,
+    #[error("it is an unreleased workspace package a selected package depends on; select it too")]
+    DependencyNotSelected,
 }
 
 /// An unmet precondition for a release operation, carried by

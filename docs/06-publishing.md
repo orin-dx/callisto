@@ -9,19 +9,19 @@ This document covers authentication setup for registry publishing, with particul
 `callisto release` publishes every package whose current version has no tag yet: registry publish, git tag, and GitHub release for each. It runs on any branch and records HEAD's commit as the source.
 
 - `callisto release --dry-run` prints the plan and performs no effect. It works anywhere, including on a dirty worktree or without an `origin` remote (tags are then noted as unbound).
-- `--package <ecosystem/name>` (repeatable) restricts the run to named unreleased packages.
+- `--package <ecosystem/name>` (repeatable) restricts the run to named unreleased packages, plus every member of their fixed or linked groups. An unreleased workspace package that a selected one depends on (runtime, optional, or peer) must be selected too.
 - It refuses a dirty worktree: a tracked modification or an untracked file not covered by `.gitignore`. Ignored files never count.
 - It prints `Nothing to release.` and exits 0 when every package is already tagged.
-- The receipt goes to `--receipt <file>`, else `<state dir>/callisto/<repo-hash>/<intent-digest>/receipt.json` (`$XDG_STATE_HOME`, else `~/.local/state`; `~/Library/Application Support` on macOS). Never inside the checkout.
+- A receipt is written only when every operation succeeded; after a partial failure, rerun to adopt what landed. It goes to `--receipt <file>` (refused inside the checkout), else `<state dir>/callisto/<repo-hash>/<intent-digest>/receipt.json` (`$XDG_STATE_HOME`, else `~/.local/state`; `~/Library/Application Support` on macOS). Never inside the checkout.
 - A workspace with `[[release.artifact]]` slots or napi/maturin platform packages must release from CI: `callisto release plan`, `release artifact-manifest`, `release execute`.
 
 Before the first effect it checks one credential per operation kind and names the one that is missing:
 
 | Operation | Accepted credential |
 |---|---|
-| cargo publish | `CARGO_REGISTRY_TOKEN`, or a `cargo login` credentials file |
-| npm publish | `NODE_AUTH_TOKEN`, `NPM_TOKEN`, an auth line in `~/.npmrc` or the project `.npmrc`, or OIDC (`ACTIONS_ID_TOKEN_REQUEST_URL`) |
-| PyPI publish | `TWINE_PASSWORD`, or OIDC |
+| cargo publish | crates.io: `CARGO_REGISTRY_TOKEN`; another registry `<name>`: `CARGO_REGISTRIES_<NAME>_TOKEN`. Or a `cargo login` entry for that registry, or a configured `credential-provider` |
+| npm publish | `NODE_AUTH_TOKEN`, `NPM_TOKEN`, OIDC (`ACTIONS_ID_TOKEN_REQUEST_URL`), or an auth line in the user (`NPM_CONFIG_USERCONFIG`, else `~/.npmrc`), project, or package `.npmrc`; a `${VAR}` in it counts only when `VAR` is set |
+| PyPI publish | `TWINE_PASSWORD`, OIDC, or a `~/.pypirc` password for the target repository. A keyring-only password cannot be detected |
 | GitHub release | `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth status` succeeding |
 
 ---

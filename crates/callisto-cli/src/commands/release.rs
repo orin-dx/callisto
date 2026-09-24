@@ -41,6 +41,9 @@ pub fn handle(args: ReleaseCommandArgs, global: &GlobalArgs) -> Result<ExitCode,
 pub const TAGS_UNBOUND_NOTE: &str =
     "note: `origin` has no push URL, so tag operations are unbound; `callisto release` will refuse until one is set";
 
+/// Bound on the `gh auth status` credential probe.
+const GH_AUTH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// Exact stdout when no package has an unreleased version.
 pub const NOTHING_TO_RELEASE: &str = "Nothing to release.";
 
@@ -74,23 +77,16 @@ fn release(
             reason: route.to_string(),
         });
     }
-    let Some(intent) =
-        plan_local_release(&root, &locator, &runner, &selections, LocalReleaseSource::Trusted)?.map(|plan| plan.intent)
-    else {
+    let Some(plan) = plan_local_release(&root, &locator, &runner, &selections, LocalReleaseSource::Trusted)? else {
         print_nothing_to_release(global)?;
         return Ok(ExitCode::SUCCESS);
     };
+    let intent = plan.intent;
     let var = |name: &str| std::env::var(name).ok();
-    // Status only: `gh auth status` prints account details this command must not echo.
+    // Quiet and bounded: `gh auth status` prints account details this command must not echo.
     let gh_authenticated = || {
-        std::process::Command::new("gh")
-            .args(["auth", "status"])
-            .current_dir(&root)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .is_ok_and(|status| status.success())
+        callisto_model::CommandRunner::run_quiet(&runner, "gh", &["auth", "status"], &root, GH_AUTH_TIMEOUT)
+            .is_ok_and(|output| output.success())
     };
     super::release_credentials::check(
         &intent,
@@ -98,14 +94,16 @@ fn release(
             var: &var,
             home: home_dir(),
             root: &root,
+            package_dirs: &plan.package_dirs,
             gh_authenticated: &gh_authenticated,
         },
     )?;
     let receipt = match receipt {
-        Some(path) => path,
+        Some(path) => explicit_receipt_path(&root, &path)?,
         None => default_receipt_path(&root, &intent, &var)?,
     };
     let permit = ApplyPermit::granted_unless_dry_run(false).expect("non-dry-run permits writes");
+    // A receipt records only full success; a partial run is recovered by rerunning.
     callisto_model::atomic::probe_atomic_write(&receipt, &permit).map_err(|source| CliError::Io {
         source,
         path: Some(receipt.clone()),
@@ -200,13 +198,47 @@ fn default_receipt_path(
     let state = state_dir(var, home_dir()).ok_or_else(|| CliError::ReleaseReceiptLocation {
         detail: "no platform state directory (set XDG_STATE_HOME or HOME)".to_owned(),
     })?;
-    let path = receipt_path_in(&state, root, intent);
-    if path.starts_with(root) {
+    let root = canonical_prefix(root)?;
+    let path = receipt_path_in(&canonical_prefix(&state)?, &root, intent);
+    if path.starts_with(&root) {
         return Err(CliError::ReleaseReceiptLocation {
             detail: format!("the state directory `{}` is inside the repository", state.display()),
         });
     }
     Ok(path)
+}
+
+/// A `--receipt` path, refused inside the repository.
+fn explicit_receipt_path(root: &std::path::Path, path: &std::path::Path) -> Result<std::path::PathBuf, CliError> {
+    let absolute = std::path::absolute(path).map_err(|source| CliError::Io {
+        source,
+        path: Some(path.to_path_buf()),
+    })?;
+    if canonical_prefix(&absolute)?.starts_with(canonical_prefix(root)?) {
+        return Err(CliError::ReleaseReceiptLocation {
+            detail: format!("`{}` is inside the repository", path.display()),
+        });
+    }
+    Ok(absolute)
+}
+
+/// Canonicalizes the longest existing ancestor of `path` and re-appends the rest.
+fn canonical_prefix(path: &std::path::Path) -> Result<std::path::PathBuf, CliError> {
+    let mut existing = path;
+    let mut rest = Vec::new();
+    while !existing.exists() {
+        let (Some(parent), Some(name)) = (existing.parent(), existing.file_name()) else {
+            return Ok(path.to_path_buf());
+        };
+        rest.push(name.to_owned());
+        existing = parent;
+    }
+    let mut canonical = dunce::canonicalize(existing).map_err(|source| CliError::Io {
+        source,
+        path: Some(existing.to_path_buf()),
+    })?;
+    canonical.extend(rest.into_iter().rev());
+    Ok(canonical)
 }
 
 fn receipt_path_in(state: &std::path::Path, root: &std::path::Path, intent: &ReleaseIntentV1) -> std::path::PathBuf {
@@ -456,8 +488,8 @@ fn inspect(args: ReleaseInspectArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
 }
 
 fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
-    // Every input is validated and the receipt destination probed before the first effect, so a
-    // late failure cannot leave published crates, tags or releases without a receipt.
+    // Inputs and the receipt destination are checked before the first effect; a provider failure
+    // mid-run still leaves landed effects without a receipt, and a rerun adopts them.
     let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).ok_or(CliError::ReleaseExecuteDryRun)?;
     let intent = read_intent(&args.intent)?;
     let orchestration_revision = callisto_model::CommitSha::parse(&args.orchestration_revision).map_err(|error| {
@@ -674,7 +706,51 @@ mod tests {
         let outside_path = outside.path().to_string_lossy().into_owned();
         let var = move |name: &str| (name == "XDG_STATE_HOME").then(|| outside_path.clone());
         let path = default_receipt_path(root.path(), &intent, &var).unwrap();
-        assert!(path.starts_with(outside.path()) && !path.starts_with(root.path()));
+        let canonical_outside = dunce::canonicalize(outside.path()).unwrap();
+        let canonical_root = dunce::canonicalize(root.path()).unwrap();
+        assert!(path.starts_with(&canonical_outside) && !path.starts_with(&canonical_root));
+    }
+
+    /// L2: the repository hash is taken from the canonical root, so a symlinked path agrees.
+    #[cfg(unix)]
+    #[test]
+    fn default_receipt_path_is_stable_across_symlinked_roots() {
+        let intent = sample();
+        let base = tempfile::tempdir().unwrap();
+        let root = base.path().join("repo");
+        std::fs::create_dir(&root).unwrap();
+        let link = base.path().join("link");
+        std::os::unix::fs::symlink(&root, &link).unwrap();
+        let state = tempfile::tempdir().unwrap();
+        let state_path = state.path().to_string_lossy().into_owned();
+        let var = move |name: &str| (name == "XDG_STATE_HOME").then(|| state_path.clone());
+        assert_eq!(
+            default_receipt_path(&root, &intent, &var).unwrap(),
+            default_receipt_path(&link, &intent, &var).unwrap()
+        );
+    }
+
+    /// L2: `--receipt` inside the repository is refused, including through a symlink.
+    #[cfg(unix)]
+    #[test]
+    fn explicit_receipt_inside_the_worktree_is_refused() {
+        let base = tempfile::tempdir().unwrap();
+        let root = base.path().join("repo");
+        std::fs::create_dir(&root).unwrap();
+        let link = base.path().join("link");
+        std::os::unix::fs::symlink(&root, &link).unwrap();
+        for inside in [root.join("receipt.json"), link.join("out").join("receipt.json")] {
+            assert!(
+                matches!(
+                    explicit_receipt_path(&root, &inside),
+                    Err(CliError::ReleaseReceiptLocation { .. })
+                ),
+                "{}",
+                inside.display()
+            );
+        }
+        let outside = base.path().join("receipts").join("receipt.json");
+        assert_eq!(explicit_receipt_path(&root, &outside).unwrap(), outside);
     }
 
     #[test]
