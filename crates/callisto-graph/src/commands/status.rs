@@ -130,10 +130,15 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
     escalate(&mut diagnostics, opts.strict, opts.strict_graph);
 
     let has_changesets = packages.iter().any(|p| !p.pending_changesets.is_empty());
+    // AC-04: count of packages with a planned bump, post-cascade/fixed/linked-group --
+    // the field a script now reads to detect pending changesets, since `--check`'s
+    // exit code no longer signals it.
+    let pending = packages.iter().filter(|p| p.pending_severity.is_some()).count() as u32;
 
     Ok(StatusReport {
         schema_version: SCHEMA_VERSION,
         has_changesets,
+        pending,
         packages,
         diagnostics,
     })

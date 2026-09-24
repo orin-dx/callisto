@@ -12,19 +12,11 @@ runs:
       env:
         FORCE_COLOR: "1"
         CLICOLOR_FORCE: "1"
-      # `callisto status --check` exit codes (SPEC-DX-STATUS-ADD AC-04): 0 = no
-      # --check-reachable success path here (status --check never returns it),
-      # 1 = workspace errors (fail the step), 2 = changesets pending with no
-      # errors, 3 = nothing pending with no errors -- 2 and 3 are both a clean
-      # bill of health for this gate.
-      run: |
-        set +e
-        callisto status --check
-        code=$?
-        set -e
-        if [ "$code" -eq 1 ]; then
-          exit 1
-        fi
+      # `callisto status --check` (SPEC-DX-STATUS-ADD AC-04) is a conventional
+      # 0/1 gate: 0 when there are no error-level diagnostics, 1 otherwise,
+      # regardless of pending changesets. `shell: bash` already fails the step
+      # on a non-zero exit, so no wrapper is needed.
+      run: callisto status --check
 
     - name: Pre-Flight Release Plan Simulation (DAG Pre-Check)
       shell: bash

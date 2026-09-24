@@ -158,8 +158,10 @@ fn test_status_matches_ecosystem_qualified_changeset_entry() {
     )
     .unwrap();
 
-    // --check returns exit code 2 when at least one pending changeset is found and
-    // there are no error-level diagnostics.
+    // status --check must still succeed (no error-level diagnostics) --
+    // SPEC-DX-STATUS-ADD AC-04 made pending state exit-code-irrelevant, so the
+    // ecosystem-qualified-match regression this test guards is now asserted
+    // via the report itself (`pending`/`pending_severity`), not the exit code.
     let code = commands::status::handle(
         StatusArgs {
             strict: false,
@@ -169,17 +171,25 @@ fn test_status_matches_ecosystem_qualified_changeset_entry() {
         &global,
     )
     .unwrap();
+    assert_eq!(format!("{code:?}"), format!("{:?}", ExitCode::SUCCESS));
+
+    let runner = callisto_cli::runner::CliCommandRunner;
+    let ws = callisto_cli::workspace::load_workspace(&global, &runner).unwrap();
+    let inference = callisto_cli::workspace::select_inference();
+    let report =
+        callisto_graph::commands::status(&ws, &inference, &callisto_graph::commands::StatusOptions::default()).unwrap();
 
     assert_eq!(
-        format!("{code:?}"),
-        format!("{:?}", ExitCode::from(2u8)),
-        "status --check must detect a pending changeset whose entry uses an \
-         ecosystem-qualified name (cargo/my-app) for a package registered as my-app"
+        report.pending, 1,
+        "status must detect a pending changeset whose entry uses an ecosystem-qualified \
+         name (cargo/my-app) for a package registered as my-app; got: {:?}",
+        report.packages
     );
 }
 
-/// `callisto status --check` must return exit code 2 when at least one pending
-/// changeset exists (and no errors), and exit code 3 when the workspace is clean.
+/// `callisto status --check` must return exit code 0 regardless of pending
+/// state, as long as there are no error-level diagnostics (SPEC-DX-STATUS-ADD
+/// AC-04: `--check` is a conventional errors-only gate).
 #[test]
 fn test_status_check_exit_codes() {
     use std::process::ExitCode;
@@ -218,27 +228,15 @@ fn test_status_check_exit_codes() {
         check: true,
     };
 
-    // --- Clean workspace: no changesets pending -> exit code 3 ---
+    // --- Clean workspace: nothing pending, no errors -> exit code 0 ---
     let clean_code = commands::status::handle(check_args.clone(), &global).unwrap();
-    // ExitCode does not implement PartialEq, but `from(3)` is equivalent to
-    // the u8 value 3.  We compare via the Display of the debug form, which is
-    // not stable, so instead we re-derive from the known constant.
-    let expected_clean = ExitCode::from(3u8);
-    // We cannot directly compare ExitCode values, so compare via a round-trip:
-    // if `clean_code` were SUCCESS (0) the test below would panic correctly.
-    // The canonical check is to ensure it is NOT SUCCESS.
-    assert_ne!(
-        format!("{clean_code:?}"),
-        format!("{:?}", ExitCode::SUCCESS),
-        "clean workspace with --check must not return exit code 0"
-    );
     assert_eq!(
         format!("{clean_code:?}"),
-        format!("{expected_clean:?}"),
-        "clean workspace with --check must return exit code 3"
+        format!("{:?}", ExitCode::SUCCESS),
+        "clean workspace with --check must return exit code 0"
     );
 
-    // --- Workspace with a pending changeset (no errors) -> exit code 2 ---
+    // --- Workspace with a pending changeset (no errors) -> still exit code 0 ---
     commands::add::handle(
         callisto_cli::cli::AddArgs {
             packages: vec!["my-app:patch".to_string()],
@@ -251,8 +249,9 @@ fn test_status_check_exit_codes() {
     let pending_code = commands::status::handle(check_args.clone(), &global).unwrap();
     assert_eq!(
         format!("{pending_code:?}"),
-        format!("{:?}", ExitCode::from(2u8)),
-        "workspace with pending changeset and --check must return exit code 2"
+        format!("{:?}", ExitCode::SUCCESS),
+        "workspace with a well-formed pending changeset and --check must still return \
+         exit code 0 -- pending state never gates the exit code"
     );
 }
 

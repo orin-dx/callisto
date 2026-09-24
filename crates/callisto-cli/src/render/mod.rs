@@ -45,6 +45,10 @@ pub fn render_status<W: io::Write>(report: &StatusReport, use_color: bool, w: &m
             )?;
         }
     }
+    // SPEC-DX-STATUS-ADD AC-04: `status --check`'s exit code no longer signals
+    // pending state (0/1 gate on errors only), so the summary line and the
+    // JSON `pending` count are how a reader sees it now.
+    writeln!(w, "{} package(s) pending", report.pending)?;
     render_diagnostics(&report.diagnostics, None, w)
 }
 
@@ -214,6 +218,7 @@ mod tests {
         let report = StatusReport {
             schema_version: callisto_model::SCHEMA_VERSION,
             has_changesets: true,
+            pending: 1,
             packages: vec![status_pkg("crate-a", Some(Severity::Minor), vec!["cs-001"])],
             diagnostics: vec![],
         };
@@ -479,6 +484,7 @@ mod tests {
         let report = StatusReport {
             schema_version: callisto_model::SCHEMA_VERSION,
             has_changesets: true,
+            pending: 1,
             packages: vec![status_pkg("crate-a", Some(Severity::Minor), vec!["cs-001"])],
             diagnostics: vec![],
         };
@@ -495,6 +501,7 @@ mod tests {
         let report = StatusReport {
             schema_version: callisto_model::SCHEMA_VERSION,
             has_changesets: true,
+            pending: 1,
             packages: vec![status_pkg("crate-a", Some(Severity::Minor), vec!["cs-001"])],
             diagnostics: vec![],
         };
@@ -520,6 +527,7 @@ mod tests {
             &StatusReport {
                 schema_version: 7,
                 has_changesets: false,
+                pending: 0,
                 packages: vec![],
                 diagnostics: vec![],
             },

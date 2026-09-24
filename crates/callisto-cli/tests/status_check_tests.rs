@@ -44,12 +44,13 @@ fn test_status_check_clean_workspace_exits_ok() {
     )
     .unwrap();
 
-    // A pending changeset with no diagnostics errors: exit code 2, not FAILURE.
+    // A pending changeset with no diagnostic errors: exit code 0, not FAILURE
+    // -- SPEC-DX-STATUS-ADD AC-04 made pending state exit-code-irrelevant.
     let result = commands::status::handle(check_args(), &global);
-    assert_ne!(
+    assert_eq!(
         result.unwrap(),
-        ExitCode::FAILURE,
-        "status --check must not fail when all pending changesets are well-formed"
+        ExitCode::SUCCESS,
+        "status --check must succeed when all pending changesets are well-formed"
     );
 }
 
