@@ -1,11 +1,16 @@
 use std::collections::BTreeMap;
 
-use callisto_model::{CommandRunner, Package, PackageId, Severity, StatusReport, SCHEMA_VERSION};
+use callisto_model::{
+    CommandRunner, Diagnostic, DiagnosticCode, DiagnosticSeverity, Package, PackageId, Severity, StatusReport,
+    SCHEMA_VERSION,
+};
 
 use crate::aggregate::{resolve_target_package, LoadedChangeset};
 use crate::changed::changed_since_last_tag;
 use crate::commands::escalate;
+use crate::commands::version::{plan_version, VersionOptions};
 use crate::error::GraphError;
+use crate::infer::SeverityInference;
 use crate::resolver::DependencyResolver;
 use crate::Workspace;
 
@@ -56,8 +61,9 @@ fn resolve_pending_changesets<'a>(
     Ok(pending)
 }
 
-pub fn status<R: CommandRunner, D: DependencyResolver>(
+pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
     ws: &Workspace<'_, R, D>,
+    inference: &I,
     opts: &StatusOptions,
 ) -> Result<StatusReport, GraphError> {
     let mut packages = Vec::new();
@@ -67,6 +73,19 @@ pub fn status<R: CommandRunner, D: DependencyResolver>(
 
     let all_packages: Vec<&Package> = ws.graph.packages().collect();
     let pending = resolve_pending_changesets(all_packages.iter().copied(), &loaded_changesets)?;
+
+    // AC-01 (SPEC-DX-STATUS-ADD): pending severity is `plan_version`'s own
+    // `PlannedBump.severity` per package -- the same cascade/fixed/linked-group
+    // computation `callisto version` uses. status computes no cascade of its
+    // own; it only reads the plan `plan_version` already derives.
+    let version_opts = VersionOptions {
+        strict: opts.strict,
+        strict_graph: opts.strict_graph,
+        allow_empty_changesets: true,
+    };
+    let plan = plan_version(ws, inference, &version_opts)?;
+    let planned_severity: BTreeMap<PackageId, Severity> =
+        plan.bumps.iter().map(|b| (b.package.clone(), b.severity)).collect();
 
     // `ws.tags()` above already triggered `ws.git_access()`'s discovery and
     // cached the result on `Workspace`; reuse it here instead of paying for
@@ -85,14 +104,15 @@ pub fn status<R: CommandRunner, D: DependencyResolver>(
         let last_released_version = last.map(|t| t.version.clone());
         let changed = changed_since_last_tag(ws.runner, &ws.root, pkg, tags, git)?;
 
-        let (pkg_changesets, max_sev) = pending.get(&pkg.id).cloned().unwrap_or_default();
+        let (pkg_changesets, _) = pending.get(&pkg.id).cloned().unwrap_or_default();
+        let pending_severity = planned_severity.get(&pkg.id).copied();
 
         packages.push(callisto_model::StatusPackageRecord {
             package: pkg.id.clone(),
             current_version,
             last_tag,
             last_released_version,
-            pending_severity: max_sev,
+            pending_severity,
             changed_since_last_tag: changed,
             release_trigger: pkg.release_trigger,
             pending_changesets: pkg_changesets,
@@ -100,6 +120,13 @@ pub fn status<R: CommandRunner, D: DependencyResolver>(
     }
 
     let mut diagnostics = ws.graph.diagnostics().to_vec();
+    // AC-03: fold in every well-formedness diagnostic `validate` used to
+    // report (EmptyChangeset, EmptySummary, UnknownPackage,
+    // AmbiguousPackageName, InvalidPackageName) now that `validate` is gone.
+    diagnostics.extend(changeset_wellformedness_diagnostics(
+        all_packages.iter().copied(),
+        &loaded_changesets,
+    ));
     escalate(&mut diagnostics, opts.strict, opts.strict_graph);
 
     let has_changesets = packages.iter().any(|p| !p.pending_changesets.is_empty());
@@ -110,6 +137,100 @@ pub fn status<R: CommandRunner, D: DependencyResolver>(
         packages,
         diagnostics,
     })
+}
+
+/// The per-changeset well-formedness diagnostics `validate` used to emit
+/// (crates/callisto-graph/src/commands/validate.rs, now removed -- SPEC-DX-STATUS-ADD
+/// AC-03), ported verbatim: entries/summary shape and package-name resolution,
+/// all at Error severity. Uses `resolve_unique` (soft: returns candidates on
+/// ambiguity) rather than `resolve_target_package` (hard-errors via `?`) --
+/// unlike `resolve_pending_changesets` above, this must never abort the scan.
+fn changeset_wellformedness_diagnostics<'a>(
+    packages: impl Iterator<Item = &'a Package> + Clone,
+    loaded: &[LoadedChangeset],
+) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    for cs in loaded {
+        if cs.changeset.entries.is_empty() {
+            diagnostics.push(Diagnostic {
+                code: DiagnosticCode::EmptyChangeset,
+                severity: DiagnosticSeverity::Error,
+                message: format!("Changeset `{}` is empty", cs.path.display()),
+                package: None,
+                path: Some(cs.path.clone()),
+                governed_by: None,
+                escalated_by: None,
+            });
+        }
+
+        if !cs.changeset.entries.is_empty() && cs.changeset.summary.trim().is_empty() {
+            diagnostics.push(Diagnostic {
+                code: DiagnosticCode::EmptySummary,
+                severity: DiagnosticSeverity::Error,
+                message: format!("Changeset `{}` has entries but an empty summary", cs.path.display()),
+                package: None,
+                path: Some(cs.path.clone()),
+                governed_by: None,
+                escalated_by: None,
+            });
+        }
+
+        for entry in &cs.changeset.entries {
+            match PackageId::parse(&entry.name) {
+                Ok(id) => match id.resolve_unique(packages.clone(), |p| &p.id) {
+                    Ok(None) => {
+                        diagnostics.push(Diagnostic {
+                            code: DiagnosticCode::UnknownPackage,
+                            severity: DiagnosticSeverity::Error,
+                            message: format!(
+                                "Changeset `{}` references unknown package `{}`",
+                                cs.path.display(),
+                                entry.name
+                            ),
+                            package: Some(id),
+                            path: Some(cs.path.clone()),
+                            governed_by: None,
+                            escalated_by: None,
+                        });
+                    }
+                    Ok(Some(_)) => {}
+                    Err(candidates) => {
+                        let names: Vec<String> = candidates.iter().map(|p| p.id.display_name().to_string()).collect();
+                        diagnostics.push(Diagnostic {
+                            code: DiagnosticCode::AmbiguousPackageName,
+                            severity: DiagnosticSeverity::Error,
+                            message: format!(
+                                "Changeset `{}` references ambiguous package `{}` (matches: {})",
+                                cs.path.display(),
+                                entry.name,
+                                names.join(", ")
+                            ),
+                            package: Some(id),
+                            path: Some(cs.path.clone()),
+                            governed_by: None,
+                            escalated_by: None,
+                        });
+                    }
+                },
+                Err(_) => {
+                    diagnostics.push(Diagnostic {
+                        code: DiagnosticCode::InvalidPackageName,
+                        severity: DiagnosticSeverity::Error,
+                        message: format!(
+                            "Changeset `{}` contains invalid package name `{}`",
+                            cs.path.display(),
+                            entry.name
+                        ),
+                        package: None,
+                        path: Some(cs.path.clone()),
+                        governed_by: None,
+                        escalated_by: None,
+                    });
+                }
+            }
+        }
+    }
+    diagnostics
 }
 
 #[cfg(test)]

@@ -57,7 +57,8 @@ fn decide(args: ReleasePrDecideArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
 
     let runner = CliCommandRunner;
     let workspace = load_workspace(global, &runner)?;
-    let status = status(&workspace, &StatusOptions::default())?;
+    let inference = crate::workspace::select_inference();
+    let status = status(&workspace, &inference, &StatusOptions::default())?;
     let decision = ReleasePrDecisionV2::derive(status.has_changesets, &config, &snapshot)?;
 
     match global.format {

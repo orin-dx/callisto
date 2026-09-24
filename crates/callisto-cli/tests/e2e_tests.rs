@@ -158,8 +158,8 @@ fn test_status_matches_ecosystem_qualified_changeset_entry() {
     )
     .unwrap();
 
-    // --check returns exit code 1 (FAILURE) when at least one pending changeset is found.
-    // Before the fix this returned exit code 2 (no pending changesets detected).
+    // --check returns exit code 2 when at least one pending changeset is found and
+    // there are no error-level diagnostics.
     let code = commands::status::handle(
         StatusArgs {
             strict: false,
@@ -172,14 +172,14 @@ fn test_status_matches_ecosystem_qualified_changeset_entry() {
 
     assert_eq!(
         format!("{code:?}"),
-        format!("{:?}", ExitCode::FAILURE),
+        format!("{:?}", ExitCode::from(2u8)),
         "status --check must detect a pending changeset whose entry uses an \
          ecosystem-qualified name (cargo/my-app) for a package registered as my-app"
     );
 }
 
-/// `callisto status --check` must return exit code 1 (FAILURE) when at least one pending
-/// changeset exists, and exit code 2 when the workspace is clean.
+/// `callisto status --check` must return exit code 2 when at least one pending
+/// changeset exists (and no errors), and exit code 3 when the workspace is clean.
 #[test]
 fn test_status_check_exit_codes() {
     use std::process::ExitCode;
@@ -218,12 +218,12 @@ fn test_status_check_exit_codes() {
         check: true,
     };
 
-    // --- Clean workspace: no changesets pending -> exit code 2 ---
+    // --- Clean workspace: no changesets pending -> exit code 3 ---
     let clean_code = commands::status::handle(check_args.clone(), &global).unwrap();
-    // ExitCode does not implement PartialEq, but `from(2)` is equivalent to
-    // the u8 value 2.  We compare via the Display of the debug form, which is
+    // ExitCode does not implement PartialEq, but `from(3)` is equivalent to
+    // the u8 value 3.  We compare via the Display of the debug form, which is
     // not stable, so instead we re-derive from the known constant.
-    let expected_clean = ExitCode::from(2u8);
+    let expected_clean = ExitCode::from(3u8);
     // We cannot directly compare ExitCode values, so compare via a round-trip:
     // if `clean_code` were SUCCESS (0) the test below would panic correctly.
     // The canonical check is to ensure it is NOT SUCCESS.
@@ -235,10 +235,10 @@ fn test_status_check_exit_codes() {
     assert_eq!(
         format!("{clean_code:?}"),
         format!("{expected_clean:?}"),
-        "clean workspace with --check must return exit code 2"
+        "clean workspace with --check must return exit code 3"
     );
 
-    // --- Workspace with a pending changeset -> exit code 0 ---
+    // --- Workspace with a pending changeset (no errors) -> exit code 2 ---
     commands::add::handle(
         callisto_cli::cli::AddArgs {
             packages: vec!["my-app:patch".to_string()],
@@ -251,8 +251,8 @@ fn test_status_check_exit_codes() {
     let pending_code = commands::status::handle(check_args.clone(), &global).unwrap();
     assert_eq!(
         format!("{pending_code:?}"),
-        format!("{:?}", ExitCode::FAILURE),
-        "workspace with pending changeset and --check must return exit code 1 (FAILURE)"
+        format!("{:?}", ExitCode::from(2u8)),
+        "workspace with pending changeset and --check must return exit code 2"
     );
 }
 

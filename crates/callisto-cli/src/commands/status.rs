@@ -10,16 +10,17 @@ use crate::render;
 use crate::runner::CliCommandRunner;
 use crate::workspace::load_workspace;
 
-/// Compute the --check exit code as a raw `u8` from a status report.
+/// Compute the --check exit code as a raw `u8` from a status report that has
+/// no error-level diagnostics (the caller checks that first).
 ///
 /// Returns:
-/// - `1` when there are packages with pending changesets (maps to `ExitCode::FAILURE`).
-/// - `2` when no changesets are pending (sentinel for CI scripts).
+/// - `2` when there are packages with pending changesets.
+/// - `3` when no changesets are pending (sentinel for CI scripts).
 pub(crate) fn check_exit_code_raw(report: &StatusReport) -> u8 {
     if report.has_changesets {
-        1
-    } else {
         2
+    } else {
+        3
     }
 }
 
@@ -32,7 +33,8 @@ pub fn handle(args: StatusArgs, global: &GlobalArgs) -> Result<ExitCode, CliErro
         strict_graph: args.strict_graph,
     };
 
-    let report = callisto_graph::commands::status(&ws, &opts)?;
+    let inference = crate::workspace::select_inference();
+    let report = callisto_graph::commands::status(&ws, &inference, &opts)?;
 
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &report)?,
@@ -94,25 +96,27 @@ mod tests {
         }
     }
 
-    // QW-3: check=true with pending changesets must return 1 (FAILURE).
+    // SPEC-DX-STATUS-ADD AC-04: check=true with pending changesets (and no
+    // errors) must return 2.
     #[test]
-    fn check_exit_code_returns_failure_when_changesets_pending() {
+    fn check_exit_code_returns_2_when_changesets_pending() {
         let report = make_report(vec![vec!["cs-001"]]);
         assert_eq!(
             check_exit_code_raw(&report),
-            1,
-            "check_exit_code must return 1 (FAILURE) when changesets are pending"
+            2,
+            "check_exit_code must return 2 when changesets are pending and there are no errors"
         );
     }
 
-    // QW-3: check=true with no pending changesets must return exit code 2.
+    // SPEC-DX-STATUS-ADD AC-04: check=true with no pending changesets (and no
+    // errors) must return 3.
     #[test]
-    fn check_exit_code_returns_2_when_no_changesets_pending() {
+    fn check_exit_code_returns_3_when_no_changesets_pending() {
         let report = make_report(vec![vec![]]);
         assert_eq!(
             check_exit_code_raw(&report),
-            2,
-            "check_exit_code must return 2 when no changesets are pending"
+            3,
+            "check_exit_code must return 3 when no changesets are pending and there are no errors"
         );
     }
 

@@ -74,26 +74,15 @@ pub fn execute_extension(input: moon_pdk_api::ExecuteExtensionInput) -> ExecuteE
                 }
             }
         }
-        "validate" => {
-            use callisto_graph::commands::validate::{validate, ValidateOptions};
-            match validate(&ws, &ValidateOptions::default()) {
-                Ok(report) => {
-                    let exit_code = if report.ok { 0 } else { 1 };
-                    build_extension_output(serde_json::to_value(&report), exit_code)
-                }
-                Err(e) => {
-                    let json_val = format_graph_error_json(&e);
-                    error_output(json_val, &e)
-                }
-            }
-        }
         _ => {
+            use callisto_graph::infer::NoInference;
+
             let opts = StatusOptions {
                 strict: false,
                 strict_graph: false,
             };
 
-            match status(&ws, &opts) {
+            match status(&ws, &NoInference, &opts) {
                 Ok(report) => {
                     let has_errors = report
                         .diagnostics

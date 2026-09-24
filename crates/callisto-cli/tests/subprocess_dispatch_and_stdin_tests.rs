@@ -21,7 +21,7 @@ fn bin() -> &'static str {
 }
 
 /// Drives one full lifecycle through the real binary so every subcommand's
-/// `main.rs` dispatch arm actually executes: init, status, version, validate,
+/// `main.rs` dispatch arm actually executes: init, status, version,
 /// release (dry-run), compose-pr-body, and completions.
 #[test]
 fn subprocess_lifecycle_exercises_every_main_dispatch_arm() {
@@ -81,13 +81,11 @@ fn subprocess_lifecycle_exercises_every_main_dispatch_arm() {
         String::from_utf8_lossy(&add.stderr)
     );
 
-    let validate = run(&["--cwd", &root_str, "--format", "json", "validate"]);
-    assert!(
-        validate.status.success(),
-        "validate failed: {}",
-        String::from_utf8_lossy(&validate.stderr)
-    );
-
+    Command::new("git")
+        .args(["remote", "add", "origin", "https://github.com/example/core-crate.git"])
+        .current_dir(root)
+        .status()
+        .unwrap();
     // `--dry-run` so release never attempts a real network call.
     let release = run(&["--cwd", &root_str, "--format", "json", "--dry-run", "release"]);
     assert!(
@@ -147,6 +145,27 @@ fn subprocess_lifecycle_exercises_every_main_dispatch_arm() {
         String::from_utf8_lossy(&completions.stderr)
     );
     assert!(!completions.stdout.is_empty(), "completions must print a script");
+}
+
+/// SPEC-DX-STATUS-ADD AC-02: `validate` was removed, not merely hidden --
+/// invoking it must fail clap's own argument parsing (unrecognized
+/// subcommand), not dispatch anywhere.
+#[test]
+fn validate_subcommand_is_unrecognized() {
+    let output = Command::new(bin())
+        .args(["validate"])
+        .output()
+        .unwrap_or_else(|e| panic!("failed to spawn callisto validate: {e}"));
+
+    assert!(
+        !output.status.success(),
+        "`callisto validate` must fail now that the subcommand is removed"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("unrecognized subcommand") || stderr.contains("error"),
+        "expected clap's unrecognized-subcommand error, got: {stderr}"
+    );
 }
 
 /// `callisto compose-pr-body --existing-body -` must read the existing PR

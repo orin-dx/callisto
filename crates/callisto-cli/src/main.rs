@@ -18,9 +18,11 @@ use callisto_cli::commands::*;
 //
 //   status         0 when no errors and --check is not set
 //                  1 when any diagnostic is Error-severity (or Warning under --strict),
-//                    OR when --check is set and at least one package has pending changesets
+//                    regardless of --check or pending changesets
 //                  2 (ExitCode::from(2)) when --check is set, there are no diagnostic
-//                    errors, and no changesets are pending
+//                    errors, and at least one changeset is pending
+//                  3 (ExitCode::from(3)) when --check is set, there are no diagnostic
+//                    errors, and nothing is pending
 //
 //   matrix         0 on success (report printed, including an empty report or
 //                  one carrying UnrecognisedPlatformTriple warnings)
@@ -32,9 +34,6 @@ use callisto_cli::commands::*;
 //
 //   pre            0 on success
 //                  1 on any error
-//
-//   validate       0 when the workspace passes all checks
-//                  1 on any validation error or strict violation
 //
 //   snapshot       0 on success (snapshot versions applied or dry-run preview)
 //                  1 on any error (graph error, strict crosscheck failure, etc.)
@@ -63,7 +62,6 @@ fn main() -> ExitCode {
         Command::Matrix(args) => matrix::handle(args, &cli.global),
         Command::Version(args) => version::handle(args, &cli.global),
         Command::Pre(args) => pre::handle(args, &cli.global),
-        Command::Validate(args) => validate::handle(args, &cli.global),
         Command::Snapshot(args) => snapshot::handle(args, &cli.global),
         Command::Init(args) => init::handle(args, &cli.global),
         Command::ComposePrBody(args) => compose_pr_body::handle(args, &cli.global),

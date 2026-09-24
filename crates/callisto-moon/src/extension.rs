@@ -122,10 +122,9 @@ pub(crate) fn build_extension_output(
 /// JSON value and the error whose `Display` rendering becomes `rendered`.
 /// `exit_code` is always `1` -- every call site is a hard failure branch.
 ///
-/// Pulled out of `execute_extension` (`extension_pdk.rs`), whose five
-/// failure branches (locator error, `Workspace::load` error, `release`
-/// error, `validate` error, `status` error) all hand-built this exact struct
-/// literal verbatim.
+/// Pulled out of `execute_extension` (`extension_pdk.rs`), whose failure
+/// branches (locator error, `Workspace::load` error, `release` error,
+/// `status` error) all hand-built this exact struct literal verbatim.
 #[cfg(any(feature = "pdk", test))]
 pub(crate) fn error_output(json_val: serde_json::Value, e: &impl std::fmt::Display) -> ExecuteExtensionOutput {
     ExecuteExtensionOutput {
@@ -144,9 +143,7 @@ pub(crate) fn error_output(json_val: serde_json::Value, e: &impl std::fmt::Displ
 /// real wasm32 Extism host (see `runner.rs`'s `pdk`-feature impl).
 ///
 /// NOTE: resolves *which* name to dispatch on, doesn't validate it.
-/// `execute_extension` rejects a removed name (see [`removed_subcommand`]) and
-/// treats any other name besides `"release"` and `"validate"` the same as no subcommand -- silently falls back to `status`, same as empty `args`.
-/// No distinct "unrecognized subcommand" error path exists yet.
+/// `execute_extension` rejects removed names (see [`removed_subcommand`]) and falls back to `status` for any other unknown name.
 #[cfg(feature = "pdk")]
 pub(crate) fn resolve_subcommand(args: &[String]) -> &str {
     args.first().map(|s| s.as_str()).unwrap_or("status")
@@ -155,11 +152,11 @@ pub(crate) fn resolve_subcommand(args: &[String]) -> &str {
 /// The replacement for a removed extension subcommand, if `name` is one.
 #[cfg(any(feature = "pdk", test))]
 pub(crate) fn removed_subcommand(name: &str) -> Option<&'static str> {
-    matches!(
-        name,
-        "plan-publish" | "plan_publish" | "publish" | "tag" | "filter-plan" | "filter_plan"
-    )
-    .then_some("release")
+    match name {
+        "plan-publish" | "plan_publish" | "publish" | "tag" | "filter-plan" | "filter_plan" => Some("release"),
+        "validate" => Some("status --check"),
+        _ => None,
+    }
 }
 
 // `execute_extension`/`initialize_extension` moved to `extension_pdk.rs` --
@@ -264,7 +261,8 @@ mod tests {
         ] {
             assert_eq!(removed_subcommand(name), Some("release"), "{name}");
         }
-        for name in ["release", "validate", "status", "bogus"] {
+        assert_eq!(removed_subcommand("validate"), Some("status --check"));
+        for name in ["release", "status", "bogus"] {
             assert_eq!(removed_subcommand(name), None, "{name}");
         }
     }

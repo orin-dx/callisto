@@ -12,7 +12,19 @@ runs:
       env:
         FORCE_COLOR: "1"
         CLICOLOR_FORCE: "1"
-      run: callisto validate
+      # `callisto status --check` exit codes (SPEC-DX-STATUS-ADD AC-04): 0 = no
+      # --check-reachable success path here (status --check never returns it),
+      # 1 = workspace errors (fail the step), 2 = changesets pending with no
+      # errors, 3 = nothing pending with no errors -- 2 and 3 are both a clean
+      # bill of health for this gate.
+      run: |
+        set +e
+        callisto status --check
+        code=$?
+        set -e
+        if [ "$code" -eq 1 ]; then
+          exit 1
+        fi
 
     - name: Pre-Flight Release Plan Simulation (DAG Pre-Check)
       shell: bash
