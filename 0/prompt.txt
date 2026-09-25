@@ -1,0 +1,1 @@
+Is that clear enough that we're managing all the crates? How do we find the middle groudn between too much magic and zero config?
