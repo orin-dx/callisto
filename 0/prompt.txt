@@ -1,0 +1,1 @@
+Let’s fix what needs fixing still too. And do consider DX and UX deeply. We want to eventually tackle initial setup, maybe a interactive CLI setup, etc
