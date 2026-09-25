@@ -81,7 +81,6 @@ Decisions (owner, 2026-09-25):
 - `pre enter` after `pre exit` is rejected. Re-enter from exit mode.
 - A changeset with one unknown entry is consumed, losing the known entries. Do not consume it.
 - `status` reports every unparseable changeset as a diagnostic.
-- The changeset writer quotes names only when needed; `@changesets/cli` always quotes.
 - `.changeset/config.json` is not translated; `ChangesetsConfigKeyDropped` is defined but never emitted.
 
 ### 5. Every failure has a code and help; one output contract
