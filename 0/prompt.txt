@@ -1,0 +1,1 @@
+Let's not keep historical things as it would confuse future AI helping us and is it really relevant to the user after we ship v1?
