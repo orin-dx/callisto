@@ -1,0 +1,1 @@
+In all our work what do we do after the version update is realeased? Internally we have to update our pinned versions, no? What do changesets and knope do? nx release and release please?
