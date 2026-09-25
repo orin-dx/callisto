@@ -411,7 +411,8 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
                 }
             }
 
-            let winner = crate::groups::fixed_group_target(&live_members, input.base, max_sev, input.tags)?;
+            let winner =
+                crate::groups::fixed_group_target(&g.name, &live_members, input.base, max_sev, input.tags, input.pre)?;
 
             for id in live_members {
                 if out.targets.get(&id) != Some(&winner) {
@@ -440,27 +441,11 @@ fn bump_target<D: DependencyResolver>(
             field: "version",
         })
     })?;
-    let versioning: &dyn callisto_format::Versioning = match base.grammar() {
-        callisto_model::VersionGrammar::Pep440 => &callisto_format::Pep440Versioning,
-        _ => &callisto_format::SemVerVersioning,
-    };
 
-    if let Some(pre) = input.pre {
-        if pre.mode == callisto_format::PreMode::Pre {
-            let pinned_base = pre.initial_versions.get(id.name()).unwrap_or(&base);
-            versioning
-                .bump_prerelease(pinned_base, sev, &pre.tag, &base)
-                .map_err(GraphError::Bump)
-        } else {
-            // PreMode::Exit: finalize the current pre-release to a stable version.
-            // Bumping the on-disk pre-release version (e.g. "1.0.0-alpha.2") with
-            // any severity that matches the pre-release target strips the tag and
-            // produces the stable version (e.g. "1.0.0").
-            versioning.bump(&base, sev).map_err(GraphError::Bump)
-        }
-    } else {
-        versioning.bump(&base, sev).map_err(GraphError::Bump)
-    }
+    // PreMode::Exit falls through `versioned_bump`'s `_` arm to a plain
+    // `versioning.bump`: finalizing a pre-release (e.g. "1.0.0-alpha.2") with
+    // a matching severity strips the tag and produces "1.0.0" directly.
+    crate::groups::versioned_bump(id, &base, sev, input.pre)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1959,6 +1944,45 @@ mod tests {
             !outcome.targets.contains_key(&pkg_stale),
             "stale fixed-group member must never receive a target: {:?}",
             outcome.targets
+        );
+    }
+
+    /// Regression: `fixed_group_target` itself (not just its `solve_cascade`
+    /// caller, which pre-filters `live_members` to ids present in `base`)
+    /// must reject a released member missing from `base` as an error rather
+    /// than silently defaulting the group's alignment target to `1.0.0`,
+    /// which would corrupt the target for every live sibling.
+    #[test]
+    fn test_fixed_group_target_errors_on_tagged_member_missing_base_directly() {
+        use std::sync::atomic::AtomicUsize;
+
+        let pkg_tagged = PackageId::parse("pkg-tagged").unwrap();
+
+        let graph = TwoPackageGraph {
+            packages: vec![package_with_canonical_manifest(&pkg_tagged)],
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        let runner = FakeGitTagRunner {
+            calls: AtomicUsize::new(0),
+            tags: vec!["pkg-tagged@2.0.0".to_string()],
+        };
+        let git = callisto_vcs::GitAccess::new(dir, &runner);
+        let cfg_resolved = crate::config::load(dir).unwrap();
+        let tags = TagIndex::build(&git, &graph, &cfg_resolved).unwrap();
+        assert!(tags.last_tag(&pkg_tagged).is_some(), "must carry a real release tag");
+
+        // `base` deliberately omits `pkg_tagged`, simulating a caller that
+        // passed an unfiltered live_members slice.
+        let base: BTreeMap<PackageId, Version> = BTreeMap::new();
+        let group = GroupName("g".to_string());
+
+        let err = crate::groups::fixed_group_target(&group, &[pkg_tagged], &base, Severity::Minor, &tags, None)
+            .expect_err("a tagged member missing from base must be an error, not a 1.0.0 default");
+
+        assert!(
+            matches!(err, GraphError::FixedGroupTaggedMemberMissingBase { .. }),
+            "expected FixedGroupTaggedMemberMissingBase, got {err:?}"
         );
     }
 }

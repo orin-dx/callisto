@@ -123,11 +123,16 @@
     },
     {
       "id": "VER-GRP-01",
-      "criterion": "All package members of a `[[fixed-group]]` receive the group's highest severity and one shared version: the on-disk version of the group's released members (members with a release tag) bumped by that severity."
+      "criterion": "All package members of a `[[fixed-group]]` receive the group's highest severity and one shared version, computed the same grammar- and pre-release-aware way as any other bump (VER-PRE-03): the alignment base is the on-disk version of the group's released member (a member with a release tag) if the group has one, otherwise the highest on-disk version among its members, bumped by that severity."
     },
     {
       "id": "VER-GRP-02",
-      "criterion": "A fixed group whose released members have different on-disk versions aborts the run with E106, and one whose released members use different version grammars aborts with E107.",
+      "criterion": "A fixed group whose released members have different on-disk versions aborts the run with E106, one whose released members use different version grammars (or whose untagged members do) aborts with E107, one whose released member has no on-disk base version aborts with E205, and one with no live member carrying a base version aborts with E206.",
+      "is_error_case": true
+    },
+    {
+      "id": "VER-GRP-06",
+      "criterion": "A computed bump — for a single package or a fixed group's shared target — that would sort behind the version it was bumped from aborts the run with E207 instead of writing the regressed version to disk.",
       "is_error_case": true
     },
     {

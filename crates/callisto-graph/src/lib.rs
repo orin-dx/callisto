@@ -40,7 +40,7 @@ pub use cascade::{
 };
 pub use config::{load as load_config, resolve as resolve_config, GroupDef, GroupTable, ResolvedConfig};
 pub use error::{ConfigError, GraphError};
-pub use groups::{fixed_group_target, pre_mutation_checks, GroupCheckOutcome};
+pub use groups::{fixed_group_target, pre_mutation_checks, versioned_bump, GroupCheckOutcome};
 pub use identity::IdentityIndex;
 pub use infer::{InferenceOutcome, InferenceWindowSpec, NoInference, SeverityInference};
 pub use locate::{find_workspace_root, IgnoreWalkLocator, LocateError, ProjectLocator};
@@ -186,11 +186,23 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
     }
 
     pub fn pre_json_key<'b>(&self, id: &'b PackageId) -> Result<&'b str, GraphError> {
-        Ok(id.name())
+        Ok(pre_json_key(id))
     }
 
     pub fn initial_versions(&self) -> Result<Vec<(String, Version)>, GraphError> {
         let base = self.base_versions()?;
-        Ok(base.into_iter().map(|(id, v)| (id.name().to_string(), v)).collect())
+        Ok(base
+            .into_iter()
+            .map(|(id, v)| (pre_json_key(&id).to_string(), v))
+            .collect())
     }
+}
+
+/// The canonical `.changeset/pre.json` `initialVersions` key for `id`: the
+/// bare package name, unqualified by ecosystem prefix. The one definition
+/// every reader and writer of `initialVersions` must share -- a reader that
+/// keyed by `display_name()` instead (ecosystem-prefixed) would silently
+/// miss every entry written by this function for a `PackageId::Prefixed` id.
+pub fn pre_json_key(id: &PackageId) -> &str {
+    id.name()
 }

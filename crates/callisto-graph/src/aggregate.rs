@@ -275,7 +275,7 @@ where
                         // changelog "from" baseline so the log covers the full pre
                         // range rather than reflecting live (pre-tagged) versions.
                         let pkg_ver = if is_pre_mode {
-                            pre.and_then(|s| s.initial_versions.get(&canonical_id.display_name()))
+                            pre.and_then(|s| s.initial_versions.get(crate::pre_json_key(&canonical_id)))
                                 .cloned()
                                 .or_else(|| base_versions.get(&canonical_id).cloned())
                                 .unwrap_or_else(|| Version::semver(0, 0, 0))
@@ -1535,6 +1535,65 @@ mod tests {
             "changesets must NOT be consumed during a pre-release cycle (PreMode::Pre); \
              agg.consumed must be empty but got: {:?}",
             agg.consumed
+        );
+    }
+
+    /// Regression: the pre-mode changelog "from" baseline must be looked up
+    /// in `pre.json`'s `initialVersions` by the same key `pre enter` writes
+    /// it under (`PackageId::name()`, unqualified), not by `display_name()`
+    /// (ecosystem-prefixed). For a `PackageId::Prefixed` id those differ, so
+    /// a `display_name()` lookup always misses and falls through to
+    /// `base_versions`/`0.0.0`, corrupting the changelog range for every
+    /// ecosystem-qualified package in a pre-release cycle.
+    #[test]
+    fn test_aggregate_pre_mode_changelog_baseline_uses_pre_json_key_not_display_name() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+
+        init_repo(root);
+        std::fs::write(root.join("README.md"), "hello\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "initial commit"]);
+
+        let cs_dir = root.join(".changeset");
+        std::fs::create_dir_all(&cs_dir).unwrap();
+        std::fs::write(
+            cs_dir.join("some-feature.md"),
+            "---\n\"npm/pkg-a\": minor\n---\n\nA feature in pre mode.\n",
+        )
+        .unwrap();
+
+        let pkg_id = PackageId::parse("npm/pkg-a").unwrap();
+        let graph = SinglePackageGraph {
+            pkg: make_pkg(pkg_id.clone()),
+        };
+        let cfg = crate::config::load(root).unwrap();
+        let runner = RealGitRunner;
+        let git = GitAccess::new(root, &runner);
+        let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
+        let mut base_versions = BTreeMap::new();
+        // Live on-disk version is far from the pinned pre-cycle baseline;
+        // a key-lookup miss falling back to this would be caught below.
+        base_versions.insert(pkg_id.clone(), Version::semver(9, 9, 9));
+
+        // pre.json's initialVersions is keyed by the bare name ("pkg-a"),
+        // exactly as `Workspace::initial_versions` (via `pre_json_key`) writes it.
+        let pre_state = callisto_format::PreState::entering("next", [("pkg-a".to_string(), Version::semver(1, 2, 3))]);
+
+        let inference = RecordingInference::default();
+        let agg = aggregate(&graph, &cfg, &git, &tags, &base_versions, Some(&pre_state), &inference).unwrap();
+
+        let cl_input = agg
+            .changelog_inputs
+            .get(&pkg_id)
+            .expect("changeset entry must produce a changelog input");
+
+        assert_eq!(
+            cl_input.from.render(),
+            "1.2.3",
+            "pre-mode changelog baseline must resolve pre.json's pinned initialVersions \
+             entry via the bare-name key, not fall through to base_versions (9.9.9) because \
+             a display_name() lookup (\"npm/pkg-a\") missed the bare-name (\"pkg-a\") key"
         );
     }
 
