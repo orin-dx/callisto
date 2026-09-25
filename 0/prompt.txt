@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bwpvuztoi</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a08620cc-8b37-45b5-b4b2-89a977aad490/tasks/bwpvuztoi.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for PR 104 checks to finish" completed (exit code 0)</summary>
+</task-notification>
