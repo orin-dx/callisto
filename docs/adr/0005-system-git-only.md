@@ -1,28 +1,29 @@
 # 5. System git only
 
-Status: Accepted
+Status: Proposed
 
 ## Context
 
 - Callisto reads commits, tags and staged changes, and creates and pushes tags.
 - From 2026-08-03 `callisto-vcs` had two backends behind `GitDataSource`: native gix (`GitRepository`) and a shell fallback (`ShellGit`), with reads retrying through the shell on any native error (commit bb2a69cc4).
 - The CLI already required a `git` binary: trust observation, staged changes and every fallback went through it (#145).
-- gix could not serve the moon WASM extension anyway: its object reads use mmap, which WASI rejects with ENOSYS (Track 0 spike, ffc922d44; see ADR 6).
 
 ## Decision
 
-Every Git read and write shells out to the user's `git` through `CommandRunner`. `callisto-vcs` has one type, `GitAccess`. Callisto sees exactly the repository, config and identity that Git does.
+Every Git command in the `callisto` binary runs the user's `git` through `CommandRunner`. `callisto-vcs` has one Git access type, `GitAccess`, and defines no backend trait; `GitAccess` implements callisto-model's `CommitWalker` for severity inference (`crates/callisto-vcs/src/lib.rs`). Git operations use the user's git config and identity, except release tags: with no identity set, the target commit's committer becomes the tagger, and `TagSignPolicy::ForceUnsigned` adds `--no-sign` (`crates/callisto-vcs/src/access.rs`). Workspace-root discovery looks for a `.git` entry on disk (`crates/callisto-graph/src/locate/root.rs`).
 
 ## Options considered
 
 - **gix as the primary backend with a shell fallback (two backends)** — rejected in #145: "Two backends meant two semantics to keep in step (gix ignored TagSignPolicy) and 106 extra crates." The changeset adds: "every Git read and write already had to work through the `git` binary the CLI requires."
-- **gix only** — not viable: the shell path was already required for trust observation and staged changes (#145), and gix object reads fail under WASI (ffc922d44).
+- **gix only** — not considered in #145. Reason not recorded.
 
 ## Consequences
 
 - History walks use `git log --no-merges --full-history`, matching the gix commit sets; plain `git log` history simplification drops commits whose change a later merge discarded.
 - Callisto depends on the installed git version and parses its output.
 - Annotated tags work on runners with no git identity: the tagger falls back to the target commit's committer (#145).
+- The managed release-PR action is outside this decision: it writes its commit and branch refs through the GitHub API (`.github/actions/callisto-action/scripts/create-or-update-release-pr.sh`).
+- Today `release-pr commit-plan` reads staged bytes from the worktree, not the index (docs/projects/ROAD-TO-V1.md, v1 fix plan §1).
 
 ## Enforcement
 
@@ -38,5 +39,4 @@ Every Git read and write shells out to the user's `git` through `CommandRunner`.
 
 - PR #145 (7ad333311): commit body, PR body, `.changeset/calm-foxes-pounce.md`
 - Commit bb2a69cc4 (two-backend `GitDataSource` introduced)
-- Commit ffc922d44 (Track 0 WASI spike)
-- docs/00-design.md §15, `callisto-vcs` entry (`git show 11038b11b^:docs/00-design.md`)
+- docs/00-design.md §15 `callisto-vcs` entry, describing the pre-#145 two-backend design (`git show 7ad333311^:docs/00-design.md`)

@@ -1,43 +1,41 @@
 # 7. Platform packages are owned through optionalDependencies and release with their owner
 
-Status: Accepted
+Status: Proposed
 
 ## Context
 
-- napi-rs and esbuild-style distributions ship one main npm package plus N per-platform packages (`os`/`cpu` in `package.json`). The main package names them in `optionalDependencies` at exact versions, so platforms must be on the registry first or installs 404 (docs/00-design.md §0, §9.3).
-- The original design derived platforms from `napi.targets` and had `callisto init` write them into `callisto.toml` as a user-owned `[[fixed-group]]`, "to avoid permanent coupling to `@napi-rs/cli` internals" (docs/00-design.md §5.3).
-- In practice platform directories often sit outside the npm workspace globs (oxc's `packages/*/npm/*`) and were never discovered, versioned or published (#111).
+- napi-rs distributions ship one main npm package plus N per-platform packages. The main package names them in `optionalDependencies` at exact versions, so platforms must be on the registry first or installs 404 (docs/00-design.md §0, §9.2). #111 extends the same pattern to esbuild-style distributions and uses `os`/`cpu` in `package.json` as the platform signal.
+- The original design derived platforms from `napi.targets`, and had `callisto init` offer to write them into `callisto.toml` as a user-owned `[[fixed-group]]`; steady state would not re-derive, which "avoids permanent coupling to `@napi-rs/cli` internals" (docs/00-design.md §5.3).
+- In practice platform directories usually sit outside the npm workspace globs (oxc's `packages/*/npm/*`) and were never discovered, versioned or published (#111).
 
 ## Decision
 
-An npm `package.json` with `os`+`cpu` that exactly one npm package names in `optionalDependencies` is a `ManifestRole::Platform` manifest of that owner, found inside or outside the workspace globs. It is never a package of its own: it takes the owner's version, has no tag, and each platform publish is a prerequisite of the owner's npm publish. The owner's `optionalDependencies` pins follow. A platform with zero or several owners is not guessed: it stays its own package (or is not released, if outside the workspace) with a `platform-package-without-owner` warning.
+A `package.json` with no co-located admitted package of another ecosystem, with `os`+`cpu`, that exactly one admitted npm package names in `optionalDependencies` is a `ManifestRole::Platform` manifest of that owner, found inside or outside the workspace globs. It is never a package of its own: it takes the owner's version, has no tag, and each platform publish is a prerequisite of the owner's npm publish. The owner's `optionalDependencies` pins follow. A platform with zero or several owners is not guessed. Inside the workspace it stays its own package with a `platform-package-without-owner` warning. Outside the workspace, several owners give the same warning and it is not released; no owner leaves it undiscovered with no diagnostic (`crates/callisto-graph/src/walk.rs`).
 
 ## Options considered
 
-- **List platform packages in a `[[fixed-group]]`** — rejected in #111: that is the old path, and it needed every platform listed by hand ("No `[[fixed-group]]` entry needed" is the stated change). Directories outside the workspace globs were invisible to it.
-- **Derive platforms from `napi.targets` into explicit config** — rejected in #111. The reason recorded is scope: #111 targets "napi-rs and esbuild-style npm binary distributions" (needed for oxc-react-docgen), and esbuild-style packages have no `napi.targets`. A fuller reason is not recorded.
-- **Treat each platform package as an independent package with its own tag** — reason not recorded beyond #111's statement that a platform is "never its own package, never tagged".
+- **Require platform packages in a `[[fixed-group]]`** — not required after #111 ("No `[[fixed-group]]` entry needed"). It needed every platform listed by hand and could not see directories outside the workspace globs. Fixed-group platform members remain supported as an optional path (b46079a62: "plus any [[fixed-group]] platform members").
+- **Derive platforms from `napi.targets` into explicit config** — the §5.3 design, not chosen in #111. #111 uses `optionalDependencies` as the owner signal "so napi addons and esbuild-style native CLIs behave the same" (`.claude/semantic-model/core-identity.md`, b46079a62).
+- **Treat each platform package as an independent package with its own tag** — rejected since the original design: platform packages "are dependents-in-lockstep with the main package's release, not separate release points" (docs/00-design.md §9.2). #111 kept this ("never its own package, never tagged").
 
 ## Consequences
 
 - A changeset naming a platform package directly resolves to unknown; changesets must target the owner package.
-- A Cargo + `package.json` directory takes its npm release id from `package.json` (#111).
-- Discovery is npm-only and directory-scoped; maturin and several platform packages per owner are not covered (docs/projects/ROAD-TO-V1.md, Design).
-- `callisto release` sends workspaces with attached platforms to the CI route (`ci_release_route`).
+- Discovery is npm-only and directory-scoped, so maturin platform packages are not covered (docs/projects/ROAD-TO-V1.md, Design). A platform named by several owners is diagnosed, not attached (`walk.rs`).
+- `callisto release` refuses a workspace with attached platforms (`callisto::release_requires_ci_route`, via `ci_release_route`); it must release through `release plan`, `release artifact-manifest` and `release execute` in CI (`crates/callisto-cli/src/error.rs`).
 
 ## Enforcement
 
-- `crates/callisto-graph/tests/npm_platform_packages_test.rs`: `platform_packages_are_manifests_of_their_owner_not_packages`, `platform_package_without_owner_stays_a_package_with_a_diagnostic`, `platform_package_named_by_two_owners_is_not_guessed`, `platform_versions_follow_the_owner_without_a_fixed_group`, `snapshot_versions_attached_platforms_too`.
+- `crates/callisto-graph/tests/npm_platform_packages_test.rs`: `platform_packages_are_manifests_of_their_owner_not_packages`, `platform_package_without_owner_stays_a_package_with_a_diagnostic`, `platform_package_named_by_two_owners_is_not_guessed`, `unnamed_platform_outside_the_workspace_stays_undiscovered`, `platform_versions_follow_the_owner_without_a_fixed_group`, `snapshot_versions_attached_platforms_too`.
 - Attachment logic: `crates/callisto-graph/src/walk.rs` (`PlatformPackageWithoutOwner`).
 
 ## Revisit when
 
-- Platform packages need an owner outside npm (maturin wheels) or several owners.
+- Platform packages need an owner outside npm (maturin wheels).
 - A distribution pattern ships platform packages that are not named in the owner's `optionalDependencies`.
 
 ## Sources
 
-- PR #111 (b46079a62): commit bodies and PR body
-- Commit cd951653a (init detects attached platforms)
-- docs/00-design.md §0, §5.2, §5.3, §9.3 (`git show 11038b11b^:docs/00-design.md`)
+- PR #111 (b46079a62): commit bodies and PR body; `.claude/semantic-model/core-identity.md` as added in that commit
+- docs/00-design.md §0, §5.3, §9.2 (`git show 11038b11b^:docs/00-design.md`)
 - docs/projects/ROAD-TO-V1.md, Design section

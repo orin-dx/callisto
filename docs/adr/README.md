@@ -1,13 +1,13 @@
 # Architecture decision records
 
-- [1. Changesets-compatible change records](0001-changesets-compatible-change-records.md) — `.changeset/*.md` byte-compatible with `@changesets/cli`, commit inference opt-in; guardrail: do not make Conventional Commits the primary input or change the file format without a new ADR.
-- [2. The committed version decision is the release authority](0002-committed-decision-is-release-authority.md) — CI verifies the merged commit against `.callisto/release-decision.json`; guardrail: do not re-derive cascade or group policy after merge without a new ADR.
+- [1. Changesets-compatible change records](0001-changesets-compatible-change-records.md) — `.changeset/*.md` in `@changesets/cli`'s format, commit inference opt-in; guardrail: do not make Conventional Commits the primary input or change the file format without a new ADR.
+- [2. The committed version decision is the release authority](0002-committed-decision-is-release-authority.md) — CI verifies the merged commit against the decision `callisto version --emit-decision` committed; guardrail: do not re-derive cascade or group policy after merge without a new ADR.
 - [3. Reruns observe and adopt landed effects; no persisted execution state](0003-reruns-adopt-landed-effects.md) — every run observes providers and adopts what landed, state stays in memory; guardrail: do not add a persisted execution state file or recovery commands without a new ADR.
-- [4. Ecosystem tools publish and own authentication](0004-ecosystem-tools-publish-and-own-auth.md) — `cargo`, `npm`, `twine` and `gh` publish with their own credentials; guardrail: do not add native registry clients or a credential pre-flight without a new ADR.
-- [5. System git only](0005-system-git-only.md) — all Git access shells out to `git`; guardrail: do not add gix or a second Git backend without a new ADR.
+- [4. Ecosystem tools publish and own authentication](0004-ecosystem-tools-publish-and-own-auth.md) — `cargo`, the npm-family tools, `twine` and `gh` publish with their own credentials; guardrail: do not add native registry clients or a credential pre-flight without a new ADR.
+- [5. System git only](0005-system-git-only.md) — every Git command in the `callisto` binary runs the system `git`; guardrail: do not add gix or a second Git backend without a new ADR.
 - [6. moon integrates through a proto plugin, not a WASM extension](0006-moon-through-proto-plugin-not-wasm-extension.md) — moon users install the native CLI with a proto TOML plugin; guardrail: do not add a moon WASM extension or WASM build without a new ADR.
 - [7. Platform packages are owned through optionalDependencies and release with their owner](0007-platform-packages-owned-through-optional-dependencies.md) — an `os`+`cpu` package with one owner releases with that owner; guardrail: do not require fixed-group entries or explicit config for platform packages without a new ADR.
-- [8. Format-preserving manifest writes gated by ApplyPermit](0008-format-preserving-writes-gated-by-apply-permit.md) — `toml_edit` and fingerprinted JSON through `atomic_write(&ApplyPermit)`; guardrail: do not use serde round-trips, regex edits or unpermitted writes without a new ADR.
+- [8. Format-preserving manifest writes gated by ApplyPermit](0008-format-preserving-writes-gated-by-apply-permit.md) — `toml_edit` and fingerprinted JSON through `atomic_write(&ApplyPermit)`; guardrail: do not use typed serde round-trips for TOML, unfingerprinted `package.json` rewrites, regex edits or unpermitted writes without a new ADR.
 
 ## Rules
 

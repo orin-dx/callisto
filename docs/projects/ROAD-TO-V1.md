@@ -7,9 +7,13 @@ Open work only. Verified against the code on 2026-09-25; git history holds the s
 - Build or drop a workspace-wide check that no `map_err` discards its source error. No gate script or CI wiring exists; `map_err_ignore = "deny"` in `Cargo.toml` is the only partial guard.
 - Derive the default tag template from fixed or independent mode, or drop the idea. Today `tag-template` is `None` unless set (`crates/callisto-graph/src/config/resolve.rs`).
 - Crate consolidation and the MIT/FSL split.
+- Release-commit provenance: `release plan --from-release-commit` accepts any commit whose decision file, consumed changeset and manifest diff agree; the decision digest is unkeyed. Decide whether that is enough.
 - Owner items pending decision: the rust-cache pin in orin-dx/actions, the bot-PR check policy, token rotation.
 
 ## Correctness
+
+- `ApplyPermit` is minted with a literal `false` in `commands/release.rs` (two sites) and cli `init.rs`, so the type does not enforce the dry-run check there.
+- npm manifest writes re-serialize the whole file (`callisto-manifests/src/npm.rs`), normalizing hand-formatted layout such as inline arrays.
 
 - `Indeterminate` observations drop stderr (`crates/callisto-graph/src/commands/release/provider/registry.rs`, the `ProviderIndeterminateCause::CommandFailed` sites). Add redacted stderr to `ProviderIndeterminateCause`; do not stream it live (`run_quiet` redacts `CARGO_REGISTRY_TOKEN`).
 - `GroupTable::from_groups` (`crates/callisto-graph/src/config/groups.rs`) skips the conflict check `resolve()` enforces. Test-only today; close it before it gains a real caller.
@@ -47,6 +51,8 @@ Decisions (owner, 2026-09-25):
 - A rerun after a crash bumps again. Refuse per the decision above.
 - `pre.json` `initialVersions` keys disagree between aggregate and cascade (`id.name()` vs `display_name()`).
 - Tests: cascade `always`, `bump-severity = minor`, dev dependents, E105; `version --dry-run` output.
+- The `release-trigger` default is defined twice (`walk.rs` fallback and `#[default]` in `ecosystem.rs`), and attribution text says `auto (default)` when the default is `changeset` (`render/attribution.rs`, and a test asserts it).
+- `pre.json` is rewritten with LF and no format fingerprint (`callisto-format/src/pre.rs`).
 
 ### 2b. The workspace resolves natively after `version` and `snapshot`
 - Invariant: after `version` or `snapshot`, each ecosystem's locked install succeeds (`cargo metadata --locked`, `npm ci`, `pnpm install --frozen-lockfile`, `uv lock --check`).
@@ -66,6 +72,8 @@ Decisions (owner, 2026-09-25):
 - Delete E101 `SplitIdentity` (divergent names are allowed).
 - Group member ambiguity reports E108 instead of E103; E102 help points at a nonexistent config key; `[[package]]` rules that match nothing get no diagnostic.
 - Test: the not-released platform warning's two messages.
+- Root detection looks for `.git` on disk instead of asking git, so `GIT_DIR`, `GIT_WORK_TREE` and `GIT_CEILING_DIRECTORIES` are ignored (`locate/root.rs`).
+- An attached platform outside the workspace globs attaches even when a `Cargo.toml` or `pyproject.toml` sits beside it (`walk.rs`, only `by_path` is checked).
 
 ### 4. Anything `@changesets/cli` accepts, callisto accepts
 - An empty changeset (`changeset add --empty`) is rejected with E048. Accept it.
@@ -73,6 +81,8 @@ Decisions (owner, 2026-09-25):
 - `pre enter` after `pre exit` is rejected. Re-enter from exit mode.
 - A changeset with one unknown entry is consumed, losing the known entries. Do not consume it.
 - `status` reports every unparseable changeset as a diagnostic.
+- The changeset writer quotes names only when needed; `@changesets/cli` always quotes.
+- `.changeset/config.json` is not translated; `ChangesetsConfigKeyDropped` is defined but never emitted.
 
 ### 5. Every failure has a code and help; one output contract
 - Architecture test: every error variant has a code and help or is `transparent`. Fixes codeless variants (ParseChangeset, OnDiskVersionDrift, GrammarMismatch, WorkspaceVersionConflict, ConflictingGroupNames and other ConfigError variants), wrappers that hide E020-E025, missing help (E013, E022-E024, E051, E107-E110).
@@ -94,7 +104,7 @@ Decisions (owner, 2026-09-25):
 ## Design
 
 - Target resolution is Rust-shaped: `triple_host_runner_use_cross` in `crates/callisto-graph/src/matrix.rs` is an 18-triple table. Replace it with facts from `rustc --print cfg`.
-- npm platform-manifest discovery is npm-only and directory-scoped (`crates/callisto-graph/src/walk.rs`). Needed for maturin or several platform packages per owner.
+- npm platform-manifest discovery is npm-only and directory-scoped (`crates/callisto-graph/src/walk.rs`). Needed for maturin platform wheels and for a platform package shared by several owners.
 - Require `kind` in `[registries]` entries.
 - Attest napi `.node` artifacts.
 
