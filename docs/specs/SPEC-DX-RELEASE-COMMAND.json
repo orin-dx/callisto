@@ -61,7 +61,7 @@
     },
     {
       "id": "AC-09",
-      "criterion": "A local (non-CI) `callisto release` run's recorded orchestration revision equals its source commit. The receipt is written to `--receipt <path>` when given, else to `<platform state dir>/callisto/<repo-hash>/<intent-digest>/receipt.json` (e.g. `$XDG_STATE_HOME` on Linux); the default path is never inside the git worktree."
+      "criterion": "A local (non-CI) `callisto release` run's recorded orchestration revision equals its source commit. The receipt is written only when `--receipt <path>` is given; without it the run prints a summary and writes no receipt file."
     },
     {
       "id": "AC-10",

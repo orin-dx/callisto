@@ -100,7 +100,7 @@ callisto version
 
 ## Publishing Packages
 
-`callisto version` bumps and commits. `callisto release` then publishes every package whose current version has no tag yet: registry publish, git tag, and GitHub release for each. It runs on any branch from a clean worktree and writes its receipt to the platform state directory (or `--receipt <file>`):
+`callisto version` bumps and commits. `callisto release` then publishes every package whose current version has no tag yet: registry publish, git tag, and GitHub release for each. It runs on any branch from a clean worktree and writes a receipt only with `--receipt <file>`:
 
 ```bash
 # Preview exactly what would be released (read-only, works anywhere)

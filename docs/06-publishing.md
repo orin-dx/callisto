@@ -12,7 +12,7 @@ This document covers authentication setup for registry publishing, with particul
 - `--package <ecosystem/name>` (repeatable) restricts the run to named unreleased packages, plus every member of their fixed or linked groups. An unreleased workspace package that a selected one depends on (runtime, optional, or peer) must be selected too.
 - It refuses a dirty worktree: a tracked modification or an untracked file not covered by `.gitignore`. Ignored files never count.
 - It prints `Nothing to release.` and exits 0 when every package is already tagged.
-- A receipt is written only when every operation succeeded; after a partial failure, rerun to adopt what landed. It goes to `--receipt <file>` (refused inside the checkout), else `<state dir>/callisto/<repo-hash>/<intent-digest>/receipt.json` (`$XDG_STATE_HOME`, else `~/.local/state`; `~/Library/Application Support` on macOS). Never inside the checkout.
+- It prints a summary. With `--receipt <file>` it also writes the receipt there, only when every operation succeeded; after a partial failure, rerun to adopt what landed.
 - A workspace with `[[release.artifact]]` slots or napi/maturin platform packages must release from CI: `callisto release plan`, `release artifact-manifest`, `release execute`.
 
 Callisto does not check credentials itself. cargo, npm, twine and gh each report their own auth failure; fix it and rerun, which adopts every effect that already landed.

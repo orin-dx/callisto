@@ -43,7 +43,6 @@ dialoguer = "0.11"
 dunce = { workspace = true }
 path-slash = { workspace = true }
 tempfile = { workspace = true }
-sha2 = { workspace = true }
 
 [dev-dependencies]
 callisto-model = { path = "../callisto-model", features = ["test-util"] }

@@ -69,17 +69,14 @@ fn release(
         return Ok(ExitCode::SUCCESS);
     };
     let intent = plan.intent;
-    let var = |name: &str| std::env::var(name).ok();
-    let receipt = match receipt {
-        Some(path) => explicit_receipt_path(&root, &path)?,
-        None => default_receipt_path(&root, &intent, &var)?,
-    };
     let permit = ApplyPermit::granted_unless_dry_run(false).expect("non-dry-run permits writes");
     // A receipt records only full success; a partial run is recovered by rerunning.
-    callisto_model::atomic::probe_atomic_write(&receipt, &permit).map_err(|source| CliError::Io {
-        source,
-        path: Some(receipt.clone()),
-    })?;
+    if let Some(path) = &receipt {
+        callisto_model::atomic::probe_atomic_write(path, &permit).map_err(|source| CliError::Io {
+            source,
+            path: Some(path.clone()),
+        })?;
+    }
     let callisto_model::SourceIdentity::GitCommit { sha } = &intent.snapshot.source else {
         return Err(CliError::ReleaseEnvelopeInvalid {
             detail: "a local release source must be a Git commit".to_owned(),
@@ -96,14 +93,18 @@ fn release(
         ReleaseReceiptV1::from_state(capability.intent(), &state).map_err(|error| CliError::ReleaseReceiptIssue {
             detail: error.to_string(),
         })?;
-    write_receipt(&receipt, &receipt_document, &permit)?;
+    if let Some(path) = &receipt {
+        write_receipt(path, &receipt_document, &permit)?;
+    }
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &receipt_document)?,
-        OutputFormat::Text => println!(
-            "Released {} package(s); receipt saved to {}",
-            capability.intent().decision.entries.len(),
-            receipt.display()
-        ),
+        OutputFormat::Text => {
+            let released = capability.intent().decision.entries.len();
+            match &receipt {
+                Some(path) => println!("Released {released} package(s); receipt saved to {}", path.display()),
+                None => println!("Released {released} package(s)"),
+            }
+        }
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -208,96 +209,6 @@ fn render_release_plan_table(intent: &ReleaseIntentV1) -> String {
         ]);
     }
     format!("{table}\n")
-}
-
-fn home_dir() -> Option<std::path::PathBuf> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .filter(|home| !home.is_empty())
-        .map(std::path::PathBuf::from)
-}
-
-/// `<platform state dir>/callisto/<repo-hash>/<intent-digest>/receipt.json`, never inside `root`.
-fn default_receipt_path(
-    root: &std::path::Path,
-    intent: &ReleaseIntentV1,
-    var: &dyn Fn(&str) -> Option<String>,
-) -> Result<std::path::PathBuf, CliError> {
-    let state = state_dir(var, home_dir()).ok_or_else(|| CliError::ReleaseReceiptLocation {
-        detail: "no platform state directory (set XDG_STATE_HOME or HOME)".to_owned(),
-    })?;
-    let root = canonical_prefix(root)?;
-    let path = receipt_path_in(&canonical_prefix(&state)?, &root, intent);
-    if path.starts_with(&root) {
-        return Err(CliError::ReleaseReceiptLocation {
-            detail: format!("the state directory `{}` is inside the repository", state.display()),
-        });
-    }
-    Ok(path)
-}
-
-/// A `--receipt` path, refused inside the repository.
-fn explicit_receipt_path(root: &std::path::Path, path: &std::path::Path) -> Result<std::path::PathBuf, CliError> {
-    let absolute = std::path::absolute(path).map_err(|source| CliError::Io {
-        source,
-        path: Some(path.to_path_buf()),
-    })?;
-    if canonical_prefix(&absolute)?.starts_with(canonical_prefix(root)?) {
-        return Err(CliError::ReleaseReceiptLocation {
-            detail: format!("`{}` is inside the repository", path.display()),
-        });
-    }
-    Ok(absolute)
-}
-
-/// Canonicalizes the longest existing ancestor of `path` and re-appends the rest.
-fn canonical_prefix(path: &std::path::Path) -> Result<std::path::PathBuf, CliError> {
-    let mut existing = path;
-    let mut rest = Vec::new();
-    while !existing.exists() {
-        let (Some(parent), Some(name)) = (existing.parent(), existing.file_name()) else {
-            return Ok(path.to_path_buf());
-        };
-        rest.push(name.to_owned());
-        existing = parent;
-    }
-    let mut canonical = dunce::canonicalize(existing).map_err(|source| CliError::Io {
-        source,
-        path: Some(existing.to_path_buf()),
-    })?;
-    canonical.extend(rest.into_iter().rev());
-    Ok(canonical)
-}
-
-fn receipt_path_in(state: &std::path::Path, root: &std::path::Path, intent: &ReleaseIntentV1) -> std::path::PathBuf {
-    use sha2::Digest as _;
-    let repo_hash = format!("{:x}", sha2::Sha256::digest(root.to_string_lossy().as_bytes()));
-    state
-        .join("callisto")
-        .join(&repo_hash[..16])
-        .join(intent.digest().to_string())
-        .join("receipt.json")
-}
-
-/// `$XDG_STATE_HOME`, else the platform default for per-user state.
-fn state_dir(var: &dyn Fn(&str) -> Option<String>, home: Option<std::path::PathBuf>) -> Option<std::path::PathBuf> {
-    if let Some(xdg) = var("XDG_STATE_HOME")
-        .map(std::path::PathBuf::from)
-        .filter(|path| path.is_absolute())
-    {
-        return Some(xdg);
-    }
-    if cfg!(windows) {
-        if let Some(local) = var("LOCALAPPDATA").filter(|value| !value.is_empty()) {
-            return Some(std::path::PathBuf::from(local));
-        }
-    }
-    let home = home?;
-    Some(if cfg!(target_os = "macos") {
-        home.join("Library").join("Application Support")
-    } else {
-        home.join(".local").join("state")
-    })
 }
 
 fn artifact_manifest(args: ReleaseArtifactManifestArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
@@ -666,8 +577,6 @@ fn write_receipt(path: &std::path::Path, receipt: &ReleaseReceiptV1, permit: &Ap
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
-
     use callisto_model::{
         RegistryBindingDigest, RegistryBindingId, ReleaseDecisionEntry, ReleaseDecisionV1, ReleaseInclusionReason,
         ReleaseInputSnapshotV1, ReleaseOperation, ReleasePackageId, ReleasePackageInputV1, SemanticInputDigest,
@@ -712,113 +621,6 @@ mod tests {
             vec![],
         )
         .unwrap()
-    }
-
-    fn vars(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<String> {
-        move |name| {
-            pairs
-                .iter()
-                .find(|(key, _)| *key == name)
-                .map(|(_, value)| value.to_string())
-        }
-    }
-
-    #[test]
-    fn state_dir_prefers_absolute_xdg_state_home() {
-        let home = Some(PathBuf::from("/home/u"));
-        assert_eq!(
-            state_dir(&vars(&[("XDG_STATE_HOME", "/state")]), home.clone()),
-            Some(PathBuf::from("/state"))
-        );
-        let fallback = state_dir(&vars(&[("XDG_STATE_HOME", "relative")]), home.clone()).unwrap();
-        assert!(fallback.starts_with("/home/u"), "{}", fallback.display());
-        assert_eq!(state_dir(&vars(&[]), None), None);
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn linux_state_dir_defaults_to_local_state() {
-        assert_eq!(
-            state_dir(&vars(&[]), Some(PathBuf::from("/home/u"))),
-            Some(PathBuf::from("/home/u/.local/state"))
-        );
-    }
-
-    #[test]
-    fn receipt_path_is_keyed_by_repository_and_intent() {
-        let intent = sample();
-        let path = receipt_path_in(Path::new("/state"), Path::new("/repo/a"), &intent);
-        let parts: Vec<_> = path.iter().map(|part| part.to_string_lossy().into_owned()).collect();
-        assert_eq!(parts[..3], ["/", "state", "callisto"]);
-        assert_eq!(parts[3].len(), 16);
-        assert_eq!(parts[4], intent.digest().to_string());
-        assert_eq!(parts[5], "receipt.json");
-        assert_ne!(
-            receipt_path_in(Path::new("/state"), Path::new("/repo/b"), &intent),
-            path,
-            "each repository gets its own directory"
-        );
-    }
-
-    #[test]
-    fn default_receipt_path_refuses_a_state_dir_inside_the_worktree() {
-        let intent = sample();
-        let root = tempfile::tempdir().unwrap();
-        let inside = root.path().join("state").to_string_lossy().into_owned();
-        let var = move |name: &str| (name == "XDG_STATE_HOME").then(|| inside.clone());
-        assert!(matches!(
-            default_receipt_path(root.path(), &intent, &var),
-            Err(CliError::ReleaseReceiptLocation { .. })
-        ));
-        let outside = tempfile::tempdir().unwrap();
-        let outside_path = outside.path().to_string_lossy().into_owned();
-        let var = move |name: &str| (name == "XDG_STATE_HOME").then(|| outside_path.clone());
-        let path = default_receipt_path(root.path(), &intent, &var).unwrap();
-        let canonical_outside = dunce::canonicalize(outside.path()).unwrap();
-        let canonical_root = dunce::canonicalize(root.path()).unwrap();
-        assert!(path.starts_with(&canonical_outside) && !path.starts_with(&canonical_root));
-    }
-
-    /// L2: the repository hash is taken from the canonical root, so a symlinked path agrees.
-    #[cfg(unix)]
-    #[test]
-    fn default_receipt_path_is_stable_across_symlinked_roots() {
-        let intent = sample();
-        let base = tempfile::tempdir().unwrap();
-        let root = base.path().join("repo");
-        std::fs::create_dir(&root).unwrap();
-        let link = base.path().join("link");
-        std::os::unix::fs::symlink(&root, &link).unwrap();
-        let state = tempfile::tempdir().unwrap();
-        let state_path = state.path().to_string_lossy().into_owned();
-        let var = move |name: &str| (name == "XDG_STATE_HOME").then(|| state_path.clone());
-        assert_eq!(
-            default_receipt_path(&root, &intent, &var).unwrap(),
-            default_receipt_path(&link, &intent, &var).unwrap()
-        );
-    }
-
-    /// L2: `--receipt` inside the repository is refused, including through a symlink.
-    #[cfg(unix)]
-    #[test]
-    fn explicit_receipt_inside_the_worktree_is_refused() {
-        let base = tempfile::tempdir().unwrap();
-        let root = base.path().join("repo");
-        std::fs::create_dir(&root).unwrap();
-        let link = base.path().join("link");
-        std::os::unix::fs::symlink(&root, &link).unwrap();
-        for inside in [root.join("receipt.json"), link.join("out").join("receipt.json")] {
-            assert!(
-                matches!(
-                    explicit_receipt_path(&root, &inside),
-                    Err(CliError::ReleaseReceiptLocation { .. })
-                ),
-                "{}",
-                inside.display()
-            );
-        }
-        let outside = base.path().join("receipts").join("receipt.json");
-        assert_eq!(explicit_receipt_path(&root, &outside).unwrap(), outside);
     }
 
     #[test]

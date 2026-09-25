@@ -282,13 +282,6 @@ pub enum CliError {
     )]
     ReleaseRequiresCiRoute { reason: String },
 
-    #[error("invalid release receipt location: {detail}")]
-    #[diagnostic(
-        code(callisto::release_receipt_location),
-        help("pass `--receipt <file>` outside the repository")
-    )]
-    ReleaseReceiptLocation { detail: String },
-
     #[error("stdin is not a terminal, so init needs flags instead of prompts; missing: {}", .missing.join(", "))]
     #[diagnostic(
         code(callisto::init_requires_yes),

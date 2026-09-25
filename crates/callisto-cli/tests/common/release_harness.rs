@@ -591,7 +591,7 @@ pub fn execute(root: &Path, intent: &Path, receipt: &Path, publishers: FakePubli
         .expect("release execute should run")
 }
 
-/// Host credential and state variables, cleared so none leaks into a local run.
+/// Host credential variables, cleared so none leaks into a local run.
 pub const CREDENTIAL_VARS: &[&str] = &[
     "CARGO_REGISTRY_TOKEN",
     "CARGO_HOME",
@@ -601,18 +601,11 @@ pub const CREDENTIAL_VARS: &[&str] = &[
     "GH_TOKEN",
     "GITHUB_TOKEN",
     "ACTIONS_ID_TOKEN_REQUEST_URL",
-    "XDG_STATE_HOME",
 ];
 
 /// Runs bare `callisto release` (local route) against the fake publishers.
-/// `home` isolates `~/.cargo`, `~/.npmrc` and the state directory; `env` adds variables.
-pub fn release_local(
-    root: &Path,
-    args: &[&str],
-    home: &Path,
-    env: &[(&str, &str)],
-    publishers: FakePublishers<'_>,
-) -> Output {
+/// `home` isolates `~/.cargo` and `~/.npmrc`.
+pub fn release_local(root: &Path, args: &[&str], home: &Path, publishers: FakePublishers<'_>) -> Output {
     let path = format!("{}:{}", publishers.bin.display(), std::env::var("PATH").unwrap());
     let mut command = Command::new(env!("CARGO_BIN_EXE_callisto"));
     command.args(["--cwd", root.to_str().unwrap()]).args(args);
@@ -621,7 +614,6 @@ pub fn release_local(
     }
     command
         .env("HOME", home)
-        .envs(env.iter().copied())
         .env("PATH", path)
         .env("CALLISTO_TEST_LOG", publishers.log)
         .env("CALLISTO_TEST_GIT_TRACE", publishers.git_trace)
