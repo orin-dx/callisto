@@ -17,7 +17,7 @@ Open work only. Verified against the code on 2026-09-25; git history holds the s
 
 ## v1 fix plan
 
-Stacked PRs, merged in this order. Each PR fixes the bugs that break one guarantee and updates its spec criteria in the same change. Most items were reproduced against 0.8.0. A PR that implements a decision below also records it as an ADR.
+Stacked PRs, merged in this order. Each PR fixes the bugs that break one guarantee and updates its spec criteria in the same change. Most items were reproduced against 0.8.0. Decisions a contributor might reverse (tag identity, directory-keyed identity, native resolution after `version`) also go into ARCHITECTURE.md's design decisions.
 
 Decisions (owner, 2026-09-25):
 - A tag is the same landed effect when it names the same commit and is annotated; the annotation text is not compared, locally or remotely.

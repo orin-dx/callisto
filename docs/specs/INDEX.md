@@ -1,6 +1,6 @@
 # Specifications
 
-Each spec (`spec@1`) states current behavior as testable criteria, grouped by topic prefix. No history: Git records how the behavior got here, and `docs/adr/` records the decisions that still hold.
+Each spec (`spec@1`) states current behavior as testable criteria, grouped by topic prefix. No history: Git records how the behavior got here, and `ARCHITECTURE.md` records the design decisions that still hold.
 
 | Spec | Covers |
 | --- | --- |
