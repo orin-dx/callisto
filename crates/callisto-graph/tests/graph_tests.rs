@@ -30,7 +30,7 @@ fn test_compose_pr_body_custom_branch_flag() {
     let ws_dir = tempfile::tempdir().unwrap();
     let cfg = callisto_graph::config::load(&ws_dir.path().join("callisto.toml")).unwrap();
     let graph = GraphBuilder::new().build().unwrap();
-    let git = callisto_vcs::GitAccess::discover(ws_dir.path(), &runner);
+    let git = callisto_vcs::GitAccess::new(ws_dir.path(), &runner);
     let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
         root: ws_dir.path().to_path_buf(),

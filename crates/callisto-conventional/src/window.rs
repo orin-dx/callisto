@@ -16,10 +16,7 @@ pub enum InferenceWindow {
 ///
 /// Sourcing the history is entirely `walker`'s business. This crate names
 /// only the Layer 1 [`CommitWalker`] contract, so it links against no VCS
-/// engine at all: callers hand it native gix, a shelled-out `git`, the
-/// gix-with-shell-fallback selector, or a test double, and the raw-message
-/// reconstruction and conventional-commit parsing below run identically
-/// either way.
+/// engine at all: callers hand it `callisto_vcs::GitAccess` or a test double.
 pub fn fetch_commits(
     walker: &dyn CommitWalker,
     window: &InferenceWindow,
@@ -49,7 +46,7 @@ mod tests {
     use std::path::Path;
 
     use super::*;
-    use callisto_fixtures::git::{init_repo, run_git, PoisonedRunner};
+    use callisto_fixtures::git::{init_repo, run_git, GitRunner};
     use callisto_model::{CommandError, CommandOutput, CommandRunner, CommitRecord, CommitWalkError};
     use callisto_vcs::GitAccess;
 
@@ -170,10 +167,8 @@ mod tests {
     }
 
     /// Spec: the real `callisto_vcs::GitAccess` backend satisfies
-    /// `CommitWalker`, so production wiring works end to end -- commits come
-    /// back from native gix (a `CommandRunner` that fails on every call must
-    /// not prevent that) and pathspec filtering scopes them to the given
-    /// paths. `callisto-vcs` is a dev-dependency here purely to run this
+    /// `CommitWalker`, so production wiring works end to end and pathspec
+    /// filtering scopes commits to the given paths. `callisto-vcs` is a dev-dependency here purely to run this
     /// integration check; nothing in this crate's production code names it.
     #[test]
     fn test_real_git_access_backend_satisfies_commit_walker_and_filters_by_pathspec() {
@@ -191,11 +186,11 @@ mod tests {
         run_git(root, &["add", "."]);
         run_git(root, &["commit", "-q", "-m", "feat: add pkg-b file"]);
 
-        let runner = PoisonedRunner;
-        let git = GitAccess::discover(root, &runner);
+        let runner = GitRunner;
+        let git = GitAccess::new(root, &runner);
         let pathspecs = vec![PathBuf::from("crates/pkg-a")];
         let commits = fetch_commits(&git, &InferenceWindow::FullHistory, &pathspecs)
-            .expect("fetch_commits must succeed even with a poisoned CommandRunner");
+            .expect("fetch_commits must succeed against a real repository");
 
         assert_eq!(commits.len(), 1);
         assert_eq!(commits[0].subject(), "add pkg-a file");
@@ -217,8 +212,8 @@ mod tests {
         run_git(root, &["add", "."]);
         run_git(root, &["commit", "-q", "-m", "feat: c2"]);
 
-        let runner = PoisonedRunner;
-        let git = GitAccess::discover(root, &runner);
+        let runner = GitRunner;
+        let git = GitAccess::new(root, &runner);
         let commits = fetch_commits(&git, &InferenceWindow::FullHistory, &[]).unwrap();
 
         assert_eq!(commits.len(), 2);
@@ -236,17 +231,14 @@ mod tests {
         run_git(root, &["add", "."]);
         run_git(root, &["commit", "-q", "-m", "feat: c1"]);
 
-        let since_sha = {
-            let repo = callisto_vcs::GitRepository::discover(root).unwrap();
-            repo.head_sha().unwrap()
-        };
+        let since_sha = GitAccess::new(root, &GitRunner).head_sha().unwrap();
 
         std::fs::write(root.join("a.txt"), "a2\n").unwrap();
         run_git(root, &["add", "."]);
         run_git(root, &["commit", "-q", "-m", "feat: c2"]);
 
-        let runner = PoisonedRunner;
-        let git = GitAccess::discover(root, &runner);
+        let runner = GitRunner;
+        let git = GitAccess::new(root, &runner);
         let window = InferenceWindow::SinceCommit(since_sha);
         let commits = fetch_commits(&git, &window, &[]).unwrap();
 
@@ -254,21 +246,9 @@ mod tests {
         assert_eq!(commits[0].subject(), "c2");
     }
 
-    /// A directory guaranteed not to sit inside any Git repository, so
-    /// `GitRepository::discover` fails, forcing `GitAccess` onto its
-    /// `CommandRunner` fallback.
-    fn non_repo_dir() -> tempfile::TempDir {
-        let dir = tempfile::tempdir().unwrap();
-        assert!(
-            callisto_vcs::GitRepository::discover(dir.path()).is_err(),
-            "test fixture must not be discoverable as a Git repo"
-        );
-        dir
-    }
-
-    /// A `CommandRunner` double standing in for a real `git` binary on
-    /// `GitAccess`'s shell fallback path. Returns a canned `git log` payload
-    /// in the `--format=<RS>%H<US>%B` record shape that `ShellGit` issues.
+    /// A `CommandRunner` double standing in for the `git` binary. Returns a
+    /// canned `git log` payload in the `--format=<RS>%H<US>%B` record shape
+    /// `GitAccess` issues.
     struct FakeGitLogRunner {
         stdout: String,
     }
@@ -284,24 +264,21 @@ mod tests {
         }
     }
 
-    /// Spec: conventional-commit inference must survive gix being
-    /// unavailable. `GitAccess`'s shell fallback then serves the
-    /// walk, and `fetch_commits` must parse real commits out of it rather
-    /// than degrading to an empty list. (The exact `git log` argv that
-    /// fallback issues is `ShellGit`'s contract and is asserted in
-    /// `callisto-vcs`; what matters here is that parsing still happens.)
+    /// Spec: `fetch_commits` parses the commits `GitAccess` reads from
+    /// `git log` rather than degrading to an empty list. (The exact argv is
+    /// `callisto-vcs`'s contract.)
     #[test]
-    fn test_inference_still_works_when_gix_is_unavailable() {
-        let dir = non_repo_dir();
+    fn test_inference_parses_commits_read_through_git_access() {
+        let dir = tempfile::tempdir().unwrap();
         let sha_a = "a".repeat(40);
         let sha_b = "b".repeat(40);
         let stdout =
             format!("\u{1e}{sha_a}\u{1f}feat(core): add thing\n\nSome body text\n\u{1e}{sha_b}\u{1f}fix: bug\n");
         let runner = FakeGitLogRunner { stdout };
-        let git = GitAccess::discover(dir.path(), &runner);
+        let git = GitAccess::new(dir.path(), &runner);
 
-        let commits = fetch_commits(&git, &InferenceWindow::FullHistory, &[])
-            .expect("inference must survive gix being unavailable");
+        let commits =
+            fetch_commits(&git, &InferenceWindow::FullHistory, &[]).expect("inference must parse the git log records");
 
         assert_eq!(commits.len(), 2);
         assert_eq!(commits[0].sha().as_str(), sha_a);
@@ -326,8 +303,8 @@ mod tests {
             }
         }
 
-        let dir = non_repo_dir();
-        let git = GitAccess::discover(dir.path(), &FailingRunner);
+        let dir = tempfile::tempdir().unwrap();
+        let git = GitAccess::new(dir.path(), &FailingRunner);
         let result = fetch_commits(&git, &InferenceWindow::FullHistory, &[]);
 
         assert!(

@@ -3,16 +3,11 @@
 //! `Workspace::load` used to build the full `TagIndex` unconditionally --
 //! even for callers (e.g. `callisto add`'s non-interactive path, `callisto
 //! init`, `callisto add`'s interactive package-selection step) that never
-//! consult tags at all. `TagIndex::build` fetches the repo's full tag list
-//! via `callisto_vcs::GitRepository` (gix) or, when gix is unavailable, via
-//! a `CommandRunner`-shelled `git tag --list` call. Neither should ever happen just because a
-//! `Workspace` was loaded; it should happen at most once, and only once
-//! something actually calls `Workspace::tags()`.
+//! consult tags at all. `TagIndex::build` spawns `git tag --list`; that
+//! should never happen just because a `Workspace` was loaded, only once
+//! something actually calls `Workspace::tags()`, and at most once.
 //!
-//! This test forces the `CommandRunner` fallback deterministically (by
-//! using a workspace root gix cannot discover as a repo, mirroring the
-//! `non_repo_dir` fixture in `callisto-graph/src/tags.rs`'s own unit tests)
-//! and counts `git tag --list` invocations to prove laziness.
+//! This test counts `git tag --list` invocations to prove laziness.
 
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -62,15 +57,6 @@ fn workspace_load_does_not_build_tag_index_until_tags_is_called() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     write_minimal_workspace(root);
-
-    // Deliberately no `git init`: guarantees `GitRepository::discover` fails,
-    // so *if* `TagIndex`
-    // construction ran, it would deterministically fall through to the
-    // `CommandRunner` `git tag --list` call this test counts.
-    assert!(
-        callisto_vcs::GitRepository::discover(root).is_err(),
-        "test fixture must not be discoverable as a Git repo"
-    );
 
     let locator = IgnoreWalkLocator::new(root);
     let runner = CountingTagListRunner {

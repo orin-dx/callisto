@@ -5,18 +5,32 @@ use std::path::Path;
 
 use callisto_model::{CommandError, CommandOutput, CommandRunner};
 
-/// A [`CommandRunner`] double that errors on every invocation.
-///
-/// Used to prove that a code path resolves git state without shelling out
-/// through `CommandRunner` at all (e.g. via `callisto_vcs::GitRepository`/gix
-/// instead) -- a runner that always fails must not affect the result.
-pub struct PoisonedRunner;
+/// A [`CommandRunner`] that runs the real `git`, for tests that read a
+/// fixture repository through `callisto_vcs::GitAccess`. Every other program
+/// succeeds with no output.
+pub struct GitRunner;
 
-impl CommandRunner for PoisonedRunner {
-    fn run(&self, program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
-        Err(CommandError::Io {
-            program: program.to_string(),
-            message: "poisoned runner: this code path must not shell out to git".to_string(),
+impl CommandRunner for GitRunner {
+    fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
+        if program != "git" {
+            return Ok(CommandOutput {
+                exit_code: Some(0),
+                stdout: String::new(),
+                stderr: String::new(),
+            });
+        }
+        let output = std::process::Command::new(program)
+            .args(args)
+            .current_dir(cwd)
+            .output()
+            .map_err(|e| CommandError::Io {
+                program: program.to_string(),
+                message: e.to_string(),
+            })?;
+        Ok(CommandOutput {
+            exit_code: output.status.code(),
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
         })
     }
 }

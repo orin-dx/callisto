@@ -785,6 +785,16 @@ pub const TOOL_SHAPES: &[ToolShape] = &[
     },
     ToolShape {
         tool: "git",
+        subcommand: &["var"],
+        flags: &[],
+    },
+    ToolShape {
+        tool: "git",
+        subcommand: &["cat-file"],
+        flags: &[],
+    },
+    ToolShape {
+        tool: "git",
         subcommand: &["rev-parse"],
         flags: &[
             "--verify",

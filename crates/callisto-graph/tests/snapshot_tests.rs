@@ -3,10 +3,7 @@ use callisto_model::PackageId;
 use fixtures::GraphBuilder;
 use std::cell::OnceCell;
 
-/// Runs `git` for test-fixture setup only (not exercised through `CommandRunner`;
-/// `plan_snapshot`'s HEAD sha resolution goes through `callisto_vcs::GitAccess`, which
-/// tries native gix against the real on-disk repo first and only falls back to
-/// `CommandRunner` when gix is unavailable).
+/// Runs `git` for test-fixture setup.
 fn run_git(dir: &std::path::Path, args: &[&str]) {
     let status = std::process::Command::new("git")
         .args(args)
@@ -35,27 +32,11 @@ fn init_git_repo_with_commit(dir: &std::path::Path) -> String {
     String::from_utf8(output.stdout).unwrap().trim().to_string()
 }
 
-struct DummyRunner;
-impl callisto_model::CommandRunner for DummyRunner {
-    fn run(
-        &self,
-        _program: &str,
-        _args: &[&str],
-        _cwd: &std::path::Path,
-    ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
-        Ok(callisto_model::CommandOutput {
-            exit_code: Some(0),
-            stdout: String::new(),
-            stderr: String::new(),
-        })
-    }
-}
-
 #[test]
 fn test_snapshot_version_template_placeholders() {
     use callisto_graph::commands::plan_snapshot;
 
-    let runner = DummyRunner;
+    let runner = callisto_fixtures::git::GitRunner;
     let ws_dir = tempfile::tempdir().unwrap();
     let root = ws_dir.path();
 
@@ -67,7 +48,7 @@ fn test_snapshot_version_template_placeholders() {
 
     let cfg = callisto_graph::config::load(&root.join("callisto.toml")).unwrap();
     let graph = GraphBuilder::new().build().unwrap();
-    let git = callisto_vcs::GitAccess::discover(root, &runner);
+    let git = callisto_vcs::GitAccess::new(root, &runner);
     let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
         root: root.to_path_buf(),
@@ -94,7 +75,7 @@ fn test_snapshot_version_template_placeholders() {
 fn test_snapshot_version_format_matches_spec() {
     use callisto_graph::commands::plan_snapshot;
 
-    let runner = DummyRunner;
+    let runner = callisto_fixtures::git::GitRunner;
     let ws_dir = tempfile::tempdir().unwrap();
     let root = ws_dir.path();
 
@@ -130,7 +111,7 @@ fn test_snapshot_version_format_matches_spec() {
         .unwrap();
 
     let cfg = callisto_graph::config::load(&root.join("callisto.toml")).unwrap();
-    let git = callisto_vcs::GitAccess::discover(root, &runner);
+    let git = callisto_vcs::GitAccess::new(root, &runner);
     let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
         root: root.to_path_buf(),
@@ -175,13 +156,13 @@ fn test_snapshot_version_format_matches_spec() {
 fn test_snapshot_sha_resolution_failure_is_surfaced_error() {
     use callisto_graph::commands::plan_snapshot;
 
-    let runner = DummyRunner;
+    let runner = callisto_fixtures::git::GitRunner;
     let ws_dir = tempfile::tempdir().unwrap();
     // Deliberately no `git init`: the workspace root is not part of any Git repository,
     // so HEAD sha resolution must fail.
     let cfg = callisto_graph::config::load(&ws_dir.path().join("callisto.toml")).unwrap();
     let graph = GraphBuilder::new().build().unwrap();
-    let git = callisto_vcs::GitAccess::discover(ws_dir.path(), &runner);
+    let git = callisto_vcs::GitAccess::new(ws_dir.path(), &runner);
     let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
         root: ws_dir.path().to_path_buf(),
@@ -207,14 +188,9 @@ fn test_snapshot_sha_resolution_failure_is_surfaced_error() {
     );
 }
 
-/// `plan_snapshot` must resolve HEAD via `GitAccess`'s `CommandRunner` shell fallback when
-/// native gix cannot discover a repository. Before this was wired through `GitAccess` (instead of
-/// calling `callisto_vcs::GitRepository::discover` directly, which has no such fallback and
-/// consults `CommandRunner` for nothing), this exact scenario -- no gix-discoverable repo,
-/// but a runner able to answer `git rev-parse HEAD` -- would hard-fail regardless of what
-/// the runner returned, because the direct `GitRepository::discover` call never looked at it.
+/// `plan_snapshot` resolves HEAD with `git rev-parse HEAD` through the workspace's runner.
 #[test]
-fn test_snapshot_resolves_head_sha_via_command_runner_fallback_when_gix_unavailable() {
+fn test_snapshot_resolves_head_sha_through_the_command_runner() {
     use callisto_graph::commands::plan_snapshot;
 
     struct FakeHeadShaRunner(String);
@@ -245,15 +221,10 @@ fn test_snapshot_resolves_head_sha_via_command_runner_fallback_when_gix_unavaila
     let head_sha = "b".repeat(40);
     let runner = FakeHeadShaRunner(head_sha.clone());
     let ws_dir = tempfile::tempdir().unwrap();
-    // Deliberately no `git init`: gix discovery must fail here, forcing the shell fallback.
-    assert!(
-        callisto_vcs::GitRepository::discover(ws_dir.path()).is_err(),
-        "test fixture must not be discoverable as a Git repo"
-    );
 
     let cfg = callisto_graph::config::load(&ws_dir.path().join("callisto.toml")).unwrap();
     let graph = GraphBuilder::new().build().unwrap();
-    let git = callisto_vcs::GitAccess::discover(ws_dir.path(), &runner);
+    let git = callisto_vcs::GitAccess::new(ws_dir.path(), &runner);
     let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
         root: ws_dir.path().to_path_buf(),
@@ -266,8 +237,7 @@ fn test_snapshot_resolves_head_sha_via_command_runner_fallback_when_gix_unavaila
         identity: callisto_graph::IdentityIndex::default(),
     };
 
-    let (_, report) = plan_snapshot(&ws, "canary")
-        .expect("plan_snapshot must succeed via the CommandRunner fallback when gix cannot discover a repo");
+    let (_, report) = plan_snapshot(&ws, "canary").expect("plan_snapshot must resolve HEAD through the runner");
 
     let expected_version = format!("0.0.0-canary-{}", &head_sha[..7]);
     assert_eq!(report.snapshot_tag, expected_version);

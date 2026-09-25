@@ -3,21 +3,17 @@ use std::collections::BTreeMap;
 use callisto_model::{
     select_last_tag, CommitSha, Diagnostic, LastTag, LastTagSelection, PackageId, TagTemplate, VersionGrammar,
 };
-use callisto_vcs::{GitAccess, GitDataSource};
+use callisto_vcs::GitAccess;
 
 use crate::config::ResolvedConfig;
 use crate::error::GraphError;
 use crate::resolver::DependencyResolver;
 
-/// Fetches the full, unfiltered list of every tag name in the repository at
-/// `root`, via [`GitAccess`] (native gix, falling back to a `CommandRunner`-
-/// shelled `git tag --list` when gix is unavailable).
+/// Fetches the full, unfiltered list of every tag name in the repository.
 ///
-/// Deliberately fetches with no glob pattern: callers filter afterwards
-/// via [`matching_tags`], using the same `globset` matcher both
-/// `GitDataSource` backends use internally -- identical tag-selection
-/// semantics regardless of backend, and lets the fetch batch once across
-/// every package (see [`TagIndex::build`]) instead of once per package.
+/// Deliberately fetches with no glob pattern: callers filter afterwards via
+/// [`matching_tags`], so the fetch batches once across every package (see
+/// [`TagIndex::build`]) instead of one `git` spawn per package.
 pub(crate) fn fetch_all_tags(git: &GitAccess<'_>) -> Result<Vec<String>, GraphError> {
     let tags = git.list_tags(None)?;
     Ok(tags.into_iter().map(|t| t.as_str().to_string()).collect())
@@ -26,10 +22,8 @@ pub(crate) fn fetch_all_tags(git: &GitAccess<'_>) -> Result<Vec<String>, GraphEr
 /// Filters `all_tags` down to those matching `template`'s glob.
 ///
 /// Compiles the glob via [`callisto_vcs::compile_tag_glob`] -- the same
-/// shared helper both `GitDataSource` backends (`GitRepository::list_tags`,
-/// `ShellGit::list_tags`) use internally -- so tag selection is
-/// byte-identical whether `all_tags` came from gix or the `CommandRunner`
-/// fallback in [`fetch_all_tags`]. Includes error behavior: a
+/// helper `GitAccess::list_tags` uses -- so tag selection is identical
+/// either way. Includes error behavior: a
 /// `template.glob()` that fails to compile surfaces as
 /// `Err(GraphError::Vcs(VcsError::InvalidGlob))` -- matching every tag is
 /// the unsafe alternative, since a malformed template must never silently
@@ -121,12 +115,7 @@ impl TagIndex {
         let diagnostics = Vec::new();
 
         // Fetch the raw tag list exactly once for the whole build, not once
-        // per package -- see `fetch_all_tags` for why (avoids N gix
-        // discoveries / N host round-trips for N packages). `git` is shared
-        // with the caller rather than discovered fresh here, so a single
-        // `Workspace`-scoped command that also needs git for other reasons
-        // (e.g. local release's head_sha resolution) doesn't pay for a
-        // second discovery.
+        // per package -- see `fetch_all_tags` for why.
         let all_tags = fetch_all_tags(git)?;
         let all_tags_set: std::collections::BTreeSet<String> = all_tags.iter().cloned().collect();
         let mut glob_cache: std::collections::HashMap<String, Vec<&str>> = std::collections::HashMap::new();
@@ -249,9 +238,8 @@ mod tests {
 
     /// A `CommandRunner` double that never touches a real `git` binary: it
     /// answers `git tag --list` with a canned tag list and counts every
-    /// invocation. Used both to prove `TagIndex::build` succeeds with gix
-    /// unavailable, and to count how many
-    /// `CommandRunner` round-trips a `TagIndex::build` call costs.
+    /// invocation, to count how many `git` spawns a `TagIndex::build` call
+    /// costs.
     struct FakeGitTagRunner {
         calls: AtomicUsize,
         tags: Vec<String>,
@@ -279,34 +267,25 @@ mod tests {
         }
     }
 
-    /// A directory that is guaranteed not to sit inside any Git repository,
-    /// so `callisto_vcs::GitRepository::discover` fails -- the stand-in for
-    /// "gix is unavailable" the spec calls for, forcing every
-    /// path under test through the `CommandRunner` fallback.
+    /// A directory outside any Git repository, so every `git` call is
+    /// answered by the test's runner.
     fn non_repo_dir() -> tempfile::TempDir {
-        let dir = tempfile::tempdir().unwrap();
-        assert!(
-            callisto_vcs::GitRepository::discover(dir.path()).is_err(),
-            "test fixture must not be discoverable as a Git repo"
-        );
-        dir
+        tempfile::tempdir().unwrap()
     }
 
-    /// Spec: `TagIndex::build` must not hard-fail when gix is unavailable
-    /// either -- it drives the same fallback for every package in the
-    /// graph.
+    /// Spec: `TagIndex::build` selects each package's last tag from the
+    /// `git tag --list` output.
     #[test]
-    fn test_tag_index_build_succeeds_without_gix() {
+    fn test_tag_index_build_selects_last_tag_from_git_tag_list() {
         let dir = non_repo_dir();
         let runner = FakeGitTagRunner::new(vec!["pkg-a@2.0.0".to_string()]);
         let graph = FixedGraph {
             pkgs: vec![make_pkg("pkg-a")],
         };
         let cfg = crate::config::load(dir.path()).unwrap();
-        let git = GitAccess::discover(dir.path(), &runner);
+        let git = GitAccess::new(dir.path(), &runner);
 
-        let tags = TagIndex::build(&git, &graph, &cfg)
-            .expect("TagIndex::build must succeed via the CommandRunner fallback when gix cannot discover a repo");
+        let tags = TagIndex::build(&git, &graph, &cfg).expect("TagIndex::build must succeed from the git tag list");
 
         let pkg_id = PackageId::parse("pkg-a").unwrap();
         assert_eq!(
@@ -330,7 +309,7 @@ mod tests {
             pkgs: vec![make_pkg("pkg-a"), make_pkg("pkg-b"), make_pkg("pkg-c")],
         };
         let cfg = crate::config::load(dir.path()).unwrap();
-        let git = GitAccess::discover(dir.path(), &runner);
+        let git = GitAccess::new(dir.path(), &runner);
 
         let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
 
@@ -346,10 +325,8 @@ mod tests {
         );
     }
 
-    /// Spec: on a real, gix-discoverable repo, `matching_tags` must select
-    /// exactly the tags `callisto_vcs::GitRepository::list_tags`'s own
-    /// glob-based filtering would -- proving the two paths share identical
-    /// selection semantics.
+    /// Spec: `matching_tags` selects exactly what the template's `globset`
+    /// glob matches.
     #[test]
     fn test_matching_tags_mirrors_globset_semantics() {
         let all = vec![
@@ -407,7 +384,7 @@ mod tests {
         pkg.tag_template = Some(TagTemplate::parse("pkg-a@{version}{oops").unwrap());
         let graph = FixedGraph { pkgs: vec![pkg] };
         let cfg = crate::config::load(dir.path()).unwrap();
-        let git = GitAccess::discover(dir.path(), &runner);
+        let git = GitAccess::new(dir.path(), &runner);
 
         match TagIndex::build(&git, &graph, &cfg) {
             Err(GraphError::Vcs(callisto_vcs::VcsError::InvalidGlob { .. })) => {}
@@ -424,7 +401,7 @@ mod tests {
             pkgs: vec![make_pkg("pkg-a"), make_pkg("pkg-b")],
         };
         let cfg = crate::config::load(dir.path()).unwrap();
-        let git = GitAccess::discover(dir.path(), &runner);
+        let git = GitAccess::new(dir.path(), &runner);
 
         let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
 
@@ -456,7 +433,7 @@ mod tests {
             pkgs: vec![make_pkg("pkg-a"), make_pkg("pkg-ab")],
         };
         let cfg = crate::config::load(dir.path()).unwrap();
-        let git = GitAccess::discover(dir.path(), &runner);
+        let git = GitAccess::new(dir.path(), &runner);
 
         let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
 
@@ -472,9 +449,8 @@ mod tests {
         );
     }
 
-    /// A `CommandRunner` double that always fails, standing in for a real
-    /// `git` binary missing/erroring on the `CommandRunner` fallback path
-    /// (used when gix is unavailable).
+    /// A `CommandRunner` double that always fails, standing in for a
+    /// missing `git` binary.
     struct FailingRunner;
 
     impl CommandRunner for FailingRunner {
@@ -518,7 +494,7 @@ mod tests {
             pkgs: vec![custom_pkg, default_pkg],
         };
         let cfg = crate::config::load(dir.path()).unwrap();
-        let git = GitAccess::discover(dir.path(), &runner);
+        let git = GitAccess::new(dir.path(), &runner);
 
         let tags = TagIndex::build(&git, &graph, &cfg).expect("TagIndex::build must succeed");
 
@@ -555,7 +531,7 @@ mod tests {
             pkgs: vec![make_pkg("pkg-a")],
         };
         let cfg = crate::config::load(dir.path()).unwrap();
-        let git = GitAccess::discover(dir.path(), &runner);
+        let git = GitAccess::new(dir.path(), &runner);
 
         let tags = TagIndex::build(&git, &graph, &cfg).expect("TagIndex::build must succeed");
 
@@ -575,8 +551,8 @@ mod tests {
     // hazard `OPEN_CALL_COUNT`/`PERSIST_CALL_COUNT` are isolated from --
     // see `tests/apply_persist_open_count_test.rs`).
 
-    /// Spec: when gix is unavailable and the `CommandRunner` fallback
-    /// itself returns `Err`, `TagIndex::build` must propagate that error up
+    /// Spec: when the `CommandRunner` returns `Err`, `TagIndex::build` must
+    /// propagate that error up
     /// through the whole build rather than panicking or silently swallowing
     /// it into an empty tag list per-package.
     #[test]
@@ -587,7 +563,7 @@ mod tests {
             pkgs: vec![make_pkg("pkg-a")],
         };
         let cfg = crate::config::load(dir.path()).unwrap();
-        let git = GitAccess::discover(dir.path(), &runner);
+        let git = GitAccess::new(dir.path(), &runner);
 
         let is_command_err = matches!(
             TagIndex::build(&git, &graph, &cfg),

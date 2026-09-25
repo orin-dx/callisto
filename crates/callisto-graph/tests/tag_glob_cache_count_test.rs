@@ -76,16 +76,10 @@ impl CommandRunner for FakeGitTagRunner {
     }
 }
 
-/// A directory guaranteed not to sit inside any Git repository, forcing
-/// `GitAccess::discover` through the `CommandRunner` fallback path (mirrors
-/// `callisto-graph`'s own `tags.rs` unit-test fixture of the same name).
+/// A directory outside any Git repository, so every `git` call is answered
+/// by the test's runner.
 fn non_repo_dir() -> tempfile::TempDir {
-    let dir = tempfile::tempdir().unwrap();
-    assert!(
-        callisto_vcs::GitRepository::discover(dir.path()).is_err(),
-        "test fixture must not be discoverable as a Git repo"
-    );
-    dir
+    tempfile::tempdir().unwrap()
 }
 
 /// Spec: `TagIndex::build` must compile/scan a given tag-template glob at
@@ -107,7 +101,7 @@ fn tag_index_build_compiles_shared_glob_template_once() {
     ];
     let graph = FixedGraph { pkgs };
     let cfg = callisto_graph::config::load(dir.path()).unwrap();
-    let git = GitAccess::discover(dir.path(), &runner);
+    let git = GitAccess::new(dir.path(), &runner);
 
     callisto_graph::tags::reset_glob_compile_count();
     TagIndex::build(&git, &graph, &cfg).expect("TagIndex::build must succeed");
@@ -131,7 +125,7 @@ fn tag_index_build_compiles_distinct_glob_templates_separately() {
     let pkgs = vec![make_pkg("pkg-a", None), make_pkg("pkg-b", None)];
     let graph = FixedGraph { pkgs };
     let cfg = callisto_graph::config::load(dir.path()).unwrap();
-    let git = GitAccess::discover(dir.path(), &runner);
+    let git = GitAccess::new(dir.path(), &runner);
 
     callisto_graph::tags::reset_glob_compile_count();
     TagIndex::build(&git, &graph, &cfg).expect("TagIndex::build must succeed");

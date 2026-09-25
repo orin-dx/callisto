@@ -1,7 +1,8 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use callisto_model::{CommandRunner, Package};
-use callisto_vcs::{GitAccess, GitDataSource};
+use callisto_model::{Package, PackageId};
+use callisto_vcs::{GitAccess, VcsError};
 
 use crate::error::GraphError;
 use crate::tags::TagIndex;
@@ -20,77 +21,105 @@ pub fn package_paths(pkg: &Package) -> Vec<PathBuf> {
     set.into_iter().collect()
 }
 
-pub fn changed_since_last_tag<R: CommandRunner>(
-    runner: &R,
-    root: &Path,
-    pkg: &Package,
+/// Whether each of `packages` changed since its last tag: a non-merge commit
+/// in `tag..HEAD` touched one of its paths, or its tracked files differ from
+/// the tag. An untagged package counts as changed.
+///
+/// One `git rev-parse` for every tag, then per distinct tag commit one `git
+/// log` and at most one `git diff`, however many packages share that commit.
+pub fn changed_since_last_tag(
+    packages: &[&Package],
     tags: &TagIndex,
     git: &GitAccess<'_>,
-) -> Result<bool, GraphError> {
-    let Some(last) = tags.last_tag(&pkg.id) else {
-        return Ok(true);
-    };
-
-    // `git` is a single `GitAccess` built once by the caller and shared
-    // across every package -- rediscovering it per package (native gix
-    // repository-open, or a fresh `ShellGit` on the fallback path) for an
-    // N-package workspace was N redundant discoveries of the exact same
-    // repository. A failure on either backend is not fatal -- it just means
-    // the cheap short-circuit below is skipped in favor of the exact `git
-    // diff --quiet` check.
-    //
-    // `last.name` is a tag read back from the repository's own tag list
-    // (via `TagIndex`), not text Callisto renders itself -- unlike a
-    // `tag-template`-rendered name, it is not run through
-    // `is_valid_git_ref_name`. It is fully qualified as `refs/tags/<name>`
-    // before being shelled to `git log`/`git diff` so it can never be
-    // misread as a CLI flag by either command's argument parser, even in
-    // the (currently unreachable, given `TagTemplate::parse`'s and
-    // `PackageId::parse`'s own leading-hyphen rejections) case of a
-    // hyphen-leading tag reaching this far.
-    let qualified = format!("refs/tags/{}", last.name.as_str());
-
-    // Scoped identically to the `git diff --quiet` fallback below: an
-    // empty pathspec here would walk every commit in the *whole* repo
-    // since the tag, so any other package's commit would short-circuit
-    // this package as "changed" too.
-    let paths = package_paths(pkg);
-
-    if let Ok(commits) = git.commits_since(Some(&qualified), &paths) {
-        if !commits.is_empty() {
-            return Ok(true);
+) -> Result<BTreeMap<PackageId, bool>, GraphError> {
+    let mut changed = BTreeMap::new();
+    let mut tagged = Vec::new();
+    for pkg in packages {
+        match tags.last_tag(&pkg.id) {
+            // Fully qualified so a tag name can never be misread as a flag.
+            Some(last) => tagged.push((*pkg, format!("refs/tags/{}", last.name.as_str()))),
+            None => {
+                changed.insert(pkg.id.clone(), true);
+            }
         }
     }
-
-    let mut args = vec!["diff", "--quiet", qualified.as_str(), "--"];
-    let path_strs: Vec<String> = paths.iter().map(|p| p.display().to_string()).collect();
-    for p in &path_strs {
-        args.push(p);
+    if tagged.is_empty() {
+        return Ok(changed);
     }
 
-    let output = runner.run("git", &args, root)?;
-    Ok(!output.success())
+    let refs: Vec<String> = tagged.iter().map(|(_, r)| r.clone()).collect();
+    let keys: Vec<String> = match git.resolve_commits(&refs)? {
+        Some(shas) => shas.iter().map(|sha| sha.as_str().to_string()).collect(),
+        None => refs,
+    };
+    let mut groups: BTreeMap<String, Vec<&Package>> = BTreeMap::new();
+    for ((pkg, _), key) in tagged.into_iter().zip(keys) {
+        groups.entry(key).or_default().push(pkg);
+    }
+
+    for (since, members) in groups {
+        // A failed walk only skips the cheap check in favor of the exact diff.
+        let committed = match git.paths_changed_since(&since) {
+            Err(VcsError::Command(e)) => return Err(VcsError::Command(e).into()),
+            result => result.unwrap_or_default(),
+        };
+        let mut differing: Option<Option<Vec<PathBuf>>> = None;
+        for pkg in members {
+            let specs = package_paths(pkg);
+            let mut is_changed = touches(&committed, &specs);
+            if !is_changed {
+                if differing.is_none() {
+                    differing = Some(match git.paths_differing_from(&since) {
+                        Ok(paths) => Some(paths),
+                        Err(VcsError::Command(e)) => return Err(VcsError::Command(e).into()),
+                        Err(_) => None,
+                    });
+                }
+                // A diff that could not run counts as changed.
+                is_changed = differing
+                    .as_ref()
+                    .and_then(Option::as_ref)
+                    .is_none_or(|paths| touches(paths, &specs));
+            }
+            changed.insert(pkg.id.clone(), is_changed);
+        }
+    }
+    Ok(changed)
+}
+
+/// Whether any of `paths` falls under one of `specs` as a literal `git`
+/// pathspec would match it; `.` matches every path.
+fn touches(paths: &[PathBuf], specs: &[PathBuf]) -> bool {
+    paths.iter().any(|path| {
+        specs
+            .iter()
+            .any(|spec| spec.as_path() == Path::new(".") || path.starts_with(spec))
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    use callisto_model::{CommandError, CommandOutput, DepEdge, ManifestDecl, ManifestFormat, ManifestRole, PackageId};
+    use callisto_fixtures::git::{init_repo, run_git, GitRunner};
+    use callisto_model::{
+        CommandError, CommandOutput, CommandRunner, DepEdge, ManifestDecl, ManifestFormat, ManifestRole,
+    };
+    use std::sync::Mutex;
 
     use super::*;
     use crate::resolver::DependencyResolver;
 
-    fn make_pkg(name: &str) -> Package {
-        let manifest = ManifestDecl::new(
-            format!("{name}/Cargo.toml"),
-            ManifestRole::Canonical,
-            ManifestFormat::CargoToml,
-        )
-        .unwrap();
+    fn make_pkg(dir: &str) -> Package {
+        let manifest_path = if dir == "." {
+            "Cargo.toml".to_string()
+        } else {
+            format!("{dir}/Cargo.toml")
+        };
+        let name = if dir == "." { "root" } else { dir };
         Package {
             id: PackageId::parse(name).unwrap(),
-            manifests: vec![manifest],
+            manifests: vec![
+                ManifestDecl::new(manifest_path, ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap(),
+            ],
             changelog: None,
             release_trigger: callisto_model::ReleaseTrigger::Changeset,
             publish_to: Vec::new(),
@@ -116,304 +145,195 @@ mod tests {
         }
     }
 
-    /// A directory that is guaranteed not to sit inside any Git repository,
-    /// so `callisto_vcs::GitRepository::discover` fails, forcing every path under test
-    /// through the `CommandRunner` fallback, the same fixture pattern
-    /// `tags.rs`'s tests use.
-    fn non_repo_dir() -> tempfile::TempDir {
+    /// Records every `git` invocation and runs it for real.
+    struct RecordingGit {
+        calls: Mutex<Vec<String>>,
+    }
+
+    impl CommandRunner for RecordingGit {
+        fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
+            self.calls.lock().unwrap().push(args.join(" "));
+            GitRunner.run(program, args, cwd)
+        }
+    }
+
+    fn write(root: &Path, path: &str, contents: &str) {
+        let file = root.join(path);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, contents).unwrap();
+    }
+
+    fn commit(root: &Path, path: &str, contents: &str, message: &str) {
+        write(root, path, contents);
+        run_git(root, &["add", "-A"]);
+        run_git(root, &["commit", "-q", "-m", message]);
+    }
+
+    /// Repo with `pkg-a`, `pkg-b` and `pkg-c`, each tagged `<pkg>@1.0.0` at one commit.
+    fn tagged_repo() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
-        assert!(
-            callisto_vcs::GitRepository::discover(dir.path()).is_err(),
-            "test fixture must not be discoverable as a Git repo"
-        );
+        let root = dir.path();
+        init_repo(root);
+        for pkg in ["pkg-a", "pkg-b", "pkg-c"] {
+            write(root, &format!("{pkg}/Cargo.toml"), "[package]\n");
+        }
+        commit(root, "README.md", "r\n", "chore: init");
+        for pkg in ["pkg-a", "pkg-b", "pkg-c"] {
+            run_git(root, &["tag", "-a", "-m", "release", &format!("{pkg}@1.0.0")]);
+        }
         dir
     }
 
-    fn tag_index_with_tag(dir: &std::path::Path, pkg_name: &str, tag: &str) -> TagIndex {
-        struct TagListRunner(String);
-        impl CommandRunner for TagListRunner {
-            fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
-                assert_eq!(program, "git");
-                assert_eq!(args, ["tag", "--list"]);
-                Ok(CommandOutput {
-                    exit_code: Some(0),
-                    stdout: self.0.clone(),
-                    stderr: String::new(),
-                })
-            }
-        }
-        let graph = FixedGraph {
-            pkgs: vec![make_pkg(pkg_name)],
+    fn changed(root: &Path, pkgs: &[Package]) -> (BTreeMap<PackageId, bool>, Vec<String>) {
+        let graph = FixedGraph { pkgs: pkgs.to_vec() };
+        let cfg = crate::config::load(root).unwrap();
+        let runner = RecordingGit {
+            calls: Mutex::new(Vec::new()),
         };
-        let cfg = crate::config::load(dir).unwrap();
-        let runner = TagListRunner(tag.to_string());
-        let git = GitAccess::discover(dir, &runner);
-        TagIndex::build(&git, &graph, &cfg).unwrap()
+        let git = GitAccess::new(root, &runner);
+        let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
+        let refs: Vec<&Package> = pkgs.iter().collect();
+        let result = changed_since_last_tag(&refs, &tags, &git).unwrap();
+        let calls = runner.calls.lock().unwrap().clone();
+        (result, calls)
     }
 
-    /// Routes `git log` (the `commits_since` short-circuit) and `git diff
-    /// --quiet` (the exact fallback check) to independently canned
-    /// responses, counting each kind of invocation separately and
-    /// recording the exact args of the most recent call of each kind so
-    /// tests can inspect exactly what was shelled.
-    struct RoutingRunner {
-        log_calls: AtomicUsize,
-        diff_calls: AtomicUsize,
-        log_stdout: String,
-        diff_exit_code: i32,
-        last_log_args: std::sync::Mutex<Vec<String>>,
-        last_diff_args: std::sync::Mutex<Vec<String>>,
-    }
-
-    impl CommandRunner for RoutingRunner {
-        fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
-            assert_eq!(program, "git");
-            match args.first() {
-                Some(&"log") => {
-                    self.log_calls.fetch_add(1, Ordering::SeqCst);
-                    *self.last_log_args.lock().unwrap() = args.iter().map(|s| s.to_string()).collect();
-                    Ok(CommandOutput {
-                        exit_code: Some(0),
-                        stdout: self.log_stdout.clone(),
-                        stderr: String::new(),
-                    })
-                }
-                Some(&"diff") => {
-                    self.diff_calls.fetch_add(1, Ordering::SeqCst);
-                    *self.last_diff_args.lock().unwrap() = args.iter().map(|s| s.to_string()).collect();
-                    Ok(CommandOutput {
-                        exit_code: Some(self.diff_exit_code),
-                        stdout: String::new(),
-                        stderr: String::new(),
-                    })
-                }
-                other => panic!("unexpected git subcommand: {other:?}"),
-            }
-        }
-    }
-
-    fn routing_runner(log_stdout: String, diff_exit_code: i32) -> RoutingRunner {
-        RoutingRunner {
-            log_calls: AtomicUsize::new(0),
-            diff_calls: AtomicUsize::new(0),
-            log_stdout,
-            diff_exit_code,
-            last_log_args: std::sync::Mutex::new(Vec::new()),
-            last_diff_args: std::sync::Mutex::new(Vec::new()),
-        }
+    fn id(name: &str) -> PackageId {
+        PackageId::parse(name).unwrap()
     }
 
     #[test]
-    fn returns_true_immediately_when_package_has_no_last_tag() {
-        let dir = non_repo_dir();
+    fn untagged_package_is_changed_without_running_git() {
+        let dir = tempfile::tempdir().unwrap();
         let pkg = make_pkg("pkg-a");
-        let tags = TagIndex::empty();
-        let runner = routing_runner(String::new(), 0);
-        let git = GitAccess::discover(dir.path(), &runner);
-
-        let changed = changed_since_last_tag(&runner, dir.path(), &pkg, &tags, &git).unwrap();
-
-        assert!(changed, "a package with no last tag must count as changed");
-        assert_eq!(
-            runner.log_calls.load(Ordering::SeqCst),
-            0,
-            "must short-circuit before shelling any git command"
-        );
-        assert_eq!(runner.diff_calls.load(Ordering::SeqCst), 0);
-    }
-
-    #[test]
-    fn short_circuits_true_when_commits_since_finds_commits_no_diff_check_needed() {
-        let dir = non_repo_dir();
-        let pkg = make_pkg("pkg-a");
-        let tags = tag_index_with_tag(dir.path(), "pkg-a", "pkg-a@1.0.0");
-        // One well-formed `git log --format=<RS>%H<FS>%B` record.
-        let sha = "a".repeat(40);
-        let log_stdout = format!("\u{1e}{sha}\u{1f}feat: something\n");
-        let runner = routing_runner(log_stdout, 0);
-        let git = GitAccess::discover(dir.path(), &runner);
-
-        let changed = changed_since_last_tag(&runner, dir.path(), &pkg, &tags, &git).unwrap();
-
-        assert!(changed);
-        assert_eq!(runner.log_calls.load(Ordering::SeqCst), 1);
-        assert_eq!(
-            runner.diff_calls.load(Ordering::SeqCst),
-            0,
-            "commits_since already found commits; diff --quiet must not run"
-        );
-        assert!(
-            runner
-                .last_log_args
-                .lock()
-                .unwrap()
-                .iter()
-                .any(|a| a == "refs/tags/pkg-a@1.0.0..HEAD"),
-            "the tag must be shelled as a fully-qualified refs/tags/ ref, not a bare name that \
-             a maliciously-named tag could get misread as a `git log` flag, got: {:?}",
-            runner.last_log_args.lock().unwrap()
-        );
-    }
-
-    #[test]
-    fn falls_back_to_diff_quiet_when_commits_since_is_empty() {
-        let dir = non_repo_dir();
-        let pkg = make_pkg("pkg-a");
-        let tags = tag_index_with_tag(dir.path(), "pkg-a", "pkg-a@1.0.0");
-        let runner = routing_runner(String::new(), 1); // non-zero exit == files differ == changed
-        let git = GitAccess::discover(dir.path(), &runner);
-
-        let changed = changed_since_last_tag(&runner, dir.path(), &pkg, &tags, &git).unwrap();
-
-        assert!(changed, "non-zero diff --quiet exit must mean changed");
-        assert_eq!(runner.log_calls.load(Ordering::SeqCst), 1);
-        assert_eq!(runner.diff_calls.load(Ordering::SeqCst), 1);
-        assert!(
-            runner
-                .last_diff_args
-                .lock()
-                .unwrap()
-                .iter()
-                .any(|a| a == "refs/tags/pkg-a@1.0.0"),
-            "the tag must be shelled as a fully-qualified refs/tags/ ref in the `git diff` \
-             positional too, got: {:?}",
-            runner.last_diff_args.lock().unwrap()
-        );
-    }
-
-    #[test]
-    fn diff_quiet_success_exit_means_unchanged() {
-        let dir = non_repo_dir();
-        let pkg = make_pkg("pkg-a");
-        let tags = tag_index_with_tag(dir.path(), "pkg-a", "pkg-a@1.0.0");
-        let runner = routing_runner(String::new(), 0); // zero exit == no differences == unchanged
-        let git = GitAccess::discover(dir.path(), &runner);
-
-        let changed = changed_since_last_tag(&runner, dir.path(), &pkg, &tags, &git).unwrap();
-
-        assert!(!changed);
-    }
-
-    /// The refactor's actual contract: a single `GitAccess`, built once,
-    /// must be reusable across multiple packages/calls without any
-    /// per-call setup cost of its own -- `changed_since_last_tag` no longer
-    /// discovers its own `GitAccess` internally (that responsibility moved
-    /// to the caller, `status()`), so calling it repeatedly against one
-    /// shared instance must cost exactly one `git log` + one `git diff`
-    /// round trip per package, not more.
-    #[test]
-    fn shared_git_access_is_reusable_across_multiple_packages() {
-        let dir = non_repo_dir();
-        let pkg_a = make_pkg("pkg-a");
-        let pkg_b = make_pkg("pkg-b");
-        let tags_a = tag_index_with_tag(dir.path(), "pkg-a", "pkg-a@1.0.0");
-        let tags_b = tag_index_with_tag(dir.path(), "pkg-b", "pkg-b@1.0.0");
-        let runner = routing_runner(String::new(), 0);
-        // Built once, exactly as `status()` now does before its per-package loop.
-        let git = GitAccess::discover(dir.path(), &runner);
-
-        changed_since_last_tag(&runner, dir.path(), &pkg_a, &tags_a, &git).unwrap();
-        changed_since_last_tag(&runner, dir.path(), &pkg_b, &tags_b, &git).unwrap();
-
-        assert_eq!(
-            runner.log_calls.load(Ordering::SeqCst),
-            2,
-            "exactly one git log per package"
-        );
-        assert_eq!(
-            runner.diff_calls.load(Ordering::SeqCst),
-            2,
-            "exactly one git diff per package"
-        );
-    }
-
-    /// Routes `git log`/`git diff` responses by whether the shelled args
-    /// carry a pathspec under `touched_path_prefix`, simulating what real
-    /// `git` does when a pathspec is (or is not) passed: a commit/diff
-    /// "touches" a package only when the pathspec scopes to that package's
-    /// own path. When no `--`-delimited pathspec is present at all (the
-    /// pre-fix bug's `&[]`), the query is repo-wide and therefore always
-    /// sees the touched package's activity, regardless of which package is
-    /// actually being asked about.
-    struct PathScopedRunner {
-        touched_path_prefix: &'static str,
-        diff_calls: AtomicUsize,
-        last_diff_args: std::sync::Mutex<Vec<String>>,
-    }
-
-    impl CommandRunner for PathScopedRunner {
-        fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
-            assert_eq!(program, "git");
-            let has_pathspec_marker = args.contains(&"--");
-            let scoped_to_touched = args.iter().any(|a| a.starts_with(self.touched_path_prefix));
-            match args.first() {
-                Some(&"log") => {
-                    let sha = "a".repeat(40);
-                    let stdout = if !has_pathspec_marker || scoped_to_touched {
-                        format!("\u{1e}{sha}\u{1f}feat: something\n")
-                    } else {
-                        String::new()
-                    };
-                    Ok(CommandOutput {
-                        exit_code: Some(0),
-                        stdout,
-                        stderr: String::new(),
-                    })
-                }
-                Some(&"diff") => {
-                    self.diff_calls.fetch_add(1, Ordering::SeqCst);
-                    *self.last_diff_args.lock().unwrap() = args.iter().map(|s| s.to_string()).collect();
-                    Ok(CommandOutput {
-                        exit_code: Some(i32::from(scoped_to_touched)),
-                        stdout: String::new(),
-                        stderr: String::new(),
-                    })
-                }
-                other => panic!("unexpected git subcommand: {other:?}"),
-            }
-        }
-    }
-
-    /// Regression test for the bug where `changed_since_last_tag` called
-    /// `commits_since` with an empty (repo-wide) pathspec instead of
-    /// `package_paths(pkg)`. Only `pkg-a` has commits since its tag that
-    /// touch its own paths; `pkg-b`'s tag is just as stale, but nothing
-    /// under `pkg-b`'s own path changed. Pre-fix, the unscoped
-    /// `commits_since` sees `pkg-a`'s commit and short-circuits `Ok(true)`
-    /// for `pkg-b` too, even though `pkg-b` itself never changed.
-    #[test]
-    fn other_package_unchanged_when_only_sibling_package_has_commits_since_tag() {
-        let dir = non_repo_dir();
-        let pkg_a = make_pkg("pkg-a");
-        let pkg_b = make_pkg("pkg-b");
-        let tags_a = tag_index_with_tag(dir.path(), "pkg-a", "pkg-a@1.0.0");
-        let tags_b = tag_index_with_tag(dir.path(), "pkg-b", "pkg-b@1.0.0");
-        let runner = PathScopedRunner {
-            touched_path_prefix: "pkg-a",
-            diff_calls: AtomicUsize::new(0),
-            last_diff_args: std::sync::Mutex::new(Vec::new()),
+        let runner = RecordingGit {
+            calls: Mutex::new(Vec::new()),
         };
-        let git = GitAccess::discover(dir.path(), &runner);
+        let git = GitAccess::new(dir.path(), &runner);
 
-        let changed_a = changed_since_last_tag(&runner, dir.path(), &pkg_a, &tags_a, &git).unwrap();
-        assert!(changed_a, "pkg-a has commits since its tag touching its own paths");
+        let result = changed_since_last_tag(&[&pkg], &TagIndex::empty(), &git).unwrap();
 
-        let changed_b = changed_since_last_tag(&runner, dir.path(), &pkg_b, &tags_b, &git).unwrap();
-        assert!(
-            !changed_b,
-            "pkg-b has no commits touching its own paths since its tag -- only pkg-a changed \
-             -- so it must report unchanged, not short-circuit true just because *some* other \
-             package in the repo changed"
-        );
+        assert!(result[&id("pkg-a")]);
+        assert!(runner.calls.lock().unwrap().is_empty());
+    }
 
-        // The path-scoped `diff --quiet` fallback must actually run for
-        // pkg-b, proving the (correctly scoped) `commits_since` came back
-        // empty rather than the check being skipped entirely.
-        assert_eq!(runner.diff_calls.load(Ordering::SeqCst), 1);
-        assert!(
-            runner.last_diff_args.lock().unwrap().iter().any(|a| a == "pkg-b"),
-            "diff --quiet must be scoped to pkg-b's own paths, got: {:?}",
-            runner.last_diff_args.lock().unwrap()
-        );
+    /// Only the package a commit touched is changed, and packages sharing a
+    /// tag commit share one `git log` and one `git diff`.
+    #[test]
+    fn a_commit_changes_only_the_package_it_touched() {
+        let dir = tagged_repo();
+        let root = dir.path();
+        commit(root, "pkg-a/src/lib.rs", "a\n", "feat: a");
+        let pkgs = [make_pkg("pkg-a"), make_pkg("pkg-b"), make_pkg("pkg-c")];
+
+        let (result, calls) = changed(root, &pkgs);
+
+        assert!(result[&id("pkg-a")]);
+        assert!(!result[&id("pkg-b")]);
+        assert!(!result[&id("pkg-c")]);
+        let count = |sub: &str| calls.iter().filter(|c| c.starts_with(sub)).count();
+        assert_eq!(count("rev-parse"), 1, "{calls:?}");
+        assert_eq!(count("log"), 1, "{calls:?}");
+        assert_eq!(count("diff"), 1, "{calls:?}");
+    }
+
+    #[test]
+    fn an_uncommitted_change_counts_as_changed() {
+        let dir = tagged_repo();
+        let root = dir.path();
+        write(root, "pkg-b/Cargo.toml", "[package]\nname = \"b\"\n");
+        let pkgs = [make_pkg("pkg-a"), make_pkg("pkg-b")];
+
+        let (result, _) = changed(root, &pkgs);
+
+        assert!(!result[&id("pkg-a")]);
+        assert!(result[&id("pkg-b")]);
+    }
+
+    /// A commit that touched the package still counts after a later commit
+    /// reverted it, like `git log -- <paths>`.
+    #[test]
+    fn a_reverted_commit_still_counts() {
+        let dir = tagged_repo();
+        let root = dir.path();
+        commit(root, "pkg-a/x.txt", "x\n", "feat: x");
+        run_git(root, &["rm", "-q", "pkg-a/x.txt"]);
+        run_git(root, &["commit", "-q", "-m", "revert: x"]);
+        let pkgs = [make_pkg("pkg-a")];
+
+        let (result, _) = changed(root, &pkgs);
+
+        assert!(result[&id("pkg-a")]);
+    }
+
+    /// Moving a file out of a package changes it: renames count for both paths.
+    #[test]
+    fn a_rename_out_of_a_package_changes_it() {
+        let dir = tagged_repo();
+        let root = dir.path();
+        run_git(root, &["mv", "pkg-a/Cargo.toml", "pkg-b/moved.toml"]);
+        run_git(root, &["commit", "-q", "-m", "refactor: move"]);
+        let pkgs = [make_pkg("pkg-a"), make_pkg("pkg-b"), make_pkg("pkg-c")];
+
+        let (result, _) = changed(root, &pkgs);
+
+        assert!(result[&id("pkg-a")]);
+        assert!(result[&id("pkg-b")]);
+        assert!(!result[&id("pkg-c")]);
+    }
+
+    /// A path that merely shares a prefix with a package is not in it.
+    #[test]
+    fn a_sibling_with_a_shared_prefix_does_not_change_the_package() {
+        let dir = tagged_repo();
+        let root = dir.path();
+        commit(root, "pkg-ab/f.txt", "f\n", "feat: sibling");
+        let pkgs = [make_pkg("pkg-a")];
+
+        let (result, _) = changed(root, &pkgs);
+
+        assert!(!result[&id("pkg-a")]);
+    }
+
+    /// Packages tagged at different commits each get their own range.
+    #[test]
+    fn packages_tagged_at_different_commits_use_their_own_range() {
+        let dir = tagged_repo();
+        let root = dir.path();
+        commit(root, "pkg-a/f.txt", "1\n", "feat: a before b's release");
+        run_git(root, &["tag", "-a", "-m", "release", "pkg-b@1.1.0"]);
+        let pkgs = [make_pkg("pkg-a"), make_pkg("pkg-b")];
+
+        let (result, calls) = changed(root, &pkgs);
+
+        assert!(result[&id("pkg-a")]);
+        assert!(!result[&id("pkg-b")]);
+        assert_eq!(calls.iter().filter(|c| c.starts_with("log")).count(), 2, "{calls:?}");
+    }
+
+    /// The root-level package's `.` pathspec matches every path.
+    #[test]
+    fn root_package_is_changed_by_any_commit() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        init_repo(root);
+        commit(root, "Cargo.toml", "[package]\n", "chore: init");
+        run_git(root, &["tag", "-a", "-m", "release", "root@1.0.0"]);
+        commit(root, "src/lib.rs", "x\n", "feat: x");
+        let pkgs = [make_pkg(".")];
+
+        let (result, _) = changed(root, &pkgs);
+
+        assert!(result[&id("root")]);
+    }
+
+    #[test]
+    fn touches_matches_components_not_string_prefixes() {
+        let specs = [PathBuf::from("crates/a")];
+        assert!(touches(&[PathBuf::from("crates/a")], &specs));
+        assert!(touches(&[PathBuf::from("crates/a/src/lib.rs")], &specs));
+        assert!(!touches(&[PathBuf::from("crates/ab/lib.rs")], &specs));
+        assert!(touches(&[PathBuf::from("anything")], &[PathBuf::from(".")]));
+        assert!(!touches(&[], &[PathBuf::from(".")]));
     }
 }

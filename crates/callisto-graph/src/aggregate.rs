@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use callisto_changelog::{ChangeSource, ChangelogEntry, ChangelogInput};
 use callisto_format::{parse_changeset, Changeset};
 use callisto_model::{BumpReason, CommitSha, Diagnostic, Package, PackageId, ReleaseTrigger, Severity, Version};
-use callisto_vcs::{GitAccess, GitDataSource};
+use callisto_vcs::GitAccess;
 
 use crate::config::resolve::resolve_package_config;
 use crate::config::GroupTable;
@@ -112,14 +112,9 @@ pub fn apply_pre_major(
 /// severity inference can be scoped to `since..HEAD` instead of walking the
 /// entire history on every `aggregate()`-driven command.
 ///
-/// Thin wrapper around [`GitDataSource::resolve_commit`] (native gix,
-/// falling back to a `CommandRunner`-shelled `git rev-parse` when gix is
-/// unavailable): any failure to resolve the tag
-/// (missing, unborn repo, etc.) degrades gracefully to `None`, which
-/// callers treat as "infer over full history" -- the same behavior this
-/// function has always had, now delegated to [`GitAccess`] instead of
-/// hand-rolling the gix-then-runner-fallback shape itself.
-fn resolve_since(git: &impl GitDataSource, tag_name: &str) -> Option<CommitSha> {
+/// Any failure to resolve the tag (missing, unborn repo, etc.) degrades to
+/// `None`, which callers treat as "infer over full history".
+fn resolve_since(git: &GitAccess<'_>, tag_name: &str) -> Option<CommitSha> {
     git.resolve_commit(tag_name).ok().flatten()
 }
 
@@ -165,13 +160,6 @@ where
     let loaded = load_changesets(&config.root, config)?;
     let mut agg = Aggregation::default();
 
-    // `git` is shared with the caller (a single `Workspace`-scoped
-    // `GitAccess`, via `Workspace::git_access`) rather than discovered
-    // fresh here, so a caller resolving both this and e.g. a head SHA in
-    // the same command invocation only pays for one discovery. A
-    // resolution failure degrades gracefully to `None`, same as
-    // `resolve_since`'s own per-tag failure handling.
-
     for pkg in graph.packages() {
         let cur_sev = agg.severities.get(&pkg.id).copied().unwrap_or(Severity::None);
         let pathspecs: Vec<PathBuf> = crate::changed::package_paths(pkg);
@@ -186,23 +174,20 @@ where
                 })
             })?;
 
-        let since = last_tag.and_then(|t| resolve_since(git, t.name.as_str()));
-
         let policy = resolve_package_config(&pkg.id, config)?
             .and_then(|pcfg| pcfg.pre_major_inference)
             .unwrap_or(PreMajorInferencePolicy::Off);
 
-        let window = crate::infer::InferenceWindowSpec {
-            pathspecs: &pathspecs,
-            since,
-            current_version: &cur_ver,
-            has_prior_release: last_tag.is_some(),
-            policy,
-        };
-
         // release_trigger: Changeset packages take severity from pending changesets only --
-        // commit inference must not run for them, even when the `inference` feature is compiled in.
+        // commit inference must not run for them, so neither does resolving its window.
         let inferred = if pkg.release_trigger == ReleaseTrigger::Auto {
+            let window = crate::infer::InferenceWindowSpec {
+                pathspecs: &pathspecs,
+                since: last_tag.and_then(|t| resolve_since(git, t.name.as_str())),
+                current_version: &cur_ver,
+                has_prior_release: last_tag.is_some(),
+                policy,
+            };
             inference.infer(pkg, git, window)
         } else {
             Ok(None)
@@ -487,7 +472,7 @@ mod tests {
 
     use crate::config::{GroupDef, GroupMember};
     use crate::infer::{InferenceOutcome, InferenceWindowSpec, SeverityInference};
-    use callisto_fixtures::git::{init_repo, run_git, PoisonedRunner};
+    use callisto_fixtures::git::{init_repo, run_git};
 
     /// Direct unit coverage for `apply_pre_major` across all three policy
     /// states, previously only exercised indirectly through full-config
@@ -534,14 +519,7 @@ mod tests {
         );
     }
 
-    /// Shells out to the real `git` binary. Retained as the `CommandRunner`
-    /// implementation passed to `aggregate()`/`TagIndex::build` in most
-    /// tests below, even though neither actually uses it for git access
-    /// anymore: both resolve against the real repo on disk via
-    /// `callisto_vcs::GitRepository` (gix). See
-    /// `test_aggregate_resolves_since_without_shelling_through_runner` for
-    /// the test proving `aggregate()`'s since-resolution no longer needs a
-    /// working runner at all.
+    /// Shells out to the real `git` binary.
     struct RealGitRunner;
 
     impl CommandRunner for RealGitRunner {
@@ -562,23 +540,8 @@ mod tests {
         }
     }
 
-    /// A directory that is guaranteed not to sit inside any Git repository,
-    /// so `callisto_vcs::GitRepository::discover` fails, forcing
-    /// `resolve_since` through its `CommandRunner` fallback. Mirrors `tags.rs`'s helper of the same
-    /// name.
-    fn non_repo_dir() -> tempfile::TempDir {
-        let dir = tempfile::tempdir().unwrap();
-        assert!(
-            callisto_vcs::GitRepository::discover(dir.path()).is_err(),
-            "test fixture must not be discoverable as a Git repo"
-        );
-        dir
-    }
-
     /// A `CommandRunner` double that answers `git rev-parse --verify --quiet
-    /// <tag>^{commit}` with a canned SHA and counts invocations. Stands in
-    /// for the real `git` binary on the `resolve_since` fallback path,
-    /// exercised when gix is unavailable.
+    /// <tag>^{commit}` with a canned SHA and counts invocations.
     struct FakeRevParseRunner {
         calls: AtomicUsize,
         tag: String,
@@ -634,30 +597,26 @@ mod tests {
         );
     }
 
-    /// Spec: `resolve_since` must not silently degrade to `None` (forcing
-    /// an unbounded full-history commit walk, see
-    /// `test_aggregate_scopes_inference_window_to_last_tag`) just because
-    /// gix is unavailable -- it must fall back (via `GitAccess`) to a
-    /// `CommandRunner`-shelled `git rev-parse --verify --quiet
-    /// <tag>^{commit}` call.
+    /// Spec: `resolve_since` resolves the tag with one `git rev-parse
+    /// --verify --quiet <tag>^{commit}` rather than degrading to `None` (an
+    /// unbounded full-history walk).
     #[test]
-    fn test_resolve_since_falls_back_to_command_runner_without_gix() {
-        let dir = non_repo_dir();
+    fn test_resolve_since_resolves_the_tag_through_git() {
+        let dir = tempfile::tempdir().unwrap();
         let sha = CommitSha::parse("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef").unwrap();
         let runner = FakeRevParseRunner {
             calls: AtomicUsize::new(0),
             tag: "pkg-a@1.0.0".to_string(),
             sha: sha.clone(),
         };
-        let git = GitAccess::discover(dir.path(), &runner);
+        let git = GitAccess::new(dir.path(), &runner);
 
         let resolved = resolve_since(&git, "pkg-a@1.0.0");
 
         assert_eq!(
             resolved,
             Some(sha),
-            "resolve_since must resolve the tag via the CommandRunner fallback when gix is \
-             unavailable, not silently return None"
+            "resolve_since must resolve the tag, not silently return None"
         );
         assert_eq!(runner.calls.load(Ordering::SeqCst), 1);
     }
@@ -750,7 +709,7 @@ mod tests {
                 tag_template: None,
             },
         };
-        let git = GitAccess::discover(root, &runner);
+        let git = GitAccess::new(root, &runner);
         let cfg = crate::config::load(root).unwrap();
         let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
 
@@ -826,7 +785,7 @@ mod tests {
         };
 
         let runner = RealGitRunner;
-        let git = GitAccess::discover(root, &runner);
+        let git = GitAccess::new(root, &runner);
         let cfg = crate::config::load(root).unwrap();
         let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
 
@@ -890,7 +849,7 @@ mod tests {
             },
         };
         let runner = RealGitRunner;
-        let git = GitAccess::discover(root, &runner);
+        let git = GitAccess::new(root, &runner);
         let cfg = crate::config::load(root).unwrap();
         let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
 
@@ -955,7 +914,7 @@ mod tests {
             },
         };
         let runner = RealGitRunner;
-        let git = GitAccess::discover(root, &runner);
+        let git = GitAccess::new(root, &runner);
         let cfg = crate::config::load(root).unwrap();
         let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
 
@@ -998,7 +957,7 @@ mod tests {
             },
         };
         let runner = RealGitRunner;
-        let git = GitAccess::discover(root, &runner);
+        let git = GitAccess::new(root, &runner);
         let cfg = crate::config::load(root).unwrap();
         let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
 
@@ -1021,11 +980,10 @@ mod tests {
         );
     }
 
-    /// Spec: since-resolution must go through `callisto_vcs::GitRepository`
-    /// (gix), not the `CommandRunner` shell-out -- a `CommandRunner` that
-    /// fails on every call must not prevent `since` from being resolved.
+    /// Spec: `aggregate()` scopes inference to the commit the last tag
+    /// points at.
     #[test]
-    fn test_aggregate_resolves_since_without_shelling_through_runner() {
+    fn test_aggregate_resolves_since_to_the_tag_commit() {
         let ws_dir = tempfile::tempdir().unwrap();
         let root = ws_dir.path();
 
@@ -1050,7 +1008,7 @@ mod tests {
         assert!(expected_sha_output.status.success());
         let expected_sha = CommitSha::parse(String::from_utf8_lossy(&expected_sha_output.stdout).trim()).unwrap();
 
-        let poisoned = PoisonedRunner;
+        let runner = RealGitRunner;
         let manifest = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         let graph = SinglePackageGraph {
             pkg: Package {
@@ -1062,7 +1020,7 @@ mod tests {
                 tag_template: None,
             },
         };
-        let git = GitAccess::discover(root, &poisoned);
+        let git = GitAccess::new(root, &runner);
         let cfg = crate::config::load(root).unwrap();
         let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
 
@@ -1080,8 +1038,7 @@ mod tests {
         assert_eq!(
             captured,
             Some(expected_sha),
-            "aggregate() must resolve `since` via callisto_vcs::GitRepository (gix), not by \
-             shelling out through the CommandRunner"
+            "aggregate() must resolve `since` to the last tag's commit"
         );
     }
 
@@ -1239,7 +1196,7 @@ mod tests {
         };
         let cfg = crate::config::load(root).unwrap();
         let runner = RealGitRunner;
-        let git = GitAccess::discover(root, &runner);
+        let git = GitAccess::new(root, &runner);
         let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
 
         let mut base_versions = BTreeMap::new();
@@ -1442,7 +1399,7 @@ mod tests {
         };
         let cfg = crate::config::load(root).unwrap();
         let runner = RealGitRunner;
-        let git = GitAccess::discover(root, &runner);
+        let git = GitAccess::new(root, &runner);
         let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
         let mut base_versions = BTreeMap::new();
         base_versions.insert(pkg_id.clone(), Version::semver(1, 0, 0));
@@ -1500,7 +1457,7 @@ mod tests {
         };
         let cfg = crate::config::load(root).unwrap();
         let runner = RealGitRunner;
-        let git = GitAccess::discover(root, &runner);
+        let git = GitAccess::new(root, &runner);
         let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
         let mut base_versions = BTreeMap::new();
         base_versions.insert(pkg_id.clone(), Version::semver(0, 1, 0));
@@ -1563,7 +1520,7 @@ mod tests {
         };
         let cfg = crate::config::load(root).unwrap();
         let runner = RealGitRunner;
-        let git = GitAccess::discover(root, &runner);
+        let git = GitAccess::new(root, &runner);
         let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
         let mut base_versions = BTreeMap::new();
         base_versions.insert(pkg_id.clone(), Version::semver(1, 0, 0));
@@ -1610,7 +1567,7 @@ mod tests {
         };
         let cfg = crate::config::load(root).unwrap();
         let runner = RealGitRunner;
-        let git = GitAccess::discover(root, &runner);
+        let git = GitAccess::new(root, &runner);
         let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
         let mut base_versions = BTreeMap::new();
         base_versions.insert(pkg_id.clone(), Version::semver(0, 1, 0));
@@ -1683,7 +1640,7 @@ mod tests {
         };
         let cfg = crate::config::load(root).unwrap();
         let runner = RealGitRunner;
-        let git = GitAccess::discover(root, &runner);
+        let git = GitAccess::new(root, &runner);
         let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
         let mut base_versions = BTreeMap::new();
         // Version 0.1.0 (pre-1.0) ensures pre-major-inference is consulted.

@@ -85,10 +85,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
     let planned_severity: BTreeMap<PackageId, Severity> =
         plan.bumps.iter().map(|b| (b.package.clone(), b.severity)).collect();
 
-    // `ws.tags()` above already triggered `ws.git_access()`'s discovery and
-    // cached the result on `Workspace`; reuse it here instead of paying for
-    // a second, entirely separate gix-repository-open-or-shell-fallback.
-    let git = ws.git_access();
+    let changed = changed_since_last_tag(&all_packages, tags, ws.git_access())?;
 
     for pkg in all_packages.iter().copied() {
         let current_version = base_versions.get(&pkg.id).cloned().ok_or_else(|| {
@@ -100,7 +97,6 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
         let last = tags.last_tag(&pkg.id);
         let last_tag = last.map(|t| t.name.clone());
         let last_released_version = last.map(|t| t.version.clone());
-        let changed = changed_since_last_tag(ws.runner, &ws.root, pkg, tags, git)?;
 
         let (pkg_changesets, _) = pending.get(&pkg.id).cloned().unwrap_or_default();
         let pending_severity = planned_severity.get(&pkg.id).copied();
@@ -111,7 +107,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
             last_tag,
             last_released_version,
             pending_severity,
-            changed_since_last_tag: changed,
+            changed_since_last_tag: changed[&pkg.id],
             release_trigger: pkg.release_trigger,
             pending_changesets: pkg_changesets,
         });

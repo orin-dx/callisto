@@ -1,5 +1,4 @@
 use callisto_model::{CommandRunner, SnapshotReport, SCHEMA_VERSION};
-use callisto_vcs::GitDataSource;
 
 use crate::error::GraphError;
 use crate::plan::VersionPlan;
@@ -13,10 +12,7 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
     // §G.11 (SPEC DECISION, pinned invariant #33): the sha component is a real, resolved
     // HEAD commit sha — never a fake placeholder. A resolution failure here must surface
     // as a real error rather than silently proceeding with a value that risks colliding
-    // with snapshots from unrelated runs. `ws.git_access()` (native gix, falling back to
-    // the `CommandRunner` shell path) rather than a direct `GitRepository::discover`,
-    // which has no such fallback -- and reuses `Workspace`'s shared, lazily-discovered instance instead of paying for
-    // a second discovery when something else in this command invocation already triggered one.
+    // with snapshots from unrelated runs.
     let sha = ws.git_access().head_sha()?;
     let sha_short = sha.short();
 
@@ -157,18 +153,6 @@ mod tests {
 
     use super::plan_snapshot;
 
-    struct NoopSuccessRunner;
-
-    impl CommandRunner for NoopSuccessRunner {
-        fn run(&self, _program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
-            Ok(CommandOutput {
-                exit_code: Some(0),
-                stdout: String::new(),
-                stderr: String::new(),
-            })
-        }
-    }
-
     struct FailingTagsRunner;
 
     impl CommandRunner for FailingTagsRunner {
@@ -223,10 +207,6 @@ mod tests {
             "[package]\nname = \"pkg-alpha\"\nversion = \"1.0.0\"\n",
         )
         .unwrap();
-        assert!(
-            callisto_vcs::GitRepository::discover(root).is_err(),
-            "fixture must not be a discoverable git repo, forcing the CommandRunner fallback"
-        );
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = FailingTagsRunner;
@@ -270,7 +250,7 @@ mod tests {
         .unwrap();
 
         let locator = IgnoreWalkLocator::new(root);
-        let runner = NoopSuccessRunner;
+        let runner = callisto_fixtures::git::GitRunner;
         let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let (plan, report) = plan_snapshot(&ws, "canary").expect("plan_snapshot must succeed");

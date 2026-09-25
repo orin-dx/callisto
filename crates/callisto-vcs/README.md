@@ -1,14 +1,14 @@
 # callisto-vcs
 
-Native Git repository discovery, status checking, and tag management for Callisto.
+Git access for Callisto, through the system `git` binary.
 
 ## Overview
 
-`callisto-vcs` handles Git operations and repository discovery:
+`callisto-vcs` runs every Git read and write as a `git` subprocess through a `CommandRunner`:
 
-- Native repository root discovery with Windows UNC path stripping via `dunce`.
-- Commit history extraction and changed file detection.
-- Tag discovery and version template parsing.
+- Commit history since a tag, scoped to package paths.
+- Tag listing, ref resolution, and tag creation.
+- Staged-change and release-trust observation.
 
 ## License
 

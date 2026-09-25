@@ -5,7 +5,7 @@
 //! set of paths. That need is expressed here, in permissive Layer 1, as
 //! [`CommitWalker`] over [`CommitRecord`] values -- so consumers such as
 //! `callisto-conventional` depend on the *shape* of a commit walk rather than
-//! on any particular VCS implementation (native `gix`, a shelled-out `git`,
+//! on any particular VCS implementation (`callisto_vcs::GitAccess` shelling `git`,
 //! or a test double).
 
 use std::path::PathBuf;

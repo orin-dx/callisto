@@ -84,7 +84,7 @@ deliberately.
     ┌─────────────────┐   ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
     │ callisto-format │   │callisto-manifests│  │    callisto-     │  │    callisto-     │
     │  MIT/Apache-2.0 │   │      AGPL        │  │  conventional    │  │    changelog     │
-    │ changesets fmt  │   │ per-ecosystem I/O│  │      AGPL        │  │      AGPL        │  │ native gitoxide  │
+    │ changesets fmt  │   │ per-ecosystem I/O│  │      AGPL        │  │      AGPL        │  │   system git     │
     └─────────────────┘   └──────────────────┘  └──────────────────┘  └──────────────────┘  └──────────────────┘
               ▲                      ▲                  ▲                       ▲                     ▲
               │                      │                  │ (optional             │                     │
@@ -4569,7 +4569,7 @@ pub enum InferenceWindow {
 }
 
 /// Runs `git log` over `window`, scoped to `pathspecs` (workspace-root-relative — resolved
-/// against whatever root `walker` itself carries internally, e.g. `GitAccess::discover`'s
+/// against whatever root `walker` itself carries internally, e.g. `GitAccess::new`'s
 /// `root`; see the "no `cwd` parameter" note below), and parses every resulting commit via
 /// [`parse_commit`]. Order is git's own reverse-chronological log order; callers that need a
 /// count do not care about order, and nothing in this crate's output is order-sensitive.
@@ -4582,9 +4582,8 @@ pub enum InferenceWindow {
 ///
 /// Sourcing the history is entirely `walker`'s business — this crate names only the Layer 1
 /// [`callisto_model::CommitWalker`] contract (`callisto-model/src/commit.rs`), so it links
-/// against no VCS engine at all: callers hand it native gix, a shelled-out `git`,
-/// `callisto-vcs`'s gix-with-shell-fallback `GitAccess` selector, or a test double, and the
-/// delimiter parsing below is identical either way. `CommandRunner`-shelling `git log`
+/// against no VCS engine at all: callers hand it `callisto-vcs`'s `GitAccess` or a test
+/// double, and the delimiter parsing below is identical either way. `CommandRunner`-shelling `git log`
 /// directly used to live here; it moved behind this trait so this crate has no
 /// *production* dependency on `callisto-vcs` at all (§C.0's dependency table lists only
 /// `callisto-model`; `callisto-vcs` appears only as a **dev**-dependency exercising the real
@@ -4599,11 +4598,11 @@ pub fn fetch_commits(
 
 `&dyn CommitWalker` rather than a generic parameter is a deliberate, compatible choice: it
 keeps the trait dyn-compatible (mirroring `CommandRunner`'s own dyn-compatible design, §M.10)
-precisely so that any `&GitAccess`/`&GitRepository`/`&ShellGit` (all three implement
-`CommitWalker`, §V.7) coerces here with no adapter. Neither form is privileged. Note there is
+precisely so that `&GitAccess` (which implements `CommitWalker`, §V.4) coerces here with no
+adapter. Neither form is privileged. Note there is
 no `cwd: &Path` parameter here — unlike the `CommandRunner`-based
 functions elsewhere in this crate (§C.6), a `CommitWalker` implementation already carries its
-own repository root internally (e.g. `GitAccess::discover`'s `root`), so this function has no
+own repository root internally (e.g. `GitAccess::new`'s `root`), so this function has no
 separate root to be told.
 
 ### C.6 Pre-mode cursor ref — `pre_cursor.rs`
@@ -4767,7 +4766,7 @@ pub enum ConventionalError {
 log`/history-walk failure from `fetch_commits`/`infer_severity` surfaces as `CommitWalk` —
 distinct variants because they're reached through genuinely distinct call paths, not two names
 for the same condition. `CommitWalkError` (`callisto-model/src/commit.rs`) itself narrows a much wider
-set of possible backend failures (gix, `ShellGit`, or any other `CommitWalker` implementation)
+set of possible backend failures (`GitAccess` or any other `CommitWalker` implementation)
 down to three: `Command` (the walk's own subprocess couldn't run), `RefNotFound` (an explicit
 `since` ref didn't resolve), and `Backend` (everything else, carrying the backend's own
 rendering) — see `callisto-vcs`'s §V.7 for how a `VcsError` narrows into this contract.
@@ -11048,330 +11047,55 @@ be guessing:
 
 ## 12. `callisto-vcs`
 
-**Purpose.** One `GitDataSource` trait, two backends, and a selector that picks between them
-per operation so every other crate that needs Git — `callisto-graph` (tags, changed-since,
-publish SHAs) and `callisto-conventional` (commit-severity inference windows) — calls one API
-regardless of whether native `gix` is available on the running target.
-
-**License:** MIT/Apache-2.0 (§16 — despite sitting below AGPL `callisto-graph` in the
-dependency graph, this crate depends on nothing but `callisto-model`, so nothing AGPL leaks
-into it; the permissive/AGPL boundary is a one-way constraint on what a permissive crate may
-depend on, not on who may depend on a permissive crate).
-**Milestone:** v0.1 (§17 — repository discovery and tag/commit reads are load-bearing for
-`status`'s `last_tag_for`/`changed_since_last_tag` from the first shipped milestone).
-
-### V.0 Dependencies and boundaries
-
-| Edge | Kind | Why |
-|---|---|---|
-| `callisto-vcs → callisto-model` | normal | `ApplyPermit`, `CommandError`, `CommandRunner`, `CommitRecord`, `CommitSha`, `CommitWalkError`, `CommitWalker`, `TagName` |
-| `gix` | normal, `cfg(not(target_arch = "wasm32"))` only | native backend (§V.4) |
-| `globset` | normal | tag-glob matching, shared identically by both backends (§V.4, §V.5) |
-| `dunce` | normal | UNC-prefix-stripped canonicalization before `gix::discover` (§V.4) |
-| `callisto-model` (`test-util` feature) | **dev** | `ApplyPermit::force_for_tests` — tests mint a write permit directly, with no dry-run flag to consult |
-| `tempfile` | **dev** | temporary repository fixtures built with the real `git` binary (§V.8) |
-
-**Deliberately absent:** `callisto-graph`, `callisto-manifests`, `callisto-format`. This crate
-has no concept of a `Package`, a manifest, or a changeset — it answers exactly two kinds of
-question, "what does history/refs say" and "write this ref," using only `CommitSha`/`TagName`
-as vocabulary. `callisto-moon` never depends on this crate at all (not even for the shell
-backend): gix's mmap-based object reads hit `ENOSYS` under `wasm32-wasip1` (confirmed by a
-2026 probe, `ARCHITECTURE.md`'s §"In-Process VCS Engine"), so `GitRepository::discover` is
-`cfg`-gated out entirely on that target and would
-contribute nothing `callisto-moon` could use — the WASM extension's own exec seam calls
-`CommandRunner` directly against moon's `exec_command` host function instead, without going
-through this crate's `ShellGit` wrapper.
-
-**What this crate is not responsible for:** deciding *which* ref format a tag name should take
-(`tag_template` resolution is `callisto-model`'s `last_tag_for`, §M.9.4, plus
-`callisto-graph`'s `git tag --list` glob execution, §G.9.1 — this crate only ever receives an
-already-resolved literal name or glob string), and deciding *when* a tag should be created
-(§9.1's "never at `version` time" rule is enforced by callers; `create_tag` will happily create
-a tag the instant it's called).
+**Purpose.** One type, `GitAccess`, through which every other crate that needs Git -- `callisto-graph` (tags, changed-since, publish SHAs, release trust) and `callisto-conventional` (commit-severity inference windows, via `CommitWalker`) -- runs the system `git` binary through a `CommandRunner`. The CLI requires a supported `git` (`ensure_git_supported`).
 
 ### V.1 Module layout
 
 ```
-callisto-vcs/
-├── Cargo.toml   # deps: callisto-model, thiserror, miette, globset, dunce; gix (non-wasm32
-│                  target only). dev-deps: callisto-model (test-util), tempfile.
+crates/callisto-vcs/
+├── Cargo.toml   # deps: callisto-model, thiserror, miette, globset, dunce
 └── src/
-    ├── lib.rs     # VcsError, GitCommit alias, GitVcsProvider, GitDataSource, GitRepository,
-    │                CommitWalker bridge (§V.7)
-    ├── access.rs  # GitAccess — per-operation native/shell selection (§V.6)
-    └── shell.rs   # ShellGit — CommandRunner-shelled backend (§V.5)
+    ├── lib.rs     # VcsError, GitCommit alias, compile_tag_glob, TagSignPolicy, CommitWalker impl
+    └── access.rs  # GitAccess and its git output parsers; release-trust evidence types
 ```
 
-### V.2 Errors — `VcsError` (`lib.rs`)
+### V.2 Errors -- `VcsError`
+
+`RepoNotFound`, `Git`, `RefNotFound`, `InvalidGlob`, and `Command` (transparent `CommandError`: `git` could not be spawned). At the `CommitWalker` boundary `Command` and `RefNotFound` survive as themselves; every other variant narrows to `CommitWalkError::Backend` with its `Display` text.
+
+### V.3 `GitAccess`
 
 ```rust
-#[derive(Clone, Debug, thiserror::Error, miette::Diagnostic, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum VcsError {
-    #[error("failed to discover Git repository at `{path}`: {message}")]
-    #[diagnostic(code(E050), help("Ensure target directory is inside a valid Git repository."))]
-    RepoNotFound { path: PathBuf, message: String },
-
-    #[error("git error: {0}")]
-    #[diagnostic(code(E051))]
-    Git(String),
-
-    #[error("reference `{ref_name}` was not found")]
-    #[diagnostic(code(E052), help("Check if reference or tag exists in local or remote Git refs."))]
-    RefNotFound { ref_name: String },
-
-    #[error("tag glob pattern `{pattern}` is not a valid glob: {message}")]
-    #[diagnostic(code(E053), help("Fix the glob syntax or use a literal tag name."))]
-    InvalidGlob { pattern: String, message: String },
-
-    /// Wraps a `CommandError` surfaced by the shell backend — e.g. `git` itself couldn't be
-    /// spawned. Kept `transparent` so callers that only care about the underlying
-    /// `CommandError` can match through it regardless of which backend served the call.
-    #[error(transparent)]
-    Command(#[from] CommandError),
-}
-```
-
-`callisto-graph` wraps this transparently (`GraphError::Vcs`, §error-taxonomy — no dedicated
-E-code of its own; the four codes above are `VcsError`'s own and survive unchanged through the
-transparent wrap). `E050`–`E053` is this crate's own contiguous block, chosen not to collide
-with `callisto-model`'s or `callisto-graph`'s ranges (§error-taxonomy).
-
-**`RefNotFound` is not always an error at the trait level.** `GitDataSource::resolve_commit`
-returns `Ok(None)` for an unresolvable ref — a caller-visible "no bound" signal, not a failure.
-`VcsError::RefNotFound` exists for the one place resolution failure *is* fatal:
-`GitDataSource::commits_since`'s `since_ref: Some(r)` where `r` fails to resolve (§V.4) — the
-distinction matters because a caller that explicitly bounded its walk must never silently fall
-back to unbounded history (§V.4's regression note).
-
-### V.3 `GitDataSource` — the unified access trait (`lib.rs`)
-
-```rust
-pub type GitCommit = callisto_model::CommitRecord;
-
-pub trait GitDataSource {
-    fn head_sha(&self) -> Result<CommitSha, VcsError>;
-    fn list_tags(&self, glob: Option<&str>) -> Result<Vec<TagName>, VcsError>;
-    fn resolve_commit(&self, refname: &str) -> Result<Option<CommitSha>, VcsError>;
-    fn commits_since(&self, since_ref: Option<&str>, pathspecs: &[PathBuf])
-        -> Result<Vec<GitCommit>, VcsError>;
-    fn create_tag(&self, name: &str, target_sha: &CommitSha, message: Option<&str>,
-        permit: &ApplyPermit) -> Result<(), VcsError>;
-    fn create_floating_major(&self, major_name: &str, target_sha: &CommitSha,
-        permit: &ApplyPermit) -> Result<(), VcsError>;
-}
-```
-
-`GitCommit` is a type alias for `callisto_model::CommitRecord`, not a redeclaration — a commit
-crosses the `CommitWalker` seam (§V.7, Layer 1) without a conversion, and there is exactly one
-definition of "what a commit looks like" in the workspace. Three implementors: `GitRepository`
-(§V.4), `ShellGit` (§V.5), and `GitAccess` (§V.6, the one callers actually construct).
-`create_tag`/`create_floating_major` take an `ApplyPermit` (§M.10) because they write a ref; a
-dry run mints no permit and so cannot reach either call.
-
-`list_tags`'s `glob` parameter is matched with `globset::Glob` — **identically** by both
-backends (§V.4 filters `gix`'s own reference iterator locally; §V.5 always fetches the
-*unfiltered* `git tag --list` and filters locally too, deliberately never delegating to `git
-tag --list <pattern>`'s own, different glob dialect) — so tag selection is byte-identical
-regardless of which backend served the request. A pattern that fails to compile is
-`Err(VcsError::InvalidGlob)`, never a silent "match everything," since a malformed
-`tag_template`-derived glob silently matching every tag in the repo would let `last_tag_for`
-(§M.9.4) pick an unrelated package's tag.
-
-### V.4 `GitRepository` — native `gix` backend (`lib.rs`)
-
-```rust
-pub struct GitRepository { /* wraps gix::Repository, cfg(not(wasm32)) only */ }
-
-impl GitRepository {
-    pub fn discover(path: impl AsRef<Path>) -> Result<Self, VcsError>;
-    pub fn head_sha(&self) -> Result<CommitSha, VcsError>;
-    pub fn list_tags(&self, glob_pattern: Option<&str>) -> Result<Vec<TagName>, VcsError>;
-    pub fn resolve_commit(&self, refname: &str) -> Result<Option<CommitSha>, VcsError>;
-    pub fn commits_since_with_pathspec(&self, since: Option<&CommitSha>, pathspecs: &[PathBuf])
-        -> Result<Vec<GitCommit>, VcsError>;
-    pub fn create_tag(&self, name: &str, target_sha: &CommitSha, message: Option<&str>,
-        permit: &ApplyPermit) -> Result<(), VcsError>;
-    pub fn create_floating_major(&self, major_name: &str, target_sha: &CommitSha,
-        permit: &ApplyPermit) -> Result<(), VcsError>;
-}
-```
-
-`discover` runs `path` through `dunce::canonicalize` first (falling back to the raw path if
-canonicalization itself fails) before handing it to `gix::discover` — the same UNC-stripping
-concern as every other canonicalization site in the workspace. Every method is `cfg`-split
-in its body: the non-`wasm32` half does the real `gix` call; the `wasm32` half is either an
-always-`Err` (`discover`, `create_tag`, `create_floating_major` — no meaningful degraded
-behavior for a write or for the root discovery call itself) or a harmless always-empty/`Ok(None)`
-(`list_tags`, `resolve_commit` — a caller on that target never actually reaches these, since
-`discover` already failed upstream, but the bodies stay total rather than panicking).
-
-**`resolve_commit` treats an unresolvable ref as `Ok(None)`, not `Err`** — chained `let...else`
-steps (rev-parse → object → peel-to-commit) each degrade to `None` on failure. This is a
-deliberate two-tier contract with `commits_since`: an *implicit* absence of a bound
-(`since_ref: None`) and an *explicit* bound that fails to resolve are different situations, and
-only `GitDataSource::commits_since` (not `resolve_commit` itself) is where the second case
-becomes `Err(VcsError::RefNotFound)`.
-
-**Regression fixed by this shape: no silent unbounded fallback.** An earlier version of this
-method resolved `since_ref` *internally* and, on a resolution failure, fell through to walking
-the entire history unbounded — a correctness bug (already-released commits could re-surface
-into changelog/severity inference) masquerading as graceful degradation. The fix routes
-`since_ref` resolution through `resolve_commit` and an explicit `Ok(None) =>
-Err(RefNotFound)` step in `commits_since`, so an unresolvable *explicit* bound is always
-surfaced as an error; `since_ref: None` (no bound requested at all) is unaffected.
-
-`commits_since_with_pathspec` walks `gix::Repository::rev_walk` from `HEAD`, excluding every
-SHA reachable from `since` (computed as its own full walk, collected into a `HashSet`, so
-membership is checked with `continue` rather than terminating the outer walk with `break` — a
-topological walk can visit `since` before it has emitted every commit on a branch that
-diverged *before* `since`, and a `break` would silently drop those still-queued commits; this
-was a real bug, pinned by `test_commits_since_with_pathspec_includes_pre_tag_branch_commits`).
-Merge commits (more than one parent) are always skipped, matching `git log --no-merges`.
-Path-scoping diffs each commit's tree against its first parent (or the empty tree, for a root
-commit) with `track_rewrites(None)` — a rename is reported as a separate `Deletion`+`Addition`
-rather than one `Rewrite`, and either half matching a pathspec counts as "touched," which is
-also why a file moved *out of* a matching directory still shows that commit as touching it.
-Commit message CRLF sequences are normalized to `\n` in both `summary` and `body`.
-
-### V.5 `ShellGit` — `CommandRunner`-shelled backend (`shell.rs`)
-
-```rust
-pub struct ShellGit<'r> { /* runner: &'r dyn CommandRunner, root: PathBuf */ }
-
-impl<'r> ShellGit<'r> {
-    pub fn new(runner: &'r dyn CommandRunner, root: impl Into<PathBuf>) -> Self;
-}
-```
-
-Implements `GitDataSource` by shelling exactly the `git` subcommands each operation needs,
-consolidating five previously independent hand-rolled fallbacks (`callisto-graph`'s
-`changed.rs`, `tags.rs`, `commands/tag.rs`, `aggregate.rs`, and `callisto-conventional`'s
-`window.rs`). Works on every target, including `wasm32`, since it never touches `gix`.
-
-| Operation | Shell command |
-|---|---|
-| `head_sha` | `git rev-parse HEAD` |
-| `list_tags` | `git tag --list`, filtered locally with `globset` (§V.3) |
-| `resolve_commit` | `git rev-parse --verify --quiet <ref>^{commit}` — non-zero or empty stdout is `Ok(None)`, never `Err` |
-| `commits_since` | `git log --no-merges --format=<RS>%H<US>%B <since>..HEAD\|HEAD [-- <pathspecs>]` |
-| `create_tag` | `git tag [-a -m <message>] -- <name> <sha>` |
-| `create_floating_major` | `git tag -f -- <major_name> <sha>` |
-
-`commits_since` deliberately does **not** pre-resolve `since_ref` with a separate `rev-parse`
-round-trip: an unresolvable `since_ref` already makes `git log <since_ref>..HEAD` itself exit
-non-zero, which the method surfaces as `Err(VcsError::Git(..))` exactly like any other `git
-log` failure — one shell call either way, and the same no-silent-unbounded-walk guarantee
-§V.4 documents for the native backend, achieved by a different mechanism (a failing command
-instead of a resolved-then-checked ref).
-
-`--format=` uses two control characters as delimiters, never present in ordinary commit text:
-`\u{1e}` (record separator) immediately before each commit's SHA, and `\u{1f}` (field
-separator) between the SHA and the raw `%B` message body. This makes a commit message
-containing literal newlines — or even one that happened to contain the record separator
-itself, if a commit author somehow typed it — unambiguous to split back into records, which a
-newline- or blank-line-based delimiter could not guarantee. Parsing then splits each raw
-message on its *first* blank line into `summary`/`body`, mirroring how `gix`'s own
-commit-message parsing splits title from body on the native path, so both backends hand
-callers byte-identical shapes. `--` before pathspecs and before `name`/`target_sha` in every
-tag-writing command marks the end of option parsing, so a value that happens to start with `-`
-(defended against upstream by `is_valid_git_ref_name`, but defended here too) is never
-misread as a flag.
-
-### V.6 `GitAccess` — backend selection (`access.rs`)
-
-```rust
-pub struct GitAccess<'r> { /* native: Option<GitRepository>, shell: ShellGit<'r> */ }
+pub struct GitAccess<'r> { /* runner: &'r dyn CommandRunner, root: PathBuf */ }
 
 impl<'r> GitAccess<'r> {
-    pub fn discover(root: impl AsRef<Path>, runner: &'r dyn CommandRunner) -> Self;
+    pub fn new(root: impl Into<PathBuf>, runner: &'r dyn CommandRunner) -> Self;
+    pub fn head_sha(&self) -> Result<CommitSha, VcsError>;
+    pub fn list_tags(&self, glob: Option<&str>) -> Result<Vec<TagName>, VcsError>;
+    pub fn resolve_commit(&self, refname: &str) -> Result<Option<CommitSha>, VcsError>;
+    pub fn commits_since(&self, since_ref: Option<&str>, pathspecs: &[PathBuf]) -> Result<Vec<GitCommit>, VcsError>;
+    pub fn create_tag(&self, name: &str, target: &CommitSha, message: Option<&str>, sign: TagSignPolicy, permit: &ApplyPermit) -> Result<(), VcsError>;
+    pub fn create_floating_major(&self, name: &str, target: &CommitSha, permit: &ApplyPermit) -> Result<(), VcsError>;
+    pub fn staged_changes_since(&self, base: &CommitSha) -> Result<Vec<StagedChangeV1>, VcsError>;
+    pub fn observe_git_commit_trust(&self) -> Result<GitCommitTrustEvidence, VcsError>;
 }
 ```
 
-The type every production caller outside this crate actually constructs — exclusively within
-`callisto-graph` (§G.9, and the command handlers §G.11 documents). `callisto-conventional`
-touches `GitAccess` only inside its own test code — its production `infer_severity` and
-`fetch_commits` take `&dyn CommitWalker` directly and link against no VCS crate at all, per
-their own doc comments in source (`crates/callisto-conventional/src/{infer,window}.rs`; §C.5
-and §C.7 of this document still show an older `CommandRunner`-based signature for both and
-are tracked as stale — see the backlog item this finding produced). `discover`
-never fails: it attempts native `gix` discovery and keeps the `Option<GitRepository>` result
-either way, while unconditionally preparing a `ShellGit` against the same root as the
-fallback (or sole) backend. A discovery failure — not a repo, or `wasm32` where `gix` is
-excluded from the dependency set entirely — just means every operation on this `GitAccess`
-runs through the shell.
+- `list_tags`: one `git tag --list`, filtered locally with `compile_tag_glob` (the same matcher `callisto-graph`'s `tags::matching_tags` uses). A malformed glob is `InvalidGlob`, never "match everything". "not a git repository" is an empty list; any other failure is an error.
+- `resolve_commit`: `git rev-parse --verify --quiet <ref>^{commit}`. Unresolvable is `Ok(None)`.
+- `commits_since`: `git log --no-merges --full-history --format=<RS>%H<US>%B <since>..HEAD [-- <pathspecs>]`. Pathspecs are relative to `root`; `.` is the root-level package. `--full-history` keeps a commit that touched a pathspec even when a later merge discarded its change (default history simplification would drop it). A given `since_ref` that does not resolve is `RefNotFound`, never an unbounded walk. Messages are CRLF-normalized and split at the first blank line into `summary`/`body`.
+- `create_tag`: `git tag [-a -m <msg>] [--no-sign] -- <name> <sha>`. For an annotated tag, when `git var GIT_COMMITTER_IDENT` fails (no identity configured), the target commit's committer is passed as `-c user.name=… -c user.email=…` so the tag object always carries a tagger.
+- `create_floating_major`: `git tag -f -- <name> <sha>`.
 
-**Fallback policy differs by operation category, deliberately:**
+Writes take an `ApplyPermit`; a dry run has none to give.
 
-- **Reads** (`head_sha`, `list_tags`, `resolve_commit`, `commits_since`): fall back to the
-  shell backend whenever native `gix` errors for *any* reason — failed discovery as well as a
-  discovered repo's own operation failing. Retrying a read through the shell can only help: at
-  worst it fails too and the error propagates from there instead.
-- **Writes** (`create_tag`, `create_floating_major`): fall back to the shell *only* when
-  native `gix` was never available to begin with (discovery failed). If a repo *was*
-  discovered, its result — success or failure — is authoritative and returned as-is,
-  never retried through the shell. Retrying a failed mutation through a second, different
-  code path risks masking a genuine failure (e.g. "tag already exists") or double-applying a
-  mutation the first attempt partially completed — a risk read-only retries don't carry.
+### V.4 `CommitWalker` integration
 
-`GitAccess` implements `GitDataSource` by trying `self.native`'s corresponding method first
-(reads: `if let Ok(..) = ...`, falling through on any `Err`; writes: an unconditional early
-`return` when `self.native` is `Some`, regardless of whether the call itself succeeds) and
-falling back to `self.shell` only in the cases the policy above allows.
+`impl CommitWalker for GitAccess<'_>` delegates `commits_since` and narrows `VcsError` per V.2, so `callisto-conventional` names no VCS crate.
 
-### V.7 `CommitWalker` integration — bridging to Layer 1 (`lib.rs`)
+### V.5 Fixture obligations
 
-```rust
-impl From<VcsError> for CommitWalkError { /* narrows to the Layer 1 vocabulary, below */ }
-```
-
-`callisto_model::CommitWalker` (`callisto-model/src/commit.rs`) is a Layer 1 trait — it must not know `VcsError` exists,
-since `callisto-model` depends on no `callisto-*` crate (§M.5). This crate bridges the gap:
-`CommitWalkError::Command` and `CommitWalkError::RefNotFound` survive the narrowing as
-themselves (the two distinctions Layer 1 callers branch on); every other `VcsError` variant —
-`RepoNotFound`, `Git`, `InvalidGlob` — is gix- or repository-specific with no Layer 1
-equivalent, so it collapses into `CommitWalkError::Backend { message }` carrying the original
-`Display` rendering, losing nothing a user would see. `GitAccess`, `GitRepository`, and
-`ShellGit` each get a `CommitWalker` impl whose body is identical (delegate `commits_since`,
-map the error through the `From` above) — written via a macro rather than a blanket `impl<T:
-GitDataSource> CommitWalker for T`, since `CommitWalker` is foreign to this crate and a
-blanket impl over an uncovered type parameter is forbidden by Rust's orphan rules.
-
-### V.8 Fixture obligations
-
-Per §12.6's "broader than JSON shape alone" (this crate has no JSON output of its own — its
-data feeds `callisto-graph`'s tag/commit logic, not stdout directly):
-
-1. **Backend-parity corpus.** Every `GitDataSource` operation exercised against a real
-   temporary repository (built with the real `git` binary, not mocked) through both
-   `GitRepository` directly and `ShellGit` against a `CommandRunner` shelling that same real
-   `git`, asserting identical results — this is what makes §V.3's "byte-identical regardless
-   of backend" claim a tested property, not an aspiration.
-2. **`GitAccess` selection corpus.** A poisoned `CommandRunner` (panics/errors on any
-   invocation) proves a real-repo read never touches the shell; a non-repo root with a
-   call-counting `CommandRunner` proves exactly one shell call serves the read fallback; a
-   real repo with a failing write (`create_tag` on an already-existing name) proves the
-   failure propagates without a rescue attempt through the poisoned shell.
-3. **`commits_since` regression corpus.** The pre-tag-branch-commit scenario (§V.4) and the
-   ref-not-found-must-error scenario (§V.4, §V.5), each proven independently through both
-   backends.
-4. **Glob-parity corpus.** The same malformed glob pattern against both backends, asserting
-   `Err(VcsError::InvalidGlob)` from each — not "some" error, the specific variant, since a
-   caller pattern-matches on it.
-5. **`wasm32-wasip1` build check.** This crate must compile for that target (native `gix`
-   `cfg`'d out, `GitRepository::discover` always `Err`) — no runtime test suite, since
-   `callisto-moon` never constructs `GitRepository`/`GitAccess` directly (§V.0); a build
-   failure here would still indicate a real problem (an accidental non-`cfg`-gated `gix` call).
-
-### V.9 Index of `[SPEC DECISION]` flags
-
-None. Every shape and policy in this section — the four `VcsError` codes, the read/write
-fallback-policy split, the `CommitWalker` narrowing rule — is either pinned directly by
-`00-design.md` §9.4/§13 or is existing, shipped behavior with no open reading of the design
-doc left to resolve; this crate's section was written directly from source (§1's "traced back
-to source" standard) rather than from a design-doc gap requiring a documented choice.
-
----
+`crates/callisto-vcs/tests/git_access_test.rs` runs against real repositories with global and system Git config isolated: pathspec filtering and the `.` root pathspec, exclusive `since`, `RefNotFound`, merges excluded with both sides kept, a branch forked before the bound, a merge-discarded change kept (`--full-history`), renames counting for the old path, binary changes, CRLF messages, detached `HEAD`, tag resolution, globset filtering, and tagger identity with and without configured identity.
 
 ## 13. Callisto v1.0 Production Hardening & Moon Alignment
 
@@ -11397,25 +11121,9 @@ This section documents the formal specification additions for Callisto's v1.0 in
 ### 13.5 WASM Target & Plugin PDK Protocol
 1. **Target Capability**: `callisto-moon` MUST be compilable to `wasm32-wasip1` using `extism-pdk` to allow Moon v1/v2 to execute Callisto inside its native WebAssembly sandbox.
 
-### 13.6 Native VCS Engine Architecture (`callisto-vcs` & `gix`)
+### 13.6 VCS (`callisto-vcs`)
 
-**Purpose.** In-process Git operations powered by `gix` (gitoxide), eliminating subprocess
-fork/exec overhead for repository discovery, ref matching, commit history revwalks, tag
-filtering, and HEAD SHA retrieval where available, with a `CommandRunner`-shelled fallback
-everywhere else. Full type signatures, the read/write fallback-policy split, and fixture
-obligations live in **§V (`callisto-vcs`, §12)** — this subsection states the two MUST-level
-requirements only; it is not a second, independent sketch of the crate's shapes.
-
-1. **In-Process Git Engine**: Repository discovery (`GitRepository::discover`), ref resolution
-   (`resolve_commit`), tag enumeration (`list_tags`), commit history revwalks
-   (`commits_since_with_pathspec`), and HEAD SHA retrieval (`head_sha`) MUST be encapsulated
-   within `callisto-vcs` using pure-Rust `gix` (§V.4) — never called directly by
-   `callisto-graph` or `callisto-conventional`.
-2. **Subprocess Fallback**: Every caller MUST reach Git through `GitAccess::discover` (§V.6),
-   not through `GitRepository` or `ShellGit` directly — `GitAccess` is what applies the
-   read/write fallback-policy split (§V.6) that makes "seamlessly falls back to `CommandRunner`
-   subprocess calls when `gix` is unavailable" true without each call site re-implementing the
-   policy itself.
+Every caller MUST reach Git through `GitAccess` (§12), never by shelling `git` for an operation `GitAccess` provides.
 
 ### 13.7 GitHub Actions Workflow & Moon Alignment (`callisto-action`)
 1. **Action Architecture**: Callisto release orchestration in CI MUST be composed as a CLI consumer using `callisto-cli` binary calls, `gh` CLI for Pull Requests, and `moon run :publish` for multi-ecosystem package publishing.
