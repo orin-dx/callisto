@@ -1,0 +1,5 @@
+We said we use the tools to simplify auth, why are we complicarting things WTF. Agreed on receipt.
+
+Why is the generated build matrix not good? We worked hard on it, how can we not determine it?
+Yes, drop target-list valiation
+If the registry is not different we don't need to test it right?
