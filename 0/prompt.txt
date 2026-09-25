@@ -1,0 +1,1 @@
+Can we allow for things like everything in a specific folder is a group? etc? Some sort of of simple regex pattern match?
