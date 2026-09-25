@@ -1,0 +1,244 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent
+
+The goals, in order:
+- **Initial:** fix Callisto's self-release after another agent "made a mess". The user chose "Audit #104 + release path", then asked to publish 0.8.0.
+- **Architecture:** design for DX/UX, prefer zero-config with sane defaults, avoid overengineering, learn from prior art (changesets, knope, release-please, nx, cargo-dist, goreleaser), and support Rust, napi-rs and Python comprehensively.
+- **Pre-1.0 work:** get to v1 soon, landing breaking changes now. Fix wiring gaps using agent teams with appropriate model and effort, parallelizing only where there is no conflict.
+- **oxc:** support publishing oxc-react-docgen (napi) from `~/Projects/oxc-react-codegen`.
+- **Builds:** speed up builds and tests. Ensure prod builds carry no debug symbols.
+- **Cleanup:** remove stale worktrees. Run `cargo info` with zero retries.
+- **Communication (latest):**
+  - Be extremely succinct in all communication with the user and with agents.
+  - Never hard-wrap PR descriptions or Markdown files.
+  - Keep changesets, PR descriptions and docs succinct and free of AI slop and wordy prose.
+- **Versioning:** pin versions (e.g. michi's `callisto-action@main`) only once safe versions exist.
+
+2. Key Technical Concepts
+
+**Release pipeline**
+- Rust workspace driven by just/moon/proto. The self-release workflow `.github/workflows/callisto-release.yml` runs: plan → build-artifact matrix → build → execute.
+- GitHub Actions semantics:
+  - A skipped ancestor skips any job without a status function.
+  - `always()` runs a job even when the run is cancelled; `!cancelled()` does not.
+  - Artifact-name uniqueness is scoped per run attempt.
+- The GitHub App tag-push guard: `GITHUB_TOKEN` cannot push a tag, or create a ref via the API, whose `.github/workflows/` differs from every branch tip. No `workflows` permission scope exists for it. Normal-path releases tag the tip, so they work.
+- Release model: `ReleaseIntentV1`, `ArtifactSlotId`, `validate_operation_roster`, `ArtifactSlotOutsideDecision`, `OperationState` (a payload-free enum; per-op evidence is not persisted), receipts, and recovery via `workflow_dispatch` with `release_source_sha`.
+
+**npm platform packages ("Case E")**
+- A package with `os`/`cpu` that is listed in an owner's `optionalDependencies` becomes a Platform manifest of that owner.
+- New `PlatformPublish { registry, platform }` operation role; publishes run `npm publish <dir>` by directory.
+- `ReleaseIntentV1` schema bumped 3 → 4.
+
+**Registry observation**
+- PyPI is observed through the PEP 691 JSON simple index via `curl -sS -i`. A yanked version counts as Absent.
+- Tool-level retries are disabled so callisto owns retrying:
+  - `cargo --config net.retry=0 info` (the flag must come before `info`).
+  - `npm view --fetch-retries=0`.
+
+**Tooling and environment**
+- Worktree isolation for agents. `rtk` rewrites plain `git`, which the worktree guard refuses. An allow rule for `/opt/homebrew/bin/git` was added.
+- `proto` was upgraded to 0.62.3 because moon 2.5.5 required a newer version.
+- `strip = true` added to the release profile.
+
+3. Files and Code Sections
+
+**Workflow and policy**
+- `.github/workflows/callisto-release.yml`:
+  - `has_artifacts` step split out so `set -e` fires, plus a `case true|false` guard (#104).
+  - `execute` gates on `!cancelled()` (#106).
+  - Receipt artifact named per attempt.
+- `.github/tests/verify-release-workflow-policy.sh`:
+  - `slots_probe_errors` rule.
+  - Status-function rule widened; `eval_if` understands `cancelled()`, `success()` and `failure()`.
+  - Deny-by-default `ALLOWED_WRITES`.
+  - `table_agreement` anchored on `callisto.toml` instead of a Rust const.
+- `.github/actions/callisto-action`: dead `nativeMatrix` output removed (#107).
+
+**Config and release derivation**
+- `crates/callisto-graph/src/config/{raw.rs,resolve.rs}`:
+  - `[[release.artifact]]` (package, target, asset-name) replaces `artifact-targets`.
+  - `PRODUCT_ARTIFACT_TARGETS` removed.
+  - `parse_qualified_package` helper added (#109).
+- `crates/callisto-graph/src/commands/release/derive.rs`: slot owner is the building package; E179 `ReleaseArtifactOwnerNotReleased`.
+- `crates/callisto-graph/src/commands/release_decision.rs`: `fixed_group_of`, so `--package` narrowing keeps fixed-group siblings.
+- `crates/callisto-vcs/src/lib.rs`: `create_tag` uses a real tagger from the repo committer, falling back to the target commit's committer (#105).
+- `crates/callisto-graph/src/commands/release/provider/registry.rs` (#115, then fixes):
+
+```rust
+fn cargo_info_args<'a>(spec: &'a str, registry: &'a str) -> [&'a str; 6] {
+    ["--config", "net.retry=0", "info", spec, "--registry", registry]
+}
+let mut args = vec!["view", spec.as_str(), "--json", "--fetch-retries=0"];
+```
+
+**Tests**
+- `crates/callisto-cli/tests/common/release_harness.rs` (#115):
+  - The fake cargo skips leading `--config`.
+  - `TOOL_SHAPES` cargo info gains `--config`; npm view gains `--fetch-retries`.
+  - `argv_violations` strips cargo's `--config`.
+- `crates/callisto-cli/tests/release_hardening_tests.rs`: `red_d01` asserts the `--config net.retry=0 info ` prefix.
+- `crates/callisto-cli/tests/release_artifact_owner_tests.rs`: e2e tests for plugin artifact ownership and E179.
+
+**Build and config**
+- `Cargo.toml`: dead `[workspace.package] version` removed; `strip = true` added (#112).
+- `callisto.toml`: migrated to `[[release.artifact]]` blocks (the callisto-moon wasm is owned by `cargo/callisto-moon`).
+- `.claude/settings.local.json`: allow rule `Bash(/opt/homebrew/bin/git *)`.
+
+**Docs**
+- `.claude/plans/ROAD-TO-V1.md`: the durable plan (#108).
+- `.claude/semantic-model/release-lifecycle.md`: artifact ownership section; E179 and E180 codes.
+- `docs/06-publishing.md` and `docs/07-self-release-lifecycle.md`: PyPI text updated. `docs/07` gets the recovery runbook (#117).
+
+**Memory files**
+- `feedback_never_hard_wrap_prose.md`
+- `feedback_succinct_written_artifacts.md`
+- Both indexed in `MEMORY.md`.
+
+**Scratchpad**
+- `unwrap_md.py`: a Markdown unwrapper that preserves fences, lists, tables, headings and trailers.
+
+4. Errors and fixes
+
+**Worktree and git problems**
+- Implementation agents running in the shared checkout moved HEAD and stashed my work. I recovered it from patches and switched to worktree isolation.
+- The `rtk` git rewrite blocked worktree agents. The user chose "Allow direct git", so I added the allow rule.
+
+**Wrong conclusions I corrected**
+- I first assumed the tagger bug caused the tag-push rejection. A probe proved the push guard was the cause.
+- The API route and branch creation were also refused, which I probed as well.
+- Several sub-agent claims were refuted with evidence: the 409 artifact collision, the artifact-less publish, and treating PyPI refusal as permanent.
+- My first reproducible-tar fix used GNU flags that fail on the macOS bsdtar leg. I didn't ship it.
+
+**Shell and test issues**
+- zsh doesn't word-split unquoted variables; fixed with arrays and python.
+- A trailing `cargo info --config` is ignored by cargo; the flag now comes first.
+- Test fakes and allow-lists rejected the new argv; updated them.
+
+**Rebases and PR hygiene**
+- PR #111 conflicted after #109 was squash-merged. I rebased it with `--onto` and force-pushed with lease.
+- The user objected to hard-wrapped PR bodies and Markdown. I unwrapped 9 PR bodies and the touched files (#117, #118), each proven whitespace-only.
+- The user objected to wordy changesets, PR bodies and docs. I rewrote the changesets and open PR bodies.
+
+5. Problem Solving
+
+**0.8.0 release**
+- 0.8.0 is published (9 crates, tags, GitHub release, receipt). The tags were pushed manually after the platform guard refused the workflow's push.
+
+**Merged PRs**
+- #104: checksum fix plus `has_artifacts` P0.
+- #105: tagger.
+- #106: cancel guard and write scopes.
+- #107: nativeMatrix removal.
+- #108: v1 plan.
+- #109: artifact ownership and E179.
+- #110: PyPI observation.
+- #111: npm platform packages.
+- #112: strip.
+
+**Other findings**
+- A version PR, #113 (0.9.0), is open.
+- Build speed: tests spend their time waiting. Causes: the cargo/npm retries (fixed in #115), real backoff sleeps, the moon wasm rebuilt per process, and debug cranelift. The test-speed agent is working on the latter three.
+- Worktree cleanup: 10 stale worktrees and 6 throwaway branches removed. The proptest seed was preserved (#114).
+
+6. All user messages
+
+- "I need some help in fixing callisto. Another AI agent tried and just made a mess of it..." (with the pasted handoff).
+- Chose "Audit #104 + release path".
+- "Why should we not just ship it?" / "I mean the things you left for a follow up? Why not work on it now and ship?"
+- "Merged, how did it go?" / "Shouldn't this have published 0.8???" / "Do it" / "Run it please"
+- "Why are we trying to touch workflows?????" / "Aren't your direcctions to be succinct in output? Is this succinct? HOw do we fix this?"
+- "We're not using a PAT for the GH workflow. We have the GH TOKEN built in to actions, right? Are you dumb or confused?"
+- "Shouldn't we just add the permissions? Why are we making this more complicated than it has to be???"
+- "How does changesets and knope push releases and tags without needing a PAT??? You are not thinking this through..."
+- "Or is this a problem with permissions in the repo?"
+- "I'm using rulesets. Can it be bypssed with deploy keys, something else?"
+- "This all seems super complicated while changesets and knope don't have a requirement for uploading a a keypair"
+- "Does it work for changesets because they have an app? Do they ahve one?"
+- "How would that work for support outside of GH?" / "What would this look like in Gitlab or another forge?" / "Are there crates we can leverage here instead of building from scratch?" / "Think architecturally here and how this would work for other users with minimal config"
+- "Are we making our setup so complex for a simple version management? Are we orverengineering the crap out of this tool?"
+- "Yeah, cutting those things seems like a good idea. Let's ot create a system for a case that should be rare but our system should be able to automatically create the tags, right?" / "yes" / "Just do it dude"
+- "Most merged..."-era questions: "Hmmmm....another agent said this and it's troublesome: ... If that is true we wouldn't be able to use it with any other package, right? What would be the point?" / "WTF are you thinking when you made that?? That is embarassing and it looks terrible for me right?" / "That PR was written by you (claude code) dummy"
+- "Can we fix this now? The targets should be easy. Is it possible to derrive them from rust and/or npm?" / "The asset name should also be derived no?" / "The wasm is a special case I think, most tools won't have wasm." / "You're rushing to do something. Did you consider how we setup targets in rust, in NPM? Pypi? for all the other languages we want to support?"
+- "How do we want to consider these vs regular 'packages'..." / "We want to have sane defaults that require minimal configuration and follow best practices but allow customization if need be"
+- "Think about our semantic models and our architecture... What does release please and nx release do?... Can we do better with zero config? Any other place we should adopt more zero config practices in our toml config?"
+- "Is that clear enough that we're managing all the crates? How do we find the middle groudn between too much magic and zero config?" / "What is some crates in the monorepo should be separate?..." / "Can we allow for things like everything in a specific folder is a group?..."
+- "Yes, not publish should not mean, no version I think, right?"
+- "Have you reasoned through all of this architecture... from a DX and UX perspective?..." / "Anything else we should think through? Questions?"
+- "Callisto wasm is for moon also, not just our action right? We want to get to v1 soon, if we have changes we're thinking we should intro now"
+- "Let's fix what needs fixing still too. And do consider DX and UX deeply. We want to eventually tackle initial setup, maybe a interactive CLI setup, etc"
+- "Why do we have product targets hardcoded? Can't we just use the same system to auto-detect for callisto itself???"
+- "We should make sure we have the latest version of everything please" / "Isn't there a way to validate without hardcoding it?" / "That seems like a smell and extremely bad practice. You're being lazy and taking shortcuts unecessarily" / "Again, don't be constrained and so focused just on rust for the natives, right?"
+- "Let's do the rust and node/npm please, probably go and python since we support those too right?" / "We should support rust, napi-rs and python please. Comprehensively, thinking of the architecture and semantic model please. Use subagents with the most appropriate model and effort to not waste token"
+- "Is there a better way to architect and handle this? How do other tools do this? Are we doing something novel? Are we overengineering it?"
+- "Let's avoid the overengineering and trying to cram what doesn't match together. Lets learn from others but still ship something better. Lets address the gaps in wiring and architecture comprehensively with agent teams and workflows using the most appropriate model and effort for quality but avoiding token overuse. Communicate across in extremely succinct language. Avoid AI slop and wordy prose, it's unecessary. But succinct and to the point in ALL COMMUNICATION, to me and to agents. Give the required information and nothing wasteful."
+- "No external consumers, start with what makes most sense. Use agent teams... Parallelize where no conflict will exist. Evaluate the architecture and semantic models before starting. Adjust as needed."
+- "Continue our work with the agent teams-etc"
+- Chose "Allow direct git (Recommended)".
+- "Start now please, we will be publishing oxc-react-docgen so we need napi right?" / "All done?"
+- Chose "New op role (Recommended)".
+- "We dropped the native matrix ouput, but isn't that used by the actions to do the build jobs? Or was that something else?" / "We will pin versions once we have safe versions"
+- "Anything we can do to speedup our builds? Takes so long" / "Can we also make sure that the build is prod, not with debug symbolx?"
+- "This PR has a conflict, please rebase: https://github.com/orin-dx/callisto/pull/111"
+- "Most merged, just waiting for pypi. What's next?" / "While things are buiding in 110 let's tackle the next set of PRs"
+- "We should be able to cleanup worktrees we're confident are stale and unecessary. We can probably run info with zero retry too"
+- "You" (truncated message).
+- "You're wrapping the description of the PRs and our MD files, NEVER EVER wrap those"
+- "Our changesets should also be succint and devoid of AI slop and wordy prose. Same with PR descriptions and docs"
+
+7. Pending Tasks
+
+**Tightening docs** (in progress):
+- `docs/07` PyPI paragraph and the recovery runbook (on the #117 branch).
+- `docs/06` PyPI paragraph (on the #118 branch).
+- Possibly `ROAD-TO-V1.md` and the semantic model.
+
+**Open PRs to shepherd:**
+- #113 (0.9.0 version PR)
+- #114
+- #115
+- #116
+- #117
+- #118
+
+**Running agent:**
+- The `impl-test-speed` agent is on `perf/test-suite-waits`, working on the backoff env knob, building the moon wasm once, and cranelift opt-level. When it reports: review it and open its PR with a succinct, unwrapped body.
+
+**Decisions awaiting the user:**
+- Whether to build the receipt from state (execution-state schema 2 → 3).
+- Whether to do a repo-wide Markdown unwrap sweep.
+
+**oxc-react-codegen:**
+- Its packages need `publishConfig.access: public` (a change in that repo; #116 helps).
+- Bump its callisto pin to 0.9.0 after release.
+
+**Remaining cleanup (not yet approved):**
+- The obsolete `fix/derive-artifact-targets` branch.
+- Old stashes.
+- Stale `callisto/version-packages--<sha>` remote branches.
+- Never delete `entire/*` branches.
+
+8. Current Work
+
+I was applying the user's latest instruction: "Our changesets should also be succint and devoid of AI slop and wordy prose. Same with PR descriptions and docs". Done so far:
+- Saved `feedback_succinct_written_artifacts.md`.
+- Rewrote the 3 changesets on `main` via the #118 branch (`docs/unwrap-markdown`).
+- Rewrote the 3 changesets on the #115, #116 and #117 branches.
+- Rewrote the #114–#118 PR bodies and retitled #118.
+
+I had just read the docs passages written this session in order to tighten them:
+- `docs/06` lines 203–205 (the PyPI paragraph, still hard-wrapped on `main` but unwrapped in #118).
+- `docs/07` on the #117 branch: the long PyPI paragraph at line 81, and the "Recovering an older release" runbook, which is verbose.
+
+9. Optional Next Step
+
+Tighten the docs passages written this session so they are succinct and unwrapped, per the user's latest message: "Our changesets should also be succint and devoid of AI slop and wordy prose. Same with PR descriptions and docs".
+- Rewrite `docs/07`'s PyPI paragraph and the "Recovering an older release" runbook on the `refactor/release-cuts` branch (#117): keep the command blocks, cut the prose to terse imperative lines.
+- Rewrite `docs/06`'s PyPI paragraph on the `docs/unwrap-markdown` branch (#118).
+- Commit and push to those branches with no hard wraps.
+- Then report back succinctly.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/e2fe6504-b7f2-430b-a234-1e8197320f97.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
