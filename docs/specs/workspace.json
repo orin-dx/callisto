@@ -1,0 +1,164 @@
+{
+  "id": "SPEC-WORKSPACE",
+  "purpose": "Define how Callisto finds the workspace root, decides which manifests are packages, gives each package an identity, applies per-package config, and treats npm platform packages.",
+  "scope": "Workspace root detection, project discovery and membership, package identity and dependency edges, [[package]]/[[package-set]] resolution, and npm platform packages.",
+  "non_goals": [
+    "Version planning, changelog and manifest write rules beyond platform version propagation.",
+    "Release operation derivation and registry publishing of platform packages.",
+    "Fixed and linked group semantics other than naming a platform package as a member.",
+    "Ecosystems other than Cargo, npm and Python."
+  ],
+  "api_surface": [
+    {
+      "name": "[[package]] match",
+      "signature": "match = \"<name>\" | \"<ecosystem>:<name>\" | \"<ecosystem>/<name>\"",
+      "description": "Exact package id. Ecosystem prefixes: cargo, npm, pypi.",
+      "error_conditions": [
+        "An empty, absolute, `..`-containing or otherwise unparseable id fails config loading."
+      ]
+    },
+    {
+      "name": "[[package-set]] match",
+      "signature": "match = \"<glob>\" | \"<ecosystem>:<glob>\"",
+      "description": "Glob over package names. Only the colon form scopes the glob to an ecosystem.",
+      "error_conditions": [
+        "An invalid glob fails config loading."
+      ]
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "WS-DISC-01",
+      "criterion": "Root detection walks up from the start directory, never past the Git toplevel, and picks the nearest directory with a workspace marker (Cargo.toml with [workspace], package.json with `workspaces`, pnpm-workspace.yaml, or a .moon directory); with no marker it picks the outermost directory with a package manifest (Cargo.toml with [package], package.json, or pyproject.toml)."
+    },
+    {
+      "id": "WS-DISC-02",
+      "criterion": "Root detection fails with E030 naming the start directory and Git toplevel when no marker or package manifest exists up to the toplevel, and with E058 (help suggests `git init`) when the start directory is not inside a Git repository.",
+      "is_error_case": true
+    },
+    {
+      "id": "WS-DISC-03",
+      "criterion": "Discovery treats every directory under the root whose Cargo.toml, package.json or pyproject.toml parses and declares a package name as a candidate, following symlinks up to 32 levels deep and skipping hidden and gitignored paths and directories named target, node_modules, .git, .moon and dist; a manifest without a name is not a package."
+    },
+    {
+      "id": "WS-DISC-04",
+      "criterion": "A Cargo candidate is admitted when the root Cargo.toml [workspace] has no `members` key or its path matches `members`, and its path does not match `exclude`; Python candidates follow the same rules using pyproject.toml [tool.uv.workspace]."
+    },
+    {
+      "id": "WS-DISC-05",
+      "criterion": "Membership globs match root-relative paths where `*` matches one path segment, `**` matches any depth, and an entry starting with `!` removes matching paths from the list's other entries."
+    },
+    {
+      "id": "WS-DISC-06",
+      "criterion": "With no root manifest or no workspace table for an ecosystem, every candidate of that ecosystem is admitted; an empty `members`, `workspaces` or `packages` list admits none except a hybrid root."
+    },
+    {
+      "id": "WS-DISC-07",
+      "criterion": "An npm candidate is admitted when its path matches the `packages` list of the root pnpm-workspace.yaml, or, when that file is absent or unusable, the root package.json `workspaces` array; with neither, all npm candidates are admitted."
+    },
+    {
+      "id": "WS-DISC-08",
+      "criterion": "A hybrid root (root Cargo.toml with both [package] and [workspace], root pyproject.toml with both [project] and [tool.uv.workspace], or a root package.json with a `name`) is always admitted, even when `exclude` matches `.` or the member globs do not."
+    },
+    {
+      "id": "WS-DISC-09",
+      "criterion": "Malformed membership input never fails discovery: an unparseable root manifest or a `members`, `workspaces` or `packages` value that is not an array of strings is treated as absent, an unparseable, empty or `packages`-less pnpm-workspace.yaml falls back to package.json `workspaces`, and a malformed `exclude` excludes nothing.",
+      "is_error_case": true
+    },
+    {
+      "id": "WS-DISC-10",
+      "criterion": "An invalid glob in `members`, `exclude`, `workspaces` or `packages` is ignored while the list's valid entries still apply.",
+      "is_error_case": true
+    },
+    {
+      "id": "WS-ID-01",
+      "criterion": "A package whose name is claimed by no other directory gets a bare id equal to its manifest name (for example `foo` or `@scope/foo`)."
+    },
+    {
+      "id": "WS-ID-02",
+      "criterion": "A dual-manifest package (one directory with several admitted manifests) is one package whose id comes from Cargo.toml, else package.json, else pyproject.toml, and each manifest's own name still resolves to that package within its ecosystem."
+    },
+    {
+      "id": "WS-ID-03",
+      "criterion": "When two or more directories declare the same name and no ecosystem declares it in more than one of them, each package is promoted to an ecosystem-qualified id (`cargo:foo`, `npm:foo`, `pypi:foo`), displayed as `cargo/foo`."
+    },
+    {
+      "id": "WS-ID-04",
+      "criterion": "When two directories declare the same name in the same ecosystem (including a dual-manifest Cargo+npm `foo` and an npm-only `foo`), loading fails with E100 naming both paths.",
+      "is_error_case": true
+    },
+    {
+      "id": "WS-ID-05",
+      "criterion": "A `[[fixed-group]]` member written `cargo:foo` or `cargo/foo` resolves to package `foo` when a Cargo manifest declares `foo`, promoted or not; a member naming an ecosystem with no such manifest fails loading with E108.",
+      "is_error_case": true
+    },
+    {
+      "id": "WS-ID-06",
+      "criterion": "A changeset or `callisto matrix --package` naming the bare name of promoted packages fails with E103 listing every qualified candidate.",
+      "is_error_case": true
+    },
+    {
+      "id": "WS-ID-07",
+      "criterion": "A dependency edge is created only to a workspace package that declares the dependency's name in the depending manifest's own ecosystem; a name declared only in other ecosystems creates no edge and one `unknown-package` warning listing the candidates (`cargo:foo`), and a name no workspace package declares creates no edge and no diagnostic."
+    },
+    {
+      "id": "WS-CFG-01",
+      "criterion": "For each package, the first ecosystem-prefixed `[[package]]` rule matching it applies, regardless of declaration order; if none matches, the first matching bare rule applies."
+    },
+    {
+      "id": "WS-CFG-03",
+      "criterion": "A bare `[[package]]` rule that would apply to a promoted package fails loading with E103 listing the qualified candidates; prefixed rules for the same packages load normally.",
+      "is_error_case": true
+    },
+    {
+      "id": "WS-CFG-04",
+      "criterion": "A `[[package-set]]` rule applies only when no `[[package]]` rule matches, the first matching set in declaration order wins, and a `cargo:`, `npm:` or `pypi:` prefix restricts it to packages with a manifest in that ecosystem."
+    },
+    {
+      "id": "WS-CFG-05",
+      "criterion": "A matched rule overrides only the fields it sets; otherwise a package uses release trigger `changeset`, `CHANGELOG.md` in its directory (a configured changelog is relative to the package directory), and the publish targets its manifests declare."
+    },
+    {
+      "id": "WS-CFG-06",
+      "criterion": "A `publish-to` override whose target ecosystem is not among the matched package's manifest ecosystems fails loading with E119.",
+      "is_error_case": true
+    },
+    {
+      "id": "WS-CFG-07",
+      "criterion": "A `[[package-set]]` that matches no package emits one `package-set-matched-nothing` warning naming its pattern; a set matching a package that a `[[package]]` rule shadows counts as matched.",
+      "is_error_case": true
+    },
+    {
+      "id": "WS-CFG-08",
+      "criterion": "A bare `[[package]]` rule matching packages whose manifests span two or more ecosystems, such as a dual-manifest package, emits one non-fatal `bare-rule-matches-multiple-ecosystems` warning; prefixed rules and `[[package-set]]` rules never emit it.",
+      "is_error_case": true
+    },
+    {
+      "id": "WS-PLAT-01",
+      "criterion": "A package.json with non-empty `os` and `cpu` arrays is an npm platform package whose platform and arch are the first entries; for Linux its ABI is `gnueabihf`, `gnu` or `musl` from the name's `-<abi>` suffix, otherwise none."
+    },
+    {
+      "id": "WS-PLAT-02",
+      "criterion": "An npm-only platform package named in the `optionalDependencies` of exactly one admitted npm package becomes an attached platform package of that owner, inside or outside the npm workspace globs: it is not its own package and adds no publish targets to the owner."
+    },
+    {
+      "id": "WS-PLAT-03",
+      "criterion": "A co-located platform manifest belongs to its directory's package, is never attached to another owner, and a `[[fixed-group]]` member may name any platform manifest by its own npm name."
+    },
+    {
+      "id": "WS-PLAT-04",
+      "criterion": "When an owner is versioned or snapshotted, each attached platform manifest receives the owner's new version and the owner's `optionalDependencies` pins update to it, with no fixed group required."
+    },
+    {
+      "id": "WS-PLAT-05",
+      "criterion": "An admitted platform package named in no owner's or several owners' `optionalDependencies` stays its own package and emits a `platform-package-without-owner` warning with its manifest path and the owner count or paths.",
+      "is_error_case": true
+    },
+    {
+      "id": "WS-PLAT-06",
+      "criterion": "A platform package outside the npm workspace named by several owners emits `platform-package-without-owner` stating it is not released; one named by no owner stays undiscovered with no diagnostic.",
+      "is_error_case": true
+    }
+  ],
+  "spec_file_path": "docs/specs/workspace.json"
+}

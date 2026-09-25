@@ -12,11 +12,10 @@ The goal is progressive loading: ~400 tokens here, then ~1500 tokens per topic f
 | `identity.rs`, PackageId, ecosystem matching | `core-identity.md` |
 | `error.rs`, adding or using error variants | `error-taxonomy.md` |
 | `callisto release`, release execute/recover, receipts, provider observation | `release-lifecycle.md`, `error-taxonomy.md` |
-| Implementing a specific track | `docs/specs/<track>.json` only |
+| Changing behavior in an area | `docs/specs/<area>.json` |
 | Starting fresh, no task assigned | `docs/projects/ROAD-TO-V1.md` |
 
-Do NOT load semantic-model files when implementing a track unless the spec explicitly
-references them. The spec@1 is the authority; these files are the reference layer beneath it.
+Specs in `docs/specs/` are the contract; these files describe how the code implements it.
 
 ## File Map
 
