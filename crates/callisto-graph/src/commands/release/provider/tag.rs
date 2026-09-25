@@ -17,13 +17,14 @@ use super::{
     ProviderRequest, ReleaseProvider, TagOperation,
 };
 
-/// What the local repository holds at `refs/tags/<name>`.
+/// What the local repository holds at `refs/tags/<name>`. A tag's landed
+/// effect is its target commit plus being annotated; annotation text is
+/// never part of its identity.
 #[derive(Debug, PartialEq, Eq)]
 enum LocalTagObservation {
     Absent,
     Annotated {
         target: CommitSha,
-        annotation: String,
     },
     /// A lightweight tag, or any other object this adapter did not write.
     Unannotated,
@@ -143,10 +144,7 @@ fn tag_observation(
 ) -> Result<ProviderObservationV1, GraphError> {
     match observed_local_tag(context, &operation.name)? {
         LocalTagObservation::Absent => {}
-        LocalTagObservation::Annotated {
-            target: observed,
-            annotation: observed_annotation,
-        } if observed == operation.target && observed_annotation == operation.annotation => {}
+        LocalTagObservation::Annotated { target: observed } if observed == operation.target => {}
         _ => {
             return Ok(ProviderObservationV1::Conflict {
                 reason: ProviderConflictReason::LocalTagDiffers,
@@ -304,19 +302,169 @@ fn observed_local_tag(context: &ProviderContext<'_>, name: &TagName) -> Result<L
             },
         });
     }
-    let annotation = annotation.ok_or_else(|| GraphError::ReleaseInvariant {
+    // Identity is target commit plus being annotated; the annotation text
+    // itself is not part of that identity, but its presence still confirms
+    // this is a well-formed annotated tag object.
+    annotation.ok_or_else(|| GraphError::ReleaseInvariant {
         detail: "for-each-ref line validated as `tag`/empty-body but carried no annotation field".to_string(),
     })?;
-    Ok(LocalTagObservation::Annotated {
-        target,
-        annotation: annotation.to_string(),
-    })
+    Ok(LocalTagObservation::Annotated { target })
 }
 
 #[cfg(test)]
 mod tests {
     use super::super::loopback::fixtures;
     use super::*;
+
+    /// Delegates local git plumbing (`rev-parse`, `for-each-ref`) to a real
+    /// repo at `root`, but scripts `remote`/`ls-remote` so the remote side is
+    /// under test control without a real push.
+    struct LocalRepoRemoteScript {
+        url: &'static str,
+        ls_remote_stdout: &'static str,
+    }
+
+    impl CommandRunner for LocalRepoRemoteScript {
+        fn run(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            assert_eq!(program, "git");
+            match args.first() {
+                Some(&"remote") => Ok(callisto_model::CommandOutput {
+                    exit_code: Some(0),
+                    stdout: self.url.to_owned(),
+                    stderr: String::new(),
+                }),
+                Some(&"ls-remote") => Ok(callisto_model::CommandOutput {
+                    exit_code: Some(0),
+                    stdout: self.ls_remote_stdout.to_owned(),
+                    stderr: String::new(),
+                }),
+                _ => callisto_fixtures::git::GitRunner.run(program, args, cwd),
+            }
+        }
+    }
+
+    /// `git rev-parse HEAD` against the real repo at `root`, via the same
+    /// [`CommandRunner`] impl `LocalRepoRemoteScript` delegates non-remote
+    /// commands to.
+    fn head_sha(root: &Path) -> CommitSha {
+        let output = callisto_fixtures::git::GitRunner
+            .run("git", &["rev-parse", "HEAD"], root)
+            .unwrap();
+        CommitSha::parse(output.stdout.trim()).unwrap()
+    }
+
+    fn local_annotated_tag_operation(root: &Path, name: &str, message: &str) -> TagOperation {
+        let target = head_sha(root);
+        let git = GitAccess::new(root, &callisto_fixtures::git::GitRunner);
+        git.create_tag(
+            name,
+            &target,
+            Some(message),
+            TagSignPolicy::ForceUnsigned,
+            &callisto_model::ApplyPermit::force_for_tests(),
+        )
+        .unwrap();
+        TagOperation {
+            name: TagName::new_unchecked(name.to_owned()),
+            target,
+            annotation: message.to_owned(),
+        }
+    }
+
+    /// Regression for the tag-identity fix: a local annotated tag that names
+    /// the prepared commit but carries different annotation *text* is the
+    /// same landed effect, not a conflict (annotation text is never part of
+    /// tag identity). Before the fix this returned `Conflict` without ever
+    /// checking the remote.
+    #[test]
+    fn local_tag_with_matching_target_and_different_annotation_text_is_not_a_conflict() {
+        let dir = tempfile::tempdir().unwrap();
+        callisto_fixtures::git::init_repo(dir.path());
+        callisto_fixtures::git::run_git(dir.path(), &["commit", "--allow-empty", "-q", "-m", "root"]);
+        let mut operation = local_annotated_tag_operation(dir.path(), "callisto@0.8.0", "operation's own message");
+        operation.annotation = "a completely different message than the local tag carries".to_owned();
+
+        let remote =
+            crate::commands::release::binding::canonical_git_remote("https://github.com/orin-dx/callisto").unwrap();
+        let runner = LocalRepoRemoteScript {
+            url: "https://github.com/orin-dx/callisto",
+            ls_remote_stdout: fixtures::LS_REMOTE_ABSENT,
+        };
+        let context = ProviderContext::new(dir.path(), &runner, Some(&remote));
+
+        assert_eq!(
+            tag_observation(&context, &operation).unwrap(),
+            ProviderObservationV1::Absent
+        );
+    }
+
+    /// Regression: a local lightweight tag at the right commit still
+    /// conflicts. Only annotation *text* stopped mattering; being annotated
+    /// at all did not.
+    #[test]
+    fn local_lightweight_tag_at_the_right_commit_still_conflicts() {
+        let dir = tempfile::tempdir().unwrap();
+        callisto_fixtures::git::init_repo(dir.path());
+        callisto_fixtures::git::run_git(dir.path(), &["commit", "--allow-empty", "-q", "-m", "root"]);
+        let target = head_sha(dir.path());
+        callisto_fixtures::git::run_git(dir.path(), &["tag", "callisto@0.8.0", target.as_str()]);
+        let operation = TagOperation {
+            name: TagName::new_unchecked("callisto@0.8.0".to_owned()),
+            target,
+            annotation: "Release callisto@0.8.0".to_owned(),
+        };
+
+        let remote =
+            crate::commands::release::binding::canonical_git_remote("https://github.com/orin-dx/callisto").unwrap();
+        let runner = LocalRepoRemoteScript {
+            url: "https://github.com/orin-dx/callisto",
+            ls_remote_stdout: fixtures::LS_REMOTE_ABSENT,
+        };
+        let context = ProviderContext::new(dir.path(), &runner, Some(&remote));
+
+        assert_eq!(
+            tag_observation(&context, &operation).unwrap(),
+            ProviderObservationV1::Conflict {
+                reason: ProviderConflictReason::LocalTagDiffers,
+            }
+        );
+    }
+
+    /// Remote path: `ls-remote` only ever compares the peeled commit
+    /// (annotation text is unreadable over `ls-remote` to begin with), so an
+    /// annotated remote tag on the right commit is adopted regardless of the
+    /// prepared operation's own annotation text.
+    #[test]
+    fn remote_tag_on_the_right_commit_is_adopted_regardless_of_annotation_text() {
+        let dir = tempfile::tempdir().unwrap();
+        callisto_fixtures::git::init_repo(dir.path());
+        let operation = TagOperation {
+            name: TagName::new_unchecked("callisto-changelog@0.3.1".to_owned()),
+            target: CommitSha::parse("caf945cc9d5a11a71c57f419d1a73d0627c1756b").unwrap(),
+            annotation: "a message that has nothing to do with the remote tag's own message".to_owned(),
+        };
+        let remote =
+            crate::commands::release::binding::canonical_git_remote("https://github.com/orin-dx/callisto").unwrap();
+        let runner = LocalRepoRemoteScript {
+            url: "https://github.com/orin-dx/callisto",
+            ls_remote_stdout: fixtures::LS_REMOTE_ANNOTATED,
+        };
+        let context = ProviderContext::new(dir.path(), &runner, Some(&remote));
+
+        assert_eq!(
+            tag_observation(&context, &operation).unwrap(),
+            ProviderObservationV1::Exact {
+                evidence: ProviderEvidenceV1::GitTag {
+                    peeled_commit: CommitSha::parse("caf945cc9d5a11a71c57f419d1a73d0627c1756b").unwrap(),
+                },
+            }
+        );
+    }
 
     fn classify(captured: &str, tag: &str) -> Result<RemoteTagObservation, GraphError> {
         let reference = format!("refs/tags/{tag}");

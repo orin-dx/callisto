@@ -235,11 +235,11 @@
     },
     {
       "id": "REL-RERUN-02",
-      "criterion": "After a run fails partway, rerunning the same command with no state file from the failed run performs only the missing operations and writes a receipt. A local tag with the expected target and annotation that is missing on the remote is pushed before the receipt is written."
+      "criterion": "After a run fails partway, rerunning the same command with no state file from the failed run performs only the missing operations and writes a receipt. A local annotated tag on the expected commit that is missing on the remote is pushed before the receipt is written, regardless of its annotation text."
     },
     {
       "id": "REL-RERUN-03",
-      "criterion": "Any of these fails with E167 and is never adopted: a local or remote tag on another commit or with another annotation, a lightweight tag, a GitHub release with a different prerelease flag, an asset of the same name with a different size or sha256, or two assets with the same name.",
+      "criterion": "Any of these fails with E167 and is never adopted: a local or remote tag on another commit, a lightweight tag, a GitHub release with a different prerelease flag, an asset of the same name with a different size or sha256, or two assets with the same name. A tag's identity is its target commit plus being annotated; annotation text is never compared.",
       "is_error_case": true
     },
     {
