@@ -1,0 +1,1 @@
+We should support rust, napi-rs and python please. Comprehensively,thinking of the architecture and semantic model please
