@@ -1,5 +1,10 @@
 # Callisto Specification: Python Engine (`docs/04-python-engine-spec.md`)
 
+> **Historical.** Pre-implementation engine spec; kept for background and rationale. It predates the current implementation and may not reflect current commands, config, or behavior — see [`../ARCHITECTURE.md`](../ARCHITECTURE.md) and [`specs/`](specs/) for current behavior.
+
+
+> **Historical.** This document predates the current implementation and may not reflect current behavior, commands, or config. See [README.md](../README.md), [ARCHITECTURE.md](../ARCHITECTURE.md), and [docs/specs/](specs/) for what is current.
+
 ---
 
 ## 1. Specification Overview & Standard Compliance
