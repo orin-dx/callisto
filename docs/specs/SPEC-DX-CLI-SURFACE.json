@@ -39,5 +39,5 @@
   ],
   "reasoning": "Grounded against origin/fix/release-run-simplify (HEAD 9be31095): crates/callisto-cli/src/cli.rs's doc comments give the exact current one-line help text for each of the 8 retained commands, confirming `release`'s current text ('Create, inspect, or execute durable release intents.') contains the banned phrase 'durable release intents' and must be rewritten, motivating AC-01's explicit callout; grep for anstream across crates/ found only the Cargo.toml dependency declaration (`anstream = \"0.6\"`) and no call site, confirming AC-04/AC-05 describe target behavior to be implemented, not a correction of existing behavior -- consistent with anstream::AutoStream's documented FORCE_COLOR blind spot cited in GATE2-FIXES.md, which is why ColorChoice is computed explicitly rather than left to AutoStream's own environment probing. AC-06's regex and callisto-schema exemption are the owner's stated defaults (GATE2-FIXES.md), recorded as such.",
   "spec_file_path": "docs/specs/SPEC-DX-CLI-SURFACE.json",
-  "status": "design"
+  "status": "current"
 }

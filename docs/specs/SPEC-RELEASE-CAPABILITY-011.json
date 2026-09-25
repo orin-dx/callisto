@@ -1,8 +1,8 @@
 {
   "id": "SPEC-RELEASE-CAPABILITY-011",
-  "status": "draft",
+  "status": "current",
   "owner_track": "release-security",
-  "last_verified_revision": "289001ec",
+  "last_verified_revision": "a2156a4ae",
   "depends_on": [
     "SPEC-RELEASE-DECISION-008",
     "SPEC-RELEASE-INTENT-MODEL-009",
@@ -19,7 +19,7 @@
   "acceptance_criteria": [
     {
       "id": "AC-001",
-      "criterion": "callisto-graph creates a release observation only from a canonical workspace root while holding the GitCommitTrustEvidence required by SPEC-RELEASE-TRUST-010. It re-runs the normal configuration resolution, package discovery, linked-group/cascade/prerelease policy resolution, and dependency analysis from disk; it never trusts a caller-provided workspace, selection, package list, endpoint, source SHA, or previously cached Workspace interior state as fresh evidence.",
+      "criterion": "callisto-graph creates a release observation only from a canonical workspace root while holding the GitCommitTrustEvidence required by SPEC-RELEASE-TRUST-010. It re-runs configuration resolution, package discovery, and dependency analysis from disk against the received, already-approved ReleaseDecisionV1; it never trusts a caller-provided workspace, endpoint, source SHA, or previously cached Workspace interior state as fresh evidence, and it does not re-derive the decision's linked-group, cascade or prerelease selection.",
       "is_error_case": true
     },
     {

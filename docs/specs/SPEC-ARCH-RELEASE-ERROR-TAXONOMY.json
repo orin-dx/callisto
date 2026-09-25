@@ -2,7 +2,7 @@
   "artifact_type": "spec@1",
   "schema": "spec@1",
   "id": "SPEC-ARCH-RELEASE-ERROR-TAXONOMY",
-  "status": "draft",
+  "status": "current",
   "produced_by": "scribe:architect (workflow wf_b20f2ad3-7ca)",
   "purpose": "Eliminate the defect class 'fieldless catch-all error variant absorbs semantically distinct failure families' in callisto-graph's release executor, where GraphError::ReleaseIntentStale (E124) is constructed at 101 sites of which 6 are genuine staleness and 95 discard a typed model error, a subprocess exit status and stderr, a malformed-output detail, a merged-commit verification mismatch, a remote-object conflict, an unsupported feature, a precondition, or an internal invariant. The structural change makes staleness a proof-carrying variant constructible only by the fresh-re-observation code, gives every other family a typed variant so the source is carried by `?` rather than discarded by `map_err`, and closes the `map_err(|_ident| ...)` evasion of the workspace's existing `clippy::map_err_ignore = \"deny\"` with a source-scan architecture test.",
   "scope": "Structural boundary: the GraphError taxonomy in crates/callisto-graph/src/error.rs and its three release-executor producers, crates/callisto-graph/src/commands/{release.rs, release_decision.rs, release_execution.rs}; the module-privacy boundary of crate::commands::release for StaleReason; the single subprocess exit-status classification point (run_checked) shared by release.rs and release_decision.rs; and crates/callisto-graph/tests/architecture.rs as the enforcement point. Consumers see the change only through the CLI JSON error envelope's code/message/help fields (crates/callisto-cli/src/error.rs), which carry the new codes E158-E171 unchanged in shape.",

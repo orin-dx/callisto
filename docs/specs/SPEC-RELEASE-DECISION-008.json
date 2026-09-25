@@ -1,6 +1,6 @@
 {
   "id": "SPEC-RELEASE-DECISION-008",
-  "status": "draft",
+  "status": "current",
   "owner_track": "release-security",
   "depends_on": ["SPEC-RELEASE-EXECUTION-FOUNDATION-007"],
   "purpose": "Make the release roster and its version/lane choices an explicit, deterministic graph decision. In CI, the merged Callisto release-PR delta is the reviewed authority; graph derives this decision from that immutable delta rather than PublishPlan or mutable configuration.",

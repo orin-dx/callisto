@@ -62,9 +62,6 @@ surface to the user as GraphError.
 
 | Variant | Status | When to use |
 |---|---|---|
-| `PackageMatchedNothing { pattern }` | Defined but NEVER EMITTED — known gap | A [[package]] rule matched no packages after workspace walk |
-| `PackageSetMatchedNothing { pattern }` | Defined but NEVER EMITTED — known gap | A [[package-set]] rule matched no packages |
-| `OverlappingPackageSets { package, patterns }` | Defined but NEVER EMITTED — known gap | A package is claimed by two [[package-set]] rules |
 | `ConflictingGroupNames { group, other, member }` | Active | Same member in two groups |
 | `EmptyGroup { group }` | Active | A group has no members |
 | `DuplicateGroupName { group }` | Active | Two groups with the same name |

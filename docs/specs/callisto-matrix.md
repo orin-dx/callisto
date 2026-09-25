@@ -1,6 +1,6 @@
 # callisto matrix — auto-discovery specification
 
-**Status:** PLANNED (Phase 3 / v0.5)
+**Status:** Superseded by `track-g-matrix-napi-maturin.json` (SPEC-004), which describes the shipped napi/maturin matrix. The .NET RID, `dotnet-aot`, Java, `callisto-build-action` and artifact-routing sections were never built.
 **Date:** 2026-08-09
 **Repo:** `github.com/orin-dx/callisto`
 **Companions:** `docs/01-spec.md` (crate spec), `docs/00-design.md` (canonical design)

@@ -24,5 +24,5 @@
   "linked_requirement": "REQ-DX-V1",
   "reasoning": "Grounded against origin/fix/release-run-simplify@9be31095: release_forge_publish_e2e_tests.rs and durable_release_e2e_tests.rs confirmed to exist at crates/callisto-cli/tests/. Per GATE2-FIXES.md's SPEC-DX-RELEASE-CORRECTNESS decisions: AC-21 (real local cargo registry) is dropped because cargo publish needs a registry index with an API that no minimal local server provides cleanly, and the existing hermetic file:// git-registry test already covers observable behavior -- kept as a non-goal rather than silently omitted. AC-20/22 route registry access through each package manager's own config rather than a callisto binding, per the same notes, and AC-20b makes explicit that this routing must not require loosening callisto's own registry-trust checks (owned by SPEC-DX-CORRECTNESS-PARITY).",
   "spec_file_path": "docs/specs/SPEC-DX-CORRECTNESS-E2E.json",
-  "status": "design"
+  "status": "current"
 }

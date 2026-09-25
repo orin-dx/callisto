@@ -13,7 +13,7 @@ The goal is progressive loading: ~400 tokens here, then ~1500 tokens per topic f
 | `error.rs`, adding or using error variants | `error-taxonomy.md` |
 | `callisto release`, release execute/recover, receipts, provider observation | `release-lifecycle.md`, `error-taxonomy.md` |
 | Implementing a specific track | `docs/specs/<track>.json` only |
-| Starting fresh, no task assigned | `.claude/plans/ACTIVE.md` |
+| Starting fresh, no task assigned | `docs/projects/ROAD-TO-V1.md` |
 
 Do NOT load semantic-model files when implementing a track unless the spec explicitly
 references them. The spec@1 is the authority; these files are the reference layer beneath it.
@@ -32,6 +32,6 @@ references them. The spec@1 is the authority; these files are the reference laye
 
 - Source code — read it directly from the crate
 - Spec@1 artifacts — live in `docs/specs/`
-- Active task tracking — lives in `.claude/plans/ACTIVE.md`
+- Plans and open work — live in `docs/projects/`
 - User preferences — lives in the memory directory
 - Prose design docs — live in `docs/` (treat as human reference, not invariant source)

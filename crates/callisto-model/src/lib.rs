@@ -181,6 +181,17 @@ mod tests {
     }
 
     #[test]
+    fn every_diagnostic_code_is_documented() {
+        let doc = include_str!("../../../docs/errors.md");
+        let missing: Vec<String> = DIAGNOSTIC_CODE_SOURCE_FILES
+            .iter()
+            .flat_map(|(_, text)| extract_diagnostic_codes(text))
+            .filter(|code| !doc.contains(&format!("| {code} |")))
+            .collect();
+        assert!(missing.is_empty(), "codes missing from docs/errors.md: {missing:?}");
+    }
+
+    #[test]
     fn extract_diagnostic_codes_finds_every_code_in_a_small_fixture() {
         let text = r#"
             #[diagnostic(code(E001))]

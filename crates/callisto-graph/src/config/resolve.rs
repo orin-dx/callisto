@@ -341,11 +341,7 @@ pub fn parse_pre_major_policy(s: &str) -> Result<PreMajorInferencePolicy, Config
 /// `[[package-set]]` blocks (release-trigger, tag-template, changelog,
 /// pre-major-inference, publish-to) into a `PackageConfig`.
 ///
-/// `RawPackageConfig` and `RawPackageSetConfig` are field-identical raw
-/// shapes (see `config::raw`) -- only the pattern type that parses `match`
-/// (`PackageId` vs `PackagePattern`, handled by each caller before calling
-/// this) and `error_prefix` (naming which block a `publish-to` error came
-/// from) differ between the two call sites this factors out of.
+/// `previous_tag_templates` is `[[package]]`-only; `[[package-set]]` callers pass `None`.
 #[allow(clippy::too_many_arguments)]
 fn parse_package_config_fields(
     callisto_toml: &Path,

@@ -1,16 +1,16 @@
 # Specification Authority
 
-Accepted `SPEC-*` artifacts in this directory are Callisto's top-level normative requirements. A specification is accepted only when its `status` is `accepted`; a `proposed` or `draft` specification is a reviewable contract, not an implementation instruction. A `superseded` or `abandoned` specification is history only; `superseded_by` names its replacement.
+Current `SPEC-*` artifacts in this directory are Callisto's top-level normative requirements. A `current` specification describes shipped behavior; a `draft` specification is a reviewable contract, not an implementation instruction. A `superseded` or `abandoned` specification is history only; `superseded_by` names its replacement.
 
-`docs/01-spec.md` is normative only where it explicitly identifies a requirement. `docs/00-design.md` explains rationale. Files in `.claude/semantic-model/` describe verified current implementation. Files in `.claude/plans/` describe intended work and status. Handoffs are historical context. Neither plans nor handoffs override an accepted specification.
+`docs/01-spec.md` is normative only where it explicitly identifies a requirement. `docs/00-design.md` explains rationale. Files in `.claude/semantic-model/` describe verified current implementation. Files in `docs/projects/` describe intended work and status. Handoffs are historical context. Neither plans nor handoffs override a current specification.
 
 When sources conflict, first reproduce the behavior against the revision named by the current-description material. Correct the specification when the intended contract has changed; otherwise correct the implementation or the current-description material. Do not preserve known contradictions merely to retain a narrative: Git history remains the record of prior decisions.
 
 Legacy `linked_requirement: REQ-*` references have no backing requirement files. New specifications must not add them.
 
-## Design (REQ-DX-V1, not yet built)
+## Current
 
-Build order: correctness → config schema → release command → CLI surface → status/add → setup core → setup workflow (simple, then matrix).
+DX v1 (`REQ-DX-V1`, shipped in #126-#150):
 
 - `SPEC-DX-CORRECTNESS-PARITY`: release plan gains every `plan-publish` check.
 - `SPEC-DX-CORRECTNESS-TRIGGER`: `release-trigger` gates commit inference.
@@ -25,8 +25,6 @@ Build order: correctness → config schema → release command → CLI surface �
 - `SPEC-DX-SETUP-WORKFLOW-SIMPLE`: generated two-job workflow; callisto-action `mode`.
 - `SPEC-DX-SETUP-WORKFLOW-MATRIX`: generated plan/build/execute workflow for napi and binaries.
 
-## Current
-
 Release lifecycle:
 
 - `SPEC-SELF-RELEASE-LIFECYCLE` - release lifecycle contract: merge is the only authorization, recovery, provider observation, receipts.
@@ -37,7 +35,6 @@ Release lifecycle:
 - `SPEC-RELEASE-CAPABILITY-011` - fresh validation into a private execution capability.
 - `SPEC-RELEASE-PR-DECISION-014` - managed release-PR decision and commit plan.
 - `SPEC-ARCH-RELEASE-ERROR-TAXONOMY` - typed release errors.
-- `SPEC-ARCH-ERROR-SOURCE-PRESERVATION-GATE` - error-source preservation check.
 
 Versioning and graph:
 
@@ -56,12 +53,17 @@ Versioning and graph:
 
 Matrix and publish preview:
 
-- `SPEC-004` (`track-g-matrix-napi-maturin.json`) and `callisto-matrix.md` - `callisto matrix`.
+- `SPEC-004` (`track-g-matrix-napi-maturin.json`) - `callisto matrix`.
 - `SPEC-005` - `ReleaseEntry.is_prerelease`. Its callisto-action release loop criteria were removed in #39.
 - `SPEC-TRACK4-RELEASE-PIPELINE-CONTRACT-CORRECTNESS` - status exit codes, tag SHAs, changelog sections. Its callisto-action criteria were removed in #39.
 
+## Draft (not built)
+
+- `SPEC-ARCH-ERROR-SOURCE-PRESERVATION-GATE` - error-source preservation check; the gate script and CI wiring do not exist.
+
 ## Superseded
 
+- `callisto-matrix.md` - by `SPEC-004`; its .NET, Java and build-action sections were never built.
 - `SPEC-RELEASE-EXECUTION-FOUNDATION-007` - by `SPEC-SELF-RELEASE-LIFECYCLE`.
 - `SPEC-RELEASE-EXECUTION-012` - by `SPEC-RELEASE-LIFECYCLE-HARDENING`.
 - `SPEC-RELEASE-INTERFACES-013` - by `SPEC-RELEASE-LIFECYCLE-HARDENING`.

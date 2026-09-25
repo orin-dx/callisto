@@ -20,5 +20,5 @@
   "linked_requirement": "REQ-DX-V1",
   "reasoning": "Grounded against origin/fix/release-run-simplify@9be31095: .github/actions/callisto-validate/action.yml:24 confirmed to run `callisto plan-publish --format text || true`. callisto-ci.yml's test job (line 108) runs `just test-ci`, and justfile:46-48 confirms test-ci is `cargo nextest run --workspace --all-features --profile ci` plus `cargo test --doc --all-features` -- no default-feature invocation exists anywhere in CI, confirming the gap AC-19 requires closed.",
   "spec_file_path": "docs/specs/SPEC-DX-CORRECTNESS-CI.json",
-  "status": "design"
+  "status": "current"
 }

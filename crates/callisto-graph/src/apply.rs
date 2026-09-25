@@ -49,7 +49,7 @@ pub(crate) struct ManifestWriteClassification {
     pub(crate) resolver_batched: BTreeMap<PathBuf, ManifestWriteGroup>,
     /// Paths that receive writes through BOTH the `Manifest` trait and
     /// `WorkspaceCargoResolver` -- the mixed-routing data-loss/ordering
-    /// hazard from SPEC-APPLY-BATCH-002 (see `.claude/plans/ACTIVE.md`).
+    /// hazard from SPEC-APPLY-BATCH-002.
     /// Never batched on either side; each write is applied individually,
     /// strictly in plan order, exactly as before this change.
     pub(crate) excluded: BTreeSet<PathBuf>,

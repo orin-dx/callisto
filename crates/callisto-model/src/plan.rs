@@ -40,12 +40,7 @@ pub struct PublishPlan {
 }
 
 impl PublishPlan {
-    /// `true` when every publishable list and `releases` is empty — nothing
-    /// in this plan actually needs to run `callisto publish` or `callisto
-    /// tag`. Callers driving a release pipeline (CI orchestration in
-    /// particular) should check this before running either, rather than
-    /// unconditionally reporting `published=true` for a run that shipped
-    /// nothing.
+    /// `true` when every publishable list and `releases` is empty.
     pub fn is_empty(&self) -> bool {
         self.rust_crates.is_empty()
             && self.npm_platform_packages.is_empty()

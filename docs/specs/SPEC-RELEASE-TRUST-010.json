@@ -1,6 +1,6 @@
 {
   "id": "SPEC-RELEASE-TRUST-010",
-  "status": "draft",
+  "status": "current",
   "owner_track": "release-security",
   "last_verified_revision": "289001ec",
   "depends_on": [

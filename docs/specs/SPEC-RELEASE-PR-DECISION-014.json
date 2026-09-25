@@ -1,6 +1,6 @@
 {
   "id": "SPEC-RELEASE-PR-DECISION-014",
-  "status": "draft",
+  "status": "current",
   "owner_track": "release-security",
   "depends_on": ["SPEC-RELEASE-LIFECYCLE-HARDENING"],
   "purpose": "Move managed release-pull-request policy from the GitHub composite-action shell script into a typed, provider-neutral Callisto decision boundary.",

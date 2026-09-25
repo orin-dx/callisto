@@ -535,7 +535,7 @@ mod compose_pr_body_report_tests {
     }
 }
 
-/// Validate report output from `callisto validate --format json`.
+/// Legacy validate report shape; no CLI command emits it since `validate` was removed (type removal deferred).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ValidateReport {

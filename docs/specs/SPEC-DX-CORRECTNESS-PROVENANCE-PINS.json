@@ -20,5 +20,5 @@
   "linked_requirement": "REQ-DX-V1",
   "reasoning": "Grounded against origin/fix/release-run-simplify@9be31095: ArtifactManifestV1::new (release.rs) already checks entry.attestation.source_commit != entry.slot.attestation_policy.workflow_commit as one of the MismatchedAttestation conditions, and sets the top-level source_commit from intent.snapshot.source's GitCommit sha -- confirming the two fields are already correctly separated. GitHubArtifactAttestationV1's doc comment (release.rs:1448-1452) states this separation is intentional: recovery intentionally builds an older release checkout with current coordinator workflow code. AC-16/17 are regression pins on existing correct behavior, not fixes for a defect.",
   "spec_file_path": "docs/specs/SPEC-DX-CORRECTNESS-PROVENANCE-PINS.json",
-  "status": "design"
+  "status": "current"
 }

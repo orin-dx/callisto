@@ -6,7 +6,7 @@ tasks:
       - "callisto.toml"
 
   callisto-validate:
-    command: "cargo run --bin callisto -- validate"
+    command: "cargo run --bin callisto -- status --check"
     inputs:
       - ".changeset/**/*"
       - "callisto.toml"
