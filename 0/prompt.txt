@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bus4p5vvr</task-id>
+<summary>Monitor event: "release run 35552753450 job state changes"</summary>
+<event>Check release workflow policy for recovery: completed skipped
+Verify release candidate: in_progress</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
