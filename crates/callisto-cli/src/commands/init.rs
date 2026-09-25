@@ -336,15 +336,12 @@ fn collect_answers(
     let targets = if args.artifact_targets.is_empty() {
         loop {
             let answer = prompter.input(TARGETS_PROMPT, None)?;
-            let targets: Vec<String> = answer
-                .split(',')
-                .map(str::trim)
-                .filter(|target| !target.is_empty())
-                .map(str::to_owned)
-                .collect();
-            if !targets.is_empty() {
-                break targets;
+            let targets: Vec<String> = answer.split(',').map(str::trim).map(str::to_owned).collect();
+            if targets.iter().all(|target| target.is_empty()) {
+                // Nothing meaningful submitted: re-ask rather than error.
+                continue;
             }
+            break targets;
         }
     } else {
         args.artifact_targets.clone()
@@ -671,6 +668,28 @@ mod tests {
         );
     }
 
+    // AC-003c: a comma-separated answer with an empty entry errors naming it, rather than
+    // silently dropping it, and re-asking only kicks in when the whole answer is blank.
+    #[test]
+    fn interactive_target_with_empty_entry_errors_without_writing() {
+        let dir = workspace(1);
+        let run = run_init(
+            dir.path(),
+            InitArgs::default(),
+            true,
+            vec![
+                Answer::Select(0),
+                Answer::Confirm(true),
+                Answer::Input("example/tools"),
+                Answer::Input("x86_64-unknown-linux-gnu,,x86_64-pc-windows-msvc"),
+            ],
+            false,
+        );
+        let error = run.result.unwrap_err();
+        assert!(error.to_string().contains("target `` is invalid"), "{error}");
+        assert!(nothing_written(dir.path()));
+    }
+
     // AC-003b: a forge repository other than origin's, or an invalid one, errors up front without writing.
     #[test]
     fn forge_repository_mismatch_and_invalid_error() {
@@ -826,6 +845,10 @@ mod tests {
                 "`x86_64-unknown-linux-gnu`",
             ),
             (with_targets(&[""]), "target `` is invalid"),
+            (
+                with_targets(&["x86_64-unknown-linux-gnu", "", "x86_64-pc-windows-msvc"]),
+                "target `` is invalid",
+            ),
             (
                 InitArgs {
                     product_package: Some("core".to_owned()),

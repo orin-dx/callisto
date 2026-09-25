@@ -37,7 +37,8 @@ use callisto_cli::commands::*;
 //                  1 on any error
 //
 //   snapshot       0 on success (snapshot versions applied or dry-run preview)
-//                  1 on any error (graph error, strict graph failure, etc.)
+//                  1 on any error (graph error, Error-severity graph diagnostics
+//                  under --strict, etc.)
 //
 //   init           0 on success (configuration scaffolded or dry-run preview)
 //                  1 on any error

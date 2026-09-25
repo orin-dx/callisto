@@ -166,8 +166,8 @@ pub struct InitArgs {
     /// Whether packages share one version (fixed) or version independently.
     #[arg(long, value_enum)]
     pub versioning: Option<InitVersioning>,
-    /// Ship the product's binaries as GitHub release assets for this Rust target triple (repeatable).
-    #[arg(long = "artifact-target", value_name = "TRIPLE")]
+    /// Ship the product's binaries as GitHub release assets for this Rust target triple (repeatable, comma-separated).
+    #[arg(long = "artifact-target", value_name = "TRIPLE", value_delimiter = ',')]
     pub artifact_targets: Vec<String>,
     /// The package whose binaries ship, when several packages produce one.
     #[arg(long, value_name = "PACKAGE")]
@@ -723,5 +723,17 @@ mod tests {
             Cli::try_parse_from(["callisto", "validate"]).is_err(),
             "`validate` must no longer parse as a subcommand"
         );
+    }
+
+    /// SPEC-DX-SETUP-CORE AC-003c: a comma-separated `--artifact-target` value keeps every
+    /// entry, including empties, so `collect_answers` can error naming the empty one.
+    #[test]
+    fn artifact_target_flag_splits_on_comma() {
+        use clap::Parser;
+        let cli = Cli::parse_from(["callisto", "init", "--artifact-target", "a,,b"]);
+        let Command::Init(args) = cli.command else {
+            panic!("expected Init command");
+        };
+        assert_eq!(args.artifact_targets, vec!["a", "", "b"]);
     }
 }

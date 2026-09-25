@@ -5,7 +5,7 @@ use callisto_model::{
     SCHEMA_VERSION,
 };
 
-use crate::aggregate::{resolve_target_package, LoadedChangeset};
+use crate::aggregate::LoadedChangeset;
 use crate::changed::changed_since_last_tag;
 use crate::commands::escalate;
 use crate::commands::version::{plan_version, VersionOptions};
@@ -25,22 +25,25 @@ type PendingChangesets = BTreeMap<PackageId, (Vec<String>, Option<Severity>)>;
 /// Resolves each changeset entry to at most one package and accumulates the
 /// pending changeset names and max severity per package.
 ///
-/// Uses [`resolve_target_package`] (the same ambiguity-checking resolution
-/// `aggregate()` relies on) rather than a bare `matches()` loop, so a
-/// changeset entry naming a bare package that exists in two or more
-/// ecosystems (e.g. `cargo/foo` and `npm/foo`) errors instead of silently
-/// attaching the changeset to every matching package.
+/// Uses [`PackageId::resolve_unique`] -- the same primitive
+/// `changeset_wellformedness_diagnostics` uses below, kept as the one
+/// resolution path -- rather than a bare `matches()` loop, so a changeset
+/// entry naming a bare package that exists in two or more ecosystems (e.g.
+/// `cargo/foo` and `npm/foo`) is never silently attached to every matching
+/// package. An unknown or ambiguous entry is skipped here rather than
+/// hard-erroring: `changeset_wellformedness_diagnostics` reports both cases
+/// as an Error-severity diagnostic instead (SPEC-DX-STATUS-ADD AC-03).
 fn resolve_pending_changesets<'a>(
     packages: impl Iterator<Item = &'a Package> + Clone,
     loaded_changesets: &[LoadedChangeset],
-) -> Result<PendingChangesets, GraphError> {
+) -> PendingChangesets {
     let mut pending: PendingChangesets = BTreeMap::new();
     for lc in loaded_changesets {
         for entry in &lc.changeset.entries {
             let Ok(entry_id) = PackageId::parse(&entry.name) else {
                 continue;
             };
-            let Some(resolved) = resolve_target_package(packages.clone(), &entry_id)? else {
+            let Ok(Some(resolved)) = entry_id.resolve_unique(packages.clone(), |p| &p.id) else {
                 continue;
             };
             let name = lc
@@ -57,7 +60,7 @@ fn resolve_pending_changesets<'a>(
             };
         }
     }
-    Ok(pending)
+    pending
 }
 
 pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
@@ -71,7 +74,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
     let tags = ws.tags()?;
 
     let all_packages: Vec<&Package> = ws.graph.packages().collect();
-    let pending = resolve_pending_changesets(all_packages.iter().copied(), &loaded_changesets)?;
+    let pending = resolve_pending_changesets(all_packages.iter().copied(), &loaded_changesets);
 
     // AC-01 (SPEC-DX-STATUS-ADD): pending severity is `plan_version`'s own
     // `PlannedBump.severity` per package -- the same cascade/fixed/linked-group
@@ -81,9 +84,21 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
         strict: opts.strict,
         allow_empty_changesets: true,
     };
-    let plan = plan_version(ws, inference, &version_opts)?;
-    let planned_severity: BTreeMap<PackageId, Severity> =
-        plan.bumps.iter().map(|b| (b.package.clone(), b.severity)).collect();
+    // AC-03: an ambiguous changeset entry makes `plan_version` (via `aggregate`)
+    // hard-error -- the right behavior for a real `version`/`release` run, but
+    // `status` must survive it and report `AmbiguousPackageName` below instead.
+    // Severity planning is skipped for this run rather than duplicating
+    // `aggregate`'s own resolution to route around its error.
+    let plan = match plan_version(ws, inference, &version_opts) {
+        Ok(plan) => Some(plan),
+        Err(GraphError::AmbiguousName { .. }) => None,
+        Err(e) => return Err(e),
+    };
+    let planned_severity: BTreeMap<PackageId, Severity> = plan
+        .iter()
+        .flat_map(|plan| &plan.bumps)
+        .map(|b| (b.package.clone(), b.severity))
+        .collect();
 
     let changed = changed_since_last_tag(&all_packages, tags, ws.git_access())?;
 
@@ -141,9 +156,10 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
 /// The per-changeset well-formedness diagnostics `validate` used to emit
 /// (crates/callisto-graph/src/commands/validate.rs, now removed -- SPEC-DX-STATUS-ADD
 /// AC-03), ported verbatim: entries/summary shape and package-name resolution,
-/// all at Error severity. Uses `resolve_unique` (soft: returns candidates on
-/// ambiguity) rather than `resolve_target_package` (hard-errors via `?`) --
-/// unlike `resolve_pending_changesets` above, this must never abort the scan.
+/// all at Error severity. Uses the same `resolve_unique` primitive
+/// `resolve_pending_changesets` does, but this scan must never abort early,
+/// so an unknown or ambiguous entry becomes a diagnostic instead of an
+/// early return.
 fn changeset_wellformedness_diagnostics<'a>(
     packages: impl Iterator<Item = &'a Package> + Clone,
     loaded: &[LoadedChangeset],
@@ -285,29 +301,24 @@ mod tests {
         }
     }
 
-    /// Spec: a bare changeset entry name that exists in two or more
-    /// ecosystems (e.g. `cargo/foo` and `npm/foo`) must error instead of
-    /// silently attaching the changeset to every matching package. Before
-    /// the fix, `status()` used `pkg.id.matches(&entry_id)` in a per-package
-    /// loop, which attached the changeset to *both* packages with no
-    /// indication the reference was ambiguous.
+    /// Spec (SPEC-DX-STATUS-ADD AC-03): a bare changeset entry name that
+    /// exists in two or more ecosystems (e.g. `cargo/foo` and `npm/foo`)
+    /// must not attach the changeset to either package, ambiguously or
+    /// otherwise, and must not hard-error `status` either --
+    /// `changeset_wellformedness_diagnostics` reports it as an
+    /// `AmbiguousPackageName` diagnostic instead.
     #[test]
-    fn test_resolve_pending_changesets_ambiguous_bare_name_errors() {
+    fn test_resolve_pending_changesets_ambiguous_bare_name_is_skipped() {
         let cargo_foo = make_package(Ecosystem::Cargo, "foo");
         let npm_foo = make_package(Ecosystem::Npm, "foo");
         let packages = vec![&cargo_foo, &npm_foo];
 
         let loaded = vec![make_loaded_changeset("foo", Severity::Minor)];
 
-        let result = resolve_pending_changesets(packages.into_iter(), &loaded);
+        let pending = resolve_pending_changesets(packages.into_iter(), &loaded);
 
-        match result {
-            Err(GraphError::AmbiguousName { name, candidates }) => {
-                assert_eq!(name, "foo");
-                assert_eq!(candidates.len(), 2);
-            }
-            other => panic!("expected GraphError::AmbiguousName, got {other:?}"),
-        }
+        assert!(!pending.contains_key(&cargo_foo.id));
+        assert!(!pending.contains_key(&npm_foo.id));
     }
 
     /// An unambiguous bare-name changeset entry still resolves to the single
@@ -319,7 +330,7 @@ mod tests {
 
         let loaded = vec![make_loaded_changeset("foo", Severity::Major)];
 
-        let pending = resolve_pending_changesets(packages.into_iter(), &loaded).unwrap();
+        let pending = resolve_pending_changesets(packages.into_iter(), &loaded);
 
         let (names, sev) = pending.get(&cargo_foo.id).expect("package should be present");
         assert_eq!(names, &vec!["foo-changeset".to_string()]);
