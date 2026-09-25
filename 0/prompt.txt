@@ -1,0 +1,1 @@
+For our workflow in GH actions can we just switch to ci being fast + coverage
