@@ -282,21 +282,6 @@ pub enum CliError {
     )]
     ReleaseRequiresCiRoute { reason: String },
 
-    #[error("missing credential {credential} to release `{package}`")]
-    #[diagnostic(code(callisto::release_credential_missing), help("{fix}"))]
-    ReleaseCredentialMissing {
-        package: String,
-        credential: String,
-        fix: String,
-    },
-
-    #[error("invalid release receipt location: {detail}")]
-    #[diagnostic(
-        code(callisto::release_receipt_location),
-        help("pass `--receipt <file>` outside the repository")
-    )]
-    ReleaseReceiptLocation { detail: String },
-
     #[error("stdin is not a terminal, so init needs flags instead of prompts; missing: {}", .missing.join(", "))]
     #[diagnostic(
         code(callisto::init_requires_yes),

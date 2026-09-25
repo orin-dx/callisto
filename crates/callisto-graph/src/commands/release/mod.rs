@@ -84,7 +84,6 @@ pub use local::{
     ci_release_route, plan_local_release, plan_workspace_release, CiReleaseRoute, LocalReleasePlan, LocalReleaseSource,
 };
 pub(crate) use provider::policy::{programs, timeouts};
-pub use provider::registry::cargo_registry_name;
 pub use provider::{ReleasePreflight, ReleaseProviderSet};
 
 #[cfg(test)]

@@ -5,7 +5,6 @@ pub mod init;
 pub mod matrix;
 pub mod pre;
 pub mod release;
-mod release_credentials;
 pub mod release_pr;
 pub mod schema;
 pub mod snapshot;

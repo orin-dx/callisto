@@ -129,7 +129,7 @@ pub fn run<R: CommandRunner>(
         }
     }
     let prompting = interactive && !args.yes;
-    let answers = collect_answers(&args, &facts, prompting, prompter, runner)?;
+    let answers = collect_answers(&args, &facts, prompting, prompter)?;
 
     let mut diagnostics = Vec::new();
     let shape = match scaffold::workflow_shape(&facts, &answers) {
@@ -274,12 +274,11 @@ fn missing(flag: &'static str) -> CliError {
     CliError::InitMissingFlags { missing: vec![flag] }
 }
 
-fn collect_answers<R: CommandRunner>(
+fn collect_answers(
     args: &InitArgs,
     facts: &InitFacts,
     prompting: bool,
     prompter: &mut dyn Prompter,
-    runner: &R,
 ) -> Result<InitAnswers, CliError> {
     let versioning = match args.versioning {
         Some(InitVersioning::Fixed) => Versioning::Fixed,
@@ -350,8 +349,7 @@ fn collect_answers<R: CommandRunner>(
     } else {
         args.artifact_targets.clone()
     };
-    let known = scaffold::known_target_triples(runner, &facts.root);
-    let targets = scaffold::validate_targets(&targets, known.as_ref())?;
+    let targets = scaffold::validate_targets(&targets)?;
 
     Ok(InitAnswers {
         versioning,
@@ -714,9 +712,9 @@ mod tests {
         assert!(nothing_written(dir.path()));
     }
 
-    // AC-003c: an unrecognized triple errors without writing.
+    // AC-003c: a repeated triple errors without writing.
     #[test]
-    fn unknown_interactive_target_errors() {
+    fn repeated_interactive_target_errors() {
         let dir = workspace(1);
         let run = run_init(
             dir.path(),
@@ -726,12 +724,12 @@ mod tests {
                 Answer::Select(0),
                 Answer::Confirm(true),
                 Answer::Input("example/tools"),
-                Answer::Input("not-a-triple"),
+                Answer::Input("x86_64-unknown-linux-gnu, x86_64-unknown-linux-gnu"),
             ],
             false,
         );
         let error = run.result.unwrap_err();
-        assert!(error.to_string().contains("`not-a-triple`"), "{error}");
+        assert!(error.to_string().contains("`x86_64-unknown-linux-gnu`"), "{error}");
         assert!(nothing_written(dir.path()));
     }
 
@@ -828,7 +826,6 @@ mod tests {
                 "`x86_64-unknown-linux-gnu`",
             ),
             (with_targets(&[""]), "target `` is invalid"),
-            (with_targets(&["bogus-triple"]), "`bogus-triple`"),
             (
                 InitArgs {
                     product_package: Some("core".to_owned()),

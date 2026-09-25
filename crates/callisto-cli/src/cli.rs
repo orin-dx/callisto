@@ -209,7 +209,7 @@ pub struct ReleaseCommandArgs {
     /// Release only this exact qualified package, for example `cargo/callisto-cli`. Repeatable.
     #[arg(long = "package", value_name = "ECOSYSTEM/NAME")]
     pub packages: Vec<String>,
-    /// Write the release receipt here instead of the platform state directory.
+    /// Also write the release receipt to this file.
     #[arg(long, value_name = "FILE")]
     pub receipt: Option<PathBuf>,
 }

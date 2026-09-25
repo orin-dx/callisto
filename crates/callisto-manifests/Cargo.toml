@@ -10,20 +10,10 @@ readme = "README.md"
 [lints]
 workspace = true
 
-[features]
-default = ["cargo", "npm", "pypi"]
-cargo = ["dep:toml_edit"]
-npm = []
-pypi = ["dep:toml_edit"]
-go = []
-maven = []
-nuget = []
-deno = []
-
 [dependencies]
 callisto-model = { path = "../callisto-model", version = "0.8.0" }
 camino.workspace = true
-toml_edit = { workspace = true, optional = true }
+toml_edit = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true, features = ["preserve_order"] }
 indexmap = { workspace = true }
@@ -31,7 +21,7 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 callisto-model = { path = "../callisto-model", features = ["test-util"] }
-callisto-fixtures = { path = "../callisto-fixtures", default-features = false }
+callisto-fixtures = { path = "../callisto-fixtures" }
 tempfile.workspace = true
 proptest.workspace = true
 serial_test.workspace = true

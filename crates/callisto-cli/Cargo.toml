@@ -14,12 +14,6 @@ workspace = true
 name = "callisto"
 path = "src/main.rs"
 
-[features]
-default = ["cargo", "npm"]
-cargo = ["callisto-graph/cargo"]
-npm = ["callisto-graph/npm"]
-inference = ["callisto-graph/inference"]
-
 [dependencies]
 callisto-changelog = { path = "../callisto-changelog", version = "0.8.0" }
 callisto-conventional = { path = "../callisto-conventional", version = "0.8.0" }
@@ -43,8 +37,6 @@ dialoguer = "0.11"
 dunce = { workspace = true }
 path-slash = { workspace = true }
 tempfile = { workspace = true }
-sha2 = { workspace = true }
-toml = { workspace = true }
 
 [dev-dependencies]
 callisto-model = { path = "../callisto-model", features = ["test-util"] }

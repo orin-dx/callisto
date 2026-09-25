@@ -77,8 +77,6 @@ pub struct LocalReleasePlan {
     pub intent: ReleaseIntentV1,
     /// A preview only: `origin` has no push URL, so tags carry no remote and a run would refuse.
     pub tags_unbound: bool,
-    /// Absolute directory of every released package, for per-package credential lookup.
-    pub package_dirs: std::collections::BTreeMap<ReleasePackageId, std::path::PathBuf>,
 }
 
 /// Derives the intent for every unreleased package (or exactly `selections`).
@@ -147,19 +145,7 @@ pub fn plan_workspace_release<R: CommandRunner, D: DependencyResolver>(
             reason: StaleReason::source_identity_changed(),
         });
     }
-    let mut package_dirs = std::collections::BTreeMap::new();
-    for package in workspace.graph.packages() {
-        for id in crate::commands::release_decision::release_package_ids(&workspace.identity, package)? {
-            if intent.decision.entries.iter().any(|entry| entry.package == id) {
-                package_dirs.insert(id, workspace.root.join(super::derive::package_dir(package)?));
-            }
-        }
-    }
-    Ok(Some(LocalReleasePlan {
-        intent,
-        tags_unbound,
-        package_dirs,
-    }))
+    Ok(Some(LocalReleasePlan { intent, tags_unbound }))
 }
 
 #[cfg(test)]

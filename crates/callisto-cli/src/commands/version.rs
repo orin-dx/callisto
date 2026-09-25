@@ -127,7 +127,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "inference")]
     fn run_git(root: &Path, args: &[&str]) {
         let status = std::process::Command::new("git")
             .args(args)
@@ -336,18 +335,10 @@ mod tests {
         }
     }
 
-    /// Spec: with the `inference` feature enabled, the CLI must actually use commit-based
-    /// severity inference for a package with no changeset -- not silently behave as if
-    /// inference were off. Builds a real git repo (real `CliCommandRunner`, real gix/git,
-    /// no `NoopRunner`) with a release tag followed by a `feat:` commit and no changeset
-    /// file, then asserts `plan_version` -- driven by `crate::workspace::select_inference()`,
-    /// the same call `handle()` makes -- infers a `Minor` bump attributed to inference.
-    /// `NoInference` (or a `select_inference()` that ignores the feature flag) always
-    /// returns `Ok(None)`, which would leave the package unbumped, so this fails for exactly
-    /// the right reason if the feature-gated dispatch isn't wired up.
-    #[cfg(feature = "inference")]
+    /// A `release-trigger = "auto"` package with a `feat:` commit and no changeset gets an
+    /// inferred minor bump through `select_inference()`, the call `handle()` makes.
     #[test]
-    fn version_uses_real_commit_inference_when_feature_enabled() {
+    fn version_uses_real_commit_inference_for_auto_trigger() {
         use crate::runner::CliCommandRunner;
         use callisto_graph::locate::IgnoreWalkLocator;
         use callisto_model::BumpReason;
@@ -400,11 +391,11 @@ mod tests {
         let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");
 
         let pkg_alpha = PackageId::parse("pkg-alpha").unwrap();
-        let bump = plan.bumps.iter().find(|b| b.package == pkg_alpha).expect(
-            "pkg-alpha must have a planned bump from commit inference -- got none, meaning \
-             select_inference() is not actually dispatching to CommitInference despite the \
-             inference feature being enabled",
-        );
+        let bump = plan
+            .bumps
+            .iter()
+            .find(|b| b.package == pkg_alpha)
+            .expect("pkg-alpha must have a planned bump from commit inference");
 
         assert_eq!(bump.to.render(), "1.1.0", "a `feat:` commit must infer a minor bump");
         assert!(

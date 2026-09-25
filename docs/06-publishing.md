@@ -12,17 +12,10 @@ This document covers authentication setup for registry publishing, with particul
 - `--package <ecosystem/name>` (repeatable) restricts the run to named unreleased packages, plus every member of their fixed or linked groups. An unreleased workspace package that a selected one depends on (runtime, optional, or peer) must be selected too.
 - It refuses a dirty worktree: a tracked modification or an untracked file not covered by `.gitignore`. Ignored files never count.
 - It prints `Nothing to release.` and exits 0 when every package is already tagged.
-- A receipt is written only when every operation succeeded; after a partial failure, rerun to adopt what landed. It goes to `--receipt <file>` (refused inside the checkout), else `<state dir>/callisto/<repo-hash>/<intent-digest>/receipt.json` (`$XDG_STATE_HOME`, else `~/.local/state`; `~/Library/Application Support` on macOS). Never inside the checkout.
+- It prints a summary. With `--receipt <file>` it also writes the receipt there, only when every operation succeeded; after a partial failure, rerun to adopt what landed.
 - A workspace with `[[release.artifact]]` slots or napi/maturin platform packages must release from CI: `callisto release plan`, `release artifact-manifest`, `release execute`.
 
-Before the first effect it checks one credential per operation kind and names the one that is missing:
-
-| Operation | Accepted credential |
-|---|---|
-| cargo publish | crates.io: `CARGO_REGISTRY_TOKEN`; another registry `<name>`: `CARGO_REGISTRIES_<NAME>_TOKEN`. Or a `cargo login` entry for that registry, or a configured `credential-provider` |
-| npm publish | `NODE_AUTH_TOKEN`, `NPM_TOKEN`, OIDC (`ACTIONS_ID_TOKEN_REQUEST_URL`), or an auth line in the user (`NPM_CONFIG_USERCONFIG`, else `~/.npmrc`), project, or package `.npmrc`; a `${VAR}` in it counts only when `VAR` is set |
-| PyPI publish | `TWINE_PASSWORD`, OIDC, or a `~/.pypirc` password for the target repository. A keyring-only password cannot be detected |
-| GitHub release | `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth status` succeeding |
+Callisto does not check credentials itself. cargo, npm, twine and gh each report their own auth failure; fix it and rerun, which adopts every effect that already landed.
 
 ---
 

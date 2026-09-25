@@ -22,7 +22,7 @@ Rules for AI agents working in this repo.
 ## Commands
 
 - Full pipeline: `just ci` (includes the 90% coverage gate). `just test`, `just lint`, `just fmt`.
-- Scoped iteration: one `cargo test -p <crate>` or `cargo clippy -p <crate> --all-targets --all-features -- -D warnings` at a time.
+- Scoped iteration: one `cargo test -p <crate>` or `cargo clippy -p <crate> --all-targets -- -D warnings` at a time.
   - Not `moon run <project>:test`: its per-project fan-out serializes on `target/`'s build lock.
   - Never run cargo builds in parallel.
 - Changesets: `callisto add --package <crate>:<bump> --summary "..."` (non-interactive).

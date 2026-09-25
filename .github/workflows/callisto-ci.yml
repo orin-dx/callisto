@@ -102,26 +102,14 @@ jobs:
       - uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab # v2
         with:
           tool: cargo-nextest
+      # Real-registry e2e runs on Linux only; the tests skip elsewhere.
       - name: Install Verdaccio (real-registry npm e2e coverage)
+        if: runner.os == 'Linux'
         run: npm install -g verdaccio@6.10.4 # zizmor: ignore[adhoc-packages] pinned to an exact upstream release; a CI-only test-registry tool, not a shipped or lockfile-tracked dependency.
       - name: Install pypiserver (real-registry PyPI e2e coverage)
-        # A venv, not --user: pins pypi-server, twine and build to exact
-        # versions in one directory, same layout on both runner OSes. Its
-        # bin/ carries both `python3` and `python` regardless of the base
-        # interpreter's own name, and pypi_publish_argv resolves `python3`
-        # first (falling back to `python`), so either name resolves here.
-        # legacy-cgi: pypiserver 2.4.0 (its latest release) imports the
-        # stdlib `cgi` module, removed in Python 3.13 (PEP 594); macOS
-        # runners' `python3` is already past that line, so without this
-        # pypi-server crashes on startup with ModuleNotFoundError before
-        # ever binding its port. A no-op on a Python that still has the
-        # real stdlib module (verified: the real one still wins the import).
-        # gunicorn: the test passes `--server gunicorn` to pypi-server --
-        # every other backend (the `auto` default's `wsgiref` fallback,
-        # `paste`, gevent's `pywsgi`) resolves the bind address via
-        # `socket.getfqdn()` before listening, measured to take 12-35s on a
-        # machine exhibiting the same slow-reverse-DNS symptom the CI macOS
-        # runner hit; gunicorn has no such call and measured under 1s.
+        if: runner.os == 'Linux'
+        # legacy-cgi: pypiserver 2.4.0 imports `cgi`, removed in Python 3.13.
+        # gunicorn: the test's `--server gunicorn` avoids a slow getfqdn() bind.
         run: |
           python3 -m venv "$RUNNER_TEMP/pypi-e2e-venv"
           "$RUNNER_TEMP/pypi-e2e-venv/bin/pip" install pypiserver==2.4.0 twine==6.2.0 build==1.4.4 legacy-cgi==2.6.3 gunicorn==26.2.0
@@ -130,23 +118,6 @@ jobs:
       - run: just release-workflow-behavior
       - name: Verify Release-PR action against the real callisto binary
         run: bash .github/actions/callisto-action/tests/test_release_pr_decide_binary_contract.sh
-
-  test-default-features:
-    name: Test Suite (Default Features)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: taiki-e/install-action@c3ec0de9ae7f1019cea21aa96aa0a895b9552063 # v2
-        with:
-          tool: just@1.58.0
-      - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
-      - uses: taiki-e/install-action@c3ec0de9ae7f1019cea21aa96aa0a895b9552063 # v2
-        with:
-          tool: cargo-nextest
-      - run: just test-ci-default-features
 
   release-artifact-preflight:
     name: Release Artifact Preflight (${{ matrix.id }})

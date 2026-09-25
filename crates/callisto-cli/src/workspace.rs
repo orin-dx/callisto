@@ -36,17 +36,7 @@ pub fn workspace_root(global: &GlobalArgs, runner: &dyn CommandRunner) -> Result
     Ok(find_workspace_root(&start)?)
 }
 
-/// Selects the concrete `SeverityInference` impl at compile time, milestone-gated by the
-/// `inference` Cargo feature (§17, §G.14): `NoInference` when the feature is off,
-/// `CommitInference` (a real git-backed adapter, §G.6.4) when it's on. `CommitInference`
-/// needs no workspace/runner context of its own -- `SeverityInference::infer` receives the
-/// caller's `GitAccess` per call -- so this needs no parameters and no lifetime.
-#[cfg(not(feature = "inference"))]
-pub fn select_inference() -> impl SeverityInference {
-    callisto_graph::infer::NoInference
-}
-
-#[cfg(feature = "inference")]
+/// Commit inference; `release-trigger` decides per package whether it runs.
 pub fn select_inference() -> impl SeverityInference {
     callisto_graph::infer::CommitInference
 }

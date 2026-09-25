@@ -11,8 +11,6 @@ use std::path::Path;
 
 use release_harness::*;
 
-const CREDENTIALS: &[(&str, &str)] = &[("CARGO_REGISTRY_TOKEN", "cargo-secret"), ("GH_TOKEN", "gh-secret")];
-
 struct Rig {
     external: tempfile::TempDir,
     bin: std::path::PathBuf,
@@ -43,19 +41,11 @@ impl Rig {
         self.external.path().join("home")
     }
 
-    fn state(&self) -> std::path::PathBuf {
-        self.external.path().join("state")
-    }
-
-    fn run(&self, root: &Path, args: &[&str], env: &[(&str, &str)]) -> std::process::Output {
-        let state = self.state();
-        let mut env = env.to_vec();
-        env.push(("XDG_STATE_HOME", state.to_str().unwrap()));
+    fn run(&self, root: &Path, args: &[&str]) -> std::process::Output {
         release_local(
             root,
             args,
             &self.home(),
-            &env,
             FakePublishers {
                 bin: &self.bin,
                 log: &self.log,
@@ -96,12 +86,12 @@ fn release_on_a_branch_publishes_tags_and_releases_then_has_nothing_left() {
     let root = dir.path();
     let rig = Rig::new(&release_commit);
 
-    let preview = rig.run(root, &["--format", "json", "--dry-run", "release"], &[]);
+    let preview = rig.run(root, &["--format", "json", "--dry-run", "release"]);
     assert!(preview.status.success(), "{}", stderr(&preview));
     let planned: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
     assert_no_effects(&rig, root);
 
-    let run = rig.run(root, &["--format", "json", "release"], CREDENTIALS);
+    let run = rig.run(root, &["--format", "json", "release"]);
     assert!(run.status.success(), "{}\n{}", stderr(&run), rig.effects());
     let effects = rig.effects();
     for effect in ["cargo publish", "git push", "gh release create"] {
@@ -121,29 +111,19 @@ fn release_on_a_branch_publishes_tags_and_releases_then_has_nothing_left() {
         Some(release_commit.as_str())
     );
 
-    let path = rig
-        .state()
-        .join("callisto")
-        .read_dir()
-        .unwrap()
-        .next()
-        .unwrap()
-        .unwrap()
-        .path()
-        .join(planned["digest"].as_str().unwrap())
-        .join("receipt.json");
-    let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    assert_eq!(saved, receipt);
-    assert!(!path.starts_with(root));
     assert_eq!(git(root, &["status", "--porcelain"]), "", "no receipt in the checkout");
+    assert!(
+        !rig.home().join(".local").exists() && !rig.home().join("Library").exists(),
+        "no receipt without --receipt"
+    );
 
-    let again = rig.run(root, &["--format", "text", "release"], CREDENTIALS);
+    let again = rig.run(root, &["--format", "text", "release"]);
     assert!(again.status.success(), "{}", stderr(&again));
     assert_eq!(String::from_utf8_lossy(&again.stdout), "Nothing to release.\n");
     assert_eq!(rig.effects(), effects, "no-op performs no effect");
 }
 
-/// AC-09: `--receipt` overrides the state directory.
+/// AC-09: `--receipt` writes the receipt to that file.
 #[test]
 fn receipt_flag_writes_to_the_given_path() {
     let (dir, release_commit) = on_branch();
@@ -151,10 +131,13 @@ fn receipt_flag_writes_to_the_given_path() {
     let rig = Rig::new(&release_commit);
     let receipt = rig.external.path().join("explicit-receipt.json");
 
-    let run = rig.run(root, &["release", "--receipt", receipt.to_str().unwrap()], CREDENTIALS);
+    let run = rig.run(root, &["release", "--receipt", receipt.to_str().unwrap()]);
     assert!(run.status.success(), "{}", stderr(&run));
-    assert!(receipt.is_file());
-    assert!(!rig.state().exists());
+    let saved: serde_json::Value = serde_json::from_slice(&fs::read(&receipt).unwrap()).unwrap();
+    assert_eq!(
+        saved["envelope"]["releaseSourceRevision"].as_str(),
+        Some(release_commit.as_str())
+    );
     assert!(String::from_utf8_lossy(&run.stdout).contains(receipt.to_str().unwrap()));
 }
 
@@ -166,17 +149,17 @@ fn dirty_worktree_blocks_release_before_any_effect() {
     let rig = Rig::new(&release_commit);
 
     fs::write(root.join("crates/core/src/lib.rs"), "pub fn changed() {}\n").unwrap();
-    let tracked = rig.run(root, &["release"], CREDENTIALS);
+    let tracked = rig.run(root, &["release"]);
     assert!(!tracked.status.success());
     assert!(stderr(&tracked).contains("clean worktree"), "{}", stderr(&tracked));
     git(root, &["checkout", "--", "crates/core/src/lib.rs"]);
 
     fs::write(root.join("notes.txt"), "untracked\n").unwrap();
-    let untracked = rig.run(root, &["release"], CREDENTIALS);
+    let untracked = rig.run(root, &["release"]);
     assert!(!untracked.status.success());
     assert!(stderr(&untracked).contains("clean worktree") && stderr(&untracked).contains("notes.txt"));
 
-    let preview = rig.run(root, &["--format", "text", "--dry-run", "release"], &[]);
+    let preview = rig.run(root, &["--format", "text", "--dry-run", "release"]);
     assert!(preview.status.success(), "{}", stderr(&preview));
     let text = String::from_utf8_lossy(&preview.stdout);
     assert!(
@@ -191,39 +174,8 @@ fn dirty_worktree_blocks_release_before_any_effect() {
     git(root, &["commit", "-q", "-m", "ignore scratch"]);
     fs::create_dir(root.join("scratch")).unwrap();
     fs::write(root.join("scratch/out"), "ignored\n").unwrap();
-    let clean = rig.run(root, &["release"], CREDENTIALS);
+    let clean = rig.run(root, &["release"]);
     assert!(clean.status.success(), "{}", stderr(&clean));
-}
-
-/// AC-07: a missing credential for any selected kind stops before every effect and is named.
-#[test]
-fn missing_credentials_are_named_before_any_effect() {
-    let (dir, release_commit) = on_branch();
-    let root = dir.path();
-    let rig = Rig::new(&release_commit);
-
-    let no_cargo = rig.run(root, &["release"], &[("GH_TOKEN", "gh-secret")]);
-    assert!(!no_cargo.status.success());
-    assert!(
-        stderr(&no_cargo).contains("CARGO_REGISTRY_TOKEN"),
-        "{}",
-        stderr(&no_cargo)
-    );
-    assert_no_effects(&rig, root);
-
-    let no_github = rig.run(root, &["release"], &[("CARGO_REGISTRY_TOKEN", "cargo-secret")]);
-    assert!(!no_github.status.success());
-    assert!(stderr(&no_github).contains("GH_TOKEN"), "{}", stderr(&no_github));
-    assert_no_effects(&rig, root);
-
-    fs::create_dir_all(rig.home().join(".cargo")).unwrap();
-    fs::write(
-        rig.home().join(".cargo/credentials.toml"),
-        "[registry]\ntoken = \"x\"\n",
-    )
-    .unwrap();
-    let logged_in = rig.run(root, &["release"], &[("GITHUB_TOKEN", "gh-secret")]);
-    assert!(logged_in.status.success(), "{}", stderr(&logged_in));
 }
 
 /// AC-03: `--package` restricts selection; a released or unknown package is refused.
@@ -243,7 +195,6 @@ fn package_selection_is_exact() {
             "--package",
             "cargo/core-crate",
         ],
-        &[],
     );
     assert!(selected.status.success(), "{}", stderr(&selected));
     let intent: serde_json::Value = serde_json::from_slice(&selected.stdout).unwrap();
@@ -253,10 +204,10 @@ fn package_selection_is_exact() {
         "unreleasedVersion"
     );
 
-    let unknown = rig.run(root, &["--dry-run", "release", "--package", "cargo/nope"], &[]);
+    let unknown = rig.run(root, &["--dry-run", "release", "--package", "cargo/nope"]);
     assert!(!unknown.status.success());
 
-    let commit = rig.run(root, &["release", "--from-release-commit", &release_commit], &[]);
+    let commit = rig.run(root, &["release", "--from-release-commit", &release_commit]);
     assert!(!commit.status.success());
     assert!(stderr(&commit).contains("--from-release-commit"), "{}", stderr(&commit));
 }
@@ -269,7 +220,7 @@ fn artifact_slot_workspace_names_the_ci_route() {
     git(root, &["checkout", "-q", "main"]);
     let rig = Rig::new(&release_commit);
 
-    let run = rig.run(root, &["--format", "json", "release"], CREDENTIALS);
+    let run = rig.run(root, &["--format", "json", "release"]);
     assert!(!run.status.success());
     let err = stderr(&run);
     assert!(err.contains("release_requires_ci_route"), "{err}");
@@ -278,7 +229,7 @@ fn artifact_slot_workspace_names_the_ci_route() {
     }
     assert_no_effects(&rig, root);
 
-    let preview = rig.run(root, &["--format", "json", "--dry-run", "release"], &[]);
+    let preview = rig.run(root, &["--format", "json", "--dry-run", "release"]);
     assert!(preview.status.success(), "{}", stderr(&preview));
     let intent: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
     assert_eq!(intent["artifactSlots"].as_array().unwrap().len(), 4);
@@ -291,7 +242,7 @@ fn legacy_publish_commands_fail_to_parse() {
     let root = dir.path();
     let rig = Rig::new(&release_commit);
     for command in ["publish", "plan-publish", "tag", "filter-plan"] {
-        let out = rig.run(root, &[command], &[]);
+        let out = rig.run(root, &[command]);
         assert_eq!(out.status.code(), Some(2), "{command}");
         assert!(
             stderr(&out).contains("unrecognized subcommand"),
@@ -373,7 +324,7 @@ fn dry_run_without_origin_notes_unbound_tags() {
     git(root, &["remote", "remove", "origin"]);
     let rig = Rig::new(&release_commit);
 
-    let preview = rig.run(root, &["--format", "text", "--dry-run", "release"], &[]);
+    let preview = rig.run(root, &["--format", "text", "--dry-run", "release"]);
     assert!(preview.status.success(), "{}", stderr(&preview));
     let text = String::from_utf8_lossy(&preview.stdout);
     assert!(
@@ -387,7 +338,7 @@ fn dry_run_without_origin_notes_unbound_tags() {
         stderr(&preview)
     );
 
-    let run = rig.run(root, &["release"], CREDENTIALS);
+    let run = rig.run(root, &["release"]);
     assert!(!run.status.success());
     assert_no_effects(&rig, root);
 }
@@ -398,31 +349,13 @@ fn a_failed_run_writes_no_receipt_and_a_rerun_completes() {
     let (dir, release_commit) = on_branch();
     let root = dir.path();
     let failing = Rig::with_cargo_failure(&release_commit, true);
-    let out = failing.run(root, &["release"], CREDENTIALS);
+    let receipt = failing.external.path().join("receipt.json");
+    let out = failing.run(root, &["release", "--receipt", receipt.to_str().unwrap()]);
     assert!(!out.status.success());
-    assert!(receipts(&failing.state()).is_empty(), "no receipt for a partial run");
+    assert!(!receipt.exists(), "no receipt for a partial run");
 
     let rig = Rig::new(&release_commit);
-    let rerun = rig.run(root, &["--format", "json", "release"], CREDENTIALS);
+    let rerun = rig.run(root, &["release", "--receipt", receipt.to_str().unwrap()]);
     assert!(rerun.status.success(), "{}", stderr(&rerun));
-    assert_eq!(receipts(&rig.state()).len(), 1);
-}
-
-fn receipts(dir: &Path) -> Vec<std::path::PathBuf> {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    entries
-        .flatten()
-        .flat_map(|entry| {
-            let path = entry.path();
-            if path.is_dir() {
-                receipts(&path)
-            } else if path.file_name().is_some_and(|name| name == "receipt.json") {
-                vec![path]
-            } else {
-                Vec::new()
-            }
-        })
-        .collect()
+    assert!(receipt.is_file());
 }
