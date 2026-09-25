@@ -297,6 +297,20 @@ pub enum CliError {
     )]
     ReleaseReceiptLocation { detail: String },
 
+    #[error("stdin is not a terminal, so init needs flags instead of prompts; missing: {}", .missing.join(", "))]
+    #[diagnostic(
+        code(callisto::init_requires_yes),
+        help("re-run `callisto init --yes` with the listed flags, or run it in a terminal to be asked")
+    )]
+    InitRequiresYes { missing: Vec<&'static str> },
+
+    #[error("init --yes is missing required flag(s): {}", .missing.join(", "))]
+    #[diagnostic(
+        code(callisto::init_missing_flags),
+        help("supply the listed flags; see `callisto init --help`")
+    )]
+    InitMissingFlags { missing: Vec<&'static str> },
+
     #[error("{0}")]
     #[diagnostic(code(callisto::error))]
     Other(String),

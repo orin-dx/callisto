@@ -34,7 +34,48 @@ edition = "2021"
         cwd: root.to_path_buf(),
         dry_run: false,
     };
-    let init_res = commands::init::handle(callisto_cli::cli::InitArgs { yes: true }, &global);
+    for args in [
+        ["remote", "add", "origin", "https://github.com/example/my-app.git"].as_slice(),
+        [
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            "add",
+            ".",
+        ]
+        .as_slice(),
+        [
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "-m",
+            "init",
+        ]
+        .as_slice(),
+    ] {
+        assert!(std::process::Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .status()
+            .unwrap()
+            .success());
+    }
+    let init_res = commands::init::handle(
+        callisto_cli::cli::InitArgs {
+            yes: true,
+            versioning: Some(callisto_cli::cli::InitVersioning::Independent),
+            ..Default::default()
+        },
+        &global,
+    );
     assert!(init_res.is_ok());
     assert!(root.join("callisto.toml").exists());
 
@@ -106,7 +147,7 @@ fn test_status_matches_ecosystem_qualified_changeset_entry() {
         dry_run: false,
     };
 
-    commands::init::handle(callisto_cli::cli::InitArgs { yes: true }, &global).unwrap();
+    callisto_fixtures::scaffold_callisto(&global.cwd);
 
     // Write a changeset manually using the ecosystem-qualified entry name.
     // This happens when a user runs `callisto add --package cargo/my-app:patch`.
@@ -169,7 +210,7 @@ fn test_status_check_exit_codes() {
     };
 
     // Initialize so callisto.toml exists.
-    commands::init::handle(callisto_cli::cli::InitArgs { yes: true }, &global).unwrap();
+    callisto_fixtures::scaffold_callisto(&global.cwd);
 
     let check_args = StatusArgs {
         strict: false,
@@ -244,7 +285,7 @@ fn test_status_default_exit_code_clean_workspace() {
         dry_run: false,
     };
 
-    commands::init::handle(callisto_cli::cli::InitArgs { yes: true }, &global).unwrap();
+    callisto_fixtures::scaffold_callisto(&global.cwd);
 
     let code = commands::status::handle(
         StatusArgs {

@@ -284,7 +284,8 @@ mod tests {
     #[test]
     fn discover_returns_workspace_root_not_found_for_non_workspace_dir() {
         let tmp = tempfile::tempdir().unwrap();
-        // Deliberately no workspace markers -- plain empty temp directory
+        // A Git repository with deliberately no workspace or package markers.
+        std::fs::create_dir(tmp.path().join(".git")).unwrap();
         let result = IgnoreWalkLocator::discover(tmp.path());
         let is_correct = matches!(result, Err(LocateError::WorkspaceRootNotFound { .. }));
         let err_display = result

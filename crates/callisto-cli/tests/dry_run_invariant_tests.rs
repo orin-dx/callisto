@@ -12,7 +12,7 @@ use std::fs;
 use std::process::Command;
 
 use callisto_cli::cli::{
-    AddArgs, GlobalArgs, InitArgs, OutputFormat, PreArgs, ReleaseCommandArgs, SnapshotArgs, VersionArgs,
+    AddArgs, GlobalArgs, InitArgs, InitVersioning, OutputFormat, PreArgs, ReleaseCommandArgs, SnapshotArgs, VersionArgs,
 };
 use callisto_cli::commands;
 use callisto_fixtures::dry_run::assert_no_disk_mutation;
@@ -68,7 +68,7 @@ fn global(root: &std::path::Path, dry_run: bool) -> GlobalArgs {
 /// changeset, so `version`/`snapshot` have real work to preview.
 fn seed_initialized_workspace(root: &std::path::Path) {
     let real = global(root, false);
-    commands::init::handle(InitArgs { yes: true }, &real).unwrap();
+    callisto_fixtures::scaffold_callisto(root);
     commands::add::handle(
         AddArgs {
             packages: vec!["core-crate:minor".to_string()],
@@ -181,50 +181,26 @@ fn pre_exit_dry_run_writes_nothing() {
 }
 
 /// Regression: `init` scaffolded `callisto.toml`, `.changeset/`, and
-/// `.changeset/README.md` unconditionally on a first run.
-#[test]
-fn init_dry_run_writes_nothing_on_first_run() {
-    let dir = setup_repo();
-    let root = dir.path();
-
-    assert_no_disk_mutation(root, || {
-        commands::init::handle(InitArgs { yes: false }, &global(root, true)).unwrap();
-    });
-}
-
-/// `--yes` and `--dry-run` are independent gates. `--yes` only answers the
-/// interactive confirm and the reconcile-apply question; it must never
-/// override `--dry-run`. This combination was the specific hole: `--yes`
-/// took the apply branch while `--dry-run` was ignored entirely.
+/// `.changeset/README.md` unconditionally on a first run; `--yes` must not override `--dry-run`.
 #[test]
 fn init_dry_run_writes_nothing_even_with_yes() {
     let dir = setup_repo();
     let root = dir.path();
+    git(
+        root,
+        &["remote", "add", "origin", "https://github.com/example/core-crate.git"],
+    );
 
     assert_no_disk_mutation(root, || {
-        commands::init::handle(InitArgs { yes: true }, &global(root, true)).unwrap();
-    });
-}
-
-/// The reconcile path: an existing `callisto.toml` recording fewer ecosystems
-/// than the workspace now contains. With `--yes` this normally rewrites the
-/// `[init]` table; under `--dry-run` it must only report the diff.
-#[test]
-fn init_dry_run_writes_nothing_on_reconcile_with_yes() {
-    let dir = setup_repo();
-    let root = dir.path();
-
-    // Record only `cargo`, leaving `npm` as drift to reconcile.
-    fs::write(
-        root.join("callisto.toml"),
-        "# callisto configuration\n\n[init]\necosystems = [\"cargo\"]\n",
-    )
-    .unwrap();
-    fs::create_dir_all(root.join(".changeset")).unwrap();
-    fs::write(root.join(".changeset/README.md"), "# Changesets\n").unwrap();
-
-    assert_no_disk_mutation(root, || {
-        commands::init::handle(InitArgs { yes: true }, &global(root, true)).unwrap();
+        commands::init::handle(
+            InitArgs {
+                yes: true,
+                versioning: Some(InitVersioning::Fixed),
+                ..Default::default()
+            },
+            &global(root, true),
+        )
+        .unwrap();
     });
 }
 
@@ -294,6 +270,7 @@ fn snapshot_dry_run_text_output_has_dry_run_marker() {
 #[test]
 fn pre_exit_without_pre_json_returns_io_error() {
     let dir = tempdir().unwrap();
+    std::fs::create_dir(dir.path().join(".git")).unwrap();
     let root = dir.path();
 
     // A minimal workspace root marker satisfies `find_workspace_root`.

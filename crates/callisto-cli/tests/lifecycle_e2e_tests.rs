@@ -3,7 +3,9 @@ mod common;
 use std::fs;
 use std::process::Command;
 
-use callisto_cli::cli::{AddArgs, GlobalArgs, InitArgs, OutputFormat, ReleaseCommandArgs, StatusArgs, VersionArgs};
+use callisto_cli::cli::{
+    AddArgs, GlobalArgs, InitArgs, InitVersioning, OutputFormat, ReleaseCommandArgs, StatusArgs, VersionArgs,
+};
 use callisto_cli::commands;
 
 use common::setup_polyglot_git_repo;
@@ -20,7 +22,20 @@ fn test_full_polyglot_workspace_release_lifecycle() {
     };
 
     // 1. callisto init
-    let init_res = commands::init::handle(InitArgs { yes: true }, &global);
+    assert!(Command::new("git")
+        .args(["remote", "add", "origin", "https://github.com/example/core-crate.git"])
+        .current_dir(root)
+        .status()
+        .unwrap()
+        .success());
+    let init_res = commands::init::handle(
+        InitArgs {
+            yes: true,
+            versioning: Some(InitVersioning::Independent),
+            ..Default::default()
+        },
+        &global,
+    );
     assert!(init_res.is_ok());
 
     // 2. callisto add
@@ -67,11 +82,6 @@ fn test_full_polyglot_workspace_release_lifecycle() {
     assert!(updated_pkg.contains("\"version\": \"1.0.1\""));
 
     // 5. callisto release --dry-run previews the release without publishing.
-    Command::new("git")
-        .args(["remote", "add", "origin", "https://github.com/example/core-crate.git"])
-        .current_dir(root)
-        .status()
-        .unwrap();
     let dry_run_global = GlobalArgs {
         dry_run: true,
         ..global.clone()
@@ -224,14 +234,7 @@ fn test_dry_run_flag_preserves_disk_state() {
         dry_run: true,
     };
 
-    commands::init::handle(
-        InitArgs { yes: true },
-        &GlobalArgs {
-            dry_run: false,
-            ..global_dry.clone()
-        },
-    )
-    .unwrap();
+    callisto_fixtures::scaffold_callisto(root);
 
     commands::add::handle(
         AddArgs {

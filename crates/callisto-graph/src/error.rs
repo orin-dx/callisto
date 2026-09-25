@@ -570,6 +570,74 @@ pub enum GraphError {
         package: callisto_model::ReleasePackageId,
         target: &'static str,
     },
+
+    #[error("`{}` already exists; this workspace is already initialized", .path.display())]
+    #[diagnostic(
+        code(E190),
+        help("Edit callisto.toml directly; `callisto init` only scaffolds a workspace without one.")
+    )]
+    InitAlreadyInitialized { path: PathBuf },
+
+    #[error("`{}` is not a Git repository", .root.display())]
+    #[diagnostic(
+        code(E191),
+        help("Run `git init` in the workspace root, then re-run `callisto init`.")
+    )]
+    InitNotGitRepository { root: PathBuf },
+
+    #[error("no `origin` remote is configured")]
+    #[diagnostic(
+        code(E192),
+        help("Add the repository's remote as `origin`: `git remote add origin <url>`.")
+    )]
+    InitOriginMissing,
+
+    #[error("package `{package}` matches more than one tag convention: {}", .matches.join("; "))]
+    #[diagnostic(
+        code(E193),
+        help("Write a [[package]] entry for it with `tag-template` set to the current convention and `previous-tag-templates` listing the older ones.")
+    )]
+    InitTagTemplateAmbiguous { package: String, matches: Vec<String> },
+
+    #[error("several packages have `v{{version}}` tags: {}", .packages.join(", "))]
+    #[diagnostic(
+        code(E194),
+        help("Give each package its own [[package]] `tag-template` (and `previous-tag-templates` for the shared `v{{version}}` tags).")
+    )]
+    InitSharedVersionTag { packages: Vec<String> },
+
+    #[error("forge repository `{value}` is invalid: {reason}")]
+    #[diagnostic(code(E195), help("Use the GitHub `owner/repo` the product releases to."))]
+    InitInvalidForgeRepository { value: String, reason: String },
+
+    #[error("forge repository `{configured}` does not match the origin remote `{origin}`")]
+    #[diagnostic(
+        code(E187),
+        help("The release plan requires [release].forge-repository to be origin's GitHub repository. Use that `owner/repo`, or point origin at the repository binaries release to.")
+    )]
+    InitForgeRepositoryMismatch { configured: String, origin: String },
+
+    #[error("artifact target `{triple}` is invalid: {reason}")]
+    #[diagnostic(
+        code(E196),
+        help("Use distinct Rust target triples from `rustc --print target-list`.")
+    )]
+    InitInvalidTargetTriple { triple: String, reason: &'static str },
+
+    #[error("no package produces a binary artifact, so there is nothing to ship")]
+    #[diagnostic(
+        code(E188),
+        help("Remove --artifact-target, or add a binary target ([[bin]], an npm `bin`, or [project.scripts]).")
+    )]
+    InitNoBinaryPackage,
+
+    #[error("product package `{package}` is invalid: {reason}")]
+    #[diagnostic(code(E189), help("Name one of the binary-producing packages: {}.", .candidates.join(", ")))]
+    InitInvalidProductPackage {
+        package: String,
+        reason: &'static str,
+        candidates: Vec<String>,
+    },
 }
 
 /// Source of a [`GraphError::ReleaseCommand`] (E164) failure: either the

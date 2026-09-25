@@ -136,32 +136,14 @@ pub fn render_init<W: io::Write>(report: &InitReport, w: &mut W) -> io::Result<(
             w,
             "Initialized callisto configuration at {}",
             report.config_path.display()
-        )?;
-    } else if report.diff.new_ecosystems.is_empty() {
+        )
+    } else {
         writeln!(
             w,
-            "callisto configuration at {} is up to date; nothing to reconcile",
+            "[DRY-RUN] Would write {} (no files written)",
             report.config_path.display()
-        )?;
-    } else {
-        let names: Vec<&str> = report.diff.new_ecosystems.iter().map(|e| e.prefix()).collect();
-        if report.diff.applied {
-            writeln!(
-                w,
-                "Reconciled {}: added newly-detected ecosystem(s) {}",
-                report.config_path.display(),
-                names.join(", ")
-            )?;
-        } else {
-            writeln!(
-                w,
-                "Drift detected in {}: newly-detected ecosystem(s) {} — re-run with --yes to apply",
-                report.config_path.display(),
-                names.join(", ")
-            )?;
-        }
+        )
     }
-    Ok(())
 }
 
 pub fn render_matrix<W: io::Write>(report: &callisto_model::MatrixReport, w: &mut W) -> io::Result<()> {
@@ -410,59 +392,24 @@ mod tests {
     }
 
     #[test]
-    fn render_init_up_to_date_reports_nothing_to_reconcile() {
-        let report = InitReport {
+    fn render_init_reports_written_or_dry_run() {
+        let report = |initialized| InitReport {
             schema_version: callisto_model::SCHEMA_VERSION,
-            initialized: false,
+            initialized,
             config_path: std::path::PathBuf::from("callisto.toml"),
-            diff: callisto_model::InitDiff {
-                new_ecosystems: vec![],
-                applied: false,
-            },
+            config: String::new(),
             diagnostics: vec![],
         };
-        let mut out = Vec::new();
-        render_init(&report, &mut out).unwrap();
-        let text = String::from_utf8(out).unwrap();
-        assert!(text.contains("up to date"), "got: {text}");
-    }
-
-    #[test]
-    fn render_init_applied_drift_reports_reconciled() {
-        let report = InitReport {
-            schema_version: callisto_model::SCHEMA_VERSION,
-            initialized: false,
-            config_path: std::path::PathBuf::from("callisto.toml"),
-            diff: callisto_model::InitDiff {
-                new_ecosystems: vec![Ecosystem::Npm],
-                applied: true,
-            },
-            diagnostics: vec![],
+        let render = |report| {
+            let mut out = Vec::new();
+            render_init(&report, &mut out).unwrap();
+            String::from_utf8(out).unwrap()
         };
-        let mut out = Vec::new();
-        render_init(&report, &mut out).unwrap();
-        let text = String::from_utf8(out).unwrap();
-        assert!(text.contains("Reconciled"), "got: {text}");
-        assert!(text.contains("npm"), "got: {text}");
-    }
-
-    #[test]
-    fn render_init_unapplied_drift_reports_needs_yes_flag() {
-        let report = InitReport {
-            schema_version: callisto_model::SCHEMA_VERSION,
-            initialized: false,
-            config_path: std::path::PathBuf::from("callisto.toml"),
-            diff: callisto_model::InitDiff {
-                new_ecosystems: vec![Ecosystem::Npm],
-                applied: false,
-            },
-            diagnostics: vec![],
-        };
-        let mut out = Vec::new();
-        render_init(&report, &mut out).unwrap();
-        let text = String::from_utf8(out).unwrap();
-        assert!(text.contains("Drift detected"), "got: {text}");
-        assert!(text.contains("--yes"), "got: {text}");
+        assert_eq!(
+            render(report(true)),
+            "Initialized callisto configuration at callisto.toml\n"
+        );
+        assert!(render(report(false)).starts_with("[DRY-RUN]"));
     }
 
     /// §13 invariant 28 / §CLI.5.2: `render_version` must call

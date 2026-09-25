@@ -370,6 +370,15 @@ impl Manifest for PyprojectToml {
         self.role.clone()
     }
 
+    fn bin_names(&self) -> Vec<String> {
+        self.document
+            .get("project")
+            .and_then(|project| project.get("scripts"))
+            .and_then(|scripts| scripts.as_table_like())
+            .map(|scripts| scripts.iter().map(|(name, _)| name.to_string()).collect())
+            .unwrap_or_default()
+    }
+
     fn package_name(&self) -> Result<String, ManifestError> {
         python_package_name(&self.document)
             .map(|s| s.to_string())
@@ -820,6 +829,26 @@ mod tests {
     use callisto_model::ManifestFormat;
     use proptest::prelude::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn bin_names_read_project_scripts_keys() {
+        let dir = tempdir().unwrap();
+        let open = |content: &str| {
+            fs::write(dir.path().join("pyproject.toml"), content).unwrap();
+            let decl =
+                ManifestDecl::new("pyproject.toml", ManifestRole::Canonical, ManifestFormat::PyprojectToml).unwrap();
+            let ctx = OpenContext {
+                workspace_root: dir.path(),
+                cargo_workspace: None,
+                npm_workspace_kind: None,
+            };
+            PyprojectToml::open(&decl, &ctx).unwrap()
+        };
+        let project = "[project]\nname = \"tool\"\nversion = \"1.0.0\"\n";
+        assert!(open(project).bin_names().is_empty());
+        let scripts = format!("{project}\n[project.scripts]\nalpha = \"tool:a\"\nbeta = \"tool:b\"\n");
+        assert_eq!(open(&scripts).bin_names(), ["alpha", "beta"]);
+    }
 
     #[test]
     fn python_package_name_reads_pep621_name() {

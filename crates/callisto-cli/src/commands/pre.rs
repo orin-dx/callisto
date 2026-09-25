@@ -199,6 +199,7 @@ mod tests {
     #[test]
     fn handle_enter_dry_run_text_format_previews_without_writing() {
         let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(tmp.path().join(".git")).unwrap();
         let root = tmp.path();
         std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
         std::fs::write(root.join("callisto.toml"), "").unwrap();

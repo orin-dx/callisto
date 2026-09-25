@@ -5,8 +5,8 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    CommitSha, ConfigKey, DepKind, Diagnostic, Ecosystem, GroupName, PackageId, PublishPlan, ReleaseTrigger, Severity,
-    TagName, Version,
+    CommitSha, ConfigKey, DepKind, Diagnostic, GroupName, PackageId, PublishPlan, ReleaseTrigger, Severity, TagName,
+    Version,
 };
 
 pub const SCHEMA_VERSION: u32 = 1;
@@ -727,20 +727,11 @@ mod tag_report_tests {
 #[serde(rename_all = "camelCase")]
 pub struct InitReport {
     pub schema_version: u32,
-    /// `true` only on a first run, when `callisto.toml` did not exist yet and
-    /// was written directly. `false` on every re-run (§18 Q5.4 mechanism 1),
-    /// including a re-run that applies detected drift — that case is
-    /// reported through `diff`, not this flag.
+    /// `true` when `callisto.toml` was written; `false` under `--dry-run`.
     pub initialized: bool,
     pub config_path: PathBuf,
-    /// Drift between the currently-discovered workspace state and what is
-    /// already recorded in `callisto.toml`, and whether that drift was
-    /// applied this run (docs/00-design.md §18 Q5.4 mechanism 1: re-running
-    /// `init` is the reconcile flow — it re-detects, reports a diff, and
-    /// applies only with confirmation). Empty/`applied: false` when there is
-    /// nothing to reconcile, including on a first run.
-    #[serde(default)]
-    pub diff: InitDiff,
+    /// The `callisto.toml` content written, or that would be written.
+    pub config: String,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub diagnostics: Vec<Diagnostic>,
@@ -756,24 +747,4 @@ impl Report for InitReport {
     fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
     }
-}
-
-/// The reconcile diff computed by a `callisto init` re-run (§18 Q5.4
-/// mechanism 1). Carries *what would change*, not just whether something
-/// changed, so a wrapper (CLI text renderer, `--format json` consumer) can
-/// narrate the drift instead of a bare boolean.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct InitDiff {
-    /// Ecosystems present in the discovered workspace but not yet recorded
-    /// against the existing `callisto.toml` (e.g. a `package.json` added to
-    /// a previously Cargo-only workspace, or `napi.targets` appearing).
-    /// Sorted for determinism. Empty when there is no drift to reconcile.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub new_ecosystems: Vec<Ecosystem>,
-    /// `true` when `new_ecosystems` was non-empty and was written to
-    /// `callisto.toml` this run (`InitOptions::yes`). `false` when the diff
-    /// was only reported (dry-preview) or when there was no diff to apply.
-    #[serde(default)]
-    pub applied: bool,
 }

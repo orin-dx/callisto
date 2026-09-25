@@ -93,7 +93,17 @@ pub struct Workspace<'a, R: CommandRunner, D: DependencyResolver = ManifestWalkR
 
 impl<'a, R: CommandRunner> Workspace<'a, R, ManifestWalkResolver> {
     pub fn load<L: ProjectLocator>(root: PathBuf, locator: &L, runner: &'a R) -> Result<Self, GraphError> {
-        let mut config = config::load(&root)?;
+        let config = config::load(&root)?;
+        Self::load_with_config(root, config, locator, runner)
+    }
+
+    /// Builds the workspace against an already-resolved config instead of `callisto.toml`.
+    pub fn load_with_config<L: ProjectLocator>(
+        root: PathBuf,
+        mut config: ResolvedConfig,
+        locator: &L,
+        runner: &'a R,
+    ) -> Result<Self, GraphError> {
         let manifest_cache: RefCell<BTreeMap<PathBuf, Arc<dyn Manifest>>> = RefCell::new(BTreeMap::new());
         let graph = ManifestWalkResolver::build(&root, locator, runner, &config, &manifest_cache)?;
 

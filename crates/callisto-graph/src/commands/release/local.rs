@@ -94,7 +94,16 @@ pub fn plan_local_release<L: ProjectLocator, R: CommandRunner>(
 ) -> Result<Option<LocalReleasePlan>, GraphError> {
     let root = canonical_root(root)?;
     let workspace = Workspace::load(root, locator, runner)?;
-    let Some(decision) = crate::commands::derive_unreleased_decision(&workspace, selections)? else {
+    plan_workspace_release(&workspace, selections, mode)
+}
+
+/// [`plan_local_release`] over an already-loaded workspace, e.g. one built from an in-memory config.
+pub fn plan_workspace_release<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    selections: &[ReleasePackageId],
+    mode: LocalReleaseSource,
+) -> Result<Option<LocalReleasePlan>, GraphError> {
+    let Some(decision) = crate::commands::derive_unreleased_decision(workspace, selections)? else {
         return Ok(None);
     };
     let profile = ExecutionTrustProfileV1::GitCommit;
@@ -102,7 +111,7 @@ pub fn plan_local_release<L: ProjectLocator, R: CommandRunner>(
         LocalReleaseSource::Preview => SourceIdentity::GitCommit {
             sha: workspace.git_access().head_sha()?,
         },
-        LocalReleaseSource::Trusted => observe_source(&workspace, profile, ReleaseCheckout::AnyHead)?,
+        LocalReleaseSource::Trusted => observe_source(workspace, profile, ReleaseCheckout::AnyHead)?,
     };
     // A local run is its own orchestration: slots bind to the source commit.
     let artifact_policy = match (&workspace.config.product_release, &source) {
@@ -120,7 +129,7 @@ pub fn plan_local_release<L: ProjectLocator, R: CommandRunner>(
         LocalReleaseSource::Trusted => GitRemoteRequirement::Required,
     };
     let intent = derive_release_intent(
-        &workspace,
+        workspace,
         &decision,
         source.clone(),
         profile,
@@ -133,7 +142,7 @@ pub fn plan_local_release<L: ProjectLocator, R: CommandRunner>(
             .iter()
             .any(|operation| operation.id().role == callisto_model::ReleaseOperationRole::Tag)
         && optional_git_remote(&workspace.root, workspace.runner)?.is_none();
-    if mode == LocalReleaseSource::Trusted && observe_source(&workspace, profile, ReleaseCheckout::AnyHead)? != source {
+    if mode == LocalReleaseSource::Trusted && observe_source(workspace, profile, ReleaseCheckout::AnyHead)? != source {
         return Err(GraphError::ReleaseIntentStale {
             reason: StaleReason::source_identity_changed(),
         });

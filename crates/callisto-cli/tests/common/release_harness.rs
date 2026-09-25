@@ -190,7 +190,7 @@ pub fn release_commit_fixture_with_product_release(product_release: bool) -> (Te
     git(root, &["add", "."]);
     git(root, &["commit", "-m", "initial workspace"]);
 
-    let init = callisto(root, &["init", "--yes"]);
+    let init = callisto(root, &["init", "--yes", "--versioning", "independent"]);
     assert!(
         init.status.success(),
         "init failed: {}",
@@ -298,7 +298,7 @@ pub fn fixed_group_release_commit_fixture() -> (TempDir, String) {
     git(root, &["tag", "crate-a@0.1.0"]);
     git(root, &["tag", "crate-b@0.1.0"]);
 
-    let init = callisto(root, &["init", "--yes"]);
+    let init = callisto(root, &["init", "--yes", "--versioning", "independent"]);
     assert!(
         init.status.success(),
         "init failed: {}",

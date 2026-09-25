@@ -44,7 +44,7 @@ fn plugin_artifact_fixture(plugin_in_fixed_group: bool) -> (TempDir, String) {
     git(root, &["tag", "core-crate@0.1.0"]);
     git(root, &["tag", "plugin-crate@0.1.0"]);
 
-    let init = callisto(root, &["init", "--yes"]);
+    let init = callisto(root, &["init", "--yes", "--versioning", "independent"]);
     assert!(init.status.success(), "init: {}", String::from_utf8_lossy(&init.stderr));
     let config = fs::read_to_string(root.join("callisto.toml")).unwrap();
     let group = if plugin_in_fixed_group {

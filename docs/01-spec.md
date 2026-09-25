@@ -2034,8 +2034,7 @@ impl Report for ComposePrBodyReport { const COMMAND: &'static str = "compose-pr-
 > schema version on *every* `--format json` output, so these three cannot be left shapeless.]`
 > `ValidateReport` and `TagReport` below are deliberately minimal — each is the smallest thing
 > that lets a wrapper gate on the command's outcome — and each is a candidate for expansion
-> when its milestone lands. `InitReport` is not a placeholder: its shape is the reconcile-flow
-> design from `docs/00-design.md` §18 Q5.4 mechanism 1, already fully implemented and tested.
+> when its milestone lands. `InitReport` follows `docs/specs/SPEC-DX-SETUP-CORE.json`.
 
 ```rust
 /// `callisto validate --format json` (v0.2, §17, §18 Q3). Used by the Action's
@@ -2074,46 +2073,19 @@ pub struct CreatedTag {
     pub already_existed: bool,
 }
 
-/// `callisto init --format json` (v0.1, §18 Q5.5). Also the moon-side payload for
-/// `initialize_extension` (§10, §11, §MO.2.4). The real shape is the reconcile-flow design
-/// from `docs/00-design.md` §18 Q5.4 mechanism 1: re-running `init` re-detects the workspace,
-/// reports a diff against the already-recorded `callisto.toml`, and applies only with
-/// confirmation — this report exists to make that outcome (first-write vs. reconciled vs.
-/// nothing-to-do) observable to a caller, not to re-enumerate the discovered packages (that's
-/// `status`'s/`validate`'s job).
+/// `callisto init --format json` (SPEC-DX-SETUP-CORE). First run only: an existing
+/// `callisto.toml` is an error, never reconciled.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InitReport {
     pub schema_version: u32,
-    /// `true` only on a first run, when `callisto.toml` did not exist yet and was written
-    /// directly. `false` on every re-run, including one that applies detected drift — that
-    /// case is reported through `diff`, not this flag.
+    /// `true` when `callisto.toml` was written; `false` under `--dry-run`.
     pub initialized: bool,
-    /// Workspace-root-relative path to the `callisto.toml` this run wrote or reconciled.
     pub config_path: PathBuf,
-    /// Drift between the currently-discovered workspace state and what is already recorded
-    /// in `callisto.toml`, and whether that drift was applied this run. Empty/`applied: false`
-    /// when there is nothing to reconcile, including on a first run.
-    #[serde(default)]
-    pub diff: InitDiff,
+    /// The `callisto.toml` content written, or that would be written.
+    pub config: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub diagnostics: Vec<Diagnostic>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InitDiff {
-    /// Ecosystems present in the discovered workspace but not yet recorded against the
-    /// existing `callisto.toml` (e.g. a `package.json` added to a previously Cargo-only
-    /// workspace, or `napi.targets` appearing). Sorted for determinism. Empty when there is
-    /// no drift to reconcile.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub new_ecosystems: Vec<Ecosystem>,
-    /// `true` when `new_ecosystems` was non-empty and was written to `callisto.toml` this run
-    /// (`InitOptions::yes`). `false` when the diff was only reported (dry-preview) or when
-    /// there was no diff to apply.
-    #[serde(default)]
-    pub applied: bool,
 }
 
 impl Report for ValidateReport { const COMMAND: &'static str = "validate"; /* … */ }

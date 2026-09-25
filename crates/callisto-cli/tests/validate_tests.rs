@@ -3,7 +3,7 @@ mod common;
 use std::fs;
 use std::process::ExitCode;
 
-use callisto_cli::cli::{AddArgs, GlobalArgs, InitArgs, OutputFormat, ValidateArgs};
+use callisto_cli::cli::{AddArgs, GlobalArgs, OutputFormat, ValidateArgs};
 use callisto_cli::commands;
 
 use common::setup_polyglot_git_repo;
@@ -19,7 +19,7 @@ fn test_validate_clean_workspace_exits_zero() {
         dry_run: false,
     };
 
-    commands::init::handle(InitArgs { yes: true }, &global).unwrap();
+    callisto_fixtures::scaffold_callisto(&global.cwd);
 
     commands::add::handle(
         AddArgs {
@@ -57,7 +57,7 @@ fn test_validate_malformed_changeset_exits_nonzero() {
         dry_run: false,
     };
 
-    commands::init::handle(InitArgs { yes: true }, &global).unwrap();
+    callisto_fixtures::scaffold_callisto(&global.cwd);
 
     // Write a changeset with an empty summary body (invalid — entries present but no text)
     let changeset_dir = root.join(".changeset");
@@ -107,7 +107,7 @@ fn test_add_unknown_package_name_returns_error() {
         dry_run: false,
     };
 
-    commands::init::handle(InitArgs { yes: true }, &global).unwrap();
+    callisto_fixtures::scaffold_callisto(&global.cwd);
 
     // "completely-unknown-pkg" is not in the workspace (workspace has "core-crate" and "@myorg/web-app")
     let result = commands::add::handle(

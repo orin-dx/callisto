@@ -16,10 +16,7 @@ pub struct RawConfig {
     pub fixed_group: Option<Vec<crate::config::groups::RawGroup>>,
     #[serde(rename = "linked-group")]
     pub linked_group: Option<Vec<crate::config::groups::RawGroup>>,
-    /// `callisto init` bookkeeping (§18 Q5.4 mechanism 1), not a user-facing
-    /// policy section — records the workspace state `init` last reconciled
-    /// against, so a later run can diff the freshly-discovered state against
-    /// it instead of against nothing.
+    /// Deprecated `[init]` bookkeeping from the removed reconcile flow: parsed, never read.
     pub init: Option<RawInitConfig>,
 }
 
@@ -63,12 +60,10 @@ pub struct RawLegacyReleaseProfile {
     pub registry_routes: Option<toml::Value>,
 }
 
+/// Deprecated `[init]` table; accepted so older configs still load.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawInitConfig {
-    /// Ecosystem prefixes (`Ecosystem::prefix()`: `"cargo"`, `"npm"`, ...)
-    /// present in the workspace as of the last `init` run that wrote or
-    /// reconciled this file.
     pub ecosystems: Option<Vec<String>>,
 }
 

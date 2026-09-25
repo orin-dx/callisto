@@ -187,11 +187,30 @@ pub struct SnapshotArgs {
 }
 
 /// Arguments for the `init` command.
-#[derive(Args, Clone, Debug)]
+#[derive(Args, Clone, Debug, Default)]
 pub struct InitArgs {
-    /// Skip the interactive confirmation prompt.
+    /// Run without prompts; required when stdin is not a terminal.
     #[arg(long)]
     pub yes: bool,
+    /// Whether packages share one version (fixed) or version independently.
+    #[arg(long, value_enum)]
+    pub versioning: Option<InitVersioning>,
+    /// Ship the product's binaries as GitHub release assets for this Rust target triple (repeatable).
+    #[arg(long = "artifact-target", value_name = "TRIPLE")]
+    pub artifact_targets: Vec<String>,
+    /// The package whose binaries ship, when several packages produce one.
+    #[arg(long, value_name = "PACKAGE")]
+    pub product_package: Option<String>,
+    /// The GitHub repository (`owner/repo`) binaries are released to.
+    #[arg(long, value_name = "OWNER/REPO")]
+    pub forge_repository: Option<String>,
+}
+
+/// `init --versioning` values.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InitVersioning {
+    Fixed,
+    Independent,
 }
 
 /// Arguments for the `compose-pr-body` command.
