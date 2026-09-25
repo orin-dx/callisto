@@ -1,0 +1,1 @@
+Do we have to run the release workflow (https://github.com/orin-dx/callisto/actions/runs/35779076723) in a PR? should be just on merge of a PR or on the release branch to update the release PR itself right?
