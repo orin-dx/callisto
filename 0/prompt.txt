@@ -1,0 +1,1 @@
+Can we audit our docs and specs? We need to make sure we have consistent, clean and clear docs + specs. Free of AI slop, wordy prose and unecessary context/words. We want succinct, to the point, eng focused. Mindful of context and token cost when we have to read them. Readable enough for humans too (short sentences, bullets and sub-bullets, sections and sub-sections).
