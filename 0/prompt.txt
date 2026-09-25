@@ -1,0 +1,1 @@
+An adopter of callisto will want callisto to keep the managed packages in the workspace up-to-date as part of releases, right?
