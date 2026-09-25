@@ -96,7 +96,7 @@
     },
     {
       "id": "AC-13",
-      "criterion": "crates/callisto-graph/src/commands/matrix.rs's MatrixOptions.package doc comment and crates/callisto-graph/src/commands/publish.rs's PublishOptions.only doc comment each state that an ambiguous bare name (matching two or more promoted siblings) returns Err(GraphError::AmbiguousName), and that an ecosystem-qualified name (e.g. \"cargo/name\") disambiguates directly -- neither doc comment asserts pure, unqualified bare-name matching as the complete contract any longer.",
+      "criterion": "[UPDATED 2026-09-24: publish.rs/PublishOptions removed (bccec34ac)] crates/callisto-graph/src/commands/matrix.rs's MatrixOptions.package doc comment states that an ambiguous bare name (matching two or more promoted siblings) returns Err(GraphError::AmbiguousName), and that an ecosystem-qualified name (e.g. \"cargo/name\") disambiguates directly -- it does not assert pure, unqualified bare-name matching as the complete contract any longer. (The former PublishOptions.only half of this criterion no longer applies; plan_publish/publish.rs were removed, replaced by `callisto release`.)",
       "is_error_case": false
     },
     {
