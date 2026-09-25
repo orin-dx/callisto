@@ -1,0 +1,53 @@
+Why can't we just rely on python3? https://github.com/orin-dx/callisto/pull/140/changes
+
+---
+
+Let's not worry about it then, not right now
+
+---
+
+Are we overdoing it in any of the other PRs like this?
+
+---
+
+This PR has a failure: https://github.com/orin-dx/callisto/pull/135
+
+---
+
+Also, the CLI should ship with all features, any reason we should test just the default vs all features?
+
+---
+
+We said we use the tools to simplify auth, why are we complicarting things WTF. Agreed on receipt.
+
+Why is the generated build matrix not good? We worked hard on it, how can we not determine it?
+Yes, drop target-list valiation
+If the registry is not different we don't need to test it right?
+
+---
+
+All done?
+
+---
+
+All done? We should remove gix right?
+
+---
+
+Didn't we already replace wasm with proto? SHouldn't that all be in the one PR?
+
+---
+
+keep going on the stack
+
+---
+
+keep going on the stack
+
+---
+
+Are the subagents done?
+
+---
+
+Make sure we're not wasting toknes
