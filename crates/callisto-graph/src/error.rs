@@ -784,6 +784,8 @@ pub enum ReleasePreconditionRequirement {
     ObservableProvider,
     #[error("a registry client that can prove a version absent")]
     ObservableRegistryClient,
+    #[error("a python interpreter (python3 or python) on PATH")]
+    PythonInterpreterOnPath,
 }
 
 #[cfg(test)]
