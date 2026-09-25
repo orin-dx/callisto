@@ -1,0 +1,1 @@
+Renovate and dependabot should not be touching internal "workspace" dependencies so we shouldn't concern ourselves here, right? Am I thinking about this the wrong way?
