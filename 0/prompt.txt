@@ -1,0 +1,19 @@
+The codex hook:
+
+• Hook failed
+  └ hook returned invalid post-tool-use JSON output
+
+• Hook failed
+  └ hook returned invalid post-tool-use JSON output
+
+• Hook failed
+  └ hook returned invalid post-tool-use JSON output
+
+• The hook runs just pre-commit, which calls just fmt-check and then moon run :format-check. That runs cargo fmt --check across the
+  Moon Rust projects, so formatting errors anywhere in the workspace can block a commit—even in files you didn’t stage. The handoff
+  says another agent’s unformatted files caused this before.
+
+  Your current checkout is clean, though, and I haven’t run the hook, so I can’t say that it’s failing now.
+
+• Hook failed
+  └ hook returned invalid stop hook JSON output
