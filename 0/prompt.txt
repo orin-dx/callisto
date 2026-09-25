@@ -1,0 +1,1 @@
+Does having a wasm plugin add enough value or just a task is enough?
