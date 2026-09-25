@@ -1,0 +1,11 @@
+<task-notification>
+<task-id>a81b324cb33bda8ee</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/e2fe6504-b7f2-430b-a234-1e8197320f97/tasks/a81b324cb33bda8ee.output</output-file>
+<status>completed</status>
+<summary>Agent "Exit-gate SPEC-DX-SETUP-CORE" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>This agent's report was delivered to you as a message from "a81b324cb33bda8ee" (its SubagentHandback call). Read it there; it is not repeated here.
+</result>
+<usage><subagent_tokens>93546</subagent_tokens><tool_uses>21</tool_uses><duration_ms>305998</duration_ms></usage>
+</task-notification>
