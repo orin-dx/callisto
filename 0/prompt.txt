@@ -1,0 +1,1 @@
+We should be able to cleanup worktrees we're confident are stale and unecessary. We can probably run info with zero retry too
