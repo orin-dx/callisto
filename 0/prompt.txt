@@ -1,0 +1,1 @@
+/compact keep a summarized information of the work we're doing, the fixes and the ROAD-TO-V1.md 40 bugs we need to address.
