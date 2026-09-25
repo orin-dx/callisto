@@ -453,8 +453,12 @@ pub(crate) fn assemble_runtime_versions(
 }
 
 /// Assembles the full MatrixReport for `packages`. Map keys are each
-/// package's bare name (AC-009's BTreeMap ordering comes from this for free);
-/// a package contributes no platformTargets entry when it declares neither
+/// package's ecosystem-qualified id (`PackageId::display_name()` -- a bare
+/// name when the package was never promoted, `ecosystem/name` once a
+/// same-name package in another ecosystem forced promotion; AC-009's
+/// BTreeMap ordering comes from this for free) so a Cargo package and an npm
+/// package sharing a bare name (the common napi split layout) never collide
+/// on the same map entry; a package contributes no platformTargets entry when it declares neither
 /// napi.targets nor [tool.maturin].targets, and no runtimeVersions entry when
 /// it declares neither engines.node nor requires-python.
 ///
@@ -491,13 +495,13 @@ pub(crate) fn build_matrix_report(
                     target.manifest_path = manifest_path.clone();
                 }
             }
-            platform_targets.insert(pkg.name.clone(), group);
+            platform_targets.insert(pkg.id.display_name(), group);
         }
         diagnostics.extend(diags);
 
         let rv = assemble_runtime_versions(&pkg.dir_abs, pkg_json_val.as_ref(), pyproject_val.as_ref())?;
         if !rv.is_empty() {
-            runtime_versions.insert(pkg.name.clone(), rv);
+            runtime_versions.insert(pkg.id.display_name(), rv);
         }
     }
 
@@ -529,7 +533,7 @@ pub(crate) fn add_release_artifact_groups(
     for artifact in artifacts {
         let group = report
             .platform_targets
-            .entry(artifact.name.clone())
+            .entry(artifact.id.display_name())
             .or_insert_with(|| PlatformTargetGroup {
                 kind: PlatformTargetKind::Cargo,
                 source: SOURCE.to_owned(),

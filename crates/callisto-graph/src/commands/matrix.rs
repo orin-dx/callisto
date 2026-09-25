@@ -1,5 +1,6 @@
 use callisto_model::{CommandRunner, Diagnostic, DiagnosticCode, DiagnosticSeverity, MatrixReport, PackageId};
 
+use crate::aggregate::resolve_target_package;
 use crate::error::GraphError;
 use crate::matrix::{
     add_release_artifact_groups, build_matrix_report, MatrixPackageInput, NapiCrate, ReleaseArtifactInput,
@@ -9,9 +10,13 @@ use crate::Workspace;
 
 #[derive(Clone, Debug, Default)]
 pub struct MatrixOptions {
-    /// When Some, restrict the report to exactly this one registered
-    /// package's PackageId::name() string. Err(GraphError::UnknownPackage)
-    /// when no registered package matches.
+    /// When Some, restrict the report to exactly this one registered package.
+    /// Accepts a bare name -- resolved only when it matches exactly one
+    /// registered package (`GraphError::AmbiguousName` otherwise, listing
+    /// the qualified candidates) -- or an ecosystem-qualified id
+    /// (`cargo/foo`, `npm/foo`). Err(GraphError::UnknownPackage) when no
+    /// registered package matches. Same resolution rule as changeset
+    /// package-name resolution (`resolve_target_package`).
     pub package: Option<String>,
     /// Resolve each napi package's addon crate into `manifestPath` (E204 when not exactly one).
     pub napi_crates: bool,
@@ -23,17 +28,15 @@ pub fn matrix<R: CommandRunner, D: DependencyResolver>(
 ) -> Result<MatrixReport, GraphError> {
     let all_packages: Vec<&callisto_model::Package> = ws.graph.packages().collect();
 
-    if let Some(ref name) = opts.package {
-        if !all_packages.iter().any(|p| p.id.name() == name) {
-            return Err(GraphError::UnknownPackage {
-                id: PackageId::Bare(name.clone()),
-            });
-        }
-    }
+    let selected = opts
+        .package
+        .as_deref()
+        .map(|raw| resolve_selected_package(&all_packages, raw))
+        .transpose()?;
 
     let inputs: Vec<MatrixPackageInput> = all_packages
         .iter()
-        .filter(|p| opts.package.as_deref().map(|n| p.id.name() == n).unwrap_or(true))
+        .filter(|p| selected.as_ref().is_none_or(|id| p.id == *id))
         .map(|p| {
             let dir_rel = package_dir_rel(p);
             MatrixPackageInput {
@@ -57,17 +60,13 @@ pub fn matrix<R: CommandRunner, D: DependencyResolver>(
         .iter()
         .flat_map(|release| &release.artifacts)
         .filter(|artifact| artifact.package.ecosystem() == Some(callisto_model::Ecosystem::Cargo))
-        .filter(|artifact| {
-            opts.package
-                .as_deref()
-                .is_none_or(|name| artifact.package.name() == name)
-        })
+        .filter(|artifact| selected.as_ref().is_none_or(|id| artifact.package.matches(id)))
     {
         let resolved = all_packages.iter().find_map(|package| {
             let manifest = package
                 .canonical_manifests()
                 .find(|manifest| manifest.ecosystem() == callisto_model::Ecosystem::Cargo)?;
-            (package.id.name() == artifact.package.name()).then_some((package, manifest))
+            package.id.matches(&artifact.package).then_some((package, manifest))
         });
         let Some((package, manifest)) = resolved else {
             report.diagnostics.push(Diagnostic {
@@ -98,6 +97,17 @@ pub fn matrix<R: CommandRunner, D: DependencyResolver>(
     }
     add_release_artifact_groups(&mut report, &artifacts)?;
     Ok(report)
+}
+
+/// Resolves a human-typed `--package` argument (bare or ecosystem-qualified)
+/// against `all_packages`, reusing `resolve_target_package`'s ambiguity rule
+/// -- a bare name is accepted only when it names exactly one package.
+fn resolve_selected_package(all_packages: &[&callisto_model::Package], raw: &str) -> Result<PackageId, GraphError> {
+    let parsed = PackageId::parse(raw).unwrap_or_else(|_| PackageId::Bare(raw.to_string()));
+    match resolve_target_package(all_packages.iter().copied(), &parsed)? {
+        Some(pkg) => Ok(pkg.id.clone()),
+        None => Err(GraphError::UnknownPackage { id: parsed }),
+    }
 }
 
 /// Every workspace cargo package that builds a napi-rs addon.

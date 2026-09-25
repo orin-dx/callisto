@@ -105,7 +105,8 @@ pub struct StatusArgs {
 /// Arguments for the `matrix` command.
 #[derive(Args, Clone, Debug, Default)]
 pub struct MatrixArgs {
-    /// Restrict output to one registered package's name (PackageId::name()).
+    /// Restrict output to one package: a bare name (only if it names exactly
+    /// one package) or an ecosystem-qualified id, for example `cargo/foo`.
     #[arg(long)]
     pub package: Option<String>,
 }
