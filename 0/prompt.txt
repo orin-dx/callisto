@@ -1,0 +1,1 @@
+Also include what the tool does, how is it different from the competition. Any context it needs to evalute how the code works, our UX and DX, etc
