@@ -1,0 +1,1 @@
+Yeah, cutting those things seems like a good idea. Let's ot create a system for a case that should be rare but our system should be able to automatically create the tags, right?
