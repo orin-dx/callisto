@@ -42,7 +42,6 @@ pub enum GraphError {
     #[diagnostic(transparent)]
     Changelog(#[from] callisto_changelog::ChangelogError),
 
-    #[cfg(feature = "inference")]
     #[error(transparent)]
     Conventional(#[from] callisto_conventional::ConventionalError),
 

@@ -427,8 +427,7 @@ threshold of 90 that CI enforces. A PR that
 regresses total line coverage below 90% fails CI, not just informationally. The
 baseline at the time this gate was added was 90.40%, leaving a thin ~0.4-point margin -- a
 deliberate choice to catch essentially any regression, at the cost of the gate being more sensitive
-to normal coverage fluctuation than a wider margin would be. This is also the only place the
-workspace compiles and tests under `--all-features` together.
+to normal coverage fluctuation than a wider margin would be.
 
 The workspace-total gate can pass while a single small crate is far below threshold -- a few
 large crates (`callisto-graph` alone is ~15,000 of the workspace's ~26,000 covered lines) dominate

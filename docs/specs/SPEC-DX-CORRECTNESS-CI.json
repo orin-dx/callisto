@@ -14,7 +14,7 @@
     },
     {
       "id": "AC-19",
-      "criterion": "CI runs the full callisto-cli test suite compiled with default features only (no --all-features, no --features inference), as a required check separate from `just test-ci`. Today only `just release-workflow-behavior` (durable_release_e2e_tests) runs default features; every other callisto-cli test binary runs only under --all-features."
+      "criterion": "[SUPERSEDED 2026-09-24: cargo features removed; tests and the shipped binary build one feature set] CI runs the full callisto-cli test suite compiled with default features only (no --all-features, no --features inference), as a required check separate from `just test-ci`. Today only `just release-workflow-behavior` (durable_release_e2e_tests) runs default features; every other callisto-cli test binary runs only under --all-features."
     }
   ],
   "linked_requirement": "REQ-DX-V1",

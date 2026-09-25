@@ -14,14 +14,14 @@ build-release:
 # same Nextest command as CI: a runner/configuration failure must never be
 # mistaken for a passing Moon fallback.
 test:
-    cargo nextest run --workspace --all-features
-    cargo test --doc --all-features
+    cargo nextest run --workspace
+    cargo test --doc --workspace
 
 # Explicit compatibility path for contributors who do not have cargo-nextest
 # installed. It is never used by CI or pre-merge verification.
 test-moon:
     moon run :test
-    cargo test --doc --all-features
+    cargo test --doc --workspace
 
 # Exercise the Release-PR action's real shell block with Git and GitHub API
 # boundaries faked. This proves the script's control flow given a decision
@@ -36,13 +36,6 @@ test-release-action:
 # supersede decisions; skips cleanly otherwise.
 test-release-action-binary:
     bash .github/actions/callisto-action/tests/test_release_pr_decide_binary_contract.sh
-
-# Compiles and runs the callisto-cli test suite under the shipped binary's
-# default features only (no --all-features, no inference), so a bug reachable
-# only in that build is caught here instead of only under --all-features.
-test-ci-default-features:
-    cargo nextest run -p callisto-cli
-    cargo test --doc -p callisto-cli
 
 # Execute the release lifecycle at the real CLI boundary with fake registry,
 # Git, forge, and attestation providers. This is deliberately separate from
@@ -128,7 +121,7 @@ doc-check:
 coverage threshold="":
     #!/usr/bin/env bash
     set -euo pipefail
-    args=(--all-features --lcov --output-path lcov.info)
+    args=(--workspace --lcov --output-path lcov.info)
     cargo llvm-cov "${args[@]}"
     cargo llvm-cov report --summary-only
     if [[ -n "{{threshold}}" ]]; then
@@ -209,4 +202,4 @@ workflow-contracts: release-workflow-checks
 # Every check CI runs except actionlint (Docker) and the binary-dependent
 # release-PR decide contract and artifact preflight build. CI runs them as
 # parallel jobs (callisto-ci.yml); locally they run in sequence.
-ci: fmt-check lint test test-ci-default-features audit doc-check zizmor workflow-contracts release-workflow-behavior (coverage "90")
+ci: fmt-check lint test audit doc-check zizmor workflow-contracts release-workflow-behavior (coverage "90")

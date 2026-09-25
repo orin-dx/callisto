@@ -119,23 +119,6 @@ jobs:
       - name: Verify Release-PR action against the real callisto binary
         run: bash .github/actions/callisto-action/tests/test_release_pr_decide_binary_contract.sh
 
-  test-default-features:
-    name: Test Suite (Default Features)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: taiki-e/install-action@c3ec0de9ae7f1019cea21aa96aa0a895b9552063 # v2
-        with:
-          tool: just@1.58.0
-      - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
-      - uses: taiki-e/install-action@c3ec0de9ae7f1019cea21aa96aa0a895b9552063 # v2
-        with:
-          tool: cargo-nextest
-      - run: just test-ci-default-features
-
   release-artifact-preflight:
     name: Release Artifact Preflight (${{ matrix.id }})
     runs-on: ${{ matrix.runner }}

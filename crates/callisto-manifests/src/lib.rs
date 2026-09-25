@@ -286,11 +286,8 @@ pub fn open(decl: &ManifestDecl, ctx: &OpenContext<'_>) -> Result<Box<dyn Manife
     }
 
     match decl.format {
-        #[cfg(feature = "cargo")]
         ManifestFormat::CargoToml => Ok(Box::new(CargoToml::open(decl, ctx)?)),
-        #[cfg(feature = "npm")]
         ManifestFormat::PackageJson => Ok(Box::new(PackageJson::open(decl, ctx)?)),
-        #[cfg(feature = "pypi")]
         ManifestFormat::PyprojectToml => Ok(Box::new(PyprojectToml::open(decl, ctx)?)),
         other => Err(ManifestError::ReadOnlyFormat {
             path: decl.path.clone(),
@@ -303,17 +300,14 @@ pub fn open(decl: &ManifestDecl, ctx: &OpenContext<'_>) -> Result<Box<dyn Manife
 /// Dispatches spec round-trip rewriting to the appropriate ecosystem handler.
 pub fn round_trip(ecosystem: Ecosystem, spec: &DepSpec, target: &Version) -> Option<DepSpec> {
     match (ecosystem, spec) {
-        #[cfg(feature = "cargo")]
         (Ecosystem::Cargo, _) => cargo::round_trip(spec, target),
-        #[cfg(feature = "npm")]
         (Ecosystem::Npm, _) => npm::round_trip(spec, target),
-        #[cfg(feature = "pypi")]
         (Ecosystem::Pypi, _) => python::round_trip(spec, target),
         _ => None,
     }
 }
 
-#[cfg(all(test, feature = "pypi"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;

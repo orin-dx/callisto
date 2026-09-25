@@ -48,14 +48,12 @@ impl SeverityInference for NoInference {
     }
 }
 
-/// v0.2's impl, behind the `inference` feature. A thin, stateless adapter over
+/// The shipped impl. A thin, stateless adapter over
 /// `callisto_conventional::infer_severity` -- it holds no fields of its own; the caller's
 /// [`GitAccess`] is handed in per call via [`SeverityInference::infer`]'s `git` parameter
 /// rather than discovered here, so this type carries nothing to discover it with.
-#[cfg(feature = "inference")]
 pub struct CommitInference;
 
-#[cfg(feature = "inference")]
 impl SeverityInference for CommitInference {
     fn infer(
         &self,
