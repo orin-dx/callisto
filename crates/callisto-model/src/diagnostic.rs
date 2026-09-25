@@ -80,7 +80,6 @@ pub enum DiagnosticSeverity {
 #[serde(rename_all = "kebab-case")]
 pub enum StrictFlag {
     Strict,
-    StrictGraph,
 }
 
 /// Stable machine-readable identifier for one kind of [`Diagnostic`]. Serializes to

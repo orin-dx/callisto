@@ -53,7 +53,6 @@ fn test_full_polyglot_workspace_release_lifecycle() {
     let status_res = commands::status::handle(
         StatusArgs {
             strict: false,
-            strict_graph: false,
             check: false,
         },
         &global,
@@ -65,7 +64,6 @@ fn test_full_polyglot_workspace_release_lifecycle() {
         VersionArgs {
             refresh_lockfiles: false,
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: false,
             emit_decision: None,
         },
@@ -129,7 +127,6 @@ edition = "2021"
         VersionArgs {
             refresh_lockfiles: false,
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: false,
             emit_decision: None,
         },
@@ -203,7 +200,6 @@ fn test_compose_pr_body_before_version_and_subpkg_changelog() {
         VersionArgs {
             refresh_lockfiles: false,
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: false,
             emit_decision: None,
         },
@@ -253,7 +249,6 @@ fn test_dry_run_flag_preserves_disk_state() {
         VersionArgs {
             refresh_lockfiles: false,
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: false,
             emit_decision: None,
         },

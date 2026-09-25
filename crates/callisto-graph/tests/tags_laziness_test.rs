@@ -4,10 +4,8 @@
 //! even for callers (e.g. `callisto add`'s non-interactive path, `callisto
 //! init`, `callisto add`'s interactive package-selection step) that never
 //! consult tags at all. `TagIndex::build` fetches the repo's full tag list
-//! via `callisto_vcs::GitRepository` (gix) or, when gix is unavailable --
-//! permanently the case on `wasm32`, where each `CommandRunner` round-trip
-//! is a full Extism guest<->host context switch -- via a `CommandRunner`-
-//! shelled `git tag --list` call. Neither should ever happen just because a
+//! via `callisto_vcs::GitRepository` (gix) or, when gix is unavailable, via
+//! a `CommandRunner`-shelled `git tag --list` call. Neither should ever happen just because a
 //! `Workspace` was loaded; it should happen at most once, and only once
 //! something actually calls `Workspace::tags()`.
 //!
@@ -65,8 +63,8 @@ fn workspace_load_does_not_build_tag_index_until_tags_is_called() {
     let root = tmp.path();
     write_minimal_workspace(root);
 
-    // Deliberately no `git init`: guarantees `GitRepository::discover` fails
-    // (the same situation `wasm32` is permanently in), so *if* `TagIndex`
+    // Deliberately no `git init`: guarantees `GitRepository::discover` fails,
+    // so *if* `TagIndex`
     // construction ran, it would deterministically fall through to the
     // `CommandRunner` `git tag --list` call this test counts.
     assert!(

@@ -1512,10 +1512,8 @@ pub struct Diagnostic {
     /// Workspace-root-relative (§M.1.3).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<PathBuf>,
-    /// Which flag promotes this diagnostic from warning to hard failure, when one does.
-    /// §6.3's `--strict` / §7.2's `--strict-graph` are independent, per-check flags that
-    /// compose freely and neither of which implies the other — so the diagnostic names its
-    /// own escalation flag rather than the consumer inferring it from `code`.
+    /// Which flag promotes this diagnostic from warning to hard failure, when one does, so the
+    /// diagnostic names its own escalation flag rather than the consumer inferring it from `code`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub escalated_by: Option<StrictFlag>,
     /// The config key that could turn this check off or change its outcome, when one exists
@@ -1534,9 +1532,7 @@ pub enum StrictFlag {
     /// `--strict` — this command's own warn-by-default validations (§6.3 empty-changesets,
     /// §7.5 napi drift).
     Strict,
-    /// `--strict-graph` — the moon edge cross-check only (§7.2), separately named because
-    /// that check is itself opt-in and must be escalatable independently.
-    StrictGraph,
+    // `--strict-graph` / `StrictGraph` were removed with the moon edge cross-check (§G.4.6).
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -8308,13 +8304,12 @@ pub fn init(ws: &…, opts: &InitOptions) -> Result<InitReport, GraphError>;
 pub fn matrix(ws: &…, opts: &MatrixOptions) -> Result<MatrixReport, GraphError>;
 
 #[derive(Clone, Debug, Default)] pub struct StatusOptions {
-    pub strict: bool, pub strict_graph: bool,
+    pub strict: bool,
 }
 #[derive(Clone, Debug, Default)] pub struct VersionOptions  {
     pub strict: bool,
     /// §7.2's moon edge cross-check, escalated. Independent of `strict`; neither implies the
     /// other (§6.3's `--strict` composition paragraph).
-    pub strict_graph: bool,
     /// §6.3's per-invocation escape hatch, OR-ed with
     /// `ResolvedConfig::validation.allow_empty_changesets`.
     pub allow_empty_changesets: bool,
@@ -8322,7 +8317,7 @@ pub fn matrix(ws: &…, opts: &MatrixOptions) -> Result<MatrixReport, GraphError
 #[derive(Clone, Debug, Default)] pub struct PublishOptions  { }
 #[derive(Clone, Debug, Default)] pub struct ValidateOptions {
     pub staged: bool, pub since: Option<String>,
-    pub strict: bool, pub strict_graph: bool,
+    pub strict: bool,
 }
 #[derive(Clone, Debug, Default)] pub struct PrBodyOptions {
     pub existing_body: Option<String>, pub labels: Vec<String>, pub branch: Option<String>,
@@ -8343,7 +8338,7 @@ command function therefore applies:
 /// `DiagnosticSeverity::Error`, in place. Applied exactly once per command, to the report's
 /// assembled `diagnostics` array, so a diagnostic's severity in `--format json` and the
 /// command's exit code (§CLI.7) can never disagree.
-pub fn escalate(diagnostics: &mut [Diagnostic], strict: bool, strict_graph: bool);
+pub fn escalate(diagnostics: &mut [Diagnostic], strict: bool);
 ```
 
 > `[SPEC DECISION, not in 00-design.md: `commands::init` exists here, with the signature
@@ -9277,12 +9272,11 @@ pub struct StatusArgs {
     /// "`status`/`version` surface the same drift as warn-by-default cross-checks,
     /// `--strict`-escalatable."
     #[arg(long)]
-    pub strict_graph: bool,
 }
 ```
 
 `load_workspace` →
-`callisto_graph::commands::status(&ws, &StatusOptions { strict, strict_graph })` →
+`callisto_graph::commands::status(&ws, &StatusOptions { strict })` →
 `emit_report`. `status` never writes anything under any flag; the flags change only whether a
 `Diagnostic` is reported as `Warning` or `Error`, and therefore whether the process exits `0`
 or `1` (§CLI.7).
@@ -9316,7 +9310,6 @@ pub struct VersionArgs {
     /// every invocation, and §18 Q5.4 mechanism 1 requires `status`/`version` to surface that
     /// drift `--strict`-escalatably.
     #[arg(long)]
-    pub strict_graph: bool,
     /// §6.3's escape hatch, per-invocation: "escape hatch via `--allow-empty-changesets` **or**
     /// `[validation].allow-empty-changesets = true`". The flag ORs with the config key rather
     /// than overriding it, since both spellings mean "permit it this time" and neither has a
@@ -9332,7 +9325,6 @@ let ws = load_workspace(&global, &runner)?;
 let inference = select_inference();                     // §CLI.6.3.1
 let plan = callisto_graph::commands::plan_version(&ws, &inference, &VersionOptions {
     strict: args.strict,
-    strict_graph: args.strict_graph,
     allow_empty_changesets: args.allow_empty_changesets,
 })?;
 let outcome = callisto_graph::apply_version_plan(
@@ -9424,7 +9416,6 @@ pub struct ValidateArgs {
     #[arg(long)] pub staged: bool,
     #[arg(long, value_name = "REF")] pub since: Option<String>,
     #[arg(long)] pub strict: bool,
-    #[arg(long)] pub strict_graph: bool,
 }
 ```
 

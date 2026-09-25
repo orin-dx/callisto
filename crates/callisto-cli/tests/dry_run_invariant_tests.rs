@@ -110,7 +110,6 @@ fn version_dry_run_writes_nothing() {
             VersionArgs {
                 refresh_lockfiles: false,
                 strict: false,
-                strict_graph: false,
                 allow_empty_changesets: false,
                 emit_decision: None,
             },
@@ -131,7 +130,6 @@ fn snapshot_dry_run_writes_nothing() {
             SnapshotArgs {
                 tag: "canary".to_string(),
                 strict: false,
-                strict_graph: false,
             },
             &global(root, true),
         )

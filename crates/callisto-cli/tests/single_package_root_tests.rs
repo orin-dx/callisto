@@ -64,7 +64,6 @@ fn lifecycle(dir: &tempfile::TempDir, package: &str, manifest: &str, bumped: &st
     .unwrap();
     let status = StatusArgs {
         strict: false,
-        strict_graph: false,
         check: false,
     };
     assert_eq!(
@@ -74,7 +73,6 @@ fn lifecycle(dir: &tempfile::TempDir, package: &str, manifest: &str, bumped: &st
     let version = VersionArgs {
         refresh_lockfiles: false,
         strict: false,
-        strict_graph: false,
         allow_empty_changesets: false,
         emit_decision: None,
     };

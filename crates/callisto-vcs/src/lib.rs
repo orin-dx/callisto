@@ -111,13 +111,9 @@ pub enum TagSignPolicy {
 ///
 /// Two backends implement this trait:
 ///
-/// - [`GitRepository`] -- native `gix`. Fast, side-effect-free for reads,
-///   but unavailable on `wasm32` ([`GitRepository::discover`] always
-///   errors there -- gix is excluded from that target's deps).
+/// - [`GitRepository`] -- native `gix`. Fast and side-effect-free for reads.
 /// - [`ShellGit`] -- shells out to real `git` via a
-///   [`callisto_model::CommandRunner`], so it works everywhere a `git`
-///   binary is reachable, including through the `wasm32`/Extism host
-///   bridge.
+///   [`callisto_model::CommandRunner`].
 ///
 /// Callers shouldn't implement or select between these directly; use
 /// [`GitAccess::discover`], which tries native `gix` first and falls back
@@ -231,12 +227,10 @@ pub fn revwalk_visit_count() -> usize {
 }
 
 pub struct GitRepository {
-    #[cfg(not(target_arch = "wasm32"))]
     repo: gix::Repository,
 }
 
 impl GitRepository {
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn discover(path: impl AsRef<Path>) -> Result<Self, VcsError> {
         let p = path.as_ref();
         let clean_path = dunce::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
@@ -247,76 +241,53 @@ impl GitRepository {
         Ok(Self { repo })
     }
 
-    #[cfg(target_arch = "wasm32")]
-    pub fn discover(path: impl AsRef<Path>) -> Result<Self, VcsError> {
-        Err(VcsError::RepoNotFound {
-            path: path.as_ref().to_path_buf(),
-            message: "gix native git operations disabled on WASM target".to_string(),
-        })
-    }
-
     pub fn head_sha(&self) -> Result<CommitSha, VcsError> {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let head = self
-                .repo
-                .head_commit()
-                .map_err(|e| VcsError::Git(format!("Failed to get HEAD commit: {e}")))?;
-            CommitSha::parse(&head.id.to_hex().to_string()).map_err(|e| VcsError::Git(format!("Invalid HEAD SHA: {e}")))
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            Err(VcsError::Git("WASM unsupported".to_string()))
-        }
+        let head = self
+            .repo
+            .head_commit()
+            .map_err(|e| VcsError::Git(format!("Failed to get HEAD commit: {e}")))?;
+        CommitSha::parse(&head.id.to_hex().to_string()).map_err(|e| VcsError::Git(format!("Invalid HEAD SHA: {e}")))
     }
 
     pub fn list_tags(&self, glob_pattern: Option<&str>) -> Result<Vec<TagName>, VcsError> {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let platform = self
-                .repo
-                .references()
-                .map_err(|e| VcsError::Git(format!("Failed to read references: {e}")))?;
+        let platform = self
+            .repo
+            .references()
+            .map_err(|e| VcsError::Git(format!("Failed to read references: {e}")))?;
 
-            let mut tags = Vec::new();
-            let tag_refs = platform
-                .tags()
-                .map_err(|e| VcsError::Git(format!("Failed to list tag refs: {e}")))?;
+        let mut tags = Vec::new();
+        let tag_refs = platform
+            .tags()
+            .map_err(|e| VcsError::Git(format!("Failed to list tag refs: {e}")))?;
 
-            // A pattern that fails to compile must not silently disable
-            // filtering (which would match every tag in the repo -- a real
-            // correctness risk for release tagging, since a malformed tag
-            // template could then make "last tag" resolution pick an
-            // unrelated package's tag). Surface it as an error instead;
-            // `None` (no pattern requested at all) still means "match
-            // everything".
-            let matcher = glob_pattern.map(compile_tag_glob).transpose()?;
+        // A pattern that fails to compile must not silently disable
+        // filtering (which would match every tag in the repo -- a real
+        // correctness risk for release tagging, since a malformed tag
+        // template could then make "last tag" resolution pick an
+        // unrelated package's tag). Surface it as an error instead;
+        // `None` (no pattern requested at all) still means "match
+        // everything".
+        let matcher = glob_pattern.map(compile_tag_glob).transpose()?;
 
-            for r in tag_refs.flatten() {
-                let name = r.name().shorten().to_string();
-                if let Some(ref m) = matcher {
-                    if !m.is_match(&name) {
-                        continue;
-                    }
-                }
-                // A ref name Git itself created is always a legal ref, but
-                // "legal Git ref" does not imply "safe to hand to a CLI
-                // parser as a bare positional" (a leading `-` is legal but
-                // reads as a flag) -- skip anything `TagName::parse` would
-                // reject rather than propagate an unsafe name into "last
-                // tag" resolution.
-                if let Ok(tag) = TagName::parse(&name) {
-                    tags.push(tag);
+        for r in tag_refs.flatten() {
+            let name = r.name().shorten().to_string();
+            if let Some(ref m) = matcher {
+                if !m.is_match(&name) {
+                    continue;
                 }
             }
+            // A ref name Git itself created is always a legal ref, but
+            // "legal Git ref" does not imply "safe to hand to a CLI
+            // parser as a bare positional" (a leading `-` is legal but
+            // reads as a flag) -- skip anything `TagName::parse` would
+            // reject rather than propagate an unsafe name into "last
+            // tag" resolution.
+            if let Ok(tag) = TagName::parse(&name) {
+                tags.push(tag);
+            }
+        }
 
-            Ok(tags)
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            let _unused = glob_pattern;
-            Ok(Vec::new())
-        }
+        Ok(tags)
     }
 
     /// Resolves an arbitrary ref (tag, branch, or partial SHA) to the commit
@@ -329,27 +300,19 @@ impl GitRepository {
     /// degrades gracefully to `Ok(None)`, which callers treat as "no bound"
     /// / "infer over full history".
     pub fn resolve_commit(&self, refname: &str) -> Result<Option<CommitSha>, VcsError> {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let Ok(spec) = self.repo.rev_parse_single(refname) else {
-                return Ok(None);
-            };
-            let Ok(object) = spec.object() else {
-                return Ok(None);
-            };
-            let Ok(commit) = object.peel_to_kind(gix::object::Kind::Commit) else {
-                return Ok(None);
-            };
+        let Ok(spec) = self.repo.rev_parse_single(refname) else {
+            return Ok(None);
+        };
+        let Ok(object) = spec.object() else {
+            return Ok(None);
+        };
+        let Ok(commit) = object.peel_to_kind(gix::object::Kind::Commit) else {
+            return Ok(None);
+        };
 
-            let hex = commit.id.to_hex().to_string();
-            let sha = CommitSha::parse(&hex).map_err(|e| VcsError::Git(format!("Invalid commit SHA: {e}")))?;
-            Ok(Some(sha))
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            let _unused = refname;
-            Ok(None)
-        }
+        let hex = commit.id.to_hex().to_string();
+        let sha = CommitSha::parse(&hex).map_err(|e| VcsError::Git(format!("Invalid commit SHA: {e}")))?;
+        Ok(Some(sha))
     }
 
     /// Like [`Self::commits_since`], but filters to commits touching at
@@ -370,81 +333,73 @@ impl GitRepository {
         since: Option<&CommitSha>,
         pathspecs: &[PathBuf],
     ) -> Result<Vec<GitCommit>, VcsError> {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let head = self
-                .repo
-                .head_commit()
-                .map_err(|e| VcsError::Git(format!("Failed to get HEAD commit: {e}")))?;
+        let head = self
+            .repo
+            .head_commit()
+            .map_err(|e| VcsError::Git(format!("Failed to get HEAD commit: {e}")))?;
 
-            let mut platform = self.repo.rev_walk(vec![head.id]);
+        let mut platform = self.repo.rev_walk(vec![head.id]);
 
-            // Bound the walk with gix's own hidden-tip frontier algorithm
-            // (`git log since..HEAD` semantics) instead of a second,
-            // unbounded full-history walk from `since` collected into an
-            // exclusion set. `with_hidden` paints the overlap between the
-            // visible (HEAD) and hidden (`since`) tips using generation
-            // numbers and refuses to enqueue parents once a commit is known
-            // to be hidden-only ancestry, so the walk stops once every
-            // in-flight branch has been resolved instead of continuing to
-            // the repository's first commit. This preserves the same
-            // branchy-history correctness the old two-walk-then-exclude
-            // approach needed a manual `continue`-not-`break` exclusion set
-            // for (a topological walk can visit `since` before it has
-            // emitted all commits on branches that diverged before it) --
-            // gix's frontier computation is exactly the same "boundary
-            // commit" algorithm `git rev-list branch ^tag` itself uses, so
-            // it handles that case internally rather than needing it
-            // reimplemented here. `since` remains exclusive, matching the
-            // prior behavior: `with_hidden` excludes both the hidden tip
-            // itself and everything reachable from it.
-            if let Some(s) = since {
-                let since_oid = gix::ObjectId::from_hex(s.as_ref().as_bytes())
-                    .map_err(|e| VcsError::Git(format!("Invalid since SHA: {e}")))?;
-                platform = platform.with_hidden(Some(since_oid));
+        // Bound the walk with gix's own hidden-tip frontier algorithm
+        // (`git log since..HEAD` semantics) instead of a second,
+        // unbounded full-history walk from `since` collected into an
+        // exclusion set. `with_hidden` paints the overlap between the
+        // visible (HEAD) and hidden (`since`) tips using generation
+        // numbers and refuses to enqueue parents once a commit is known
+        // to be hidden-only ancestry, so the walk stops once every
+        // in-flight branch has been resolved instead of continuing to
+        // the repository's first commit. This preserves the same
+        // branchy-history correctness the old two-walk-then-exclude
+        // approach needed a manual `continue`-not-`break` exclusion set
+        // for (a topological walk can visit `since` before it has
+        // emitted all commits on branches that diverged before it) --
+        // gix's frontier computation is exactly the same "boundary
+        // commit" algorithm `git rev-list branch ^tag` itself uses, so
+        // it handles that case internally rather than needing it
+        // reimplemented here. `since` remains exclusive, matching the
+        // prior behavior: `with_hidden` excludes both the hidden tip
+        // itself and everything reachable from it.
+        if let Some(s) = since {
+            let since_oid = gix::ObjectId::from_hex(s.as_ref().as_bytes())
+                .map_err(|e| VcsError::Git(format!("Invalid since SHA: {e}")))?;
+            platform = platform.with_hidden(Some(since_oid));
+        }
+
+        let revwalk = platform
+            .all()
+            .map_err(|e| VcsError::Git(format!("Failed to create revwalk: {e}")))?;
+
+        let mut commits = Vec::new();
+        for info in revwalk {
+            let info = info.map_err(|e| VcsError::Git(e.to_string()))?;
+            REVWALK_VISIT_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let hex = info.id.to_hex().to_string();
+
+            if info.parent_ids().count() > 1 {
+                continue;
             }
 
-            let revwalk = platform
-                .all()
-                .map_err(|e| VcsError::Git(format!("Failed to create revwalk: {e}")))?;
+            let commit_obj = info
+                .object()
+                .map_err(|e| VcsError::Git(format!("Failed to load commit object: {e}")))?;
 
-            let mut commits = Vec::new();
-            for info in revwalk {
-                let info = info.map_err(|e| VcsError::Git(e.to_string()))?;
-                REVWALK_VISIT_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                let hex = info.id.to_hex().to_string();
-
-                if info.parent_ids().count() > 1 {
+            if !pathspecs.is_empty() {
+                let touched = commit_touches_pathspecs(&self.repo, &info, &commit_obj, pathspecs)?;
+                if !touched {
                     continue;
                 }
-
-                let commit_obj = info
-                    .object()
-                    .map_err(|e| VcsError::Git(format!("Failed to load commit object: {e}")))?;
-
-                if !pathspecs.is_empty() {
-                    let touched = commit_touches_pathspecs(&self.repo, &info, &commit_obj, pathspecs)?;
-                    if !touched {
-                        continue;
-                    }
-                }
-
-                let sha = CommitSha::parse(&hex).map_err(|e| VcsError::Git(format!("Invalid commit SHA: {e}")))?;
-
-                let message = commit_obj.message().map_err(|e| VcsError::Git(e.to_string()))?;
-                let summary = message.title.to_string().replace("\r\n", "\n").trim_end().to_string();
-                let body = message.body.map(|b| b.to_string().replace("\r\n", "\n"));
-
-                commits.push(GitCommit { sha, summary, body });
             }
 
-            Ok(commits)
+            let sha = CommitSha::parse(&hex).map_err(|e| VcsError::Git(format!("Invalid commit SHA: {e}")))?;
+
+            let message = commit_obj.message().map_err(|e| VcsError::Git(e.to_string()))?;
+            let summary = message.title.to_string().replace("\r\n", "\n").trim_end().to_string();
+            let body = message.body.map(|b| b.to_string().replace("\r\n", "\n"));
+
+            commits.push(GitCommit { sha, summary, body });
         }
-        #[cfg(target_arch = "wasm32")]
-        {
-            let _unused = (since, pathspecs);
-            Ok(Vec::new())
-        }
+
+        Ok(commits)
     }
 
     /// `sign` is accepted for interface parity with [`ShellGit::create_tag`]
@@ -459,64 +414,56 @@ impl GitRepository {
         _sign: TagSignPolicy,
         _permit: &ApplyPermit,
     ) -> Result<(), VcsError> {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let oid = gix::ObjectId::from_hex(target_sha.as_ref().as_bytes())
-                .map_err(|e| VcsError::Git(format!("Invalid SHA: {e}")))?;
+        let oid = gix::ObjectId::from_hex(target_sha.as_ref().as_bytes())
+            .map_err(|e| VcsError::Git(format!("Invalid SHA: {e}")))?;
 
-            if let Some(msg) = message {
-                // A tag object with no `tagger` line is invalid: `git tag -a` refuses to
-                // write one, and GitHub's receive-pack rejects the push that carries it.
-                let target_commit;
-                let tagger = match self.repo.committer() {
-                    Some(Ok(signature)) => signature,
-                    Some(Err(e)) => {
-                        return Err(VcsError::Git(format!("invalid committer identity for tag: {e}")));
-                    }
-                    // No configured identity: attribute the tag to whoever committed
-                    // what it points at, rather than inventing one.
-                    None => {
-                        target_commit = self
-                            .repo
-                            .find_object(oid)
-                            .map_err(|e| VcsError::Git(format!("could not read tag target: {e}")))?
-                            .try_into_commit()
-                            .map_err(|e| VcsError::Git(format!("tag target is not a commit: {e}")))?;
-                        target_commit
-                            .committer()
-                            .map_err(|e| VcsError::Git(format!("could not read target committer: {e}")))?
-                    }
-                };
-                self.repo
-                    .tag(
-                        name,
-                        oid,
-                        gix::object::Kind::Commit,
-                        Some(tagger),
-                        msg,
-                        gix::refs::transaction::PreviousValue::MustNotExist,
-                    )
-                    .map_err(|e| VcsError::Git(format!("Failed to create tag: {e}")))?;
-            } else {
-                let clean_name = name.strip_prefix("refs/tags/").unwrap_or(name);
-                let ref_name = format!("refs/tags/{}", clean_name);
-                let _unused = self
-                    .repo
-                    .reference(
-                        ref_name,
-                        oid,
-                        gix::refs::transaction::PreviousValue::MustNotExist,
-                        "callisto create tag",
-                    )
-                    .map_err(|e| VcsError::Git(format!("Failed to create lightweight tag: {e}")))?;
-            }
-            Ok(())
+        if let Some(msg) = message {
+            // A tag object with no `tagger` line is invalid: `git tag -a` refuses to
+            // write one, and GitHub's receive-pack rejects the push that carries it.
+            let target_commit;
+            let tagger = match self.repo.committer() {
+                Some(Ok(signature)) => signature,
+                Some(Err(e)) => {
+                    return Err(VcsError::Git(format!("invalid committer identity for tag: {e}")));
+                }
+                // No configured identity: attribute the tag to whoever committed
+                // what it points at, rather than inventing one.
+                None => {
+                    target_commit = self
+                        .repo
+                        .find_object(oid)
+                        .map_err(|e| VcsError::Git(format!("could not read tag target: {e}")))?
+                        .try_into_commit()
+                        .map_err(|e| VcsError::Git(format!("tag target is not a commit: {e}")))?;
+                    target_commit
+                        .committer()
+                        .map_err(|e| VcsError::Git(format!("could not read target committer: {e}")))?
+                }
+            };
+            self.repo
+                .tag(
+                    name,
+                    oid,
+                    gix::object::Kind::Commit,
+                    Some(tagger),
+                    msg,
+                    gix::refs::transaction::PreviousValue::MustNotExist,
+                )
+                .map_err(|e| VcsError::Git(format!("Failed to create tag: {e}")))?;
+        } else {
+            let clean_name = name.strip_prefix("refs/tags/").unwrap_or(name);
+            let ref_name = format!("refs/tags/{}", clean_name);
+            let _unused = self
+                .repo
+                .reference(
+                    ref_name,
+                    oid,
+                    gix::refs::transaction::PreviousValue::MustNotExist,
+                    "callisto create tag",
+                )
+                .map_err(|e| VcsError::Git(format!("Failed to create lightweight tag: {e}")))?;
         }
-        #[cfg(target_arch = "wasm32")]
-        {
-            let _ = (name, target_sha, message);
-            Err(VcsError::Git("WASM unsupported".to_string()))
-        }
+        Ok(())
     }
 
     pub fn create_floating_major(
@@ -525,36 +472,27 @@ impl GitRepository {
         target_sha: &CommitSha,
         _permit: &ApplyPermit,
     ) -> Result<(), VcsError> {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let oid = gix::ObjectId::from_hex(target_sha.as_ref().as_bytes())
-                .map_err(|e| VcsError::Git(format!("Invalid SHA: {e}")))?;
+        let oid = gix::ObjectId::from_hex(target_sha.as_ref().as_bytes())
+            .map_err(|e| VcsError::Git(format!("Invalid SHA: {e}")))?;
 
-            let ref_name = format!("refs/tags/{}", major_name);
-            let _unused = self
-                .repo
-                .reference(
-                    ref_name,
-                    oid,
-                    gix::refs::transaction::PreviousValue::Any,
-                    "callisto floating major",
-                )
-                .map_err(|e| VcsError::Git(format!("Failed to update floating major: {e}")))?;
+        let ref_name = format!("refs/tags/{}", major_name);
+        let _unused = self
+            .repo
+            .reference(
+                ref_name,
+                oid,
+                gix::refs::transaction::PreviousValue::Any,
+                "callisto floating major",
+            )
+            .map_err(|e| VcsError::Git(format!("Failed to update floating major: {e}")))?;
 
-            Ok(())
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            let _ = (major_name, target_sha);
-            Err(VcsError::Git("WASM unsupported".to_string()))
-        }
+        Ok(())
     }
 }
 
 /// Diffs `commit_obj`'s tree against its first parent's tree (or the empty
 /// tree, for a root commit) and reports whether any changed path falls
 /// under one of `pathspecs`.
-#[cfg(not(target_arch = "wasm32"))]
 fn commit_touches_pathspecs(
     repo: &gix::Repository,
     info: &gix::revision::walk::Info<'_>,
@@ -604,7 +542,6 @@ fn commit_touches_pathspecs(
     Ok(touched)
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn change_matches_pathspecs(change: &gix::object::tree::diff::Change<'_, '_, '_>, pathspecs: &[PathBuf]) -> bool {
     use gix::object::tree::diff::Change;
     match change {
@@ -632,7 +569,6 @@ fn change_matches_pathspecs(change: &gix::object::tree::diff::Change<'_, '_, '_>
 /// case a root-level pathspec would silently match zero commits instead of
 /// every commit -- making commit-based inference a total no-op for exactly
 /// the single-package repos most likely to rely on it.
-#[cfg(not(target_arch = "wasm32"))]
 fn location_matches(location: &gix::bstr::BStr, pathspecs: &[PathBuf]) -> bool {
     let path_str = String::from_utf8_lossy(location);
     let changed_path = Path::new(path_str.as_ref());

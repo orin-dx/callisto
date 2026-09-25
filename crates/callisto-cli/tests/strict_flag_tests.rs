@@ -112,7 +112,6 @@ fn test_version_strict_no_changesets_exits_nonzero() {
 
     let args = VersionArgs {
         strict: true,
-        strict_graph: false,
         allow_empty_changesets: false,
         refresh_lockfiles: false,
         emit_decision: None,
@@ -140,7 +139,6 @@ fn test_version_no_strict_no_changesets_succeeds() {
 
     let args = VersionArgs {
         strict: false,
-        strict_graph: false,
         allow_empty_changesets: false,
         refresh_lockfiles: false,
         emit_decision: None,
@@ -176,7 +174,6 @@ fn test_snapshot_strict_clean_graph_succeeds() {
     let args = SnapshotArgs {
         tag: "ci".to_string(),
         strict: true,
-        strict_graph: false,
     };
 
     let result = commands::snapshot::handle(args, &global);
@@ -202,33 +199,11 @@ fn test_snapshot_no_strict_clean_graph_succeeds() {
     let args = SnapshotArgs {
         tag: "ci".to_string(),
         strict: false,
-        strict_graph: false,
     };
 
     let result = commands::snapshot::handle(args, &global);
     assert!(
         result.is_ok(),
         "snapshot without --strict should succeed; got: {result:?}"
-    );
-}
-
-/// `callisto snapshot --strict-graph` (with `--strict` left off) must be
-/// honored as its own real flag on a clean graph, rather than being ignored
-/// because no field ever carried it through to `escalate()`.
-#[test]
-fn test_snapshot_strict_graph_alone_clean_graph_succeeds() {
-    let tmp = TempDir::new().unwrap();
-    let global = make_git_workspace(&tmp);
-
-    let args = SnapshotArgs {
-        tag: "ci".to_string(),
-        strict: false,
-        strict_graph: true,
-    };
-
-    let result = commands::snapshot::handle(args, &global);
-    assert!(
-        result.is_ok(),
-        "snapshot --strict-graph on a clean graph should succeed; got: {result:?}"
     );
 }

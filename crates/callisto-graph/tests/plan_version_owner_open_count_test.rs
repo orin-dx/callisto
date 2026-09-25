@@ -154,7 +154,6 @@ fn plan_version_opens_owner_manifest_once_regardless_of_platform_sibling_count()
     let inference = NoInference;
     let opts = VersionOptions {
         strict: false,
-        strict_graph: false,
         allow_empty_changesets: true,
     };
     let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");

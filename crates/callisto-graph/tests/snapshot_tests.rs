@@ -208,8 +208,7 @@ fn test_snapshot_sha_resolution_failure_is_surfaced_error() {
 }
 
 /// `plan_snapshot` must resolve HEAD via `GitAccess`'s `CommandRunner` shell fallback when
-/// native gix cannot discover a repository -- always true on wasm32, since gix is excluded
-/// from that target's dependency set. Before this was wired through `GitAccess` (instead of
+/// native gix cannot discover a repository. Before this was wired through `GitAccess` (instead of
 /// calling `callisto_vcs::GitRepository::discover` directly, which has no such fallback and
 /// consults `CommandRunner` for nothing), this exact scenario -- no gix-discoverable repo,
 /// but a runner able to answer `git rev-parse HEAD` -- would hard-fail regardless of what

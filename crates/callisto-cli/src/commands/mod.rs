@@ -32,10 +32,8 @@ pub(crate) fn read_json_arg(arg: &str) -> Result<String, crate::error::CliError>
     }
 }
 
-/// Escalates workspace graph diagnostics per `strict`/`strict_graph` (mirroring
-/// `callisto_graph::commands::escalate`'s own semantics: `strict` escalates
-/// both `StrictFlag::Strict` and `StrictFlag::StrictGraph` diagnostics,
-/// `strict_graph` alone escalates only the latter) and errors out naming every
+/// Escalates workspace graph diagnostics per `strict` (via
+/// `callisto_graph::commands::escalate`) and errors out naming every
 /// diagnostic that is `Error` severity afterward.
 ///
 /// Used by `snapshot`, which must abort *before* touching any
@@ -45,10 +43,9 @@ pub(crate) fn read_json_arg(arg: &str) -> Result<String, crate::error::CliError>
 pub(crate) fn abort_on_graph_errors(
     diagnostics: &[callisto_model::Diagnostic],
     strict: bool,
-    strict_graph: bool,
 ) -> Result<(), crate::error::CliError> {
     let mut diags = diagnostics.to_vec();
-    callisto_graph::commands::escalate(&mut diags, strict, strict_graph);
+    callisto_graph::commands::escalate(&mut diags, strict);
 
     let messages: Vec<String> = diags
         .iter()
@@ -60,7 +57,7 @@ pub(crate) fn abort_on_graph_errors(
         Ok(())
     } else {
         Err(crate::error::CliError::Other(format!(
-            "--strict/--strict-graph: workspace graph has error diagnostics:\n{}",
+            "--strict: workspace graph has error diagnostics:\n{}",
             messages.join("\n")
         )))
     }
@@ -72,45 +69,30 @@ mod tests {
 
     use super::abort_on_graph_errors;
 
-    fn strict_graph_diagnostic() -> Diagnostic {
+    fn strict_diagnostic() -> Diagnostic {
         Diagnostic {
             code: DiagnosticCode::RangeNotRoundTrippable,
             severity: DiagnosticSeverity::Warning,
             message: "graph warning a -> b".to_string(),
             package: None,
             path: None,
-            escalated_by: Some(StrictFlag::StrictGraph),
+            escalated_by: Some(StrictFlag::Strict),
             governed_by: None,
         }
     }
 
-    /// Neither flag set: a `StrictGraph`-tagged warning stays a warning, so
+    /// Without `--strict`, a `Strict`-tagged warning stays a warning, so
     /// `snapshot` must proceed rather than abort.
     #[test]
-    fn neither_flag_leaves_warning_diagnostics_unescalated() {
-        let diags = vec![strict_graph_diagnostic()];
-        assert!(abort_on_graph_errors(&diags, false, false).is_ok());
+    fn without_strict_warning_diagnostics_stay_unescalated() {
+        let diags = vec![strict_diagnostic()];
+        assert!(abort_on_graph_errors(&diags, false).is_ok());
     }
 
-    /// This is the bug fix under test: previously `snapshot` hardcoded
-    /// `escalate(&mut diags, true, true)`, reachable only from behind an
-    /// `if args.strict` gate -- `--strict-graph` alone had no field to carry
-    /// it and no way to trigger escalation on its own. Now `strict_graph:
-    /// true` with `strict: false` must, by itself, escalate a
-    /// `StrictFlag::StrictGraph` diagnostic to `Error` and abort.
     #[test]
-    fn strict_graph_alone_now_escalates_graph_diagnostics() {
-        let diags = vec![strict_graph_diagnostic()];
-        let err = abort_on_graph_errors(&diags, false, true).unwrap_err();
+    fn strict_escalates_and_aborts_naming_the_diagnostic() {
+        let diags = vec![strict_diagnostic()];
+        let err = abort_on_graph_errors(&diags, true).unwrap_err();
         assert!(err.to_string().contains("graph warning a -> b"));
-    }
-
-    /// `--strict` alone still escalates `StrictGraph`-tagged diagnostics too
-    /// (matching `escalate`'s own `strict || strict_graph` rule for that
-    /// flag, and matching `status`/`validate`/`version`'s behavior).
-    #[test]
-    fn strict_alone_still_escalates_graph_diagnostics() {
-        let diags = vec![strict_graph_diagnostic()];
-        assert!(abort_on_graph_errors(&diags, true, false).is_err());
     }
 }

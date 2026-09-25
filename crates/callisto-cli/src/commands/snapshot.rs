@@ -16,8 +16,8 @@ pub fn handle(args: SnapshotArgs, global: &GlobalArgs) -> Result<ExitCode, CliEr
     let ws = load_workspace(global, &runner)?;
 
     // Promote graph diagnostics per
-    // `--strict`/`--strict-graph` and abort before touching any files.
-    abort_on_graph_errors(ws.graph.diagnostics(), args.strict, args.strict_graph)?;
+    // `--strict` and abort before touching any files.
+    abort_on_graph_errors(ws.graph.diagnostics(), args.strict)?;
 
     let (plan, report) = callisto_graph::commands::plan_snapshot(&ws, &args.tag)?;
 
@@ -123,7 +123,6 @@ mod tests {
             SnapshotArgs {
                 tag: "canary".to_string(),
                 strict: false,
-                strict_graph: false,
             },
             &global,
         );

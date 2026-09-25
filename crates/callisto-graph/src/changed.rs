@@ -117,8 +117,7 @@ mod tests {
     }
 
     /// A directory that is guaranteed not to sit inside any Git repository,
-    /// so `callisto_vcs::GitRepository::discover` fails exactly the way it
-    /// unconditionally does on `wasm32` -- forcing every path under test
+    /// so `callisto_vcs::GitRepository::discover` fails, forcing every path under test
     /// through the `CommandRunner` fallback, the same fixture pattern
     /// `tags.rs`'s tests use.
     fn non_repo_dir() -> tempfile::TempDir {

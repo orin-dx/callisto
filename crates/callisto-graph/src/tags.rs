@@ -11,16 +11,13 @@ use crate::resolver::DependencyResolver;
 
 /// Fetches the full, unfiltered list of every tag name in the repository at
 /// `root`, via [`GitAccess`] (native gix, falling back to a `CommandRunner`-
-/// shelled `git tag --list` when gix is unavailable -- most notably on
-/// `wasm32`).
+/// shelled `git tag --list` when gix is unavailable).
 ///
 /// Deliberately fetches with no glob pattern: callers filter afterwards
 /// via [`matching_tags`], using the same `globset` matcher both
 /// `GitDataSource` backends use internally -- identical tag-selection
 /// semantics regardless of backend, and lets the fetch batch once across
-/// every package (see [`TagIndex::build`]) instead of once per package,
-/// important on `wasm32` where each `CommandRunner` call is a full Extism
-/// round-trip.
+/// every package (see [`TagIndex::build`]) instead of once per package.
 pub(crate) fn fetch_all_tags(git: &GitAccess<'_>) -> Result<Vec<String>, GraphError> {
     let tags = git.list_tags(None)?;
     Ok(tags.into_iter().map(|t| t.as_str().to_string()).collect())
@@ -253,8 +250,7 @@ mod tests {
     /// A `CommandRunner` double that never touches a real `git` binary: it
     /// answers `git tag --list` with a canned tag list and counts every
     /// invocation. Used both to prove `TagIndex::build` succeeds with gix
-    /// unavailable (mirroring the wasm32 code path, where
-    /// `GitRepository::discover` always fails), and to count how many
+    /// unavailable, and to count how many
     /// `CommandRunner` round-trips a `TagIndex::build` call costs.
     struct FakeGitTagRunner {
         calls: AtomicUsize,
@@ -284,9 +280,8 @@ mod tests {
     }
 
     /// A directory that is guaranteed not to sit inside any Git repository,
-    /// so `callisto_vcs::GitRepository::discover` fails exactly the way it
-    /// unconditionally does on `wasm32` -- this is the native-testable
-    /// stand-in for "gix is unavailable" the spec calls for, forcing every
+    /// so `callisto_vcs::GitRepository::discover` fails -- the stand-in for
+    /// "gix is unavailable" the spec calls for, forcing every
     /// path under test through the `CommandRunner` fallback.
     fn non_repo_dir() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();

@@ -58,8 +58,7 @@ pub struct Workspace<'a, R: CommandRunner, D: DependencyResolver = ManifestWalkR
     /// [`Workspace::tags`] is called, not eagerly by [`Workspace::load`].
     ///
     /// `TagIndex::build` fetches the repo's full tag list -- native gix, or
-    /// (unavailable on `wasm32`) a shelled `git tag --list` Extism
-    /// round-trip. Several command paths never consult tags at all (`add`'s
+    /// a shelled `git tag --list`. Several command paths never consult tags at all (`add`'s
     /// non-interactive path only needs [`Workspace::root`]; `init` only
     /// needs package names/root), so building unconditionally in
     /// `Workspace::load` charged every caller for work only some need. All
