@@ -1,0 +1,1 @@
+Shall we move them to the new location and update our agents.md file location? We should change our setup so claude reads the AGENTS.md file now right?
