@@ -2,4 +2,4 @@
 callisto-cli: patch
 ---
 
-version now refuses when a prior run crashed mid-way, validates strict escalation before writing anything, and writes the release decision only after a successful apply
+`version` now refuses to run again after a previous run wrote its changes but was never committed, and validates `--strict` escalation before writing anything instead of writing first and failing afterward.

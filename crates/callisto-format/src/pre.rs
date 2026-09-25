@@ -116,11 +116,9 @@ pub fn write_pre_json(state: &PreState) -> String {
     render_pre_json(state, "  ")
 }
 
-/// Renders `state`, then reapplies `existing`'s on-disk formatting (BOM,
-/// CRLF vs LF, and indent width) instead of always emitting the default
-/// 2-space bare-LF shape -- otherwise a CRLF or custom-indent `pre.json`
-/// (e.g. from a repo with `core.autocrlf=true`, or a hand-edited file) gets
-/// silently reformatted on every `pre exit` or mid-cycle `version` rewrite.
+/// Renders `state`, then reapplies `existing`'s on-disk formatting (BOM, CRLF vs LF, indent width) instead of the
+/// default 2-space bare-LF shape, so a CRLF or custom-indent `pre.json` (e.g. `core.autocrlf=true`, or hand-edited)
+/// is not reformatted on a `pre exit` or mid-cycle `version` rewrite.
 pub fn write_pre_json_preserving(state: &PreState, existing: &str) -> String {
     let fp = PreJsonFingerprint::detect(existing);
     let rendered = render_pre_json(state, &fp.indent_str());
@@ -151,10 +149,7 @@ fn render_pre_json(state: &PreState, indent_str: &str) -> String {
     out
 }
 
-/// Byte-level formatting facts `pre.json`'s writer must preserve across a
-/// rewrite: `serde_json` re-serialization always produces 2-space-indented,
-/// bare-LF, no-BOM text regardless of what was originally on disk. Detected
-/// once from the file as read, then reapplied to the freshly-rendered body.
+/// Byte-level formatting facts (BOM, CRLF, indent) `pre.json` must preserve across a rewrite.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct PreJsonFingerprint {
     has_bom: bool,
@@ -174,8 +169,7 @@ impl PreJsonFingerprint {
         let clean = content.strip_prefix('\u{FEFF}').unwrap_or(content);
         let crlf = clean.contains("\r\n");
 
-        // The first quote-leading line is a top-level key (`"mode"`, ...) at
-        // indent depth 1 -- its leading whitespace is one indent unit.
+        // The first quote-leading line is a top-level key at indent depth 1; its leading whitespace is one unit.
         let mut indent = PreJsonIndent::Spaces(2);
         for line in clean.lines() {
             let trimmed = line.trim_start();
@@ -200,8 +194,7 @@ impl PreJsonFingerprint {
         }
     }
 
-    /// Reapplies this fingerprint to `rendered` -- a freshly-serialized
-    /// body with bare-LF line endings and no BOM.
+    /// Reapplies this fingerprint to `rendered`, a freshly-serialized body with bare-LF endings and no BOM.
     fn apply(&self, rendered: &str) -> String {
         let mut out = if self.crlf {
             rendered.replace("\r\n", "\n").replace('\n', "\r\n")
@@ -356,9 +349,7 @@ mod tests {
         );
     }
 
-    /// Spec: rewriting an existing CRLF `pre.json` must keep CRLF line
-    /// endings, not silently normalize to LF -- the same fingerprinting
-    /// contract as the manifest editors.
+    /// Spec: rewriting a CRLF `pre.json` must keep CRLF, the same fingerprinting contract as the manifest editors.
     #[test]
     fn write_pre_json_preserving_keeps_crlf() {
         let existing = "{\r\n  \"mode\": \"pre\",\r\n  \"tag\": \"beta\",\r\n  \"initialVersions\": {},\r\n  \"changesets\": []\r\n}\r\n";
@@ -376,8 +367,7 @@ mod tests {
         );
     }
 
-    /// Spec: a tab-indented `pre.json` must be rewritten with tabs, not the
-    /// default 2-space indent.
+    /// Spec: a tab-indented `pre.json` must be rewritten with tabs, not the default 2-space indent.
     #[test]
     fn write_pre_json_preserving_keeps_tab_indent() {
         let existing =

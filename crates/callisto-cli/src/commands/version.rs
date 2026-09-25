@@ -29,32 +29,20 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
 
     let plan = callisto_graph::commands::plan_version(&ws, &inference, &opts)?;
 
-    // Refuses closed when disk already reflects a version bump HEAD doesn't
-    // have while a changeset is still pending there -- the signature of a
-    // prior `version` run that wrote and staged but never committed.
+    // Refuses when disk already shows a bump HEAD lacks while a changeset is still pending: a crashed prior run.
     callisto_graph::commands::check_partial_run(&ws)?;
 
-    // Escalated diagnostics (e.g. --strict on "no pending changesets") must
-    // fail the run before anything is written: `--emit-decision` and apply
-    // used to both run first and only afterwards check this, so a --strict
-    // failure still wrote and staged the plan on its way to a non-zero exit.
+    // Escalated diagnostics (e.g. --strict on "no pending changesets") must fail before anything is written.
     let has_errors = plan.diagnostics.iter().any(|d| d.severity == DiagnosticSeverity::Error);
 
     let permit = ApplyPermit::granted_unless_dry_run(global.dry_run);
 
-    // Validated up front -- a plan with no bumps or divergent group targets
-    // (VER-APPLY-11) fails here, before apply runs -- but the decision file
-    // itself is written only after apply below has actually succeeded.
+    // Decision is derived only once the plan validates (VER-APPLY-11), but written only after apply below succeeds.
     let pending_decision = if !has_errors {
         match args.emit_decision.as_deref() {
             Some(path) => {
                 let decision = callisto_graph::commands::derive_release_decision(&ws, &plan)?;
-                // Relative to the workspace root, not the process's actual
-                // working directory: this file must land inside the tree
-                // `--cwd` points at so `git add -A` picks it up alongside the
-                // manifest and changelog edits, and so its path matches what
-                // `--decision` later reads back via `git show <commit>:<path>`
-                // (always workspace-root-relative).
+                // Workspace-root-relative, not cwd-relative, so `git add -A` and a later `--decision` `git show` agree.
                 Some((ws.root.join(path), decision))
             }
             None => None,

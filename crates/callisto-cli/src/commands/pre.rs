@@ -12,12 +12,7 @@ use crate::output::{log_line, write_json};
 use crate::runner::CliCommandRunner;
 use crate::workspace::load_workspace;
 
-/// Stages `pre.json` (at `rel_path`, relative to `root`) via `git add`,
-/// called by `pre enter` and `pre exit` on a real (non-dry-run) write so the
-/// change is included in the next commit. Extracted from [`handle`] so it's
-/// directly testable with a fake [`CommandRunner`] -- `handle` itself always
-/// constructs a real [`crate::runner::CliCommandRunner`], which shells out
-/// for real.
+/// Extracted from [`handle`] so a fake [`CommandRunner`] can exercise the `git add` without shelling out for real.
 fn stage_pre_json(runner: &dyn CommandRunner, root: &Path, rel_path: &Path) -> Result<(), CliError> {
     let rel_str = rel_path.to_string_lossy();
     let output = runner
@@ -33,8 +28,7 @@ fn stage_pre_json(runner: &dyn CommandRunner, root: &Path, rel_path: &Path) -> R
     Ok(())
 }
 
-/// Reports the `pre.json` content a real run would have written, mirroring
-/// `add`'s dry-run preview in both output formats.
+/// Mirrors `add`'s dry-run preview so both commands report the not-yet-written content the same way.
 fn preview(global: &GlobalArgs, mode: &str, tag: &str, rel_path: &Path, content: &str) -> Result<(), CliError> {
     let rel_str = rel_path.to_string_lossy();
     match global.format {
@@ -166,8 +160,7 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
 
             callisto_manifests::atomic::atomic_write(&pre_path, &updated, &permit)?;
 
-            // `pre exit` mutates the same tracked file `pre enter` created,
-            // so it must stage it the same way for the next commit.
+            // Mutates the same tracked file `pre enter` created, so it must be staged the same way.
             stage_pre_json(&runner, &root, &rel_pre_path)?;
 
             match global.format {

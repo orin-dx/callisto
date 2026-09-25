@@ -77,19 +77,9 @@ pub fn pre_mutation_checks<D: DependencyResolver>(
     Ok(outcome)
 }
 
-/// Computes `base`'s next version under `severity`: grammar-aware (SemVer vs
-/// PEP 440, via `callisto_format::versioning_for`) and, in pre-release mode,
-/// anchored on the `initialVersions` entry pinned in `pre.json` rather than
-/// the live on-disk version. Shared by `cascade::bump_target` (per-package
-/// bumps) and `fixed_group_target` (group-aligned bumps) so the two paths
-/// can never diverge on grammar or pre-release handling the way
-/// `fixed_group_target` once did by hardcoding `SemVerVersioning` and
-/// ignoring `pre` entirely.
-///
-/// Guards against ever returning a version that sorts behind `base`: a
-/// miscomputed alignment base upstream (e.g. the `1.0.0`/`0.0.0` defaults
-/// this function replaces) must surface as an error here rather than silently
-/// write a downgrade to a manifest.
+/// Computes `base`'s next version under `severity`, grammar-aware (SemVer vs PEP 440) and, in pre-release mode,
+/// anchored on `pre.json`'s pinned `initialVersions` entry rather than the live on-disk version. Shared by
+/// `cascade::bump_target` and `fixed_group_target`, and rejects any result that sorts behind `base`.
 pub fn versioned_bump(
     package: &PackageId,
     base: &Version,
@@ -102,12 +92,7 @@ pub fn versioned_bump(
         })
         .map_err(GraphError::Bump)?;
 
-    // The regression guard compares against the version actually being bumped
-    // from: in pre-release mode that's the pinned `initialVersions` anchor,
-    // not the live on-disk prerelease, which may already be deeper into a
-    // *different*, larger-severity pre-release cycle than the pinned baseline
-    // (e.g. on-disk "2.0.0-next.0" pinned at "1.0.0" legitimately bumps Minor
-    // to "1.1.0-next.0" -- smaller than on-disk, but not a regression).
+    // Compares against the pinned anchor in pre mode, not live on-disk, which may lead a different pre-release cycle.
     let (bumped_from, next) = match pre {
         Some(pre) if pre.mode == callisto_format::PreMode::Pre => {
             let pinned_base = pre.initial_versions.get(crate::pre_json_key(package)).unwrap_or(base);
@@ -133,20 +118,9 @@ pub fn versioned_bump(
     Ok(next)
 }
 
-/// Computes a fixed group's shared alignment target.
-///
-/// `live_members` must already be filtered to package ids present in
-/// `base` (see `solve_cascade`'s Track-1 block) -- a stale group member
-/// (still declared in callisto.toml but no longer in the workspace) has
-/// no entry in `base`, so if it were included here and happened to carry
-/// a release tag, `base.get(&released[0])` would miss.
-///
-/// The alignment base is the tagged member's on-disk version when the
-/// group has a released member (a member absent from `base` there is an
-/// error, not a silent `1.0.0` default -- a live sibling would otherwise
-/// align against a fabricated version), or otherwise the highest on-disk
-/// version among the untagged live members (not a hardcoded `0.0.0`,
-/// which made every untagged fixed-group bump a downgrade).
+/// Computes a fixed group's shared alignment target. `live_members` must already be filtered to ids present in
+/// `base` (see `solve_cascade`'s Track-1 block). The alignment base is a released member's on-disk version (an
+/// error, not a silent default, if that member is missing from `base`), or else the highest on-disk untagged version.
 pub fn fixed_group_target(
     group: &GroupName,
     live_members: &[PackageId],
@@ -279,10 +253,7 @@ mod tests {
         );
     }
 
-    /// Regression: an untagged fixed group's alignment base must be the
-    /// highest on-disk member version, not the hardcoded `0.0.0` the old
-    /// code used -- which turned every untagged fixed-group Minor bump into
-    /// a downgrade (1.0.0 + minor -> 0.1.0).
+    /// An untagged fixed group's alignment base must be the highest on-disk member version, not a hardcoded `0.0.0`.
     #[test]
     fn fixed_group_target_untagged_base_is_highest_ondisk_not_zero() {
         let pkg_core = PackageId::Bare("core".to_string());
@@ -306,10 +277,7 @@ mod tests {
         );
     }
 
-    /// Regression: fixed-group alignment must honor the base version's own
-    /// grammar (via `callisto_format::versioning_for`) instead of always
-    /// bumping with `SemVerVersioning`, which corrupted PEP 440 fixed
-    /// groups (E035: "bump_version requires a SemVer version").
+    /// Fixed-group alignment must honor the base version's own grammar, not always bump as SemVer.
     #[test]
     fn fixed_group_target_honors_pep440_grammar() {
         let pkg = PackageId::Bare("pya".to_string());
@@ -329,9 +297,7 @@ mod tests {
         assert_eq!(target.render(), "1.1.0");
     }
 
-    /// Regression: fixed-group alignment must honor pre-release mode via
-    /// `pre.json`'s `initialVersions`, producing a `-<tag>.N` target instead
-    /// of silently finalizing to a stable version.
+    /// Fixed-group alignment must honor pre-release mode via `pre.json`'s `initialVersions`, not finalize to stable.
     #[test]
     fn fixed_group_target_honors_pre_mode() {
         let pkg = PackageId::Bare("core".to_string());

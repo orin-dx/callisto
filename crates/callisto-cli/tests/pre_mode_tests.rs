@@ -334,11 +334,7 @@ fn test_pre_exit_stages_pre_json_via_git_add() {
     );
 }
 
-/// Regression test for the "pre mode records what it consumed" bug: running
-/// `version` a second time in pre mode, with no new changeset added, must
-/// not duplicate the changeset's changelog entry -- previously `consumed`
-/// was always empty in pre mode, so `pre.json`'s `changesets` list never
-/// grew, and every `version` run re-added the same changelog line.
+/// Running `version` twice in pre mode with no new changeset must not duplicate the changelog entry.
 #[test]
 fn test_pre_mode_rerun_does_not_duplicate_changelog_entry() {
     let dir = setup_polyglot_git_repo();
@@ -398,9 +394,7 @@ fn test_pre_mode_rerun_does_not_duplicate_changelog_entry() {
          in pre mode, got {occurrences} occurrences in:\n{changelog}"
     );
 
-    // Total bullet-entry count, not just a substring match: an already-recorded
-    // pre-mode changeset must not get a second, differently-worded entry (e.g.
-    // a synthesized "Version bump (minor)" line) alongside its real one.
+    // Counts total bullet entries, not just a substring match, so a second synthesized entry can't hide alongside it.
     let total_entries = changelog.lines().filter(|l| l.starts_with("- ")).count();
     assert_eq!(
         total_entries, 1,
@@ -408,8 +402,7 @@ fn test_pre_mode_rerun_does_not_duplicate_changelog_entry() {
          commit between them, got {total_entries} in:\n{changelog}"
     );
 
-    // The changeset file itself must still be on disk -- pre mode never
-    // deletes a changeset until `pre exit`'s consuming run.
+    // The changeset file must remain on disk -- pre mode never deletes it until `pre exit`'s consuming run.
     let cs_dir = root.join(".changeset");
     let remaining_md: Vec<_> = fs::read_dir(&cs_dir)
         .unwrap()

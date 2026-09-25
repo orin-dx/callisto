@@ -123,15 +123,7 @@ fn test_version_no_strict_no_changesets_succeeds() {
     );
 }
 
-/// Regression test: `version --strict` must fail before writing anything.
-///
-/// A pre-release exit with no pending changesets still computes a real bump
-/// (finalizing the prerelease to stable) while the "no pending changesets"
-/// warning is escalated to Error under `--strict` (the bump comes from the
-/// exit-mode synthetic severity, not from a consumed changeset, so it never
-/// clears `nothing_pending`). Before the fix, `--emit-decision` and `apply`
-/// both ran before this diagnostic was checked, so the manifest and
-/// changelog were written and staged on the way to the non-zero exit.
+/// A pre-release exit's synthetic bump never clears `nothing_pending`, so `--strict` must fail before writing.
 #[test]
 fn test_version_strict_fails_before_writing_a_pre_exit_bump() {
     let tmp = TempDir::new().unwrap();

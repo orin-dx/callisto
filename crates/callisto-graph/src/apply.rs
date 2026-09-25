@@ -338,10 +338,7 @@ pub fn apply_version_plan<R: CommandRunner>(
         }
 
         if let Some(ref pre_state) = plan.pre_state_update {
-            // Written from `plan.pre_json_path` (ResolvedConfig::pre_json_path),
-            // not derived from `consumed_changesets` -- that list is always
-            // empty in pre mode, which previously made this silently fall
-            // back to the hardcoded default `.changeset` dir.
+            // Written from `plan.pre_json_path`, not derived from `consumed_changesets` (always empty in pre mode).
             let rel_pre_path = plan.pre_json_path.clone();
             let pre_path = root.join(&rel_pre_path);
             let text = match &plan.pre_json_original_text {
@@ -2343,9 +2340,7 @@ mod tests {
         );
     }
 
-    /// A `pre_state_update` write must land at `plan.pre_json_path` --
-    /// which reflects `[changesets] dir` -- not at a hardcoded `.changeset`
-    /// guessed from `consumed_changesets` (always empty in pre mode).
+    /// A `pre_state_update` write must land at `plan.pre_json_path`, not a `.changeset` default guessed elsewhere.
     #[test]
     fn pre_state_update_writes_to_plan_pre_json_path_not_hardcoded_default() {
         let dir = tempfile::tempdir().unwrap();

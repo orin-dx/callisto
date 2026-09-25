@@ -74,10 +74,9 @@ impl ResolvedConfig {
         self.provenance.get(key).copied().unwrap_or(ConfigProvenance::Default)
     }
 
-    /// The workspace-relative path to `pre.json`, inside `[changesets] dir`.
-    /// The single source of truth for this path -- `pre enter`/`pre exit`,
-    /// `version`'s read and delete, and `apply_version_plan`'s write must
-    /// all resolve it through this method rather than re-deriving it.
+    /// The workspace-relative path to `pre.json`, inside `[changesets] dir`. The single source of truth for this
+    /// path: `pre enter`/`pre exit`, `version`'s read and delete, and `apply_version_plan`'s write all resolve it
+    /// through this method rather than re-deriving it.
     pub fn pre_json_path(&self) -> PathBuf {
         self.changesets_dir.join("pre.json")
     }
@@ -496,10 +495,6 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
     if validation_raw.allow_empty_changesets.is_some() {
         provenance.insert(ConfigKey::VALIDATION_ALLOW_EMPTY_CHANGESETS, ConfigProvenance::Explicit);
     }
-
-    // TODO: FIXED_GROUP/LINKED_GROUP/TAG_TEMPLATE/PRE_MAJOR_INFERENCE are never inserted
-    // here, so diagnostics governed by those keys always render "(default)" even when
-    // explicitly configured -- these keys need the same explicit-provenance tracking above.
 
     let mut registries = BTreeMap::new();
     registries.insert(

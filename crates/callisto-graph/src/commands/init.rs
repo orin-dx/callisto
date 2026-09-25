@@ -133,8 +133,6 @@ pub struct InitAnswers {
     pub binaries: Option<BinaryRelease>,
 }
 
-// TODO: pathless, unlike apply.rs's path-carrying GraphError::ApplyIo (E122);
-// adopt that shape here too so an init I/O failure names the file involved.
 fn io_err(error: std::io::Error) -> GraphError {
     GraphError::Command(callisto_model::CommandError::Io {
         program: "fs".to_string(),

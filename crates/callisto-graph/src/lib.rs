@@ -198,11 +198,9 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
     }
 }
 
-/// The canonical `.changeset/pre.json` `initialVersions` key for `id`: the
-/// bare package name, unqualified by ecosystem prefix. The one definition
-/// every reader and writer of `initialVersions` must share -- a reader that
-/// keyed by `display_name()` instead (ecosystem-prefixed) would silently
-/// miss every entry written by this function for a `PackageId::Prefixed` id.
+/// The canonical `.changeset/pre.json` `initialVersions` key for `id`: the bare package name, unqualified by
+/// ecosystem prefix. Every reader and writer of `initialVersions` must share this definition -- keying by
+/// `display_name()` instead would silently miss every entry for a `PackageId::Prefixed` id.
 pub fn pre_json_key(id: &PackageId) -> &str {
     id.name()
 }

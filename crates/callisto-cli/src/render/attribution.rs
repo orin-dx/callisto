@@ -10,8 +10,7 @@ pub fn attribution_line(key: &ConfigKey, cfg: &ResolvedConfig) -> String {
     };
 
     let prov = cfg.provenance(key);
-    // release-trigger has no ResolvedConfig-level rendered value (it's package-scoped);
-    // its actual default is ReleaseTrigger::default() (changeset), not a generic "auto".
+    // release-trigger is package-scoped and has no rendered value here; its real default is `changeset`, not "auto".
     let val = cfg.rendered_value(key).unwrap_or_else(|| {
         if key == &ConfigKey::RELEASE_TRIGGER {
             match ReleaseTrigger::default() {

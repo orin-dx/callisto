@@ -442,9 +442,7 @@ fn bump_target<D: DependencyResolver>(
         })
     })?;
 
-    // PreMode::Exit falls through `versioned_bump`'s `_` arm to a plain
-    // `versioning.bump`: finalizing a pre-release (e.g. "1.0.0-alpha.2") with
-    // a matching severity strips the tag and produces "1.0.0" directly.
+    // PreMode::Exit falls through to a plain `versioning.bump`, which strips a matching pre-release tag directly.
     crate::groups::versioned_bump(id, &base, sev, input.pre)
 }
 
@@ -1947,11 +1945,7 @@ mod tests {
         );
     }
 
-    /// Regression: `fixed_group_target` itself (not just its `solve_cascade`
-    /// caller, which pre-filters `live_members` to ids present in `base`)
-    /// must reject a released member missing from `base` as an error rather
-    /// than silently defaulting the group's alignment target to `1.0.0`,
-    /// which would corrupt the target for every live sibling.
+    /// `fixed_group_target` must reject a released member missing from `base` as an error, not default to `1.0.0`.
     #[test]
     fn test_fixed_group_target_errors_on_tagged_member_missing_base_directly() {
         use std::sync::atomic::AtomicUsize;
@@ -1972,8 +1966,7 @@ mod tests {
         let tags = TagIndex::build(&git, &graph, &cfg_resolved).unwrap();
         assert!(tags.last_tag(&pkg_tagged).is_some(), "must carry a real release tag");
 
-        // `base` deliberately omits `pkg_tagged`, simulating a caller that
-        // passed an unfiltered live_members slice.
+        // `base` deliberately omits `pkg_tagged`, simulating an unfiltered `live_members` slice.
         let base: BTreeMap<PackageId, Version> = BTreeMap::new();
         let group = GroupName("g".to_string());
 
@@ -2007,17 +2000,12 @@ mod tests {
         }
     }
 
-    /// `[cascade] mode = "always"` must bump a dependent whose existing spec
-    /// already covers the new version -- `cascade_action` forces `effective`
-    /// coverage to `DoesNotCover` for every real `Coverage` value under
-    /// `Always`, so a dependent that would be left alone under `OutOfRange`
-    /// still gets `cfg.bump_severity`, end to end through `run_cascade`.
+    /// `[cascade] mode = "always"` must bump a dependent even when its existing spec already covers the new version.
     #[test]
     fn run_cascade_always_mode_bumps_in_range_dependent() {
         let upstream = PackageId::parse("pkg-core").unwrap();
         let dependent = PackageId::parse("pkg-app").unwrap();
-        // pkg-core bumps Minor (1.0.0 -> 1.1.0); "^1.0.0" covers 1.1.0 under
-        // ordinary caret semantics, so OutOfRange mode would leave pkg-app alone.
+        // pkg-core bumps Minor (1.0.0 -> 1.1.0); "^1.0.0" covers 1.1.0, so OutOfRange mode would leave pkg-app alone.
         let edge = make_dep_edge_kind(&dependent, &upstream, "^1.0.0", Ecosystem::Cargo, DepKind::Runtime);
 
         let graph = TestGraph {
@@ -2071,10 +2059,7 @@ mod tests {
         );
     }
 
-    /// `[cascade] bump-severity = "minor"` must make a cascaded dependent's
-    /// own severity `Severity::Minor`, not the default `Patch` -- exercised
-    /// through `run_cascade`'s `severities` map directly (not inferred from
-    /// changelog entry *kinds*, which don't distinguish severities).
+    /// `[cascade] bump-severity = "minor"` must set a cascaded dependent's own severity to `Minor`, not `Patch`.
     #[test]
     fn run_cascade_bump_severity_minor_sets_dependent_severity_to_minor() {
         let upstream = PackageId::parse("pkg-core").unwrap();
@@ -2134,12 +2119,7 @@ mod tests {
         );
     }
 
-    /// A `Dev` dependent must never be bumped (row `(Dev, _) => Severity::None`
-    /// in `cascade_action`), but when its spec is out of range for the new
-    /// version, `solve_cascade`'s `rewrite` decision (`matches!(coverage,
-    /// DoesNotCover)`) is independent of `kind` -- so the dev dependency's
-    /// spec is still rewritten even though the dev package's own version
-    /// never moves.
+    /// A `Dev` dependent must never be bumped, but its out-of-range spec must still be rewritten independent of `kind`.
     #[test]
     fn run_cascade_dev_dependent_never_bumped_but_spec_rewritten() {
         let upstream = PackageId::parse("pkg-core").unwrap();
@@ -2201,12 +2181,7 @@ mod tests {
         );
     }
 
-    /// `solve_cascade` must surface `GraphError::CascadeNotConverged` (E105)
-    /// once the worklist pop count exceeds `convergence_bound`, rather than
-    /// looping or silently truncating. `convergence_bound` is derived from
-    /// `graph.packages().count()`; reporting zero packages while the graph
-    /// still has real dependent edges undersizes the bound to 1 and forces
-    /// the second worklist pop to exceed it deterministically.
+    /// `solve_cascade` must surface `CascadeNotConverged` (E105) once worklist pops exceed `convergence_bound`.
     #[test]
     fn run_cascade_exceeding_convergence_bound_returns_cascade_not_converged() {
         let upstream = PackageId::parse("pkg-core").unwrap();

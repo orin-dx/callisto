@@ -187,11 +187,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
                 }
                 agg_input
             } else if agg.pre_mode_recorded_only.contains(id) {
-                // This package's severity came solely from a pre-mode changeset
-                // already recorded in pre.json on an earlier run: it is being
-                // re-affirmed (still counts toward severity/cascade), not newly
-                // applied, so it must not re-log a changelog entry. Leave entries
-                // empty; a NewGroupMember note below can still attach to it.
+                // Re-affirms an already-recorded pre-mode changeset, so no changelog entry is re-logged here.
                 ChangelogInput {
                     package: id.clone(),
                     from: from.clone(),
@@ -238,9 +234,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
                 });
             }
 
-            // An already-recorded pre-mode changeset with no other reason to log
-            // (no real changeset data, no new group membership) produces no entries;
-            // render_section() rejects an empty list, so skip the write entirely.
+            // An already-recorded pre-mode changeset with nothing else to log produces no entries; skip the write.
             if !input.entries.is_empty() {
                 changelog_writes.push(crate::plan::ChangelogWrite {
                     changelog_path: ch_path.clone(),
@@ -254,11 +248,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         .as_ref()
         .map(|s| s.mode == callisto_format::PreMode::Pre)
         .unwrap_or(false);
-    // In pre mode a changeset already recorded in pre.json keeps re-matching
-    // (and keeps counting toward severity, and toward the prerelease
-    // counter) on every run without being "new"; the "no pending
-    // changesets" warning fires only when NO changeset -- new or already
-    // recorded -- is active this run, not when merely nothing new appeared.
+    // The "no pending changesets" warning fires only when no changeset, new or already recorded, is active this run.
     let nothing_pending = if is_pre_mode {
         !agg.pre_mode_has_active_changeset
     } else {
@@ -285,9 +275,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         if state.mode == callisto_format::PreMode::Exit {
             (None, Some(ws.config.pre_json_path()))
         } else {
-            // Record ids aggregate() determined are newly-seen this run (not
-            // already in pre.json's changesets list) -- see
-            // Aggregation::new_pre_changesets.
+            // Records ids aggregate() determined are newly-seen this run; see Aggregation::new_pre_changesets.
             for id in &agg.new_pre_changesets {
                 if !state.changesets.iter().any(|s| s == id) {
                     state.changesets.push(id.clone());
@@ -319,38 +307,16 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     })
 }
 
-/// Refuses to proceed when the workspace shows the signature of a `version`
-/// run that wrote and staged its changes but crashed (or was killed) before
-/// committing: either a changeset still pending as of `HEAD` (so the last
-/// commit hadn't consumed it yet) while some canonical manifest's on-disk
-/// version has already moved past what `HEAD` records; or, outside an active
-/// pre-release cycle, a canonical manifest staged in the index but not yet
-/// committed while disk has already moved past `HEAD` -- the signature of
-/// `callisto add` followed by `callisto version` with no commit in between,
-/// then `version` run again: the changeset never reached any commit
-/// (`head_has_pending_changeset` alone can't see it), but the bump it
-/// produced is sitting staged. A pre-release cycle (`.changeset/pre.json`
-/// present) is exempt from this second check: re-running `version` there
-/// with nothing committed between runs is its designed workflow.
-///
-/// Continuing would compute a plan from that half-applied disk state and
-/// bump forward again on top of it, compounding the drift instead of
-/// surfacing it.
-///
-/// A brand-new repository with no commits, or one where `git` cannot be
-/// consulted, has nothing to compare against and is never refused here --
-/// [`plan_version`]'s own checks (and `apply`'s E117) cover those paths.
+/// Refuses when the workspace shows the signature of a crashed `version` run: a manifest's on-disk version has
+/// moved past `HEAD` while either a changeset is still pending there, or (outside an active pre-release cycle) the
+/// manifest is staged but uncommitted. Continuing would compound the drift instead of surfacing it.
 pub fn check_partial_run<R: CommandRunner, D: DependencyResolver>(ws: &Workspace<'_, R, D>) -> Result<(), GraphError> {
     let Ok(head) = ws.git_access().head_sha() else {
         return Ok(());
     };
     let head = head.as_str();
 
-    // A pre-release cycle (`.changeset/pre.json` present, in either Pre or
-    // Exit mode) legitimately runs `version` more than once with nothing
-    // committed in between -- that is its designed workflow, not a crash
-    // signature -- so the broadened staged-manifest check below is scoped to
-    // workspaces with no active pre-release cycle at all.
+    // A pre-release cycle legitimately reruns `version` uncommitted; the staged-manifest check is scoped past it.
     let in_pre_release_cycle = ws.root.join(ws.config.pre_json_path()).exists();
 
     let pending = head_has_pending_changeset(ws, head)?
@@ -381,11 +347,7 @@ pub fn check_partial_run<R: CommandRunner, D: DependencyResolver>(ws: &Workspace
     Ok(())
 }
 
-/// True when at least one canonical manifest differs between the index and
-/// `HEAD` (`git diff --cached`) -- i.e. it was `git add`ed by a prior `apply`
-/// but that change was never committed. Outside pre mode this is the only
-/// trace left once the changeset file itself (never committed, only ever a
-/// working-tree file) has already been deleted by that same prior run.
+/// True when a canonical manifest differs between index and HEAD: `git add`ed by a prior `apply` but never committed.
 fn any_canonical_manifest_staged_uncommitted<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
 ) -> Result<bool, GraphError> {
@@ -400,9 +362,7 @@ fn any_canonical_manifest_staged_uncommitted<R: CommandRunner, D: DependencyReso
                     &ws.root,
                 )
                 .map_err(GraphError::Command)?;
-            // `git diff --quiet` exits 1 when there is a difference, 0 when
-            // there is none; any other exit code (missing path, etc.) is
-            // treated as "no signal" here, matching this check's advisory role.
+            // `git diff --quiet` exits 1 on a difference, 0 on none; any other exit code is treated as no signal.
             if output.exit_code == Some(1) {
                 return Ok(true);
             }
@@ -411,11 +371,7 @@ fn any_canonical_manifest_staged_uncommitted<R: CommandRunner, D: DependencyReso
     Ok(false)
 }
 
-/// Silently reports whether `<rev>:<path>` names an object, via `git
-/// rev-parse --verify --quiet` -- unlike `ls-tree`/`show`, this prints
-/// nothing to stderr for a missing path, so a workspace with no
-/// `.changeset` directory yet (or a package added since `head`) doesn't
-/// spam the terminal with an expected "does not exist" `fatal:` line.
+/// Whether `<rev>:<path>` names an object; `--quiet` keeps a missing path from printing to stderr.
 fn head_object_exists<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     spec: &str,
@@ -427,10 +383,7 @@ fn head_object_exists<R: CommandRunner, D: DependencyResolver>(
     Ok(output.success())
 }
 
-/// True when `HEAD`'s tree still has at least one unconsumed changeset file
-/// under the workspace's changesets directory (the same file selection
-/// [`crate::aggregate::load_changesets`] uses, but read from the commit
-/// instead of the working tree).
+/// True when `HEAD`'s tree still has an unconsumed changeset file, read from the commit, not the working tree.
 fn head_has_pending_changeset<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     head: &str,
@@ -438,9 +391,7 @@ fn head_has_pending_changeset<R: CommandRunner, D: DependencyResolver>(
     let dir = ws.config.changesets_dir.to_string_lossy();
     let spec = format!("{head}:{dir}");
     if !head_object_exists(ws, &spec)? {
-        // The changesets directory didn't exist at HEAD (e.g. the very
-        // first `version` run in this workspace's history) -- nothing to
-        // have been left pending.
+        // The changesets directory didn't exist at HEAD (e.g. the first `version` run); nothing left pending.
         return Ok(false);
     }
     let output = ws
@@ -456,10 +407,7 @@ fn head_has_pending_changeset<R: CommandRunner, D: DependencyResolver>(
     }))
 }
 
-/// The version a canonical manifest declared at `head`, or `None` when the
-/// path didn't exist at that commit (a package added since, which has
-/// nothing to have drifted from) or its content can't be read as that
-/// version grammar's declared literal version.
+/// The version a canonical manifest declared at `head`, or `None` if it didn't exist there or can't be parsed.
 fn manifest_version_at<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     head: &str,
@@ -625,9 +573,7 @@ mod tests {
         std::fs::write(root.join(".changeset").join(name), "---\npkg-a: minor\n---\n\nfeat\n").unwrap();
     }
 
-    /// The signature of a `version` run that wrote and staged its changes but
-    /// crashed before committing: `HEAD` still has a pending changeset, but
-    /// disk already shows the manifest bumped past what `HEAD` records.
+    /// A pending changeset at `HEAD` plus a manifest already bumped past `HEAD` on disk must be refused.
     #[test]
     fn check_partial_run_refuses_when_disk_is_ahead_of_head_with_a_pending_changeset() {
         let tmp = tempfile::tempdir().unwrap();
@@ -639,8 +585,7 @@ mod tests {
         write_changeset(root, "a.md");
         commit_all(root, "cs");
 
-        // Never committed: simulates apply having bumped the manifest on disk
-        // before the run crashed.
+        // Never committed: simulates apply having bumped the manifest on disk before the run crashed.
         write_pkg_a(root, "1.1.0");
 
         let locator = IgnoreWalkLocator::new(root);
@@ -654,8 +599,7 @@ mod tests {
         );
     }
 
-    /// The ordinary case -- a changeset pending at `HEAD` with disk exactly
-    /// matching `HEAD` -- must never be refused.
+    /// A changeset pending at `HEAD` with disk exactly matching `HEAD` must never be refused.
     #[test]
     fn check_partial_run_allows_an_ordinary_pending_changeset() {
         let tmp = tempfile::tempdir().unwrap();

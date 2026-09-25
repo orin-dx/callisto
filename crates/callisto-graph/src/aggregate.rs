@@ -27,26 +27,20 @@ pub struct Aggregation {
     pub severities: BTreeMap<PackageId, Severity>,
     pub reasons: BTreeMap<PackageId, BumpReason>,
     pub named_by: BTreeMap<PackageId, NamedBy>,
-    /// Changeset files to delete from disk this run (non-pre-mode only: a
-    /// pre-mode run must never delete a changeset, since it may still be
-    /// re-applied on the next pre-mode `version` before `pre exit`).
+    /// Changeset files to delete from disk this run (non-pre-mode only: a pre-mode run must never delete a
+    /// changeset, since it may still be re-applied on the next pre-mode `version` before `pre exit`).
     pub consumed: Vec<PathBuf>,
-    /// Changeset ids matched this run in pre mode that are NOT already in
-    /// `pre.json`'s `changesets` list -- the caller records these into
-    /// `pre.json` so a rerun recognizes them as already-applied and skips
-    /// re-adding their changelog entry, without deleting the file.
+    /// Changeset ids matched this run in pre mode that are not already in `pre.json`'s `changesets` list; the
+    /// caller records these into `pre.json` so a rerun recognizes them as already-applied and skips re-adding
+    /// their changelog entry, without deleting the file.
     pub new_pre_changesets: Vec<String>,
-    /// True when at least one changeset (new or already recorded) matched a
-    /// real package in pre mode this run. Distinct from `new_pre_changesets`
-    /// being empty: a rerun with nothing NEW still has an active pre-release
-    /// changeset driving its severity, so the "no pending changesets"
-    /// warning must key off this, not off "nothing new".
+    /// True when at least one changeset (new or already recorded) matched a real package in pre mode this run.
+    /// Distinct from `new_pre_changesets` being empty: a rerun with nothing new still has an active pre-release
+    /// changeset driving severity, so the "no pending changesets" warning must key off this, not off "nothing new".
     pub pre_mode_has_active_changeset: bool,
-    /// Packages whose severity this run came solely from a pre-mode
-    /// changeset already recorded in `pre.json` -- re-affirmed, not newly
-    /// applied. The caller must not synthesize a changelog entry for these:
-    /// the changeset's entry was already logged on the run that first
-    /// recorded it, and `changelog_inputs` correctly has no entry here.
+    /// Packages whose severity this run came solely from a pre-mode changeset already recorded in `pre.json` --
+    /// re-affirmed, not newly applied. The caller must not synthesize a changelog entry for these: it was already
+    /// logged on the run that first recorded the changeset.
     pub pre_mode_recorded_only: std::collections::HashSet<PackageId>,
     pub changelog_inputs: BTreeMap<PackageId, ChangelogInput>,
     pub inference_commits: BTreeMap<PackageId, Vec<(CommitSha, String)>>,
@@ -246,9 +240,7 @@ where
     // During a pre-release cycle (PreMode::Pre) changesets must NOT be consumed:
     // they remain on disk so they can be re-applied when the cycle exits.
     let is_pre_mode = pre.map(|s| s.mode == callisto_format::PreMode::Pre).unwrap_or(false);
-    // Ids pre.json already recorded from an earlier pre-mode run: still
-    // resolved for severity (so cascade sees the right target), but not
-    // re-added to the changelog (already logged there).
+    // Ids already recorded in pre.json still resolve for severity, but are not re-added to the changelog.
     let already_recorded: std::collections::HashSet<&str> = pre
         .map(|s| s.changesets.iter().map(String::as_str).collect())
         .unwrap_or_default();
@@ -357,17 +349,11 @@ where
                 }
             }
         }
-        // A fully-orphaned changeset (no entry resolved) is left on disk and
-        // unrecorded regardless of mode.
+        // A fully-orphaned changeset (no entry resolved) is left on disk and unrecorded regardless of mode.
         if matched_any {
             if is_pre_mode {
                 agg.pre_mode_has_active_changeset = true;
-                // Record newly-seen ids so a rerun treats them as
-                // already-applied instead of re-adding their changelog
-                // entry every time; the file itself stays on disk so it can
-                // still be re-applied by a later pre-mode run before `pre
-                // exit`, and its severity keeps counting against
-                // `initialVersions` on every run via `already_recorded`.
+                // Records newly-seen ids so a rerun treats them as already-applied and skips the changelog entry.
                 if !is_already_recorded {
                     agg.new_pre_changesets.push(cs.id.clone());
                 }
@@ -1579,13 +1565,7 @@ mod tests {
         );
     }
 
-    /// Regression: the pre-mode changelog "from" baseline must be looked up
-    /// in `pre.json`'s `initialVersions` by the same key `pre enter` writes
-    /// it under (`PackageId::name()`, unqualified), not by `display_name()`
-    /// (ecosystem-prefixed). For a `PackageId::Prefixed` id those differ, so
-    /// a `display_name()` lookup always misses and falls through to
-    /// `base_versions`/`0.0.0`, corrupting the changelog range for every
-    /// ecosystem-qualified package in a pre-release cycle.
+    /// The pre-mode changelog baseline must key `initialVersions` by `PackageId::name()`, not `display_name()`.
     #[test]
     fn test_aggregate_pre_mode_changelog_baseline_uses_pre_json_key_not_display_name() {
         let ws_dir = tempfile::tempdir().unwrap();
@@ -1613,12 +1593,10 @@ mod tests {
         let git = GitAccess::new(root, &runner);
         let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
         let mut base_versions = BTreeMap::new();
-        // Live on-disk version is far from the pinned pre-cycle baseline;
-        // a key-lookup miss falling back to this would be caught below.
+        // Far from the pinned pre-cycle baseline, so a key-lookup miss falling back to this is caught below.
         base_versions.insert(pkg_id.clone(), Version::semver(9, 9, 9));
 
-        // pre.json's initialVersions is keyed by the bare name ("pkg-a"),
-        // exactly as `Workspace::initial_versions` (via `pre_json_key`) writes it.
+        // Keyed by the bare name ("pkg-a"), as `Workspace::initial_versions` (via `pre_json_key`) writes it.
         let pre_state = callisto_format::PreState::entering("next", [("pkg-a".to_string(), Version::semver(1, 2, 3))]);
 
         let inference = RecordingInference::default();
@@ -1787,13 +1765,7 @@ mod tests {
         );
     }
 
-    /// Spec: in pre mode, a changeset matched for the first time is recorded
-    /// into `new_pre_changesets` (so the caller can persist its id into
-    /// `pre.json`) and produces one changelog entry, but is never added to
-    /// `consumed` (the file must stay on disk). Reproduces the
-    /// ver-pre-reapply bug: previously `consumed` was the only record of
-    /// "seen this run", and pre mode always suppressed it, so a rerun had no
-    /// way to tell an already-applied changeset from a new one.
+    /// A changeset matched for the first time in pre mode is recorded into `new_pre_changesets`, not `consumed`.
     #[test]
     fn test_pre_mode_first_match_is_recorded_not_consumed() {
         let ws_dir = tempfile::tempdir().unwrap();
@@ -1851,12 +1823,7 @@ mod tests {
         );
     }
 
-    /// Spec: once a changeset's id is already in `pre.json`'s `changesets`
-    /// list, a rerun must still count its severity (so cascade computes the
-    /// correct target against `initialVersions`) but must NOT record it
-    /// again as new and must NOT add a second changelog entry -- otherwise
-    /// every `version` run during a pre-release cycle re-applies the same
-    /// changeset, duplicating its changelog line (the ver-pre-reapply bug).
+    /// A changeset id already in `pre.json` counts toward severity on rerun but must not add a second changelog entry.
     #[test]
     fn test_pre_mode_already_recorded_changeset_counts_severity_but_not_changelog() {
         let ws_dir = tempfile::tempdir().unwrap();
@@ -1926,12 +1893,7 @@ mod tests {
         );
     }
 
-    /// Spec: with no changeset on disk at all in pre mode (neither new nor
-    /// previously recorded), the run has no active changeset -- this, not
-    /// `new_pre_changesets` alone, is what must gate the "no pending
-    /// changesets" warning: a rerun with an
-    /// already-recorded changeset still driving severity is NOT the same as
-    /// a genuinely empty run.
+    /// With no changeset on disk in pre mode, the run has no active changeset, not just an empty `new_pre_changesets`.
     #[test]
     fn test_pre_mode_no_changesets_at_all_has_no_active_changeset() {
         let ws_dir = tempfile::tempdir().unwrap();

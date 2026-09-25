@@ -113,11 +113,7 @@ fn version_dry_run_text_output_shows_cascade_attribution_for_a_real_dependency_g
     );
 }
 
-/// `callisto version --dry-run` in text format must print both the
-/// `[DRY-RUN]` marker line `handle` writes itself and the `render_version`
-/// plan body (the "Version Plan:" header and each package's `from → to`
-/// line) -- the two pieces of text a dry-run's whole value proposition
-/// depends on, from the real binary's stdout.
+/// The `[DRY-RUN]` marker and the `render_version` plan body are written independently; both must reach stdout.
 #[test]
 fn version_dry_run_text_output_prints_dry_run_header_and_plan_body() {
     let dir = tempfile::tempdir().unwrap();
