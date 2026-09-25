@@ -1,6 +1,6 @@
 # Releasing
 
-This is the operational contract for how a Callisto-managed release moves from changeset to published package. The binding spec is [`SPEC-SELF-RELEASE-LIFECYCLE`](specs/SPEC-SELF-RELEASE-LIFECYCLE.json); its implementation plan (if still open) is under `docs/projects/`.
+How a Callisto-managed release moves from changeset to published package. The contract is [`specs/release.json`](specs/release.json).
 
 For registry credential setup (npm, crates.io, PyPI), see [`publishing.md`](publishing.md).
 

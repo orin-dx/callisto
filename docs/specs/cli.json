@@ -1,0 +1,312 @@
+{
+  "id": "SPEC-CLI",
+  "purpose": "Defines the callisto command-line surface a user or CI script sees: commands, global flags, output formats, exit codes, and the behavior of status, add, init, pre, snapshot, completions and schema, plus the release workflow init generates.",
+  "scope": "Command surface and help, global flags, text and JSON output, colour, exit codes, status, add, init, generated workflows and callisto-action modes, pre, snapshot, completions, schema.",
+  "non_goals": [
+    "Release planning, publishing and receipts behind `callisto release` and its hidden subcommands.",
+    "Version planning, cascade and changelog rules behind `callisto version`.",
+    "The callisto.toml schema beyond the keys init writes.",
+    "Managed release-PR decisions made by the hidden `release-pr` plumbing."
+  ],
+  "api_surface": [
+    {
+      "name": "add",
+      "signature": "callisto add [--package <NAME:SEVERITY>]... [--summary <TEXT>]",
+      "description": "Writes one changeset to .changeset/<adjective>-<noun>-<verb>.md, from flags or, with no --package and a terminal stdin, from an interactive wizard.",
+      "error_conditions": [
+        "No --package and stdin is not a terminal.",
+        "--package given without --summary, or with a blank summary.",
+        "A --package value without `:severity`, with a severity other than none, patch, minor or major, or naming a package not in the workspace."
+      ]
+    },
+    {
+      "name": "status",
+      "signature": "callisto status [--check] [--strict]",
+      "description": "Shows each package's current version and planned bump, the pending package count, and diagnostics.",
+      "error_conditions": [
+        "With --check, any error-level diagnostic (after --strict escalation) exits 1."
+      ]
+    },
+    {
+      "name": "version",
+      "signature": "callisto version [--refresh-lockfiles] [--strict] [--allow-empty-changesets] [--emit-decision <PATH>]",
+      "description": "Consumes pending changesets and applies the planned version bumps.",
+      "error_conditions": [
+        "With --strict, no pending changesets exits 1 with an error diagnostic."
+      ]
+    },
+    {
+      "name": "pre",
+      "signature": "callisto pre enter <TAG> | callisto pre exit",
+      "description": "Enters or exits prerelease mode by writing .changeset/pre.json.",
+      "error_conditions": [
+        "`pre enter` while already in prerelease mode.",
+        "`pre exit` after prerelease mode was already exited, or with no .changeset/pre.json."
+      ]
+    },
+    {
+      "name": "snapshot",
+      "signature": "callisto snapshot --tag <TAG> [--strict]",
+      "description": "Sets every package's manifest version to 0.0.0-<TAG>-<short HEAD sha> without consuming changesets.",
+      "error_conditions": [
+        "--tag missing (usage error, exit 2).",
+        "With --strict, error-level workspace graph diagnostics."
+      ]
+    },
+    {
+      "name": "init",
+      "signature": "callisto init [--yes] [--versioning fixed|independent] [--artifact-target <TRIPLE>[,<TRIPLE>]...] [--product-package <PACKAGE>] [--forge-repository <OWNER/REPO>] [--workflow | --no-workflow]",
+      "description": "Detects the workspace, asks only for intent, previews the first release, then writes callisto.toml, .changeset/README.md and optionally .github/workflows/callisto-release.yml.",
+      "error_conditions": [
+        "callisto.toml already exists.",
+        "Not inside a Git repository, or no `origin` remote.",
+        "A package matches more than one tag convention, or more than one package matches `v{version}`.",
+        "stdin is not a terminal and --yes is absent; --yes without a required flag.",
+        "--workflow together with --no-workflow.",
+        "Invalid --artifact-target, --product-package or --forge-repository values.",
+        "--workflow when a workflow file already exists or the workspace shape has no generated workflow."
+      ]
+    },
+    {
+      "name": "release",
+      "signature": "callisto release [--package <ECOSYSTEM/NAME>]... [--receipt <FILE>]",
+      "description": "Publishes every package whose current version is unreleased; with --dry-run prints the release plan only.",
+      "error_conditions": [
+        "Any planning or publishing failure exits 1; `Nothing to release.` exits 0."
+      ]
+    },
+    {
+      "name": "completions",
+      "signature": "callisto completions <bash|elvish|fish|powershell|zsh>",
+      "description": "Prints a shell completion script to stdout.",
+      "error_conditions": [
+        "An unsupported shell name (usage error, exit 2)."
+      ]
+    },
+    {
+      "name": "schema (hidden)",
+      "signature": "callisto schema [--type <TYPE>]",
+      "description": "Prints the JSON Schema for a report type (status by default; also version, snapshot, validate, init, changeset, pre, matrix, release-receipt).",
+      "error_conditions": [
+        "An unknown --type exits 1 listing the supported types."
+      ]
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "CLI-SURF-01",
+      "criterion": "`callisto --help` lists eight commands (add, status, version, pre, snapshot, init, release, completions), each with a one-line description, plus the global options --format, --cwd, --dry-run, --help and --version."
+    },
+    {
+      "id": "CLI-SURF-02",
+      "criterion": "`matrix`, `schema`, `compose-pr-body`, `release-pr`, and `release plan|inspect|artifact-manifest|execute` are absent from `--help` output but still parse and run when invoked."
+    },
+    {
+      "id": "CLI-SURF-04",
+      "criterion": "`--format`, `--cwd` and `--dry-run` are accepted before or after any subcommand name; --format defaults to text and --cwd defaults to the current directory."
+    },
+    {
+      "id": "CLI-SURF-05",
+      "criterion": "With --dry-run, add, init, pre, snapshot and version write nothing; text output marks the preview with `[DRY-RUN]`."
+    },
+    {
+      "id": "CLI-OUT-01",
+      "criterion": "When stdout is a terminal and NO_COLOR is unset, `status` and `release --dry-run` render a box-drawing table with ANSI colour; when stdout is piped they print plain indented lines with no ANSI codes or box-drawing characters."
+    },
+    {
+      "id": "CLI-OUT-02",
+      "criterion": "A non-empty NO_COLOR disables colour and tables even when CLICOLOR_FORCE or FORCE_COLOR is set; an empty NO_COLOR is ignored."
+    },
+    {
+      "id": "CLI-OUT-03",
+      "criterion": "CLICOLOR_FORCE or FORCE_COLOR (any value) turns colour and tables on for piped stdout, and CLICOLOR=0 turns them off on a terminal."
+    },
+    {
+      "id": "CLI-OUT-04",
+      "criterion": "Text output of status, add, init, pre, snapshot and release --dry-run never contains a schema version string such as `schema v1`."
+    },
+    {
+      "id": "CLI-OUT-05",
+      "criterion": "With `--format json`, the status, add, init, pre and snapshot reports on stdout are single JSON objects with camelCase keys and a top-level `schemaVersion`."
+    },
+    {
+      "id": "CLI-OUT-06",
+      "criterion": "When a command fails under `--format json`, stderr ends with a JSON object `{\"schemaVersion\", \"error\": {\"code\", \"message\", \"help\"}}` and the exit code is 1.",
+      "is_error_case": true
+    },
+    {
+      "id": "CLI-OUT-07",
+      "criterion": "When a command fails under text format, stderr shows a diagnostic with an error code and a message, and the exit code is 1.",
+      "is_error_case": true
+    },
+    {
+      "id": "CLI-OUT-08",
+      "criterion": "Argument parsing errors (unknown flag, missing required argument, invalid value) exit 2 with clap's usage message; every other failure exits 1 and every success exits 0, including --dry-run previews and `release` reporting `Nothing to release.`",
+      "is_error_case": true
+    },
+    {
+      "id": "CLI-STATUS-01",
+      "criterion": "`callisto status`, with or without a callisto.toml, prints one row per package with its name, current version and planned bump (or `none`), then `<N> package(s) pending`, then a `Diagnostics:` section when any exist."
+    },
+    {
+      "id": "CLI-STATUS-02",
+      "criterion": "A package with no changeset of its own that `callisto version` would bump through dependency cascade or a fixed or linked group shows that planned bump in status and counts toward the pending total."
+    },
+    {
+      "id": "CLI-STATUS-03",
+      "criterion": "`status --format json` reports `hasChangesets`, `pending` (count of packages with a planned bump), and per package `package`, `currentVersion`, `lastReleasedVersion`, `pendingSeverity` (omitted when no bump is planned), `changedSinceLastTag`, `releaseTrigger` and `pendingChangesets`."
+    },
+    {
+      "id": "CLI-STATUS-04",
+      "criterion": "`callisto status` without --check always exits 0; `status --check` exits 0 when no diagnostic is error-level, regardless of pending changesets, and exits 1 when any diagnostic is error-level."
+    },
+    {
+      "id": "CLI-STATUS-05",
+      "criterion": "A changeset naming an unknown, ambiguous or invalid package produces an error-level diagnostic naming the changeset file, so `status --check` exits 1; a changeset that fails to parse (empty, blank summary, malformed entry) makes `status` exit 1 with the parse error.",
+      "is_error_case": true
+    },
+    {
+      "id": "CLI-STATUS-06",
+      "criterion": "`status --strict` reports strict-escalatable warnings as errors, so `status --check --strict` exits 1 where `status --check` exits 0.",
+      "is_error_case": true
+    },
+    {
+      "id": "CLI-ADD-01",
+      "criterion": "`callisto add --package <name>:<severity> --summary <text>` (--package repeatable, bare or qualified names such as `cargo/app`, severity none, patch, minor or major) writes `.changeset/<adjective>-<noun>-<verb>.md` with front matter mapping each package to its severity and the trimmed summary as body, prints `Added changeset: <path>`, and never prompts."
+    },
+    {
+      "id": "CLI-ADD-02",
+      "criterion": "`add --format json` prints `{\"schemaVersion\", \"command\": \"add\", \"path\"}`; with --dry-run it prints `dryRun: true`, the path and the file content, and creates no file or directory."
+    },
+    {
+      "id": "CLI-ADD-03",
+      "criterion": "`callisto add` with no --package and a terminal stdin runs a wizard asking, in order, which packages to include, which are major, which remaining are minor (the rest are patch), a non-empty summary unless --summary was given, and a final confirmation; declining the confirmation writes nothing and exits 0."
+    },
+    {
+      "id": "CLI-ADD-04",
+      "criterion": "`callisto add` with no --package and a non-terminal stdin exits 1 with error `callisto::not_a_tty` whose help names `callisto add --package <name>:<severity>`.",
+      "is_error_case": true
+    },
+    {
+      "id": "CLI-ADD-05",
+      "criterion": "`add --package` without --summary, or with a whitespace-only summary, exits 1 naming --summary and writes nothing.",
+      "is_error_case": true
+    },
+    {
+      "id": "CLI-ADD-06",
+      "criterion": "A --package value missing `:severity`, with an unknown severity, or naming a package not in the workspace exits 1 with a message naming the bad value (and, for an unknown package, listing the known packages) and writes nothing.",
+      "is_error_case": true
+    },
+    {
+      "id": "CLI-INIT-01",
+      "criterion": "Before any question, `callisto init` prints `Detected:` with the ecosystems, the origin remote URL, and each package's qualified id, version, last tag, and binary names for binary-producing packages."
+    },
+    {
+      "id": "CLI-INIT-02",
+      "criterion": "Interactive init asks only: versioning (independent or fixed); whether to ship binaries as GitHub release assets, only when a package produces a binary; the product package, only when more than one does; the forge repository, pre-filled from origin; comma-separated target triples; whether to generate a workflow (default no); and whether to write callisto.toml (default yes)."
+    },
+    {
+      "id": "CLI-INIT-03",
+      "criterion": "A supplied flag (--versioning, --artifact-target, --product-package, --forge-repository, --workflow, --no-workflow) skips its question, and declining the final write question writes no file."
+    },
+    {
+      "id": "CLI-INIT-04",
+      "criterion": "The written callisto.toml starts with `# callisto configuration` and contains only answered intent: a `[[fixed-group]]` named `all` listing every non-platform package for fixed versioning, a `[[package]]` `tag-template` for each package whose existing tags follow a non-default convention, and, when shipping binaries, `publish-to` with `github-release` on the product plus a `[release]` table with `product-package`, `forge-repository` and one `[[release.artifact]]` per target and binary."
+    },
+    {
+      "id": "CLI-INIT-05",
+      "criterion": "Tag detection matches each package's tags against `{name}@{version}` (default, never written), `{name}-v{version}`, `{name}-{version}` and `v{version}`, and writes the single matching non-default convention as that package's tag-template."
+    },
+    {
+      "id": "CLI-INIT-06",
+      "criterion": "init exits 1 without writing when a package matches more than one tag convention (listing each with its tags) or when more than one package matches `v{version}`.",
+      "is_error_case": true
+    },
+    {
+      "id": "CLI-INIT-07",
+      "criterion": "After the config, init prints the first-release preview that `callisto release --dry-run` would show under it, or `No commits yet: commit, then run \\`callisto release --dry-run\\` to preview the first release.` when HEAD has no commit."
+    },
+    {
+      "id": "CLI-INIT-08",
+      "criterion": "A successful init writes callisto.toml and creates .changeset/README.md only when it does not already exist."
+    },
+    {
+      "id": "CLI-INIT-09",
+      "criterion": "init exits 1 without writing when callisto.toml already exists, when the directory is not inside a Git repository, or when no `origin` remote is configured, each with a help line naming the fix.",
+      "is_error_case": true
+    },
+    {
+      "id": "CLI-INIT-10",
+      "criterion": "With a non-terminal stdin and no --yes, init exits 1 with `callisto::init_requires_yes` naming --yes and every other missing flag; with --yes it exits 1 with `callisto::init_missing_flags` naming each missing flag: --versioning always, --forge-repository when --artifact-target is given, and --product-package when --artifact-target is given and more than one package produces a binary.",
+      "is_error_case": true
+    },
+    {
+      "id": "CLI-INIT-11",
+      "criterion": "With --yes, omitting --artifact-target writes no `[release]` table; --artifact-target is repeatable and comma-separated, and --workflow with --no-workflow exits 1 with `callisto::init_workflow_flags_conflict` before writing.",
+      "is_error_case": true
+    },
+    {
+      "id": "CLI-INIT-12",
+      "criterion": "init exits 1 without writing for an empty or repeated target triple, --artifact-target when no package produces a binary, a --product-package that is absent or not binary-producing, or, when binaries ship, a --forge-repository that is not `owner/repo` or differs from origin's GitHub repository.",
+      "is_error_case": true
+    },
+    {
+      "id": "CLI-INIT-13",
+      "criterion": "`init --format json` writes the human-readable detection, config and preview to stderr and a report `{schemaVersion, initialized, configPath, config}` (plus `diagnostics` when any) to stdout; with --dry-run `initialized` is false and no file is written."
+    },
+    {
+      "id": "CLI-WF-01",
+      "criterion": "A workflow is written to .github/workflows/callisto-release.yml only when --workflow is given or the interactive workflow question is answered yes; after writing, init prints that merging to the default branch publishes and advises requiring pull requests and reviews on it."
+    },
+    {
+      "id": "CLI-WF-02",
+      "criterion": "init never overwrites an existing .github/workflows/callisto-release.yml: when a workflow is requested and the file exists, init exits 1 before writing any file.",
+      "is_error_case": true
+    },
+    {
+      "id": "CLI-WF-03",
+      "criterion": "Without artifact slots or platform packages, the generated workflow triggers on push to the default branch (from origin/HEAD, else `main`) and has two jobs: `version-pr` running callisto-action with `mode: version-pr`, and `release` running it with `mode: release` and a token secret per detected ecosystem (CARGO_REGISTRY_TOKEN, NPM_TOKEN with NPM_CONFIG_PROVENANCE, PYPI_TOKEN) plus GH_TOKEN."
+    },
+    {
+      "id": "CLI-WF-04",
+      "criterion": "When binaries ship as artifact slots or the workspace has napi platform packages, the generated workflow has `version-pr`, `plan` (runs `callisto release plan --from-release-commit` when the pushed commit adds or modifies .callisto/release-decision.json), `build` (a matrix from napi targets and artifact slots), and `execute` (runs `callisto release artifact-manifest` and `callisto release execute`) jobs."
+    },
+    {
+      "id": "CLI-WF-05",
+      "criterion": "Every callisto-action reference in a generated workflow is pinned to the commit SHA of the `callisto@<cli version>` tag, and init exits 1 when that tag cannot be resolved.",
+      "is_error_case": true
+    },
+    {
+      "id": "CLI-WF-06",
+      "criterion": "For a workspace with maturin platform targets, or platform packages without napi targets, init prints `Skipping GitHub Actions workflow generation: <reason>.`, records a warning diagnostic in the JSON report, and exits 1 instead when --workflow was given.",
+      "is_error_case": true
+    },
+    {
+      "id": "CLI-WF-07",
+      "criterion": "callisto-action accepts `mode: version-pr` (default; creates or updates the release PR and outputs `hasChangesets`) and `mode: release` (runs `callisto --format json release` and outputs `published` and `publishedPackages`); any other mode fails the step.",
+      "is_error_case": true
+    },
+    {
+      "id": "CLI-PRE-01",
+      "criterion": "`callisto pre enter <tag>` writes .changeset/pre.json with mode `pre`, the tag and each package's initial version; `callisto pre exit` sets its mode to `exit`."
+    },
+    {
+      "id": "CLI-PRE-02",
+      "criterion": "`pre enter` while in prerelease mode, and `pre exit` after prerelease mode was already exited, exit 1 naming the next step; `pre exit` with no .changeset/pre.json exits 1.",
+      "is_error_case": true
+    },
+    {
+      "id": "CLI-SNAP-01",
+      "criterion": "`callisto snapshot --tag <tag>` sets every package's manifest version to `0.0.0-<tag>-<short HEAD sha>`, prints each `from → to`, and leaves changesets in place."
+    },
+    {
+      "id": "CLI-COMP-01",
+      "criterion": "`callisto completions <shell>` prints a completion script for bash, elvish, fish, powershell or zsh and exits 0."
+    },
+    {
+      "id": "CLI-SCHEMA-01",
+      "criterion": "`callisto schema` prints the StatusReport JSON Schema; `--type` selects another report type, and an unknown type exits 1 listing the supported types."
+    }
+  ],
+  "spec_file_path": "docs/specs/cli.json"
+}

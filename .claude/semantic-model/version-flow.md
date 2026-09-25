@@ -97,4 +97,4 @@ on disk is correct but may not be staged in git. Pushing it to modified_paths en
 - `GraphError::UnexpectedManifestVersion` — error.rs, E117, fields: path, expected_from, expected_to, found
 - `WorkspaceCargoResolver::workspace_version()` — cargo.rs, returns `Result<Option<Version>, ManifestError>`
 
-See `docs/specs/track-b-idempotent-apply.json` for the full testable acceptance criteria.
+Criteria: `docs/specs/versioning.json` (`VER-APPLY-*`).

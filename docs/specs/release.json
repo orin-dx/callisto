@@ -1,0 +1,328 @@
+{
+  "id": "SPEC-RELEASE",
+  "purpose": "Publish every package whose current version is untagged (registry publish, git tag, GitHub release) either locally with `callisto release` or from CI through plan, artifact-manifest and execute, using the merged release PR's committed decision as the only release authority. Every effect is checked against the registry, Git remote or GitHub first, so a rerun finishes a partial release without repeating anything.",
+  "scope": "Local `callisto release`, the hidden CI release subcommands, decision verification and source checks, operation order, registry publish and observation, reruns and receipts, tags and GitHub releases and assets, the managed release PR, `[release]` config, and release error codes.",
+  "non_goals": [
+    "Forges other than GitHub, and publish targets other than crates.io-style Cargo registries, npm and PyPI.",
+    "Checking registry credentials before publishing; cargo, npm, twine and gh report their own auth failures.",
+    "A workspace lock file; re-observing Git state before every operation guards against concurrent changes.",
+    "Persisting execution state between runs; a rerun re-observes providers from scratch.",
+    "Apple code signing and notarization of product assets."
+  ],
+  "api_surface": [
+    {
+      "name": "callisto release",
+      "signature": "callisto [--dry-run] [--format text|json] release [--package ECOSYSTEM/NAME]... [--receipt FILE]",
+      "description": "Publishes every untagged package from the current checkout on any branch. With --dry-run it prints the plan and performs no effect.",
+      "error_conditions": [
+        "Dirty worktree: E051.",
+        "Workspace needs the CI route: callisto::release_requires_ci_route.",
+        "Invalid --package: callisto::release_package_invalid, E102 or E169.",
+        "Missing or unsafe origin push URL: E132."
+      ]
+    },
+    {
+      "name": "callisto release plan (hidden)",
+      "signature": "callisto release plan [--source-root DIR] (--from-release-commit SHA --decision FILE | --package ECOSYSTEM/NAME...) [--orchestration-revision SHA --artifact-repository OWNER/REPO] --out FILE",
+      "description": "Writes a release plan file (JSON, schemaVersion 5) for a detached source checkout. With --from-release-commit it verifies the committed decision file. With --package it derives the roster from a fresh version plan.",
+      "error_conditions": [
+        "--dry-run: callisto::release_plan_dry_run.",
+        "Commit verification failure: E165.",
+        "[release] present without both orchestration flags: callisto::release_orchestration_flags_required."
+      ]
+    },
+    {
+      "name": "callisto release artifact-manifest (hidden)",
+      "signature": "callisto release artifact-manifest --intent FILE --artifact-dir DIR --out FILE",
+      "description": "Hashes one regular file per declared artifact slot and writes the artifact manifest.",
+      "error_conditions": [
+        "Plan declares no slots: callisto::release_no_artifact_slots.",
+        "Asset missing, a symlink or not a regular file: callisto::release_artifact_not_regular_file."
+      ]
+    },
+    {
+      "name": "callisto release execute (hidden)",
+      "signature": "callisto release execute [--source-root DIR] --intent FILE [--artifact-manifest FILE --artifact-dir DIR] --receipt FILE --orchestration-revision SHA",
+      "description": "Validates the plan file against a fresh derivation from the source checkout, runs every operation, and writes the receipt on full success.",
+      "error_conditions": [
+        "--dry-run: callisto::release_execute_dry_run.",
+        "Stale plan: E124.",
+        "Incomplete run: E172."
+      ]
+    },
+    {
+      "name": "callisto release inspect (hidden)",
+      "signature": "callisto release inspect --input FILE",
+      "description": "Prints a plan, artifact manifest or receipt JSON document without recomputing it."
+    },
+    {
+      "name": "callisto release-pr decide | verify | commit-plan",
+      "signature": "release-pr decide --snapshot FILE|JSON|- --repository OWNER/REPO --base-branch B --release-branch R; release-pr verify --decision X --snapshot X; release-pr commit-plan --base-commit SHA --message M [--out FILE]",
+      "description": "Decides noop, create or update for the managed release PR from a forge snapshot, re-verifies that snapshot, and builds the commit-API file changes from the staged Git index."
+    },
+    {
+      "name": "callisto version --emit-decision",
+      "signature": "callisto version [--refresh-lockfiles] --emit-decision PATH",
+      "description": "Writes the release decision (package, target version, inclusion reasons) next to the manifest and changelog edits it applies."
+    },
+    {
+      "name": "[release] in callisto.toml",
+      "signature": "[release] product-package = \"ECOSYSTEM/NAME\"; forge-repository = \"owner/repo\"; [[release.artifact]] package = \"ECOSYSTEM/NAME\", target = \"TRIPLE\", asset-name = \"FILE\"",
+      "description": "Declares the product package, its GitHub repository, and the binary assets attached to its GitHub release.",
+      "error_conditions": [
+        "No [[release.artifact]], an unqualified package, an unsafe target or asset-name, a duplicate asset-name, or an unsupported profile: E197.",
+        "forge-repository missing when planning: E198."
+      ]
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "REL-CMD-01",
+      "criterion": "`callisto release` selects every package that has a publish target other than `none` and whose current version has no matching tag. For each one it runs the registry publishes, creates the git tag, and creates the GitHub release when `github-release` is a target."
+    },
+    {
+      "id": "REL-CMD-02",
+      "criterion": "When no package qualifies, `callisto release` prints `Nothing to release.` (JSON: `{\"nothingToRelease\": true}`), exits 0 and runs no command that publishes, pushes or creates anything."
+    },
+    {
+      "id": "REL-CMD-03",
+      "criterion": "`callisto release` runs on any branch, leaves HEAD on that branch, and records HEAD's commit as both `releaseSourceRevision` and `orchestrationRevision` in the receipt."
+    },
+    {
+      "id": "REL-CMD-04",
+      "criterion": "`callisto release --dry-run` prints each package as `<ecosystem/name> <version>` with its operations (a table on a colour terminal, `Release plan:` lines otherwise) and performs no effect. This holds on a dirty worktree, without an `origin` remote, and in a workspace that needs the CI route. With `--format json` it prints the plan document, whose `digest` equals the receipt's `intentDigest` from a following `callisto release` on the same state."
+    },
+    {
+      "id": "REL-CMD-05",
+      "criterion": "Without an `origin` push URL, `--dry-run` prints one stderr note that tag operations are unbound, and `callisto release` fails with E132 before any effect.",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-CMD-06",
+      "criterion": "A tracked modification or an untracked file not covered by `.gitignore` makes `callisto release` fail with E051 naming a clean worktree and the offending path, before any effect. Ignored files never count.",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-CMD-07",
+      "criterion": "Repeated `--package <ecosystem/name>` limits the run to the named packages plus every package that shares a `fixed` or `linked` group with one of them."
+    },
+    {
+      "id": "REL-CMD-08",
+      "criterion": "A malformed `--package` value fails with `callisto::release_package_invalid` and an unknown package with E102. A duplicate selection, an already-tagged version, or a package with no publish target fails with E169.",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-CMD-09",
+      "criterion": "Suppose a selected package has a runtime, optional or peer dependency on a publishable workspace package whose current version is untagged, and that package is not selected. Planning fails with E169 (\"select it too\") before any effect. A dependency whose current version is already tagged need not be selected.",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-CMD-10",
+      "criterion": "In a workspace with `[[release.artifact]]` slots or a napi/maturin platform package, `callisto release` fails with `callisto::release_requires_ci_route` before any effect. The help names `release plan`, `release artifact-manifest` and `release execute`.",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-CMD-11",
+      "criterion": "On success, text output is `Released N package(s)`, followed by `; receipt saved to <path>` when `--receipt` is given, and JSON output is the receipt. A receipt file is written only to the `--receipt` path, never into the checkout, and an unwritable `--receipt` path fails the run before any effect."
+    },
+    {
+      "id": "REL-AUTH-01",
+      "criterion": "`release plan --from-release-commit <sha> --decision <path>` takes the package and version roster from the decision file committed in that commit. It does not re-run changeset, group, cascade or pre-release selection."
+    },
+    {
+      "id": "REL-AUTH-02",
+      "criterion": "`release plan --from-release-commit` fails with E165 and writes no output file in any of these cases: HEAD is not the given commit; the commit neither adds nor modifies the decision file; it deletes no changeset `.md` file; a claimed package's manifest does not change to its claimed version; a claimed package's changelog is unchanged; an unclaimed manifest version changes; or a claimed package is not found.",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-AUTH-03",
+      "criterion": "A committed decision file whose digest does not match its entries fails with E166. Decision schema versions 1 and 2 are accepted, and any other version fails with an error naming the version found.",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-AUTH-04",
+      "criterion": "An abbreviated or unknown `--from-release-commit` SHA, a non-40-hex `--orchestration-revision` for a source with `[release]`, or an `--intent` file with a different `schemaVersion` (`callisto::release_intent_schema_unsupported`, naming found and expected versions) fails before any output file is written or any effect runs.",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-AUTH-05",
+      "criterion": "`release plan` and `release execute` require the source checkout at a detached HEAD and fail with E170 otherwise. `callisto release` accepts an attached HEAD. Every route requires a complete, non-shallow SHA-1 repository and fails with E051 otherwise.",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-AUTH-06",
+      "criterion": "`release execute` re-derives the plan from the source checkout and fails with E124 before any effect when the result differs from the `--intent` file. A change to the decision, source commit, manifests, config, registry binding or origin remote is enough.",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-AUTH-07",
+      "criterion": "Before each operation, the executor re-checks HEAD, worktree cleanliness and the `origin` push URL. A change stops the run before that operation's effect, with E124 for a moved HEAD or remote and E051 for a dirty worktree.",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-AUTH-08",
+      "criterion": "`release plan` for a source with `[release]` requires `--orchestration-revision` and `--artifact-repository` (`callisto::release_orchestration_flags_required`). For a source without `[release]` it ignores both flags, prints a notice, and plans zero artifact slots.",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-AUTH-09",
+      "criterion": "`[release].forge-repository` is the only GitHub destination. Planning rejects an `--artifact-repository` that differs from it (`callisto::release_forge_repository_mismatch`) or from the `origin` GitHub repository (E175). Execution rejects artifact slots that target another repository, and a `[release]` section without it fails planning with E198.",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-ORD-01",
+      "criterion": "A package's tag is created only after all of its registry publishes succeed, and its GitHub release draft only after its tag. Its asset uploads follow the draft, and the release is published only after the draft and every upload."
+    },
+    {
+      "id": "REL-ORD-02",
+      "criterion": "A selected package publishes after the selected packages it depends on through runtime, build, optional or dev edges. A dev edge between two packages in the same dependency cycle does not order them, and a runtime, build or optional cycle fails with E104."
+    },
+    {
+      "id": "REL-ORD-03",
+      "criterion": "An npm package with attached platform packages publishes each platform package with `npm publish <platform-dir>` before publishing the owner package. Operations run one at a time and the first failure stops the run, so an owner package is never published after one of its platform packages fails."
+    },
+    {
+      "id": "REL-PUB-01",
+      "criterion": "Cargo publish runs `cargo publish --manifest-path <pkg>/Cargo.toml --locked` from the workspace root, adding `--registry <key>` for registries other than crates.io. It runs only after the on-disk version (resolving `version.workspace = true`) equals the planned version and fails with an on-disk version drift error otherwise."
+    },
+    {
+      "id": "REL-PUB-02",
+      "criterion": "npm publish picks its tool from the root lockfile: `pnpm publish --filter=<name> --no-git-checks`, `yarn workspace <name> npm publish`, `bun publish` in the package directory, and otherwise `npm publish --workspace=<name>`. It appends `--tag next` for prerelease versions and `--access` and `--registry` when set."
+    },
+    {
+      "id": "REL-PUB-03",
+      "criterion": "A scoped npm package (`@scope/name`) with no configured access publishes with `--access public`. A configured access value always wins, and an unscoped package with no configured access gets no `--access` flag."
+    },
+    {
+      "id": "REL-PUB-04",
+      "criterion": "PyPI publish runs `python3 -m build --sdist --wheel --outdir dist/` in the package directory, falling back to `python` and failing with E170 when neither is on PATH. It then runs `twine upload dist/<normalized-name>-<version>*` with `--repository-url` for a configured index, adding `--skip-existing` only for the default index, `upload.pypi.org` or `test.pypi.org`."
+    },
+    {
+      "id": "REL-PUB-05",
+      "criterion": "A `publishConfig.registry` in package.json that does not match the `url` of an npm-kind `[registries]` entry fails with E120. A registry URL that is not `https`, or has userinfo, a query or a fragment, fails with E126. An `origin` push URL that is not HTTPS or `git@` SSH, or that carries credentials, fails with E132. All three fail before any effect.",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-PUB-06",
+      "criterion": "Cargo observation runs `cargo --config net.retry=0 info NAME@VERSION --registry <name>` from the workspace root, passing `crates-io` for the default. Exit 0 with a matching `version:` line means present, exit 101 with ``could not find `NAME@VERSION` `` means absent, and anything else is indeterminate."
+    },
+    {
+      "id": "REL-PUB-07",
+      "criterion": "npm observation runs `npm view NAME@VERSION --json --fetch-retries=0`, with `--registry` when configured. Non-empty output means present, and empty output or an E404, ETARGET or `no matching version` response means absent."
+    },
+    {
+      "id": "REL-PUB-08",
+      "criterion": "PyPI observation fetches `<index>/<normalized-name>/` (default `https://pypi.org/simple`) with `curl` and `Accept: application/vnd.pypi.simple.v1+json`. A 200 JSON body with a matching non-yanked file means present. A 404, no matching file, or a yanked matching file means absent, and a non-JSON body or any other status is indeterminate."
+    },
+    {
+      "id": "REL-PUB-09",
+      "criterion": "After a publish command reports success, Callisto re-observes the registry and treats \"absent\" as not yet propagated, retrying within the observation limit. A publish whose version the registry never shows fails with E157, including one whose output says the version already exists, and no receipt is written.",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-PUB-10",
+      "criterion": "Read-only observations (registry query, GitHub release lookup, `git ls-remote`) run at most 5 attempts with exponential backoff from 2 s, capped at 300 s. HTTP 429, 5xx, rate-limited 403 and failed commands are retried, and an observation still indeterminate fails with E176 before that operation's effect.",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-PUB-11",
+      "criterion": "A publish command that fails with auth, rate-limit or other registry output fails the run with E163. A failing git or gh effect command fails with E164. No effect command is re-issued automatically.",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-RERUN-01",
+      "criterion": "An operation whose result is already present and identical is recorded as already satisfied, and its effect is not repeated. For a registry version, stderr shows `warning: <package> <version> is already published; skipping`."
+    },
+    {
+      "id": "REL-RERUN-02",
+      "criterion": "After a run fails partway, rerunning the same command with no state file from the failed run performs only the missing operations and writes a receipt. A local tag with the expected target and annotation that is missing on the remote is pushed before the receipt is written."
+    },
+    {
+      "id": "REL-RERUN-03",
+      "criterion": "Any of these fails with E167 and is never adopted: a local or remote tag on another commit or with another annotation, a lightweight tag, a GitHub release with a different prerelease flag, an asset of the same name with a different size or sha256, or two assets with the same name.",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-RERUN-04",
+      "criterion": "A receipt is written only when every operation ends `published` or `alreadySatisfied`, and otherwise the run exits 1 with no receipt file (E172 when operations remain incomplete). The receipt records `intentDigest`, the envelope (`orchestrationRevision`, `releaseSourceRevision`, intent and artifact-manifest digests), and each operation's outcome and provider evidence.",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-RERUN-05",
+      "criterion": "`workflow_dispatch` with `release_source_sha` releases that commit using the current workflow run's commit as the orchestration revision. The SHA must be 40 lowercase hex characters, resolve to that same commit, and be a GitHub-verified commit merged into `main` from `callisto/version-packages` or `callisto/version-packages--<40-hex>` in the same repository. A recovery run skips `verify` and `version-pr` and is gated by `recovery-checks`."
+    },
+    {
+      "id": "REL-RERUN-06",
+      "criterion": "A tag push that GitHub refuses because the tagged commit's workflows differ from every branch tip fails with E180, naming the tag and target commit.",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-GH-01",
+      "criterion": "Every package with a publish target gets an annotated, unsigned tag named by its tag template, with message `Release <tag>`, on the source commit, pushed to the `origin` push URL."
+    },
+    {
+      "id": "REL-GH-02",
+      "criterion": "A package that targets `github-release` gets `gh release create <tag> --repo <owner/repo> --verify-tag --draft`, adding `--prerelease` for prerelease versions. After all its assets upload, the release is published with `gh release edit <tag> --draft=false`."
+    },
+    {
+      "id": "REL-GH-03",
+      "criterion": "Release notes are the body of the package CHANGELOG section for the version, passed with `--notes-file`. With no changelog configured, a missing or unreadable file, or a missing or empty section, Callisto passes `--generate-notes` and prints `notes: using generated notes (<reason>) for <package>` to stderr."
+    },
+    {
+      "id": "REL-GH-04",
+      "criterion": "Each `[[release.artifact]]` becomes one upload named `asset-name` on the product package's GitHub release. An artifact whose `package` is not in the release fails with E179, and a `product-package` that is missing or does not target `github-release` fails with E197.",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-GH-05",
+      "criterion": "`release artifact-manifest` requires, for each slot, a regular non-symlink file named `asset-name` directly in `--artifact-dir` (`callisto::release_artifact_not_regular_file` for a symlink or non-file, an I/O error when missing) and records its sha256 and byte length. With slots, `release execute` requires both `--artifact-manifest` and `--artifact-dir` (`callisto::release_missing_artifact_inputs`); without slots it rejects either flag (`callisto::release_unexpected_artifact_inputs`).",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-GH-06",
+      "criterion": "Before any effect, `release execute` fails with E139 when an artifact's bytes differ from the manifest. It fails with E140 unless `gh attestation verify` passes with the configured `--repo`, `--signer-workflow <repo>/.github/workflows/callisto-release.yml`, `--signer-digest` set to the orchestration revision, `--source-digest` and `--deny-self-hosted-runners`.",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-GH-07",
+      "criterion": "In the release workflow, `CARGO_REGISTRY_TOKEN` reaches only the `execute` job's execute step. The workflow's default permissions are empty, and the plan and build jobs receive no registry credential."
+    },
+    {
+      "id": "REL-PR-01",
+      "criterion": "`release-pr decide` returns `noop` when there are no pending changesets. It returns `update` when one open PR from the same repository has head `<release-branch>` or `<release-branch>--<40 lowercase hex>`, and `create` otherwise."
+    },
+    {
+      "id": "REL-PR-02",
+      "criterion": "`release-pr decide` fails in these cases: an invalid repository (E141), an unsafe branch name (E142), duplicate PR numbers, a snapshot for another repository or base branch (E144), a managed-branch PR from a fork (E145), more than one managed PR (E146), a malformed SHA suffix (E147), or a PR headed at `<release-branch>--staging` (E154). `release-pr verify` exits 0 when a fresh snapshot equals the decision's snapshot and fails with E148 otherwise.",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-PR-03",
+      "criterion": "`release-pr commit-plan` emits base64 additions and deletions for the index staged against `--base-commit`. It fails for: no changes (E149); a mode other than 100644 (E150); a type change or unmerged path (E151); over 4 MiB of content (E152); or a path under `.github/workflows/` or `.git/`, an absolute path, or one containing `..` (E153).",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-PR-04",
+      "criterion": "The release-PR action runs the version command with `--emit-decision <decision_path>` (default `.callisto/release-decision.json`). It commits the result with GitHub's `createCommitOnBranch` on `<release-branch>--staging` reset to the base commit, and refuses unless the remote tree equals the locally staged tree. It then moves the release branch ref through the REST API and never runs `git push`. Before creating the commit, before moving the ref, and before any label or PR write, it runs `callisto release-pr verify` against a fresh snapshot and stops when verification fails."
+    },
+    {
+      "id": "REL-PR-05",
+      "criterion": "`callisto-action` with `mode: release` runs `callisto --format json release --receipt <tmp>` and sets `published` and `publishedPackages` from registry and platform publish operations whose outcome is `published`. A `mode` other than `version-pr` or `release` fails the step."
+    },
+    {
+      "id": "REL-ERR-01",
+      "criterion": "Every release failure exits 1 with a diagnostic carrying a code (`E###`, or `callisto::<name>` for CLI-level errors)."
+    },
+    {
+      "id": "REL-ERR-02",
+      "criterion": "`--dry-run` with `release plan`, `release artifact-manifest` or `release execute` fails with `callisto::release_plan_dry_run`, `callisto::release_artifact_manifest_dry_run` or `callisto::release_execute_dry_run` and writes nothing.",
+      "is_error_case": true
+    },
+    {
+      "id": "REL-ERR-03",
+      "criterion": "A `[release]` section fails config loading with E197 when it has no `[[release.artifact]]`, an unqualified `product-package` or artifact `package`, an unsafe `target` or `asset-name`, or a duplicate `asset-name`. It also fails for a `[release.profiles.<name>]` other than `production`, or a `production` forge-repository that conflicts with the top-level key.",
+      "is_error_case": true
+    }
+  ],
+  "spec_file_path": "docs/specs/release.json"
+}
