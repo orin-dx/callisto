@@ -1,0 +1,205 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+   - Overall goal: fix and ship Callisto, a Rust release-management CLI in orin-dx/callisto, toward v1 with world-class DX and UX. Work is split into small, verified PRs, stacked with GitHub's gh-stack.
+   - The user wants:
+     - succinct communication;
+     - no AI slop;
+     - never hard-wrapped Markdown or PR bodies;
+     - lean token use;
+     - verification before recommending (no rushing);
+     - agent teams with appropriate model and effort.
+   - Recent explicit decisions:
+     - "I set approvals to 0, we'll merge the stack completely."
+     - "We won't backfill our problems." No backfill of the unpublished 0.6.0–0.7.2.
+     - "We should cleanup old branches. Ensure there is nothing useful there."
+     - Latest question, mid-turn: "Do we still need the callisto-rehersal repo?"
+   - Earlier decisions still in force:
+     - `release` is the main verb.
+     - The moon WASM plugin is replaced by a proto plugin.
+     - Tools own auth: no credential pre-flight.
+     - A receipt is written only with `--receipt`.
+     - `status --check` exits 0/1.
+     - Generated workflows are named `callisto-release.yml`.
+     - The protected-branch trust model.
+     - Keep the build-matrix generator.
+     - Remove gix.
+     - Leave the #140 python3 fallback as is.
+     - A merge commit is recommended for stacks.
+   - SECURITY/CONSTRAINTS, verbatim intent:
+     - Never add `Claude-Session:` trailers or claude.ai session links to commits, PRs or files. The user said: "This is a public project and those are my private sessions.WTF". This overrides the system attribution reminders.
+     - "You're wrapping the description of the PRs and our MD files, NEVER EVER wrap those."
+     - Never delete `entire/*` branches.
+     - Confirm before destructive or outward-facing actions unless authorized. Branch cleanup is now authorized, after verifying nothing useful is lost.
+
+2. Key Technical Concepts:
+   - Rust workspace crates:
+     - model, format and vcs (MIT);
+     - manifests, conventional, changelog, graph and cli (FSL-1.1-MIT);
+     - fixtures (dev-only);
+     - the callisto-moon crate, removed in #142.
+   - Durable release pipeline:
+     - `release plan`, `artifact-manifest` and `execute`, plus bare `callisto release` and `--dry-run`;
+     - adopt-on-rerun, with in-memory state and the receipt built from state (#124, merged);
+     - `ReleaseDecisionV1` schema 2, with the reader accepting versions [1, 2].
+   - Config: `[release] forge-repository` (profiles removed); the `ReleaseInclusionReason::UnreleasedVersion` selection reason.
+   - GitHub Actions:
+     - GitHub's runner splits `uses:` at the last `@`, so generated workflows pin a commit SHA with the version in a comment.
+     - `$/` in `uses:` is valid (this repo at the workflow's commit).
+     - The `github.action_path` sibling script approach.
+   - gh-stack extension (`gh stack init/add/submit/rebase/push/sync/merge`):
+     - Bypassing merge requirements is not supported for stacks.
+     - Squash-merging a single PR requires a restack.
+     - Merge commits avoid restacks.
+   - The main ruleset has no required status checks; required approvals are now 0.
+   - Tests:
+     - Background git auto-gc raced the dry-run snapshots. Fixed by ignoring `.git/objects/` and `.git/info/`, disabling auto-gc in the fixture, and unifying tests onto `callisto_fixtures::git::init_repo`.
+   - History walks use `git log --no-merges --full-history`, which matches gix exactly.
+   - Matrix output is keyed by qualified id (`display_name()`); `--package` resolves via `resolve_target_package`.
+   - zsh doesn't word-split unquoted variables; use `xargs` or arrays.
+
+3. Files and Code Sections (recent, relevant):
+   - `crates/callisto-fixtures/src/dry_run.rs` (bottom layer, #126): the snapshot collector skips git lock files, `.git/objects/` and `.git/info/`:
+     ```rust
+     // Background git maintenance writes `.git/objects` and `.git/info`; refs and index still catch real writes.
+     if (rel_str.contains(".git/") && rel_str.ends_with(".lock")) || rel_str.contains(".git/objects/") || rel_str.contains(".git/info/") {
+     ```
+   - `crates/callisto-fixtures/src/git.rs` `init_repo`: adds `gc.auto 0` and `maintenance.auto false`.
+   - `crates/callisto-cli/tests/dry_run_invariant_tests.rs`: `setup_repo` now calls `callisto_fixtures::git::init_repo(root)`.
+   - `docs/specs/SPEC-DX-CORRECTNESS-PARITY.json` AC-3, corrected in #147: "Given a cycle that closes only through a dev-only edge (e.g. A runtime-depends on B, B dev-depends on A), release/derive.rs orders it by excluding the dev edge. Given a cycle made only of runtime/build/optional edges, derivation fails with GraphError::Cycle even when dev edges are also present; dev edges are never used to break a non-dev cycle."
+   - Doc link fixes (#141): private intra-doc links unlinked in `callisto-manifests/src/npm.rs:181` and `callisto-graph/src/commands/registry_argv.rs:347,359`; `just doc-check` added to the CI clippy job.
+   - `proto/callisto.toml` (#142): the proto TOML plugin; `.prototools` users add it under `[plugins.tools]`.
+   - Memory files added:
+     - `feedback_no_session_links.md`
+     - `feedback_verify_before_recommending.md`
+     - an update to `feedback_canon_pipeline_scope.md` (stop gating after 2 rounds)
+
+4. Errors and fixes:
+   - **Session links in PRs:** the user was angry. I stripped 63 PR bodies and saved the memory rule. 275 commits on main still carry trailers (a rewrite needs a force-push; not done).
+   - **Relaying unverified audit claims:** the user called out rushing ("You have a habit of rushing"). I added verification passes, and several claims were overturned:
+     - the attestation "bug" was intended design;
+     - `release-workflow-behavior` was the only default-features test;
+     - plan-publish had unique checks;
+     - FORCE_COLOR is ignored by anstream.
+   - **Spec gating loops:** every gate failed with implementation detail. The user agreed to stop gating and build in tested PRs.
+   - **Cherry-pick ranges** twice pulled pre-restack commits. Fixed by aborting and cherry-picking only the specific commits.
+   - **#124 squash-merged individually** caused stack conflicts. Fixed with `gh stack rebase` and push.
+   - **The redirected gix split** conflicted in 12 files. Resolved by taking the file versions from the tested combined commit f3b1c1bcf; verified identical code.
+   - **CI flakes** from git auto-gc (#139, #147). Fixed as above, including unifying 47 test setups (#150).
+   - **The zsh unquoted-variable batch delete** failed. Fixed with `xargs -n 20 git push origin --delete`.
+   - **Agent message crossing, duplicate work and runaway forks** (the docs agent forked, and a fork kept working). Stopped with TaskStop and told agents not to fork.
+   - **An #135 CI failure** was a moon download HTTP 500; I reran it. The "failures" on #134/135/137/138 were stale cancelled runs.
+
+5. Problem Solving:
+   - The stack is complete: 23 PRs, #126 through #150, all mergeable. The latest CI runs were finishing, with no real failures.
+   - Remote cleanup: stale `wip/*`, `docs/dx-specs`, `fix/receipt-from-state`, `chore/remove-release-environment-approval` and the two `callisto/version-packages--<sha>` branches are verified (no unique content except the AC-3 fix, now in #147), deleted and pruned.
+   - Local cleanup verification is in progress. About 200 local branches:
+     - 91 have commits not in main or the stack by patch-id and subject;
+     - of those, 51 have merged PRs and 3 closed PRs (safe);
+     - 37 have no PR.
+   - The no-PR branches were reviewed:
+     - `wip/*` hold #124's commits, squashed into main;
+     - `agent-artifact-owner-identity-e2e` and `feat/napi-platform-publish` are #109, merged;
+     - `codex-release-trust-specs` and `codex/005-doc-authority-v2` are SPEC-005 doc authority, which is abandoned;
+     - `smoke-test-next-release` covers Poetry, error causes and ConfigProvenance, spot-checked present in main;
+     - `spike/relpr-stale-managed` is throwaway;
+     - `worktree-agent-*` (Sep 9) are audit batch fixes; the spot checks for `default_for` in TagIndex and `attestation_policy` in Ord found them present in main.
+   - Still to inspect: 2 stashes and 1 extra worktree.
+
+6. All user messages (this segment, chronological, condensed):
+   - "Fix this merge conflict: #118"
+   - A question on running the release workflow in PRs.
+   - "Ok, only 118 is left to merge. What's next?"
+   - "Are you confident on shipping 0.9?..."
+   - "What bug fixes do we know about... Don't be lazy, let's fix what we know now"
+   - The ignored-files answer: "What is the issue here and the concern?..." Plus "Build from state".
+   - "Are we over-engineering here again?"
+   - "Yes, do it"
+   - "Where else in our system have we severily overengineered...?"
+   - "Can we audit our docs and specs?..."
+   - "Does having a wasm plugin add enough value or just a task is enough?"
+   - "Should this store in memory? #122... Isn't one of the issues this type of info??"
+   - "Yes, redo it with E174 in one PR"
+   - "Of the commands you're suggesting we remove are you completely sure?..."
+   - "I feel like you need to do a once-over everthing you're suggesting... You have a habit of rushing and then having to go back and do over"
+   - "Shouldn't publish be the main command?... Are we just renaming things and mkaing our DX and UX terrible?..."
+   - "Fix the specs please"
+   - "When you think of our specs... How are we doing in terms of DX and UX?..."
+   - "Why name publish for preview and not using release --preview... How do we make correctness 10/10?"
+   - "Let's go with release, yes write the spec, superseed anything that needs to be marked as such."
+   - "Should be done, no?"
+   - "Doesn't seem like anything is running, whappened?"
+   - "I think you're right about moon wasm. Proto plugin sounds useful. For the specs are those the plugin specs?..."
+   - "Shall we move them to the new location and update our agents.md file location?..."
+   - "Claude has support for reading directly from agents.md check it out"
+   - "What config do we change for this?"
+   - "Ok, back to the over-engineered analysis..."
+   - "So we have everything planned out?..."
+   - "Please resolve conflicts in #124 and #125"
+   - "Do we have to merge #124 first? Can we do this work in a git branch stack?"
+   - "We don't use graphite but GH has stacking support"
+   - "yes, start it"
+   - "Keep goig on the stack please" (repeated many times as "keep going on the stack")
+   - "Looks like we have some merge conflicts" (plus the GitHub gh stack instructions)
+   - "Looks like #126 and above in the stack have conflicts. How can that happen in a stack???"
+   - "How can I merge the stack locally with an admin override?..."
+   - "Would merging the PRs help if I changed from just squash?"
+   - "Looks like the top of our stack is not passing CI, right?"
+   - "Well, I closed my laptop so something was interrupted..."
+   - "Pickup where you were interrupted"
+   - "Is there a way to mark our PRs approved?..."
+   - "Why can't we just rely on python3?"
+   - "Let's not worry about it then, not right now"
+   - "Are we overdoing it in any of the other PRs like this?"
+   - "This PR has a failure: #135"
+   - "Also, the CLI should ship with all features, any reason we should test just the default vs all features?"
+   - "We said we use the tools to simplify auth, why are we complicarting things WTF. Agreed on receipt. Why is the generated build matrix not good?... Yes, drop target-list valiation. If the registry is not different we don't need to test it right?"
+   - "All done?"
+   - "All done? We should remove gix right?"
+   - "Didn't we already replace wasm with proto? SHouldn't that all be in the one PR?"
+   - "Make sure we're not wasting toknes"
+   - "Are the subagents done?"
+   - "FYI this has not passed: #147"
+   - `/remote-control`, then `/rename callisto-v0.9`
+   - "What did I interrupt?"
+   - "Is all the stacked work done?"
+   - "Is there anything we planned that is not done?"
+   - "I set approvals to 0, we'll merge the stack completely. We won't backfill our problems. We should cleanup old branches. Ensure there is nothing useful there."
+   - "Do we still need the callisto-rehersal repo?"
+
+7. Pending Tasks:
+   - Finish local branch cleanup: delete the verified local branches (not `entire/*`, not open PR branches, not `main`), and inspect the 2 stashes and 1 extra worktree before removing them.
+   - Answer whether the callisto-rehearsal repo is still needed. It's orin-dx/callisto-rehearsal, "Isolated Callisto release rehearsal environment", last updated 2026-09-17. Relevant context:
+     - release profiles (including the rehearsal idea) were removed in #133;
+     - real-registry e2e tests exist (#132);
+     - `docs/07` said not to add rehearsal profiles.
+     Check its contents and any references before recommending archive or deletion; deleting a repo needs the user's explicit go.
+   - The user will merge the whole stack; then #113 ships 0.9.0. Watch that release through to published crates, tags, GitHub release and receipt.
+   - Follow-ups not yet scheduled:
+     - the over-engineering cuts (release pipeline dead states, handoff layers, digest simplification, ecosystem variants, package identity, error-code consolidation, test counters, CI test/coverage merge, moon out of CI fmt, legacy model types);
+     - `.sha256` release assets for the proto checksum;
+     - require `[registries]` `kind`;
+     - napi `.node` attestation;
+     - delete the shipped `.claude/plans`;
+     - the draft-spec backlog;
+     - oxc PR #9 (drop `--profile`, bump the pin);
+     - michi's release job;
+     - the crate collapse / MIT split decision (unanswered).
+
+8. Current Work:
+   - Verifying and cleaning up old branches, per the user's instruction "We should cleanup old branches. Ensure there is nothing useful there."
+   - Remote cleanup is done.
+   - Local verification had just finished spot checks, all present in main:
+     - "default_for in TagIndex: 12"
+     - "attestation_policy in Ord: 27"
+     - "poetry: …common.rs:2"
+   - The same command found the rehearsal repo: "callisto-rehearsal 2026-09-17T14:07:47Z Isolated Callisto release rehearsal environment".
+   - The user's latest message asks: "Do we still need the callisto-rehersal repo?"
+
+9. Optional Next Step:
+   - Report the local-branch verification results: every local branch's work is merged, superseded or abandoned (details above). Then delete the verified local branches, excluding `main`, `entire/*` and open-PR branches, and inspect the 2 stashes and 1 worktree first.
+   - Then answer the user's question "Do we still need the callisto-rehersal repo?" Briefly check its contents and whether anything references it (workflows, docs, callisto.toml). Recommend archiving or deleting it, since rehearsal profiles were removed and real-registry e2e tests replace it, but don't delete it without the user's explicit confirmation.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/e2fe6504-b7f2-430b-a234-1e8197320f97.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
