@@ -1,0 +1,136 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+   - Original: summarize callisto's state for a fresh agent: succinct, complete, no wordy prose. Then add what the tool does, how it differs from competitors, and context for evaluating the code, UX and DX. Then "include the missing stuff" and "give me a full thing together" (written to scratchpad/CALLISTO-HANDOFF.md).
+   - Doc cleanup: no historical content ("would confuse future AI"). Account for the open PR stack and put changes on top of the stack (added to PR #151).
+   - "Fix the dangling spec refs and sweep the § citations too". The user then added: "We should avoid spec citations in the code. The specs are for the maintainers right? This will become a source of things to get out-of-sync like this".
+   - "Case D and Case E are not descriptive in a doc or in a comment though, right? We need to be succinct and clear at the same time. Let's not skip out here".
+   - "Anything else we should clean up here? We want to be human friendly but also be mindful of the context it takes to read and parse everything. Succinct and to the point without meaningless terms and without wordy prose."
+   - "Let's make sure our specs are succinct, precise and to the point. They should not be muddled with historical perspective. ADRs track history in so much as decisions made that should be recorded... Not minutia. We did some back and forth and made mistakes (Agentic amnesia) that we should not record either." Answers to my questions: keep the format the plugins expect (spec@1) but better structured, more semantic and easier to follow; all 12 ADRs as listed; a new PR on top of #151.
+   - Compaction instruction: keep a summary of the work, the fixes, and the ROAD-TO-V1.md bugs (about 40) that need addressing.
+
+2. Key Technical Concepts:
+   - Callisto: a changesets-style release engine for polyglot monorepos (Cargo, npm incl. napi-rs, PyPI), one Rust binary; flow add → version → release; repo orin-dx/callisto; latest callisto@0.8.0.
+   - Differentiators: byte-compatible changesets format; napi platform-package coordination (owner via optionalDependencies); CST-preserving edits (toml_edit / fingerprinted JSON); atomic_write + ApplyPermit (a dry run cannot write); system git only; npm range preservation. Competitors: @changesets/cli, release-please, Nx Release, knope, cargo-release/release-plz. License: MIT (model, format, vcs) / FSL-1.1-MIT (the rest).
+   - Crates: model, format, vcs, conventional, changelog, manifests, graph (engine, ~35k lines), cli, fixtures (moon removed in #142).
+   - Release model: `version --emit-decision` writes .callisto/release-decision.json; after merge, `release plan --from-release-commit` verifies it and never re-derives; reruns adopt landed effects; a receipt only when everything succeeded; merge is the only approval (no Environment gate); secrets only in the execute job.
+   - spec@1 schema (~/.claude/plugins/marketplaces/orin-dx-agent-plugins/shared/schemas/spec@1.json): required id, purpose, scope, non_goals, acceptance_criteria; optional api_surface, linked_*, spec_file_path, revision_note, reasoning; additionalProperties false.
+   - Terms: dual-manifest package (one dir with Cargo.toml + package.json, one package); co-located platform manifest (os+cpu package.json beside its owner's Cargo.toml); attached platform package (os+cpu package in its own dir, owned via optionalDependencies).
+   - PR stack: #126→#150 (DX v1: release command, 8-command CLI, init/workflows, status --check errors-only, no cargo features, gix dropped, proto replaces moon) → #151 docs/consistency-cleanup → #152 docs/spec-rewrite.
+
+3. Files and Code Sections:
+   - PR #151 (docs/consistency-cleanup), my commits:
+     - 7ab66c55c "docs: drop historical docs and superseded specs": deleted docs/00-design.md, 01-spec.md, 01-research-brief.md, 02-library-vs-moon-decision.md, 04-python-engine-spec.md, callisto-matrix.md, 12 superseded/abandoned specs; stripped revision_note; removed 01-spec citations in report.rs and snapshot_tests.rs; untracked 10 crates/callisto-cli/*.profraw; added `*.profraw` to .gitignore; INDEX.md reworded.
+     - 7156e9126 "docs: stop citing specs from code; fix dangling spec refs": about 650 SPEC/AC/§/Track/Gap citations removed across 90 files; AC-numbered test fns renamed (e.g. `ac18_npm_consumer...` → `npm_consumer...`); deleted crates/callisto-graph/tests/apply_batch_002_verification_notes.md; 008/009 depends_on → SPEC-SELF-RELEASE-LIFECYCLE; dropped the incident linked_requirement; removed criteria requiring 01-spec edits (SPEC-005 AC-011, track-e AC-11, track-g G.13 rows). AGENTS.md rule: "Code never cites specs: no spec IDs, criterion IDs, section numbers or track names in comments, test names or messages. Describe the behavior instead."
+     - 6719f1ec5 "docs: name package shapes instead of Case D and Case E": comments/messages in walk.rs, identity.rs, version.rs, release_decision.rs, release/{derive,local,mod}.rs, init.rs, apply.rs (P1/P2 → a-crate/b-crate), tests; .claude/semantic-model/core-identity.md gained a "## Terms" section defining the three terms.
+   - PR #152 (docs/spec-rewrite, base docs/consistency-cleanup), commit b8960acac:
+     - New docs/specs/{workspace,versioning,release,cli,matrix}.json (spec@1, ids SPEC-WORKSPACE/-VERSIONING/-RELEASE/-CLI/-MATRIX, criteria prefixes WS-DISC/ID/CFG/PLAT, VER-CS/AGG/CAS/GRP/PRE/APPLY, REL-CMD/AUTH/ORD/PUB/RERUN/GH/PR/ERR, CLI-SURF/OUT/STATUS/ADD/INIT/WF/PRE/SNAP/COMP/SCHEMA, MX-DISC/OUT/ERR); about 203 criteria, ~72 KB, replacing ~1 MB.
+     - Deleted all old SPEC-*.json and track-*.json; kept REQ-DX-V1.md (delete when v1 ships).
+     - docs/specs/INDEX.md rewritten (table of 5 specs; "When code and a spec disagree, reproduce the behavior first...").
+     - docs/adr/0001–0012 + README.md: changesets format; system git only; ecosystem tools publish and own auth; merge authorizes release; committed decision is authority; reruns adopt landed effects; platform packages release with owner; one build (only dev-only feature callisto-model/test-util); proto plugin instead of moon; format-preserving atomic writes; license split; code never cites specs. Format: # N. Title / Context / Decision / Consequences.
+     - AGENTS.md "Specs and plans": specs are one per area, current behavior only, changed in the same PR as the behavior, with no history, rationale or revision notes; ADRs record decisions that still hold and superseded ADRs are deleted; plans in docs/projects are deleted once shipped.
+     - docs/releasing.md line 3 → "How a Callisto-managed release moves from changeset to published package. The contract is [`specs/release.json`](specs/release.json)."
+     - .claude/semantic-model/{INDEX,core-identity,version-flow,config-resolution}.md repointed to the new specs; track names removed.
+     - docs/projects/ROAD-TO-V1.md: first item reworded (map_err source-preservation gate); new section "Found while rewriting the specs (reproduce before fixing)" plus a Tests line.
+   - scratchpad/CALLISTO-HANDOFF.md: the full handoff document (not committed).
+
+4. Errors and fixes:
+   - The auto-mode classifier denied a batch edit (spec status design→current, depends_on repoint, linked_requirement removal). I did not retry. The user later explicitly asked to "Fix the dangling spec refs", and I did it then.
+   - `git rev-parse --short A B` failed and aborted the first commit chain; I redid the commit.
+   - The regex sweep joined a `\` line continuation, producing an invalid `\;` escape in crates/callisto-graph/tests/cross_ecosystem_diagnostic_test.rs; I fixed it by hand. rustfmt then passed.
+   - The "Case D" expect strings made lines too long; I ran `cargo fmt`.
+   - The ADR-writing bash timed out (the trailing cat hung), but all files were written.
+   - User feedback: keeping "Case D/E" as "domain terms" was wrong, so I replaced them everywhere. Spec citations in code are a drift source, so I swept them and added the rule.
+   - Drift checks found criteria that did not match the code. I corrected incidental details (codes, formats) and kept intended invariants with the bug recorded.
+
+5. Problem Solving:
+   - Worked in isolated scratchpad worktrees with CARGO_TARGET_DIR=scratchpad/target, because other sessions are active in the main checkout. Before every push I checked that the remote branch was unchanged, and pushed fast-forward only.
+   - Verification for code sweeps: `cargo nextest run --workspace` 1583/1583, doctests, clippy -D warnings, `just workflow-contracts`, fmt; graph tests 668 after the Case rename.
+   - Spec quality: 5 drafting agents, then 5 scribe:drift-checker agents; bug-codifying criteria dropped (CLI-SURF-03 help rejected, VER-PRE-04 pre re-apply, WS-CFG-02 npm/foo matches Cargo, schema validate, command key).
+
+6. All user messages:
+   - "Let's understand the current state of callisto, the goal of the tool and summarize for an agent that is picking this up fresh. Be succinct, avoid wordy prose. Be mindful of the context and only include what is useful but don't forget important things please."
+   - "Also include what the tool does, how is it different from the competition. Any context it needs to evalute how the code works, our UX and DX, etc"
+   - "Is this comprehensive enough?"
+   - "Include the missing stuff"
+   - "Give me a full thing together."
+   - "Should any of this info be in our readme, architecture? some other doc?"
+   - "Let's not keep historical things as it would confuse future AI helping us and is it really relevant to the user after we ship v1?"
+   - "Before we do that does all of this take into account the work on our PR stack currently open???"
+   - "Can we consider the changes in the stack and account for them? And add this to the top of the stack to avoid conflicts?"
+   - "Adjust based on the altest PR in the stack"
+   - "Can we add it to that PR?"
+   - "Fix the dangling spec refs and sweep the § citations too"
+   - (mid-turn) "We should avoid spec citations in the code. The specs are for the maintainers right? This will become a source of things to get out-of-sync like this"
+   - "Case D and Case E are not descriptive in a doc or in a comment though, right? We need to be succinct and clear at the same time. Let's not skip out here"
+   - "Anything else we should clean up here? We wan to be human friendly but also be mindful of the context it takes to read and parse everything. Succint and to the point without meaninfless terms and without wordy prose."
+   - "Let's make sure our specs are succint, precise and to the point. They should not be muddled with historical perspective. ADRs track history in so much as decisions made that should be recorded, right? Not minutia. We did some back and forth and made mistakes (Agentic amenhesia) that would should not record either."
+   - AskUserQuestion answers: format "We should keep the format the plugins expect but we can make the specs better structure, more semantic and easier to follow."; ADRs "All 12 as listed"; placement "New PR on top of #151".
+   - Standing constraints (from memory/AGENTS.md): no claude.ai session links in commits/PRs/files; never run cargo builds in parallel; never `git checkout -- Cargo.lock`; succinct writing, no hard-wrapped Markdown; verify before recommending; a requirement the owner didn't state needs owner confirmation before it gates anything; lean token use.
+
+7. Pending Tasks:
+   - Remaining cleanup from the survey, not yet done:
+     - releasing.md and publishing.md internal jargon (intent/orchestration/envelope; target about 80 lines).
+     - Code comment trimming: history wording, long blocks such as the main.rs 47-line exit-code table, emphasis words.
+     - README tagline ("for Rust workspaces") plus a "Why callisto" section and ecosystems line.
+     - ARCHITECTURE release-model section and command module map.
+     - Decide on .gemini/settings.json and assets/callisto-logo-2.pxd.
+     - Prune memory entries that point to deleted files.
+   - Fix the bugs recorded in ROAD-TO-V1.md "Found while rewriting the specs (reproduce before fixing)":
+     - Versioning:
+       - A fixed group with no tagged member bumps from 0.0.0 (1.0.0 + minor → 0.1.0).
+       - Fixed-group version is SemVer-only: PEP 440 errors; in pre mode members get a stable version with no -tag.N.
+       - Pre mode never records consumed changesets in pre.json, so every run re-applies them and warns none are pending.
+       - pre.json is read from .changeset/ but deleted from the configured dir; pre exit doesn't stage it.
+       - `version` after a crash with changesets left on disk bumps again.
+       - `version --strict` writes and stages before failing.
+       - The same package in two groups with the same spelling raises an uncoded ConflictingGroupNames error.
+       - snapshot rewrites only dependency specs a patch would break (core = "1.0.0" keeps pointing at 1.x).
+     - Workspace/identity:
+       - A prefixed rule `npm/foo` applies to an unpromoted Cargo-only foo.
+       - Two id syntaxes (`cargo:foo` in package-set and diagnostics vs `cargo/foo` elsewhere); E103 help suggests cargo:pkg.
+       - E101 SplitIdentity is never raised.
+       - A qualified id for an unpromoted package matches any ecosystem (`--package cargo/foo` selects npm-only foo).
+       - A malformed manifest that is a package's only manifest is silently skipped.
+       - Same-name collisions are checked only on the primary id (no E100; the index is overwritten).
+       - Prefixed [[package]] rules never check ecosystems (pypi:foo applies to Cargo-only foo; a test locks this in).
+       - Root detection text-matches `[workspace]`/`[package]` (commented lines count; `[workspace.package]` doesn't).
+       - The unknown-package warning lists primary names, which is wrong for dual-manifest packages.
+     - CLI:
+       - The generated workflow passes no `branch:` to callisto-action (defaults to main).
+       - `pre exit` with no pre.json gives a raw I/O error.
+       - `status` to a closed pipe exits 1 (io_error); `completions` panics.
+       - `status --check` help text says it signals pending changesets.
+       - `add --summary x` without --package says no flags were given.
+       - Completions list hidden commands; `schema --type validate` still works.
+       - `init --dry-run --workflow` doesn't mention the workflow; init without origin leaks git stderr.
+       - Error codes mix callisto::name and E###; only add/pre JSON carry `command`.
+       - Text output shows `cratesIo`; `callisto help <command>` is rejected.
+       - status hard-fails on an empty or summary-less changeset (the EmptyChangeset/EmptySummary diagnostics are unreachable).
+       - `init --forge-repository` is validated only when binaries ship.
+     - Release:
+       - `[release]` requires at least one [[release.artifact]] (E197), forcing the CI route.
+       - OnDiskVersionDrift has no code.
+       - The product GitHub release publish is not gated on assets owned by other packages.
+       - The upload prerelease flag comes from the owner's version (a mismatch gives E167).
+       - The remote-tag check ignores the annotation.
+       - PyPI observation ignores Retry-After; observation timeouts/spawn failures give E025, not a retry.
+       - `release plan` without [release] ignores a malformed --orchestration-revision.
+       - release-pr decide reports duplicate PRs and unsafe branch as callisto::error, not E143/E142.
+       - commit-plan reads addition bytes from the worktree, not the index.
+       - Missing help text on E051, E022-E024, E107-E110, callisto::error.
+     - Tests:
+       - Criteria without an asserting test: changeset parse edge cases, cascade always/minor/dev/E105, apply dual-manifest and --dry-run output, E124, release subcommand --dry-run rejection, the not-released platform warning.
+       - The zero-slots test reads `artifact_slots` instead of `artifactSlots` and always passes.
+       - A real-registry e2e test for cargo is missing.
+   - Earlier-listed (pre-spec-rewrite) DX findings are also in the roadmap/specs: init requires origin; a private root package.json without version gives E013 with no path; `version --dry-run` shows no diff.
+
+8. Current Work:
+   The spec rewrite was just completed and shipped as PR #152 (https://github.com/orin-dx/callisto/pull/152), base docs/consistency-cleanup (#151), commit b8960acac "docs: one current-behavior spec per area; ADRs for standing decisions". I removed the specwt worktree and local branch, and stopped the scheduled wakeup. PR #151 now contains my commits 7ab66c55c, 7156e9126 and 6719f1ec5 on top of the other session's 935f2c07d. CI results for #151/#152 were not checked after the pushes.
+
+9. Optional Next Step:
+   The last task (spec rewrite, PR #152) is complete. Next: report the outcome to the user: PR #152, 5 specs (~203 criteria, ~72 KB vs ~1 MB), 12 ADRs, about 40 bugs recorded in ROAD-TO-V1.md. Check CI on #151/#152 and ask which remaining cleanup item to take next (releasing.md jargon rewrite, code-comment trim, README/ARCHITECTURE edits, memory prune) or whether to start fixing the ROAD-TO-V1 bugs. Do not start any of these without the user's confirmation.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/320aa0c9-2df0-4319-88b7-ed0e66679ed8.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
