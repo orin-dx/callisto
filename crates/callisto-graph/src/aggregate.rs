@@ -42,6 +42,12 @@ pub struct Aggregation {
     /// changeset driving its severity, so the "no pending changesets"
     /// warning must key off this, not off "nothing new".
     pub pre_mode_has_active_changeset: bool,
+    /// Packages whose severity this run came solely from a pre-mode
+    /// changeset already recorded in `pre.json` -- re-affirmed, not newly
+    /// applied. The caller must not synthesize a changelog entry for these:
+    /// the changeset's entry was already logged on the run that first
+    /// recorded it, and `changelog_inputs` correctly has no entry here.
+    pub pre_mode_recorded_only: std::collections::HashSet<PackageId>,
     pub changelog_inputs: BTreeMap<PackageId, ChangelogInput>,
     pub inference_commits: BTreeMap<PackageId, Vec<(CommitSha, String)>>,
     pub diagnostics: Vec<Diagnostic>,
@@ -291,6 +297,9 @@ where
                         agg.named_by.insert(canonical_id.clone(), NamedBy::Changeset);
                     }
 
+                    if entry.severity != Severity::None && is_already_recorded {
+                        agg.pre_mode_recorded_only.insert(canonical_id.clone());
+                    }
                     if entry.severity != Severity::None && !is_already_recorded {
                         // In pre-release mode use the pre-cycle entry version as the
                         // changelog "from" baseline so the log covers the full pre

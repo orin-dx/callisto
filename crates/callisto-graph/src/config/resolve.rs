@@ -497,6 +497,10 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
         provenance.insert(ConfigKey::VALIDATION_ALLOW_EMPTY_CHANGESETS, ConfigProvenance::Explicit);
     }
 
+    // TODO: FIXED_GROUP/LINKED_GROUP/TAG_TEMPLATE/PRE_MAJOR_INFERENCE are never inserted
+    // here, so diagnostics governed by those keys always render "(default)" even when
+    // explicitly configured -- these keys need the same explicit-provenance tracking above.
+
     let mut registries = BTreeMap::new();
     registries.insert(
         RegistryKey(RegistryKey::CRATES_IO.to_string()),

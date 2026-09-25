@@ -398,6 +398,16 @@ fn test_pre_mode_rerun_does_not_duplicate_changelog_entry() {
          in pre mode, got {occurrences} occurrences in:\n{changelog}"
     );
 
+    // Total bullet-entry count, not just a substring match: an already-recorded
+    // pre-mode changeset must not get a second, differently-worded entry (e.g.
+    // a synthesized "Version bump (minor)" line) alongside its real one.
+    let total_entries = changelog.lines().filter(|l| l.starts_with("- ")).count();
+    assert_eq!(
+        total_entries, 1,
+        "the changelog must have exactly one entry after two `version` runs in pre mode with no \
+         commit between them, got {total_entries} in:\n{changelog}"
+    );
+
     // The changeset file itself must still be on disk -- pre mode never
     // deletes a changeset until `pre exit`'s consuming run.
     let cs_dir = root.join(".changeset");

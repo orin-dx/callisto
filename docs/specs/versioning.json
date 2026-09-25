@@ -235,7 +235,7 @@
     },
     {
       "id": "VER-APPLY-13",
-      "criterion": "After planning but before any write, `version` refuses with E121 when the workspace's changesets directory still has a pending changeset as of `HEAD` (not yet consumed by a commit) while some canonical manifest's on-disk version differs from its version at `HEAD` -- the signature of a `version` run that wrote and staged its changes but never committed. A repository with no commits yet, or a manifest/changesets directory that didn't exist at `HEAD`, is never refused this way.",
+      "criterion": "After planning but before any write, `version` refuses with E121 when a canonical manifest's on-disk version differs from its version at `HEAD` and either: the workspace's changesets directory still has a pending changeset as of `HEAD` (not yet consumed by a commit); or, outside an active pre-release cycle (`.changeset/pre.json` absent), a canonical manifest is staged in the git index but not yet committed. Both are the signature of a `version` run that wrote and staged its changes but never committed -- the second covers a changeset that was only ever a working-tree file (added and consumed by `version` without ever being committed), which the first check cannot see. A repository with no commits yet, a manifest/changesets directory that didn't exist at `HEAD`, or an active pre-release cycle (which legitimately reruns `version` without a commit in between) is never refused this way.",
       "is_error_case": true
     }
   ],

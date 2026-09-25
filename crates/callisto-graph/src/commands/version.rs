@@ -186,6 +186,18 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
                     }
                 }
                 agg_input
+            } else if agg.pre_mode_recorded_only.contains(id) {
+                // This package's severity came solely from a pre-mode changeset
+                // already recorded in pre.json on an earlier run: it is being
+                // re-affirmed (still counts toward severity/cascade), not newly
+                // applied, so it must not re-log a changelog entry. Leave entries
+                // empty; a NewGroupMember note below can still attach to it.
+                ChangelogInput {
+                    package: id.clone(),
+                    from: from.clone(),
+                    to: Some(to.clone()),
+                    entries: Vec::new(),
+                }
             } else {
                 // No changeset drove this bump (cascade, group, inference, pre-release).
                 // Synthesize a single entry describing the reason so that render_section()
@@ -226,10 +238,15 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
                 });
             }
 
-            changelog_writes.push(crate::plan::ChangelogWrite {
-                changelog_path: ch_path.clone(),
-                input,
-            });
+            // An already-recorded pre-mode changeset with no other reason to log
+            // (no real changeset data, no new group membership) produces no entries;
+            // render_section() rejects an empty list, so skip the write entirely.
+            if !input.entries.is_empty() {
+                changelog_writes.push(crate::plan::ChangelogWrite {
+                    changelog_path: ch_path.clone(),
+                    input,
+                });
+            }
         }
     }
 
@@ -304,11 +321,21 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
 
 /// Refuses to proceed when the workspace shows the signature of a `version`
 /// run that wrote and staged its changes but crashed (or was killed) before
-/// committing: a changeset still pending as of `HEAD` (so the last commit
-/// hadn't consumed it yet) while some canonical manifest's on-disk version
-/// has already moved past what `HEAD` records. Continuing would compute a
-/// plan from that half-applied disk state and bump forward again on top of
-/// it, compounding the drift instead of surfacing it.
+/// committing: either a changeset still pending as of `HEAD` (so the last
+/// commit hadn't consumed it yet) while some canonical manifest's on-disk
+/// version has already moved past what `HEAD` records; or, outside an active
+/// pre-release cycle, a canonical manifest staged in the index but not yet
+/// committed while disk has already moved past `HEAD` -- the signature of
+/// `callisto add` followed by `callisto version` with no commit in between,
+/// then `version` run again: the changeset never reached any commit
+/// (`head_has_pending_changeset` alone can't see it), but the bump it
+/// produced is sitting staged. A pre-release cycle (`.changeset/pre.json`
+/// present) is exempt from this second check: re-running `version` there
+/// with nothing committed between runs is its designed workflow.
+///
+/// Continuing would compute a plan from that half-applied disk state and
+/// bump forward again on top of it, compounding the drift instead of
+/// surfacing it.
 ///
 /// A brand-new repository with no commits, or one where `git` cannot be
 /// consulted, has nothing to compare against and is never refused here --
@@ -319,7 +346,16 @@ pub fn check_partial_run<R: CommandRunner, D: DependencyResolver>(ws: &Workspace
     };
     let head = head.as_str();
 
-    if !head_has_pending_changeset(ws, head)? {
+    // A pre-release cycle (`.changeset/pre.json` present, in either Pre or
+    // Exit mode) legitimately runs `version` more than once with nothing
+    // committed in between -- that is its designed workflow, not a crash
+    // signature -- so the broadened staged-manifest check below is scoped to
+    // workspaces with no active pre-release cycle at all.
+    let in_pre_release_cycle = ws.root.join(ws.config.pre_json_path()).exists();
+
+    let pending = head_has_pending_changeset(ws, head)?
+        || (!in_pre_release_cycle && any_canonical_manifest_staged_uncommitted(ws)?);
+    if !pending {
         return Ok(());
     }
 
@@ -343,6 +379,36 @@ pub fn check_partial_run<R: CommandRunner, D: DependencyResolver>(ws: &Workspace
     }
 
     Ok(())
+}
+
+/// True when at least one canonical manifest differs between the index and
+/// `HEAD` (`git diff --cached`) -- i.e. it was `git add`ed by a prior `apply`
+/// but that change was never committed. Outside pre mode this is the only
+/// trace left once the changeset file itself (never committed, only ever a
+/// working-tree file) has already been deleted by that same prior run.
+fn any_canonical_manifest_staged_uncommitted<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+) -> Result<bool, GraphError> {
+    for pkg in ws.graph.packages() {
+        for decl in pkg.canonical_manifests() {
+            let path_str = decl.path.to_string_lossy();
+            let output = ws
+                .runner
+                .run(
+                    "git",
+                    &["diff", "--cached", "--quiet", "--", path_str.as_ref()],
+                    &ws.root,
+                )
+                .map_err(GraphError::Command)?;
+            // `git diff --quiet` exits 1 when there is a difference, 0 when
+            // there is none; any other exit code (missing path, etc.) is
+            // treated as "no signal" here, matching this check's advisory role.
+            if output.exit_code == Some(1) {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 /// Silently reports whether `<rev>:<path>` names an object, via `git
