@@ -169,6 +169,7 @@ fn matrix_napi_and_maturin_share_triple_derivation() {
     )
     .unwrap();
 
+    napi_crate(root, "napi-mod");
     let bin = env!("CARGO_BIN_EXE_callisto");
     let output = Command::new(bin)
         .args(["--cwd", &root.to_string_lossy(), "--format", "json", "matrix"])
@@ -246,6 +247,7 @@ fn matrix_lists_release_artifact_cargo_binaries_beside_napi_targets() {
     )
     .unwrap();
 
+    napi_crate(root, "napi-mod");
     let output = Command::new(env!("CARGO_BIN_EXE_callisto"))
         .args(["--cwd", &root.to_string_lossy(), "--format", "json", "matrix"])
         .output()
@@ -407,6 +409,8 @@ fn matrix_package_filter_and_unknown_package_via_binary() {
         .unwrap();
     }
 
+    napi_crate(root, "pkg-a");
+    napi_crate(root, "pkg-b");
     let bin = env!("CARGO_BIN_EXE_callisto");
 
     let filtered = Command::new(bin)
@@ -495,6 +499,8 @@ fn matrix_orders_keys_lexicographically_across_three_packages() {
     )
     .unwrap();
 
+    napi_crate(root, "zeta");
+    napi_crate(root, "mid");
     let bin = env!("CARGO_BIN_EXE_callisto");
     let output = Command::new(bin)
         .args(["--cwd", &root.to_string_lossy(), "--format", "json", "matrix"])
@@ -595,6 +601,8 @@ fn matrix_unrecognised_triple_end_to_end_diagnostic_contract() {
     )
     .unwrap();
 
+    napi_crate(root, "mixed-mod");
+    napi_crate(root, "clean-mod");
     let bin = env!("CARGO_BIN_EXE_callisto");
     let output = Command::new(bin)
         .args(["--cwd", &root.to_string_lossy(), "--format", "json", "matrix"])
@@ -662,6 +670,7 @@ fn matrix_text_format_and_bare_invocation_match_and_are_non_json() {
     )
     .unwrap();
 
+    napi_crate(root, "native-mod");
     let bin = env!("CARGO_BIN_EXE_callisto");
 
     let explicit_text = Command::new(bin)
@@ -688,6 +697,54 @@ fn matrix_text_format_and_bare_invocation_match_and_are_non_json() {
         explicit_text.stdout, bare.stdout,
         "--format text and the bare (no-flag) invocation must produce identical output"
     );
+}
+
+/// A split napi layout (npm package and addon crate in different dirs) carries the crate's
+/// `manifestPath`; with no matching crate the matrix fails with E204.
+#[test]
+fn matrix_resolves_a_split_napi_crate_manifest_path() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir(tmp.path().join(".git")).unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
+    std::fs::write(root.join("callisto.toml"), "").unwrap();
+    std::fs::create_dir_all(root.join("packages/napi")).unwrap();
+    std::fs::write(
+        root.join("packages/napi/package.json"),
+        r#"{"name":"@scope/napi","version":"0.1.0","napi":{"binaryName":"scope_binding","targets":["x86_64-unknown-linux-gnu"]}}"#,
+    )
+    .unwrap();
+
+    let missing = run_matrix_json(root);
+    assert!(!missing.status.success());
+    assert!(String::from_utf8_lossy(&missing.stderr).contains("E204"));
+
+    std::fs::create_dir_all(root.join("crates/scope-binding")).unwrap();
+    napi_crate(root, "crates/scope-binding");
+
+    let output = run_matrix_json(root);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let target = &json["platformTargets"]["@scope/napi"]["targets"][0];
+    assert_eq!(target["packageDir"], "packages/napi");
+    assert_eq!(target["manifestPath"], "crates/scope-binding/Cargo.toml");
+}
+
+/// Makes `dir` a napi addon crate as well as an npm package, as napi-rs's template does.
+fn napi_crate(root: &std::path::Path, dir: &str) {
+    let name = dir.rsplit('/').next().unwrap();
+    std::fs::write(
+        root.join(dir).join("Cargo.toml"),
+        format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n[dependencies]\nnapi = \"3\"\n"),
+    )
+    .unwrap();
+    let manifest = root.join("Cargo.toml");
+    let workspace = std::fs::read_to_string(&manifest).unwrap();
+    std::fs::write(
+        &manifest,
+        workspace.replacen("members = [", &format!("members = [\"{dir}\", "), 1),
+    )
+    .unwrap();
 }
 
 fn base_workspace() -> tempfile::TempDir {

@@ -15,6 +15,7 @@ pub fn handle(args: MatrixArgs, global: &GlobalArgs) -> Result<ExitCode, CliErro
 
     let opts = MatrixOptions {
         package: args.package.clone(),
+        napi_crates: true,
     };
     let report = callisto_graph::commands::matrix(&ws, &opts)?;
 

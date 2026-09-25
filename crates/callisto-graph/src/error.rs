@@ -184,6 +184,17 @@ pub enum GraphError {
     )]
     PlatformTargetsWithReleaseArtifacts { package: PackageId, source_field: String },
 
+    #[error("napi package `{package}` needs exactly one napi `cdylib` crate with lib name `{binary_name}`; candidates: {}", if .candidates.is_empty() { "none".to_owned() } else { .candidates.join(", ") })]
+    #[diagnostic(
+        code(E204),
+        help("Set `napi.binaryName` in package.json to the `[lib] name` (or package name with `-` as `_`) of the one crate that builds the addon.")
+    )]
+    NapiCrateUnresolved {
+        package: PackageId,
+        binary_name: String,
+        candidates: Vec<String>,
+    },
+
     #[error(
         "package `{package}` configures publish-to target `{target}` (ecosystem `{}`), but its detected ecosystem is `{}`",
         .target_ecosystem.prefix(),

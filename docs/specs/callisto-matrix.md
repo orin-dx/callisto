@@ -99,9 +99,12 @@ path — the manifest path is implicit in the package.
   "useCross":      true | false,
   "artifactName":  "<packageName>-<platform>-<arch>[-<abi>]" | "native-<rid>",
   "packageDir":    "<workspace-root-relative path>",
-  "packageName":   "<registered package name>"
+  "packageName":   "<registered package name>",
+  "manifestPath":  "<workspace-root-relative Cargo.toml>"  // napi only; omitted when the crate is in packageDir
 }
 ```
+
+`manifestPath` is the napi addon crate: the workspace cargo package that is a `cdylib` depending on `napi` and whose lib name (`[lib] name`, else the package name with `-` as `_`) equals `napi.binaryName` (else `napi.name`, else `index`). A crate in `packageDir` itself wins with no `manifestPath`. Zero or several matches fail with E204.
 
 `packageDir` is the directory that must contain the native artifact before `callisto publish`
 runs. For napi packages it is the path from the platform manifest entry; for maturin and

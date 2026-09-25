@@ -263,6 +263,7 @@ mod tests {
                     artifact_name: "native-mod-darwin-arm64".to_string(),
                     package_dir: "native-mod".to_string(),
                     package_name: "native-mod".to_string(),
+                    manifest_path: None,
                 }],
             },
         );

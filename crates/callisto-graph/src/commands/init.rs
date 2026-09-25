@@ -728,6 +728,7 @@ jobs:
       USE_CROSS: ${{ matrix.useCross }}
       PACKAGE_DIR: ${{ matrix.packageDir }}
       PACKAGE: ${{ matrix.packageName }}
+      MANIFEST_PATH: ${{ matrix.manifestPath }}
       ASSET: ${{ matrix.artifactName }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -743,7 +744,8 @@ jobs:
           set -euo pipefail
           args=(--platform --release --target "$TRIPLE" --output-dir "$RUNNER_TEMP/napi-out")
           if [[ "$USE_CROSS" == true ]]; then args+=(--use-cross); fi
-          (cd "${PACKAGE_DIR:-.}" && npx --yes @napi-rs/cli@3.10.4 build "${args[@]}")
+          if [[ -n "$MANIFEST_PATH" ]]; then args+=(--manifest-path "$GITHUB_WORKSPACE/$MANIFEST_PATH"); fi
+          (cd "${PACKAGE_DIR:-.}" && npx --yes --package @napi-rs/cli@3.10.4 napi build "${args[@]}")
       - if: matrix.kind == 'napi'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -830,7 +832,7 @@ jobs:
           callisto --format json matrix \
             | jq -r '[.platformTargets[] | select(.kind=="napi") | .targets[].packageDir] | unique[]' \
             | while IFS= read -r dir; do
-              npx --yes @napi-rs/cli@3.10.4 artifacts --cwd "${dir:-.}" --output-dir "$RUNNER_TEMP/napi-artifacts"
+              npx --yes --package @napi-rs/cli@3.10.4 napi artifacts --cwd "${dir:-.}" --output-dir "$RUNNER_TEMP/napi-artifacts"
             done
       - if: needs.plan.outputs.has_artifacts == 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -1697,7 +1699,12 @@ mod tests {
             "{build}"
         );
         assert!(
-            build.contains(r#"npx --yes @napi-rs/cli@3.10.4 build "${args[@]}""#),
+            build.contains(r#"npx --yes --package @napi-rs/cli@3.10.4 napi build "${args[@]}""#),
+            "{build}"
+        );
+        assert!(build.contains("MANIFEST_PATH: ${{ matrix.manifestPath }}"), "{build}");
+        assert!(
+            build.contains(r#"args+=(--manifest-path "$GITHUB_WORKSPACE/$MANIFEST_PATH")"#),
             "{build}"
         );
         assert!(build.contains("name: napi-${{ matrix.artifactName }}"), "{build}");
@@ -1737,7 +1744,7 @@ mod tests {
         let execute = job(&workflow, "execute");
         assert!(execute.contains("needs: [plan, build]"), "{execute}");
         let place = execute
-            .find("npx --yes @napi-rs/cli@3.10.4 artifacts")
+            .find("npx --yes --package @napi-rs/cli@3.10.4 napi artifacts")
             .expect("napi artifacts step");
         let manifest = execute
             .find("callisto release artifact-manifest")

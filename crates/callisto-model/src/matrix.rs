@@ -72,6 +72,9 @@ pub struct PlatformTarget {
     /// Workspace-root-relative.
     pub package_dir: String,
     pub package_name: String,
+    /// napi: the addon crate's workspace-relative `Cargo.toml` when it is not in `package_dir`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manifest_path: Option<String>,
 }
 
 /// One package's runtime-version constraint, sourced from engines.node (npm)

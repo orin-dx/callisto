@@ -31,7 +31,7 @@ The default branch is the approval boundary: a merge to it publishes. Protect it
 
 Limits of the build-matrix shape:
 
-- `napi build` runs in the napi package's directory. When the Rust crate lives elsewhere (for example `packages/napi` with the crate in `crates/binding`), add `--manifest-path` to that step.
+- `napi build` runs in the napi package's directory. When the addon crate lives elsewhere (for example `packages/napi` with the crate in `crates/binding`), the step passes `--manifest-path` for the workspace crate whose lib name equals `napi.binaryName`; `callisto matrix` fails with E204 when no single crate matches.
 - `napi artifacts` writes `.node` files into the checkout, and `release execute` refuses a dirty worktree, so `*.node` must be gitignored.
 - Artifact slots build the package's `bin` targets with `cargo build --release --locked`. Any other build (a `cdylib`, custom features) needs a hand-edited step.
 

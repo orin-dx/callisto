@@ -73,6 +73,7 @@ fn matrix_package_filter_restricts_to_one_package() {
 
     let opts = MatrixOptions {
         package: Some("pkg-a".to_string()),
+        ..Default::default()
     };
     let report = matrix(&ws, &opts).expect("matrix should succeed");
 
@@ -112,6 +113,7 @@ fn matrix_unknown_package_errors() {
 
     let opts = MatrixOptions {
         package: Some("does-not-exist".to_string()),
+        ..Default::default()
     };
     let err = matrix(&ws, &opts).unwrap_err();
     match err {
