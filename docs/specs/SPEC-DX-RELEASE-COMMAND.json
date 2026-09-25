@@ -51,7 +51,7 @@
     },
     {
       "id": "AC-07",
-      "criterion": "Before any registry publish, tag, or forge-release effect for any package, `callisto release` checks each selected package's operation kind for its required credential: cargo needs `CARGO_REGISTRY_TOKEN` set or a `cargo login` credentials file present; npm needs `NODE_AUTH_TOKEN` or `NPM_TOKEN` set, an auth line in the user or project `.npmrc`, or `ACTIONS_ID_TOKEN_REQUEST_URL` set (OIDC trusted publishing); PyPI needs `TWINE_PASSWORD` set or OIDC; the GitHub forge release needs `GH_TOKEN`/`GITHUB_TOKEN` set or `gh auth status` succeeding. A missing credential for any selected package's required kind exits non-zero before any effect for any package, and the error names the specific missing credential.",
+      "criterion": "[SUPERSEDED 2026-09-24: credential pre-flight removed; cargo, npm, twine and gh report their own auth errors and a rerun adopts landed effects] Before any registry publish, tag, or forge-release effect for any package, `callisto release` checks each selected package's operation kind for its required credential: cargo needs `CARGO_REGISTRY_TOKEN` set or a `cargo login` credentials file present; npm needs `NODE_AUTH_TOKEN` or `NPM_TOKEN` set, an auth line in the user or project `.npmrc`, or `ACTIONS_ID_TOKEN_REQUEST_URL` set (OIDC trusted publishing); PyPI needs `TWINE_PASSWORD` set or OIDC; the GitHub forge release needs `GH_TOKEN`/`GITHUB_TOKEN` set or `gh auth status` succeeding. A missing credential for any selected package's required kind exits non-zero before any effect for any package, and the error names the specific missing credential.",
       "is_error_case": true
     },
     {

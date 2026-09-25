@@ -591,7 +591,7 @@ pub fn execute(root: &Path, intent: &Path, receipt: &Path, publishers: FakePubli
         .expect("release execute should run")
 }
 
-/// Credential variables a local `callisto release` reads; cleared so the host cannot leak one in.
+/// Host credential and state variables, cleared so none leaks into a local run.
 pub const CREDENTIAL_VARS: &[&str] = &[
     "CARGO_REGISTRY_TOKEN",
     "CARGO_HOME",
@@ -605,7 +605,7 @@ pub const CREDENTIAL_VARS: &[&str] = &[
 ];
 
 /// Runs bare `callisto release` (local route) against the fake publishers.
-/// `home` isolates `~/.cargo`, `~/.npmrc` and the state directory; `env` sets credentials.
+/// `home` isolates `~/.cargo`, `~/.npmrc` and the state directory; `env` adds variables.
 pub fn release_local(
     root: &Path,
     args: &[&str],

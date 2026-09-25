@@ -282,14 +282,6 @@ pub enum CliError {
     )]
     ReleaseRequiresCiRoute { reason: String },
 
-    #[error("missing credential {credential} to release `{package}`")]
-    #[diagnostic(code(callisto::release_credential_missing), help("{fix}"))]
-    ReleaseCredentialMissing {
-        package: String,
-        credential: String,
-        fix: String,
-    },
-
     #[error("invalid release receipt location: {detail}")]
     #[diagnostic(
         code(callisto::release_receipt_location),

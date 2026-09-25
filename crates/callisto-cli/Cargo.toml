@@ -44,7 +44,6 @@ dunce = { workspace = true }
 path-slash = { workspace = true }
 tempfile = { workspace = true }
 sha2 = { workspace = true }
-toml = { workspace = true }
 
 [dev-dependencies]
 callisto-model = { path = "../callisto-model", features = ["test-util"] }

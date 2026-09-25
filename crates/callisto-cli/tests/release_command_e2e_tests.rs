@@ -11,8 +11,6 @@ use std::path::Path;
 
 use release_harness::*;
 
-const CREDENTIALS: &[(&str, &str)] = &[("CARGO_REGISTRY_TOKEN", "cargo-secret"), ("GH_TOKEN", "gh-secret")];
-
 struct Rig {
     external: tempfile::TempDir,
     bin: std::path::PathBuf,
@@ -101,7 +99,7 @@ fn release_on_a_branch_publishes_tags_and_releases_then_has_nothing_left() {
     let planned: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
     assert_no_effects(&rig, root);
 
-    let run = rig.run(root, &["--format", "json", "release"], CREDENTIALS);
+    let run = rig.run(root, &["--format", "json", "release"], &[]);
     assert!(run.status.success(), "{}\n{}", stderr(&run), rig.effects());
     let effects = rig.effects();
     for effect in ["cargo publish", "git push", "gh release create"] {
@@ -137,7 +135,7 @@ fn release_on_a_branch_publishes_tags_and_releases_then_has_nothing_left() {
     assert!(!path.starts_with(root));
     assert_eq!(git(root, &["status", "--porcelain"]), "", "no receipt in the checkout");
 
-    let again = rig.run(root, &["--format", "text", "release"], CREDENTIALS);
+    let again = rig.run(root, &["--format", "text", "release"], &[]);
     assert!(again.status.success(), "{}", stderr(&again));
     assert_eq!(String::from_utf8_lossy(&again.stdout), "Nothing to release.\n");
     assert_eq!(rig.effects(), effects, "no-op performs no effect");
@@ -151,7 +149,7 @@ fn receipt_flag_writes_to_the_given_path() {
     let rig = Rig::new(&release_commit);
     let receipt = rig.external.path().join("explicit-receipt.json");
 
-    let run = rig.run(root, &["release", "--receipt", receipt.to_str().unwrap()], CREDENTIALS);
+    let run = rig.run(root, &["release", "--receipt", receipt.to_str().unwrap()], &[]);
     assert!(run.status.success(), "{}", stderr(&run));
     assert!(receipt.is_file());
     assert!(!rig.state().exists());
@@ -166,13 +164,13 @@ fn dirty_worktree_blocks_release_before_any_effect() {
     let rig = Rig::new(&release_commit);
 
     fs::write(root.join("crates/core/src/lib.rs"), "pub fn changed() {}\n").unwrap();
-    let tracked = rig.run(root, &["release"], CREDENTIALS);
+    let tracked = rig.run(root, &["release"], &[]);
     assert!(!tracked.status.success());
     assert!(stderr(&tracked).contains("clean worktree"), "{}", stderr(&tracked));
     git(root, &["checkout", "--", "crates/core/src/lib.rs"]);
 
     fs::write(root.join("notes.txt"), "untracked\n").unwrap();
-    let untracked = rig.run(root, &["release"], CREDENTIALS);
+    let untracked = rig.run(root, &["release"], &[]);
     assert!(!untracked.status.success());
     assert!(stderr(&untracked).contains("clean worktree") && stderr(&untracked).contains("notes.txt"));
 
@@ -191,39 +189,8 @@ fn dirty_worktree_blocks_release_before_any_effect() {
     git(root, &["commit", "-q", "-m", "ignore scratch"]);
     fs::create_dir(root.join("scratch")).unwrap();
     fs::write(root.join("scratch/out"), "ignored\n").unwrap();
-    let clean = rig.run(root, &["release"], CREDENTIALS);
+    let clean = rig.run(root, &["release"], &[]);
     assert!(clean.status.success(), "{}", stderr(&clean));
-}
-
-/// AC-07: a missing credential for any selected kind stops before every effect and is named.
-#[test]
-fn missing_credentials_are_named_before_any_effect() {
-    let (dir, release_commit) = on_branch();
-    let root = dir.path();
-    let rig = Rig::new(&release_commit);
-
-    let no_cargo = rig.run(root, &["release"], &[("GH_TOKEN", "gh-secret")]);
-    assert!(!no_cargo.status.success());
-    assert!(
-        stderr(&no_cargo).contains("CARGO_REGISTRY_TOKEN"),
-        "{}",
-        stderr(&no_cargo)
-    );
-    assert_no_effects(&rig, root);
-
-    let no_github = rig.run(root, &["release"], &[("CARGO_REGISTRY_TOKEN", "cargo-secret")]);
-    assert!(!no_github.status.success());
-    assert!(stderr(&no_github).contains("GH_TOKEN"), "{}", stderr(&no_github));
-    assert_no_effects(&rig, root);
-
-    fs::create_dir_all(rig.home().join(".cargo")).unwrap();
-    fs::write(
-        rig.home().join(".cargo/credentials.toml"),
-        "[registry]\ntoken = \"x\"\n",
-    )
-    .unwrap();
-    let logged_in = rig.run(root, &["release"], &[("GITHUB_TOKEN", "gh-secret")]);
-    assert!(logged_in.status.success(), "{}", stderr(&logged_in));
 }
 
 /// AC-03: `--package` restricts selection; a released or unknown package is refused.
@@ -269,7 +236,7 @@ fn artifact_slot_workspace_names_the_ci_route() {
     git(root, &["checkout", "-q", "main"]);
     let rig = Rig::new(&release_commit);
 
-    let run = rig.run(root, &["--format", "json", "release"], CREDENTIALS);
+    let run = rig.run(root, &["--format", "json", "release"], &[]);
     assert!(!run.status.success());
     let err = stderr(&run);
     assert!(err.contains("release_requires_ci_route"), "{err}");
@@ -387,7 +354,7 @@ fn dry_run_without_origin_notes_unbound_tags() {
         stderr(&preview)
     );
 
-    let run = rig.run(root, &["release"], CREDENTIALS);
+    let run = rig.run(root, &["release"], &[]);
     assert!(!run.status.success());
     assert_no_effects(&rig, root);
 }
@@ -398,12 +365,12 @@ fn a_failed_run_writes_no_receipt_and_a_rerun_completes() {
     let (dir, release_commit) = on_branch();
     let root = dir.path();
     let failing = Rig::with_cargo_failure(&release_commit, true);
-    let out = failing.run(root, &["release"], CREDENTIALS);
+    let out = failing.run(root, &["release"], &[]);
     assert!(!out.status.success());
     assert!(receipts(&failing.state()).is_empty(), "no receipt for a partial run");
 
     let rig = Rig::new(&release_commit);
-    let rerun = rig.run(root, &["--format", "json", "release"], CREDENTIALS);
+    let rerun = rig.run(root, &["--format", "json", "release"], &[]);
     assert!(rerun.status.success(), "{}", stderr(&rerun));
     assert_eq!(receipts(&rig.state()).len(), 1);
 }

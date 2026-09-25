@@ -41,9 +41,6 @@ pub fn handle(args: ReleaseCommandArgs, global: &GlobalArgs) -> Result<ExitCode,
 pub const TAGS_UNBOUND_NOTE: &str =
     "note: `origin` has no push URL, so tag operations are unbound; `callisto release` will refuse until one is set";
 
-/// Bound on the `gh auth status` credential probe.
-const GH_AUTH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
-
 /// Exact stdout when no package has an unreleased version.
 pub const NOTHING_TO_RELEASE: &str = "Nothing to release.";
 
@@ -73,21 +70,6 @@ fn release(
     };
     let intent = plan.intent;
     let var = |name: &str| std::env::var(name).ok();
-    // Quiet and bounded: `gh auth status` prints account details this command must not echo.
-    let gh_authenticated = || {
-        callisto_model::CommandRunner::run_quiet(&runner, "gh", &["auth", "status"], &root, GH_AUTH_TIMEOUT)
-            .is_ok_and(|output| output.success())
-    };
-    super::release_credentials::check(
-        &intent,
-        &super::release_credentials::CredentialSources {
-            var: &var,
-            home: home_dir(),
-            root: &root,
-            package_dirs: &plan.package_dirs,
-            gh_authenticated: &gh_authenticated,
-        },
-    )?;
     let receipt = match receipt {
         Some(path) => explicit_receipt_path(&root, &path)?,
         None => default_receipt_path(&root, &intent, &var)?,
@@ -686,10 +668,50 @@ fn write_receipt(path: &std::path::Path, receipt: &ReleaseReceiptV1, permit: &Ap
 mod tests {
     use std::path::{Path, PathBuf};
 
+    use callisto_model::{
+        RegistryBindingDigest, RegistryBindingId, ReleaseDecisionEntry, ReleaseDecisionV1, ReleaseInclusionReason,
+        ReleaseInputSnapshotV1, ReleaseOperation, ReleasePackageId, ReleasePackageInputV1, SemanticInputDigest,
+        SourceIdentity, Version, VersionGrammar,
+    };
+
     use super::*;
 
     fn sample() -> ReleaseIntentV1 {
-        super::super::release_credentials::tests::intent(callisto_model::Ecosystem::Cargo, "cratesIo", true)
+        let package = ReleasePackageId::new(callisto_model::Ecosystem::Cargo, "demo").unwrap();
+        let version = Version::parse("1.0.0", VersionGrammar::SemVer).unwrap();
+        let binding =
+            RegistryBindingId::new("cratesIo", RegistryBindingDigest::parse(&"a".repeat(64)).unwrap()).unwrap();
+        let publish = ReleaseOperation::registry_publish(package.clone(), version.clone(), binding, vec![]).unwrap();
+        let tag = ReleaseOperation::tag(package.clone(), version.clone(), vec![publish.id().clone()]).unwrap();
+        let release =
+            ReleaseOperation::forge_release(package.clone(), version.clone(), vec![tag.id().clone()]).unwrap();
+        let published =
+            ReleaseOperation::forge_publish(package.clone(), version.clone(), vec![release.id().clone()]).unwrap();
+        let operations = vec![publish, tag, release, published];
+        let decision = ReleaseDecisionV1::new(vec![ReleaseDecisionEntry {
+            package: package.clone(),
+            target_version: version,
+            reasons: vec![ReleaseInclusionReason::UnreleasedVersion],
+        }])
+        .unwrap();
+        let snapshot = ReleaseInputSnapshotV1::new(
+            SourceIdentity::GitCommit {
+                sha: callisto_model::CommitSha::parse(&"b".repeat(40)).unwrap(),
+            },
+            vec![ReleasePackageInputV1 {
+                package,
+                fingerprint: SemanticInputDigest::parse(&"c".repeat(64)).unwrap(),
+            }],
+        )
+        .unwrap();
+        ReleaseIntentV1::new(
+            decision,
+            snapshot,
+            ExecutionTrustProfileV1::GitCommit,
+            operations,
+            vec![],
+        )
+        .unwrap()
     }
 
     fn vars(pairs: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<String> {

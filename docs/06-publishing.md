@@ -15,14 +15,7 @@ This document covers authentication setup for registry publishing, with particul
 - A receipt is written only when every operation succeeded; after a partial failure, rerun to adopt what landed. It goes to `--receipt <file>` (refused inside the checkout), else `<state dir>/callisto/<repo-hash>/<intent-digest>/receipt.json` (`$XDG_STATE_HOME`, else `~/.local/state`; `~/Library/Application Support` on macOS). Never inside the checkout.
 - A workspace with `[[release.artifact]]` slots or napi/maturin platform packages must release from CI: `callisto release plan`, `release artifact-manifest`, `release execute`.
 
-Before the first effect it checks one credential per operation kind and names the one that is missing:
-
-| Operation | Accepted credential |
-|---|---|
-| cargo publish | crates.io: `CARGO_REGISTRY_TOKEN`; another registry `<name>`: `CARGO_REGISTRIES_<NAME>_TOKEN`. Or a `cargo login` entry for that registry, or a configured `credential-provider` |
-| npm publish | `NODE_AUTH_TOKEN`, `NPM_TOKEN`, OIDC (`ACTIONS_ID_TOKEN_REQUEST_URL`), or an auth line in the user (`NPM_CONFIG_USERCONFIG`, else `~/.npmrc`), project, or package `.npmrc`; a `${VAR}` in it counts only when `VAR` is set |
-| PyPI publish | `TWINE_PASSWORD`, OIDC, or a `~/.pypirc` password for the target repository. A keyring-only password cannot be detected |
-| GitHub release | `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth status` succeeding |
+Callisto does not check credentials itself. cargo, npm, twine and gh each report their own auth failure; fix it and rerun, which adopts every effect that already landed.
 
 ---
 
