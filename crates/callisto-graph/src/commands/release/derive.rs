@@ -434,18 +434,12 @@ fn derive_release_inputs_with<R: CommandRunner, D: DependencyResolver>(
     let mut uploads_by_package = BTreeMap::<ReleasePackageId, Vec<ReleaseOperationId>>::new();
     if let (Some(product), Some(policy)) = (&workspace.config.product_release, artifact_policy) {
         require_product_package_publishes_to_forge(workspace, &product.package)?;
-        // Workspace package identities may remain bare even when a policy
-        // intentionally qualifies the product by ecosystem. Use the model's
-        // compatibility relation and retain the explicit ecosystem check so a
-        // same-name package in another ecosystem cannot acquire the
-        // product's binary release slots.
+        // Bare identities still need the ecosystem check, so a same-name package in another ecosystem can't match.
         let matches_product = |id: &ReleasePackageId, package: &callisto_model::Package| {
             product.package.matches(&package.id) && product.package.ecosystem() == Some(id.ecosystem())
         };
         if !selected.iter().any(|(id, (package, _))| matches_product(id, package)) {
-            // The product itself isn't in this release, so the loop below never
-            // runs for it. An artifact owner can still be selected on its own --
-            // warn rather than silently leaving its asset unregistered.
+            // The product isn't in this release, so warn instead of leaving the artifact owner's asset unregistered.
             for artifact in &product.artifacts {
                 if let Some((owner_id, _)) = selected.iter().find(|(candidate, (pkg, _))| {
                     artifact.package.matches(&pkg.id) && artifact.package.ecosystem() == Some(candidate.ecosystem())
@@ -509,10 +503,7 @@ fn derive_release_inputs_with<R: CommandRunner, D: DependencyResolver>(
                         prerelease,
                     }),
                 );
-                // Keyed by the product's id, not the artifact owner's: the
-                // product's own forge-publish prerequisites are looked up
-                // under its own id below, and a plugin-owned asset must gate
-                // the product's publish even though the plugin built it.
+                // Keyed by the product's id: a plugin-built asset must still gate the product's own forge-publish.
                 uploads_by_package
                     .entry(id.clone())
                     .or_default()
@@ -639,9 +630,7 @@ fn require_product_package_publishes_to_forge<R: CommandRunner, D: DependencyRes
     Err(crate::error::ConfigError::InvalidProductRelease { detail }.into())
 }
 
-/// Message for the case where `owner` is selected for release but the
-/// product it builds an asset for is not, so that asset has nowhere to
-/// attach and will not be uploaded this run.
+/// Warns that `owner`'s asset has no release to attach to, since its product isn't selected for release.
 fn unreleased_product_artifact_warning(
     product: &callisto_model::PackageId,
     artifact: &crate::config::resolve::ProductArtifactConfig,
@@ -1362,9 +1351,7 @@ mod tests {
         assert_eq!(operations, after_operations);
     }
 
-    /// A two-package cargo workspace: `core` is the product (publishes to
-    /// github-release), `plugin` owns one configured `[[release.artifact]]`
-    /// slot on `core`'s release.
+    /// core publishes to github-release; plugin owns one `[[release.artifact]]` slot on core's release.
     fn product_and_plugin_repo(core_version: &str, plugin_version: &str) -> tempfile::TempDir {
         repo(&[
             ("Cargo.toml", "[workspace]\nmembers = [\"core\", \"plugin\"]\n"),
@@ -1386,8 +1373,7 @@ mod tests {
         ])
     }
 
-    /// Same derivation as `derive`, but with the `ArtifactBuildPolicy` a real
-    /// product release run would build (mirrors `local::plan_workspace_release`).
+    /// Same derivation as `derive`, but with the `ArtifactBuildPolicy` a real release run would build.
     fn derive_with_artifact_policy(
         dir: &tempfile::TempDir,
         decision: &ReleaseDecisionV1,
@@ -1440,10 +1426,7 @@ mod tests {
             .unwrap_or_else(|| panic!("no forge publish for {package}"))
     }
 
-    /// A `[[release.artifact]]` slot owned by a *different* package than the
-    /// product (`plugin` builds an asset that ships on `core`'s release)
-    /// must still gate `core`'s forge-publish -- the upload has to complete
-    /// before the release can be published, regardless of who built it.
+    /// A slot owned by a different package than the product must still gate the product's forge-publish.
     #[test]
     fn plugin_owned_artifact_gates_product_forge_publish() {
         let dir = product_and_plugin_repo("1.0.0", "2.0.0");
@@ -1465,16 +1448,12 @@ mod tests {
         );
     }
 
-    /// `core`'s forge release is stable (`1.0.0`) even though the artifact's
-    /// owning package (`plugin`) is a prerelease version. The uploaded
-    /// asset must be tagged with the product's own prerelease flag, since
-    /// `forge.rs::publish` rejects an upload whose flag disagrees with the
-    /// draft release it attaches to (E167 `ForgeReleasePrereleaseDiffers`).
+    /// The product's release stability must set the upload's prerelease flag, not the owning package's, or
+    /// `forge.rs::publish` rejects the mismatch (E167).
     #[test]
     fn artifact_upload_prerelease_flag_follows_the_product_not_the_owner() {
         let dir = product_and_plugin_repo("1.0.0", "2.0.0-beta.1");
-        // `cargo_release` targets every package at the same "1.0.0"; build the
-        // decision directly so `plugin` targets its own prerelease version.
+        // `cargo_release` targets every package at 1.0.0; build the decision directly for plugin's own version.
         let decision = release(&[
             (Ecosystem::Cargo, "core", "1.0.0"),
             (Ecosystem::Cargo, "plugin", "2.0.0-beta.1"),
@@ -1488,11 +1467,7 @@ mod tests {
         );
     }
 
-    /// When `plugin` (an artifact owner) is selected for release but `core`
-    /// (the product) is not, `plugin`'s asset has no release to attach to.
-    /// Derivation must still succeed and must not register a dangling slot;
-    /// the warning path (`unreleased_product_artifact_warning`) is what
-    /// replaces silently doing nothing.
+    /// Derivation must still succeed without registering a dangling slot; the warning path replaces silence.
     #[test]
     fn owner_selected_without_product_derives_no_slot() {
         let dir = product_and_plugin_repo("1.0.0", "2.0.0");
@@ -1510,9 +1485,7 @@ mod tests {
         );
     }
 
-    /// Unit coverage for the exact warning text emitted on that path, since
-    /// `eprintln!` output cannot be captured from inside the derivation
-    /// pipeline without unsafe fd redirection (forbidden by this workspace).
+    /// Unit coverage for the warning text, since `eprintln!` output can't be captured from inside derivation.
     #[test]
     fn unreleased_product_artifact_warning_names_owner_product_and_asset() {
         let product = callisto_model::PackageId::parse("cargo/core").unwrap();

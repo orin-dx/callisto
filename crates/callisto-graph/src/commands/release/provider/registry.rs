@@ -527,10 +527,8 @@ fn classify_pypi_simple_body(body: &str, version: &Version) -> Attempt<ProviderO
 /// inside [`classify_pypi_simple_body`] and reads as `MalformedResponse`, same
 /// as any other body PEP 691 JSON parsing cannot make sense of.
 ///
-/// Any other status -- shares [`HttpResponse::is_transient`] with GitHub's
-/// `gh api` reads, so a PyPI rate limit or outage retries on the server's own
-/// `Retry-After` exactly like a forge lookup does, instead of every non-200/404
-/// settling immediately as a permanent `MalformedResponse` and never retrying.
+/// Any other status shares [`HttpResponse::is_transient`] with GitHub's `gh api` reads, so it retries on
+/// `Retry-After` instead of settling immediately as `MalformedResponse`.
 fn classify_pypi_simple(output: &CommandOutput, version: &Version) -> Attempt<ProviderObservationV1> {
     let response = match parse_http_response(&output.stdout) {
         Ok(response) => response,

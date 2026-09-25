@@ -93,22 +93,12 @@ fn scaled_for_tests(duration: Duration) -> Duration {
     }
 }
 
-/// A read-only observation command could not be run at all (it timed out or
-/// failed to spawn/exec), as distinct from running and exiting non-zero.
+/// A command that could not be run at all (timed out or failed to spawn), unlike one that ran and exited non-zero.
 #[derive(Debug)]
 pub(crate) struct CommandUnavailable;
 
-/// Runs one observation command, separating "the process never produced an
-/// answer" from "it ran and its exit code or output says something". Every
-/// `observe_once` used to hand its runner call straight to `?`, so
-/// `CommandError::TimedOut`/`Io` propagated as a hard [`GraphError`] before
-/// [`retry_observation`] ever saw it -- a hung or momentarily-unreachable
-/// command aborted the whole observation instead of feeding the bounded
-/// retry. This is the one place that translation happens, for every caller.
-///
-/// `CommandError::NotFound` (the program itself is missing) is deliberately
-/// excluded: no amount of retrying installs the program, so it still
-/// surfaces as the ordinary hard error.
+/// Translates a timeout or I/O failure into `CommandUnavailable` so `retry_observation` can retry it, instead
+/// of propagating a hard `GraphError`. `NotFound` stays a hard error: retrying can't install a missing program.
 pub(crate) fn run_observation(
     runner: &dyn CommandRunner,
     program: &str,
@@ -181,8 +171,7 @@ pub(crate) mod tests {
     use std::collections::VecDeque;
     use std::sync::Mutex;
 
-    /// Hands back one scripted `run`/`run_quiet`/`run_with_timeout` result per
-    /// call, in order.
+    /// Hands back one scripted `run`/`run_quiet`/`run_with_timeout` result per call, in order.
     struct ScriptedCommand(Mutex<VecDeque<Result<CommandOutput, CommandError>>>);
 
     impl ScriptedCommand {
@@ -205,11 +194,7 @@ pub(crate) mod tests {
         }
     }
 
-    /// The regression this whole module exists for: before `run_observation`,
-    /// every `observe_once` handed its runner call straight to `?`, so a
-    /// `TimedOut`/`Io` `CommandError` propagated as a hard `GraphError`
-    /// instead of becoming a transient answer `retry_observation` could act
-    /// on.
+    /// A timed-out command must become `CommandUnavailable`, not propagate as a hard `GraphError`.
     #[test]
     fn a_timed_out_command_is_unavailable_not_a_hard_error() {
         let runner = ScriptedCommand::new(vec![Err(CommandError::TimedOut {
@@ -250,9 +235,7 @@ pub(crate) mod tests {
         assert_eq!(result.unwrap().unwrap(), ok_output());
     }
 
-    /// Composes `run_observation` with `retry_observation`: a command that
-    /// times out once now retries and settles, instead of aborting the whole
-    /// observation on the first transient failure.
+    /// Composes `run_observation` with `retry_observation` so a command that times out once still retries and settles.
     #[test]
     fn retry_observation_recovers_from_one_timed_out_attempt() {
         let runner = ScriptedCommand::new(vec![

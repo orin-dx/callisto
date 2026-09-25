@@ -340,11 +340,7 @@ fn changed_checkout_after_planning_never_reaches_a_publish_boundary() {
     assert!(!receipt.exists());
 }
 
-/// Unlike the dirty-worktree case above, this commits the manifest change so
-/// the checkout is clean at execution time. That routes past the dirty-tree
-/// check straight into the fresh-derivation comparison, so execution must
-/// fail with E124 (`ReleaseIntentStale`/`IntentDiffersFromFreshDerivation`)
-/// rather than a generic Git error.
+/// Committing (unlike the dirty-worktree case above) reaches the fresh-derivation check, so this expects E124.
 #[test]
 fn committed_change_after_planning_is_rejected_as_a_stale_intent() {
     let (dir, release_commit) = release_commit_fixture();
@@ -354,9 +350,7 @@ fn committed_change_after_planning_is_rejected_as_a_stale_intent() {
     let receipt = external.path().join("release-receipt.json");
     let (bin, log, forge_marker, git_trace) = fake_publishers(external.path(), &release_commit, false);
 
-    // A new commit lands on top of the planned release commit: the checkout
-    // is fully clean, but the committed state the coordinator would re-derive
-    // from no longer matches the approved intent.
+    // The tree is clean here, so this must fail via the fresh-derivation mismatch, not the dirty-tree check.
     fs::write(
         root.join("crates/core/Cargo.toml"),
         "[package]\nname = \"core-crate\"\nversion = \"0.2.1\"\nedition = \"2021\"\n",
@@ -499,9 +493,7 @@ fn release_plan_rejects_a_commit_that_is_not_checked_out_and_writes_nothing() {
     );
 }
 
-/// `release plan --dry-run` has no read-only mode to preview: planning
-/// already writes nothing but its explicit `--out` file, so `--dry-run`
-/// is rejected outright rather than silently ignored.
+/// No read-only mode exists: planning already writes only `--out`, so `--dry-run` is rejected outright.
 #[test]
 fn release_plan_dry_run_is_rejected_and_writes_nothing() {
     let dir = tempfile::tempdir().unwrap();
@@ -530,8 +522,7 @@ fn release_plan_dry_run_is_rejected_and_writes_nothing() {
     assert!(!out.exists());
 }
 
-/// `release execute --dry-run` has no read-only mode: execution either
-/// authorizes and performs remote effects or it does not run at all.
+/// No read-only mode exists: execution either performs remote effects under authorization or does not run.
 #[test]
 fn release_execute_dry_run_is_rejected_and_writes_nothing() {
     let dir = tempfile::tempdir().unwrap();
@@ -562,8 +553,7 @@ fn release_execute_dry_run_is_rejected_and_writes_nothing() {
     assert!(!receipt.exists());
 }
 
-/// `release artifact-manifest --dry-run` has no read-only mode: the manifest
-/// it writes records what was actually built, not a hypothetical preview.
+/// No read-only mode exists: the manifest records what was actually built, never a hypothetical preview.
 #[test]
 fn release_artifact_manifest_dry_run_is_rejected_and_writes_nothing() {
     let dir = tempfile::tempdir().unwrap();

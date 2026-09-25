@@ -37,11 +37,8 @@ impl HttpResponse {
                 .is_some_and(|value| value.trim() == "0")
     }
 
-    /// Whether this response is worth retrying rather than settling as a
-    /// permanent answer: a rate limit or a server-side failure may resolve
-    /// on its own, unlike a client error or a malformed body. Shared by
-    /// every provider that reads a plain HTTP status (GitHub's `gh api`,
-    /// PyPI's simple index) so the two can't drift on which statuses retry.
+    /// A rate limit or server error may resolve on its own, unlike a client error or malformed body. Shared by
+    /// every status-reading provider (`gh api`, PyPI) so they can't drift on which statuses retry.
     pub(crate) fn is_transient(&self) -> bool {
         matches!(self.status, 429 | 500..=599) || (self.status == 403 && self.is_rate_limited())
     }

@@ -20,8 +20,7 @@ pub(crate) enum GitHubReleaseLookup {
     Indeterminate {
         status: u16,
     },
-    /// `gh api` itself timed out or failed to run -- there is no HTTP status
-    /// to report, unlike [`Self::Indeterminate`].
+    /// `gh api` failed to run at all, so there is no HTTP status to report, unlike [`Self::Indeterminate`].
     CommandFailed,
     Found(serde_json::Value),
 }
@@ -190,8 +189,7 @@ fn github_api_get_once(
 mod tests {
     use super::*;
 
-    /// Regression: `gh api` timing out once must retry, not hand
-    /// `CommandError::TimedOut` straight to `?` and abort the observation.
+    /// Regression: a timed-out `gh api` call must retry, not hand `CommandError::TimedOut` straight to `?`.
     #[test]
     fn a_timed_out_gh_api_call_retries_and_settles() {
         struct FlakyGh(

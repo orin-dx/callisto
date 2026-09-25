@@ -17,9 +17,7 @@ use super::{
     ProviderRequest, ReleaseProvider, TagOperation,
 };
 
-/// What the local repository holds at `refs/tags/<name>`. A tag's landed
-/// effect is its target commit plus being annotated; annotation text is
-/// never part of its identity.
+/// What the local repository holds at `refs/tags/<name>`; identity is the target commit plus being annotated.
 #[derive(Debug, PartialEq, Eq)]
 enum LocalTagObservation {
     Absent,
@@ -302,9 +300,7 @@ fn observed_local_tag(context: &ProviderContext<'_>, name: &TagName) -> Result<L
             },
         });
     }
-    // Identity is target commit plus being annotated; the annotation text
-    // itself is not part of that identity, but its presence still confirms
-    // this is a well-formed annotated tag object.
+    // The annotation's presence confirms a well-formed tag object; its text is never part of tag identity.
     annotation.ok_or_else(|| GraphError::ReleaseInvariant {
         detail: "for-each-ref line validated as `tag`/empty-body but carried no annotation field".to_string(),
     })?;
@@ -316,9 +312,7 @@ mod tests {
     use super::super::loopback::fixtures;
     use super::*;
 
-    /// Delegates local git plumbing (`rev-parse`, `for-each-ref`) to a real
-    /// repo at `root`, but scripts `remote`/`ls-remote` so the remote side is
-    /// under test control without a real push.
+    /// Delegates local git plumbing to a real repo at `root`, but scripts `remote`/`ls-remote` for test control.
     struct LocalRepoRemoteScript {
         url: &'static str,
         ls_remote_stdout: &'static str,
@@ -348,9 +342,7 @@ mod tests {
         }
     }
 
-    /// `git rev-parse HEAD` against the real repo at `root`, via the same
-    /// [`CommandRunner`] impl `LocalRepoRemoteScript` delegates non-remote
-    /// commands to.
+    /// `git rev-parse HEAD` against the real repo at `root`, via the same runner `LocalRepoRemoteScript` delegates to.
     fn head_sha(root: &Path) -> CommitSha {
         let output = callisto_fixtures::git::GitRunner
             .run("git", &["rev-parse", "HEAD"], root)
@@ -376,11 +368,8 @@ mod tests {
         }
     }
 
-    /// Regression for the tag-identity fix: a local annotated tag that names
-    /// the prepared commit but carries different annotation *text* is the
-    /// same landed effect, not a conflict (annotation text is never part of
-    /// tag identity). Before the fix this returned `Conflict` without ever
-    /// checking the remote.
+    /// A local annotated tag naming the prepared commit with different annotation text is the same landed effect,
+    /// not a conflict: annotation text is never part of tag identity.
     #[test]
     fn local_tag_with_matching_target_and_different_annotation_text_is_not_a_conflict() {
         let dir = tempfile::tempdir().unwrap();
@@ -403,9 +392,8 @@ mod tests {
         );
     }
 
-    /// Regression: a local lightweight tag at the right commit still
-    /// conflicts. Only annotation *text* stopped mattering; being annotated
-    /// at all did not.
+    /// A local lightweight tag at the right commit still conflicts: only annotation text stopped mattering, not
+    /// whether the tag is annotated at all.
     #[test]
     fn local_lightweight_tag_at_the_right_commit_still_conflicts() {
         let dir = tempfile::tempdir().unwrap();
@@ -435,10 +423,8 @@ mod tests {
         );
     }
 
-    /// Remote path: `ls-remote` only ever compares the peeled commit
-    /// (annotation text is unreadable over `ls-remote` to begin with), so an
-    /// annotated remote tag on the right commit is adopted regardless of the
-    /// prepared operation's own annotation text.
+    /// `ls-remote` only ever compares the peeled commit, so an annotated remote tag on the right commit is adopted
+    /// regardless of the prepared operation's own annotation text.
     #[test]
     fn remote_tag_on_the_right_commit_is_adopted_regardless_of_annotation_text() {
         let dir = tempfile::tempdir().unwrap();
@@ -506,8 +492,7 @@ mod tests {
         ));
     }
 
-    /// Answers `git remote get-url` deterministically, then hands back one
-    /// scripted `ls-remote` result per call.
+    /// Answers `git remote get-url` deterministically, then hands back one scripted `ls-remote` result per call.
     struct FlakyLsRemote {
         url: &'static str,
         results: std::sync::Mutex<
@@ -535,10 +520,7 @@ mod tests {
         }
     }
 
-    /// Regression: a `git ls-remote` that times out once must retry and
-    /// settle, not abort the whole observation with a hard error (the bug
-    /// was `observed_remote_tag` handing `CommandError::TimedOut` straight to
-    /// `?`, which `retry_observation` never saw).
+    /// A `git ls-remote` that times out once must retry and settle, not abort the whole observation with a hard error.
     #[test]
     fn observed_remote_tag_retries_past_a_timed_out_ls_remote() {
         let remote =

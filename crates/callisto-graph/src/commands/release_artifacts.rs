@@ -190,11 +190,7 @@ fn verify_github_attestation<R: CommandRunner>(
     }
 }
 
-/// A `gh attestation verify` command that timed out or failed to run is a
-/// transient observation, not a hard failure: it goes through the same
-/// bounded retry as every other GitHub-touching observation (registry
-/// queries, the `gh api` release lookup, `git ls-remote`), instead of
-/// aborting the whole release on one hiccup.
+/// A timed-out `gh attestation verify` is a transient observation, not a hard failure that aborts the release.
 fn attempt_attestation_verify<R: CommandRunner>(
     runner: &R,
     args: &[&str],
@@ -379,11 +375,7 @@ mod tests {
         assert!(runner.calls.lock().unwrap().is_empty());
     }
 
-    /// Regression: `gh attestation verify` timing out once must retry
-    /// through the same bounded observation policy as every other
-    /// GitHub-touching check (registry queries, the `gh api` release
-    /// lookup, `git ls-remote`), not hand `CommandError::TimedOut` straight
-    /// to `?` and abort the whole release.
+    /// A timed-out `gh attestation verify` must retry through the bounded observation policy, not abort the release.
     #[test]
     fn a_timed_out_attestation_verify_retries_and_settles() {
         let runner = RecordingRunner::default();

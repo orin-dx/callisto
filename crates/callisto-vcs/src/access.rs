@@ -93,20 +93,9 @@ impl<'r> GitAccess<'r> {
         }
     }
 
-    /// Returns every staged (Git index) change relative to `base`, resolving
-    /// paths from the repository's toplevel (via `git rev-parse
-    /// --show-toplevel`) rather than `self.root`, so this works from any
-    /// subdirectory of the checkout.
-    ///
-    /// File contents for additions and modifications are read directly from
-    /// the worktree with [`std::fs::read`], never through a
-    /// [`CommandRunner`] (whose captured stdout is a lossy `String`), so
-    /// CRLF and binary content survive exactly. Each read is then verified
-    /// against the index blob's sha (from `--raw`'s post-image sha, via
-    /// `git hash-object`) rather than trusted blind: a worktree file edited
-    /// again after `git add` no longer matches what is actually staged, and
-    /// that mismatch must fail loudly ([`VcsError::StagedContentMismatch`])
-    /// instead of silently emitting the wrong bytes.
+    /// Every staged (index) change relative to `base`, resolved from the repository's toplevel rather than
+    /// `self.root` so this works from any subdirectory. Worktree bytes are read directly (for CRLF/binary
+    /// fidelity) and verified against the index blob sha; a mismatch fails loudly instead of returning stale bytes.
     pub fn staged_changes_since(&self, base: &CommitSha) -> Result<Vec<StagedChangeV1>, VcsError> {
         let root = self.repo_root()?;
 
@@ -155,15 +144,12 @@ impl<'r> GitAccess<'r> {
         Ok(changes)
     }
 
-    /// Resolves the repository's toplevel directory, independent of whether
-    /// `self.root` is that toplevel or one of its subdirectories.
+    /// Resolves the repository's toplevel directory, whether `self.root` is that toplevel or a subdirectory.
     fn repo_root(&self) -> Result<PathBuf, VcsError> {
         self.resolved_toplevel(&format!("in `{}`", self.root.display()))
     }
 
-    /// The one `git rev-parse --show-toplevel` + [`canonical_git_root`]
-    /// resolution shared by every caller that needs the repository's
-    /// toplevel; `context` names the caller in the error message on failure.
+    /// The `git rev-parse --show-toplevel` resolution shared by every caller; `context` names the caller on failure.
     fn resolved_toplevel(&self, context: &str) -> Result<PathBuf, VcsError> {
         let output = self.runner.run("git", &["rev-parse", "--show-toplevel"], &self.root)?;
         if !output.success() {
@@ -175,10 +161,8 @@ impl<'r> GitAccess<'r> {
         canonical_git_root(output.stdout_trimmed())
     }
 
-    /// Confirms the worktree bytes just read for `path` hash to the same
-    /// blob sha the Git index has staged, via `git hash-object` (which
-    /// reads the file itself, so no content ever round-trips through a
-    /// [`CommandRunner`]'s lossy `String` capture).
+    /// Confirms the worktree bytes just read for `path` hash to the same blob sha the index has staged, without
+    /// round-tripping content through a lossy `String` capture.
     fn verify_staged_blob(&self, root: &Path, path: &str, expected_sha: &str) -> Result<(), VcsError> {
         let output = self.runner.run("git", &["hash-object", "--", path], root)?;
         if !output.success() {
@@ -268,8 +252,7 @@ struct RawDiffEntry {
     path: String,
     /// The post-image Git file mode, or `None` for a pure deletion.
     new_mode: Option<u32>,
-    /// The post-image blob sha the index has staged for this path, used to
-    /// verify a worktree read against it in [`GitAccess::verify_staged_blob`].
+    /// The post-image blob sha staged for this path, verified against a worktree read in `verify_staged_blob`.
     new_sha: String,
     status: char,
 }
@@ -1318,9 +1301,7 @@ mod tests {
         assert_eq!(deleted.contents, None, "a deletion must carry no contents to read");
     }
 
-    /// When the worktree bytes hash to a different blob than `--raw`'s
-    /// post-image sha, the read must fail rather than silently return
-    /// content that is not actually what is staged.
+    /// A worktree read must fail if its bytes hash to a different blob than `--raw`'s post-image sha.
     #[test]
     fn staged_changes_since_rejects_a_worktree_blob_mismatch() {
         let temp = tempfile::tempdir().unwrap();
@@ -1342,8 +1323,7 @@ mod tests {
                 ["diff", "--cached", "--raw", "-z", "--no-renames", "--no-abbrev", sha] if sha == &"0".repeat(40) => {
                     Ok(ok(raw.clone()))
                 }
-                // A different sha than the `--raw` entry claims: the index
-                // has content this worktree read does not match.
+                // A different sha than the `--raw` entry claims: the worktree read does not match the staged content.
                 ["hash-object", "--", "VERSION"] => Ok(ok(format!("{}\n", "9".repeat(40)))),
                 other => panic!("unexpected command: {other:?}"),
             }),

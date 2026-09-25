@@ -536,9 +536,7 @@ fn an_unexpected_status_is_transient_malformed_response() {
     );
 }
 
-/// PyPI shares GitHub's status-based classifier: a 429 retries on the
-/// server's own `Retry-After`, not the fixed backoff a bare `MalformedResponse`
-/// used to force by never reporting one.
+/// PyPI shares GitHub's status-based classifier: a 429 retries on the server's own `Retry-After`, not a fixed backoff.
 #[test]
 fn a_rate_limited_pypi_response_retries_on_its_own_retry_after() {
     let output = curl_output("HTTP/1.1 429 Too Many Requests\r\nRetry-After: 30\r\n\r\nslow down");
@@ -553,8 +551,7 @@ fn a_rate_limited_pypi_response_retries_on_its_own_retry_after() {
     );
 }
 
-/// A plain 401 is not a rate limit and cannot resolve by retrying, so it
-/// settles immediately instead of spending the whole retry budget on it.
+/// A plain 401 is not a rate limit and cannot resolve by retrying, so it settles immediately instead of retrying.
 #[test]
 fn a_permanent_401_settles_instead_of_retrying() {
     let output = curl_output("HTTP/1.1 401 Unauthorized\r\ncontent-type: text/plain\r\n\r\nno auth");
@@ -566,8 +563,7 @@ fn a_permanent_401_settles_instead_of_retrying() {
     );
 }
 
-/// Regression: a `curl` call that times out once must retry, not hand
-/// `CommandError::TimedOut` straight to `?` and abort the observation.
+/// Regression: a `curl` call that times out once must retry, not hand `CommandError::TimedOut` straight to `?`.
 #[test]
 fn a_timed_out_curl_call_retries_and_settles() {
     struct FlakyCurl(std::sync::Mutex<std::collections::VecDeque<Result<CommandOutput, callisto_model::CommandError>>>);

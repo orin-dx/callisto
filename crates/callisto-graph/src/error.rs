@@ -789,10 +789,8 @@ mod tests {
         );
     }
 
-    /// Regression: `GraphError::Command` used to have no `#[diagnostic(transparent)]`,
-    /// so a `CommandError`'s own code (e.g. E025 for a timeout) never reached
-    /// `miette::Diagnostic::code` on the outer `GraphError` -- every command
-    /// failure surfaced to users with no code and no fix text at all.
+    /// `GraphError::Command` must be transparent so the inner `CommandError`'s own code (e.g. E025) reaches
+    /// `miette::Diagnostic::code` on the outer error.
     #[test]
     fn graph_error_command_surfaces_the_inner_commanderrors_own_code() {
         let inner = callisto_model::CommandError::TimedOut {
@@ -809,7 +807,7 @@ mod tests {
         assert!(miette::Diagnostic::help(&graph_err).is_some());
     }
 
-    /// Same regression for `GraphError::VersionParse`.
+    /// Same for `GraphError::VersionParse`.
     #[test]
     fn graph_error_version_parse_surfaces_the_inner_errors_own_code() {
         let inner =
