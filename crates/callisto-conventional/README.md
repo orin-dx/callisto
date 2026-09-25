@@ -1,15 +1,5 @@
 # callisto-conventional
 
-Conventional Commits specification parser and severity classifier for Callisto.
+Conventional Commit parsing and bump-severity classification for callisto.
 
-## Overview
-
-`callisto-conventional` parses Git commit messages following the Conventional Commits specification:
-
-- Parsing commit types (`feat`, `fix`, `docs`, `refactor`, `chore`, etc.).
-- Extracting breaking change footers (`BREAKING CHANGE:`).
-- Classifying semver bump severity (`major`, `minor`, `patch`) from commit history.
-
-## License
-
-Functional Source License, Version 1.1, MIT Future License (`FSL-1.1-MIT`).
+License: FSL-1.1-MIT. See [ARCHITECTURE.md](../../ARCHITECTURE.md) for the full crate map and [the root README](../../README.md) for the CLI.

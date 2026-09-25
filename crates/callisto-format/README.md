@@ -1,15 +1,5 @@
 # callisto-format
 
-Changeset markdown parser and writer for Callisto monorepo version management.
+Byte-compatible reader/writer for `@changesets/cli`'s file formats: the changeset Markdown frontmatter grammar and `.changeset/pre.json`.
 
-## Overview
-
-`callisto-format` provides bidirectional serialization for human-readable markdown changeset files stored in `.changeset/*.md`:
-
-- Parse frontmatter declaring package bump types (`major`, `minor`, `patch`).
-- Parse and serialize release summaries and changelog entries.
-- Format-preserving markdown document construction.
-
-## License
-
-MIT License (`MIT`).
+License: MIT. See [ARCHITECTURE.md](../../ARCHITECTURE.md) for the full crate map and [the root README](../../README.md) for the CLI.

@@ -43,7 +43,11 @@ Limits of the build-matrix shape:
 
 Callisto's own `.github/workflows/callisto-release.yml` separates release work into four authority boundaries. A push with pending changesets creates or updates the release PR. That PR versions manifests and changelogs and removes only the changesets it consumed. Nothing is removed from `main` until that PR is merged.
 
-One `callisto/version-packages` release PR is kept current, recomputed from `main` whenever changesets land — a reconstruction, not a rebase of an old commit, so stale edits are never carried forward. The action never runs a local `git push` to update that branch: it stages the recomputed change via GitHub's `createCommitOnBranch` commit API (restricted to non-workflow paths, so `.github/workflows/*` is always inherited unchanged from the branch's current tip), then moves the release branch's ref with a plain REST ref update. `GITHUB_TOKEN` cannot write `.github/workflows/*` through either the Git push protocol or `createCommitOnBranch`'s own file changes on a public repository, but a ref move carrying no workflow-file write isn't subject to that restriction — so the built-in token never needs elevated permission. Resulting commits are GitHub-signed ("Verified"), attributed to `github-actions[bot]`. An optional App or fine-grained token remains available for release-PR operations attributed to a different identity, but is never required.
+One `callisto/version-packages` release PR is kept current, recomputed from `main` whenever changesets land — a reconstruction, not a rebase of an old commit, so stale edits are never carried forward.
+
+- The action never runs a local `git push` to update that branch. It stages the recomputed change via GitHub's `createCommitOnBranch` commit API, then moves the release branch's ref with a plain REST ref update.
+- `createCommitOnBranch` is restricted to non-workflow paths, so `.github/workflows/*` is always inherited unchanged from the branch's current tip. `GITHUB_TOKEN` cannot write `.github/workflows/*` through either the Git push protocol or that API's own file changes on a public repository — but a ref move carrying no workflow-file write isn't subject to that restriction, so the built-in token never needs elevated permission.
+- Resulting commits are GitHub-signed ("Verified"), attributed to `github-actions[bot]`. An optional App or fine-grained token remains available for release-PR operations attributed to a different identity, but is never required.
 
 After a merge, the workflow derives a fresh release run from the exact merged source and passes its immutable handoff between jobs. "Re-run failed jobs" on a failed release run is supported: the rerun adopts every effect that already landed and performs the rest. To release an older merged source with current orchestration, dispatch a new run with that source SHA (see Recovery below).
 
@@ -54,6 +58,35 @@ An administrator must also enable a branch-protection rule or ruleset on `main` 
 Progress is derived from provider observation (registry, remote tag, forge release, assets); binary assets publish to the GitHub Release. A green workflow is not by itself proof a release exists — use the release receipt and independent provider checks as completion evidence.
 
 `callisto-action` has two modes: `mode: version-pr` (default) opens or updates the release PR; `mode: release` installs callisto and runs `callisto release`. Its former `publish` and `create_github_release` inputs are ignored. Workspaces with artifact slots or platform packages release through the plan/build/execute workflow instead.
+
+### `callisto-action` inputs
+
+[`.github/actions/callisto-action/action.yml`](../.github/actions/callisto-action/action.yml):
+
+| Input | Default | Purpose |
+| :--- | :--- | :--- |
+| `version_command` | `callisto version --refresh-lockfiles` | Versioning command; `--emit-decision <decision_path>` is appended automatically. |
+| `decision_path` | `.callisto/release-decision.json` | Where the version command records the exact release decision the PR carries; `release plan --from-release-commit` verifies the merged commit against this file. |
+| `commit_message` | `chore(release): version packages` | Release-PR commit message. |
+| `title` | `chore(release): version packages` | Release-PR title. |
+| `pr_label` | `callisto: release` | Release-PR label. |
+| `setup_git_user` | `true` | Unused no-op, kept for backward compatibility. The managed branch is committed through the forge commit API, not a local `git commit`. |
+| `branch` | `main` | Base branch for the release PR. |
+| `release_branch` | `callisto/version-packages` | Managed head branch for the release PR. |
+| `github_token` | `""` | Optional token for PR and forge commit API operations. The default `GITHUB_TOKEN` is sufficient even on a public repository, since the executor never writes `.github/workflows/*`. |
+| `setup_callisto` | `true` | Install the Callisto environment before running. |
+| `cwd` | `.` | Workspace directory. |
+| `mode` | `version-pr` | `version-pr`: create/update the release PR. `release`: run `callisto release`. |
+
+Outputs: `hasChangesets` (`version-pr` mode only), `published` and `publishedPackages` (`release` mode only; otherwise `false`/`[]`).
+
+## PR pre-flight verification
+
+Every PR runs [`.github/actions/callisto-validate/action.yml`](../.github/actions/callisto-validate/action.yml):
+
+- `callisto status --check` — one gate covering config health, package discovery, and changeset syntax: exit 0 with no error-level diagnostics, exit 1 otherwise.
+- `callisto release --dry-run --format text` — simulates the release plan without effect.
+- Writes a workspace status summary to the job's GitHub Actions summary page.
 
 ---
 
@@ -80,7 +113,11 @@ The orchestration revision is the SHA of the run itself (`github.sha`), never th
 
 A local `callisto release` (no artifact slots, no platform packages) is its own orchestration: both revisions are HEAD's commit, and it may run on a branch. The CI route (`release plan`/`release execute`) still requires the exact merge commit checked out detached.
 
-Every run is the same kind of run. A push-triggered release whose `execute` job fails partway is fixed by "Re-run failed jobs": the rerun starts from nothing, observes each provider, adopts every operation that is already exactly done (printing one warning line per registry version it skips), and performs the rest. A different object at the same identity is a conflict, never adopted. Execution state is in memory only — nothing is persisted between runs.
+Every run is the same kind of run.
+
+- A push-triggered release whose `execute` job fails partway is fixed by "Re-run failed jobs": the rerun starts from nothing, observes each provider, adopts every operation that is already exactly done (printing one warning line per registry version it skips), and performs the rest.
+- A different object at the same identity is a conflict, never adopted.
+- Execution state is in memory only — nothing is persisted between runs.
 
 The run envelope (orchestration revision, release-source revision, intent digest, artifact-manifest digest) is derived from the intent by one constructor, so source revision and intent digest have no second authority. It is validated across fields before the first effect. The receipt is built from that envelope plus the exact provider evidence each operation recorded when it succeeded; nothing is re-observed after the effects.
 
@@ -112,15 +149,20 @@ gh workflow run callisto-release.yml --ref main -f release_source_sha="$SHA"
 
 ## Execution
 
-Before an effect, Callisto observes the provider. An operation is one of absent, exact success, conflict, or indeterminate. Exact success carries typed per-role evidence: registry version with checksum and yanked flag, tag peeled commit, forge release tag and draft flag, asset size and sha256. Conflict reasons and indeterminate causes are closed enums; an authentication, rate-limit, or transport failure is always indeterminate, never a conflict. Exact success becomes `AlreadySatisfied` — Callisto never publishes the same version merely to learn whether it exists. Conflict and indeterminate observations fail closed with an actionable diagnostic.
+Before an effect, Callisto observes the provider. An operation is one of absent, exact success, conflict, or indeterminate.
+
+- Exact success carries typed per-role evidence: registry version with checksum and yanked flag, tag peeled commit, forge release tag and draft flag, asset size and sha256.
+- Conflict reasons and indeterminate causes are closed enums; an authentication, rate-limit, or transport failure is always indeterminate, never a conflict.
+- Exact success becomes `AlreadySatisfied` — Callisto never publishes the same version merely to learn whether it exists.
+- Conflict and indeterminate observations fail closed with an actionable diagnostic.
 
 A single pure transition table is the only way an operation's state changes. `Attempting` is reachable only through an absent proof; "our attempt landed" (`Published`) is distinct from "it already existed" (`AlreadySatisfied`).
 
-Registry observation goes through the ecosystem's own package manager — the same tool and configuration the publish effect uses. For cargo: `cargo info NAME@VERSION --registry REGISTRY`, run from the source workspace root so `.cargo/config.toml` registry definitions and credentials apply (`--registry` is never omitted). Exit 0 with a matching `version:` line is exact evidence; exit 101 with ``could not find `NAME@VERSION` `` is absence; anything else (including an unreachable registry) is indeterminate and retried. For npm: `npm view NAME@VERSION version --json`.
+Registry observation goes through the ecosystem's own package manager — the same tool and configuration the publish effect uses.
 
-A yanked version reads as absent, because `cargo info` cannot see yanks — that fails closed: the publish that follows is refused by the registry, and the run ends in a typed unconfirmed-publication error rather than a receipt.
-
-PyPI versions are checked with `curl` against the PEP 691 JSON simple index (`https://pypi.org/simple/<project>/` or the configured private index), not `pip`, which can't tell a missing project from an unreachable index. A matching file is exact; 404 or no match is absent; a transport failure or non-JSON (PEP 503 HTML) response is indeterminate. Yanked files count as absent, so publishing over a yanked version fails closed.
+- **Cargo**: `cargo info NAME@VERSION --registry REGISTRY`, run from the source workspace root so `.cargo/config.toml` registry definitions and credentials apply (`--registry` is never omitted). Exit 0 with a matching `version:` line is exact evidence; exit 101 with ``could not find `NAME@VERSION` `` is absence; anything else (including an unreachable registry) is indeterminate and retried. A yanked version reads as absent, because `cargo info` cannot see yanks — that fails closed: the registry refuses the publish that follows, and the run ends in a typed unconfirmed-publication error rather than a receipt.
+- **npm**: `npm view NAME@VERSION version --json`.
+- **PyPI**: checked with `curl` against the PEP 691 JSON simple index (`https://pypi.org/simple/<project>/` or the configured private index), not `pip`, which can't tell a missing project from an unreachable index. A matching file is exact; 404 or no match is absent; a transport failure or non-JSON (PEP 503 HTML) response is indeterminate. Yanked files count as absent, so publishing over a yanked version fails closed.
 
 Registry endpoints must be `https` — no loopback exception, since an endpoint receives a credential.
 

@@ -1,15 +1,5 @@
 # callisto-graph
 
-Polyglot dependency DAG solver, cascade propagator, and publish planner for Callisto.
+Dependency graph, cascade engine, changeset/commit aggregation, config resolution, and release execution for callisto. The workspace's engine crate — most CLI commands are thin wrappers over this crate.
 
-## Overview
-
-`callisto-graph` constructs and solves dependency graphs for polyglot monorepos:
-
-- Topological sorting of workspace packages for publication order.
-- Dependency cascade resolution (propagating major/minor bumps downstream).
-- Release plan derivation (`plan_local_release`, `build_release_intent`) and PR description formatting (`compose-pr-body`).
-
-## License
-
-Functional Source License, Version 1.1, MIT Future License (`FSL-1.1-MIT`).
+License: FSL-1.1-MIT. See [ARCHITECTURE.md](../../ARCHITECTURE.md) for the full crate map and [the root README](../../README.md) for the CLI.
