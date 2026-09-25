@@ -1,0 +1,1 @@
+Is there a better way to architect and handle this? How do other tools do this? Are we doing something novel? Are we overengineering it?
