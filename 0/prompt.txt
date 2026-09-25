@@ -1,0 +1,1 @@
+Claude has support for reading directly from agents.md check it out
