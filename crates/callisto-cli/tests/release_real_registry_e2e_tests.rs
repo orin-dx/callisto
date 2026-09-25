@@ -1,6 +1,6 @@
-#![cfg(unix)]
+#![cfg(target_os = "linux")]
 
-//! Real-registry e2e coverage (SPEC-DX-CORRECTNESS-E2E).
+//! Real-registry e2e coverage (SPEC-DX-CORRECTNESS-E2E). Linux only: CI installs the registries there.
 //!
 //! `release_forge_publish_e2e_tests.rs` and `durable_release_e2e_tests.rs`
 //! cover npm and PyPI publish only against fake providers. This file adds a

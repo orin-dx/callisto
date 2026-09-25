@@ -10,7 +10,7 @@
   "acceptance_criteria": [
     {
       "id": "AC-20",
-      "criterion": "An e2e test starts a local Verdaccio registry, points npm at it via --registry or a test-scoped .npmrc (not a callisto-side registry binding), runs callisto's npm publish path against it, and asserts the published version is retrievable from that registry's package metadata afterward. When the Verdaccio binary is not available in the environment, the test skips and prints the reason to test output rather than failing; this test is included in just ci, and CI installs Verdaccio so the test runs there."
+      "criterion": "An e2e test starts a local Verdaccio registry, points npm at it via --registry or a test-scoped .npmrc (not a callisto-side registry binding), runs callisto's npm publish path against it, and asserts the published version is retrievable from that registry's package metadata afterward. When the Verdaccio binary is not available in the environment, the test skips and prints the reason to test output rather than failing; the test is Linux-only (compiled out elsewhere), and CI installs Verdaccio on its Linux leg so the test runs there."
     },
     {
       "id": "AC-20b",
@@ -18,7 +18,7 @@
     },
     {
       "id": "AC-22",
-      "criterion": "An e2e test starts a local pypiserver instance, points twine at it via --repository-url (not a callisto-side registry binding), runs callisto's PyPI publish path against it, and asserts the published package/version is retrievable from that server's simple index afterward. When the pypiserver binary is not available, the test skips and prints the reason to test output rather than failing; this test is included in just ci, CI installs pypiserver so the test runs there, and only loopback network access is required (no external network calls)."
+      "criterion": "An e2e test starts a local pypiserver instance, points twine at it via --repository-url (not a callisto-side registry binding), runs callisto's PyPI publish path against it, and asserts the published package/version is retrievable from that server's simple index afterward. When the pypiserver binary is not available, the test skips and prints the reason to test output rather than failing; the test is Linux-only (compiled out elsewhere), CI installs pypiserver on its Linux leg so the test runs there, and only loopback network access is required (no external network calls)."
     }
   ],
   "linked_requirement": "REQ-DX-V1",
