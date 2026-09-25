@@ -158,11 +158,17 @@ impl<'r> GitAccess<'r> {
     /// Resolves the repository's toplevel directory, independent of whether
     /// `self.root` is that toplevel or one of its subdirectories.
     fn repo_root(&self) -> Result<PathBuf, VcsError> {
+        self.resolved_toplevel(&format!("in `{}`", self.root.display()))
+    }
+
+    /// The one `git rev-parse --show-toplevel` + [`canonical_git_root`]
+    /// resolution shared by every caller that needs the repository's
+    /// toplevel; `context` names the caller in the error message on failure.
+    fn resolved_toplevel(&self, context: &str) -> Result<PathBuf, VcsError> {
         let output = self.runner.run("git", &["rev-parse", "--show-toplevel"], &self.root)?;
         if !output.success() {
             return Err(VcsError::Git(format!(
-                "could not determine the Git repository root in `{}`: {}",
-                self.root.display(),
+                "could not determine the Git repository root {context}: {}",
                 output.redacted_stderr()
             )));
         }
@@ -195,13 +201,7 @@ impl<'r> GitAccess<'r> {
     /// Returns explicit, fresh Git trust evidence for a durable release.
     /// Errors omit raw stderr; ignored paths (build output) are allowed.
     pub fn observe_git_commit_trust(&self) -> Result<GitCommitTrustEvidence, VcsError> {
-        let root = self.runner.run("git", &["rev-parse", "--show-toplevel"], &self.root)?;
-        if !root.success() {
-            return Err(VcsError::Git(
-                "could not determine the Git repository root for release trust".to_string(),
-            ));
-        }
-        let canonical_root = canonical_git_root(root.stdout_trimmed())?;
+        let canonical_root = self.resolved_toplevel("for release trust")?;
 
         let object_format = self
             .runner
