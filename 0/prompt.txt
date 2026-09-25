@@ -1,0 +1,1 @@
+We want the local workspace (moon, npm workspace, etc) to be able to resolve locally in the native way that crates npm packages, etc resolve local workspace (aka monorepos)
