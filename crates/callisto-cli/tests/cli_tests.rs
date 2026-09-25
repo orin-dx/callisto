@@ -80,7 +80,7 @@ fn test_add_non_interactive_via_pipe() {
         stderr.contains("stdin is not a terminal") || stderr.contains("not_a_tty"),
         "stderr should mention the TTY check; got: {stderr}"
     );
-    // SPEC-DX-STATUS-ADD AC-09: the error must name the flags needed to
+    // The error must name the flags needed to
     // proceed non-interactively, not just say "no".
     assert!(
         stderr.contains("--package"),
@@ -88,7 +88,7 @@ fn test_add_non_interactive_via_pipe() {
     );
 }
 
-/// SPEC-DX-STATUS-ADD AC-08: `add --package name:severity` must record the
+/// `add --package name:severity` must record the
 /// changeset without prompting even when both stdin and stdout are piped
 /// (non-TTY) -- the flags path never touches `tty::is_interactive()`.
 #[test]
@@ -138,10 +138,10 @@ fn test_add_flags_path_skips_tty_check_entirely() {
     );
 }
 
-/// AC-001 + AC-002 + AC-014: a napi package and a maturin package that both
+/// A napi package and a maturin package that both
 /// declare the same two triples must produce byte-identical platform/arch/
 /// abi/hostRunner/useCross for each triple -- proving the derivation is
-/// shared code, not a duplicated table. AC-014: the darwin triple's abi is
+/// shared code, not a duplicated table. The darwin triple's abi is
 /// JSON null; the linux triple's abi is a non-null string.
 #[test]
 fn matrix_napi_and_maturin_share_triple_derivation() {
@@ -212,7 +212,7 @@ fn matrix_napi_and_maturin_share_triple_derivation() {
     }
 }
 
-/// SPEC-DX-SETUP-WORKFLOW-MATRIX AC-005: each configured `[[release.artifact]]`
+/// Each configured `[[release.artifact]]`
 /// cargo binary is a `cargo` platformTargets entry alongside napi entries.
 #[test]
 fn matrix_lists_release_artifact_cargo_binaries_beside_napi_targets() {
@@ -312,7 +312,7 @@ fn matrix_warns_on_a_release_artifact_with_an_unknown_package() {
     );
 }
 
-/// AC-004, AC-005, AC-005b: npm-only, python-only, and dual-manifest
+/// Npm-only, python-only, and dual-manifest
 /// packages each produce the exact runtimeVersions shape the spec pins.
 #[test]
 fn matrix_runtime_versions_npm_python_and_dual_manifest() {
@@ -383,8 +383,8 @@ fn matrix_runtime_versions_npm_python_and_dual_manifest() {
     );
 }
 
-/// AC-006: --package restricts output to exactly one package's entries, in
-/// BOTH platformTargets and runtimeVersions. AC-007: an unknown --package
+/// --package restricts output to exactly one package's entries, in
+/// BOTH platformTargets and runtimeVersions. An unknown --package
 /// name exits 1 and names the package in stderr, never a structurally valid
 /// empty report on stdout.
 #[test]
@@ -462,8 +462,8 @@ fn matrix_package_filter_and_unknown_package_via_binary() {
     );
 }
 
-/// AC-009: platformTargets/runtimeVersions keys and each group's targets[]
-/// are lexicographically ordered across 3+ packages. AC-001b: an explicitly
+/// PlatformTargets/runtimeVersions keys and each group's targets[]
+/// are lexicographically ordered across 3+ packages. An explicitly
 /// empty napi.targets = [] still produces a present platformTargets entry.
 #[test]
 fn matrix_orders_keys_lexicographically_across_three_packages() {
@@ -485,11 +485,7 @@ fn matrix_orders_keys_lexicographically_across_three_packages() {
 
     let alpha = root.join("alpha");
     std::fs::create_dir_all(&alpha).unwrap();
-    std::fs::write(
-        alpha.join("package.json"),
-        r#"{"name":"alpha","napi":{"targets":[]}}"#, // AC-001b
-    )
-    .unwrap();
+    std::fs::write(alpha.join("package.json"), r#"{"name":"alpha","napi":{"targets":[]}}"#).unwrap();
 
     let mid = root.join("mid");
     std::fs::create_dir_all(&mid).unwrap();
@@ -520,7 +516,7 @@ fn matrix_orders_keys_lexicographically_across_three_packages() {
         "keys must be lexicographically ordered"
     );
 
-    // AC-001b: alpha's entry is present-but-empty, not absent.
+    // Alpha's entry is present-but-empty, not absent.
     assert_eq!(json["platformTargets"]["alpha"]["targets"], serde_json::json!([]));
 
     // Within zeta's group, targets[] must be ascending by triple.
@@ -539,7 +535,7 @@ fn matrix_orders_keys_lexicographically_across_three_packages() {
     );
 }
 
-/// AC-003: a workspace with no relevant manifests anywhere produces exactly
+/// A workspace with no relevant manifests anywhere produces exactly
 /// {"schemaVersion":1,"platformTargets":{},"runtimeVersions":{}} with no
 /// "diagnostics" key, and exits 0.
 #[test]
@@ -570,7 +566,7 @@ fn matrix_empty_workspace_produces_exact_empty_report_shape() {
     );
 }
 
-/// AC-011 (full end-to-end contract): a package with one recognised and one
+/// A package with one recognised and one
 /// unrecognised triple, plus a second package with only a recognised triple,
 /// must exit 0, report exactly one UnrecognisedPlatformTriple diagnostic,
 /// exclude the bad triple from every targets[] array, and keep every other
@@ -650,7 +646,7 @@ fn matrix_unrecognised_triple_end_to_end_diagnostic_contract() {
     assert_eq!(clean_triples, vec!["x86_64-unknown-linux-gnu".to_string()]);
 }
 
-/// AC-008 + AC-003b: `--format text` and bare invocation (no --format flag)
+/// `--format text` and bare invocation (no --format flag)
 /// must both exit 0 and produce identical non-empty, non-JSON stdout.
 #[test]
 fn matrix_text_format_and_bare_invocation_match_and_are_non_json() {
@@ -774,7 +770,7 @@ fn assert_error_exit_no_report(output: &std::process::Output) {
     );
 }
 
-/// AC-017: a package declaring both napi.targets and [tool.maturin].targets
+/// A package declaring both napi.targets and [tool.maturin].targets
 /// exits 1 via GraphError::ConflictingPlatformTargetSources (E118), naming
 /// the package and both source field names.
 #[test]
@@ -810,7 +806,7 @@ fn matrix_conflicting_platform_target_sources_exits_1() {
     );
 }
 
-/// AC-010: malformed pyproject.toml (unterminated string) exits 1. The
+/// Malformed pyproject.toml (unterminated string) exits 1. The
 /// directory also carries a valid, name-bearing package.json so it
 /// registers via npm -- ignore_walk.rs silently drops a directory whose
 /// SOLE manifest is a malformed pyproject.toml, so without this co-located
@@ -836,9 +832,9 @@ fn matrix_malformed_pyproject_toml_exits_1() {
     );
 }
 
-/// AC-010b: malformed package.json (trailing comma) exits 1. The directory
+/// Malformed package.json (trailing comma) exits 1. The directory
 /// also carries a valid, name-bearing pyproject.toml so it registers via
-/// python -- mirroring AC-010's registration workaround for the JSON side
+/// python -- mirroring the registration workaround for the JSON side
 /// of the same read pass.
 #[test]
 fn matrix_malformed_package_json_exits_1() {
@@ -861,7 +857,7 @@ fn matrix_malformed_package_json_exits_1() {
     );
 }
 
-/// AC-010c: napi.targets present but not an array (a bare string) exits 1.
+/// Napi.targets present but not an array (a bare string) exits 1.
 /// The package.json itself carries a valid "name" field so it registers on
 /// its own -- ignore_walk.rs's package.json registration only requires a
 /// valid top-level "name" key, independent of napi.targets' own validity.
@@ -880,7 +876,7 @@ fn matrix_napi_targets_wrong_type_exits_1() {
     assert_error_exit_no_report(&output);
 }
 
-/// AC-010c sibling (a): [tool.maturin].targets present but a bare string,
+/// [tool.maturin].targets present but a bare string,
 /// not an array. The pyproject.toml carries a valid [project].name so it
 /// registers on its own via the locator, independent of the
 /// package.json-co-location workaround used by the two tests above.
@@ -899,7 +895,7 @@ fn matrix_maturin_targets_wrong_type_exits_1() {
     assert_error_exit_no_report(&output);
 }
 
-/// AC-010c sibling (b): engines.node present but a JSON number, not a
+/// engines.node present but a JSON number, not a
 /// string. The package.json carries a valid "name" field so it registers
 /// on its own.
 #[test]

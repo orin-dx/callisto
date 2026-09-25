@@ -15,7 +15,7 @@ pub struct ApplyOptions {
     /// Plumbed from `--refresh-lockfiles` but not yet consulted here;
     /// `ApplyOutcome::lockfile_refresh_results` is consequently always `None`.
     pub refresh_lockfiles: bool,
-    /// When true (snapshot mode, §8), manifest mutations are written to disk
+    /// When true (snapshot mode), manifest mutations are written to disk
     /// but changelog prepends (step 7), changeset deletions (step 8), and
     /// git staging (step 11) are suppressed.
     pub transient: bool,
@@ -49,7 +49,7 @@ pub(crate) struct ManifestWriteClassification {
     pub(crate) resolver_batched: BTreeMap<PathBuf, ManifestWriteGroup>,
     /// Paths that receive writes through BOTH the `Manifest` trait and
     /// `WorkspaceCargoResolver` -- the mixed-routing data-loss/ordering
-    /// hazard from SPEC-APPLY-BATCH-002 (see `.claude/plans/ACTIVE.md`).
+    /// hazard.
     /// Never batched on either side; each write is applied individually,
     /// strictly in plan order, exactly as before this change.
     pub(crate) excluded: BTreeSet<PathBuf>,
@@ -582,7 +582,7 @@ mod tests {
         Version::parse(v, VersionGrammar::SemVer).expect("valid semver")
     }
 
-    /// AC-014: a bump-precondition failure inside a batched group must block
+    /// A bump-precondition failure inside a batched group must block
     /// every rewrite in that group and leave the manifest byte-for-byte
     /// unchanged (no rewrite is ever attempted, persist is never called).
     #[test]
@@ -657,7 +657,7 @@ mod tests {
         );
     }
 
-    /// AC-016 (byte half): a batched group where the bump is skipped
+    /// A batched group where the bump is skipped
     /// (already at target) but a rewrite succeeds must still write the
     /// rewrite's mutation to disk (not silently dropped).
     #[test]
@@ -1215,7 +1215,7 @@ mod tests {
         );
     }
 
-    /// AC-009 check (b): running `apply_version_plan` end-to-end over a Cargo
+    /// Running `apply_version_plan` end-to-end over a Cargo
     /// bump must produce on-disk bytes byte-identical to a direct
     /// `open()` -> `write_version()` -> `persist()` sequence over the same
     /// starting fixture — not merely a substring match.
@@ -1263,7 +1263,7 @@ mod tests {
         );
     }
 
-    /// AC-009 check (b), npm sibling: same byte-identity proof for a
+    /// npm sibling: same byte-identity proof for a
     /// `package.json` bump.
     #[test]
     fn apply_version_plan_npm_bump_produces_byte_identical_output_to_direct_mutate_then_persist() {
@@ -1531,7 +1531,7 @@ mod tests {
         let original_mode = std::fs::metadata(&pkg_b_dir).unwrap().permissions().mode();
         std::fs::set_permissions(&pkg_b_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
 
-        // Same root-uid guard as the bumps-loop version of this test (T16):
+        // Same root-uid guard as the bumps-loop version of this test:
         // skip rather than assert if the chmod did not actually block writes.
         let probe_path = pkg_b_dir.join(".rtk-write-probe");
         let probe_write_succeeded = std::fs::write(&probe_path, b"probe").is_ok();
@@ -1686,7 +1686,7 @@ mod tests {
         assert!(!classification.batched.contains_key(&p));
     }
 
-    /// AC-004: a batched group's bump succeeds, but the second of two
+    /// A batched group's bump succeeds, but the second of two
     /// rewrites for the same path fails. Neither the bump nor the first
     /// rewrite may land on disk, since persist() for the group is never
     /// reached -- proven by unchanged on-disk bytes (if persist() had
@@ -1774,7 +1774,7 @@ mod tests {
         );
     }
 
-    /// AC-012: `classify_manifest_writes`' `BTreeMap<PathBuf, _>` iteration
+    /// `classify_manifest_writes`' `BTreeMap<PathBuf, _>` iteration
     /// order -- not `plan.bumps`' encounter order -- determines which
     /// batched group is processed first. b-crate's bump is listed first in
     /// the plan but a-crate sorts first as a path, so a-crate's group must
@@ -1857,19 +1857,19 @@ mod tests {
                 result,
                 Err(GraphError::Manifest(callisto_model::ManifestError::Write { .. }))
             ),
-            "P2's persist failure must propagate; got: {result:?}"
+            "b-crate's persist failure must propagate; got: {result:?}"
         );
 
         let a_on_disk = std::fs::read_to_string(&a_path).unwrap();
         assert!(
             a_on_disk.contains("version = \"1.1.0\""),
-            "P1 (a-crate/Cargo.toml, sorts before P2) must already be fully processed and persisted before P2 is even attempted; got:\n{a_on_disk}"
+            "a-crate sorts first, so it must be fully persisted before b-crate is attempted; got:\n{a_on_disk}"
         );
 
         let b_on_disk = std::fs::read_to_string(&b_path).unwrap();
         assert_eq!(
             b_on_disk, b_original,
-            "P2's own group must be byte-for-byte unchanged since its persist never succeeded"
+            "b-crate must be byte-for-byte unchanged since its persist never succeeded"
         );
     }
 
@@ -2147,7 +2147,7 @@ mod tests {
         assert!(result.staged.contains(&PathBuf::from("package.json")));
     }
 
-    /// AC-012: a `platform_writes` entry whose `from` does not match the
+    /// A `platform_writes` entry whose `from` does not match the
     /// actual on-disk `current_version()` of the platform manifest (drift)
     /// must cause `apply_version_plan` to return
     /// `Err(GraphError::UnexpectedManifestVersion { .. })` with the correct
@@ -2199,7 +2199,7 @@ mod tests {
         );
     }
 
-    /// AC-012b: a `platform_writes` entry whose `from` does not match the
+    /// A `platform_writes` entry whose `from` does not match the
     /// on-disk `current_version()`, but the on-disk version already equals
     /// the target `version` (idempotent retry after a prior interrupted
     /// apply), must succeed without rewriting the manifest, and the path
@@ -2245,7 +2245,7 @@ mod tests {
         );
     }
 
-    /// AC-009: a plan with `bumps` empty but a `platform_writes` entry
+    /// A plan with `bumps` empty but a `platform_writes` entry
     /// pointing at an npm-ecosystem manifest must still stage the npm
     /// lockfile present on disk. `active_ecosystems` was previously derived
     /// solely from `plan.bumps`, so an npm lockfile went unstaged whenever
@@ -2300,7 +2300,7 @@ mod tests {
         );
     }
 
-    /// AC-010: same as AC-009, but the npm manifest is touched via
+    /// Same as the Cargo byte-identity check, but the npm manifest is touched via
     /// `optional_dep_updates` instead of `platform_writes`.
     #[test]
     fn optional_dep_updates_only_plan_stages_npm_lockfile_without_refresh() {

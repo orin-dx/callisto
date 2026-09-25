@@ -237,9 +237,8 @@ pub fn detect<L: ProjectLocator, R: CommandRunner>(
         .flat_map(|package| package.canonical_manifests())
         .map(|manifest| manifest.ecosystem())
         .collect();
-    // Case D (own canonical manifest is platform-tagged) or Case E (a platform
-    // package attached from a sibling directory) -- never just Case D, since an
-    // attached platform package is never its own entry in `packages` above.
+    // Counts attached platform packages too: they never get their own `packages` entry,
+    // so scanning canonical manifests alone finds only co-located ones.
     let has_platform_packages = workspace
         .graph
         .packages()
@@ -525,9 +524,9 @@ pub fn workflow_path(root: &Path) -> PathBuf {
 /// Which release workflow `init` generates.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WorkflowShape {
-    /// Two jobs: `version-pr` and `callisto release` (SPEC-DX-SETUP-WORKFLOW-SIMPLE).
+    /// Two jobs: `version-pr` and `callisto release`.
     Simple,
-    /// `version-pr` plus plan -> build (matrix) -> execute (SPEC-DX-SETUP-WORKFLOW-MATRIX),
+    /// `version-pr` plus plan -> build (matrix) -> execute,
     /// for `[[release.artifact]]` slots or napi platform packages.
     BuildMatrix,
 }
@@ -1051,7 +1050,7 @@ mod tests {
         binaries: None,
     };
 
-    // AC-001, AC-020: facts report ecosystems, packages, origin, tags, and binaries.
+    // Facts report ecosystems, packages, origin, tags, and binaries.
     #[test]
     fn detect_reports_workspace_facts() {
         let dir = workspace();
@@ -1073,7 +1072,7 @@ mod tests {
         assert_eq!(binaries, ["cargo/app"]);
     }
 
-    // AC-020: npm `bin` and PyPI `[project.scripts]` make a package binary-producing.
+    // Npm `bin` and PyPI `[project.scripts]` make a package binary-producing.
     #[test]
     fn npm_bin_and_pypi_scripts_are_binaries() {
         let dir = repo(
@@ -1092,7 +1091,7 @@ mod tests {
         assert_eq!(binaries, ["npm/cli", "pypi/pytool"]);
     }
 
-    // AC-008, AC-024: an existing config is an error, and its [init] table is never read.
+    // An existing config is an error, and its [init] table is never read.
     #[test]
     fn existing_config_is_already_initialized() {
         let dir = workspace();
@@ -1113,7 +1112,6 @@ mod tests {
         ));
     }
 
-    // AC-011b
     #[test]
     fn outside_git_is_an_error() {
         let dir = tempfile::tempdir().unwrap();
@@ -1123,7 +1121,7 @@ mod tests {
         assert!(error.to_string().contains("not a Git repository"));
     }
 
-    // AC-011: no `origin` errors, with zero remotes or only other remotes.
+    // No `origin` errors, with zero remotes or only other remotes.
     #[test]
     fn missing_origin_is_an_error() {
         let files = [("Cargo.toml", cargo("app", "1.0.0"))];
@@ -1141,7 +1139,7 @@ mod tests {
         }
     }
 
-    // AC-011a: a rejected origin URL shows the rejection; an accepted non-GitHub one binds.
+    // A rejected origin URL shows the rejection; an accepted non-GitHub one binds.
     #[test]
     fn origin_url_is_canonicalized() {
         let files = [("Cargo.toml", cargo("app", "1.0.0"))];
@@ -1159,7 +1157,7 @@ mod tests {
         assert_eq!(facts.origin_repository, None);
     }
 
-    // AC-012: exactly one non-default convention is written; the default never is.
+    // Exactly one non-default convention is written; the default never is.
     #[test]
     fn a_single_non_default_convention_becomes_a_tag_template() {
         let dir = workspace();
@@ -1184,7 +1182,7 @@ mod tests {
         assert!(!config.contains("core"), "default convention is not written:\n{config}");
     }
 
-    // AC-012: a sole `v{version}` package gets that template.
+    // A sole `v{version}` package gets that template.
     #[test]
     fn a_sole_v_tag_package_gets_the_v_template() {
         let single = repo(&[("Cargo.toml", &cargo("app", "1.0.0"))], Some(ORIGIN));
@@ -1196,7 +1194,6 @@ mod tests {
         );
     }
 
-    // AC-012a
     #[test]
     fn several_conventions_for_one_package_are_ambiguous() {
         let dir = workspace();
@@ -1215,7 +1212,6 @@ mod tests {
         assert!(help.contains("tag-template") && help.contains("previous-tag-templates"));
     }
 
-    // AC-012b
     #[test]
     fn a_v_tag_shared_by_several_packages_is_an_error() {
         let dir = workspace();
@@ -1258,7 +1254,6 @@ mod tests {
         toml::from_str(config).unwrap()
     }
 
-    // AC-007, AC-010
     #[test]
     fn fixed_versioning_writes_one_all_group_of_qualified_non_platform_members() {
         let facts = facts_for_render();
@@ -1284,7 +1279,7 @@ mod tests {
         assert!(parse(&independent).is_empty());
     }
 
-    // AC-009, AC-009a, AC-023: one artifact per target per bin; no profiles or registry-routes.
+    // One artifact per target per bin; no profiles or registry-routes.
     #[test]
     fn shipping_binaries_writes_release_and_artifacts() {
         let config = render_config(
@@ -1339,7 +1334,7 @@ mod tests {
         assert!(resolve_config_text(Path::new("/ws"), &config).is_ok());
     }
 
-    // AC-005, AC-019: the preview is the release plan for the in-memory config, excluding tagged versions.
+    // The preview is the release plan for the in-memory config, excluding tagged versions.
     #[test]
     fn preview_matches_release_dry_run_without_writing() {
         let dir = workspace();
@@ -1367,7 +1362,7 @@ mod tests {
         assert_eq!(preview, dry_run);
     }
 
-    // AC-005: a binary release previews through the same plan function.
+    // A binary release previews through the same plan function.
     #[test]
     fn preview_includes_artifact_uploads() {
         let dir = workspace();
@@ -1382,7 +1377,6 @@ mod tests {
         )));
     }
 
-    // AC-003b
     #[test]
     fn forge_repository_must_be_origins_owner_repo() {
         let facts = facts_for_render();
@@ -1413,7 +1407,6 @@ mod tests {
         ));
     }
 
-    // AC-014b
     #[test]
     fn targets_must_be_distinct_and_non_empty() {
         let targets = |values: &[&str]| values.iter().map(|value| (*value).to_owned()).collect::<Vec<_>>();
@@ -1433,7 +1426,6 @@ mod tests {
         }
     }
 
-    // AC-014d
     #[test]
     fn product_package_must_be_a_binary_workspace_package() {
         let facts = facts_for_render();
@@ -1448,7 +1440,6 @@ mod tests {
         }
     }
 
-    // AC-021a
     #[test]
     fn write_creates_the_readme_only_when_absent() {
         let dir = tempfile::tempdir().unwrap();
@@ -1491,7 +1482,7 @@ mod tests {
         render_workflow(facts, WorkflowShape::Simple, branch, FAKE_COMMIT, "0.8.0")
     }
 
-    // AC-004, AC-004a, AC-004c, AC-004d: two jobs, no matrix/recovery/SHA-gating machinery,
+    // Two jobs, no matrix/recovery/SHA-gating machinery,
     // per-job permissions, and secrets scoped to the cargo-only workspace's own ecosystem.
     #[test]
     fn render_workflow_is_a_cargo_only_two_job_workflow_within_the_line_budget() {
@@ -1529,7 +1520,7 @@ mod tests {
         }
     }
 
-    // AC-004d: a workspace with no cargo/npm/pypi ecosystem wires no ecosystem secret.
+    // A workspace with no cargo/npm/pypi ecosystem wires no ecosystem secret.
     #[test]
     fn render_workflow_wires_a_secret_per_detected_ecosystem() {
         let mut facts = facts_for_render();
@@ -1643,7 +1634,7 @@ mod tests {
         &rest[..end]
     }
 
-    // SPEC-DX-SETUP-WORKFLOW-MATRIX AC-001: the plan job runs `callisto release plan`
+    // The plan job runs `callisto release plan`
     // and hands the intent to the later jobs.
     #[test]
     fn matrix_workflow_plan_job_runs_release_plan() {
@@ -1663,7 +1654,7 @@ mod tests {
         )));
     }
 
-    // AC-002: napi entries flatten `callisto matrix`; each job runs on its hostRunner and
+    // Napi entries flatten `callisto matrix`; each job runs on its hostRunner and
     // passes --use-cross when useCross.
     #[test]
     fn matrix_workflow_build_matrix_flattens_napi_targets() {
@@ -1686,7 +1677,7 @@ mod tests {
         );
     }
 
-    // AC-003: a napi entry runs `napi build --platform --release --target` and uploads its output.
+    // A napi entry runs `napi build --platform --release --target` and uploads its output.
     #[test]
     fn matrix_workflow_napi_entry_builds_and_uploads() {
         let build = job(&render_matrix_workflow(), "build").to_owned();
@@ -1707,7 +1698,7 @@ mod tests {
         assert!(build.contains("path: ${{ runner.temp }}/napi-out/*.node"), "{build}");
     }
 
-    // AC-004: one entry per intent artifact slot, built with `cargo build --release --target`
+    // One entry per intent artifact slot, built with `cargo build --release --target`
     // and archived to the slot's asset name.
     #[test]
     fn matrix_workflow_artifact_slots_build_and_archive_to_the_asset_name() {
@@ -1732,7 +1723,7 @@ mod tests {
         assert!(build.contains("name: asset-${{ matrix.artifactName }}"), "{build}");
     }
 
-    // AC-006, AC-007: napi artifacts are placed after every build, then the execute job
+    // Napi artifacts are placed after every build, then the execute job
     // runs `release artifact-manifest` before `release execute`.
     #[test]
     fn matrix_workflow_execute_places_napi_artifacts_then_manifests_then_executes() {
@@ -1776,7 +1767,7 @@ mod tests {
         assert!(render_matrix_workflow().contains("NPM_CONFIG_PROVENANCE: \"true\""));
     }
 
-    // AC-008: the version-pr job matches the simple workflow's.
+    // The version-pr job matches the simple workflow's.
     #[test]
     fn matrix_workflow_keeps_the_simple_version_pr_job() {
         let simple = render_workflow_0_8_0(&cargo_only_facts(), "main");
@@ -1785,7 +1776,7 @@ mod tests {
         assert!(job(&matrix, "version-pr").contains("with: {mode: version-pr}"));
     }
 
-    // AC-008a: no recovery, coordinator, or SHA-based release-candidate detection; the
+    // No recovery, coordinator, or SHA-based release-candidate detection; the
     // only gate is the decision-file content precondition.
     #[test]
     fn matrix_workflow_has_no_recovery_or_sha_gating() {
@@ -1813,7 +1804,7 @@ mod tests {
         );
     }
 
-    // AC-004b: the push trigger targets `origin/HEAD`'s branch, falling back to `main`.
+    // The push trigger targets `origin/HEAD`'s branch, falling back to `main`.
     #[test]
     fn default_branch_reads_origin_head_and_falls_back_to_main() {
         let dir = workspace();
@@ -1890,7 +1881,7 @@ mod tests {
     }
 
     // A platform package attached from a sibling directory (napi's per-arch
-    // packages, §M.6.1 Case E) never becomes its own entry in `packages`, so
+    // packages) never becomes its own entry in `packages`, so
     // `has_platform_packages` -- not a per-package scan -- must catch it.
     #[test]
     fn detect_flags_a_workspace_with_only_an_attached_platform_package() {
@@ -1938,7 +1929,7 @@ mod tests {
         }
     }
 
-    // AC-004: an annotated tag resolves to its peeled (dereferenced) commit,
+    // An annotated tag resolves to its peeled (dereferenced) commit,
     // not the tag object's own SHA -- `uses:` needs a real commit.
     #[test]
     fn resolve_release_commit_prefers_the_peeled_commit_over_the_tag_object() {
@@ -1962,7 +1953,7 @@ mod tests {
         assert_eq!(commit, "6161616161626262626363636364646464626262");
     }
 
-    // AC-004: an unresolvable tag (offline, or an unreleased version) errors
+    // An unresolvable tag (offline, or an unreleased version) errors
     // clearly instead of embedding a broken reference in the generated file.
     #[test]
     fn resolve_release_commit_errors_when_the_tag_is_not_found() {
@@ -2006,7 +1997,7 @@ mod tests {
         );
     }
 
-    // Underlies AC-002a: the workflow file's own no-overwrite check and write.
+    // Underlies the workflow file's own no-overwrite check and write.
     #[test]
     fn write_workflow_refuses_an_existing_file_and_writes_nothing() {
         let dir = tempfile::tempdir().unwrap();

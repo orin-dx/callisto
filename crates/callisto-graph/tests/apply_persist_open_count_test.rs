@@ -1,4 +1,4 @@
-//! AC-009 check (c): apply_version_plan must open each distinct manifest
+//! Apply_version_plan must open each distinct manifest
 //! path exactly once. Isolated in its own integration-test binary because
 //! callisto_manifests::open_call_count is a process-global counter that
 //! other, non-#[serial] tests in a shared binary would pollute (see
@@ -246,14 +246,12 @@ fn mixed_routing_root_cargo_toml_excludes_plain_dependencies_from_batching() {
     assert!(on_disk.contains("inherited-c = \"^1.3.0\""));
 }
 
-/// AC-016 (persist_call_count half): a batched group where the bump is
+/// A batched group where the bump is
 /// skipped (already at target) but a rewrite succeeds must still cause
 /// exactly one persist call -- the skipped bump must not suppress the
 /// persist a successful rewrite on the same path requires.
 ///
-/// DEVIATION FROM AC-016'S LITERAL FILE-PLACEMENT WORDING (documented, per
-/// plan T13): AC-016's text places this assertion in apply.rs's
-/// `#[cfg(test)]` module, but PERSIST_CALL_COUNT is a process-global
+/// Lives here, not in apply.rs's `#[cfg(test)]` module: PERSIST_CALL_COUNT is a process-global
 /// counter and apply.rs's own `--lib` module has 9+ other non-#[serial]
 /// tests that would race it -- the same hazard this file's module doc
 /// already isolates OPEN_CALL_COUNT from. This test lives here instead,

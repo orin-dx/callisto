@@ -98,7 +98,7 @@ url = "https://npm.internal.example.com"
 
 ## `[[package]]` and `[[package-set]]`
 
-Both blocks share five override fields, parsed identically. `[[package]]`'s `match` is an exact `PackageId` (first matching rule wins, prefixed forms like `cargo/foo` take priority over bare `foo` regardless of declaration order). `[[package-set]]`'s `match` is a glob `PackagePattern` and can match many packages at once; `[[package]]` always takes priority over `[[package-set]]` for a given package.
+Both blocks share five override fields, parsed identically; `[[package]]` also accepts `previous-tag-templates`. `[[package]]`'s `match` is an exact `PackageId` (first matching rule wins, prefixed forms like `cargo/foo` take priority over bare `foo` regardless of declaration order). `[[package-set]]`'s `match` is a glob `PackagePattern` and can match many packages at once; `[[package]]` always takes priority over `[[package-set]]` for a given package.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
@@ -106,7 +106,7 @@ Both blocks share five override fields, parsed identically. `[[package]]`'s `mat
 | `release-trigger` | string (`"changeset"` \| `"auto"`) | none — every field here is an `Option`; omitted means "use this package's own default", not a config-level default | What causes this package to be considered for release |
 | `publish-to` | array of strings (`"crates-io"` \| `"npm"` \| `"pypi"` \| `"nuget"` \| `"github-release"` \| `"none"`) | none | Where this package publishes |
 | `tag-template` | string | none | Git tag template, e.g. `"callisto@{version}"` |
-| `previous-tag-templates` | array of strings | `[]` | Earlier tag templates checked (in order) for this package's last release tag, only if `tag-template` finds none |
+| `previous-tag-templates` | array of strings | `[]` | `[[package]]` only (`[[package-set]]` rejects it). Earlier tag templates checked (in order) for this package's last release tag, only if `tag-template` finds none |
 | `changelog` | string | none | Changelog path, relative to the package's own root. Forward-slash-separated only; rejected if absolute or containing `..` (E113). |
 | `pre-major-inference` | string (`"off"` \| `"conservative"` \| `"conservative-feat"`) | `"off"` | Pre-1.0 severity-downgrade policy: `conservative` downgrades an inferred Major to Minor; `conservative-feat` also downgrades Minor to Patch |
 

@@ -436,7 +436,7 @@ mod tests {
         assert_eq!(pre1.render(), "1.1.1.dev1");
     }
 
-    /// Gap 1: epoch + post + dev combined in a single version. The epoch-carry
+    /// Epoch + post + dev combined in a single version. The epoch-carry
     /// logic and the "post outranks dev/pre, always bump forward" branch have
     /// only ever been exercised separately (see `1!2.0.0` and `.post1.dev1`
     /// cases above); this exercises both simultaneously. Observed/expected:
@@ -452,7 +452,7 @@ mod tests {
         assert_eq!(versioning.bump(&v, sev).unwrap().render(), expected);
     }
 
-    /// Gap 2: a PEP 440 local version identifier (`+build.5`). Verified
+    /// A PEP 440 local version identifier (`+build.5`). Verified
     /// empirically (not assumed from the doc comment): the local segment is
     /// dropped cleanly by a bump, and the release arithmetic proceeds
     /// normally on the release triple, matching the module doc comment's
@@ -467,7 +467,7 @@ mod tests {
         assert_eq!(versioning.bump(&v, sev).unwrap().render(), expected);
     }
 
-    /// Gap 3: all-zero `0.0.0` base version bumped by Minor/Major. Plain
+    /// All-zero `0.0.0` base version bumped by Minor/Major. Plain
     /// (non-prerelease) releases go through the ordinary forward-bump branch,
     /// which has no zero-guard and behaves like any other release. The
     /// `patch == 0` / `minor == 0 && patch == 0` boundary guards only exist in
@@ -509,7 +509,7 @@ mod tests {
         assert_eq!(versioning.bump(&v, Severity::Major).unwrap().render(), "0.0.0");
     }
 
-    /// Gap 4: a genuinely malformed PEP 440 string passed to the public parse
+    /// A genuinely malformed PEP 440 string passed to the public parse
     /// entry point returns a proper `Err`, never panics.
     /// Regression test: an undotted prerelease suffix such as `alpha1` (common in
     /// packages migrated from other toolchains) must have its numeric suffix
@@ -564,7 +564,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    /// Gap 5: `Severity::None` applied to a post-tagged or dev-tagged input
+    /// `Severity::None` applied to a post-tagged or dev-tagged input
     /// leaves the version completely unchanged (early-return before any
     /// finalize/bump-forward branch runs), same as it does for a plain
     /// release.

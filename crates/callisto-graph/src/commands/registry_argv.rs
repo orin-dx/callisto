@@ -804,7 +804,7 @@ mod tests {
     }
 
     #[test]
-    fn ac6_scoped_npm_package_without_explicit_access_publishes_public() {
+    fn scoped_npm_package_without_explicit_access_publishes_public() {
         assert_eq!(npm_default_access("@s/cli", None), Some(NpmAccess::Public));
         assert_eq!(npm_default_access("cli", None), None);
         assert_eq!(

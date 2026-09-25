@@ -17,7 +17,7 @@ pub fn is_interactive() -> bool {
 mod tests {
     use super::*;
 
-    // SPEC-DX-STATUS-ADD AC-07: `add` must enter the wizard whenever stdin is
+    // `add` must enter the wizard whenever stdin is
     // a TTY, regardless of stdout -- guards against a future edit growing a
     // stdout TTY check into this function. There is no pty harness in this
     // crate's dev-dependencies to fake a real stdin TTY in-process, so this

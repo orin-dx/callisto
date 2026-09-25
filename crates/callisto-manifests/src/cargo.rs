@@ -1614,7 +1614,7 @@ edition = "2021"
         let new_ver = Version::parse("1.1.0", VersionGrammar::SemVer).unwrap();
         manifest.write_version(&new_ver, &permit()).unwrap();
 
-        // Regression lock for AC-002's workspace-inherited-version branch:
+        // Regression lock for the workspace-inherited-version branch:
         // write_version alone must not touch disk. The member file must
         // still read exactly as it was originally written -- still
         // `version.workspace = true`, not yet pinned.

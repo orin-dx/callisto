@@ -2,7 +2,7 @@
   "schema": "spec@1",
   "id": "SPEC-002",
   "purpose": "Make [[package]] rule lookup specificity-ordered so a prefixed pattern (cargo:foo) always wins over a bare pattern (foo) regardless of TOML declaration order, and emit a warning diagnostic when a bare rule matches packages in more than one ecosystem.",
-  "scope": "Three changes: (1) the [[package]] rule lookup in ManifestWalkResolver::build in crates/callisto-graph/src/walk.rs, (2) a new cross-ecosystem diagnostic pass after the packages loop in the same function, (3) one new DiagnosticCode variant in crates/callisto-model/src/diagnostic.rs plus a corresponding row in the diagnostic registry table at docs/01-spec.md §G.13. PackageId::matches() is NOT changed. Packages map keys are always Bare PackageIds (the locator constructs ids from manifest name strings alone, which do not carry an ecosystem prefix). Ecosystem information for a given package is derived from the canonical ManifestDecl entries in the Package value — specifically ManifestDecl::ecosystem(), which delegates to ManifestFormat::ecosystem() and returns Ecosystem directly.",
+  "scope": "Three changes: (1) the [[package]] rule lookup in ManifestWalkResolver::build in crates/callisto-graph/src/walk.rs, (2) a new cross-ecosystem diagnostic pass after the packages loop in the same function, (3) one new DiagnosticCode variant in crates/callisto-model/src/diagnostic.rs. PackageId::matches() is NOT changed. Packages map keys are always Bare PackageIds (the locator constructs ids from manifest name strings alone, which do not carry an ecosystem prefix). Ecosystem information for a given package is derived from the canonical ManifestDecl entries in the Package value — specifically ManifestDecl::ecosystem(), which delegates to ManifestFormat::ecosystem() and returns Ecosystem directly.",
   "non_goals": [
     "PackageId::matches() in identity.rs: bare-matches-all-ecosystems is correct and intentional. The fix is at the call site, not in the type.",
     "[[package-set]] rules: multi-ecosystem glob matching is their explicit purpose; they are exempt from the cross-ecosystem diagnostic.",
@@ -82,11 +82,6 @@
       "id": "AC-10",
       "description": "Serializing a Diagnostic whose code is DiagnosticCode::BareRuleMatchesMultipleEcosystems to JSON produces the string \"bare-rule-matches-multiple-ecosystems\" for the code field. Deserializing that string yields the variant. This is enforced by the existing #[serde(rename_all = \"kebab-case\")] on DiagnosticCode — no additional serde annotation on the new variant is needed.",
       "is_error_case": false
-    },
-    {
-      "id": "AC-11",
-      "description": "The diagnostic attribution table in docs/01-spec.md section G.13 contains a row whose Code cell is `BareRuleMatchesMultipleEcosystems`, whose Emitted-by cell references the walk module (§G.4 walk), whose escalated_by cell is the em-dash placeholder (—), and whose governed_by cell is the em-dash placeholder (—), consistent with escalated_by = None and governed_by = None from AC-8b.",
-      "is_error_case": false
     }
   ],
   "api_surface": {
@@ -99,6 +94,5 @@
       "DiagnosticCode::BareRuleMatchesMultipleEcosystems in crates/callisto-model/src/diagnostic.rs — add to the end of the DiagnosticCode enum, kebab-case serde name 'bare-rule-matches-multiple-ecosystems'."
     ]
   },
-  "status": "current",
-  "revision_note": "2026-09-24: added status; AC-8b dropped the removed --strict-graph mode (f3b1c1bcf)."
+  "status": "current"
 }

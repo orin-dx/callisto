@@ -154,10 +154,9 @@ fn mixed_cargo_python_workspace_loads_without_crashing() {
 // Bug 2: Cross-ecosystem dep edge discovery
 // ---------------------------------------------------------------------------
 
-/// AC-12/AC-14: An npm package depending on a cargo crate's bare name must NOT
+/// An npm package depending on a cargo crate's bare name must NOT
 /// silently resolve across the ecosystem boundary. `resolve_native_with_fallback`'s
-/// single-candidate cross-ecosystem match is suppressed (see T13a in
-/// SPEC-TRACK3B1-IDENTITY-PROMOTION-CORE): no DepEdge is created from the npm
+/// single-candidate cross-ecosystem match is suppressed: no DepEdge is created from the npm
 /// package to the cargo crate, and an UnknownPackage Warning diagnostic naming
 /// `cargo:rust-addon` is recorded instead, so the unresolved dependency name is
 /// visible rather than silently satisfied.
@@ -213,12 +212,12 @@ fn cross_ecosystem_npm_to_cargo_dep_edge_is_discovered() {
         pkg_names
     );
 
-    // No cross-ecosystem DepEdge is created (AC-12/AC-14): same-ecosystem-first
+    // No cross-ecosystem DepEdge is created: same-ecosystem-first
     // resolution treats the cargo-only name as unresolved from npm.
     let edges: Vec<_> = ws.graph.dependencies_of(&npm_id).collect();
     assert!(
         !edges.iter().any(|e| e.to == cargo_id),
-        "cross-ecosystem edge my-app -> rust-addon must NOT exist (AC-12/AC-14); \
+        "cross-ecosystem edge my-app -> rust-addon must NOT exist; \
          found edges from my-app: {:?}",
         edges.iter().map(|e| e.to.display_name()).collect::<Vec<_>>()
     );

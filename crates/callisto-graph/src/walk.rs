@@ -37,7 +37,7 @@ fn compute_claiming_ecosystems_and_native_keys(
 /// The PROMOTION PREDICATE: true only when the two paths' name-scoped
 /// claiming-ecosystem sets share no ecosystem. This is a disjointness test,
 /// not an inequality test -- {Cargo,Npm} and {Npm} are unequal but not
-/// disjoint, and must NOT promote (see AC-08).
+/// disjoint, and must NOT promote.
 fn claiming_sets_disjoint(a: &BTreeSet<Ecosystem>, b: &BTreeSet<Ecosystem>) -> bool {
     a.is_disjoint(b)
 }
@@ -184,8 +184,8 @@ impl ManifestWalkResolver {
                         }
                         // `id` is this manifest's own npm identity, resolved from its
                         // own `name` field -- distinct from `primary_id` whenever a
-                        // higher-priority ecosystem (Cargo) shares this directory
-                        // (Case D). Config authors reference the platform package by
+                        // higher-priority ecosystem (Cargo) shares this directory.
+                        // Config authors reference the platform package by
                         // its own name in `[[fixed-group]] members`, so that must be
                         // the index key; `primary_id` is who it belongs to.
                         index
@@ -221,7 +221,7 @@ impl ManifestWalkResolver {
                 // decls -- captured via the `existing_decls` returned by `insert` above
                 // and the `current_decls` clone taken before `insert` overwrote the map,
                 // never via a `.get(&primary_id)` lookup after the fact (a lookup miss
-                // there would silently substitute an empty Vec -- exactly the AC-04
+                // there would silently substitute an empty Vec -- the
                 // manifests-bleed bug).
                 let existing_id = PackageId::Prefixed {
                     ecosystem: primary_ecosystems[&existing_path],
@@ -334,12 +334,12 @@ impl ManifestWalkResolver {
 
             // The real ecosystem(s) this package's manifests were discovered
             // in. `id` may be PackageId::Bare (unpromoted) or PackageId::Prefixed
-            // (promoted, see SPEC-TRACK3B1-IDENTITY-PROMOTION-CORE); this is the
+            // (promoted); this is the
             // only place an ecosystem-prefixed [[package-set]] pattern has
             // anything to match against.
             let package_ecosystems: Vec<Ecosystem> = decls.iter().map(|d| d.ecosystem()).collect();
 
-            // Two-pass specificity search for [[package]] rules (SPEC-002 AC-1/2/3).
+            // Two-pass specificity search for [[package]] rules.
             // Pass 1: find the first Prefixed rule (pattern.ecosystem().is_some())
             //         that matches this package's ID. Prefixed rules always win
             //         over Bare rules regardless of declaration order in callisto.toml.
@@ -462,14 +462,14 @@ impl ManifestWalkResolver {
             }
         }
 
-        // SPEC-002 AC-5: Cross-ecosystem diagnostic pass.
+        // Cross-ecosystem diagnostic pass.
         //
         // For each bare [[package]] rule in cfg.packages (pattern.ecosystem() == None),
         // compute the distinct-ecosystem set: the Ecosystem values found in the canonical
         // ManifestDecls of every packages-map entry matched by this rule.
         //
         // Packages-map keys may be PackageId::Bare or PackageId::Prefixed (a
-        // promoted package, see SPEC-TRACK3B1-IDENTITY-PROMOTION-CORE). This loop
+        // promoted package). This loop
         // remains correct regardless: ecosystem information is always sourced from
         // pkg.canonical_manifests(), never from key.ecosystem(), and `pattern`
         // here is always unprefixed (prefixed rules `continue` above), so
@@ -480,11 +480,11 @@ impl ManifestWalkResolver {
         // package.json (the napi case): one packages-map entry with two canonical
         // ManifestDecls whose ecosystems are {Cargo, Npm}.
         //
-        // Prefixed [[package]] rules are skipped unconditionally (AC-7).
-        // [[package-set]] rules are never iterated here (AC-8).
+        // Prefixed [[package]] rules are skipped unconditionally.
+        // [[package-set]] rules are never iterated here.
         for (pattern, _) in &cfg.packages {
             if pattern.ecosystem().is_some() {
-                continue; // Prefixed rules never trigger this diagnostic (AC-7).
+                continue; // Prefixed rules never trigger this diagnostic.
             }
             let ecosystems: BTreeSet<Ecosystem> = packages
                 .iter()
@@ -572,7 +572,7 @@ impl ManifestWalkResolver {
     }
 }
 
-/// §M.6.1 Case E: maps each npm-only platform package directory (`os`+`cpu`)
+/// Maps each npm-only platform package directory (`os`+`cpu`)
 /// to the owner directory whose `package.json` names it in `optionalDependencies`,
 /// plus the platform's own name and role. `non_members` are platform packages
 /// outside the npm workspace, attachable but otherwise not discovered. A member
@@ -609,8 +609,7 @@ fn platform_owners(
         let Some(manifest) = open_npm(rel_path) else {
             continue;
         };
-        // A platform manifest sharing its directory with another ecosystem is Case D:
-        // it already belongs to that directory's package.
+        // A co-located platform manifest already belongs to its directory's package.
         match platform_role(&manifest) {
             Some(role) if list.len() == 1 => platforms.push((rel_path.clone(), id.name().to_string(), role, true)),
             _ => {
@@ -717,7 +716,7 @@ mod tests {
     }
 
     #[test]
-    fn ac16a_fixed_group_member_resolves_via_prefixed_unpromoted_cargo_package() {
+    fn fixed_group_member_resolves_via_prefixed_unpromoted_cargo_package() {
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
         write_pkg(root, "crates/foo", Ecosystem::Cargo, "foo");
@@ -741,7 +740,7 @@ mod tests {
             .identity()
             .prefixed
             .get(&(Ecosystem::Cargo, "foo".to_string()))
-            .expect("prefixed entry must exist for AC-02");
+            .expect("prefixed entry must exist");
         assert_eq!(
             prefixed, native,
             "prefixed and native must resolve to the identical PackageId for an unpromoted single-ecosystem package"
@@ -756,7 +755,7 @@ mod tests {
     }
 
     #[test]
-    fn ac03_fixed_group_member_naming_absent_ecosystem_is_missing_group_member() {
+    fn fixed_group_member_naming_absent_ecosystem_is_missing_group_member() {
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
         write_pkg(root, "crates/foo", Ecosystem::Cargo, "foo");
@@ -791,7 +790,7 @@ mod tests {
         }
     }
 
-    /// End-to-end: a real disk-discovered napi platform manifest (Case D --
+    /// End-to-end: a real disk-discovered napi platform manifest (co-located:
     /// a `Cargo.toml` and a differently-named `package.json` sharing one
     /// directory, the platform npm package's own identity distinct from the
     /// owning crate's) must resolve through `[[fixed-group]] members`
@@ -861,14 +860,14 @@ mod tests {
         );
     }
 
-    /// A real `optionalDependencies` edge onto a Case D platform package (a
+    /// A real `optionalDependencies` edge onto a co-located platform package (a
     /// `Cargo.toml` and differently-named `package.json` sharing one
     /// directory, per the test above) must resolve through
     /// `IdentityIndex.native`, keyed by the platform manifest's own npm
     /// name -- not the owning crate's `primary_id` name, which a
     /// sibling's dependency entry never names. Before this fix,
     /// `index.native` was keyed by `primary_id.name()` for every
-    /// ecosystem in a Case D directory, so a dependency naming the
+    /// ecosystem in a dual-manifest directory, so a dependency naming the
     /// platform package by its real npm name silently failed to resolve,
     /// dropping the edge with no diagnostic.
     #[test]
@@ -902,12 +901,12 @@ mod tests {
         let consumer = callisto_model::PackageId::Bare("@myorg/consumer".to_string());
 
         let edge = ws.graph.edges().iter().find(|e| e.from == consumer).expect(
-            "consumer's optionalDependencies edge onto the Case D platform package must \
+            "consumer's optionalDependencies edge onto the co-located platform package must \
                  resolve, not be silently dropped",
         );
         assert_eq!(
             edge.to, owning_crate,
-            "the platform package belongs to the owning crate (Case D); the edge must resolve \
+            "the platform package belongs to the co-located owning crate; the edge must resolve \
              to the owning crate's identity, not fail to resolve at all"
         );
     }
@@ -1114,7 +1113,8 @@ mod tests {
         .unwrap();
         let locator = crate::locate::IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("Case D load must succeed");
+        let ws =
+            crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("dual-manifest workspace must load");
         assert!(ws.graph.get(&PackageId::Bare("foo".to_string())).is_some());
     }
 
@@ -1354,7 +1354,7 @@ mod tests {
         );
     }
 
-    /// A platform npm manifest co-located with a Cargo owner (Case D) whose
+    /// A platform npm manifest co-located with a Cargo owner whose
     /// owner later gets promoted via a disjoint cross-ecosystem bare-name
     /// collision elsewhere in the workspace: `index.platform`'s stored
     /// owner id must be rewritten to the promoted Prefixed id, matching the
@@ -1445,12 +1445,13 @@ mod tests {
 
         let locator = crate::locate::IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("Case D load must succeed");
+        let ws =
+            crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("dual-manifest workspace must load");
 
         let bare_id = PackageId::Bare("hybrid".to_string());
         assert!(
             ws.graph.get(&bare_id).is_some(),
-            "Case D primary package must register under Bare ID"
+            "dual-manifest primary package must register under Bare ID"
         );
         let platform_entry = ws
             .graph
@@ -1499,7 +1500,7 @@ mod tests {
         );
         assert_ne!(
             cargo_id, npm_id,
-            "a distinct-id count of 2 is required for ResolvedConfig.promoted_siblings' derivation (AC-23) to retain this name"
+            "a distinct-id count of 2 is required for ResolvedConfig.promoted_siblings' derivation to retain this name"
         );
     }
 
@@ -1561,7 +1562,7 @@ mod tests {
         // Same three ecosystems as `third_path_joins_already_promoted_group`, but
         // path names are chosen so BTreeMap's lexicographic by-path iteration
         // visits Pypi first, then Npm, then Cargo -- the reverse ecosystem
-        // sequence -- proving the outcome is order-independent (AC-17a).
+        // sequence -- proving the outcome is order-independent.
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
         write_pkg(root, "path-a-pypi", Ecosystem::Pypi, "multi2");
@@ -1635,7 +1636,8 @@ mod tests {
         .unwrap();
         let locator = crate::locate::IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("Case D load must succeed");
+        let ws =
+            crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("dual-manifest workspace must load");
         assert_eq!(ws.graph.packages().count(), 1);
         let pkg = ws
             .graph
@@ -1644,12 +1646,12 @@ mod tests {
         assert_eq!(
             pkg.manifests.len(),
             2,
-            "both the Cargo and npm manifest belong to the one Case D package"
+            "both the Cargo and npm manifest belong to the one dual-manifest package"
         );
     }
 
     #[test]
-    fn ac12_ac18_npm_consumer_depending_on_cargo_only_name_gets_no_edge_and_diagnostic() {
+    fn npm_consumer_depending_on_cargo_only_name_gets_no_edge_and_diagnostic() {
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
         write_pkg(root, "crates/foo", Ecosystem::Cargo, "foo");
@@ -1682,7 +1684,7 @@ mod tests {
     }
 
     #[test]
-    fn ac14_ac18_npm_consumer_depending_on_serde_with_cargo_serde_present_gets_no_edge_and_diagnostic() {
+    fn npm_consumer_depending_on_serde_with_cargo_serde_present_gets_no_edge_and_diagnostic() {
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
         write_pkg(root, "crates/serde", Ecosystem::Cargo, "serde");
@@ -1711,7 +1713,7 @@ mod tests {
     }
 
     #[test]
-    fn ac15_ac18_npm_consumer_depending_on_ambiguous_lib_with_cargo_and_pypi_present_gets_exactly_one_diagnostic() {
+    fn npm_consumer_depending_on_ambiguous_lib_with_cargo_and_pypi_present_gets_exactly_one_diagnostic() {
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
         write_pkg(root, "crates/ambiguous-lib", Ecosystem::Cargo, "ambiguous-lib");

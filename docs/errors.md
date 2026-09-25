@@ -1,8 +1,8 @@
 # Error codes
 
-Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src/error.rs` as of this writing — not auto-generated. It will drift if new codes are added without updating it here.
+Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`. A `callisto-model` test fails when a numeric code is missing here.
 
-129 codes exist across two namespaces: 96 numeric `E###` codes (`callisto-model`, `callisto-changelog`, `callisto-graph`) and 33 `callisto::snake_case` codes (`callisto-cli`'s own top-level errors — the ones the CLI surface actually raises). `callisto-conventional` errors carry no diagnostic code at all. `callisto-cli`'s `CliError` also has 9 variants that wrap another crate's error transparently (`#[diagnostic(transparent)]`, no `code(...)` of its own) — those are intentionally out of scope here since they have no code to document; the code you see for them at runtime is whichever code above their wrapped error already carries.
+180 codes exist across two namespaces: 147 numeric `E###` codes (`callisto-model`, `callisto-format`, `callisto-vcs`, `callisto-changelog`, `callisto-graph`) and 33 `callisto::snake_case` codes (`callisto-cli`'s own top-level errors — the ones the CLI surface actually raises). `callisto-conventional` errors carry no diagnostic code at all. `callisto-cli`'s `CliError` also has 9 variants that wrap another crate's error transparently (`#[diagnostic(transparent)]`, no `code(...)` of its own) — those are intentionally out of scope here since they have no code to document; the code you see for them at runtime is whichever code above their wrapped error already carries.
 
 "Fix" is the code's `help(...)` text verbatim. "—" means the variant has no help text in the source.
 
@@ -29,8 +29,64 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src/
 | E017 | Manifest has no dependency of the given kind and name | — |
 | E018 | Operation is not supported for this manifest's format | — |
 | E019 | Format-preserving write would not round-trip | Ensure CST document retains formatting structure. |
+| E020 | `<program>` was not found; callisto requires it to be available | Ensure program is installed and available on system PATH. |
+| E021 | `<program>` reports version `<found>`, but callisto requires <required> | Upgrade program to meet version requirement. |
+| E022 | Executing `<program>` is not supported on this surface: <reason> | — |
+| E023 | `<program>` failed with exit code <exit_code>: <stderr> | — |
+| E024 | Failed to run `<program>`: <message> | — |
+| E025 | `<program>` timed out after <seconds>s | The process did not exit within the allowed time. This usually indicates a network stall or a registry that is unreachable. |
+| E026 | Commit walk failed: <message> | — |
 | E027 | Internal invariant violated while operating on a manifest path | — |
 | E028 | Manifest dependency has a TOML value that is neither a string nor a table; refusing to silently no-op the rewrite | Fix the dependency's TOML shape to a plain string or a table before running callisto again. |
+| E029 | `<raw>` is not a valid <grammar> version: <message> | Ensure the version string strictly adheres to the <grammar> specification. |
+| E034 | Cannot compare a <left> version with a <right> version | All version comparisons in a cascade step must share the same version grammar. |
+| E054 | Reference `<ref_name>` was not found | Check if the reference or tag exists in local or remote Git refs. |
+| E141 | Release PR repository `<repository>` is invalid | Use the exact GitHub owner/repository identity, for example `orin-dx/callisto`. |
+| E142 | Release PR <kind> `<branch>` is not a safe Git branch name | Use a non-empty Git ref name without whitespace, control characters, `..`, `@{`, or shell-sensitive prefixes. |
+| E143 | Release PR snapshot contains the same pull request number more than once | Refresh the forge snapshot and pass each open pull request exactly once. |
+| E144 | Release PR snapshot does not match the configured repository or base branch | Collect the snapshot for the configured repository and base branch immediately before calling Callisto. |
+| E145 | Managed release PR #<number> comes from foreign repository `<repository>` | Do not treat a fork branch as Callisto-managed; close or rename the lookalike before retrying. |
+| E146 | Found <count> open managed release PRs | Resolve the ambiguous managed PRs manually before running the release action again. |
+| E147 | Managed release branch `<branch>` has an invalid SHA suffix | Use the canonical branch or the canonical branch followed by `--` and one lowercase forty-hex commit SHA. |
+| E148 | Release PR snapshot changed after Callisto made its decision | Re-run `callisto release-pr decide` with a fresh snapshot; no forge mutation was made. |
+| E149 | Commit plan for base commit `<base_commit>` has no file changes | An empty commit plan means nothing was staged; check the version command actually ran. |
+| E150 | Path `<path>` has unsupported Git mode `<mode>` | The forge commit API can only create plain, non-executable regular files; commit an executable bit, symlink, or submodule change through a privileged token instead. |
+| E151 | Path `<path>` has unsupported change kind `<kind>` | Renames, copies, type changes, and unmerged paths cannot be expressed as forge commit additions/deletions; stage a plain add/modify/delete instead. |
+| E152 | Commit plan is <bytes> bytes, exceeding the <limit> byte limit | Split the release into smaller changesets, or reduce large generated files (for example a monolithic CHANGELOG) before retrying. |
+| E153 | Path `<path>` may not appear in a forge commit plan | The executor never writes `.github/workflows/*`, `.git/*`, or unsafe paths through the forge commit API; those are inherited unchanged from the base commit. |
+| E154 | Pull request #<number> targets the internal staging branch | The `<release-branch>--staging` branch is reserved for the executor's own commit staging; close or rename a pull request opened against it before retrying. |
+
+## callisto-format
+
+| Code | Meaning | Fix |
+| --- | --- | --- |
+| E035 | Bump_version requires a SemVer version; `<raw>` was parsed as <grammar> | — |
+| E036 | No versioning implementation exists for <grammar> | — |
+| E037 | Bump requires a PEP 440 version; `<raw>` was parsed as <grammar> | — |
+| E038 | Internal error computing bumped version `<raw>`: <message> | — |
+| E039 | Version component overflow while bumping `<raw>` | — |
+| E040 | Changeset does not start with a `---` frontmatter delimiter on line 1 | Add a `---` frontmatter delimiter on line 1 of the changeset file. |
+| E041 | Frontmatter opened with `---` on line 1 but was never closed with a matching `---` | Ensure frontmatter block closes with `---`. |
+| E042 | Line <line>: quoted name is never closed with a matching `"` | — |
+| E043 | Line <line>: quoted name `<raw>` is followed by unexpected content before the `:` separator | — |
+| E044 | Line <line>: no `:` separator found in <raw> | — |
+| E045 | Line <line>: package name is empty | — |
+| E046 | Line <line>: invalid severity for package <name>: <source> | — |
+| E047 | Line <line>: package <name> is named more than once in this changeset's frontmatter (first on line <first_line>) | — |
+| E048 | Changeset has no frontmatter entries and an empty summary | — |
+| E049 | Cannot write changeset: no entries and an empty summary | — |
+| E055 | Changeset has entries but an empty or whitespace-only summary | Add a non-empty summary after the closing `---` delimiter. |
+| E056 | Cannot write changeset: entries present but summary is empty or whitespace-only | Provide a non-empty summary describing the change. |
+| E057 | Entry <index> has an empty package name | — |
+
+## callisto-vcs
+
+| Code | Meaning | Fix |
+| --- | --- | --- |
+| E050 | Failed to discover Git repository at `<path>`: <message> | Ensure target directory is inside a valid Git repository. |
+| E051 | Git error: <0> | — |
+| E052 | Reference `<ref_name>` was not found | Check if reference or tag exists in local or remote Git refs. |
+| E053 | Tag glob pattern `<pattern>` is not a valid glob: <message> | Fix the glob syntax (e.g. balance `{`/`}` and `[`/`]`) or use a literal tag name. |
 
 ## callisto-changelog
 
@@ -49,12 +105,17 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src/
 | E111 | `callisto.toml` is not valid TOML | Verify callisto.toml TOML syntax formatting. |
 | E113 | A package's `changelog` path is absolute or contains `..`, and would escape the workspace root | Use a forward-slash-separated path relative to the package root that does not contain '..' components. |
 | E116 | `changesets.dir` is absolute or contains `..`, and would escape the workspace root | Use a forward-slash-separated path relative to the workspace root that is not absolute and does not contain '..' components. |
-| E197 | Invalid `[release]` product configuration | Configure one supported product package and all four required artifact targets. |
+| E197 | Invalid `[release]` product configuration | Configure one supported product package and its artifact targets. |
 
 ## callisto-graph — workspace graph
 
 | Code | Meaning | Fix |
 | --- | --- | --- |
+| E030 | Workspace root not found between `<path>` and the Git repository root `<path>` | Callisto never searches above the Git repository root. Add a workspace manifest (Cargo.toml with [workspace], package.json with a workspaces field, pnpm-workspace.yaml, or a .moon directory) or a package manifest (Cargo.toml with [package], package.json, or pyproject.toml) inside the repository. |
+| E031 | Failed to walk filesystem under `<path>`: <message> | — |
+| E032 | Project path `<path>` is outside the workspace root `<root>` | — |
+| E033 | VCS error during workspace location: <0> | — |
+| E058 | `<path>` is not inside a Git repository | Callisto needs a Git repository: run `git init` in the workspace root. |
 | E100 | Package ID is defined at more than one manifest path | Ensure package IDs are unique across workspace manifest paths. |
 | E101 | Package at one path declares conflicting identities | Align package name declarations in manifest files. |
 | E102 | Named package was not found in the workspace | Verify package is included in workspace members in callisto.toml. |
@@ -65,26 +126,24 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src/
 | E107 | Group's members use incompatible version grammars | — |
 | E108 | Group lists a member not found in the workspace | — |
 | E109 | Package is listed in more than one conflicting group | — |
-| E117 | Manifest's on-disk version doesn't match the version plan's expected from/to version | The manifest version does not match the plan's from or to version. This may indicate the manifest was modified outside of callisto after the plan was generated. |
 | E114 | Failed to parse `.changeset/pre.json` | Check that .changeset/pre.json is valid JSON and was not partially written. Delete the file and re-run `callisto pre enter` to recover. |
 | E115 | Failed to read `.changeset/pre.json` | Check that .changeset/pre.json is readable. Delete the file and re-run `callisto pre enter` to recover. |
+| E117 | Manifest's on-disk version doesn't match the version plan's expected from/to version | The manifest version does not match the plan's from or to version. This may indicate the manifest was modified outside of callisto after the plan was generated. |
 | E118 | Package declares platform targets through both `napi.targets` and `[tool.maturin].targets` | Remove one of the two target declarations -- either napi.targets in package.json or [tool.maturin].targets in pyproject.toml -- from the package's manifest. |
-| E203 | Package declares platform targets and also ships `[[release.artifact]]` binaries; only one is allowed | Build the native addon and the release binaries from separate packages, or drop one of the two declarations. |
-| E204 | napi package needs exactly one napi `cdylib` crate matching its binary name, and none or more than one candidate exists | Set `napi.binaryName` in package.json to the `[lib] name` (or package name with `-` as `_`) of the one crate that builds the addon. |
 | E119 | Package's `publish-to` target ecosystem doesn't match its detected ecosystem | Remove the mismatched target from publish-to, or fix the [[package]]/[[package-set]] rule so it only matches packages in that ecosystem. |
 | E120 | Package's `publishConfig.registry` (npm) is not an operator-approved registry | `publishConfig.registry` in package.json is manifest-controlled data (a PR author can set it in their own package.json), not operator config, so it is never trusted verbatim as a publish destination. The URL must use the `https` scheme and must exactly match a `url` configured on an `npm`-kind entry in `[registries]` in callisto.toml. Add the registry there if it is a legitimate private registry, or remove the override from package.json. |
 | E123 | Release intent references a package that is not an exact selected workspace package | Rebuild the release intent from the current workspace instead of reusing a selection from another workspace. |
 | E124 | Release intent no longer matches the current workspace snapshot | Regenerate and reapprove the release intent; no release operation was authorized. |
-| E157 | Registry reported a package version published, but does not yet show it | The publish command already ran and the registry client reported success; this is registry propagation lag, not an unauthorized or stale operation. Re-run reconciliation once the registry catches up -- do not regenerate the release intent. |
+| E125 | Cannot read a release input file | Ensure the release manifest and configuration files remain readable until validation completes. |
+| E126 | Registry binding is not a credential-free canonical URL | Use a URL without userinfo, query parameters, or fragments in callisto.toml. |
+| E127 | Release execution state is invalid | Regenerate the release intent; no release operation was authorized. |
+| E132 | Git push remote is unsafe | Configure origin with a credential-free HTTPS or SSH URL. |
 | E136 | Artifact manifest is not authorized by this release intent | Regenerate the artifact manifest for this exact release intent; no artifact was uploaded. |
 | E137 | Artifact path is unsafe (e.g. escapes the artifact directory) | Place the built asset directly beneath the explicit artifact directory without symbolic links. |
 | E138 | Cannot read a build artifact | Ensure the build artifact is readable and has not changed since it was attested. |
 | E139 | Artifact doesn't match its manifest digest or byte length | Rebuild and re-attest the artifact; it was not uploaded. |
 | E140 | GitHub could not verify the artifact's attestation | Verify that the artifact was built by the exact trusted workflow and source commit declared in the release intent. |
-| E125 | Cannot read a release input file | Ensure the release manifest and configuration files remain readable until validation completes. |
-| E126 | Registry binding is not a credential-free canonical URL | Use a URL without userinfo, query parameters, or fragments in callisto.toml. |
-| E132 | Git push remote is unsafe | Configure origin with a credential-free HTTPS or SSH URL. |
-| E127 | Release execution state is invalid | Regenerate the release intent; no release operation was authorized. |
+| E157 | Registry reported a package version published, but does not yet show it | The publish command already ran and the registry client reported success; this is registry propagation lag, not an unauthorized or stale operation. Re-run reconciliation once the registry catches up -- do not regenerate the release intent. |
 | E158 | Release intent could not be constructed | Fix the reported release-intent construction problem (for example, an unsupported execution trust profile) and rebuild the release intent from a valid decision. |
 | E159 | Release operation could not be constructed | Fix the reported release-operation construction problem in the source release decision or package graph. |
 | E160 | Release decision could not be constructed | Fix the reported release-decision problem (for example an empty or duplicate roster) and re-derive it. |
@@ -98,29 +157,31 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src/
 | E168 | Release feature/combination is not implemented | This combination is not implemented for release; adjust the release configuration to use a supported combination. |
 | E169 | Release `--package` selection is invalid | Select each package at most once, only packages with a pending release and a publish target, and every unreleased platform package a selected npm package depends on. |
 | E170 | Release precondition is unmet (e.g. detached HEAD, missing GitHub remote) | Satisfy the reported precondition (for example a detached HEAD or a configured GitHub remote) before retrying. |
+| E171 | Internal release invariant violated | This is an internal callisto defect, not an operator action; report it along with the full error detail. |
+| E172 | Release execution is incomplete: one or more operations lack verified terminal success | Rerun the release: it adopts every operation that already landed and retries the rest. Do not treat this release as successful. |
+| E175 | Configured artifact repository doesn't match the prepared GitHub push remote | Use the repository derived from the trusted Git remote; Callisto will not upload product assets to a caller-selected repository. |
+| E176 | Cannot dispatch a release operation because its provider observation is indeterminate | Restore provider credentials or connectivity, then retry. Callisto will not dispatch an effect while it cannot determine the remote identity. |
+| E177 | Provider observation is not usable as release evidence | This is an internal callisto defect: a provider adapter produced evidence that does not belong to the operation's role. Report it with the full error detail. |
+| E178 | Release run envelope is not valid for this intent | Re-plan the release intent, or run execute with the orchestration revision and artifact manifest the intent was planned against. |
 | E179 | An asset's owning package is not part of this release | Release the owning package in the same run: add a changeset for it, or put it in the product's [[fixed-group]]. |
 | E180 | Remote refused a tag push: a GitHub App token cannot push a commit whose `.github/workflows/` differs from every branch tip | This happens when releasing a commit that is not a branch tip (for example, recovering an older release) with GITHUB_TOKEN, which cannot be granted the `workflows` scope. Push the tag, and every other tag of this release, as an annotated tag at the target with a non-App credential (a PAT or deploy key), then re-run the release. |
-| E171 | Internal release invariant violated | This is an internal callisto defect, not an operator action; report it along with the full error detail. |
-| E172 | Release execution is incomplete: one or more operations lack verified terminal success | Use release reconcile to inspect the exact incomplete operations; do not treat this release as successful. |
-| E175 | Configured artifact repository doesn't match the prepared GitHub push remote | Use the repository derived from the trusted Git remote; Callisto will not upload product assets to a caller-selected repository. |
-| E178 | Release run envelope is not valid for this intent | Re-plan the release intent, or run execute with the orchestration revision and artifact manifest the intent was planned against. |
-| E177 | Provider observation is not usable as release evidence | This is an internal callisto defect: a provider adapter produced evidence that does not belong to the operation's role. Report it with the full error detail. |
-| E176 | Cannot dispatch a release operation because its provider observation is indeterminate | Restore provider credentials or connectivity, then retry. Callisto will not dispatch an effect while it cannot determine the remote identity. |
-| E198 | `[release]` declares no `forge-repository` | Add forge-repository = "owner/repo" under [release] in callisto.toml. |
-| E199 | Package configures a `publish-to` target that release cannot dispatch yet | Remove the target from `publish-to` for this package, or publish it outside `callisto release`. |
+| E187 | Configured forge repository doesn't match the origin remote | The release plan requires [release].forge-repository to be origin's GitHub repository. Use that `owner/repo`, or point origin at the repository binaries release to. |
+| E188 | No package produces a binary artifact; nothing to ship | Remove --artifact-target, or add a binary target ([[bin]], an npm `bin`, or [project.scripts]). |
+| E189 | `--product-package` value is invalid | Name one of the binary-producing packages (candidates are listed in the error). |
 | E190 | `callisto init` target already exists; workspace is already initialized | Edit callisto.toml directly; `callisto init` only scaffolds a workspace without one. |
 | E191 | Workspace root is not a Git repository | Run `git init` in the workspace root, then re-run `callisto init`. |
 | E192 | No `origin` remote is configured | Add the repository's remote as `origin`: `git remote add origin <url>`. |
 | E193 | Package matches more than one tag naming convention | Write a [[package]] entry for it with `tag-template` set to the current convention and `previous-tag-templates` listing the older ones. |
 | E194 | More than one package shares a `v{version}` tag | Give each package its own [[package]] `tag-template` (and `previous-tag-templates` for the shared `v{version}` tags). |
 | E195 | `--forge-repository` value is invalid | Use the GitHub `owner/repo` the product releases to. |
-| E187 | Configured forge repository doesn't match the origin remote | The release plan requires [release].forge-repository to be origin's GitHub repository. Use that `owner/repo`, or point origin at the repository binaries release to. |
 | E196 | `--artifact-target` triple is invalid | Use distinct, non-empty Rust target triples. |
-| E188 | No package produces a binary artifact; nothing to ship | Remove --artifact-target, or add a binary target ([[bin]], an npm `bin`, or [project.scripts]). |
-| E189 | `--product-package` value is invalid | Name one of the binary-producing packages (candidates are listed in the error). |
+| E198 | `[release]` declares no `forge-repository` | Add forge-repository = "owner/repo" under [release] in callisto.toml. |
+| E199 | Package configures a `publish-to` target that release cannot dispatch yet | Remove the target from `publish-to` for this package, or publish it outside `callisto release`. |
 | E200 | Generated workflow file already exists; `callisto init` refuses to overwrite it | Remove or edit the existing file directly; `callisto init` never merges into it. |
 | E201 | Couldn't resolve `callisto@{version}` to a commit on `orin-dx/callisto` | check network access to github.com, or run `callisto init --no-workflow` to skip workflow generation |
 | E202 | `callisto init` cannot generate a release workflow for this workspace | omit --workflow and write .github/workflows/callisto-release.yml by hand |
+| E203 | Package declares platform targets and also ships `[[release.artifact]]` binaries; only one is allowed | Build the native addon and the release binaries from separate packages, or drop one of the two declarations. |
+| E204 | napi package needs exactly one napi `cdylib` crate matching its binary name, and none or more than one candidate exists | Set `napi.binaryName` in package.json to the `[lib] name` (or package name with `-` as `_`) of the one crate that builds the addon. |
 
 ## callisto-cli (`callisto::*` namespace)
 
@@ -160,4 +221,4 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src/
 | `callisto::init_workflow_flags_conflict` | `--workflow` and `--no-workflow` are mutually exclusive | pass only one of --workflow or --no-workflow |
 | `callisto::error` | Fallback/untyped error; message is whatever string was wrapped | — |
 
-129 codes total: 96 numeric (21 callisto-model, 4 callisto-changelog, 71 callisto-graph: 5 config + 66 graph) + 33 `callisto::*` in callisto-cli.
+180 codes total: 147 numeric (45 callisto-model, 18 callisto-format, 4 callisto-vcs, 4 callisto-changelog, 76 callisto-graph: 5 config + 71 graph) + 33 `callisto::*` in callisto-cli.

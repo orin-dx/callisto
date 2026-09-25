@@ -483,7 +483,7 @@ mod tests {
         .is_ok());
     }
 
-    /// SPEC-DX-RELEASE-COMMAND AC-10: the legacy publish commands no longer parse.
+    /// The legacy publish commands no longer parse.
     #[test]
     fn legacy_publish_commands_are_unrecognized() {
         use clap::Parser;
@@ -501,7 +501,7 @@ mod tests {
         }
     }
 
-    /// SPEC-DX-RELEASE-COMMAND AC-03: bare release takes repeatable `--package`, not `--from-release-commit`.
+    /// Bare release takes repeatable `--package`, not `--from-release-commit`.
     #[test]
     fn bare_release_accepts_packages_and_rejects_release_commit() {
         use clap::Parser;
@@ -538,7 +538,7 @@ mod tests {
         );
     }
 
-    /// AC-006/AC-007 (parse slice): `callisto matrix --package foo` parses
+    /// `callisto matrix --package foo` parses
     /// into Command::Matrix with the package field populated; MatrixArgs
     /// declares no --format of its own (the global flag is used instead).
     #[test]
@@ -552,7 +552,7 @@ mod tests {
         }
     }
 
-    /// AC-003b: bare `callisto matrix` (no --package) parses with package: None.
+    /// Bare `callisto matrix` (no --package) parses with package: None.
     #[test]
     fn test_cli_parse_matrix_command_bare() {
         use clap::Parser;
@@ -564,7 +564,7 @@ mod tests {
         }
     }
 
-    /// SPEC-DX-CLI-SURFACE AC-01: `--help` lists exactly the 8 user commands,
+    /// `--help` lists exactly the 8 user commands,
     /// each with one plain-language line free of internal jargon.
     #[test]
     fn help_lists_exactly_eight_commands_with_plain_help_text() {
@@ -624,7 +624,7 @@ mod tests {
         }
     }
 
-    /// SPEC-DX-CLI-SURFACE AC-02: the automatic `help` subcommand is disabled,
+    /// The automatic `help` subcommand is disabled,
     /// but `-h`/`--help` still work on the root command and on subcommands.
     #[test]
     fn help_subcommand_is_disabled_but_flag_help_works() {
@@ -655,7 +655,7 @@ mod tests {
         );
     }
 
-    /// SPEC-DX-CLI-SURFACE AC-03: plumbing subcommands stay callable but hidden
+    /// Plumbing subcommands stay callable but hidden
     /// from `callisto --help` and `callisto release --help`.
     #[test]
     fn plumbing_subcommands_are_hidden_but_callable() {
@@ -714,7 +714,7 @@ mod tests {
         .is_ok());
     }
 
-    /// SPEC-DX-STATUS-ADD AC-02: `validate` is removed, not merely hidden --
+    /// `validate` is removed, not merely hidden --
     /// parsing it must fail as an unrecognized subcommand.
     #[test]
     fn validate_subcommand_fails_to_parse() {
@@ -725,7 +725,7 @@ mod tests {
         );
     }
 
-    /// SPEC-DX-SETUP-CORE AC-003c: a comma-separated `--artifact-target` value keeps every
+    /// A comma-separated `--artifact-target` value keeps every
     /// entry, including empties, so `collect_answers` can error naming the empty one.
     #[test]
     fn artifact_target_flag_splits_on_comma() {

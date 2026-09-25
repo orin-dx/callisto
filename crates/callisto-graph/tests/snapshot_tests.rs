@@ -36,7 +36,7 @@ fn test_snapshot_version_template_placeholders() {
     let ws_dir = tempfile::tempdir().unwrap();
     let root = ws_dir.path();
 
-    // `plan_snapshot` must resolve a real HEAD sha (§G.11), so the fixture needs a
+    // `plan_snapshot` must resolve a real HEAD sha, so the fixture needs a
     // real Git repository with at least one commit, not just a bare temp dir.
     std::fs::write(root.join(".gitkeep"), "").unwrap();
     let head_sha = init_git_repo_with_commit(root);
@@ -62,7 +62,7 @@ fn test_snapshot_version_template_placeholders() {
     assert_eq!(report.snapshot_tag, format!("0.0.0-canary-{expected_sha7}"));
 }
 
-/// docs/01-spec.md §G.11 (SPEC DECISION, pinned invariant #33): the snapshot version is
+/// The snapshot version is
 /// exactly `0.0.0-{tag}-{sha7}` — base literally `0.0.0` (never the package's own version),
 /// hyphen-joined (never dot-joined), and **identical for every package in the workspace**.
 /// This is what makes a snapshot unpublishable-over-a-real-release: every genuine release
@@ -124,7 +124,7 @@ fn test_snapshot_version_format_matches_spec() {
 
     assert_eq!(
         report.snapshot_tag, expected_version,
-        "snapshot_tag must be exactly `0.0.0-{{tag}}-{{sha7}}` per docs/01-spec.md §G.11"
+        "snapshot_tag must be exactly `0.0.0-{{tag}}-{{sha7}}`"
     );
 
     assert_eq!(plan.bumps.len(), 2, "expected one planned bump per package");
@@ -133,7 +133,7 @@ fn test_snapshot_version_format_matches_spec() {
             bump.to.render(),
             expected_version.as_str(),
             "package `{}` must receive the identical workspace-wide snapshot version, \
-             not a version derived from its own current version (§G.11 invariant #33)",
+             not a version derived from its own current version",
             bump.package.display_name()
         );
     }
@@ -144,7 +144,7 @@ fn test_snapshot_version_format_matches_spec() {
     }
 }
 
-/// docs/01-spec.md §G.11: the snapshot sha is `CommitSha::short()` of a resolved HEAD.
+/// The snapshot sha is `CommitSha::short()` of a resolved HEAD.
 /// When HEAD cannot be resolved (no repo, no commits, etc.), `plan_snapshot` must return a
 /// real, surfaced error — not silently substitute a fake `0000000` placeholder sha, which
 /// would let snapshots from unrelated runs collide on the same tag.

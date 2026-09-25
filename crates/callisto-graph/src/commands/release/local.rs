@@ -385,7 +385,7 @@ mod tests {
         dir
     }
 
-    /// M1: `--package` keeps every fixed- or linked-group member, as the CI route does.
+    /// `--package` keeps every fixed- or linked-group member, as the CI route does.
     #[test]
     fn package_selection_expands_fixed_and_linked_groups() {
         for kind in ["fixed", "linked"] {

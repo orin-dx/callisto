@@ -136,7 +136,7 @@ fn test_status_matches_ecosystem_qualified_changeset_entry() {
     .unwrap();
 
     // status --check must still succeed (no error-level diagnostics) --
-    // SPEC-DX-STATUS-ADD AC-04 made pending state exit-code-irrelevant, so the
+    // Pending state never affects the exit code, so the
     // ecosystem-qualified-match regression this test guards is now asserted
     // via the report itself (`pending`/`pending_severity`), not the exit code.
     let code = commands::status::handle(
@@ -164,8 +164,8 @@ fn test_status_matches_ecosystem_qualified_changeset_entry() {
 }
 
 /// `callisto status --check` must return exit code 0 regardless of pending
-/// state, as long as there are no error-level diagnostics (SPEC-DX-STATUS-ADD
-/// AC-04: `--check` is a conventional errors-only gate).
+/// state, as long as there are no error-level diagnostics
+/// (`--check` is a conventional errors-only gate).
 #[test]
 fn test_status_check_exit_codes() {
     use std::process::ExitCode;

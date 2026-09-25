@@ -1073,10 +1073,10 @@ fn a_rerun_after_a_crate_is_already_published_completes_with_a_receipt() {
     );
 }
 
-/// AC-13: rerunning a fully published release dispatches nothing and the receipt
+/// Rerunning a fully published release dispatches nothing and the receipt
 /// records `AlreadySatisfied` for every operation.
 #[test]
-fn ac13_rerun_of_a_fully_published_release_is_already_satisfied_everywhere() {
+fn rerun_of_a_fully_published_release_is_already_satisfied_everywhere() {
     let (intent, manifest) = simulator_intent();
     let context = Rc::new(SimContext::default());
     let scenario = Scenario {

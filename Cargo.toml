@@ -11,8 +11,8 @@ documentation = "https://docs.rs/callisto-cli"
 keywords = ["monorepo", "changesets", "release-management", "versioning", "moon"]
 categories = ["development-tools", "command-line-utilities"]
 
-# Pinned once here, not per-crate: §M.1.1 notes that bump_version's byte-exactness claim
-# (§6.2) is meaningless if two crates in the workspace disagree about what SemVer parsing
+# Pinned once here, not per-crate: bump_version's byte-exactness claim
+# is meaningless if two crates in the workspace disagree about what SemVer parsing
 # and rendering do.
 [workspace.dependencies]
 semver = { version = "1", features = ["serde"] }

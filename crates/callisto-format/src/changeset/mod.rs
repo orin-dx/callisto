@@ -5,7 +5,7 @@ mod tests;
 use callisto_model::{Severity, SeverityParseError};
 use frontmatter::{needs_quoting, parse_entry_line, LineError};
 
-/// One parsed `.changeset/*.md` file (§6.1's shape): a frontmatter block of
+/// One parsed `.changeset/*.md` file: a frontmatter block of
 /// `name: severity` entries, followed by a free-text summary.
 ///
 /// Deliberately does not carry a filename or path — this crate is filesystem-free; a caller
@@ -13,7 +13,7 @@ use frontmatter::{needs_quoting, parse_entry_line, LineError};
 /// context.
 use schemars::JsonSchema;
 
-/// One parsed `.changeset/*.md` file (§6.1's shape): a frontmatter block of
+/// One parsed `.changeset/*.md` file: a frontmatter block of
 /// `name: severity` entries, followed by a free-text summary.
 ///
 /// Deliberately does not carry a filename or path — this crate is filesystem-free; a caller
@@ -99,7 +99,7 @@ pub enum ParseError {
         name: String,
     },
 
-    /// §6.1: "Empty frontmatter valid iff summary is non-empty."
+    /// Empty frontmatter is valid iff the summary is non-empty.
     #[error("changeset has no frontmatter entries and an empty summary")]
     #[diagnostic(code(E048))]
     EmptyChangeset,
@@ -136,7 +136,7 @@ pub enum WriteError {
 
 /// Parses one `.changeset/*.md` file's contents.
 ///
-/// Grammar (§6.1): a `---`-delimited frontmatter block starting on line 1, each non-blank,
+/// Grammar: a `---`-delimited frontmatter block starting on line 1, each non-blank,
 /// non-comment line inside it shaped `<name>: <severity>`, followed by the file's remaining
 /// content as `summary` (trimmed). `#`-comment lines and blank lines inside the frontmatter
 /// block are skipped. CRLF line endings are normalized to LF before parsing.

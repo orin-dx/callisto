@@ -500,7 +500,7 @@ pub enum GraphError {
     #[error("release execution is incomplete: {count} operation(s) lack verified terminal success")]
     #[diagnostic(
         code(E172),
-        help("Use release reconcile to inspect the exact incomplete operations; do not treat this release as successful.")
+        help("Rerun the release: it adopts every operation that already landed and retries the rest. Do not treat this release as successful.")
     )]
     ReleaseIncomplete { count: usize },
 
@@ -787,7 +787,7 @@ mod tests {
         );
     }
 
-    /// AC-017 (message shape): ConflictingPlatformTargetSources must name the
+    /// ConflictingPlatformTargetSources must name the
     /// package and both source field names in its Display text, and carry
     /// diagnostic code E118 with help text pointing at the fix.
     #[test]
@@ -819,15 +819,6 @@ pub enum ConfigError {
     #[error("`{path}` is not valid TOML: {message}")]
     #[diagnostic(code(E111), help("Verify callisto.toml TOML syntax formatting."))]
     ParseToml { path: PathBuf, message: String },
-
-    #[error("[[package-set]] `{pattern}` matched no packages")]
-    PackageSetMatchedNothing { pattern: String },
-
-    #[error("[[package]] `{pattern}` matched no package")]
-    PackageMatchedNothing { pattern: String },
-
-    #[error("package `{package}` is claimed by more than one [[package-set]]: {}", .patterns.join(", "))]
-    OverlappingPackageSets { package: String, patterns: Vec<String> },
 
     #[error("group `{group}` and group `{other}` both list `{member}`")]
     ConflictingGroupNames {
@@ -873,7 +864,7 @@ pub enum ConfigError {
     #[error("invalid product release configuration: {detail}")]
     #[diagnostic(
         code(E197),
-        help("Configure one supported product package and all four required artifact targets.")
+        help("Configure one supported product package and its artifact targets.")
     )]
     InvalidProductRelease { detail: String },
 

@@ -1,8 +1,8 @@
 {
   "id": "SPEC-RELEASE-CAPABILITY-011",
-  "status": "draft",
+  "status": "current",
   "owner_track": "release-security",
-  "last_verified_revision": "289001ec",
+  "last_verified_revision": "a2156a4ae",
   "depends_on": [
     "SPEC-RELEASE-DECISION-008",
     "SPEC-RELEASE-INTENT-MODEL-009",
@@ -19,7 +19,7 @@
   "acceptance_criteria": [
     {
       "id": "AC-001",
-      "criterion": "callisto-graph creates a release observation only from a canonical workspace root while holding the GitCommitTrustEvidence required by SPEC-RELEASE-TRUST-010. It re-runs the normal configuration resolution, package discovery, linked-group/cascade/prerelease policy resolution, and dependency analysis from disk; it never trusts a caller-provided workspace, selection, package list, endpoint, source SHA, or previously cached Workspace interior state as fresh evidence.",
+      "criterion": "callisto-graph creates a release observation only from a canonical workspace root while holding the GitCommitTrustEvidence required by SPEC-RELEASE-TRUST-010. It re-runs configuration resolution, package discovery, and dependency analysis from disk against the received, already-approved ReleaseDecisionV1; it never trusts a caller-provided workspace, endpoint, source SHA, or previously cached Workspace interior state as fresh evidence, and it does not re-derive the decision's linked-group, cascade or prerelease selection.",
       "is_error_case": true
     },
     {
@@ -63,6 +63,5 @@
     "Use BTreeMap/BTreeSet and explicit Ord implementations for durable and scheduling order. Do not use PackageId::matches for release-operation identity: it intentionally supports a bare-name wildcard and is not an exact authorization predicate.",
     "Workspace currently contains interior caches. Fresh authorization should construct or invalidate an observation boundary rather than claiming a pre-existing cached graph is current."
   ],
-  "reasoning": "The durable intent records what was approved. It is intentionally not sufficient to perform effects: filesystem locations, endpoints, and clients are mutable operational inputs. A graph-private, freshly observed capability bridges that gap without serializing secrets or allowing an old plan path to regain authority.",
-  "revision_note": "Revised for PR #124: every run adopts already-landed effects, execution state is in memory only, and the receipt is built from recorded state evidence."
+  "reasoning": "The durable intent records what was approved. It is intentionally not sufficient to perform effects: filesystem locations, endpoints, and clients are mutable operational inputs. A graph-private, freshly observed capability bridges that gap without serializing secrets or allowing an old plan path to regain authority."
 }

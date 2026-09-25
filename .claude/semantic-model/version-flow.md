@@ -6,16 +6,20 @@ Sources: `crates/callisto-graph/src/apply.rs`, `crates/callisto-graph/src/plan.r
 
 The complete description of what needs to change. Produced by plan-generation, consumed by apply.
 
-Key fields:
+Fields (`crates/callisto-graph/src/plan.rs`):
 - `bumps: Vec<PlannedBump>` — version changes per package
-- `rewrites: Vec<PlannedRewrite>` — dependency spec updates in manifests
+- `rewrites: Vec<SpecRewrite>` — dependency spec updates in manifests
+- `platform_writes: Vec<PlatformWrite>` — npm platform manifest version writes
+- `optional_dep_updates: Vec<OptionalDepUpdate>` — owner `optionalDependencies` updates
 - `changelog_writes: Vec<ChangelogWrite>` — changelog sections to prepend
 - `consumed_changesets: Vec<PathBuf>` — changeset files to delete after apply
 - `pre_state_update: Option<PreState>` — pre-mode state to write to pre.json
 - `delete_pre_json: Option<PathBuf>` — pre.json to delete (exit pre-mode)
+- `pre_cursor_updates: Vec<(PackageId, CommitSha)>` — prerelease cursors to advance
+- `observed_versions: BTreeMap<PackageId, Version>` — versions read during planning
+- `diagnostics: Vec<Diagnostic>`
 
-`VersionPlan` derives `Serialize`/`Deserialize`/`JsonSchema` but is not currently persisted.
-This is a known gap — persisting it would enable Release Please-style resumable applies.
+`VersionPlan` is in-memory only: it derives `Clone`/`Debug`/`Default`, not `Serialize`.
 
 ## PlannedBump
 
@@ -63,7 +67,7 @@ pub struct ApplyOutcome {
 
 ## apply_version_plan — Idempotency Guard
 
-### The Contract (Track B design decision)
+### The Contract
 
 For each `VersionWriteTarget::Manifest(p)` in a bump's writes:
 
@@ -81,8 +85,6 @@ Changeset paths in `plan.consumed_changesets` are ALWAYS pushed to `modified_pat
 regardless of whether the file exists on disk. This enables `git rm --cached --ignore-unmatch`
 to clean the index on idempotent retry after a crash deleted the file but didn't stage the removal.
 
-The current code has a bug here: it gates the push behind `if full.exists()`. Track B removes
-this gate.
 
 ### Why manifest path is staged even when write is skipped
 
@@ -94,6 +96,5 @@ on disk is correct but may not be staged in git. Pushing it to modified_paths en
 
 - `GraphError::UnexpectedManifestVersion` — error.rs, E117, fields: path, expected_from, expected_to, found
 - `WorkspaceCargoResolver::workspace_version()` — cargo.rs, returns `Result<Option<Version>, ManifestError>`
-- Three RED tests in apply.rs test module — see `.claude/plans/ACTIVE.md` for names
 
 See `docs/specs/track-b-idempotent-apply.json` for the full testable acceptance criteria.

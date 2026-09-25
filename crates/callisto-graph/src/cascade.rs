@@ -292,7 +292,7 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
             }
         }
 
-        // Spec §G.6.7: Linked group release severity propagation
+        // Linked group release severity propagation
         for g in input.groups.linked.values() {
             let max_sev = g.max_severity(&out.severities);
             if max_sev == Severity::None {
@@ -367,7 +367,7 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
             }
         }
 
-        // Track 1: Fixed group convergence -- mirrors the Linked-group block
+        // Fixed group convergence -- mirrors the Linked-group block
         // above but computes each group's shared target via
         // fixed_group_target instead of taking the max of independently
         // bumped per-member candidates.
@@ -633,7 +633,7 @@ mod tests {
         }
     }
 
-    /// §13 invariant 9 / §7.4 row 5 vs row 4: peer-dependency escalation to
+    /// Peer-dependency escalation to
     /// `Severity::Major` must only fire when the upstream (source) severity
     /// is non-patch (Minor or Major). A patch-severity source that leaves a
     /// peer spec out of range falls through to row 4 (`cfg.bump_severity`),
@@ -691,7 +691,7 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
-    // T06: caret range must not cover pre-release versions
+    // Caret range must not cover pre-release versions
     // -------------------------------------------------------------------------
 
     /// Spec: caret_covers(cur, new) must return false when `new` is a pre-release
@@ -828,7 +828,7 @@ mod tests {
         }
     }
 
-    /// AC-001/AC-002: a dual-identity rewrite target registered under two
+    /// A dual-identity rewrite target registered under two
     /// different native names per ecosystem must produce a RewriteKey whose
     /// `name` is the name registered for the DEPENDENT's own ecosystem, not
     /// PackageId::name() (the target's own native-ecosystem registration).
@@ -912,12 +912,12 @@ mod tests {
         );
     }
 
-    /// AC-003: when IdentityIndex::native_name(&target, dependent_eco) returns
+    /// When IdentityIndex::native_name(&target, dependent_eco) returns
     /// None (the common, non-dual-identity case), RewriteKey.name must equal
     /// PackageId::name() exactly as it did before this fix, for a Prefixed
     /// target with no registration.
     #[test]
-    fn test_none_registration_fallback_uses_package_id_name_ac003() {
+    fn test_none_registration_fallback_uses_package_id_name() {
         let dep_target = PackageId::parse("pkg-core").unwrap();
         let dependent = PackageId::parse("pkg-app").unwrap();
         let edge = make_dep_edge(&dependent, &dep_target, "^1.0.0", Ecosystem::Cargo);
@@ -972,11 +972,11 @@ mod tests {
         );
     }
 
-    /// AC-007: same fallback, exercised for a PackageId::Bare target with no
+    /// Same fallback, exercised for a PackageId::Bare target with no
     /// registration, confirming the Bare variant is handled identically to the
-    /// Prefixed None-registration case in AC-003.
+    /// Prefixed None-registration case.
     #[test]
-    fn test_bare_target_with_no_registration_falls_back_to_name_ac007() {
+    fn test_bare_target_with_no_registration_falls_back_to_name() {
         let dep_target = PackageId::Bare("foo".to_string());
         let dependent = PackageId::parse("pkg-app").unwrap();
         let edge = make_dep_edge(&dependent, &dep_target, "^1.0.0", Ecosystem::Cargo);
@@ -1030,7 +1030,7 @@ mod tests {
         );
     }
 
-    /// Spec §G.6.7: a severity bump landing on a single member of a linked
+    /// A severity bump landing on a single member of a linked
     /// group (e.g. via a changeset naming only that package) must propagate
     /// to every other member of the group, and every member must converge
     /// on a stable target version.
@@ -1106,7 +1106,7 @@ mod tests {
         );
     }
 
-    /// Spec §G.6.7: linked group members with *different* base versions must
+    /// Linked group members with *different* base versions must
     /// converge on the SAME winning target version (the max of each member's
     /// individually-computed candidate at the converged severity), not just
     /// the same severity.
@@ -1544,11 +1544,11 @@ mod tests {
         assert_eq!(target.render(), "1.1.0-next.0");
     }
 
-    /// AC-017: solve_cascade's rewrite-construction logic must never route an
+    /// Solve_cascade's rewrite-construction logic must never route an
     /// inherited Cargo dependency edge through `DepWriteTarget::Manifest` --
     /// it must always route through `DepWriteTarget::CargoWorkspaceDependency`
     /// instead. This is the cross-module invariant that CargoToml's own
-    /// self-delegation guard (AC-018) relies on being true of real planner
+    /// self-delegation guard relies on being true of real planner
     /// output.
     #[test]
     fn inherited_cargo_dependency_edge_never_produces_manifest_rewrite_target() {
@@ -1655,7 +1655,7 @@ mod tests {
         );
     }
 
-    /// AC-001/AC-002/AC-004/AC-013(bug1): Fixed-group members seeded
+    /// Fixed-group members seeded
     /// directly (not via raise()) must converge on ONE shared,
     /// group-aligned target version computed by fixed_group_target, not on
     /// independently-bumped per-member targets. Exercised through the real
@@ -1745,7 +1745,7 @@ mod tests {
         assert_eq!(target_a, target_b);
     }
 
-    /// Regression: Track 1 (Fixed-group convergence) must apply the same
+    /// Regression: Fixed-group convergence must apply the same
     /// stale-member guard the Linked-group block directly above it already
     /// has. A fixed group naming a package absent from `input.base`
     /// (removed from the workspace but still listed in callisto.toml),
@@ -1850,7 +1850,7 @@ mod tests {
     /// Regression: `fixed_group_target` must ignore a stale group member (a
     /// package no longer present in `input.base`) even when that stale
     /// member carries a real release tag from before it was removed from
-    /// the workspace. Before this fix, Track 1 passed the raw `GroupDef`
+    /// the workspace. Fixed-group convergence once passed the raw `GroupDef`
     /// into `fixed_group_target`, which iterated ALL declared members --
     /// not just live ones -- when picking `released[0]` as the alignment
     /// base. With the stale, tagged member declared first, `released[0]`

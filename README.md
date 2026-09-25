@@ -66,7 +66,7 @@ callisto release
 
 Every subcommand accepts `--dry-run` (preview, no writes) `--format json` (machine-readable output) and `--cwd <path>` (run outside the current directory).
 
-`callisto status --check` exits `1` if there are pending changesets or error-level diagnostics, `0` otherwise — use it as a CI gate. `callisto pre enter <tag>` / `callisto pre exit` manage prerelease mode. `callisto snapshot --tag <tag>` applies a one-off, non-persistent version bump. `callisto completions <shell>` prints a shell completion script.
+`callisto status --check` exits `1` if there are error-level diagnostics, `0` otherwise (pending changesets alone never fail it) — use it as a CI gate. `callisto pre enter <tag>` / `callisto pre exit` manage prerelease mode. `callisto snapshot --tag <tag>` applies a one-off, non-persistent version bump. `callisto completions <shell>` prints a shell completion script.
 
 ## Configuration
 

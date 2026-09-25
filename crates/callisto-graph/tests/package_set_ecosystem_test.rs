@@ -5,7 +5,7 @@
 //! Cargo packages, but before the fix `matches()` glob-matched only against
 //! `PackageId::name()`, which never carries an ecosystem prefix -- so every
 //! ecosystem-prefixed `[[package-set]]` rule matched zero packages, silently.
-//! `GraphError::PackageSetMatchedNothing` / `DiagnosticCode::PackageSetMatchedNothing`
+//! `DiagnosticCode::PackageSetMatchedNothing`
 //! exists specifically to catch this but was never wired up at the walk-time
 //! matching call site.
 

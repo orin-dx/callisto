@@ -32,7 +32,7 @@ pub(crate) fn release_package_ids(
         .canonical_manifests()
         .map(|manifest| {
             let ecosystem = manifest.ecosystem();
-            // A Case D package's manifests may declare different names.
+            // A dual-manifest package's manifests may declare different names.
             let name = identity
                 .native_name(&package.id, ecosystem)
                 .unwrap_or(package.id.name());
@@ -264,7 +264,7 @@ fn workspace_package<'w, R: callisto_model::CommandRunner, D: DependencyResolver
     workspace: &'w Workspace<'_, R, D>,
     id: &ReleasePackageId,
 ) -> Option<&'w Package> {
-    // By release identity, not name: a Case D package's npm name can differ from its id.
+    // By release identity, not name: a dual-manifest package's npm name can differ from its id.
     workspace
         .graph
         .packages()
@@ -920,7 +920,7 @@ mod tests {
         assert!(parse_name_status("M Cargo.toml\n", &args).is_err());
     }
 
-    /// AC-005/AC-007 regression: both malformed name-status lines must
+    /// Regression: both malformed name-status lines must
     /// surface as `GraphError::ReleaseCommand` (E164) with a
     /// `CommandFailure::MalformedOutput` cause naming the real `git`
     /// program/args, not the old fieldless `ReleaseIntentStale`.
@@ -1261,7 +1261,7 @@ mod tests {
         );
     }
 
-    /// AC-007: a merged commit whose actual `HEAD` differs from the commit
+    /// A merged commit whose actual `HEAD` differs from the commit
     /// being verified must report `ReleaseCommitVerificationFailed{reason:
     /// HeadMismatch}`, naming the *verified* commit -- not the fieldless
     /// `ReleaseIntentStale` every other mismatch used to collapse into.
@@ -1294,7 +1294,7 @@ mod tests {
         }
     }
 
-    /// AC-008: a committed decision file that isn't valid JSON must report
+    /// A committed decision file that isn't valid JSON must report
     /// `ReleaseDecisionDecode` naming the decision path -- distinct from
     /// every `ReleaseCommitVerificationFailed` mismatch, and distinct from
     /// the old fieldless `ReleaseIntentStale` both used to share.
@@ -1335,7 +1335,7 @@ mod tests {
         }
     }
 
-    /// AC-007: a committed decision claiming a release package this
+    /// A committed decision claiming a release package this
     /// workspace never observes changing must report
     /// `ReleaseCommitVerificationFailed{reason: ClaimedPackageNotObserved}`,
     /// distinct from every other mismatch this function can report.
@@ -1482,7 +1482,7 @@ mod tests {
         }
     }
 
-    /// AC-011: a duplicate `--package` selection must report
+    /// A duplicate `--package` selection must report
     /// `ReleaseSelectionInvalid{reason: Duplicate}` naming the duplicated
     /// package, not the fieldless `ReleaseIntentStale`.
     #[test]
@@ -1533,9 +1533,9 @@ mod tests {
             .unwrap_err()
     }
 
-    /// AC-10: a workspace package with no pending release is `NotARelease`.
+    /// A workspace package with no pending release is `NotARelease`.
     #[test]
-    fn ac10_selection_that_is_not_a_release_candidate_reports_not_a_release() {
+    fn selection_that_is_not_a_release_candidate_reports_not_a_release() {
         let err = selection_error(
             vec![publishing_cargo_package("pkg-a"), publishing_cargo_package("pkg-b")],
             "pkg-b",
@@ -1551,9 +1551,9 @@ mod tests {
         );
     }
 
-    /// AC-10: a release candidate with nothing to dispatch is `NoDispatchableTarget`.
+    /// A release candidate with nothing to dispatch is `NoDispatchableTarget`.
     #[test]
-    fn ac10_release_candidate_without_publish_target_reports_no_dispatchable_target() {
+    fn release_candidate_without_publish_target_reports_no_dispatchable_target() {
         let err = selection_error(vec![cargo_package("pkg-a")], "pkg-a", "pkg-a");
         assert!(
             matches!(
@@ -1565,10 +1565,10 @@ mod tests {
         );
     }
 
-    /// AC-10: selection is by exact `ecosystem/name`; a same-named package in another
+    /// Selection is by exact `ecosystem/name`; a same-named package in another
     /// ecosystem, or a name absent from the workspace, never matches.
     #[test]
-    fn ac10_selection_matches_exact_ecosystem_and_name_only() {
+    fn selection_matches_exact_ecosystem_and_name_only() {
         let runner = empty_runner();
         let workspace = fixture_workspace(&runner, vec![publishing_cargo_package("pkg-a")]);
         for selection in [

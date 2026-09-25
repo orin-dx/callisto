@@ -199,7 +199,7 @@ mod tests {
         );
     }
 
-    /// §13 invariant 28: the empty-changeset diagnostic is deliberately
+    /// The empty-changeset diagnostic is deliberately
     /// governed by `validation.allow-empty-changesets` even when nobody set
     /// it, so an operator seeing the warning knows which key silences it.
     /// `render_version` must surface that as an attribution line, not just
@@ -217,8 +217,8 @@ mod tests {
         )
         .unwrap();
         // Deliberately no `.changeset` entries, and no `callisto.toml`
-        // opt-out: this is exactly the "no named default" case §13
-        // invariant 28's attribution exists to explain.
+        // opt-out: this is exactly the "no named default" case the
+        // attribution line exists to explain.
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = NoopRunner;

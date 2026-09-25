@@ -1,9 +1,9 @@
 //! Byte-compatible reader/writer for `@changesets/cli`'s file formats.
 //!
-//! - The changeset markdown format (§6.1): frontmatter parsing/writing, the quoted-vs-bare
+//! - The changeset markdown format: frontmatter parsing/writing, the quoted-vs-bare
 //!   name grammar, the empty-changeset validity rule.
-//! - `bump_version` (§6.2) and the `Versioning` trait (§7.7).
-//! - `pre.json`'s byte shape (§6.4, §8).
+//! - `bump_version` and the `Versioning` trait.
+//! - `pre.json`'s byte shape.
 
 pub mod bump;
 pub mod changeset;

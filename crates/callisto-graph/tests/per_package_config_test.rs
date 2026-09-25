@@ -198,7 +198,7 @@ release-trigger = "auto"
     );
 }
 
-/// AC-1: A prefixed [[package]] rule (e.g. `cargo/my-crate`) must win over a bare
+/// A prefixed [[package]] rule (e.g. `cargo/my-crate`) must win over a bare
 /// rule (e.g. `my-crate`) even when the bare rule appears EARLIER in callisto.toml.
 ///
 /// Scenario: bare rule declares `release-trigger = "auto"` and appears first; prefixed
@@ -250,7 +250,7 @@ changelog = "RELEASES.md"
         pkg.release_trigger,
     );
 }
-/// AC-1b: A prefixed [[package]] rule wins by name alone — no ecosystem check
+/// A prefixed [[package]] rule wins by name alone — no ecosystem check
 /// is performed against the package's actual manifests. Here, `npm/cross-eco`
 /// is prefixed for npm but the package is Cargo-only; the prefixed rule still wins.
 #[test]
@@ -282,17 +282,17 @@ changelog = "RELEASES.md"
     let changelog = pkg.changelog.as_ref().expect("changelog should be set");
     assert!(
         changelog.ends_with("RELEASES.md"),
-        "prefixed rule must win regardless of ecosystem match (AC-1b): got {changelog:?}",
+        "prefixed rule must win regardless of ecosystem match: got {changelog:?}",
     );
     assert_eq!(
         pkg.release_trigger,
         ReleaseTrigger::Changeset,
-        "bare rule release-trigger must not apply (AC-1b); got {:?}",
+        "bare rule release-trigger must not apply; got {:?}",
         pkg.release_trigger,
     );
 }
 
-/// AC-2: When only Bare rules match a given package (non-matching Prefixed rules
+/// When only Bare rules match a given package (non-matching Prefixed rules
 /// for different packages may exist in cfg.packages), the first Bare rule wins.
 #[test]
 fn bare_rule_applies_when_no_prefixed_rule_matches_this_package() {
@@ -322,12 +322,12 @@ release-trigger = "auto"
     assert_eq!(
         pkg.release_trigger,
         ReleaseTrigger::Auto,
-        "bare rule must apply when no prefixed rule matches this package (AC-2); got {:?}",
+        "bare rule must apply when no prefixed rule matches this package; got {:?}",
         pkg.release_trigger,
     );
 }
 
-/// AC-4a: When no [[package]] rule matches, the first matching [[package-set]]
+/// When no [[package]] rule matches, the first matching [[package-set]]
 /// rule in declaration order is applied (first-match-wins within the set tier).
 #[test]
 fn package_set_fallback_applies_first_match_wins() {
@@ -361,18 +361,18 @@ changelog = "ALSO-WRONG.md"
     assert_eq!(
         pkg.release_trigger,
         ReleaseTrigger::Auto,
-        "first [[package-set]] must win (AC-4a); got {:?}",
+        "first [[package-set]] must win; got {:?}",
         pkg.release_trigger,
     );
     if let Some(cl) = &pkg.changelog {
         assert!(
             !cl.ends_with("ALSO-WRONG.md"),
-            "second [[package-set]] must not win (AC-4a first-match-wins); got {cl:?}",
+            "second [[package-set]] must not win (first match wins); got {cl:?}",
         );
     }
 }
 
-/// AC-4b: When neither [[package]] nor [[package-set]] rules match, the default
+/// When neither [[package]] nor [[package-set]] rules match, the default
 /// config is returned (no override).
 #[test]
 fn no_rule_match_returns_default_config() {
@@ -398,17 +398,14 @@ changelog = "WRONG.md"
     assert_eq!(
         pkg.release_trigger,
         ReleaseTrigger::Changeset,
-        "unmatched package must have default release_trigger (AC-4b); got {:?}",
+        "unmatched package must have default release_trigger; got {:?}",
         pkg.release_trigger,
     );
     if let Some(cl) = &pkg.changelog {
-        assert!(
-            !cl.ends_with("WRONG.md"),
-            "nomatch rule must not apply (AC-4b); got {cl:?}"
-        );
+        assert!(!cl.ends_with("WRONG.md"), "nomatch rule must not apply; got {cl:?}");
     }
 }
-/// AC-3: When a package is matched only by Prefixed rules (no Bare rule in
+/// When a package is matched only by Prefixed rules (no Bare rule in
 /// cfg.packages matches it), the first Prefixed rule in declaration order wins.
 /// Both `cargo/multi` and `npm/multi` are Prefixed and both match Bare("multi")
 /// — Prefixed(E,x).matches(Bare(x)) is true for any E per PackageId::matches.
@@ -440,6 +437,6 @@ changelog = "SECOND.md"
     let changelog = pkg.changelog.as_ref().expect("changelog should be set");
     assert!(
         changelog.ends_with("FIRST.md"),
-        "first Prefixed rule in declaration order must win (AC-3); got {changelog:?}",
+        "first Prefixed rule in declaration order must win; got {changelog:?}",
     );
 }

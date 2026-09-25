@@ -69,7 +69,7 @@ pub fn pre_mutation_checks<D: DependencyResolver>(
             outcome.new_members.insert(g.name.clone(), fresh);
         }
 
-        // napi.targets drift cross-check (§G.8.4).
+        // napi.targets drift cross-check.
         if let Some(declared) = napi.declared_for(&g.name) {
             outcome.diagnostics.extend(napi_drift(g, declared, root));
         }

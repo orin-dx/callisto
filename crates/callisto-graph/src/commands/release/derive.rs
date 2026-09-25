@@ -26,7 +26,7 @@ use crate::commands::release_decision::{has_dispatchable_target, version_is_tagg
 use crate::toposort::PublishEdgeFilter;
 
 /// A package that is itself an npm platform package (its own package.json has
-/// `os`+`cpu`). An owner's attached (Case E) platform manifests do not count.
+/// `os`+`cpu`). An owner's attached platform manifests do not count.
 pub(crate) fn is_platform_package(pkg: &callisto_model::Package) -> bool {
     pkg.manifests.iter().any(|m| {
         matches!(m.role, callisto_model::ManifestRole::Platform { .. })
@@ -820,7 +820,7 @@ mod tests {
         assert_eq!(before_operations, after_operations);
     }
 
-    /// AC-011: a `[release]` without a forge destination cannot plan.
+    /// A `[release]` without a forge destination cannot plan.
     #[test]
     fn a_release_section_without_forge_repository_cannot_derive() {
         let (dir, runner) = super::super::tests::fixture();
@@ -953,9 +953,9 @@ mod tests {
         )
     }
 
-    /// AC-2: a dev-only cycle orders instead of failing; an unrelated dev edge still orders.
+    /// A dev-only cycle orders instead of failing; an unrelated dev edge still orders.
     #[test]
-    fn ac2_dev_only_cycle_is_ordered_not_a_cycle_error() {
+    fn dev_only_cycle_is_ordered_not_a_cycle_error() {
         let dir = repo_of(&cargo_workspace(&[
             ("a", "[dev-dependencies]\nb = { path = \"../b\" }\n"),
             ("b", "[dev-dependencies]\na = { path = \"../a\" }\n"),
@@ -969,9 +969,9 @@ mod tests {
         assert!(registry_publish(&operations, "c").prerequisites().contains(&a));
     }
 
-    /// AC-3: a runtime cycle still fails, even with dev edges alongside it.
+    /// A runtime cycle still fails, even with dev edges alongside it.
     #[test]
-    fn ac3_runtime_cycle_still_fails_with_a_cycle_error() {
+    fn runtime_cycle_still_fails_with_a_cycle_error() {
         let dir = repo_of(&cargo_workspace(&[
             (
                 "a",
@@ -984,9 +984,9 @@ mod tests {
         assert!(matches!(error, GraphError::Cycle { .. }), "{error:?}");
     }
 
-    /// AC-3: in a runtime+dev cycle only the dev edge is excluded; the runtime edge orders.
+    /// In a runtime+dev cycle only the dev edge is excluded; the runtime edge orders.
     #[test]
-    fn ac3_mixed_cycle_excludes_only_the_dev_edge() {
+    fn mixed_cycle_excludes_only_the_dev_edge() {
         let dir = repo_of(&cargo_workspace(&[
             ("a", "[dependencies]\nb = { path = \"../b\" }\n"),
             ("b", "[dev-dependencies]\na = { path = \"../a\" }\n"),
@@ -998,9 +998,9 @@ mod tests {
         assert!(!registry_publish(&operations, "b").prerequisites().contains(&a));
     }
 
-    /// AC-12: exactly one package input per decision entry; unselected packages never appear.
+    /// Exactly one package input per decision entry; unselected packages never appear.
     #[test]
-    fn ac12_derivation_neither_adds_nor_drops_selected_packages() {
+    fn derivation_neither_adds_nor_drops_selected_packages() {
         let dir = repo_of(&cargo_workspace(&[
             ("a", "[dependencies]\nb = { path = \"../b\" }\n"),
             ("b", ""),
@@ -1020,7 +1020,7 @@ mod tests {
         }
     }
 
-    /// M2: an unreleased runtime, optional, or peer dependency must be selected with its dependent.
+    /// An unreleased runtime, optional, or peer dependency must be selected with its dependent.
     #[test]
     fn unselected_unreleased_workspace_dependency_is_rejected() {
         let dir = repo_of(&cargo_workspace(&[
@@ -1084,9 +1084,9 @@ mod tests {
         dir
     }
 
-    /// AC-1: an unreleased standalone platform dependency must be selected with its npm owner.
+    /// An unreleased standalone platform dependency must be selected with its npm owner.
     #[test]
-    fn ac1_unselected_unreleased_platform_dependency_is_rejected() {
+    fn unselected_unreleased_platform_dependency_is_rejected() {
         let dir = npm_platform_repo(false);
         let error = derive(&dir, &release(&[(Ecosystem::Npm, "main", "1.0.0")])).unwrap_err();
         assert!(
@@ -1106,9 +1106,9 @@ mod tests {
         .unwrap();
     }
 
-    /// AC-1b: an already-released platform dependency need not be selected.
+    /// An already-released platform dependency need not be selected.
     #[test]
-    fn ac1b_released_platform_dependency_need_not_be_selected() {
+    fn released_platform_dependency_need_not_be_selected() {
         let dir = npm_platform_repo(true);
         let (snapshot, _, _, _, _) = derive(&dir, &release(&[(Ecosystem::Npm, "main", "1.0.0")])).unwrap();
         assert_eq!(snapshot.packages.len(), 1);
@@ -1127,9 +1127,9 @@ mod tests {
         ])
     }
 
-    /// AC-4: a `publishConfig.registry` not configured in `[registries]` is untrusted.
+    /// A `publishConfig.registry` not configured in `[registries]` is untrusted.
     #[test]
-    fn ac4_unapproved_npm_registry_override_is_rejected() {
+    fn unapproved_npm_registry_override_is_rejected() {
         let dir = npm_registry_repo("https://npm.evil.example/");
         let error = derive(&dir, &release(&[(Ecosystem::Npm, "lib", "1.0.0")])).unwrap_err();
         assert!(matches!(error, GraphError::UntrustedNpmRegistry { .. }), "{error:?}");
@@ -1137,18 +1137,18 @@ mod tests {
         derive(&approved, &release(&[(Ecosystem::Npm, "lib", "1.0.0")])).unwrap();
     }
 
-    /// AC-5: a cleartext override fails the scheme check before host matching.
+    /// A cleartext override fails the scheme check before host matching.
     #[test]
-    fn ac5_non_https_npm_registry_override_is_unsafe_even_on_an_approved_host() {
+    fn non_https_npm_registry_override_is_unsafe_even_on_an_approved_host() {
         let dir = npm_registry_repo("http://npm.corp.example/");
         let error = derive(&dir, &release(&[(Ecosystem::Npm, "lib", "1.0.0")])).unwrap_err();
         assert!(matches!(error, GraphError::UnsafeRegistryBinding { .. }), "{error:?}");
     }
 
-    /// AC-6: a scoped npm package without explicit access publishes public, for the
+    /// A scoped npm package without explicit access publishes public, for the
     /// owner and its platform prerequisites, and the defaulted value is fingerprinted.
     #[test]
-    fn ac6_scoped_npm_package_defaults_to_public_access() {
+    fn scoped_npm_package_defaults_to_public_access() {
         let dir = repo(&[
             ("package.json", r#"{"name":"@s/lib","version":"1.0.0"}"#),
             ("callisto.toml", ""),
@@ -1216,9 +1216,9 @@ mod tests {
         }
     }
 
-    /// AC-11: an undispatchable target fails derivation instead of being skipped.
+    /// An undispatchable target fails derivation instead of being skipped.
     #[test]
-    fn ac11_unimplemented_publish_target_fails_derivation() {
+    fn unimplemented_publish_target_fails_derivation() {
         let dir = repo(&[
             (
                 "Cargo.toml",
@@ -1280,10 +1280,10 @@ mod tests {
             .expect("a forge release operation")
     }
 
-    /// AC-7: the forge release carries the changelog section, and the notes stay
+    /// The forge release carries the changelog section, and the notes stay
     /// out of the intent: changing them changes neither snapshot nor operations.
     #[test]
-    fn ac7_forge_release_notes_come_from_the_changelog_and_do_not_affect_the_intent() {
+    fn forge_release_notes_come_from_the_changelog_and_do_not_affect_the_intent() {
         let dir = repo(&[
             (
                 "Cargo.toml",

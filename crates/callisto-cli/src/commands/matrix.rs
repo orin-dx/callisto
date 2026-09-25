@@ -32,8 +32,8 @@ mod tests {
     use super::*;
     use crate::cli::MatrixArgs;
 
-    /// AC-003 (handler slice): an empty workspace produces exit code 0.
-    /// AC-003b: bare invocation (global.format default = Text) does not error.
+    /// An empty workspace produces exit code 0.
+    /// Bare invocation (global.format default = Text) does not error.
     #[test]
     fn handle_empty_workspace_succeeds() {
         let tmp = tempfile::tempdir().unwrap();

@@ -1,6 +1,6 @@
 #![cfg(target_os = "linux")]
 
-//! Real-registry e2e coverage (SPEC-DX-CORRECTNESS-E2E). Linux only: CI installs the registries there.
+//! Real-registry e2e coverage. Linux only: CI installs the registries there.
 //!
 //! `release_forge_publish_e2e_tests.rs` and `durable_release_e2e_tests.rs`
 //! cover npm and PyPI publish only against fake providers. This file adds a
@@ -11,8 +11,7 @@
 //! Registry routing goes entirely through npm's own `.npmrc` (a project-root
 //! file, gitignored so it never dirties the release-trust worktree check),
 //! never a callisto registry binding: `registry_endpoint::canonical_registry_url`
-//! rejects non-https URLs with no loopback exception, by design (see
-//! SPEC-DX-CORRECTNESS-PARITY AC-4/AC-5), so a local `http://127.0.0.1` test
+//! rejects non-https URLs with no loopback exception, by design, so a local `http://127.0.0.1` test
 //! registry can never be configured as a `[registries]` entry. Leaving the
 //! package unmatched by any `[registries]` override keeps
 //! `PreparedRegistryBinding.endpoint` at `None`, which is also what makes
@@ -22,12 +21,12 @@
 //! hardcodes the public simple index when `endpoint` is `None` (see the PyPI
 //! note below).
 //!
-//! PyPI (AC-22) drives `registry_argv::pypi_publish_argv` directly (the exact
+//! PyPI drives `registry_argv::pypi_publish_argv` directly (the exact
 //! production build-then-upload argv, including `--repository-url` for a
 //! private index) rather than through `callisto release execute`: that CLI
 //! path routes a registry through `PreparedRegistryBinding`, whose
 //! `canonical_registry_url` rejects non-https with no loopback exception --
-//! by design (see SPEC-DX-CORRECTNESS-PARITY AC-4/AC-5) -- so a callisto
+//! by design -- so a callisto
 //! registry binding can never target a local `http://127.0.0.1` test index.
 //! Calling `pypi_publish_argv` directly stays on the same side of that line
 //! as the npm test above: real registry, real package-manager config
@@ -250,7 +249,7 @@ fn npm_registry_release_fixture(package_name: &str) -> (tempfile::TempDir, Strin
     (dir, release_commit)
 }
 
-/// AC-20 / AC-20b: a real Verdaccio registry, npm routed to it purely via
+/// A real Verdaccio registry, npm routed to it purely via
 /// `.npmrc`, `callisto release execute`'s real npm provider adapter, and an
 /// assertion against the registry's own package metadata afterward -- not
 /// just callisto's exit code.
@@ -438,7 +437,7 @@ fn run_argv(argv: &Argv, extra_env: &[(&str, &str)]) -> std::process::Output {
     })
 }
 
-/// AC-22: a real pypiserver registry, `registry_argv::pypi_publish_argv`'s
+/// A real pypiserver registry, `registry_argv::pypi_publish_argv`'s
 /// exact production build-then-upload argv (including `--repository-url`,
 /// callisto's own package-manager-config routing, not a registry binding),
 /// and an assertion against the registry's own simple index afterward -- not

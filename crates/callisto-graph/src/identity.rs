@@ -103,7 +103,7 @@ pub struct IdentityIndex {
     /// `"@myorg/my-crate-linux-x64-gnu"`) -- distinct from `owner`'s name
     /// when the owning package's primary identity comes from a
     /// higher-priority ecosystem sharing the same directory (a Cargo+npm
-    /// Case D project, §M.6.1 M7: platform manifests belong to the owning
+    /// dual project: platform manifests belong to the owning
     /// `Package`, they are never independently-registered `Package`s of
     /// their own). The `ManifestRole::Platform` is carried alongside so
     /// `GroupTable::resolve` doesn't need a second disk read to recover it.
@@ -266,8 +266,8 @@ impl IdentityIndex {
         id.display_name()
     }
 
-    /// §M.6.1 Case E: the platform manifests attached to `owner` from their own
-    /// directories, as (npm name, manifest path). Excludes a Case D platform
+    /// The platform manifests attached to `owner` from their own
+    /// directories, as (npm name, manifest path). Excludes a co-located platform
     /// manifest that is also one of `owner`'s canonical manifests.
     pub fn attached_platforms<'a>(
         &'a self,

@@ -51,51 +51,30 @@ Source: `crates/callisto-graph/src/config/pattern.rs`
 Wraps `globset::GlobMatcher` for use in `[[package-set]]` blocks.
 
 ```rust
-pub struct PackagePattern { raw: String, matcher: GlobMatcher }
+pub struct PackagePattern { raw: String, ecosystem: Option<Ecosystem>, matcher: GlobMatcher }
 impl PackagePattern {
-    pub fn parse(s: &str) -> Result<Self, globset::Error>
-    pub fn matches(&self, id: &PackageId) -> bool  // checks id.name() only, not ecosystem
-    pub fn as_str(&self) -> &str
+    pub fn parse(s: &str) -> Result<Self, globset::Error>  // optional `cargo:`/`npm:`/`pypi:` prefix
+    pub fn ecosystem(&self) -> Option<Ecosystem>
+    pub fn matches(&self, id: &PackageId) -> bool
+    pub fn matches_in_ecosystems(&self, name: &str, ecosystems: &[Ecosystem]) -> bool
 }
 ```
 
-`matches()` tests `id.name()` against the glob pattern. It is intentionally ecosystem-agnostic:
-`[[package-set]] match = "foo-*"` applies to `cargo:foo-bar`, `npm:foo-bar`, etc. all at once.
+An unprefixed pattern (`match = "foo-*"`) matches the name in any ecosystem. A prefixed pattern (`match = "cargo:foo-*"`) matches only packages discovered in that ecosystem; `walk.rs` passes each package's discovered ecosystems to `matches_in_ecosystems`.
 
 ## Rule Application in walk.rs
 
-For each discovered package, `ManifestWalkResolver::build` resolves an override in two steps:
+For each discovered package, `ManifestWalkResolver::build` resolves an override in two steps.
 
 ### Step 1: [[package]] rule lookup
 
-Current code (first-match-wins, declaration order):
-```rust
-let pkg_override = cfg.packages.iter()
-    .find(|(pattern, _)| pattern.matches(&id))
-    .map(|(_, cfg)| cfg);
-```
-
-Track E fix (specificity-ordered — prefixed beats bare, regardless of declaration order):
-```
-Collect all matching [[package]] rules.
-If any are Prefixed-pattern matches → use the first Prefixed match.
-If none are Prefixed → use the first Bare match.
-If no matches → None.
-```
+`config::resolve::resolve_package_config` (two-pass specificity):
+- Pass 1: first rule, in declaration order, with an ecosystem prefix that matches.
+- Pass 2: only if pass 1 found nothing, first rule that matches. A bare rule matching a name promoted into several ecosystems returns `GraphError::AmbiguousName`.
 
 ### Step 2: [[package-set]] fallback
 
-Only consulted when Step 1 produced None:
-```rust
-let set_override = if pkg_override.is_none() {
-    cfg.package_sets.iter()
-        .find(|(pattern, _)| pattern.matches(&id))
-        .map(|(_, cfg)| cfg)
-} else {
-    None
-};
-let active_override = pkg_override.or(set_override);
-```
+Only consulted when Step 1 produced `None`: the first `[[package-set]]` pattern, in declaration order, that matches. Every matching pattern is also recorded for the zero-match diagnostic, even when a `[[package]]` rule shadows it.
 
 ### Priority order (highest to lowest)
 
@@ -104,7 +83,7 @@ let active_override = pkg_override.or(set_override);
 3. `[[package-set]]` with matching glob (e.g. `match = "foo-*"`)
 4. Manifest-inferred defaults (publish_to from the manifest itself, Changeset trigger, etc.)
 
-## Cross-Ecosystem Diagnostic (Track E Fix 2)
+## Cross-Ecosystem Diagnostic
 
 After the packages loop in `ManifestWalkResolver::build`:
 

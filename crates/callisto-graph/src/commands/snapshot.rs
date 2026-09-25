@@ -9,7 +9,7 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     tag: &str,
 ) -> Result<(VersionPlan, SnapshotReport), GraphError> {
-    // §G.11 (SPEC DECISION, pinned invariant #33): the sha component is a real, resolved
+    // The sha component is a real, resolved
     // HEAD commit sha — never a fake placeholder. A resolution failure here must surface
     // as a real error rather than silently proceeding with a value that risks colliding
     // with snapshots from unrelated runs.
@@ -17,7 +17,7 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
     let sha_short = sha.short();
 
     // Base is literally `0.0.0`, never the package's own version, and every package in
-    // the workspace gets this identical, hyphen-joined string (§G.11 invariant #33) — not
+    // the workspace gets this identical, hyphen-joined string — not
     // a per-package, dot-joined prerelease of that package's real version.
     let snapshot_tag = format!("0.0.0-{tag}-{sha_short}");
     let snapshot_ver =
@@ -182,7 +182,7 @@ mod tests {
         }
     }
 
-    /// AC-014: when ws.tags() (TagIndex::build) fails, plan_snapshot must
+    /// When ws.tags() (TagIndex::build) fails, plan_snapshot must
     /// propagate that Err rather than silently proceeding with an
     /// empty/partial TagIndex.
     #[test]
@@ -209,7 +209,7 @@ mod tests {
         );
     }
 
-    /// AC-005: plan_snapshot's synthetic snapshot version overwrites every
+    /// Plan_snapshot's synthetic snapshot version overwrites every
     /// PlannedBump.to and BumpRecord.to unconditionally, even for members of
     /// a Fixed group -- the cascade-stage target the new Fixed-group
     /// convergence block computes internally is discarded.
@@ -262,7 +262,7 @@ mod tests {
         }
     }
 
-    /// AC-006 (non-goal confirmation): plan_snapshot must never call
+    /// Plan_snapshot must never call
     /// pre_mutation_checks -- snapshot mode assigns every package the
     /// identical synthetic version, so there is no distinct-target
     /// divergence for pre_mutation_checks to ever catch here.

@@ -53,16 +53,16 @@ mod tests {
     }
 
     #[test]
-    fn ac7_the_version_section_becomes_the_release_notes() {
+    fn the_version_section_becomes_the_release_notes() {
         assert_eq!(
             notes(Some("CHANGELOG.md"), Some("## 1.0.0\n\n- fix\n\n## 0.9.0\n\n- old\n")),
             ReleaseNotes::Section("- fix".to_owned())
         );
     }
 
-    /// AC-8: a missing file, a missing heading, or an empty section falls back, never fails.
+    /// A missing file, a missing heading, or an empty section falls back, never fails.
     #[test]
-    fn ac8_missing_file_heading_or_content_falls_back_to_generated_notes() {
+    fn missing_file_heading_or_content_falls_back_to_generated_notes() {
         assert_eq!(notes(Some("CHANGELOG.md"), None), generated(NotesFallback::FileMissing));
         assert_eq!(
             notes(Some("CHANGELOG.md"), Some("## 0.9.0\n\n- old\n")),
@@ -75,9 +75,9 @@ mod tests {
         assert_eq!(notes(None, None), generated(NotesFallback::NotConfigured));
     }
 
-    /// AC-9: a changelog that exists but cannot be read falls back as `Unreadable`.
+    /// A changelog that exists but cannot be read falls back as `Unreadable`.
     #[test]
-    fn ac9_unreadable_changelog_falls_back_to_generated_notes() {
+    fn unreadable_changelog_falls_back_to_generated_notes() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join("CHANGELOG.md")).unwrap();
         let version = Version::parse("1.0.0", VersionGrammar::SemVer).unwrap();

@@ -1,5 +1,5 @@
 //! `status --check`'s well-formedness diagnostics -- covers what `validate`
-//! (removed, SPEC-DX-STATUS-ADD AC-02/AC-03) used to check.
+//! (removed) used to check.
 
 mod common;
 
@@ -89,7 +89,7 @@ fn test_status_check_clean_workspace_exits_ok() {
     .unwrap();
 
     // A pending changeset with no diagnostic errors: exit code 0, not FAILURE
-    // -- SPEC-DX-STATUS-ADD AC-04 made pending state exit-code-irrelevant.
+    // -- pending state never affects the exit code.
     let result = commands::status::handle(check_args(), &global);
     assert_eq!(
         result.unwrap(),
@@ -123,7 +123,7 @@ fn test_status_check_malformed_changeset_exits_failure() {
     );
 }
 
-/// SPEC-DX-STATUS-ADD AC-03: a changeset naming a bare package that's
+/// A changeset naming a bare package that's
 /// ambiguous between ecosystems must report the `AmbiguousPackageName`
 /// diagnostic (exit 1), not hard-error out of `status` entirely.
 #[test]

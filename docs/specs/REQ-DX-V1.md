@@ -2,6 +2,8 @@
 
 Stakeholder: Callisto owner (sole maintainer); users releasing Rust, npm (incl. napi-rs) and Python monorepos.
 
+Status: shipped in #126-#150, except a cargo real-registry e2e test (tracked in `docs/projects/ROAD-TO-V1.md`).
+
 Why: Callisto's release engine is rigorous but its surface is confusing and its setup is heavy. Goal: a new repo goes from `callisto init` to its first published release in under 10 minutes, with one obvious release command and no known correctness bugs.
 
 ## Decided by the owner
@@ -11,7 +13,7 @@ Why: Callisto's release engine is rigorous but its surface is confusing and its 
 - `add` keeps both modes: interactive wizard on a TTY, flags for automation, clear error with the needed flags when neither.
 - Breaking changes are fine pre-1.0; no external users.
 
-## Verified current state (origin/main, 2026-09-22)
+## State before the work (origin/main, 2026-09-22)
 - 17 top-level commands. `publish` only prints a preview (`cli/src/commands/publish.rs`). `plan-publish` prints the same preview. `tag` echoes its input (`--floating-major` ignored). `filter-plan` needs a `PublishReport` nothing produces.
 - Real publishing is `release plan` + `release execute`: ~9 required flags (`--source-root`, `--orchestration-revision`, `--decision`, `--intent`, `--receipt`, ...), built for a 3-job CI workflow. `release plan` with no args fails on missing `--out`, `--package`/`--from-release-commit`.
 - `release-pr decide/verify/commit-plan`, `compose-pr-body`, `release artifact-manifest`, `matrix`, `schema` are plumbing for the action/workflow but appear in `--help`.

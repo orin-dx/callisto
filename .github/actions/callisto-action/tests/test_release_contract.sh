@@ -11,7 +11,7 @@ release_script="$action_dir/scripts/run-release.sh"
 
 fail=0
 
-# --- validate-mode.sh: AC-003 (accepted values), AC-003c (rejection) ---
+# --- validate-mode.sh: accepted values and rejection ---
 for mode in version-pr release; do
   if ! INPUT_MODE="$mode" bash "$mode_script" > /dev/null 2>&1; then
     echo "FAIL: mode '$mode' must be accepted"
@@ -60,7 +60,7 @@ STUB
   return "$rc"
 }
 
-# AC-003a, AC-003b: nothing to release keeps the fixed false/[] values.
+# Nothing to release keeps the fixed false/[] values.
 output="$(run_release '{"nothingToRelease":true}')"
 if [[ "$output" != *'published=false'* ]] || [[ "$output" != *'publishedPackages=[]'* ]]; then
   echo "FAIL: nothing-to-release must keep published=false/publishedPackages=[]: $output"
@@ -69,7 +69,7 @@ else
   echo 'PASS: run-release keeps published=false/publishedPackages=[] when nothing to release'
 fi
 
-# AC-003b: a receipt with published registry/platform outcomes fills both
+# A receipt with published registry/platform outcomes fills both
 # outputs; a published `tag` outcome and an `alreadySatisfied` one are excluded.
 receipt='{"outcomes":[
   {"operation":{"package":"cargo/app","role":{"kind":"registryPublish"},"version":"1.0.0"},"outcome":{"kind":"published"}},
@@ -84,7 +84,7 @@ else
   echo 'PASS: run-release fills published/publishedPackages from published registry/platform outcomes only'
 fi
 
-# AC-005: callisto-action's own environment setup must not use `$/` or an
+# Callisto-action's own environment setup must not use `$/` or an
 # external owner/repo/path@ref for its sibling setup-callisto -- both resolve
 # against whatever ref invoked *this* action, which may not exist verbatim in
 # setup-callisto's own history. It must call the sibling script directly by
@@ -104,7 +104,7 @@ else
   echo 'PASS: setup-callisto is called by github.action_path, not a ref-ambiguous uses:'
 fi
 
-# AC-003, AC-003a, AC-003c: the mode input, its default, and both scripts are wired.
+# The mode input, its default, and both scripts are wired.
 if [[ "$action_contents" != *$'mode:\n    description:'* ]] \
   || [[ "$action_contents" != *"default: 'version-pr'"* ]] \
   || [[ "$action_contents" != *'bash "$GITHUB_ACTION_PATH/scripts/validate-mode.sh"'* ]] \
@@ -116,7 +116,7 @@ else
   echo 'PASS: action metadata wires mode (default version-pr) to both scripts'
 fi
 
-# AC-003b: published/publishedPackages read from the release step, falling
+# Published/publishedPackages read from the release step, falling
 # back to the version-pr mode's fixed false/[] when that step did not run.
 if [[ "$action_contents" != *"steps.release.outputs.published || 'false'"* ]] \
   || [[ "$action_contents" != *"steps.release.outputs.publishedPackages || '[]'"* ]]; then

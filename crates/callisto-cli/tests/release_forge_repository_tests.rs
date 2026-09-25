@@ -68,7 +68,6 @@ fn without_workspace(args: &[&str]) -> std::process::Output {
         .unwrap()
 }
 
-/// AC-009
 #[test]
 fn release_plan_rejects_profile_as_an_unknown_argument() {
     let out = without_workspace(&["release", "plan", "--profile", "production", "--out", "i.json"]);
@@ -77,7 +76,6 @@ fn release_plan_rejects_profile_as_an_unknown_argument() {
     assert!(err.contains("unexpected argument '--profile'"), "{err}");
 }
 
-/// AC-010
 #[test]
 fn release_execute_rejects_profile_as_an_unknown_argument() {
     let out = without_workspace(&[
@@ -97,14 +95,12 @@ fn release_execute_rejects_profile_as_an_unknown_argument() {
     assert!(err.contains("unexpected argument '--profile'"), "{err}");
 }
 
-/// AC-001
 #[test]
 fn top_level_forge_repository_loads() {
     let (ok, codes, detail) = status_with("forge-repository = \"org/one\"\n", "");
     assert!(ok && codes.is_empty(), "codes {codes:?}: {detail}");
 }
 
-/// AC-002
 #[test]
 fn legacy_production_profile_still_loads() {
     let (ok, codes, detail) = status_with(
@@ -114,7 +110,6 @@ fn legacy_production_profile_still_loads() {
     assert!(ok && codes.is_empty(), "codes {codes:?}: {detail}");
 }
 
-/// AC-005
 #[test]
 fn a_non_production_profile_is_rejected_naming_it() {
     let (ok, codes, detail) = status_with(
@@ -127,7 +122,6 @@ fn a_non_production_profile_is_rejected_naming_it() {
     );
 }
 
-/// AC-003
 #[test]
 fn a_conflicting_legacy_forge_repository_is_rejected() {
     let (ok, codes, detail) = status_with(
@@ -144,7 +138,6 @@ fn repo_file(path: &str) -> String {
     fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(path)).unwrap()
 }
 
-/// AC-018
 #[test]
 fn release_workflow_and_its_contract_pass_no_profile() {
     for path in [
@@ -155,7 +148,6 @@ fn release_workflow_and_its_contract_pass_no_profile() {
     }
 }
 
-/// AC-019
 #[test]
 fn this_repository_config_uses_top_level_forge_repository() {
     let text = repo_file("callisto.toml");

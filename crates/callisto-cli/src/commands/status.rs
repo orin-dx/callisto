@@ -12,7 +12,7 @@ use crate::workspace::load_workspace;
 
 /// Whether a status report has any error-level diagnostic. Pending state
 /// (`report.pending`) never factors in: `--check` is a conventional
-/// errors-only gate (SPEC-DX-STATUS-ADD AC-04), and a script that wants
+/// errors-only gate, and a script that wants
 /// pending state reads `status --format json`'s `pending` count instead.
 pub(crate) fn has_error_diagnostics(report: &StatusReport) -> bool {
     report
@@ -100,7 +100,7 @@ mod tests {
         }
     }
 
-    // SPEC-DX-STATUS-ADD AC-04: pending changesets alone (no error-level
+    // Pending changesets alone (no error-level
     // diagnostics) must not count as an error -- `--check` is an errors-only
     // gate now, unlike the pre-correction 2/3 scheme.
     #[test]
@@ -118,7 +118,7 @@ mod tests {
         assert!(!has_error_diagnostics(&report));
     }
 
-    // SPEC-DX-STATUS-ADD AC-04: an error-level diagnostic must be reported
+    // An error-level diagnostic must be reported
     // regardless of pending state.
     #[test]
     fn has_error_diagnostics_is_true_when_an_error_diagnostic_is_present() {
@@ -154,7 +154,7 @@ mod tests {
         assert_eq!(result.unwrap(), ExitCode::SUCCESS);
     }
 
-    /// SPEC-DX-STATUS-ADD AC-04: `status --check` on a workspace with a
+    /// `status --check` on a workspace with a
     /// pending changeset but no error-level diagnostics must exit 0 -- the
     /// gate is errors-only, not pending-state.
     #[test]
@@ -197,7 +197,7 @@ mod tests {
         );
     }
 
-    /// SPEC-DX-STATUS-ADD AC-04: `status --check` must exit 1 when a
+    /// `status --check` must exit 1 when a
     /// changeset carries an error-level diagnostic (e.g. names an unknown
     /// package), regardless of pending state.
     #[test]

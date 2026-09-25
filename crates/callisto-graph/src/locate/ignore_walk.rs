@@ -345,12 +345,12 @@ mod tests {
         );
     }
 
-    /// Spec (AC-01, AC-02): a Cargo.toml `[workspace]` `exclude` entry must
+    /// A Cargo.toml `[workspace]` `exclude` entry must
     /// prevent `projects()` from returning the excluded crate, while a crate
     /// that matches `members` and is not excluded must still be returned
     /// exactly once with `Ecosystem::Cargo`.
     #[test]
-    fn ac01_ac02_excludes_scratch_example_and_includes_kept_example_via_cargo_workspace_exclude() {
+    fn excludes_scratch_example_and_includes_kept_example_via_cargo_workspace_exclude() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(
@@ -375,7 +375,7 @@ mod tests {
 
         assert!(
             !projects.iter().any(|p| p.path == Path::new("crates/scratch-example")),
-            "AC-01: crates/scratch-example must be excluded, got: {projects:?}"
+            "crates/scratch-example must be excluded, got: {projects:?}"
         );
         let kept_count = projects
             .iter()
@@ -383,7 +383,7 @@ mod tests {
             .count();
         assert_eq!(
             kept_count, 1,
-            "AC-02: exactly one entry for crates/kept-example, got: {projects:?}"
+            "exactly one entry for crates/kept-example, got: {projects:?}"
         );
         let kept = projects
             .iter()
@@ -392,11 +392,11 @@ mod tests {
         assert_eq!(kept.ecosystem, Ecosystem::Cargo);
     }
 
-    /// Spec (AC-03): a root package.json declaring `{"workspaces": ["packages/*"]}`
+    /// A root package.json declaring `{"workspaces": ["packages/*"]}`
     /// (no pnpm-workspace.yaml anywhere) must cause `projects()` to exclude a
     /// package.json found at a path outside every workspaces glob.
     #[test]
-    fn ac03_excludes_package_outside_npm_workspaces_glob() {
+    fn excludes_package_outside_npm_workspaces_glob() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(root.join("package.json"), r#"{"workspaces": ["packages/*"]}"#).unwrap();
@@ -407,18 +407,18 @@ mod tests {
 
         assert!(
             !projects.iter().any(|p| p.path == Path::new("tools/helper")),
-            "AC-03: tools/helper must not be discovered, got: {projects:?}"
+            "tools/helper must not be discovered, got: {projects:?}"
         );
     }
 
-    /// Spec (AC-04): given a root with no package.json "workspaces" field but
+    /// Given a root with no package.json "workspaces" field but
     /// a sibling pnpm-workspace.yaml containing `packages:\n  - "packages/*"`,
     /// parsed via yaml_rust2::YamlLoader::load_from_str, a package.json at
     /// packages/kept/package.json (matching the glob) is discovered by
     /// projects(), and a package.json at tools/outside/package.json (not
     /// matching the glob) is not discovered by projects().
     #[test]
-    fn ac04_pnpm_workspace_yaml_governs_npm_membership_when_no_workspaces_field() {
+    fn pnpm_workspace_yaml_governs_npm_membership_when_no_workspaces_field() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(root.join("pnpm-workspace.yaml"), "packages:\n  - \"packages/*\"\n").unwrap();
@@ -433,21 +433,21 @@ mod tests {
             projects
                 .iter()
                 .any(|p| p.path == Path::new("packages/kept") && p.ecosystem == Ecosystem::Npm),
-            "AC-04: packages/kept must be discovered as Npm, got: {projects:?}"
+            "packages/kept must be discovered as Npm, got: {projects:?}"
         );
         assert!(
             !projects.iter().any(|p| p.path == Path::new("tools/outside")),
-            "AC-04: tools/outside must not be discovered, got: {projects:?}"
+            "tools/outside must not be discovered, got: {projects:?}"
         );
     }
 
-    /// Spec (AC-05): given a Cargo.toml at the workspace root with no
+    /// Given a Cargo.toml at the workspace root with no
     /// [workspace] table at all (a single-crate repo), every Cargo candidate
     /// directory discovered by the walk is included in projects() -- the
     /// absence of a [workspace] table means no membership filter applies,
     /// not that zero packages are admitted.
     #[test]
-    fn ac05_admits_all_cargo_candidates_when_root_has_no_workspace_table() {
+    fn admits_all_cargo_candidates_when_root_has_no_workspace_table() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(
@@ -474,14 +474,14 @@ mod tests {
         );
     }
 
-    /// Spec (AC-05b): given a workspace root with no Cargo.toml file at all
+    /// Given a workspace root with no Cargo.toml file at all
     /// (the file does not exist), and crates/kept/Cargo.toml elsewhere in
     /// the tree with a valid [package] table, the complete absence of a
     /// root Cargo.toml is treated identically to a root Cargo.toml with no
-    /// [workspace] table (AC-05): no Cargo membership filter applies, not
+    /// [workspace] table: no Cargo membership filter applies, not
     /// zero packages admitted, and the walk does not error.
     #[test]
-    fn ac05b_admits_cargo_candidates_when_root_has_no_cargo_toml_file_at_all() {
+    fn admits_cargo_candidates_when_root_has_no_cargo_toml_file_at_all() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::create_dir_all(root.join("crates/kept")).unwrap();
@@ -501,13 +501,13 @@ mod tests {
         );
     }
 
-    /// AC-07: the root's [package]-declared crate is an implicit member
+    /// The root's [package]-declared crate is an implicit member
     /// exempt from the exclude list. Even a workspace root Cargo.toml whose
     /// exclude glob would textually match "." must still include the root
     /// package entry, and the members filter must still admit crates/child
     /// normally alongside the root exemption.
     #[test]
-    fn ac07_includes_root_package_as_implicit_member_even_when_exclude_would_match_it() {
+    fn includes_root_package_as_implicit_member_even_when_exclude_would_match_it() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(
@@ -539,11 +539,11 @@ mod tests {
         );
     }
 
-    /// AC-10c: an explicitly empty `members = []` is a real filter matching
+    /// An explicitly empty `members = []` is a real filter matching
     /// nothing, not a no-op. A Cargo.toml elsewhere in the tree must be
     /// excluded from the Cargo ecosystem entries.
     #[test]
-    fn ac10c_empty_members_array_admits_zero_cargo_entries() {
+    fn empty_members_array_admits_zero_cargo_entries() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\n").unwrap();
@@ -562,12 +562,12 @@ mod tests {
         );
     }
 
-    /// AC-15: a [workspace] table with an exclude key but no members key at
+    /// A [workspace] table with an exclude key but no members key at
     /// all is treated identically to an absent [workspace] table for
     /// filtering purposes (every non-excluded candidate is admitted), not as
-    /// an empty members = [] list which excludes everything (AC-10c).
+    /// an empty members = [] list which excludes everything.
     #[test]
-    fn ac15_workspace_table_with_exclude_only_and_no_members_key_admits_non_excluded() {
+    fn workspace_table_with_exclude_only_and_no_members_key_admits_non_excluded() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(root.join("Cargo.toml"), "[workspace]\nexclude = [\"crates/foo\"]\n").unwrap();
@@ -596,14 +596,14 @@ mod tests {
         );
     }
 
-    /// Spec (AC-06): given a root package.json with no "workspaces" field
+    /// Given a root package.json with no "workspaces" field
     /// and no pnpm-workspace.yaml anywhere in the workspace, every Npm
     /// candidate directory discovered by the walk is included in
     /// projects() -- absence of both markers means no npm membership
-    /// filter applies. This mirrors AC-05's Cargo analog by asserting both
+    /// filter applies. This mirrors the Cargo case by asserting both
     /// the root package and the child package are admitted, not just one.
     #[test]
-    fn ac06_admits_all_npm_candidates_when_no_workspaces_field_and_no_pnpm_yaml() {
+    fn admits_all_npm_candidates_when_no_workspaces_field_and_no_pnpm_yaml() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(root.join("package.json"), r#"{"name":"root"}"#).unwrap();
@@ -616,27 +616,27 @@ mod tests {
             projects
                 .iter()
                 .any(|p| p.path == Path::new(".") && p.ecosystem == Ecosystem::Npm),
-            "AC-06: root package must be admitted as Npm, got: {projects:?}"
+            "root package must be admitted as Npm, got: {projects:?}"
         );
         assert!(
             projects
                 .iter()
                 .any(|p| p.path == Path::new("packages/child") && p.ecosystem == Ecosystem::Npm),
-            "AC-06: packages/child must be admitted as Npm, got: {projects:?}"
+            "packages/child must be admitted as Npm, got: {projects:?}"
         );
     }
 
-    /// Spec (AC-06b): given a workspace root directory containing no
+    /// Given a workspace root directory containing no
     /// package.json file at all (the file does not exist at the root) and
     /// no pnpm-workspace.yaml anywhere in the workspace, and
     /// packages/kept/package.json elsewhere in the tree with a valid
     /// "name" field, projects() includes an entry with path ==
     /// "packages/kept" and ecosystem == Ecosystem::Npm -- the complete
     /// absence of a root package.json file is treated identically to a
-    /// root package.json with no "workspaces" field (AC-06): no npm
+    /// root package.json with no "workspaces" field: no npm
     /// membership filter applies.
     #[test]
-    fn ac06b_admits_npm_candidates_when_root_has_no_package_json_file_at_all() {
+    fn admits_npm_candidates_when_root_has_no_package_json_file_at_all() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::create_dir_all(root.join("packages/kept")).unwrap();
@@ -648,17 +648,17 @@ mod tests {
             projects
                 .iter()
                 .any(|p| p.path == Path::new("packages/kept") && p.ecosystem == Ecosystem::Npm),
-            "AC-06b: packages/kept must be admitted as Npm, got: {projects:?}"
+            "packages/kept must be admitted as Npm, got: {projects:?}"
         );
     }
 
-    /// Spec (AC-10): given a root package.json with "workspaces": []
+    /// Given a root package.json with "workspaces": []
     /// (present but empty array) and at least one package.json elsewhere in
     /// the tree, projects() returns zero Npm-ecosystem entries -- an
     /// explicitly empty workspaces list is a real membership filter
     /// (matches nothing), not a no-op.
     #[test]
-    fn ac10_empty_npm_workspaces_array_admits_zero_npm_entries() {
+    fn empty_npm_workspaces_array_admits_zero_npm_entries() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(root.join("package.json"), r#"{"workspaces": []}"#).unwrap();
@@ -669,17 +669,17 @@ mod tests {
 
         assert!(
             !projects.iter().any(|p| p.ecosystem == Ecosystem::Npm),
-            "AC-10: no npm entries expected when workspaces = [], got: {projects:?}"
+            "no npm entries expected when workspaces = [], got: {projects:?}"
         );
     }
 
-    /// Spec (AC-10, hybrid-root clause): the same empty "workspaces": []
+    /// The same empty "workspaces": []
     /// list must not exclude a hybrid root -- a root package.json that also
     /// declares a "name" field remains an implicit member of its own
-    /// workspace (AC-16's exemption) and is admitted at path "." even
+    /// workspace and is admitted at path "." even
     /// though the empty workspaces list matches nothing.
     #[test]
-    fn ac10_empty_npm_workspaces_array_still_admits_hybrid_root() {
+    fn empty_npm_workspaces_array_still_admits_hybrid_root() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(
@@ -696,23 +696,23 @@ mod tests {
             projects
                 .iter()
                 .any(|p| p.path == Path::new(".") && p.ecosystem == Ecosystem::Npm),
-            "AC-10: hybrid root at '.' must still be admitted, got: {projects:?}"
+            "hybrid root at '.' must still be admitted, got: {projects:?}"
         );
         assert!(
             !projects
                 .iter()
                 .any(|p| p.path == Path::new("packages/other") && p.ecosystem == Ecosystem::Npm),
-            "AC-10: non-root packages/other must remain excluded, got: {projects:?}"
+            "non-root packages/other must remain excluded, got: {projects:?}"
         );
     }
 
-    /// Spec (AC-10, distinguished-from-absent clause): an explicitly empty
+    /// An explicitly empty
     /// "workspaces": [] list excludes a sibling package.json, whereas a root
-    /// package.json with no "workspaces" field at all (AC-06) admits the
+    /// package.json with no "workspaces" field at all admits the
     /// same sibling -- proving the empty list is a real filter distinct
     /// from, and not conflated with, an absent field.
     #[test]
-    fn ac10_empty_workspaces_array_distinguished_from_absent_workspaces_field() {
+    fn empty_workspaces_array_distinguished_from_absent_workspaces_field() {
         let tmp_empty = tempfile::tempdir().unwrap();
         let root_empty = tmp_empty.path();
         std::fs::write(root_empty.join("package.json"), r#"{"workspaces": []}"#).unwrap();
@@ -732,17 +732,17 @@ mod tests {
             !projects_empty
                 .iter()
                 .any(|p| p.path == Path::new("packages/other") && p.ecosystem == Ecosystem::Npm),
-            "AC-10: empty workspaces = [] must exclude packages/other, got: {projects_empty:?}"
+            "empty workspaces = [] must exclude packages/other, got: {projects_empty:?}"
         );
         assert!(
             projects_absent
                 .iter()
                 .any(|p| p.path == Path::new("packages/other") && p.ecosystem == Ecosystem::Npm),
-            "AC-06: absent workspaces field must admit packages/other, got: {projects_absent:?}"
+            "absent workspaces field must admit packages/other, got: {projects_absent:?}"
         );
     }
 
-    /// Spec (AC-08): given a root package.json declaring
+    /// Given a root package.json declaring
     /// {"workspaces": ["packages/*"]} and a sibling pnpm-workspace.yaml
     /// declaring `packages:\n  - "tools/*"` (a different glob than the
     /// package.json field), projects() discovers a package.json at
@@ -753,7 +753,7 @@ mod tests {
     /// at the same root; the package.json "workspaces" field is ignored
     /// in that case.
     #[test]
-    fn ac08_pnpm_workspace_yaml_takes_precedence_over_package_json_workspaces_field() {
+    fn pnpm_workspace_yaml_takes_precedence_over_package_json_workspaces_field() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(root.join("package.json"), r#"{"workspaces": ["packages/*"]}"#).unwrap();
@@ -769,23 +769,19 @@ mod tests {
             projects
                 .iter()
                 .any(|p| p.path == Path::new("tools/x") && p.ecosystem == Ecosystem::Npm),
-            "AC-08: tools/x must be discovered as Npm, got: {projects:?}"
+            "tools/x must be discovered as Npm, got: {projects:?}"
         );
         assert!(
             !projects.iter().any(|p| p.path == Path::new("packages/y")),
-            "AC-08: packages/y must not be discovered, got: {projects:?}"
+            "packages/y must not be discovered, got: {projects:?}"
         );
     }
 
-    /// AC-12: consolidated Cargo workspace-membership regression group.
-    /// Reassembles the exact fixtures from AC-01/AC-02, AC-05, AC-05b,
-    /// AC-07 (both the plain inclusion case and the exclude-exemption
-    /// case), AC-10c, and AC-15 into a single regression test function per
-    /// AC-12's literal "ships with at least one regression test using
-    /// these exact fixtures" wording.
+    /// Consolidated Cargo workspace-membership regression group.
+    /// Reassembles the individual Cargo membership fixtures, including the
+    /// root's plain inclusion and exclude-exemption cases.
     #[test]
-    fn ac12_cargo_workspace_membership_regression_group() {
-        // AC-01 / AC-02
+    fn cargo_workspace_membership_regression_group() {
         {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
@@ -819,7 +815,6 @@ mod tests {
                 .unwrap();
             assert_eq!(kept.ecosystem, Ecosystem::Cargo);
         }
-        // AC-05
         {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
@@ -831,7 +826,6 @@ mod tests {
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(projects.iter().any(|p| p.path == Path::new(".")));
         }
-        // AC-05b
         {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
@@ -844,7 +838,7 @@ mod tests {
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(projects.iter().any(|p| p.path == Path::new("crates/kept")));
         }
-        // AC-07 (plain inclusion)
+        // Root's own crate: plain inclusion.
         {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
@@ -858,7 +852,7 @@ mod tests {
                 .iter()
                 .any(|p| p.path == Path::new(".") && p.ecosystem == Ecosystem::Cargo));
         }
-        // AC-07 (exclude-exemption: exclude = ["."] still admits the root)
+        // exclude = ["."] still admits the root.
         {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
@@ -872,7 +866,6 @@ mod tests {
                 .iter()
                 .any(|p| p.path == Path::new(".") && p.ecosystem == Ecosystem::Cargo));
         }
-        // AC-10c
         {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
@@ -886,7 +879,6 @@ mod tests {
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(!projects.iter().any(|p| p.ecosystem == Ecosystem::Cargo));
         }
-        // AC-15
         {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
@@ -909,16 +901,16 @@ mod tests {
         }
     }
 
-    /// Spec (AC-10b): given a pnpm-workspace.yaml declaring `packages: []`
+    /// Given a pnpm-workspace.yaml declaring `packages: []`
     /// (present, empty list) and at least one package.json elsewhere in the
     /// tree, projects() returns zero Npm-ecosystem entries besides any
-    /// AC-17-style hybrid root package (a root package.json that also
+    /// hybrid root package (a root package.json that also
     /// declares a "name" field is still an implicit member of its own
-    /// workspace per AC-17's pnpm-governed exemption and is admitted at
+    /// workspace and is admitted at
     /// path "." even though the empty packages: list matches nothing) --
-    /// mirrors AC-10 for the pnpm-driven case.
+    /// the pnpm-driven counterpart of the empty-workspaces case.
     #[test]
-    fn ac10b_pnpm_empty_packages_list_admits_zero_npm_entries() {
+    fn pnpm_empty_packages_list_admits_zero_npm_entries() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(root.join("pnpm-workspace.yaml"), "packages: []\n").unwrap();
@@ -929,17 +921,17 @@ mod tests {
 
         assert!(
             !projects.iter().any(|p| p.ecosystem == Ecosystem::Npm),
-            "AC-10b: no non-root npm entries expected, got: {projects:?}"
+            "no non-root npm entries expected, got: {projects:?}"
         );
     }
 
-    /// Spec (AC-10b, hybrid-root clause): the same empty `packages: []`
+    /// The same empty `packages: []`
     /// list must not exclude a hybrid root -- a root package.json that
     /// also declares a "name" field remains an implicit member of its own
-    /// workspace (AC-17's pnpm-governed exemption) and is admitted at
+    /// workspace and is admitted at
     /// path "." even though the empty packages: list matches nothing.
     #[test]
-    fn ac10b_pnpm_empty_packages_list_still_admits_hybrid_root() {
+    fn pnpm_empty_packages_list_still_admits_hybrid_root() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(root.join("pnpm-workspace.yaml"), "packages: []\n").unwrap();
@@ -953,22 +945,22 @@ mod tests {
             projects
                 .iter()
                 .any(|p| p.path == Path::new(".") && p.ecosystem == Ecosystem::Npm),
-            "AC-10b: hybrid root at '.' must still be admitted, got: {projects:?}"
+            "hybrid root at '.' must still be admitted, got: {projects:?}"
         );
         assert!(
             !projects
                 .iter()
                 .any(|p| p.path == Path::new("packages/other") && p.ecosystem == Ecosystem::Npm),
-            "AC-10b: non-root packages/other must remain excluded, got: {projects:?}"
+            "non-root packages/other must remain excluded, got: {projects:?}"
         );
     }
 
-    /// AC-11c: a sibling pnpm-workspace.yaml that fails to parse as YAML
-    /// does not count as "present" for AC-08's precedence purposes -- the
+    /// A sibling pnpm-workspace.yaml that fails to parse as YAML
+    /// does not count as "present" for precedence purposes -- the
     /// root package.json's "workspaces" field is still consulted and
     /// governs npm-ecosystem membership normally.
     #[test]
-    fn ac11c_malformed_pnpm_yaml_does_not_count_as_present_for_precedence() {
+    fn malformed_pnpm_yaml_does_not_count_as_present_for_precedence() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(root.join("package.json"), r#"{"workspaces": ["packages/*"]}"#).unwrap();
@@ -980,19 +972,19 @@ mod tests {
 
         assert!(
             projects.iter().any(|p| p.path == Path::new("packages/y")),
-            "AC-11c: package.json workspaces field must still govern membership when \
+            "package.json workspaces field must still govern membership when \
              pnpm-workspace.yaml is malformed YAML, got: {projects:?}"
         );
     }
 
-    /// AC-11: a root package.json with no "workspaces" field, alongside a
+    /// A root package.json with no "workspaces" field, alongside a
     /// pnpm-workspace.yaml whose YAML is malformed (unterminated flow
     /// sequence -> yaml_rust2::YamlLoader::load_from_str returns Err), must
     /// not panic or error the whole walk. The npm membership filter is
-    /// treated as absent for that workspace (falls back to AC-06's
-    /// admit-all behavior), matching AC-09's malformed-TOML treatment.
+    /// treated as absent for that workspace (falls back to
+    /// admit-all), matching the malformed-TOML treatment.
     #[test]
-    fn ac11_malformed_pnpm_yaml_with_no_package_json_workspaces_falls_back_to_absent_filter() {
+    fn malformed_pnpm_yaml_with_no_package_json_workspaces_falls_back_to_absent_filter() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(root.join("package.json"), r#"{"name":"root"}"#).unwrap();
@@ -1004,18 +996,16 @@ mod tests {
 
         assert!(
             projects.iter().any(|p| p.path == Path::new("packages/kept")),
-            "AC-11: malformed pnpm-workspace.yaml with no package.json workspaces field \
+            "malformed pnpm-workspace.yaml with no package.json workspaces field \
              must fall back to admit-all npm membership, got: {projects:?}"
         );
     }
 
-    /// AC-13: consolidated npm/pnpm workspace-membership regression group.
-    /// Reassembles the exact fixtures required by AC-03, AC-04, AC-06,
-    /// AC-06b, AC-08, AC-10, AC-10b, AC-10d, AC-11c, AC-16, AC-16b, and
-    /// AC-17 into a single regression test.
+    /// Consolidated npm/pnpm workspace-membership regression group.
+    /// Reassembles the individual npm and pnpm membership fixtures into a
+    /// single regression test.
     #[test]
-    fn ac13_npm_pnpm_workspace_membership_regression_group() {
-        // AC-03
+    fn npm_pnpm_workspace_membership_regression_group() {
         {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
@@ -1025,7 +1015,6 @@ mod tests {
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(!projects.iter().any(|p| p.path == Path::new("tools/helper")));
         }
-        // AC-04
         {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
@@ -1038,7 +1027,6 @@ mod tests {
             assert!(projects.iter().any(|p| p.path == Path::new("packages/kept")));
             assert!(!projects.iter().any(|p| p.path == Path::new("tools/outside")));
         }
-        // AC-06
         {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
@@ -1050,7 +1038,6 @@ mod tests {
                 .iter()
                 .any(|p| p.path == Path::new("packages/child") && p.ecosystem == Ecosystem::Npm));
         }
-        // AC-06b
         {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
@@ -1059,7 +1046,6 @@ mod tests {
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(projects.iter().any(|p| p.path == Path::new("packages/kept")));
         }
-        // AC-08
         {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
@@ -1073,7 +1059,6 @@ mod tests {
             assert!(projects.iter().any(|p| p.path == Path::new("tools/x")));
             assert!(!projects.iter().any(|p| p.path == Path::new("packages/y")));
         }
-        // AC-10b
         {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
@@ -1083,7 +1068,6 @@ mod tests {
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(!projects.iter().any(|p| p.ecosystem == Ecosystem::Npm));
         }
-        // AC-11c
         {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
@@ -1095,7 +1079,6 @@ mod tests {
             assert!(projects.iter().any(|p| p.path == Path::new("packages/y")));
         }
 
-        // AC-10
         {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
@@ -1105,7 +1088,6 @@ mod tests {
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(!projects.iter().any(|p| p.ecosystem == Ecosystem::Npm));
         }
-        // AC-16
         {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
@@ -1124,7 +1106,6 @@ mod tests {
                 .iter()
                 .any(|p| p.path == Path::new("packages/child") && p.ecosystem == Ecosystem::Npm));
         }
-        // AC-16b
         {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
@@ -1144,7 +1125,6 @@ mod tests {
                 .iter()
                 .any(|p| p.path == Path::new("packages/child") && p.ecosystem == Ecosystem::Npm));
         }
-        // AC-10d
         {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
@@ -1160,7 +1140,6 @@ mod tests {
             assert_eq!(npm_entries.len(), 1);
             assert_eq!(npm_entries[0].path, Path::new("."));
         }
-        // AC-17
         {
             let tmp = tempfile::tempdir().unwrap();
             let root = tmp.path();
@@ -1178,7 +1157,7 @@ mod tests {
         }
     }
 
-    /// AC-16: given a root package.json declaring both "name" and
+    /// Given a root package.json declaring both "name" and
     /// "workspaces": ["packages/*"] (the ordinary npm/yarn-classic
     /// monorepo root layout), and no pnpm-workspace.yaml anywhere,
     /// IgnoreWalkLocator::new(root).projects() returns an entry for the
@@ -1187,7 +1166,7 @@ mod tests {
     /// silently dropped merely because it matches no entry in its own
     /// "workspaces" glob list.
     #[test]
-    fn ac16_npm_hybrid_root_admitted_when_workspaces_field_governs() {
+    fn npm_hybrid_root_admitted_when_workspaces_field_governs() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(
@@ -1204,26 +1183,26 @@ mod tests {
             projects
                 .iter()
                 .any(|p| p.path == Path::new(".") && p.ecosystem == Ecosystem::Npm),
-            "AC-16: root package must be admitted as Npm, got: {projects:?}"
+            "root package must be admitted as Npm, got: {projects:?}"
         );
         assert!(
             projects
                 .iter()
                 .any(|p| p.path == Path::new("packages/child") && p.ecosystem == Ecosystem::Npm),
-            "AC-16: packages/child must be admitted as Npm, got: {projects:?}"
+            "packages/child must be admitted as Npm, got: {projects:?}"
         );
     }
 
-    /// AC-16b: given a root package.json declaring both "name" and
+    /// Given a root package.json declaring both "name" and
     /// "workspaces": ["packages/*"], and a sibling pnpm-workspace.yaml whose
     /// content is malformed YAML, calling projects() still returns an entry
     /// with path == "." and ecosystem == Npm for the root's own package.
     /// A malformed pnpm-workspace.yaml does not count as "present" for
-    /// AC-08/AC-11c's precedence purposes, so package.json's "workspaces"
-    /// field governs and AC-16's hybrid-root exemption applies exactly as it
+    /// precedence purposes, so package.json's "workspaces"
+    /// field governs and the hybrid-root exemption applies exactly as it
     /// would if no pnpm-workspace.yaml existed at all.
     #[test]
-    fn ac16b_npm_hybrid_root_admitted_when_sibling_pnpm_workspace_yaml_is_malformed() {
+    fn npm_hybrid_root_admitted_when_sibling_pnpm_workspace_yaml_is_malformed() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(
@@ -1243,17 +1222,17 @@ mod tests {
             projects
                 .iter()
                 .any(|p| p.path == Path::new(".") && p.ecosystem == Ecosystem::Npm),
-            "AC-16b: root package must be admitted as Npm despite malformed pnpm-workspace.yaml, got: {projects:?}"
+            "root package must be admitted as Npm despite malformed pnpm-workspace.yaml, got: {projects:?}"
         );
         assert!(
             projects
                 .iter()
                 .any(|p| p.path == Path::new("packages/child") && p.ecosystem == Ecosystem::Npm),
-            "AC-16b: packages/child must be admitted as Npm, got: {projects:?}"
+            "packages/child must be admitted as Npm, got: {projects:?}"
         );
     }
 
-    /// AC-17: given a root package.json declaring "name": "root-package" and a
+    /// Given a root package.json declaring "name": "root-package" and a
     /// sibling pnpm-workspace.yaml that exists, parses successfully, and
     /// declares packages: ["packages/*"] (a glob that does not itself match
     /// "."), calling projects() returns an entry with path == "." and
@@ -1262,7 +1241,7 @@ mod tests {
     /// silently dropped merely because the governing pnpm-workspace.yaml's
     /// packages: list contains no entry matching ".".
     #[test]
-    fn ac17_npm_hybrid_root_admitted_when_pnpm_workspace_yaml_governs() {
+    fn npm_hybrid_root_admitted_when_pnpm_workspace_yaml_governs() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(root.join("package.json"), r#"{"name": "root-package"}"#).unwrap();
@@ -1276,24 +1255,24 @@ mod tests {
             projects
                 .iter()
                 .any(|p| p.path == Path::new(".") && p.ecosystem == Ecosystem::Npm),
-            "AC-17: root package must be admitted as Npm when pnpm-workspace.yaml governs, got: {projects:?}"
+            "root package must be admitted as Npm when pnpm-workspace.yaml governs, got: {projects:?}"
         );
         assert!(
             projects
                 .iter()
                 .any(|p| p.path == Path::new("packages/child") && p.ecosystem == Ecosystem::Npm),
-            "AC-17: packages/child must be admitted as Npm, got: {projects:?}"
+            "packages/child must be admitted as Npm, got: {projects:?}"
         );
     }
 
-    /// AC-10d: given a root package.json declaring both "name": "root-package"
+    /// Given a root package.json declaring both "name": "root-package"
     /// and "workspaces": [] (present, empty array) and at least one other
     /// package.json elsewhere in the tree, calling projects() returns exactly
     /// one Npm-ecosystem entry: path == "." for the root's own package.
     /// The empty workspaces list excludes every non-root candidate but never
-    /// excludes the root's own AC-16-exempt package.
+    /// excludes the root's own package.
     #[test]
-    fn ac10d_npm_hybrid_root_admitted_despite_empty_workspaces_array() {
+    fn npm_hybrid_root_admitted_despite_empty_workspaces_array() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(
@@ -1311,17 +1290,17 @@ mod tests {
         assert_eq!(
             npm_projects.len(),
             1,
-            "AC-10d: empty workspaces array must admit exactly one Npm entry (the hybrid root), got: {npm_projects:?}"
+            "empty workspaces array must admit exactly one Npm entry (the hybrid root), got: {npm_projects:?}"
         );
         assert_eq!(
             npm_projects[0].path,
             Path::new("."),
-            "AC-10d: the single Npm entry must be the root package at path '.', got: {npm_projects:?}"
+            "the single Npm entry must be the root package at path '.', got: {npm_projects:?}"
         );
     }
 
     #[test]
-    fn ac09_malformed_cargo_members_bare_string_falls_back_to_absent_filter() {
+    fn malformed_cargo_members_bare_string_falls_back_to_absent_filter() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = \"crates/*\"\n").unwrap();
@@ -1338,7 +1317,7 @@ mod tests {
     }
 
     #[test]
-    fn ac09_malformed_cargo_members_non_string_entry_falls_back_to_absent_filter() {
+    fn malformed_cargo_members_non_string_entry_falls_back_to_absent_filter() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = [\"crates/*\", 42]\n").unwrap();
@@ -1355,7 +1334,7 @@ mod tests {
     }
 
     #[test]
-    fn ac09d_malformed_root_cargo_toml_syntax_falls_back_to_absent_cargo_filter() {
+    fn malformed_root_cargo_toml_syntax_falls_back_to_absent_cargo_filter() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(root.join("Cargo.toml"), "[workspace\nmembers = [\n").unwrap();
@@ -1372,7 +1351,7 @@ mod tests {
     }
 
     #[test]
-    fn ac09b_malformed_cargo_exclude_bare_string_falls_back_to_excluding_nothing() {
+    fn malformed_cargo_exclude_bare_string_falls_back_to_excluding_nothing() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(
@@ -1407,7 +1386,7 @@ mod tests {
     }
 
     #[test]
-    fn ac09b_malformed_cargo_exclude_non_string_entry_falls_back_to_excluding_nothing() {
+    fn malformed_cargo_exclude_non_string_entry_falls_back_to_excluding_nothing() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(
@@ -1442,7 +1421,7 @@ mod tests {
     }
 
     #[test]
-    fn ac09f_invalid_glob_in_cargo_members_is_skipped_without_disabling_sibling_entries() {
+    fn invalid_glob_in_cargo_members_is_skipped_without_disabling_sibling_entries() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(
@@ -1463,7 +1442,7 @@ mod tests {
     }
 
     #[test]
-    fn ac09g_invalid_glob_in_npm_workspaces_is_skipped_without_disabling_sibling_entries() {
+    fn invalid_glob_in_npm_workspaces_is_skipped_without_disabling_sibling_entries() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(
@@ -1484,7 +1463,7 @@ mod tests {
     }
 
     #[test]
-    fn ac09i_invalid_glob_in_cargo_exclude_is_skipped_without_disabling_sibling_entries() {
+    fn invalid_glob_in_cargo_exclude_is_skipped_without_disabling_sibling_entries() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(
@@ -1512,7 +1491,7 @@ mod tests {
     }
 
     #[test]
-    fn ac09h_invalid_glob_in_pnpm_packages_is_skipped_without_disabling_sibling_entries() {
+    fn invalid_glob_in_pnpm_packages_is_skipped_without_disabling_sibling_entries() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(
@@ -1533,7 +1512,7 @@ mod tests {
     }
 
     #[test]
-    fn ac09c_malformed_npm_workspaces_bare_string_falls_back_to_absent_filter() {
+    fn malformed_npm_workspaces_bare_string_falls_back_to_absent_filter() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(root.join("package.json"), r#"{"workspaces": "packages/*"}"#).unwrap();
@@ -1546,7 +1525,7 @@ mod tests {
     }
 
     #[test]
-    fn ac09c_malformed_npm_workspaces_non_string_entry_falls_back_to_absent_filter() {
+    fn malformed_npm_workspaces_non_string_entry_falls_back_to_absent_filter() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(root.join("package.json"), r#"{"workspaces": ["packages/*", 42]}"#).unwrap();
@@ -1559,7 +1538,7 @@ mod tests {
     }
 
     #[test]
-    fn ac09e_malformed_root_package_json_syntax_falls_back_to_absent_npm_filter() {
+    fn malformed_root_package_json_syntax_falls_back_to_absent_npm_filter() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(root.join("package.json"), "{\"workspaces\": [\"packages/*\"],}").unwrap();
@@ -1571,16 +1550,16 @@ mod tests {
         assert!(projects.iter().any(|p| p.path == Path::new("packages/kept")));
     }
 
-    /// Spec (AC-11b): a pnpm-workspace.yaml that parses successfully but
+    /// A pnpm-workspace.yaml that parses successfully but
     /// whose top-level document either has no `packages:` key, or has a
     /// `packages:` key whose value is not a YAML sequence of strings --
     /// e.g. `packages: "packages/*"` (bare scalar), `packages: {foo: bar}`
     /// (mapping), or a sequence containing a non-string element -- does not
     /// panic; `IgnoreWalkLocator::projects()` treats the npm membership
-    /// filter as absent for that workspace, the same fallback as AC-11's
+    /// filter as absent for that workspace, the same fallback as the
     /// YAML-syntax-error case.
     #[test]
-    fn ac11b_pnpm_packages_wrong_shape_falls_back_to_absent_filter() {
+    fn pnpm_packages_wrong_shape_falls_back_to_absent_filter() {
         let dir_missing = tempfile::tempdir().unwrap();
         let root_missing = dir_missing.path();
         std::fs::write(root_missing.join("pnpm-workspace.yaml"), "other_key: true\n").unwrap();
@@ -1589,7 +1568,7 @@ mod tests {
         let projects_missing = IgnoreWalkLocator::new(root_missing).projects().unwrap();
         assert!(
             projects_missing.iter().any(|p| p.path == Path::new("packages/kept")),
-            "AC-11b (missing key): packages/kept must be admitted, got: {projects_missing:?}"
+            "missing key: packages/kept must be admitted, got: {projects_missing:?}"
         );
 
         let dir_scalar = tempfile::tempdir().unwrap();
@@ -1600,7 +1579,7 @@ mod tests {
         let projects_scalar = IgnoreWalkLocator::new(root_scalar).projects().unwrap();
         assert!(
             projects_scalar.iter().any(|p| p.path == Path::new("packages/kept")),
-            "AC-11b (wrong scalar type): packages/kept must be admitted, got: {projects_scalar:?}"
+            "wrong scalar type: packages/kept must be admitted, got: {projects_scalar:?}"
         );
 
         let dir_mapping = tempfile::tempdir().unwrap();
@@ -1611,7 +1590,7 @@ mod tests {
         let projects_mapping = IgnoreWalkLocator::new(root_mapping).projects().unwrap();
         assert!(
             projects_mapping.iter().any(|p| p.path == Path::new("packages/kept")),
-            "AC-11b (mapping value): packages/kept must be admitted, got: {projects_mapping:?}"
+            "mapping value: packages/kept must be admitted, got: {projects_mapping:?}"
         );
 
         let dir_nonstring = tempfile::tempdir().unwrap();
@@ -1626,20 +1605,20 @@ mod tests {
         let projects_nonstring = IgnoreWalkLocator::new(root_nonstring).projects().unwrap();
         assert!(
             projects_nonstring.iter().any(|p| p.path == Path::new("packages/kept")),
-            "AC-11b (non-string sequence element): packages/kept must be admitted, got: {projects_nonstring:?}"
+            "non-string sequence element: packages/kept must be admitted, got: {projects_nonstring:?}"
         );
     }
 
-    /// Spec (AC-11d): a pnpm-workspace.yaml file that is empty (zero bytes),
+    /// A pnpm-workspace.yaml file that is empty (zero bytes),
     /// contains only whitespace, or contains only YAML comments -- such that
     /// yaml_rust2::YamlLoader::load_from_str returns Ok(vec![]), a
     /// successful parse producing zero YAML documents rather than a single
     /// document -- does not panic (IgnoreWalkLocator::projects() must not
     /// unconditionally index docs[0] or call docs.first().unwrap()); it
     /// treats the npm membership filter as absent for that workspace, the
-    /// same fallback as AC-11b's missing-packages-key case.
+    /// same fallback as the missing-packages-key case.
     #[test]
-    fn ac11d_zero_yaml_documents_falls_back_to_absent_filter_without_panic() {
+    fn zero_yaml_documents_falls_back_to_absent_filter_without_panic() {
         let dir_empty = tempfile::tempdir().unwrap();
         let root_empty = dir_empty.path();
         std::fs::write(root_empty.join("pnpm-workspace.yaml"), "").unwrap();
@@ -1648,7 +1627,7 @@ mod tests {
         let projects_empty = IgnoreWalkLocator::new(root_empty).projects().unwrap();
         assert!(
             projects_empty.iter().any(|p| p.path == Path::new("packages/kept")),
-            "AC-11d (zero bytes): packages/kept must be admitted, got: {projects_empty:?}"
+            "zero bytes: packages/kept must be admitted, got: {projects_empty:?}"
         );
 
         let dir_whitespace = tempfile::tempdir().unwrap();
@@ -1659,7 +1638,7 @@ mod tests {
         let projects_whitespace = IgnoreWalkLocator::new(root_whitespace).projects().unwrap();
         assert!(
             projects_whitespace.iter().any(|p| p.path == Path::new("packages/kept")),
-            "AC-11d (whitespace only): packages/kept must be admitted, got: {projects_whitespace:?}"
+            "whitespace only: packages/kept must be admitted, got: {projects_whitespace:?}"
         );
 
         let dir_comments = tempfile::tempdir().unwrap();
@@ -1674,21 +1653,20 @@ mod tests {
         let projects_comments = IgnoreWalkLocator::new(root_comments).projects().unwrap();
         assert!(
             projects_comments.iter().any(|p| p.path == Path::new("packages/kept")),
-            "AC-11d (comments only): packages/kept must be admitted, got: {projects_comments:?}"
+            "comments only: packages/kept must be admitted, got: {projects_comments:?}"
         );
     }
 
-    /// AC-14 (Cargo slice): regression-proof consolidation of the Cargo
-    /// malformed-input criteria already proven individually (AC-09,
-    /// AC-09b, AC-09d, AC-09f, AC-09i -- bare-string members/exclude
+    /// Regression-proof consolidation of the Cargo
+    /// malformed-input criteria already proven individually (bare-string members/exclude
     /// fallback, malformed root `Cargo.toml` fallback, invalid glob
     /// skip-without-disabling for both members and exclude). Reassembles
-    /// AC-14's exact fixtures into one regression group so future changes
+    /// those fixtures into one regression group so future changes
     /// to Cargo membership handling that break any of these
     /// no-panic/fallback behaviors are caught here.
     #[test]
-    fn ac14_cargo_malformed_edge_case_regression_slice() {
-        // AC-09: bare-string `members` falls back to absent filter (admits everything).
+    fn cargo_malformed_edge_case_regression_slice() {
+        // Bare-string `members` falls back to absent filter (admits everything).
         {
             let tmp = tempdir().unwrap();
             let root = tmp.path();
@@ -1702,11 +1680,11 @@ mod tests {
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
                 projects.iter().any(|p| p.path == Path::new("tools/outside")),
-                "AC-09: tools/outside must be admitted, got: {projects:?}"
+                "tools/outside must be admitted, got: {projects:?}"
             );
         }
 
-        // AC-09b: bare-string `exclude` falls back to excluding nothing, while
+        // Bare-string `exclude` falls back to excluding nothing, while
         // the well-formed `members` filter still applies.
         {
             let tmp = tempdir().unwrap();
@@ -1737,19 +1715,19 @@ mod tests {
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
                 projects.iter().any(|p| p.path == Path::new("crates/scratch-example")),
-                "AC-09b: crates/scratch-example must be admitted, got: {projects:?}"
+                "crates/scratch-example must be admitted, got: {projects:?}"
             );
             assert!(
                 projects.iter().any(|p| p.path == Path::new("crates/kept-example")),
-                "AC-09b: crates/kept-example must be admitted, got: {projects:?}"
+                "crates/kept-example must be admitted, got: {projects:?}"
             );
             assert!(
                 !projects.iter().any(|p| p.path == Path::new("tools/outside")),
-                "AC-09b: tools/outside must remain excluded by members, got: {projects:?}"
+                "tools/outside must remain excluded by members, got: {projects:?}"
             );
         }
 
-        // AC-09d: syntactically invalid root TOML falls back to absent Cargo filter.
+        // Syntactically invalid root TOML falls back to absent Cargo filter.
         {
             let tmp = tempdir().unwrap();
             let root = tmp.path();
@@ -1763,11 +1741,11 @@ mod tests {
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
                 projects.iter().any(|p| p.path == Path::new("crates/kept")),
-                "AC-09d: crates/kept must be admitted, got: {projects:?}"
+                "crates/kept must be admitted, got: {projects:?}"
             );
         }
 
-        // AC-09f: an invalid glob entry in `members` is skipped without
+        // An invalid glob entry in `members` is skipped without
         // disabling sibling well-formed entries.
         {
             let tmp = tempdir().unwrap();
@@ -1786,11 +1764,11 @@ mod tests {
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
                 projects.iter().any(|p| p.path == Path::new("crates/kept-example")),
-                "AC-09f: crates/kept-example must be admitted, got: {projects:?}"
+                "crates/kept-example must be admitted, got: {projects:?}"
             );
         }
 
-        // AC-09i: an invalid glob entry in `exclude` is skipped without
+        // An invalid glob entry in `exclude` is skipped without
         // disabling sibling well-formed exclude entries.
         {
             let tmp = tempdir().unwrap();
@@ -1815,25 +1793,25 @@ mod tests {
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
                 !projects.iter().any(|p| p.path == Path::new("crates/scratch-example")),
-                "AC-09i: crates/scratch-example must remain excluded, got: {projects:?}"
+                "crates/scratch-example must remain excluded, got: {projects:?}"
             );
             assert!(
                 projects.iter().any(|p| p.path == Path::new("crates/kept-example")),
-                "AC-09i: crates/kept-example must be admitted, got: {projects:?}"
+                "crates/kept-example must be admitted, got: {projects:?}"
             );
         }
     }
 
-    /// AC-14 (npm slice): consolidated regression group reassembling the
-    /// fixtures already proven individually (AC-09c malformed-workspaces
-    /// fallback, AC-09e malformed-root-json fallback, AC-09g invalid-glob
-    /// skip, AC-10 empty-workspaces-array excludes everything).
-    /// Reassembles AC-14's exact fixtures into one regression group so
+    /// Consolidated regression group reassembling the
+    /// fixtures already proven individually (malformed-workspaces
+    /// fallback, malformed-root-json fallback, invalid-glob
+    /// skip, empty-workspaces-array excludes everything).
+    /// Reassembles those fixtures into one regression group so
     /// future changes to npm membership handling that break any of these
     /// no-panic/fallback behaviors are caught here.
     #[test]
-    fn ac14_npm_malformed_edge_case_regression_slice() {
-        // AC-09c: bare-string `workspaces` falls back to absent npm filter
+    fn npm_malformed_edge_case_regression_slice() {
+        // Bare-string `workspaces` falls back to absent npm filter
         // (admits everything, including paths outside any glob).
         {
             let tmp = tempdir().unwrap();
@@ -1844,11 +1822,11 @@ mod tests {
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
                 projects.iter().any(|p| p.path == Path::new("tools/outside")),
-                "AC-09c: tools/outside must be admitted, got: {projects:?}"
+                "tools/outside must be admitted, got: {projects:?}"
             );
         }
 
-        // AC-09e: syntactically invalid JSON falls back to absent npm
+        // Syntactically invalid JSON falls back to absent npm
         // filter without panicking or erroring the whole walk.
         {
             let tmp = tempdir().unwrap();
@@ -1859,11 +1837,11 @@ mod tests {
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
                 projects.iter().any(|p| p.path == Path::new("packages/kept")),
-                "AC-09e: packages/kept must be admitted, got: {projects:?}"
+                "packages/kept must be admitted, got: {projects:?}"
             );
         }
 
-        // AC-09g: an invalid glob entry in npm `workspaces` is skipped
+        // An invalid glob entry in npm `workspaces` is skipped
         // without disabling sibling well-formed entries.
         {
             let tmp = tempdir().unwrap();
@@ -1882,11 +1860,11 @@ mod tests {
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
                 projects.iter().any(|p| p.path == Path::new("packages/kept-example")),
-                "AC-09g: packages/kept-example must be admitted, got: {projects:?}"
+                "packages/kept-example must be admitted, got: {projects:?}"
             );
         }
 
-        // AC-10: an explicitly empty `workspaces` array is a real
+        // An explicitly empty `workspaces` array is a real
         // membership filter that matches nothing (distinguished from an
         // absent `workspaces` field).
         {
@@ -1898,22 +1876,21 @@ mod tests {
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
                 !projects.iter().any(|p| p.ecosystem == Ecosystem::Npm),
-                "AC-10: no Npm entries expected, got: {projects:?}"
+                "no Npm entries expected, got: {projects:?}"
             );
         }
     }
 
-    /// AC-14 (pnpm slice): consolidated regression group reassembling the
-    /// fixtures already proven individually (AC-09h invalid-glob skip
-    /// TASK-25, AC-11 malformed-yaml-no-workspaces fallback TASK-27,
-    /// AC-11b wrong-shape fallback TASK-28, AC-11d zero-yaml-documents
-    /// fallback TASK-29). Reassembles AC-14's exact fixtures into one
+    /// Consolidated regression group reassembling the
+    /// fixtures already proven individually (invalid-glob skip,
+    /// malformed-yaml-no-workspaces fallback, wrong-shape fallback,
+    /// zero-yaml-documents fallback). Reassembles those fixtures into one
     /// regression group so future changes to pnpm membership handling
     /// that break any of these no-panic/fallback behaviors are caught
     /// here.
     #[test]
-    fn ac14_pnpm_malformed_edge_case_regression_slice() {
-        // AC-09h: an invalid glob entry in pnpm `packages` is skipped
+    fn pnpm_malformed_edge_case_regression_slice() {
+        // An invalid glob entry in pnpm `packages` is skipped
         // without disabling sibling well-formed entries.
         {
             let tmp = tempdir().unwrap();
@@ -1932,11 +1909,11 @@ mod tests {
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
                 projects.iter().any(|p| p.path == Path::new("packages/kept-example")),
-                "AC-09h: packages/kept-example must be admitted, got: {projects:?}"
+                "packages/kept-example must be admitted, got: {projects:?}"
             );
         }
 
-        // AC-11: malformed pnpm-workspace.yaml (unterminated flow sequence)
+        // Malformed pnpm-workspace.yaml (unterminated flow sequence)
         // with a root package.json present but lacking a "workspaces"
         // field falls back to admit-all npm membership without panicking
         // or erroring the whole walk.
@@ -1950,11 +1927,11 @@ mod tests {
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
                 projects.iter().any(|p| p.path == Path::new("packages/kept")),
-                "AC-11: packages/kept must be admitted, got: {projects:?}"
+                "packages/kept must be admitted, got: {projects:?}"
             );
         }
 
-        // AC-11b: pnpm-workspace.yaml parses successfully but `packages:`
+        // Pnpm-workspace.yaml parses successfully but `packages:`
         // is a bare scalar string, not a sequence -- falls back to absent
         // npm membership filter without panicking.
         {
@@ -1966,11 +1943,11 @@ mod tests {
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
                 projects.iter().any(|p| p.path == Path::new("packages/kept")),
-                "AC-11b: packages/kept must be admitted, got: {projects:?}"
+                "packages/kept must be admitted, got: {projects:?}"
             );
         }
 
-        // AC-11d: pnpm-workspace.yaml containing only YAML comments parses
+        // Pnpm-workspace.yaml containing only YAML comments parses
         // successfully to zero documents (Ok(vec![])) -- falls back to
         // absent npm membership filter without unconditionally indexing
         // docs[0].
@@ -1983,7 +1960,7 @@ mod tests {
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(
                 projects.iter().any(|p| p.path == Path::new("packages/kept")),
-                "AC-11d: packages/kept must be admitted, got: {projects:?}"
+                "packages/kept must be admitted, got: {projects:?}"
             );
         }
     }

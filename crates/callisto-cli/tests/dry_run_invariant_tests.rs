@@ -202,7 +202,7 @@ fn init_dry_run_writes_nothing_even_with_yes() {
     });
 }
 
-/// AC-02: `release --dry-run` on a dirty worktree prints the plan and changes nothing.
+/// `release --dry-run` on a dirty worktree prints the plan and changes nothing.
 #[test]
 fn release_dry_run_writes_nothing() {
     let dir = setup_repo();

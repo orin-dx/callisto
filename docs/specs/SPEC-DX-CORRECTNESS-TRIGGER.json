@@ -20,5 +20,5 @@
   "linked_requirement": "REQ-DX-V1",
   "reasoning": "Grounded against origin/fix/release-run-simplify@9be31095. release_trigger already has per-package override tests (per_package_config_test.rs: per_package_release_trigger_auto_is_applied) confirming resolution works; the defect is solely that aggregate.rs:203's inference call site ignores the resolved value. This is a small, surgical gate at one call site, not a redesign of the inference feature.",
   "spec_file_path": "docs/specs/SPEC-DX-CORRECTNESS-TRIGGER.json",
-  "status": "design"
+  "status": "current"
 }

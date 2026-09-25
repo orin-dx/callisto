@@ -1,6 +1,6 @@
-//! Tests for the cross-ecosystem [[package]] rule warning diagnostic (SPEC-002 AC-5).
+//! Tests for the cross-ecosystem [[package]] rule warning diagnostic.
 //!
-//! AC-5 trigger: a SINGLE directory containing both Cargo.toml and package.json
+//! Trigger: a SINGLE directory containing both Cargo.toml and package.json
 //! (the napi case). IgnoreWalkLocator discovers both manifests for the same
 //! directory and groups them into ONE packages-map entry whose `manifests` Vec
 //! contains two canonical ManifestDecls (CargoToml + PackageJson). A bare
@@ -30,10 +30,10 @@ impl CommandRunner for NoopRunner {
     }
 }
 
-/// AC-5 + AC-8b: A bare [[package]] rule matching a napi-style package (one
+/// A bare [[package]] rule matching a napi-style package (one
 /// directory containing both Cargo.toml and package.json with the same name)
 /// must emit exactly one BareRuleMatchesMultipleEcosystems Warning diagnostic.
-/// The diagnostic must have escalated_by = None and governed_by = None (AC-8b).
+/// The diagnostic must have escalated_by = None and governed_by = None.
 /// The message must contain the rule name and both ecosystem prefixes.
 #[test]
 fn bare_rule_matching_napi_package_emits_one_cross_ecosystem_diagnostic() {
@@ -103,26 +103,22 @@ fn bare_rule_matching_napi_package_emits_one_cross_ecosystem_diagnostic() {
         "diagnostic message must contain ecosystem prefix 'npm'; got: {:?}",
         diag.message,
     );
-    // AC-8b: advisory warning — no escalation, no governing key.
-    assert!(
-        diag.package.is_none(),
-        "package must be None (AC-5); got: {:?}",
-        diag.package,
-    );
-    assert!(diag.path.is_none(), "path must be None (AC-5); got: {:?}", diag.path,);
+    // Advisory warning — no escalation, no governing key.
+    assert!(diag.package.is_none(), "package must be None; got: {:?}", diag.package,);
+    assert!(diag.path.is_none(), "path must be None; got: {:?}", diag.path,);
     assert!(
         diag.escalated_by.is_none(),
-        "escalated_by must be None (AC-8b); got: {:?}",
+        "escalated_by must be None; got: {:?}",
         diag.escalated_by,
     );
     assert!(
         diag.governed_by.is_none(),
-        "governed_by must be None (AC-8b); got: {:?}",
+        "governed_by must be None; got: {:?}",
         diag.governed_by,
     );
 }
 
-/// AC-6: A bare [[package]] rule that matches exactly one ecosystem must NOT
+/// A bare [[package]] rule that matches exactly one ecosystem must NOT
 /// emit a BareRuleMatchesMultipleEcosystems diagnostic (distinct-ecosystem
 /// set size < 2).
 #[test]
@@ -160,13 +156,12 @@ fn bare_rule_matching_single_ecosystem_emits_no_diagnostic() {
     assert_eq!(
         count,
         0,
-        "bare rule matching only one ecosystem must not emit the cross-ecosystem diagnostic \
-         (AC-6); all diagnostics: {:?}",
+        "bare rule matching only one ecosystem must not emit the cross-ecosystem diagnostic; all diagnostics: {:?}",
         ws.graph.diagnostics(),
     );
 }
 
-/// AC-7: A PREFIXED [[package]] rule must never trigger
+/// A PREFIXED [[package]] rule must never trigger
 /// BareRuleMatchesMultipleEcosystems even when the matched package has
 /// canonical manifests in multiple ecosystems.
 #[test]
@@ -184,7 +179,7 @@ fn prefixed_rule_never_triggers_cross_ecosystem_diagnostic() {
     .unwrap();
     fs::write(pkg_dir.join("package.json"), r#"{"name":"baz","version":"0.1.0"}"#).unwrap();
     // PREFIXED rule — pattern.ecosystem() returns Some, so the diagnostic pass
-    // skips it unconditionally (AC-7).
+    // skips it unconditionally.
     fs::write(root.join("callisto.toml"), "[[package]]\nmatch = \"cargo/baz\"\n").unwrap();
 
     let locator = IgnoreWalkLocator::new(root);
@@ -201,13 +196,13 @@ fn prefixed_rule_never_triggers_cross_ecosystem_diagnostic() {
     assert_eq!(
         count,
         0,
-        "prefixed rules must not trigger BareRuleMatchesMultipleEcosystems (AC-7); \
+        "prefixed rules must not trigger BareRuleMatchesMultipleEcosystems; \
          all diagnostics: {:?}",
         ws.graph.diagnostics(),
     );
 }
 
-/// AC-8: A [[package-set]] rule must never trigger the cross-ecosystem diagnostic
+/// A [[package-set]] rule must never trigger the cross-ecosystem diagnostic
 /// regardless of what it matches. The diagnostic pass iterates cfg.packages only,
 /// never cfg.package_sets.
 #[test]
@@ -224,7 +219,7 @@ fn package_set_rule_never_triggers_cross_ecosystem_diagnostic() {
     )
     .unwrap();
     fs::write(pkg_dir.join("package.json"), r#"{"name":"qux","version":"0.1.0"}"#).unwrap();
-    // [[package-set]] rule (not [[package]]) — must never trigger (AC-8).
+    // [[package-set]] rule (not [[package]]) — must never trigger.
     // cfg.packages is empty; cfg.package_sets has one entry.
     fs::write(root.join("callisto.toml"), "[[package-set]]\nmatch = \"*\"\n").unwrap();
 
@@ -242,13 +237,13 @@ fn package_set_rule_never_triggers_cross_ecosystem_diagnostic() {
     assert_eq!(
         count,
         0,
-        "[[package-set]] rules must not trigger BareRuleMatchesMultipleEcosystems (AC-8); \
+        "[[package-set]] rules must not trigger BareRuleMatchesMultipleEcosystems; \
          all diagnostics: {:?}",
         ws.graph.diagnostics(),
     );
 }
 
-/// AC-9a: When cfg.packages is empty (no [[package]] rules in callisto.toml),
+/// When cfg.packages is empty (no [[package]] rules in callisto.toml),
 /// no BareRuleMatchesMultipleEcosystems diagnostic is present. The diagnostic
 /// pass iterates cfg.packages, which is an empty Vec, so the loop body never
 /// executes.
@@ -266,7 +261,7 @@ fn empty_packages_config_emits_no_cross_ecosystem_diagnostic() {
     )
     .unwrap();
     fs::write(pkg_dir.join("package.json"), r#"{"name":"zap","version":"0.1.0"}"#).unwrap();
-    // callisto.toml with NO [[package]] rules — cfg.packages is empty (AC-9a).
+    // callisto.toml with NO [[package]] rules — cfg.packages is empty.
     fs::write(root.join("callisto.toml"), "").unwrap();
 
     let locator = IgnoreWalkLocator::new(root);
@@ -283,13 +278,13 @@ fn empty_packages_config_emits_no_cross_ecosystem_diagnostic() {
     assert_eq!(
         count,
         0,
-        "no [[package]] rules means no cross-ecosystem diagnostic (AC-9a); \
+        "no [[package]] rules means no cross-ecosystem diagnostic; \
          all diagnostics: {:?}",
         ws.graph.diagnostics(),
     );
 }
 
-/// AC-9b: cfg.packages is non-empty but the packages map has zero entries
+/// Cfg.packages is non-empty but the packages map has zero entries
 /// (no packages discovered). The diagnostic loop body never fires because
 /// packages.iter() yields nothing and the ecosystem set stays empty.
 #[test]
@@ -317,7 +312,7 @@ match = "ghost"
     assert_eq!(
         count,
         0,
-        "empty packages map means empty ecosystem set for every rule (AC-9b); \
+        "empty packages map means empty ecosystem set for every rule; \
          all diagnostics: {:?}",
         ws.graph.diagnostics(),
     );

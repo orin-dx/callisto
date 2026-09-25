@@ -341,7 +341,6 @@ impl NpmMembership {
 /// True when the root package.json exists, parses as JSON, and declares a
 /// "name" field. Independent of which arm (package.json "workspaces" or a
 /// sibling pnpm-workspace.yaml) governs the rest of npm membership -- see
-/// AC-16/AC-16b/AC-17/AC-10d.
 fn package_json_declares_name(root: &Path) -> bool {
     let Ok(content) = std::fs::read_to_string(root.join(ManifestFormat::PackageJson.file_name())) else {
         return false;

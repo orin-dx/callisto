@@ -275,7 +275,7 @@ fn test_linked_group_converges_shared_version() {
 
     let outcome = run_cascade(input).unwrap();
 
-    // Spec §G.6.7: Linked group syncs release severities across members, and
+    // Linked group syncs release severities across members, and
     // members converge on a single winning target version (the max of each
     // member's individually-computed candidate) rather than diverging by
     // their own base version: pkg-a's candidate is 1.0.1, pkg-b's is 2.0.1,
@@ -345,7 +345,7 @@ fn test_linked_group_version_convergence() {
     let target_a = outcome.targets.get(&pkg_a).unwrap().render();
     let target_b = outcome.targets.get(&pkg_b).unwrap().render();
 
-    // Spec §G.6.7: Linked group members sync release severity (Minor) AND
+    // Linked group members sync release severity (Minor) AND
     // converge on the single winning target version: pkg_a's candidate is
     // 1.5.0, pkg_b's is 2.8.0, so both converge on the winner, 2.8.0.
     assert_eq!(target_a, "2.8.0");

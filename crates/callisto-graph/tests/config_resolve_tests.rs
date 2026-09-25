@@ -105,7 +105,7 @@ members = ["foo", "bar"]
     );
 }
 
-/// AC-010 + AC-013(bug3): two Fixed groups' members that resolve to the
+/// Two Fixed groups' members that resolve to the
 /// SAME PackageId under different spellings must make Workspace::load
 /// (which calls GroupTable::resolve) fail with
 /// GraphError::ConflictingGroupMembership -- not silently let the second
@@ -145,7 +145,7 @@ members = ["cargo:my-lib"]
     }
 }
 
-/// AC-010b: a resolved PackageId listed as a Fixed-group member under one
+/// A resolved PackageId listed as a Fixed-group member under one
 /// spelling and a Linked-group member under a different spelling must also
 /// be rejected -- confirming the conflict check spans both group kinds and
 /// is not scoped separately to fixed_of and linked_of.
@@ -186,7 +186,7 @@ members = ["cargo:my-lib"]
     }
 }
 
-/// AC-011: a workspace where each resolved PackageId belongs to exactly
+/// A workspace where each resolved PackageId belongs to exactly
 /// one group (the ordinary, allowed case) must resolve Ok, and
 /// GraphError::ConflictingGroupMembership must never be constructed during
 /// that resolve() call.

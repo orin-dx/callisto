@@ -51,6 +51,5 @@
       "is_error_case": true
     }
   ],
-  "linked_requirement": "REQ-TRACK5-CHANGELOG-PR-BODY-CONSOLIDATION",
-  "revision_note": "2026-09-24 drift pass: added status: current; AC-001 rewritten -- PR body is now grouped by change (render_entry_text/ChangeGroups), not per-package under a '#### Release Reason' heading; render_section is only a success gate."
+  "linked_requirement": "REQ-TRACK5-CHANGELOG-PR-BODY-CONSOLIDATION"
 }

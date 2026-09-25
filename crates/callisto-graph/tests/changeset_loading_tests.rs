@@ -1,5 +1,5 @@
 //! `load_changesets` parse-time error behavior -- split out of
-//! validate_command_tests.rs (SPEC-DX-STATUS-ADD) when `validate` was removed.
+//! validate_command_tests.rs when `validate` was removed.
 //! These test `load_changesets` itself, not the removed `validate` command.
 
 #[test]

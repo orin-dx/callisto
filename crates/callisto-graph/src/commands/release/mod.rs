@@ -190,8 +190,8 @@ pub(crate) mod tests {
     /// each independently mapped a package's canonical manifests to
     /// `ReleasePackageId`s -- one via a plain per-manifest map, the other via
     /// a `BTreeSet<Ecosystem>` dedup step -- before both were migrated onto
-    /// `release_decision::release_package_ids`. A dual-identity package (one
-    /// directory, a Cargo manifest and an npm manifest, Case D) is exactly
+    /// `release_decision::release_package_ids`. A dual-manifest package (one
+    /// directory, a Cargo manifest and an npm manifest) is exactly
     /// the shape that would have silently diverged had the two derivations
     /// disagreed: this proves the roster `derive_release_decision` computes
     /// and the snapshot `build_release_intent` derives from it agree on the
@@ -243,7 +243,7 @@ pub(crate) mod tests {
         assert_eq!(
             workspace.graph.packages().count(),
             1,
-            "the Cargo and npm manifest must merge into one Case D package"
+            "the Cargo and npm manifest must merge into one dual-manifest package"
         );
 
         let plan = crate::VersionPlan {
@@ -290,7 +290,7 @@ pub(crate) mod tests {
         );
     }
 
-    /// A Case D package's npm identity is its package.json `name`, not the crate name.
+    /// A dual-manifest package's npm identity is its package.json `name`, not the crate name.
     #[test]
     fn case_d_npm_release_identity_uses_the_package_json_name() {
         let dir = tempfile::tempdir().unwrap();
@@ -364,7 +364,7 @@ pub(crate) mod tests {
         dir
     }
 
-    /// §M.6.1 Case E: each attached platform package is one `PlatformPublish`
+    /// Each attached platform package is one `PlatformPublish`
     /// under its owner, published by directory before the owner, with no tag,
     /// forge, or artifact operation of its own.
     #[test]

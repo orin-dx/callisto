@@ -287,7 +287,7 @@ pub fn open(decl: &ManifestDecl, ctx: &OpenContext<'_>) -> Result<Box<dyn Manife
         return Err(ManifestError::ReadOnlyFormat {
             path: decl.path.clone(),
             format: decl.format,
-            reason: "lockfiles are regenerated via subprocess (§7.6 step 9), never opened as a Manifest handle",
+            reason: "lockfiles are regenerated via subprocess, never opened as a Manifest handle",
         });
     }
 
@@ -298,7 +298,7 @@ pub fn open(decl: &ManifestDecl, ctx: &OpenContext<'_>) -> Result<Box<dyn Manife
         other => Err(ManifestError::ReadOnlyFormat {
             path: decl.path.clone(),
             format: other,
-            reason: "not implemented — demand-gated per §2.2",
+            reason: "not implemented yet",
         }),
     }
 }

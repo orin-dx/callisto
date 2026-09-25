@@ -84,7 +84,7 @@ runs:
       env:
         CARGO_INCREMENTAL: "0"
         CARGO_REGISTRY_SPARSE: "true"
-    - name: Install Moon
+    - name: Install moon and the .prototools toolchain
       if: inputs.setup_callisto == 'true'
       # moonrepo/setup-toolchain v0
       uses: moonrepo/setup-toolchain@261c62cb5b0f580c7be7c8cd0f023a2e96756095

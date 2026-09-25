@@ -824,7 +824,7 @@ mod tests {
         }
     }
 
-    /// AC-003 scaffold: aggregate() must retain InferenceOutcome.commits
+    /// aggregate() must retain InferenceOutcome.commits
     /// on Aggregation.inference_commits keyed by package, not discard it
     /// after constructing BumpReason::Inference (which only carries a count).
     #[test]
@@ -889,7 +889,7 @@ mod tests {
         }
     }
 
-    /// AC-14: a package resolved to `ReleaseTrigger::Changeset` (the default) must not
+    /// A package resolved to `ReleaseTrigger::Changeset` (the default) must not
     /// have commit-based severity inference invoked at all, even when the `inference`
     /// feature is compiled in -- its severity comes only from pending changesets.
     #[test]
@@ -932,7 +932,7 @@ mod tests {
         );
     }
 
-    /// AC-15: a package resolved to `ReleaseTrigger::Auto` must still run commit-based
+    /// A package resolved to `ReleaseTrigger::Auto` must still run commit-based
     /// severity inference, and its outcome can still raise the package's severity above
     /// what pending changesets alone would produce -- unchanged from current behavior.
     #[test]
@@ -1602,7 +1602,7 @@ mod tests {
         );
     }
 
-    /// AC-F7a: Prefixed rule (npm:pkg, OFF policy) must win over Bare rule (pkg, conservative)
+    /// Prefixed rule (npm:pkg, OFF policy) must win over Bare rule (pkg, conservative)
     /// even when the Bare rule is declared first in callisto.toml.
     /// With single-pass lookup: the Bare rule (declared first) wins -> conservative applied.
     /// With resolve_package_config (two-pass): the Prefixed rule wins -> OFF applied.
