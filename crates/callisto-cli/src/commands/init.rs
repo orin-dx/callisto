@@ -29,9 +29,15 @@ pub const WORKFLOW_PROMPT: &str = "Generate a GitHub Actions release workflow?";
 /// Printed instead of the preview when the repository has no commit to plan from.
 pub const NO_COMMITS: &str =
     "No commits yet: commit, then run `callisto release --dry-run` to preview the first release.";
-/// Printed instead of asking `WORKFLOW_PROMPT` for a workspace the simple workflow can't cover yet.
-fn workflow_needs_matrix_note(reason: scaffold::WorkflowMatrixReason) -> String {
-    format!("Skipping GitHub Actions workflow generation: {reason}, which `callisto init` does not yet generate.")
+/// Printed instead of asking `WORKFLOW_PROMPT` for a workspace no generated workflow covers.
+fn workflow_unsupported_note(reason: scaffold::WorkflowUnsupported) -> String {
+    format!("Skipping GitHub Actions workflow generation: {reason}.")
+}
+/// Printed once a generated workflow is written: a merge to `branch` is the release approval.
+fn merge_publishes_note(branch: &str) -> String {
+    format!(
+        "Merging to `{branch}` publishes: require pull requests and reviews on `{branch}` (GitHub → Settings → Rules)."
+    )
 }
 const VERSIONING_CHOICES: [&str; 2] = [
     "independent: each package has its own version",
@@ -126,18 +132,18 @@ pub fn run<R: CommandRunner>(
     let answers = collect_answers(&args, &facts, prompting, prompter, runner)?;
 
     let mut diagnostics = Vec::new();
-    let want_workflow = match scaffold::workflow_matrix_reason(&facts, &answers) {
-        Some(reason) if args.workflow => {
-            return Err(GraphError::InitWorkflowNeedsMatrix {
+    let shape = match scaffold::workflow_shape(&facts, &answers) {
+        Err(reason) if args.workflow => {
+            return Err(GraphError::InitWorkflowUnsupported {
                 reason: reason.to_string(),
             }
             .into());
         }
-        Some(reason) => {
-            let note = workflow_needs_matrix_note(reason);
+        Err(reason) => {
+            let note = workflow_unsupported_note(reason);
             writeln!(human, "{note}")?;
             diagnostics.push(callisto_model::Diagnostic {
-                code: callisto_model::DiagnosticCode::WorkflowGenerationNeedsMatrix,
+                code: callisto_model::DiagnosticCode::WorkflowGenerationUnsupported,
                 severity: callisto_model::DiagnosticSeverity::Warning,
                 message: note,
                 package: None,
@@ -145,21 +151,27 @@ pub fn run<R: CommandRunner>(
                 escalated_by: None,
                 governed_by: None,
             });
-            false
+            None
         }
-        None if args.workflow => true,
-        None if args.no_workflow => false,
-        None if prompting => prompter.confirm(WORKFLOW_PROMPT, false)?,
-        None => false,
+        Ok(shape) => Some(shape),
     };
-    let workflow = if want_workflow {
-        scaffold::ensure_workflow_absent(&facts.root)?;
-        let branch = scaffold::default_branch(runner, &facts.root);
-        let version = env!("CARGO_PKG_VERSION");
-        let commit = scaffold::resolve_release_commit(runner, &facts.root, version)?;
-        Some(scaffold::render_workflow(&facts, &branch, &commit, version))
-    } else {
-        None
+    let want_workflow = match shape {
+        None => false,
+        Some(_) if args.workflow => true,
+        Some(_) if args.no_workflow => false,
+        Some(_) if prompting => prompter.confirm(WORKFLOW_PROMPT, false)?,
+        Some(_) => false,
+    };
+    let workflow = match shape.filter(|_| want_workflow) {
+        Some(shape) => {
+            scaffold::ensure_workflow_absent(&facts.root)?;
+            let branch = scaffold::default_branch(runner, &facts.root);
+            let version = env!("CARGO_PKG_VERSION");
+            let commit = scaffold::resolve_release_commit(runner, &facts.root, version)?;
+            let content = scaffold::render_workflow(&facts, shape, &branch, &commit, version);
+            Some((content, branch))
+        }
+        None => None,
     };
 
     let config = scaffold::render_config(&facts, &answers);
@@ -176,7 +188,7 @@ pub fn run<R: CommandRunner>(
         }
         None => writeln!(human, "{NO_COMMITS}")?,
     }
-    if let Some(workflow) = &workflow {
+    if let Some((workflow, _)) = &workflow {
         writeln!(
             human,
             "\n{}:\n{workflow}",
@@ -199,8 +211,19 @@ pub fn run<R: CommandRunner>(
         }
         let permit = ApplyPermit::granted_unless_dry_run(false).expect("non-dry-run permits writes");
         let report = scaffold::write(&facts.root, &config, &permit)?;
-        if let Some(workflow) = &workflow {
+        if let Some((workflow, branch)) = &workflow {
             scaffold::write_workflow(&facts.root, workflow, &permit)?;
+            let note = merge_publishes_note(branch);
+            writeln!(human, "{note}")?;
+            diagnostics.push(callisto_model::Diagnostic {
+                code: callisto_model::DiagnosticCode::WorkflowMergePublishes,
+                severity: callisto_model::DiagnosticSeverity::Info,
+                message: note,
+                package: None,
+                path: None,
+                escalated_by: None,
+                governed_by: None,
+            });
         }
         report
     };
@@ -620,6 +643,7 @@ mod tests {
                 Answer::Input("example/tools"),
                 Answer::Input(" , "),
                 Answer::Input("x86_64-unknown-linux-gnu, x86_64-pc-windows-msvc"),
+                Answer::Confirm(false),
                 Answer::Confirm(true),
             ],
             false,
@@ -634,6 +658,7 @@ mod tests {
                 FORGE_PROMPT,
                 TARGETS_PROMPT,
                 TARGETS_PROMPT,
+                WORKFLOW_PROMPT,
                 WRITE_PROMPT
             ]
         );
@@ -853,6 +878,7 @@ mod tests {
                 Answer::Confirm(true),
                 Answer::Input("example/tools"),
                 Answer::Input("x86_64-unknown-linux-gnu"),
+                Answer::Confirm(false),
                 Answer::Confirm(true),
             ],
             false,
@@ -1063,6 +1089,67 @@ mod tests {
         assert!(dir.path().join(".github/workflows/callisto-release.yml").exists());
     }
 
+    // Writing a workflow prints that a merge to the default branch publishes, and records it
+    // as an info diagnostic; a dry run writes nothing and says nothing.
+    #[test]
+    fn written_workflow_notes_that_merging_publishes() {
+        let note =
+            "Merging to `main` publishes: require pull requests and reviews on `main` (GitHub → Settings → Rules).";
+        let args = || InitArgs {
+            workflow: true,
+            ..yes(InitVersioning::Independent)
+        };
+        let text = workspace(0);
+        let run = run_init_with_runner(
+            text.path(),
+            args(),
+            false,
+            vec![],
+            false,
+            &fake_ls_remote(env!("CARGO_PKG_VERSION")),
+        );
+        run.result.unwrap();
+        assert!(run.out.contains(&format!("{note}\n")), "{}", run.out);
+
+        let dir = workspace(0);
+        let out = Shared::default();
+        let err = Shared::default();
+        run_with_json(dir.path(), args(), false, &out, &err);
+        assert!(err.text().contains(note), "{}", err.text());
+        let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
+        let diagnostics = report["diagnostics"].as_array().unwrap();
+        assert_eq!(diagnostics.len(), 1, "{report}");
+        assert_eq!(diagnostics[0]["code"], "workflow-merge-publishes");
+        assert_eq!(diagnostics[0]["severity"], "info");
+        assert_eq!(diagnostics[0]["message"], note);
+
+        let dry = workspace(0);
+        let out = Shared::default();
+        let err = Shared::default();
+        run_with_json(dry.path(), args(), true, &out, &err);
+        assert!(!err.text().contains("Merging to"), "{}", err.text());
+        let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
+        assert!(
+            report
+                .get("diagnostics")
+                .is_none_or(|d| d.as_array().unwrap().is_empty()),
+            "{report}"
+        );
+    }
+
+    fn run_with_json(root: &Path, args: InitArgs, dry_run: bool, out: &Shared, err: &Shared) {
+        run(
+            args,
+            &global(root, OutputFormat::Json, dry_run),
+            false,
+            &mut Scripted::new(vec![], out),
+            &mut out.clone(),
+            &mut err.clone(),
+            &fake_ls_remote(env!("CARGO_PKG_VERSION")),
+        )
+        .unwrap();
+    }
+
     // AC-004: an unresolvable tag (offline, or an unreleased version) errors clearly, naming the fix.
     #[test]
     fn unresolvable_version_errors_naming_the_fix() {
@@ -1170,81 +1257,115 @@ mod tests {
         assert!(nothing_written(dir.path()));
     }
 
-    // A workspace that ships binaries needs the build-matrix workflow (out of scope
-    // here); init skips the question and generation entirely, with a note.
-    #[test]
-    fn shipping_binaries_skips_workflow_generation_with_a_note() {
-        let dir = workspace(1);
-        let run = run_init(
-            dir.path(),
-            with_targets(&["x86_64-unknown-linux-gnu"]),
-            false,
-            vec![],
-            false,
+    /// An npm package with an attached platform package but no `napi.targets`.
+    fn platform_workspace_without_napi_targets() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for (path, content) in [
+            (
+                "package.json",
+                r#"{"name":"root","version":"0.0.0","private":true,"workspaces":["web","web-linux-x64-gnu"]}"#,
+            ),
+            (
+                "web/package.json",
+                r#"{"name":"web","version":"1.0.0","optionalDependencies":{"web-linux-x64-gnu":"1.0.0"}}"#,
+            ),
+            (
+                "web-linux-x64-gnu/package.json",
+                r#"{"name":"web-linux-x64-gnu","version":"1.0.0","os":["linux"],"cpu":["x64"]}"#,
+            ),
+        ] {
+            std::fs::create_dir_all(root.join(path).parent().unwrap()).unwrap();
+            std::fs::write(root.join(path), content).unwrap();
+        }
+        callisto_fixtures::git::init_repo(root);
+        git(
+            root,
+            &["remote", "add", "origin", "https://github.com/example/tools.git"],
         );
-        run.result.unwrap();
-        assert!(
-            run.out.contains("Skipping GitHub Actions workflow generation")
-                && run.out.contains("ships release artifacts")
-                && run.out.contains("does not yet generate"),
-            "{}",
-            run.out
-        );
-        assert!(!dir.path().join(".github/workflows/callisto-release.yml").exists());
+        git(root, &["add", "."]);
+        git(root, &["commit", "-q", "-m", "fixture"]);
+        dir
     }
 
-    // The skip note also lands in InitReport.diagnostics, so a --format json caller sees it too.
+    // SPEC-DX-SETUP-WORKFLOW-MATRIX: shipping binaries generates plan -> build -> execute.
     #[test]
-    fn shipping_binaries_skip_note_is_a_json_diagnostic() {
-        let dir = workspace(1);
-        let out = Shared::default();
-        let err = Shared::default();
-        run(
-            with_targets(&["x86_64-unknown-linux-gnu"]),
-            &global(dir.path(), OutputFormat::Json, false),
-            false,
-            &mut Scripted::new(vec![], &out),
-            &mut out.clone(),
-            &mut err.clone(),
-            &CliCommandRunner,
-        )
-        .unwrap();
-        let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
-        let diagnostics = report["diagnostics"].as_array().unwrap();
-        assert_eq!(diagnostics.len(), 1, "{report}");
-        assert_eq!(diagnostics[0]["code"], "workflow-generation-needs-matrix");
-        assert_eq!(diagnostics[0]["severity"], "warning");
-        assert!(
-            diagnostics[0]["message"]
-                .as_str()
-                .unwrap()
-                .contains("ships release artifacts"),
-            "{report}"
-        );
-    }
-
-    // Passing --workflow explicitly for a workspace that needs the build matrix errors,
-    // naming the CI route, instead of silently skipping.
-    #[test]
-    fn explicit_workflow_flag_errors_clearly_for_a_matrix_workspace() {
+    fn shipping_binaries_generates_the_build_matrix_workflow() {
         let dir = workspace(1);
         let args = InitArgs {
             workflow: true,
             ..with_targets(&["x86_64-unknown-linux-gnu"])
         };
+        run_init_with_runner(
+            dir.path(),
+            args,
+            false,
+            vec![],
+            false,
+            &fake_ls_remote(env!("CARGO_PKG_VERSION")),
+        )
+        .result
+        .unwrap();
+        let workflow = workflow_file(dir.path());
+        for expected in [
+            "callisto release plan --from-release-commit",
+            "include: ${{ fromJSON(needs.plan.outputs.matrix) }}",
+            "callisto release execute",
+            "with: {mode: version-pr}",
+        ] {
+            assert!(workflow.contains(expected), "`{expected}` missing:\n{workflow}");
+        }
+    }
+
+    // A shape no generated workflow covers skips the question with a note that
+    // also lands in InitReport.diagnostics for a --format json caller.
+    #[test]
+    fn unsupported_workspace_skips_workflow_generation_with_a_json_diagnostic() {
+        let dir = platform_workspace_without_napi_targets();
+        let out = Shared::default();
+        let err = Shared::default();
+        run(
+            InitArgs::default(),
+            &global(dir.path(), OutputFormat::Json, false),
+            true,
+            &mut Scripted::new(vec![Answer::Select(0), Answer::Confirm(true)], &out),
+            &mut out.clone(),
+            &mut err.clone(),
+            &CliCommandRunner,
+        )
+        .unwrap();
+        assert!(
+            err.text().contains("Skipping GitHub Actions workflow generation"),
+            "{}",
+            err.text()
+        );
+        let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
+        let diagnostics = report["diagnostics"].as_array().unwrap();
+        assert_eq!(diagnostics.len(), 1, "{report}");
+        assert_eq!(diagnostics[0]["code"], "workflow-generation-unsupported");
+        assert_eq!(diagnostics[0]["severity"], "warning");
+        assert!(
+            diagnostics[0]["message"].as_str().unwrap().contains("napi.targets"),
+            "{report}"
+        );
+        assert!(!dir.path().join(".github/workflows/callisto-release.yml").exists());
+    }
+
+    // Passing --workflow for a shape no generated workflow covers errors, naming why.
+    #[test]
+    fn explicit_workflow_flag_errors_for_an_unsupported_workspace() {
+        let dir = platform_workspace_without_napi_targets();
+        let args = InitArgs {
+            workflow: true,
+            ..yes(InitVersioning::Independent)
+        };
         let run = run_init(dir.path(), args, false, vec![], false);
         let error = run.result.unwrap_err();
         assert!(
-            matches!(&error, CliError::Graph(GraphError::InitWorkflowNeedsMatrix { .. })),
+            matches!(&error, CliError::Graph(GraphError::InitWorkflowUnsupported { .. })),
             "{error}"
         );
-        assert!(
-            error
-                .to_string()
-                .contains("build-matrix workflow generation is not supported"),
-            "{error}"
-        );
-        assert!(error.to_string().contains("ships release artifacts"), "{error}");
+        assert!(error.to_string().contains("napi.targets"), "{error}");
         assert!(nothing_written(dir.path()));
     }
 }

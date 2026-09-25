@@ -456,6 +456,68 @@ pub(crate) fn build_matrix_report(packages: &[MatrixPackageInput]) -> Result<Mat
     })
 }
 
+/// One configured `[[release.artifact]]` cargo binary, resolved to its package.
+pub(crate) struct ReleaseArtifactInput {
+    pub id: PackageId,
+    pub name: String,
+    /// Workspace-root-relative package directory.
+    pub dir_rel: String,
+    pub target: String,
+    pub asset_name: String,
+}
+
+/// Adds one `cargo` group per package from its `[[release.artifact]]` entries;
+/// each target's `artifactName` is the slot's configured asset name.
+pub(crate) fn add_release_artifact_groups(
+    report: &mut MatrixReport,
+    artifacts: &[ReleaseArtifactInput],
+) -> Result<(), GraphError> {
+    const SOURCE: &str = "[[release.artifact]]";
+    for artifact in artifacts {
+        let group = report
+            .platform_targets
+            .entry(artifact.name.clone())
+            .or_insert_with(|| PlatformTargetGroup {
+                kind: PlatformTargetKind::Cargo,
+                source: SOURCE.to_owned(),
+                targets: Vec::new(),
+            });
+        if group.kind != PlatformTargetKind::Cargo {
+            return Err(GraphError::PlatformTargetsWithReleaseArtifacts {
+                package: artifact.id.clone(),
+                source_field: group.source.clone(),
+            });
+        }
+        match build_platform_target(&artifact.target, &artifact.dir_rel, &artifact.name) {
+            Some(mut target) => {
+                target.artifact_name = artifact.asset_name.clone();
+                group.targets.push(target);
+            }
+            None => report.diagnostics.push(Diagnostic {
+                code: DiagnosticCode::UnrecognisedPlatformTriple,
+                severity: DiagnosticSeverity::Warning,
+                message: format!(
+                    "package `{}` declares unrecognised platform triple `{}` in `{SOURCE}`",
+                    artifact.name, artifact.target
+                ),
+                package: Some(artifact.id.clone()),
+                path: None,
+                escalated_by: None,
+                governed_by: None,
+            }),
+        }
+        group.targets.sort_by(|a, b| {
+            a.triple
+                .cmp(&b.triple)
+                .then_with(|| a.artifact_name.cmp(&b.artifact_name))
+        });
+    }
+    report
+        .platform_targets
+        .retain(|_, group| !group.targets.is_empty() || group.kind != PlatformTargetKind::Cargo);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1056,5 +1118,55 @@ mod tests {
         assert_eq!(group.source, "napi.targets");
         assert!(group.targets.is_empty());
         assert!(diagnostics.is_empty());
+    }
+
+    fn release_artifact(name: &str, target: &str, asset: &str) -> ReleaseArtifactInput {
+        ReleaseArtifactInput {
+            id: pkg_id(name),
+            name: name.to_string(),
+            dir_rel: format!("crates/{name}"),
+            target: target.to_string(),
+            asset_name: asset.to_string(),
+        }
+    }
+
+    /// SPEC-DX-SETUP-WORKFLOW-MATRIX AC-005: an unrecognised artifact triple is
+    /// a warning, and a group left with no targets is dropped.
+    #[test]
+    fn add_release_artifact_groups_warns_on_an_unrecognised_triple() {
+        let mut report = build_matrix_report(&[]).unwrap();
+        add_release_artifact_groups(
+            &mut report,
+            &[
+                release_artifact("tool", "x86_64-unknown-linux-gnu", "tool.tar.gz"),
+                release_artifact("other", "sparc-sun-solaris", "other.tar.gz"),
+            ],
+        )
+        .unwrap();
+        assert_eq!(report.platform_targets.keys().collect::<Vec<_>>(), ["tool"]);
+        assert_eq!(report.platform_targets["tool"].targets[0].artifact_name, "tool.tar.gz");
+        assert_eq!(report.diagnostics.len(), 1);
+        assert_eq!(report.diagnostics[0].code, DiagnosticCode::UnrecognisedPlatformTriple);
+    }
+
+    /// A package cannot be both a napi/maturin platform source and a release-artifact binary.
+    #[test]
+    fn add_release_artifact_groups_rejects_a_package_with_napi_targets() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("package.json"),
+            r#"{"napi":{"targets":["aarch64-apple-darwin"]}}"#,
+        )
+        .unwrap();
+        let mut report = build_matrix_report(&[input("tool", tmp.path())]).unwrap();
+        let error = add_release_artifact_groups(
+            &mut report,
+            &[release_artifact("tool", "x86_64-unknown-linux-gnu", "tool.tar.gz")],
+        )
+        .unwrap_err();
+        assert!(
+            matches!(&error, GraphError::PlatformTargetsWithReleaseArtifacts { source_field, .. } if source_field == "napi.targets"),
+            "{error}"
+        );
     }
 }

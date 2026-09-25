@@ -70,6 +70,8 @@ pub struct Diagnostic {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DiagnosticSeverity {
+    /// Advisory only; never fails a command.
+    Info,
     Warning,
     Error,
 }
@@ -98,7 +100,8 @@ pub enum DiagnosticCode {
     EmptySummary,
     /// A changeset entry names a package that isn't in the workspace (e.g. removed since the
     /// changeset was written) — the changeset stays on disk rather than being silently
-    /// consumed, since deleting it would erase a still-unresolved entry.
+    /// consumed, since deleting it would erase a still-unresolved entry. `callisto matrix`
+    /// also emits it for a cargo `[[release.artifact]]` naming no workspace cargo package.
     UnknownPackage,
     /// A changeset entry's package name does not parse as a valid `PackageId` at all.
     InvalidPackageName,
@@ -176,10 +179,13 @@ pub enum DiagnosticCode {
     /// `optionalDependencies`, so it cannot be attached to an owner (§M.6.1 Case E) and is
     /// treated as its own package.
     PlatformPackageWithoutOwner,
-    /// `callisto init` skipped GitHub Actions workflow generation because the workspace needs
-    /// the build-matrix workflow (napi/maturin platform packages, or `[[release.artifact]]`
-    /// slots), which `init` does not yet generate.
-    WorkflowGenerationNeedsMatrix,
+    /// `callisto init` skipped GitHub Actions workflow generation because it generates no
+    /// workflow for the workspace's shape (maturin platform builds, or platform packages
+    /// with no `napi.targets`).
+    WorkflowGenerationUnsupported,
+    /// `callisto init` wrote a release workflow: a merge to the named default branch
+    /// publishes, so that branch should require pull requests and reviews.
+    WorkflowMergePublishes,
 }
 
 #[cfg(test)]
