@@ -1,0 +1,1 @@
+We want to have sane defaults that require minimal configuration and follow best practices but allow customization if need be
