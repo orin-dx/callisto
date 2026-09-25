@@ -31,7 +31,7 @@ fn workspace_load_populates_promoted_siblings_and_aggregate_propagates_ambiguity
         r#"{"name":"native-core","version":"0.1.0"}"#,
     )
     .unwrap();
-    // No [[package]] rules at all -- byte-different from AC-19's fixture, so
+    // No [[package]] rules at all -- byte-different from the promoted-sibling fixture, so
     // Workspace::load itself succeeds; the ambiguous rule is injected onto a
     // cloned config afterward, proving aggregate() (not build()) is what
     // catches it.
@@ -40,7 +40,7 @@ fn workspace_load_populates_promoted_siblings_and_aggregate_propagates_ambiguity
     let locator = callisto_graph::locate::IgnoreWalkLocator::new(root);
     let runner = NoopRunner;
     let workspace = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner)
-        .expect("Workspace::load must succeed for this AC-23 fixture");
+        .expect("Workspace::load must succeed for this fixture");
 
     let siblings = workspace
         .config

@@ -13,7 +13,7 @@ use crate::{Diagnostic, Report};
 /// package in another ecosystem forced promotion -- the common napi split
 /// layout -- so a Cargo crate and an npm package sharing a bare name never
 /// collide on one entry). BTreeMap guarantees lexicographic key ordering by
-/// that id without a separate sort step (AC-009).
+/// that id without a separate sort step.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MatrixReport {
@@ -47,7 +47,7 @@ pub struct PlatformTargetGroup {
     /// "[[release.artifact]]"),
     /// used for audit output only -- not a filesystem path.
     pub source: String,
-    /// Sorted ascending by triple string before serialization (AC-009).
+    /// Sorted ascending by triple string before serialization.
     pub targets: Vec<PlatformTarget>,
 }
 
@@ -98,7 +98,7 @@ pub struct RuntimeVersionEntry {
 /// `pyproject.toml` and nothing else; a third ecosystem (e.g. a future `.NET`
 /// `TargetFramework` field) is deliberately out of scope, not merely unimplemented, so
 /// deserializing an unrecognized ecosystem string is a schema error rather than silently
-/// accepted (§M.12.7 — this module's own test suite pins this).
+/// accepted.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum RuntimeEcosystem {
@@ -110,7 +110,7 @@ pub enum RuntimeEcosystem {
 mod tests {
     use super::*;
 
-    /// AC-003 (type-level slice): an empty MatrixReport with no diagnostics
+    /// An empty MatrixReport with no diagnostics
     /// serializes to exactly {"schemaVersion":1,"platformTargets":{},"runtimeVersions":{}}
     /// with no "diagnostics" key present.
     #[test]
@@ -132,7 +132,7 @@ mod tests {
         );
     }
 
-    /// AC-015: PlatformTargetKind has exactly two variants (napi, maturin) --
+    /// PlatformTargetKind has exactly two variants (napi, maturin) --
     /// deserializing a "dotnet-aot" kind must fail.
     #[test]
     fn platform_target_kind_rejects_unknown_dotnet_aot_variant() {
@@ -145,7 +145,7 @@ mod tests {
         assert!(result.is_err(), "expected deserialization of kind=dotnet-aot to fail");
     }
 
-    /// AC-015: RuntimeEcosystem has exactly two variants (npm, python) --
+    /// RuntimeEcosystem has exactly two variants (npm, python) --
     /// deserializing an "dotnet" ecosystem must fail.
     #[test]
     fn runtime_ecosystem_rejects_unknown_dotnet_variant() {

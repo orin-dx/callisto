@@ -364,7 +364,7 @@ pub(crate) mod tests {
         dir
     }
 
-    /// §M.6.1 Case E: each attached platform package is one `PlatformPublish`
+    /// Each attached platform package is one `PlatformPublish`
     /// under its owner, published by directory before the owner, with no tag,
     /// forge, or artifact operation of its own.
     #[test]

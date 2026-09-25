@@ -23,7 +23,7 @@ pub(crate) enum LineError {
     },
     EmptyName,
     /// Carries the already-resolved name — `parse_entry_line` is the only place that has it
-    /// in scope when severity parsing fails, and `ParseError::InvalidSeverity` (§F.5.5) needs
+    /// in scope when severity parsing fails, and `ParseError::InvalidSeverity` needs
     /// it to construct a useful message.
     InvalidSeverity {
         name: String,
@@ -32,8 +32,7 @@ pub(crate) enum LineError {
 }
 
 /// Splits one frontmatter line into its name token and the unparsed
-/// remainder (starting at `:`). This is the function §13 invariant 1
-/// names: "unquotes before splitting on `:`, not after."
+/// remainder (starting at `:`). It unquotes before splitting on `:`, not after.
 ///
 /// **Quoted** name: the closing `"` is located by scanning for the
 /// matching delimiter -- never by searching for `:` -- before the
@@ -82,7 +81,7 @@ pub(crate) fn parse_entry_line(line: &str) -> Result<Entry, LineError> {
     Ok(Entry { name, severity })
 }
 
-/// §6.1: "quoted-when-necessary on write." Conservative by construction — over-quoting is
+/// Quoted only when necessary on write. Conservative by construction — over-quoting is
 /// lossless, under-quoting corrupts output, so every character class that could make a bare
 /// scalar ambiguous or YAML-invalid triggers quoting.
 pub(crate) fn needs_quoting(name: &str) -> bool {
@@ -136,7 +135,7 @@ mod tests {
     #[test]
     fn quoted_name_containing_colon_is_not_mis_split() {
         // The reference `knope-dev/changesets` crate colon-splits before unquoting, which
-        // mis-parses exactly this Maven-style identity (§13 invariant 1).
+        // mis-parses exactly this Maven-style identity.
         let (token, rest) = split_name_and_rest("\"maven/org.example:foo-core\": major").unwrap();
         assert_eq!(token, NameToken::Quoted("maven/org.example:foo-core".to_string()));
         assert_eq!(rest, " major");

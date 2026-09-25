@@ -1,12 +1,12 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// §5.1, §6.1. A changeset's declared severity for one named package, **and** §7.4's internal
+/// A changeset's declared severity for one named package, **and** the internal
 /// cascade outcome for an out-of-range dev-dependency ("spec rewrite only, no version bump").
 /// Only the file-format usage is ever persisted to disk as a changeset.
 ///
 /// **Variant order is deliberate, not alphabetical.** The derived `Ord` is the
-/// aggregation-by-max lattice §7.1 relies on: `None < Patch < Minor < Major`.
+/// aggregation-by-max lattice aggregation relies on: `None < Patch < Minor < Major`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
@@ -22,7 +22,7 @@ impl Severity {
     pub const ALL: [Severity; 4] = [Severity::None, Severity::Patch, Severity::Minor, Severity::Major];
 }
 
-/// §6.1: "case-insensitive read, lowercase write." `FromStr` is the read half, `Display` the
+/// Case-insensitive read, lowercase write. `FromStr` is the read half, `Display` the
 /// write half. The asymmetry is the spec, not a bug to unify.
 impl std::str::FromStr for Severity {
     type Err = SeverityParseError;

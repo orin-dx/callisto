@@ -1,4 +1,4 @@
-//! SPEC-DX-CLI-SURFACE AC-04/AC-05: `status` and `release --dry-run` render
+//! `status` and `release --dry-run` render
 //! ANSI color and box-drawing tables through the one `NO_COLOR`/`CLICOLOR_FORCE`/
 //! `FORCE_COLOR` decision, driven through the compiled binary so the check
 //! covers the real (piped, non-TTY) stdout comfy-table and anstream see.
@@ -69,7 +69,7 @@ fn has_ansi_escape(bytes: &[u8]) -> bool {
     bytes.contains(&ESC)
 }
 
-/// AC-04: `FORCE_COLOR` forces `status` to render ANSI color and a box-drawing table.
+/// `FORCE_COLOR` forces `status` to render ANSI color and a box-drawing table.
 #[test]
 fn status_with_force_color_renders_ansi_and_box_drawing_table() {
     let tmp = fixture();
@@ -84,7 +84,7 @@ fn status_with_force_color_renders_ansi_and_box_drawing_table() {
     assert!(text.contains(BOX_DRAWING), "expected box-drawing table: {text}");
 }
 
-/// AC-04: `CLICOLOR_FORCE` alone also forces color on for `status`.
+/// `CLICOLOR_FORCE` alone also forces color on for `status`.
 #[test]
 fn status_with_clicolor_force_renders_ansi() {
     let tmp = fixture();
@@ -93,7 +93,7 @@ fn status_with_clicolor_force_renders_ansi() {
     assert!(has_ansi_escape(&out.stdout));
 }
 
-/// AC-05: `NO_COLOR` (non-empty) wins over `FORCE_COLOR`/`CLICOLOR_FORCE` for `status`.
+/// `NO_COLOR` (non-empty) wins over `FORCE_COLOR`/`CLICOLOR_FORCE` for `status`.
 #[test]
 fn status_no_color_wins_over_force_vars() {
     let tmp = fixture();
@@ -108,7 +108,7 @@ fn status_no_color_wins_over_force_vars() {
     assert!(!text.contains(BOX_DRAWING), "expected no box-drawing table: {text}");
 }
 
-/// AC-05: with no env signal and a piped (non-TTY) stdout, `status` renders plain text.
+/// With no env signal and a piped (non-TTY) stdout, `status` renders plain text.
 #[test]
 fn status_default_non_tty_has_no_color_or_box_drawing() {
     let tmp = fixture();
@@ -120,7 +120,7 @@ fn status_default_non_tty_has_no_color_or_box_drawing() {
     assert!(text.contains("demo 0.1.0 (pending: none)"), "got: {text}");
 }
 
-/// AC-04: `FORCE_COLOR` forces `release --dry-run` to render ANSI color and a box-drawing table.
+/// `FORCE_COLOR` forces `release --dry-run` to render ANSI color and a box-drawing table.
 #[test]
 fn release_dry_run_with_force_color_renders_ansi_and_box_drawing_table() {
     let tmp = fixture();
@@ -132,7 +132,7 @@ fn release_dry_run_with_force_color_renders_ansi_and_box_drawing_table() {
     assert!(text.contains("demo"), "got: {text}");
 }
 
-/// AC-05: with no env signal and a piped (non-TTY) stdout, `release --dry-run` renders plain text.
+/// With no env signal and a piped (non-TTY) stdout, `release --dry-run` renders plain text.
 #[test]
 fn release_dry_run_default_non_tty_has_no_color_or_box_drawing() {
     let tmp = fixture();
@@ -144,7 +144,7 @@ fn release_dry_run_default_non_tty_has_no_color_or_box_drawing() {
     assert!(text.starts_with("Release plan:\n"), "got: {text}");
 }
 
-/// AC-06: no command's default text output matches `schema v\d+` (that ban is
+/// No command's default text output matches `schema v\d+` (that ban is
 /// universal except `callisto schema`'s own output).
 #[test]
 fn status_and_release_text_output_never_mentions_schema_version() {

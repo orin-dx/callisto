@@ -550,7 +550,7 @@ mod tests {
             && !root.join(".github/workflows/callisto-release.yml").exists()
     }
 
-    // AC-001, AC-002, AC-004, AC-021a: facts precede the only questions: versioning and the write confirm.
+    // Facts precede the only questions: versioning and the write confirm.
     #[test]
     fn interactive_run_without_binaries_asks_versioning_then_confirms() {
         let dir = workspace(0);
@@ -579,7 +579,7 @@ mod tests {
         assert!(run.out.contains("Initialized callisto configuration"));
     }
 
-    // AC-002a: a supplied flag pre-answers its question on a TTY.
+    // A supplied flag pre-answers its question on a TTY.
     #[test]
     fn a_supplied_flag_skips_its_question() {
         let dir = workspace(0);
@@ -598,7 +598,7 @@ mod tests {
         assert_eq!(config(dir.path()), "# callisto configuration\n");
     }
 
-    // AC-003: the ship question appears only with binaries; declining writes no [release].
+    // The ship question appears only with binaries; declining writes no [release].
     #[test]
     fn declining_to_ship_binaries_writes_no_release() {
         let dir = workspace(1);
@@ -623,7 +623,7 @@ mod tests {
         assert!(!config(dir.path()).contains("[release]"));
     }
 
-    // AC-003a, AC-003b, AC-003c, AC-009: product, pre-filled forge, and targets (empty re-asks).
+    // Product, pre-filled forge, and targets (empty re-asks).
     #[test]
     fn shipping_binaries_asks_product_forge_and_targets() {
         let dir = workspace(2);
@@ -668,7 +668,7 @@ mod tests {
         );
     }
 
-    // AC-003c: a comma-separated answer with an empty entry errors naming it, rather than
+    // A comma-separated answer with an empty entry errors naming it, rather than
     // silently dropping it, and re-asking only kicks in when the whole answer is blank.
     #[test]
     fn interactive_target_with_empty_entry_errors_without_writing() {
@@ -690,7 +690,7 @@ mod tests {
         assert!(nothing_written(dir.path()));
     }
 
-    // AC-003b: a forge repository other than origin's, or an invalid one, errors up front without writing.
+    // A forge repository other than origin's, or an invalid one, errors up front without writing.
     #[test]
     fn forge_repository_mismatch_and_invalid_error() {
         let dir = workspace(1);
@@ -731,7 +731,7 @@ mod tests {
         assert!(nothing_written(dir.path()));
     }
 
-    // AC-003c: a repeated triple errors without writing.
+    // A repeated triple errors without writing.
     #[test]
     fn repeated_interactive_target_errors() {
         let dir = workspace(1);
@@ -752,7 +752,6 @@ mod tests {
         assert!(nothing_written(dir.path()));
     }
 
-    // AC-006
     #[test]
     fn declining_the_preview_writes_nothing() {
         let dir = workspace(0);
@@ -768,7 +767,6 @@ mod tests {
         assert!(nothing_written(dir.path()));
     }
 
-    // AC-008
     #[test]
     fn an_existing_config_errors() {
         let dir = workspace(0);
@@ -780,7 +778,6 @@ mod tests {
         assert!(!dir.path().join(".changeset").exists());
     }
 
-    // AC-013
     #[test]
     fn non_tty_without_yes_names_yes_and_missing_flags() {
         let dir = workspace(0);
@@ -792,7 +789,6 @@ mod tests {
         assert!(nothing_written(dir.path()));
     }
 
-    // AC-013a, AC-014a
     #[test]
     fn yes_requires_versioning_forge_and_product() {
         let dir = workspace(2);
@@ -817,7 +813,7 @@ mod tests {
         assert!(nothing_written(dir.path()));
     }
 
-    // AC-014: --yes without --artifact-target opts out of shipping.
+    // --yes without --artifact-target opts out of shipping.
     #[test]
     fn yes_without_targets_ships_nothing() {
         let dir = workspace(1);
@@ -835,7 +831,6 @@ mod tests {
         }
     }
 
-    // AC-014b, AC-014c, AC-014d
     #[test]
     fn invalid_binary_flags_error_without_writing() {
         let one = workspace(1);
@@ -885,7 +880,7 @@ mod tests {
         assert!(nothing_written(none.path()));
     }
 
-    // AC-015: flags produce the interactive run's config and preview, without prompting.
+    // Flags produce the interactive run's config and preview, without prompting.
     #[test]
     fn non_interactive_matches_interactive() {
         let interactive_dir = workspace(1);
@@ -947,7 +942,7 @@ mod tests {
         assert!(root.join(".changeset/README.md").exists());
     }
 
-    // AC-021: --dry-run detects, asks, and previews, then writes nothing.
+    // --dry-run detects, asks, and previews, then writes nothing.
     #[test]
     fn dry_run_previews_and_writes_nothing() {
         let dir = workspace(0);
@@ -1053,7 +1048,7 @@ mod tests {
         }
     }
 
-    // AC-001, AC-002: answering yes to the interactive question writes the generated workflow.
+    // Answering yes to the interactive question writes the generated workflow.
     #[test]
     fn interactive_workflow_confirm_writes_the_generated_file() {
         let dir = workspace(0);
@@ -1088,7 +1083,7 @@ mod tests {
         );
     }
 
-    // AC-001: `--workflow` generates without asking, even non-interactively.
+    // `--workflow` generates without asking, even non-interactively.
     #[test]
     fn workflow_flag_generates_without_asking() {
         let dir = workspace(0);
@@ -1170,7 +1165,7 @@ mod tests {
         .unwrap();
     }
 
-    // AC-004: an unresolvable tag (offline, or an unreleased version) errors clearly, naming the fix.
+    // An unresolvable tag (offline, or an unreleased version) errors clearly, naming the fix.
     #[test]
     fn unresolvable_version_errors_naming_the_fix() {
         let dir = workspace(0);
@@ -1193,7 +1188,7 @@ mod tests {
         assert!(!dir.path().join(".github/workflows/callisto-release.yml").exists());
     }
 
-    // AC-001a: declining interactively, `--no-workflow`, and `--yes` with neither flag all write nothing.
+    // Declining interactively, `--no-workflow`, and `--yes` with neither flag all write nothing.
     #[test]
     fn workflow_not_requested_writes_nothing() {
         let declined = workspace(0);
@@ -1233,7 +1228,7 @@ mod tests {
             .exists());
     }
 
-    // AC-002a: an existing workflow file errors before the preview, in both normal and --dry-run runs.
+    // An existing workflow file errors before the preview, in both normal and --dry-run runs.
     #[test]
     fn existing_workflow_file_errors_before_the_preview_and_writes_nothing() {
         for dry_run in [false, true] {
@@ -1261,7 +1256,7 @@ mod tests {
         }
     }
 
-    // AC-002b: the two flags are mutually exclusive; the question is never asked.
+    // The two flags are mutually exclusive; the question is never asked.
     #[test]
     fn workflow_and_no_workflow_together_error_without_asking() {
         let dir = workspace(0);
@@ -1308,7 +1303,7 @@ mod tests {
         dir
     }
 
-    // SPEC-DX-SETUP-WORKFLOW-MATRIX: shipping binaries generates plan -> build -> execute.
+    // Shipping binaries generates plan -> build -> execute.
     #[test]
     fn shipping_binaries_generates_the_build_matrix_workflow() {
         let dir = workspace(1);

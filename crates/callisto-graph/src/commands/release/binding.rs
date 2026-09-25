@@ -357,7 +357,6 @@ mod tests {
         assert!(canonical_git_remote("https://token@github.com/example/release-fixture.git").is_err());
     }
 
-    /// AC-007
     #[test]
     fn a_target_binds_its_own_configured_registry_key() {
         let (dir, runner) = super::super::tests::fixture();
@@ -374,7 +373,7 @@ mod tests {
         assert_eq!(binding.endpoint.as_deref(), Some("https://registry.example.test/index"));
     }
 
-    /// AC-007: an unconfigured built-in key binds its own default.
+    /// An unconfigured built-in key binds its own default.
     #[test]
     fn an_unconfigured_builtin_key_binds_itself() {
         let (dir, runner) = super::super::tests::fixture();
@@ -386,7 +385,6 @@ mod tests {
         assert_eq!(binding.endpoint, None);
     }
 
-    /// AC-008
     #[test]
     fn registry_errors_name_the_key_and_ecosystem_but_no_profile() {
         let (dir, runner) = super::super::tests::fixture();
@@ -426,9 +424,9 @@ mod tests {
 
     const CORP: &str = "[registries.corp]\nkind = \"npm\"\nurl = \"https://npm.corp.example/\"\n";
 
-    /// AC-4: only an npm override matching a configured npm registry is trusted.
+    /// Only an npm override matching a configured npm registry is trusted.
     #[test]
-    fn ac4_npm_override_must_match_a_configured_npm_registry() {
+    fn npm_override_must_match_a_configured_npm_registry() {
         assert!(npm_binding(CORP, "https://npm.corp.example/").is_ok());
         for untrusted in ["https://npm.evil.example/", "https://npm.corp.example/other/"] {
             assert!(
@@ -446,9 +444,9 @@ mod tests {
         ));
     }
 
-    /// AC-5: the scheme check runs first, so a cleartext approved host is unsafe, not untrusted.
+    /// The scheme check runs first, so a cleartext approved host is unsafe, not untrusted.
     #[test]
-    fn ac5_non_https_npm_override_is_unsafe_before_host_matching() {
+    fn non_https_npm_override_is_unsafe_before_host_matching() {
         assert!(matches!(
             npm_binding(CORP, "http://npm.corp.example/"),
             Err(GraphError::UnsafeRegistryBinding { .. })

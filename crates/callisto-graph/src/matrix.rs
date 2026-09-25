@@ -7,7 +7,7 @@
 /// `triple_to_role`'s `ManifestRole::Platform` carries only platform/arch/abi
 /// and has no concept of hostRunner/useCross, so this cannot be derived from
 /// it. Returns `None` for any triple `triple_to_role` does not recognise --
-/// callers must treat that as the AC-011 diagnostic path, never a silent
+/// callers must treat that as the unrecognised-triple diagnostic path, never a silent
 /// default.
 pub(crate) fn triple_host_runner_use_cross(triple: &str) -> Option<(&'static str, bool)> {
     Some(match triple {
@@ -33,7 +33,7 @@ pub(crate) fn triple_host_runner_use_cross(triple: &str) -> Option<(&'static str
     })
 }
 
-/// AC-001: artifactName embeds the package's own (already workspace-unique)
+/// ArtifactName embeds the package's own (already workspace-unique)
 /// name alongside platform/arch/abi, mirroring napi-rs's own
 /// published-package and recommended-CI-artifact convention
 /// (`<name>-<platform>-<arch>[-<abi>]`, e.g. `addon-darwin-arm64`,
@@ -67,7 +67,7 @@ use crate::error::GraphError;
 use crate::napi::triple_to_role;
 
 /// Result of reading the `napi.targets` field from a package.json. Distinct
-/// from `Option<Vec<String>>` so AC-001b (present-but-empty vs absent) is a
+/// from `Option<Vec<String>>` so present-but-empty vs absent is a
 /// type-level distinction, not a magic-empty-vec convention.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum NapiTargetsField {
@@ -105,8 +105,8 @@ pub(crate) fn parse_package_json(pkg_json_path: &Path) -> Result<Option<serde_js
 
 /// Extracts `napi.targets` from an already-parsed `package.json` value (see
 /// `parse_package_json`). A missing `napi` key or missing `napi.targets` key
-/// is `Absent` (AC-003: no platformTargets entry). A present `napi.targets`
-/// that is not a JSON array of strings is a hard error (AC-010c) -- strict
+/// is `Absent` (no platformTargets entry). A present `napi.targets`
+/// that is not a JSON array of strings is a hard error -- strict
 /// policy, propagating `callisto_manifests::read_napi_targets`'s error
 /// as-is; unlike `NapiTargetsIndex::load`, which `.ok()`s the same shared
 /// reader to silently drop non-array values instead.
@@ -121,7 +121,7 @@ pub(crate) fn read_napi_targets(pkg_json_path: &Path, val: &serde_json::Value) -
 /// platform/arch/abi with this module's hostRunner/useCross/artifactName
 /// table. Returns `None` when `triple` is not recognised by either --
 /// callers must route that case to an UnrecognisedPlatformTriple diagnostic
-/// (AC-011) rather than treating it as an error.
+/// rather than treating it as an error.
 pub(crate) fn build_platform_target(triple: &str, package_dir: &str, package_name: &str) -> Option<PlatformTarget> {
     let ManifestRole::Platform { platform, arch, abi } = triple_to_role(triple)? else {
         return None;
@@ -173,8 +173,8 @@ pub(crate) fn parse_pyproject_toml(pyproject_path: &Path) -> Result<Option<toml:
 
 /// Extracts `[tool.maturin].targets` from an already-parsed `pyproject.toml`
 /// value (see `parse_pyproject_toml`). Returns `Ok(None)` when the table or
-/// field is absent (AC-003: no platformTargets entry). A present value that
-/// is not a TOML array of strings is a hard error (AC-010c).
+/// field is absent (no platformTargets entry). A present value that
+/// is not a TOML array of strings is a hard error.
 pub(crate) fn read_maturin_targets(
     pyproject_path: &Path,
     val: &toml::Value,
@@ -254,9 +254,9 @@ use callisto_model::{PackageId, PlatformTargetKind};
 /// corresponding file doesn't exist -- shared with `assemble_runtime_versions`
 /// so `build_matrix_report` parses each file at most once per package.
 ///
-/// - Neither declared: `Ok(None)` (AC-003).
-/// - Both declared: `Err(GraphError::ConflictingPlatformTargetSources)` (AC-017).
-/// - Exactly one declared (even as an explicitly empty array, AC-001b):
+/// - Neither declared: `Ok(None)`.
+/// - Both declared: `Err(GraphError::ConflictingPlatformTargetSources)`.
+/// - Exactly one declared (even as an explicitly empty array):
 ///   `Ok(Some((kind, source, triples)))`.
 pub(crate) fn select_platform_target_source(
     package_dir_abs: &Path,
@@ -297,11 +297,11 @@ pub(crate) fn select_platform_target_source(
 use callisto_model::{Diagnostic, DiagnosticCode, DiagnosticSeverity, PlatformTargetGroup};
 
 /// Calls `select_platform_target_source` and, when a source is present,
-/// builds a PlatformTarget for every declared triple (AC-001, AC-002),
+/// builds a PlatformTarget for every declared triple,
 /// excluding any triple `build_platform_target` does not recognise and
 /// pushing an `UnrecognisedPlatformTriple` warning Diagnostic for each one
-/// instead (AC-011). `group.targets` is sorted ascending by triple string
-/// (AC-009) before returning.
+/// instead. `group.targets` is sorted ascending by triple string
+/// before returning.
 pub(crate) fn assemble_platform_target_group(
     package_dir_abs: &Path,
     package_dir_rel: &str,
@@ -415,7 +415,7 @@ pub(crate) fn napi_manifest_path(
 
 /// Reads engines.node (npm) and requires-python (python) from
 /// `package_dir_abs`'s already-parsed manifest values, in that order, so
-/// callers preserve the npm-before-python ordering AC-005b requires without
+/// callers preserve the npm-before-python ordering without
 /// a separate sort step. `pkg_json_val`/`pyproject_val` are shared with
 /// `assemble_platform_target_group` (see `select_platform_target_source`'s
 /// doc comment) so `build_matrix_report` parses each file at most once per
@@ -455,7 +455,7 @@ pub(crate) fn assemble_runtime_versions(
 /// Assembles the full MatrixReport for `packages`. Map keys are each
 /// package's ecosystem-qualified id (`PackageId::display_name()` -- a bare
 /// name when the package was never promoted, `ecosystem/name` once a
-/// same-name package in another ecosystem forced promotion; AC-009's
+/// same-name package in another ecosystem forced promotion; the
 /// BTreeMap ordering comes from this for free) so a Cargo package and an npm
 /// package sharing a bare name (the common napi split layout) never collide
 /// on the same map entry; a package contributes no platformTargets entry when it declares neither
@@ -656,7 +656,7 @@ mod tests {
         assert!(several.to_string().contains("crates/a/Cargo.toml"), "{several}");
     }
 
-    /// AC-003: no packages declare anything -> the empty-report shape.
+    /// No packages declare anything -> the empty-report shape.
     #[test]
     fn build_matrix_report_empty_workspace_produces_empty_report() {
         let report = build_matrix_report(&[], None).unwrap();
@@ -666,7 +666,7 @@ mod tests {
         assert!(report.diagnostics.is_empty());
     }
 
-    /// AC-009: platformTargets and runtimeVersions keys are ordered
+    /// PlatformTargets and runtimeVersions keys are ordered
     /// lexicographically by package name across 3+ packages.
     #[test]
     fn build_matrix_report_orders_packages_lexicographically() {
@@ -690,7 +690,7 @@ mod tests {
         assert_eq!(keys, vec!["alpha", "mid", "zeta"]);
     }
 
-    /// AC-001: two distinct packages declaring the same triple must produce
+    /// Two distinct packages declaring the same triple must produce
     /// distinct artifactName values, each embedding that package's own name.
     #[test]
     fn build_matrix_report_same_triple_two_packages_have_distinct_artifact_names() {
@@ -718,7 +718,7 @@ mod tests {
         assert_ne!(a, b);
     }
 
-    /// AC-005b: a package with both engines.node and requires-python gets a
+    /// A package with both engines.node and requires-python gets a
     /// two-element runtimeVersions array, npm before python, and this is not
     /// an error.
     #[test]
@@ -777,7 +777,7 @@ mod tests {
         assert_eq!(entries[0].range, ">=20.0.0");
     }
 
-    /// AC-017: a package.json with napi.targets AND a pyproject.toml with
+    /// A package.json with napi.targets AND a pyproject.toml with
     /// [tool.maturin].targets in the same directory is a hard error.
     #[test]
     fn select_platform_target_source_conflicting_sources_errors() {
@@ -816,7 +816,7 @@ mod tests {
         }
     }
 
-    /// AC-003 (per-package slice): neither manifest declares platform
+    /// Neither manifest declares platform
     /// targets -> None.
     #[test]
     fn select_platform_target_source_no_manifests_returns_none() {
@@ -825,7 +825,7 @@ mod tests {
         assert!(result.is_none());
     }
 
-    /// AC-001b: an explicitly empty napi.targets = [] must be distinguishable
+    /// An explicitly empty napi.targets = [] must be distinguishable
     /// from the field being absent entirely.
     #[test]
     fn read_napi_targets_distinguishes_absent_from_present_empty() {
@@ -862,7 +862,7 @@ mod tests {
         );
     }
 
-    /// AC-010b: malformed JSON syntax must be a hard read error naming the
+    /// Malformed JSON syntax must be a hard read error naming the
     /// path. Now surfaced by `parse_package_json` (the shared read+parse
     /// step), rather than by `read_napi_targets` itself, since parsing is no
     /// longer that function's job.
@@ -878,7 +878,7 @@ mod tests {
         );
     }
 
-    /// AC-010c: napi.targets present but not a JSON array (a bare string) must
+    /// Napi.targets present but not a JSON array (a bare string) must
     /// be a hard error, not silently treated as absent.
     #[test]
     fn read_napi_targets_non_array_value_is_error() {
@@ -893,7 +893,7 @@ mod tests {
         );
     }
 
-    /// AC-012: table-driven assertion of all 18 (hostRunner, useCross) pairs.
+    /// Table-driven assertion of all 18 (hostRunner, useCross) pairs.
     #[test]
     fn triple_host_runner_use_cross_matches_all_18_triples() {
         let expected: &[(&str, &str, bool)] = &[
@@ -925,7 +925,7 @@ mod tests {
         }
     }
 
-    /// AC-001: artifactName combines the already-workspace-unique
+    /// ArtifactName combines the already-workspace-unique
     /// package_name with platform/arch[/abi], matching napi-rs's own
     /// published-package and recommended-CI-artifact convention.
     #[test]
@@ -952,13 +952,13 @@ mod tests {
     }
 
     /// An unrecognised triple must return None, not panic or fall back to a
-    /// default -- callers use this to drive the AC-011 diagnostic path.
+    /// default -- callers use this to drive the unrecognised-triple diagnostic path.
     #[test]
     fn triple_host_runner_use_cross_unknown_triple_returns_none() {
         assert!(triple_host_runner_use_cross("sparc64-unknown-linux-gnu").is_none());
     }
 
-    /// AC-001 (mapping slice) + AC-014 (abi null on non-linux platforms):
+    /// Mapping slice, with abi null on non-linux platforms:
     /// build_platform_target must combine triple_to_role's platform/arch/abi
     /// with the CI table's hostRunner/useCross/artifactName.
     #[test]
@@ -976,7 +976,7 @@ mod tests {
         assert_eq!(t.package_name, "native-mod");
     }
 
-    /// AC-014: a linux triple must carry a non-null abi string.
+    /// A linux triple must carry a non-null abi string.
     #[test]
     fn build_platform_target_linux_triple_has_non_null_abi() {
         let t = build_platform_target("x86_64-unknown-linux-gnu", "pkg-dir", "pkg-name")
@@ -984,14 +984,14 @@ mod tests {
         assert_eq!(t.abi, Some("gnu".to_string()));
     }
 
-    /// An unrecognised triple must return None -- this is the hook the AC-011
+    /// An unrecognised triple must return None -- this is the hook the unrecognised-triple
     /// diagnostic path (added in a later task) relies on.
     #[test]
     fn build_platform_target_unrecognised_triple_returns_none() {
         assert!(build_platform_target("sparc64-unknown-linux-gnu", "dir", "name").is_none());
     }
 
-    /// AC-014: one triple per remaining platform family (win32, freebsd,
+    /// One triple per remaining platform family (win32, freebsd,
     /// android, wasi, and unknown/wasm32-unknown-unknown) must all carry a
     /// null abi -- extending the darwin/linux coverage above to the rest of
     /// the recognised triples' platform families.
@@ -1012,7 +1012,7 @@ mod tests {
         }
     }
 
-    /// AC-002 precursor: [tool.maturin].targets reads as a plain Vec<String>
+    /// [tool.maturin].targets reads as a plain Vec<String>
     /// when present, None when absent.
     #[test]
     fn read_maturin_targets_reads_present_and_absent() {
@@ -1049,7 +1049,7 @@ mod tests {
         assert_eq!(read_maturin_targets(&path, &val).unwrap(), Some(vec![]));
     }
 
-    /// AC-010: malformed TOML syntax must be a hard error naming the path.
+    /// Malformed TOML syntax must be a hard error naming the path.
     /// Now surfaced by `parse_pyproject_toml` (the shared read+parse step),
     /// rather than by `read_maturin_targets` itself, since parsing is no
     /// longer that function's job.
@@ -1065,7 +1065,7 @@ mod tests {
         );
     }
 
-    /// AC-010c: [tool.maturin].targets present but not an array must be a
+    /// [tool.maturin].targets present but not an array must be a
     /// hard error.
     #[test]
     fn read_maturin_targets_non_array_value_is_error() {
@@ -1080,7 +1080,7 @@ mod tests {
         );
     }
 
-    /// AC-004: engines.node reads as a raw string; absent is None.
+    /// Engines.node reads as a raw string; absent is None.
     #[test]
     fn read_engines_node_reads_present_and_absent() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1098,7 +1098,7 @@ mod tests {
         assert_eq!(read_engines_node(&absent, &absent_val).unwrap(), None);
     }
 
-    /// AC-010c: engines.node present but not a string (e.g. a number) is a
+    /// Engines.node present but not a string (e.g. a number) is a
     /// hard error.
     #[test]
     fn read_engines_node_non_string_value_is_error() {
@@ -1109,7 +1109,7 @@ mod tests {
         assert!(read_engines_node(&path, &val).is_err());
     }
 
-    /// AC-005: requires-python reads as a raw string; absent is None.
+    /// Requires-python reads as a raw string; absent is None.
     #[test]
     fn read_requires_python_reads_present_and_absent() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1127,7 +1127,7 @@ mod tests {
         assert_eq!(read_requires_python(&absent, &absent_val).unwrap(), None);
     }
 
-    /// AC-010c: requires-python present but not a string is a hard error.
+    /// Requires-python present but not a string is a hard error.
     #[test]
     fn read_requires_python_non_string_value_is_error() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1137,7 +1137,7 @@ mod tests {
         assert!(read_requires_python(&path, &val).is_err());
     }
 
-    /// AC-011: an unrecognised triple is excluded from targets[] and reported
+    /// An unrecognised triple is excluded from targets[] and reported
     /// as a warning diagnostic naming the triple and the package; recognised
     /// triples in the same declaration remain present.
     #[test]
@@ -1214,7 +1214,7 @@ mod tests {
         );
     }
 
-    /// AC-001b: napi.targets = [] (present, explicitly empty) produces a
+    /// Napi.targets = [] (present, explicitly empty) produces a
     /// present-but-empty group, not None.
     #[test]
     fn assemble_platform_target_group_empty_array_is_present_not_absent() {
@@ -1250,7 +1250,7 @@ mod tests {
         }
     }
 
-    /// SPEC-DX-SETUP-WORKFLOW-MATRIX AC-005: an unrecognised artifact triple is
+    /// An unrecognised artifact triple is
     /// a warning, and a group left with no targets is dropped.
     #[test]
     fn add_release_artifact_groups_warns_on_an_unrecognised_triple() {

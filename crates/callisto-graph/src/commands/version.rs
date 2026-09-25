@@ -293,7 +293,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
 
 /// Platform manifest version writes and owner `optionalDependencies` pin updates
 /// for every owner with a target version in `targets`. Sources: each owner's
-/// attached (§M.6.1 Case E) platform manifests, plus `[[fixed-group]]`
+/// attached platform manifests, plus `[[fixed-group]]`
 /// platform members.
 pub(crate) fn platform_version_writes<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
@@ -409,7 +409,7 @@ mod tests {
             .expect("git commit");
     }
 
-    /// AC-007 (divergent case) + AC-009 + AC-013(bug2): a Fixed group whose
+    /// A Fixed group whose
     /// released members' base versions parse under the same grammar but
     /// disagree in value must make plan_version return
     /// Err(GraphError::FixedGroupDivergent) before run_cascade ever
@@ -456,7 +456,7 @@ mod tests {
         );
     }
 
-    /// AC-007 (grammar-mismatch case): a Fixed group whose released
+    /// A Fixed group whose released
     /// members use different version grammars (SemVer vs PEP 440) must
     /// return Err(GraphError::GroupGrammarMismatch) via plan_version's real
     /// call path, before run_cascade executes.
@@ -507,7 +507,7 @@ mod tests {
         );
     }
 
-    /// AC-007b: a Fixed group's napi package.json existing at the
+    /// A Fixed group's napi package.json existing at the
     /// conventional path but containing malformed JSON must surface as
     /// Err(GraphError::Manifest(ManifestError::Parse { .. })) from
     /// plan_version, with no VersionPlan produced.
@@ -560,7 +560,7 @@ mod tests {
         );
     }
 
-    /// AC-008: GroupCheckOutcome.diagnostics returned by pre_mutation_checks
+    /// GroupCheckOutcome.diagnostics returned by pre_mutation_checks
     /// must be merged into VersionPlan.diagnostics, not discarded.
     #[test]
     fn version_merges_group_check_diagnostics_into_plan() {
@@ -611,7 +611,7 @@ mod tests {
         );
     }
 
-    /// AC-006: a package with a bump this run, `pkg.changelog` set, no pending
+    /// A package with a bump this run, `pkg.changelog` set, no pending
     /// changeset, and a BumpReason with no direct ChangeSource mapping
     /// (PreRelease) must still produce exactly one ChangelogWrite entry via
     /// the generic 'Version bump ({severity})' fallback -- plan_version must
@@ -670,7 +670,7 @@ mod tests {
         }
     }
 
-    /// AC-001 + AC-002: a Fixed group with an owner Package member that
+    /// A Fixed group with an owner Package member that
     /// receives a real PlannedBump this run, plus a sibling
     /// GroupMember::PlatformManifest member (a Case D hybrid-root npm
     /// package.json with non-empty os/cpu arrays living in the same
@@ -744,7 +744,7 @@ mod tests {
         );
     }
 
-    /// AC-005: when no Fixed group anywhere has any
+    /// When no Fixed group anywhere has any
     /// GroupMember::PlatformManifest members, plan_version's
     /// platform_writes and optional_dep_updates must both be empty --
     /// no regression for workspaces without platform packages.
@@ -793,7 +793,7 @@ mod tests {
         );
     }
 
-    /// AC-006: when a Fixed group's owner package receives no version bump
+    /// When a Fixed group's owner package receives no version bump
     /// this run, plan_version must produce no PlatformWrite for that
     /// group's GroupMember::PlatformManifest members, even though the
     /// platform manifest exists on disk -- platform writes are driven
@@ -848,7 +848,7 @@ mod tests {
         );
     }
 
-    /// AC-002b [REWRITTEN per corrected spec]: plan_version's
+    /// plan_version's
     /// OpenContext/workspace-inheritance resolution logic verified directly
     /// against a FIXTURE-CONSTRUCTED GroupMember::PlatformManifest (bypassing
     /// walk.rs discovery entirely, since walk.rs:199 only registers npm
@@ -883,7 +883,7 @@ mod tests {
         // The fixture's on-disk platform manifest target -- a maturin-style
         // Cargo.toml inheriting its version from [workspace.package]. This is
         // an ordinary, real, on-disk Cargo.toml; it is NOT registered as a
-        // GroupMember::PlatformManifest by walk.rs (per AC-002b, that
+        // GroupMember::PlatformManifest by walk.rs (that
         // classification is npm-only today) -- it is wired into the group
         // fixture manually below.
         std::fs::create_dir_all(root.join("platform/plat")).unwrap();
@@ -911,7 +911,7 @@ mod tests {
         let mut ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         // Fixture-construct the GroupMember::PlatformManifest, bypassing
-        // walk.rs discovery entirely (per corrected AC-002b).
+        // walk.rs discovery entirely.
         let owner = callisto_model::PackageId::Bare("cargo-owner".to_string());
         let group_name = callisto_model::GroupName("cargo-owner-group".to_string());
         let group = ws
@@ -971,7 +971,7 @@ mod tests {
         );
     }
 
-    /// AC-007 (spec text names no discovery mechanism): an owner with two
+    /// An owner with two
     /// platform siblings (linux-x64-gnu, darwin-arm64), both bumped, must
     /// produce one `PlatformWrite` per sibling, not just the first.
     ///
@@ -982,7 +982,7 @@ mod tests {
     /// disk-discovered from that same directory, and a directory holds at
     /// most one `package.json`. So two real disk-discovered siblings under
     /// one owner isn't representable via `walk.rs` today (same constraint
-    /// as AC-002b's Cargo correction). This test instead proves
+    /// as the Cargo case). This test instead proves
     /// `plan_version`'s own loop -- agnostic to how a member entered
     /// `ws.config.groups.fixed` -- iterates every `PlatformManifest` member,
     /// not just the first.
@@ -1090,7 +1090,7 @@ mod tests {
         assert_eq!(darwin_pw.version, owner_bump.to);
     }
 
-    /// AC-007b: given the AC-007 scenario (owner with two
+    /// Given the grammar-mismatch scenario (owner with two
     /// `GroupMember::PlatformManifest` siblings, both bumped) where the
     /// owner's canonical manifest has matching `optionalDependencies`
     /// entries for both platform names, `plan_version`'s
@@ -1213,7 +1213,7 @@ mod tests {
         );
     }
 
-    /// AC-008 (disjunct 1: missing file): a Fixed group's platform manifest
+    /// A Fixed group's platform manifest
     /// that validated during the walk (so it is a real
     /// GroupMember::PlatformManifest) but has been deleted from disk before
     /// plan_version runs -- simulating the file having gone missing between
@@ -1268,7 +1268,7 @@ mod tests {
         );
     }
 
-    /// AC-008 (disjunct 2: malformed content): a Fixed group's platform
+    /// A Fixed group's platform
     /// manifest that exists on disk but cannot be parsed as valid content
     /// for its ecosystem (malformed JSON) must also surface as
     /// Err(GraphError), not panic and not produce a partial VersionPlan --
@@ -1327,7 +1327,7 @@ mod tests {
         );
     }
 
-    /// AC-003: given the AC-001 scenario (owner bumped, sibling
+    /// Given the owner-bumped scenario (owner bumped, sibling
     /// GroupMember::PlatformManifest with name N), and the owner's own
     /// canonical manifest already declares an optionalDependencies entry
     /// whose name exactly matches N, plan_version's
@@ -1401,7 +1401,7 @@ mod tests {
         );
     }
 
-    /// AC-004: given the AC-001 scenario, but the owner package's
+    /// Given the owner-bumped scenario, but the owner package's
     /// canonical manifest has no dependency entry (of any kind) whose name
     /// matches the platform member's name N, plan_version's
     /// VersionPlan.optional_dep_updates must contain no entry referencing
@@ -1469,7 +1469,7 @@ mod tests {
         }
     }
 
-    /// AC-003 (non-empty commits): Inference-driven bump with a real,
+    /// Inference-driven bump with a real,
     /// non-empty InferenceOutcome.commits must produce exactly one
     /// ChangelogEntry with ChangeSource::Commit from commits[0] (newest,
     /// since callisto-vcs shells `git log --no-merges` with no reversing
@@ -1536,9 +1536,9 @@ mod tests {
         }
     }
 
-    /// AC-003 (empty commits): an InferenceOutcome with empty `commits` but
+    /// An InferenceOutcome with empty `commits` but
     /// nonzero `commit_count` must fall back to a ChangeSource::Changeset
-    /// entry summarizing the count, mirroring AC-006's fallback pattern.
+    /// entry summarizing the count, mirroring the changelog fallback pattern.
     #[test]
     fn plan_version_inference_reason_falls_back_when_commits_empty() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1595,7 +1595,7 @@ mod tests {
         }
     }
 
-    /// AC-005 (Cascade sub-case): a package with a pending changeset AND a
+    /// A package with a pending changeset AND a
     /// genuine Cascade reason this run must get its changeset entries
     /// followed by exactly one additional DependencyUpdate entry.
     #[test]
@@ -1662,10 +1662,10 @@ mod tests {
         ));
     }
 
-    /// AC-005 (Inference sub-case, reusing T3's mapping): a package with
+    /// A package with
     /// both a pending changeset and outcome.reasons == Some(Inference{..})
     /// must get its changeset entries followed by one Inference-mapped
-    /// entry (AC-003's Commit-or-fallback logic).
+    /// entry (Commit-or-fallback logic).
     #[test]
     fn plan_version_unions_changeset_with_inference_reason() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1734,7 +1734,7 @@ mod tests {
         }
     }
 
-    /// AC-004 (changeset-only sub-case): a fixed group with one released
+    /// A fixed group with one released
     /// member and one fresh (never-tagged) member at the identical base
     /// version; the fresh member gets a changeset-driven bump with no other
     /// reason. Entries must be [Changeset, NewGroupMember] in that order.
@@ -1894,7 +1894,7 @@ mod tests {
         );
     }
 
-    /// AC-004 (additive-on-top-of-AC-005 sub-case): same fixed-group
+    /// Same fixed-group
     /// fixture, but pkg-fresh is ALSO a cascade target this run (via a
     /// third driver package), so it has both a changeset entry and a
     /// cascade-mapped entry (T4) before the NewGroupMember append.

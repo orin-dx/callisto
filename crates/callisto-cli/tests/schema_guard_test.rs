@@ -1,7 +1,5 @@
-//! AC-13 guard: none of this track's fixes may change any report struct's field shape,
-//! except where a task's explicit scope is the shape change itself. Permitted schema
-//! deltas: the additive DiagnosticCode::ChangelogReadError variant; SPEC-DX-STATUS-ADD
-//! AC-04's additive, mandatory `StatusReport.pending` field (count of packages with a
+//! Guards every report struct's field shape. Permitted schema deltas: the additive
+//! DiagnosticCode::ChangelogReadError variant; the additive, mandatory `StatusReport.pending` field (count of packages with a
 //! planned bump -- `status --check`'s 0/1 exit code no longer signals pending state, so
 //! this is how a script detects it). The `tag` and `plan-publish` report schemas left
 //! with their commands. Expected sets below were captured from `callisto schema`
@@ -40,7 +38,7 @@ fn set(items: &[&str]) -> BTreeSet<String> {
 }
 
 #[test]
-fn ac13_report_struct_field_shapes_are_unchanged() {
+fn report_struct_field_shapes_are_unchanged() {
     let status_schema = run_schema("status");
     let (req, props) = required_and_props(&status_schema);
     assert_eq!(req, set(&["hasChangesets", "packages", "pending", "schemaVersion"]));
@@ -51,7 +49,7 @@ fn ac13_report_struct_field_shapes_are_unchanged() {
 }
 
 #[test]
-fn ac13_diagnostic_code_enum_gains_only_changelog_read_error() {
+fn diagnostic_code_enum_gains_only_changelog_read_error() {
     let status_schema = run_schema("status");
     let variants: BTreeSet<String> = status_schema["definitions"]["DiagnosticCode"]["oneOf"]
         .as_array()

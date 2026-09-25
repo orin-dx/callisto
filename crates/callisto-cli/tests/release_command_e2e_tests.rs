@@ -1,6 +1,6 @@
 #![cfg(unix)]
 
-//! SPEC-DX-RELEASE-COMMAND: bare `callisto release` and `--dry-run`, driven
+//! Bare `callisto release` and `--dry-run`, driven
 //! through the compiled binary over a real Git repository with fake publishers.
 
 #[path = "common/release_harness.rs"]
@@ -79,7 +79,6 @@ fn stderr(output: &std::process::Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
 }
 
-/// AC-01, AC-04, AC-06, AC-09.
 #[test]
 fn release_on_a_branch_publishes_tags_and_releases_then_has_nothing_left() {
     let (dir, release_commit) = on_branch();
@@ -123,7 +122,7 @@ fn release_on_a_branch_publishes_tags_and_releases_then_has_nothing_left() {
     assert_eq!(rig.effects(), effects, "no-op performs no effect");
 }
 
-/// AC-09: `--receipt` writes the receipt to that file.
+/// `--receipt` writes the receipt to that file.
 #[test]
 fn receipt_flag_writes_to_the_given_path() {
     let (dir, release_commit) = on_branch();
@@ -141,7 +140,7 @@ fn receipt_flag_writes_to_the_given_path() {
     assert!(String::from_utf8_lossy(&run.stdout).contains(receipt.to_str().unwrap()));
 }
 
-/// AC-02, AC-08: a dirty worktree blocks the run but not the preview; ignored files never count.
+/// A dirty worktree blocks the run but not the preview; ignored files never count.
 #[test]
 fn dirty_worktree_blocks_release_before_any_effect() {
     let (dir, release_commit) = on_branch();
@@ -178,7 +177,7 @@ fn dirty_worktree_blocks_release_before_any_effect() {
     assert!(clean.status.success(), "{}", stderr(&clean));
 }
 
-/// AC-03: `--package` restricts selection; a released or unknown package is refused.
+/// `--package` restricts selection; a released or unknown package is refused.
 #[test]
 fn package_selection_is_exact() {
     let (dir, release_commit) = on_branch();
@@ -212,7 +211,7 @@ fn package_selection_is_exact() {
     assert!(stderr(&commit).contains("--from-release-commit"), "{}", stderr(&commit));
 }
 
-/// AC-05: artifact slots require the CI route; the preview still works.
+/// Artifact slots require the CI route; the preview still works.
 #[test]
 fn artifact_slot_workspace_names_the_ci_route() {
     let (dir, release_commit) = product_release_commit_fixture();
@@ -235,7 +234,7 @@ fn artifact_slot_workspace_names_the_ci_route() {
     assert_eq!(intent["artifactSlots"].as_array().unwrap().len(), 4);
 }
 
-/// AC-10: the legacy commands are gone from the binary.
+/// The legacy commands are gone from the binary.
 #[test]
 fn legacy_publish_commands_fail_to_parse() {
     let (dir, release_commit) = on_branch();

@@ -29,7 +29,7 @@ fn severity_emoji(severity: Severity) -> &'static str {
 /// Identity used to merge the same underlying change across every package it
 /// bumps, instead of repeating its rendered text once per package. A shared
 /// `.changeset/*.md` file's `summary` is copied verbatim into every package
-/// it names (§6.1's fan-out model) -- correct and desirable for each
+/// it names (fan-out) -- correct and desirable for each
 /// package's own standalone `CHANGELOG.md`, but exactly the duplication that
 /// makes a multi-package PR body hard to read in one sitting.
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -323,7 +323,7 @@ pub fn render_pr_body_from_plan(
     }
 
     // 3. What's Changing -- grouped by underlying change, not by package, so
-    // a changeset naming several packages (§6.1's fan-out) renders once
+    // a changeset naming several packages (fan-out) renders once
     // instead of once per package it touches.
     body.push_str("### 📦 What's Changing\n\n");
 
@@ -580,7 +580,7 @@ mod tests {
     }
 
     #[test]
-    fn ac002_inference_fallback_is_non_empty() {
+    fn inference_fallback_is_non_empty() {
         let plan = plan_with_single_bump(BumpReason::Inference {
             commits: 3,
             remapped: false,
@@ -590,7 +590,7 @@ mod tests {
     }
 
     #[test]
-    fn ac002_prerelease_fallback_is_non_empty() {
+    fn prerelease_fallback_is_non_empty() {
         let plan = plan_with_single_bump(BumpReason::PreRelease {
             tag: "alpha".to_string(),
         });
@@ -599,7 +599,7 @@ mod tests {
     }
 
     #[test]
-    fn ac002_new_group_member_fallback_is_non_empty() {
+    fn new_group_member_fallback_is_non_empty() {
         let plan = plan_with_single_bump(BumpReason::NewGroupMember {
             group: callisto_model::GroupName("grp".to_string()),
         });
@@ -608,7 +608,7 @@ mod tests {
     }
 
     #[test]
-    fn ac001_render_section_takes_priority_over_fallback_when_both_available() {
+    fn render_section_takes_priority_over_fallback_when_both_available() {
         let pkg_a = PackageId::parse("pkg-a").unwrap();
         let bump = PlannedBump {
             package: pkg_a.clone(),
@@ -680,7 +680,7 @@ mod tests {
     }
 
     #[test]
-    fn ac007_empty_entries_falls_back_and_other_package_renders_normally() {
+    fn empty_entries_falls_back_and_other_package_renders_normally() {
         let pkg_a = PackageId::parse("pkg-a").unwrap();
         let pkg_b = PackageId::parse("pkg-b").unwrap();
 
@@ -755,7 +755,7 @@ mod tests {
         let report = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap();
         assert!(
             report.body.contains("Automatic dependency cascade triggered by"),
-            "pkg-a must use the AC-002 fallback text since its ChangelogWrite has empty entries; body: {}",
+            "pkg-a must use the fallback text since its ChangelogWrite has empty entries; body: {}",
             report.body
         );
         assert!(
@@ -771,7 +771,7 @@ mod tests {
     }
 
     #[test]
-    fn ac007_severity_none_entry_falls_back() {
+    fn severity_none_entry_falls_back() {
         let pkg_a = PackageId::parse("pkg-a").unwrap();
         let bump_a = PlannedBump {
             package: pkg_a.clone(),
@@ -824,7 +824,7 @@ mod tests {
     }
 
     #[test]
-    fn ac007_empty_entries_and_no_reason_uses_no_changelog_entries_literal() {
+    fn empty_entries_and_no_reason_uses_no_changelog_entries_literal() {
         let pkg_a = PackageId::parse("pkg-a").unwrap();
         let bump_a = PlannedBump {
             package: pkg_a.clone(),
@@ -866,7 +866,7 @@ mod tests {
     }
 
     /// The headline fix this module exists for: a single `.changeset/*.md`
-    /// file names several packages (§6.1's fan-out model) and its summary
+    /// file names several packages (fan-out) and its summary
     /// is copied verbatim into each one's own `ChangelogEntry`. Before this
     /// change, the PR body repeated that summary once per package; it must
     /// now render exactly once, with every affected package listed in its

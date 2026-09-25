@@ -295,12 +295,12 @@ pub struct LockfileRefreshResult {
 #[serde(rename_all = "camelCase")]
 pub struct StatusReport {
     pub schema_version: u32,
-    /// Mandatory (§12.5) — the field the Action's mode dispatch reads.
+    /// Mandatory — the field the Action's mode dispatch reads.
     /// Always serialized, never omitted, even when `false`.
     pub has_changesets: bool,
     /// Count of packages with a planned bump (`StatusPackageRecord.pending_severity.is_some()`),
     /// i.e. post-cascade/fixed/linked-group -- unlike `has_changesets`, which only reflects
-    /// changeset files directly naming a package. SPEC-DX-STATUS-ADD AC-04: `status --check`'s
+    /// changeset files directly naming a package. `status --check`'s
     /// exit code no longer signals pending state (0/1 gate on errors only), so this field is
     /// how a script detects it. Always serialized, even when `0`.
     pub pending: u32,
@@ -336,8 +336,8 @@ pub struct StatusPackageRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_severity: Option<Severity>,
 
-    /// Mandatory, always serialized — §6.3's empty-changeset validation and
-    /// §G.9.3's `changed_since_last_tag` depend on this being present even
+    /// Mandatory, always serialized — empty-changeset validation and
+    /// `changed_since_last_tag` consumers depend on this being present even
     /// when `false`.
     pub changed_since_last_tag: bool,
 
@@ -372,9 +372,8 @@ mod status_report_tests {
         }
     }
 
-    /// `StatusReport.hasChangesets` is mandatory —
-    /// §12.5 mandates it and §12.2 branch 3 gates the Action's mode dispatch
-    /// on it — so it must always be present in the serialized JSON, never
+    /// `StatusReport.hasChangesets` is mandatory — the Action's mode dispatch
+    /// reads it — so it must always be present in the serialized JSON, never
     /// omitted regardless of its value.
     #[test]
     fn status_report_json_always_contains_has_changesets() {
@@ -392,7 +391,7 @@ mod status_report_tests {
         );
     }
 
-    /// SPEC-DX-STATUS-ADD AC-04: `pending` (count of packages with a planned
+    /// `pending` (count of packages with a planned
     /// bump) must always serialize, including when `0` -- it's the field a
     /// script now reads to detect pending changesets, since `status --check`'s
     /// exit code no longer signals it.
@@ -508,8 +507,8 @@ mod compose_pr_body_report_tests {
     /// `ComposePrBodyReport`'s composed-body field is
     /// documented as `body`, serialized camelCase as `"body"` -- not `"prBody"`.
     ///
-    /// NOTE: intentionally doesn't assert a `metadata` key. §M.12.5 also
-    /// documents `metadata: PrBodyMetadata` (labels/managedLabels/overflow),
+    /// NOTE: intentionally doesn't assert a `metadata` key. The original spec also
+    /// documented `metadata: PrBodyMetadata` (labels/managedLabels/overflow),
     /// but the data to populate `managedLabels` (round-tripping the
     /// previous run's labels) and `overflow` (notes-branch overflow
     /// detection) isn't computed anywhere in
@@ -636,7 +635,7 @@ pub struct CreatedTag {
     pub tag_name: TagName,
     pub sha: CommitSha,
     /// `true` when the tag already existed at this sha and was left alone --
-    /// P3's idempotence made observable rather than assumed. An existing tag
+    /// Idempotence made observable rather than assumed. An existing tag
     /// at a *different* sha is an error diagnostic, not a silent overwrite.
     pub already_existed: bool,
     /// `true` for a floating major-version alias (e.g. `v1`), which is
@@ -693,8 +692,8 @@ mod tag_report_tests {
     }
 
     /// `CreatedTag::already_existed` is `true` when
-    /// the tag already existed at this sha and was left alone (P3's
-    /// idempotence made observable). Serialized camelCase as
+    /// the tag already existed at this sha and was left alone (idempotence
+    /// made observable). Serialized camelCase as
     /// `"alreadyExisted"`.
     #[test]
     fn created_tag_json_includes_already_existed_key() {

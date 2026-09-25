@@ -62,7 +62,7 @@ Well-known RegistryKey constants:
 - `RegistryKey::PYPI` = "pypi"
 - `RegistryKey::NUGET` = "nuget"
 
-## Track E Design Decision (Option 3)
+## Rule Specificity Decision
 
 **Do NOT change `PackageId::matches()`.**
 
@@ -76,7 +76,7 @@ See `docs/specs/track-e-specificity.json` for the full testable acceptance crite
 
 ## npm platform packages -- Case E (`walk.rs::platform_owners`)
 
-A `package.json` with `os`+`cpu` (`NpmRole::Platform`) whose `name` appears in exactly one other npm package's `optionalDependencies` is a `ManifestRole::Platform` manifest of that owner, never a `Package` (spec §M.6.1, invariant 20: never tagged). The owner signal is `optionalDependencies`, so napi addons and esbuild-style native CLIs behave the same.
+A `package.json` with `os`+`cpu` (`NpmRole::Platform`) whose `name` appears in exactly one other npm package's `optionalDependencies` is a `ManifestRole::Platform` manifest of that owner, never a `Package` (never tagged). The owner signal is `optionalDependencies`, so napi addons and esbuild-style native CLIs behave the same.
 
 - Discovery also considers platform dirs outside the npm workspace globs (`ProjectLocator::projects_and_platform_candidates`); those attach or stay invisible.
 - A workspace-member platform with zero or several owners stays its own package and gets `platform-package-without-owner`. Never guess an owner.

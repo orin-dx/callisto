@@ -3,16 +3,15 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::Ecosystem;
 
-/// §7.7. `SemVer` is the only grammar with an implementation in the committed v0.1–v0.4
-/// scope; the rest are declared so `Ecosystem::version_grammar` is total.
+/// `SemVer` is the only implemented grammar; the rest are declared so `Ecosystem::version_grammar` is total.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub enum VersionGrammar {
     SemVer,
-    /// PEP 440 (§7.7) — declared, not implemented.
+    /// PEP 440 — declared, not implemented.
     Pep440,
-    /// Maven's qualifier-ordering comparator (§7.7) — declared, not implemented.
+    /// Maven's qualifier-ordering comparator — declared, not implemented.
     Maven,
 }
 
@@ -23,7 +22,7 @@ pub(crate) enum ParsedVersion {
     Pep440(pep440_rs::Version),
 }
 
-/// A parsed version, tagged with the grammar it was parsed under. §7.7, P4.
+/// A parsed version, tagged with the grammar it was parsed under.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, JsonSchema)]
 #[schemars(with = "String")]
 pub struct Version {
@@ -72,7 +71,7 @@ impl Version {
             VersionGrammar::Maven => Err(VersionParseError {
                 raw: raw.to_string(),
                 grammar,
-                message: format!("{grammar:?} has no versioning implementation yet (§7.7)"),
+                message: format!("{grammar:?} has no versioning implementation yet"),
             }),
         }
     }
@@ -384,7 +383,7 @@ mod tests {
         );
     }
 
-    /// Gap 6: a genuinely malformed PEP 440 string returns a proper `Err`
+    /// A genuinely malformed PEP 440 string returns a proper `Err`
     /// from the public parse entry point, never a panic.
     #[test]
     fn pep440_parse_malformed_string_returns_err_not_panic() {
@@ -395,7 +394,7 @@ mod tests {
         assert_eq!(err.raw, "garbage-not-a-version");
     }
 
-    /// Gap 7: PEP 440 pre-release markers are case-insensitive per the spec
+    /// PEP 440 pre-release markers are case-insensitive per the spec
     /// (`pep440_rs` normalizes both spellings to the same canonical `a1`
     /// form), so `A1` and `a1` parse to equal, identically-rendered versions.
     /// Verified empirically, not assumed.
@@ -408,7 +407,7 @@ mod tests {
         assert_eq!(lower.render(), "1.0.0a1");
     }
 
-    /// Gap 8: whitespace-padded input. Verified empirically: `pep440_rs`
+    /// Whitespace-padded input. Verified empirically: `pep440_rs`
     /// trims surrounding whitespace and accepts the input, normalizing `raw`
     /// to the trimmed canonical form; `semver` does not trim and rejects
     /// whitespace-padded input with a parse error. The two grammars behave
@@ -425,8 +424,8 @@ mod tests {
         assert!(result.is_err());
     }
 
-    /// Gap 9 (RESOLVED): `Version::deserialize` now mirrors
-    /// `VersionReq::deserialize`'s multi-grammar fallback (§ see doc comment
+    /// `Version::deserialize` now mirrors
+    /// `VersionReq::deserialize`'s multi-grammar fallback (see the doc comment
     /// on the `Deserialize` impl): SemVer is tried first since it is the
     /// strictest, most unambiguous grammar, and PEP 440 is tried only if
     /// SemVer parsing fails. A PEP-440-only version string (e.g. `1.2.3a1`,

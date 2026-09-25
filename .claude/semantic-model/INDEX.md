@@ -22,8 +22,8 @@ references them. The spec@1 is the authority; these files are the reference laye
 
 | File | Covers |
 |---|---|
-| `core-identity.md` | PackageId variants, Ecosystem, bare vs prefixed, matches() semantics, Track E decision |
-| `version-flow.md` | VersionPlan, PlannedBump, apply_version_plan, idempotency guard, Track B design |
+| `core-identity.md` | PackageId variants, Ecosystem, bare vs prefixed, matches() semantics, rule-specificity decision |
+| `version-flow.md` | VersionPlan, PlannedBump, apply_version_plan, idempotency guard |
 | `config-resolution.md` | ResolvedConfig, [[package]] vs [[package-set]], PackagePattern, specificity ordering |
 | `error-taxonomy.md` | All GraphError + ConfigError variants, E-codes, when to emit each |
 | `release-lifecycle.md` | Local `callisto release` route, run envelope, evidence-carrying provider observation, operation transition table, release E-codes, wire versions |

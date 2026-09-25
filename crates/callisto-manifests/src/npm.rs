@@ -849,7 +849,7 @@ mod tests {
         assert!(on_disk.contains("\"lodash\": \"^4.17.0\""));
     }
 
-    // --- Gap 1: happy-path co-mutation of overrides/resolutions ---
+    // --- Happy-path co-mutation of overrides/resolutions ---
 
     #[test]
     fn update_dependency_spec_co_mutates_overrides() {
@@ -1023,7 +1023,7 @@ mod tests {
         );
     }
 
-    // --- Gap 2: resolutions missing from validate-before-mutate regression ---
+    // --- Resolutions missing from validate-before-mutate regression ---
 
     #[test]
     fn update_dependency_spec_does_not_mutate_resolutions_when_primary_section_missing() {
@@ -1111,7 +1111,7 @@ mod tests {
         );
     }
 
-    // --- Gap 4: nested overrides object must not be replaced with a string ---
+    // --- Nested overrides object must not be replaced with a string ---
 
     /// When `overrides["foo"]` is a nested object (e.g. `{ "bar": "^1.0.0" }`),
     /// bumping `foo` must leave that object intact. The nested form expresses a
@@ -1157,7 +1157,7 @@ mod tests {
         );
     }
 
-    // --- Gap 3: DepKind::Dev validate-before-mutate path ---
+    // --- DepKind::Dev validate-before-mutate path ---
 
     #[test]
     fn update_dependency_spec_does_not_mutate_overrides_when_dev_dep_missing() {

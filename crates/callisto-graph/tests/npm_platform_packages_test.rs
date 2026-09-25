@@ -1,4 +1,4 @@
-//! §M.6.1 Case E: npm platform packages (`os`+`cpu`) named in an owner's
+//! npm platform packages (`os`+`cpu`) named in an owner's
 //! `optionalDependencies` are `Platform` manifests of that owner, never
 //! `Package`s of their own. Fixture mirrors oxc-react-docgen: a napi addon and
 //! an esbuild-style CLI, each with standalone `npm/<platform>` directories

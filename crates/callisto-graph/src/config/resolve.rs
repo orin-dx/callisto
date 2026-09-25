@@ -837,7 +837,7 @@ mod tests {
         );
     }
 
-    /// AC-F1: Bare rule declared first, Prefixed rule declared second.
+    /// Bare rule declared first, Prefixed rule declared second.
     /// Both rules set release_trigger with different values so the winner is directly observable.
     /// Bare foo: release-trigger = "auto" -> release_trigger = Some(Auto).
     /// Prefixed npm/foo: release-trigger = "changeset" -> release_trigger = Some(Changeset).
@@ -860,13 +860,13 @@ mod tests {
         assert_eq!(
             pcfg.release_trigger,
             Some(ReleaseTrigger::Changeset),
-            "Prefixed rule (npm/foo, changeset) must win over Bare rule (foo, auto) (AC-F1); \
+            "Prefixed rule (npm/foo, changeset) must win over Bare rule (foo, auto); \
              Some(Auto) means the Bare rule incorrectly won. Got: {:?}",
             pcfg.release_trigger
         );
     }
 
-    /// AC-F2: Three-rule scenario. First Prefixed rule matches a different name.
+    /// Three-rule scenario. First Prefixed rule matches a different name.
     /// Pass 1 skips cargo/other (name mismatch), finds npm/pkg as the first Prefixed entry
     /// whose name matches, and returns it. The third entry (pypi/pkg) is never reached.
     #[test]
@@ -891,14 +891,14 @@ mod tests {
                 .as_ref()
                 .map(|p| p.ends_with("FIRST.md"))
                 .unwrap_or(false),
-            "First MATCHING Prefixed entry (npm/pkg) must win (AC-F2): expected changelog ending \
+            "First MATCHING Prefixed entry (npm/pkg) must win: expected changelog ending \
              in FIRST.md. cargo/other skipped (name mismatch); pypi/pkg never reached. \
              Got changelog: {:?}",
             pcfg.changelog
         );
     }
 
-    /// AC-F3: No Prefixed rule matches "pkg". Pass 1 finds nothing.
+    /// No Prefixed rule matches "pkg". Pass 1 finds nothing.
     /// Pass 2 finds the Bare "pkg" entry and returns it.
     #[test]
     fn resolve_package_config_bare_rule_wins_via_pass_2_when_no_prefixed_matches() {
@@ -919,13 +919,13 @@ mod tests {
         assert_eq!(
             pcfg.release_trigger,
             Some(ReleaseTrigger::Auto),
-            "Bare rule must win via pass 2 (AC-F3): expected release_trigger = Some(Auto). \
+            "Bare rule must win via pass 2: expected release_trigger = Some(Auto). \
              Got: {:?}",
             pcfg.release_trigger
         );
     }
 
-    /// AC-F4: No rule matches "pkg" at all.
+    /// No rule matches "pkg" at all.
     /// Pass 1 and pass 2 both iterate zero matching entries; result is None.
     #[test]
     fn resolve_package_config_returns_none_when_no_rule_matches() {
@@ -942,11 +942,11 @@ mod tests {
         let result = resolve_package_config(&id, &cfg).unwrap();
         assert!(
             result.is_none(),
-            "resolve_package_config must return None when no rule matches (AC-F4); got Some(...)"
+            "resolve_package_config must return None when no rule matches; got Some(...)"
         );
     }
 
-    /// AC-F4b: cfg.packages is empty. Both passes iterate zero entries.
+    /// Cfg.packages is empty. Both passes iterate zero entries.
     /// Every query returns None regardless of the id argument.
     #[test]
     fn resolve_package_config_returns_none_for_empty_packages() {
@@ -957,7 +957,7 @@ mod tests {
         let cfg = load(root).expect("load should succeed");
         assert!(
             cfg.packages.is_empty(),
-            "fixture must produce an empty packages Vec (AC-F4b); got: {:?}",
+            "fixture must produce an empty packages Vec; got: {:?}",
             cfg.packages
         );
         for id_str in &["pkg", "npm/pkg", "cargo/pkg"] {
@@ -966,12 +966,12 @@ mod tests {
             assert!(
                 result.is_none(),
                 "resolve_package_config must return None for empty packages, \
-                 id={id_str} (AC-F4b)"
+                 id={id_str}"
             );
         }
     }
 
-    /// AC-F5: Two Prefixed rules — npm/foo declared first, cargo/foo declared second in Vec order.
+    /// Two Prefixed rules — npm/foo declared first, cargo/foo declared second in Vec order.
     /// Both rules set release_trigger with different values so the winner is directly observable.
     /// npm/foo (first): release-trigger = "auto" -> release_trigger = Some(Auto).
     /// cargo/foo (second): release-trigger = "changeset" -> release_trigger = Some(Changeset).
@@ -1000,7 +1000,7 @@ mod tests {
             pcfg.release_trigger,
             Some(ReleaseTrigger::Auto),
             "npm/foo (declared first) must win over cargo/foo (declared second) — Vec order, \
-             not alphabetical sort, governs first-match-wins (AC-F5). \
+             not alphabetical sort, governs first-match-wins. \
              A sorted implementation would incorrectly return Some(Changeset). Got: {:?}",
             pcfg.release_trigger
         );
@@ -1239,21 +1239,18 @@ mod tests {
         }
     }
 
-    /// AC-001
     #[test]
     fn top_level_forge_repository_resolves() {
         let config = resolve_str("forge-repository = \"orin-dx/callisto\"\n").unwrap();
         assert_eq!(forge(&config).as_deref(), Some("orin-dx/callisto"));
     }
 
-    /// AC-002
     #[test]
     fn legacy_production_profile_forge_repository_migrates() {
         let config = resolve_str("[release.profiles.production]\nforge-repository = \"orin-dx/legacy\"\n").unwrap();
         assert_eq!(forge(&config).as_deref(), Some("orin-dx/legacy"));
     }
 
-    /// AC-003
     #[test]
     fn differing_top_level_and_legacy_forge_repositories_are_rejected() {
         let detail = detail(resolve_str(
@@ -1265,7 +1262,6 @@ mod tests {
         );
     }
 
-    /// AC-004
     #[test]
     fn identical_top_level_and_legacy_forge_repositories_resolve() {
         let config = resolve_str(
@@ -1275,7 +1271,6 @@ mod tests {
         assert_eq!(forge(&config).as_deref(), Some("orin-dx/one"));
     }
 
-    /// AC-005
     #[test]
     fn a_non_production_profile_is_rejected_naming_it() {
         for body in [
@@ -1291,7 +1286,6 @@ mod tests {
         }
     }
 
-    /// AC-006
     #[test]
     fn legacy_registry_routes_change_nothing() {
         let with = resolve_str(
@@ -1311,7 +1305,6 @@ mod tests {
         assert!(detail(resolve_str("forge-repository = \"not a repo\"\n")).contains("not a repo"));
     }
 
-    /// AC-017
     #[test]
     fn load_is_read_parse_then_resolve() {
         let tmp = tempfile::tempdir().expect("tempdir");

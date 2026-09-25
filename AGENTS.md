@@ -46,7 +46,8 @@ Rules for AI agents working in this repo.
 ## Specs and plans
 
 - Specs (`spec@1`) live in `docs/specs/`; plans (`plan@1`) in `docs/projects/`.
-- Delete a plan once its work ships. Keep a spec while it describes current behavior.
+- Delete a plan once its work ships. Keep a spec while it describes current behavior; delete it when superseded. Git history is the record.
+- Code never cites specs: no spec IDs, criterion IDs, section numbers or track names in comments, test names or messages. Describe the behavior instead.
 - A requirement the owner didn't state is a judgment call. Get owner confirmation before it gates anything.
 
 ## Writing

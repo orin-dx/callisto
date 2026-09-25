@@ -56,7 +56,6 @@ fn fixed_group_cascade_bump_without_direct_changeset_is_accepted() {
         "both fixed-group members must be authorized, not just the one with a direct changeset"
     );
 }
-/// AC-012
 #[test]
 fn execute_rejects_an_intent_whose_artifact_repository_is_not_the_configured_one() {
     let (dir, release_commit) = product_release_commit_fixture();

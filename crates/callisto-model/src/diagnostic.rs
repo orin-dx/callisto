@@ -120,14 +120,14 @@ pub enum DiagnosticCode {
     /// that might not preserve the author's original intent.
     RangeNotRoundTrippable,
     /// A `DepSpec::Catalog` entry's coverage of the new version is never tested at all —
-    /// catalog specs are never rewritten regardless of coverage (§13 inv. 15) — so this is
+    /// catalog specs are never rewritten regardless of coverage — so this is
     /// reported under its own code rather than [`Self::RangeNotRoundTrippable`], whose
     /// trigger (a failed rewrite attempt) never applies to a catalog entry in the first place.
     CatalogSpecNotRewritten,
     /// A tag matched a `tag_template`-derived glob, but the substring at the `{version}`
     /// placeholder position did not parse as a valid version under the expected grammar.
     TagGlobNonVersionMatch,
-    /// Reserved for `init`'s `.changeset/config.json` translation (§18 Q4, v0.4) reporting a
+    /// Reserved for `init`'s `.changeset/config.json` translation reporting a
     /// config key from `@changesets/cli` that has no callisto equivalent and was dropped; not
     /// emitted by any current code path.
     ChangesetsConfigKeyDropped,
@@ -172,7 +172,7 @@ pub enum DiagnosticCode {
     /// cannot be resolved to a single target without an ecosystem prefix.
     AmbiguousPackageName,
     /// An npm platform package (`os`+`cpu`) is not named in exactly one other npm package's
-    /// `optionalDependencies`, so it cannot be attached to an owner (§M.6.1 Case E) and is
+    /// `optionalDependencies`, so it cannot be attached to an owner and is
     /// treated as its own package.
     PlatformPackageWithoutOwner,
     /// `callisto init` skipped GitHub Actions workflow generation because it generates no
@@ -188,7 +188,7 @@ pub enum DiagnosticCode {
 mod tests {
     use super::DiagnosticCode;
 
-    /// AC-12c: DiagnosticCode::ChangelogReadError must serialize to the kebab-case string
+    /// DiagnosticCode::ChangelogReadError must serialize to the kebab-case string
     /// "changelog-read-error" and deserialize back to the same variant.
     #[test]
     fn changelog_read_error_serializes_to_kebab_case() {
@@ -202,7 +202,7 @@ mod tests {
         assert_eq!(roundtrip, code, "deserialized value must equal the original variant",);
     }
 
-    /// AC-10: DiagnosticCode::BareRuleMatchesMultipleEcosystems must serialize
+    /// DiagnosticCode::BareRuleMatchesMultipleEcosystems must serialize
     /// to the kebab-case string "bare-rule-matches-multiple-ecosystems" and
     /// deserialize back to the same variant. The existing
     /// `#[serde(rename_all = "kebab-case")]` on DiagnosticCode handles this
@@ -220,7 +220,7 @@ mod tests {
         assert_eq!(roundtrip, code, "deserialized value must equal the original variant",);
     }
 
-    /// AC-018: DiagnosticCode::UnrecognisedPlatformTriple must serialize to
+    /// DiagnosticCode::UnrecognisedPlatformTriple must serialize to
     /// the kebab-case string "unrecognised-platform-triple" and deserialize
     /// back to the same variant.
     #[test]

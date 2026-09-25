@@ -318,7 +318,7 @@ mod tests {
         assert!(calls[0].1.contains(&"--deny-self-hosted-runners".to_owned()));
     }
 
-    /// AC-17: `--source-digest` pins to the orchestration revision
+    /// `--source-digest` pins to the orchestration revision
     /// (`attestation.source_commit`), never the release source -- a
     /// recovery rerun's manifest binds GitHub's attested source digest to
     /// the coordinator workflow's commit, not the older release checkout.

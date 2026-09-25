@@ -637,7 +637,7 @@ mod tests {
         assert_eq!(text.matches("    - ").count(), intent.operations.len(), "{text}");
     }
 
-    /// AC-04: `use_color: true` renders the release plan as a box-drawing table.
+    /// `use_color: true` renders the release plan as a box-drawing table.
     #[test]
     fn plan_text_with_color_renders_box_drawing_table() {
         let intent = sample();
@@ -649,7 +649,7 @@ mod tests {
         }
     }
 
-    /// AC-05: `use_color: false` never emits box-drawing characters.
+    /// `use_color: false` never emits box-drawing characters.
     #[test]
     fn plan_text_without_color_has_no_box_drawing_chars() {
         let intent = sample();

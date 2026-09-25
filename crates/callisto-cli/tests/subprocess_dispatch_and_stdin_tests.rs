@@ -147,7 +147,7 @@ fn subprocess_lifecycle_exercises_every_main_dispatch_arm() {
     assert!(!completions.stdout.is_empty(), "completions must print a script");
 }
 
-/// SPEC-DX-STATUS-ADD AC-02: `validate` was removed, not merely hidden --
+/// `validate` was removed, not merely hidden --
 /// invoking it must fail clap's own argument parsing (unrecognized
 /// subcommand), not dispatch anywhere.
 #[test]

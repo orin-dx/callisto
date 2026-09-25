@@ -67,7 +67,7 @@ pub struct ApplyOutcome {
 
 ## apply_version_plan — Idempotency Guard
 
-### The Contract (Track B design decision)
+### The Contract
 
 For each `VersionWriteTarget::Manifest(p)` in a bump's writes:
 

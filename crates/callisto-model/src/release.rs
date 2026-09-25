@@ -986,7 +986,7 @@ pub enum ReleaseOperationRole {
     /// Publishes the draft created by [`Self::ForgeRelease`], only after every
     /// artifact upload of that release has been confirmed.
     ForgePublish,
-    /// Publishes one npm platform package (§M.6.1 Case E) of the operation's
+    /// Publishes one npm platform package of the operation's
     /// owning package, by directory. It is not a package of its own, so it has
     /// no tag, forge release, or decision entry.
     PlatformPublish {
@@ -2951,7 +2951,7 @@ mod tests {
         manifest.validate_for_intent(&intent).unwrap();
     }
 
-    /// AC-16: top-level `source_commit` pins to the release source (the
+    /// Top-level `source_commit` pins to the release source (the
     /// intent's immutable snapshot), never the orchestration revision that
     /// attested the binary -- a recovery rerun deliberately builds an older
     /// release commit with current coordinator workflow code, so these two
@@ -3010,7 +3010,7 @@ mod tests {
         assert_ne!(manifest.source_commit, orchestration_revision);
     }
 
-    /// AC-17: an entry whose `attestation.source_commit` is set to the
+    /// An entry whose `attestation.source_commit` is set to the
     /// release source instead of the orchestration revision (when the two
     /// differ) is rejected -- otherwise a recovery rerun's manifest would
     /// silently bind GitHub's attested source digest to the wrong commit.

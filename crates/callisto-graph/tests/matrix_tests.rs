@@ -29,7 +29,7 @@ fn napi_manifest_decl(name: &str) -> callisto_model::ManifestDecl {
     .unwrap()
 }
 
-/// AC-006: --package restricts BOTH platformTargets AND runtimeVersions to
+/// --package restricts BOTH platformTargets AND runtimeVersions to
 /// exactly that one package's entries.
 #[test]
 fn matrix_package_filter_restricts_to_one_package() {
@@ -89,7 +89,7 @@ fn matrix_package_filter_restricts_to_one_package() {
     assert!(!report.runtime_versions.contains_key("pkg-b"));
 }
 
-/// AC-007: an unknown --package name is a hard error naming the package,
+/// An unknown --package name is a hard error naming the package,
 /// never a structurally valid empty report.
 #[test]
 fn matrix_unknown_package_errors() {

@@ -1,7 +1,6 @@
-//! SPEC-DX-STATUS-ADD AC-01 (pending severity is `plan_version`'s own
-//! cascade/fixed-group computation, not a per-package changeset scan) and
-//! AC-03 (`status` covers every well-formedness diagnostic `validate` used to
-//! report).
+//! Pending severity is `plan_version`'s own cascade/fixed-group computation,
+//! not a per-package changeset scan, and `status` covers every well-formedness diagnostic `validate` used to
+//! report.
 
 use std::fs;
 use std::path::Path;
@@ -36,7 +35,7 @@ fn git_init_with_commit(root: &Path) {
     }
 }
 
-/// AC-01: a Fixed group's union bump must show up as `pending_severity` for
+/// A Fixed group's union bump must show up as `pending_severity` for
 /// every member, including one with no changeset of its own naming it --
 /// `status` must read this from `plan_version`'s cascade output, not from a
 /// per-package changeset scan (which would show `None` for the un-named member).
@@ -101,7 +100,7 @@ fn status_pending_severity_reflects_fixed_group_cascade() {
     );
 }
 
-/// AC-01: a package with no planned bump at all shows `None`, not a stale
+/// A package with no planned bump at all shows `None`, not a stale
 /// leftover severity from a directly-named-but-inert changeset entry.
 #[test]
 fn status_pending_severity_is_none_with_no_planned_bump() {
@@ -136,7 +135,7 @@ fn status_pending_severity_is_none_with_no_planned_bump() {
     assert_eq!(rec.pending_severity, None, "no pending changeset means no bump");
 }
 
-/// AC-03: a changeset naming a package outside the workspace must surface as
+/// A changeset naming a package outside the workspace must surface as
 /// `DiagnosticCode::UnknownPackage` on `status`, exactly as `validate` used to
 /// report it, so `status --check` can gate on it.
 #[test]
@@ -185,7 +184,7 @@ fn status_reports_unknown_package_diagnostic() {
     );
 }
 
-/// AC-03: a changeset with entries but no package/severity lines still parses
+/// A changeset with entries but no package/severity lines still parses
 /// as an entries-empty changeset (summary alone) -- `status` must report it as
 /// `DiagnosticCode::EmptyChangeset`, exactly as `validate` used to.
 #[test]

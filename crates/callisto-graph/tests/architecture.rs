@@ -187,7 +187,7 @@ fn allowlist_entries_reference_files_that_still_exist() {
     }
 }
 
-// --- SPEC-ARCH-RELEASE-ERROR-TAXONOMY (PR1-PR4, complete) ----------------
+// --- Typed release errors ------------------------------------------------
 //
 // Enforcement for the `GraphError::ReleaseIntentStale` (E124) struct-variant
 // migration: staleness carries a real `StaleReason`, constructible only
@@ -212,7 +212,7 @@ fn read_production_source(relative: &str) -> String {
     strip_test_modules(&content)
 }
 
-/// `StaleReason`'s four fresh-re-observation constructors (AC-001).
+/// `StaleReason`'s four fresh-re-observation constructors.
 const STALE_REASON_REAL_CONSTRUCTORS: [&str; 4] = [
     "trust_evidence_changed",
     "source_identity_changed",
@@ -220,10 +220,9 @@ const STALE_REASON_REAL_CONSTRUCTORS: [&str; 4] = [
     "intent_differs_from_fresh_derivation",
 ];
 
-/// AC-002: `GraphError::ReleaseIntentStale` is constructed only via one of
+/// `GraphError::ReleaseIntentStale` is constructed only via one of
 /// `StaleReason`'s four fresh-re-observation constructors, and only from
-/// the `commands/release/` module -- the SPEC-ARCH-RELEASE-ERROR-TAXONOMY migration
-/// (PR1-PR4) eliminated every other construction site workspace-wide.
+/// the `commands/release/` module; no other construction site exists workspace-wide.
 #[test]
 fn release_intent_stale_is_constructed_only_by_fresh_reobservation() {
     let release_module = graph_crate_src_dir().join("commands/release");
@@ -253,7 +252,7 @@ fn release_intent_stale_is_constructed_only_by_fresh_reobservation() {
     );
 }
 
-/// AC-001: the four real constructors carry no visibility modifier --
+/// The four real constructors carry no visibility modifier --
 /// callable only from within the `commands/release/` module itself.
 #[test]
 fn stale_reason_constructors_are_module_private() {
@@ -276,12 +275,8 @@ fn stale_reason_constructors_are_module_private() {
 }
 
 /// Files still permitted to discard their `map_err` closure's bound error.
-/// All three release-executor files (`release.rs`, `release_decision.rs`,
-/// `release_execution.rs`) completed the SPEC-ARCH-RELEASE-ERROR-TAXONOMY
-/// migration across PR1-PR4 and are no longer allowlisted. The remaining
-/// five predate this spec entirely and belong to the companion
-/// SPEC-ARCH-ERROR-SOURCE-PRESERVATION-GATE.json, which widens this same
-/// check workspace-wide; not migrated here.
+/// The release-executor files are not allowlisted. The remaining five
+/// predate this check and are not migrated yet.
 ///
 /// This test's job is to block a new file from adopting the pattern, not to
 /// re-litigate already-tracked ones.
@@ -315,9 +310,8 @@ fn contains_map_err_ignore(content: &str) -> bool {
     false
 }
 
-/// AC-003: zero `map_err(|_ident| ...)` source-discarding closures anywhere
-/// in this crate except the allowlisted, pre-existing files tracked by
-/// SPEC-ARCH-ERROR-SOURCE-PRESERVATION-GATE.json; this test fails on any
+/// Zero `map_err(|_ident| ...)` source-discarding closures anywhere
+/// in this crate except the allowlisted, pre-existing files; this test fails on any
 /// non-allowlisted file adopting the pattern.
 #[test]
 fn release_modules_never_discard_error_sources() {
@@ -346,7 +340,7 @@ fn release_modules_never_discard_error_sources() {
 
     assert!(
         violations.is_empty(),
-        "found a new map_err(|_ident| ...) source-discarding closure outside the tracked PR1-PR4 \
+        "found a new map_err(|_ident| ...) source-discarding closure outside the \
          allowlist ({MAP_ERR_IGNORE_ALLOWLIST:?}); report the real error cause instead: {violations:#?}"
     );
 }

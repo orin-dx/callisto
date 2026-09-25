@@ -51,7 +51,7 @@ fn git_init_with_commit(root: &Path) {
 
 /// Builds the same owner-with-two-platform-siblings fixture as
 /// `commands::version`'s own `plan_version_merges_two_platform_siblings_optional_dep_updates_into_one_entry`
-/// (AC-007b) test: a real, disk-discovered Case D linux sibling
+/// test: a real, disk-discovered Case D linux sibling
 /// (`Cargo.toml` + `package.json` sharing one directory) plus a
 /// fixture-injected darwin sibling, both under owner "hybrid", whose
 /// `Cargo.toml` declares matching `optional = true` dependencies on both
@@ -110,7 +110,7 @@ fn plan_version_opens_owner_manifest_once_regardless_of_platform_sibling_count()
     // Fixture-inject the second (darwin) platform sibling -- walk.rs's Case D
     // registration groups strictly by directory, so a second platform
     // manifest under the same owner can't be disk-discovered (a directory
-    // holds at most one package.json); see AC-007's doc comment in
+    // holds at most one package.json); see the grammar-mismatch test's doc comment in
     // commands/version.rs for the full explanation.
     let owner = PackageId::Bare("hybrid".to_string());
     let group_name = GroupName("hybrid-group".to_string());

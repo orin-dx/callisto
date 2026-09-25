@@ -45,7 +45,7 @@ pub fn render_status<W: io::Write>(report: &StatusReport, use_color: bool, w: &m
             )?;
         }
     }
-    // SPEC-DX-STATUS-ADD AC-04: `status --check`'s exit code no longer signals
+    // `status --check`'s exit code no longer signals
     // pending state (0/1 gate on errors only), so the summary line and the
     // JSON `pending` count are how a reader sees it now.
     writeln!(w, "{} package(s) pending", report.pending)?;
@@ -82,8 +82,7 @@ fn render_status_table<W: io::Write>(report: &StatusReport, w: &mut W) -> io::Re
     writeln!(w, "{table}")
 }
 
-/// `cfg` is the resolved config that produced `report`: §13 invariant 28
-/// requires the attribution line ("governed by ...") beneath any bump or
+/// `cfg` is the resolved config that produced `report`: callisto prints the attribution line ("governed by ...") beneath any bump or
 /// diagnostic whose default could defensibly have gone the other way, and
 /// only the caller's already-resolved config has the value and provenance
 /// that line needs (`callisto-graph` deliberately carries only the `ConfigKey`
@@ -236,7 +235,7 @@ mod tests {
     }
 
     // QW-9: render_publish with empty plan should say "nothing to publish".
-    /// AC-008: text-format output for a report with at least one platform
+    /// Text-format output for a report with at least one platform
     /// target and one runtime-version entry must be non-empty and must not
     /// parse as JSON.
     #[test]
@@ -302,7 +301,7 @@ mod tests {
         );
     }
 
-    /// AC-011: render_matrix must surface a diagnostic's triple/message in
+    /// Render_matrix must surface a diagnostic's triple/message in
     /// the human-readable table output, not just its presence.
     #[test]
     fn render_matrix_renders_diagnostics_for_unrecognised_triple() {
@@ -418,7 +417,7 @@ mod tests {
         assert!(render(report(false)).starts_with("[DRY-RUN]"));
     }
 
-    /// §13 invariant 28 / §CLI.5.2: `render_version` must call
+    /// `render_version` must call
     /// `render::attribution` for every bump and diagnostic that carries a
     /// `governed_by`, and must stay silent for the ones that don't.
     #[test]
@@ -479,7 +478,7 @@ mod tests {
         );
     }
 
-    /// AC-04: `use_color: true` renders `status` with box-drawing table characters.
+    /// `use_color: true` renders `status` with box-drawing table characters.
     #[test]
     fn render_status_with_color_renders_box_drawing_table() {
         let report = StatusReport {
@@ -496,7 +495,7 @@ mod tests {
         assert!(text.contains("crate-a") && text.contains("minor"), "got:\n{text}");
     }
 
-    /// AC-05: `use_color: false` never emits box-drawing characters, regardless of report content.
+    /// `use_color: false` never emits box-drawing characters, regardless of report content.
     #[test]
     fn render_status_without_color_has_no_box_drawing_chars() {
         let report = StatusReport {
@@ -515,7 +514,7 @@ mod tests {
         );
     }
 
-    /// AC-06: no text-format renderer emits `schema v\d+` (that's `callisto schema`'s exemption alone).
+    /// No text-format renderer emits `schema v\d+` (that's `callisto schema`'s exemption alone).
     #[test]
     fn no_renderer_emits_schema_version_text() {
         let schema_v_regex = |text: &str| {

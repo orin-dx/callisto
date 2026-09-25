@@ -443,9 +443,9 @@ mod tests {
         }
     }
 
-    /// AC-7: a changelog section is passed as `--notes-file`, never with `--generate-notes`.
+    /// A changelog section is passed as `--notes-file`, never with `--generate-notes`.
     #[test]
-    fn ac7_changelog_section_is_passed_as_a_notes_file() {
+    fn changelog_section_is_passed_as_a_notes_file() {
         let operation = forge_operation_with(ReleaseNotes::Section("- fix".to_owned()));
         let args = release_create_args(&operation, "example/core", Some("/tmp/notes.md"));
         assert!(
@@ -455,9 +455,9 @@ mod tests {
         assert!(!args.contains(&"--generate-notes"), "{args:?}");
     }
 
-    /// AC-8/AC-9: without a usable section the release falls back to generated notes and says why.
+    /// Without a usable section the release falls back to generated notes and says why.
     #[test]
-    fn ac8_ac9_generated_notes_fallback_names_the_package_and_reason() {
+    fn generated_notes_fallback_names_the_package_and_reason() {
         let operation = forge_operation_with(ReleaseNotes::Generated {
             reason: NotesFallback::SectionMissing,
         });

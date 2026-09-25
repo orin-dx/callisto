@@ -83,7 +83,7 @@ Only consulted when Step 1 produced `None`: the first `[[package-set]]` pattern,
 3. `[[package-set]]` with matching glob (e.g. `match = "foo-*"`)
 4. Manifest-inferred defaults (publish_to from the manifest itself, Changeset trigger, etc.)
 
-## Cross-Ecosystem Diagnostic (Track E Fix 2)
+## Cross-Ecosystem Diagnostic
 
 After the packages loop in `ManifestWalkResolver::build`:
 

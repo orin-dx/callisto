@@ -32,7 +32,7 @@ type PendingChangesets = BTreeMap<PackageId, (Vec<String>, Option<Severity>)>;
 /// `cargo/foo` and `npm/foo`) is never silently attached to every matching
 /// package. An unknown or ambiguous entry is skipped here rather than
 /// hard-erroring: `changeset_wellformedness_diagnostics` reports both cases
-/// as an Error-severity diagnostic instead (SPEC-DX-STATUS-ADD AC-03).
+/// as an Error-severity diagnostic instead.
 fn resolve_pending_changesets<'a>(
     packages: impl Iterator<Item = &'a Package> + Clone,
     loaded_changesets: &[LoadedChangeset],
@@ -76,7 +76,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
     let all_packages: Vec<&Package> = ws.graph.packages().collect();
     let pending = resolve_pending_changesets(all_packages.iter().copied(), &loaded_changesets);
 
-    // AC-01 (SPEC-DX-STATUS-ADD): pending severity is `plan_version`'s own
+    // Pending severity is `plan_version`'s own
     // `PlannedBump.severity` per package -- the same cascade/fixed/linked-group
     // computation `callisto version` uses. status computes no cascade of its
     // own; it only reads the plan `plan_version` already derives.
@@ -84,7 +84,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
         strict: opts.strict,
         allow_empty_changesets: true,
     };
-    // AC-03: an ambiguous changeset entry makes `plan_version` (via `aggregate`)
+    // An ambiguous changeset entry makes `plan_version` (via `aggregate`)
     // hard-error -- the right behavior for a real `version`/`release` run, but
     // `status` must survive it and report `AmbiguousPackageName` below instead.
     // Severity planning is skipped for this run rather than duplicating
@@ -129,7 +129,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
     }
 
     let mut diagnostics = ws.graph.diagnostics().to_vec();
-    // AC-03: fold in every well-formedness diagnostic `validate` used to
+    // Fold in every well-formedness diagnostic `validate` used to
     // report (EmptyChangeset, EmptySummary, UnknownPackage,
     // AmbiguousPackageName, InvalidPackageName) now that `validate` is gone.
     diagnostics.extend(changeset_wellformedness_diagnostics(
@@ -139,7 +139,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
     escalate(&mut diagnostics, opts.strict);
 
     let has_changesets = packages.iter().any(|p| !p.pending_changesets.is_empty());
-    // AC-04: count of packages with a planned bump, post-cascade/fixed/linked-group --
+    // Count of packages with a planned bump, post-cascade/fixed/linked-group --
     // the field a script now reads to detect pending changesets, since `--check`'s
     // exit code no longer signals it.
     let pending = packages.iter().filter(|p| p.pending_severity.is_some()).count() as u32;
@@ -154,8 +154,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
 }
 
 /// The per-changeset well-formedness diagnostics `validate` used to emit
-/// (crates/callisto-graph/src/commands/validate.rs, now removed -- SPEC-DX-STATUS-ADD
-/// AC-03), ported verbatim: entries/summary shape and package-name resolution,
+/// (crates/callisto-graph/src/commands/validate.rs, now removed), ported verbatim: entries/summary shape and package-name resolution,
 /// all at Error severity. Uses the same `resolve_unique` primitive
 /// `resolve_pending_changesets` does, but this scan must never abort early,
 /// so an unknown or ambiguous entry becomes a diagnostic instead of an
@@ -301,7 +300,7 @@ mod tests {
         }
     }
 
-    /// Spec (SPEC-DX-STATUS-ADD AC-03): a bare changeset entry name that
+    /// A bare changeset entry name that
     /// exists in two or more ecosystems (e.g. `cargo/foo` and `npm/foo`)
     /// must not attach the changeset to either package, ambiguously or
     /// otherwise, and must not hard-error `status` either --

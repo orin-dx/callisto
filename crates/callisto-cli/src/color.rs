@@ -43,28 +43,28 @@ mod tests {
         pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
     }
 
-    /// AC-05: `NO_COLOR` set to a non-empty value always disables color, regardless of the force vars.
+    /// `NO_COLOR` set to a non-empty value always disables color, regardless of the force vars.
     #[test]
     fn no_color_non_empty_wins_over_force_vars() {
         let env = vars(&[("NO_COLOR", "1"), ("CLICOLOR_FORCE", "1"), ("FORCE_COLOR", "1")]);
         assert_eq!(resolve_with(&|k| env.get(k).cloned()), ColorChoice::Never);
     }
 
-    /// AC-04: `NO_COLOR` set but empty does not disable color; `CLICOLOR_FORCE` forces it on.
+    /// `NO_COLOR` set but empty does not disable color; `CLICOLOR_FORCE` forces it on.
     #[test]
     fn no_color_empty_does_not_suppress_clicolor_force() {
         let env = vars(&[("NO_COLOR", ""), ("CLICOLOR_FORCE", "1")]);
         assert_eq!(resolve_with(&|k| env.get(k).cloned()), ColorChoice::Always);
     }
 
-    /// AC-04: `CLICOLOR_FORCE` alone forces color on.
+    /// `CLICOLOR_FORCE` alone forces color on.
     #[test]
     fn clicolor_force_forces_color_on() {
         let env = vars(&[("CLICOLOR_FORCE", "1")]);
         assert_eq!(resolve_with(&|k| env.get(k).cloned()), ColorChoice::Always);
     }
 
-    /// AC-04: `FORCE_COLOR` alone forces color on -- anstream's own auto-detection
+    /// `FORCE_COLOR` alone forces color on -- anstream's own auto-detection
     /// doesn't see this variable, which is exactly the blind spot this module exists to close.
     #[test]
     fn force_color_forces_color_on() {
@@ -72,7 +72,7 @@ mod tests {
         assert_eq!(resolve_with(&|k| env.get(k).cloned()), ColorChoice::Always);
     }
 
-    /// AC-05: neither `NO_COLOR` nor a force var set falls back to anstream's own
+    /// Neither `NO_COLOR` nor a force var set falls back to anstream's own
     /// auto-detection, which always resolves to a concrete Always/Never, never Auto.
     #[test]
     fn no_env_signal_falls_back_to_concrete_auto_detection() {

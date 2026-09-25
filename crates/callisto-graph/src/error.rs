@@ -787,7 +787,7 @@ mod tests {
         );
     }
 
-    /// AC-017 (message shape): ConflictingPlatformTargetSources must name the
+    /// ConflictingPlatformTargetSources must name the
     /// package and both source field names in its Display text, and carry
     /// diagnostic code E118 with help text pointing at the fix.
     #[test]

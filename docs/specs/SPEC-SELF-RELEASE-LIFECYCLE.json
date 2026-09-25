@@ -69,7 +69,6 @@
       "criterion": "Documentation, CLI help, configuration examples, tests, and workflow behavior describe the same release lifecycle; obsolete preview-only release paths are removed rather than retained as a second implementation."
     }
   ],
-  "linked_requirement": "RELEASE-SELF-HOSTING-INCIDENT-2026-09-16",
   "spec_file_path": "docs/specs/SPEC-SELF-RELEASE-LIFECYCLE.json",
   "reasoning": "Grounded in the owner-authoritative incident report and live source inspection on 2026-09-17. The owner explicitly rejected AWS and another distribution service for rehearsal, so external staging registry selection is deferred rather than fabricated."
 }
