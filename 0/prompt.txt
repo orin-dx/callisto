@@ -1,0 +1,1 @@
+Yes, we had talked about making product tags. Cargo should not be running slow, you need to figure out why. It should take minutes, not hours. WTF. Don't overrun, don't run too much in parallel because of contention. Figure the fuck out vs assuming that is normal.
