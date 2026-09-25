@@ -1,0 +1,1 @@
+It definitely should not take hours to build and test. Maybe we do that in the end to avoid issues?
