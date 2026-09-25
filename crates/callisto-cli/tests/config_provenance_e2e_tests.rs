@@ -112,3 +112,59 @@ fn version_dry_run_text_output_shows_cascade_attribution_for_a_real_dependency_g
         "the cascade-driven bump must print its ConfigProvenance attribution line in real CLI text output: {plan_text}"
     );
 }
+
+/// `callisto version --dry-run` in text format must print both the
+/// `[DRY-RUN]` marker line `handle` writes itself and the `render_version`
+/// plan body (the "Version Plan:" header and each package's `from → to`
+/// line) -- the two pieces of text a dry-run's whole value proposition
+/// depends on, from the real binary's stdout.
+#[test]
+fn version_dry_run_text_output_prints_dry_run_header_and_plan_body() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git_init(root);
+
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/solo-crate\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("callisto.toml"), "").unwrap();
+
+    std::fs::create_dir_all(root.join("crates/solo-crate/src")).unwrap();
+    std::fs::write(
+        root.join("crates/solo-crate/Cargo.toml"),
+        "[package]\nname = \"solo-crate\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("crates/solo-crate/src/lib.rs"), "pub fn hi() {}\n").unwrap();
+
+    git_commit_all(root, "Initial commit");
+
+    let add_out = run_callisto_text(
+        root,
+        &["add", "--package", "solo-crate:minor", "--summary", "a new feature"],
+    );
+    assert!(add_out.contains("Added changeset"), "add did not succeed: {add_out}");
+
+    let plan_text = run_callisto_text(root, &["version", "--dry-run"]);
+
+    assert!(
+        plan_text.contains("[DRY-RUN] Version Plan Calculated (no files modified):"),
+        "dry-run must print the [DRY-RUN] marker line before the plan body: {plan_text}"
+    );
+    assert!(
+        plan_text.contains("Version Plan:"),
+        "dry-run must print render_version's \"Version Plan:\" header: {plan_text}"
+    );
+    assert!(
+        plan_text.contains("solo-crate 1.0.0 → 1.1.0"),
+        "dry-run must print the package's bump line with its from and to versions: {plan_text}"
+    );
+
+    let manifest_after = std::fs::read_to_string(root.join("crates/solo-crate/Cargo.toml")).unwrap();
+    assert!(
+        manifest_after.contains("version = \"1.0.0\""),
+        "dry-run must not write the bumped version to disk: {manifest_after}"
+    );
+}
