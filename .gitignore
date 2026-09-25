@@ -29,3 +29,4 @@ mutants.out/
 .codex/
 .gemini/skills/entire-search/
 .opencode/
+*.profraw

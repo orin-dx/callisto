@@ -112,6 +112,5 @@
     }
   ],
   "linked_requirement": "REQ-TRACK4-RELEASE-PIPELINE-CONTRACT-CORRECTNESS",
-  "status": "current",
-  "revision_note": "2026-09-24 drift pass: added status: current; superseded AC-01/02/04 (HAS_CHANGESETS step removed #39), AC-05 (superseded by SPEC-DX-STATUS-ADD AC-04), AC-06/06b/06c/06d/07/08 (callisto tag removed), AC-10/10b/11/12/12c (plan_publish removed; release notes now via notes.rs NotesFallback). AC-13 unchanged."
+  "status": "current"
 }

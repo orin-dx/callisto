@@ -71,6 +71,5 @@
   ],
   "linked_requirement": "RELEASE-SELF-HOSTING-INCIDENT-2026-09-16",
   "spec_file_path": "docs/specs/SPEC-SELF-RELEASE-LIFECYCLE.json",
-  "revision_note": "2026-09-24 drift pass: added status: current; rewrote SRL-02 (no profile field), SRL-06 (cargo info/PEP 691 simple index, not sparse index/JSON API), SRL-07 (yanked reads Absent, not Conflict), SRL-11 (profiles removed, forge-repository is sole destination), SRL-12 (credential/secret scope moved to policy guards), SRL-13 (external branch-protection setting). Prior: revised for PR #124: every run adopts already-landed effects, execution state is in memory only, and the receipt is built from recorded state evidence.",
   "reasoning": "Grounded in the owner-authoritative incident report and live source inspection on 2026-09-17. The owner explicitly rejected AWS and another distribution service for rehearsal, so external staging registry selection is deferred rather than fabricated."
 }

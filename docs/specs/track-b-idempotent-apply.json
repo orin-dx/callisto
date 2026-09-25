@@ -73,6 +73,5 @@
       "In the VersionWriteTarget::Manifest arm of the write loop: read the current version via handle.version() after opening the manifest. If current == bump.to (PartialEq), skip write_version and push p to modified_paths. If current == bump.from, call write_version(&bump.to, permit)? and push p to modified_paths. Otherwise return Err(GraphError::UnexpectedManifestVersion { path: p.clone(), expected_from: bump.from.clone(), expected_to: bump.to.clone(), found: current }) immediately. GraphError::UnexpectedManifestVersion is an existing variant (E117 in error.rs) — do not create a new one. All propagation uses the existing ? operator; no new From impls or map_err calls.",
       "In the consumed_changesets loop: move modified_paths.push(cs_path.clone()) outside the if full.exists() block so it executes unconditionally after the delete attempt. Keep the if full.exists() guard around fs::remove_file only. The ? on fs::remove_file remains — permission errors and other IO failures still propagate and abort the loop before the push."
     ]
-  },
-  "revision_note": "2026-09-24 drift pass: added status: current (no criteria changes)."
+  }
 }

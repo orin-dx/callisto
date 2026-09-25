@@ -63,6 +63,5 @@
     "Use BTreeMap/BTreeSet and explicit Ord implementations for durable and scheduling order. Do not use PackageId::matches for release-operation identity: it intentionally supports a bare-name wildcard and is not an exact authorization predicate.",
     "Workspace currently contains interior caches. Fresh authorization should construct or invalidate an observation boundary rather than claiming a pre-existing cached graph is current."
   ],
-  "reasoning": "The durable intent records what was approved. It is intentionally not sufficient to perform effects: filesystem locations, endpoints, and clients are mutable operational inputs. A graph-private, freshly observed capability bridges that gap without serializing secrets or allowing an old plan path to regain authority.",
-  "revision_note": "Revised for PR #124: every run adopts already-landed effects, execution state is in memory only, and the receipt is built from recorded state evidence."
+  "reasoning": "The durable intent records what was approved. It is intentionally not sufficient to perform effects: filesystem locations, endpoints, and clients are mutable operational inputs. A graph-private, freshly observed capability bridges that gap without serializing secrets or allowing an old plan path to regain authority."
 }

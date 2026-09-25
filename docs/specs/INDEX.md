@@ -1,12 +1,10 @@
 # Specification Authority
 
-Current `SPEC-*` artifacts in this directory are Callisto's top-level normative requirements. A `current` specification describes shipped behavior; a `draft` specification is a reviewable contract, not an implementation instruction. A `superseded` or `abandoned` specification is history only; `superseded_by` names its replacement.
+Current `SPEC-*` artifacts in this directory are Callisto's top-level normative requirements. A `current` specification describes shipped behavior; a `draft` specification is a reviewable contract, not an implementation instruction.
 
-`docs/01-spec.md` is normative only where it explicitly identifies a requirement. `docs/00-design.md` explains rationale. Files in `.claude/semantic-model/` describe verified current implementation. Files in `docs/projects/` describe intended work and status. Handoffs are historical context. Neither plans nor handoffs override a current specification.
+Files in `.claude/semantic-model/` describe verified current implementation. Files in `docs/projects/` describe open work; a plan never overrides a current specification. Only current behaviour and open work are documented: Git history is the record of superseded specs, finished plans and past decisions.
 
-When sources conflict, first reproduce the behavior against the revision named by the current-description material. Correct the specification when the intended contract has changed; otherwise correct the implementation or the current-description material. Do not preserve known contradictions merely to retain a narrative: Git history remains the record of prior decisions.
-
-Legacy `linked_requirement: REQ-*` references have no backing requirement files. New specifications must not add them.
+When sources conflict, first reproduce the behavior against the revision named by the current-description material. Correct the specification when the intended contract has changed; otherwise correct the implementation or the current-description material.
 
 ## Current
 
@@ -60,22 +58,3 @@ Matrix and publish preview:
 ## Draft (not built)
 
 - `SPEC-ARCH-ERROR-SOURCE-PRESERVATION-GATE` - error-source preservation check; the gate script and CI wiring do not exist.
-
-## Superseded
-
-- `callisto-matrix.md` - by `SPEC-004`; its .NET, Java and build-action sections were never built.
-- `SPEC-RELEASE-EXECUTION-FOUNDATION-007` - by `SPEC-SELF-RELEASE-LIFECYCLE`.
-- `SPEC-RELEASE-EXECUTION-012` - by `SPEC-RELEASE-LIFECYCLE-HARDENING`.
-- `SPEC-RELEASE-INTERFACES-013` - by `SPEC-RELEASE-LIFECYCLE-HARDENING`.
-- `SPEC-RELEASE-PLAN-DURABILITY-001A` - by `SPEC-RELEASE-INTENT-MODEL-009`.
-- `SPEC-RELEASE-PLAN-DURABILITY-001B` - by `SPEC-RELEASE-LIFECYCLE-HARDENING`.
-- `SPEC-RELEASE-PLAN-DURABILITY-001C` - by `SPEC-RELEASE-LIFECYCLE-HARDENING`.
-- `SPEC-RELEASE-SOURCE-PROVENANCE-002` - by 008, 009, 010 and `SPEC-RELEASE-LIFECYCLE-HARDENING`.
-- `SPEC-GITHUB-RELEASE-HARDENING-003` - by `SPEC-RELEASE-LIFECYCLE-HARDENING`.
-
-## Abandoned
-
-- `SPEC-SUPPLY-CHAIN-REPRODUCIBILITY-004` - never built.
-- `SPEC-DOCUMENTATION-AUTHORITY-005` - only this index shipped.
-- `SPEC-RELEASE-LANE-POLICY-006` - never built.
-- `SPEC-006` (`SPEC-006-native-artifact-placement.json`) - action placement removed in #39, no replacement.

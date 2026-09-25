@@ -46,6 +46,5 @@
     { "id": "AC-015", "criterion": "[SUPERSEDED 2026-09-24: `plan-publish` removed (bccec34ac), replaced by `callisto release`; is_prerelease now flows through crates/callisto-graph/src/commands/release/derive.rs:424 and provider/forge.rs:106-107] For a release entry processed by .github/actions/callisto-action/action.yml's GitHub Release creation loop whose `isPrerelease` key is absent, `null`, or of any JSON type other than boolean (e.g. a stale cached plan, a hand-edited fixture, or a plan produced by a pre-this-change callisto binary), the step fails with a non-zero exit code and an error message naming the offending tag, before any `gh release create` call is made for that entry -- it is never silently treated as `isPrerelease: false`. Presence and type are tested explicitly (e.g. `jq -e 'has(\"isPrerelease\") and (.isPrerelease|type==\"boolean\")'`); the `//` alternative operator must not be used to read this field, since `false // empty` yields empty and would make a legitimate `false` indistinguishable from a missing key.", "is_error_case": true }
   ],
   "linked_requirement": "REQ-008",
-  "status": "current",
-  "revision_note": "2026-09-24 drift pass: added status: current; superseded AC-002/003/004/005/006/007/009/010/012a/013/015 (plan-publish removed, bccec34ac; is_prerelease now flows through the release provider). AC-001/008/011/012b/012c/014 unchanged."
+  "status": "current"
 }

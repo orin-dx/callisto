@@ -72,6 +72,5 @@
     "Use BTree collections or defined sorted vectors for durable ordering. If existing enum Ord conflicts with its canonical serialized identity, implement a dedicated canonical sort key; do not rely on declaration order.",
     "Use miette for transient diagnostics and closed safe data structures for persistence. Do not persist miette reports or arbitrary provider errors.",
     "The successor graph-capability spec will construct an opaque non-Serialize/non-Clone ValidatedReleaseIntent from this durable intent, freshly re-observed workspace state, Git evidence, and operation-specific private prepared inputs."
-  ],
-  "revision_note": "2026-09-24 drift pass: rewrote AC-001 (committed, diff-verified decision file is the CI authority) and AC-005 (ReleaseOperationRole's derived Ord is the canonical tie-break order). AC-002/AC-007 left as-is (code looks wrong / uncovered, see drift report). Prior: revised for PR #124: every run adopts already-landed effects, execution state is in memory only, and the receipt is built from recorded state evidence."
+  ]
 }

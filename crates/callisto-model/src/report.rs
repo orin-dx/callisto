@@ -372,7 +372,7 @@ mod status_report_tests {
         }
     }
 
-    /// docs/01-spec.md §M.12.4: `StatusReport.hasChangesets` is mandatory —
+    /// `StatusReport.hasChangesets` is mandatory —
     /// §12.5 mandates it and §12.2 branch 3 gates the Action's mode dispatch
     /// on it — so it must always be present in the serialized JSON, never
     /// omitted regardless of its value.
@@ -412,7 +412,7 @@ mod status_report_tests {
         );
     }
 
-    /// docs/01-spec.md §M.12.4: `StatusEntry.changedSinceLastTag` is
+    /// `StatusEntry.changedSinceLastTag` is
     /// mandatory and computed from v0.1 — it must always be serialized,
     /// including when `false`, not omitted via skip_serializing_if.
     #[test]
@@ -426,7 +426,7 @@ mod status_report_tests {
         );
     }
 
-    /// docs/01-spec.md §M.12.4: `StatusEntry` carries `lastReleasedVersion`
+    /// `StatusEntry` carries `lastReleasedVersion`
     /// and `releaseTrigger` fields alongside the other five.
     #[test]
     fn status_package_record_carries_last_released_version_and_release_trigger() {
@@ -476,10 +476,10 @@ impl Report for SnapshotReport {
 #[serde(rename_all = "camelCase")]
 pub struct ComposePrBodyReport {
     pub schema_version: u32,
-    /// docs/01-spec.md §M.12.5: the composed PR body. Wire key is `body`
+    /// The composed PR body. Wire key is `body`
     /// (not `prBody`).
     ///
-    /// NOTE: docs/01-spec.md §M.12.5 also documents a `metadata:
+    /// NOTE: the original spec also documented a `metadata:
     /// PrBodyMetadata` field. It is intentionally not present on this
     /// struct yet -- see the `compose_pr_body_report_json_uses_body_key_not_pr_body`
     /// test doc comment for why.
@@ -505,7 +505,7 @@ impl Report for ComposePrBodyReport {
 mod compose_pr_body_report_tests {
     use super::*;
 
-    /// docs/01-spec.md §M.12.5: `ComposePrBodyReport`'s composed-body field is
+    /// `ComposePrBodyReport`'s composed-body field is
     /// documented as `body`, serialized camelCase as `"body"` -- not `"prBody"`.
     ///
     /// NOTE: intentionally doesn't assert a `metadata` key. §M.12.5 also
@@ -566,7 +566,7 @@ impl Report for ValidateReport {
 mod validate_report_tests {
     use super::*;
 
-    /// docs/01-spec.md §M.12.6: `ValidateReport`'s boolean field is documented
+    /// `ValidateReport`'s boolean field is documented
     /// as `ok`, serialized camelCase as `"ok"` -- not `"valid"`.
     #[test]
     fn validate_report_json_uses_ok_key_not_valid() {
@@ -586,7 +586,7 @@ mod validate_report_tests {
         );
     }
 
-    /// docs/01-spec.md §M.12.6: "Mandatory here, unlike every other report --
+    /// "Mandatory here, unlike every other report --
     /// validate's entire payload *is* its diagnostics, so an absent key would
     /// leave the command with nothing to say." `diagnostics` must always be
     /// serialized, even when empty, unlike every other report's diagnostics
@@ -637,8 +637,7 @@ pub struct CreatedTag {
     pub sha: CommitSha,
     /// `true` when the tag already existed at this sha and was left alone --
     /// P3's idempotence made observable rather than assumed. An existing tag
-    /// at a *different* sha is an error diagnostic, not a silent overwrite
-    /// (docs/01-spec.md §M.12.6).
+    /// at a *different* sha is an error diagnostic, not a silent overwrite.
     pub already_existed: bool,
     /// `true` for a floating major-version alias (e.g. `v1`), which is
     /// intentionally force-moved to point at each new release; `false` for
@@ -666,7 +665,7 @@ mod tag_report_tests {
         PackageId::parse("pkg-a").unwrap()
     }
 
-    /// docs/01-spec.md §M.12.6: `TagReport`'s array field is documented as
+    /// `TagReport`'s array field is documented as
     /// `tags: Vec<CreatedTag>`, serialized camelCase as `"tags"` -- not
     /// `"createdTags"`.
     #[test]
@@ -693,7 +692,7 @@ mod tag_report_tests {
         );
     }
 
-    /// docs/01-spec.md §M.12.6: `CreatedTag::already_existed` is `true` when
+    /// `CreatedTag::already_existed` is `true` when
     /// the tag already existed at this sha and was left alone (P3's
     /// idempotence made observable). Serialized camelCase as
     /// `"alreadyExisted"`.

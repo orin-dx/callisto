@@ -63,6 +63,5 @@
     "Reuse the existing group, cascade, prerelease, PackageId, Version, and graph structures where their semantics match; introduce a new typed result rather than extending PublishPlan into authority.",
     "Use BTreeMap/BTreeSet or explicitly sorted Vec values at durable boundaries. Do not add Rayon or Tokio: deriving one release decision is policy-sensitive and its deterministic evidence matters more than parallel traversal.",
     "The next spec, SPEC-RELEASE-INTENT-MODEL-009, consumes this result. Git trust, locks, prepared effect inputs, and actual effect dispatch are later dependent specs."
-  ],
-  "revision_note": "2026-09-24 drift pass: rewrote AC-001 (empty selection means all-unreleased locally; CI trusts the committed decision, diff-verified), AC-002 in part (linked-group expansion is scoped to plan members; the overlapping-groups diagnostic gap is unresolved, see drift report), AC-005 (accepts ReleaseInclusionReason's derived Ord as the canonical within-entry order), AC-006 in part (fail-fast rejection is the current behavior; per-package explanations and a closed edge_kind enum are unresolved, see drift report). AC-003/AC-004 left as-is (code looks wrong, see drift report)."
+  ]
 }
