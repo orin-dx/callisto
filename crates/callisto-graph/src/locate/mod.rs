@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use callisto_model::{DeclaredEdge, ProjectRoot};
+use callisto_model::ProjectRoot;
 
 pub mod ignore_walk;
 mod membership;
@@ -15,9 +15,6 @@ pub trait ProjectLocator: Send + Sync {
     /// workspace's membership: candidates for §M.6.1 Case E attachment only.
     fn projects_and_platform_candidates(&self) -> Result<(Vec<ProjectRoot>, Vec<ProjectRoot>), LocateError> {
         Ok((self.projects()?, Vec::new()))
-    }
-    fn declared_edges(&self) -> Option<Vec<DeclaredEdge>> {
-        None
     }
 }
 
@@ -58,15 +55,6 @@ pub enum LocateError {
     #[error("VCS error during workspace location: {0}")]
     #[diagnostic(code(E033))]
     Vcs(Box<callisto_vcs::VcsError>),
-
-    #[error("moon CLI is unavailable or exited non-zero")]
-    MoonUnavailable,
-
-    #[error("Failed to parse moon project-graph output: {message}")]
-    MoonOutputParse { message: String },
-
-    #[error("Incompatible moon version found: {found}, required: {required}")]
-    IncompatibleMoonVersion { found: String, required: String },
 
     #[error(transparent)]
     Graph(#[from] Box<crate::error::GraphError>),

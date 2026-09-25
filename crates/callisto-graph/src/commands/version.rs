@@ -17,7 +17,6 @@ use crate::Workspace;
 #[derive(Clone, Debug, Default)]
 pub struct VersionOptions {
     pub strict: bool,
-    pub strict_graph: bool,
     pub allow_empty_changesets: bool,
 }
 
@@ -247,7 +246,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         });
     }
 
-    escalate(&mut diagnostics, opts.strict, opts.strict_graph);
+    escalate(&mut diagnostics, opts.strict);
 
     let (pre_state_update, delete_pre_json) = if let Some(mut state) = pre_state {
         if state.mode == callisto_format::PreMode::Exit {
@@ -470,7 +469,6 @@ mod tests {
         let inference = NoInference;
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 
@@ -522,7 +520,6 @@ mod tests {
         let inference = NoInference;
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 
@@ -570,7 +567,6 @@ mod tests {
         let inference = NoInference;
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 
@@ -625,7 +621,6 @@ mod tests {
         let inference = NoInference;
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 
@@ -672,7 +667,6 @@ mod tests {
         let inference = NoInference;
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 
@@ -741,7 +735,6 @@ mod tests {
         let inference = NoInference;
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 
@@ -807,7 +800,6 @@ mod tests {
         let inference = NoInference;
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 
@@ -863,7 +855,6 @@ mod tests {
         let inference = NoInference;
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 
@@ -969,7 +960,6 @@ mod tests {
         let inference = NoInference;
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 
@@ -1089,7 +1079,6 @@ mod tests {
         let inference = NoInference;
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 
@@ -1209,7 +1198,6 @@ mod tests {
         let inference = NoInference;
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 
@@ -1293,7 +1281,6 @@ mod tests {
         let inference = NoInference;
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 
@@ -1353,7 +1340,6 @@ mod tests {
         let inference = NoInference;
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 
@@ -1409,7 +1395,6 @@ mod tests {
         let inference = NoInference;
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 
@@ -1480,7 +1465,6 @@ mod tests {
         let inference = NoInference;
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 
@@ -1553,7 +1537,6 @@ mod tests {
         let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 
@@ -1614,7 +1597,6 @@ mod tests {
         let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 
@@ -1681,7 +1663,6 @@ mod tests {
         let inference = crate::infer::NoInference;
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 
@@ -1751,7 +1732,6 @@ mod tests {
         let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 
@@ -1816,7 +1796,6 @@ mod tests {
         let inference = crate::infer::NoInference;
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 
@@ -1901,7 +1880,6 @@ mod tests {
         let inference = NoInference;
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 
@@ -1994,7 +1972,6 @@ mod tests {
         let inference = crate::infer::NoInference;
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 

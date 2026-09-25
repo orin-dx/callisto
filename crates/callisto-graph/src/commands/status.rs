@@ -17,7 +17,6 @@ use crate::Workspace;
 #[derive(Clone, Debug, Default)]
 pub struct StatusOptions {
     pub strict: bool,
-    pub strict_graph: bool,
 }
 
 /// Per-package accumulator: pending changeset names and their max severity.
@@ -80,7 +79,6 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
     // own; it only reads the plan `plan_version` already derives.
     let version_opts = VersionOptions {
         strict: opts.strict,
-        strict_graph: opts.strict_graph,
         allow_empty_changesets: true,
     };
     let plan = plan_version(ws, inference, &version_opts)?;
@@ -127,7 +125,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
         all_packages.iter().copied(),
         &loaded_changesets,
     ));
-    escalate(&mut diagnostics, opts.strict, opts.strict_graph);
+    escalate(&mut diagnostics, opts.strict);
 
     let has_changesets = packages.iter().any(|p| !p.pending_changesets.is_empty());
     // AC-04: count of packages with a planned bump, post-cascade/fixed/linked-group --

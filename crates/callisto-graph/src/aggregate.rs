@@ -114,7 +114,7 @@ pub fn apply_pre_major(
 ///
 /// Thin wrapper around [`GitDataSource::resolve_commit`] (native gix,
 /// falling back to a `CommandRunner`-shelled `git rev-parse` when gix is
-/// unavailable -- most notably on `wasm32`): any failure to resolve the tag
+/// unavailable): any failure to resolve the tag
 /// (missing, unborn repo, etc.) degrades gracefully to `None`, which
 /// callers treat as "infer over full history" -- the same behavior this
 /// function has always had, now delegated to [`GitAccess`] instead of
@@ -563,10 +563,8 @@ mod tests {
     }
 
     /// A directory that is guaranteed not to sit inside any Git repository,
-    /// so `callisto_vcs::GitRepository::discover` fails exactly the way it
-    /// unconditionally does on `wasm32` -- the native-testable stand-in for
-    /// "gix is unavailable" used to force `resolve_since` through its
-    /// `CommandRunner` fallback. Mirrors `tags.rs`'s helper of the same
+    /// so `callisto_vcs::GitRepository::discover` fails, forcing
+    /// `resolve_since` through its `CommandRunner` fallback. Mirrors `tags.rs`'s helper of the same
     /// name.
     fn non_repo_dir() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
@@ -580,8 +578,7 @@ mod tests {
     /// A `CommandRunner` double that answers `git rev-parse --verify --quiet
     /// <tag>^{commit}` with a canned SHA and counts invocations. Stands in
     /// for the real `git` binary on the `resolve_since` fallback path,
-    /// exercised when gix is unavailable (`repo: None`, as is permanently
-    /// the case on `wasm32`).
+    /// exercised when gix is unavailable.
     struct FakeRevParseRunner {
         calls: AtomicUsize,
         tag: String,

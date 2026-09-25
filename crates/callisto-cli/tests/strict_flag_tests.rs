@@ -1,17 +1,10 @@
 /// Tests for the `--strict` flag on `callisto snapshot`.
 ///
 /// The command must abort with a `CliError` when `--strict` is passed and
-/// the workspace graph contains crosscheck failures (diagnostics whose
-/// `escalated_by` field is `StrictFlag::Strict` or `StrictFlag::StrictGraph`,
-/// promoted to `DiagnosticSeverity::Error` under strict mode).
-///
-/// Because creating a real crosscheck failure requires moon-declared edges that
-/// disagree with manifest edges (a moon-specific infra concern), these tests
-/// use a simpler strategy: verify that `--strict` with a *clean* graph does not
-/// abort (exit code 0), and that a `Diagnostic` with `Error` severity produced
-/// by a mocked graph triggers the abort path.  The graph-level crosscheck unit
-/// tests in `callisto-graph/src/crosscheck.rs` already prove the diagnostic
-/// production logic; these tests prove the CLI abort-on-error contract.
+/// the workspace graph contains diagnostics escalated to
+/// `DiagnosticSeverity::Error` under strict mode. The escalation unit tests in
+/// `callisto-cli/src/commands/mod.rs` prove the abort path; these tests prove a
+/// clean graph does not abort.
 ///
 use std::fs;
 use std::process::ExitCode;
@@ -119,7 +112,6 @@ fn test_version_strict_no_changesets_exits_nonzero() {
 
     let args = VersionArgs {
         strict: true,
-        strict_graph: false,
         allow_empty_changesets: false,
         refresh_lockfiles: false,
         emit_decision: None,
@@ -147,7 +139,6 @@ fn test_version_no_strict_no_changesets_succeeds() {
 
     let args = VersionArgs {
         strict: false,
-        strict_graph: false,
         allow_empty_changesets: false,
         refresh_lockfiles: false,
         emit_decision: None,
@@ -170,7 +161,7 @@ fn test_version_no_strict_no_changesets_succeeds() {
 // Snapshot --strict tests
 // ---------------------------------------------------------------------------
 
-/// `callisto snapshot --strict` on a workspace with no crosscheck failures
+/// `callisto snapshot --strict` on a workspace with no error diagnostics
 /// must succeed (return Ok with ExitCode::SUCCESS).
 ///
 /// A clean graph has no `Error`-severity diagnostics even after escalation, so
@@ -183,7 +174,6 @@ fn test_snapshot_strict_clean_graph_succeeds() {
     let args = SnapshotArgs {
         tag: "ci".to_string(),
         strict: true,
-        strict_graph: false,
     };
 
     let result = commands::snapshot::handle(args, &global);
@@ -209,33 +199,11 @@ fn test_snapshot_no_strict_clean_graph_succeeds() {
     let args = SnapshotArgs {
         tag: "ci".to_string(),
         strict: false,
-        strict_graph: false,
     };
 
     let result = commands::snapshot::handle(args, &global);
     assert!(
         result.is_ok(),
         "snapshot without --strict should succeed; got: {result:?}"
-    );
-}
-
-/// `callisto snapshot --strict-graph` (with `--strict` left off) must be
-/// honored as its own real flag on a clean graph, rather than being ignored
-/// because no field ever carried it through to `escalate()`.
-#[test]
-fn test_snapshot_strict_graph_alone_clean_graph_succeeds() {
-    let tmp = TempDir::new().unwrap();
-    let global = make_git_workspace(&tmp);
-
-    let args = SnapshotArgs {
-        tag: "ci".to_string(),
-        strict: false,
-        strict_graph: true,
-    };
-
-    let result = commands::snapshot::handle(args, &global);
-    assert!(
-        result.is_ok(),
-        "snapshot --strict-graph on a clean graph should succeed; got: {result:?}"
     );
 }

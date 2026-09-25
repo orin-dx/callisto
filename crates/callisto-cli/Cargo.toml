@@ -19,7 +19,6 @@ default = ["cargo", "npm"]
 cargo = ["callisto-graph/cargo"]
 npm = ["callisto-graph/npm"]
 inference = ["callisto-graph/inference"]
-wrapper = []
 
 [dependencies]
 callisto-changelog = { path = "../callisto-changelog", version = "0.8.0" }

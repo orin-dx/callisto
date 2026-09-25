@@ -37,7 +37,7 @@
 > One native crate compiling to N architecture-specific npm/PyPI packages plus one wrapper package that depends on all of them is a first-class case, not a workaround: callisto gates the wrapper's publish on every platform sibling actually succeeding, so `optionalDependencies` never point at a version that was never uploaded. No other changesets-family tool models this shape at all.
 
 > **Hermetic & Build-System Agnostic**  
-> Pure Rust CLI engine runs seamlessly in Bazel sandboxes (`rules_callisto`), Buck2, Nix flakes, Moon WASM (`callisto-moon`), GitHub Actions, GitLab CI, and local VCS hooks (`just hooks`).
+> Pure Rust CLI engine runs seamlessly in Bazel sandboxes (`rules_callisto`), Buck2, Nix flakes, moon (via proto), GitHub Actions, GitLab CI, and local VCS hooks (`just hooks`).
 
 ---
 
@@ -201,7 +201,7 @@ Callisto combines ideas from `@changesets/cli`, `release-please`, and `nx releas
 | **Manifest edits** | CST-based (`toml_edit`, `serde_json`), preserves comments/order/whitespace | `release-please` uses regex; `@changesets/cli` re-serializes JSON with default formatting |
 | **Cycle detection** | Kahn + Tarjan SCC with `miette` diagnostic cards | `release-please` is single-repo only; `nx release` is tied to Nx JS trees |
 | **Matrix discovery** | Auto-discovers napi-rs/maturin targets and npm/PyPI runtime constraints from manifests (Java/.NET planned) | Manual 50-line matrix arrays in CI YAML |
-| **Portability** | Runs in Bazel, Buck2, Nix, Moon WASM, GitHub Actions, GitLab CI, and local Git hooks | Locked to GitHub REST APIs or JS workspace tooling |
+| **Portability** | Runs in Bazel, Buck2, Nix, moon, GitHub Actions, GitLab CI, and local Git hooks | Locked to GitHub REST APIs or JS workspace tooling |
 
 ### Feature comparison
 
@@ -237,21 +237,48 @@ Download pre-compiled binaries for Linux (x86_64) or macOS from [GitHub Releases
 curl -sL https://github.com/orin-dx/callisto/releases/latest/download/callisto-linux-amd64.tar.gz | tar -xz -C /usr/local/bin
 ```
 
-### 3. Moon Extension Plugin (WebAssembly)
+### 3. proto
 
-Add Callisto as a WASM plugin in your repository's `.moon/workspace.yml`:
+Callisto ships a [proto](https://moonrepo.dev/proto) plugin that installs the release binary for macOS (arm64) and Linux (x86_64, glibc or musl). Add it to `.prototools`:
+
+```toml
+callisto = "0.8.0"
+
+[plugins.tools]
+callisto = "https://raw.githubusercontent.com/orin-dx/callisto/main/proto/callisto.toml"
+```
+
+Then run `proto install`.
+
+### Using callisto with moon
+
+moon installs tools through proto, so the `.prototools` entry above makes `callisto` available to moon tasks. Example `.moon/tasks/callisto.yml`:
 
 ```yaml
-extensions:
-  callisto:
-    plugin: 'https://github.com/orin-dx/callisto/releases/latest/download/callisto-moon.wasm'
+tasks:
+  callisto-check:
+    command: "callisto status --check"
+    options:
+      cache: false
+  callisto-version:
+    command: "callisto version"
+    options:
+      cache: false
+      runInCI: false
+  callisto-release-preview:
+    command: "callisto release --dry-run"
+    options:
+      cache: false
+      runInCI: false
 ```
+
+`callisto status --check` exits non-zero when the workspace has error diagnostics. The moon extension (`callisto-moon.wasm`) was removed in favor of this setup.
 
 ---
 
 ## Workspace Crate Architecture
 
-Callisto is structured into 10 workspace crates divided between MIT-licensed foundations and FSL-licensed product code:
+Callisto is structured into 9 workspace crates divided between MIT-licensed foundations and FSL-licensed product code:
 
 ```mermaid
 graph TB
@@ -273,7 +300,6 @@ graph TB
   subgraph L4["Layer 4 — surface"]
     direction LR
     cli["callisto-cli"]
-    moon["callisto-moon"]
   end
   model --> graph_
   format --> graph_
@@ -282,7 +308,6 @@ graph TB
   manifests --> graph_
   vcs --> graph_
   graph_ --> cli
-  graph_ --> moon
 ```
 
 | Layer | Crate | License | Purpose |
@@ -295,7 +320,6 @@ graph TB
 | | [`callisto-vcs`](crates/callisto-vcs) | MIT | Native in-process Git operations powered by `gix` (gitoxide) |
 | **Layer 3** | [`callisto-graph`](crates/callisto-graph) | FSL-1.1-MIT | Dependency DAG solver and Tarjan SCC cycle diagnostics |
 | **Layer 4** | [`callisto-cli`](crates/callisto-cli) | FSL-1.1-MIT | Standalone CLI binary, colored diff previews, `miette` diagnostic cards |
-| | [`callisto-moon`](crates/callisto-moon) | FSL-1.1-MIT | Moon extension protocol implementation (`extism-pdk`) |
 | **Dev** | [`callisto-fixtures`](crates/callisto-fixtures) | FSL-1.1-MIT | Multi-ecosystem corpus and in-memory test doubles |
 
 ---
@@ -305,7 +329,7 @@ graph TB
 Callisto uses `just` as its primary developer command runner, delegating workspace tasks to `moon`:
 
 ```bash
-# Run full local CI suite (formatting, clippy lints, test suite, security audit, WASM check)
+# Run full local CI suite (formatting, clippy lints, test suite, security audit)
 just ci
 
 # Run test suite

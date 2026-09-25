@@ -4,7 +4,7 @@ use callisto_graph::apply::{apply_version_plan, ApplyOptions};
 use callisto_model::ApplyPermit;
 
 use crate::cli::{GlobalArgs, OutputFormat, SnapshotArgs};
-use crate::commands::abort_on_crosscheck_failures;
+use crate::commands::abort_on_graph_errors;
 use crate::error::CliError;
 use crate::output::write_json;
 use crate::render;
@@ -15,9 +15,9 @@ pub fn handle(args: SnapshotArgs, global: &GlobalArgs) -> Result<ExitCode, CliEr
     let runner = CliCommandRunner;
     let ws = load_workspace(global, &runner)?;
 
-    // Promote graph diagnostics (including crosscheck failures) per
-    // `--strict`/`--strict-graph` and abort before touching any files.
-    abort_on_crosscheck_failures(ws.graph.diagnostics(), args.strict, args.strict_graph)?;
+    // Promote graph diagnostics per
+    // `--strict` and abort before touching any files.
+    abort_on_graph_errors(ws.graph.diagnostics(), args.strict)?;
 
     let (plan, report) = callisto_graph::commands::plan_snapshot(&ws, &args.tag)?;
 
@@ -123,7 +123,6 @@ mod tests {
             SnapshotArgs {
                 tag: "canary".to_string(),
                 strict: false,
-                strict_graph: false,
             },
             &global,
         );

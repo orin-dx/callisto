@@ -98,9 +98,7 @@ impl<'r> GitAccess<'r> {
     /// or as the sole backend (writes, when discovery failed).
     ///
     /// Never fails: a discovery failure just means every operation runs
-    /// through the shell backend instead, exactly as it unconditionally
-    /// does on `wasm32` (gix is excluded from that target's dependency set,
-    /// so [`GitRepository::discover`] always returns `Err` there).
+    /// through the shell backend instead.
     pub fn discover(root: impl AsRef<Path>, runner: &'r dyn CommandRunner) -> Self {
         let root = root.as_ref();
         GitAccess {

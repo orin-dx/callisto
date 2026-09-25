@@ -22,7 +22,6 @@ fn global(root: &std::path::Path) -> GlobalArgs {
 fn check_args() -> StatusArgs {
     StatusArgs {
         strict: false,
-        strict_graph: false,
         check: true,
     }
 }

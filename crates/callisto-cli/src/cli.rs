@@ -97,9 +97,6 @@ pub struct StatusArgs {
     /// Enable strict mode: promote warning-level diagnostics to errors, causing a non-zero exit.
     #[arg(long)]
     pub strict: bool,
-    /// Treat dependency-graph warnings as errors.
-    #[arg(long)]
-    pub strict_graph: bool,
     /// Exit with a distinct status code indicating whether any changesets are pending.
     #[arg(long)]
     pub check: bool,
@@ -122,9 +119,6 @@ pub struct VersionArgs {
     /// Treat warning-level diagnostics as errors.
     #[arg(long)]
     pub strict: bool,
-    /// Treat dependency-graph warnings as errors.
-    #[arg(long)]
-    pub strict_graph: bool,
     /// Allow versioning to proceed even if no changesets are pending.
     #[arg(long)]
     pub allow_empty_changesets: bool,
@@ -157,13 +151,9 @@ pub struct SnapshotArgs {
     /// Tag to append to the snapshot version (e.g. a commit SHA or branch name).
     #[arg(long)]
     pub tag: String,
-    /// Abort if the workspace graph contains crosscheck failures or other
-    /// error-severity diagnostics.
+    /// Abort if the workspace graph contains error-severity diagnostics.
     #[arg(long)]
     pub strict: bool,
-    /// Treat dependency-graph warnings as errors.
-    #[arg(long)]
-    pub strict_graph: bool,
 }
 
 /// Arguments for the `init` command.

@@ -14,10 +14,8 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
     // HEAD commit sha — never a fake placeholder. A resolution failure here must surface
     // as a real error rather than silently proceeding with a value that risks colliding
     // with snapshots from unrelated runs. `ws.git_access()` (native gix, falling back to
-    // the `CommandRunner` shell path when unavailable -- always true on wasm32) rather
-    // than a direct `GitRepository::discover`, which has no such fallback and would
-    // unconditionally fail on wasm32, hard-erroring `plan_snapshot` entirely there --
-    // and reuses `Workspace`'s shared, lazily-discovered instance instead of paying for
+    // the `CommandRunner` shell path) rather than a direct `GitRepository::discover`,
+    // which has no such fallback -- and reuses `Workspace`'s shared, lazily-discovered instance instead of paying for
     // a second discovery when something else in this command invocation already triggered one.
     let sha = ws.git_access().head_sha()?;
     let sha_short = sha.short();

@@ -541,7 +541,7 @@ mod compose_pr_body_report_tests {
 pub struct ValidateReport {
     pub schema_version: u32,
     /// `false` iff any diagnostic has `severity == Error` (after
-    /// `--strict`/`--strict-graph` escalation has been applied).
+    /// `--strict` escalation has been applied).
     pub ok: bool,
 
     /// Mandatory here, unlike every other report -- `validate`'s entire

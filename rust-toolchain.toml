@@ -4,4 +4,3 @@ components = [
     "clippy",
     "rustfmt",
 ]
-targets = ["wasm32-wasip1"]

@@ -256,7 +256,6 @@ fn platform_versions_follow_the_owner_without_a_fixed_group() {
 
     let opts = VersionOptions {
         strict: false,
-        strict_graph: false,
         allow_empty_changesets: true,
     };
     let plan = plan_version(&ws, &NoInference, &opts).expect("plan_version must succeed");

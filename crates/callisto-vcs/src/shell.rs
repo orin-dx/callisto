@@ -3,9 +3,8 @@
 //! to live at each call site (`callisto-graph`'s `changed.rs`, `tags.rs`,
 //! `commands/tag.rs`, `aggregate.rs`, and `callisto-conventional`'s
 //! `window.rs`). Every operation here is reachable purely via
-//! [`callisto_model::CommandRunner`], so it works on every target,
-//! including `wasm32`, where native `gix` (`GitRepository`) is entirely
-//! unavailable.
+//! [`callisto_model::CommandRunner`], so it works wherever native `gix`
+//! (`GitRepository`) cannot discover a repository.
 //!
 //! Callers should not construct [`ShellGit`] directly except in tests that
 //! specifically want to exercise the shell backend in isolation; use

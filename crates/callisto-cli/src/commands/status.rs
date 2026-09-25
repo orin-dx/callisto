@@ -25,10 +25,7 @@ pub fn handle(args: StatusArgs, global: &GlobalArgs) -> Result<ExitCode, CliErro
     let runner = CliCommandRunner;
     let ws = load_workspace(global, &runner)?;
 
-    let opts = StatusOptions {
-        strict: args.strict,
-        strict_graph: args.strict_graph,
-    };
+    let opts = StatusOptions { strict: args.strict };
 
     let inference = crate::workspace::select_inference();
     let report = callisto_graph::commands::status(&ws, &inference, &opts)?;
@@ -38,7 +35,7 @@ pub fn handle(args: StatusArgs, global: &GlobalArgs) -> Result<ExitCode, CliErro
         OutputFormat::Text => render::render_status(&report, crate::color::enabled(), &mut crate::color::stdout())?,
     }
 
-    // `status()` already applies --strict/--strict-graph escalation before
+    // `status()` already applies --strict escalation before
     // returning, so `has_error_diagnostics` alone reflects it.
     if args.check && has_error_diagnostics(&report) {
         Ok(ExitCode::FAILURE)
@@ -149,7 +146,6 @@ mod tests {
         let result = handle(
             StatusArgs {
                 strict: false,
-                strict_graph: false,
                 check: false,
             },
             &global,
@@ -190,7 +186,6 @@ mod tests {
         let result = handle(
             StatusArgs {
                 strict: false,
-                strict_graph: false,
                 check: true,
             },
             &global,
@@ -238,7 +233,6 @@ mod tests {
         let result = handle(
             StatusArgs {
                 strict: false,
-                strict_graph: false,
                 check: true,
             },
             &global,

@@ -73,7 +73,7 @@
     },
     {
       "id": "AC-F9",
-      "criterion": "Running `just ci` exits with status 0 after all changes, with no compiler warnings (Clippy -D warnings), all unit and integration tests passing, and WASM target check passing.",
+      "criterion": "[SUPERSEDED 2026-09-24: callisto-moon and the wasm32-wasip1 asset were removed; moon uses the CLI via proto] Running `just ci` exits with status 0 after all changes, with no compiler warnings (Clippy -D warnings), all unit and integration tests passing, and WASM target check passing.",
       "is_error_case": false
     }
   ],

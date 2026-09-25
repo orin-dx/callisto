@@ -19,7 +19,7 @@ Callisto supports three release paradigms. Each gates publishing behind CI verif
 ### Architecture
 All development lands on `main`. Callisto automatically generates a Version PR (`callisto/version-packages`) when changesets are present. Merging the Version PR to `main` triggers a two-stage release workflow:
 
-1. **Job 1 (`verify`)**: Executes full workspace verification (`moon run :format-check`, `moon run :lint`, `moon run :test`, WASM compilation, and `cargo-deny` security audit).
+1. **Job 1 (`verify`)**: Executes full workspace verification (`moon run :format-check`, `moon run :lint`, `moon run :test`, and `cargo-deny` security audit).
 2. **Job 2 (`release`)**: Depends on Job 1 (`needs: [verify]`). If any test or check fails in Job 1, GitHub Actions blocks Job 2 from running.
 
 ### Example Workflow Configuration (`.github/workflows/callisto-release.yml`)
@@ -46,11 +46,9 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-callisto
-      - uses: ./.github/actions/setup-callisto-wasm
       - run: moon run :format-check
       - run: moon run :lint
       - run: moon run :test
-      - run: cargo check -p callisto-moon --target wasm32-wasip1 --features pdk
       - run: cargo-deny check
 
   release:

@@ -15,12 +15,11 @@ The active `main` ruleset requires one approving review, signed commits, linear 
 - `Clippy Lints (Moon & Just)`
 - `Security & Advisory Audit (Moon & Just)`
 - `Code Coverage & Test Report`
-- `Test Suite & WASM Check (macos-latest)`
-- `Test Suite & WASM Check (ubuntu-latest)`
+- `Test Suite (macos-latest)`
+- `Test Suite (ubuntu-latest)`
 - `Release Artifact Preflight (macos-arm64)`
 - `Release Artifact Preflight (linux-gnu)`
 - `Release Artifact Preflight (linux-musl)`
-- `Release Artifact Preflight (wasm-wasi)`
 - `Validate Changesets & Workspace Status`
 
 The repository owner has an explicit ruleset bypass for emergency recovery. That bypass is not a second approval mechanism and must be used only when the normal evidence path cannot run.
@@ -96,7 +95,7 @@ All transient intent, receipt, downloaded artifacts, and build output live under
 
 ## Product assets and rehearsal
 
-The product release will contain attested assets for `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, `x86_64-unknown-linux-musl`, and `wasm32-wasip1`. Apple signing and notarization are intentionally out of scope until the project has a safe project-owned policy.
+The product release will contain attested assets for `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, and `x86_64-unknown-linux-musl`. Apple signing and notarization are intentionally out of scope until the project has a safe project-owned policy.
 
 Each asset's GitHub provenance is bound to the current coordinator workflow revision: that is the revision GitHub records for the workflow run. The immutable intent and artifact manifest separately bind those bytes to the selected release-source revision, so a recovery can safely use current orchestration without misrepresenting an older source checkout as the workflow source.
 
@@ -104,7 +103,7 @@ A source without a `[release]` section plans with zero artifact slots and prints
 
 The `callisto@{version}` product tag replaced `callisto-cli@{version}`; `previous-tag-templates` in `callisto.toml` keeps tags from the old template discoverable as the last release.
 
-The `setup-callisto` and `setup-callisto-wasm` actions verify a downloaded prebuilt asset with `gh attestation verify` against `orin-dx/callisto` and the `callisto-release.yml` signer workflow, and never run an unverified asset unless `verification: skip` (modes: `require`, `fallback` default, `skip`).
+The `setup-callisto` action verifies a downloaded prebuilt asset with `gh attestation verify` against `orin-dx/callisto` and the `callisto-release.yml` signer workflow, and never run an unverified asset unless `verification: skip` (modes: `require`, `fallback` default, `skip`).
 
 ### Rehearsal boundary
 

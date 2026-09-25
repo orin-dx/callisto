@@ -24,7 +24,6 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
     let inference = select_inference();
     let opts = VersionOptions {
         strict: args.strict,
-        strict_graph: args.strict_graph,
         allow_empty_changesets: args.allow_empty_changesets,
     };
 
@@ -173,7 +172,6 @@ mod tests {
         let inference = NoInference;
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 
@@ -242,7 +240,6 @@ mod tests {
         let inference = NoInference;
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: false,
         };
 
@@ -286,7 +283,6 @@ mod tests {
         let inference = NoInference;
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 
@@ -398,7 +394,6 @@ mod tests {
         let inference = crate::workspace::select_inference();
         let opts = VersionOptions {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
         };
 
@@ -444,7 +439,6 @@ mod tests {
 
         let args = crate::cli::VersionArgs {
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
             refresh_lockfiles: false,
             emit_decision: None,

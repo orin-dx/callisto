@@ -255,10 +255,8 @@ mod tests {
     }
 
     /// A directory guaranteed not to sit inside any Git repository, so
-    /// `GitRepository::discover` fails exactly the way it unconditionally
-    /// does on `wasm32` (gix is excluded from that target's dependency
-    /// set) -- the native-testable stand-in for "gix is unavailable" that
-    /// forces `GitAccess` onto its `CommandRunner` fallback.
+    /// `GitRepository::discover` fails, forcing `GitAccess` onto its
+    /// `CommandRunner` fallback.
     fn non_repo_dir() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
         assert!(
@@ -287,8 +285,7 @@ mod tests {
     }
 
     /// Spec: conventional-commit inference must survive gix being
-    /// unavailable -- always the case on `wasm32`, where gix is excluded
-    /// from the dependency set. `GitAccess`'s shell fallback then serves the
+    /// unavailable. `GitAccess`'s shell fallback then serves the
     /// walk, and `fetch_commits` must parse real commits out of it rather
     /// than degrading to an empty list. (The exact `git log` argv that
     /// fallback issues is `ShellGit`'s contract and is asserted in

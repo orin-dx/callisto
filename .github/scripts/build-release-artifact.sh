@@ -4,7 +4,7 @@
 # planning, artifact identity, provenance verification, and publication.
 set -euo pipefail
 
-: "${CALLISTO_RELEASE_ARTIFACT_KIND:?must name cli, cross, or wasm}"
+: "${CALLISTO_RELEASE_ARTIFACT_KIND:?must name cli or cross}"
 : "${CALLISTO_RELEASE_ARTIFACT_TARGET:?must name a supported Rust target}"
 : "${CALLISTO_RELEASE_ARTIFACT_ASSET:?must name the expected release asset}"
 : "${CALLISTO_RELEASE_SOURCE_ROOT:?must name the checked-out source root}"
@@ -19,8 +19,7 @@ artifact_dir="$CALLISTO_RELEASE_ARTIFACT_DIR"
 case "$kind:$target:$asset" in
   cli:aarch64-apple-darwin:callisto-aarch64-apple-darwin.tar.gz | \
   cli:x86_64-unknown-linux-gnu:callisto-x86_64-unknown-linux-gnu.tar.gz | \
-  cross:x86_64-unknown-linux-musl:callisto-x86_64-unknown-linux-musl.tar.gz | \
-  wasm:wasm32-wasip1:callisto-moon.wasm)
+  cross:x86_64-unknown-linux-musl:callisto-x86_64-unknown-linux-musl.tar.gz)
     ;;
   *)
     printf 'unsupported Callisto release artifact: kind=%s target=%s asset=%s\n' \
@@ -42,11 +41,5 @@ case "$kind" in
     cargo install cross --locked --version 0.2.5
     (cd "$source_root" && cross build --locked --release -p callisto-cli --target "$target")
     tar -C "$source_root/target/$target/release" -czf "$artifact_dir/$asset" callisto
-    ;;
-  wasm)
-    rustup target add "$target"
-    (cd "$source_root" && cargo rustc --locked --release -p callisto-moon --target "$target" \
-      --features pdk --crate-type cdylib)
-    cp "$source_root/target/$target/release/callisto_moon.wasm" "$artifact_dir/$asset"
     ;;
 esac

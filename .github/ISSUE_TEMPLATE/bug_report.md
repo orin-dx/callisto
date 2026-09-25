@@ -17,7 +17,7 @@ e.g. `callisto version --dry-run`, `callisto add --package my-crate:minor`
 - [ ] Cargo
 - [ ] npm
 - [ ] PyPI
-- [ ] Moon WASM plugin (`callisto-moon`)
+- [ ] moon / proto integration
 
 ## Steps to reproduce
 1.

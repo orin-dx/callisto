@@ -38,7 +38,6 @@ fn test_changelog_content_uses_real_changeset_summary() {
         VersionArgs {
             refresh_lockfiles: false,
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: false,
             emit_decision: None,
         },
@@ -102,7 +101,6 @@ fn test_changelog_content_includes_all_changeset_summaries() {
         VersionArgs {
             refresh_lockfiles: false,
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: false,
             emit_decision: None,
         },

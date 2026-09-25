@@ -102,7 +102,6 @@ edition = "2021"
     let status_res = commands::status::handle(
         StatusArgs {
             strict: false,
-            strict_graph: false,
             check: false,
         },
         &global,
@@ -165,7 +164,6 @@ fn test_status_matches_ecosystem_qualified_changeset_entry() {
     let code = commands::status::handle(
         StatusArgs {
             strict: false,
-            strict_graph: false,
             check: true,
         },
         &global,
@@ -224,7 +222,6 @@ fn test_status_check_exit_codes() {
 
     let check_args = StatusArgs {
         strict: false,
-        strict_graph: false,
         check: true,
     };
 
@@ -289,7 +286,6 @@ fn test_status_default_exit_code_clean_workspace() {
     let code = commands::status::handle(
         StatusArgs {
             strict: false,
-            strict_graph: false,
             check: false,
         },
         &global,

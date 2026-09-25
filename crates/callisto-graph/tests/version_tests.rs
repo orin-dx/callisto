@@ -109,7 +109,6 @@ fn test_plan_version_produces_correct_bumps_in_cascade() {
     let inference = NoInference;
     let opts = VersionOptions {
         strict: false,
-        strict_graph: false,
         allow_empty_changesets: true,
     };
 
@@ -223,7 +222,6 @@ fn apply_version_plan_succeeds_for_dual_identity_cross_ecosystem_rewrite_ac006()
     let inference = NoInference;
     let opts = VersionOptions {
         strict: false,
-        strict_graph: false,
         allow_empty_changesets: true,
     };
     let plan = plan_version(&ws, &inference, &opts).expect("plan_version should succeed");
@@ -305,7 +303,6 @@ fn test_fixed_group_two_changesets_converge_on_single_bump_not_compounded() {
     let inference = NoInference;
     let opts = VersionOptions {
         strict: false,
-        strict_graph: false,
         allow_empty_changesets: true,
     };
 

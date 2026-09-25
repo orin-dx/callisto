@@ -11,7 +11,6 @@ use callisto_model::{
 
 use crate::config::resolve::resolve_package_config;
 use crate::config::ResolvedConfig;
-use crate::crosscheck::crosscheck_declared_edges;
 use crate::error::GraphError;
 use crate::identity::IdentityIndex;
 use crate::locate::ProjectLocator;
@@ -87,12 +86,7 @@ impl ManifestWalkResolver {
         let mut primary_ecosystems: BTreeMap<PathBuf, Ecosystem> = BTreeMap::new();
         let mut promoted_siblings: BTreeMap<String, Vec<(PackageId, BTreeSet<Ecosystem>)>> = BTreeMap::new();
 
-        // Use the identity already resolved by the locator (`proj.id`) rather
-        // than re-reading manifests through `IdentityResolver::resolve`.
-        // The locator (e.g. `IgnoreWalkLocator`) already parsed each manifest
-        // to discover the project, so re-resolving from scratch is redundant
-        // and fragile — in particular, `IdentityResolver` historically had no
-        // `Ecosystem::Pypi` arm and would crash for Python projects.
+        // The locator already parsed each manifest, so reuse `proj.id`.
         let mut by_path: BTreeMap<PathBuf, Vec<(Ecosystem, PackageId)>> = BTreeMap::new();
         for proj in &projects {
             by_path
@@ -565,11 +559,6 @@ impl ManifestWalkResolver {
                     }
                 }
             }
-        }
-
-        if let Some(declared) = locator.declared_edges() {
-            let cross_diags = crosscheck_declared_edges(&packages, &edges, &declared);
-            diagnostics.extend(cross_diags);
         }
 
         Ok(ManifestWalkResolver {

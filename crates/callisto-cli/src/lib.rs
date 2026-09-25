@@ -1,4 +1,4 @@
-//! Standalone callisto CLI binary library target (`wrapper` feature for callisto-moon).
+//! Standalone callisto CLI binary library target.
 
 #![allow(clippy::result_large_err)]
 

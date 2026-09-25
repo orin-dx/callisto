@@ -7,14 +7,9 @@
 //! stderr/stdout, exactly what an operator sees when they mistype a
 //! severity.
 //!
-//! The lock-contention and identity-resolution fixes in the same PR are not
-//! covered here: both are already exercised against a *real* OS-level
-//! primitive (a real `fs2` file lock; a real malformed-manifest parse) in
-//! their unit tests, and neither has a simple, direct CLI trigger --
-//! `IdentityResolver::resolve`'s error paths are graph-internal, and
-//! reproducing real lock contention at the CLI level requires a second
-//! concurrent process. Noting the gap explicitly rather than skipping it in
-//! silence, per this repo's sibling-gap discipline.
+//! The lock-contention fix in the same PR is not covered here: it is
+//! exercised against a real `fs2` file lock in its unit tests, and reproducing
+//! real lock contention at the CLI level requires a second concurrent process.
 
 use std::path::Path;
 use std::process::Command;

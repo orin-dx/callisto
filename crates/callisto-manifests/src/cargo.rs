@@ -102,10 +102,8 @@ impl CargoToml {
 /// Pure and I/O-free -- operates on a document the caller already has,
 /// whether that's a fully-opened [`CargoToml`] (via [`Manifest::package_name`])
 /// or a bare parse a caller made for some other purpose entirely (e.g.
-/// `callisto-graph`'s `IdentityResolver`, which needs only a package name
-/// and deliberately does not go through the full [`CargoToml::open`]
-/// lifecycle -- that requires workspace-inheritance context this function
-/// has no need for, since a package's *name* is never workspace-inherited).
+/// [`crate::read_identity`], which needs only a package name and deliberately
+/// does not go through the full [`CargoToml::open`] lifecycle).
 pub fn cargo_package_name(doc: &toml_edit::DocumentMut) -> Option<&str> {
     doc.get("package").and_then(|p| p.get("name")).and_then(|n| n.as_str())
 }

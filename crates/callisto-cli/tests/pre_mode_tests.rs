@@ -44,7 +44,6 @@ fn test_pre_mode_blackbox_lifecycle() {
         VersionArgs {
             refresh_lockfiles: false,
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: false,
             emit_decision: None,
         },
@@ -64,7 +63,6 @@ fn test_pre_mode_blackbox_lifecycle() {
         VersionArgs {
             refresh_lockfiles: false,
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: true,
             emit_decision: None,
         },
@@ -114,7 +112,6 @@ fn test_malformed_pre_json_returns_error_not_silent_normal_release() {
         VersionArgs {
             refresh_lockfiles: false,
             strict: false,
-            strict_graph: false,
             allow_empty_changesets: false,
             emit_decision: None,
         },

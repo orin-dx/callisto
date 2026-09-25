@@ -58,9 +58,6 @@ jobs:
       - name: Unit & Integration Tests
         run: just test
 
-      - name: WASM Target Check
-        run: just wasm-check
-
       - name: Install cargo-deny
         uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab # v2
         with:
@@ -282,11 +279,6 @@ jobs:
             target: x86_64-unknown-linux-musl
             asset: callisto-x86_64-unknown-linux-musl.tar.gz
             kind: cross
-          - id: wasm-wasi
-            runner: ubuntu-latest
-            target: wasm32-wasip1
-            asset: callisto-moon.wasm
-            kind: wasm
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -377,10 +369,6 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-build-linux-musl
-          path: ${{ runner.temp }}/release-artifacts
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: release-build-wasm-wasi
           path: ${{ runner.temp }}/release-artifacts
       - name: Create exact artifact manifest
         run: |

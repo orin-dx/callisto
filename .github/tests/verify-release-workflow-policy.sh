@@ -12,7 +12,6 @@ CONFIG = "callisto.toml"
 CI_WORKFLOW = ".github/workflows/callisto-ci.yml"
 BUILD_SCRIPT = ".github/scripts/build-release-artifact.sh"
 INSTALLER = ".github/actions/setup-callisto/scripts/install-callisto.sh"
-WASM_INSTALLER = ".github/actions/setup-callisto-wasm/action.yml"
 COORDINATOR_CONST_SRC = "crates/callisto-model/src/release.rs"
 CONTENTS_WRITE = {"execute", "version-pr"}  # version-pr commits the managed branch via the forge API
 OIDC_JOBS = {"build-artifact"}
@@ -469,10 +468,6 @@ def table_agreement(paths):
     for asset in set(re.findall(r'ASSET_NAME="([^"]+)"', installer)):
         if asset not in rust_assets:
             errs.append(f"{paths['installer']}: asset {asset} disagrees with {paths['config']}")
-    wasm = open(paths["wasm_installer"]).read()
-    for asset in set(re.findall(r"releases/[^\s\"]*/(callisto-[A-Za-z0-9._-]+)", wasm)):
-        if asset not in rust_assets:
-            errs.append(f"{paths['wasm_installer']}: asset {asset} disagrees with {paths['config']}")
     return errs
 
 
@@ -486,16 +481,15 @@ def coordinator_path_agreement(path, src):
         errs.append(f"{src}: coordinator path {m.group(1)} disagrees with the checked workflow {path}")
     if not os.path.isfile(m.group(1)):
         errs.append(f"{src}: coordinator workflow {m.group(1)} does not exist")
-    for installer in (INSTALLER, WASM_INSTALLER):
-        for signer in re.findall(r"--signer-workflow\s+(\S+)", open(installer).read()):
-            if not signer.endswith("/" + m.group(1)):
-                errs.append(f"{installer}: --signer-workflow {signer} disagrees with {src} coordinator path {m.group(1)}")
+    for signer in re.findall(r"--signer-workflow\s+(\S+)", open(INSTALLER).read()):
+        if not signer.endswith("/" + m.group(1)):
+            errs.append(f"{INSTALLER}: --signer-workflow {signer} disagrees with {src} coordinator path {m.group(1)}")
     return errs
 
 
 def default_paths(release=DEFAULT):
     return {"config": CONFIG, "release": release, "ci": CI_WORKFLOW,
-            "script": BUILD_SCRIPT, "installer": INSTALLER, "wasm_installer": WASM_INSTALLER}
+            "script": BUILD_SCRIPT, "installer": INSTALLER}
 
 
 def table_mutants(d):
@@ -508,15 +502,15 @@ def table_mutants(d):
     def variants():
         base = default_paths()
         for label, key, old, new in (
-            ("asset renamed in release matrix", "release", "asset: callisto-moon.wasm", "asset: callisto-moon2.wasm"),
+            ("asset renamed in release matrix", "release", "asset: callisto-x86_64-unknown-linux-musl.tar.gz", "asset: callisto-musl.tar.gz"),
             ("target dropped from release matrix", "release", "          - id: linux-musl\n            runner: ubuntu-latest\n            target: x86_64-unknown-linux-musl\n            asset: callisto-x86_64-unknown-linux-musl.tar.gz\n            kind: cross\n", ""),
             ("asset renamed in ci matrix", "ci", "asset: callisto-x86_64-unknown-linux-gnu.tar.gz", "asset: callisto-x86_64-linux-gnu.tar.gz"),
-            ("target dropped from ci matrix", "ci", "          - id: wasm-wasi\n            runner: ubuntu-latest\n            target: wasm32-wasip1\n            asset: callisto-moon.wasm\n            kind: wasm\n", ""),
+            ("target dropped from ci matrix", "ci", "          - id: linux-musl\n            runner: ubuntu-latest\n            target: x86_64-unknown-linux-musl\n            asset: callisto-x86_64-unknown-linux-musl.tar.gz\n            kind: cross\n", ""),
             ("asset renamed in build script", "script", "cli:aarch64-apple-darwin:callisto-aarch64-apple-darwin.tar.gz", "cli:aarch64-apple-darwin:callisto-arm.tar.gz"),
             ("asset renamed in installer", "installer", 'ASSET_NAME="callisto-aarch64-apple-darwin.tar.gz"', 'ASSET_NAME="callisto-macos.tar.gz"'),
             ("artifact dropped from callisto.toml", "config",
-             '[[release.artifact]]\npackage = "cargo/callisto-moon"\ntarget = "wasm32-wasip1"\nasset-name = "callisto-moon.wasm"\n', ""),
-            ("asset renamed in callisto.toml", "config", 'asset-name = "callisto-moon.wasm"', 'asset-name = "callisto-plugin.wasm"'),
+             '[[release.artifact]]\npackage = "cargo/callisto-cli"\ntarget = "x86_64-unknown-linux-musl"\nasset-name = "callisto-x86_64-unknown-linux-musl.tar.gz"\n', ""),
+            ("asset renamed in callisto.toml", "config", 'asset-name = "callisto-x86_64-unknown-linux-musl.tar.gz"', 'asset-name = "callisto-musl.tar.gz"'),
         ):
             text = open(base[key]).read()
             if old not in text:

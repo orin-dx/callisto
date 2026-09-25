@@ -1,5 +1,7 @@
 # Library-first vs. moon-first: resolving §0.1
 
+> **moon extension removed (2026-09-24):** `callisto-moon`, `MoonProjectLocator`, `ProjectLocator::declared_edges`, the declared-edge cross-check (`DeclaredEdge`, `GraphEdgeDisagreement`) and the `LocateError::Moon*` variants no longer exist. moon runs the `callisto` CLI installed through proto (`proto/callisto.toml`). Sections describing them are historical.
+
 > **Current licensing policy (2026-09-16):** `callisto-model`,
 > `callisto-format`, and `callisto-vcs` are MIT-only; all other crates use
 > canonical FSL-1.1-MIT. This decision document records the prior licensing

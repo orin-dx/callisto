@@ -28,7 +28,6 @@ runs:
       uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db
       with:
         components: clippy,rustfmt
-        targets: wasm32-wasip1
         shared-key: "callisto-workspace-shared"
         save-if: "true"
       env:
