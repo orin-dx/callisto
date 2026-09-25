@@ -110,9 +110,11 @@ jobs:
         if: runner.os == 'Linux'
         # legacy-cgi: pypiserver 2.4.0 imports `cgi`, removed in Python 3.13.
         # gunicorn: the test's `--server gunicorn` avoids a slow getfqdn() bind.
+        # setuptools/wheel: the test builds with `--no-isolation` against this venv's build
+        # backend, so no network fetch happens during `python -m build`; must be pre-installed.
         run: |
           python3 -m venv "$RUNNER_TEMP/pypi-e2e-venv"
-          "$RUNNER_TEMP/pypi-e2e-venv/bin/pip" install pypiserver==2.4.0 twine==6.2.0 build==1.4.4 legacy-cgi==2.6.3 gunicorn==26.2.0
+          "$RUNNER_TEMP/pypi-e2e-venv/bin/pip" install pypiserver==2.4.0 twine==6.2.0 build==1.4.4 legacy-cgi==2.6.3 gunicorn==26.2.0 setuptools==80.9.0 wheel==0.45.1
           echo "$RUNNER_TEMP/pypi-e2e-venv/bin" >> "$GITHUB_PATH"
       - run: just test
       - run: just release-workflow-behavior

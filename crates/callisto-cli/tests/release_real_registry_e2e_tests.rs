@@ -481,7 +481,23 @@ fn pypi_publish_against_a_real_pypiserver_registry_is_retrievable_afterward() {
         upload.args
     );
 
-    let built = run_argv(build, &[]);
+    // `--no-isolation`: production `pypi_publish_argv` deliberately omits it (a real release
+    // wants a clean, isolated build), but a plain `python -m build` here would pip-install
+    // `setuptools` from PyPI into a fresh isolated env -- network access CI must not depend on.
+    // The CI venv (see callisto-ci.yml) pre-installs pinned `setuptools`/`wheel`, so building
+    // against it directly, unisolated, needs nothing from the network; `PIP_NO_INDEX=1` makes
+    // that a hard failure instead of a silent fetch if isolation is ever attempted anyway.
+    let offline_build = Argv {
+        program: build.program.clone(),
+        args: build
+            .args
+            .iter()
+            .cloned()
+            .chain(["--no-isolation".to_string()])
+            .collect(),
+        cwd: build.cwd.clone(),
+    };
+    let built = run_argv(&offline_build, &[("PIP_NO_INDEX", "1")]);
     assert!(
         built.status.success(),
         "python -m build failed: {}",
