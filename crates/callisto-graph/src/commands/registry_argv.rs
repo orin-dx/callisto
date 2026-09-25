@@ -313,20 +313,47 @@ pub fn npm_publish_directory_argv(
 
 // ----------------------------------------------------------------- pypi
 
+/// The public warehouses twine (>= 5) allows `--skip-existing` against.
+/// Matches twine's own `repository.WAREHOUSE`/`repository.TEST_WAREHOUSE`
+/// constants exactly, including the `upload.` subdomain -- PyPI's upload
+/// endpoint, not its browsing/simple-index host (`pypi.org`).
+const PYPI_WAREHOUSE_URL: &str = "https://upload.pypi.org/";
+const PYPI_TEST_WAREHOUSE_URL: &str = "https://test.pypi.org/";
+
+/// Whether twine accepts `--skip-existing` for this upload target. Twine's
+/// own `verify_feature_capability` (added in twine 5) raises
+/// `UnsupportedConfiguration` and refuses to run at all when `--skip-existing`
+/// is set against any repository URL other than the public warehouses --
+/// confirmed live against a real local `pypiserver`: the upload never reaches
+/// the wire. `index: None` means twine's own default target (`.pypirc`'s
+/// `pypi` alias, `https://upload.pypi.org/legacy/`), which is always safe.
+fn twine_accepts_skip_existing(index: Option<&str>) -> bool {
+    match index {
+        None => true,
+        Some(url) => url.starts_with(PYPI_WAREHOUSE_URL) || url.starts_with(PYPI_TEST_WAREHOUSE_URL),
+    }
+}
+
 /// Builds the two-step PyPI publish argv sequence: build the sdist and
 /// wheel into `dist/`, then upload the exact `dist/<normalized-name>-
-/// <version>*` glob via `twine upload --skip-existing`. Both steps run from
-/// `package_dir` so `dist/` resolves to that package's own directory in a
-/// monorepo, and neither ever builds into or uploads from a fresh temporary
-/// directory -- `twine`'s own glob targets exactly the artifacts this
-/// `python -m build` invocation just produced, not whatever else happens to
-/// be sitting in `dist/`.
+/// <version>*` glob via `twine upload`. Both steps run from `package_dir` so
+/// `dist/` resolves to that package's own directory in a monorepo, and
+/// neither ever builds into or uploads from a fresh temporary directory --
+/// `twine`'s own glob targets exactly the artifacts this `python -m build`
+/// invocation just produced, not whatever else happens to be sitting in
+/// `dist/`.
+///
+/// `--skip-existing` is included only when [`twine_accepts_skip_existing`]
+/// allows it for `index`; it's mostly redundant for the durable release path
+/// anyway, since the operation is only ever dispatched after an `Absent`
+/// preflight observation of the exact same registry.
 ///
 /// Package name is normalized to PEP 427 wheel-filename form (lowercased,
 /// `-`/`.` -> `_`) before building the glob; `twine` expands the glob
 /// internally, so the literal `*` is safe with no shell involved.
 /// `index: Some` inserts `--repository-url <url>` before the glob, to target
-/// a private index (Nexus/Artifactory PyPI proxy) instead of public PyPI.
+/// a private index (Nexus/Artifactory PyPI proxy, or a local test registry)
+/// instead of public PyPI.
 pub fn pypi_publish_argv(
     workspace_root: &Path,
     package_dir: &Path,
@@ -350,7 +377,10 @@ pub fn pypi_publish_argv(
 
     let normalized = normalize_pypi_package_name(package_name);
     let pattern = format!("dist/{normalized}-{}*", version.render());
-    let mut upload_args = vec!["upload".to_string(), "--skip-existing".to_string()];
+    let mut upload_args = vec!["upload".to_string()];
+    if twine_accepts_skip_existing(index) {
+        upload_args.push("--skip-existing".to_string());
+    }
     if let Some(idx) = index {
         upload_args.push("--repository-url".to_string());
         upload_args.push(idx.to_string());
@@ -491,6 +521,16 @@ pub(crate) fn classify_npm_publish_output(output: &CommandOutput) -> Result<Publ
 ///    `Published`. Handles `dist/` accumulating stale pre-release
 ///    artifacts: `dist/my_pkg-1.0.0*` matches both `my_pkg-1.0.0a0.whl`
 ///    (skipped) and `my_pkg-1.0.0.whl` (uploaded), producing mixed output.
+///    Only reachable when [`pypi_publish_argv`] included `--skip-existing`
+///    (a public-warehouse target); a private-index conflict never emits this
+///    text (confirmed live against `pypiserver`: a real conflict there is a
+///    bare `409 Conflict`), so it falls through to `RegistryError::Other`
+///    below instead -- an intentional fail-closed outcome. The durable
+///    release executor only ever calls this after an `Absent` preflight
+///    observation of the very same registry, so a private-index conflict
+///    here is a rare race, not the common path; a rerun converges through
+///    that same observation rather than through this classifier guessing at
+///    conflict text with no stable, portable shape across index servers.
 /// 2. Zero exit code with no skip-only mention -> [`PublishOutcome::Published`].
 /// 3. Rate-limit signal (`429`, `too many requests`, `rate limit`) ->
 ///    [`RegistryError::RateLimited`] with a parsed or default 60-second
@@ -801,12 +841,51 @@ mod tests {
             argvs[1].args,
             vec![
                 "upload",
-                "--skip-existing",
                 "--repository-url",
                 "https://pypi.example.com/simple",
                 "dist/my_pkg-1.0.0*",
             ]
         );
+    }
+
+    /// Twine >= 5 refuses `--skip-existing` outright for any non-warehouse
+    /// repository (`UnsupportedConfiguration`), confirmed live against a real
+    /// local `pypiserver` -- so a private index must never receive it.
+    #[test]
+    fn pypi_publish_argv_omits_skip_existing_for_a_private_index() {
+        let argvs = pypi_publish_argv(
+            Path::new("/workspace"),
+            Path::new("packages/my-pkg"),
+            "my-pkg",
+            &v("1.0.0"),
+            Some("http://127.0.0.1:4873/"),
+        );
+        assert!(
+            !argvs[1].args.contains(&"--skip-existing".to_string()),
+            "{:?}",
+            argvs[1].args
+        );
+    }
+
+    /// An index explicitly configured to one of twine's own public
+    /// warehouses still gets `--skip-existing` -- matches twine's own
+    /// `repository.WAREHOUSE`/`TEST_WAREHOUSE` check exactly.
+    #[test]
+    fn pypi_publish_argv_keeps_skip_existing_for_an_explicit_warehouse_override() {
+        for warehouse in ["https://upload.pypi.org/legacy/", "https://test.pypi.org/legacy/"] {
+            let argvs = pypi_publish_argv(
+                Path::new("/workspace"),
+                Path::new("packages/my-pkg"),
+                "my-pkg",
+                &v("1.0.0"),
+                Some(warehouse),
+            );
+            assert!(
+                argvs[1].args.contains(&"--skip-existing".to_string()),
+                "{warehouse}: {:?}",
+                argvs[1].args
+            );
+        }
     }
 
     // ---------------------------------------------------------- classification
@@ -896,6 +975,16 @@ mod tests {
     #[test]
     fn classify_twine_output_failure_is_other() {
         let out = output(1, "", "some unrecognized failure");
+        assert!(matches!(classify_twine_output(&out), Err(RegistryError::Other(_))));
+    }
+
+    /// Without `--skip-existing` (private index, or a race against the
+    /// preflight observation), a real conflict is a typed error, not a
+    /// guessed `AlreadyPublished` -- captured verbatim from a real
+    /// `pypiserver` 409 response, which carries no "already exist" text.
+    #[test]
+    fn classify_twine_output_private_index_conflict_without_skip_existing_is_a_typed_error() {
+        let out = output(1, "", "HTTPError: 409 Conflict from http://127.0.0.1:18081/\nConflict");
         assert!(matches!(classify_twine_output(&out), Err(RegistryError::Other(_))));
     }
 }
