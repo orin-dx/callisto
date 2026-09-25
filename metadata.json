@@ -3,7 +3,7 @@
   "checkpoint_id": "01M3CP11VDPPY3H61TYVP34GQK",
   "strategy": "manual-commit",
   "branch": "docs/consistency-cleanup",
-  "checkpoints_count": 9,
+  "checkpoints_count": 38,
   "files_touched": [
     ".agents/subagents/bug-hunter.md",
     ".changeset/tough-lynxes-strut.md",
@@ -22,6 +22,7 @@
     "docs/02-library-vs-moon-decision.md",
     "docs/config.md",
     "docs/errors.md",
+    "docs/specs/INDEX.md",
     "docs/specs/REQ-DX-V1.md",
     "docs/specs/SPEC-ARCH-RELEASE-ERROR-TAXONOMY.json",
     "docs/specs/SPEC-DX-CLI-SURFACE.json",
@@ -36,9 +37,11 @@
     "docs/specs/SPEC-DX-SETUP-WORKFLOW-MATRIX.json",
     "docs/specs/SPEC-DX-SETUP-WORKFLOW-SIMPLE.json",
     "docs/specs/SPEC-DX-STATUS-ADD.json",
+    "docs/specs/SPEC-RELEASE-CAPABILITY-011.json",
     "docs/specs/SPEC-RELEASE-DECISION-008.json",
     "docs/specs/SPEC-RELEASE-INTENT-MODEL-009.json",
     "docs/specs/SPEC-RELEASE-LIFECYCLE-HARDENING.json",
+    "docs/specs/SPEC-RELEASE-PR-DECISION-014.json",
     "docs/specs/SPEC-RELEASE-TRUST-010.json",
     "docs/specs/callisto-matrix.md"
   ],
@@ -49,13 +52,27 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": "/0/prompt.txt"
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": "/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 110,
-    "cache_creation_tokens": 128715,
-    "cache_read_tokens": 6201427,
-    "output_tokens": 49882,
-    "api_call_count": 55
+    "input_tokens": 502,
+    "cache_creation_tokens": 379033,
+    "cache_read_tokens": 72970497,
+    "output_tokens": 128070,
+    "api_call_count": 232,
+    "subagent_tokens": {
+      "input_tokens": 604,
+      "cache_creation_tokens": 1053914,
+      "cache_read_tokens": 37009326,
+      "output_tokens": 14658,
+      "api_call_count": 302
+    }
   }
 }

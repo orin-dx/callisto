@@ -1,0 +1,317 @@
+{
+  "cli_version": "0.11.3-nightly.202609240627.b2779c9eb",
+  "checkpoint_id": "01M3CP11VDPPY3H61TYVP34GQK",
+  "session_id": "e2fe6504-b7f2-430b-a234-1e8197320f97",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-25T16:22:59.89148Z",
+  "branch": "docs/consistency-cleanup",
+  "checkpoints_count": 29,
+  "save_step_count": 14,
+  "files_touched": [
+    ".agents/subagents/bug-hunter.md",
+    ".changeset/tough-lynxes-strut.md",
+    ".github/actions/callisto-action/action.yml",
+    ".github/actions/setup-callisto/action.yml",
+    ".gitignore",
+    ".moon/tasks/callisto.yml",
+    "README.md",
+    "crates/callisto-graph/src/apply.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/tests/package_set_ecosystem_test.rs",
+    "crates/callisto-model/src/lib.rs",
+    "crates/callisto-model/src/plan.rs",
+    "crates/callisto-model/src/report.rs",
+    "docs/02-library-vs-moon-decision.md",
+    "docs/config.md",
+    "docs/errors.md",
+    "docs/specs/INDEX.md",
+    "docs/specs/REQ-DX-V1.md",
+    "docs/specs/SPEC-ARCH-RELEASE-ERROR-TAXONOMY.json",
+    "docs/specs/SPEC-DX-CLI-SURFACE.json",
+    "docs/specs/SPEC-DX-CONFIG-RELEASE-SCHEMA.json",
+    "docs/specs/SPEC-DX-CORRECTNESS-CI.json",
+    "docs/specs/SPEC-DX-CORRECTNESS-E2E.json",
+    "docs/specs/SPEC-DX-CORRECTNESS-PARITY.json",
+    "docs/specs/SPEC-DX-CORRECTNESS-PROVENANCE-PINS.json",
+    "docs/specs/SPEC-DX-CORRECTNESS-TRIGGER.json",
+    "docs/specs/SPEC-DX-RELEASE-COMMAND.json",
+    "docs/specs/SPEC-DX-SETUP-CORE.json",
+    "docs/specs/SPEC-DX-SETUP-WORKFLOW-MATRIX.json",
+    "docs/specs/SPEC-DX-SETUP-WORKFLOW-SIMPLE.json",
+    "docs/specs/SPEC-DX-STATUS-ADD.json",
+    "docs/specs/SPEC-RELEASE-CAPABILITY-011.json",
+    "docs/specs/SPEC-RELEASE-DECISION-008.json",
+    "docs/specs/SPEC-RELEASE-INTENT-MODEL-009.json",
+    "docs/specs/SPEC-RELEASE-LIFECYCLE-HARDENING.json",
+    "docs/specs/SPEC-RELEASE-PR-DECISION-014.json",
+    "docs/specs/SPEC-RELEASE-TRUST-010.json",
+    "docs/specs/callisto-matrix.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5[1m]",
+  "turn_id": "2bd7f193b9ff",
+  "checkpoint_transcript_start": 11471,
+  "transcript_lines_at_start": 11471,
+  "compact_transcript_start": 1545,
+  "token_usage": {
+    "input_tokens": 392,
+    "cache_creation_tokens": 250318,
+    "cache_read_tokens": 66769070,
+    "output_tokens": 78188,
+    "api_call_count": 177,
+    "subagent_tokens": {
+      "input_tokens": 604,
+      "cache_creation_tokens": 1053914,
+      "cache_read_tokens": 37009326,
+      "output_tokens": 14658,
+      "api_call_count": 302
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01CUpXW5NHBVQ34MSDhwtUdJ",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "update-config"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "af98eaf093d9",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 4245,
+        "end": 4246,
+        "entry_ids": [
+          "05bffd7a-fbc9-46e0-8e50-0f765596178c"
+        ],
+        "tool_use_id": "toolu_01CUpXW5NHBVQ34MSDhwtUdJ"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01CUpXW5NHBVQ34MSDhwtUdJ"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: update-config",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 47
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-25T16:22:59.420126Z",
+    "agent_lines": 0,
+    "agent_removed": 65,
+    "human_added": 0,
+    "human_modified": 286,
+    "human_removed": 6200,
+    "total_committed": 67,
+    "total_lines_changed": 12966,
+    "agent_percentage": 0.5013111213944161,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 14,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.local.json": 12
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 14,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.local.json": 12
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 7,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 8,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 9,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 10,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 11,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 12,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 13,
+      "user_lines_added": 100,
+      "user_lines_removed": 25,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.local.json": 12,
+        "README.md": 1,
+        "crates/callisto-graph/src/error.rs": 1,
+        "docs/config.md": 2,
+        "docs/errors.md": 82
+      },
+      "user_removed_per_file": {
+        "README.md": 1,
+        "crates/callisto-graph/src/error.rs": 1,
+        "docs/config.md": 2,
+        "docs/errors.md": 21
+      }
+    },
+    {
+      "checkpoint_number": 14,
+      "user_lines_added": 37,
+      "user_lines_removed": 46,
+      "agent_lines_added": 139,
+      "agent_lines_removed": 78,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/agents/bug-hunter.md": 1,
+        ".claude/semantic-model/INDEX.md": 2,
+        ".claude/semantic-model/config-resolution.md": 11,
+        ".claude/semantic-model/version-flow.md": 8,
+        ".claude/settings.local.json": 12,
+        ".claude/skills/bug-hunter/SKILL.md": 1
+      },
+      "user_removed_per_file": {
+        ".claude/agents/bug-hunter.md": 1,
+        ".claude/semantic-model/INDEX.md": 2,
+        ".claude/semantic-model/config-resolution.md": 32,
+        ".claude/semantic-model/error-taxonomy.md": 3,
+        ".claude/semantic-model/version-flow.md": 7,
+        ".claude/skills/bug-hunter/SKILL.md": 1
+      }
+    },
+    {
+      "checkpoint_number": 15,
+      "user_lines_added": 191,
+      "user_lines_removed": 6415,
+      "agent_lines_added": 153,
+      "agent_lines_removed": 90,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/agents/bug-hunter.md": 1,
+        ".claude/semantic-model/INDEX.md": 2,
+        ".claude/semantic-model/config-resolution.md": 11,
+        ".claude/semantic-model/version-flow.md": 8,
+        ".claude/settings.local.json": 12,
+        ".claude/skills/bug-hunter/SKILL.md": 1,
+        "docs/projects/ROAD-TO-V1.md": 154
+      },
+      "user_removed_per_file": {
+        ".claude/agents/bug-hunter.md": 1,
+        ".claude/plans/ACTIVE.md": 413,
+        ".claude/plans/CODEX-HANDOFF-RELEASE-TRUST.md": 60,
+        ".claude/plans/CODEX-RECONCILIATION-REPORT.md": 53,
+        ".claude/plans/PLAN-005-release-entry-is-prerelease.json": 232,
+        ".claude/plans/PLAN-006.json": 190,
+        ".claude/plans/PLAN-DOCUMENTATION-AUTHORITY-005.json": 279,
+        ".claude/plans/PLAN-RELEASE-PR-API-COMMIT-015.json": 66,
+        ".claude/plans/PLAN-RELEASE-PR-DECISION-014.json": 15,
+        ".claude/plans/PLAN-RELEASE-REARCHITECTURE-008-013.json": 187,
+        ".claude/plans/PLAN-TRACK1-FIXED-GROUP-CASCADE-CORRECTNESS.json": 328,
+        ".claude/plans/PLAN-TRACK2-PLATFORM-MANIFEST-WRITES.json": 307,
+        ".claude/plans/PLAN-TRACK3B1-IDENTITY-PROMOTION-CORE.json": 511,
+        ".claude/plans/PLAN-TRACK4-RELEASE-PIPELINE-CONTRACT-CORRECTNESS.json": 259,
+        ".claude/plans/PLAN-TRACK5-CHANGELOG-PR-BODY-CONSOLIDATION.json": 200,
+        ".claude/plans/PLAN-TRACK9-CASCADE-REWRITE-KEY-CORRECTNESS.json": 158,
+        ".claude/plans/PR101-HARDENING/README.md": 31,
+        ".claude/plans/PR101-HARDENING/audit/pr101-arch.md": 60,
+        ".claude/plans/PR101-HARDENING/audit/pr101-config-cli.md": 80,
+        ".claude/plans/PR101-HARDENING/audit/pr101-core.md": 70,
+        ".claude/plans/PR101-HARDENING/audit/pr101-perf.md": 69,
+        ".claude/plans/PR101-HARDENING/audit/pr101-tests.md": 157,
+        ".claude/plans/PR101-HARDENING/audit/pr101-workflow.md": 78,
+        ".claude/plans/PR101-HARDENING/closure-matrix.md": 75,
+        ".claude/plans/PR101-HARDENING/defects-and-red-tests.md": 24,
+        ".claude/plans/PR101-HARDENING/w0-ledger.md": 67,
+        ".claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md": 435,
+        ".claude/plans/ROAD-TO-V1.md": 154,
+        ".claude/plans/SESSION_HANDOFF.md": 162,
+        ".claude/plans/apply-batch-002-plan.json": 262,
+        ".claude/plans/manifest-persist-001-plan.json": 504,
+        ".claude/plans/track-e-specificity-plan.json": 113,
+        ".claude/plans/track-f-resolution-plan.json": 159,
+        ".claude/plans/track-g-matrix-napi-maturin.plan.json": 611,
+        ".claude/semantic-model/INDEX.md": 2,
+        ".claude/semantic-model/config-resolution.md": 32,
+        ".claude/semantic-model/error-taxonomy.md": 3,
+        ".claude/semantic-model/version-flow.md": 7,
+        ".claude/skills/bug-hunter/SKILL.md": 1
+      }
+    }
+  ]
+}

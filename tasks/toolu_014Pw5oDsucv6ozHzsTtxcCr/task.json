@@ -1,0 +1,20 @@
+{
+  "tool_use_id": "toolu_014Pw5oDsucv6ozHzsTtxcCr",
+  "agent_id": "ab8c6e31f485206fe",
+  "subagent_type": "general-purpose",
+  "task_description": "Drift-check specs 011 and 014",
+  "files": [
+    ".github/actions/callisto-action/action.yml",
+    ".github/actions/setup-callisto/action.yml",
+    ".moon/tasks/callisto.yml",
+    "README.md",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-model/src/lib.rs",
+    "crates/callisto-model/src/plan.rs",
+    "crates/callisto-model/src/report.rs",
+    "docs/config.md",
+    "docs/errors.md"
+  ],
+  "started_at": "2026-09-25T09:14:51.898879-07:00",
+  "completed_at": "2026-09-25T09:14:51.89944-07:00"
+}
