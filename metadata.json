@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.11.3-nightly.202609240627.b2779c9eb",
+  "checkpoint_id": "01M3D6R46XNMMNG3B5HVCY85AR",
+  "strategy": "manual-commit",
+  "branch": "fix/release-consistency",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 19244,
+    "cache_read_tokens": 3043197,
+    "output_tokens": 6913,
+    "api_call_count": 11
+  }
+}
