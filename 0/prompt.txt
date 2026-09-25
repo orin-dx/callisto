@@ -1,0 +1,104 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+   - Original: adversarial analysis of https://github.com/orin-dx/callisto/pull/101 (self-release lifecycle: architecture/semantic model, performance, bugs, corner cases, coverage; tests should be black box with happy/corner/error paths). It evolved into: fix everything audited (holistically by root pattern, not spot patches), do the deferred structural work ("Let's not defer important stuff"), push to the open PR and make hosted CI pass ("Make sure we don't fail things we should pass"), decide judgment calls with research ("Don't assume, research, triple check things"), then get the first real release out.
+   - User decisions recorded: product tag `callisto@{version}` is intentional; no red-green testing, keep token spend lean ("Stop wasting tokens"); cargo must build in minutes; registry observation must use the package manager not curl; https only (no plain http, "auth will get complicated"); PyPI refused at plan time is fine; installer verification should be configurable (three modes); `ci` = full incl. coverage (ci-fast removed); workflows should use just/moon; "None for now" to optional follow-ups (queue: max concurrency, checksum-based already-published rerun path, plan-publish blocking vs warn, token rotation optional).
+   - Latest requests (in order): "Can we cleanup?" (done for my own items) then "Anything in those worktrees things we should bring in? Probably from codex. We need to clean up further" (in progress: classify leftover branches/worktrees, identify unmerged valuable work, then clean up further).
+   - Also in flight: the first real release. User merged release PR #99 (merge commit c5578e6a, GitHub-verified) and pasted run https://github.com/orin-dx/callisto/actions/runs/35552753450.
+
+2. Key Technical Concepts:
+   - Callisto durable self-release lifecycle: immutable release intent (schema 3, 24 ops for this release: 9 registry publish, 9 tag, forge release draft, 4 asset uploads, forge publish), ReleaseRunEnvelopeV1 persisted before effects, evidence-carrying ProviderObservationV1 (Absent | Exact{evidence} | Conflict{reason} | Indeterminate{cause}), single pure OperationState transition table (Attempting only via AbsentProof), ReleaseProvider port per role (Registry/GitTag/ForgeRelease/ArtifactUpload/ForgePublish), bounded retry (5 attempts, 2/4/8/16 s, Retry-After clamp 300 s), per-command deadlines (module `timeouts`), provider contract tier (captured real fixtures in testing/fixtures/providers, strict fakes, real-tool flag checks), fault-injection simulator (release_simulator.rs).
+   - Registry observation: cargo via `cargo info NAME@VER --registry X` from workspace root (yanked reads Absent — fails closed since publish is then refused; network failure ≠ Absent); npm via `npm view`; PyPI refused at plan time (pip cannot distinguish missing project from unreachable index); https-only registry endpoints; E174 for existing version in non-Recovery run; E173 stranded Attempting; E198 unknown profile; E170 capability gates.
+   - GitHub Release: create as draft, upload to draft, separate ForgePublish op last (GitHub immutable releases docs; knope documents same flow); drafts found via list endpoint; `gh release upload TAG` finds drafts (gh source FetchRelease).
+   - Workflow: orchestration revision = github.sha, main-only, signed-commit requirement (`.commit.verification.verified`), per-SHA concurrency, timeouts, recovery via workflow_dispatch with release_source_sha, recovery-checks job, policy script with 25 mutants (`.github/tests/verify-release-workflow-policy.sh`), installer `verification` input (require|fallback default|skip), just recipes (`zizmor`, `release-workflow-checks`, `workflow-contracts`, `ci` includes coverage 90).
+   - Build performance root cause: polluted target/debug/deps (1.72M .o files) from macOS split-debuginfo=unpacked; fixed with `.cargo/config.toml` split-debuginfo=off (local, git-excluded), single cargo invocation shape.
+   - Research findings (verified from source/docs): changesets/nx treat already-published as success/skip; knope retry 5 with Retry-After; release-please label state machine and re-runnable tagging; GitHub `concurrency.queue: max` (May 2026, actionlint 1.7.12 rejects); taiki-e/install-action `fallback` + SHA256; npm names allow legacy uppercase and scoped leading `.`/`_`.
+
+3. Files and Code Sections:
+   - crates/callisto-graph/src/commands/release/{mod,capability,derive,binding,github}.rs and provider/{mod,registry,tag,forge,artifact,policy,http}.rs: split from the 2,900-line release.rs; provider port and single provider table; registry.rs now runs `cargo info ... --registry` (classify_cargo_info), npm view; PypiRegistry can_observe_versions=false + require_observable_registry at plan.
+   - crates/callisto-graph/src/commands/release_execution.rs: executor generic over ReleaseProviderSet; observe-before-Attempting; recovery sweep of all Pending ops in Recovery runs; memoized reconcile.
+   - crates/callisto-graph/src/commands/release_simulator.rs: fault-injection simulator (1197 scenarios, 6 invariants).
+   - crates/callisto-model/src/{release.rs,release_observation.rs,release_transition.rs}: envelope, evidence, transition table, ForgePublish role, ReleasePackageId::new name grammar (check_npm_name now allows uppercase and scoped `.`/`_` leading; segment checker `check_npm_segment(segment, scoped)`).
+   - crates/callisto-graph/src/registry_endpoint.rs: https-only canonical registry URL; single-bracket IPv6 rendering test.
+   - crates/callisto-cli/src/commands/release.rs: validate-before-effects, receipt probe, typed errors, plan tolerates source without [release] (zero slots + notice).
+   - .github/workflows/callisto-release.yml, callisto-ci.yml: workflow adapter; 8 `extractions/setup-just` steps replaced by `taiki-e/install-action@c3ec0de9ae7f1019cea21aa96aa0a895b9552063 # v2` with `tool: just@1.58.0` (PR #102).
+   - .github/tests/verify-release-workflow-policy.sh (+ contract script), justfile (workflow-contracts also runs installer tests), .github/actions/setup-callisto{,-wasm}/action.yml (verification input).
+   - Specs/docs: .claude/specs/SPEC-RELEASE-LIFECYCLE-HARDENING.json (44 criteria, 14 [JC] awaiting owner acceptance), docs/07-self-release-lifecycle.md, docs/specs/SPEC-SELF-RELEASE-LIFECYCLE.json, .claude/semantic-model/release-lifecycle.md, .claude/plans/PR101-HARDENING/ (README, closure-matrix, defects map, audit reports), .changeset/release-product-artifacts.md.
+   - Memory files: project_cargo_slowness_target_pollution.md, feedback_no_red_green_lean_tokens.md, project_pr101_hardening_state.md (updated 2026-09-20 with final state and owner decisions; older stale statements corrected).
+   - Release PR #99: bumps 10 crates 0.7.2 → 0.8.0 (fixed group `workspace`), 24 files; ruleset 22292852 on main: 12 required checks, 1 approving code-owner review, signatures, linear history; bypass actor user 116747 (castrog) mode always.
+
+4. Errors and fixes:
+   - Misused zsh globs (`--include=*.ts`, `$P` array/word-splitting, `wt-*` no-match aborting whole `rm`): fixed with quoting/functions/setopt nullglob.
+   - Slow cargo: root cause target pollution; fixed as above; agents earlier ran `pkill -9 rustc` (forbid).
+   - Commit missed untracked `registry_endpoint.rs` (git add -u): fixed via fixup + autosquash.
+   - Pre-commit hook fmt-check blocks commits while another agent's unformatted files are in tree: wait for agent to finish.
+   - just ci failure: rustdoc broken intra-doc links after module split: fixed links in commands/release/mod.rs.
+   - Withdrawn wrong finding: license mismatch was stale-base artifact.
+   - npm name validator wrongly rejected legacy names: fixed after corpus test (8,014 names).
+   - Transient CI failure: setup-just GET releases 500 → reran failed job; durable fix PR #102.
+   - PR #102 CI creation delayed by mergeability computation; my first wait loop exited early (condition allowed zero checks): fixed by requiring >5 checks.
+   - Local E051 (`release trust found an ignored path outside its fixed allowlist`) in rehearsal caused by user's Entire hook writing `.entire/logs/`: local only; remove before running plan.
+   - Stale callisto-action tests (8) failed identically on main and were unwired: deleted (action reduced to release-PR script by commit c1adbf37).
+   - Fixture refresh had unrelated churn: reverted GitHub/git fixtures.
+
+5. Problem Solving:
+   - Solved: audited defects D01–D08, C2–C8, P20, F1–F4 etc.; cargo slowness; hosted CI green on Linux+macOS (12/12) on PR #101, #102, and on release PR #99 head; main CI flake rerun succeeded.
+   - Ongoing: (a) CRITICAL unanalyzed: release run 35552753450 completed "success" but `Derive ephemeral intent…`, `Build…`, `Assemble attested product artifacts`, `Execute approved release` and `Create or update the Callisto release PR` were all SKIPPED while `Identify a merged Callisto release PR` succeeded — i.e., the release apparently did not execute. Need to inspect release-candidate outputs (is_release_pr, release_source_sha, orchestration_sha), the jq/API checks (merged PR association, head repo full_name == repository, managed head branch name `callisto/version-packages…`, verified commit), and confirm crates.io/tags/releases still absent for 0.8.0. (b) Branch/worktree cleanup: classify leftovers and identify unmerged valuable work (especially Codex): see current work.
+
+6. All user messages:
+   - "Can you do an adversarial analysis of https://github.com/orin-dx/callisto/pull/101? Focusing on architecture, semantic model in the context of the goals of callisto? Also look for performance issues, bugs, missed corner casses and missing coverage. Tests should be black box, cover useful functionality, happy path, corner cases and error states."
+   - Pasted Codex findings (publish-then-reject on bad orchestration revision; target_commitish; DAG cost; profile authority split; coverage gaps).
+   - "Let's make a comprehensive plan that accounts for the architecture and semantic models. We want to adjust as needed to ensure that we avoid similar bugs in the future vs spot patching one at a time. Sometimes there is a pattern to our issues that we can address with a model change or architectural change. Let's be holistic about this once the bug hunter is done please. Present the plan first. Don't rush."
+   - "Lets tackle these leveraging our plugins to the best of their ability with agent teams and a workflow using the best agent + effort for quality work but lower cost. Account for that and adjust the plan. Present it"
+   - "Let's fire it up and build on top of the PR branch please"
+   - "This is taking a long time? Is that right?"
+   - "It definitely should not take hours to build and test. Maybe we do that in the end to avoid issues?"
+   - "Can we wrap this up quicker please?"
+   - "Let's make..." (see cargo message) — "Yes, we had talked about making product tags. Cargo should not be running slow, you need to figure out why. It should take minutes, not hours. WTF. Don't overrun, don't run too much in parallel because of contention. Figure the fuck out vs assuming that is normal."
+   - "We don't do red-green testing anymore, right? Stop wasting tokens"
+   - "Amazing, let's fire up and keep going for the rest of the work then"
+   - "How much work is left? You are taking a long time"
+   - "Have you completed all of the work we identified?"
+   - "Let's not defer important stuff"
+   - "Why have ci and ci fast?"
+   - "For our workflow in GH actions can we just switch to ci being fast + coverage"
+   - "Shouldn't the workflow use moon and just???"
+   - "Can we cleanup?" — no wait, see below; other messages in order: "Are you super confident?" came later.
+   - "All done?"
+   - "Updated and push specs and plans. Make sure we don't fail things we should pass"
+   - "We should push to the open PR and test"
+   - "Rebase from latest main"
+   - "Why rotating token???"
+   - "Installer fail closed default? Explain"
+   - "Let's’ allow a config"
+   - "Please fix things appropriatelly and give me detaisl on the 14 judgement calls. What can we learn from changesets, knope, nx release and release please that helps use decide on those calls?"
+   - "Don't assume, research, triple check things"
+   - "We should use the package manager, not curl. We want to keep things clean. We should avoid plan http please because auth will get complicated, right? Why complicate thigns. The rest seems fine"
+   - "Sounds fine for pypi"
+   - "None for now"
+   - "Are you super confident?"
+   - "Merged the PR, what's next?"
+   - "Did it faile?"
+   - "How do we fix it?"
+   - "merged 102"
+   - "How does this look?" (pasted https://github.com/orin-dx/callisto/actions/runs/35551949907)
+   - "Merged the release PR:" (pasted https://github.com/orin-dx/callisto/actions/runs/35552753450)
+   - "We have two implementer agents active?"
+   - "Can we cleanup?"
+   - "Anything in those worktrees things we should bring in? Probably from codex. We need to clean up further"
+   (Note: earlier ordering approximate; system-injected notifications and subagent hand-backs are not user messages.)
+
+7. Pending Tasks:
+   - Investigate why release run 35552753450 skipped plan/build/assemble/execute despite `Identify a merged Callisto release PR` success (release may not have run); verify state on crates.io/tags/GitHub Releases; if release did not trigger, diagnose (is_release_pr false?) and fix or use `workflow_dispatch` recovery with release_source_sha = c5578e6a's full SHA. Report to user.
+   - Finish branch/worktree investigation: inspect unique commits of class E branches (esp. codex/005-doc-authority-v2 +11, codex-release-trust-specs +3, worktree-agent-* +1 each, smoke-test-next-release, spike/relpr-stale-managed, chore/remove-release-environment-approval closed PR), check `.claude/worktrees/*` dirty state, decide what (if anything) to bring in, then clean up further with user confirmation for anything unmerged. Do NOT delete `entire/*` branches or touch other sessions' work without asking.
+   - Still-open owner items: re-pin `Swatinem/rust-cache@v2` inside orin-dx/actions setup-rust; bot-PR check approval (user apparently got checks to run on #99 — ask what they did); optional token rotation; 14 [JC] calls in SPEC-RELEASE-LIFECYCLE-HARDENING.json awaiting acceptance; optional follow-ups user declined for now.
+
+8. Current Work:
+   Immediately before the summary request I was answering "Anything in those worktrees things we should bring in? Probably from codex. We need to clean up further" by running a python classification of all local branches vs origin/main (results: A already-in-main 50; B squash-merged PR with differing local commits 39; D closed unmerged PR 1 (`chore/remove-release-environment-approval`); E no-PR unique commits 27 — including entire/c5578e6-e3b0c4 +11, smoke-test-next-release +3, ~22 `worktree-agent-*` +1 each dated 2026-09-09, spike/relpr-stale-managed +1, codex-release-trust-specs +3 and codex/005-doc-authority-v2 +11 both 2026-08-29). Rows saved to /tmp/branch_rows.json. I had not yet inspected the unique commits' content or worktree status. In the same window the Monitor task bus4p5vvr ended reporting release run 35552753450 COMPLETED success with the release-execution jobs skipped — not yet analyzed or reported to the user.
+
+9. Optional Next Step:
+   First priority (critical, directly tied to the user's pasted release run): investigate run 35552753450 — e.g., `gh run view 35552753450 --json jobs`, read the "Identify a merged Callisto release PR" step log/outputs (is_release_pr, release_source_sha), confirm whether 0.8.0 exists on crates.io/tags/releases, and tell the user plainly that the release job graph skipped execute. Then continue the branch cleanup analysis the user asked for: "Anything in those worktrees things we should bring in? Probably from codex. We need to clean up further" — inspect unique commits of the class E branches (starting with codex/005-doc-authority-v2, codex-release-trust-specs, worktree-agent-* subjects such as "fix(model): stop dropping attestation_policy from ReleaseOpe..." and "fix(graph): guard against stale fixed-group members in casca..."), check whether each is already superseded by main's current code, and present a keep/bring-in/delete list for confirmation before deleting anything unmerged.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/gabe/.claude/projects/-Users-gabe-Projects-callisto/a08620cc-8b37-45b5-b4b2-89a977aad490.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
