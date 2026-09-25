@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>b6yvc7d52</task-id>
+<tool-use-id>toolu_01TR9gTST1XhrizowztFCVwo</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a08620cc-8b37-45b5-b4b2-89a977aad490/tasks/b6yvc7d52.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the push-triggered release run on the merge commit to finish" completed (exit code 0)</summary>
+</task-notification>
