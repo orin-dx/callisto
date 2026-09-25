@@ -3,8 +3,6 @@
 > **Historical.** Original crate specification draft; kept for background and rationale. It predates the current implementation and may not reflect current commands, config, or behavior — see [`../ARCHITECTURE.md`](../ARCHITECTURE.md) and [`specs/`](specs/) for current behavior.
 
 
-> **Historical.** This document predates the current implementation and may not reflect current behavior, commands, or config. See [README.md](../README.md), [ARCHITECTURE.md](../ARCHITECTURE.md), and [docs/specs/](specs/) for what is current.
-
 > **moon extension removed (2026-09-24):** `callisto-moon`, `MoonProjectLocator`, `ProjectLocator::declared_edges`, the declared-edge cross-check (`DeclaredEdge`, `GraphEdgeDisagreement`) and the `LocateError::Moon*` variants no longer exist. moon runs the `callisto` CLI installed through proto (`proto/callisto.toml`). Sections describing them are historical.
 
 > **Current licensing policy (2026-09-16):** `callisto-model`,
