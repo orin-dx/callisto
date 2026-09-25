@@ -15,7 +15,9 @@ pub mod npm;
 pub mod python;
 
 pub use cargo::{cargo_package_name, CargoToml, InheritedDep, WorkspaceCargoResolver, WorkspaceInheritance};
-pub use npm::{detect_npm_workspace_kind, npm_package_name, npm_role_from_source, read_napi_targets, PackageJson};
+pub use npm::{
+    detect_npm_workspace_kind, napi_binary_name, npm_package_name, npm_role_from_source, read_napi_targets, PackageJson,
+};
 pub use python::{python_package_name, PyprojectToml, Requirement};
 
 /// Package identity extracted directly from manifest source text via
@@ -135,6 +137,10 @@ pub trait Manifest: Send + Sync {
     /// Executable names this package builds; empty for a library-only package.
     fn bin_names(&self) -> Vec<String> {
         Vec::new()
+    }
+    /// The lib name of a napi-rs addon crate: a `cdylib` depending on `napi`.
+    fn napi_lib_name(&self) -> Option<String> {
+        None
     }
 }
 

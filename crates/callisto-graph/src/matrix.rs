@@ -138,6 +138,7 @@ pub(crate) fn build_platform_target(triple: &str, package_dir: &str, package_nam
         artifact_name,
         package_dir: package_dir.to_string(),
         package_name: package_name.to_string(),
+        manifest_path: None,
     })
 }
 
@@ -371,6 +372,47 @@ pub(crate) struct MatrixPackageInput {
     pub name: String,
 }
 
+/// A workspace napi-rs addon crate (see `Manifest::napi_lib_name`).
+pub(crate) struct NapiCrate {
+    pub lib_name: String,
+    /// Workspace-root-relative `Cargo.toml`.
+    pub manifest_path: String,
+}
+
+/// The `--manifest-path` a napi package's build needs; `None` when its own directory holds its addon crate.
+pub(crate) fn napi_manifest_path(
+    pkg: &MatrixPackageInput,
+    pkg_json: &serde_json::Value,
+    crates: &[NapiCrate],
+) -> Result<Option<String>, GraphError> {
+    let in_package_dir =
+        |candidate: &&NapiCrate| Path::new(&candidate.manifest_path).parent() == Some(Path::new(&pkg.dir_rel));
+    if crates.iter().any(|candidate| in_package_dir(&candidate)) {
+        return Ok(None);
+    }
+    let binary_name = callisto_manifests::napi_binary_name(pkg_json);
+    let matches: Vec<&NapiCrate> = crates
+        .iter()
+        .filter(|candidate| candidate.lib_name == binary_name)
+        .collect();
+    if let [only] = matches.as_slice() {
+        return Ok(Some(only.manifest_path.clone()));
+    }
+    let listed: Vec<&NapiCrate> = if matches.is_empty() {
+        crates.iter().collect()
+    } else {
+        matches
+    };
+    Err(GraphError::NapiCrateUnresolved {
+        package: pkg.id.clone(),
+        binary_name,
+        candidates: listed
+            .iter()
+            .map(|candidate| format!("{} (lib `{}`)", candidate.manifest_path, candidate.lib_name))
+            .collect(),
+    })
+}
+
 /// Reads engines.node (npm) and requires-python (python) from
 /// `package_dir_abs`'s already-parsed manifest values, in that order, so
 /// callers preserve the npm-before-python ordering AC-005b requires without
@@ -420,7 +462,10 @@ pub(crate) fn assemble_runtime_versions(
 /// once here and the resulting value shared between the platform-target and
 /// runtime-version extraction paths, instead of each independently
 /// re-reading and re-parsing the same file from disk.
-pub(crate) fn build_matrix_report(packages: &[MatrixPackageInput]) -> Result<MatrixReport, GraphError> {
+pub(crate) fn build_matrix_report(
+    packages: &[MatrixPackageInput],
+    napi_crates: Option<&[NapiCrate]>,
+) -> Result<MatrixReport, GraphError> {
     let mut platform_targets = BTreeMap::new();
     let mut runtime_versions = BTreeMap::new();
     let mut diagnostics = Vec::new();
@@ -437,7 +482,15 @@ pub(crate) fn build_matrix_report(packages: &[MatrixPackageInput]) -> Result<Mat
             pkg_json_val.as_ref(),
             pyproject_val.as_ref(),
         )?;
-        if let Some(group) = group {
+        if let Some(mut group) = group {
+            if let (PlatformTargetKind::Napi, Some(pkg_json), Some(napi_crates), false) =
+                (group.kind, pkg_json_val.as_ref(), napi_crates, group.targets.is_empty())
+            {
+                let manifest_path = napi_manifest_path(pkg, pkg_json, napi_crates)?;
+                for target in &mut group.targets {
+                    target.manifest_path = manifest_path.clone();
+                }
+            }
             platform_targets.insert(pkg.name.clone(), group);
         }
         diagnostics.extend(diags);
@@ -536,10 +589,73 @@ mod tests {
         }
     }
 
+    fn napi_crate(lib_name: &str, manifest_path: &str) -> NapiCrate {
+        NapiCrate {
+            lib_name: lib_name.to_owned(),
+            manifest_path: manifest_path.to_owned(),
+        }
+    }
+
+    fn napi_path(crates: &[NapiCrate], package_json: &str) -> Result<Option<String>, GraphError> {
+        let pkg = input("packages/napi", Path::new("."));
+        napi_manifest_path(&pkg, &serde_json::from_str(package_json).unwrap(), crates)
+    }
+
+    #[test]
+    fn napi_crate_in_the_package_dir_needs_no_manifest_path() {
+        let json = r#"{"napi":{"binaryName":"addon"}}"#;
+        for lib in ["addon", "other_name"] {
+            let crates = [
+                napi_crate(lib, "packages/napi/Cargo.toml"),
+                napi_crate("addon", "crates/addon/Cargo.toml"),
+            ];
+            assert_eq!(napi_path(&crates, json).unwrap(), None);
+        }
+    }
+
+    #[test]
+    fn split_napi_crate_is_matched_by_binary_name() {
+        let crates = [
+            napi_crate("oxc_react_docgen_napi", "crates/binding/Cargo.toml"),
+            napi_crate("other", "crates/other/Cargo.toml"),
+        ];
+        let json = r#"{"napi":{"binaryName":"oxc_react_docgen_napi"}}"#;
+        assert_eq!(
+            napi_path(&crates, json).unwrap().as_deref(),
+            Some("crates/binding/Cargo.toml")
+        );
+        let default = [napi_crate("index", "crates/index/Cargo.toml")];
+        assert_eq!(
+            napi_path(&default, r#"{"napi":{}}"#).unwrap().as_deref(),
+            Some("crates/index/Cargo.toml")
+        );
+    }
+
+    #[test]
+    fn zero_or_several_napi_crates_error_listing_candidates() {
+        let json = r#"{"napi":{"binaryName":"addon"}}"#;
+        let zero = napi_path(&[napi_crate("other", "crates/other/Cargo.toml")], json).unwrap_err();
+        assert!(
+            matches!(&zero, GraphError::NapiCrateUnresolved { candidates, .. } if candidates == &["crates/other/Cargo.toml (lib `other`)"]),
+            "{zero}"
+        );
+        let crates = [
+            napi_crate("addon", "crates/a/Cargo.toml"),
+            napi_crate("addon", "crates/b/Cargo.toml"),
+            napi_crate("other", "crates/other/Cargo.toml"),
+        ];
+        let several = napi_path(&crates, json).unwrap_err();
+        assert!(
+            matches!(&several, GraphError::NapiCrateUnresolved { candidates, .. } if candidates.len() == 2),
+            "{several}"
+        );
+        assert!(several.to_string().contains("crates/a/Cargo.toml"), "{several}");
+    }
+
     /// AC-003: no packages declare anything -> the empty-report shape.
     #[test]
     fn build_matrix_report_empty_workspace_produces_empty_report() {
-        let report = build_matrix_report(&[]).unwrap();
+        let report = build_matrix_report(&[], None).unwrap();
         assert_eq!(report.schema_version, callisto_model::SCHEMA_VERSION);
         assert!(report.platform_targets.is_empty());
         assert!(report.runtime_versions.is_empty());
@@ -565,7 +681,7 @@ mod tests {
             input("alpha", &tmp.path().join("alpha")),
             input("mid", &tmp.path().join("mid")),
         ];
-        let report = build_matrix_report(&inputs).unwrap();
+        let report = build_matrix_report(&inputs, None).unwrap();
         let keys: Vec<&String> = report.platform_targets.keys().collect();
         assert_eq!(keys, vec!["alpha", "mid", "zeta"]);
     }
@@ -588,7 +704,7 @@ mod tests {
             input("pkg-a", &tmp.path().join("pkg-a")),
             input("pkg-b", &tmp.path().join("pkg-b")),
         ];
-        let report = build_matrix_report(&inputs).unwrap();
+        let report = build_matrix_report(&inputs, None).unwrap();
 
         let artifact_name = |pkg: &str| report.platform_targets[pkg].targets[0].artifact_name.clone();
         let a = artifact_name("pkg-a");
@@ -609,7 +725,7 @@ mod tests {
         std::fs::write(dir.join("package.json"), r#"{"engines":{"node":">=20.0.0"}}"#).unwrap();
         std::fs::write(dir.join("pyproject.toml"), "[project]\nrequires-python = \">=3.9\"\n").unwrap();
 
-        let report = build_matrix_report(&[input("dual-pkg", &dir)]).unwrap();
+        let report = build_matrix_report(&[input("dual-pkg", &dir)], None).unwrap();
         let entries = report
             .runtime_versions
             .get("dual-pkg")
@@ -639,7 +755,7 @@ mod tests {
         )
         .unwrap();
 
-        let report = build_matrix_report(&[input("dual-field-pkg", &dir)]).unwrap();
+        let report = build_matrix_report(&[input("dual-field-pkg", &dir)], None).unwrap();
 
         let group = report
             .platform_targets
@@ -1134,7 +1250,7 @@ mod tests {
     /// a warning, and a group left with no targets is dropped.
     #[test]
     fn add_release_artifact_groups_warns_on_an_unrecognised_triple() {
-        let mut report = build_matrix_report(&[]).unwrap();
+        let mut report = build_matrix_report(&[], None).unwrap();
         add_release_artifact_groups(
             &mut report,
             &[
@@ -1158,7 +1274,7 @@ mod tests {
             r#"{"napi":{"targets":["aarch64-apple-darwin"]}}"#,
         )
         .unwrap();
-        let mut report = build_matrix_report(&[input("tool", tmp.path())]).unwrap();
+        let mut report = build_matrix_report(&[input("tool", tmp.path())], None).unwrap();
         let error = add_release_artifact_groups(
             &mut report,
             &[release_artifact("tool", "x86_64-unknown-linux-gnu", "tool.tar.gz")],

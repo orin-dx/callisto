@@ -239,6 +239,26 @@ impl Manifest for CargoToml {
         }
     }
 
+    fn napi_lib_name(&self) -> Option<String> {
+        let lib = self.document.get("lib");
+        let cdylib = lib
+            .and_then(|lib| lib.get("crate-type"))
+            .and_then(|types| types.as_array())
+            .is_some_and(|types| types.iter().any(|kind| kind.as_str() == Some("cdylib")));
+        let napi = self
+            .document
+            .get("dependencies")
+            .and_then(|deps| deps.as_table_like())
+            .is_some_and(|deps| deps.contains_key("napi"));
+        if !(cdylib && napi) {
+            return None;
+        }
+        lib.and_then(|lib| lib.get("name"))
+            .and_then(|name| name.as_str())
+            .or_else(|| cargo_package_name(&self.document))
+            .map(|name| name.replace('-', "_"))
+    }
+
     fn package_name(&self) -> Result<String, ManifestError> {
         let name = cargo_package_name(&self.document).ok_or_else(|| ManifestError::MissingField {
             path: self.path.clone(),
@@ -774,6 +794,30 @@ mod tests {
 
         let bins = format!("{package}\n[[bin]]\nname = \"first\"\n\n[[bin]]\nname = \"second\"\n");
         assert_eq!(open_cargo(dir.path(), &bins).bin_names(), ["first"]);
+    }
+
+    #[test]
+    fn napi_lib_name_needs_a_cdylib_depending_on_napi() {
+        let dir = tempdir().unwrap();
+        let package = "[package]\nname = \"my-binding\"\nversion = \"1.0.0\"\n";
+        let cdylib = "[lib]\ncrate-type = [\"cdylib\"]\n";
+        let napi = "[dependencies]\nnapi = \"3\"\n";
+        let cases = [
+            (format!("{package}{cdylib}{napi}"), Some("my_binding")),
+            (
+                format!("{package}[lib]\nname = \"addon\"\ncrate-type = [\"cdylib\"]\n{napi}"),
+                Some("addon"),
+            ),
+            (format!("{package}{napi}"), None),
+            (format!("{package}{cdylib}"), None),
+        ];
+        for (content, expected) in cases {
+            assert_eq!(
+                open_cargo(dir.path(), &content).napi_lib_name().as_deref(),
+                expected,
+                "{content}"
+            );
+        }
     }
 
     #[test]

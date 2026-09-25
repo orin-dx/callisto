@@ -1,7 +1,9 @@
 use callisto_model::{CommandRunner, Diagnostic, DiagnosticCode, DiagnosticSeverity, MatrixReport, PackageId};
 
 use crate::error::GraphError;
-use crate::matrix::{add_release_artifact_groups, build_matrix_report, MatrixPackageInput, ReleaseArtifactInput};
+use crate::matrix::{
+    add_release_artifact_groups, build_matrix_report, MatrixPackageInput, NapiCrate, ReleaseArtifactInput,
+};
 use crate::resolver::DependencyResolver;
 use crate::Workspace;
 
@@ -11,6 +13,8 @@ pub struct MatrixOptions {
     /// package's PackageId::name() string. Err(GraphError::UnknownPackage)
     /// when no registered package matches.
     pub package: Option<String>,
+    /// Resolve each napi package's addon crate into `manifestPath` (E204 when not exactly one).
+    pub napi_crates: bool,
 }
 
 pub fn matrix<R: CommandRunner, D: DependencyResolver>(
@@ -41,7 +45,11 @@ pub fn matrix<R: CommandRunner, D: DependencyResolver>(
         })
         .collect();
 
-    let mut report = build_matrix_report(&inputs)?;
+    let napi_crates = opts
+        .napi_crates
+        .then(|| workspace_napi_crates(ws, &all_packages))
+        .transpose()?;
+    let mut report = build_matrix_report(&inputs, napi_crates.as_deref())?;
     let mut artifacts = Vec::new();
     for artifact in ws
         .config
@@ -90,6 +98,28 @@ pub fn matrix<R: CommandRunner, D: DependencyResolver>(
     }
     add_release_artifact_groups(&mut report, &artifacts)?;
     Ok(report)
+}
+
+/// Every workspace cargo package that builds a napi-rs addon.
+fn workspace_napi_crates<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+    packages: &[&callisto_model::Package],
+) -> Result<Vec<NapiCrate>, GraphError> {
+    let ctx = callisto_manifests::OpenContext::for_workspace_root(&ws.root);
+    let mut crates = Vec::new();
+    for decl in packages
+        .iter()
+        .flat_map(|package| package.canonical_manifests())
+        .filter(|decl| decl.format == callisto_model::ManifestFormat::CargoToml)
+    {
+        if let Some(lib_name) = crate::manifest_cache::open_cached(&ws.manifest_cache, decl, &ctx)?.napi_lib_name() {
+            crates.push(NapiCrate {
+                lib_name,
+                manifest_path: decl.path.to_string_lossy().into_owned(),
+            });
+        }
+    }
+    Ok(crates)
 }
 
 fn package_dir_rel(package: &callisto_model::Package) -> String {

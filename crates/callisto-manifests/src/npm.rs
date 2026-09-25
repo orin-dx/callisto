@@ -171,6 +171,16 @@ pub fn read_napi_targets(path: &Path, val: &Value) -> Result<Option<Vec<String>>
     Ok(Some(out))
 }
 
+/// The napi-rs binary name: `napi.binaryName`, else the deprecated `napi.name`, else napi-rs's `index`.
+pub fn napi_binary_name(val: &Value) -> String {
+    let napi = val.get("napi");
+    ["binaryName", "name"]
+        .iter()
+        .find_map(|key| napi.and_then(|napi| napi.get(key)).and_then(Value::as_str))
+        .unwrap_or("index")
+        .to_owned()
+}
+
 /// Detects whether `doc` (an already-parsed `package.json` document) declares
 /// itself a napi-rs platform package -- `os`+`cpu` constraint arrays both
 /// present and non-empty -- and if so, its platform/arch/abi. Pure and
@@ -593,6 +603,14 @@ mod tests {
         let doc: serde_json::Map<String, serde_json::Value> =
             serde_json::from_str(r#"{"name":"my-pkg","version":"1.0.0"}"#).unwrap();
         assert_eq!(npm_package_name(&doc), Some("my-pkg"));
+    }
+
+    #[test]
+    fn napi_binary_name_falls_back_to_name_then_index() {
+        let name = |json: &str| napi_binary_name(&serde_json::from_str(json).unwrap());
+        assert_eq!(name(r#"{"napi":{"binaryName":"addon","name":"old"}}"#), "addon");
+        assert_eq!(name(r#"{"napi":{"name":"old"}}"#), "old");
+        assert_eq!(name(r#"{"napi":{}}"#), "index");
     }
 
     #[test]
