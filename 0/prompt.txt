@@ -1,0 +1,11 @@
+<task-notification>
+<task-id>a3523397d544bcb56</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/320aa0c9-2df0-4319-88b7-ed0e66679ed8/tasks/a3523397d544bcb56.output</output-file>
+<status>completed</status>
+<summary>Agent "Evaluate CLI bugs" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>This agent's report was delivered to you as a message from "a3523397d544bcb56" (its SubagentHandback call). Read it there; it is not repeated here.
+</result>
+<usage><subagent_tokens>136128</subagent_tokens><tool_uses>60</tool_uses><duration_ms>430602</duration_ms></usage>
+</task-notification>
