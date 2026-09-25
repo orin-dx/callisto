@@ -1,0 +1,1 @@
+Why do we have product targets hardcoded? Can't we just use the same system to auto-detect for callisto itself???
