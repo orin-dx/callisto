@@ -1,0 +1,1 @@
+How can I merge the stack locally with an admin override? The web UI doesn't allow me to do so?
