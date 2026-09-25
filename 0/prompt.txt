@@ -1,0 +1,1 @@
+Shouldn't publish be the main command? What is the main command? What are all our commands? Are we just renaming things and mkaing our DX and UX terrible? Is it discoverable? Frienldy? Easy to understand?
