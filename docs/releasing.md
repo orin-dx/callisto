@@ -23,10 +23,16 @@ Callisto does not check registry credentials itself. `cargo`, `npm`, `twine`, an
 
 ## Generated workflows
 
-`callisto init --workflow` (or answering yes to its prompt) writes `.github/workflows/callisto-release.yml`. That path is what `release plan` binds artifact attestations to — keep the name if you rename anything else. Init never overwrites an existing file. This repo's own `.github/workflows/callisto-release.yml` is a worked example.
+`callisto init --workflow` (or answering yes to its prompt) writes `.github/workflows/callisto-release.yml`. That path is what `release plan` binds artifact attestations to — keep the name if you rename anything else.
+
+- Init never overwrites an existing file.
+- This repo's own `.github/workflows/callisto-release.yml` is a worked example.
 
 - **Simple shape** (no `[[release.artifact]]` slots, no napi platform packages): a `version-pr` job keeps the release PR current, and a `release` job runs `callisto release` on every push to the default branch. That is a no-op until the merged release PR leaves an untagged version.
-- **Build-matrix shape** (artifact slots or napi platform packages): `version-pr`, then `plan` -> `build` -> `execute`. `plan` runs only when the pushed commit writes `.callisto/release-decision.json`. `build` has one matrix job per napi target from `callisto matrix` and one per artifact slot, and attests the slot assets. `execute` places the napi builds (`napi artifacts`), writes the artifact manifest, and runs `callisto release execute`.
+- **Build-matrix shape** (artifact slots or napi platform packages): `version-pr`, then `plan` -> `build` -> `execute`.
+  - `plan` runs only when the pushed commit writes `.callisto/release-decision.json`.
+  - `build` has one matrix job per napi target from `callisto matrix` and one per artifact slot, and attests the slot assets.
+  - `execute` places the napi builds (`napi artifacts`), writes the artifact manifest, and runs `callisto release execute`.
 - Maturin builds, and platform packages without `napi.targets`, get no generated workflow.
 
 The default branch is the approval boundary: a merge to it publishes. Protect it with a rule that requires pull requests and reviews (GitHub -> Settings -> Rules). Init prints this reminder after writing the file.
