@@ -35,9 +35,11 @@ pub struct RawProductReleaseConfig {
     /// package that builds it, so an artifact need not come from the product.
     #[serde(default)]
     pub artifact: Vec<RawArtifactConfig>,
-    /// Credential-free forge destinations keyed by release profile. Registry
-    /// credentials are deliberately excluded from repository configuration.
-    pub profiles: Option<BTreeMap<String, RawReleaseProfileConfig>>,
+    /// The GitHub repository (`owner/repo`) the product release publishes to.
+    #[serde(rename = "forge-repository")]
+    pub forge_repository: Option<String>,
+    /// Legacy `[release.profiles]`, read only to migrate `production`.
+    pub profiles: Option<BTreeMap<String, RawLegacyReleaseProfile>>,
 }
 
 /// One declared release artifact. `target` is opaque to Callisto: it is passed
@@ -53,13 +55,12 @@ pub struct RawArtifactConfig {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct RawReleaseProfileConfig {
+pub struct RawLegacyReleaseProfile {
     #[serde(rename = "forge-repository")]
     pub forge_repository: String,
-    /// Maps a logical package target registry (for example `cratesIo`) to a
-    /// concrete configured registry key. This contains no endpoint or token.
+    /// Accepted so legacy files parse; never read.
     #[serde(rename = "registry-routes")]
-    pub registry_routes: Option<BTreeMap<String, String>>,
+    pub registry_routes: Option<toml::Value>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

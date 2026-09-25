@@ -4,13 +4,13 @@ use std::path::{Path, PathBuf};
 
 use callisto_model::release::is_safe_artifact_component;
 use callisto_model::{
-    ConfigKey, Ecosystem, GitHubRepository, PackageId, PublishTarget, RegistryKey, ReleaseProfileId, ReleaseTrigger,
-    Severity, TagTemplate,
+    ConfigKey, Ecosystem, GitHubRepository, PackageId, PublishTarget, RegistryKey, ReleaseTrigger, Severity,
+    TagTemplate,
 };
 
 use crate::config::groups::{GroupTable, RawGroupTable};
 use crate::config::pattern::PackagePattern;
-use crate::config::raw::{RawConfig, RawProductReleaseConfig, RawReleaseProfileConfig};
+use crate::config::raw::{RawConfig, RawProductReleaseConfig};
 use crate::error::{ConfigError, GraphError};
 
 #[derive(Clone, Debug)]
@@ -50,22 +50,8 @@ pub struct ResolvedConfig {
 pub struct ProductReleaseConfig {
     pub package: PackageId,
     pub artifacts: Vec<ProductArtifactConfig>,
-    pub profiles: BTreeMap<ReleaseProfileId, ReleaseProfileConfig>,
-}
-
-/// Credential-free destination facts required before a product release can
-/// plan or execute. A rehearsal registry is intentionally not synthesized:
-/// absent infrastructure leaves the rehearsal profile unavailable.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ReleaseProfileConfig {
-    pub forge_repository: GitHubRepository,
-    pub registry_routes: BTreeMap<RegistryKey, RegistryKey>,
-}
-
-impl ProductReleaseConfig {
-    pub fn profile(&self, id: &ReleaseProfileId) -> Option<&ReleaseProfileConfig> {
-        self.profiles.get(id)
-    }
+    /// The one forge destination; planning requires it.
+    pub forge_repository: Option<GitHubRepository>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -206,66 +192,44 @@ fn resolve_product_release(raw: RawProductReleaseConfig) -> Result<ProductReleas
             asset_name: entry.asset_name.clone(),
         });
     }
-    let profiles = raw
-        .profiles
-        .unwrap_or_default()
-        .into_iter()
-        .map(|(name, raw)| resolve_release_profile(name, raw))
-        .collect::<Result<BTreeMap<_, _>, _>>()?;
-    for (profile, destination) in &profiles {
-        if let Some((other, _)) = profiles
-            .iter()
-            .find(|(other, candidate)| *other != profile && candidate.forge_repository == destination.forge_repository)
-        {
-            return Err(ConfigError::InvalidProductRelease {
-                detail: format!(
-                    "release profiles `{}` and `{}` share forge-repository `{}`",
-                    profile.as_str(),
-                    other.as_str(),
-                    destination.forge_repository.as_slug()
-                ),
-            });
-        }
-    }
+    let forge_repository = resolve_forge_repository(&raw)?
+        .map(|raw| {
+            GitHubRepository::parse(&raw).map_err(|error| ConfigError::InvalidProductRelease {
+                detail: format!("forge-repository `{raw}` is invalid: {error}"),
+            })
+        })
+        .transpose()?;
     Ok(ProductReleaseConfig {
         package,
         artifacts,
-        profiles,
+        forge_repository,
     })
 }
 
-fn resolve_release_profile(
-    name: String,
-    raw: RawReleaseProfileConfig,
-) -> Result<(ReleaseProfileId, ReleaseProfileConfig), ConfigError> {
-    let profile = ReleaseProfileId::parse(&name).map_err(|error| ConfigError::InvalidProductRelease {
-        detail: format!("release profile `{name}` is invalid: {error}"),
-    })?;
-    let forge_repository =
-        GitHubRepository::parse(&raw.forge_repository).map_err(|error| ConfigError::InvalidProductRelease {
-            detail: format!("release profile `{name}` has invalid forge-repository: {error}"),
-        })?;
-    let registry_routes = raw
-        .registry_routes
-        .unwrap_or_default()
-        .into_iter()
-        .map(|(logical, destination)| {
-            let key = |raw: String| {
-                callisto_model::validated_registry_key(raw).map_err(|error| ConfigError::InvalidProductRelease {
-                    detail: format!("release profile `{name}` has an invalid registry route: {error}"),
-                })
-            };
-            Ok((key(logical)?, key(destination)?))
-        })
-        .collect::<Result<_, ConfigError>>()?;
-    Ok((
-        profile,
-        ReleaseProfileConfig {
-            forge_repository,
-            registry_routes,
-        },
-    ))
+/// `[release].forge-repository`, else the legacy `[release.profiles.production]` one.
+fn resolve_forge_repository(raw: &RawProductReleaseConfig) -> Result<Option<String>, ConfigError> {
+    let mut legacy = None;
+    for (name, profile) in raw.profiles.iter().flatten() {
+        if name != LEGACY_PRODUCTION_PROFILE {
+            return Err(ConfigError::InvalidProductRelease {
+                detail: format!(
+                    "release profile `{name}` is not supported: only a top-level [release].forge-repository key, or the `production` profile name for migration, is accepted"
+                ),
+            });
+        }
+        legacy = Some(profile.forge_repository.clone());
+    }
+    match (raw.forge_repository.clone(), legacy) {
+        (Some(current), Some(legacy)) if current != legacy => Err(ConfigError::InvalidProductRelease {
+            detail: format!(
+                "[release].forge-repository `{current}` conflicts with [release.profiles.production].forge-repository `{legacy}`"
+            ),
+        }),
+        (current, legacy) => Ok(current.or(legacy)),
+    }
 }
+
+const LEGACY_PRODUCTION_PROFILE: &str = "production";
 
 /// Per-package overrides from a `[[package]]` block in `callisto.toml`.
 ///
@@ -445,6 +409,7 @@ fn parse_package_config_fields(
     })
 }
 
+/// Reads and parses `root/callisto.toml` (absent means empty), then [`resolve`]s it.
 pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
     let callisto_toml = root.join("callisto.toml");
     let raw = if callisto_toml.exists() {
@@ -459,7 +424,12 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
     } else {
         RawConfig::default()
     };
+    resolve(root, raw)
+}
 
+/// Validates and defaults an already-parsed config for the workspace at `root`.
+pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigError> {
+    let callisto_toml = root.join("callisto.toml");
     let mut provenance = BTreeMap::new();
     let product_release = raw.release.map(resolve_product_release).transpose()?;
 
@@ -556,9 +526,6 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
             registries.insert(key, RegistryConfig { kind, url: reg.url });
         }
     }
-    if let Some(release) = product_release.as_ref() {
-        validate_release_profile_routes(release, &registries)?;
-    }
 
     let raw_groups = RawGroupTable {
         fixed: raw.fixed_group.unwrap_or_default(),
@@ -634,107 +601,6 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
         promoted_siblings: BTreeMap::new(),
         provenance,
     })
-}
-
-fn validate_release_profile_routes(
-    release: &ProductReleaseConfig,
-    registries: &BTreeMap<RegistryKey, RegistryConfig>,
-) -> Result<(), ConfigError> {
-    for (profile, destination) in &release.profiles {
-        for (logical, actual) in &destination.registry_routes {
-            let registry = registries
-                .get(actual)
-                .ok_or_else(|| ConfigError::InvalidProductRelease {
-                    detail: format!(
-                        "release profile `{}` routes `{}` to unknown registry `{}`",
-                        profile.as_str(),
-                        logical.as_str(),
-                        actual.as_str()
-                    ),
-                })?;
-            if actual.as_str() != RegistryKey::CRATES_IO
-                && actual.as_str() != RegistryKey::NPM
-                && registry.url.is_none()
-            {
-                return Err(ConfigError::InvalidProductRelease {
-                    detail: format!(
-                        "release profile `{}` routes `{}` to registry `{}` without a credential-free URL",
-                        profile.as_str(),
-                        logical.as_str(),
-                        actual.as_str()
-                    ),
-                });
-            }
-            // The same check release binding applies, run here so a cleartext
-            // or credential-bearing endpoint is refused before any publish.
-            if let Some(url) = registry.url.as_deref() {
-                crate::registry_endpoint::canonical_registry_url(url).map_err(|reason| {
-                    ConfigError::InvalidProductRelease {
-                        detail: format!(
-                            "release profile `{}` routes `{}` to registry `{}` with an unusable URL: {reason}",
-                            profile.as_str(),
-                            logical.as_str(),
-                            actual.as_str()
-                        ),
-                    }
-                })?;
-            }
-        }
-    }
-    let production = Some(ReleaseProfileId::production());
-    let route_destination = |key: &RegistryKey| {
-        crate::registry_endpoint::registry_destination(
-            key.as_str(),
-            registries.get(key).and_then(|registry| registry.url.as_deref()),
-        )
-    };
-    let same_destination = |a: &RegistryKey, b: &RegistryKey| {
-        a == b
-            || match (route_destination(a), route_destination(b)) {
-                (Some(a), Some(b)) => a == b,
-                _ => false,
-            }
-    };
-    let conflict = |profile: &ReleaseProfileId, other: &str, logical: &RegistryKey, actual: &RegistryKey| {
-        Err(ConfigError::InvalidProductRelease {
-            detail: format!(
-                "release profiles `{}` and `{}` share registry destination `{}` for `{}`",
-                profile.as_str(),
-                other,
-                actual.as_str(),
-                logical.as_str()
-            ),
-        })
-    };
-    for (profile, destination) in &release.profiles {
-        for (other, other_destination) in &release.profiles {
-            if other <= profile {
-                continue;
-            }
-            for (logical, actual) in &destination.registry_routes {
-                if let Some(other_actual) = other_destination.registry_routes.get(logical) {
-                    if same_destination(actual, other_actual) {
-                        return conflict(profile, other.as_str(), logical, actual);
-                    }
-                }
-            }
-        }
-        // The production profile owns each built-in destination it does not re-route; a lone
-        // non-production profile is compared against those built-ins directly.
-        let production_routes = production.as_ref().and_then(|id| release.profiles.get(id));
-        let non_production = production.as_ref() != Some(profile);
-        if non_production && (production_routes.is_some() || release.profiles.len() == 1) {
-            for (logical, actual) in &destination.registry_routes {
-                let owner = production_routes
-                    .and_then(|routes| routes.registry_routes.get(logical))
-                    .unwrap_or(logical);
-                if same_destination(actual, owner) {
-                    return conflict(profile, ReleaseProfileId::PRODUCTION, logical, actual);
-                }
-            }
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -1353,139 +1219,114 @@ mod tests {
         );
     }
 
-    #[test]
-    fn product_release_profiles_bind_named_forge_destinations() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        fs::write(
-            tmp.path().join("callisto.toml"),
-            "[release]\nproduct-package = \"cargo/demo\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"aarch64-apple-darwin\"\nasset-name = \"callisto-aarch64-apple-darwin.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"callisto-x86_64-unknown-linux-gnu.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-musl\"\nasset-name = \"callisto-x86_64-unknown-linux-musl.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"wasm32-wasip1\"\nasset-name = \"callisto-moon.wasm\"\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\n\n[release.profiles.rehearsal]\nforge-repository = \"orin-dx/callisto-rehearsal\"\n",
-        )
-        .expect("write callisto.toml");
+    const RELEASE_HEAD: &str = "[release]\nproduct-package = \"cargo/demo\"\n";
+    const ARTIFACT: &str =
+        "\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"aarch64-apple-darwin\"\nasset-name = \"demo.tar.gz\"\n";
 
-        let config = load(tmp.path()).expect("profile configuration must load");
-        let release = config.product_release.expect("product release config");
-        assert_eq!(
-            release
-                .profile(&ReleaseProfileId::production())
-                .expect("production profile")
-                .forge_repository
-                .as_slug(),
-            "orin-dx/callisto"
-        );
-        assert_eq!(
-            release
-                .profile(&ReleaseProfileId::parse("rehearsal").unwrap())
-                .expect("rehearsal profile")
-                .forge_repository
-                .as_slug(),
-            "orin-dx/callisto-rehearsal"
-        );
+    fn resolve_str(body: &str) -> Result<ResolvedConfig, ConfigError> {
+        let raw = toml::from_str::<RawConfig>(&format!("{RELEASE_HEAD}{body}{ARTIFACT}")).expect("parse");
+        resolve(Path::new("/workspace"), raw)
     }
 
-    #[test]
-    fn product_release_profiles_reject_a_shared_forge_destination() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        fs::write(
-            tmp.path().join("callisto.toml"),
-            "[release]\nproduct-package = \"cargo/demo\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"aarch64-apple-darwin\"\nasset-name = \"callisto-aarch64-apple-darwin.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"callisto-x86_64-unknown-linux-gnu.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-musl\"\nasset-name = \"callisto-x86_64-unknown-linux-musl.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"wasm32-wasip1\"\nasset-name = \"callisto-moon.wasm\"\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\n\n[release.profiles.rehearsal]\nforge-repository = \"orin-dx/callisto\"\n",
-        )
-        .expect("write callisto.toml");
+    fn forge(config: &ResolvedConfig) -> Option<String> {
+        config
+            .product_release
+            .as_ref()
+            .and_then(|release| release.forge_repository.as_ref())
+            .map(GitHubRepository::as_slug)
+    }
 
-        assert!(matches!(
-            load(tmp.path()),
-            Err(ConfigError::InvalidProductRelease { detail }) if detail.contains("share forge-repository")
+    fn detail(result: Result<ResolvedConfig, ConfigError>) -> String {
+        match result {
+            Err(ConfigError::InvalidProductRelease { detail }) => detail,
+            other => panic!("expected InvalidProductRelease, got {:?}", other.map(|_| ())),
+        }
+    }
+
+    /// AC-001
+    #[test]
+    fn top_level_forge_repository_resolves() {
+        let config = resolve_str("forge-repository = \"orin-dx/callisto\"\n").unwrap();
+        assert_eq!(forge(&config).as_deref(), Some("orin-dx/callisto"));
+    }
+
+    /// AC-002
+    #[test]
+    fn legacy_production_profile_forge_repository_migrates() {
+        let config = resolve_str("[release.profiles.production]\nforge-repository = \"orin-dx/legacy\"\n").unwrap();
+        assert_eq!(forge(&config).as_deref(), Some("orin-dx/legacy"));
+    }
+
+    /// AC-003
+    #[test]
+    fn differing_top_level_and_legacy_forge_repositories_are_rejected() {
+        let detail = detail(resolve_str(
+            "forge-repository = \"orin-dx/one\"\n[release.profiles.production]\nforge-repository = \"orin-dx/two\"\n",
         ));
-    }
-
-    #[test]
-    fn product_release_profiles_reject_a_shared_registry_destination() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        fs::write(
-            tmp.path().join("callisto.toml"),
-            "[release]\nproduct-package = \"cargo/demo\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"aarch64-apple-darwin\"\nasset-name = \"callisto-aarch64-apple-darwin.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"callisto-x86_64-unknown-linux-gnu.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-musl\"\nasset-name = \"callisto-x86_64-unknown-linux-musl.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"wasm32-wasip1\"\nasset-name = \"callisto-moon.wasm\"\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\nregistry-routes = { cratesIo = \"private-cargo\" }\n\n[release.profiles.rehearsal]\nforge-repository = \"orin-dx/callisto-rehearsal\"\nregistry-routes = { cratesIo = \"private-cargo\" }\n\n[registries.private-cargo]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index\"\n",
-        )
-        .expect("write callisto.toml");
-
-        assert!(matches!(
-            load(tmp.path()),
-            Err(ConfigError::InvalidProductRelease { detail }) if detail.contains("share registry destination")
-        ));
-    }
-
-    /// `npm --registry`/`twine --repository-url` would carry a credential to
-    /// a cleartext endpoint, so config load refuses one before any publish
-    /// can bind it.
-    #[test]
-    fn product_release_routes_reject_a_cleartext_registry_url() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        fs::write(
-            tmp.path().join("callisto.toml"),
-            "[release]\nproduct-package = \"cargo/demo\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"aarch64-apple-darwin\"\nasset-name = \"callisto-aarch64-apple-darwin.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"callisto-x86_64-unknown-linux-gnu.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-musl\"\nasset-name = \"callisto-x86_64-unknown-linux-musl.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"wasm32-wasip1\"\nasset-name = \"callisto-moon.wasm\"\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\nregistry-routes = { cratesIo = \"private-cargo\" }\n\n[registries.private-cargo]\nkind = \"cargo\"\nurl = \"http://registry.example.test/index\"\n",
-        )
-        .expect("write callisto.toml");
-
         assert!(
-            matches!(
-                load(tmp.path()),
-                Err(ConfigError::InvalidProductRelease { ref detail }) if detail.contains("must be https")
-            ),
-            "cleartext registry URL accepted: {:?}",
-            load(tmp.path()).map(|_| ())
+            detail.contains("orin-dx/one") && detail.contains("orin-dx/two"),
+            "{detail}"
         );
     }
 
-    /// There is no loopback exception: a cleartext registry is refused even
-    /// when it never leaves the host.
+    /// AC-004
     #[test]
-    fn product_release_routes_reject_a_cleartext_loopback_registry_url() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        fs::write(
-            tmp.path().join("callisto.toml"),
-            "[release]\nproduct-package = \"cargo/demo\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"aarch64-apple-darwin\"\nasset-name = \"callisto-aarch64-apple-darwin.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"callisto-x86_64-unknown-linux-gnu.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-musl\"\nasset-name = \"callisto-x86_64-unknown-linux-musl.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"wasm32-wasip1\"\nasset-name = \"callisto-moon.wasm\"\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\nregistry-routes = { cratesIo = \"private-cargo\" }\n\n[registries.private-cargo]\nkind = \"cargo\"\nurl = \"http://127.0.0.1:8765/index/\"\n",
+    fn identical_top_level_and_legacy_forge_repositories_resolve() {
+        let config = resolve_str(
+            "forge-repository = \"orin-dx/one\"\n[release.profiles.production]\nforge-repository = \"orin-dx/one\"\n",
         )
-        .expect("write callisto.toml");
+        .unwrap();
+        assert_eq!(forge(&config).as_deref(), Some("orin-dx/one"));
+    }
 
-        assert!(
-            matches!(
-                load(tmp.path()),
-                Err(ConfigError::InvalidProductRelease { ref detail }) if detail.contains("must be https")
-            ),
-            "cleartext loopback registry URL accepted: {:?}",
-            load(tmp.path()).map(|_| ())
+    /// AC-005
+    #[test]
+    fn a_non_production_profile_is_rejected_naming_it() {
+        for body in [
+            "[release.profiles.rehearsal]\nforge-repository = \"orin-dx/rehearsal\"\n",
+            "forge-repository = \"orin-dx/one\"\n[release.profiles.rehearsal]\nforge-repository = \"orin-dx/rehearsal\"\n",
+        ] {
+            let detail = detail(resolve_str(body));
+            assert!(detail.contains("`rehearsal`"), "{detail}");
+            assert!(
+                detail.contains("only a top-level [release].forge-repository key, or the `production` profile name for migration, is accepted"),
+                "{detail}"
+            );
+        }
+    }
+
+    /// AC-006
+    #[test]
+    fn legacy_registry_routes_change_nothing() {
+        let with = resolve_str(
+            "[release.profiles.production]\nforge-repository = \"orin-dx/one\"\nregistry-routes = { cratesIo = \"elsewhere\" }\n",
+        )
+        .unwrap();
+        let without = resolve_str("[release.profiles.production]\nforge-repository = \"orin-dx/one\"\n").unwrap();
+        assert_eq!(with.product_release, without.product_release);
+        assert_eq!(
+            with.registries.keys().collect::<Vec<_>>(),
+            without.registries.keys().collect::<Vec<_>>()
         );
     }
 
-    /// An https registry route stays loadable.
     #[test]
-    fn product_release_routes_accept_an_https_registry_url() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        fs::write(
-            tmp.path().join("callisto.toml"),
-            "[release]\nproduct-package = \"cargo/demo\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"aarch64-apple-darwin\"\nasset-name = \"callisto-aarch64-apple-darwin.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"callisto-x86_64-unknown-linux-gnu.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-musl\"\nasset-name = \"callisto-x86_64-unknown-linux-musl.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"wasm32-wasip1\"\nasset-name = \"callisto-moon.wasm\"\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\nregistry-routes = { cratesIo = \"private-cargo\" }\n\n[registries.private-cargo]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index/\"\n",
-        )
-        .expect("write callisto.toml");
-
-        load(tmp.path()).expect("an https registry must stay loadable");
+    fn an_invalid_forge_repository_is_rejected() {
+        assert!(detail(resolve_str("forge-repository = \"not a repo\"\n")).contains("not a repo"));
     }
 
-    /// A route's logical key reaches argv and cross-profile comparison, so it
-    /// goes through the same charset rule a durable intent's key does.
+    /// AC-017
     #[test]
-    fn product_release_routes_reject_a_malformed_logical_key() {
+    fn load_is_read_parse_then_resolve() {
         let tmp = tempfile::tempdir().expect("tempdir");
-        fs::write(
-            tmp.path().join("callisto.toml"),
-            "[release]\nproduct-package = \"cargo/demo\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"aarch64-apple-darwin\"\nasset-name = \"callisto-aarch64-apple-darwin.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"callisto-x86_64-unknown-linux-gnu.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"x86_64-unknown-linux-musl\"\nasset-name = \"callisto-x86_64-unknown-linux-musl.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/demo\"\ntarget = \"wasm32-wasip1\"\nasset-name = \"callisto-moon.wasm\"\n\n[release.profiles.production]\nforge-repository = \"orin-dx/callisto\"\nregistry-routes = { \"--registry\" = \"private-cargo\" }\n\n[registries.private-cargo]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index\"\n",
-        )
-        .expect("write callisto.toml");
-
-        assert!(
-            matches!(
-                load(tmp.path()),
-                Err(ConfigError::InvalidProductRelease { ref detail }) if detail.contains("invalid registry route")
-            ),
-            "malformed logical registry key accepted: {:?}",
-            load(tmp.path()).map(|_| ())
+        let content = format!(
+            "{RELEASE_HEAD}forge-repository = \"orin-dx/callisto\"\n{ARTIFACT}\n[cascade]\nmode = \"always\"\n\n[registries.corp]\nkind = \"cargo\"\nurl = \"https://corp.example/index\"\n\n[[package]]\nmatch = \"cargo/demo\"\npublish-to = [\"crates-io\"]\n\n[init]\necosystems = [\"cargo\"]\n"
         );
+        fs::write(tmp.path().join("callisto.toml"), &content).expect("write callisto.toml");
+        let loaded = load(tmp.path()).unwrap();
+        let resolved = resolve(tmp.path(), toml::from_str::<RawConfig>(&content).unwrap()).unwrap();
+        assert_eq!(format!("{loaded:?}"), format!("{resolved:?}"));
+        assert_eq!(loaded.cascade.mode, CascadeMode::Always);
+        assert_eq!(forge(&loaded).as_deref(), Some("orin-dx/callisto"));
     }
 }

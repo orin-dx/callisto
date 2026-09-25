@@ -10,7 +10,6 @@ use callisto_model::{
     PublishTarget, RegistryBindingDigest, RegistryKey, SemanticInputDigest,
 };
 
-use crate::config::ReleaseProfileConfig;
 use crate::registry_endpoint::{
     builtin_registry_url, canonical_registry_url, url_parse_error_reason, RegistryBindingV1,
 };
@@ -39,58 +38,39 @@ pub(crate) struct PreparedGitRemote {
     pub(crate) github_repository: Option<GitHubRepository>,
 }
 
-/// The single registry-trust validator: routes `target`, rejects a non-https or
-/// credentialed URL, and rejects an npm `publishConfig.registry` override (package-
+/// The single registry-trust validator: resolves `target`'s own registry key, rejects a
+/// non-https or credentialed URL, and rejects an npm `publishConfig.registry` override (package-
 /// controlled data) unless it matches a `url` on an npm-kind `[registries]` entry.
 pub(crate) fn prepared_registry_binding<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     target: &PublishTarget,
-    profile: Option<&ReleaseProfileConfig>,
     package: &PackageId,
 ) -> Result<PreparedRegistryBinding, GraphError> {
-    let logical_key = target.registry_key().ok_or_else(|| GraphError::ReleaseInvariant {
+    let key = target.registry_key().ok_or_else(|| GraphError::ReleaseInvariant {
         detail: format!("publish target `{}` has no registry key", target.config_str()),
     })?;
-    let key = profile
-        .map(|profile| {
-            profile
-                .registry_routes
-                .get(&logical_key)
-                .cloned()
-                .ok_or_else(|| GraphError::ReleaseInvariant {
-                    detail: format!(
-                        "release profile has no registry route for logical registry `{}`",
-                        logical_key.as_str()
-                    ),
-                })
-        })
-        .transpose()?
-        .unwrap_or_else(|| logical_key.clone());
-    // Built-in keys (pypi, nuget) need no [registries] entry; an unknown routed key still fails.
+    // Built-in keys (pypi, nuget) need no [registries] entry; an unknown key still fails.
     let builtin_unconfigured = builtin_registry_url(key.as_str()).is_some();
     let configured_registry = match workspace.config.registries.get(&key) {
         Some(registry) => Some(registry),
         None if builtin_unconfigured => None,
         None => {
             return Err(GraphError::ReleaseInvariant {
-                detail: format!(
-                    "release profile routes `{}` to unknown registry `{}`",
-                    logical_key.as_str(),
-                    key.as_str()
-                ),
+                detail: format!("unknown registry `{}`", key.as_str()),
             })
         }
     };
-    if configured_registry.is_some_and(|registry| Some(registry.kind) != target.ecosystem()) {
+    if let Some(registry) = configured_registry.filter(|registry| Some(registry.kind) != target.ecosystem()) {
         return Err(GraphError::ReleaseInvariant {
             detail: format!(
-                "release profile routes `{}` to registry `{}` with incompatible ecosystem",
-                logical_key.as_str(),
-                key.as_str()
+                "registry `{}` is configured for ecosystem `{}`, not `{}`",
+                key.as_str(),
+                registry.kind.prefix(),
+                target.ecosystem().map_or("none", |ecosystem| ecosystem.prefix())
             ),
         });
     }
-    let explicit = (key == logical_key).then(|| target.registry_override()).flatten();
+    let explicit = target.registry_override();
     let configured = configured_registry.and_then(|registry| registry.url.as_deref());
     let raw = explicit.or(configured);
     let Some(raw) = raw else {
@@ -360,27 +340,54 @@ mod tests {
         assert!(canonical_git_remote("https://token@github.com/example/release-fixture.git").is_err());
     }
 
+    /// AC-007
     #[test]
-    fn profile_registry_route_replaces_the_logical_crates_io_destination() {
+    fn a_target_binds_its_own_configured_registry_key() {
         let (dir, runner) = super::super::tests::fixture();
         std::fs::write(
             dir.path().join("callisto.toml"),
-            "[release]\nproduct-package = \"cargo/release-fixture\"\n\n[[release.artifact]]\npackage = \"cargo/release-fixture\"\ntarget = \"aarch64-apple-darwin\"\nasset-name = \"callisto-aarch64-apple-darwin.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/release-fixture\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"callisto-x86_64-unknown-linux-gnu.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/release-fixture\"\ntarget = \"x86_64-unknown-linux-musl\"\nasset-name = \"callisto-x86_64-unknown-linux-musl.tar.gz\"\n\n[[release.artifact]]\npackage = \"cargo/release-fixture\"\ntarget = \"wasm32-wasip1\"\nasset-name = \"callisto-moon.wasm\"\n\n[release.profiles.rehearsal]\nforge-repository = \"example/rehearsal\"\nregistry-routes = { cratesIo = \"rehearsal-cargo\" }\n\n[registries.rehearsal-cargo]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index\"\n\n[[package]]\nmatch = \"release-fixture\"\npublish-to = [\"crates-io\"]\n",
+            "[registries.cratesIo]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index\"\n\n[[package]]\nmatch = \"release-fixture\"\npublish-to = [\"crates-io\"]\n",
         )
         .unwrap();
         let locator = crate::IgnoreWalkLocator::new(dir.path());
         let workspace = Workspace::load(dir.path().to_path_buf(), &locator, &runner).unwrap();
-        let profile = workspace
-            .config
-            .product_release
-            .as_ref()
-            .and_then(|release| release.profile(&callisto_model::ReleaseProfileId::parse("rehearsal").unwrap()))
-            .unwrap();
-
         let package = PackageId::parse("release-fixture").unwrap();
-        let binding = prepared_registry_binding(&workspace, &PublishTarget::CratesIo, Some(profile), &package).unwrap();
-        assert_eq!(binding.key.as_str(), "rehearsal-cargo");
+        let binding = prepared_registry_binding(&workspace, &PublishTarget::CratesIo, &package).unwrap();
+        assert_eq!(binding.key.as_str(), "cratesIo");
         assert_eq!(binding.endpoint.as_deref(), Some("https://registry.example.test/index"));
+    }
+
+    /// AC-007: an unconfigured built-in key binds its own default.
+    #[test]
+    fn an_unconfigured_builtin_key_binds_itself() {
+        let (dir, runner) = super::super::tests::fixture();
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let workspace = Workspace::load(dir.path().to_path_buf(), &locator, &runner).unwrap();
+        let package = PackageId::parse("release-fixture").unwrap();
+        let binding = prepared_registry_binding(&workspace, &PublishTarget::Pypi { index: None }, &package).unwrap();
+        assert_eq!(binding.key.as_str(), RegistryKey::PYPI);
+        assert_eq!(binding.endpoint, None);
+    }
+
+    /// AC-008
+    #[test]
+    fn registry_errors_name_the_key_and_ecosystem_but_no_profile() {
+        let (dir, runner) = super::super::tests::fixture();
+        std::fs::write(
+            dir.path().join("callisto.toml"),
+            "[registries.cratesIo]\nkind = \"npm\"\n\n[[package]]\nmatch = \"release-fixture\"\npublish-to = [\"crates-io\"]\n",
+        )
+        .unwrap();
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let workspace = Workspace::load(dir.path().to_path_buf(), &locator, &runner).unwrap();
+        let package = PackageId::parse("release-fixture").unwrap();
+        let Err(GraphError::ReleaseInvariant { detail }) =
+            prepared_registry_binding(&workspace, &PublishTarget::CratesIo, &package)
+        else {
+            panic!("an npm-kind registry must not bind a cargo target");
+        };
+        assert!(detail.contains("`cratesIo`") && detail.contains("`npm`"), "{detail}");
+        assert!(!detail.contains("profile"), "{detail}");
     }
 
     fn npm_workspace(registries: &str) -> (tempfile::TempDir, super::super::tests::RealGitRunner) {
@@ -397,7 +404,7 @@ mod tests {
             registry: Some(url.to_owned()),
             access: None,
         };
-        prepared_registry_binding(&workspace, &target, None, &PackageId::parse("lib").unwrap())
+        prepared_registry_binding(&workspace, &target, &PackageId::parse("lib").unwrap())
     }
 
     const CORP: &str = "[registries.corp]\nkind = \"npm\"\nurl = \"https://npm.corp.example/\"\n";

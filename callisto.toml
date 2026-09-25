@@ -20,6 +20,7 @@ dir = ".changeset"
 
 [release]
 product-package = "cargo/callisto-cli"
+forge-repository = "orin-dx/callisto"
 
 [[release.artifact]]
 package = "cargo/callisto-cli"
@@ -41,10 +42,6 @@ asset-name = "callisto-x86_64-unknown-linux-musl.tar.gz"
 package = "cargo/callisto-moon"
 target = "wasm32-wasip1"
 asset-name = "callisto-moon.wasm"
-
-[release.profiles.production]
-forge-repository = "orin-dx/callisto"
-registry-routes = { cratesIo = "cratesIo" }
 
 [cascade]
 mode = "out-of-range"

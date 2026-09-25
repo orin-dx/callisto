@@ -20,8 +20,8 @@ use callisto_model::{
     Ecosystem, ExactEvidence, ExecutionTrustProfileV1, GitHubArtifactAttestationV1, GitHubRepository,
     ProviderConflictReason, ProviderEvidenceV1, ProviderIndeterminateCause, ProviderObservationV1,
     RegistryBindingDigest, RegistryBindingId, ReleaseDecisionEntry, ReleaseDecisionV1, ReleaseInclusionReason,
-    ReleaseInputSnapshotV1, ReleaseIntentV1, ReleaseOperation, ReleaseOperationId, ReleasePackageId, ReleaseProfileId,
-    ReleaseReceiptV1, SourceIdentity, Version,
+    ReleaseInputSnapshotV1, ReleaseIntentV1, ReleaseOperation, ReleaseOperationId, ReleasePackageId, ReleaseReceiptV1,
+    SourceIdentity, Version,
 };
 
 use crate::commands::release::provider::preflight_from_observation;
@@ -151,7 +151,6 @@ fn simulator_intent() -> (ReleaseIntentV1, ArtifactManifestV1) {
     let mut slots = vec![linux, macos];
     slots.sort();
     let intent = ReleaseIntentV1::new(
-        ReleaseProfileId::production(),
         decision,
         ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]).unwrap(),
         ExecutionTrustProfileV1::GitCommit,

@@ -55,10 +55,9 @@ fn plugin_artifact_fixture(plugin_in_fixed_group: bool) -> (TempDir, String) {
     fs::write(
         root.join("callisto.toml"),
         format!(
-            "{config}\n[release]\nproduct-package = \"cargo/core-crate\"\n\n\
+            "{config}\n[release]\nproduct-package = \"cargo/core-crate\"\nforge-repository = \"example/core-crate\"\n\n\
              [[release.artifact]]\npackage = \"cargo/core-crate\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"core-linux.tar.gz\"\n\n\
              [[release.artifact]]\npackage = \"cargo/plugin-crate\"\ntarget = \"wasm32-wasip1\"\nasset-name = \"plugin.wasm\"\n\n\
-             [release.profiles.production]\nforge-repository = \"example/core-crate\"\nregistry-routes = {{ cratesIo = \"cratesIo\" }}\n\n\
              [[package]]\nmatch = \"cargo/core-crate\"\npublish-to = [\"crates-io\", \"github-release\"]\n{group}"
         ),
     )

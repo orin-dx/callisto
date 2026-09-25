@@ -1560,7 +1560,7 @@ pub enum ArtifactManifestError {
 
 /// The one charset rule for a registry key, applied wherever a key is minted
 /// from configuration or from a durable intent: a key reaches argv (`cargo
-/// publish --registry <key>`) and is compared across profiles, so it stays
+/// publish --registry <key>`), so it stays
 /// alphanumeric plus `-`/`_`.
 ///
 /// # Errors
@@ -1587,10 +1587,6 @@ pub fn validated_registry_key(raw: String) -> Result<RegistryKey, ReleaseOperati
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReleaseIntentV1 {
     pub schema_version: u8,
-    /// The destination profile selected before planning. It is part of the
-    /// canonical digest so execution cannot relabel a production intent as a
-    /// rehearsal (or vice versa) when writing its receipt.
-    pub profile: ReleaseProfileId,
     pub decision: ReleaseDecisionV1,
     pub snapshot: ReleaseInputSnapshotV1,
     pub trust_profile: ExecutionTrustProfileV1,
@@ -1603,7 +1599,6 @@ pub struct ReleaseIntentV1 {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ReleaseIntentV1Wire {
     schema_version: u8,
-    profile: ReleaseProfileId,
     decision: ReleaseDecisionV1,
     snapshot: ReleaseInputSnapshotV1,
     trust_profile: ExecutionTrustProfileV1,
@@ -1633,7 +1628,6 @@ impl<'de> Deserialize<'de> for ReleaseIntentV1 {
             return Err(serde::de::Error::custom("release input packages are not canonical"));
         }
         let intent = Self::new(
-            wire.profile,
             wire.decision,
             wire.snapshot,
             wire.trust_profile,
@@ -1654,10 +1648,10 @@ impl ReleaseIntentV1 {
     /// 3 adds the `forgePublish` role: publication is its own operation after
     /// every artifact upload, so a version-2 intent's DAG is not executable here.
     /// 4 adds the `platformPublish` role, which an earlier reader cannot execute.
-    pub const SCHEMA_VERSION: u8 = 4;
+    /// 5 removes the release `profile`.
+    pub const SCHEMA_VERSION: u8 = 5;
 
     pub fn new(
-        profile: ReleaseProfileId,
         decision: ReleaseDecisionV1,
         snapshot: ReleaseInputSnapshotV1,
         trust_profile: ExecutionTrustProfileV1,
@@ -1688,17 +1682,9 @@ impl ReleaseIntentV1 {
             });
         }
         validate_artifact_upload_roster(&operations, &artifact_slots)?;
-        let digest = digest_intent(
-            &profile,
-            &decision,
-            &snapshot,
-            trust_profile,
-            &operations,
-            &artifact_slots,
-        );
+        let digest = digest_intent(&decision, &snapshot, trust_profile, &operations, &artifact_slots);
         Ok(Self {
             schema_version: Self::SCHEMA_VERSION,
-            profile,
             decision,
             snapshot,
             trust_profile,
@@ -1714,7 +1700,6 @@ impl ReleaseIntentV1 {
 }
 
 fn digest_intent(
-    profile: &ReleaseProfileId,
     decision: &ReleaseDecisionV1,
     snapshot: &ReleaseInputSnapshotV1,
     trust_profile: ExecutionTrustProfileV1,
@@ -1723,7 +1708,6 @@ fn digest_intent(
 ) -> IntentDigest {
     let mut transcript = CanonicalTranscript::intent_v1();
     transcript.push_bytes("schema", [ReleaseIntentV1::SCHEMA_VERSION]);
-    transcript.push_str("profile", profile.as_str());
     transcript.push_str("decision", decision.digest.as_str());
     transcript.push_str("snapshot", snapshot.digest().as_str());
     transcript.push_str(
@@ -1966,56 +1950,6 @@ pub enum OperationOutcome {
     Blocked { reason: OperationBlockReason },
 }
 
-/// A normalized, credential-free release profile identity.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, JsonSchema)]
-#[schemars(with = "String")]
-pub struct ReleaseProfileId(String);
-
-impl ReleaseProfileId {
-    /// The default profile; the only one valid when a workspace has no `[release]` section.
-    pub const PRODUCTION: &'static str = "production";
-
-    pub fn production() -> Self {
-        Self(Self::PRODUCTION.to_owned())
-    }
-
-    pub fn parse(raw: impl AsRef<str>) -> Result<Self, ReleaseRunEnvelopeError> {
-        let raw = raw.as_ref();
-        if raw.is_empty()
-            || raw.len() > 128
-            || !raw
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-        {
-            return Err(ReleaseRunEnvelopeError::InvalidProfile { raw: raw.to_owned() });
-        }
-        Ok(Self(raw.to_owned()))
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Serialize for ReleaseProfileId {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&self.0)
-    }
-}
-
-impl<'de> Deserialize<'de> for ReleaseProfileId {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let raw = String::deserialize(deserializer)?;
-        Self::parse(raw).map_err(serde::de::Error::custom)
-    }
-}
-
 /// The immutable identity of one release run, created and validated before
 /// the first effect and recorded in the receipt.
 ///
@@ -2029,7 +1963,6 @@ pub struct ReleaseRunEnvelopeV1 {
     schema_version: u8,
     orchestration_revision: CommitSha,
     release_source_revision: CommitSha,
-    profile: ReleaseProfileId,
     intent_digest: IntentDigest,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     artifact_manifest_digest: Option<ArtifactDigest>,
@@ -2041,7 +1974,6 @@ struct ReleaseRunEnvelopeV1Wire {
     schema_version: u8,
     orchestration_revision: CommitSha,
     release_source_revision: CommitSha,
-    profile: ReleaseProfileId,
     intent_digest: IntentDigest,
     #[serde(default)]
     artifact_manifest_digest: Option<ArtifactDigest>,
@@ -2062,7 +1994,6 @@ impl<'de> Deserialize<'de> for ReleaseRunEnvelopeV1 {
             schema_version: wire.schema_version,
             orchestration_revision: wire.orchestration_revision,
             release_source_revision: wire.release_source_revision,
-            profile: wire.profile,
             intent_digest: wire.intent_digest,
             artifact_manifest_digest: wire.artifact_manifest_digest,
         })
@@ -2070,9 +2001,10 @@ impl<'de> Deserialize<'de> for ReleaseRunEnvelopeV1 {
 }
 
 impl ReleaseRunEnvelopeV1 {
-    pub const SCHEMA_VERSION: u8 = 2;
+    /// 3 removes the release `profile`.
+    pub const SCHEMA_VERSION: u8 = 3;
 
-    /// The only constructor. Profile, source revision, and intent digest are
+    /// The only constructor. Source revision, and intent digest are
     /// read out of `intent`; only the coordinator revision and the verified
     /// manifest digest come from the caller, and both are cross-checked
     /// against the intent here, before any effect.
@@ -2089,7 +2021,6 @@ impl ReleaseRunEnvelopeV1 {
             schema_version: Self::SCHEMA_VERSION,
             orchestration_revision,
             release_source_revision,
-            profile: intent.profile.clone(),
             intent_digest: intent.digest.clone(),
             artifact_manifest_digest,
         };
@@ -2103,10 +2034,6 @@ impl ReleaseRunEnvelopeV1 {
 
     pub fn release_source_revision(&self) -> &CommitSha {
         &self.release_source_revision
-    }
-
-    pub fn profile(&self) -> &ReleaseProfileId {
-        &self.profile
     }
 
     pub fn intent_digest(&self) -> &IntentDigest {
@@ -2126,9 +2053,6 @@ impl ReleaseRunEnvelopeV1 {
         }
         if self.intent_digest != intent.digest {
             return Err(ReleaseRunEnvelopeError::MismatchedIntent);
-        }
-        if self.profile != intent.profile {
-            return Err(ReleaseRunEnvelopeError::MismatchedProfile);
         }
         match (intent.artifact_slots.is_empty(), &self.artifact_manifest_digest) {
             (false, None) => return Err(ReleaseRunEnvelopeError::MissingArtifactManifest),
@@ -2154,14 +2078,10 @@ impl ReleaseRunEnvelopeV1 {
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum ReleaseRunEnvelopeError {
-    #[error("release profile `{raw}` must be a nonempty ASCII identifier")]
-    InvalidProfile { raw: String },
     #[error("unsupported release run envelope schema version {found}")]
     UnsupportedSchema { found: u8 },
     #[error("release run envelope is bound to a different intent")]
     MismatchedIntent,
-    #[error("release run envelope profile does not match the release intent")]
-    MismatchedProfile,
     #[error("release run envelope source does not match the release intent")]
     MismatchedReleaseSource,
     #[error("release run envelope requires a Git commit release source")]
@@ -2228,7 +2148,7 @@ impl ReleaseExecutionStateV1 {
     }
 
     /// The run this state belongs to: the single authority for coordinator
-    /// revision, release source, profile, and manifest digest.
+    /// revision, release source, and manifest digest.
     pub fn envelope(&self) -> &ReleaseRunEnvelopeV1 {
         &self.envelope
     }
@@ -2720,7 +2640,6 @@ mod tests {
             }
         }
         ReleaseIntentV1::new(
-            ReleaseProfileId::production(),
             ReleaseDecisionV1::new(entries).expect("test operations define a roster"),
             snapshot.expect("test snapshot is valid"),
             trust_profile,
@@ -3440,9 +3359,7 @@ mod tests {
     }
 
     #[test]
-    fn release_run_envelope_wire_and_profile_identifiers_fail_closed() {
-        assert!(ReleaseProfileId::parse("production/main").is_err());
-        assert!(ReleaseProfileId::parse("").is_err());
+    fn release_run_envelope_wire_fails_closed() {
         let intent = test_intent(
             ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]),
             ExecutionTrustProfileV1::GitCommit,

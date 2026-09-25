@@ -86,7 +86,7 @@ pub(crate) mod tests {
 
     use callisto_model::{
         CommandError, CommandOutput, CommandRunner, Ecosystem, ExecutionTrustProfileV1, ReleaseDecisionV1,
-        ReleasePackageId, ReleaseProfileId, SourceIdentity, Version, VersionGrammar,
+        ReleasePackageId, SourceIdentity, Version, VersionGrammar,
     };
 
     use super::provider::PreparedOperation;
@@ -275,7 +275,6 @@ pub(crate) mod tests {
             &locator,
             &runner,
             &decision,
-            ReleaseProfileId::production(),
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
@@ -390,7 +389,6 @@ pub(crate) mod tests {
         let (intent, prepared) = derive::derive_release_intent_with_prepared(
             &workspace,
             &decision,
-            ReleaseProfileId::production(),
             source,
             ExecutionTrustProfileV1::GitCommit,
             None,
@@ -482,7 +480,6 @@ pub(crate) mod tests {
             &locator,
             &runner,
             &decision(),
-            ReleaseProfileId::production(),
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
@@ -506,7 +503,6 @@ pub(crate) mod tests {
             &locator,
             &runner,
             &decision(),
-            ReleaseProfileId::production(),
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
@@ -562,7 +558,6 @@ pub(crate) mod tests {
             &locator,
             &runner,
             &decision(),
-            ReleaseProfileId::production(),
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();
@@ -618,7 +613,6 @@ pub(crate) mod tests {
             &locator,
             &runner,
             &decision(),
-            ReleaseProfileId::production(),
             ExecutionTrustProfileV1::GitCommit,
         )
         .unwrap();

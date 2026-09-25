@@ -546,7 +546,7 @@ pub enum GraphError {
     #[error("release run envelope is not valid for this intent: {source}")]
     #[diagnostic(
         code(E178),
-        help("Re-plan the release intent, or run execute with the orchestration revision, profile and artifact manifest the intent was planned against.")
+        help("Re-plan the release intent, or run execute with the orchestration revision and artifact manifest the intent was planned against.")
     )]
     ReleaseRunEnvelope {
         source: callisto_model::ReleaseRunEnvelopeError,
@@ -572,14 +572,12 @@ pub enum GraphError {
         operation: Box<callisto_model::ReleaseOperationId>,
     },
 
-    #[error("release profile `{profile}` is not configured")]
+    #[error("[release] declares no forge-repository")]
     #[diagnostic(
         code(E198),
-        help(
-            "Define it under [release.profiles.{profile}] in the workspace config; without a [release] section only the default `production` profile is valid."
-        )
+        help("Add forge-repository = \"owner/repo\" under [release] in callisto.toml.")
     )]
-    ReleaseProfileUnknown { profile: String },
+    ReleaseForgeRepositoryMissing,
 
     #[error("package `{package}` configures publish-to = [\"{target}\"], which release cannot dispatch yet")]
     #[diagnostic(

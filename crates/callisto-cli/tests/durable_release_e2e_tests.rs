@@ -56,40 +56,61 @@ fn fixed_group_cascade_bump_without_direct_changeset_is_accepted() {
         "both fixed-group members must be authorized, not just the one with a direct changeset"
     );
 }
+/// AC-012
 #[test]
-fn product_release_rejects_an_unconfigured_profile_before_writing_intent() {
+fn execute_rejects_an_intent_whose_artifact_repository_is_not_the_configured_one() {
     let (dir, release_commit) = product_release_commit_fixture();
+    let root = dir.path();
     let external = tempfile::tempdir().unwrap();
-    let intent = external.path().join("rehearsal-intent.json");
-    let plan = callisto(
-        dir.path(),
+    let intent = plan_product_intent(root, external.path(), &release_commit);
+    let artifacts = create_product_artifacts(external.path());
+    let manifest = external.path().join("artifact-manifest.json");
+    let create_manifest = callisto(
+        root,
         &[
             "release",
-            "plan",
-            "--profile",
-            "rehearsal",
-            "--from-release-commit",
-            &release_commit,
-            "--decision",
-            DECISION_PATH,
-            "--orchestration-revision",
-            &release_commit,
-            "--artifact-repository",
-            "example/core-crate",
-            "--out",
+            "artifact-manifest",
+            "--intent",
             intent.to_str().unwrap(),
+            "--artifact-dir",
+            artifacts.to_str().unwrap(),
+            "--out",
+            manifest.to_str().unwrap(),
         ],
     );
-    assert!(
-        !plan.status.success(),
-        "an unconfigured rehearsal destination must fail before creating an intent"
+    assert!(create_manifest.status.success());
+    let config = root.join("callisto.toml");
+    let moved = fs::read_to_string(&config).unwrap().replace(
+        "forge-repository = \"example/core-crate\"",
+        "forge-repository = \"example/moved\"",
     );
-    assert!(
-        String::from_utf8_lossy(&plan.stderr).contains("release profile `rehearsal` is not configured"),
-        "profile failure should say why provisioning is required: {}",
-        String::from_utf8_lossy(&plan.stderr)
+    fs::write(&config, moved).unwrap();
+    let receipt = external.path().join("release-receipt.json");
+    let (bin, log, forge_marker, git_trace) = fake_publishers(external.path(), &release_commit, false);
+    let out = execute_product(
+        root,
+        &intent,
+        &manifest,
+        &artifacts,
+        &receipt,
+        FakePublishers {
+            bin: &bin,
+            log: &log,
+            forge_marker: &forge_marker,
+            git_trace: &git_trace,
+        },
     );
-    assert!(!intent.exists(), "failed profile validation must not write an intent");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success());
+    assert!(
+        err.contains("release_forge_repository_mismatch")
+            && err.contains("`example/moved`")
+            && err.contains("`example/core-crate`")
+            && !err.contains("profile"),
+        "{err}"
+    );
+    assert!(!log.exists() || !fs::read_to_string(&log).unwrap().contains("cargo publish"));
+    assert!(!receipt.exists());
 }
 
 #[test]

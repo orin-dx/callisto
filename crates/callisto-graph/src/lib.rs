@@ -39,7 +39,7 @@ pub use cascade::{
     cascade_action, coverage, rewrite_spec, run_cascade, CascadeDecision, CascadeInput, CascadeOutcome, DepWriteTarget,
     RewriteKey, RewriteOutcome, SpecRewrite,
 };
-pub use config::{load as load_config, GroupDef, GroupTable, ResolvedConfig};
+pub use config::{load as load_config, resolve as resolve_config, GroupDef, GroupTable, ResolvedConfig};
 pub use error::{ConfigError, GraphError};
 pub use groups::{fixed_group_target, pre_mutation_checks, GroupCheckOutcome};
 pub use identity::{IdentityIndex, IdentityResolver};

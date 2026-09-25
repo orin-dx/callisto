@@ -170,13 +170,6 @@ pub enum CliError {
     )]
     ReleaseManifestInvalid { detail: String },
 
-    #[error("invalid release profile `{profile}`: {detail}")]
-    #[diagnostic(
-        code(callisto::release_profile_invalid),
-        help("pass a profile id declared under [release.profiles] in callisto.toml")
-    )]
-    ReleaseProfileInvalid { profile: String, detail: String },
-
     #[error("invalid merged release commit `{raw}`: {detail}")]
     #[diagnostic(
         code(callisto::release_commit_invalid),
@@ -219,16 +212,12 @@ pub enum CliError {
     )]
     ReleaseArtifactRepositoryInvalid { repository: String, detail: String },
 
-    #[error("release profile `{profile}` targets forge repository `{configured}`, not `{requested}`")]
+    #[error("[release].forge-repository is `{configured}`, but the release targets `{requested}`")]
     #[diagnostic(
-        code(callisto::release_profile_repository_mismatch),
-        help("pass --artifact-repository matching the profile's forge-repository in callisto.toml")
+        code(callisto::release_forge_repository_mismatch),
+        help("plan with an --artifact-repository matching [release].forge-repository in callisto.toml")
     )]
-    ReleaseProfileRepositoryMismatch {
-        profile: String,
-        configured: String,
-        requested: String,
-    },
+    ReleaseForgeRepositoryMismatch { configured: String, requested: String },
 
     #[error("product release planning requires --orchestration-revision and --artifact-repository")]
     #[diagnostic(
@@ -236,13 +225,6 @@ pub enum CliError {
         help("pass both --orchestration-revision and --artifact-repository")
     )]
     ReleaseOrchestrationFlagsRequired,
-
-    #[error("release execute profile `{selected}` does not match immutable intent profile `{intent}`")]
-    #[diagnostic(
-        code(callisto::release_profile_mismatch),
-        help("execute with the profile the intent was planned under, or re-plan for the wanted profile")
-    )]
-    ReleaseProfileMismatch { selected: String, intent: String },
 
     #[error("release intent declares no binary artifact slots; omit --artifact-manifest and --artifact-dir")]
     #[diagnostic(
@@ -264,13 +246,6 @@ pub enum CliError {
         help("re-check the orchestration revision and artifact manifest against the intent")
     )]
     ReleaseEnvelopeInvalid { detail: String },
-
-    #[error("release intent artifact destination does not match profile `{profile}` forge repository `{repository}`")]
-    #[diagnostic(
-        code(callisto::release_artifact_destination_mismatch),
-        help("re-plan the intent with an --artifact-repository matching the profile")
-    )]
-    ReleaseArtifactDestinationMismatch { profile: String, repository: String },
 
     #[error("cannot issue terminal release receipt: {detail}")]
     #[diagnostic(
@@ -441,10 +416,6 @@ mod tests {
                 dir: "x".to_owned(),
             },
             CliError::ReleaseManifestInvalid { detail: "x".to_owned() },
-            CliError::ReleaseProfileInvalid {
-                profile: "x".to_owned(),
-                detail: "x".to_owned(),
-            },
             CliError::ReleaseCommitInvalid {
                 raw: "x".to_owned(),
                 detail: "x".to_owned(),
@@ -469,23 +440,14 @@ mod tests {
                 repository: "x".to_owned(),
                 detail: "x".to_owned(),
             },
-            CliError::ReleaseProfileRepositoryMismatch {
-                profile: "x".to_owned(),
+            CliError::ReleaseForgeRepositoryMismatch {
                 configured: "x".to_owned(),
                 requested: "x".to_owned(),
             },
             CliError::ReleaseOrchestrationFlagsRequired,
-            CliError::ReleaseProfileMismatch {
-                selected: "x".to_owned(),
-                intent: "x".to_owned(),
-            },
             CliError::ReleaseUnexpectedArtifactInputs,
             CliError::ReleaseMissingArtifactInputs,
             CliError::ReleaseEnvelopeInvalid { detail: "x".to_owned() },
-            CliError::ReleaseArtifactDestinationMismatch {
-                profile: "x".to_owned(),
-                repository: "x".to_owned(),
-            },
             CliError::ReleaseReceiptIssue { detail: "x".to_owned() },
             CliError::ReleaseIntentInvalid {
                 path: "x".to_owned(),

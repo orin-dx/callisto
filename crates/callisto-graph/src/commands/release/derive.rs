@@ -9,10 +9,9 @@ use callisto_model::{
     ArtifactSlotId, CanonicalTranscript, CommandRunner, CommitSha, DepKind, ExecutionTrustProfileV1, GitHubRepository,
     PlatformPackageV1, PublishTarget, RegistryBindingDigest, RegistryBindingId, ReleaseDecisionV1,
     ReleaseInputSnapshotV1, ReleaseIntentV1, ReleaseOperation, ReleaseOperationId, ReleasePackageId,
-    ReleasePackageInputV1, ReleaseProfileId, SemanticInputDigest, SourceIdentity, Version,
+    ReleasePackageInputV1, SemanticInputDigest, SourceIdentity, Version,
 };
 
-use crate::config::ReleaseProfileConfig;
 use crate::error::{ReleasePreconditionRequirement, ReleaseSelectionInvalidReason, UnsupportedReleaseFeature};
 use crate::{DependencyResolver, GraphError, Workspace};
 
@@ -52,15 +51,12 @@ pub(crate) struct PreparedDerivation {
 pub(crate) fn derive_release_intent<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     decision: &ReleaseDecisionV1,
-    profile: ReleaseProfileId,
     source: SourceIdentity,
     trust_profile: ExecutionTrustProfileV1,
     artifact_policy: Option<&ArtifactBuildPolicy>,
 ) -> Result<ReleaseIntentV1, GraphError> {
-    let (snapshot, operations, _, _, slots) =
-        derive_release_inputs(workspace, decision, &profile, source, artifact_policy)?;
+    let (snapshot, operations, _, _, slots) = derive_release_inputs(workspace, decision, source, artifact_policy)?;
     Ok(ReleaseIntentV1::new(
-        profile,
         decision.clone(),
         snapshot,
         trust_profile,
@@ -72,14 +68,13 @@ pub(crate) fn derive_release_intent<R: CommandRunner, D: DependencyResolver>(
 pub(crate) fn derive_release_intent_with_prepared<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     decision: &ReleaseDecisionV1,
-    profile: ReleaseProfileId,
     source: SourceIdentity,
     trust_profile: ExecutionTrustProfileV1,
     artifact_policy: Option<&ArtifactBuildPolicy>,
 ) -> Result<(ReleaseIntentV1, PreparedDerivation), GraphError> {
     let (snapshot, operations, prepared, git_remote, slots) =
-        derive_release_inputs(workspace, decision, &profile, source, artifact_policy)?;
-    let intent = ReleaseIntentV1::new(profile, decision.clone(), snapshot, trust_profile, operations, slots)?;
+        derive_release_inputs(workspace, decision, source, artifact_policy)?;
+    let intent = ReleaseIntentV1::new(decision.clone(), snapshot, trust_profile, operations, slots)?;
     Ok((
         intent,
         PreparedDerivation {
@@ -113,26 +108,17 @@ pub(crate) fn artifact_policy_from_intent(intent: &ReleaseIntentV1) -> Result<Op
 pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     decision: &ReleaseDecisionV1,
-    profile: &ReleaseProfileId,
     source: SourceIdentity,
     artifact_policy: Option<&ArtifactBuildPolicy>,
 ) -> Result<DerivedReleaseInputs, GraphError> {
-    // The single authority for profile validity; callers only plumb the id through.
-    let profile_config = match workspace.config.product_release.as_ref() {
-        Some(release) => Some(
-            release
-                .profile(profile)
-                .ok_or_else(|| GraphError::ReleaseProfileUnknown {
-                    profile: profile.as_str().to_owned(),
-                })?,
-        ),
-        None if profile.as_str() == ReleaseProfileId::PRODUCTION => None,
-        None => {
-            return Err(GraphError::ReleaseProfileUnknown {
-                profile: profile.as_str().to_owned(),
-            })
-        }
-    };
+    if workspace
+        .config
+        .product_release
+        .as_ref()
+        .is_some_and(|release| release.forge_repository.is_none())
+    {
+        return Err(GraphError::ReleaseForgeRepositoryMissing);
+    }
     let mut package_inputs = Vec::new();
 
     let mut selected = BTreeMap::new();
@@ -217,7 +203,6 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
             package,
             version,
             produces_tag.then_some(git_remote.as_ref()).flatten(),
-            profile_config,
         )?;
         package_inputs.push(ReleasePackageInputV1 {
             package: id.clone(),
@@ -234,7 +219,7 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
             }
             if target.ecosystem() == Some(id.ecosystem()) {
                 super::provider::registry::require_observable_registry(id.ecosystem())?;
-                let binding = prepared_registry_binding(workspace, target, profile_config, &package.id)?;
+                let binding = prepared_registry_binding(workspace, target, &package.id)?;
                 let binding_id = RegistryBindingId::new(binding.key.as_str(), binding.identity.clone())?;
                 let operation =
                     ReleaseOperation::registry_publish(id.clone(), version.clone(), binding_id.clone(), Vec::new())?;
@@ -279,7 +264,7 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
                                 package_dir: directory.to_path_buf(),
                                 package_name: name.to_string(),
                                 version: version.clone(),
-                                registry: prepared_registry_binding(workspace, target, profile_config, &package.id)?,
+                                registry: prepared_registry_binding(workspace, target, &package.id)?,
                                 npm_access: npm_default_access(name, explicit_access),
                                 npm_tag: npm_tag.clone(),
                                 by_directory: true,
@@ -594,7 +579,6 @@ fn package_fingerprint<R: CommandRunner, D: DependencyResolver>(
     package: &callisto_model::Package,
     version: &Version,
     git_remote: Option<&PreparedGitRemote>,
-    profile: Option<&ReleaseProfileConfig>,
 ) -> Result<SemanticInputDigest, GraphError> {
     let mut transcript = CanonicalTranscript::semantic_input_v1();
     transcript.push_str("package.id", &id.to_string());
@@ -625,7 +609,7 @@ fn package_fingerprint<R: CommandRunner, D: DependencyResolver>(
     for target in &package.publish_to {
         transcript.push_str(
             "package.target",
-            target_fingerprint(workspace, &package.id, npm_name, target, profile)?.as_str(),
+            target_fingerprint(workspace, &package.id, npm_name, target)?.as_str(),
         );
     }
     if let Some(remote) = git_remote {
@@ -710,7 +694,6 @@ fn target_fingerprint<R: CommandRunner, D: DependencyResolver>(
     package: &callisto_model::PackageId,
     npm_name: &str,
     target: &PublishTarget,
-    profile: Option<&ReleaseProfileConfig>,
 ) -> Result<SemanticInputDigest, GraphError> {
     let mut transcript = CanonicalTranscript::semantic_input_v1();
     // Single source of truth for the "kind" string, shared with
@@ -722,13 +705,13 @@ fn target_fingerprint<R: CommandRunner, D: DependencyResolver>(
         PublishTarget::CratesIo => {
             push_registry_binding(
                 &mut transcript,
-                prepared_registry_binding(workspace, target, profile, package)?.identity,
+                prepared_registry_binding(workspace, target, package)?.identity,
             )?;
         }
         PublishTarget::Npm { access, .. } => {
             push_registry_binding(
                 &mut transcript,
-                prepared_registry_binding(workspace, target, profile, package)?.identity,
+                prepared_registry_binding(workspace, target, package)?.identity,
             )?;
             transcript.push_str(
                 "target.access",
@@ -742,7 +725,7 @@ fn target_fingerprint<R: CommandRunner, D: DependencyResolver>(
         PublishTarget::Pypi { .. } | PublishTarget::NuGet { .. } => {
             push_registry_binding(
                 &mut transcript,
-                prepared_registry_binding(workspace, target, profile, package)?.identity,
+                prepared_registry_binding(workspace, target, package)?.identity,
             )?;
         }
         #[allow(unreachable_patterns)]
@@ -774,14 +757,8 @@ mod tests {
         let root = super::super::capability::canonical_root(dir.path()).unwrap();
         let workspace = Workspace::load(root.clone(), &locator, &runner).unwrap();
         let source = super::super::capability::observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
-        let (before_snapshot, before_operations, _, _, _) = derive_release_inputs(
-            &workspace,
-            &super::super::tests::decision(),
-            &ReleaseProfileId::production(),
-            source.clone(),
-            None,
-        )
-        .unwrap();
+        let (before_snapshot, before_operations, _, _, _) =
+            derive_release_inputs(&workspace, &super::super::tests::decision(), source.clone(), None).unwrap();
 
         std::fs::write(
             root.join("callisto.toml"),
@@ -789,17 +766,31 @@ mod tests {
         )
         .unwrap();
         let reread = Workspace::load(root, &locator, &runner).unwrap();
-        let (after_snapshot, after_operations, _, _, _) = derive_release_inputs(
-            &reread,
-            &super::super::tests::decision(),
-            &ReleaseProfileId::production(),
-            source,
-            None,
-        )
-        .unwrap();
+        let (after_snapshot, after_operations, _, _, _) =
+            derive_release_inputs(&reread, &super::super::tests::decision(), source, None).unwrap();
 
         assert_eq!(before_snapshot, after_snapshot);
         assert_eq!(before_operations, after_operations);
+    }
+
+    /// AC-011: a `[release]` without a forge destination cannot plan.
+    #[test]
+    fn a_release_section_without_forge_repository_cannot_derive() {
+        let (dir, runner) = super::super::tests::fixture();
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let root = super::super::capability::canonical_root(dir.path()).unwrap();
+        let clean = Workspace::load(root.clone(), &locator, &runner).unwrap();
+        let source = super::super::capability::observe_source(&clean, ExecutionTrustProfileV1::GitCommit).unwrap();
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[release]\nproduct-package = \"cargo/release-fixture\"\n\n[[release.artifact]]\npackage = \"cargo/release-fixture\"\ntarget = \"t\"\nasset-name = \"a.tar.gz\"\n",
+        )
+        .unwrap();
+        let workspace = Workspace::load(root, &locator, &runner).unwrap();
+        assert!(matches!(
+            derive_release_inputs(&workspace, &super::super::tests::decision(), source, None),
+            Err(GraphError::ReleaseForgeRepositoryMissing)
+        ));
     }
 
     use callisto_model::{Ecosystem, NpmAccess, ReleaseDecisionEntry, ReleaseInclusionReason, VersionGrammar};
@@ -859,7 +850,7 @@ mod tests {
         let root = super::super::capability::canonical_root(dir.path()).unwrap();
         let workspace = Workspace::load(root, &locator, &RealGitRunner).unwrap();
         let source = super::super::capability::observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
-        derive_release_inputs(&workspace, decision, &ReleaseProfileId::production(), source, None)
+        derive_release_inputs(&workspace, decision, source, None)
     }
 
     fn registry_publish<'a>(operations: &'a [ReleaseOperation], name: &str) -> &'a ReleaseOperation {
@@ -1070,7 +1061,6 @@ mod tests {
         let (_, _, prepared, _, _) = derive_release_inputs(
             &workspace,
             &release(&[(Ecosystem::Npm, "@s/lib", "1.0.0")]),
-            &ReleaseProfileId::production(),
             source,
             None,
         )
@@ -1091,7 +1081,6 @@ mod tests {
                 &package,
                 name,
                 &PublishTarget::Npm { registry: None, access },
-                None,
             )
             .unwrap()
         };
@@ -1162,14 +1151,7 @@ mod tests {
             identity: crate::IdentityIndex::default(),
         };
         let source = super::super::capability::observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
-        let error = derive_release_inputs(
-            &workspace,
-            &cargo_release(&["core"]),
-            &ReleaseProfileId::production(),
-            source,
-            None,
-        )
-        .unwrap_err();
+        let error = derive_release_inputs(&workspace, &cargo_release(&["core"]), source, None).unwrap_err();
         assert!(
             matches!(
                 &error,
@@ -1217,7 +1199,7 @@ mod tests {
         let source = super::super::capability::observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
         std::fs::write(dir.path().join("CHANGELOG.md"), "# core\n\n## 1.0.0\n\n").unwrap();
         let (after_snapshot, after_operations, after_prepared, _, _) =
-            derive_release_inputs(&workspace, &decision, &ReleaseProfileId::production(), source, None).unwrap();
+            derive_release_inputs(&workspace, &decision, source, None).unwrap();
         assert_eq!(
             forge_notes(&after_prepared),
             ReleaseNotes::Generated {

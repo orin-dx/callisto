@@ -4,12 +4,14 @@ fn sha(c: char) -> CommitSha {
     CommitSha::parse(&c.to_string().repeat(40)).unwrap()
 }
 
-fn intent(profile: &str) -> ReleaseIntentV1 {
+fn intent() -> ReleaseIntentV1 {
+    intent_at(Version::semver(1, 2, 3))
+}
+
+fn intent_at(version: Version) -> ReleaseIntentV1 {
     let package = ReleasePackageId::parse("cargo/demo").unwrap();
-    let version = Version::semver(1, 2, 3);
     let op = ReleaseOperation::tag(package.clone(), version.clone(), vec![]).unwrap();
     ReleaseIntentV1::new(
-        ReleaseProfileId::parse(profile).unwrap(),
         ReleaseDecisionV1::new(vec![ReleaseDecisionEntry {
             package,
             target_version: version,
@@ -57,25 +59,50 @@ fn done_state(i: &ReleaseIntentV1) -> ReleaseExecutionStateV1 {
     st
 }
 #[test]
-fn profile_is_bound_into_the_intent_digest_and_cannot_be_relabelled() {
-    let prod = intent("production");
-    let reh = intent("rehearsal");
-    assert_ne!(prod.digest(), reh.digest());
-    let mut v = serde_json::to_value(&prod).unwrap();
-    v["profile"] = "rehearsal".into();
-    assert!(
-        serde_json::from_value::<ReleaseIntentV1>(v).is_err(),
-        "relabelled profile must fail digest verification"
-    );
+fn intent_has_no_profile_and_rejects_one_on_the_wire() {
+    let mut v = serde_json::to_value(intent()).unwrap();
+    assert!(v.get("profile").is_none());
+    assert_eq!(v["schemaVersion"], 5);
+    v["profile"] = "production".into();
+    assert!(serde_json::from_value::<ReleaseIntentV1>(v).is_err());
+}
+
+#[test]
+fn intent_of_another_schema_version_names_the_found_version() {
+    for found in [4u8, 6] {
+        let mut v = serde_json::to_value(intent()).unwrap();
+        v["schemaVersion"] = found.into();
+        let error = serde_json::from_value::<ReleaseIntentV1>(v).unwrap_err().to_string();
+        assert!(error.contains(&format!("schema version {found}")), "{error}");
+    }
+}
+
+#[test]
+fn envelope_has_no_profile_and_other_schema_versions_name_the_found_version() {
+    let i = intent();
+    let v = serde_json::to_value(envelope(&i)).unwrap();
+    assert!(v.get("profile").is_none());
+    assert_eq!(v["schemaVersion"], 3);
+    let mut with_profile = v.clone();
+    with_profile["profile"] = "production".into();
+    assert!(serde_json::from_value::<ReleaseRunEnvelopeV1>(with_profile).is_err());
+    for found in [2u8, 4] {
+        let mut wire = v.clone();
+        wire["schemaVersion"] = found.into();
+        let error = serde_json::from_value::<ReleaseRunEnvelopeV1>(wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains(&format!("schema version {found}")), "{error}");
+    }
 }
 
 #[test]
 fn receipt_rejects_a_state_bound_to_another_intent() {
-    let i = intent("production");
+    let i = intent();
     let st = done_state(&i);
     assert!(ReleaseReceiptV1::from_state(&i, &st).is_ok());
 
-    let other = intent("rehearsal");
+    let other = intent_at(Version::semver(1, 2, 4));
     assert!(matches!(
         ReleaseReceiptV1::from_state(&other, &st),
         Err(ReleaseReceiptError::InvalidState(ReleaseStateError::MismatchedIntent))
@@ -84,7 +111,7 @@ fn receipt_rejects_a_state_bound_to_another_intent() {
 
 #[test]
 fn receipt_records_the_evidence_in_state_and_needs_every_operation_terminal() {
-    let i = intent("production");
+    let i = intent();
     let st = done_state(&i);
     let receipt = ReleaseReceiptV1::from_state(&i, &st).unwrap();
     for o in &i.operations {
@@ -104,7 +131,7 @@ fn receipt_records_the_evidence_in_state_and_needs_every_operation_terminal() {
 
 #[test]
 fn deserialized_receipt_rejects_nonexact_or_missing_observations() {
-    let i = intent("production");
+    let i = intent();
     let r = ReleaseReceiptV1::from_state(&i, &done_state(&i)).unwrap();
     let good = serde_json::to_value(&r).unwrap();
     let roundtrip: ReleaseReceiptV1 = serde_json::from_value(good.clone()).unwrap();
@@ -137,7 +164,6 @@ fn artifact_manifest_rejects_attestation_source_that_is_not_the_coordinator_revi
     )
     .unwrap();
     let i = ReleaseIntentV1::new(
-        ReleaseProfileId::production(),
         ReleaseDecisionV1::new(vec![ReleaseDecisionEntry {
             package,
             target_version: version,
@@ -185,7 +211,6 @@ fn red_c6_manifest_with_forged_source_commit_is_rejected() {
     )
     .unwrap();
     let i = ReleaseIntentV1::new(
-        ReleaseProfileId::production(),
         ReleaseDecisionV1::new(vec![ReleaseDecisionEntry {
             package,
             target_version: version,
