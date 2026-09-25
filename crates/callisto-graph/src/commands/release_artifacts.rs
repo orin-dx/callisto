@@ -14,7 +14,8 @@ use callisto_model::{ArtifactManifestV1, CommandRunner, ReleaseIntentV1};
 
 use crate::GraphError;
 
-use super::release::timeouts;
+use super::release::provider::policy::{self, retry_observation, run_observation, Attempt};
+use super::release::{programs, timeouts};
 
 /// A manifest whose exact local bytes and GitHub provenance have been checked.
 ///
@@ -157,9 +158,9 @@ fn verify_github_attestation<R: CommandRunner>(
     entry: &callisto_model::ArtifactManifestEntryV1,
     runner: &R,
 ) -> Result<(), GraphError> {
-    let policy = &entry.slot.attestation_policy;
-    let repository_slug = policy.repository.as_slug();
-    let workflow = format!("{repository_slug}/{}", policy.workflow_path);
+    let attestation_policy = &entry.slot.attestation_policy;
+    let repository_slug = attestation_policy.repository.as_slug();
+    let workflow = format!("{repository_slug}/{}", attestation_policy.workflow_path);
     let path_argument = path.to_string_lossy();
     let source_commit = entry.attestation.source_commit.as_str();
     let args = [
@@ -171,23 +172,15 @@ fn verify_github_attestation<R: CommandRunner>(
         "--signer-workflow",
         workflow.as_str(),
         "--signer-digest",
-        policy.workflow_commit.as_str(),
+        attestation_policy.workflow_commit.as_str(),
         "--source-digest",
         source_commit,
         "--deny-self-hosted-runners",
     ];
-    let output = runner
-        .run_with_timeout(
-            "gh",
-            &args,
-            path.parent().unwrap_or_else(|| Path::new(".")),
-            timeouts::ATTESTATION_VERIFY,
-        )
-        .map_err(|error| GraphError::ArtifactAttestation {
-            path: path.to_path_buf(),
-            message: error.to_string(),
-        })?;
-    if output.success() {
+    let cwd = path.parent().unwrap_or_else(|| Path::new("."));
+    let sleeper = policy::ThreadSleeper;
+    let succeeded = retry_observation(&sleeper, || attempt_attestation_verify(runner, &args, cwd))?;
+    if succeeded {
         Ok(())
     } else {
         Err(GraphError::ArtifactAttestation {
@@ -195,6 +188,28 @@ fn verify_github_attestation<R: CommandRunner>(
             message: "GitHub attestation verification failed".to_owned(),
         })
     }
+}
+
+/// A `gh attestation verify` command that timed out or failed to run is a
+/// transient observation, not a hard failure: it goes through the same
+/// bounded retry as every other GitHub-touching observation (registry
+/// queries, the `gh api` release lookup, `git ls-remote`), instead of
+/// aborting the whole release on one hiccup.
+fn attempt_attestation_verify<R: CommandRunner>(
+    runner: &R,
+    args: &[&str],
+    cwd: &Path,
+) -> Result<Attempt<bool>, GraphError> {
+    let observed = match run_observation(runner, programs::GH, args, cwd, timeouts::ATTESTATION_VERIFY, false)? {
+        Ok(output) => output,
+        Err(_unavailable) => {
+            return Ok(Attempt::Transient {
+                value: false,
+                retry_after: None,
+            })
+        }
+    };
+    Ok(Attempt::Settled(observed.success()))
 }
 
 #[cfg(test)]
@@ -362,6 +377,31 @@ mod tests {
             Err(GraphError::ArtifactBytesMismatch { .. })
         ));
         assert!(runner.calls.lock().unwrap().is_empty());
+    }
+
+    /// Regression: `gh attestation verify` timing out once must retry
+    /// through the same bounded observation policy as every other
+    /// GitHub-touching check (registry queries, the `gh api` release
+    /// lookup, `git ls-remote`), not hand `CommandError::TimedOut` straight
+    /// to `?` and abort the whole release.
+    #[test]
+    fn a_timed_out_attestation_verify_retries_and_settles() {
+        let runner = RecordingRunner::default();
+        runner.outputs.lock().unwrap().push_back(Err(CommandError::TimedOut {
+            program: "gh".to_owned(),
+            seconds: 120,
+        }));
+        runner.outputs.lock().unwrap().push_back(Ok(CommandOutput {
+            exit_code: Some(0),
+            stdout: String::new(),
+            stderr: String::new(),
+        }));
+        let sleeper = policy::tests::RecordingSleeper::new();
+        let args = ["attestation", "verify"];
+        let result = retry_observation(&sleeper, || attempt_attestation_verify(&runner, &args, Path::new(".")));
+        assert_eq!(result, Ok(true));
+        assert_eq!(sleeper.waits(), vec![std::time::Duration::from_secs(2)]);
+        assert_eq!(runner.calls.lock().unwrap().len(), 2);
     }
 
     #[cfg(unix)]
