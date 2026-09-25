@@ -1,0 +1,3 @@
+Should this store in memory? https://github.com/orin-dx/callisto/pull/122/changes
+
+Isn't one of the issues this type of info??
