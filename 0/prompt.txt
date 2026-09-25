@@ -1,0 +1,1 @@
+Let's make sure our specs are succint, precise and to the point. They should not be muddled with historical perspective. ADRs track history in so much as decisions made that should be recorded, right? Not minutia. We did some back and forth and made mistakes (Agentic amenhesia) that would should not record either.
