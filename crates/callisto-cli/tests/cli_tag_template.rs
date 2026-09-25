@@ -75,7 +75,8 @@ fn find_key(value: &serde_json::Value, key: &str) -> Option<String> {
 
 #[test]
 fn red_c3_installer_derives_crate_version_from_the_current_tag_template() {
-    let action = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.github/actions/setup-callisto/action.yml");
+    let action =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.github/actions/setup-callisto/scripts/install-callisto.sh");
     let body = fs::read_to_string(&action).unwrap();
     let fragment = body
         .lines()

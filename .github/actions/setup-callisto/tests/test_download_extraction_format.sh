@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Regression test for the download/extraction format dispatch in action.yml.
-# Extracts the actual run-step body from action.yml by a
-# real text anchor -- the "# Validate verification mode" comment through
-# the end of the file -- so this test always exercises the file's current
-# real logic; it cannot silently drift from it.
+# Regression test for the download/extraction format dispatch in
+# scripts/install-callisto.sh. Extracts the actual script body by a real
+# text anchor -- the "# Validate verification mode" comment through the end
+# of the file -- so this test always exercises the file's current real
+# logic; it cannot silently drift from it.
 #
 # The step's very first three lines (CALLISTO_BIN_DIR assignment, mkdir, and
 # TAG_NAME="${{ inputs.version || 'latest' }}") are GitHub Actions template
@@ -12,10 +12,12 @@
 # test starts extraction just after that line and supplies CALLISTO_BIN_DIR /
 # TAG_NAME itself, matching what the runner would have already substituted.
 set -u
-ACTION_YML="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/action.yml"
+ACTION_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ACTION_YML="$ACTION_DIR/action.yml"
+INSTALL_SCRIPT="$ACTION_DIR/scripts/install-callisto.sh"
 
 extract_snippet() {
-  sed -n '/# Validate verification mode/,$p' "$ACTION_YML"
+  sed -n '/# Validate verification mode/,$p' "$INSTALL_SCRIPT"
 }
 
 # Runs the extracted snippet with uname/curl stubbed per test case, and

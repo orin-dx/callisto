@@ -311,6 +311,13 @@ pub enum CliError {
     )]
     InitMissingFlags { missing: Vec<&'static str> },
 
+    #[error("--workflow and --no-workflow are mutually exclusive")]
+    #[diagnostic(
+        code(callisto::init_workflow_flags_conflict),
+        help("pass only one of --workflow or --no-workflow")
+    )]
+    InitWorkflowFlagsConflict,
+
     #[error("{0}")]
     #[diagnostic(code(callisto::error))]
     Other(String),

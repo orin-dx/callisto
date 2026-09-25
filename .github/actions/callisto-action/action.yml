@@ -45,24 +45,64 @@ inputs:
     description: 'Workspace directory'
     required: false
     default: '.'
+  mode:
+    description: 'version-pr (default): create/update the release PR. release: run `callisto release`.'
+    required: false
+    default: 'version-pr'
 outputs:
   hasChangesets:
-    description: 'Whether pending changesets were found'
+    description: 'Whether pending changesets were found (mode: version-pr only)'
     value: ${{ steps.version-pr.outputs.hasChangesets }}
   published:
-    description: 'Always false: this action never publishes'
-    value: 'false'
+    description: 'Whether `callisto release` published anything (mode: release only; otherwise false)'
+    value: ${{ steps.release.outputs.published || 'false' }}
   publishedPackages:
-    description: 'Always an empty JSON array'
-    value: '[]'
+    description: 'JSON array of packages `callisto release` published (mode: release only; otherwise [])'
+    value: ${{ steps.release.outputs.publishedPackages || '[]' }}
 runs:
   using: composite
   steps:
-    - name: Setup Callisto Environment
+    - name: Validate mode
+      shell: bash
+      env:
+        INPUT_MODE: ${{ inputs.mode }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/validate-mode.sh"
+    # setup-callisto's own steps, called directly rather than through its
+    # `uses:` (both `$/` and an external owner/repo/path@ref resolve against
+    # whichever ref invoked *this* action, not necessarily a real one -- see
+    # setup-callisto/scripts/install-callisto.sh's header). github.action_path
+    # is this action's own checked-out directory, so a sibling-relative path
+    # always uses the same ref this action itself was invoked at.
+    - name: Install Rust Toolchain & Cache
       if: inputs.setup_callisto == 'true'
-      uses: $/.github/actions/setup-callisto
+      # orin-dx/actions/setup-rust v1.1
+      uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db
+      with:
+        components: clippy,rustfmt
+        targets: wasm32-wasip1
+        shared-key: "callisto-workspace-shared"
+        save-if: "true"
+      env:
+        CARGO_INCREMENTAL: "0"
+        CARGO_REGISTRY_SPARSE: "true"
+    - name: Install Moon
+      if: inputs.setup_callisto == 'true'
+      # moonrepo/setup-toolchain v0
+      uses: moonrepo/setup-toolchain@261c62cb5b0f580c7be7c8cd0f023a2e96756095
+      with:
+        auto-install: true
+    - name: Install or Build Callisto Binary
+      if: inputs.setup_callisto == 'true'
+      shell: bash
+      env:
+        INPUT_CALLISTO_SOURCE: auto
+        INPUT_CALLISTO_VERSION: latest
+        INPUT_CALLISTO_VERIFICATION: fallback
+        GH_TOKEN: ${{ inputs.github_token || github.token }}
+      run: bash "${{ github.action_path }}/../setup-callisto/scripts/install-callisto.sh" # zizmor: ignore[github-env] the PATH entry is a fixed child of the trusted runner temporary directory, not action input or downloaded archive content.
     - name: Create or update release PR
       id: version-pr
+      if: inputs.mode == 'version-pr'
       shell: bash
       env:
         INPUT_VERSION_COMMAND: ${{ inputs.version_command }}
@@ -79,3 +119,11 @@ runs:
         # repository workflow that invokes this action after checkout.
         GH_TOKEN: ${{ inputs.github_token || github.token }}
       run: bash "$GITHUB_ACTION_PATH/scripts/create-or-update-release-pr.sh"
+    - name: Run release
+      id: release
+      if: inputs.mode == 'release'
+      shell: bash
+      env:
+        INPUT_CWD: ${{ inputs.cwd }}
+        GH_TOKEN: ${{ inputs.github_token || github.token }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/run-release.sh"
