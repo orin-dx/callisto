@@ -1,0 +1,1 @@
+How do we want to consider these vs regular "packages" (aka crates in rust, etc)
