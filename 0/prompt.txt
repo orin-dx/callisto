@@ -1,0 +1,1 @@
+Let's understand the current state of callisto, the goal of the tool and summarize for an agent that is picking this up fresh
