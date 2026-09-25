@@ -1,0 +1,24 @@
+{
+  "cli_version": "0.11.3-nightly.202609240627.b2779c9eb",
+  "checkpoint_id": "01M3CW4R0G5G9RVSSGVT71VSM5",
+  "strategy": "manual-commit",
+  "branch": "docs/spec-rewrite",
+  "checkpoints_count": 9,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 108,
+    "cache_creation_tokens": 100764,
+    "cache_read_tokens": 16010510,
+    "output_tokens": 46519,
+    "api_call_count": 47
+  }
+}
