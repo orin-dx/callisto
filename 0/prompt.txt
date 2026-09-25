@@ -1,0 +1,1 @@
+Go with your recommendations, update the roadmap and start the PRs stacked on each other. THe prior large stack is merging now. You might wan to pull latest main once that is done prior to starting, right? Use our plugins, leverage agent teams and workflows for rapid work and efficient token usage. Use the most appropriate model and effort to balance quality and token cost.
