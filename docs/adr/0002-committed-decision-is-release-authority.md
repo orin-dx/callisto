@@ -1,4 +1,4 @@
-# 3. The committed version decision is the release authority
+# 2. The committed version decision is the release authority
 
 Status: Accepted
 
@@ -10,7 +10,7 @@ Status: Accepted
 
 ## Decision
 
-`callisto version --emit-decision <file>` writes the exact version decision it computed (package, target version, inclusion reason) to `.callisto/release-decision.json`, committed in the release PR. After merge, `release plan --from-release-commit --decision <file>` reads that decision and confirms the merged commit's diff matches it exactly, no more and no less. CI never recomputes changeset, group or cascade policy at that boundary.
+`callisto version --emit-decision <file>` writes the exact version decision it computed (package, target version, inclusion reason) to `.callisto/release-decision.json`, committed in the release PR. After merge, `release plan --from-release-commit --decision <file>` reads that decision and confirms the merged commit's diff matches it exactly, no more and no less. CI never recomputes changeset, group or cascade policy at that boundary. The verified merge is also the authorization: callisto has no approval step of its own, and any extra gate is the adopter's CI choice.
 
 ## Options considered
 

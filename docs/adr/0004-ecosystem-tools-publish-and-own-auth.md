@@ -1,4 +1,4 @@
-# 5. Ecosystem tools publish and own authentication
+# 4. Ecosystem tools publish and own authentication
 
 Status: Accepted
 
@@ -20,7 +20,7 @@ Callisto decides what to publish and in what order, then runs the ecosystem tool
 ## Consequences
 
 - Any auth method a tool supports (tokens, config files, keyrings, OIDC) works without callisto knowing about it.
-- A missing credential surfaces mid-release as the tool's own error. Effects before it have landed; a rerun adopts them (ADR 4).
+- A missing credential surfaces mid-release as the tool's own error. Effects before it have landed; a rerun adopts them (ADR 3).
 - Callisto parses tool output to classify results (for example "already published"), so a tool's output change can break classification (`crates/callisto-graph/src/commands/registry_argv.rs`).
 - Every release machine needs the tools on `PATH`.
 

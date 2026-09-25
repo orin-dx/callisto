@@ -1,4 +1,4 @@
-# 4. Reruns observe and adopt landed effects; no persisted execution state
+# 3. Reruns observe and adopt landed effects; no persisted execution state
 
 Status: Accepted
 

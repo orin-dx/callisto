@@ -1,4 +1,4 @@
-# 7. One CLI distributed through proto
+# 6. One CLI distributed through proto
 
 Status: Accepted
 
@@ -35,7 +35,7 @@ There is one product, the native `callisto` CLI. moon users install it with prot
 ## Revisit when
 
 - moon offers something a CLI task cannot get (for example project-graph data with version requirements) and the owner wants it.
-- WASI gains mmap, or gix-odb gains a read fallback. Git access is shell-only anyway (ADR 6), so this alone is not enough.
+- WASI gains mmap, or gix-odb gains a read fallback. Git access is shell-only anyway (ADR 5), so this alone is not enough.
 
 ## Sources
 

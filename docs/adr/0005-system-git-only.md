@@ -1,4 +1,4 @@
-# 6. System git only
+# 5. System git only
 
 Status: Accepted
 
@@ -7,7 +7,7 @@ Status: Accepted
 - Callisto reads commits, tags and staged changes, and creates and pushes tags.
 - From 2026-08-03 `callisto-vcs` had two backends behind `GitDataSource`: native gix (`GitRepository`) and a shell fallback (`ShellGit`), with reads retrying through the shell on any native error (commit bb2a69cc4).
 - The CLI already required a `git` binary: trust observation, staged changes and every fallback went through it (#145).
-- gix could not serve the moon WASM extension anyway: its object reads use mmap, which WASI rejects with ENOSYS (Track 0 spike, ffc922d44; see ADR 7).
+- gix could not serve the moon WASM extension anyway: its object reads use mmap, which WASI rejects with ENOSYS (Track 0 spike, ffc922d44; see ADR 6).
 
 ## Decision
 

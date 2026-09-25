@@ -2,7 +2,7 @@
 
 Sources: `crates/callisto-graph/src/apply.rs`, `crates/callisto-graph/src/plan.rs`
 
-Decisions: `docs/adr/0009-format-preserving-writes-gated-by-apply-permit.md` (writes) and `docs/adr/0003-committed-decision-is-release-authority.md` (the emitted decision).
+Decisions: `docs/adr/0008-format-preserving-writes-gated-by-apply-permit.md` (writes) and `docs/adr/0002-committed-decision-is-release-authority.md` (the emitted decision).
 
 ## VersionPlan
 

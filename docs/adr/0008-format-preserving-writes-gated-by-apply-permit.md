@@ -1,4 +1,4 @@
-# 9. Format-preserving manifest writes gated by ApplyPermit
+# 8. Format-preserving manifest writes gated by ApplyPermit
 
 Status: Accepted
 

@@ -1,4 +1,4 @@
-# 8. Platform packages are owned through optionalDependencies and release with their owner
+# 7. Platform packages are owned through optionalDependencies and release with their owner
 
 Status: Accepted
 
