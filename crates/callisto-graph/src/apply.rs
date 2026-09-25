@@ -329,11 +329,9 @@ pub fn apply_version_plan<R: CommandRunner>(
         for cs_path in &plan.consumed_changesets {
             let full = root.join(cs_path);
             if full.exists() {
-                fs::remove_file(&full).map_err(|e| {
-                    GraphError::Command(CommandError::Io {
-                        program: "fs".to_string(),
-                        message: e.to_string(),
-                    })
+                fs::remove_file(&full).map_err(|e| GraphError::ApplyIo {
+                    path: cs_path.clone(),
+                    message: e.to_string(),
                 })?;
             }
             modified_paths.push(cs_path.clone());
@@ -350,21 +348,17 @@ pub fn apply_version_plan<R: CommandRunner>(
                 Some(existing) => callisto_format::write_pre_json_preserving(pre_state, existing),
                 None => callisto_format::write_pre_json(pre_state),
             };
-            callisto_manifests::atomic::atomic_write(&pre_path, &text, permit).map_err(|e| {
-                GraphError::Command(CommandError::Io {
-                    program: "fs".to_string(),
-                    message: e.to_string(),
-                })
+            callisto_manifests::atomic::atomic_write(&pre_path, &text, permit).map_err(|e| GraphError::ApplyIo {
+                path: rel_pre_path.clone(),
+                message: e.to_string(),
             })?;
             modified_paths.push(rel_pre_path);
         } else if let Some(rel_pre_path) = &plan.delete_pre_json {
             let pre_path = root.join(rel_pre_path);
             if pre_path.exists() {
-                fs::remove_file(&pre_path).map_err(|e| {
-                    GraphError::Command(CommandError::Io {
-                        program: "fs".to_string(),
-                        message: e.to_string(),
-                    })
+                fs::remove_file(&pre_path).map_err(|e| GraphError::ApplyIo {
+                    path: rel_pre_path.clone(),
+                    message: e.to_string(),
                 })?;
                 modified_paths.push(rel_pre_path.clone());
             }

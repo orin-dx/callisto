@@ -183,6 +183,30 @@ pub enum GraphError {
     #[error("workspace root `{root_manifest}` has conflicting version updates: {details}")]
     WorkspaceVersionConflict { root_manifest: PathBuf, details: String },
 
+    #[error(
+        "`{}` is at {} on disk but {} at HEAD, and a changeset is still pending: this looks like a `version` run that wrote and staged its changes but never committed",
+        .path.display(), .disk.render(), .head.render()
+    )]
+    #[diagnostic(
+        code(E121),
+        help(
+            "Finish the interrupted run (review the staged changes and `git commit` them), or reset it \
+             (`git reset --hard HEAD`, discarding the staged work) before running `version` again."
+        )
+    )]
+    PartialVersionRun {
+        path: PathBuf,
+        disk: callisto_model::Version,
+        head: callisto_model::Version,
+    },
+
+    #[error("failed to update `{}` while applying the version plan: {message}", .path.display())]
+    #[diagnostic(
+        code(E122),
+        help("Check file permissions and that the path still exists, then re-run `callisto version`.")
+    )]
+    ApplyIo { path: PathBuf, message: String },
+
     #[error("failed to parse .changeset/pre.json: {0}")]
     #[diagnostic(
         code(E114),

@@ -2,7 +2,7 @@
 
 Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`. A `callisto-model` test fails when a numeric code is missing here.
 
-180 codes exist across two namespaces: 147 numeric `E###` codes (`callisto-model`, `callisto-format`, `callisto-vcs`, `callisto-changelog`, `callisto-graph`) and 33 `callisto::snake_case` codes (`callisto-cli`'s own top-level errors — the ones the CLI surface actually raises). `callisto-conventional` errors carry no diagnostic code at all. `callisto-cli`'s `CliError` also has 9 variants that wrap another crate's error transparently (`#[diagnostic(transparent)]`, no `code(...)` of its own) — those are intentionally out of scope here since they have no code to document; the code you see for them at runtime is whichever code above their wrapped error already carries.
+182 codes exist across two namespaces: 149 numeric `E###` codes (`callisto-model`, `callisto-format`, `callisto-vcs`, `callisto-changelog`, `callisto-graph`) and 33 `callisto::snake_case` codes (`callisto-cli`'s own top-level errors — the ones the CLI surface actually raises). `callisto-conventional` errors carry no diagnostic code at all. `callisto-cli`'s `CliError` also has 9 variants that wrap another crate's error transparently (`#[diagnostic(transparent)]`, no `code(...)` of its own) — those are intentionally out of scope here since they have no code to document; the code you see for them at runtime is whichever code above their wrapped error already carries.
 
 "Fix" is the code's `help(...)` text verbatim. "—" means the variant has no help text in the source.
 
@@ -133,6 +133,8 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`
 | E118 | Package declares platform targets through both `napi.targets` and `[tool.maturin].targets` | Remove one of the two target declarations -- either napi.targets in package.json or [tool.maturin].targets in pyproject.toml -- from the package's manifest. |
 | E119 | Package's `publish-to` target ecosystem doesn't match its detected ecosystem | Remove the mismatched target from publish-to, or fix the [[package]]/[[package-set]] rule so it only matches packages in that ecosystem. |
 | E120 | Package's `publishConfig.registry` (npm) is not an operator-approved registry | `publishConfig.registry` in package.json is manifest-controlled data (a PR author can set it in their own package.json), not operator config, so it is never trusted verbatim as a publish destination. The URL must use the `https` scheme and must exactly match a `url` configured on an `npm`-kind entry in `[registries]` in callisto.toml. Add the registry there if it is a legitimate private registry, or remove the override from package.json. |
+| E121 | A canonical manifest's on-disk version differs from its version at `HEAD` while a changeset is still pending there -- a prior `version` run wrote and staged its changes but never committed | Finish the interrupted run (review the staged changes and `git commit` them), or reset it (`git reset --hard HEAD`, discarding the staged work) before running `version` again. |
+| E122 | A filesystem operation failed while applying the version plan | Check file permissions and that the path still exists, then re-run `callisto version`. |
 | E123 | Release intent references a package that is not an exact selected workspace package | Rebuild the release intent from the current workspace instead of reusing a selection from another workspace. |
 | E124 | Release intent no longer matches the current workspace snapshot | Regenerate and reapprove the release intent; no release operation was authorized. |
 | E125 | Cannot read a release input file | Ensure the release manifest and configuration files remain readable until validation completes. |
@@ -222,4 +224,4 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`
 | `callisto::init_workflow_flags_conflict` | `--workflow` and `--no-workflow` are mutually exclusive | pass only one of --workflow or --no-workflow |
 | `callisto::error` | Fallback/untyped error; message is whatever string was wrapped | — |
 
-180 codes total: 147 numeric (45 callisto-model, 18 callisto-format, 4 callisto-vcs, 4 callisto-changelog, 76 callisto-graph: 5 config + 71 graph) + 33 `callisto::*` in callisto-cli.
+182 codes total: 149 numeric (45 callisto-model, 18 callisto-format, 4 callisto-vcs, 4 callisto-changelog, 78 callisto-graph: 5 config + 73 graph) + 33 `callisto::*` in callisto-cli.

@@ -29,32 +29,62 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
 
     let plan = callisto_graph::commands::plan_version(&ws, &inference, &opts)?;
 
+    // Refuses closed when disk already reflects a version bump HEAD doesn't
+    // have while a changeset is still pending there -- the signature of a
+    // prior `version` run that wrote and staged but never committed.
+    callisto_graph::commands::check_partial_run(&ws)?;
+
+    // Escalated diagnostics (e.g. --strict on "no pending changesets") must
+    // fail the run before anything is written: `--emit-decision` and apply
+    // used to both run first and only afterwards check this, so a --strict
+    // failure still wrote and staged the plan on its way to a non-zero exit.
+    let has_errors = plan.diagnostics.iter().any(|d| d.severity == DiagnosticSeverity::Error);
+
     let permit = ApplyPermit::granted_unless_dry_run(global.dry_run);
 
-    if let (Some(path), Some(permit)) = (args.emit_decision.as_deref(), permit.as_ref()) {
-        let decision = callisto_graph::commands::derive_release_decision(&ws, &plan)?;
-        let content = serde_json::to_string_pretty(&decision).expect("release decision serializes") + "\n";
-        // Relative to the workspace root, not the process's actual working
-        // directory: this file must land inside the tree `--cwd` points at so
-        // `git add -A` picks it up alongside the manifest and changelog
-        // edits, and so its path matches what `--decision` later reads back
-        // via `git show <commit>:<path>` (always workspace-root-relative).
-        let full_path = ws.root.join(path);
-        callisto_model::atomic::atomic_write(&full_path, &content, permit).map_err(|source| CliError::Io {
-            source,
-            path: Some(full_path),
-        })?;
-    }
+    // Validated up front -- a plan with no bumps or divergent group targets
+    // (VER-APPLY-11) fails here, before apply runs -- but the decision file
+    // itself is written only after apply below has actually succeeded.
+    let pending_decision = if !has_errors {
+        match args.emit_decision.as_deref() {
+            Some(path) => {
+                let decision = callisto_graph::commands::derive_release_decision(&ws, &plan)?;
+                // Relative to the workspace root, not the process's actual
+                // working directory: this file must land inside the tree
+                // `--cwd` points at so `git add -A` picks it up alongside the
+                // manifest and changelog edits, and so its path matches what
+                // `--decision` later reads back via `git show <commit>:<path>`
+                // (always workspace-root-relative).
+                Some((ws.root.join(path), decision))
+            }
+            None => None,
+        }
+    } else {
+        None
+    };
 
     let apply_opts = ApplyOptions {
         refresh_lockfiles: args.refresh_lockfiles,
         transient: false,
     };
 
-    let outcome = match permit.as_ref() {
-        Some(permit) => apply_version_plan(&ws.root, &plan, &runner, &apply_opts, permit)?,
-        None => ApplyOutcome::default(),
+    let outcome = if has_errors {
+        ApplyOutcome::default()
+    } else {
+        match permit.as_ref() {
+            Some(permit) => apply_version_plan(&ws.root, &plan, &runner, &apply_opts, permit)?,
+            None => ApplyOutcome::default(),
+        }
     };
+
+    if let (Some((full_path, decision)), Some(permit)) = (pending_decision.as_ref(), permit.as_ref()) {
+        let content = serde_json::to_string_pretty(decision).expect("release decision serializes") + "\n";
+        callisto_model::atomic::atomic_write(full_path, &content, permit).map_err(|source| CliError::Io {
+            source,
+            path: Some(full_path.clone()),
+        })?;
+    }
+
     let report = plan.to_report(outcome.lockfile_refresh_results);
 
     if global.dry_run && global.format == OutputFormat::Text {
@@ -66,14 +96,8 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
         OutputFormat::Text => render::render_version(&report, &ws.config, &mut std::io::stdout())?,
     }
 
-    // If any diagnostic was escalated to Error (e.g. by --strict), fail.
     // Mirrors the pattern in status.rs: diagnostics ride in the report so the
     // caller sees full detail before the non-zero exit.
-    let has_errors = report
-        .diagnostics
-        .iter()
-        .any(|d| d.severity == DiagnosticSeverity::Error);
-
     if has_errors {
         Ok(ExitCode::FAILURE)
     } else {

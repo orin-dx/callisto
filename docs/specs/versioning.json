@@ -221,11 +221,21 @@
     },
     {
       "id": "VER-APPLY-10",
-      "criterion": "`version --emit-decision <path>` writes the release decision JSON to `<path>` relative to the workspace root before applying the plan: `schemaVersion` 2, a digest, and one entry per canonical manifest of each bumped package (ecosystem-qualified name, target version, reasons) sorted by package. Reason `kind` is `changeset`, `inference`, `fixedGroup` or `linkedGroup` (with `groupId`), `cascade` (with source package and edge kind, `peer` for peer escalation) or `preReleasePolicy` (with the prerelease tag)."
+      "criterion": "`version --emit-decision <path>` writes the release decision JSON to `<path>` relative to the workspace root after the plan has been applied successfully: `schemaVersion` 2, a digest, and one entry per canonical manifest of each bumped package (ecosystem-qualified name, target version, reasons) sorted by package. Reason `kind` is `changeset`, `inference`, `fixedGroup` or `linkedGroup` (with `groupId`), `cascade` (with source package and edge kind, `peer` for peer escalation) or `preReleasePolicy` (with the prerelease tag)."
     },
     {
       "id": "VER-APPLY-11",
       "criterion": "`--emit-decision` with `--dry-run` is rejected before any work, and a plan with no bumps, or whose group members have different target versions, fails to produce a decision before any file is written.",
+      "is_error_case": true
+    },
+    {
+      "id": "VER-APPLY-12",
+      "criterion": "A diagnostic escalated to an error (for example `--strict` on the empty-changeset warning) is evaluated right after planning: `version` writes nothing -- not the manifests and changelog, not `pre.json`, not the `--emit-decision` file -- and exits with a failure status, instead of applying the plan and only then failing.",
+      "is_error_case": true
+    },
+    {
+      "id": "VER-APPLY-13",
+      "criterion": "After planning but before any write, `version` refuses with E121 when the workspace's changesets directory still has a pending changeset as of `HEAD` (not yet consumed by a commit) while some canonical manifest's on-disk version differs from its version at `HEAD` -- the signature of a `version` run that wrote and staged its changes but never committed. A repository with no commits yet, or a manifest/changesets directory that didn't exist at `HEAD`, is never refused this way.",
       "is_error_case": true
     }
   ],
