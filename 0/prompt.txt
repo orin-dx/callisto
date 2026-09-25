@@ -1,0 +1,12 @@
+Hmmmm....another agent said this and it's troublesome:
+
+
+
+<pasted_content id="354f">
+package.json — the private root package was named oxc-react-docgen, colliding with the CLI crate and making every oxc-react-docgen: patch changeset ambiguous across cargo/npm. Renamed to oxc-react-docgen-workspace; referenced nowhere else, and pnpm-lock.yaml keys importers by path. callisto validate now passes.
+
+I deliberately did not add a [release] section: 0.8's artifact-targets are validated against callisto's own hardcoded asset-name table, so no other workspace can use it. The plan job asserts the derived intent has zero artifact slots.
+</pasted_content id="354f">
+
+
+If that is true we wouldn't be able to use it with any other package, right? What would be the point?
