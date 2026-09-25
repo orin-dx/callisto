@@ -1,5 +1,6 @@
 {
   "id": "SPEC-SELF-RELEASE-LIFECYCLE",
+  "status": "current",
   "purpose": "Define one recoverable, provider-observed release lifecycle for Callisto so that a reviewed managed release merge automatically releases exactly its committed version, can be rerun safely after interruption, and never treats workflow structure or local state as proof of publication.",
   "scope": "The Callisto release domain model, graph coordinator, CLI, GitHub Actions adapter, binary assets, hermetic behavioral test harness, release documentation, and merge governance required before the next self-release.",
   "non_goals": [
@@ -16,7 +17,7 @@
     },
     {
       "id": "SRL-02",
-      "criterion": "Release orchestration is modeled by a serializable run envelope (orchestration revision, release-source revision, profile, intent digest, artifact-manifest digest). It is derived from the intent by one constructor, validated across fields, and held in the in-memory execution state before the first effect; the receipt is built from it."
+      "criterion": "Release orchestration is modeled by a serializable run envelope (orchestration revision, release-source revision, intent digest, artifact-manifest digest -- no profile field; intent schema 5 removed it, matching SPEC-RELEASE-LIFECYCLE-HARDENING AC-001's 'no profile' requirement). It is derived from the intent by one constructor, validated across fields, and held in the in-memory execution state before the first effect; the receipt is built from it."
     },
     {
       "id": "SRL-03",
@@ -33,11 +34,11 @@
     },
     {
       "id": "SRL-06",
-      "criterion": "Before every effect, on every run including a rerun, each registry publication, Git tag, forge release, forge publication, and artifact upload is provider-observed as absent, exact success (with typed per-role evidence), conflict, or indeterminate; conflict and indeterminate carry closed reasons and fail closed with typed diagnostics. Attempting is reachable only through an absent proof. Registry observation uses the registry protocol (crates.io sparse index, PyPI JSON API; npm via npm view); read-only observations use one bounded retry policy that honours Retry-After, effects are never blindly re-issued, and every outbound command has a deadline."
+      "criterion": "Before every effect, on every run including a rerun, each registry publication, Git tag, forge release, forge publication, and artifact upload is provider-observed as absent, exact success (with typed per-role evidence), conflict, or indeterminate; conflict and indeterminate carry closed reasons and fail closed with typed diagnostics. Attempting is reachable only through an absent proof. Registry observation is `cargo info --registry` for crates.io (not the sparse index directly), the PEP 691 JSON simple index over curl for PyPI (not the /pypi JSON API), and `npm view` for npm; read-only observations use one bounded retry policy that honours Retry-After, effects are never blindly re-issued, and every outbound command has a deadline."
     },
     {
       "id": "SRL-07",
-      "criterion": "On every run, an exact pre-existing remote effect, a registry version included, is recorded as already satisfied without attempting a duplicate publication, with one warning line per adopted registry version; a same-identity version whose remote contents do not match the immutable intent, including a yanked registry version, is reported as a conflict."
+      "criterion": "On every run, an exact pre-existing remote effect, a registry version included, is recorded as already satisfied without attempting a duplicate publication, with one warning line per adopted registry version; a same-identity version whose remote contents do not match the immutable intent is reported as a conflict. A yanked registry version reads as Absent, not Conflict (cargo's `cargo info` cannot see yanks; PyPI treats it as Absent by explicit choice), so it fails closed through a refused publish attempt rather than a Conflict diagnostic (matches SPEC-RELEASE-LIFECYCLE-HARDENING AC-014)."
     },
     {
       "id": "SRL-08",
@@ -53,15 +54,15 @@
     },
     {
       "id": "SRL-11",
-      "criterion": "A release profile is consumed by the release lifecycle. The production profile has one explicit destination; any future non-production profile must use isolated destinations, and shared forge destinations or registry endpoints are rejected before any effect."
+      "criterion": "[UPDATED 2026-09-24: release profiles were removed] `[release].forge-repository` is the single destination authority consumed by the release lifecycle; a legacy production profile is migrated at config load, and any other profile name is rejected (matches SPEC-RELEASE-LIFECYCLE-HARDENING AC-026)."
     },
     {
       "id": "SRL-12",
-      "criterion": "Executable behavioral tests cover fresh release, recovery, hidden and nested artifact transport, clean source worktrees, source/orchestration identity separation, job-local Git credentials, no-secret plan/build jobs, partial provider success, provider conflict, and receipt emission; provider fakes serve captured real responses and reject flags outside the real tools' shapes, and emitted flags are checked against the real tools' help; line-oriented YAML checks remain only as narrow policy guards."
+      "criterion": "Executable behavioral tests cover fresh release, recovery, hidden and nested artifact transport, clean source worktrees, source/orchestration identity separation, partial provider success, provider conflict, and receipt emission; provider fakes serve captured real responses and reject flags outside the real tools' shapes, and emitted flags are checked against the real tools' help. Job-local Git credentials and no-secret plan/build jobs are verified only by the workflow-YAML policy and contract scripts (.github/tests/verify-release-workflow-contract.sh, verify-release-workflow-policy.sh), not by an executable behavioral test; line-oriented YAML checks remain only as narrow policy guards for those two properties."
     },
     {
       "id": "SRL-13",
-      "criterion": "The repository requires the concrete verification checks used as release evidence before merge, while merge remains the sole release authorization boundary."
+      "criterion": "[UPDATED 2026-09-24] Required status checks before merge are a GitHub branch-protection or ruleset setting, external to this repository's tracked files (.github/ holds only CODEOWNERS, templates, dependabot, workflows, actions, and scripts/tests; no ruleset is codified in-repo). The release workflow's verify job runs after merge, not as a merge gate. This criterion is verified manually against the repository's branch-protection settings, not from tracked files, while merge remains the sole release authorization boundary."
     },
     {
       "id": "SRL-14",
@@ -70,6 +71,6 @@
   ],
   "linked_requirement": "RELEASE-SELF-HOSTING-INCIDENT-2026-09-16",
   "spec_file_path": "docs/specs/SPEC-SELF-RELEASE-LIFECYCLE.json",
-  "revision_note": "Revised for PR #124: every run adopts already-landed effects, execution state is in memory only, and the receipt is built from recorded state evidence.",
+  "revision_note": "2026-09-24 drift pass: added status: current; rewrote SRL-02 (no profile field), SRL-06 (cargo info/PEP 691 simple index, not sparse index/JSON API), SRL-07 (yanked reads Absent, not Conflict), SRL-11 (profiles removed, forge-repository is sole destination), SRL-12 (credential/secret scope moved to policy guards), SRL-13 (external branch-protection setting). Prior: revised for PR #124: every run adopts already-landed effects, execution state is in memory only, and the receipt is built from recorded state evidence.",
   "reasoning": "Grounded in the owner-authoritative incident report and live source inspection on 2026-09-17. The owner explicitly rejected AWS and another distribution service for rehearsal, so external staging registry selection is deferred rather than fabricated."
 }

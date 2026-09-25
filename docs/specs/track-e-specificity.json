@@ -65,7 +65,7 @@
     },
     {
       "id": "AC-8b",
-      "description": "The Diagnostic pushed per AC-5 has escalated_by = None and governed_by = None. The warning is advisory under --strict and --strict-graph; it does not escalate to a build failure in either strict mode.",
+      "description": "The Diagnostic pushed per AC-5 has escalated_by = None and governed_by = None. The warning is advisory under --strict (the only strict mode; --strict-graph and its escalation branch were removed in f3b1c1bcf); it does not escalate to a build failure.",
       "is_error_case": false
     },
     {
@@ -98,5 +98,7 @@
     "new_variants": [
       "DiagnosticCode::BareRuleMatchesMultipleEcosystems in crates/callisto-model/src/diagnostic.rs — add to the end of the DiagnosticCode enum, kebab-case serde name 'bare-rule-matches-multiple-ecosystems'."
     ]
-  }
+  },
+  "status": "current",
+  "revision_note": "2026-09-24: added status; AC-8b dropped the removed --strict-graph mode (f3b1c1bcf)."
 }

@@ -1,6 +1,7 @@
 {
   "schema": "spec@1",
   "id": "SPEC-001",
+  "status": "current",
   "purpose": "Make apply_version_plan idempotent so a crashed apply can be safely retried without manual intervention.",
   "scope": "The VersionWriteTarget::Manifest arm of the manifest write loop and the consumed_changesets loop in apply_version_plan. modified_paths is a local Vec<PathBuf> accumulator assigned verbatim to ApplyOutcome::staged at the end of the function — all criteria that reference 'pushed to modified_paths' and 'appears in ApplyOutcome::staged' refer to this single collection. Version equality uses the PartialEq implementation on callisto_model::Version: build metadata suffixes (the + segment per semver 2.0.0 §10) are ignored, so '1.1.0+build' is considered equal to '1.1.0'. ManifestFormat::from_path is assumed infallible for paths with a recognized extension; test fixtures may use any extension handled by that function without triggering a ManifestError — extension-validation behavior is out of scope for this spec. When plan.bumps is empty, or all bumps have empty writes arrays and consumed_changesets is empty, apply_version_plan returns Ok and ApplyOutcome::staged is an empty Vec; empty input is not an error.",
   "non_goals": [
@@ -72,5 +73,6 @@
       "In the VersionWriteTarget::Manifest arm of the write loop: read the current version via handle.version() after opening the manifest. If current == bump.to (PartialEq), skip write_version and push p to modified_paths. If current == bump.from, call write_version(&bump.to, permit)? and push p to modified_paths. Otherwise return Err(GraphError::UnexpectedManifestVersion { path: p.clone(), expected_from: bump.from.clone(), expected_to: bump.to.clone(), found: current }) immediately. GraphError::UnexpectedManifestVersion is an existing variant (E117 in error.rs) — do not create a new one. All propagation uses the existing ? operator; no new From impls or map_err calls.",
       "In the consumed_changesets loop: move modified_paths.push(cs_path.clone()) outside the if full.exists() block so it executes unconditionally after the delete attempt. Keep the if full.exists() guard around fs::remove_file only. The ? on fs::remove_file remains — permission errors and other IO failures still propagate and abort the loop before the push."
     ]
-  }
+  },
+  "revision_note": "2026-09-24 drift pass: added status: current (no criteria changes)."
 }
