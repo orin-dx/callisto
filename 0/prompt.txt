@@ -1,0 +1,1 @@
+Please fix things appropriatelly and give me detaisl on the 14 judgement calls. What can we learn from changesets, knope, nx release and release please that helps use decide on those calls?
