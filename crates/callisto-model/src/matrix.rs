@@ -7,8 +7,13 @@ use crate::{Diagnostic, Report};
 
 /// Top-level report output from `callisto matrix --format json`.
 ///
-/// BTreeMap guarantees lexicographic key ordering by registered package name
-/// (PackageId::name()) without a separate sort step (AC-009).
+/// `platform_targets`/`runtime_versions` are keyed by each package's
+/// ecosystem-qualified identity (`PackageId::display_name()`: a bare name
+/// when the package was never promoted, `ecosystem/name` once a same-name
+/// package in another ecosystem forced promotion -- the common napi split
+/// layout -- so a Cargo crate and an npm package sharing a bare name never
+/// collide on one entry). BTreeMap guarantees lexicographic key ordering by
+/// that id without a separate sort step (AC-009).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MatrixReport {

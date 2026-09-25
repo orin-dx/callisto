@@ -2132,8 +2132,11 @@ CI configuration a caller builds from this data (the calling workflow owns whate
 }
 ```
 
-Both top-level maps are keyed by the *registered package's* `PackageId::name()` — not by
-triple or by manifest path — so a caller resolving CI jobs per package (the common case:
+Both top-level maps are keyed by the *registered package's* `PackageId::display_name()` —
+the bare name for a package that was never promoted (as in the `@myorg/foo` example above),
+or `<ecosystem>/<name>` once a same-named package in another ecosystem forced promotion (the
+common napi split layout: a Cargo crate and an npm package sharing a bare name) — never by
+triple or by manifest path, so a caller resolving CI jobs per package (the common case:
 one build job fans out over that package's own triples) never has to invert an
 index. Map ordering is lexicographic by construction (`BTreeMap`), so output is stable
 across runs without a separate sort step. `platformTargets[pkg].targets` is itself sorted

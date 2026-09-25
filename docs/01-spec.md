@@ -2093,7 +2093,7 @@ impl Report for InitReport     { const COMMAND: &'static str = "init";     /* �
 
 #### M.12.7 `MatrixReport` — §19, §G.11 `matrix`, §CLI.6.13
 
-`callisto matrix`'s report is keyed by package name rather than shaped as a per-`Package` list
+`callisto matrix`'s report is keyed by package id rather than shaped as a per-`Package` list
 like every other report above, because two packages can independently populate the *same* two
 maps without either being "the" subject of the report — there is no natural single-array shape
 that avoids repeating each package's identity once per contributing field.
@@ -2103,9 +2103,12 @@ that avoids repeating each package's identity once per contributing field.
 #[serde(rename_all = "camelCase")]
 pub struct MatrixReport {
     pub schema_version: u32,
-    /// Keyed by `PackageId::name()`. `BTreeMap` gives lexicographic key order for free — no
-    /// separate sort step (AC-009). A package that declares neither `napi.targets` nor
-    /// `[tool.maturin].targets` contributes no entry; the map is `{}`, not omitted, for a
+    /// Keyed by `PackageId::display_name()` — a bare name for a package that was never
+    /// promoted, `<ecosystem>/<name>` once a same-named package in another ecosystem (the
+    /// common napi split layout) forced promotion, so a Cargo and an npm package sharing a
+    /// bare name never collide on one map entry. `BTreeMap` gives lexicographic key order for
+    /// free — no separate sort step (AC-009). A package that declares neither `napi.targets`
+    /// nor `[tool.maturin].targets` contributes no entry; the map is `{}`, not omitted, for a
     /// workspace with no platform packages at all (§13 invariant 14's schema-version-on-every-
     /// output rule still needs a report to attach to).
     pub platform_targets: BTreeMap<String, PlatformTargetGroup>,

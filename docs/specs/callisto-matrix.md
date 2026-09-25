@@ -45,17 +45,20 @@ drift-checking to report emission. The table itself is not duplicated; `callisto
 
 ## 2. JSON output contract — `MatrixReport`
 
-The report is emitted as a single JSON object. All package names are the registered package
-name (the `name` field in `package.json`, `[package] name` in `Cargo.toml`, or
-`<PackageId>` in a `.csproj`).
+The report is emitted as a single JSON object. Top-level map keys are each package's
+ecosystem-qualified identity (`<ecosystem>/<name>`, e.g. `cargo/foo`, `npm/foo`) once a
+same-named package in another ecosystem forces promotion, or the bare registered package name
+(the `name` field in `package.json`, `[package] name` in `Cargo.toml`, or `<PackageId>` in a
+`.csproj`) otherwise -- see `PackageId::display_name`. This keeps a Cargo crate and an npm
+package sharing a bare name (the common napi split layout) from colliding on the same entry.
 
 ```jsonc
 {
   "platformTargets": {
-    "<package_name>": { /* PlatformTargetGroup */ }
+    "<package_id>": { /* PlatformTargetGroup */ }
   },
   "runtimeVersions": {
-    "<package_name>": { /* RuntimeVersionEntry */ }
+    "<package_id>": { /* RuntimeVersionEntry */ }
   }
 }
 ```
@@ -245,7 +248,7 @@ callisto matrix [--package <name>] [--format json|table]
 
 | Flag | Default | Description |
 |---|---|---|
-| `--package <name>` | all packages | Restrict output to a single package by registered name |
+| `--package <name>` | all packages | Restrict output to one package. Accepts a bare name (resolved only if it names exactly one package; two-plus candidates across ecosystems error listing the qualified candidates) or an ecosystem-qualified id (`cargo/foo`, `npm/foo`) |
 | `--format json\|table` | `json` | Output format. `table` renders a human-readable ASCII table |
 
 ### 5.2 Exit codes
@@ -260,7 +263,7 @@ and no `engines.node` / `requires-python` constraints exits 0 with `{"platformTa
 
 ### 5.3 Output ordering
 
-Keys in both top-level maps are sorted lexicographically by package name. `targets[]` entries
+Keys in both top-level maps are sorted lexicographically by package id (see §2). `targets[]` entries
 within a `PlatformTargetGroup` are sorted by triple/RID string, so the output is
 deterministic and diff-friendly.
 
