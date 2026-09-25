@@ -13,18 +13,7 @@
 5. **System Git only.** All VCS reads and writes shell out to the user's `git` binary (`callisto-vcs`), so Callisto sees exactly the repository, config, and identity Git itself does. No embedded Git implementation: gix was a second backend with diverging semantics and 106 extra crates.
 6. **User-facing errors are diagnosable.** Every error surfaced to a user derives `miette::Diagnostic` with a stable code and, where the fix isn't obvious from the message, `help` text. Full list: [`docs/errors.md`](docs/errors.md).
 
-## Design decisions
-
-Decisions a contributor might reasonably reverse. Each names what was rejected and why.
-
-- **Changesets file format.** `.changeset/*.md` is byte-compatible with `@changesets/cli`, so adopting or leaving callisto is one commit. Commit inference is opt-in per package (`release-trigger = "auto"`), not the default.
-- **Ecosystem tools publish and own auth.** `cargo`, `npm`/`pnpm`, `twine` and `gh` publish with whatever credentials they see. Callisto has no credential pre-flight: it duplicated each tool's auth rules and drifted from them.
-- **Merging the release PR is the only approval.** No GitHub Environment reviewer gate: it blocked automated releases and reviewed nothing the PR had not. Protect the default branch instead; registry credentials exist only in the `execute` job.
-- **The committed decision is the release authority.** `version --emit-decision` writes `.callisto/release-decision.json` into the release PR; after merge, `release plan` verifies against it and never re-derives, so what reviewers approved is what ships.
-- **Reruns adopt landed effects.** Each run observes every provider and adopts effects that already landed. No execution state is persisted; it added recovery commands and failure modes of its own. A receipt is written only when everything succeeded.
-- **Platform packages release with their owner.** An `os`+`cpu` package in exactly one package's `optionalDependencies` takes the owner's version, has no tag of its own and publishes first. No `[[fixed-group]]` entry needed.
-- **One build.** No cargo features in shipped crates: a feature-gated binary differed from the tested one. Behaviour is chosen at runtime (`release-trigger`).
-- **proto, not a moon extension.** moon users run the CLI installed through proto. The WASM extension could not read Git objects under WASI and pulled in wasmtime (445 crates).
+Design decisions, with the options they rejected and why: [`docs/adr/README.md`](docs/adr/README.md).
 
 ## Crate map
 

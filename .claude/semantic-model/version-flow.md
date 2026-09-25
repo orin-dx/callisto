@@ -2,6 +2,8 @@
 
 Sources: `crates/callisto-graph/src/apply.rs`, `crates/callisto-graph/src/plan.rs`
 
+Decisions: `docs/adr/0009-format-preserving-writes-gated-by-apply-permit.md` (writes) and `docs/adr/0003-committed-decision-is-release-authority.md` (the emitted decision).
+
 ## VersionPlan
 
 The complete description of what needs to change. Produced by plan-generation, consumed by apply.

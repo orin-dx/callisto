@@ -35,6 +35,7 @@ Rules for AI agents working in this repo.
 3. File writes go through `callisto_model::atomic::atomic_write`.
 4. User-facing errors derive `miette::Diagnostic` with a code and a fix.
 5. No emojis in docs or code.
+6. No cargo features in shipped crates; behaviour is chosen at runtime (#143). The dev-only `callisto-model/test-util` feature is the exception.
 
 ## Fixing bugs
 
@@ -46,7 +47,7 @@ Rules for AI agents working in this repo.
 ## Specs and plans
 
 - Specs (`spec@1`) live in `docs/specs/`, one per area, current behavior only. Change the spec in the same PR as the behavior. No history, rationale or revision notes.
-- Design decisions live in `ARCHITECTURE.md` ("Design decisions"), one bullet each naming what was rejected and why. Add one only when a contributor might reasonably reverse it; delete it when it no longer holds.
+- Read `docs/adr/README.md` before changing release flow, Git access, publishing, distribution, platform packages or manifest writes. Reversing an ADR needs a new ADR the owner accepts.
 - Plans (`plan@1`) live in `docs/projects/`. Delete a plan once its work ships.
 - Code never cites specs: no spec IDs, criterion IDs, section numbers or track names in comments, test names or messages. Describe the behavior instead.
 - A requirement the owner didn't state is a judgment call. Get owner confirmation before it gates anything.
