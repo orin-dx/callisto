@@ -1,0 +1,3 @@
+Callisto wasm is for moon also, not just our action right?
+
+We want to get to v1 soon, if we have changes we’re thinking we should intro now
