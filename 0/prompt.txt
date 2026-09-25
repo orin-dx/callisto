@@ -1,0 +1,1 @@
+Should any of this info be in our readme, architecture? some other doc?
