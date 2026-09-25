@@ -1,0 +1,10 @@
+<task-notification>
+<task-id>b1gim2wvz</task-id>
+<summary>Monitor event: "0.8.0 release run 35664936198 job transitions"</summary>
+<event>Check release workflow policy for recovery: success
+Create or update the Callisto release PR: skipped
+Derive ephemeral intent from the merged release commit: in_progress
+Identify a merged Callisto release PR: success
+Verify release candidate: skipped</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
