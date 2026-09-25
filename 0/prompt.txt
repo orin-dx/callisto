@@ -1,0 +1,3 @@
+We should use the package manager, not curl. We want to keep things clean. We should avoid plan http please because auth will get complicated, right? Why complicate thigns.
+
+The rest seems fine
