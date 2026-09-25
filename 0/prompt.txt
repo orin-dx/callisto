@@ -1,0 +1,1 @@
+We're not using a PAT for the GH workflow. We have the GH TOKEN built in to actions, right? Are you dumb or confused?
