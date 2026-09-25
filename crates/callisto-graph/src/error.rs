@@ -597,10 +597,7 @@ pub enum GraphError {
     InitForgeRepositoryMismatch { configured: String, origin: String },
 
     #[error("artifact target `{triple}` is invalid: {reason}")]
-    #[diagnostic(
-        code(E196),
-        help("Use distinct Rust target triples from `rustc --print target-list`.")
-    )]
+    #[diagnostic(code(E196), help("Use distinct, non-empty Rust target triples."))]
     InitInvalidTargetTriple { triple: String, reason: &'static str },
 
     #[error("no package produces a binary artifact, so there is nothing to ship")]

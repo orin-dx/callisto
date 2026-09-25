@@ -45,7 +45,7 @@
     },
     {
       "id": "AC-003c",
-      "criterion": "When AC-003 is answered yes, init asks for artifact target triples as a comma-separated list. When rustc is present on PATH, each entered triple is validated against rustc --print target-list's output and an unrecognized triple errors naming that triple, without writing any file; when rustc is absent, entered triples are accepted without validation. Submitting an empty list re-asks the question rather than proceeding.",
+      "criterion": "When AC-003 is answered yes, init asks for artifact target triples as a comma-separated list. Triples are not checked against rustc; an empty or repeated triple errors naming it, without writing any file. Submitting an empty list re-asks the question rather than proceeding.",
       "is_error_case": false
     },
     {
@@ -140,7 +140,7 @@
     },
     {
       "id": "AC-014b",
-      "criterion": "A malformed target triple -- one that fails rustc target-list validation when rustc is present, or that is supplied as an empty string -- given via a repeated --artifact-target, or the same triple given more than once, errors naming the offending triple, without writing any file.",
+      "criterion": "An empty target triple given via a repeated --artifact-target, or the same triple given more than once, errors naming the offending triple, without writing any file.",
       "is_error_case": true
     },
     {

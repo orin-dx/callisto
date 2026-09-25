@@ -456,29 +456,12 @@ pub fn forge_repository(facts: &InitFacts, value: &str) -> Result<GitHubReposito
     Ok(repository)
 }
 
-/// Target triples `rustc` knows, or `None` when `rustc` is unavailable.
-pub fn known_target_triples<R: CommandRunner>(runner: &R, root: &Path) -> Option<BTreeSet<String>> {
-    let output = runner.run("rustc", &["--print", "target-list"], root).ok()?;
-    if output.exit_code != Some(0) {
-        return None;
-    }
-    Some(
-        output
-            .stdout
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .map(str::to_owned)
-            .collect(),
-    )
-}
-
-/// Validates artifact target triples against `known` (skipped when `None`).
+/// Validates artifact target triples.
 ///
 /// # Errors
 ///
-/// An empty, repeated, or unknown triple.
-pub fn validate_targets(targets: &[String], known: Option<&BTreeSet<String>>) -> Result<Vec<String>, GraphError> {
+/// An empty or repeated triple.
+pub fn validate_targets(targets: &[String]) -> Result<Vec<String>, GraphError> {
     let mut seen = BTreeSet::new();
     for target in targets {
         let invalid = |reason| GraphError::InitInvalidTargetTriple {
@@ -490,9 +473,6 @@ pub fn validate_targets(targets: &[String], known: Option<&BTreeSet<String>>) ->
         }
         if !seen.insert(target.as_str()) {
             return Err(invalid("it is given more than once"));
-        }
-        if known.is_some_and(|known| !known.contains(target)) {
-            return Err(invalid("`rustc --print target-list` does not list it"));
         }
     }
     Ok(targets.to_vec())
@@ -1435,39 +1415,24 @@ mod tests {
         ));
     }
 
-    struct NoRustc;
-    impl CommandRunner for NoRustc {
-        fn run(&self, program: &str, _: &[&str], _: &Path) -> Result<CommandOutput, CommandError> {
-            Err(CommandError::NotFound {
-                program: program.to_owned(),
-            })
-        }
-    }
-
-    // AC-003c, AC-014b
+    // AC-014b
     #[test]
-    fn targets_are_validated_against_rustc_when_present() {
-        let known = BTreeSet::from(["x86_64-unknown-linux-gnu".to_owned()]);
+    fn targets_must_be_distinct_and_non_empty() {
         let targets = |values: &[&str]| values.iter().map(|value| (*value).to_owned()).collect::<Vec<_>>();
-        assert!(validate_targets(&targets(&["x86_64-unknown-linux-gnu"]), Some(&known)).is_ok());
+        assert!(validate_targets(&targets(&["x86_64-unknown-linux-gnu", "made-up-triple"])).is_ok());
         for (bad, offending) in [
-            (targets(&["made-up-triple"]), "made-up-triple"),
             (
                 targets(&["x86_64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]),
                 "x86_64-unknown-linux-gnu",
             ),
             (targets(&[""]), ""),
         ] {
-            let error = validate_targets(&bad, Some(&known)).unwrap_err();
+            let error = validate_targets(&bad).unwrap_err();
             assert!(
                 matches!(&error, GraphError::InitInvalidTargetTriple { triple, .. } if triple == offending),
                 "{error}"
             );
         }
-        assert!(validate_targets(&targets(&["made-up-triple"]), None).is_ok());
-        assert_eq!(known_target_triples(&NoRustc, Path::new(".")), None);
-        let real = known_target_triples(&RealGitRunner, Path::new(".")).expect("rustc is on PATH");
-        assert!(real.contains("x86_64-unknown-linux-gnu"));
     }
 
     // AC-014d
