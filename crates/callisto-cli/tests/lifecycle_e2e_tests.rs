@@ -1,10 +1,9 @@
 mod common;
 
 use std::fs;
+use std::process::Command;
 
-use callisto_cli::cli::{
-    AddArgs, GlobalArgs, InitArgs, OutputFormat, PlanPublishArgs, PublishArgs, StatusArgs, VersionArgs,
-};
+use callisto_cli::cli::{AddArgs, GlobalArgs, InitArgs, OutputFormat, ReleaseCommandArgs, StatusArgs, VersionArgs};
 use callisto_cli::commands;
 
 use common::setup_polyglot_git_repo;
@@ -67,20 +66,25 @@ fn test_full_polyglot_workspace_release_lifecycle() {
     let updated_pkg = fs::read_to_string(root.join("packages/web/package.json")).unwrap();
     assert!(updated_pkg.contains("\"version\": \"1.0.1\""));
 
-    // 5. callisto plan-publish
-    let plan_res = commands::plan_publish::handle(PlanPublishArgs { only: vec![] }, &global);
-    assert!(plan_res.is_ok());
-
-    // 6. callisto publish --dry-run: must report the plan without ever
-    // constructing a PublishOrchestrator or shelling out to a real
-    // publisher (cargo/npm/twine) — this test asserts success purely from
-    // the dry-run short-circuit, so it never touches a real registry.
+    // 5. callisto release --dry-run previews the release without publishing.
+    Command::new("git")
+        .args(["remote", "add", "origin", "https://github.com/example/core-crate.git"])
+        .current_dir(root)
+        .status()
+        .unwrap();
     let dry_run_global = GlobalArgs {
         dry_run: true,
         ..global.clone()
     };
-    let publish_res = commands::publish::handle(PublishArgs { only: vec![] }, &dry_run_global);
-    assert!(publish_res.is_ok());
+    let release_res = commands::release::handle(
+        ReleaseCommandArgs {
+            command: None,
+            packages: vec![],
+            receipt: None,
+        },
+        &dry_run_global,
+    );
+    assert!(release_res.is_ok(), "{release_res:?}");
 }
 
 #[test]

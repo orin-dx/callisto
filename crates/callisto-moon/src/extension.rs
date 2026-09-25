@@ -123,7 +123,7 @@ pub(crate) fn build_extension_output(
 /// `exit_code` is always `1` -- every call site is a hard failure branch.
 ///
 /// Pulled out of `execute_extension` (`extension_pdk.rs`), whose five
-/// failure branches (locator error, `Workspace::load` error, `plan_publish`
+/// failure branches (locator error, `Workspace::load` error, `release`
 /// error, `validate` error, `status` error) all hand-built this exact struct
 /// literal verbatim.
 #[cfg(any(feature = "pdk", test))]
@@ -144,13 +144,22 @@ pub(crate) fn error_output(json_val: serde_json::Value, e: &impl std::fmt::Displ
 /// real wasm32 Extism host (see `runner.rs`'s `pdk`-feature impl).
 ///
 /// NOTE: resolves *which* name to dispatch on, doesn't validate it.
-/// `execute_extension`'s `match` treats any unrecognized name
-/// (`"plan-publish"`/`"plan_publish"`, `"validate"`) the same as no
-/// subcommand -- silently falls back to `status`, same as empty `args`.
+/// `execute_extension` rejects a removed name (see [`removed_subcommand`]) and
+/// treats any other name besides `"release"` and `"validate"` the same as no subcommand -- silently falls back to `status`, same as empty `args`.
 /// No distinct "unrecognized subcommand" error path exists yet.
 #[cfg(feature = "pdk")]
 pub(crate) fn resolve_subcommand(args: &[String]) -> &str {
     args.first().map(|s| s.as_str()).unwrap_or("status")
+}
+
+/// The replacement for a removed extension subcommand, if `name` is one.
+#[cfg(any(feature = "pdk", test))]
+pub(crate) fn removed_subcommand(name: &str) -> Option<&'static str> {
+    matches!(
+        name,
+        "plan-publish" | "plan_publish" | "publish" | "tag" | "filter-plan" | "filter_plan"
+    )
+    .then_some("release")
 }
 
 // `execute_extension`/`initialize_extension` moved to `extension_pdk.rs` --
@@ -243,6 +252,23 @@ mod tests {
     // there is handled cleanly (`extism_pdk::unwrap!` sets the Extism error
     // and returns `-1` from the guest export) rather than panicking/trapping.
 
+    #[test]
+    fn removed_subcommands_name_their_replacement() {
+        for name in [
+            "plan-publish",
+            "plan_publish",
+            "publish",
+            "tag",
+            "filter-plan",
+            "filter_plan",
+        ] {
+            assert_eq!(removed_subcommand(name), Some("release"), "{name}");
+        }
+        for name in ["release", "validate", "status", "bogus"] {
+            assert_eq!(removed_subcommand(name), None, "{name}");
+        }
+    }
+
     #[cfg(feature = "pdk")]
     #[test]
     fn resolve_subcommand_defaults_to_status_when_args_empty() {
@@ -254,8 +280,8 @@ mod tests {
     fn resolve_subcommand_uses_first_arg_when_present() {
         assert_eq!(resolve_subcommand(&["validate".to_string()]), "validate");
         assert_eq!(
-            resolve_subcommand(&["plan-publish".to_string(), "--extra".to_string()]),
-            "plan-publish"
+            resolve_subcommand(&["release".to_string(), "--extra".to_string()]),
+            "release"
         );
     }
 

@@ -1,7 +1,6 @@
 //! Deterministic, graph-owned release roster decisions.
 //!
-//! This is deliberately separate from `PublishPlan`: it records the exact
-//! package/version authority that later intent construction consumes, without
+//! It records the exact package/version authority that later intent construction consumes, without
 //! exposing a mutation route.
 
 use callisto_model::{
@@ -46,7 +45,7 @@ pub(crate) fn release_package_ids(
 /// Derives the durable roster from a freshly computed version plan.
 ///
 /// The caller supplies the plan from the same workspace observation; this
-/// function never inspects `PublishPlan` or a caller-provided release roster.
+/// function never inspects a caller-provided release roster.
 pub fn derive_release_decision<R: callisto_model::CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     plan: &VersionPlan,
@@ -132,8 +131,19 @@ pub fn derive_selected_release_decision<R: callisto_model::CommandRunner, D: Dep
         });
     }
 
-    let linked_groups = complete
-        .entries
+    let entries = expand_selection(workspace, complete.entries, &selected);
+    ReleaseDecisionV1::new(entries).map_err(GraphError::from)
+}
+
+/// Keeps the selected entries plus every entry sharing a fixed or linked group
+/// with a selection. Both release routes narrow `--package` through this.
+fn expand_selection<R: callisto_model::CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    entries: Vec<ReleaseDecisionEntry>,
+    selected: &std::collections::BTreeSet<&ReleasePackageId>,
+) -> Vec<ReleaseDecisionEntry> {
+    // A plan-derived entry carries its linked group as a reason.
+    let reason_groups = entries
         .iter()
         .filter(|entry| selected.contains(&entry.package))
         .flat_map(|entry| entry.reasons.iter())
@@ -142,27 +152,111 @@ pub fn derive_selected_release_decision<R: callisto_model::CommandRunner, D: Dep
             _ => None,
         })
         .collect::<std::collections::BTreeSet<_>>();
-
-    // Fixed groups version in lockstep, so selecting any member releases the whole
-    // group. Read membership from config: the selected member's own reason is often
-    // `Changeset`, so the group id never appears on it.
-    let fixed_groups = selected
+    // Config membership: a selected member's own reason is often `Changeset` or `UnreleasedVersion`.
+    let config_groups = selected
         .iter()
-        .filter_map(|selection| fixed_group_of(workspace, selection))
+        .flat_map(|selection| release_groups_of(workspace, selection))
         .collect::<std::collections::BTreeSet<_>>();
-
-    let entries = complete
-        .entries
+    entries
         .into_iter()
         .filter(|entry| {
             selected.contains(&entry.package)
                 || entry.reasons.iter().any(|reason| {
-                    matches!(reason, ReleaseInclusionReason::LinkedGroup { group_id } if linked_groups.contains(group_id))
+                    matches!(reason, ReleaseInclusionReason::LinkedGroup { group_id } if reason_groups.contains(group_id))
                 })
-                || fixed_group_of(workspace, &entry.package).is_some_and(|group| fixed_groups.contains(&group))
+                || release_groups_of(workspace, &entry.package)
+                    .iter()
+                    .any(|group| config_groups.contains(group))
         })
-        .collect();
-    ReleaseDecisionV1::new(entries).map_err(GraphError::from)
+        .collect()
+}
+
+/// Derives the roster of every publishable package whose current version has
+/// no tag in the canonical [`crate::TagIndex`], each with
+/// [`ReleaseInclusionReason::UnreleasedVersion`].
+///
+/// A non-empty `selections` restricts the roster to exactly those identities,
+/// each of which must be unreleased and publishable. `None` means nothing is
+/// unreleased.
+pub fn derive_unreleased_decision<R: callisto_model::CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    selections: &[ReleasePackageId],
+) -> Result<Option<ReleaseDecisionV1>, GraphError> {
+    let versions = workspace.base_versions()?;
+    let tags = workspace.tags()?;
+    let mut entries = Vec::new();
+    for package in workspace.graph.packages() {
+        if !has_dispatchable_target(package) {
+            continue;
+        }
+        let version = versions.get(&package.id).ok_or_else(|| GraphError::ReleaseInvariant {
+            detail: format!("package `{}` has no base version", package.id.display_name()),
+        })?;
+        if version_is_tagged(tags, &package.id, version) {
+            continue;
+        }
+        for id in release_package_ids(&workspace.identity, package)? {
+            entries.push(ReleaseDecisionEntry {
+                package: id,
+                target_version: version.clone(),
+                reasons: vec![ReleaseInclusionReason::UnreleasedVersion],
+            });
+        }
+    }
+
+    let mut seen = std::collections::BTreeSet::new();
+    for selection in selections {
+        if !seen.insert(selection) {
+            return Err(GraphError::ReleaseSelectionInvalid {
+                package: selection.clone(),
+                reason: ReleaseSelectionInvalidReason::Duplicate,
+            });
+        }
+        let Some(package) = workspace_package(workspace, selection) else {
+            return Err(GraphError::UnknownPackage {
+                id: callisto_model::PackageId::Prefixed {
+                    ecosystem: selection.ecosystem(),
+                    name: selection.name().to_string(),
+                },
+            });
+        };
+        if !has_dispatchable_target(package) {
+            return Err(GraphError::ReleaseSelectionInvalid {
+                package: selection.clone(),
+                reason: ReleaseSelectionInvalidReason::NoDispatchableTarget,
+            });
+        }
+        if !entries.iter().any(|entry| &entry.package == selection) {
+            return Err(GraphError::ReleaseSelectionInvalid {
+                package: selection.clone(),
+                reason: ReleaseSelectionInvalidReason::NotARelease,
+            });
+        }
+    }
+    if !selections.is_empty() {
+        entries = expand_selection(workspace, entries, &seen);
+    }
+    if entries.is_empty() {
+        return Ok(None);
+    }
+    ReleaseDecisionV1::new(entries).map(Some).map_err(GraphError::from)
+}
+
+/// Whether `version` of `package` already has a tag in the canonical [`crate::TagIndex`].
+pub(crate) fn version_is_tagged(
+    tags: &crate::TagIndex,
+    package: &callisto_model::PackageId,
+    version: &Version,
+) -> bool {
+    tags.contains_tag(&tags.template(package).render(version).to_string())
+        || tags.last_tag(package).is_some_and(|tag| &tag.version == version)
+}
+
+pub(crate) fn has_dispatchable_target(package: &Package) -> bool {
+    package
+        .publish_to
+        .iter()
+        .any(|target| !matches!(target, callisto_model::PublishTarget::None))
 }
 
 /// The workspace package with this exact release identity.
@@ -177,19 +271,22 @@ fn workspace_package<'w, R: callisto_model::CommandRunner, D: DependencyResolver
         .find(|package| release_package_ids(&workspace.identity, package).is_ok_and(|ids| ids.contains(id)))
 }
 
-/// The fixed group a release package belongs to, per `[[fixed-group]]` config.
-fn fixed_group_of<R: callisto_model::CommandRunner, D: DependencyResolver>(
+/// The fixed and linked groups a release package belongs to, per config.
+fn release_groups_of<R: callisto_model::CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     id: &ReleasePackageId,
-) -> Option<callisto_model::GroupName> {
-    let package = workspace_package(workspace, id)?;
-    workspace
-        .config
-        .groups
-        .fixed_of
-        .iter()
-        .find(|(member, _)| member.matches(&package.id))
-        .map(|(_, group)| group.clone())
+) -> Vec<(&'static str, callisto_model::GroupName)> {
+    let Some(package) = workspace_package(workspace, id) else {
+        return Vec::new();
+    };
+    let groups = &workspace.config.groups;
+    let fixed = groups.fixed_of.iter().map(|(member, group)| ("fixed", member, group));
+    let linked = groups.linked_of.iter().map(|(member, group)| ("linked", member, group));
+    fixed
+        .chain(linked)
+        .filter(|(_, member, _)| member.matches(&package.id))
+        .map(|(kind, _, group)| (kind, group.clone()))
+        .collect()
 }
 
 /// Verifies the release roster a merged release commit claims, against a

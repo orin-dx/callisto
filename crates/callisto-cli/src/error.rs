@@ -275,6 +275,28 @@ pub enum CliError {
     )]
     ReleaseJsonInvalid { path: String, detail: String },
 
+    #[error("this workspace cannot release locally: {reason}")]
+    #[diagnostic(
+        code(callisto::release_requires_ci_route),
+        help("release it from CI with `callisto release plan`, `callisto release artifact-manifest`, then `callisto release execute`; `callisto release --dry-run` still previews it locally")
+    )]
+    ReleaseRequiresCiRoute { reason: String },
+
+    #[error("missing credential {credential} to release `{package}`")]
+    #[diagnostic(code(callisto::release_credential_missing), help("{fix}"))]
+    ReleaseCredentialMissing {
+        package: String,
+        credential: String,
+        fix: String,
+    },
+
+    #[error("invalid release receipt location: {detail}")]
+    #[diagnostic(
+        code(callisto::release_receipt_location),
+        help("pass `--receipt <file>` outside the repository")
+    )]
+    ReleaseReceiptLocation { detail: String },
+
     #[error("{0}")]
     #[diagnostic(code(callisto::error))]
     Other(String),

@@ -591,6 +591,53 @@ pub fn execute(root: &Path, intent: &Path, receipt: &Path, publishers: FakePubli
         .expect("release execute should run")
 }
 
+/// Credential variables a local `callisto release` reads; cleared so the host cannot leak one in.
+pub const CREDENTIAL_VARS: &[&str] = &[
+    "CARGO_REGISTRY_TOKEN",
+    "CARGO_HOME",
+    "NODE_AUTH_TOKEN",
+    "NPM_TOKEN",
+    "TWINE_PASSWORD",
+    "GH_TOKEN",
+    "GITHUB_TOKEN",
+    "ACTIONS_ID_TOKEN_REQUEST_URL",
+    "XDG_STATE_HOME",
+];
+
+/// Runs bare `callisto release` (local route) against the fake publishers.
+/// `home` isolates `~/.cargo`, `~/.npmrc` and the state directory; `env` sets credentials.
+pub fn release_local(
+    root: &Path,
+    args: &[&str],
+    home: &Path,
+    env: &[(&str, &str)],
+    publishers: FakePublishers<'_>,
+) -> Output {
+    let path = format!("{}:{}", publishers.bin.display(), std::env::var("PATH").unwrap());
+    let mut command = Command::new(env!("CARGO_BIN_EXE_callisto"));
+    command.args(["--cwd", root.to_str().unwrap()]).args(args);
+    for name in CREDENTIAL_VARS {
+        command.env_remove(name);
+    }
+    command
+        .env("HOME", home)
+        .envs(env.iter().copied())
+        .env("PATH", path)
+        .env("CALLISTO_TEST_LOG", publishers.log)
+        .env("CALLISTO_TEST_GIT_TRACE", publishers.git_trace)
+        .env("CALLISTO_TEST_FORGE_MARKER", publishers.forge_marker)
+        .env(
+            "CALLISTO_TEST_ARTIFACT_MARKER",
+            publishers.log.with_extension("artifact-marker"),
+        )
+        .env("CALLISTO_TEST_FORGE_TAG", "core-crate@0.2.0")
+        .env("CALLISTO_TEST_CARGO_MARKER", registry_marker(root))
+        .env("CALLISTO_TEST_REAL_GIT", system_git())
+        .env(NO_BACKOFF_SLEEP.0, NO_BACKOFF_SLEEP.1)
+        .output()
+        .expect("callisto release should run")
+}
+
 pub fn execute_from_coordinator(
     coordinator: &Path,
     source: &Path,

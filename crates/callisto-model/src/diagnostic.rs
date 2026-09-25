@@ -135,16 +135,14 @@ pub enum DiagnosticCode {
     /// Commit-severity inference failed for a package (e.g. a `git log` error) — the package's
     /// inferred severity is treated as absent rather than the run failing outright.
     PreMajorInferenceInert,
-    /// Reserved for `plan-publish` reporting that it could not locate a release's section in
-    /// its package's generated `CHANGELOG.md` (v0.2); not emitted by any current code path.
+    /// A release's section was missing from its package's `CHANGELOG.md`. Not emitted since
+    /// `plan-publish` was removed; kept for wire compatibility.
     ChangelogSectionNotFound,
-    /// `plan-publish` could not compute the version plan it needs to determine which packages
-    /// are ready to publish (a changeset/graph error surfaced as a soft diagnostic rather than
-    /// aborting the whole publish-plan command).
+    /// The version plan could not be computed. Not emitted since `plan-publish` was removed;
+    /// kept for wire compatibility.
     ChangesetReadError,
-    /// Git repository or tag discovery failed while building a publish plan — release entries
-    /// are omitted (HEAD SHA) or every package is treated as a release candidate (tag index)
-    /// rather than the command failing outright.
+    /// Git repository or tag discovery failed. Not emitted since `plan-publish` was removed;
+    /// kept for wire compatibility.
     GitDiscoveryFailed,
     /// A bare (unprefixed) `[[package]]` config rule matched packages in two or more
     /// ecosystems — almost always unintended; use an ecosystem-prefixed pattern instead.
@@ -153,8 +151,9 @@ pub enum DiagnosticCode {
     /// that neither the shared triple-to-role table nor matrix's own host-runner table
     /// recognizes — excluded from the report's `targets[]` rather than silently guessing.
     UnrecognisedPlatformTriple,
-    /// A package configures `publish-to` for a registry kind with no implemented dispatch
-    /// (e.g. NuGet, GitHub Release) — the target is reported but not published.
+    /// A package configures `publish-to` for a registry kind with no implemented dispatch.
+    /// Not emitted since `plan-publish` was removed (release planning errors instead); kept
+    /// for wire compatibility.
     PublishTargetNotImplemented,
     /// A `[[package-set]]` config rule matched no packages after the workspace walk —
     /// advisory rather than a hard error, since a monorepo-wide rule can legitimately match
@@ -166,8 +165,8 @@ pub enum DiagnosticCode {
     DuplicatePlatformTriple,
     /// A changelog file exists at the package's resolved `pkg.changelog` path but could not
     /// be read -- invalid UTF-8, permission denied, or any I/O failure other than "file does
-    /// not exist" (that case is `ChangelogSectionNotFound` instead). `changelog_section` is
-    /// left `None` for the package; `plan_publish` is not aborted.
+    /// not exist" (that case is `ChangelogSectionNotFound` instead). Not emitted since
+    /// `plan-publish` was removed; kept for wire compatibility.
     ChangelogReadError,
     /// A changeset entry names a bare (unprefixed) package name that matches two or more
     /// packages across different ecosystems (e.g. `cargo/foo` and `npm/foo`) -- the entry

@@ -2,6 +2,13 @@
 
 The three structural authorities of a durable release run. All three live in `callisto-model` (MIT, no Callisto dependencies); `callisto-graph` supplies provider adapters, `callisto-cli` supplies the run entry point.
 
+## Two routes, one executor
+
+- **Local** (`callisto release`, `commands/release/local.rs`): `derive_unreleased_decision` selects every publishable package whose current version has no tag in the `TagIndex` (`ReleaseInclusionReason::UnreleasedVersion`); `--package` restricts to named unreleased packages, expanded by `expand_selection` (shared with the CI route: fixed and linked group membership from config, plus plan-derived linked reasons). `require_dependencies_selected` (both routes) refuses an unselected, unreleased, publishable runtime/optional/peer dependency. `plan_local_release` is the one derivation behind both `--dry-run` (`Preview`: HEAD's commit, any worktree state; no `origin` leaves tags unbound with a stderr note) and the run (`Trusted`: clean worktree, any branch, `ReleaseCheckout::AnyHead`). The run stops first on `ci_release_route` (artifact slots, a platform-role manifest, attached platforms, or a napi/maturin matrix target), then checks one credential per operation (CLI `release_credentials.rs`: per cargo registry, per npm package dir, per PyPI repository, GitHub), then mints the envelope with orchestration revision = source commit, validates with `validate_local_release_intent`, and calls `execute_release`. Receipt only on full success: `--receipt`, else `<state dir>/callisto/<sha256(canonical root)[..16]>/<intent digest>/receipt.json`; either is refused inside the worktree. No-op prints exactly `Nothing to release.`.
+- **CI** (`release plan`/`artifact-manifest`/`execute`): exact detached merge commit (`ReleaseCheckout::Detached`), decision from `--from-release-commit` + committed decision file, or `--package` over the version plan.
+
+The legacy `publish`, `plan-publish`, `tag`, and `filter-plan` commands and graph `plan_publish`/`create_tags` are gone; moon's `release` extension subcommand calls `plan_local_release` in `Preview` mode.
+
 ## Run envelope (`release.rs`)
 
 `ReleaseRunEnvelopeV1` is the immutable identity of one run: orchestration revision, release-source revision, intent digest, artifact-manifest digest. There is one run kind and one destination (`[release].forge-repository`).
@@ -90,7 +97,7 @@ Asserted after every scenario: a receipt only over landed effects, issued with n
 
 ## Wire versions
 
-`ReleaseExecutionStateV1` has no wire shape. `ReleaseReceiptV1::SCHEMA_VERSION` is `2`; its `ReleaseRunEnvelopeV1::SCHEMA_VERSION` is `3` (run `kind`, then `profile`, removed); `ReleaseIntentV1::SCHEMA_VERSION` is `5` (`profile` removed). An intent from an earlier version is rejected by `callisto::release_intent_schema_unsupported`, which names re-planning as the fix. `callisto schema --type release-receipt` publishes the wire shape, guarded by `crates/callisto-cli/tests/schema_guard_test.rs`.
+`ReleaseExecutionStateV1` has no wire shape. `ReleaseDecisionV1::SCHEMA_VERSION` is `2` (adds `unreleasedVersion`); `READABLE_SCHEMA_VERSIONS` is `[1, 2]` so a committed v1 decision still plans; `ReleaseReceiptV1::SCHEMA_VERSION` is `2`; its `ReleaseRunEnvelopeV1::SCHEMA_VERSION` is `3` (run `kind`, then `profile`, removed); `ReleaseIntentV1::SCHEMA_VERSION` is `5` (`profile` removed). An intent from an earlier version is rejected by `callisto::release_intent_schema_unsupported`, which names re-planning as the fix. `callisto schema --type release-receipt` publishes the wire shape, guarded by `crates/callisto-cli/tests/schema_guard_test.rs`.
 
 ## Provider contract tier
 

@@ -100,39 +100,20 @@ callisto version
 
 ## Publishing Packages
 
-`callisto version` bumps and commits. Durable publication is `callisto release plan` then `callisto release execute` (see [`docs/06-publishing.md`](docs/06-publishing.md)). The legacy commands below are read-only previews that pass JSON along; `callisto publish` never contacts a registry:
+`callisto version` bumps and commits. `callisto release` then publishes every package whose current version has no tag yet: registry publish, git tag, and GitHub release for each. It runs on any branch from a clean worktree, checks every needed credential before the first effect, and writes its receipt to the platform state directory (or `--receipt <file>`):
 
 ```bash
-# 1. Compute what's ready to publish (read-only, no network)
-callisto plan-publish --format json > plan.json
+# Preview exactly what would be released (read-only, works anywhere)
+callisto release --dry-run
 
-# 2. Preview the publish plan (compatibility command; does not publish)
-callisto publish --format json > report.json
+# Publish, tag, and create GitHub releases for every unreleased package
+callisto release
 
-# 3. Narrow the plan down to what the report confirms actually succeeded —
-#    so one package's failure doesn't cost its already-shipped siblings a tag
-callisto filter-plan --plan plan.json --report report.json > shipped.json
-
-# 4. Tag the commits that shipped, moving any floating major alias (e.g. v1)
-callisto tag --plan shipped.json --floating-major
+# Restrict to named packages
+callisto release --package cargo/my-crate --package npm/my-lib
 ```
 
-```mermaid
-sequenceDiagram
-  participant CI as CI / callisto-action
-  participant CLI as callisto CLI
-  participant Reg as Registries
-  participant Git as git remote
-
-  CI->>CLI: plan-publish --format json
-  CLI-->>CI: PublishPlan
-  CI->>CLI: publish --format json
-  CLI-->>CI: PublishPlan preview (nothing published)
-  CI->>CLI: filter-plan --plan --report
-  CLI-->>CI: plan narrowed to confirmed successes
-  CI->>CLI: tag --plan --floating-major
-  CLI->>Git: create tags, move floating alias
-```
+When nothing is unreleased it prints `Nothing to release.` and exits 0. A workspace with `[[release.artifact]]` slots or napi/maturin platform packages releases from CI instead (`callisto release plan`, `release artifact-manifest`, `release execute`); `callisto release --dry-run` still previews it locally. See [`docs/06-publishing.md`](docs/06-publishing.md).
 
 `callisto-action` (the bundled GitHub Action) now creates or updates only the version PR. The repository release workflow performs plan/build/attested execute after that PR merges; see [`docs/06-publishing.md`](docs/06-publishing.md).
 

@@ -15,15 +15,24 @@ use callisto_model::{
 use crate::error::{ReleasePreconditionRequirement, ReleaseSelectionInvalidReason, UnsupportedReleaseFeature};
 use crate::{DependencyResolver, GraphError, Workspace};
 
-use super::binding::{prepared_git_remote, prepared_registry_binding, PreparedGitRemote};
+use super::binding::{optional_git_remote, prepared_git_remote, prepared_registry_binding, PreparedGitRemote};
 use super::notes::release_notes;
 use super::provider::{
     ArtifactUploadOperation, ForgePublishOperation, ForgeReleaseOperation, PreparedOperation, RegistryPublishOperation,
     TagOperation,
 };
-use crate::commands::publish::is_platform_package;
 use crate::commands::registry_argv::npm_default_access;
+use crate::commands::release_decision::{has_dispatchable_target, version_is_tagged};
 use crate::toposort::PublishEdgeFilter;
+
+/// A package that is itself an npm platform package (its own package.json has
+/// `os`+`cpu`). An owner's attached (Case E) platform manifests do not count.
+pub(crate) fn is_platform_package(pkg: &callisto_model::Package) -> bool {
+    pkg.manifests.iter().any(|m| {
+        matches!(m.role, callisto_model::ManifestRole::Platform { .. })
+            && pkg.canonical_manifests().any(|c| c.path == m.path)
+    })
+}
 
 /// Coordinator-owned identity used to bind a product artifact to the exact
 /// workflow revision that built it. This is distinct from a historic release
@@ -48,14 +57,24 @@ pub(crate) struct PreparedDerivation {
     pub(crate) git_remote: Option<PreparedGitRemote>,
 }
 
+/// Whether a missing `origin` push URL fails derivation or leaves tags unbound.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum GitRemoteRequirement {
+    Required,
+    /// A preview only: tag operations are derived without a remote identity.
+    OptionalForPreview,
+}
+
 pub(crate) fn derive_release_intent<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     decision: &ReleaseDecisionV1,
     source: SourceIdentity,
     trust_profile: ExecutionTrustProfileV1,
     artifact_policy: Option<&ArtifactBuildPolicy>,
+    remote: GitRemoteRequirement,
 ) -> Result<ReleaseIntentV1, GraphError> {
-    let (snapshot, operations, _, _, slots) = derive_release_inputs(workspace, decision, source, artifact_policy)?;
+    let (snapshot, operations, _, _, slots) =
+        derive_release_inputs_with(workspace, decision, source, artifact_policy, remote)?;
     Ok(ReleaseIntentV1::new(
         decision.clone(),
         snapshot,
@@ -111,6 +130,22 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
     source: SourceIdentity,
     artifact_policy: Option<&ArtifactBuildPolicy>,
 ) -> Result<DerivedReleaseInputs, GraphError> {
+    derive_release_inputs_with(
+        workspace,
+        decision,
+        source,
+        artifact_policy,
+        GitRemoteRequirement::Required,
+    )
+}
+
+fn derive_release_inputs_with<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    decision: &ReleaseDecisionV1,
+    source: SourceIdentity,
+    artifact_policy: Option<&ArtifactBuildPolicy>,
+    remote: GitRemoteRequirement,
+) -> Result<DerivedReleaseInputs, GraphError> {
     if workspace
         .config
         .product_release
@@ -144,7 +179,7 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
             return Err(GraphError::ReleasePackageNotSelected { package: id.clone() });
         }
     }
-    require_platform_dependencies_selected(workspace, &selected, &package_ids)?;
+    require_dependencies_selected(workspace, &selected, &package_ids)?;
     let all_packages: Vec<_> = workspace.graph.packages().map(|package| package.id.clone()).collect();
     let publish_edges = PublishEdgeFilter::new(
         &package_ids.keys().cloned().collect(),
@@ -164,9 +199,11 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
             .iter()
             .any(|target| !matches!(target, PublishTarget::None))
     });
-    let git_remote = requires_git_remote
-        .then(|| prepared_git_remote(&workspace.root, workspace.runner))
-        .transpose()?;
+    let git_remote = match (requires_git_remote, remote) {
+        (false, _) => None,
+        (true, GitRemoteRequirement::Required) => Some(prepared_git_remote(&workspace.root, workspace.runner)?),
+        (true, GitRemoteRequirement::OptionalForPreview) => optional_git_remote(&workspace.root, workspace.runner)?,
+    };
     if let Some(policy) = artifact_policy {
         let remote = git_remote
             .as_ref()
@@ -298,7 +335,7 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
     }
 
     // Replace each publish leaf with prerequisites from selected dependency
-    // packages, ordered by the same edge filter `plan_publish` uses.
+    // packages, ordered by the shared publish edge filter.
     for (id, (package, _)) in &selected {
         let mut prerequisites = BTreeSet::new();
         for edge in workspace.graph.dependencies_of(&package.id) {
@@ -498,43 +535,48 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
     ))
 }
 
-/// A selected npm package's unreleased standalone platform dependency must be
-/// selected with it, or the owner would publish pointing at a missing version.
-fn require_platform_dependencies_selected<R: CommandRunner, D: DependencyResolver>(
+/// Every unreleased, publishable workspace package a selected package reaches
+/// through a runtime, optional, or peer edge must be selected with it, or the
+/// selected package would publish pointing at a version that does not exist.
+/// Standalone npm platform packages are one case of this.
+fn require_dependencies_selected<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     selected: &BTreeMap<ReleasePackageId, (&callisto_model::Package, Version)>,
     package_ids: &BTreeMap<callisto_model::PackageId, Vec<ReleasePackageId>>,
 ) -> Result<(), GraphError> {
     let mut base_versions = None;
-    for (id, (package, _)) in selected {
-        if id.ecosystem() != callisto_model::Ecosystem::Npm {
-            continue;
-        }
+    for (package, _) in selected.values() {
         for edge in workspace.graph.dependencies_of(&package.id) {
-            if !matches!(edge.kind, DepKind::Runtime | DepKind::Optional) || package_ids.contains_key(&edge.to) {
+            if !matches!(edge.kind, DepKind::Runtime | DepKind::Optional | DepKind::Peer)
+                || package_ids.contains_key(&edge.to)
+            {
                 continue;
             }
-            let Some(platform) = workspace
+            let Some(dependency) = workspace
                 .graph
                 .packages()
-                .find(|candidate| candidate.id == edge.to && is_platform_package(candidate))
+                .find(|candidate| candidate.id == edge.to && has_dispatchable_target(candidate))
             else {
                 continue;
             };
             if base_versions.is_none() {
                 base_versions = Some(workspace.base_versions()?);
             }
-            let current = base_versions.as_ref().and_then(|versions| versions.get(&platform.id));
-            let last_tag = workspace.tags()?.last_tag(&platform.id);
-            let released = current.is_some_and(|current| last_tag.is_some_and(|tag| &tag.version == current));
+            let tags = workspace.tags()?;
+            let released = base_versions
+                .as_ref()
+                .and_then(|versions| versions.get(&dependency.id))
+                .is_some_and(|current| version_is_tagged(tags, &dependency.id, current));
             if !released {
-                let name = workspace
-                    .identity
-                    .native_name(&platform.id, callisto_model::Ecosystem::Npm)
-                    .unwrap_or(platform.id.name());
+                let id = crate::commands::release_decision::release_package_ids(&workspace.identity, dependency)?
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| GraphError::ReleaseInvariant {
+                        detail: format!("package `{}` has no release identity", dependency.id.display_name()),
+                    })?;
                 return Err(GraphError::ReleaseSelectionInvalid {
-                    package: ReleasePackageId::new(callisto_model::Ecosystem::Npm, name)?,
-                    reason: ReleaseSelectionInvalidReason::PlatformDependencyNotSelected,
+                    package: id,
+                    reason: ReleaseSelectionInvalidReason::DependencyNotSelected,
                 });
             }
         }
@@ -618,7 +660,7 @@ fn package_fingerprint<R: CommandRunner, D: DependencyResolver>(
     Ok(SemanticInputDigest::from_transcript(&transcript))
 }
 
-fn package_dir(package: &callisto_model::Package) -> Result<std::path::PathBuf, GraphError> {
+pub(crate) fn package_dir(package: &callisto_model::Package) -> Result<std::path::PathBuf, GraphError> {
     package
         .canonical_manifests()
         .next()
@@ -756,7 +798,12 @@ mod tests {
         let locator = crate::IgnoreWalkLocator::new(dir.path());
         let root = super::super::capability::canonical_root(dir.path()).unwrap();
         let workspace = Workspace::load(root.clone(), &locator, &runner).unwrap();
-        let source = super::super::capability::observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
+        let source = super::super::capability::observe_source(
+            &workspace,
+            ExecutionTrustProfileV1::GitCommit,
+            super::super::capability::ReleaseCheckout::Detached,
+        )
+        .unwrap();
         let (before_snapshot, before_operations, _, _, _) =
             derive_release_inputs(&workspace, &super::super::tests::decision(), source.clone(), None).unwrap();
 
@@ -780,7 +827,12 @@ mod tests {
         let locator = crate::IgnoreWalkLocator::new(dir.path());
         let root = super::super::capability::canonical_root(dir.path()).unwrap();
         let clean = Workspace::load(root.clone(), &locator, &runner).unwrap();
-        let source = super::super::capability::observe_source(&clean, ExecutionTrustProfileV1::GitCommit).unwrap();
+        let source = super::super::capability::observe_source(
+            &clean,
+            ExecutionTrustProfileV1::GitCommit,
+            super::super::capability::ReleaseCheckout::Detached,
+        )
+        .unwrap();
         std::fs::write(
             root.join("callisto.toml"),
             "[release]\nproduct-package = \"cargo/release-fixture\"\n\n[[release.artifact]]\npackage = \"cargo/release-fixture\"\ntarget = \"t\"\nasset-name = \"a.tar.gz\"\n",
@@ -849,7 +901,12 @@ mod tests {
         let locator = crate::IgnoreWalkLocator::new(dir.path());
         let root = super::super::capability::canonical_root(dir.path()).unwrap();
         let workspace = Workspace::load(root, &locator, &RealGitRunner).unwrap();
-        let source = super::super::capability::observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
+        let source = super::super::capability::observe_source(
+            &workspace,
+            ExecutionTrustProfileV1::GitCommit,
+            super::super::capability::ReleaseCheckout::Detached,
+        )
+        .unwrap();
         derive_release_inputs(&workspace, decision, source, None)
     }
 
@@ -953,6 +1010,8 @@ mod tests {
             ("b", ""),
             ("c", ""),
         ]));
+        // `b` is already released, so selecting `a` alone is valid.
+        git(dir.path(), &["tag", "b@1.0.0"]);
         for names in [vec!["a"], vec!["a", "c"], vec!["a", "b", "c"]] {
             let decision = cargo_release(&names);
             let (snapshot, operations, _, _, _) = derive(&dir, &decision).unwrap();
@@ -963,6 +1022,50 @@ mod tests {
                 .iter()
                 .all(|operation| decided.contains(&operation.id().package)));
         }
+    }
+
+    /// M2: an unreleased runtime, optional, or peer dependency must be selected with its dependent.
+    #[test]
+    fn unselected_unreleased_workspace_dependency_is_rejected() {
+        let dir = repo_of(&cargo_workspace(&[
+            ("a", "[dependencies]\nb = { path = \"../b\" }\n"),
+            ("b", ""),
+            ("c", "[dev-dependencies]\nb = { path = \"../b\" }\n"),
+        ]));
+        let error = derive(&dir, &cargo_release(&["a"])).unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                GraphError::ReleaseSelectionInvalid {
+                    package,
+                    reason: ReleaseSelectionInvalidReason::DependencyNotSelected,
+                } if package.name() == "b"
+            ),
+            "{error:?}"
+        );
+        assert!(error.to_string().contains("`cargo/b`"), "{error}");
+        derive(&dir, &cargo_release(&["a", "b"])).unwrap();
+        derive(&dir, &cargo_release(&["c"])).expect("a dev edge never requires selection");
+
+        let peer = repo(&[
+            ("pnpm-workspace.yaml", "packages:\n  - \"packages/*\"\n"),
+            ("pnpm-lock.yaml", "lockfileVersion: '9.0'\n"),
+            (
+                "packages/plugin/package.json",
+                r#"{"name":"plugin","version":"1.0.0","peerDependencies":{"host":"1.0.0"}}"#,
+            ),
+            ("packages/host/package.json", r#"{"name":"host","version":"1.0.0"}"#),
+            ("callisto.toml", ""),
+        ]);
+        assert!(matches!(
+            derive(&peer, &release(&[(Ecosystem::Npm, "plugin", "1.0.0")])).unwrap_err(),
+            GraphError::ReleaseSelectionInvalid {
+                reason: ReleaseSelectionInvalidReason::DependencyNotSelected,
+                ..
+            }
+        ));
+        git(peer.path(), &["tag", "host@1.0.0"]);
+        derive(&peer, &release(&[(Ecosystem::Npm, "plugin", "1.0.0")])).unwrap();
     }
 
     fn npm_platform_repo(tag_platform: bool) -> tempfile::TempDir {
@@ -995,7 +1098,7 @@ mod tests {
                 &error,
                 GraphError::ReleaseSelectionInvalid {
                     package,
-                    reason: ReleaseSelectionInvalidReason::PlatformDependencyNotSelected,
+                    reason: ReleaseSelectionInvalidReason::DependencyNotSelected,
                 } if package.name() == "plat"
             ),
             "{error:?}"
@@ -1057,7 +1160,12 @@ mod tests {
         let locator = crate::IgnoreWalkLocator::new(dir.path());
         let root = super::super::capability::canonical_root(dir.path()).unwrap();
         let workspace = Workspace::load(root, &locator, &RealGitRunner).unwrap();
-        let source = super::super::capability::observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
+        let source = super::super::capability::observe_source(
+            &workspace,
+            ExecutionTrustProfileV1::GitCommit,
+            super::super::capability::ReleaseCheckout::Detached,
+        )
+        .unwrap();
         let (_, _, prepared, _, _) = derive_release_inputs(
             &workspace,
             &release(&[(Ecosystem::Npm, "@s/lib", "1.0.0")]),
@@ -1150,7 +1258,12 @@ mod tests {
             manifest_cache: Default::default(),
             identity: crate::IdentityIndex::default(),
         };
-        let source = super::super::capability::observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
+        let source = super::super::capability::observe_source(
+            &workspace,
+            ExecutionTrustProfileV1::GitCommit,
+            super::super::capability::ReleaseCheckout::Detached,
+        )
+        .unwrap();
         let error = derive_release_inputs(&workspace, &cargo_release(&["core"]), source, None).unwrap_err();
         assert!(
             matches!(
@@ -1196,7 +1309,12 @@ mod tests {
         let locator = crate::IgnoreWalkLocator::new(dir.path());
         let root = super::super::capability::canonical_root(dir.path()).unwrap();
         let workspace = Workspace::load(root, &locator, &RealGitRunner).unwrap();
-        let source = super::super::capability::observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
+        let source = super::super::capability::observe_source(
+            &workspace,
+            ExecutionTrustProfileV1::GitCommit,
+            super::super::capability::ReleaseCheckout::Detached,
+        )
+        .unwrap();
         std::fs::write(dir.path().join("CHANGELOG.md"), "# core\n\n## 1.0.0\n\n").unwrap();
         let (after_snapshot, after_operations, after_prepared, _, _) =
             derive_release_inputs(&workspace, &decision, source, None).unwrap();

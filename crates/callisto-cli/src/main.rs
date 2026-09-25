@@ -42,17 +42,11 @@ use callisto_cli::commands::*;
 //   init           0 on success (configuration scaffolded or dry-run preview)
 //                  1 on any error
 //
-//   plan-publish   0 on success
-//                  1 on any error
-//
-//   publish        0 on success
-//                  1 on any error
-//
 //   compose-pr-body  0 on success
 //                    1 on any error
 //
-//   tag            0 on success (tags created or dry-run preview)
-//                  1 on any error (graph error, strict crosscheck failure, etc.)
+//   release        0 on success, including `Nothing to release.` and --dry-run
+//                  1 on any error (dirty worktree, missing credential, CI-only workspace, etc.)
 //
 //   completions    0 on success
 //                  1 on any error
@@ -72,11 +66,7 @@ fn main() -> ExitCode {
         Command::Validate(args) => validate::handle(args, &cli.global),
         Command::Snapshot(args) => snapshot::handle(args, &cli.global),
         Command::Init(args) => init::handle(args, &cli.global),
-        Command::PlanPublish(args) => plan_publish::handle(args, &cli.global),
-        Command::Publish(args) => publish::handle(args, &cli.global),
         Command::ComposePrBody(args) => compose_pr_body::handle(args, &cli.global),
-        Command::Tag(args) => tag::handle(args, &cli.global),
-        Command::FilterPlan(args) => filter_plan::handle(args, &cli.global),
         Command::Release(args) => release::handle(args, &cli.global),
         Command::ReleasePr(args) => release_pr::handle(args, &cli.global),
         Command::Completions(args) => completions::handle(args, &cli.global),

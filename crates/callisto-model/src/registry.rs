@@ -122,7 +122,7 @@ pub fn redact_known_secrets(text: &str, secrets: &[String]) -> String {
 }
 
 /// Filters an env-var snapshot down to registry-credential values this
-/// codebase's publish flow reads: fixed `NPM_TOKEN`/`TWINE_PASSWORD`/
+/// codebase's publish flow reads: fixed `NPM_TOKEN`/`NODE_AUTH_TOKEN`/`TWINE_PASSWORD`/
 /// `CARGO_REGISTRY_TOKEN`/`GITHUB_TOKEN`/`GH_TOKEN` names, plus any
 /// `CARGO_REGISTRIES_<NAME>_TOKEN` (operator-configured, unbounded name,
 /// so matched by pattern). `GITHUB_TOKEN`/`GH_TOKEN` cover GitHub Actions'
@@ -139,7 +139,12 @@ pub fn known_credential_env_values(vars: impl Iterator<Item = (String, String)>)
         !value.is_empty()
             && (matches!(
                 key.as_str(),
-                "NPM_TOKEN" | "TWINE_PASSWORD" | "CARGO_REGISTRY_TOKEN" | "GITHUB_TOKEN" | "GH_TOKEN"
+                "NPM_TOKEN"
+                    | "NODE_AUTH_TOKEN"
+                    | "TWINE_PASSWORD"
+                    | "CARGO_REGISTRY_TOKEN"
+                    | "GITHUB_TOKEN"
+                    | "GH_TOKEN"
             ) || (key.starts_with("CARGO_REGISTRIES_") && key.ends_with("_TOKEN")))
     })
     .map(|(_, value)| value)
@@ -323,6 +328,12 @@ mod tests {
         let snapshot = vec![("NPM_TOKEN".to_string(), String::new())];
         let values = known_credential_env_values(snapshot.into_iter());
         assert!(values.is_empty());
+    }
+
+    #[test]
+    fn known_credential_env_values_matches_node_auth_token() {
+        let snapshot = vec![("NODE_AUTH_TOKEN".to_string(), "node-secret".to_string())];
+        assert_eq!(known_credential_env_values(snapshot.into_iter()), ["node-secret"]);
     }
 
     /// GITHUB_TOKEN/GH_TOKEN cover GitHub Actions' own ambient credential --

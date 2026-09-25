@@ -148,6 +148,23 @@ pub(crate) fn prepared_git_remote(root: &Path, runner: &dyn CommandRunner) -> Re
     canonical_git_remote(output.stdout.trim())
 }
 
+/// `origin`'s canonical push URL, or `None` when `origin` has no push URL.
+pub(crate) fn optional_git_remote(
+    root: &Path,
+    runner: &dyn CommandRunner,
+) -> Result<Option<PreparedGitRemote>, GraphError> {
+    let output = runner.run_with_timeout(
+        programs::GIT,
+        &["remote", "get-url", "--push", programs::GIT_REMOTE],
+        root,
+        timeouts::LOCAL_GIT,
+    )?;
+    if output.exit_code != Some(0) {
+        return Ok(None);
+    }
+    canonical_git_remote(output.stdout.trim()).map(Some)
+}
+
 /// Re-reads `origin`'s push URL and refuses unless it is still exactly the
 /// remote the intent was validated against.
 pub(crate) fn recheck_git_remote(

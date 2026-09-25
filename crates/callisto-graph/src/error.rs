@@ -210,24 +210,6 @@ pub enum GraphError {
     )]
     UntrustedNpmRegistry { package: PackageId, url: String },
 
-    #[error(
-        "npm main package `{main}` depends on platform package `{depends_on}`, which is neither \
-         in this publish plan nor already published"
-    )]
-    #[diagnostic(
-        code(E121),
-        help(
-            "The platform package is either misconfigured (missing a `publish-to = [\"npm\"]` \
-             target) or was excluded from this run by `--package`. Either fix its publish-to \
-             configuration, or include it in this run alongside its dependent main package."
-        )
-    )]
-    MissingPlatformDependency { main: PackageId, depends_on: String },
-
-    #[error("package `{id}` was requested via `--package` but is not part of this publish plan: {reason}")]
-    #[diagnostic(code(E122))]
-    PackageNotInPublishPlan { id: PackageId, reason: NotInPlanReason },
-
     #[error("release intent references package `{package}` which is not an exact selected workspace package")]
     #[diagnostic(code(E123), help("Rebuild the release intent from the current workspace instead of reusing a selection from another workspace."))]
     ReleasePackageNotSelected { package: callisto_model::ReleasePackageId },
@@ -590,18 +572,6 @@ pub enum GraphError {
     },
 }
 
-/// Why a workspace package that a `--package` filter named is nonetheless
-/// absent from the computed [`crate::commands::plan_publish`] plan, distinct
-/// from [`GraphError::UnknownPackage`] (which means the name matched no
-/// workspace package at all).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
-pub enum NotInPlanReason {
-    #[error("its on-disk version already matches its last release tag; there is nothing pending to publish")]
-    NotARelease,
-    #[error("it configures no publish target with an implemented dispatch (e.g. only NuGet or GitHub Release)")]
-    NoDispatchableTarget,
-}
-
 /// Source of a [`GraphError::ReleaseCommand`] (E164) failure: either the
 /// subprocess exited non-zero, or it exited zero but produced output this
 /// crate could not parse.
@@ -692,8 +662,8 @@ pub enum ReleaseSelectionInvalidReason {
     NoDispatchableTarget,
     #[error("the package has a duplicate registry target")]
     DuplicateRegistryTarget,
-    #[error("it is an unreleased platform package a selected npm package depends on; select it too")]
-    PlatformDependencyNotSelected,
+    #[error("it is an unreleased workspace package a selected package depends on; select it too")]
+    DependencyNotSelected,
 }
 
 /// An unmet precondition for a release operation, carried by

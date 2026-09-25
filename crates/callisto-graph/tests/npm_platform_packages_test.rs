@@ -240,44 +240,6 @@ fn unnamed_platform_outside_the_workspace_stays_undiscovered() {
     assert!(ws.graph.diagnostics().is_empty(), "{:?}", ws.graph.diagnostics());
 }
 
-#[test]
-fn legacy_publish_plan_lists_attached_platforms_under_their_owner() {
-    let tmp = tempfile::tempdir().unwrap();
-    build_fixture(tmp.path());
-    let ws = load(tmp.path());
-    let opts = callisto_graph::commands::PublishOptions {
-        only: vec!["@s/cli".to_string()],
-    };
-    let plan = callisto_graph::commands::plan_publish(&ws, &opts).expect("plan_publish must succeed");
-
-    let main: Vec<_> = plan.npm_main_packages.iter().map(|p| p.name.as_str()).collect();
-    assert_eq!(
-        main,
-        ["@s/cli"],
-        "the owner must not be classified as a platform package"
-    );
-    let expected: Vec<_> = PLATFORMS
-        .iter()
-        .map(|(suffix, ..)| format!("@s/cli-{suffix}"))
-        .collect();
-    assert_eq!(plan.npm_main_packages[0].depends_on_platforms, expected);
-    let platforms: Vec<_> = plan
-        .npm_platform_packages
-        .iter()
-        .map(|p| (p.name.clone(), p.package_dir.clone()))
-        .collect();
-    assert_eq!(
-        platforms,
-        PLATFORMS
-            .iter()
-            .map(|(suffix, ..)| (
-                format!("@s/cli-{suffix}"),
-                PathBuf::from(format!("packages/cli/npm/{suffix}"))
-            ))
-            .collect::<Vec<_>>(),
-    );
-}
-
 fn changeset(root: &Path, body: &str) {
     write(root, ".changeset/bump.md", body);
     git(root, &["add", "."]);
@@ -352,24 +314,4 @@ fn snapshot_versions_attached_platforms_too() {
         .collect();
     assert_eq!(napi_writes.len(), PLATFORMS.len());
     assert!(napi_writes.iter().all(|w| &w.version == snapshot));
-}
-
-#[test]
-fn legacy_publish_plan_does_not_treat_an_owner_as_a_platform_dependency() {
-    let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path();
-    build_fixture(root);
-    write(
-        root,
-        "packages/plugin/package.json",
-        r#"{"name":"@s/plugin","version":"0.1.0","dependencies":{"@s/napi":"0.1.0"}}"#,
-    );
-    let ws = load(root);
-    let plan = callisto_graph::commands::plan_publish(&ws, &Default::default()).expect("plan_publish must succeed");
-    let plugin = plan.npm_main_packages.iter().find(|p| p.name == "@s/plugin").unwrap();
-    assert!(
-        plugin.depends_on_platforms.is_empty(),
-        "{:?}",
-        plugin.depends_on_platforms
-    );
 }

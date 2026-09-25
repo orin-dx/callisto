@@ -8,7 +8,7 @@ use crate::error::GraphError;
 /// whose [`DepKind`] appears in `ordering_kinds` as ordering constraints. Different callers
 /// need different kinds to count: cascade/version-bump propagation only cares about
 /// `Runtime`/`Build`/`Optional` (a `Dev`-only change correctly shouldn't force a consumer's
-/// version to bump), while publish ordering (`commands::publish::publish_order`) also needs
+/// version to bump), while publish ordering ([`PublishEdgeFilter`]) also needs
 /// `Dev`, since `cargo publish`'s own local verification build needs every declared
 /// dependency — dev included — resolvable. This function has no opinion on which kinds
 /// matter; the caller states it explicitly via `ordering_kinds`.
@@ -29,7 +29,7 @@ where
 /// Same algorithm as [`toposort_impl`], but the caller decides per-edge
 /// whether it counts as an ordering constraint, rather than a single
 /// `DepKind` list applied uniformly to every pair. This is what lets
-/// `commands::publish::publish_order` exclude a `Dev` edge only between the
+/// a caller exclude a `Dev` edge only between the
 /// specific packages that form a cycle, instead of dropping `Dev` ordering
 /// for every package in `subset` the moment any one Dev cycle exists.
 pub fn toposort_with_edge_filter<F, P>(
@@ -115,7 +115,7 @@ pub const PUBLISH_ORDERING_KINDS: &[DepKind] = &[DepKind::Runtime, DepKind::Buil
 /// `Dev` edge inside a cyclic component is dropped; a `Dev` edge anywhere else
 /// still orders. A cycle that survives with every `Dev` edge excluded is a real
 /// `Runtime`/`Build`/`Optional` cycle and fails construction with
-/// [`GraphError::Cycle`]. Shared by `plan_publish` and release derivation.
+/// [`GraphError::Cycle`]. Used by release derivation.
 pub struct PublishEdgeFilter {
     dev_cycles: Vec<HashSet<PackageId>>,
 }
@@ -148,25 +148,10 @@ impl PublishEdgeFilter {
     }
 }
 
-/// Publish order of `subset`, dependencies first, under [`PublishEdgeFilter`].
-pub fn publish_order<F>(
-    subset: &HashSet<PackageId>,
-    all_packages: &[PackageId],
-    outgoing_edges: F,
-) -> Result<Vec<PackageId>, GraphError>
-where
-    F: Fn(&PackageId) -> Vec<(PackageId, DepKind)>,
-{
-    let filter = PublishEdgeFilter::new(subset, all_packages, &outgoing_edges)?;
-    toposort_with_edge_filter(subset, all_packages, outgoing_edges, |from, to, kind| {
-        filter.allows(from, to, kind)
-    })
-}
-
 /// Returns every non-trivial strongly-connected component (size > 1, or a
 /// single self-looping node) of `subset` under the edges `ordering_kinds`
 /// selects — the full member set, not just what's left after a failed
-/// toposort. Used by `commands::publish::publish_order` to scope a Dev-cycle
+/// toposort. Used by [`PublishEdgeFilter`] to scope a Dev-cycle
 /// exclusion to exactly the packages that participate in a cycle, rather
 /// than excluding Dev edges across the whole subset.
 pub fn cyclic_sccs<F>(

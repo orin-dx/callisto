@@ -3,7 +3,6 @@ use callisto_model::{Diagnostic, DiagnosticSeverity};
 pub mod init;
 pub mod matrix;
 pub mod pr_body;
-pub mod publish;
 pub mod registry_argv;
 pub mod release;
 pub mod release_artifacts;
@@ -15,7 +14,6 @@ mod release_simulator;
 pub(crate) mod release_test_support;
 pub mod snapshot;
 pub mod status;
-pub mod tag;
 pub mod validate;
 pub mod version;
 
@@ -23,17 +21,19 @@ pub use callisto_model::{ReleaseDecisionEntry, ReleaseDecisionError, ReleaseDeci
 pub use init::{init, InitOptions};
 pub use matrix::{matrix, MatrixOptions};
 pub use pr_body::{compose_pr_body, PrBodyOptions};
-pub use publish::{filter_plan_by_report, plan_publish, PublishOptions};
 pub use release::{
-    build_release_intent, build_release_intent_with_artifacts, validate_release_intent, ArtifactBuildPolicy,
-    ReleasePreflight, ReleaseProviderSet, ValidatedReleaseIntent,
+    build_release_intent, build_release_intent_with_artifacts, cargo_registry_name, ci_release_route,
+    plan_local_release, validate_local_release_intent, validate_release_intent, ArtifactBuildPolicy, CiReleaseRoute,
+    LocalReleasePlan, LocalReleaseSource, ReleasePreflight, ReleaseProviderSet, ValidatedReleaseIntent,
 };
 pub use release_artifacts::{verify_artifact_manifest, VerifiedArtifactManifest};
-pub use release_decision::{derive_release_commit_decision, derive_release_decision, derive_selected_release_decision};
+pub use release_decision::{
+    derive_release_commit_decision, derive_release_decision, derive_selected_release_decision,
+    derive_unreleased_decision,
+};
 pub use release_execution::execute_release;
 pub use snapshot::plan_snapshot;
 pub use status::{status, StatusOptions};
-pub use tag::{create_tags, create_tags_with_options, TagOptions};
 pub use validate::{validate, ValidateOptions};
 pub use version::{plan_version, VersionOptions};
 

@@ -166,8 +166,8 @@ impl ManifestWalkResolver {
                     decls.push(decl.clone());
                 }
                 // For napi platform packages (os + cpu constraints in package.json),
-                // also push a Platform-role decl so plan_publish can route them
-                // into npm_platform_packages instead of npm_main_packages. Reuses
+                // also push a Platform-role decl so release derivation can route them
+                // as platform publishes instead of main packages. Reuses
                 // the canonical decl's manifest handle via the shared
                 // `manifest_cache` (`npm_role()`) instead of a second, raw
                 // `fs::read` of the same package.json -- the handle opened here

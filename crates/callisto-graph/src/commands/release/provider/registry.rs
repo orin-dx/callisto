@@ -208,7 +208,8 @@ struct CargoRegistry;
 /// The name the *cargo* client knows this registry by. Callisto's logical
 /// `cratesIo` key is cargo's built-in `crates-io`; every other key is spelled
 /// the same in `.cargo/config.toml` as it is in `callisto.toml`.
-pub(crate) fn cargo_registry_name(key: &RegistryKey) -> &str {
+/// The cargo registry name for a logical registry key (`cratesIo` is cargo's `crates-io`).
+pub fn cargo_registry_name(key: &RegistryKey) -> &str {
     if key.as_str() == RegistryKey::CRATES_IO {
         "crates-io"
     } else {
