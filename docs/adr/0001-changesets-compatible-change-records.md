@@ -10,12 +10,12 @@ Status: Proposed
 
 ## Decision
 
-The human-written change record is a `.changeset/*.md` file in `@changesets/cli`'s format: same frontmatter shape, same `pre.json` shape, same `bump_version` semantics (no 0.x remap on an explicit major). Commit inference is opt-in per package (`release-trigger = "auto"`); an unset key resolves to `ReleaseTrigger::Changeset` (`crates/callisto-graph/src/walk.rs`). For an `auto` package, severity is the highest of its changeset entries and its inferred severity (VER-AGG-01, `docs/specs/versioning.json`).
+The human-written change record is a `.changeset/*.md` file in `@changesets/cli`'s format: YAML frontmatter mapping package names to `none`/`patch`/`minor`/`major`, then a Markdown summary. Compatibility means each tool reads the other's files; output is not byte-identical (callisto quotes names only when needed). Same `pre.json` shape, same `bump_version` semantics (no 0.x remap on an explicit major). Commit inference is opt-in per package (`release-trigger = "auto"`); an unset key resolves to `ReleaseTrigger::Changeset` (`crates/callisto-graph/src/walk.rs`). For an `auto` package, severity is the highest of its changeset entries and its inferred severity (VER-AGG-01, `docs/specs/versioning.json`).
 
 ## Options considered
 
 - **Conventional Commits as the primary input** — rejected. That is release-please's model, "the default choice for a team starting from scratch"; callisto does not try to out-build it. The changesets user base "dislikes Conventional-Commits-only tools" (docs/00-design.md §3.2). Inference is kept as an opt-in trigger, and P1's rollback guarantee covers only `Changeset`-trigger packages (§4 P1 scope note).
-- **A callisto-specific format** — rejected. P1: "Byte-compatibility with `@changesets/cli`'s file format is a hard requirement … One-commit adoption, one-commit rollback. This is the adoption gate; nothing overrides it" (docs/00-design.md §4).
+- **A callisto-specific format** — rejected: adoption and rollback must each be one commit, so existing `.changeset/` files have to keep working in both directions ("One-commit adoption, one-commit rollback. This is the adoption gate; nothing overrides it", docs/00-design.md §4 P1).
 
 ## Consequences
 
