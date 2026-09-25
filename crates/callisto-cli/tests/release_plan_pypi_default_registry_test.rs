@@ -27,11 +27,7 @@ fn callisto(root: &Path, args: &[&str]) -> std::process::Output {
 fn fixture(manifest_path: &str, manifest: &str, package_match: &str, registry: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    git(root, &["init", "-b", "main"]);
-    git(root, &["config", "user.name", "Callisto Test"]);
-    git(root, &["config", "user.email", "test@example.invalid"]);
-    git(root, &["config", "commit.gpgsign", "false"]);
-    git(root, &["config", "tag.gpgsign", "false"]);
+    callisto_fixtures::git::init_repo(root);
     git(
         root,
         &["remote", "add", "origin", "https://github.com/example/demo.git"],

@@ -18,10 +18,7 @@ fn git(root: &Path, args: &[&str]) {
 fn status_with(keys: &str, fragment: &str) -> (bool, Vec<String>, String) {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    git(root, &["init", "-b", "main"]);
-    git(root, &["config", "user.name", "Callisto Test"]);
-    git(root, &["config", "user.email", "test@example.invalid"]);
-    git(root, &["config", "commit.gpgsign", "false"]);
+    callisto_fixtures::git::init_repo(root);
     fs::write(
         root.join("Cargo.toml"),
         "[workspace]\nmembers = [\"crates/core\"]\nresolver = \"2\"\n",

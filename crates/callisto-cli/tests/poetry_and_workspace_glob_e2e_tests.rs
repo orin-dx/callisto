@@ -19,20 +19,7 @@ fn callisto_bin() -> &'static str {
 }
 
 fn git_init(root: &Path) {
-    for args in [
-        vec!["init", "-q", "-b", "main"],
-        vec!["config", "user.name", "Callisto Tester"],
-        vec!["config", "user.email", "tester@callisto.dev"],
-        vec!["config", "commit.gpgsign", "false"],
-        vec!["config", "tag.gpgsign", "false"],
-    ] {
-        assert!(Command::new("git")
-            .args(&args)
-            .current_dir(root)
-            .status()
-            .unwrap()
-            .success());
-    }
+    callisto_fixtures::git::init_repo(root);
 }
 
 fn git_commit_all(root: &Path, message: &str) {

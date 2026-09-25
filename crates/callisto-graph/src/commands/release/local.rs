@@ -258,7 +258,9 @@ mod tests {
     #[test]
     fn trusted_run_accepts_a_branch_and_records_head() {
         let (dir, _) = fixture();
-        git(dir.path(), &["checkout", "-q", "-b", "main"]);
+        // fixture() already leaves HEAD detached on a pre-existing `main` (from
+        // init_repo); this test reattaches to it rather than creating it.
+        git(dir.path(), &["checkout", "-q", "main"]);
         let intent = plan(dir.path(), &[], LocalReleaseSource::Trusted)
             .unwrap()
             .expect("unreleased");
@@ -372,11 +374,8 @@ mod tests {
             format!("[[{kind}-group]]\nname = \"g\"\nmembers = [\"a\", \"b\"]\n\n[[package]]\nmatch = \"*\"\npublish-to = [\"crates-io\"]\n"),
         )
         .unwrap();
+        callisto_fixtures::git::init_repo(root);
         for args in [
-            ["init", "-q"].as_slice(),
-            ["config", "user.email", "test@example.com"].as_slice(),
-            ["config", "user.name", "Test"].as_slice(),
-            ["config", "commit.gpgsign", "false"].as_slice(),
             ["remote", "add", "origin", "https://github.com/example/grouped.git"].as_slice(),
             ["add", "."].as_slice(),
             ["commit", "-q", "-m", "fixture"].as_slice(),
@@ -430,7 +429,7 @@ mod tests {
             r#"{"name":"addon","version":"1.0.0","napi":{"targets":["aarch64-apple-darwin"]}}"#,
         )
         .unwrap();
-        git(napi.path(), &["init", "-q"]);
+        callisto_fixtures::git::init_repo(napi.path());
         assert!(matches!(
             route(napi.path()),
             Some(CiReleaseRoute::PlatformPackage { .. })

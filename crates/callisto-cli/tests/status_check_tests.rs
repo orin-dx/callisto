@@ -18,20 +18,7 @@ fn setup_ambiguous_name_git_repo() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
 
-    for args in [
-        vec!["init", "-b", "main"],
-        vec!["config", "user.name", "Callisto Tester"],
-        vec!["config", "user.email", "tester@callisto.dev"],
-        vec!["config", "commit.gpgsign", "false"],
-        vec!["config", "tag.gpgsign", "false"],
-    ] {
-        assert!(Command::new("git")
-            .args(&args)
-            .current_dir(root)
-            .status()
-            .unwrap()
-            .success());
-    }
+    callisto_fixtures::git::init_repo(root);
 
     fs::write(
         root.join("Cargo.toml"),

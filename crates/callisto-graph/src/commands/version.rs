@@ -377,19 +377,7 @@ mod tests {
     use callisto_fixtures::git::GitRunner;
 
     fn git_init_with_commit(root: &Path) {
-        for args in [
-            vec!["init", "-q", "-b", "main"],
-            vec!["config", "user.email", "test@example.com"],
-            vec!["config", "user.name", "Test"],
-            vec!["config", "commit.gpgsign", "false"],
-            vec!["config", "tag.gpgsign", "false"],
-        ] {
-            std::process::Command::new("git")
-                .args(&args)
-                .current_dir(root)
-                .output()
-                .expect("git must be installed");
-        }
+        callisto_fixtures::git::init_repo(root);
         std::fs::write(root.join(".gitkeep"), "").unwrap();
         for args in [vec!["add", "."], vec!["commit", "-q", "-m", "init"]] {
             std::process::Command::new("git")

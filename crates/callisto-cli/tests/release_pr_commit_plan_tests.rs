@@ -93,9 +93,7 @@ fn commit_plan_reproduces_git_write_tree() {
         child.wait().unwrap()
     };
     assert!(tar_status.success());
-    git_ok(recon.path(), &["init", "-q", "-b", "main"]);
-    git(recon.path(), &["config", "user.name", "Recon"]);
-    git(recon.path(), &["config", "user.email", "recon@callisto.dev"]);
+    callisto_fixtures::git::init_repo(recon.path());
 
     for addition in plan["additions"].as_array().unwrap() {
         let path = addition["path"].as_str().unwrap();

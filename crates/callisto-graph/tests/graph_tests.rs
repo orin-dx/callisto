@@ -87,11 +87,7 @@ fn test_apply_version_plan_reports_git_add_failure() {
 
     let runner = FailingGitAddRunner;
     let ws_dir = tempfile::tempdir().unwrap();
-    std::process::Command::new("git")
-        .arg("init")
-        .current_dir(ws_dir.path())
-        .output()
-        .unwrap();
+    callisto_fixtures::git::init_repo(ws_dir.path());
 
     let pre_state = callisto_format::PreState::entering("canary", Vec::new());
     let plan = VersionPlan {

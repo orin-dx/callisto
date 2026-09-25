@@ -175,7 +175,7 @@ mod tests {
         std::fs::write(root.join("callisto.toml"), "").unwrap();
         std::fs::create_dir_all(root.join(".changeset")).unwrap();
         std::fs::write(root.join(".changeset/bump.md"), "---\npkg-a: patch\n---\n\nfix.\n").unwrap();
-        drop(std::process::Command::new("git").arg("init").current_dir(root).output());
+        callisto_fixtures::git::init_repo(root);
 
         let global = GlobalArgs {
             format: OutputFormat::Json,
@@ -222,7 +222,7 @@ mod tests {
             "---\ncargo/does-not-exist: patch\n---\n\nbad.\n",
         )
         .unwrap();
-        drop(std::process::Command::new("git").arg("init").current_dir(root).output());
+        callisto_fixtures::git::init_repo(root);
 
         let global = GlobalArgs {
             format: OutputFormat::Json,

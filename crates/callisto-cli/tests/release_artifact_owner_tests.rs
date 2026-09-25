@@ -12,15 +12,7 @@ use tempfile::TempDir;
 fn plugin_artifact_fixture(plugin_in_fixed_group: bool) -> (TempDir, String) {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    git(root, &["init", "-b", "main"]);
-    for (key, value) in [
-        ("user.name", "Callisto Test"),
-        ("user.email", "test@example.invalid"),
-        ("commit.gpgsign", "false"),
-        ("tag.gpgsign", "false"),
-    ] {
-        git(root, &["config", key, value]);
-    }
+    callisto_fixtures::git::init_repo(root);
     git(
         root,
         &["remote", "add", "origin", "https://github.com/example/core-crate.git"],

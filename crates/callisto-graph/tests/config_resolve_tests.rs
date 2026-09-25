@@ -25,11 +25,7 @@ impl CommandRunner for NoopRunner {
 
 /// Set up a minimal two-package Cargo workspace with git init.
 fn write_two_crate_workspace(root: &Path, crate_a: &str, crate_b: &str) {
-    std::process::Command::new("git")
-        .arg("init")
-        .current_dir(root)
-        .output()
-        .expect("git init should run");
+    callisto_fixtures::git::init_repo(root);
 
     fs::write(
         root.join("Cargo.toml"),

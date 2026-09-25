@@ -992,11 +992,7 @@ mod tests {
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(path, content).unwrap();
         }
-        git(dir.path(), &["init", "-q", "-b", "main"]);
-        git(dir.path(), &["config", "user.email", "test@example.com"]);
-        git(dir.path(), &["config", "user.name", "Test"]);
-        git(dir.path(), &["config", "commit.gpgsign", "false"]);
-        git(dir.path(), &["config", "tag.gpgsign", "false"]);
+        callisto_fixtures::git::init_repo(dir.path());
         if let Some(origin) = origin {
             git(dir.path(), &["remote", "add", "origin", origin]);
         }

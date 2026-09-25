@@ -153,11 +153,8 @@ pub(crate) mod tests {
             "[[package]]\nmatch = \"release-fixture\"\npublish-to = [\"crates-io\"]\n",
         )
         .unwrap();
+        callisto_fixtures::git::init_repo(dir.path());
         for args in [
-            ["init", "-q"].as_slice(),
-            ["config", "user.email", "test@example.com"].as_slice(),
-            ["config", "user.name", "Test"].as_slice(),
-            ["config", "commit.gpgsign", "false"].as_slice(),
             [
                 "remote",
                 "add",
@@ -219,11 +216,8 @@ pub(crate) mod tests {
             "[[package]]\nmatch = \"release-fixture\"\npublish-to = []\n",
         )
         .unwrap();
+        callisto_fixtures::git::init_repo(dir.path());
         for args in [
-            ["init", "-q"].as_slice(),
-            ["config", "user.email", "test@example.com"].as_slice(),
-            ["config", "user.name", "Test"].as_slice(),
-            ["config", "commit.gpgsign", "false"].as_slice(),
             ["add", "."].as_slice(),
             ["commit", "-q", "-m", "fixture"].as_slice(),
             ["checkout", "--detach", "-q", "HEAD"].as_slice(),
@@ -353,11 +347,8 @@ pub(crate) mod tests {
             );
         }
         write("callisto.toml", "");
+        callisto_fixtures::git::init_repo(dir.path());
         for args in [
-            ["init", "-q"].as_slice(),
-            ["config", "user.email", "test@example.com"].as_slice(),
-            ["config", "user.name", "Test"].as_slice(),
-            ["config", "commit.gpgsign", "false"].as_slice(),
             ["remote", "add", "origin", "https://github.com/example/platforms.git"].as_slice(),
             ["add", "."].as_slice(),
             ["commit", "-q", "-m", "fixture"].as_slice(),

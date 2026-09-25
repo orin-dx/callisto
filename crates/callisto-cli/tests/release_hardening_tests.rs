@@ -816,10 +816,7 @@ fn real_cargo_package_creates_target_under_the_source_directory() {
     };
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    git(root, &["init", "-b", "main"]);
-    git(root, &["config", "user.name", "Callisto Test"]);
-    git(root, &["config", "user.email", "test@example.invalid"]);
-    git(root, &["config", "commit.gpgsign", "false"]);
+    callisto_fixtures::git::init_repo(root);
     fs::write(root.join(".gitignore"), "target/\n").unwrap();
     fs::write(
         root.join("Cargo.toml"),

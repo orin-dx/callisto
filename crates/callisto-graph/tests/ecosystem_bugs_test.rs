@@ -29,11 +29,7 @@ impl CommandRunner for NoopRunner {
 }
 
 fn git_init(root: &Path) {
-    std::process::Command::new("git")
-        .arg("init")
-        .current_dir(root)
-        .output()
-        .expect("git init should run");
+    callisto_fixtures::git::init_repo(root);
 }
 
 // ---------------------------------------------------------------------------

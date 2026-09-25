@@ -49,18 +49,7 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let root = tmp.path();
 
-        for (program, args) in [
-            ("git", vec!["init", "-q"]),
-            ("git", vec!["config", "user.name", "Test"]),
-            ("git", vec!["config", "user.email", "test@test.dev"]),
-        ] {
-            drop(
-                std::process::Command::new(program)
-                    .args(args)
-                    .current_dir(root)
-                    .output(),
-            );
-        }
+        callisto_fixtures::git::init_repo(root);
 
         std::fs::write(
             root.join("Cargo.toml"),

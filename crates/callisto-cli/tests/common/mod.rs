@@ -12,33 +12,7 @@ pub fn setup_polyglot_git_repo() -> tempfile::TempDir {
     let dir = tempdir().unwrap();
     let root = dir.path();
 
-    let status = Command::new("git")
-        .args(["init", "-b", "main"])
-        .current_dir(root)
-        .status()
-        .unwrap();
-    assert!(status.success());
-
-    Command::new("git")
-        .args(["config", "user.name", "Callisto Tester"])
-        .current_dir(root)
-        .status()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "user.email", "tester@callisto.dev"])
-        .current_dir(root)
-        .status()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "commit.gpgsign", "false"])
-        .current_dir(root)
-        .status()
-        .unwrap();
-    Command::new("git")
-        .args(["config", "tag.gpgsign", "false"])
-        .current_dir(root)
-        .status()
-        .unwrap();
+    callisto_fixtures::git::init_repo(root);
 
     let cargo_toml = r#"[workspace]
 members = ["crates/core"]

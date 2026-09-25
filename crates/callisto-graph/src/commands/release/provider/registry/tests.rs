@@ -119,7 +119,11 @@ fn build_fixture() -> CargoFixture {
         ),
     )
     .unwrap();
+    // Real crates.io indexes use `master`, not `init_repo`'s `main`, so this fixture
+    // stays hand-rolled; background auto-gc/maintenance is still disabled to match.
     run("git", &["init", "-q", "-b", "master", "."], &index);
+    run("git", &["config", "gc.auto", "0"], &index);
+    run("git", &["config", "maintenance.auto", "false"], &index);
     run("git", &["add", "-A"], &index);
     run(
         "git",
