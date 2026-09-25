@@ -1,0 +1,1 @@
+Let's avoid the overengineering and trying to cram what doesn't match together. Lets learn from others but still ship something better
