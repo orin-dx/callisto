@@ -1,0 +1,1 @@
+Let's understand the current state of callisto, the goal of the tool and summarize for an agent that is picking this up fresh. Be succinct, avoid wordy prose. Be mindful of the context and only include what is useful but don't forget important things please.
