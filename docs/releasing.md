@@ -57,7 +57,7 @@ One `callisto/version-packages` release PR is kept current, recomputed from `mai
 
 After a merge, the workflow derives a fresh release run from the exact merged source and passes its immutable handoff between jobs. "Re-run failed jobs" on a failed release run is supported: the rerun adopts every effect that already landed and performs the rest. To release an older merged source with current orchestration, dispatch a new run with that source SHA (see Recovery below).
 
-The merged, managed release PR is the sole approval boundary — do not configure a separate GitHub Environment reviewer gate for this workflow. Keep registry credentials scoped only to the `execute` job, so planning and build jobs cannot read them. Only `execute` may receive `CARGO_REGISTRY_TOKEN`, `NPM_TOKEN`, or `TWINE_PASSWORD` — never at workflow scope, in build jobs, or in an action input.
+Callisto treats the verified merge of the release PR as the authorization and has no approval step of its own; any extra gate is your CI's choice. Keep registry credentials scoped only to the `execute` job, so planning and build jobs cannot read them. Only `execute` may receive `CARGO_REGISTRY_TOKEN`, `NPM_TOKEN`, or `TWINE_PASSWORD` — never at workflow scope, in build jobs, or in an action input.
 
 An administrator must also enable a branch-protection rule or ruleset on `main` that requires CODEOWNERS review; `.github/CODEOWNERS` names the owner for workflow and action changes, but GitHub does not enforce review merely because that file exists.
 
@@ -88,7 +88,7 @@ Outputs: `hasChangesets` (`version-pr` mode only), `published` and `publishedPac
 
 ## PR pre-flight verification
 
-Every PR runs [`.github/actions/callisto-validate/action.yml`](../.github/actions/callisto-validate/action.yml):
+[`.github/actions/callisto-validate/action.yml`](../.github/actions/callisto-validate/action.yml) is a reusable action for your PR workflow:
 
 - `callisto status --check` — one gate covering config health, package discovery, and changeset syntax: exit 0 with no error-level diagnostics, exit 1 otherwise.
 - `callisto release --dry-run --format text` — simulates the release plan without effect.
@@ -98,13 +98,7 @@ Every PR runs [`.github/actions/callisto-validate/action.yml`](../.github/action
 
 ## Authority
 
-A verified merge of a managed Callisto release PR is the sole authorization for publication. There is no GitHub Environment reviewer, deployment protection gate, or second manual click. Merge evidence and release authorization are separate concerns: required CI checks protect the merge; the merge authorizes the release.
-
-## Merge evidence
-
-The active `main` ruleset requires one approving review, signed commits, linear squash history, and named evidence from every CI job before a release PR can merge (workflow contracts, formatting, clippy, security audit, coverage, both OS test runs, every artifact-preflight target, changeset/status validation — see `.github/workflows/callisto-ci.yml` for the exact job names it checks).
-
-The repository owner has an explicit ruleset bypass for emergency recovery. That bypass is not a second approval mechanism and must be used only when the normal evidence path cannot run.
+A verified merge of a managed Callisto release PR authorizes publication; callisto adds no approval step. Protect the merge with required reviews and CI checks on the default branch.
 
 ## Release identity and recovery
 
@@ -192,7 +186,7 @@ Each asset's GitHub provenance is bound to the current coordinator workflow revi
 
 A source without a `[release]` section plans with zero artifact slots and prints a notice.
 
-The `callisto@{version}` product tag replaced `callisto-cli@{version}`; `previous-tag-templates` in `callisto.toml` keeps tags from the old template discoverable as the last release.
+`previous-tag-templates` in `callisto.toml` lets a package's tag-naming convention change without losing continuity with its prior release tags.
 
 The `setup-callisto` action verifies a downloaded prebuilt asset with `gh attestation verify` against `orin-dx/callisto` and the `callisto-release.yml` signer workflow, and never runs an unverified asset unless `verification: skip` (modes: `require`, `fallback` default, `skip`).
 

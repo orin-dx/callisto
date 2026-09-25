@@ -20,9 +20,7 @@ Every Git read and write shells out to the user's `git` through `CommandRunner`.
 
 ## Consequences
 
-- Cargo.lock 365 → 259 packages; clean debug build 20.4 s → 13.7 s; release binary 9.2 → 6.3 MB (#145).
-- History walks use `git log --no-merges --full-history`, matching the gix commit sets across 1,592 comparisons; plain `git log` would drop 47 (#145).
-- `status` batches git calls: 68-70 ms vs 75-85 ms with gix, output byte-identical (#145).
+- History walks use `git log --no-merges --full-history`, matching the gix commit sets; plain `git log` history simplification drops commits whose change a later merge discarded.
 - Callisto depends on the installed git version and parses its output.
 - Annotated tags work on runners with no git identity: the tagger falls back to the target commit's committer (#145).
 

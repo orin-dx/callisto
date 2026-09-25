@@ -2,7 +2,7 @@
 
 The three structural authorities of a durable release run. All three live in `callisto-model` (MIT, no Callisto dependencies); `callisto-graph` supplies provider adapters, `callisto-cli` supplies the run entry point.
 
-Decisions (read before changing the release flow): ADRs 2-4 and 7 in `docs/adr/` (the merged committed decision is the authority and the authorization, reruns adopt landed effects, tools publish and own auth, platform packages release with their owner). This repo's workflow has no Environment gate (AGENTS.md).
+Decisions (read before changing the release flow): ADRs 2-4 and 7 in `docs/adr/` (the merged committed decision is the authority and the authorization, reruns adopt landed effects, tools publish and own auth, platform packages release with their owner).
 
 ## Two routes, one executor
 

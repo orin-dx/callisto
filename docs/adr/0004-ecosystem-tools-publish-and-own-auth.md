@@ -6,7 +6,6 @@ Status: Accepted
 
 - Callisto releases to crates.io, npm, PyPI and GitHub. Each registry has its own auth rules, retries, rate limits and idempotence.
 - `cargo`, `npm`/`pnpm`, `twine` and `gh` already handle all of that (docs/00-design.md §9).
-- A credential pre-flight was added with `callisto release` (#134, "checks one credential per operation kind before the first effect") and widened in the same PR to per-registry cargo tokens, per-package npm config and `~/.pypirc`, with an admitted gap: "keyring passwords cannot be detected".
 
 ## Decision
 
@@ -15,7 +14,7 @@ Callisto decides what to publish and in what order, then runs the ecosystem tool
 ## Options considered
 
 - **Native registry clients in callisto** — rejected in the original design: the tools "already do registry auth, retries, rate-limit handling, and idempotence — reimplementing any of that inside callisto would be redundant and would put callisto in the business of tracking every registry's quirks" (docs/00-design.md §9). §9.5 removed a planned in-process publish pipeline with retry/backoff, registry API queries and `octocrab`/`reqwest`/`tokio`, which "significantly shrinks the CLI's dependency surface and the amount of registry-specific logic that needs testing".
-- **Credential pre-flight before the first effect** — added in #134, removed in #143 (~500 lines, `release_credentials.rs`): "cargo, npm, twine and gh report their own auth failures, and a rerun adopts every effect that already landed, so a second credential model in Callisto only drifts from the tools'".
+- **Credential pre-flight before the first effect** — added in #134, removed in #143: "cargo, npm, twine and gh report their own auth failures, and a rerun adopts every effect that already landed, so a second credential model in Callisto only drifts from the tools'".
 
 ## Consequences
 

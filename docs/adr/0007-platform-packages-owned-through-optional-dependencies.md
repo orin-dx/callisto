@@ -20,7 +20,7 @@ An npm `package.json` with `os`+`cpu` that exactly one npm package names in `opt
 
 ## Consequences
 
-- Changesets that name a platform package directly now resolve to unknown (#111, breaking).
+- A changeset naming a platform package directly resolves to unknown; changesets must target the owner package.
 - A Cargo + `package.json` directory takes its npm release id from `package.json` (#111).
 - Discovery is npm-only and directory-scoped; maturin and several platform packages per owner are not covered (docs/projects/ROAD-TO-V1.md, Design).
 - `callisto release` sends workspaces with attached platforms to the CI route (`ci_release_route`).

@@ -1,4 +1,4 @@
-# 6. One CLI distributed through proto
+# 6. moon integrates through a proto plugin, not a WASM extension
 
 Status: Accepted
 
@@ -10,7 +10,7 @@ Status: Accepted
 
 ## Decision
 
-There is one product, the native `callisto` CLI. moon users install it with proto (`proto/callisto.toml`, pinned in `.prototools`) and call it from moon tasks. There is no moon extension, no WASM build and no moon-specific code in the core.
+Callisto ships one native binary (crates.io, GitHub release archives, the `setup-callisto` action). For proto and moon users, a proto TOML plugin (`proto/callisto.toml`) installs that binary from the GitHub release assets, and moon tasks call it like any tool. There is no moon WASM extension, no WASM build and no moon-specific code in the core.
 
 ## Options considered
 
@@ -24,7 +24,7 @@ There is one product, the native `callisto` CLI. moon users install it with prot
 
 ## Consequences
 
-- #142: Cargo.lock 810 → 365 packages; `cargo deny` needs no advisory ignores; 9,622 lines deleted in f8598d19e.
+- #142: Cargo.lock 810 → 365 packages; `cargo deny` needs no advisory ignores.
 - moon workspaces get the same binary as everyone else; project discovery is callisto's own walk (`IgnoreWalkLocator`). The proto plugin covers macOS arm64 and Linux x86_64 (glibc, musl) only.
 - The proto plugin cannot verify checksums until releases publish `.sha256` assets (#142 follow-up).
 

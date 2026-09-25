@@ -6,7 +6,6 @@ Status: Accepted
 
 - A release is many external effects (registry publishes, tags, GitHub releases, asset uploads). Any run can die partway.
 - Owner requirements: a merged but unpublished version must be recoverable without inventing a newer version; a release is complete only when registries, tags, GitHub release, receipt and source commit agree (incident report §2).
-- The incident report proposed persisting execution state after every transition, uploading it on failure and resuming from it (incident §8, SPEC-RELEASE-EXECUTION-TERMINALITY). That was built (#39, #101), then removed in #124.
 
 ## Decision
 
@@ -15,7 +14,7 @@ Every run observes every provider before acting and adopts each effect that alre
 ## Options considered
 
 - **Persisted execution state file with resume** — rejected. "CI never reads execution state back (every run is a fresh runner), yet an Initial run turned an already-published registry version into E174, so 'Re-run failed jobs' could never finish a partial release" (#124).
-- **Recovery commands (`release reconcile`, `release execute --recovery`, `--state`) and Initial/Recovery run kinds** — rejected with the state file in #124 (+830 / -2674 lines). Removed with them: the workspace lock, `AdoptedExact`/`RecoveredExact`, E173, E174 and the release-state schema.
+- **Recovery commands (`release reconcile`, `release execute --recovery`, `--state`) and Initial/Recovery run kinds** — rejected with the state file in #124. Removed with them: the workspace lock, `AdoptedExact`/`RecoveredExact`, E173, E174 and the release-state schema.
 - **Rerun the historical workflow run to recover** — rejected. A rerun of an old GitHub Actions run does not pick up workflow fixes merged later (incident report, requirement 6).
 - **Post-publish re-observation pass to build the receipt** — rejected: a flaky registry read could fail a release whose effects had all landed (#122, #124).
 
@@ -42,4 +41,4 @@ Every run observes every provider before acting and adopts each effect that alre
 - PR #124 (592396564), commit bodies and PR body; closed PR #122
 - PR #101 (279e32361): "reject incomplete quiescent execution", "accept an explicit recovery source"
 - PR #39 (eeda4a2f5): durable attested execution
-- Incident report §2, §8 (`git show 11038b11b^:.claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md`)
+- Incident report §2 (`git show 11038b11b^:.claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md`)

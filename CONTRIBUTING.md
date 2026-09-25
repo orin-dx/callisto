@@ -87,3 +87,7 @@ CI (`.github/workflows/callisto-ci.yml`) gates on:
 - **`workflow-contracts`** — actionlint, zizmor, action pin verification, and the release-workflow contract/policy tests
 
 Before opening a PR: run `just ci` locally (covers everything above except the Docker-based actionlint step and the binary-dependent artifact-preflight build) and make sure `just pre-push` is clean. Add a changeset for any user-facing change (see above). Follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages.
+
+## Merging to main
+
+The `main` ruleset requires one approving review, signed commits, squash merges and every CI job passing. Merging a release PR publishes it; there is no second approval. The owner's ruleset bypass is for emergency recovery only.

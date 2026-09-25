@@ -7,7 +7,7 @@ Open work only. Verified against the code on 2026-09-25; git history holds the s
 - Build or drop a workspace-wide check that no `map_err` discards its source error. No gate script or CI wiring exists; `map_err_ignore = "deny"` in `Cargo.toml` is the only partial guard.
 - Derive the default tag template from fixed or independent mode, or drop the idea. Today `tag-template` is `None` unless set (`crates/callisto-graph/src/config/resolve.rs`).
 - Crate consolidation and the MIT/FSL split.
-- Owner items from the PR #101 audit, not rechecked since: the rust-cache pin in orin-dx/actions, the bot-PR check policy, token rotation.
+- Owner items pending decision: the rust-cache pin in orin-dx/actions, the bot-PR check policy, token rotation.
 
 ## Correctness
 

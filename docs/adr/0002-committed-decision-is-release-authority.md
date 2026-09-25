@@ -5,8 +5,7 @@ Status: Accepted
 ## Context
 
 - After the release PR merges, CI must authorize exactly what reviewers approved before any publish, tag or GitHub release runs.
-- `release plan --from-release-commit` used to re-derive the release roster from the merged commit's raw diff (which changesets were deleted, matched directly to packages).
-- That re-derivation understood only a direct changeset-to-package match. It rejected every release in which a `[[fixed-group]]` bumped a sibling that no changeset named, which is every multi-package release in a fixed-group workspace (PR #54).
+- A release roster derived from the merged commit's raw diff understands only a direct changeset-to-package match. It rejects every release in which a `[[fixed-group]]` bumps a sibling that no changeset named, which is every multi-package release in a fixed-group workspace.
 
 ## Decision
 
@@ -28,7 +27,6 @@ Status: Accepted
 
 - `crates/callisto-cli/tests/durable_release_e2e_tests.rs`: `fixed_group_cascade_bump_without_direct_changeset_is_accepted`, `release_plan_rejects_a_commit_whose_manifest_disagrees_with_its_own_decision`, `release_plan_rejects_a_hand_tampered_decision_file`.
 - `derive_release_commit_decision` in `crates/callisto-graph/src/commands/release_decision.rs` and its unit tests (head mismatch, corrupt decision file, claimed package not observed).
-- `.github/workflows/callisto-release.yml` passes `--decision …/.callisto/release-decision.json` to `release plan`.
 
 ## Revisit when
 

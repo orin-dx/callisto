@@ -16,7 +16,6 @@ The human-written change record is a `.changeset/*.md` file byte-compatible with
 
 - **Conventional Commits as the primary input** — rejected. That is release-please's model, "the default choice for a team starting from scratch"; callisto does not try to out-build it. The changesets user base "dislikes Conventional-Commits-only tools" (docs/00-design.md §3.2). Inference is kept as an opt-in trigger, and P1's rollback guarantee covers only `Changeset`-trigger packages (§4 P1 scope note).
 - **A callisto-specific format** — rejected. P1: "Byte-compatibility with `@changesets/cli`'s file format is a hard requirement … One-commit adoption, one-commit rollback. This is the adoption gate; nothing overrides it" (docs/00-design.md §4).
-- **Reuse the `knope-dev/changesets` crate for parsing** — rejected: it splits `name: severity` before unquoting and mangles quoted `@scope/name` entries (docs/00-design.md §6.1).
 
 ## Consequences
 
@@ -39,5 +38,5 @@ The human-written change record is a `.changeset/*.md` file byte-compatible with
 
 ## Sources
 
-- docs/00-design.md §0, §3.1, §3.2, §4 (P1), §6.1, §7.1 (deleted in 11038b11b; read with `git show 11038b11b^:docs/00-design.md`)
+- docs/00-design.md §0, §3.1, §3.2, §4 (P1), §7.1 (deleted in 11038b11b; read with `git show 11038b11b^:docs/00-design.md`)
 - PR #143 (bde7305f9): inference always compiled in, gated only by `release-trigger`

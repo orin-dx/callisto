@@ -23,7 +23,7 @@ Status: Accepted
 ## Consequences
 
 - Release PR diffs show only version and dependency changes.
-- CRLF files stay CRLF: `Cargo.toml` was once rewritten to LF on every write until the fingerprint was shared (435c05a17).
+- CRLF files stay CRLF.
 - Tests need `ApplyPermit::force_for_tests()`, behind `cfg(test)` or the `callisto-model/test-util` feature, enabled only under `[dev-dependencies]`.
 - The permit is a type check only. It does not stop code that calls `std::fs` directly.
 
