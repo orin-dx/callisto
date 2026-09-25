@@ -1,6 +1,6 @@
 # 1. Changesets-compatible change records
 
-Status: Proposed
+Status: Accepted (the original design, docs/00-design.md §4 P1)
 
 ## Context
 

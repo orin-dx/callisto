@@ -1,6 +1,6 @@
 # 5. System git only
 
-Status: Proposed
+Status: Accepted (implemented in #145)
 
 ## Context
 

@@ -1,6 +1,6 @@
 # 2. The committed version decision is the release authority
 
-Status: Proposed
+Status: Accepted (implemented in #54)
 
 ## Context
 

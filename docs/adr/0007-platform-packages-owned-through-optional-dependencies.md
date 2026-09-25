@@ -1,6 +1,6 @@
 # 7. Platform packages are owned through optionalDependencies and release with their owner
 
-Status: Proposed
+Status: Accepted (implemented in #111)
 
 ## Context
 

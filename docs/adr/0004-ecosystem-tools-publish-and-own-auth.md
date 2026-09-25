@@ -1,6 +1,6 @@
 # 4. Ecosystem tools publish and own authentication
 
-Status: Proposed
+Status: Accepted (implemented in #143)
 
 ## Context
 

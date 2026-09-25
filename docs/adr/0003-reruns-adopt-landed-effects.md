@@ -1,6 +1,6 @@
 # 3. Reruns observe and adopt landed effects; no persisted execution state
 
-Status: Proposed
+Status: Accepted (implemented in #124)
 
 ## Context
 

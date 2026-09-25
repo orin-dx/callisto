@@ -12,6 +12,7 @@
 ## Rules
 
 - An ADR records an architecturally significant decision that had a credible alternative.
+- `Proposed` until the PR that implements it merges, then `Accepted`.
 - A changed decision gets a new ADR with `Status: Supersedes N`. The old file moves to `docs/adr/superseded/` with `Status: Superseded by M`. Agents do not load that folder.
 - Every reason cites a source (commit, PR, historical doc). If none exists, write "Reason not recorded".
 - Behaviour belongs in `docs/specs/`; coding rules belong in `AGENTS.md`.

@@ -1,6 +1,6 @@
 # 8. Format-preserving manifest writes gated by ApplyPermit
 
-Status: Proposed
+Status: Accepted (implemented in 2c27f8d0b)
 
 ## Context
 

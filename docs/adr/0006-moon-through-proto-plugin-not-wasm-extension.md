@@ -1,6 +1,6 @@
 # 6. moon integrates through a proto plugin, not a WASM extension
 
-Status: Proposed
+Status: Accepted (implemented in #142)
 
 ## Context
 
