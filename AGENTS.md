@@ -25,7 +25,7 @@ Rules for AI agents working in this repo.
 - Scoped iteration: one `cargo test -p <crate>` or `cargo clippy -p <crate> --all-targets -- -D warnings` at a time.
   - Not `moon run <project>:test`: its per-project fan-out serializes on `target/`'s build lock.
   - Never run cargo builds in parallel.
-- Changesets: `callisto add --package <crate>:<bump> --summary "..."` (non-interactive).
+- Changesets: `callisto add --package callisto-cli:<bump> --summary "..."` (non-interactive). Target `callisto-cli`: its changelog is the one users read. One changeset per user-visible topic, written as the changelog entry: what the user sees now, no internal names or mechanism.
 - Never `git checkout -- Cargo.lock` as cleanup. A lockfile diff means investigate, not discard.
 
 ## Invariants
@@ -57,5 +57,5 @@ Rules for AI agents working in this repo.
 
 - Succinct: short sentences, bullets, tables. No backstory, hedging or filler.
 - Never hard-wrap Markdown or PR bodies: one line per paragraph.
-- Code comments: one short line, only for a non-obvious why.
+- Code comments: one short line, only for a non-obvious why. Wrap at 120 columns (`rustfmt.toml`). No history ("used to", "previously"): git records it.
 - No claude.ai session links in commits, PRs or files.
