@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use callisto_changelog::{ChangeSource, ChangelogEntry, ChangelogInput};
 use callisto_format::{parse_changeset, Changeset};
-use callisto_model::{BumpReason, CommitSha, Diagnostic, Package, PackageId, Severity, Version};
+use callisto_model::{BumpReason, CommitSha, Diagnostic, Package, PackageId, ReleaseTrigger, Severity, Version};
 use callisto_vcs::{GitAccess, GitDataSource};
 
 use crate::config::resolve::resolve_package_config;
@@ -200,7 +200,15 @@ where
             policy,
         };
 
-        match inference.infer(pkg, git, window) {
+        // release_trigger: Changeset packages take severity from pending changesets only --
+        // commit inference must not run for them, even when the `inference` feature is compiled in.
+        let inferred = if pkg.release_trigger == ReleaseTrigger::Auto {
+            inference.infer(pkg, git, window)
+        } else {
+            Ok(None)
+        };
+
+        match inferred {
             Ok(Some(outcome)) => {
                 if outcome.severity > cur_sev {
                     agg.severities.insert(pkg.id.clone(), outcome.severity);
@@ -740,7 +748,7 @@ mod tests {
                 id: pkg_id.clone(),
                 manifests: vec![manifest],
                 changelog: None,
-                release_trigger: callisto_model::ReleaseTrigger::Changeset,
+                release_trigger: callisto_model::ReleaseTrigger::Auto,
                 publish_to: Vec::new(),
                 tag_template: None,
             },
@@ -814,7 +822,7 @@ mod tests {
                 id: pkg_id.clone(),
                 manifests: vec![manifest],
                 changelog: None,
-                release_trigger: callisto_model::ReleaseTrigger::Changeset,
+                release_trigger: callisto_model::ReleaseTrigger::Auto,
                 publish_to: Vec::new(),
                 tag_template: None,
             },
@@ -879,7 +887,7 @@ mod tests {
                 id: pkg_id.clone(),
                 manifests: vec![manifest],
                 changelog: None,
-                release_trigger: callisto_model::ReleaseTrigger::Changeset,
+                release_trigger: callisto_model::ReleaseTrigger::Auto,
                 publish_to: Vec::new(),
                 tag_template: None,
             },
@@ -903,6 +911,116 @@ mod tests {
             agg.inference_commits.get(&pkg_id),
             Some(&vec![(sha_recent, "feat: recent".to_string())]),
             "Aggregation.inference_commits must retain InferenceOutcome.commits for the package"
+        );
+    }
+
+    /// Records how many times `infer()` was called, without doing any real
+    /// inference work.
+    #[derive(Default)]
+    struct CountingInference {
+        calls: AtomicUsize,
+    }
+
+    impl SeverityInference for CountingInference {
+        fn infer(
+            &self,
+            _pkg: &Package,
+            _git: &GitAccess<'_>,
+            _window: InferenceWindowSpec<'_>,
+        ) -> Result<Option<InferenceOutcome>, GraphError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(None)
+        }
+    }
+
+    /// AC-14: a package resolved to `ReleaseTrigger::Changeset` (the default) must not
+    /// have commit-based severity inference invoked at all, even when the `inference`
+    /// feature is compiled in -- its severity comes only from pending changesets.
+    #[test]
+    fn test_aggregate_skips_inference_for_changeset_trigger() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        init_repo(root);
+        std::fs::write(root.join("README.md"), "hello\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "initial commit"]);
+
+        let pkg_id = PackageId::parse("pkg-a").unwrap();
+        let manifest = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
+        let graph = SinglePackageGraph {
+            pkg: Package {
+                id: pkg_id.clone(),
+                manifests: vec![manifest],
+                changelog: None,
+                release_trigger: callisto_model::ReleaseTrigger::Changeset,
+                publish_to: Vec::new(),
+                tag_template: None,
+            },
+        };
+        let runner = RealGitRunner;
+        let git = GitAccess::discover(root, &runner);
+        let cfg = crate::config::load(root).unwrap();
+        let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
+
+        let mut base_versions = BTreeMap::new();
+        base_versions.insert(pkg_id, callisto_model::Version::semver(1, 0, 0));
+
+        let inference = CountingInference::default();
+        aggregate(&graph, &cfg, &git, &tags, &base_versions, None, &inference).unwrap();
+
+        assert_eq!(
+            inference.calls.load(Ordering::SeqCst),
+            0,
+            "aggregate() must not invoke SeverityInference::infer for a package whose \
+             resolved release_trigger is ReleaseTrigger::Changeset"
+        );
+    }
+
+    /// AC-15: a package resolved to `ReleaseTrigger::Auto` must still run commit-based
+    /// severity inference, and its outcome can still raise the package's severity above
+    /// what pending changesets alone would produce -- unchanged from current behavior.
+    #[test]
+    fn test_aggregate_runs_inference_for_auto_trigger_and_raises_severity() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        init_repo(root);
+        std::fs::write(root.join("README.md"), "hello\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "initial commit"]);
+
+        let pkg_id = PackageId::parse("pkg-a").unwrap();
+        let manifest = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
+        let graph = SinglePackageGraph {
+            pkg: Package {
+                id: pkg_id.clone(),
+                manifests: vec![manifest],
+                changelog: None,
+                release_trigger: callisto_model::ReleaseTrigger::Auto,
+                publish_to: Vec::new(),
+                tag_template: None,
+            },
+        };
+        let runner = RealGitRunner;
+        let git = GitAccess::discover(root, &runner);
+        let cfg = crate::config::load(root).unwrap();
+        let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
+
+        let mut base_versions = BTreeMap::new();
+        base_versions.insert(pkg_id.clone(), callisto_model::Version::semver(1, 0, 0));
+
+        // No changesets on disk: with no other signal, severity stays `None`
+        // unless inference itself raises it.
+        let inference = FixedCommitsInference {
+            commits: vec![(CommitSha::parse(&"b".repeat(40)).unwrap(), "feat: auto".to_string())],
+        };
+
+        let agg = aggregate(&graph, &cfg, &git, &tags, &base_versions, None, &inference).unwrap();
+
+        assert_eq!(
+            agg.severities.get(&pkg_id),
+            Some(&Severity::Minor),
+            "aggregate() must invoke inference for ReleaseTrigger::Auto and let its outcome \
+             raise the package's severity"
         );
     }
 
@@ -942,7 +1060,7 @@ mod tests {
                 id: pkg_id.clone(),
                 manifests: vec![manifest],
                 changelog: None,
-                release_trigger: callisto_model::ReleaseTrigger::Changeset,
+                release_trigger: callisto_model::ReleaseTrigger::Auto,
                 publish_to: Vec::new(),
                 tag_template: None,
             },
@@ -970,13 +1088,15 @@ mod tests {
         );
     }
 
+    // Auto so aggregate() invokes inference for callers of this fixture that
+    // exercise SeverityInference; trigger itself is irrelevant to the rest.
     fn make_pkg(id: PackageId) -> Package {
         let manifest = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
         Package {
             id,
             manifests: vec![manifest],
             changelog: None,
-            release_trigger: callisto_model::ReleaseTrigger::Changeset,
+            release_trigger: callisto_model::ReleaseTrigger::Auto,
             publish_to: Vec::new(),
             tag_template: None,
         }

@@ -365,6 +365,12 @@ mod tests {
             "[package]\nname = \"pkg-alpha\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
         )
         .unwrap();
+        // release-trigger = auto: this test's whole point is that real commit inference runs.
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[package]]\nmatch = \"pkg-alpha\"\nrelease-trigger = \"auto\"\n",
+        )
+        .unwrap();
         run_git(root, &["add", "."]);
         run_git(root, &["commit", "-q", "-m", "chore: add package"]);
         run_git(
