@@ -1,0 +1,1 @@
+Does GH provide that automatically to actions? We want out setup to be easy right?
