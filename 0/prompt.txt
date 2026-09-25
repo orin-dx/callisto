@@ -1,0 +1,1 @@
+Case D and Case E are not descriptive in a doc or in a comment though, right? We need to be succinct and clear at the same time. Let's not skip out here
