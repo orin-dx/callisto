@@ -2973,6 +2973,122 @@ mod tests {
         manifest.validate_for_intent(&intent).unwrap();
     }
 
+    /// AC-16: top-level `source_commit` pins to the release source (the
+    /// intent's immutable snapshot), never the orchestration revision that
+    /// attested the binary -- a recovery rerun deliberately builds an older
+    /// release commit with current coordinator workflow code, so these two
+    /// facts differ and must not be conflated.
+    #[test]
+    fn artifact_manifest_source_commit_is_release_source_not_orchestration_revision() {
+        let package = ReleasePackageId::parse("cargo/demo").unwrap();
+        let version = Version::semver(1, 0, 0);
+        let release_source = CommitSha::parse(&"a".repeat(40)).unwrap();
+        let orchestration_revision = CommitSha::parse(&"c".repeat(40)).unwrap();
+        assert_ne!(
+            release_source, orchestration_revision,
+            "fixture must exercise diverging commits"
+        );
+        let slot = ArtifactSlotId::new(
+            package,
+            version,
+            "x86_64-unknown-linux-gnu",
+            "demo.tar.gz",
+            GitHubRepository::parse("orin-dx/callisto").unwrap(),
+            ".github/workflows/release.yml",
+            orchestration_revision.clone(),
+        )
+        .unwrap();
+        let operation = ReleaseOperation::artifact_upload(slot.clone(), vec![]).unwrap();
+        let intent = test_intent_with_slots(
+            ReleaseInputSnapshotV1::new(
+                SourceIdentity::GitCommit {
+                    sha: release_source.clone(),
+                },
+                vec![],
+            ),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![operation],
+            vec![slot.clone()],
+        )
+        .unwrap();
+        let digest = ArtifactDigest::from_bytes(b"binary");
+        let manifest = ArtifactManifestV1::new(
+            &intent,
+            vec![ArtifactManifestEntryV1 {
+                slot,
+                digest: digest.clone(),
+                byte_length: 6,
+                attestation: GitHubArtifactAttestationV1 {
+                    repository: GitHubRepository::parse("orin-dx/callisto").unwrap(),
+                    workflow_path: ".github/workflows/release.yml".to_string(),
+                    workflow_commit: orchestration_revision.clone(),
+                    subject_digest: digest,
+                    source_commit: orchestration_revision.clone(),
+                },
+            }],
+        )
+        .unwrap();
+        assert_eq!(manifest.source_commit, release_source);
+        assert_ne!(manifest.source_commit, orchestration_revision);
+    }
+
+    /// AC-17: an entry whose `attestation.source_commit` is set to the
+    /// release source instead of the orchestration revision (when the two
+    /// differ) is rejected -- otherwise a recovery rerun's manifest would
+    /// silently bind GitHub's attested source digest to the wrong commit.
+    #[test]
+    fn artifact_manifest_rejects_attestation_source_commit_swapped_for_release_source() {
+        let package = ReleasePackageId::parse("cargo/demo").unwrap();
+        let version = Version::semver(1, 0, 0);
+        let release_source = CommitSha::parse(&"a".repeat(40)).unwrap();
+        let orchestration_revision = CommitSha::parse(&"c".repeat(40)).unwrap();
+        assert_ne!(
+            release_source, orchestration_revision,
+            "fixture must exercise diverging commits"
+        );
+        let slot = ArtifactSlotId::new(
+            package,
+            version,
+            "x86_64-unknown-linux-gnu",
+            "demo.tar.gz",
+            GitHubRepository::parse("orin-dx/callisto").unwrap(),
+            ".github/workflows/release.yml",
+            orchestration_revision.clone(),
+        )
+        .unwrap();
+        let operation = ReleaseOperation::artifact_upload(slot.clone(), vec![]).unwrap();
+        let intent = test_intent_with_slots(
+            ReleaseInputSnapshotV1::new(
+                SourceIdentity::GitCommit {
+                    sha: release_source.clone(),
+                },
+                vec![],
+            ),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![operation],
+            vec![slot.clone()],
+        )
+        .unwrap();
+        let digest = ArtifactDigest::from_bytes(b"binary");
+        let result = ArtifactManifestV1::new(
+            &intent,
+            vec![ArtifactManifestEntryV1 {
+                slot,
+                digest: digest.clone(),
+                byte_length: 6,
+                attestation: GitHubArtifactAttestationV1 {
+                    repository: GitHubRepository::parse("orin-dx/callisto").unwrap(),
+                    workflow_path: ".github/workflows/release.yml".to_string(),
+                    workflow_commit: orchestration_revision,
+                    subject_digest: digest,
+                    // Swapped: release source instead of the orchestration revision.
+                    source_commit: release_source,
+                },
+            }],
+        );
+        assert!(matches!(result, Err(ArtifactManifestError::MismatchedAttestation)));
+    }
+
     /// Two `ArtifactUpload` operations that share package/version/platform/asset_name
     /// but differ only in `attestation_policy` are distinct `ArtifactSlotId`s and must
     /// remain distinct `ReleaseOperationId`s under `Ord`, not just `Eq` -- otherwise
