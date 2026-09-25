@@ -1,0 +1,130 @@
+# AGENTS.md instructions for /Users/gabe/Projects/callisto
+
+<INSTRUCTIONS>
+@/Users/gabe/.codex/RTK.md
+
+--- project-doc ---
+
+# Callisto AI Agent Guidelines (`AGENTS.md`)
+
+Architecture, engineering invariants, and task-runner workflows for AI agents (Antigravity, Claude, Cursor, Copilot, Codex) working in this repo.
+
+---
+
+## 1. Repository Architecture & Crate Layers
+
+Callisto is a fast, polyglot monorepo versioning and release management engine written in Rust. It is divided into 10 workspace crates structured in strict architectural layers:
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│                        CALLISTO CRATE LAYERS                           │
+├───────────────────────────────────┬────────────────────────────────────┤
+│ LAYER & CRATE                     │ LICENSE & PURPOSE                  │
+├───────────────────────────────────┼────────────────────────────────────┤
+│ Layer 1: callisto-model           │ MIT                               │
+│          callisto-format          │ Domain primitives, SemVer grammars │
+├───────────────────────────────────┼────────────────────────────────────┤
+│ Layer 1.5: callisto-vcs           │ MIT                               │
+│                                    │ Native Git integration             │
+├───────────────────────────────────┼────────────────────────────────────┤
+│ Layer 2: callisto-manifests       │ FSL-1.1-MIT                        │
+│          callisto-conventional    │ AST manifest editors, changeset    │
+│          callisto-changelog       │ markdown parser/writer             │
+├───────────────────────────────────┼────────────────────────────────────┤
+│ Layer 3: callisto-graph           │ FSL-1.1-MIT                        │
+│                                   │ Dependency DAG solver & cascades   │
+├───────────────────────────────────┼────────────────────────────────────┤
+│ Layer 4: callisto-cli             │ FSL-1.1-MIT                        │
+│          callisto-moon            │ Standalone CLI & Moon WASM plugin  │
+├───────────────────────────────────┼────────────────────────────────────┤
+│ Dev:     callisto-fixtures        │ FSL-1.1-MIT — dev-only byte-compat  │
+│                                    │ test corpus                        │
+└───────────────────────────────────┴────────────────────────────────────┘
+```
+
+> **CRITICAL RULE (Layer Licensing Boundaries)**: MIT foundation crates (`callisto-model`, `callisto-format`, `callisto-vcs`) MUST NOT depend on FSL product crates. This table reflects each crate's actual `Cargo.toml` `license` field — reverify with `grep -H "^license" crates/*/Cargo.toml` if crates are added or moved.
+
+---
+
+## 2. Primary Task Runners & Verification Pipelines
+
+Always use `just` or `moon` task runners for building, testing, linting, and formatting. Do not invent manual cargo command combinations when task runners exist.
+
+### Primary Command Reference
+
+| Action | Primary Task Runner Command | Moon Engine Command |
+| :--- | :--- | :--- |
+| **Run Full Verification CI** | `just ci` | `moon run :format-check && moon run :lint && moon run :test` |
+| **Run Test Suite** | `just test` | `moon run :test` |
+| **Check Clippy Lints** | `just lint` | `moon run :lint` |
+| **Check Formatting** | `just fmt-check` | `moon run :format-check` |
+| **Format Code** | `just fmt` | `moon run :format` |
+| **Verify WASM Cross-Compilation** | `just wasm-check` | `cargo check -p callisto-moon --target wasm32-wasip1 --features pdk` |
+
+---
+
+## 3. Strict Engineering Invariants
+
+Agents modifying Callisto code MUST enforce the following 5 engineering invariants:
+
+### 1. Safe Rust Only (`unsafe_code = "forbid"`)
+- `unsafe` code blocks are strictly forbidden across all 10 workspace crates.
+
+### 2. Concrete Syntax Tree (CST) Format Preservation
+- NEVER use regular expressions or line-based string replace for manifest editing (`Cargo.toml`, `package.json`, `pyproject.toml`).
+- **TOML Editing**: Must use `toml_edit` to manipulate CST elements, preserving user comments, key order, and whitespace.
+- **JSON Editing**: Must fingerprint indentation style (`IndentStyle::Tabs` vs `IndentStyle::Spaces(N)`) and preserve key insertion order using `serde_json`.
+
+### 3. Crash-Safe Atomic Disk Writes
+- All manifest and configuration edits MUST go through `callisto_model::atomic::atomic_write`. (`callisto_manifests::atomic::atomic_write` remains a backward-compatible re-export of the same function.)
+- Writes create a `NamedTempFile` in the target file's parent directory, flush data to disk, and atomically replace the target file via `fs::rename`.
+
+### 4. Rich Diagnostic Cards (`miette`)
+- User-facing CLI errors MUST derive `miette::Diagnostic` with explicit error codes, clear error cards, and actionable remediation suggestions.
+
+### 5. No Emoji Directive in Documentation & Code
+- Documentation (`README.md`, `CONTRIBUTING.md`, `ARCHITECTURE.md`) and code comments MUST remain clean, technical, scannable, and devoid of emojis or AI bot filler phrases.
+
+### 6. Sibling-Gap Discipline (Unify, Don't Patch)
+- A fix is not done when the reported instance is patched. Before closing any bug fix or duplication fix: grep for structurally identical code elsewhere in the workspace (same algorithm, different file/ecosystem/mode — not just the same literal string).
+- If N copies of the same logic exist, prefer unifying into one implementation over patching each copy in place. Patching N copies leaves N places for the next bug to hide; unifying to N=1 removes the class of bug, not just the instance.
+- If a sibling instance is found but deliberately deferred, record it explicitly (changeset note, tracked follow-up, or code comment) — silent deferral is how the same pattern gets "found" again in a future audit and counted as new.
+- When a new shared helper/trait/abstraction is added specifically to replace duplicated logic, migrate every existing call site in the same change, or explicitly track the ones left un-migrated. A helper nobody is required to call, or an architecture recommendation nobody is required to act on, is not a fix.
+
+---
+
+## 4. Changeset CLI Execution Modes
+
+When generating changesets using Callisto CLI (`callisto add`):
+
+- **Interactive Human Mode (Terminal TTY)**: Launches the 5-step interactive `dialoguer` wizard (Package Selection -> Major Bump Selection -> Minor Bump Selection -> Summary Input -> Confirmation Preview).
+- **Non-Interactive Agent/CI Mode**: Bypasses the wizard completely using explicit CLI flags:
+  ```bash
+  callisto add --package callisto-cli:minor --summary "Add feature description"
+  ```
+
+---
+
+## 5. Preferred Modern CLI Tools Directive
+
+Agents executing shell operations or terminal commands MUST prioritize modern CLI tools over legacy POSIX/Unix shell builtins:
+
+- **Code & Pattern Search**: `ripgrep` (`rg`) over `grep`
+- **File Discovery**: `fd` over `find`
+- **Interactive Filtering**: `fzf` for selection menus
+- **File & Code Viewing**: `bat` over `cat`
+- **Directory Navigation**: `zoxide` (`z`) over `cd`
+- **Diff Inspection**: `delta` over `diff` / `git diff`
+- **Directory Formatting**: `eza` over `ls`
+- **JSON Processing**: `jq` for stream & file transformations
+- **GitHub Workflow & API**: `gh` CLI for GitHub release, PR, and repo management
+
+</INSTRUCTIONS>
+
+<environment_context>
+  <cwd>/Users/gabe/Projects/callisto</cwd>
+  <shell>zsh</shell>
+  <current_date>2026-09-18</current_date>
+  <timezone>America/Los_Angeles</timezone>
+  <filesystem><workspace_roots><root>/Users/gabe/Projects/callisto</root></workspace_roots><permission_profile type="managed"><file_system type="restricted"><entry access="read"><special>:root</special></entry><entry access="read"><path>/Users/gabe/Projects/callisto</path></entry><entry access="read"><special>:slash_tmp</special></entry><entry access="read"><special>:tmpdir</special></entry><entry access="read"><path>/Users/gabe/Projects/callisto/.git</path></entry><entry access="read"><path>/Users/gabe/Projects/callisto/.agents</path></entry><entry access="read"><path>/Users/gabe/Projects/callisto/.codex</path></entry></file_system></permission_profile></filesystem>
+</environment_context>
