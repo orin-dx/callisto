@@ -171,7 +171,7 @@
     },
     {
       "id": "REL-ORD-01",
-      "criterion": "A package's tag is created only after all of its registry publishes succeed, and its GitHub release draft only after its tag. Its asset uploads follow the draft, and the release is published only after the draft and every upload."
+      "criterion": "A package's tag is created only after all of its registry publishes succeed, and its GitHub release draft only after its tag. A `[[release.artifact]]` slot's upload follows the product's draft and gates the product's publish even when a different selected package owns the asset, and the release is published only after the draft and every upload."
     },
     {
       "id": "REL-ORD-02",
@@ -270,7 +270,7 @@
     },
     {
       "id": "REL-GH-04",
-      "criterion": "Each `[[release.artifact]]` becomes one upload named `asset-name` on the product package's GitHub release. An artifact whose `package` is not in the release fails with E179, and a `product-package` that is missing or does not target `github-release` fails with E197.",
+      "criterion": "Each `[[release.artifact]]` becomes one upload named `asset-name` on the product package's GitHub release, tagged with the product's own tag and prerelease flag regardless of the asset owner package's version. An artifact whose `package` is not in the release fails with E179, and a `product-package` that is missing or does not target `github-release` fails with E197. When an artifact's owner package is selected but the product package is not, Callisto warns on stderr and derives no slot for that asset.",
       "is_error_case": true
     },
     {
