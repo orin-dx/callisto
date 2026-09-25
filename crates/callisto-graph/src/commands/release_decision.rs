@@ -107,12 +107,29 @@ pub fn derive_selected_release_decision<R: callisto_model::CommandRunner, D: Dep
 
     let selected = selections.iter().collect::<std::collections::BTreeSet<_>>();
     for selection in &selected {
-        if !complete.entries.iter().any(|entry| &entry.package == *selection) {
-            return Err(GraphError::ReleaseSelectionInvalid {
-                package: (*selection).clone(),
-                reason: ReleaseSelectionInvalidReason::NotInPlan,
+        let Some(package) = workspace_package(workspace, selection) else {
+            return Err(GraphError::UnknownPackage {
+                id: callisto_model::PackageId::Prefixed {
+                    ecosystem: selection.ecosystem(),
+                    name: selection.name().to_string(),
+                },
             });
-        }
+        };
+        let reason = if !complete.entries.iter().any(|entry| &entry.package == *selection) {
+            ReleaseSelectionInvalidReason::NotARelease
+        } else if package
+            .publish_to
+            .iter()
+            .all(|target| matches!(target, callisto_model::PublishTarget::None))
+        {
+            ReleaseSelectionInvalidReason::NoDispatchableTarget
+        } else {
+            continue;
+        };
+        return Err(GraphError::ReleaseSelectionInvalid {
+            package: (*selection).clone(),
+            reason,
+        });
     }
 
     let linked_groups = complete
@@ -148,16 +165,24 @@ pub fn derive_selected_release_decision<R: callisto_model::CommandRunner, D: Dep
     ReleaseDecisionV1::new(entries).map_err(GraphError::from)
 }
 
+/// The workspace package with this exact release identity.
+fn workspace_package<'w, R: callisto_model::CommandRunner, D: DependencyResolver>(
+    workspace: &'w Workspace<'_, R, D>,
+    id: &ReleasePackageId,
+) -> Option<&'w Package> {
+    // By release identity, not name: a Case D package's npm name can differ from its id.
+    workspace
+        .graph
+        .packages()
+        .find(|package| release_package_ids(&workspace.identity, package).is_ok_and(|ids| ids.contains(id)))
+}
+
 /// The fixed group a release package belongs to, per `[[fixed-group]]` config.
 fn fixed_group_of<R: callisto_model::CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     id: &ReleasePackageId,
 ) -> Option<callisto_model::GroupName> {
-    // By release identity, not name: a Case D package's npm name can differ from its id.
-    let package = workspace
-        .graph
-        .packages()
-        .find(|package| release_package_ids(&workspace.identity, package).is_ok_and(|ids| ids.contains(id)))?;
+    let package = workspace_package(workspace, id)?;
     workspace
         .config
         .groups
@@ -944,6 +969,13 @@ mod tests {
         }
     }
 
+    fn publishing_cargo_package(name: &str) -> Package {
+        Package {
+            publish_to: vec![callisto_model::PublishTarget::CratesIo],
+            ..cargo_package(name)
+        }
+    }
+
     fn cargo_manifest_source(name: &str, version: &str) -> String {
         format!("[package]\nname = \"{name}\"\nversion = \"{version}\"\n")
     }
@@ -1293,7 +1325,11 @@ mod tests {
         };
         let mut workspace = fixture_workspace(
             &runner,
-            vec![cargo_package("cli"), cargo_package("plugin"), cargo_package("other")],
+            vec![
+                publishing_cargo_package("cli"),
+                cargo_package("plugin"),
+                cargo_package("other"),
+            ],
         );
         let group = callisto_model::GroupName("workspace".to_string());
         for name in ["cli", "plugin"] {
@@ -1380,12 +1416,8 @@ mod tests {
         }
     }
 
-    /// AC-011: a `--package` selection outside the computed plan must
-    /// report `ReleaseSelectionInvalid{reason: NotInPlan}` naming the
-    /// offending package.
-    #[test]
-    fn derive_selected_release_decision_reports_selection_not_in_plan_distinctly() {
-        let runner = CountingBatchRunner {
+    fn empty_runner() -> CountingBatchRunner {
+        CountingBatchRunner {
             release_commit: "a".repeat(40),
             parent: "b".repeat(40),
             decision_json: String::new(),
@@ -1393,23 +1425,66 @@ mod tests {
             blobs: std::collections::BTreeMap::new(),
             run_calls: std::sync::Mutex::new(Vec::new()),
             batch_calls: std::sync::Mutex::new(0),
-        };
-        // Two workspace packages, but the plan only bumps pkg-b -- pkg-a is
-        // a real release package id with no entry in the resulting roster.
-        let workspace = fixture_workspace(&runner, vec![cargo_package("pkg-a"), cargo_package("pkg-b")]);
-        let plan = plan_bumping("pkg-b");
-        let not_selected = ReleasePackageId::new(Ecosystem::Cargo, "pkg-a").unwrap();
-
-        let err = derive_selected_release_decision(&workspace, &plan, std::slice::from_ref(&not_selected)).unwrap_err();
-        match err {
-            GraphError::ReleaseSelectionInvalid {
-                package: reported,
-                reason,
-            } => {
-                assert_eq!(reported, not_selected);
-                assert_eq!(reason, ReleaseSelectionInvalidReason::NotInPlan);
-            }
-            other => panic!("expected ReleaseSelectionInvalid{{NotInPlan}}, got {other:?}"),
         }
+    }
+
+    fn selection_error(workspace_packages: Vec<Package>, bumped: &str, selection: &str) -> GraphError {
+        let runner = empty_runner();
+        let workspace = fixture_workspace(&runner, workspace_packages);
+        let selection = ReleasePackageId::new(Ecosystem::Cargo, selection).unwrap();
+        derive_selected_release_decision(&workspace, &plan_bumping(bumped), std::slice::from_ref(&selection))
+            .unwrap_err()
+    }
+
+    /// AC-10: a workspace package with no pending release is `NotARelease`.
+    #[test]
+    fn ac10_selection_that_is_not_a_release_candidate_reports_not_a_release() {
+        let err = selection_error(
+            vec![publishing_cargo_package("pkg-a"), publishing_cargo_package("pkg-b")],
+            "pkg-b",
+            "pkg-a",
+        );
+        assert!(
+            matches!(
+                &err,
+                GraphError::ReleaseSelectionInvalid { package, reason: ReleaseSelectionInvalidReason::NotARelease }
+                    if package.name() == "pkg-a"
+            ),
+            "{err:?}"
+        );
+    }
+
+    /// AC-10: a release candidate with nothing to dispatch is `NoDispatchableTarget`.
+    #[test]
+    fn ac10_release_candidate_without_publish_target_reports_no_dispatchable_target() {
+        let err = selection_error(vec![cargo_package("pkg-a")], "pkg-a", "pkg-a");
+        assert!(
+            matches!(
+                &err,
+                GraphError::ReleaseSelectionInvalid { package, reason: ReleaseSelectionInvalidReason::NoDispatchableTarget }
+                    if package.name() == "pkg-a"
+            ),
+            "{err:?}"
+        );
+    }
+
+    /// AC-10: selection is by exact `ecosystem/name`; a same-named package in another
+    /// ecosystem, or a name absent from the workspace, never matches.
+    #[test]
+    fn ac10_selection_matches_exact_ecosystem_and_name_only() {
+        let runner = empty_runner();
+        let workspace = fixture_workspace(&runner, vec![publishing_cargo_package("pkg-a")]);
+        for selection in [
+            ReleasePackageId::new(Ecosystem::Npm, "pkg-a").unwrap(),
+            ReleasePackageId::new(Ecosystem::Cargo, "pkg").unwrap(),
+        ] {
+            let err = derive_selected_release_decision(&workspace, &plan_bumping("pkg-a"), &[selection]).unwrap_err();
+            assert!(matches!(err, GraphError::UnknownPackage { .. }), "{err:?}");
+        }
+        let exact = ReleasePackageId::new(Ecosystem::Cargo, "pkg-a").unwrap();
+        let decision =
+            derive_selected_release_decision(&workspace, &plan_bumping("pkg-a"), std::slice::from_ref(&exact)).unwrap();
+        assert_eq!(decision.entries.len(), 1);
+        assert_eq!(decision.entries[0].package, exact);
     }
 }

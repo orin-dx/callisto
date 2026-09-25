@@ -99,6 +99,70 @@ where
     Ok(sorted)
 }
 
+/// Edge kinds cascade/version-bump propagation cares about: a `Dev`-only
+/// dependency change correctly never forces a consumer's version to bump.
+pub const CASCADE_ORDERING_KINDS: &[DepKind] = &[DepKind::Runtime, DepKind::Build, DepKind::Optional];
+
+/// Edge kinds publish ordering cares about: cascade's kinds, plus `Dev`.
+/// `cargo publish` verifies by building the packaged tarball, which needs every
+/// dependency -- `[dev-dependencies]` included -- resolvable from the registry.
+pub const PUBLISH_ORDERING_KINDS: &[DepKind] = &[DepKind::Runtime, DepKind::Build, DepKind::Optional, DepKind::Dev];
+
+/// Which dependency edges order a publish: every [`PUBLISH_ORDERING_KINDS`] edge,
+/// except a `Dev` edge between two packages of the same cycle.
+///
+/// Mutual dev-only dependencies (cross-integration tests) are legitimate, so a
+/// `Dev` edge inside a cyclic component is dropped; a `Dev` edge anywhere else
+/// still orders. A cycle that survives with every `Dev` edge excluded is a real
+/// `Runtime`/`Build`/`Optional` cycle and fails construction with
+/// [`GraphError::Cycle`]. Shared by `plan_publish` and release derivation.
+pub struct PublishEdgeFilter {
+    dev_cycles: Vec<HashSet<PackageId>>,
+}
+
+impl PublishEdgeFilter {
+    pub fn new<F>(
+        subset: &HashSet<PackageId>,
+        all_packages: &[PackageId],
+        outgoing_edges: F,
+    ) -> Result<Self, GraphError>
+    where
+        F: Fn(&PackageId) -> Vec<(PackageId, DepKind)>,
+    {
+        toposort_impl(subset, all_packages, CASCADE_ORDERING_KINDS, &outgoing_edges)?;
+        Ok(PublishEdgeFilter {
+            dev_cycles: cyclic_sccs(subset, &outgoing_edges, PUBLISH_ORDERING_KINDS),
+        })
+    }
+
+    /// Whether the `from -> to` edge of `kind` is a publish-ordering constraint.
+    pub fn allows(&self, from: &PackageId, to: &PackageId, kind: DepKind) -> bool {
+        if !PUBLISH_ORDERING_KINDS.contains(&kind) {
+            return false;
+        }
+        kind != DepKind::Dev
+            || !self
+                .dev_cycles
+                .iter()
+                .any(|component| component.contains(from) && component.contains(to))
+    }
+}
+
+/// Publish order of `subset`, dependencies first, under [`PublishEdgeFilter`].
+pub fn publish_order<F>(
+    subset: &HashSet<PackageId>,
+    all_packages: &[PackageId],
+    outgoing_edges: F,
+) -> Result<Vec<PackageId>, GraphError>
+where
+    F: Fn(&PackageId) -> Vec<(PackageId, DepKind)>,
+{
+    let filter = PublishEdgeFilter::new(subset, all_packages, &outgoing_edges)?;
+    toposort_with_edge_filter(subset, all_packages, outgoing_edges, |from, to, kind| {
+        filter.allows(from, to, kind)
+    })
+}
+
 /// Returns every non-trivial strongly-connected component (size > 1, or a
 /// single self-looping node) of `subset` under the edges `ordering_kinds`
 /// selects — the full member set, not just what's left after a failed

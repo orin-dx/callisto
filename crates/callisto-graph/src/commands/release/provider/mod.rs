@@ -67,6 +67,32 @@ pub(crate) struct TagOperation {
 pub(crate) struct ForgeReleaseOperation {
     pub(crate) tag: TagName,
     pub(crate) prerelease: bool,
+    /// Derived from the changelog at execution; not part of the intent digest.
+    pub(crate) notes: ReleaseNotes,
+}
+
+/// The body a forge release is created with.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum ReleaseNotes {
+    /// The package's changelog section for the released version.
+    Section(String),
+    /// The forge generates notes, because no changelog section is usable.
+    Generated { reason: NotesFallback },
+}
+
+/// Why a forge release falls back to generated notes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub(crate) enum NotesFallback {
+    #[error("no changelog configured")]
+    NotConfigured,
+    #[error("changelog file missing")]
+    FileMissing,
+    #[error("no section for this version")]
+    SectionMissing,
+    #[error("changelog section is empty")]
+    SectionEmpty,
+    #[error("changelog unreadable")]
+    Unreadable,
 }
 
 #[derive(Debug)]

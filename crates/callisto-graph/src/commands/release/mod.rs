@@ -64,16 +64,19 @@ mod binding;
 mod capability;
 mod derive;
 mod github;
+mod notes;
 pub(crate) mod provider;
 
 use super::release_artifacts;
 
+pub(crate) use binding::prepared_registry_binding;
 pub use capability::{
     build_release_intent, build_release_intent_with_artifacts, validate_release_intent, ValidatedReleaseIntent,
 };
 #[cfg(test)]
 pub(crate) use derive::canonical_operation_order;
 pub use derive::ArtifactBuildPolicy;
+pub(crate) use notes::changelog_section;
 pub(crate) use provider::policy::timeouts;
 pub use provider::{ReleasePreflight, ReleaseProviderSet};
 

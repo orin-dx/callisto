@@ -28,11 +28,7 @@ fn setup_repo() -> tempfile::TempDir {
     let dir = tempdir().unwrap();
     let root = dir.path();
 
-    git(root, &["init", "-b", "main"]);
-    git(root, &["config", "user.name", "Callisto Tester"]);
-    git(root, &["config", "user.email", "tester@callisto.dev"]);
-    git(root, &["config", "commit.gpgsign", "false"]);
-    git(root, &["config", "tag.gpgsign", "false"]);
+    callisto_fixtures::git::init_repo(root);
 
     fs::write(
         root.join("Cargo.toml"),

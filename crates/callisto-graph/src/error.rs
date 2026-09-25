@@ -477,7 +477,7 @@ pub enum GraphError {
     #[error("release selection for package `{package}` is invalid: {reason}")]
     #[diagnostic(
         code(E169),
-        help("Adjust the release selection so each package appears at most once and matches an entry in the release plan.")
+        help("Select each package at most once, only packages with a pending release and a publish target, and every unreleased platform package a selected npm package depends on.")
     )]
     ReleaseSelectionInvalid {
         package: callisto_model::ReleasePackageId,
@@ -580,6 +580,16 @@ pub enum GraphError {
         )
     )]
     ReleaseProfileUnknown { profile: String },
+
+    #[error("package `{package}` configures publish-to = [\"{target}\"], which release cannot dispatch yet")]
+    #[diagnostic(
+        code(E199),
+        help("Remove the target from `publish-to` for this package, or publish it outside `callisto release`.")
+    )]
+    PublishTargetNotImplemented {
+        package: callisto_model::ReleasePackageId,
+        target: &'static str,
+    },
 }
 
 /// Why a workspace package that a `--package` filter named is nonetheless
@@ -678,10 +688,14 @@ pub enum UnsupportedReleaseFeature {
 pub enum ReleaseSelectionInvalidReason {
     #[error("the package is selected more than once")]
     Duplicate,
-    #[error("the package is not part of this release plan")]
-    NotInPlan,
+    #[error("its on-disk version already matches its last release; there is nothing pending to release")]
+    NotARelease,
+    #[error("it configures no publish target to dispatch")]
+    NoDispatchableTarget,
     #[error("the package has a duplicate registry target")]
     DuplicateRegistryTarget,
+    #[error("it is an unreleased platform package a selected npm package depends on; select it too")]
+    PlatformDependencyNotSelected,
 }
 
 /// An unmet precondition for a release operation, carried by

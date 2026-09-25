@@ -2,86 +2,24 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use callisto_model::{
-    CommandRunner, CratePublish, DepKind, Ecosystem, NpmMainPublish, PackageId, PublishPlan, PublishTarget,
-    PypiPublish, RegistryKey, ReleaseEntry, SCHEMA_VERSION,
+    CommandRunner, CratePublish, Ecosystem, NpmMainPublish, PackageId, PublishPlan, PublishTarget, PypiPublish,
+    RegistryKey, ReleaseEntry, SCHEMA_VERSION,
 };
 use callisto_vcs::GitDataSource;
 
 use crate::error::GraphError;
 use crate::resolver::DependencyResolver;
-use crate::toposort::toposort_impl;
 use crate::Workspace;
 
-/// Edge kinds cascade/version-bump propagation cares about: a `Dev`-only
-/// dependency change correctly never forces a consumer's version to bump.
-const CASCADE_ORDERING_KINDS: &[DepKind] = &[DepKind::Runtime, DepKind::Build, DepKind::Optional];
-
-/// Edge kinds publish ordering cares about: cascade's kinds, plus `Dev`.
-/// `cargo publish` (run without `--no-verify`, see `registry_argv.rs`)
-/// re-extracts the packaged tarball and does a real local build to verify
-/// it, which needs *every* dependency in the crate's `Cargo.toml` —
-/// `[dev-dependencies]` included — resolvable from the registry. A
-/// dev-dependency on a workspace sibling published in the same batch
-/// therefore still needs that sibling to publish first, even though the
-/// two crates have no cascade-relevant ordering constraint between them.
-const PUBLISH_ORDERING_KINDS: &[DepKind] = &[DepKind::Runtime, DepKind::Build, DepKind::Optional, DepKind::Dev];
-
-/// Computes the order packages must be published in.
-///
-/// This is a thin, purpose-named wrapper around [`toposort_impl`] (the
-/// generic algorithm, reused as-is) rather than a generic
-/// `DependencyResolverExt::toposort()` on a shared trait — it exists
-/// specifically for `plan_publish` below, its only caller, and its
-/// semantics are publish-specific, not "the one true topological sort."
-///
-/// Tries [`PUBLISH_ORDERING_KINDS`] first (including `Dev`, unlike cascade's
-/// own [`CASCADE_ORDERING_KINDS`]) so a dev-dependency on a same-batch
-/// sibling publishes in the right order. `Dev` edges are best-effort, not a
-/// hard requirement, precisely because mutual dev-only dependencies between
-/// two otherwise-unrelated packages are a legitimate pattern (e.g. two
-/// crates each dev-depending on the other for cross-integration tests) —
-/// unlike `Runtime`/`Build`/`Optional`, which must never cycle, a `Dev`
-/// cycle must not hard-fail the whole publish plan. If including `Dev`
-/// edges would produce a cycle, this excludes `Dev` edges only between the
-/// specific packages that form a Dev-induced cycle — a `Dev` edge anywhere
-/// else in `subset` (an unrelated pair with no cycle at all) still counts as
-/// an ordering constraint, so one legitimate Dev-only cycle can never
-/// silently un-order an unrelated dev-dependency elsewhere in the same
-/// batch. A cycle that survives with every `Dev` edge excluded is a genuine
-/// `Runtime`/`Build`/`Optional` cycle and still hard-fails the whole plan.
+/// Publish order of `subset` under the shared [`crate::toposort::PublishEdgeFilter`].
 fn publish_order<D: DependencyResolver + ?Sized>(
     resolver: &D,
     subset: &HashSet<PackageId>,
 ) -> Result<Vec<PackageId>, GraphError> {
     let all_pkg_ids: Vec<PackageId> = resolver.packages().map(|p| p.id.clone()).collect();
-    let edges_of = |id: &PackageId| -> Vec<(PackageId, DepKind)> {
+    crate::toposort::publish_order(subset, &all_pkg_ids, |id| {
         resolver.dependencies_of(id).map(|e| (e.to.clone(), e.kind)).collect()
-    };
-
-    match toposort_impl(subset, &all_pkg_ids, PUBLISH_ORDERING_KINDS, edges_of) {
-        Ok(order) => Ok(order),
-        Err(GraphError::Cycle { .. }) => {
-            // Confirm the cycle is Dev-induced: a cycle that survives with no
-            // Dev edges at all is a genuine Runtime/Build/Optional cycle,
-            // which must still hard-fail the whole plan.
-            toposort_impl(subset, &all_pkg_ids, CASCADE_ORDERING_KINDS, edges_of)?;
-
-            let cyclic_components = crate::toposort::cyclic_sccs(subset, edges_of, PUBLISH_ORDERING_KINDS);
-            crate::toposort::toposort_with_edge_filter(subset, &all_pkg_ids, edges_of, |from, to, kind| {
-                if !PUBLISH_ORDERING_KINDS.contains(&kind) {
-                    return false;
-                }
-                if kind == DepKind::Dev {
-                    let in_same_cyclic_component = cyclic_components
-                        .iter()
-                        .any(|scc| scc.contains(from) && scc.contains(to));
-                    return !in_same_cyclic_component;
-                }
-                true
-            })
-        }
-        Err(e) => Err(e),
-    }
+    })
 }
 
 #[derive(Clone, Debug, Default)]
@@ -92,46 +30,9 @@ pub struct PublishOptions {
     pub only: Vec<String>,
 }
 
-/// Validates a `publishConfig.registry` URL from a package's own
-/// `package.json` before it's used as an `npm publish --registry`/`npm
-/// view --registry` target (both run with `NPM_TOKEN` live in CI).
-///
-/// `publishConfig.registry` is attacker-controllable (a PR author sets
-/// their own `package.json`) and must never be trusted verbatim. Two
-/// checks, mirroring the leading-`-` flag-injection guard on package names
-/// (see `SubprocessRegistryClient::npm_publish`):
-///
-/// 1. Must use `https` -- a scheme downgrade is rejected even if the host
-///    would otherwise be approved.
-/// 2. Must exactly match a `url` on an `npm`-kind entry in
-///    `callisto.toml`'s `[registries]` table.
-///
-/// No configured npm registries means no override is ever approved --
-/// `callisto.toml`, not `package.json`, is the source of truth for where
-/// credentialed publish requests can go.
-fn validate_npm_registry_url(
-    url: &str,
-    package: &PackageId,
-    registries: &std::collections::BTreeMap<RegistryKey, crate::config::RegistryConfig>,
-) -> Result<(), GraphError> {
-    let is_approved = url.starts_with("https://")
-        && registries
-            .values()
-            .any(|cfg| cfg.kind == Ecosystem::Npm && cfg.url.as_deref() == Some(url));
-
-    if is_approved {
-        Ok(())
-    } else {
-        Err(GraphError::UntrustedNpmRegistry {
-            package: package.clone(),
-            url: url.to_string(),
-        })
-    }
-}
-
 /// Resolves a package's `changelog_section` for `plan_publish`: reads the file at
 /// `ws_root.join(changelog_rel_path)` and extracts the `## {ver}` section via
-/// `callisto_changelog::extract_section`. Every non-fatal outcome (file not found, no
+/// the shared `release::changelog_section`. Every non-fatal outcome (file not found, no
 /// matching heading, empty matched section, or an unreadable file) leaves the return value
 /// `None` and pushes exactly one Warning diagnostic into `diagnostics` rather than aborting
 /// the plan -- `ChangelogSectionNotFound` for the first three (AC-10b, AC-11, AC-12),
@@ -143,63 +44,48 @@ fn resolve_changelog_section(
     ver: &callisto_model::Version,
     diagnostics: &mut Vec<callisto_model::Diagnostic>,
 ) -> Option<String> {
-    let full_path = ws_root.join(changelog_rel_path);
-    let content = match std::fs::read_to_string(&full_path) {
-        Ok(c) => c,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            diagnostics.push(callisto_model::Diagnostic {
-                code: callisto_model::DiagnosticCode::ChangelogSectionNotFound,
-                severity: callisto_model::DiagnosticSeverity::Warning,
-                message: format!(
-                    "no changelog file found at `{}` for package `{}`",
-                    changelog_rel_path.display(),
-                    pkg_id.display_name()
-                ),
-                package: Some(pkg_id.clone()),
-                path: Some(changelog_rel_path.to_path_buf()),
-                escalated_by: None,
-                governed_by: None,
-            });
-            return None;
-        }
-        Err(e) => {
-            diagnostics.push(callisto_model::Diagnostic {
-                code: callisto_model::DiagnosticCode::ChangelogReadError,
-                severity: callisto_model::DiagnosticSeverity::Warning,
-                message: format!(
-                    "could not read changelog at `{}` for package `{}`: {e}",
-                    changelog_rel_path.display(),
-                    pkg_id.display_name()
-                ),
-                package: Some(pkg_id.clone()),
-                path: Some(changelog_rel_path.to_path_buf()),
-                escalated_by: None,
-                governed_by: None,
-            });
-            return None;
-        }
+    use crate::commands::release::provider::NotesFallback;
+    let error = match crate::commands::release::changelog_section(ws_root, changelog_rel_path, ver) {
+        Ok(section) => return Some(section),
+        Err(error) => error,
     };
-
-    match callisto_changelog::extract_section(&content, ver) {
-        Some(section) => Some(section.to_string()),
-        None => {
-            diagnostics.push(callisto_model::Diagnostic {
-                code: callisto_model::DiagnosticCode::ChangelogSectionNotFound,
-                severity: callisto_model::DiagnosticSeverity::Warning,
-                message: format!(
-                    "no `## {}` section found in `{}` for package `{}`",
-                    ver.render(),
-                    changelog_rel_path.display(),
-                    pkg_id.display_name()
-                ),
-                package: Some(pkg_id.clone()),
-                path: Some(changelog_rel_path.to_path_buf()),
-                escalated_by: None,
-                governed_by: None,
-            });
-            None
-        }
-    }
+    let (code, message) = match (error.reason, error.io) {
+        (NotesFallback::Unreadable, Some(e)) => (
+            callisto_model::DiagnosticCode::ChangelogReadError,
+            format!(
+                "could not read changelog at `{}` for package `{}`: {e}",
+                changelog_rel_path.display(),
+                pkg_id.display_name()
+            ),
+        ),
+        (NotesFallback::FileMissing, _) => (
+            callisto_model::DiagnosticCode::ChangelogSectionNotFound,
+            format!(
+                "no changelog file found at `{}` for package `{}`",
+                changelog_rel_path.display(),
+                pkg_id.display_name()
+            ),
+        ),
+        _ => (
+            callisto_model::DiagnosticCode::ChangelogSectionNotFound,
+            format!(
+                "no `## {}` section found in `{}` for package `{}`",
+                ver.render(),
+                changelog_rel_path.display(),
+                pkg_id.display_name()
+            ),
+        ),
+    };
+    diagnostics.push(callisto_model::Diagnostic {
+        code,
+        severity: callisto_model::DiagnosticSeverity::Warning,
+        message,
+        package: Some(pkg_id.clone()),
+        path: Some(changelog_rel_path.to_path_buf()),
+        escalated_by: None,
+        governed_by: None,
+    });
+    None
 }
 
 pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
@@ -338,7 +224,8 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
             // which silently dropped `PublishTarget::NuGet`/`GitHubRelease` on
             // the floor with no diagnostic. The three targets with a real
             // dispatch implementation get their own arm below; every other
-            // target (today: `NuGet`, `GitHubRelease`; tomorrow: any new
+            // target (today: `NuGet`, and `GitHubRelease`, which only the release
+            // path dispatches; tomorrow: any new
             // `PublishTarget` variant added without a dispatch arm here) falls
             // through to `PublishTarget::is_implemented()`, so "does this
             // target get a `PublishTargetNotImplemented` diagnostic" is
@@ -352,7 +239,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
             // True once at least one configured target has a real dispatch
             // implementation. Drives the release-tag/ReleaseEntry gate below —
             // a package configured only with not-yet-implemented targets
-            // (NuGet, GitHubRelease) must not get a ReleaseEntry claiming a
+            // (NuGet) or only GitHubRelease must not get a ReleaseEntry claiming a
             // release happened when nothing was actually publishable.
             let mut has_dispatchable_target = false;
 
@@ -369,8 +256,8 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                         // setting from the first Npm target, both read
                         // from `publishConfig` in package.json.
                         if npm_registry_url.is_none() {
-                            if let Some(url) = registry {
-                                validate_npm_registry_url(url, &pkg.id, &ws.config.registries)?;
+                            if registry.is_some() {
+                                crate::commands::release::prepared_registry_binding(ws, target, None, &pkg.id)?;
                             }
                             npm_registry_url = registry.clone();
                             npm_access = *access;
@@ -443,23 +330,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
                     None
                 };
 
-                // Determine npm access level. Honour the operator's explicit
-                // `publishConfig.access` from package.json first, whatever it
-                // is -- "restricted", or "public" (which a bare bool used to
-                // silently drop for unscoped packages, since it collapsed
-                // "absent" and "explicit public" to the same value). Only
-                // fall back to the `@scope/name`-implies-public heuristic
-                // when nothing was explicitly set. npm's `--access` CLI flag
-                // takes full precedence over publishConfig.access, so
-                // callisto must read and propagate the intent explicitly
-                // here.
-                let access = npm_access.or_else(|| {
-                    if pkg.id.name().starts_with('@') {
-                        Some(callisto_model::NpmAccess::Public)
-                    } else {
-                        None
-                    }
-                });
+                let access = crate::commands::registry_argv::npm_default_access(pkg.id.name(), npm_access);
 
                 if is_platform_pkg {
                     dispatched_ids.insert(pkg.id.clone());
@@ -664,7 +535,7 @@ pub fn plan_publish<R: CommandRunner, D: DependencyResolver>(
 
 /// A package that is itself an npm platform package (its own package.json has
 /// `os`+`cpu`). An owner's attached (Case E) platform manifests do not count.
-fn is_platform_package(pkg: &callisto_model::Package) -> bool {
+pub(crate) fn is_platform_package(pkg: &callisto_model::Package) -> bool {
     pkg.manifests.iter().any(|m| {
         matches!(m.role, callisto_model::ManifestRole::Platform { .. })
             && pkg.canonical_manifests().any(|c| c.path == m.path)

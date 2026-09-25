@@ -1943,15 +1943,12 @@ fn package_rule_takes_priority_over_package_set_rule() {
 
 // ---- Fix: release-tag/ReleaseEntry gate decoupled from actual publish dispatch ----
 
-/// `PublishTarget::GitHubRelease` has an `ecosystem()` of `None`, so it
-/// passes the walk.rs ecosystem-mismatch check regardless of the package's
-/// real ecosystem — but `plan_publish`'s dispatch loop has no real
-/// implementation for it (only `CratesIo`/`Npm`/`Pypi` are dispatched).
+/// `plan_publish`'s dispatch loop only dispatches `CratesIo`/`Npm`/`Pypi`.
 ///
 /// Before this fix, the release-tag/`ReleaseEntry` gate only checked that
 /// `publish_to` was non-empty and not all `PublishTarget::None`, completely
 /// decoupled from whether anything was actually dispatchable. A package
-/// configured with only `publish-to = ["github-release"]` would get a
+/// configured with only an undispatchable target (today `nuget`) would get a
 /// `ReleaseEntry` (claiming a release happened) while zero registries were
 /// ever contacted and no diagnostic was emitted.
 ///
@@ -1989,7 +1986,7 @@ fn package_with_only_undispatchable_target_gets_no_release_entry_and_a_diagnosti
     let graph = GraphBuilder::new()
         .package(pkg_id.clone(), |p: PackageBuilder| {
             p.manifests(vec![cargo_decl])
-                .publish_to(vec![PublishTarget::GitHubRelease])
+                .publish_to(vec![PublishTarget::NuGet { source: None }])
         })
         .build()
         .unwrap();
@@ -2006,13 +2003,13 @@ fn package_with_only_undispatchable_target_gets_no_release_entry_and_a_diagnosti
         identity: callisto_graph::IdentityIndex::default(),
     };
 
-    let plan = plan_publish(&ws, &PublishOptions::default())
-        .expect("plan_publish must succeed for a GitHubRelease-only package");
+    let plan =
+        plan_publish(&ws, &PublishOptions::default()).expect("plan_publish must succeed for a NuGet-only package");
 
     assert!(
         plan.releases.iter().all(|r| r.package != pkg_id),
         "no ReleaseEntry must be created for a package whose only configured \
-         target (GitHubRelease) has no real dispatch implementation; got: {:?}",
+         target (NuGet) has no real dispatch implementation; got: {:?}",
         plan.releases
     );
 

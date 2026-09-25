@@ -207,7 +207,7 @@ pub fn npm_publish_argv(
     access: Option<NpmAccess>,
     registry: Option<&str>,
 ) -> Argv {
-    let extra = npm_publish_flags(tag, access, registry);
+    let extra = npm_publish_flags(package_name, tag, access, registry);
 
     let (program, mut args, cwd) = match package_manager {
         NpmPackageManager::Pnpm => (
@@ -251,14 +251,25 @@ pub fn npm_publish_argv(
     }
 }
 
+/// The access an npm package publishes with: the explicit `publishConfig.access`,
+/// else `public` for a scoped `@scope/name` (npm defaults scoped packages to restricted).
+pub fn npm_default_access(name: &str, explicit: Option<NpmAccess>) -> Option<NpmAccess> {
+    explicit.or_else(|| name.starts_with('@').then_some(NpmAccess::Public))
+}
+
 /// `--tag`/`--access`/`--registry`, shared by every npm-ecosystem publish argv.
-fn npm_publish_flags(tag: Option<&str>, access: Option<NpmAccess>, registry: Option<&str>) -> Vec<String> {
+fn npm_publish_flags(
+    package_name: &str,
+    tag: Option<&str>,
+    access: Option<NpmAccess>,
+    registry: Option<&str>,
+) -> Vec<String> {
     let mut extra: Vec<String> = Vec::new();
     if let Some(t) = tag {
         extra.push("--tag".to_string());
         extra.push(t.to_string());
     }
-    if let Some(access) = access {
+    if let Some(access) = npm_default_access(package_name, access) {
         extra.push("--access".to_string());
         extra.push(
             match access {
@@ -283,6 +294,7 @@ fn npm_publish_flags(tag: Option<&str>, access: Option<NpmAccess>, registry: Opt
 pub fn npm_publish_directory_argv(
     workspace_root: &Path,
     package_dir: &Path,
+    package_name: &str,
     tag: Option<&str>,
     access: Option<NpmAccess>,
     registry: Option<&str>,
@@ -291,7 +303,7 @@ pub fn npm_publish_directory_argv(
         "publish".to_string(),
         workspace_root.join(package_dir).to_string_lossy().into_owned(),
     ];
-    args.extend(npm_publish_flags(tag, access, registry));
+    args.extend(npm_publish_flags(package_name, tag, access, registry));
     Argv {
         program: "npm".to_string(),
         args,
@@ -717,6 +729,36 @@ mod tests {
                 "https://registry.example.com",
             ]
         );
+    }
+
+    #[test]
+    fn ac6_scoped_npm_package_without_explicit_access_publishes_public() {
+        assert_eq!(npm_default_access("@s/cli", None), Some(NpmAccess::Public));
+        assert_eq!(npm_default_access("cli", None), None);
+        assert_eq!(
+            npm_default_access("@s/cli", Some(NpmAccess::Restricted)),
+            Some(NpmAccess::Restricted)
+        );
+        let by_name = npm_publish_argv(
+            Path::new("/workspace"),
+            Path::new("packages/a"),
+            "@s/cli",
+            NpmPackageManager::Npm,
+            None,
+            None,
+            None,
+        );
+        let by_directory = npm_publish_directory_argv(
+            Path::new("/workspace"),
+            Path::new("npm/x"),
+            "@s/cli-x",
+            None,
+            None,
+            None,
+        );
+        for args in [&by_name.args, &by_directory.args] {
+            assert!(args.windows(2).any(|pair| pair == ["--access", "public"]), "{args:?}");
+        }
     }
 
     // ----------------------------------------------------------------- pypi

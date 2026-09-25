@@ -17,10 +17,14 @@ use crate::error::{ReleasePreconditionRequirement, ReleaseSelectionInvalidReason
 use crate::{DependencyResolver, GraphError, Workspace};
 
 use super::binding::{prepared_git_remote, prepared_registry_binding, PreparedGitRemote};
+use super::notes::release_notes;
 use super::provider::{
     ArtifactUploadOperation, ForgePublishOperation, ForgeReleaseOperation, PreparedOperation, RegistryPublishOperation,
     TagOperation,
 };
+use crate::commands::publish::is_platform_package;
+use crate::commands::registry_argv::npm_default_access;
+use crate::toposort::PublishEdgeFilter;
 
 /// Coordinator-owned identity used to bind a product artifact to the exact
 /// workflow revision that built it. This is distinct from a historic release
@@ -154,6 +158,19 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
             return Err(GraphError::ReleasePackageNotSelected { package: id.clone() });
         }
     }
+    require_platform_dependencies_selected(workspace, &selected, &package_ids)?;
+    let all_packages: Vec<_> = workspace.graph.packages().map(|package| package.id.clone()).collect();
+    let publish_edges = PublishEdgeFilter::new(
+        &package_ids.keys().cloned().collect(),
+        &all_packages,
+        |id: &callisto_model::PackageId| {
+            workspace
+                .graph
+                .dependencies_of(id)
+                .map(|edge| (edge.to.clone(), edge.kind))
+                .collect()
+        },
+    )?;
 
     let requires_git_remote = selected.values().any(|(package, _)| {
         package
@@ -209,9 +226,15 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
 
         let mut publishes = Vec::new();
         for target in &package.publish_to {
+            if !target.is_implemented() {
+                return Err(GraphError::PublishTargetNotImplemented {
+                    package: id.clone(),
+                    target: target.config_str(),
+                });
+            }
             if target.ecosystem() == Some(id.ecosystem()) {
                 super::provider::registry::require_observable_registry(id.ecosystem())?;
-                let binding = prepared_registry_binding(workspace, target, profile_config)?;
+                let binding = prepared_registry_binding(workspace, target, profile_config, &package.id)?;
                 let binding_id = RegistryBindingId::new(binding.key.as_str(), binding.identity.clone())?;
                 let operation =
                     ReleaseOperation::registry_publish(id.clone(), version.clone(), binding_id.clone(), Vec::new())?;
@@ -226,7 +249,7 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
                         reason: ReleaseSelectionInvalidReason::DuplicateRegistryTarget,
                     });
                 }
-                let npm_access = match target {
+                let explicit_access = match target {
                     PublishTarget::Npm { access, .. } => *access,
                     _ => None,
                 };
@@ -256,8 +279,8 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
                                 package_dir: directory.to_path_buf(),
                                 package_name: name.to_string(),
                                 version: version.clone(),
-                                registry: prepared_registry_binding(workspace, target, profile_config)?,
-                                npm_access,
+                                registry: prepared_registry_binding(workspace, target, profile_config, &package.id)?,
+                                npm_access: npm_default_access(name, explicit_access),
                                 npm_tag: npm_tag.clone(),
                                 by_directory: true,
                             }),
@@ -274,7 +297,9 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
                         package_name: id.name().to_string(),
                         version: version.clone(),
                         registry: binding,
-                        npm_access,
+                        npm_access: matches!(target, PublishTarget::Npm { .. })
+                            .then(|| npm_default_access(id.name(), explicit_access))
+                            .flatten(),
                         npm_tag,
                         by_directory: false,
                     }),
@@ -288,15 +313,11 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
     }
 
     // Replace each publish leaf with prerequisites from selected dependency
-    // packages. This preserves the existing publish semantics: runtime,
-    // build, optional, and dev dependencies must exist before publish.
+    // packages, ordered by the same edge filter `plan_publish` uses.
     for (id, (package, _)) in &selected {
         let mut prerequisites = BTreeSet::new();
         for edge in workspace.graph.dependencies_of(&package.id) {
-            if !matches!(
-                edge.kind,
-                DepKind::Runtime | DepKind::Build | DepKind::Optional | DepKind::Dev
-            ) {
+            if !publish_edges.allows(&package.id, &edge.to, edge.kind) {
                 continue;
             }
             for dependency_release_id in package_ids.get(&edge.to).into_iter().flatten() {
@@ -379,6 +400,7 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
                 PreparedOperation::ForgeRelease(ForgeReleaseOperation {
                     tag,
                     prerelease: version.is_prerelease(),
+                    notes: release_notes(&workspace.root, package.changelog.as_deref(), version),
                 }),
             );
             forge_by_package.insert(id.clone(), operation.id().clone());
@@ -491,6 +513,50 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
     ))
 }
 
+/// A selected npm package's unreleased standalone platform dependency must be
+/// selected with it, or the owner would publish pointing at a missing version.
+fn require_platform_dependencies_selected<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    selected: &BTreeMap<ReleasePackageId, (&callisto_model::Package, Version)>,
+    package_ids: &BTreeMap<callisto_model::PackageId, Vec<ReleasePackageId>>,
+) -> Result<(), GraphError> {
+    let mut base_versions = None;
+    for (id, (package, _)) in selected {
+        if id.ecosystem() != callisto_model::Ecosystem::Npm {
+            continue;
+        }
+        for edge in workspace.graph.dependencies_of(&package.id) {
+            if !matches!(edge.kind, DepKind::Runtime | DepKind::Optional) || package_ids.contains_key(&edge.to) {
+                continue;
+            }
+            let Some(platform) = workspace
+                .graph
+                .packages()
+                .find(|candidate| candidate.id == edge.to && is_platform_package(candidate))
+            else {
+                continue;
+            };
+            if base_versions.is_none() {
+                base_versions = Some(workspace.base_versions()?);
+            }
+            let current = base_versions.as_ref().and_then(|versions| versions.get(&platform.id));
+            let last_tag = workspace.tags()?.last_tag(&platform.id);
+            let released = current.is_some_and(|current| last_tag.is_some_and(|tag| &tag.version == current));
+            if !released {
+                let name = workspace
+                    .identity
+                    .native_name(&platform.id, callisto_model::Ecosystem::Npm)
+                    .unwrap_or(platform.id.name());
+                return Err(GraphError::ReleaseSelectionInvalid {
+                    package: ReleasePackageId::new(callisto_model::Ecosystem::Npm, name)?,
+                    reason: ReleaseSelectionInvalidReason::PlatformDependencyNotSelected,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
 /// A configured product package must exist and publish to github-release; otherwise
 /// derivation would silently yield zero artifact slots.
 fn require_product_package_publishes_to_forge<R: CommandRunner, D: DependencyResolver>(
@@ -552,10 +618,14 @@ fn package_fingerprint<R: CommandRunner, D: DependencyResolver>(
             .as_ref()
             .map_or_else(|| "default".to_string(), |tag| tag.as_str()),
     );
+    let npm_name = workspace
+        .identity
+        .native_name(&package.id, callisto_model::Ecosystem::Npm)
+        .unwrap_or(package.id.name());
     for target in &package.publish_to {
         transcript.push_str(
             "package.target",
-            target_fingerprint(workspace, target, profile)?.as_str(),
+            target_fingerprint(workspace, &package.id, npm_name, target, profile)?.as_str(),
         );
     }
     if let Some(remote) = git_remote {
@@ -637,6 +707,8 @@ fn digest_bytes(tag: &str, bytes: &[u8]) -> SemanticInputDigest {
 
 fn target_fingerprint<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
+    package: &callisto_model::PackageId,
+    npm_name: &str,
     target: &PublishTarget,
     profile: Option<&ReleaseProfileConfig>,
 ) -> Result<SemanticInputDigest, GraphError> {
@@ -650,17 +722,17 @@ fn target_fingerprint<R: CommandRunner, D: DependencyResolver>(
         PublishTarget::CratesIo => {
             push_registry_binding(
                 &mut transcript,
-                prepared_registry_binding(workspace, target, profile)?.identity,
+                prepared_registry_binding(workspace, target, profile, package)?.identity,
             )?;
         }
         PublishTarget::Npm { access, .. } => {
             push_registry_binding(
                 &mut transcript,
-                prepared_registry_binding(workspace, target, profile)?.identity,
+                prepared_registry_binding(workspace, target, profile, package)?.identity,
             )?;
             transcript.push_str(
                 "target.access",
-                match access {
+                match npm_default_access(npm_name, *access) {
                     Some(callisto_model::NpmAccess::Public) => "public",
                     Some(callisto_model::NpmAccess::Restricted) => "restricted",
                     None => "default",
@@ -670,7 +742,7 @@ fn target_fingerprint<R: CommandRunner, D: DependencyResolver>(
         PublishTarget::Pypi { .. } | PublishTarget::NuGet { .. } => {
             push_registry_binding(
                 &mut transcript,
-                prepared_registry_binding(workspace, target, profile)?.identity,
+                prepared_registry_binding(workspace, target, profile, package)?.identity,
             )?;
         }
         #[allow(unreachable_patterns)]
@@ -728,5 +800,431 @@ mod tests {
 
         assert_eq!(before_snapshot, after_snapshot);
         assert_eq!(before_operations, after_operations);
+    }
+
+    use callisto_model::{Ecosystem, NpmAccess, ReleaseDecisionEntry, ReleaseInclusionReason, VersionGrammar};
+
+    use super::super::provider::{NotesFallback, ReleaseNotes};
+    use super::super::tests::RealGitRunner;
+
+    fn git(root: &std::path::Path, args: &[&str]) {
+        assert!(std::process::Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .status()
+            .unwrap()
+            .success());
+    }
+
+    /// A committed, detached checkout of `files` with a GitHub `origin`.
+    fn repo(files: &[(&str, &str)]) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        for (rel, body) in files {
+            let path = dir.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, body).unwrap();
+        }
+        for args in [
+            ["init", "-q"].as_slice(),
+            ["config", "user.email", "test@example.com"].as_slice(),
+            ["config", "user.name", "Test"].as_slice(),
+            ["config", "commit.gpgsign", "false"].as_slice(),
+            ["config", "tag.gpgsign", "false"].as_slice(),
+            ["remote", "add", "origin", "https://github.com/example/parity.git"].as_slice(),
+            ["add", "."].as_slice(),
+            ["commit", "-q", "-m", "fixture"].as_slice(),
+            ["checkout", "--detach", "-q", "HEAD"].as_slice(),
+        ] {
+            git(dir.path(), args);
+        }
+        dir
+    }
+
+    fn release(entries: &[(Ecosystem, &str, &str)]) -> ReleaseDecisionV1 {
+        ReleaseDecisionV1::new(
+            entries
+                .iter()
+                .map(|(ecosystem, name, version)| ReleaseDecisionEntry {
+                    package: ReleasePackageId::new(*ecosystem, name).unwrap(),
+                    target_version: Version::parse(version, VersionGrammar::SemVer).unwrap(),
+                    reasons: vec![ReleaseInclusionReason::ExplicitSelection],
+                })
+                .collect(),
+        )
+        .unwrap()
+    }
+
+    fn derive(dir: &tempfile::TempDir, decision: &ReleaseDecisionV1) -> Result<DerivedReleaseInputs, GraphError> {
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let root = super::super::capability::canonical_root(dir.path()).unwrap();
+        let workspace = Workspace::load(root, &locator, &RealGitRunner).unwrap();
+        let source = super::super::capability::observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
+        derive_release_inputs(&workspace, decision, &ReleaseProfileId::production(), source, None)
+    }
+
+    fn registry_publish<'a>(operations: &'a [ReleaseOperation], name: &str) -> &'a ReleaseOperation {
+        operations
+            .iter()
+            .find(|operation| {
+                matches!(
+                    operation.id().role,
+                    callisto_model::ReleaseOperationRole::RegistryPublish { .. }
+                ) && operation.id().package.name() == name
+            })
+            .unwrap_or_else(|| panic!("no registry publish for {name}"))
+    }
+
+    fn cargo_workspace(crates: &[(&str, &str)]) -> Vec<(String, String)> {
+        let members: Vec<String> = crates.iter().map(|(name, _)| format!("\"{name}\"")).collect();
+        let mut files = vec![
+            (
+                "Cargo.toml".to_owned(),
+                format!("[workspace]\nmembers = [{}]\n", members.join(", ")),
+            ),
+            ("callisto.toml".to_owned(), String::new()),
+        ];
+        for (name, dependencies) in crates {
+            files.push((
+                format!("{name}/Cargo.toml"),
+                format!("[package]\nname = \"{name}\"\nversion = \"1.0.0\"\nedition = \"2021\"\n{dependencies}"),
+            ));
+            files[1].1.push_str(&format!(
+                "[[package]]\nmatch = \"{name}\"\npublish-to = [\"crates-io\"]\n"
+            ));
+        }
+        files
+    }
+
+    fn repo_of(files: &[(String, String)]) -> tempfile::TempDir {
+        let files: Vec<(&str, &str)> = files.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+        repo(&files)
+    }
+
+    fn cargo_release(names: &[&str]) -> ReleaseDecisionV1 {
+        release(
+            &names
+                .iter()
+                .map(|name| (Ecosystem::Cargo, *name, "1.0.0"))
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    /// AC-2: a dev-only cycle orders instead of failing; an unrelated dev edge still orders.
+    #[test]
+    fn ac2_dev_only_cycle_is_ordered_not_a_cycle_error() {
+        let dir = repo_of(&cargo_workspace(&[
+            ("a", "[dev-dependencies]\nb = { path = \"../b\" }\n"),
+            ("b", "[dev-dependencies]\na = { path = \"../a\" }\n"),
+            ("c", "[dev-dependencies]\na = { path = \"../a\" }\n"),
+        ]));
+        let (_, operations, _, _, _) = derive(&dir, &cargo_release(&["a", "b", "c"])).unwrap();
+        let a = registry_publish(&operations, "a").id().clone();
+        let b = registry_publish(&operations, "b").id().clone();
+        assert!(!registry_publish(&operations, "a").prerequisites().contains(&b));
+        assert!(!registry_publish(&operations, "b").prerequisites().contains(&a));
+        assert!(registry_publish(&operations, "c").prerequisites().contains(&a));
+    }
+
+    /// AC-3: a runtime cycle still fails, even with dev edges alongside it.
+    #[test]
+    fn ac3_runtime_cycle_still_fails_with_a_cycle_error() {
+        let dir = repo_of(&cargo_workspace(&[
+            (
+                "a",
+                "[dependencies]\nb = { path = \"../b\" }\n[dev-dependencies]\nc = { path = \"../c\" }\n",
+            ),
+            ("b", "[dependencies]\na = { path = \"../a\" }\n"),
+            ("c", "[dev-dependencies]\na = { path = \"../a\" }\n"),
+        ]));
+        let error = derive(&dir, &cargo_release(&["a", "b", "c"])).unwrap_err();
+        assert!(matches!(error, GraphError::Cycle { .. }), "{error:?}");
+    }
+
+    /// AC-3: in a runtime+dev cycle only the dev edge is excluded; the runtime edge orders.
+    #[test]
+    fn ac3_mixed_cycle_excludes_only_the_dev_edge() {
+        let dir = repo_of(&cargo_workspace(&[
+            ("a", "[dependencies]\nb = { path = \"../b\" }\n"),
+            ("b", "[dev-dependencies]\na = { path = \"../a\" }\n"),
+        ]));
+        let (_, operations, _, _, _) = derive(&dir, &cargo_release(&["a", "b"])).unwrap();
+        let a = registry_publish(&operations, "a").id().clone();
+        let b = registry_publish(&operations, "b").id().clone();
+        assert!(registry_publish(&operations, "a").prerequisites().contains(&b));
+        assert!(!registry_publish(&operations, "b").prerequisites().contains(&a));
+    }
+
+    /// AC-12: exactly one package input per decision entry; unselected packages never appear.
+    #[test]
+    fn ac12_derivation_neither_adds_nor_drops_selected_packages() {
+        let dir = repo_of(&cargo_workspace(&[
+            ("a", "[dependencies]\nb = { path = \"../b\" }\n"),
+            ("b", ""),
+            ("c", ""),
+        ]));
+        for names in [vec!["a"], vec!["a", "c"], vec!["a", "b", "c"]] {
+            let decision = cargo_release(&names);
+            let (snapshot, operations, _, _, _) = derive(&dir, &decision).unwrap();
+            let derived: Vec<_> = snapshot.packages.iter().map(|input| input.package.clone()).collect();
+            let decided: Vec<_> = decision.entries.iter().map(|entry| entry.package.clone()).collect();
+            assert_eq!(derived, decided);
+            assert!(operations
+                .iter()
+                .all(|operation| decided.contains(&operation.id().package)));
+        }
+    }
+
+    fn npm_platform_repo(tag_platform: bool) -> tempfile::TempDir {
+        let dir = repo(&[
+            ("pnpm-workspace.yaml", "packages:\n  - \"packages/*\"\n"),
+            ("pnpm-lock.yaml", "lockfileVersion: '9.0'\n"),
+            (
+                "packages/main/package.json",
+                r#"{"name":"main","version":"1.0.0","dependencies":{"plat":"1.0.0"}}"#,
+            ),
+            (
+                "packages/plat/package.json",
+                r#"{"name":"plat","version":"1.0.0","os":["darwin"],"cpu":["arm64"]}"#,
+            ),
+            ("callisto.toml", ""),
+        ]);
+        if tag_platform {
+            git(dir.path(), &["tag", "plat@1.0.0"]);
+        }
+        dir
+    }
+
+    /// AC-1: an unreleased standalone platform dependency must be selected with its npm owner.
+    #[test]
+    fn ac1_unselected_unreleased_platform_dependency_is_rejected() {
+        let dir = npm_platform_repo(false);
+        let error = derive(&dir, &release(&[(Ecosystem::Npm, "main", "1.0.0")])).unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                GraphError::ReleaseSelectionInvalid {
+                    package,
+                    reason: ReleaseSelectionInvalidReason::PlatformDependencyNotSelected,
+                } if package.name() == "plat"
+            ),
+            "{error:?}"
+        );
+        derive(
+            &dir,
+            &release(&[(Ecosystem::Npm, "main", "1.0.0"), (Ecosystem::Npm, "plat", "1.0.0")]),
+        )
+        .unwrap();
+    }
+
+    /// AC-1b: an already-released platform dependency need not be selected.
+    #[test]
+    fn ac1b_released_platform_dependency_need_not_be_selected() {
+        let dir = npm_platform_repo(true);
+        let (snapshot, _, _, _, _) = derive(&dir, &release(&[(Ecosystem::Npm, "main", "1.0.0")])).unwrap();
+        assert_eq!(snapshot.packages.len(), 1);
+    }
+
+    fn npm_registry_repo(registry: &str) -> tempfile::TempDir {
+        repo(&[
+            (
+                "package.json",
+                &format!(r#"{{"name":"lib","version":"1.0.0","publishConfig":{{"registry":"{registry}"}}}}"#),
+            ),
+            (
+                "callisto.toml",
+                "[registries.corp]\nkind = \"npm\"\nurl = \"https://npm.corp.example/\"\n",
+            ),
+        ])
+    }
+
+    /// AC-4: a `publishConfig.registry` not configured in `[registries]` is untrusted.
+    #[test]
+    fn ac4_unapproved_npm_registry_override_is_rejected() {
+        let dir = npm_registry_repo("https://npm.evil.example/");
+        let error = derive(&dir, &release(&[(Ecosystem::Npm, "lib", "1.0.0")])).unwrap_err();
+        assert!(matches!(error, GraphError::UntrustedNpmRegistry { .. }), "{error:?}");
+        let approved = npm_registry_repo("https://npm.corp.example/");
+        derive(&approved, &release(&[(Ecosystem::Npm, "lib", "1.0.0")])).unwrap();
+    }
+
+    /// AC-5: a cleartext override fails the scheme check before host matching.
+    #[test]
+    fn ac5_non_https_npm_registry_override_is_unsafe_even_on_an_approved_host() {
+        let dir = npm_registry_repo("http://npm.corp.example/");
+        let error = derive(&dir, &release(&[(Ecosystem::Npm, "lib", "1.0.0")])).unwrap_err();
+        assert!(matches!(error, GraphError::UnsafeRegistryBinding { .. }), "{error:?}");
+    }
+
+    /// AC-6: a scoped npm package without explicit access publishes public, for the
+    /// owner and its platform prerequisites, and the defaulted value is fingerprinted.
+    #[test]
+    fn ac6_scoped_npm_package_defaults_to_public_access() {
+        let dir = repo(&[
+            ("package.json", r#"{"name":"@s/lib","version":"1.0.0"}"#),
+            ("callisto.toml", ""),
+        ]);
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let root = super::super::capability::canonical_root(dir.path()).unwrap();
+        let workspace = Workspace::load(root, &locator, &RealGitRunner).unwrap();
+        let source = super::super::capability::observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
+        let (_, _, prepared, _, _) = derive_release_inputs(
+            &workspace,
+            &release(&[(Ecosystem::Npm, "@s/lib", "1.0.0")]),
+            &ReleaseProfileId::production(),
+            source,
+            None,
+        )
+        .unwrap();
+        let access: Vec<_> = prepared
+            .values()
+            .filter_map(|operation| match operation {
+                PreparedOperation::RegistryPublish(publish) => Some(publish.npm_access),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(access, vec![Some(NpmAccess::Public)]);
+
+        let package = callisto_model::PackageId::parse("lib").unwrap();
+        let fingerprint = |name: &str, access| {
+            target_fingerprint(
+                &workspace,
+                &package,
+                name,
+                &PublishTarget::Npm { registry: None, access },
+                None,
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            fingerprint("@s/lib", None),
+            fingerprint("@s/lib", Some(NpmAccess::Public))
+        );
+        assert_ne!(fingerprint("lib", None), fingerprint("lib", Some(NpmAccess::Public)));
+    }
+
+    /// The loaded graph with every package's `publish_to` replaced; config
+    /// load itself rejects a target no workspace manifest can carry.
+    struct Retargeted {
+        packages: Vec<callisto_model::Package>,
+        edges: Vec<callisto_model::DepEdge>,
+    }
+
+    impl DependencyResolver for Retargeted {
+        fn packages(&self) -> impl Iterator<Item = &callisto_model::Package> {
+            self.packages.iter()
+        }
+
+        fn dependencies_of(&self, id: &callisto_model::PackageId) -> impl Iterator<Item = &callisto_model::DepEdge> {
+            self.edges.iter().filter(move |edge| &edge.from == id)
+        }
+
+        fn dependents_of(&self, id: &callisto_model::PackageId) -> impl Iterator<Item = &callisto_model::DepEdge> {
+            self.edges.iter().filter(move |edge| &edge.to == id)
+        }
+    }
+
+    /// AC-11: an undispatchable target fails derivation instead of being skipped.
+    #[test]
+    fn ac11_unimplemented_publish_target_fails_derivation() {
+        let dir = repo(&[
+            (
+                "Cargo.toml",
+                "[package]\nname = \"core\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+            ),
+            (
+                "callisto.toml",
+                "[[package]]\nmatch = \"core\"\npublish-to = [\"crates-io\"]\n",
+            ),
+        ]);
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let root = super::super::capability::canonical_root(dir.path()).unwrap();
+        let loaded = Workspace::load(root.clone(), &locator, &RealGitRunner).unwrap();
+        let packages = loaded
+            .graph
+            .packages()
+            .cloned()
+            .map(|mut package| {
+                package.publish_to.push(PublishTarget::NuGet { source: None });
+                package
+            })
+            .collect();
+        let workspace = Workspace {
+            root,
+            config: crate::config::load(dir.path()).unwrap(),
+            graph: Retargeted {
+                packages,
+                edges: Vec::new(),
+            },
+            tags: std::cell::OnceCell::new(),
+            git: std::cell::OnceCell::new(),
+            runner: &RealGitRunner,
+            manifest_cache: Default::default(),
+            identity: crate::IdentityIndex::default(),
+        };
+        let source = super::super::capability::observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
+        let error = derive_release_inputs(
+            &workspace,
+            &cargo_release(&["core"]),
+            &ReleaseProfileId::production(),
+            source,
+            None,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(
+                &error,
+                GraphError::PublishTargetNotImplemented { package, target: "nuget" } if package.name() == "core"
+            ),
+            "{error:?}"
+        );
+    }
+
+    fn forge_notes(prepared: &BTreeMap<ReleaseOperationId, PreparedOperation>) -> ReleaseNotes {
+        prepared
+            .values()
+            .find_map(|operation| match operation {
+                PreparedOperation::ForgeRelease(forge) => Some(forge.notes.clone()),
+                _ => None,
+            })
+            .expect("a forge release operation")
+    }
+
+    /// AC-7: the forge release carries the changelog section, and the notes stay
+    /// out of the intent: changing them changes neither snapshot nor operations.
+    #[test]
+    fn ac7_forge_release_notes_come_from_the_changelog_and_do_not_affect_the_intent() {
+        let dir = repo(&[
+            (
+                "Cargo.toml",
+                "[package]\nname = \"core\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+            ),
+            ("CHANGELOG.md", "# core\n\n## 1.0.0\n\n- fixed a bug\n"),
+            (
+                "callisto.toml",
+                "[[package]]\nmatch = \"core\"\npublish-to = [\"github-release\"]\nchangelog = \"CHANGELOG.md\"\n",
+            ),
+        ]);
+        let decision = cargo_release(&["core"]);
+        let (snapshot, operations, prepared, _, _) = derive(&dir, &decision).unwrap();
+        assert_eq!(
+            forge_notes(&prepared),
+            ReleaseNotes::Section("- fixed a bug".to_owned())
+        );
+
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let root = super::super::capability::canonical_root(dir.path()).unwrap();
+        let workspace = Workspace::load(root, &locator, &RealGitRunner).unwrap();
+        let source = super::super::capability::observe_source(&workspace, ExecutionTrustProfileV1::GitCommit).unwrap();
+        std::fs::write(dir.path().join("CHANGELOG.md"), "# core\n\n## 1.0.0\n\n").unwrap();
+        let (after_snapshot, after_operations, after_prepared, _, _) =
+            derive_release_inputs(&workspace, &decision, &ReleaseProfileId::production(), source, None).unwrap();
+        assert_eq!(
+            forge_notes(&after_prepared),
+            ReleaseNotes::Generated {
+                reason: NotesFallback::SectionEmpty
+            }
+        );
+        assert_eq!(snapshot, after_snapshot);
+        assert_eq!(operations, after_operations);
     }
 }

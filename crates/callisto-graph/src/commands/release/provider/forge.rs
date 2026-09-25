@@ -3,7 +3,7 @@
 
 use callisto_model::{
     ExactEvidence, ProviderConflictReason, ProviderEvidenceV1, ProviderIndeterminateCause, ProviderObservationV1,
-    TagName,
+    ReleasePackageId, TagName,
 };
 
 use crate::error::{CommandFailure, RemoteConflict};
@@ -12,8 +12,8 @@ use crate::GraphError;
 use super::super::github::{github_release_for_tag, GitHubReleaseLookup};
 use super::policy::{programs, timeouts};
 use super::{
-    confirmed_evidence, wrong_role, EffectAuthorization, ForgePublishOperation, ForgeReleaseOperation,
-    PreparedOperation, ProviderCapabilities, ProviderContext, ProviderRequest, ReleaseProvider,
+    confirmed_evidence, wrong_role, EffectAuthorization, ForgePublishOperation, ForgeReleaseOperation, NotesFallback,
+    PreparedOperation, ProviderCapabilities, ProviderContext, ProviderRequest, ReleaseNotes, ReleaseProvider,
 };
 
 pub(crate) struct ForgeReleaseProvider;
@@ -50,23 +50,25 @@ impl ReleaseProvider for ForgeReleaseProvider {
         &self,
         context: &ProviderContext<'_>,
         request: &ProviderRequest<'_>,
-        _effect: &EffectAuthorization<'_>,
+        effect: &EffectAuthorization<'_>,
     ) -> Result<ExactEvidence, GraphError> {
         let operation = forge_operation(request)?;
         let repository = context.github_repository_slug()?;
-        let mut create_args = vec![
-            "release",
-            "create",
-            operation.tag.as_str(),
-            "--repo",
-            repository.as_str(),
-            "--verify-tag",
-            "--draft",
-            "--generate-notes",
-        ];
-        if operation.prerelease {
-            create_args.push("--prerelease");
-        }
+        // Held until `gh` has read the file.
+        let notes_dir;
+        let notes_file = match &operation.notes {
+            ReleaseNotes::Section(section) => {
+                notes_dir = tempfile::tempdir().map_err(notes_file_error)?;
+                let path = notes_dir.path().join("notes.md");
+                callisto_model::atomic::atomic_write(&path, section, effect.permit).map_err(notes_file_error)?;
+                Some(path.to_string_lossy().into_owned())
+            }
+            ReleaseNotes::Generated { reason } => {
+                eprintln!("{}", generated_notes_notice(&request.id.package, *reason));
+                None
+            }
+        };
+        let create_args = release_create_args(operation, &repository, notes_file.as_deref());
         run_gh(context, &create_args, timeouts::FORGE_RELEASE_CREATE)?;
         confirmed_evidence(
             observed_forge_release(
@@ -79,6 +81,42 @@ impl ReleaseProvider for ForgeReleaseProvider {
             request.id,
             RemoteConflict::ForgeReleaseNotObservedAfterCreate,
         )
+    }
+}
+
+/// `gh release create` for a draft: the changelog section when `notes_file` is set, else generated notes.
+fn release_create_args<'a>(
+    operation: &'a ForgeReleaseOperation,
+    repository: &'a str,
+    notes_file: Option<&'a str>,
+) -> Vec<&'a str> {
+    let mut args = vec![
+        "release",
+        "create",
+        operation.tag.as_str(),
+        "--repo",
+        repository,
+        "--verify-tag",
+        "--draft",
+    ];
+    match notes_file {
+        Some(path) => args.extend(["--notes-file", path]),
+        None => args.push("--generate-notes"),
+    }
+    if operation.prerelease {
+        args.push("--prerelease");
+    }
+    args
+}
+
+fn generated_notes_notice(package: &ReleasePackageId, reason: NotesFallback) -> String {
+    format!("notes: using generated notes ({reason}) for {package}")
+}
+
+fn notes_file_error(error: std::io::Error) -> GraphError {
+    GraphError::ReleaseInputRead {
+        path: "notes.md".into(),
+        message: error.to_string(),
     }
 }
 
@@ -395,6 +433,51 @@ mod tests {
             observe(&runner, false, Draft::Either),
             ProviderObservationV1::Absent
         ));
+    }
+
+    fn forge_operation_with(notes: ReleaseNotes) -> ForgeReleaseOperation {
+        ForgeReleaseOperation {
+            tag: TagName::new_unchecked("core@1.0.0".to_owned()),
+            prerelease: false,
+            notes,
+        }
+    }
+
+    /// AC-7: a changelog section is passed as `--notes-file`, never with `--generate-notes`.
+    #[test]
+    fn ac7_changelog_section_is_passed_as_a_notes_file() {
+        let operation = forge_operation_with(ReleaseNotes::Section("- fix".to_owned()));
+        let args = release_create_args(&operation, "example/core", Some("/tmp/notes.md"));
+        assert!(
+            args.windows(2).any(|pair| pair == ["--notes-file", "/tmp/notes.md"]),
+            "{args:?}"
+        );
+        assert!(!args.contains(&"--generate-notes"), "{args:?}");
+    }
+
+    /// AC-8/AC-9: without a usable section the release falls back to generated notes and says why.
+    #[test]
+    fn ac8_ac9_generated_notes_fallback_names_the_package_and_reason() {
+        let operation = forge_operation_with(ReleaseNotes::Generated {
+            reason: NotesFallback::SectionMissing,
+        });
+        let args = release_create_args(&operation, "example/core", None);
+        assert!(args.contains(&"--generate-notes"), "{args:?}");
+        assert!(!args.contains(&"--notes-file"), "{args:?}");
+        let package = ReleasePackageId::new(callisto_model::Ecosystem::Cargo, "core").unwrap();
+        let mut reasons = std::collections::BTreeSet::new();
+        for reason in [
+            NotesFallback::FileMissing,
+            NotesFallback::SectionMissing,
+            NotesFallback::SectionEmpty,
+            NotesFallback::Unreadable,
+        ] {
+            let notice = generated_notes_notice(&package, reason);
+            assert!(notice.starts_with("notes: using generated notes ("), "{notice}");
+            assert!(notice.ends_with(&format!(") for {package}")), "{notice}");
+            reasons.insert(notice);
+        }
+        assert_eq!(reasons.len(), 4, "each fallback reason must be distinguishable");
     }
 
     // Raw captured GitHub responses, headers included (testing/fixtures/providers/github).
