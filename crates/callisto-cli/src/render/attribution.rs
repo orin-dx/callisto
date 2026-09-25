@@ -1,5 +1,5 @@
 use callisto_graph::config::{ConfigProvenance, ResolvedConfig};
-use callisto_model::ConfigKey;
+use callisto_model::{ConfigKey, ReleaseTrigger};
 
 pub fn attribution_line(key: &ConfigKey, cfg: &ResolvedConfig) -> String {
     let key_str = key.as_str();
@@ -10,7 +10,18 @@ pub fn attribution_line(key: &ConfigKey, cfg: &ResolvedConfig) -> String {
     };
 
     let prov = cfg.provenance(key);
-    let val = cfg.rendered_value(key).unwrap_or_else(|| "auto".to_string());
+    // release-trigger has no ResolvedConfig-level rendered value (it's package-scoped);
+    // its actual default is ReleaseTrigger::default() (changeset), not a generic "auto".
+    let val = cfg.rendered_value(key).unwrap_or_else(|| {
+        if key == &ConfigKey::RELEASE_TRIGGER {
+            match ReleaseTrigger::default() {
+                ReleaseTrigger::Changeset => "changeset".to_string(),
+                ReleaseTrigger::Auto => "auto".to_string(),
+            }
+        } else {
+            "auto".to_string()
+        }
+    });
 
     match prov {
         ConfigProvenance::Default => format!("governed by {formatted_key} = {val} (default)"),
@@ -53,7 +64,7 @@ mod tests {
         let cfg = callisto_graph::config::load(tmp.path()).unwrap();
         assert_eq!(
             attribution_line(&ConfigKey::RELEASE_TRIGGER, &cfg),
-            "governed by release-trigger = auto (default)"
+            "governed by release-trigger = changeset (default)"
         );
     }
 }
