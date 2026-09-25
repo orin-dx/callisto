@@ -237,9 +237,8 @@ pub fn detect<L: ProjectLocator, R: CommandRunner>(
         .flat_map(|package| package.canonical_manifests())
         .map(|manifest| manifest.ecosystem())
         .collect();
-    // Case D (own canonical manifest is platform-tagged) or Case E (a platform
-    // package attached from a sibling directory) -- never just Case D, since an
-    // attached platform package is never its own entry in `packages` above.
+    // Counts attached platform packages too: they never get their own `packages` entry,
+    // so scanning canonical manifests alone finds only co-located ones.
     let has_platform_packages = workspace
         .graph
         .packages()

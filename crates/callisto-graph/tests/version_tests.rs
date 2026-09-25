@@ -149,7 +149,7 @@ fn duplicate_package_name_is_rejected_with_an_error() {
 
 /// The real, on-disk Cargo+npm co-located dual-identity scenario
 /// from the originating bug report -- a Cargo crate that is also its own
-/// napi-rs npm package (Case D: same directory, two manifests, one owning
+/// napi-rs npm package (dual-manifest: same directory, two manifests, one owning
 /// Bare PackageId since there is no naming collision elsewhere) -- must
 /// proceed through apply_version_plan to a successful completion for a
 /// cross-ecosystem npm dependent whose spec needs rewriting, with the
@@ -193,7 +193,7 @@ fn apply_version_plan_succeeds_for_dual_identity_cross_ecosystem_rewrite() {
     let locator = IgnoreWalkLocator::new(root);
     let runner = callisto_fixtures::git::GitRunner;
     let ws = Workspace::load(root.to_path_buf(), &locator, &runner)
-        .expect("workspace with Case D dual-identity package should load");
+        .expect("workspace with a dual-manifest package should load");
 
     let inference = NoInference;
     let opts = VersionOptions {

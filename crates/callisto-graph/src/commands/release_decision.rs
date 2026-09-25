@@ -32,7 +32,7 @@ pub(crate) fn release_package_ids(
         .canonical_manifests()
         .map(|manifest| {
             let ecosystem = manifest.ecosystem();
-            // A Case D package's manifests may declare different names.
+            // A dual-manifest package's manifests may declare different names.
             let name = identity
                 .native_name(&package.id, ecosystem)
                 .unwrap_or(package.id.name());
@@ -264,7 +264,7 @@ fn workspace_package<'w, R: callisto_model::CommandRunner, D: DependencyResolver
     workspace: &'w Workspace<'_, R, D>,
     id: &ReleasePackageId,
 ) -> Option<&'w Package> {
-    // By release identity, not name: a Case D package's npm name can differ from its id.
+    // By release identity, not name: a dual-manifest package's npm name can differ from its id.
     workspace
         .graph
         .packages()

@@ -339,7 +339,7 @@ pub(crate) fn platform_version_writes<R: CommandRunner, D: DependencyResolver>(
             from: current,
         });
 
-        // A Case D owner declares its platforms in package.json, not Cargo.toml.
+        // A dual-manifest owner declares its platforms in package.json, not Cargo.toml.
         for owner_decl in pkg_map.get(owner).into_iter().flat_map(|p| p.canonical_manifests()) {
             let owner_fmt = callisto_model::ManifestFormat::from_path(&owner_decl.path)?;
             let owner_manifest_decl =
@@ -672,7 +672,7 @@ mod tests {
 
     /// A Fixed group with an owner Package member that
     /// receives a real PlannedBump this run, plus a sibling
-    /// GroupMember::PlatformManifest member (a Case D hybrid-root npm
+    /// GroupMember::PlatformManifest member (a dual-manifest hybrid-root npm
     /// package.json with non-empty os/cpu arrays living in the same
     /// directory as the owner's Cargo.toml), must produce exactly one
     /// PlatformWrite whose `manifest` is the platform manifest's path,
@@ -975,7 +975,7 @@ mod tests {
     /// platform siblings (linux-x64-gnu, darwin-arm64), both bumped, must
     /// produce one `PlatformWrite` per sibling, not just the first.
     ///
-    /// Linux is real/disk-discovered (Case D: `Cargo.toml`+`package.json`
+    /// Linux is real/disk-discovered (co-located: `Cargo.toml`+`package.json`
     /// sharing a directory). Darwin is fixture-injected, because walk.rs's
     /// platform registration (walk.rs:131-227) groups strictly by directory
     /// -- a second platform manifest for the same owner can only be
@@ -992,9 +992,9 @@ mod tests {
         let root = tmp.path();
         git_init_with_commit(root);
 
-        // Real, disk-discovered Case D linux sibling: Cargo.toml and
+        // Real, disk-discovered co-located linux sibling: Cargo.toml and
         // package.json sharing one directory, so `owner` resolves to the
-        // Cargo primary_id via walk.rs's Case D promotion.
+        // Cargo primary_id via walk.rs's co-located promotion.
         std::fs::create_dir_all(root.join("crates/hybrid")).unwrap();
         std::fs::write(
             root.join("crates/hybrid/Cargo.toml"),
@@ -1010,7 +1010,7 @@ mod tests {
         // Second sibling's on-disk manifest target -- real content, read by
         // plan_version exactly as the first sibling's is, but fixture-wired
         // into the group below since walk.rs cannot discover a second
-        // Case D member under the same owner.
+        // Co-located member under the same owner.
         std::fs::create_dir_all(root.join("crates/hybrid-darwin")).unwrap();
         std::fs::write(
             root.join("crates/hybrid-darwin/package.json"),
@@ -1109,7 +1109,7 @@ mod tests {
         let root = tmp.path();
         git_init_with_commit(root);
 
-        // Real, disk-discovered Case D linux sibling: Cargo.toml and
+        // Real, disk-discovered co-located linux sibling: Cargo.toml and
         // package.json sharing one directory. The owner's Cargo.toml
         // declares matching `optional = true` dependencies on BOTH platform
         // members' npm names, so both siblings should produce a merged
@@ -1129,7 +1129,7 @@ mod tests {
         // Second sibling's on-disk manifest target -- real content, read by
         // plan_version exactly as the first sibling's is, but fixture-wired
         // into the group below since walk.rs cannot discover a second
-        // Case D member under the same owner.
+        // Co-located member under the same owner.
         std::fs::create_dir_all(root.join("crates/hybrid-darwin")).unwrap();
         std::fs::write(
             root.join("crates/hybrid-darwin/package.json"),

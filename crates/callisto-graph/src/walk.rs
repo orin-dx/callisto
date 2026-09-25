@@ -184,8 +184,8 @@ impl ManifestWalkResolver {
                         }
                         // `id` is this manifest's own npm identity, resolved from its
                         // own `name` field -- distinct from `primary_id` whenever a
-                        // higher-priority ecosystem (Cargo) shares this directory
-                        // (Case D). Config authors reference the platform package by
+                        // higher-priority ecosystem (Cargo) shares this directory.
+                        // Config authors reference the platform package by
                         // its own name in `[[fixed-group]] members`, so that must be
                         // the index key; `primary_id` is who it belongs to.
                         index
@@ -609,8 +609,7 @@ fn platform_owners(
         let Some(manifest) = open_npm(rel_path) else {
             continue;
         };
-        // A platform manifest sharing its directory with another ecosystem is Case D:
-        // it already belongs to that directory's package.
+        // A co-located platform manifest already belongs to its directory's package.
         match platform_role(&manifest) {
             Some(role) if list.len() == 1 => platforms.push((rel_path.clone(), id.name().to_string(), role, true)),
             _ => {
@@ -791,7 +790,7 @@ mod tests {
         }
     }
 
-    /// End-to-end: a real disk-discovered napi platform manifest (Case D --
+    /// End-to-end: a real disk-discovered napi platform manifest (co-located:
     /// a `Cargo.toml` and a differently-named `package.json` sharing one
     /// directory, the platform npm package's own identity distinct from the
     /// owning crate's) must resolve through `[[fixed-group]] members`
@@ -861,14 +860,14 @@ mod tests {
         );
     }
 
-    /// A real `optionalDependencies` edge onto a Case D platform package (a
+    /// A real `optionalDependencies` edge onto a co-located platform package (a
     /// `Cargo.toml` and differently-named `package.json` sharing one
     /// directory, per the test above) must resolve through
     /// `IdentityIndex.native`, keyed by the platform manifest's own npm
     /// name -- not the owning crate's `primary_id` name, which a
     /// sibling's dependency entry never names. Before this fix,
     /// `index.native` was keyed by `primary_id.name()` for every
-    /// ecosystem in a Case D directory, so a dependency naming the
+    /// ecosystem in a dual-manifest directory, so a dependency naming the
     /// platform package by its real npm name silently failed to resolve,
     /// dropping the edge with no diagnostic.
     #[test]
@@ -902,12 +901,12 @@ mod tests {
         let consumer = callisto_model::PackageId::Bare("@myorg/consumer".to_string());
 
         let edge = ws.graph.edges().iter().find(|e| e.from == consumer).expect(
-            "consumer's optionalDependencies edge onto the Case D platform package must \
+            "consumer's optionalDependencies edge onto the co-located platform package must \
                  resolve, not be silently dropped",
         );
         assert_eq!(
             edge.to, owning_crate,
-            "the platform package belongs to the owning crate (Case D); the edge must resolve \
+            "the platform package belongs to the co-located owning crate; the edge must resolve \
              to the owning crate's identity, not fail to resolve at all"
         );
     }
@@ -1114,7 +1113,8 @@ mod tests {
         .unwrap();
         let locator = crate::locate::IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("Case D load must succeed");
+        let ws =
+            crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("dual-manifest workspace must load");
         assert!(ws.graph.get(&PackageId::Bare("foo".to_string())).is_some());
     }
 
@@ -1354,7 +1354,7 @@ mod tests {
         );
     }
 
-    /// A platform npm manifest co-located with a Cargo owner (Case D) whose
+    /// A platform npm manifest co-located with a Cargo owner whose
     /// owner later gets promoted via a disjoint cross-ecosystem bare-name
     /// collision elsewhere in the workspace: `index.platform`'s stored
     /// owner id must be rewritten to the promoted Prefixed id, matching the
@@ -1445,12 +1445,13 @@ mod tests {
 
         let locator = crate::locate::IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("Case D load must succeed");
+        let ws =
+            crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("dual-manifest workspace must load");
 
         let bare_id = PackageId::Bare("hybrid".to_string());
         assert!(
             ws.graph.get(&bare_id).is_some(),
-            "Case D primary package must register under Bare ID"
+            "dual-manifest primary package must register under Bare ID"
         );
         let platform_entry = ws
             .graph
@@ -1635,7 +1636,8 @@ mod tests {
         .unwrap();
         let locator = crate::locate::IgnoreWalkLocator::new(root);
         let runner = NoopRunner;
-        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("Case D load must succeed");
+        let ws =
+            crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("dual-manifest workspace must load");
         assert_eq!(ws.graph.packages().count(), 1);
         let pkg = ws
             .graph
@@ -1644,7 +1646,7 @@ mod tests {
         assert_eq!(
             pkg.manifests.len(),
             2,
-            "both the Cargo and npm manifest belong to the one Case D package"
+            "both the Cargo and npm manifest belong to the one dual-manifest package"
         );
     }
 

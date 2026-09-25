@@ -267,7 +267,7 @@ impl IdentityIndex {
     }
 
     /// The platform manifests attached to `owner` from their own
-    /// directories, as (npm name, manifest path). Excludes a Case D platform
+    /// directories, as (npm name, manifest path). Excludes a co-located platform
     /// manifest that is also one of `owner`'s canonical manifests.
     pub fn attached_platforms<'a>(
         &'a self,

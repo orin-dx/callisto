@@ -26,7 +26,7 @@ use crate::commands::release_decision::{has_dispatchable_target, version_is_tagg
 use crate::toposort::PublishEdgeFilter;
 
 /// A package that is itself an npm platform package (its own package.json has
-/// `os`+`cpu`). An owner's attached (Case E) platform manifests do not count.
+/// `os`+`cpu`). An owner's attached platform manifests do not count.
 pub(crate) fn is_platform_package(pkg: &callisto_model::Package) -> bool {
     pkg.manifests.iter().any(|m| {
         matches!(m.role, callisto_model::ManifestRole::Platform { .. })
@@ -1020,7 +1020,7 @@ mod tests {
         }
     }
 
-    /// M2: an unreleased runtime, optional, or peer dependency must be selected with its dependent.
+    /// An unreleased runtime, optional, or peer dependency must be selected with its dependent.
     #[test]
     fn unselected_unreleased_workspace_dependency_is_rejected() {
         let dir = repo_of(&cargo_workspace(&[

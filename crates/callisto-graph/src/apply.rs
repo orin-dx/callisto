@@ -1857,19 +1857,19 @@ mod tests {
                 result,
                 Err(GraphError::Manifest(callisto_model::ManifestError::Write { .. }))
             ),
-            "P2's persist failure must propagate; got: {result:?}"
+            "b-crate's persist failure must propagate; got: {result:?}"
         );
 
         let a_on_disk = std::fs::read_to_string(&a_path).unwrap();
         assert!(
             a_on_disk.contains("version = \"1.1.0\""),
-            "P1 (a-crate/Cargo.toml, sorts before P2) must already be fully processed and persisted before P2 is even attempted; got:\n{a_on_disk}"
+            "a-crate sorts first, so it must be fully persisted before b-crate is attempted; got:\n{a_on_disk}"
         );
 
         let b_on_disk = std::fs::read_to_string(&b_path).unwrap();
         assert_eq!(
             b_on_disk, b_original,
-            "P2's own group must be byte-for-byte unchanged since its persist never succeeded"
+            "b-crate must be byte-for-byte unchanged since its persist never succeeded"
         );
     }
 
