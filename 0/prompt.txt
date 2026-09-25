@@ -1,0 +1,1 @@
+You're rushing to do something. Did you consider how we setup targets in rust, in NPM? Pypi? for all the other languages we want to support?
