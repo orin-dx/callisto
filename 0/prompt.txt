@@ -1,0 +1,10 @@
+<task-notification>
+<task-id>bd8ejbm3n</task-id>
+<summary>Monitor event: "0.8.0 release run 35647177820 job transitions"</summary>
+<event>Build aarch64-apple-darwin from the intent-bound source tree: in_progress
+Build wasm32-wasip1 from the intent-bound source tree: in_progress
+Build x86_64-unknown-linux-gnu from the intent-bound source tree: in_progress
+Build x86_64-unknown-linux-musl from the intent-bound source tree: in_progress
+Derive ephemeral intent from the merged release commit: success</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
