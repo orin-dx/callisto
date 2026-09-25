@@ -4,7 +4,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 
 /// Changesets-style version and release manager for Rust workspaces.
 #[derive(Parser)]
-#[command(name = "callisto", version)]
+#[command(name = "callisto", version, disable_help_subcommand = true)]
 pub struct Cli {
     #[command(flatten)]
     pub global: GlobalArgs,
@@ -46,6 +46,7 @@ pub enum Command {
     /// Show the workspace's pending changesets and diagnostics.
     Status(StatusArgs),
     /// Print the workspace's native-build target matrix as JSON or a table.
+    #[command(hide = true)]
     Matrix(MatrixArgs),
     /// Consume pending changesets and bump package versions accordingly.
     Version(VersionArgs),
@@ -53,21 +54,24 @@ pub enum Command {
     #[command(subcommand)]
     Pre(PreArgs),
     /// Check that changesets and the dependency graph are well-formed.
+    #[command(hide = true)]
     Validate(ValidateArgs),
     /// Apply a temporary, non-persistent version bump for a snapshot release.
     Snapshot(SnapshotArgs),
     /// Scaffold Callisto configuration in the current workspace.
     Init(InitArgs),
     /// Generate a pull request body summarizing pending release changes.
+    #[command(hide = true)]
     ComposePrBody(ComposePrBodyArgs),
     /// Publish every package whose current version has not been released yet.
     Release(ReleaseCommandArgs),
     /// Decide the next managed release-pull-request operation from a forge snapshot.
-    #[command(subcommand)]
+    #[command(subcommand, hide = true)]
     ReleasePr(ReleasePrArgs),
     /// Generate shell completion scripts.
     Completions(CompletionsArgs),
     /// Print the JSON schema for a report type.
+    #[command(hide = true)]
     Schema(SchemaArgs),
 }
 
@@ -219,12 +223,16 @@ pub struct ReleaseCommandArgs {
 #[derive(Subcommand, Clone, Debug)]
 pub enum ReleaseArgs {
     /// Create a read-only durable release intent from exact package selections.
+    #[command(hide = true)]
     Plan(ReleasePlanArgs),
     /// Display a durable intent, manifest, or receipt without recomputing it.
+    #[command(hide = true)]
     Inspect(ReleaseInspectArgs),
     /// Create the exact artifact manifest for a completed intent-bound build.
+    #[command(hide = true)]
     ArtifactManifest(ReleaseArtifactManifestArgs),
     /// Execute a previously approved intent. This is the only durable mutation route.
+    #[command(hide = true)]
     Execute(ReleaseExecuteArgs),
 }
 
@@ -558,5 +566,156 @@ mod tests {
         } else {
             panic!("Expected Matrix command");
         }
+    }
+
+    /// SPEC-DX-CLI-SURFACE AC-01: `--help` lists exactly the 8 user commands,
+    /// each with one plain-language line free of internal jargon.
+    #[test]
+    fn help_lists_exactly_eight_commands_with_plain_help_text() {
+        let mut cmd = Cli::command();
+        cmd.build();
+
+        let visible: Vec<&str> = cmd
+            .get_subcommands()
+            .filter(|s| !s.is_hide_set())
+            .map(|s| s.get_name())
+            .collect();
+        let expected = [
+            "add",
+            "status",
+            "version",
+            "pre",
+            "snapshot",
+            "init",
+            "release",
+            "completions",
+        ];
+        assert_eq!(
+            visible.len(),
+            8,
+            "expected exactly 8 visible commands, got: {visible:?}"
+        );
+        for name in expected {
+            assert!(
+                visible.contains(&name),
+                "missing {name:?} from visible commands: {visible:?}"
+            );
+        }
+
+        let banned = [
+            "durable release intent",
+            "forge snapshot",
+            "coordinator revision",
+            "schema v",
+        ];
+        for sub in cmd.get_subcommands().filter(|s| !s.is_hide_set()) {
+            let about = sub.get_about().map(|a| a.to_string()).unwrap_or_default();
+            assert_eq!(
+                about.lines().count().max(1),
+                1,
+                "{}'s help text must be exactly one line: {about:?}",
+                sub.get_name()
+            );
+            assert!(!about.is_empty(), "{} has no help text", sub.get_name());
+            let lower = about.to_lowercase();
+            for phrase in banned {
+                assert!(
+                    !lower.contains(phrase),
+                    "{}'s help text contains banned jargon {phrase:?}: {about:?}",
+                    sub.get_name()
+                );
+            }
+        }
+    }
+
+    /// SPEC-DX-CLI-SURFACE AC-02: the automatic `help` subcommand is disabled,
+    /// but `-h`/`--help` still work on the root command and on subcommands.
+    #[test]
+    fn help_subcommand_is_disabled_but_flag_help_works() {
+        use clap::Parser;
+
+        let help_sub = Cli::try_parse_from(["callisto", "help"]);
+        assert!(help_sub.is_err(), "`callisto help` must fail to parse");
+        assert_eq!(
+            help_sub.err().unwrap().kind(),
+            clap::error::ErrorKind::InvalidSubcommand
+        );
+
+        let help_sub_command = Cli::try_parse_from(["callisto", "help", "status"]);
+        assert!(help_sub_command.is_err(), "`callisto help status` must fail to parse");
+
+        let root_flag = Cli::try_parse_from(["callisto", "--help"]);
+        assert_eq!(
+            root_flag.err().unwrap().kind(),
+            clap::error::ErrorKind::DisplayHelp,
+            "-h/--help must still work on the root command"
+        );
+
+        let sub_flag = Cli::try_parse_from(["callisto", "status", "--help"]);
+        assert_eq!(
+            sub_flag.err().unwrap().kind(),
+            clap::error::ErrorKind::DisplayHelp,
+            "-h/--help must still work on subcommands"
+        );
+    }
+
+    /// SPEC-DX-CLI-SURFACE AC-03: plumbing subcommands stay callable but hidden
+    /// from `callisto --help` and `callisto release --help`.
+    #[test]
+    fn plumbing_subcommands_are_hidden_but_callable() {
+        let mut cmd = Cli::command();
+        cmd.build();
+
+        for name in ["matrix", "schema", "compose-pr-body", "release-pr"] {
+            let sub = cmd
+                .get_subcommands()
+                .find(|s| s.get_name() == name)
+                .unwrap_or_else(|| panic!("{name} must still be a registered subcommand"));
+            assert!(sub.is_hide_set(), "{name} must be hidden from top-level --help");
+        }
+
+        let release = cmd
+            .get_subcommands()
+            .find(|s| s.get_name() == "release")
+            .expect("release subcommand must exist");
+        for name in ["plan", "inspect", "artifact-manifest", "execute"] {
+            let sub = release
+                .get_subcommands()
+                .find(|s| s.get_name() == name)
+                .unwrap_or_else(|| panic!("release {name} must still be a registered subcommand"));
+            assert!(sub.is_hide_set(), "release {name} must be hidden from `release --help`");
+        }
+
+        // Still callable: parsing succeeds for every hidden subcommand.
+        use clap::Parser;
+        assert!(Cli::try_parse_from(["callisto", "matrix"]).is_ok());
+        assert!(Cli::try_parse_from(["callisto", "schema"]).is_ok());
+        assert!(Cli::try_parse_from(["callisto", "compose-pr-body"]).is_ok());
+        assert!(Cli::try_parse_from(["callisto", "validate"]).is_ok());
+        assert!(Cli::try_parse_from([
+            "callisto",
+            "release",
+            "plan",
+            "--package",
+            "cargo/demo",
+            "--out",
+            "intent.json"
+        ])
+        .is_ok());
+        assert!(Cli::try_parse_from(["callisto", "release", "inspect", "--input", "x"]).is_ok());
+        assert!(Cli::try_parse_from([
+            "callisto",
+            "release-pr",
+            "decide",
+            "--snapshot",
+            "-",
+            "--repository",
+            "o/r",
+            "--base-branch",
+            "main",
+            "--release-branch",
+            "release"
+        ])
+        .is_ok());
     }
 }

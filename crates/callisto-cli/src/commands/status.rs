@@ -36,7 +36,7 @@ pub fn handle(args: StatusArgs, global: &GlobalArgs) -> Result<ExitCode, CliErro
 
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &report)?,
-        OutputFormat::Text => render::render_status(&report, &mut std::io::stdout())?,
+        OutputFormat::Text => render::render_status(&report, crate::color::enabled(), &mut crate::color::stdout())?,
     }
 
     let has_errors = report

@@ -63,7 +63,11 @@ fn release(
             Some(plan) => {
                 match global.format {
                     OutputFormat::Json => write_json(&mut std::io::stdout(), &plan.intent)?,
-                    OutputFormat::Text => print!("{}", render_release_plan(&plan.intent)),
+                    OutputFormat::Text => {
+                        use std::io::Write as _;
+                        let mut out = crate::color::stdout();
+                        write!(out, "{}", render_release_plan(&plan.intent, crate::color::enabled()))?;
+                    }
                 }
                 if plan.tags_unbound {
                     eprintln!("{TAGS_UNBOUND_NOTE}");
@@ -156,30 +160,66 @@ fn parse_selections(packages: &[String]) -> Result<Vec<ReleasePackageId>, CliErr
         .collect()
 }
 
+/// One-line description of a release operation, shared by both the plain and table renderers.
+fn describe_operation(operation: &callisto_model::ReleaseOperation) -> String {
+    match &operation.id().role {
+        callisto_model::ReleaseOperationRole::RegistryPublish { registry } => {
+            format!("publish to {}", registry.registry_key().as_str())
+        }
+        callisto_model::ReleaseOperationRole::PlatformPublish { registry, platform } => {
+            format!("publish {} to {}", platform.name(), registry.registry_key().as_str())
+        }
+        callisto_model::ReleaseOperationRole::Tag => "create git tag".to_owned(),
+        callisto_model::ReleaseOperationRole::ForgeRelease => "create GitHub release draft".to_owned(),
+        callisto_model::ReleaseOperationRole::ArtifactUpload { slot } => {
+            format!("upload {}", slot.asset_name)
+        }
+        callisto_model::ReleaseOperationRole::ForgePublish => "publish GitHub release".to_owned(),
+    }
+}
+
 /// Human-readable plan: each package and version, then its operations.
-fn render_release_plan(intent: &ReleaseIntentV1) -> String {
+///
+/// `use_color` is the one color/table decision ([`crate::color::enabled`]):
+/// box-drawing table formatting renders only alongside color, never independently.
+fn render_release_plan(intent: &ReleaseIntentV1, use_color: bool) -> String {
     let mut out = String::from("Release plan:\n");
+    if use_color {
+        out.push_str(&render_release_plan_table(intent));
+        return out;
+    }
     for entry in &intent.decision.entries {
         out.push_str(&format!("  {} {}\n", entry.package, entry.target_version));
         for operation in intent.operations.iter().filter(|op| op.id().package == entry.package) {
-            let step = match &operation.id().role {
-                callisto_model::ReleaseOperationRole::RegistryPublish { registry } => {
-                    format!("publish to {}", registry.registry_key().as_str())
-                }
-                callisto_model::ReleaseOperationRole::PlatformPublish { registry, platform } => {
-                    format!("publish {} to {}", platform.name(), registry.registry_key().as_str())
-                }
-                callisto_model::ReleaseOperationRole::Tag => "create git tag".to_owned(),
-                callisto_model::ReleaseOperationRole::ForgeRelease => "create GitHub release draft".to_owned(),
-                callisto_model::ReleaseOperationRole::ArtifactUpload { slot } => {
-                    format!("upload {}", slot.asset_name)
-                }
-                callisto_model::ReleaseOperationRole::ForgePublish => "publish GitHub release".to_owned(),
-            };
-            out.push_str(&format!("    - {step}\n"));
+            out.push_str(&format!("    - {}\n", describe_operation(operation)));
         }
     }
     out
+}
+
+fn render_release_plan_table(intent: &ReleaseIntentV1) -> String {
+    use comfy_table::{presets::UTF8_FULL, Cell, Color, Table};
+
+    let mut table = Table::new();
+    // Our `use_color` gate is the sole authority -- never let comfy-table's own
+    // TTY probe override it, so a forced/piped stdout still renders styled.
+    table.force_no_tty().enforce_styling();
+    table.load_preset(UTF8_FULL);
+    table.set_header(vec!["Package", "Version", "Operations"]);
+    for entry in &intent.decision.entries {
+        let steps: Vec<String> = intent
+            .operations
+            .iter()
+            .filter(|op| op.id().package == entry.package)
+            .map(describe_operation)
+            .collect();
+        table.add_row(vec![
+            Cell::new(entry.package.to_string()),
+            Cell::new(entry.target_version.to_string()).fg(Color::Green),
+            Cell::new(steps.join("\n")),
+        ]);
+    }
+    format!("{table}\n")
 }
 
 fn home_dir() -> Option<std::path::PathBuf> {
@@ -756,7 +796,7 @@ mod tests {
     #[test]
     fn plan_text_lists_each_package_version_and_operation() {
         let intent = sample();
-        let text = render_release_plan(&intent);
+        let text = render_release_plan(&intent, false);
         assert!(text.starts_with("Release plan:\n"), "{text}");
         for entry in &intent.decision.entries {
             assert!(
@@ -765,5 +805,25 @@ mod tests {
             );
         }
         assert_eq!(text.matches("    - ").count(), intent.operations.len(), "{text}");
+    }
+
+    /// AC-04: `use_color: true` renders the release plan as a box-drawing table.
+    #[test]
+    fn plan_text_with_color_renders_box_drawing_table() {
+        let intent = sample();
+        let text = render_release_plan(&intent, true);
+        assert!(text.starts_with("Release plan:\n"), "{text}");
+        assert!(text.contains('\u{2502}'), "expected a box-drawing char in:\n{text}");
+        for entry in &intent.decision.entries {
+            assert!(text.contains(&entry.package.to_string()), "{text}");
+        }
+    }
+
+    /// AC-05: `use_color: false` never emits box-drawing characters.
+    #[test]
+    fn plan_text_without_color_has_no_box_drawing_chars() {
+        let intent = sample();
+        let text = render_release_plan(&intent, false);
+        assert!(!text.chars().any(|c| ('\u{2500}'..='\u{257F}').contains(&c)), "{text}");
     }
 }
