@@ -1,0 +1,1 @@
+Can we also make sure that the build is prod, not with debug symbolx?
