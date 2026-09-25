@@ -75,13 +75,14 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     let base_versions = ws.base_versions()?;
     let tags = ws.tags()?;
 
-    let pre_path = ws.root.join(".changeset/pre.json");
-    let pre_state = if pre_path.exists() {
+    let pre_path = ws.root.join(ws.config.pre_json_path());
+    let (pre_state, pre_json_original_text) = if pre_path.exists() {
         let text =
             std::fs::read_to_string(&pre_path).map_err(|e| GraphError::PreJsonRead { message: e.to_string() })?;
-        Some(callisto_format::parse_pre_json(&text).map_err(GraphError::PreJson)?)
+        let state = callisto_format::parse_pre_json(&text).map_err(GraphError::PreJson)?;
+        (Some(state), Some(text))
     } else {
-        None
+        (None, None)
     };
 
     let mut agg = aggregate(
@@ -232,9 +233,24 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         }
     }
 
+    let is_pre_mode = pre_state
+        .as_ref()
+        .map(|s| s.mode == callisto_format::PreMode::Pre)
+        .unwrap_or(false);
+    // In pre mode a changeset already recorded in pre.json keeps re-matching
+    // (and keeps counting toward severity, and toward the prerelease
+    // counter) on every run without being "new"; the "no pending
+    // changesets" warning fires only when NO changeset -- new or already
+    // recorded -- is active this run, not when merely nothing new appeared.
+    let nothing_pending = if is_pre_mode {
+        !agg.pre_mode_has_active_changeset
+    } else {
+        agg.consumed.is_empty()
+    };
+
     let mut diagnostics = outcome.diagnostics;
     diagnostics.extend(group_check.diagnostics);
-    if agg.consumed.is_empty() && !opts.allow_empty_changesets && !ws.config.validation.allow_empty_changesets {
+    if nothing_pending && !opts.allow_empty_changesets && !ws.config.validation.allow_empty_changesets {
         diagnostics.push(callisto_model::Diagnostic {
             code: callisto_model::DiagnosticCode::EmptyChangeset,
             severity: callisto_model::DiagnosticSeverity::Warning,
@@ -250,21 +266,14 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
 
     let (pre_state_update, delete_pre_json) = if let Some(mut state) = pre_state {
         if state.mode == callisto_format::PreMode::Exit {
-            let rel_pre_path = ws.config.changesets_dir.join("pre.json");
-            (None, Some(rel_pre_path))
+            (None, Some(ws.config.pre_json_path()))
         } else {
-            // Update pre-release state changesets.
-            // PERF-008: build an owned HashSet so each membership check is O(1)
-            // instead of O(|state.changesets|); owned strings avoid the borrow
-            // conflict that would arise from holding &str refs into the Vec
-            // while also pushing to it.
-            let seen: HashSet<String> = state.changesets.iter().cloned().collect();
-            for cs in &agg.consumed {
-                if let Some(name) = cs.file_name().and_then(|n| n.to_str()) {
-                    let stem = name.strip_suffix(".md").unwrap_or(name).to_string();
-                    if !seen.contains(&stem) {
-                        state.changesets.push(stem);
-                    }
+            // Record ids aggregate() determined are newly-seen this run (not
+            // already in pre.json's changesets list) -- see
+            // Aggregation::new_pre_changesets.
+            for id in &agg.new_pre_changesets {
+                if !state.changesets.iter().any(|s| s == id) {
+                    state.changesets.push(id.clone());
                 }
             }
             (Some(state), None)
@@ -284,6 +293,8 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         changelog_writes,
         consumed_changesets: agg.consumed,
         pre_state_update,
+        pre_json_path: ws.config.pre_json_path(),
+        pre_json_original_text,
         delete_pre_json,
         pre_cursor_updates: Vec::new(),
         observed_versions: base_versions,

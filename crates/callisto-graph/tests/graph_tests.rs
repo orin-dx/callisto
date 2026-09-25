@@ -92,6 +92,8 @@ fn test_apply_version_plan_reports_git_add_failure() {
     let pre_state = callisto_format::PreState::entering("canary", Vec::new());
     let plan = VersionPlan {
         pre_state_update: Some(pre_state),
+        pre_json_path: std::path::PathBuf::from(".changeset/pre.json"),
+        pre_json_original_text: None,
         ..Default::default()
     };
 

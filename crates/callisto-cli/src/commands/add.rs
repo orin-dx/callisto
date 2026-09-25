@@ -177,10 +177,10 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     };
     let text = callisto_format::write_changeset(&changeset)?;
 
-    let changeset_dir = ws.root.join(".changeset");
+    let changeset_dir = ws.root.join(&ws.config.changesets_dir);
     let slug = generate_human_slug();
     let filename = format!("{slug}.md");
-    let rel_path = format!(".changeset/{filename}");
+    let rel_path = ws.config.changesets_dir.join(&filename).to_string_lossy().into_owned();
 
     let Some(permit) = ApplyPermit::granted_unless_dry_run(global.dry_run) else {
         // Compute what WOULD be written, but never touch disk.

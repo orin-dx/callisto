@@ -162,6 +162,10 @@
       "criterion": "In pre mode, a bumped package's version is its `initialVersions` entry bumped by its severity plus `-{tag}.N`, where N starts at 0 and increments while the release part is unchanged (0.1.0 with a minor changeset and tag `beta` gives 0.2.0-beta.0, then 0.2.0-beta.1); PEP 440 packages use `aN` for tags `a`/`alpha`, `bN` for `b`/`beta`, `rcN` for `rc`/`c`/`pre`/`preview` (case-insensitive), and `.devN` for any other tag."
     },
     {
+      "id": "VER-PRE-04",
+      "criterion": "In pre mode, `version` never deletes a changeset from disk. A changeset whose id is not yet in `pre.json`'s `changesets` list counts toward severity, produces a changelog entry, and has its id added to `changesets`; a changeset whose id is already there still counts toward severity and the prerelease counter (VER-PRE-03) but produces no additional changelog entry. The `allow-empty-changesets`/`--strict` handling from VER-AGG-06 triggers only when no changeset -- new or already recorded -- resolves to a package this run, not merely when nothing new was added."
+    },
+    {
       "id": "VER-PRE-05",
       "criterion": "After `pre exit`, the next `version` moves every package at a prerelease version to its stable release (0.2.0-beta.1 becomes 0.2.0), consumes and deletes the pending changesets, and deletes `pre.json`."
     },

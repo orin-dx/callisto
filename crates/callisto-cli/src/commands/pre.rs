@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::process::ExitCode;
 
-use callisto_format::{parse_pre_json, write_pre_json, PreMode, PreState};
+use callisto_format::{parse_pre_json, write_pre_json, write_pre_json_preserving, PreMode, PreState};
 use callisto_model::{ApplyPermit, CommandRunner, SCHEMA_VERSION};
 use serde_json::json;
 
@@ -12,22 +12,20 @@ use crate::output::{log_line, write_json};
 use crate::runner::CliCommandRunner;
 use crate::workspace::load_workspace;
 
-/// Relative path reported in dry-run previews, so the output names the file
-/// the user would find rather than an absolute path.
-const PRE_JSON_REL: &str = ".changeset/pre.json";
-
-/// Stages `.changeset/pre.json` via `git add`, called by `pre enter` on a
-/// real (non-dry-run) write so the new file is included in the next commit.
-/// Extracted from [`handle`] so it's directly testable with a fake
-/// [`CommandRunner`] -- `handle` itself always constructs a real
-/// [`crate::runner::CliCommandRunner`], which shells out for real.
-fn stage_pre_json(runner: &dyn CommandRunner, root: &Path) -> Result<(), CliError> {
+/// Stages `pre.json` (at `rel_path`, relative to `root`) via `git add`,
+/// called by `pre enter` and `pre exit` on a real (non-dry-run) write so the
+/// change is included in the next commit. Extracted from [`handle`] so it's
+/// directly testable with a fake [`CommandRunner`] -- `handle` itself always
+/// constructs a real [`crate::runner::CliCommandRunner`], which shells out
+/// for real.
+fn stage_pre_json(runner: &dyn CommandRunner, root: &Path, rel_path: &Path) -> Result<(), CliError> {
+    let rel_str = rel_path.to_string_lossy();
     let output = runner
-        .run("git", &["add", PRE_JSON_REL], root)
+        .run("git", &["add", rel_str.as_ref()], root)
         .map_err(|e| CliError::Other(format!("git add failed: {e}")))?;
     if !output.success() {
         return Err(CliError::Other(format!(
-            "git add .changeset/pre.json failed (exit {:?}): {}",
+            "git add {rel_str} failed (exit {:?}): {}",
             output.exit_code,
             output.redacted_stderr()
         )));
@@ -35,9 +33,10 @@ fn stage_pre_json(runner: &dyn CommandRunner, root: &Path) -> Result<(), CliErro
     Ok(())
 }
 
-/// Reports the `.changeset/pre.json` content a real run would have written,
-/// mirroring `add`'s dry-run preview in both output formats.
-fn preview(global: &GlobalArgs, mode: &str, tag: &str, content: &str) -> Result<(), CliError> {
+/// Reports the `pre.json` content a real run would have written, mirroring
+/// `add`'s dry-run preview in both output formats.
+fn preview(global: &GlobalArgs, mode: &str, tag: &str, rel_path: &Path, content: &str) -> Result<(), CliError> {
+    let rel_str = rel_path.to_string_lossy();
     match global.format {
         OutputFormat::Json => {
             let env = json!({
@@ -46,13 +45,13 @@ fn preview(global: &GlobalArgs, mode: &str, tag: &str, content: &str) -> Result<
                 "dryRun": true,
                 "mode": mode,
                 "tag": tag,
-                "path": PRE_JSON_REL,
+                "path": rel_str,
                 "content": content
             });
             write_json(&mut std::io::stdout(), &env)?;
         }
         OutputFormat::Text => {
-            println!("[DRY-RUN] Would write {PRE_JSON_REL} (no files written)\n\n{content}");
+            println!("[DRY-RUN] Would write {rel_str} (no files written)\n\n{content}");
         }
     }
     Ok(())
@@ -85,8 +84,9 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             // Bug 1: reject re-entering pre mode when already active.
             // The check runs for both real and dry-run paths so a dry-run
             // never silently simulates overwriting live pre-release state.
-            let pre_dir = ws.root.join(".changeset");
-            let pre_path = pre_dir.join("pre.json");
+            let rel_pre_path = ws.config.pre_json_path();
+            let pre_path = ws.root.join(&rel_pre_path);
+            let pre_dir = pre_path.parent().unwrap_or(&ws.root).to_path_buf();
             if pre_path.exists() {
                 return Err(CliError::Other(
                     "Workspace is already in pre-release mode. Run `callisto pre exit` first, \
@@ -105,7 +105,7 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             let text = write_pre_json(&pre_state);
 
             let Some(permit) = permit else {
-                preview(global, "pre", &tag, &text)?;
+                preview(global, "pre", &tag, &rel_pre_path, &text)?;
                 return Ok(ExitCode::SUCCESS);
             };
 
@@ -113,7 +113,7 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             callisto_manifests::atomic::atomic_write(&pre_path, &text, &permit)?;
 
             // Bug 4: stage pre.json so it is included in the next commit.
-            stage_pre_json(&runner, &ws.root)?;
+            stage_pre_json(&runner, &ws.root, &rel_pre_path)?;
 
             match global.format {
                 OutputFormat::Json => {
@@ -136,7 +136,9 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
                 path: Some(global.cwd.clone()),
             })?;
             let root = callisto_graph::locate::find_workspace_root(&start)?;
-            let pre_path = root.join(PRE_JSON_REL);
+            let config = callisto_graph::load_config(&root)?;
+            let rel_pre_path = config.pre_json_path();
+            let pre_path = root.join(&rel_pre_path);
 
             let text = fs::read_to_string(&pre_path).map_err(|source| CliError::Io {
                 source,
@@ -155,14 +157,18 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
 
             pre_state.mode = PreMode::Exit;
 
-            let updated = write_pre_json(&pre_state);
+            let updated = write_pre_json_preserving(&pre_state, &text);
 
             let Some(permit) = permit else {
-                preview(global, "exit", &pre_state.tag, &updated)?;
+                preview(global, "exit", &pre_state.tag, &rel_pre_path, &updated)?;
                 return Ok(ExitCode::SUCCESS);
             };
 
             callisto_manifests::atomic::atomic_write(&pre_path, &updated, &permit)?;
+
+            // `pre exit` mutates the same tracked file `pre enter` created,
+            // so it must stage it the same way for the next commit.
+            stage_pre_json(&runner, &root, &rel_pre_path)?;
 
             match global.format {
                 OutputFormat::Json => {
@@ -259,7 +265,8 @@ mod tests {
             }
         }
 
-        let err = stage_pre_json(&LeakyGitRunner, Path::new(".")).expect_err("git add failure must surface as an Err");
+        let err = stage_pre_json(&LeakyGitRunner, Path::new("."), Path::new(".changeset/pre.json"))
+            .expect_err("git add failure must surface as an Err");
         let rendered = format!("{err}");
         assert!(
             !rendered.contains("ghs_leaked_secret"),

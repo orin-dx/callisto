@@ -27,7 +27,21 @@ pub struct Aggregation {
     pub severities: BTreeMap<PackageId, Severity>,
     pub reasons: BTreeMap<PackageId, BumpReason>,
     pub named_by: BTreeMap<PackageId, NamedBy>,
+    /// Changeset files to delete from disk this run (non-pre-mode only: a
+    /// pre-mode run must never delete a changeset, since it may still be
+    /// re-applied on the next pre-mode `version` before `pre exit`).
     pub consumed: Vec<PathBuf>,
+    /// Changeset ids matched this run in pre mode that are NOT already in
+    /// `pre.json`'s `changesets` list -- the caller records these into
+    /// `pre.json` so a rerun recognizes them as already-applied and skips
+    /// re-adding their changelog entry, without deleting the file.
+    pub new_pre_changesets: Vec<String>,
+    /// True when at least one changeset (new or already recorded) matched a
+    /// real package in pre mode this run. Distinct from `new_pre_changesets`
+    /// being empty: a rerun with nothing NEW still has an active pre-release
+    /// changeset driving its severity, so the "no pending changesets"
+    /// warning must key off this, not off "nothing new".
+    pub pre_mode_has_active_changeset: bool,
     pub changelog_inputs: BTreeMap<PackageId, ChangelogInput>,
     pub inference_commits: BTreeMap<PackageId, Vec<(CommitSha, String)>>,
     pub diagnostics: Vec<Diagnostic>,
@@ -226,8 +240,15 @@ where
     // During a pre-release cycle (PreMode::Pre) changesets must NOT be consumed:
     // they remain on disk so they can be re-applied when the cycle exits.
     let is_pre_mode = pre.map(|s| s.mode == callisto_format::PreMode::Pre).unwrap_or(false);
+    // Ids pre.json already recorded from an earlier pre-mode run: still
+    // resolved for severity (so cascade sees the right target), but not
+    // re-added to the changelog (already logged there).
+    let already_recorded: std::collections::HashSet<&str> = pre
+        .map(|s| s.changesets.iter().map(String::as_str).collect())
+        .unwrap_or_default();
 
     for cs in loaded {
+        let is_already_recorded = is_pre_mode && already_recorded.contains(cs.id.as_str());
         // Defer adding to `consumed` until after we confirm at least one entry
         // resolved to a real workspace package.  A changeset where every entry
         // names a removed package must NOT be consumed (which would delete it
@@ -270,7 +291,7 @@ where
                         agg.named_by.insert(canonical_id.clone(), NamedBy::Changeset);
                     }
 
-                    if entry.severity != Severity::None {
+                    if entry.severity != Severity::None && !is_already_recorded {
                         // In pre-release mode use the pre-cycle entry version as the
                         // changelog "from" baseline so the log covers the full pre
                         // range rather than reflecting live (pre-tagged) versions.
@@ -327,12 +348,23 @@ where
                 }
             }
         }
-        // Only mark as consumed when at least one entry resolved to a real
-        // package AND we are not in a pre-release cycle.  During pre mode the
-        // changeset files must stay on disk so they can be re-applied on exit.
-        // A fully-orphaned changeset is also left on disk regardless of mode.
-        if matched_any && !is_pre_mode {
-            agg.consumed.push(cs.path.clone());
+        // A fully-orphaned changeset (no entry resolved) is left on disk and
+        // unrecorded regardless of mode.
+        if matched_any {
+            if is_pre_mode {
+                agg.pre_mode_has_active_changeset = true;
+                // Record newly-seen ids so a rerun treats them as
+                // already-applied instead of re-adding their changelog
+                // entry every time; the file itself stays on disk so it can
+                // still be re-applied by a later pre-mode run before `pre
+                // exit`, and its severity keeps counting against
+                // `initialVersions` on every run via `already_recorded`.
+                if !is_already_recorded {
+                    agg.new_pre_changesets.push(cs.id.clone());
+                }
+            } else {
+                agg.consumed.push(cs.path.clone());
+            }
         }
     }
 
@@ -1744,5 +1776,186 @@ mod tests {
              applied instead. Two-pass specificity is required: Prefixed rules must win over \
              Bare rules regardless of declaration order."
         );
+    }
+
+    /// Spec: in pre mode, a changeset matched for the first time is recorded
+    /// into `new_pre_changesets` (so the caller can persist its id into
+    /// `pre.json`) and produces one changelog entry, but is never added to
+    /// `consumed` (the file must stay on disk). Reproduces the
+    /// ver-pre-reapply bug: previously `consumed` was the only record of
+    /// "seen this run", and pre mode always suppressed it, so a rerun had no
+    /// way to tell an already-applied changeset from a new one.
+    #[test]
+    fn test_pre_mode_first_match_is_recorded_not_consumed() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        init_repo(root);
+
+        let cs_dir = root.join(".changeset");
+        std::fs::create_dir_all(&cs_dir).unwrap();
+        std::fs::write(
+            cs_dir.join("cool-thing.md"),
+            "---\npkg-a: minor\n---\n\nAdds a thing.\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("README.md"), "hello\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "initial commit"]);
+
+        let pkg_id = PackageId::parse("pkg-a").unwrap();
+        let graph = SinglePackageGraph {
+            pkg: make_pkg(pkg_id.clone()),
+        };
+        let cfg = crate::config::load(root).unwrap();
+        let runner = RealGitRunner;
+        let git = GitAccess::new(root, &runner);
+        let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
+        let mut base_versions = BTreeMap::new();
+        base_versions.insert(pkg_id.clone(), Version::semver(0, 1, 0));
+
+        let mut initial_versions = indexmap::IndexMap::new();
+        initial_versions.insert("pkg-a".to_string(), Version::semver(0, 1, 0));
+        let pre_state = callisto_format::PreState {
+            mode: callisto_format::PreMode::Pre,
+            tag: "beta".to_string(),
+            initial_versions,
+            changesets: Vec::new(),
+        };
+
+        let inference = crate::infer::NoInference;
+        let agg = aggregate(&graph, &cfg, &git, &tags, &base_versions, Some(&pre_state), &inference).unwrap();
+
+        assert_eq!(
+            agg.new_pre_changesets,
+            vec!["cool-thing".to_string()],
+            "a changeset matched for the first time in pre mode must be recorded as new"
+        );
+        assert!(
+            agg.consumed.is_empty(),
+            "pre mode must never add a changeset to `consumed` (would delete it from disk); got: {:?}",
+            agg.consumed
+        );
+        assert_eq!(
+            agg.changelog_inputs.get(&pkg_id).map(|i| i.entries.len()),
+            Some(1),
+            "a newly-seen pre-mode changeset must produce exactly one changelog entry"
+        );
+    }
+
+    /// Spec: once a changeset's id is already in `pre.json`'s `changesets`
+    /// list, a rerun must still count its severity (so cascade computes the
+    /// correct target against `initialVersions`) but must NOT record it
+    /// again as new and must NOT add a second changelog entry -- otherwise
+    /// every `version` run during a pre-release cycle re-applies the same
+    /// changeset, duplicating its changelog line (the ver-pre-reapply bug).
+    #[test]
+    fn test_pre_mode_already_recorded_changeset_counts_severity_but_not_changelog() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        init_repo(root);
+
+        let cs_dir = root.join(".changeset");
+        std::fs::create_dir_all(&cs_dir).unwrap();
+        std::fs::write(
+            cs_dir.join("cool-thing.md"),
+            "---\npkg-a: minor\n---\n\nAdds a thing.\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("README.md"), "hello\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "initial commit"]);
+
+        let pkg_id = PackageId::parse("pkg-a").unwrap();
+        let graph = SinglePackageGraph {
+            pkg: make_pkg(pkg_id.clone()),
+        };
+        let cfg = crate::config::load(root).unwrap();
+        let runner = RealGitRunner;
+        let git = GitAccess::new(root, &runner);
+        let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
+        let mut base_versions = BTreeMap::new();
+        base_versions.insert(pkg_id.clone(), Version::semver(0, 1, 0));
+
+        let mut initial_versions = indexmap::IndexMap::new();
+        initial_versions.insert("pkg-a".to_string(), Version::semver(0, 1, 0));
+        let pre_state = callisto_format::PreState {
+            mode: callisto_format::PreMode::Pre,
+            tag: "beta".to_string(),
+            initial_versions,
+            // Simulates a prior `version` run already having recorded this id.
+            changesets: vec!["cool-thing".to_string()],
+        };
+
+        let inference = crate::infer::NoInference;
+        let agg = aggregate(&graph, &cfg, &git, &tags, &base_versions, Some(&pre_state), &inference).unwrap();
+
+        assert!(
+            agg.new_pre_changesets.is_empty(),
+            "an already-recorded pre-mode changeset must not be reported as new; got: {:?}",
+            agg.new_pre_changesets
+        );
+        assert!(
+            agg.consumed.is_empty(),
+            "pre mode must never delete a changeset from disk, recorded or not; got: {:?}",
+            agg.consumed
+        );
+        assert_eq!(
+            agg.severities.get(&pkg_id),
+            Some(&Severity::Minor),
+            "an already-recorded changeset must still count toward severity against initialVersions"
+        );
+        assert!(
+            !agg.changelog_inputs.contains_key(&pkg_id),
+            "an already-recorded pre-mode changeset must not produce a new changelog entry on rerun; \
+             got: {:?}",
+            agg.changelog_inputs.get(&pkg_id)
+        );
+        assert!(
+            agg.pre_mode_has_active_changeset,
+            "an already-recorded changeset still actively drives this run (severity + prerelease \
+             counter), so pre_mode_has_active_changeset must be true, not just new_pre_changesets"
+        );
+    }
+
+    /// Spec: with no changeset on disk at all in pre mode (neither new nor
+    /// previously recorded), the run has no active changeset -- this, not
+    /// `new_pre_changesets` alone, is what must gate the "no pending
+    /// changesets" warning: a rerun with an
+    /// already-recorded changeset still driving severity is NOT the same as
+    /// a genuinely empty run.
+    #[test]
+    fn test_pre_mode_no_changesets_at_all_has_no_active_changeset() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+        init_repo(root);
+        std::fs::write(root.join("README.md"), "hello\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "initial commit"]);
+
+        let pkg_id = PackageId::parse("pkg-a").unwrap();
+        let graph = SinglePackageGraph {
+            pkg: make_pkg(pkg_id.clone()),
+        };
+        let cfg = crate::config::load(root).unwrap();
+        let runner = RealGitRunner;
+        let git = GitAccess::new(root, &runner);
+        let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
+        let mut base_versions = BTreeMap::new();
+        base_versions.insert(pkg_id, Version::semver(0, 1, 0));
+
+        let mut initial_versions = indexmap::IndexMap::new();
+        initial_versions.insert("pkg-a".to_string(), Version::semver(0, 1, 0));
+        let pre_state = callisto_format::PreState {
+            mode: callisto_format::PreMode::Pre,
+            tag: "beta".to_string(),
+            initial_versions,
+            changesets: Vec::new(),
+        };
+
+        let inference = crate::infer::NoInference;
+        let agg = aggregate(&graph, &cfg, &git, &tags, &base_versions, Some(&pre_state), &inference).unwrap();
+
+        assert!(!agg.pre_mode_has_active_changeset);
+        assert!(agg.new_pre_changesets.is_empty());
     }
 }
