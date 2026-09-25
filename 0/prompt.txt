@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bu7d7x2ne</task-id>
+<tool-use-id>toolu_01X1aJE1Fdry7GspzpQAdMqs</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/a08620cc-8b37-45b5-b4b2-89a977aad490/tasks/bu7d7x2ne.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait in the background until all CI checks settle" completed (exit code 0)</summary>
+</task-notification>
