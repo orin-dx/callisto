@@ -1,0 +1,3 @@
+Let's take a look at the 40 bugs we identified in ROAD-TO-V1.md. Consider if they really are bugs in the context of the work we're doing or mis-representation of the goal and specs? COnsider the overall semantic model and architecture in this evaluation as well as proposed fixes across all the bugs that are validate as true.
+
+SHow what you found and a proposal
