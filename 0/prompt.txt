@@ -1,0 +1,22 @@
+The is what GH is saying:
+
+
+
+<pasted_content id="354f">
+Resolve Conflicts with CLI
+
+Use the gh stack CLI to resolve conflicts within your stack of branches.
+Step 1 Checkout the stack of branches locally.
+
+gh stack checkout 127
+Step 2 Rebase the stack with changes from the base branch.
+
+gh stack rebase
+Step 3 Fix any conflicts and commit the result.
+
+See Resolving a merge conflict for step-by-step instructions on resolving merge conflicts.
+
+Step 4 Push the changes.
+
+gh stack push
+</pasted_content id="354f">
