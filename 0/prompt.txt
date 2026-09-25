@@ -1,0 +1,1 @@
+We don't use graphite but GH has stacking support
