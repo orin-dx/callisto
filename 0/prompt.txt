@@ -1,0 +1,41 @@
+Let's understand the current state of callisto, the goal of the tool and summarize for an agent that is picking this up fresh
+
+---
+
+Let's understand the current state of callisto, the goal of the tool and summarize for an agent that is picking this up fresh. Be succinct, avoid wordy prose. Be mindful of the context and only include what is useful but don't forget important things please.
+
+---
+
+Also include what the tool does, how is it different from the competition. Any context it needs to evalute how the code works, our UX and DX, etc
+
+---
+
+Is this comprehensive enough?
+
+---
+
+Include the missing stuff
+
+---
+
+Give me a full thing together.
+
+---
+
+Should any of this info be in our readme, architecture? some other doc?
+
+---
+
+Let's not keep historical things as it would confuse future AI helping us and is it really relevant to the user after we ship v1?
+
+---
+
+yes, do it as one PR
+
+---
+
+Before we do that does all of this take into account the work on our PR stack currently open???
+
+---
+
+Can we consider the changes in the stack and account for them? And add this to the top of the stack to avoid conflicts?

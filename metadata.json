@@ -1,0 +1,61 @@
+{
+  "cli_version": "0.11.3-nightly.202609240627.b2779c9eb",
+  "checkpoint_id": "01M3CP11VDPPY3H61TYVP34GQK",
+  "strategy": "manual-commit",
+  "branch": "docs/consistency-cleanup",
+  "checkpoints_count": 9,
+  "files_touched": [
+    ".agents/subagents/bug-hunter.md",
+    ".changeset/tough-lynxes-strut.md",
+    ".github/actions/callisto-action/action.yml",
+    ".github/actions/setup-callisto/action.yml",
+    ".gitignore",
+    ".moon/tasks/callisto.yml",
+    "README.md",
+    "crates/callisto-graph/src/apply.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/tests/package_set_ecosystem_test.rs",
+    "crates/callisto-model/src/lib.rs",
+    "crates/callisto-model/src/plan.rs",
+    "crates/callisto-model/src/report.rs",
+    "docs/02-library-vs-moon-decision.md",
+    "docs/config.md",
+    "docs/errors.md",
+    "docs/specs/REQ-DX-V1.md",
+    "docs/specs/SPEC-ARCH-RELEASE-ERROR-TAXONOMY.json",
+    "docs/specs/SPEC-DX-CLI-SURFACE.json",
+    "docs/specs/SPEC-DX-CONFIG-RELEASE-SCHEMA.json",
+    "docs/specs/SPEC-DX-CORRECTNESS-CI.json",
+    "docs/specs/SPEC-DX-CORRECTNESS-E2E.json",
+    "docs/specs/SPEC-DX-CORRECTNESS-PARITY.json",
+    "docs/specs/SPEC-DX-CORRECTNESS-PROVENANCE-PINS.json",
+    "docs/specs/SPEC-DX-CORRECTNESS-TRIGGER.json",
+    "docs/specs/SPEC-DX-RELEASE-COMMAND.json",
+    "docs/specs/SPEC-DX-SETUP-CORE.json",
+    "docs/specs/SPEC-DX-SETUP-WORKFLOW-MATRIX.json",
+    "docs/specs/SPEC-DX-SETUP-WORKFLOW-SIMPLE.json",
+    "docs/specs/SPEC-DX-STATUS-ADD.json",
+    "docs/specs/SPEC-RELEASE-DECISION-008.json",
+    "docs/specs/SPEC-RELEASE-INTENT-MODEL-009.json",
+    "docs/specs/SPEC-RELEASE-LIFECYCLE-HARDENING.json",
+    "docs/specs/SPEC-RELEASE-TRUST-010.json",
+    "docs/specs/callisto-matrix.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 110,
+    "cache_creation_tokens": 128715,
+    "cache_read_tokens": 6201427,
+    "output_tokens": 49882,
+    "api_call_count": 55
+  }
+}
