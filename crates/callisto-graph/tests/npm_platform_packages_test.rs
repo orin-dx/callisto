@@ -58,15 +58,7 @@ fn platform_json(name: &str, version: &str, os: &str, cpu: &str, libc: Option<&s
 
 /// Returns the workspace root of a fresh oxc-react-docgen-shaped fixture.
 pub fn build_fixture(root: &Path) {
-    git(root, &["init", "-q", "-b", "main"]);
-    for (k, v) in [
-        ("user.email", "test@example.com"),
-        ("user.name", "Test"),
-        ("commit.gpgsign", "false"),
-        ("tag.gpgsign", "false"),
-    ] {
-        git(root, &["config", k, v]);
-    }
+    callisto_fixtures::git::init_repo(root);
     write(
         root,
         "package.json",

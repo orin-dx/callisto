@@ -165,11 +165,7 @@ pub fn product_release_commit_fixture() -> (TempDir, String) {
 pub fn release_commit_fixture_with_product_release(product_release: bool) -> (TempDir, String) {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    git(root, &["init", "-b", "main"]);
-    git(root, &["config", "user.name", "Callisto Test"]);
-    git(root, &["config", "user.email", "test@example.invalid"]);
-    git(root, &["config", "commit.gpgsign", "false"]);
-    git(root, &["config", "tag.gpgsign", "false"]);
+    callisto_fixtures::git::init_repo(root);
     git(
         root,
         &["remote", "add", "origin", "https://github.com/example/core-crate.git"],
@@ -269,11 +265,7 @@ pub fn release_commit_fixture_with_product_release(product_release: bool) -> (Te
 pub fn fixed_group_release_commit_fixture() -> (TempDir, String) {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    git(root, &["init", "-b", "main"]);
-    git(root, &["config", "user.name", "Callisto Test"]);
-    git(root, &["config", "user.email", "test@example.invalid"]);
-    git(root, &["config", "commit.gpgsign", "false"]);
-    git(root, &["config", "tag.gpgsign", "false"]);
+    callisto_fixtures::git::init_repo(root);
     git(
         root,
         &["remote", "add", "origin", "https://github.com/example/fixed-group.git"],
@@ -407,6 +399,10 @@ pub fn coordinator_checkout(source: &Path, release_commit: &str) -> (TempDir, St
     git(coordinator, &["config", "user.name", "Callisto Coordinator"]);
     git(coordinator, &["config", "user.email", "coordinator@example.invalid"]);
     git(coordinator, &["config", "commit.gpgsign", "false"]);
+    git(coordinator, &["config", "tag.gpgsign", "false"]);
+    // Background auto-gc/maintenance can race this coordinator's own commits.
+    git(coordinator, &["config", "gc.auto", "0"]);
+    git(coordinator, &["config", "maintenance.auto", "false"]);
     git(coordinator, &["checkout", "--detach", release_commit]);
     fs::write(coordinator.join("COORDINATOR-REVISION"), "new coordinator\n").unwrap();
     git(coordinator, &["add", "COORDINATOR-REVISION"]);
@@ -1387,6 +1383,15 @@ pub fn bare_remote(dir: &Path) -> PathBuf {
         .output()
         .unwrap();
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    // Background auto-gc/maintenance can race the pushes this bare remote receives.
+    for args in [["config", "gc.auto", "0"], ["config", "maintenance.auto", "false"]] {
+        let output = Command::new(system_git())
+            .args(args)
+            .current_dir(&bare)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    }
     bare
 }
 

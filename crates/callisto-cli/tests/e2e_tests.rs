@@ -9,7 +9,7 @@ fn test_e2e_workspace_init_add_and_status() {
     let root = tmp.path();
 
     // Initialize git repository
-    let _res = std::process::Command::new("git").arg("init").current_dir(root).output();
+    callisto_fixtures::git::init_repo(root);
 
     // Create a Cargo workspace manifest
     let cargo_toml = r#"[workspace]
@@ -36,30 +36,8 @@ edition = "2021"
     };
     for args in [
         ["remote", "add", "origin", "https://github.com/example/my-app.git"].as_slice(),
-        [
-            "-c",
-            "user.name=Test",
-            "-c",
-            "user.email=test@example.com",
-            "-c",
-            "commit.gpgsign=false",
-            "add",
-            ".",
-        ]
-        .as_slice(),
-        [
-            "-c",
-            "user.name=Test",
-            "-c",
-            "user.email=test@example.com",
-            "-c",
-            "commit.gpgsign=false",
-            "commit",
-            "-q",
-            "-m",
-            "init",
-        ]
-        .as_slice(),
+        ["add", "."].as_slice(),
+        ["commit", "-q", "-m", "init"].as_slice(),
     ] {
         assert!(std::process::Command::new("git")
             .args(args)
@@ -124,7 +102,7 @@ fn test_status_matches_ecosystem_qualified_changeset_entry() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
 
-    drop(std::process::Command::new("git").arg("init").current_dir(root).output());
+    callisto_fixtures::git::init_repo(root);
 
     fs::write(
         root.join("Cargo.toml"),
@@ -195,7 +173,7 @@ fn test_status_check_exit_codes() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
 
-    drop(std::process::Command::new("git").arg("init").current_dir(root).output());
+    callisto_fixtures::git::init_repo(root);
 
     fs::write(
         root.join("Cargo.toml"),
@@ -259,7 +237,7 @@ fn test_status_default_exit_code_clean_workspace() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
 
-    drop(std::process::Command::new("git").arg("init").current_dir(root).output());
+    callisto_fixtures::git::init_repo(root);
 
     fs::write(
         root.join("Cargo.toml"),

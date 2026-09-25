@@ -16,11 +16,7 @@ fn git(root: &Path, args: &[&str]) {
 fn red_c3_renamed_tag_template_still_finds_prior_tags() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    git(root, &["init", "-b", "main"]);
-    git(root, &["config", "user.name", "Callisto Test"]);
-    git(root, &["config", "user.email", "test@example.invalid"]);
-    git(root, &["config", "commit.gpgsign", "false"]);
-    git(root, &["config", "tag.gpgsign", "false"]);
+    callisto_fixtures::git::init_repo(root);
     fs::write(
         root.join("Cargo.toml"),
         "[workspace]\nmembers = [\"crates/foo\"]\nresolver = \"2\"\n",

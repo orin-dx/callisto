@@ -867,12 +867,8 @@ mod tests {
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(path, body).unwrap();
         }
+        callisto_fixtures::git::init_repo(dir.path());
         for args in [
-            ["init", "-q"].as_slice(),
-            ["config", "user.email", "test@example.com"].as_slice(),
-            ["config", "user.name", "Test"].as_slice(),
-            ["config", "commit.gpgsign", "false"].as_slice(),
-            ["config", "tag.gpgsign", "false"].as_slice(),
             ["remote", "add", "origin", "https://github.com/example/parity.git"].as_slice(),
             ["add", "."].as_slice(),
             ["commit", "-q", "-m", "fixture"].as_slice(),

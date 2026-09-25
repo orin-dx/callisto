@@ -149,6 +149,9 @@ fn git_rev_parse_flags_are_understood_by_real_git() {
         String::from_utf8_lossy(&output.stdout).trim().to_owned()
     };
     git_in(&["init", "-q"]);
+    // Background auto-gc/maintenance can race this test's own git operations.
+    git_in(&["config", "gc.auto", "0"]);
+    git_in(&["config", "maintenance.auto", "false"]);
     git_in(&[
         "-c",
         "user.name=t",

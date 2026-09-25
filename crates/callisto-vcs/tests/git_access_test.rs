@@ -55,6 +55,9 @@ fn init_repo(root: &Path) {
     git(root, &["config", "user.name", "Test"]);
     git(root, &["config", "commit.gpgsign", "false"]);
     git(root, &["config", "tag.gpgsign", "false"]);
+    // Background auto-gc/maintenance can race a test's own git operations.
+    git(root, &["config", "gc.auto", "0"]);
+    git(root, &["config", "maintenance.auto", "false"]);
 }
 
 fn commit_file(root: &Path, path: &str, contents: &[u8], message: &str) {

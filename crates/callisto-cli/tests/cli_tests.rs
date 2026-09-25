@@ -48,8 +48,8 @@ fn test_add_non_interactive_via_pipe() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
 
-    // git init (callisto needs a git repo for some operations; tolerate failure)
-    drop(Command::new("git").args(["init", "-q"]).current_dir(root).output());
+    // callisto needs a git repo for some operations.
+    callisto_fixtures::git::init_repo(root);
 
     std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
 
@@ -98,7 +98,7 @@ fn test_add_flags_path_skips_tty_check_entirely() {
 
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
-    drop(Command::new("git").args(["init", "-q"]).current_dir(root).output());
+    callisto_fixtures::git::init_repo(root);
     std::fs::write(
         root.join("Cargo.toml"),
         "[workspace]\nmembers = [\"crates/my-app\"]\nresolver = \"2\"\n",

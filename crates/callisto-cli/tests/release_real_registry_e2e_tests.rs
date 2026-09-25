@@ -188,11 +188,7 @@ const NPM_ORIGIN: &str = "https://github.com/example/npm-registry-fixture.git";
 fn npm_registry_release_fixture(package_name: &str) -> (tempfile::TempDir, String) {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    git(root, &["init", "-b", "main"]);
-    git(root, &["config", "user.name", "Callisto Test"]);
-    git(root, &["config", "user.email", "test@example.invalid"]);
-    git(root, &["config", "commit.gpgsign", "false"]);
-    git(root, &["config", "tag.gpgsign", "false"]);
+    callisto_fixtures::git::init_repo(root);
     git(root, &["remote", "add", "origin", NPM_ORIGIN]);
 
     fs::write(root.join(".gitignore"), ".npmrc\n").unwrap();

@@ -33,11 +33,7 @@ impl CommandRunner for NoopRunner {
 }
 
 fn build_two_package_workspace(root: &Path) {
-    std::process::Command::new("git")
-        .arg("init")
-        .current_dir(root)
-        .output()
-        .expect("git init should run");
+    callisto_fixtures::git::init_repo(root);
 
     fs::write(
         root.join("Cargo.toml"),

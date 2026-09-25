@@ -16,41 +16,7 @@ use callisto_cli::commands;
 fn make_git_workspace(tmp: &TempDir) -> GlobalArgs {
     let root = tmp.path();
 
-    drop(
-        std::process::Command::new("git")
-            .args(["init", "-q", "-b", "main"])
-            .current_dir(root)
-            .output(),
-    );
-
-    // Configure git identity so commits and tags work.
-    drop(
-        std::process::Command::new("git")
-            .args(["config", "user.name", "Test"])
-            .current_dir(root)
-            .output(),
-    );
-    drop(
-        std::process::Command::new("git")
-            .args(["config", "user.email", "test@test.dev"])
-            .current_dir(root)
-            .output(),
-    );
-    // Hermetic against the ambient machine's global git config: a real
-    // signing attempt would hang under a test runner (like cargo nextest)
-    // that gives child processes no controlling TTY for pinentry to use.
-    drop(
-        std::process::Command::new("git")
-            .args(["config", "commit.gpgsign", "false"])
-            .current_dir(root)
-            .output(),
-    );
-    drop(
-        std::process::Command::new("git")
-            .args(["config", "tag.gpgsign", "false"])
-            .current_dir(root)
-            .output(),
-    );
+    callisto_fixtures::git::init_repo(root);
 
     // Minimal Cargo workspace with one package.
     fs::write(
