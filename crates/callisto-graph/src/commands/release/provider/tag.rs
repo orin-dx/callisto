@@ -11,7 +11,7 @@ use callisto_vcs::{GitAccess, TagSignPolicy};
 use crate::error::{CommandFailure, RemoteConflict};
 use crate::GraphError;
 
-use super::policy::{self, programs, timeouts, Attempt};
+use super::policy::{self, programs, run_observation, timeouts, Attempt};
 use super::{
     confirmed_evidence, wrong_role, EffectAuthorization, PreparedOperation, ProviderCapabilities, ProviderContext,
     ProviderRequest, ReleaseProvider, TagOperation,
@@ -189,9 +189,22 @@ fn observed_remote_tag(
     // tag has no peeled line at all.
     let peeled = format!("{reference}^{{}}");
     let args = ["ls-remote", endpoint.as_str(), reference.as_str(), peeled.as_str()];
-    let observed = context
-        .runner()
-        .run_quiet(programs::GIT, &args, context.root(), timeouts::GIT_LS_REMOTE)?;
+    let observed = match run_observation(
+        context.runner(),
+        programs::GIT,
+        &args,
+        context.root(),
+        timeouts::GIT_LS_REMOTE,
+        true,
+    )? {
+        Ok(observed) => observed,
+        Err(_unavailable) => {
+            return Ok(Attempt::Transient {
+                value: RemoteTagObservation::Indeterminate,
+                retry_after: None,
+            })
+        }
+    };
     if observed.exit_code != Some(0) {
         return Ok(Attempt::Transient {
             value: RemoteTagObservation::Indeterminate,
@@ -343,6 +356,69 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    /// Answers `git remote get-url` deterministically, then hands back one
+    /// scripted `ls-remote` result per call.
+    struct FlakyLsRemote {
+        url: &'static str,
+        results: std::sync::Mutex<
+            std::collections::VecDeque<Result<callisto_model::CommandOutput, callisto_model::CommandError>>,
+        >,
+    }
+
+    impl CommandRunner for FlakyLsRemote {
+        fn run(
+            &self,
+            program: &str,
+            args: &[&str],
+            _cwd: &Path,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            assert_eq!(program, "git");
+            if args.first() == Some(&"remote") {
+                return Ok(callisto_model::CommandOutput {
+                    exit_code: Some(0),
+                    stdout: self.url.to_owned(),
+                    stderr: String::new(),
+                });
+            }
+            assert_eq!(args.first(), Some(&"ls-remote"));
+            self.results.lock().unwrap().pop_front().expect("script exhausted")
+        }
+    }
+
+    /// Regression: a `git ls-remote` that times out once must retry and
+    /// settle, not abort the whole observation with a hard error (the bug
+    /// was `observed_remote_tag` handing `CommandError::TimedOut` straight to
+    /// `?`, which `retry_observation` never saw).
+    #[test]
+    fn observed_remote_tag_retries_past_a_timed_out_ls_remote() {
+        let remote =
+            crate::commands::release::binding::canonical_git_remote("https://github.com/orin-dx/callisto").unwrap();
+        let runner = FlakyLsRemote {
+            url: "https://github.com/orin-dx/callisto",
+            results: std::sync::Mutex::new(
+                vec![
+                    Err(callisto_model::CommandError::TimedOut {
+                        program: "git".to_owned(),
+                        seconds: 60,
+                    }),
+                    Ok(callisto_model::CommandOutput {
+                        exit_code: Some(0),
+                        stdout: fixtures::LS_REMOTE_ABSENT.to_owned(),
+                        stderr: String::new(),
+                    }),
+                ]
+                .into(),
+            ),
+        };
+        let sleeper = policy::tests::RecordingSleeper::new();
+        let root = std::env::temp_dir();
+        let context = ProviderContext::new(&root, &runner, Some(&remote)).with_sleeper(&sleeper);
+        let name = TagName::new_unchecked("callisto-no-such-tag".to_owned());
+        let result = policy::retry_observation(context.sleeper(), || observed_remote_tag(&context, &name));
+        assert_eq!(result, Ok(RemoteTagObservation::Absent));
+        assert_eq!(sleeper.waits(), vec![std::time::Duration::from_secs(2)]);
     }
 
     struct FailedPush(&'static str);

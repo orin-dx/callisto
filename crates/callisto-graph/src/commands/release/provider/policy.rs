@@ -1,8 +1,9 @@
 //! Wall-clock and retry policy shared by every release provider.
 
+use std::path::Path;
 use std::time::Duration;
 
-use callisto_model::Version;
+use callisto_model::{CommandError, CommandOutput, CommandRunner, Version};
 
 use crate::GraphError;
 
@@ -92,6 +93,42 @@ fn scaled_for_tests(duration: Duration) -> Duration {
     }
 }
 
+/// A read-only observation command could not be run at all (it timed out or
+/// failed to spawn/exec), as distinct from running and exiting non-zero.
+#[derive(Debug)]
+pub(crate) struct CommandUnavailable;
+
+/// Runs one observation command, separating "the process never produced an
+/// answer" from "it ran and its exit code or output says something". Every
+/// `observe_once` used to hand its runner call straight to `?`, so
+/// `CommandError::TimedOut`/`Io` propagated as a hard [`GraphError`] before
+/// [`retry_observation`] ever saw it -- a hung or momentarily-unreachable
+/// command aborted the whole observation instead of feeding the bounded
+/// retry. This is the one place that translation happens, for every caller.
+///
+/// `CommandError::NotFound` (the program itself is missing) is deliberately
+/// excluded: no amount of retrying installs the program, so it still
+/// surfaces as the ordinary hard error.
+pub(crate) fn run_observation(
+    runner: &dyn CommandRunner,
+    program: &str,
+    args: &[&str],
+    cwd: &Path,
+    timeout: Duration,
+    quiet: bool,
+) -> Result<Result<CommandOutput, CommandUnavailable>, GraphError> {
+    let result = if quiet {
+        runner.run_quiet(program, args, cwd, timeout)
+    } else {
+        runner.run_with_timeout(program, args, cwd, timeout)
+    };
+    match result {
+        Ok(output) => Ok(Ok(output)),
+        Err(CommandError::TimedOut { .. } | CommandError::Io { .. }) => Ok(Err(CommandUnavailable)),
+        Err(other) => Err(other.into()),
+    }
+}
+
 /// The one bounded retry in the release path. It wraps read-only observations
 /// only: an effect (publish, push, release create, asset upload) is never
 /// re-issued from here, because a transient error cannot prove the first
@@ -141,6 +178,103 @@ pub(crate) fn require_registry_confirmation(
 pub(crate) mod tests {
     use super::*;
     use callisto_model::VersionGrammar;
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+
+    /// Hands back one scripted `run`/`run_quiet`/`run_with_timeout` result per
+    /// call, in order.
+    struct ScriptedCommand(Mutex<VecDeque<Result<CommandOutput, CommandError>>>);
+
+    impl ScriptedCommand {
+        fn new(results: Vec<Result<CommandOutput, CommandError>>) -> Self {
+            Self(Mutex::new(results.into()))
+        }
+    }
+
+    impl CommandRunner for ScriptedCommand {
+        fn run(&self, _program: &str, _args: &[&str], _cwd: &std::path::Path) -> Result<CommandOutput, CommandError> {
+            self.0.lock().unwrap().pop_front().expect("no more scripted results")
+        }
+    }
+
+    fn ok_output() -> CommandOutput {
+        CommandOutput {
+            exit_code: Some(0),
+            stdout: String::new(),
+            stderr: String::new(),
+        }
+    }
+
+    /// The regression this whole module exists for: before `run_observation`,
+    /// every `observe_once` handed its runner call straight to `?`, so a
+    /// `TimedOut`/`Io` `CommandError` propagated as a hard `GraphError`
+    /// instead of becoming a transient answer `retry_observation` could act
+    /// on.
+    #[test]
+    fn a_timed_out_command_is_unavailable_not_a_hard_error() {
+        let runner = ScriptedCommand::new(vec![Err(CommandError::TimedOut {
+            program: "cargo".to_string(),
+            seconds: 300,
+        })]);
+        let result = run_observation(&runner, "cargo", &[], std::path::Path::new("."), Duration::ZERO, true);
+        assert!(matches!(result, Ok(Err(CommandUnavailable))));
+    }
+
+    #[test]
+    fn an_io_failure_is_unavailable_not_a_hard_error() {
+        let runner = ScriptedCommand::new(vec![Err(CommandError::Io {
+            program: "git".to_string(),
+            message: "broken pipe".to_string(),
+        })]);
+        let result = run_observation(&runner, "git", &[], std::path::Path::new("."), Duration::ZERO, false);
+        assert!(matches!(result, Ok(Err(CommandUnavailable))));
+    }
+
+    /// A missing program can never resolve by retrying, so it stays a hard error.
+    #[test]
+    fn a_missing_program_is_still_a_hard_error() {
+        let runner = ScriptedCommand::new(vec![Err(CommandError::NotFound {
+            program: "cargo".to_string(),
+        })]);
+        let result = run_observation(&runner, "cargo", &[], std::path::Path::new("."), Duration::ZERO, true);
+        assert!(matches!(
+            result,
+            Err(GraphError::Command(CommandError::NotFound { .. }))
+        ));
+    }
+
+    #[test]
+    fn a_successful_run_passes_the_output_through() {
+        let runner = ScriptedCommand::new(vec![Ok(ok_output())]);
+        let result = run_observation(&runner, "cargo", &[], std::path::Path::new("."), Duration::ZERO, true);
+        assert_eq!(result.unwrap().unwrap(), ok_output());
+    }
+
+    /// Composes `run_observation` with `retry_observation`: a command that
+    /// times out once now retries and settles, instead of aborting the whole
+    /// observation on the first transient failure.
+    #[test]
+    fn retry_observation_recovers_from_one_timed_out_attempt() {
+        let runner = ScriptedCommand::new(vec![
+            Err(CommandError::TimedOut {
+                program: "cargo".to_string(),
+                seconds: 300,
+            }),
+            Ok(ok_output()),
+        ]);
+        let sleeper = RecordingSleeper::new();
+        let result = retry_observation(&sleeper, || {
+            match run_observation(&runner, "cargo", &[], std::path::Path::new("."), Duration::ZERO, true)? {
+                Ok(output) => Ok(Attempt::Settled(output)),
+                Err(CommandUnavailable) => Ok(Attempt::Transient {
+                    value: ok_output(),
+                    retry_after: None,
+                }),
+            }
+        });
+        assert_eq!(result, Ok(ok_output()));
+        assert_eq!(sleeper.waits(), vec![Duration::from_secs(2)]);
+    }
 
     /// Regression coverage for the confirmed bug: a successful npm publish
     /// whose registry hasn't caught up yet must report `RegistryPublishUnconfirmed`

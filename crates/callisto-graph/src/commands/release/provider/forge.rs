@@ -240,6 +240,11 @@ fn observed_forge_release(
                 cause: ProviderIndeterminateCause::ProviderStatus { status },
             })
         }
+        GitHubReleaseLookup::CommandFailed => {
+            return Ok(ProviderObservationV1::Indeterminate {
+                cause: ProviderIndeterminateCause::CommandFailed,
+            })
+        }
         GitHubReleaseLookup::Found(value) => value,
     };
     if value.get("tag_name").and_then(serde_json::Value::as_str) != Some(tag.as_str()) {

@@ -37,7 +37,6 @@ Decisions (owner, 2026-09-25):
 ### 1. A release is complete and consistent
 - Asset uploads are keyed to the owning package, so the product's GitHub release publishes before other packages' assets upload (`commands/release/derive.rs`, `uploads_by_package`). Key them to the product.
 - An upload's prerelease flag comes from the owner's version; a mismatch fails every run with E167. Take tag and prerelease from the product's forge release.
-- Observation timeouts and spawn failures skip the retry loop (cargo/npm/PyPI adapters, `gh api`, `git ls-remote`) and surface as `callisto::error`; PyPI ignores `Retry-After`. One `run_observation()` and one HTTP transient classifier.
 - Remote and local tag checks disagree on the annotation. Compare commit and annotated-ness only.
 - `release-pr commit-plan` reads added bytes from the worktree, not the index, and fails from a subdirectory. Verify bytes against the index blob and resolve from the repo root.
 - Warn when an artifact's owner is selected without its product.
@@ -84,7 +83,7 @@ Decisions (owner, 2026-09-25):
 - `.changeset/config.json` is not translated; `ChangesetsConfigKeyDropped` is defined but never emitted.
 
 ### 5. Every failure has a code and help; one output contract
-- Architecture test: every error variant has a code and help or is `transparent`. Fixes codeless variants (ParseChangeset, OnDiskVersionDrift, GrammarMismatch, WorkspaceVersionConflict, ConflictingGroupNames and other ConfigError variants), wrappers that hide E020-E025, missing help (E013, E022-E024, E051, E107-E110).
+- Architecture test: every error variant has a code and help or is `transparent`. Fixes codeless variants (ParseChangeset, OnDiskVersionDrift, GrammarMismatch, WorkspaceVersionConflict, ConflictingGroupNames and other ConfigError variants), missing help (E013, E022-E024, E051, E107-E110). `GraphError::Command`/`ConfigError::VersionParse`/`GraphError::VersionParse` are now `#[diagnostic(transparent)]`; `GraphError::Conventional` and `GraphError::TagTemplate` still hide their inner error's code because `ConventionalError` and `TagTemplateError` don't derive `miette::Diagnostic` at all (`callisto-conventional` has no `miette` dependency yet; `docs/errors.md` documents "callisto-conventional errors carry no diagnostic code at all" as current behavior) -- giving them codes is its own decision (new codes, a new dependency, an errors.md rewrite), not a one-line `transparent`.
 - `E####` registry; split `VcsError::Git` into typed variants; retire `CliError::Other`; keep domain validation out of `Deserialize` (release-pr decide loses E142/E143).
 - One JSON envelope with `command` for every report and error.
 - `status`, `schema` and `completions` fail or panic on a closed pipe. One output sink; broken pipe exits quietly.

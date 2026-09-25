@@ -49,6 +49,7 @@ pub enum GraphError {
     TagTemplate(#[from] callisto_model::TagTemplateError),
 
     #[error(transparent)]
+    #[diagnostic(transparent)]
     VersionParse(#[from] callisto_model::VersionParseError),
 
     #[error(transparent)]
@@ -60,6 +61,7 @@ pub enum GraphError {
     Vcs(#[from] callisto_vcs::VcsError),
 
     #[error("command error: {0}")]
+    #[diagnostic(transparent)]
     Command(#[from] callisto_model::CommandError),
 
     #[error("package `{id}` is defined at multiple paths: {}", .paths.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", "))]
@@ -787,6 +789,35 @@ mod tests {
         );
     }
 
+    /// Regression: `GraphError::Command` used to have no `#[diagnostic(transparent)]`,
+    /// so a `CommandError`'s own code (e.g. E025 for a timeout) never reached
+    /// `miette::Diagnostic::code` on the outer `GraphError` -- every command
+    /// failure surfaced to users with no code and no fix text at all.
+    #[test]
+    fn graph_error_command_surfaces_the_inner_commanderrors_own_code() {
+        let inner = callisto_model::CommandError::TimedOut {
+            program: "gh".to_string(),
+            seconds: 60,
+        };
+        let graph_err = GraphError::Command(inner);
+        assert_eq!(
+            miette::Diagnostic::code(&graph_err)
+                .map(|code| code.to_string())
+                .as_deref(),
+            Some("E025")
+        );
+        assert!(miette::Diagnostic::help(&graph_err).is_some());
+    }
+
+    /// Same regression for `GraphError::VersionParse`.
+    #[test]
+    fn graph_error_version_parse_surfaces_the_inner_errors_own_code() {
+        let inner =
+            callisto_model::Version::parse("not-a-version", callisto_model::VersionGrammar::SemVer).unwrap_err();
+        let graph_err = GraphError::VersionParse(inner);
+        assert!(miette::Diagnostic::code(&graph_err).is_some());
+    }
+
     /// ConflictingPlatformTargetSources must name the
     /// package and both source field names in its Display text, and carry
     /// diagnostic code E118 with help text pointing at the fix.
@@ -872,6 +903,7 @@ pub enum ConfigError {
     Tag(#[from] TagTemplateError),
 
     #[error(transparent)]
+    #[diagnostic(transparent)]
     VersionParse(#[from] VersionParseError),
 }
 

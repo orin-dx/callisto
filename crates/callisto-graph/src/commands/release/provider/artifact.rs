@@ -132,6 +132,11 @@ fn observe_artifact_upload(
                 cause: ProviderIndeterminateCause::ProviderStatus { status },
             })
         }
+        GitHubReleaseLookup::CommandFailed => {
+            return Ok(ProviderObservationV1::Indeterminate {
+                cause: ProviderIndeterminateCause::CommandFailed,
+            })
+        }
         GitHubReleaseLookup::Found(release) => release,
     };
     let assets = release
