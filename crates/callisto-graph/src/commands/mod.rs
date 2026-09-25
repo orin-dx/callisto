@@ -14,7 +14,6 @@ mod release_simulator;
 pub(crate) mod release_test_support;
 pub mod snapshot;
 pub mod status;
-pub mod validate;
 pub mod version;
 
 pub use callisto_model::{ReleaseDecisionEntry, ReleaseDecisionError, ReleaseDecisionV1, ReleaseInclusionReason};
@@ -34,7 +33,6 @@ pub use release_decision::{
 pub use release_execution::execute_release;
 pub use snapshot::plan_snapshot;
 pub use status::{status, StatusOptions};
-pub use validate::{validate, ValidateOptions};
 pub use version::{plan_version, VersionOptions};
 
 pub fn escalate(diagnostics: &mut [Diagnostic], strict: bool, strict_graph: bool) {

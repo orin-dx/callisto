@@ -1,8 +1,11 @@
 //! AC-13 guard: none of this track's fixes may change any report struct's field shape,
 //! except where a task's explicit scope is the shape change itself. Permitted schema
-//! deltas: the additive DiagnosticCode::ChangelogReadError variant. The `tag` and
-//! `plan-publish` report schemas left with their commands. Expected sets below were
-//! captured from `callisto schema` against the live repository.
+//! deltas: the additive DiagnosticCode::ChangelogReadError variant; SPEC-DX-STATUS-ADD
+//! AC-04's additive, mandatory `StatusReport.pending` field (count of packages with a
+//! planned bump -- `status --check`'s 0/1 exit code no longer signals pending state, so
+//! this is how a script detects it). The `tag` and `plan-publish` report schemas left
+//! with their commands. Expected sets below were captured from `callisto schema`
+//! against the live repository.
 
 use std::collections::BTreeSet;
 use std::process::Command;
@@ -40,10 +43,10 @@ fn set(items: &[&str]) -> BTreeSet<String> {
 fn ac13_report_struct_field_shapes_are_unchanged() {
     let status_schema = run_schema("status");
     let (req, props) = required_and_props(&status_schema);
-    assert_eq!(req, set(&["hasChangesets", "packages", "schemaVersion"]));
+    assert_eq!(req, set(&["hasChangesets", "packages", "pending", "schemaVersion"]));
     assert_eq!(
         props,
-        set(&["diagnostics", "hasChangesets", "packages", "schemaVersion"])
+        set(&["diagnostics", "hasChangesets", "packages", "pending", "schemaVersion"])
     );
 }
 

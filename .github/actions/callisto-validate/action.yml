@@ -12,7 +12,11 @@ runs:
       env:
         FORCE_COLOR: "1"
         CLICOLOR_FORCE: "1"
-      run: callisto validate
+      # `callisto status --check` (SPEC-DX-STATUS-ADD AC-04) is a conventional
+      # 0/1 gate: 0 when there are no error-level diagnostics, 1 otherwise,
+      # regardless of pending changesets. `shell: bash` already fails the step
+      # on a non-zero exit, so no wrapper is needed.
+      run: callisto status --check
 
     - name: Pre-Flight Release Plan Simulation (DAG Pre-Check)
       shell: bash

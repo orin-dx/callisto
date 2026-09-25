@@ -298,6 +298,12 @@ pub struct StatusReport {
     /// Mandatory (§12.5) — the field the Action's mode dispatch reads.
     /// Always serialized, never omitted, even when `false`.
     pub has_changesets: bool,
+    /// Count of packages with a planned bump (`StatusPackageRecord.pending_severity.is_some()`),
+    /// i.e. post-cascade/fixed/linked-group -- unlike `has_changesets`, which only reflects
+    /// changeset files directly naming a package. SPEC-DX-STATUS-ADD AC-04: `status --check`'s
+    /// exit code no longer signals pending state (0/1 gate on errors only), so this field is
+    /// how a script detects it. Always serialized, even when `0`.
+    pub pending: u32,
     pub packages: Vec<StatusPackageRecord>,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -375,6 +381,7 @@ mod status_report_tests {
         let report = StatusReport {
             schema_version: SCHEMA_VERSION,
             has_changesets: false,
+            pending: 0,
             packages: vec![],
             diagnostics: vec![],
         };
@@ -382,6 +389,26 @@ mod status_report_tests {
         assert!(
             json.contains("\"hasChangesets\":false"),
             "StatusReport JSON must always contain hasChangesets, even when false; got: {json}"
+        );
+    }
+
+    /// SPEC-DX-STATUS-ADD AC-04: `pending` (count of packages with a planned
+    /// bump) must always serialize, including when `0` -- it's the field a
+    /// script now reads to detect pending changesets, since `status --check`'s
+    /// exit code no longer signals it.
+    #[test]
+    fn status_report_json_always_contains_pending() {
+        let report = StatusReport {
+            schema_version: SCHEMA_VERSION,
+            has_changesets: false,
+            pending: 0,
+            packages: vec![],
+            diagnostics: vec![],
+        };
+        let json = serde_json::to_string(&report).unwrap();
+        assert!(
+            json.contains("\"pending\":0"),
+            "StatusReport JSON must always contain pending, even when 0; got: {json}"
         );
     }
 

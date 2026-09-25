@@ -53,9 +53,6 @@ pub enum Command {
     /// Manage prerelease mode for the workspace.
     #[command(subcommand)]
     Pre(PreArgs),
-    /// Check that changesets and the dependency graph are well-formed.
-    #[command(hide = true)]
-    Validate(ValidateArgs),
     /// Apply a temporary, non-persistent version bump for a snapshot release.
     Snapshot(SnapshotArgs),
     /// Scaffold Callisto configuration in the current workspace.
@@ -152,23 +149,6 @@ pub enum PreArgs {
     Enter { tag: String },
     /// Exit prerelease mode, returning to normal versioning.
     Exit,
-}
-
-/// Arguments for the `validate` command.
-#[derive(Args, Clone, Debug)]
-pub struct ValidateArgs {
-    /// Validate only changesets staged in git.
-    #[arg(long)]
-    pub staged: bool,
-    /// Validate only changesets added since the given git ref.
-    #[arg(long, value_name = "REF", conflicts_with = "staged")]
-    pub since: Option<String>,
-    /// Treat warning-level diagnostics as errors.
-    #[arg(long)]
-    pub strict: bool,
-    /// Treat dependency-graph warnings as errors.
-    #[arg(long)]
-    pub strict_graph: bool,
 }
 
 /// Arguments for the `snapshot` command.
@@ -710,7 +690,6 @@ mod tests {
         assert!(Cli::try_parse_from(["callisto", "matrix"]).is_ok());
         assert!(Cli::try_parse_from(["callisto", "schema"]).is_ok());
         assert!(Cli::try_parse_from(["callisto", "compose-pr-body"]).is_ok());
-        assert!(Cli::try_parse_from(["callisto", "validate"]).is_ok());
         assert!(Cli::try_parse_from([
             "callisto",
             "release",
@@ -736,5 +715,16 @@ mod tests {
             "release"
         ])
         .is_ok());
+    }
+
+    /// SPEC-DX-STATUS-ADD AC-02: `validate` is removed, not merely hidden --
+    /// parsing it must fail as an unrecognized subcommand.
+    #[test]
+    fn validate_subcommand_fails_to_parse() {
+        use clap::Parser;
+        assert!(
+            Cli::try_parse_from(["callisto", "validate"]).is_err(),
+            "`validate` must no longer parse as a subcommand"
+        );
     }
 }

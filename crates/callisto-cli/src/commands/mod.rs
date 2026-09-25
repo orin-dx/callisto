@@ -10,7 +10,6 @@ pub mod release_pr;
 pub mod schema;
 pub mod snapshot;
 pub mod status;
-pub mod validate;
 pub mod version;
 
 /// Reads `arg` as a JSON document: a literal `-` reads from stdin, a value

@@ -80,6 +80,62 @@ fn test_add_non_interactive_via_pipe() {
         stderr.contains("stdin is not a terminal") || stderr.contains("not_a_tty"),
         "stderr should mention the TTY check; got: {stderr}"
     );
+    // SPEC-DX-STATUS-ADD AC-09: the error must name the flags needed to
+    // proceed non-interactively, not just say "no".
+    assert!(
+        stderr.contains("--package"),
+        "stderr should name the --package flag needed to proceed non-interactively; got: {stderr}"
+    );
+}
+
+/// SPEC-DX-STATUS-ADD AC-08: `add --package name:severity` must record the
+/// changeset without prompting even when both stdin and stdout are piped
+/// (non-TTY) -- the flags path never touches `tty::is_interactive()`.
+#[test]
+fn test_add_flags_path_skips_tty_check_entirely() {
+    use std::process::{Command, Stdio};
+    use tempfile::TempDir;
+
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    drop(Command::new("git").args(["init", "-q"]).current_dir(root).output());
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/my-app\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("crates/my-app")).unwrap();
+    std::fs::write(
+        root.join("crates/my-app/Cargo.toml"),
+        "[package]\nname = \"my-app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("callisto.toml"), "").unwrap();
+
+    let bin = env!("CARGO_BIN_EXE_callisto");
+    let stdin_file = std::fs::File::open(std::path::Path::new("/dev/null")).unwrap();
+
+    let output = Command::new(bin)
+        .args([
+            "--cwd",
+            &root.to_string_lossy(),
+            "add",
+            "--package",
+            "my-app:patch",
+            "--summary",
+            "a fix",
+        ])
+        .stdin(stdin_file)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("failed to spawn callisto binary");
+
+    assert!(
+        output.status.success(),
+        "add --package must succeed non-interactively with piped stdin; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 /// AC-001 + AC-002 + AC-014: a napi package and a maturin package that both
