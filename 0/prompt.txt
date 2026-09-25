@@ -1,0 +1,3 @@
+Think about our semantic models and our architecture. Do we have to adjust things or do we adjust the plan to our architecture? What does release please and nx release do? Can we learn anything? Can we do better with zero config?
+
+Any other place we should adopt more zero config practices in our toml config?
