@@ -12,4 +12,6 @@ Each spec (`spec@1`) states current behavior as testable criteria, grouped by to
 
 `REQ-DX-V1.md` is the open v1 requirement; delete it when v1 ships.
 
+How the code implements these specs: [`ARCHITECTURE.md`](../../ARCHITECTURE.md) and [`docs/architecture/`](../architecture/).
+
 When code and a spec disagree, reproduce the behavior first. Fix the spec if the intended contract changed; otherwise fix the code.

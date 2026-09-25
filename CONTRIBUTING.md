@@ -6,7 +6,7 @@
 
 By participating in this project, you agree to abide by the [Code of Conduct](./CODE_OF_CONDUCT.md). Found a security issue? See [SECURITY.md](./SECURITY.md) instead of opening a public issue.
 
-Agent-specific rules (invariants, fixing-bugs workflow, specs/plans, crate/license table) live in [AGENTS.md](./AGENTS.md) — this file covers human setup and PR process and does not duplicate them.
+Agent-specific rules (invariants, fixing-bugs workflow, specs/plans, crate/license table) live in [AGENTS.md](./AGENTS.md) — this file covers human setup and PR process and does not duplicate them. How the code fits together: [ARCHITECTURE.md](./ARCHITECTURE.md) and [docs/architecture/](./docs/architecture/).
 
 ---
 

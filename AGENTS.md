@@ -48,6 +48,7 @@ Rules for AI agents working in this repo.
 
 - Specs (`spec@1`) live in `docs/specs/`, one per area, current behavior only. Change the spec in the same PR as the behavior. No history, rationale or revision notes.
 - This repo's release workflow has no GitHub Environment or reviewer gate and only `execute` gets registry secrets (owner policy, enforced by `.github/tests/verify-release-workflow-policy.sh`). Never add one.
+- Read `ARCHITECTURE.md` and the matching `docs/architecture/` topic before changing behavior in an area.
 - Read `docs/adr/README.md` before changing release flow, Git access, publishing, distribution, platform packages or manifest writes. Reversing an ADR needs a new ADR the owner accepts.
 - Plans (`plan@1`) live in `docs/projects/`. Delete a plan once its work ships.
 - Code never cites specs: no spec IDs, criterion IDs, section numbers or track names in comments, test names or messages. Describe the behavior instead.

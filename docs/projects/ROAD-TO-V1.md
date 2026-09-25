@@ -103,7 +103,7 @@ Decisions (owner, 2026-09-25):
 ## Design
 
 - Target resolution is Rust-shaped: `triple_host_runner_use_cross` in `crates/callisto-graph/src/matrix.rs` is an 18-triple table. Replace it with facts from `rustc --print cfg`.
-- npm platform-manifest discovery is npm-only and directory-scoped (`crates/callisto-graph/src/walk.rs`). Needed for maturin platform wheels and for a platform package shared by several owners.
+- npm platform-manifest discovery is npm-only and directory-scoped (`crates/callisto-graph/src/walk.rs`; [`docs/architecture/identity.md`](../architecture/identity.md)). Needed for maturin platform wheels and for a platform package shared by several owners.
 - Require `kind` in `[registries]` entries.
 - Attest napi `.node` artifacts.
 
