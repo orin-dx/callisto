@@ -178,7 +178,7 @@ pub fn read_napi_targets(path: &Path, val: &Value) -> Result<Option<Vec<String>>
 /// so platform-role detection is available from an already-open `Manifest`
 /// handle (e.g. one served from `callisto-graph`'s `manifest_cache`) without
 /// a second `fs::read` of the same file.
-/// [`npm_role_from_doc`] over raw `package.json` source, for callers (workspace
+/// `npm_role_from_doc` over raw `package.json` source, for callers (workspace
 /// discovery) that have not opened a manifest handle. `None` on invalid JSON.
 pub fn npm_role_from_source(source: &str) -> Option<NpmRole> {
     match serde_json::from_str::<Value>(source).ok()? {

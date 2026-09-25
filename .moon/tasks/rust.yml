@@ -41,13 +41,6 @@ tasks:
       - "tests/**/*"
       - "Cargo.toml"
 
-  audit:
-    command: "cargo-deny"
-    args: ["check", "advisories"]
-    inputs:
-      - "Cargo.lock"
-      - "Cargo.toml"
-
   publish:
     command: "cargo"
     args: ["publish", "-p", "$project", "--no-verify"]

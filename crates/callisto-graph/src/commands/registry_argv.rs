@@ -344,7 +344,7 @@ fn twine_accepts_skip_existing(index: Option<&str>) -> bool {
 /// invocation just produced, not whatever else happens to be sitting in
 /// `dist/`.
 ///
-/// `--skip-existing` is included only when [`twine_accepts_skip_existing`]
+/// `--skip-existing` is included only when `twine_accepts_skip_existing`
 /// allows it for `index`; it's mostly redundant for the durable release path
 /// anyway, since the operation is only ever dispatched after an `Absent`
 /// preflight observation of the exact same registry.
@@ -356,7 +356,7 @@ fn twine_accepts_skip_existing(index: Option<&str>) -> bool {
 /// a private index (Nexus/Artifactory PyPI proxy, or a local test registry)
 /// instead of public PyPI.
 ///
-/// The build step's interpreter comes from [`resolve_python_interpreter`] --
+/// The build step's interpreter comes from `resolve_python_interpreter` --
 /// `python3` first, `python` as a fallback -- rather than a hardcoded
 /// `python`, since many systems (macOS, Debian) ship no bare `python`.
 pub fn pypi_publish_argv(
