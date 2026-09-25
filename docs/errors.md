@@ -87,6 +87,7 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`
 | E051 | Git error: <0> | — |
 | E052 | Reference `<ref_name>` was not found | Check if reference or tag exists in local or remote Git refs. |
 | E053 | Tag glob pattern `<pattern>` is not a valid glob: <message> | Fix the glob syntax (e.g. balance `{`/`}` and `[`/`]`) or use a literal tag name. |
+| E059 | Staged content for `<path>` no longer matches the index (worktree bytes hash to a different blob than the staged `<expected_sha>`) | Re-stage the file with `git add` so the worktree matches the index, or read it again after staging. |
 
 ## callisto-changelog
 

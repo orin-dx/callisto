@@ -93,16 +93,35 @@ impl<'r> GitAccess<'r> {
         }
     }
 
-    /// Returns every staged (Git index) change relative to `base`. File
-    /// contents for additions and modifications are read directly from the
-    /// worktree with [`std::fs::read`], never through a [`CommandRunner`]
-    /// (whose captured stdout is a lossy `String`), so CRLF and binary
-    /// content survive exactly.
+    /// Returns every staged (Git index) change relative to `base`, resolving
+    /// paths from the repository's toplevel (via `git rev-parse
+    /// --show-toplevel`) rather than `self.root`, so this works from any
+    /// subdirectory of the checkout.
+    ///
+    /// File contents for additions and modifications are read directly from
+    /// the worktree with [`std::fs::read`], never through a
+    /// [`CommandRunner`] (whose captured stdout is a lossy `String`), so
+    /// CRLF and binary content survive exactly. Each read is then verified
+    /// against the index blob's sha (from `--raw`'s post-image sha, via
+    /// `git hash-object`) rather than trusted blind: a worktree file edited
+    /// again after `git add` no longer matches what is actually staged, and
+    /// that mismatch must fail loudly ([`VcsError::StagedContentMismatch`])
+    /// instead of silently emitting the wrong bytes.
     pub fn staged_changes_since(&self, base: &CommitSha) -> Result<Vec<StagedChangeV1>, VcsError> {
+        let root = self.repo_root()?;
+
         let output = self.runner.run(
             "git",
-            &["diff", "--cached", "--raw", "-z", "--no-renames", base.as_str()],
-            &self.root,
+            &[
+                "diff",
+                "--cached",
+                "--raw",
+                "-z",
+                "--no-renames",
+                "--no-abbrev",
+                base.as_str(),
+            ],
+            &root,
         )?;
         if !output.success() {
             return Err(VcsError::Git(format!(
@@ -118,9 +137,10 @@ impl<'r> GitAccess<'r> {
             let kind = staged_change_kind(entry.status);
             let contents = match kind {
                 StagedChangeKindV1::Added | StagedChangeKindV1::Modified => {
-                    let bytes = std::fs::read(self.root.join(&entry.path)).map_err(|error| {
+                    let bytes = std::fs::read(root.join(&entry.path)).map_err(|error| {
                         VcsError::Git(format!("could not read staged file `{}`: {error}", entry.path))
                     })?;
+                    self.verify_staged_blob(&root, &entry.path, &entry.new_sha)?;
                     Some(bytes)
                 }
                 _ => None,
@@ -133,6 +153,43 @@ impl<'r> GitAccess<'r> {
             });
         }
         Ok(changes)
+    }
+
+    /// Resolves the repository's toplevel directory, independent of whether
+    /// `self.root` is that toplevel or one of its subdirectories.
+    fn repo_root(&self) -> Result<PathBuf, VcsError> {
+        let output = self.runner.run("git", &["rev-parse", "--show-toplevel"], &self.root)?;
+        if !output.success() {
+            return Err(VcsError::Git(format!(
+                "could not determine the Git repository root in `{}`: {}",
+                self.root.display(),
+                output.redacted_stderr()
+            )));
+        }
+        canonical_git_root(output.stdout_trimmed())
+    }
+
+    /// Confirms the worktree bytes just read for `path` hash to the same
+    /// blob sha the Git index has staged, via `git hash-object` (which
+    /// reads the file itself, so no content ever round-trips through a
+    /// [`CommandRunner`]'s lossy `String` capture).
+    fn verify_staged_blob(&self, root: &Path, path: &str, expected_sha: &str) -> Result<(), VcsError> {
+        let output = self.runner.run("git", &["hash-object", "--", path], root)?;
+        if !output.success() {
+            return Err(VcsError::Git(format!(
+                "`git hash-object` failed for `{path}` in `{}`: {}",
+                root.display(),
+                output.redacted_stderr()
+            )));
+        }
+        let actual_sha = output.stdout_trimmed();
+        if actual_sha != expected_sha {
+            return Err(VcsError::StagedContentMismatch {
+                path: path.to_string(),
+                expected_sha: expected_sha.to_string(),
+            });
+        }
+        Ok(())
     }
 
     /// Returns explicit, fresh Git trust evidence for a durable release.
@@ -211,6 +268,9 @@ struct RawDiffEntry {
     path: String,
     /// The post-image Git file mode, or `None` for a pure deletion.
     new_mode: Option<u32>,
+    /// The post-image blob sha the index has staged for this path, used to
+    /// verify a worktree read against it in [`GitAccess::verify_staged_blob`].
+    new_sha: String,
     status: char,
 }
 
@@ -231,7 +291,7 @@ fn parse_raw_diff_z(raw: &str) -> Result<Vec<RawDiffEntry>, VcsError> {
             VcsError::Git("truncated `git diff --raw -z` output: missing a path after its metadata line".to_string())
         })?;
         let fields: Vec<&str> = meta.split(' ').collect();
-        let [_old_mode, new_mode, _old_sha, _new_sha, status_field] = fields.as_slice() else {
+        let [_old_mode, new_mode, _old_sha, new_sha, status_field] = fields.as_slice() else {
             return Err(VcsError::Git(format!(
                 "malformed `git diff --raw -z` metadata line: {meta:?}"
             )));
@@ -251,6 +311,7 @@ fn parse_raw_diff_z(raw: &str) -> Result<Vec<RawDiffEntry>, VcsError> {
         entries.push(RawDiffEntry {
             path: path.to_string(),
             new_mode,
+            new_sha: (*new_sha).to_string(),
             status,
         });
     }
@@ -1225,12 +1286,16 @@ mod tests {
         .join("\0")
             + "\0";
 
+        let root = temp.path().to_path_buf();
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
             response: Box::new(move |args| match args {
-                ["diff", "--cached", "--raw", "-z", "--no-renames", sha] if sha == &"0".repeat(40) => {
+                ["rev-parse", "--show-toplevel"] => Ok(ok(format!("{}\n", root.display()))),
+                ["diff", "--cached", "--raw", "-z", "--no-renames", "--no-abbrev", sha] if sha == &"0".repeat(40) => {
                     Ok(ok(raw.clone()))
                 }
+                ["hash-object", "--", "VERSION"] => Ok(ok(format!("{}\n", "1".repeat(40)))),
+                ["hash-object", "--", "pkg/binary.bin"] => Ok(ok(format!("{}\n", "2".repeat(40)))),
                 other => panic!("unexpected command: {other:?}"),
             }),
         };
@@ -1251,5 +1316,49 @@ mod tests {
         assert_eq!(deleted.kind, StagedChangeKindV1::Deleted);
         assert_eq!(deleted.new_mode, None);
         assert_eq!(deleted.contents, None, "a deletion must carry no contents to read");
+    }
+
+    /// When the worktree bytes hash to a different blob than `--raw`'s
+    /// post-image sha, the read must fail rather than silently return
+    /// content that is not actually what is staged.
+    #[test]
+    fn staged_changes_since_rejects_a_worktree_blob_mismatch() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::write(temp.path().join("VERSION"), b"1.2.3\n").unwrap();
+
+        let base = CommitSha::parse(&"0".repeat(40)).unwrap();
+        let raw = [
+            ":000000 100644 0000000000000000000000000000000000000000 1111111111111111111111111111111111111111 A",
+            "VERSION",
+        ]
+        .join("\0")
+            + "\0";
+
+        let root = temp.path().to_path_buf();
+        let runner = FakeRunner {
+            calls: Mutex::new(Vec::new()),
+            response: Box::new(move |args| match args {
+                ["rev-parse", "--show-toplevel"] => Ok(ok(format!("{}\n", root.display()))),
+                ["diff", "--cached", "--raw", "-z", "--no-renames", "--no-abbrev", sha] if sha == &"0".repeat(40) => {
+                    Ok(ok(raw.clone()))
+                }
+                // A different sha than the `--raw` entry claims: the index
+                // has content this worktree read does not match.
+                ["hash-object", "--", "VERSION"] => Ok(ok(format!("{}\n", "9".repeat(40)))),
+                other => panic!("unexpected command: {other:?}"),
+            }),
+        };
+        let git = GitAccess::new(temp.path(), &runner);
+
+        let result = git.staged_changes_since(&base);
+
+        assert!(
+            matches!(
+                result,
+                Err(VcsError::StagedContentMismatch { ref path, ref expected_sha })
+                    if path == "VERSION" && expected_sha == &"1".repeat(40)
+            ),
+            "got {result:?}"
+        );
     }
 }

@@ -29,6 +29,13 @@ pub enum VcsError {
     )]
     InvalidGlob { pattern: String, message: String },
 
+    #[error("staged content for `{path}` no longer matches the index (worktree bytes hash to a different blob than the staged `{expected_sha}`)")]
+    #[diagnostic(
+        code(E059),
+        help("Re-stage the file with `git add` so the worktree matches the index, or read it again after staging.")
+    )]
+    StagedContentMismatch { path: String, expected_sha: String },
+
     /// The `git` binary itself could not be run. `transparent` so callers
     /// can match the underlying [`CommandError`] through it.
     #[error(transparent)]

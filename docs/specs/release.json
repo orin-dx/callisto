@@ -298,7 +298,7 @@
     },
     {
       "id": "REL-PR-03",
-      "criterion": "`release-pr commit-plan` emits base64 additions and deletions for the index staged against `--base-commit`. It fails for: no changes (E149); a mode other than 100644 (E150); a type change or unmerged path (E151); over 4 MiB of content (E152); or a path under `.github/workflows/` or `.git/`, an absolute path, or one containing `..` (E153).",
+      "criterion": "`release-pr commit-plan` resolves the repository root with `git rev-parse --show-toplevel`, so it works from any subdirectory of the checkout, and emits base64 additions and deletions for the index staged against `--base-commit`. Each added or modified file's content is verified against the index blob sha before it is emitted; a worktree file edited again after staging fails the read (E059) rather than emitting content that does not match what is staged. It fails for: no changes (E149); a mode other than 100644 (E150); a type change or unmerged path (E151); over 4 MiB of content (E152); or a path under `.github/workflows/` or `.git/`, an absolute path, or one containing `..` (E153).",
       "is_error_case": true
     },
     {
