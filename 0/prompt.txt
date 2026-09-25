@@ -1,0 +1,1 @@
+Would merging the PRs help if I changed from just squash?
