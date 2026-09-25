@@ -77,7 +77,7 @@ fn commit_plan(args: ReleasePrCommitPlanArgs, global: &GlobalArgs) -> Result<Exi
         path: Some(global.cwd.clone()),
     })?;
     let runner = CliCommandRunner;
-    let git = GitAccess::discover(&start, &runner);
+    let git = GitAccess::new(&start, &runner);
     let changes = git.staged_changes_since(&base_commit)?;
     let plan = ReleasePrCommitPlanV1::from_changes(base_commit, args.message, changes)?;
 

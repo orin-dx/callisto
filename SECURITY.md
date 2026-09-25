@@ -19,7 +19,7 @@ Callisto edits manifests and pushes releases across multiple package registries 
 - **Workflow/action injection** — Callisto is designed to run unattended on `push` to `main` in downstream repos. An untrusted PR that could get its content executed by the release workflow (rather than merely analyzed) is in scope.
 - **Manifest parser safety** — `callisto-manifests` edits `Cargo.toml`/`package.json` via CST-preserving parsers (`toml_edit`, `serde_json`) rather than regex specifically to avoid corruption; a crafted manifest that causes incorrect writes, path traversal, or a crash mid-write (bypassing the atomic `NamedTempFile` + `fs::rename` guarantee) is a real finding.
 - **Version/changelog spoofing** — a way to make `callisto version` compute or apply an incorrect bump, or inject arbitrary content into a generated changelog, that a maintainer could plausibly merge without noticing.
-- **Git operation safety** — `callisto-vcs` performs native in-process Git operations via `gix`; unsafe handling of an untrusted repository (submodules, refs, hooks) is in scope.
+- **Git operation safety** — `callisto-vcs` runs the system `git` binary; argument injection through ref names or paths, or unsafe handling of an untrusted repository (submodules, refs, hooks), is in scope.
 
 Dependency vulnerabilities are already checked continuously via `just audit` (`cargo deny check advisories`) in CI — a report that only restates an existing advisory `cargo audit`/`cargo deny` already flags isn't a new finding, but a way to bypass or disable that check is.
 

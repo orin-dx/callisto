@@ -9,19 +9,9 @@ use std::path::{Path, PathBuf};
 use callisto_graph::commands::{plan_version, VersionOptions};
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_graph::{DependencyResolver, NoInference, Workspace};
-use callisto_model::{CommandError, CommandOutput, CommandRunner, DiagnosticCode, ManifestRole, PackageId};
+use callisto_model::{DiagnosticCode, ManifestRole, PackageId};
 
-struct NoopRunner;
-
-impl CommandRunner for NoopRunner {
-    fn run(&self, _program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
-        Ok(CommandOutput {
-            exit_code: Some(0),
-            stdout: String::new(),
-            stderr: String::new(),
-        })
-    }
-}
+use callisto_fixtures::git::GitRunner;
 
 fn git(root: &Path, args: &[&str]) {
     let out = std::process::Command::new("git")
@@ -103,12 +93,12 @@ pub fn build_fixture(root: &Path) {
     git(root, &["commit", "-q", "-m", "init"]);
 }
 
-fn load(root: &Path) -> Workspace<'static, NoopRunner> {
-    static RUNNER: NoopRunner = NoopRunner;
+fn load(root: &Path) -> Workspace<'static, GitRunner> {
+    static RUNNER: GitRunner = GitRunner;
     Workspace::load(root.to_path_buf(), &IgnoreWalkLocator::new(root), &RUNNER).expect("workspace must load")
 }
 
-fn platform_paths(ws: &Workspace<'_, NoopRunner>, owner: &str) -> Vec<PathBuf> {
+fn platform_paths(ws: &Workspace<'_, GitRunner>, owner: &str) -> Vec<PathBuf> {
     let pkg = ws
         .graph
         .packages()

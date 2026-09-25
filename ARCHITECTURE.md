@@ -16,7 +16,7 @@ Callisto addresses key architectural deficiencies in existing release management
 - **Runtime Performance**: Replaces heavy JavaScript/Node.js runtimes (`@changesets/cli`) with an optimized native Rust engine that completes status, versioning, and graph operations in `<10ms`.
 - **AST Format Preservation**: Replaces destructive text/regex search-and-replace with concrete syntax tree (CST) editors (`toml_edit` and `serde_json` with indentation fingerprinting), preserving comments, table order, and whitespace.
 - **Crash-Safe File Mutations**: Enforces atomic filesystem transactions using temporary directory file swaps (`NamedTempFile` + `fs::rename`) to prevent half-written or corrupt manifests during unexpected process termination.
-- **In-Process Git Engine**: Eliminates external `git` subprocess spawns by leveraging `gix` (gitoxide) for fast, thread-safe repository discovery, commit traversal, and ref resolution.
+- **System Git**: Every Git read and write runs the user's `git` binary, so Callisto sees exactly the repository, config, and identity Git itself does.
 - **Formal Graph Solver**: Constructs the workspace dependency graph as a hand-rolled adjacency structure (`ManifestWalkResolver`), then runs `petgraph`'s Tarjan Strongly Connected Components (SCC) algorithm over a transient graph built specifically for cycle-path extraction, to detect circular dependencies before applying topological version cascades.
 - **Licensing Isolation**: Separates MIT foundation crates from FSL product logic, allowing third-party tools to consume Callisto's domain contracts without importing product-layer restrictions.
 
@@ -35,7 +35,7 @@ flowchart TB
 
     subgraph Stage2 ["Stage 2 — Manifest & VCS Ingestion"]
         IR --> MR(["Manifest Reader<br/>(Cargo / npm / pyproject)"])
-        IR --> VCS(["callisto-vcs<br/>(gix In-Process Git Engine)"])
+        IR --> VCS(["callisto-vcs<br/>(system git)"])
     end
 
     subgraph Stage3 ["Stage 3 — Graph Construction & Cycle Detection"]
@@ -83,7 +83,7 @@ flowchart TB
 
     subgraph Layer2 ["Layer 2 — Manifest AST & VCS Mechanics"]
         Manifests(["callisto-manifests<br/>(Format-Preserving Editors)"])
-        VCS(["callisto-vcs<br/>(Native gix Git Engine)"])
+        VCS(["callisto-vcs<br/>(system git)"])
     end
 
     subgraph Layer1 ["Layer 1 — Foundational Leaf Crates (mixed license — see below)"]
@@ -120,7 +120,7 @@ flowchart TB
 | `callisto-conventional` | FSL-1.1-MIT | Layer 1 | Conventional commit parsing and severity classification | `thiserror` |
 | `callisto-changelog` | FSL-1.1-MIT | Layer 1 | Sectioned Markdown changelog rendering | `callisto-model`, `thiserror`, `miette` |
 | `callisto-manifests` | FSL-1.1-MIT | Layer 2 | Format-preserving manifest AST editing (atomic writes live in `callisto-model`, §5) | `toml_edit`, `serde_json`, `indexmap` |
-| `callisto-vcs` | MIT | Layer 2 | Git operations via native `gix` with `ShellGit` fallback | `gix`, `globset` |
+| `callisto-vcs` | MIT | Layer 2 | Git operations through the system `git` binary | `globset` |
 | `callisto-graph` | FSL-1.1-MIT | Layer 3 | Dependency DAG construction, Tarjan SCC cycle detection, cascade engine | `petgraph`, `ignore` |
 | `callisto-cli` | FSL-1.1-MIT | Layer 4 | Standalone CLI binary, colored diff previews, `miette` error reporting | `clap`, `miette`, `anstream`, `similar` |
 | `callisto-fixtures` | FSL-1.1-MIT | Dev | Multi-ecosystem corpus and in-memory test doubles | Dev-only test helpers |
@@ -258,29 +258,20 @@ flowchart TD
 
 ---
 
-## 7. In-Process VCS Engine (`callisto-vcs`)
+## 7. VCS (`callisto-vcs`)
 
-`callisto-vcs` provides Git operations through a dual-backend design: a native `gix` (gitoxide) backend, and a `ShellGit` backend that shells out to the real `git` binary as a fallback.
-
-### Key VCS Capabilities
-
-- **Repository Discovery**: Walks parent directories from the current working directory to locate `.git` (native backend only; shell backend uses `git rev-parse --show-toplevel`).
-- **Commit Walks**: Retrieves commit history to evaluate conventional commits since a given Git ref or release tag.
-- **Tag Listing**: Matches tags against glob patterns (`v*`, `@scope/*`) using `globset` (both backends apply identical `globset` matching semantics).
-
-### Dual-Backend Architecture (`GitAccess`)
-
-`callisto-vcs` exposes a unified `GitDataSource` trait. The `GitAccess` selector implements it with a deliberate fallback policy:
-
-- **Read operations** (`list_tags`, `resolve_commit`, `commits_since`): attempt the native `gix` backend first; fall back to `ShellGit` on any error, including failed repo discovery.
-- **Write operations** (`create_tag`, `create_floating_major`): fall back to `ShellGit` only when native `gix` was unavailable from the start. A discovered repo's result is authoritative — a second backend retry could mask partial mutations.
+`GitAccess` runs every Git operation as a `git` subprocess through a `CommandRunner`, rooted at the workspace root. The CLI requires a supported `git` binary.
 
 ```rust
 pub struct GitAccess<'r> {
-    native: Option<GitRepository>,  // None outside a repo
-    shell: ShellGit<'r>,            // always available via CommandRunner
+    runner: &'r dyn CommandRunner,
+    root: PathBuf,
 }
 ```
+
+- **Commit walks** (`commits_since`): `git log --no-merges --full-history <since>..HEAD -- <paths>`. `--full-history` keeps a commit that touched a package even when a later merge discarded its change. An unresolvable `since` is `RefNotFound`, never an unbounded walk.
+- **Tags** (`list_tags`, `create_tag`, `create_floating_major`): the full tag list is fetched once and filtered locally with `globset`. An annotated tag always carries a tagger: without a configured identity it uses the target commit's committer.
+- **Release trust and staged changes**: `observe_git_commit_trust`, `staged_changes_since`.
 
 ---
 

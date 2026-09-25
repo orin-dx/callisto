@@ -3,21 +3,9 @@ use callisto_graph::infer::NoInference;
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_graph::Workspace;
 use callisto_graph::{apply_version_plan, ApplyOptions};
-use callisto_model::{ApplyPermit, CommandError, CommandOutput, CommandRunner, PackageId, Severity};
+use callisto_model::{ApplyPermit, PackageId, Severity};
 use std::fs;
 use std::path::Path;
-
-struct NoopRunner;
-
-impl CommandRunner for NoopRunner {
-    fn run(&self, _program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
-        Ok(CommandOutput {
-            exit_code: Some(0),
-            stdout: String::new(),
-            stderr: String::new(),
-        })
-    }
-}
 
 fn tag(root: &Path, name: &str) {
     std::process::Command::new("git")
@@ -103,7 +91,7 @@ fn test_plan_version_produces_correct_bumps_in_cascade() {
     .unwrap();
 
     let locator = IgnoreWalkLocator::new(root);
-    let runner = NoopRunner;
+    let runner = callisto_fixtures::git::GitRunner;
     let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace should load from temp dir");
 
     let inference = NoInference;
@@ -158,7 +146,7 @@ fn duplicate_package_name_is_rejected_with_an_error() {
     }
     git_init_with_commit(root);
 
-    let runner = NoopRunner;
+    let runner = callisto_fixtures::git::GitRunner;
     let locator = callisto_graph::locate::IgnoreWalkLocator::new(root);
     let result = Workspace::load(root.to_path_buf(), &locator, &runner);
 
@@ -215,7 +203,7 @@ fn apply_version_plan_succeeds_for_dual_identity_cross_ecosystem_rewrite_ac006()
     .unwrap();
 
     let locator = IgnoreWalkLocator::new(root);
-    let runner = NoopRunner;
+    let runner = callisto_fixtures::git::GitRunner;
     let ws = Workspace::load(root.to_path_buf(), &locator, &runner)
         .expect("workspace with Case D dual-identity package should load");
 
@@ -297,7 +285,7 @@ fn test_fixed_group_two_changesets_converge_on_single_bump_not_compounded() {
     tag(root, "pkg-b@1.0.0");
 
     let locator = IgnoreWalkLocator::new(root);
-    let runner = NoopRunner;
+    let runner = callisto_fixtures::git::GitRunner;
     let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace should load from temp dir");
 
     let inference = NoInference;

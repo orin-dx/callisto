@@ -4,7 +4,6 @@
 use std::path::Path;
 
 use callisto_model::{CommandRunner, ExecutionTrustProfileV1, ReleaseIntentV1, ReleasePackageId, SourceIdentity};
-use callisto_vcs::GitDataSource;
 
 use crate::{DependencyResolver, GraphError, ProjectLocator, Workspace};
 

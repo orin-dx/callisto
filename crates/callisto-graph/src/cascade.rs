@@ -1679,15 +1679,11 @@ mod tests {
 
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path();
-        assert!(
-            callisto_vcs::GitRepository::discover(dir).is_err(),
-            "fixture dir must not be a discoverable git repo, forcing the CommandRunner fallback"
-        );
         let runner = FakeGitTagRunner {
             calls: AtomicUsize::new(0),
             tags: vec!["pkg-a@2.0.0".to_string()],
         };
-        let git = callisto_vcs::GitAccess::discover(dir, &runner);
+        let git = callisto_vcs::GitAccess::new(dir, &runner);
         let cfg_resolved = crate::config::load(dir).unwrap();
         let tags = crate::tags::TagIndex::build(&git, &graph, &cfg_resolved).unwrap();
 
@@ -1883,10 +1879,6 @@ mod tests {
 
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path();
-        assert!(
-            callisto_vcs::GitRepository::discover(dir).is_err(),
-            "fixture dir must not be a discoverable git repo, forcing the CommandRunner fallback"
-        );
         // pkg_stale carries a real release tag from before it was removed
         // from the workspace -- its tag data still exists in git even
         // though the package is gone from `base`/callisto.toml.
@@ -1894,7 +1886,7 @@ mod tests {
             calls: AtomicUsize::new(0),
             tags: vec!["pkg-stale@9.9.9".to_string(), "pkg-live@3.0.0".to_string()],
         };
-        let git = callisto_vcs::GitAccess::discover(dir, &runner);
+        let git = callisto_vcs::GitAccess::new(dir, &runner);
         let cfg_resolved = crate::config::load(dir).unwrap();
         let tags = crate::tags::TagIndex::build(&git, &graph, &cfg_resolved).unwrap();
 

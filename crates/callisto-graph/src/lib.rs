@@ -57,8 +57,8 @@ pub struct Workspace<'a, R: CommandRunner, D: DependencyResolver = ManifestWalkR
     /// Deferred [`TagIndex`]: built at most once, the first time
     /// [`Workspace::tags`] is called, not eagerly by [`Workspace::load`].
     ///
-    /// `TagIndex::build` fetches the repo's full tag list -- native gix, or
-    /// a shelled `git tag --list`. Several command paths never consult tags at all (`add`'s
+    /// `TagIndex::build` fetches the repo's full tag list with a `git tag
+    /// --list` spawn. Several command paths never consult tags at all (`add`'s
     /// non-interactive path only needs [`Workspace::root`]; `init` only
     /// needs package names/root), so building unconditionally in
     /// `Workspace::load` charged every caller for work only some need. All
@@ -66,16 +66,9 @@ pub struct Workspace<'a, R: CommandRunner, D: DependencyResolver = ManifestWalkR
     /// `OnceCell` needs no extra state -- go through [`Workspace::tags`],
     /// not this field directly.
     pub tags: OnceCell<TagIndex>,
-    /// Deferred [`GitAccess`]: built at most once, the first time
-    /// [`Workspace::git_access`] is called, mirroring `tags` above.
-    /// `GitAccess::discover` never fails (native gix, falling back to a
-    /// `CommandRunner` shell round-trip when unavailable), so simpler
-    /// than `tags` -- no `Result` to thread through. Consolidates what
-    /// were multiple independent `GitAccess::discover` calls within one
-    /// command invocation (local release's head_sha resolution,
-    /// `TagIndex::build` via [`Workspace::tags`]) into one shared
-    /// discovery. `pub` so tests can hand-construct a `Workspace` with a
-    /// pre-seeded value, bypassing discovery.
+    /// Deferred [`GitAccess`], built the first time [`Workspace::git_access`]
+    /// is called. `pub` so tests can hand-construct a `Workspace` with a
+    /// pre-seeded value.
     pub git: OnceCell<GitAccess<'a>>,
     pub runner: &'a R,
     /// Path-keyed cache of manifest handles opened read-only during this
@@ -160,16 +153,10 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
             .expect("tags was just set above, or already set by a prior call"))
     }
 
-    /// Returns the workspace's shared [`GitAccess`], discovering it on
-    /// first access and reusing the cached result afterwards -- mirrors
-    /// [`Workspace::tags`]. Every command that needs git (tag resolution,
-    /// head SHA lookup, commit history walks, ...) should go through this
-    /// rather than calling `GitAccess::discover` itself, so a single
-    /// command invocation never pays for more than one discovery
-    /// (native gix repository-open, or a `CommandRunner` shell round-trip
-    /// when gix is unavailable) regardless of how many of those it needs.
+    /// Returns the workspace's shared [`GitAccess`], rooted at the workspace
+    /// root and running `git` through the workspace's runner.
     pub fn git_access(&self) -> &GitAccess<'a> {
-        self.git.get_or_init(|| GitAccess::discover(&self.root, self.runner))
+        self.git.get_or_init(|| GitAccess::new(&self.root, self.runner))
     }
 
     pub fn base_versions(&self) -> Result<BTreeMap<PackageId, Version>, GraphError> {

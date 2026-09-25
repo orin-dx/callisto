@@ -14,7 +14,7 @@ thiserror = { workspace = true }
 [dev-dependencies]
 # Test-only. Production code here reaches history exclusively through
 # `callisto_model::CommitWalker`; this dependency exists so the test suite can
-# drive that seam with the real gix/shell backend as an integration check.
+# drive that seam with the real `GitAccess` backend as an integration check.
 callisto-vcs = { path = "../callisto-vcs", version = "0.8.0" }
 callisto-fixtures = { path = "../callisto-fixtures" }
 proptest.workspace = true

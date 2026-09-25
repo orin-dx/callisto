@@ -6,7 +6,7 @@ use callisto_model::{
     CommandRunner, CommitSha, ExactEvidence, ProviderConflictReason, ProviderEvidenceV1, ProviderIndeterminateCause,
     ProviderObservationV1, TagName,
 };
-use callisto_vcs::{GitAccess, GitDataSource, TagSignPolicy};
+use callisto_vcs::{GitAccess, TagSignPolicy};
 
 use crate::error::{CommandFailure, RemoteConflict};
 use crate::GraphError;
@@ -77,7 +77,7 @@ impl ReleaseProvider for TagProvider {
             // `--no-sign` this durable path has always needed (this repo's CI
             // sets `tag.gpgSign`/`commit.gpgsign` globally in some contexts,
             // with no tag-signing key available here).
-            let git = GitAccess::discover(context.root(), context.runner());
+            let git = GitAccess::new(context.root(), context.runner());
             git.create_tag(
                 operation.name.as_str(),
                 &operation.target,

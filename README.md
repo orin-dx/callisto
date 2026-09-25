@@ -317,7 +317,7 @@ graph TB
 | | [`callisto-conventional`](crates/callisto-conventional) | FSL-1.1-MIT | Conventional commit parsing and bump severity classification |
 | | [`callisto-changelog`](crates/callisto-changelog) | FSL-1.1-MIT | Markdown changelog renderer |
 | **Layer 2** | [`callisto-manifests`](crates/callisto-manifests) | FSL-1.1-MIT | Format-preserving manifest AST editors and atomic file writes |
-| | [`callisto-vcs`](crates/callisto-vcs) | MIT | Native in-process Git operations powered by `gix` (gitoxide) |
+| | [`callisto-vcs`](crates/callisto-vcs) | MIT | Git operations through the system `git` binary |
 | **Layer 3** | [`callisto-graph`](crates/callisto-graph) | FSL-1.1-MIT | Dependency DAG solver and Tarjan SCC cycle diagnostics |
 | **Layer 4** | [`callisto-cli`](crates/callisto-cli) | FSL-1.1-MIT | Standalone CLI binary, colored diff previews, `miette` diagnostic cards |
 | **Dev** | [`callisto-fixtures`](crates/callisto-fixtures) | FSL-1.1-MIT | Multi-ecosystem corpus and in-memory test doubles |

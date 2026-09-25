@@ -86,8 +86,7 @@ impl ReleaseProviderSet for ValidatedReleaseIntent<'_> {
     }
 
     fn recheck_trust(&self) -> Result<(), GraphError> {
-        let evidence =
-            callisto_vcs::GitAccess::discover(&self.prepared.root, self.runner).observe_git_commit_trust()?;
+        let evidence = callisto_vcs::GitAccess::new(&self.prepared.root, self.runner).observe_git_commit_trust()?;
         if evidence.identity() != self.prepared.trust.identity() || source_from_trust(&evidence) != self.prepared.source
         {
             return Err(GraphError::ReleaseIntentStale {

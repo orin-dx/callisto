@@ -374,19 +374,7 @@ mod tests {
     use crate::infer::NoInference;
     use crate::locate::IgnoreWalkLocator;
     use crate::Workspace;
-    use callisto_model::{CommandError, CommandOutput, CommandRunner};
-
-    struct NoopRunner;
-
-    impl CommandRunner for NoopRunner {
-        fn run(&self, _program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
-            Ok(CommandOutput {
-                exit_code: Some(0),
-                stdout: String::new(),
-                stderr: String::new(),
-            })
-        }
-    }
+    use callisto_fixtures::git::GitRunner;
 
     fn git_init_with_commit(root: &Path) {
         for args in [
@@ -463,7 +451,7 @@ mod tests {
         tag(root, "pkg-b@1.1.0");
 
         let locator = IgnoreWalkLocator::new(root);
-        let runner = NoopRunner;
+        let runner = GitRunner;
         let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let inference = NoInference;
@@ -514,7 +502,7 @@ mod tests {
         tag(root, "pkg-py@1.0.0");
 
         let locator = IgnoreWalkLocator::new(root);
-        let runner = NoopRunner;
+        let runner = GitRunner;
         let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let inference = NoInference;
@@ -561,7 +549,7 @@ mod tests {
         commit_all(root, "add package");
 
         let locator = IgnoreWalkLocator::new(root);
-        let runner = NoopRunner;
+        let runner = GitRunner;
         let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let inference = NoInference;
@@ -615,7 +603,7 @@ mod tests {
         commit_all(root, "add package");
 
         let locator = IgnoreWalkLocator::new(root);
-        let runner = NoopRunner;
+        let runner = GitRunner;
         let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let inference = NoInference;
@@ -661,7 +649,7 @@ mod tests {
         commit_all(root, "add package");
 
         let locator = IgnoreWalkLocator::new(root);
-        let runner = NoopRunner;
+        let runner = GitRunner;
         let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let inference = NoInference;
@@ -729,7 +717,7 @@ mod tests {
         commit_all(root, "add hybrid package");
 
         let locator = IgnoreWalkLocator::new(root);
-        let runner = NoopRunner;
+        let runner = GitRunner;
         let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let inference = NoInference;
@@ -794,7 +782,7 @@ mod tests {
         commit_all(root, "add package");
 
         let locator = IgnoreWalkLocator::new(root);
-        let runner = NoopRunner;
+        let runner = GitRunner;
         let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let inference = NoInference;
@@ -849,7 +837,7 @@ mod tests {
         commit_all(root, "add hybrid package");
 
         let locator = IgnoreWalkLocator::new(root);
-        let runner = NoopRunner;
+        let runner = GitRunner;
         let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let inference = NoInference;
@@ -931,7 +919,7 @@ mod tests {
         commit_all(root, "add owner and fixture platform crate");
 
         let locator = IgnoreWalkLocator::new(root);
-        let runner = NoopRunner;
+        let runner = GitRunner;
         let mut ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         // Fixture-construct the GroupMember::PlatformManifest, bypassing
@@ -1052,7 +1040,7 @@ mod tests {
         commit_all(root, "add hybrid package with linux platform sibling");
 
         let locator = IgnoreWalkLocator::new(root);
-        let runner = NoopRunner;
+        let runner = GitRunner;
         let mut ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let owner = callisto_model::PackageId::Bare("hybrid".to_string());
@@ -1171,7 +1159,7 @@ mod tests {
         commit_all(root, "add hybrid package with linux platform sibling");
 
         let locator = IgnoreWalkLocator::new(root);
-        let runner = NoopRunner;
+        let runner = GitRunner;
         let mut ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let owner = callisto_model::PackageId::Bare("hybrid".to_string());
@@ -1271,7 +1259,7 @@ mod tests {
         commit_all(root, "add hybrid package");
 
         let locator = IgnoreWalkLocator::new(root);
-        let runner = NoopRunner;
+        let runner = GitRunner;
         let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         // Simulate the platform manifest going missing between workspace
@@ -1325,7 +1313,7 @@ mod tests {
         commit_all(root, "add hybrid package");
 
         let locator = IgnoreWalkLocator::new(root);
-        let runner = NoopRunner;
+        let runner = GitRunner;
         let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         // Simulate the platform manifest's content becoming malformed
@@ -1389,7 +1377,7 @@ mod tests {
         commit_all(root, "add hybrid package");
 
         let locator = IgnoreWalkLocator::new(root);
-        let runner = NoopRunner;
+        let runner = GitRunner;
         let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let inference = NoInference;
@@ -1459,7 +1447,7 @@ mod tests {
         commit_all(root, "add hybrid package");
 
         let locator = IgnoreWalkLocator::new(root);
-        let runner = NoopRunner;
+        let runner = GitRunner;
         let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let inference = NoInference;
@@ -1533,7 +1521,7 @@ mod tests {
         };
 
         let locator = IgnoreWalkLocator::new(root);
-        let runner = NoopRunner;
+        let runner = GitRunner;
         let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
         let opts = VersionOptions {
             strict: false,
@@ -1593,7 +1581,7 @@ mod tests {
         };
 
         let locator = IgnoreWalkLocator::new(root);
-        let runner = NoopRunner;
+        let runner = GitRunner;
         let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
         let opts = VersionOptions {
             strict: false,
@@ -1658,7 +1646,7 @@ mod tests {
         commit_all(root, "add packages and changesets");
 
         let locator = IgnoreWalkLocator::new(root);
-        let runner = NoopRunner;
+        let runner = GitRunner;
         let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
         let inference = crate::infer::NoInference;
         let opts = VersionOptions {
@@ -1728,7 +1716,7 @@ mod tests {
         };
 
         let locator = IgnoreWalkLocator::new(root);
-        let runner = NoopRunner;
+        let runner = GitRunner;
         let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
         let opts = VersionOptions {
             strict: false,
@@ -1791,7 +1779,7 @@ mod tests {
         tag(root, "pkg-released@1.0.0");
 
         let locator = IgnoreWalkLocator::new(root);
-        let runner = NoopRunner;
+        let runner = GitRunner;
         let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
         let inference = crate::infer::NoInference;
         let opts = VersionOptions {
@@ -1862,7 +1850,7 @@ mod tests {
         commit_all(root, "add packages");
 
         let locator = IgnoreWalkLocator::new(root);
-        let runner = NoopRunner;
+        let runner = GitRunner;
         let mut ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
         let pkg_live = PackageId::parse("pkg-live").unwrap();
@@ -1967,7 +1955,7 @@ mod tests {
         tag(root, "pkg-released@1.0.0");
 
         let locator = IgnoreWalkLocator::new(root);
-        let runner = NoopRunner;
+        let runner = GitRunner;
         let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
         let inference = crate::infer::NoInference;
         let opts = VersionOptions {
