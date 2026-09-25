@@ -1,0 +1,6 @@
+<task-notification>
+<task-id>bd8ejbm3n</task-id>
+<summary>Monitor event: "0.8.0 release run 35647177820 job transitions"</summary>
+<event>Assemble attested product artifacts: queued</event>
+If this event is something the user would act on now, send a PushNotification. Routine or benign output doesn't need one.
+</task-notification>
