@@ -1,0 +1,72 @@
+Fix is applied and staged; courier is drafting the commit message.
+
+What changed
+
+.github/workflows/callisto-release.yml — the P0, plus the receipt comment:
+
+          set -euo pipefail
+          # Own statement: set -e cannot see a substitution failing inside an echo argument.
+          has_artifacts=$(jq '.artifactSlots | length > 0' "${RUNNER_TEMP}/release-intent/release-intent.json")
+          case "$has_artifacts" in
+            true|false) ;;
+            *) echo "::error::artifact slot probe returned '$has_artifacts'"; exit 1 ;;
+          esac
+          echo "has_artifacts=$has_artifacts" >> "$GITHUB_OUTPUT"
+
+.github/tests/verify-release-workflow-policy.sh — a slots_probe_errors rule that runs the real step against an unreadable intent and requires non-zero exit (same behavioural style as the handoff_roundtrip_errors check this branch already added), the matching mutant, and the receipt rule's error string rewritten around the real reason.
+
+Verification
+
+┌─────────────────────────────────────────────┬──────────────────────────────────────┐
+│                    check                    │                result                │
+├─────────────────────────────────────────────┼──────────────────────────────────────┤
+│ just release-workflow-checks                │ ok — 31/31 mutants rejected (was 30) │
+├─────────────────────────────────────────────┼──────────────────────────────────────┤
+│ new mutant slot probe swallows a jq failure │ rejected                             │
+├─────────────────────────────────────────────┼──────────────────────────────────────┤
+│ just workflow-contracts                     │ pass                                 │
+├─────────────────────────────────────────────┼──────────────────────────────────────┤
+│ just zizmor                                 │ no findings                          │
+├─────────────────────────────────────────────┼──────────────────────────────────────┤
+│ actionlint -ignore='\$/.+'                  │ exit 0                               │
+└─────────────────────────────────────────────┴──────────────────────────────────────┘
+
+The new mutant is the regression proof: it restores the exact pre-fix line and the checker rejects it.
+
+Working tree has only those two files modified, nothing untracked. I'll push once the commit message lands — say the word if you'd rather read the message first.
+
+› Message from @adfe186f01c1d1300 (ctrl+o to expand)
+
+  Committed b6ca3a78
+
+⏺ Agent "Write commit message" finished · 52s
+
+Committed as b6ca3a78; the pre-commit format check passed. Pushing to #104 as authorized.
+
+  Pushed to fix/release-handoff-checksum-and-receipt
+
+Pushed: 2c934407..b6ca3a78. #104 now carries the P0 fix and CI is re-running.
+
+Where things stand
+
+#104 is now three fixes, all verified:
+- cross-runner intent checksum (was already there, bug reproduced, fix correct)
+- per-attempt receipt name, now with an honest rationale in both the comment and the policy error string
+- the has_artifacts silent-skip P0, with a behavioural policy rule and mutant (31/31)
+
+It's still blocked on your code-owner review — I don't merge.
+
+When you're ready to release
+
+The 0.8.0 run has to be a workflow_dispatch, not a push: the push run for c5578e6a already fired and skipped, and merging #104 won't re-trigger one on that commit.
+
+gh workflow run callisto-release.yml --ref main \
+  -f release_source_sha=c5578e6a63754b54575b3ac7518cc1753e443393
+
+Wait for the push run on the merge commit to finish first — it shares the release-${{ github.sha }} concurrency group, and a second pending run in the group replaces the first.
+
+One thing to have ready before you start. If the run gets past asset upload and then fails, a recovery dispatch rebuilds the assets, and tar -czf isn't byte-reproducible, so observe_artifact_upload reads the uploaded asset as ArtifactAssetDiffers and aborts with ReleaseRecoveryUnresolved. The unblock needs no code change: delete the mismatched assets from the release, then re-dispatch — with no asset of that name, observe returns Absent and the upload op runs normally. Don't reach for the "obvious" reproducible-tar fix; the GNU flags fail on the macOS leg, which I tested.
+
+Follow-ups, deliberately not shipped
+
+!cancelled() on execute plus the policy-rule widening (they have to land together), portable reproducible archives, redacted stderr into ProviderIndeterminateCause, the trust allowlist drift (8 entries vs 19 ignore patterns), the three-scope permission gap, the setup-callisto docs-URL grep, and the dead [workspace.package] version = "0.3.3". Both full reports are in the scratchpad if you want them written up as issues.
