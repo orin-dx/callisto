@@ -4,117 +4,86 @@
 
 <h1 align="center">Contributing to Callisto</h1>
 
-<p align="center">
-  <b>Guidelines, engineering standards, testing expectations, and contribution workflows.</b>
-</p>
-
 By participating in this project, you agree to abide by the [Code of Conduct](./CODE_OF_CONDUCT.md). Found a security issue? See [SECURITY.md](./SECURITY.md) instead of opening a public issue.
 
+Agent-specific rules (invariants, fixing-bugs workflow, specs/plans, crate/license table) live in [AGENTS.md](./AGENTS.md) — this file covers human setup and PR process and does not duplicate them.
+
 ---
 
-## 1. Development Setup & Prerequisites
+## Setup
 
-### Prerequisites
-
-- **Rust Toolchain**: `stable` channel (managed via `rustup`).
-- **Moon / Proto** (Recommended): Primary monorepo task runner.
-- **Just** (Recommended): Command runner for quick workspace recipes.
-
-> [!NOTE]
-> Install native local Git hooks with `just hooks` to run formatting checks automatically before every local commit (`pre-commit`) and push (`pre-push`).
-
-### Local Initial Build
+- Rust toolchain: pinned in `rust-toolchain.toml`, installed via `rustup`.
+- [`just`](https://github.com/casey/just): command runner for all workspace recipes.
+- [`moon`](https://moonrepo.dev): a few recipes (`build`, `fmt`, `fmt-check`, `lint-affected`) delegate to it; installed like any other tool via [proto](https://moonrepo.dev/proto) (`proto/callisto.toml` shows the same pattern for installing `callisto` itself).
 
 ```bash
-# Clone the repository
 git clone https://github.com/orin-dx/callisto.git
 cd callisto
-
-# Install local Git hooks
-just hooks
-
-# Run full local CI pipeline via Just & Moon
-just ci
+just hooks   # installs .git/hooks/pre-commit and pre-push
+just ci      # full local verification pipeline
 ```
 
-### Optional Entire session capture
+---
 
-Entire is an optional maintainer tool. The committed `.entire` configuration disables automatic
-checkpoint pushes because sessions can include prompts, responses, tool calls, and file changes.
-Do not push session data to this public repository by default.
+## `just` recipes
 
-If you use Entire, install and authenticate its CLI locally, then run `entire status --detailed`.
-Use a separately approved private checkpoint remote before enabling session synchronization.
-Agent-specific integrations are local generated files and are not required to contribute.
+| Command | Runs |
+| :--- | :--- |
+| `just ci` | Everything CI runs except Docker-based actionlint and the binary-dependent release-PR/artifact-preflight jobs: `fmt-check lint test audit doc-check zizmor workflow-contracts release-workflow-behavior coverage 90` |
+| `just build` | Debug workspace binaries, via `moon run :build` |
+| `just build-release` | `cargo build --release -p callisto-cli` |
+| `just test` | `cargo nextest run --workspace` + `cargo test --doc --workspace`; this is what CI runs |
+| `just test-moon` | Compatibility path via `moon run :test` for contributors without `cargo-nextest`; never used by CI |
+| `just lint` | `cargo clippy --workspace --all-targets -- -D warnings` |
+| `just lint-affected` | Clippy scoped to crates affected since the base branch (via `moon query projects --affected`) |
+| `just fmt-check` / `just fmt` | Formatting check / apply, via `moon run :format-check` / `:format` |
+| `just audit` | `cargo deny check` (advisories, bans, licenses, sources) |
+| `just doc-check` | `cargo doc --no-deps --workspace` with warnings as errors |
+| `just coverage [threshold]` | `cargo llvm-cov` workspace report to `lcov.info`; `just coverage 90` is what CI's `coverage` job and `just ci` both call, so a coverage failure always reproduces locally |
+| `just coverage-per-crate [threshold]` | Same profile data, gated per crate instead of workspace-total (CI runs this non-blocking today; default threshold 90) |
+| `just zizmor` | Static security audit of workflow/action YAML (requires `zizmor`) |
+| `just workflow-contracts` | Release-workflow contract/policy tests, action pin verification, installer tests — what the CI `workflow-contracts` job runs besides actionlint |
+| `just release-workflow-behavior` | Release lifecycle exercised at the real CLI boundary with faked registry/Git/forge/attestation providers |
+| `just pre-commit` | `fmt-check` only — fast, runs on every local commit via the installed hook |
+| `just pre-push` | `fmt-check` + `lint-affected` — runs on every local push via the installed hook |
+| `just hooks` | Installs the native `pre-commit`/`pre-push` git hooks above |
+| `just clean` | Clears moon task caches, `cargo clean`, removes `lcov.info` / `callisto-schema.json` |
+
+Maintainer-only recipes not part of the normal PR loop: `mutants` (mutation testing), `machete` (unused deps), `check-api` (SemVer diff via `cargo-semver-checks`), `fuzz`, `provider-fixtures`/`provider-contract` (re-capture/verify the real-provider test fixtures under `testing/fixtures/`).
+
+For iterating on one crate instead of the whole workspace, see AGENTS.md's scoped-iteration guidance (`cargo test -p <crate>`, one invocation at a time — never parallel cargo builds).
 
 ---
 
-## 2. Primary Development Tasks (`just`)
+## Changesets
 
-Callisto uses `just` as its canonical developer command runner, delegating workspace tasks to `moon` under the hood:
+Non-interactive, for scripts, agents, and most contributors:
 
-| Action | Canonical Command | Description |
-| :--- | :--- | :--- |
-| **Run Full Verification CI** | `just ci` | Runs formatting, Clippy lints, unit/integration tests, and audit |
-| **Run Test Suite** | `just test` | Runs unit, integration, doctests, and E2E lifecycle test suites |
-| **Check Clippy Lints** | `just lint` | Runs Clippy lints with `-D warnings` across all workspace crates |
-| **Check Code Formatting** | `just fmt-check` | Verifies code formatting compliance |
-| **Format Code** | `just fmt` | Applies `cargo fmt` formatting automatically |
-| **Check Security Advisories** | `just audit` | Runs `cargo deny check advisories` security check |
+```bash
+callisto add --package <crate>:<bump> --summary "..."
+```
 
----
+`--package` takes repeatable `name:severity` pairs (`none`, `patch`, `minor`, `major`).
 
-## 3. Core Code Standards & Invariants
-
-All contributions to Callisto must adhere to 5 strict engineering invariants:
-
-### 1. Safe Rust Only (`unsafe_code = "forbid"`)
-Callisto forbids `unsafe` code blocks across all 10 workspace crates. Memory safety and thread safety are guaranteed by the Rust compiler.
-
-### 2. Format Preservation Guarantee
-Callisto never uses regular expressions or line-based string manipulation to edit manifests (`Cargo.toml`, `package.json`).
-- **TOML**: Edits must use `toml_edit` to parse and manipulate Concrete Syntax Trees (CST), preserving comments, table ordering, and whitespace.
-- **JSON**: Edits must fingerprint indentation style (`IndentStyle::Tabs` vs `IndentStyle::Spaces(N)`) and preserve key insertion order using `serde_json`.
-
-### 3. Crash-Safe Atomic Disk Writes
-All manifest and configuration modifications must go through `callisto_manifests::atomic::atomic_write`. File writes create a `NamedTempFile` in the target file's parent directory, flush data to disk, and atomically replace the target file via `fs::rename`.
-
-### 4. Direct & Actionable Diagnostics (`miette`)
-Errors intended for CLI users must derive `miette::Diagnostic` with an explicit error code, clear diagnostic message, and actionable remediation tip.
-
-### 5. Licensing Tier Respect
-- **MIT foundation crates** (`callisto-model`, `callisto-format`, `callisto-vcs`): Licensed under MIT and must not depend on FSL-licensed crates.
-- **FSL product crates** (all remaining workspace crates): Licensed under canonical `FSL-1.1-MIT`, which grants an MIT license beginning two years after each release is first published.
-
----
-
-## 4. Interactive Changesets & CI Coverage
-
-### Interactive Changeset Wizard
-
-When adding a feature, fix, or breaking change, run `callisto add` in an interactive terminal to launch the 5-step wizard:
+Interactive wizard (omit `--package`/`--summary`, run from a TTY): prompts for packages, then major-bump packages, then minor-bump packages (rest default to patch), then a summary, then a confirmation preview before writing `.changeset/<slug>.md`.
 
 ```bash
 cargo run --bin callisto -- add
 ```
 
-This interactive wizard:
-1. Prompts for workspace package selection (MultiSelect).
-2. Asks which selected packages require a **MAJOR** bump.
-3. Asks which remaining packages require a **MINOR** bump (defaulting others to **PATCH**).
-4. Prompts for the changeset summary text.
-5. Displays a colored preview and requests confirmation before writing `.changeset/<human-slug>.md`.
+---
 
-For automated agent or script execution, pass explicit CLI flags:
+## PR checklist
 
-```bash
-cargo run --bin callisto -- add --package callisto-cli:minor --summary "Add interactive wizard"
-```
+CI (`.github/workflows/callisto-ci.yml`) gates on:
 
-### GitHub CI & Coverage Reports
+- **`fmt`** — `just fmt-check`
+- **`clippy`** — `just lint` + `just doc-check`
+- **`test`** — `just test`, `just release-workflow-behavior`, and the Release-PR action's binary contract test, on Linux and macOS
+- **`release-artifact-preflight`** — builds the release binary for each configured target (macOS arm64, Linux gnu/musl)
+- **`coverage`** — `just coverage 90` (workspace line coverage must not regress below 90%); per-crate coverage runs non-blocking
+- **`security`** — `just audit`
+- **`validate`** — changeset and workspace-status validation
+- **`workflow-contracts`** — actionlint, zizmor, action pin verification, and the release-workflow contract/policy tests
 
-GitHub Actions executes CI using `just` and `moon` (`moonrepo/setup-toolchain-action` and `extraactions/setup-just`), ensuring total parity between local developer environments and CI.
-
-In addition, every pull request generates:
-- **Test Summary Cards**: Published directly to GitHub Step Summaries.
-- **Code Coverage Reports**: Generated via `taiki-e/cargo-llvm-cov-action@v1` and attached as `lcov.info` build artifacts.
+Before opening a PR: run `just ci` locally (covers everything above except the Docker-based actionlint step and the binary-dependent artifact-preflight build) and make sure `just pre-push` is clean. Add a changeset for any user-facing change (see above). Follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages.

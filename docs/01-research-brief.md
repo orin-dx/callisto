@@ -1,5 +1,8 @@
 # Research brief: library-first vs moon-first, and the polyglot versioning landscape
 
+> **Historical.** Early research brief; kept for background and rationale. It predates the current implementation and may not reflect current commands, config, or behavior — see [`../ARCHITECTURE.md`](../ARCHITECTURE.md) and [`specs/`](specs/) for current behavior.
+
+
 > **moon extension removed (2026-09-24):** `callisto-moon`, `MoonProjectLocator`, `ProjectLocator::declared_edges`, the declared-edge cross-check (`DeclaredEdge`, `GraphEdgeDisagreement`) and the `LocateError::Moon*` variants no longer exist. moon runs the `callisto` CLI installed through proto (`proto/callisto.toml`). Sections describing them are historical.
 
 **Purpose:** This is a handoff document for a deeper investigation than a chat session can

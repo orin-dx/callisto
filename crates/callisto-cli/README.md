@@ -1,17 +1,5 @@
 # callisto-cli
 
-Standalone command-line interface for Callisto monorepo versioning and release management.
+The `callisto` binary: `clap` CLI surface and `miette` diagnostic rendering over `callisto-graph`.
 
-## Overview
-
-`callisto-cli` provides the primary command-line binary (`callisto`) for managing changesets, versions, pull requests, and releases:
-
-- `callisto add`: Interactively or non-interactively record changesets.
-- `callisto version`: Consume changesets, bump package versions, and update changelogs.
-- `callisto status`: Inspect workspace release status.
-- `callisto release`: Publish every package with an unreleased version (`--dry-run` previews the plan).
-- `callisto compose-pr-body`: Render rich GitHub Pull Request descriptions.
-
-## License
-
-Functional Source License, Version 1.1, MIT Future License (`FSL-1.1-MIT`).
+License: FSL-1.1-MIT. See [ARCHITECTURE.md](../../ARCHITECTURE.md) for the full crate map and [the root README](../../README.md) for install and usage.

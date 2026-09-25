@@ -1,16 +1,5 @@
 # callisto-model
 
-Domain primitives, SemVer grammars, package identity types, and versioned JSON report contracts for Callisto.
+Shared types and traits for callisto: package identity, versions, manifests, dependency specs, and the versioned JSON report contract. Also holds `atomic_write` and the `ApplyPermit` capability token.
 
-## Overview
-
-`callisto-model` defines core type primitives for Callisto versioning and release management workflows:
-
-- Package identity representation (`PackageId`, `PackageName`, `Ecosystem`).
-- SemVer version parsing, comparison, and bump severity classification (`Severity`).
-- Diagnostic errors using `miette` and standard error implementations.
-- Serde-compatible JSON schemas for machine-readable publish and version plans.
-
-## License
-
-MIT License (`MIT`).
+License: MIT. See [ARCHITECTURE.md](../../ARCHITECTURE.md) for the full crate map and [the root README](../../README.md) for the CLI.

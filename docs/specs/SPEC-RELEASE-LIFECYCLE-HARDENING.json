@@ -11,7 +11,7 @@
     "SPEC-ARCH-RELEASE-ERROR-TAXONOMY"
   ],
   "purpose": "Describe, as testable criteria, the release-lifecycle contract as implemented on branch codex/release-recovery (PR 101): run envelope, provider observation and evidence, the transition table, the provider port, protocol-level registry, tag and forge observation, retry and deadlines, validation before effects, canonical destinations, redaction, the workflow adapter policy, and the verification tiers that keep them honest.",
-  "scope": "The implemented behavior of the release path in callisto-model, callisto-graph, callisto-cli, the release workflow, the setup-callisto installer and the provider contract tier. Every criterion cites its source file and the tests or policy self-test mutants that pin it. Provenance tags: [UR] owner requirement, [EC] existing contract already stated in docs/07-self-release-lifecycle.md or a sibling spec, [XC] external constraint from observed provider behavior, [JC] judgment call awaiting owner acceptance.",
+  "scope": "The implemented behavior of the release path in callisto-model, callisto-graph, callisto-cli, the release workflow, the setup-callisto installer and the provider contract tier. Every criterion cites its source file and the tests or policy self-test mutants that pin it. Provenance tags: [UR] owner requirement, [EC] existing contract already stated in docs/releasing.md or a sibling spec, [XC] external constraint from observed provider behavior, [JC] judgment call awaiting owner acceptance.",
   "non_goals": [
     "Replacing the three superseded design drafts' proposals that were not implemented (an HTTP client crate for registry observation, in-process provider clients).",
     "A data-driven [release] catalog for adopters other than Callisto; the target table stays Callisto-specific.",
@@ -92,7 +92,7 @@
     },
     {
       "id": "AC-015",
-      "criterion": "[XC] [UPDATED 2026-09-24: PyPI is now observed and supported, since d03faa2ea (#110)] PyPI is observed via the PEP 691 JSON simple index over curl (not pip/twine): an exact file match is Exact; a 404, no matching file, or a yanked file is Absent; a transport failure or a non-JSON/unparseable response is Indeterminate. A PyPI publish target passes the plan-time observability gate on the same terms as cargo and npm; the prior E170 ReleasePreconditionUnmet(ObservableRegistryClient) refusal for PyPI no longer applies, and both of this criterion's named tests were removed along with it. Source: crates/callisto-graph/src/commands/release/provider/registry.rs:410-547, crates/callisto-cli/tests/release_plan_pypi_default_registry_test.rs:75, docs/07-self-release-lifecycle.md:80.",
+      "criterion": "[XC] [UPDATED 2026-09-24: PyPI is now observed and supported, since d03faa2ea (#110)] PyPI is observed via the PEP 691 JSON simple index over curl (not pip/twine): an exact file match is Exact; a 404, no matching file, or a yanked file is Absent; a transport failure or a non-JSON/unparseable response is Indeterminate. A PyPI publish target passes the plan-time observability gate on the same terms as cargo and npm; the prior E170 ReleasePreconditionUnmet(ObservableRegistryClient) refusal for PyPI no longer applies, and both of this criterion's named tests were removed along with it. Source: crates/callisto-graph/src/commands/release/provider/registry.rs:410-547, crates/callisto-cli/tests/release_plan_pypi_default_registry_test.rs:75, docs/releasing.md:80.",
       "is_error_case": false
     },
     {

@@ -1,15 +1,5 @@
 # callisto-vcs
 
-Git access for Callisto, through the system `git` binary.
+`GitAccess`: every Git read and write as a subprocess through the system `git` binary, via the `CommandRunner` trait seam.
 
-## Overview
-
-`callisto-vcs` runs every Git read and write as a `git` subprocess through a `CommandRunner`:
-
-- Commit history since a tag, scoped to package paths.
-- Tag listing, ref resolution, and tag creation.
-- Staged-change and release-trust observation.
-
-## License
-
-MIT License (`MIT`).
+License: MIT. See [ARCHITECTURE.md](../../ARCHITECTURE.md) for the full crate map and [the root README](../../README.md) for the CLI.
