@@ -1,0 +1,1 @@
+Why name publish for preview and not using release --preview or something like that. This is confusing, what is the difference between publish and release? Why still 17 top-level commmands?, why is the output not clear? Do we have nicely formatted output? add is interactive or non-interactive (for automation)? How do we make correctness 10/10?
