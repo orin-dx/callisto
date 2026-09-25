@@ -35,12 +35,7 @@ Decisions (owner, 2026-09-25):
 - `version` refreshes lockfiles by default; `--no-refresh-lockfiles` opts out.
 
 ### 1. A release is complete and consistent
-- Asset uploads are keyed to the owning package, so the product's GitHub release publishes before other packages' assets upload (`commands/release/derive.rs`, `uploads_by_package`). Key them to the product.
-- An upload's prerelease flag comes from the owner's version; a mismatch fails every run with E167. Take tag and prerelease from the product's forge release.
-- Remote and local tag checks disagree on the annotation. Compare commit and annotated-ness only.
-- `release-pr commit-plan` reads added bytes from the worktree, not the index, and fails from a subdirectory. Verify bytes against the index blob and resolve from the repo root.
-- Warn when an artifact's owner is selected without its product.
-- Tests: the zero-slots test reads `artifact_slots` (always passes); E124 re-derivation; `--dry-run` rejection on release subcommands; cargo real-registry e2e.
+- Cargo real-registry e2e next to the npm (Verdaccio) and PyPI (pypiserver) ones. There is no drop-in local cargo registry; pick one before writing it.
 
 ### 2a. Versions are computed correctly
 - Fixed groups do their own version arithmetic (`groups.rs::fixed_group_target`): an untagged group bumps from 0.0.0 (1.0.0 + minor gives 0.1.0), pre mode yields a stable version, PEP 440 errors. One bump function shared with `bump_target`; untagged base is the highest member version.
@@ -90,6 +85,7 @@ Decisions (owner, 2026-09-25):
 - Git probes echo stderr (`init` without origin, `release --dry-run`). Split probe from exec.
 - Completions list hidden commands; `callisto help <cmd>` is rejected; text shows internal names (`cratesIo`, `{:?}`); `--check`/`--strict` help is wrong; `add --summary` without `--package` says no flags were given; wizard prompts go to stdout.
 - Delete the legacy `ValidateReport`, `PublishPlan`, `PublishReport` and tag report types and `schema --type validate`.
+- Release derivation has no diagnostics channel: the owner-without-product warning is an `eprintln!` (`commands/release/derive.rs`), so JSON output does not carry it.
 
 ### 6. What `init` generates works and stays pinned
 - The action installs `latest`, ignoring its pinned commit. Install the binary matching the action's commit.
