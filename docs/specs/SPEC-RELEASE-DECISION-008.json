@@ -20,12 +20,12 @@
   "acceptance_criteria": [
     {
       "id": "AC-001",
-      "criterion": "`release plan` derives ReleaseDecisionV1 from exact qualified selections for a local release, or from the immutable parent-to-merged-commit delta of a Callisto release PR in CI. CI verifies the consumed changesets, version/changelog changes, and release-policy closure before embedding the result in the intent. No executor or provider adapter may use PublishPlan or mutable configuration to discover additional members. An empty selection is rejected; it is never silently interpreted as all packages.",
+      "criterion": "[UPDATED 2026-09-24] `release plan` derives ReleaseDecisionV1 from exact qualified selections for a local release, or from the immutable parent-to-merged-commit delta of a Callisto release PR in CI. In the local route, an empty selection means every unreleased publishable package -- it is not rejected (crates/callisto-graph/src/commands/release_decision.rs:181-243,236). The CI route trusts the committed decision as authority and does not recompute closure; it verifies only the diff against that decision (changeset consumed, changelog touched, manifest versions match) before embedding the result in the intent (release_decision.rs:292-315; crates/callisto-graph/src/commands/release/local.rs:295). No executor or provider adapter may use PublishPlan or mutable configuration to discover additional members.",
       "is_error_case": true
     },
     {
       "id": "AC-002",
-      "criterion": "Version 1 rejects a configuration with overlapping linked groups before making a decision, with a diagnostic naming every overlapping group and qualified package. In a valid configuration, selecting any member of a linked group includes every member of that one group exactly once. A package outside that closure is included only by an explicit selection or by an already configured fixed-group, dependency-cascade, or prerelease rule that names the causal package/policy in its inclusion reason. The implementation must not use an unsatisfiable rule such as rejecting a package merely because more than one package qualifies.",
+      "criterion": "[UPDATED 2026-09-24 in part] Version 1 rejects a configuration with overlapping linked groups before making a decision, with a diagnostic naming every overlapping group and qualified package (as-implemented, ConfigError::ConflictingGroupNames fails on the first overlapping pair only, naming 2 groups and 1 member with no diagnostic code -- crates/callisto-graph/src/config/groups.rs:121,156, crates/callisto-graph/src/error.rs:832-837 -- this gap is not resolved by this revision; see drift report). In a valid configuration, selecting any member of a linked group expands the selection to every member of that group already present in the version plan (crates/callisto-graph/src/commands/release_decision.rs:84-88,140-171) -- not unconditionally every member of the group in the abstract. A package outside that closure is included only by an explicit selection or by an already configured fixed-group, dependency-cascade, or prerelease rule that names the causal package/policy in its inclusion reason. The implementation must not use an unsatisfiable rule such as rejecting a package merely because more than one package qualifies.",
       "is_error_case": true
     },
     {
@@ -40,12 +40,12 @@
     },
     {
       "id": "AC-005",
-      "criterion": "ReleaseDecisionV1 is deterministic: equivalent fresh workspace state and explicit selection produce byte-identical canonical decision data and the same DecisionDigest across process runs. Ordering is by defined semantic keys, including ecosystem-qualified package identity; Rust declaration order, HashMap iteration, filesystem enumeration order, and DepKind's declaration order are not valid ordering definitions. Dependency/cascade explanations are ordered by their defined exact identity.",
+      "criterion": "[UPDATED 2026-09-24] ReleaseDecisionV1 is deterministic: equivalent fresh workspace state and explicit selection produce byte-identical canonical decision data and the same DecisionDigest across process runs. Entry ordering (by ecosystem prefix, name) is by defined semantic keys, not Rust declaration order, HashMap iteration, filesystem enumeration order, or DepKind's declaration order. Within one entry, its ReleaseInclusionReason values are ordered by that type's own derived `Ord` (crates/callisto-model/src/release.rs:129-133,532,642) -- this derived order, not a separately hand-written reason sort key, is the defined canonical order for that ordering only.",
       "is_error_case": true
     },
     {
       "id": "AC-006",
-      "criterion": "The decision exposes an inspectable explanation for every included and rejected requested package without leaking credentials or raw endpoint/configuration text. User-facing errors use miette diagnostics with stable codes and remediation; the durable decision itself retains only closed reason variants and safe typed identifiers, not rendered diagnostics.",
+      "criterion": "[UPDATED 2026-09-24 in part] The decision exposes an inspectable explanation for every included requested package without leaking credentials or raw endpoint/configuration text. As implemented, a rejected selection is fail-fast, not per-package: the first invalid selection aborts the whole call with one error (crates/callisto-graph/src/commands/release_decision.rs:108-132) rather than producing an explanation for every rejected package -- this gap is not resolved by this revision; see drift report. User-facing errors use miette diagnostics with stable codes and remediation; the durable decision itself retains only closed reason variants and safe typed identifiers, not rendered diagnostics. (Cascade `edge_kind` is a free String built from `format!(\"{dep_kind:?}\")`, not yet a closed variant -- see drift report.)",
       "is_error_case": true
     },
     {
@@ -63,5 +63,6 @@
     "Reuse the existing group, cascade, prerelease, PackageId, Version, and graph structures where their semantics match; introduce a new typed result rather than extending PublishPlan into authority.",
     "Use BTreeMap/BTreeSet or explicitly sorted Vec values at durable boundaries. Do not add Rayon or Tokio: deriving one release decision is policy-sensitive and its deterministic evidence matters more than parallel traversal.",
     "The next spec, SPEC-RELEASE-INTENT-MODEL-009, consumes this result. Git trust, locks, prepared effect inputs, and actual effect dispatch are later dependent specs."
-  ]
+  ],
+  "revision_note": "2026-09-24 drift pass: rewrote AC-001 (empty selection means all-unreleased locally; CI trusts the committed decision, diff-verified), AC-002 in part (linked-group expansion is scoped to plan members; the overlapping-groups diagnostic gap is unresolved, see drift report), AC-005 (accepts ReleaseInclusionReason's derived Ord as the canonical within-entry order), AC-006 in part (fail-fast rejection is the current behavior; per-package explanations and a closed edge_kind enum are unresolved, see drift report). AC-003/AC-004 left as-is (code looks wrong, see drift report)."
 }

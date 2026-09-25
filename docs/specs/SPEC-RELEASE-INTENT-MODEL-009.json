@@ -23,7 +23,7 @@
   "acceptance_criteria": [
     {
       "id": "AC-001",
-      "criterion": "ReleaseIntentV1 can be constructed only from a ReleaseDecisionV1 plus explicitly typed semantic observations supplied by the graph layer. For CI, graph obtains that decision from a verified merged release-PR delta; for local use it obtains it from explicit selection. It records the exact DecisionDigest and rejects a malformed/unknown schema or an intent whose decision-derived roster, target versions, or declared operations cannot be internally reconciled. Constructing an intent from PublishPlan, a free-form JSON/TOML fingerprint, or a separately supplied decision file does not satisfy this criterion.",
+      "criterion": "[UPDATED 2026-09-24] ReleaseIntentV1 can be constructed only from a ReleaseDecisionV1 plus explicitly typed semantic observations supplied by the graph layer. For local use, graph obtains that decision from explicit selection. For CI, graph obtains it from the committed decision file, checked against the merge diff and its own digest -- that committed, diff-verified decision file is the CI authority (crates/callisto-graph/src/commands/release_decision.rs:380-390); `ReleaseIntentV1::new` is a public constructor accepting any decision and snapshot, so its own signature does not by itself distinguish CI from local provenance. It records the exact DecisionDigest and rejects a malformed/unknown schema or an intent whose decision-derived roster, target versions, or declared operations cannot be internally reconciled. Constructing an intent from PublishPlan or a free-form JSON/TOML fingerprint does not satisfy this criterion.",
       "is_error_case": true
     },
     {
@@ -43,7 +43,7 @@
     },
     {
       "id": "AC-005",
-      "criterion": "The operation DAG is complete and deterministic. All prerequisites refer to operations in the same intent, each operation has one deterministic position in a stable Kahn topological order, and every prerequisite precedes its dependent. The model rejects cycles and invalid references before any future executor can act. Tie-breaking is specified by exact operation identity's canonical ordering, not enum declaration order or hash iteration.",
+      "criterion": "[UPDATED 2026-09-24] The operation DAG is complete and deterministic. All prerequisites refer to operations in the same intent, each operation has one deterministic position in a stable Kahn topological order, and every prerequisite precedes its dependent. The model rejects cycles and invalid references before any future executor can act. Tie-breaking picks the smallest ReleaseOperationId (crates/callisto-model/src/release.rs:973); its `role` component uses ReleaseOperationRole's own derived `Ord` (release.rs:1231-1239) as the canonical role order, not a separately hand-written role rank -- this derived order, not enum-declaration-order-as-happenstance, is the specified tie-break.",
       "is_error_case": true
     },
     {
@@ -73,5 +73,5 @@
     "Use miette for transient diagnostics and closed safe data structures for persistence. Do not persist miette reports or arbitrary provider errors.",
     "The successor graph-capability spec will construct an opaque non-Serialize/non-Clone ValidatedReleaseIntent from this durable intent, freshly re-observed workspace state, Git evidence, and operation-specific private prepared inputs."
   ],
-  "revision_note": "Revised for PR #124: every run adopts already-landed effects, execution state is in memory only, and the receipt is built from recorded state evidence."
+  "revision_note": "2026-09-24 drift pass: rewrote AC-001 (committed, diff-verified decision file is the CI authority) and AC-005 (ReleaseOperationRole's derived Ord is the canonical tie-break order). AC-002/AC-007 left as-is (code looks wrong / uncovered, see drift report). Prior: revised for PR #124: every run adopts already-landed effects, execution state is in memory only, and the receipt is built from recorded state evidence."
 }

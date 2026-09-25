@@ -13,7 +13,7 @@
   "acceptance_criteria": [
     {
       "id": "AC-1",
-      "criterion": "Given a selected npm package with a runtime or optional dependency edge to a standalone workspace package carrying a Platform manifest, where that platform package is absent from the release decision and its current version is unreleased, release/derive.rs's plan derivation fails with GraphError::ReleaseSelectionInvalid{reason: ReleaseSelectionInvalidReason::PlatformDependencyNotSelected} -- a new enum variant added alongside Duplicate/NotInPlan/DuplicateRegistryTarget in callisto-graph/src/error.rs, not commands/publish.rs::plan_publish's separate MissingPlatformDependency error.",
+      "criterion": "[UPDATED 2026-09-24] Given a selected package with a runtime, optional, or peer workspace dependency edge to a standalone unreleased workspace package that is absent from the release decision, release/derive.rs's plan derivation fails with GraphError::ReleaseSelectionInvalid{reason: ReleaseSelectionInvalidReason::DependencyNotSelected} -- a generalized variant covering any unreleased runtime/optional/peer workspace dependency (not scoped to Platform-manifest dependencies specifically), added in callisto-graph/src/error.rs (crates/callisto-graph/src/error.rs:740-741; crates/callisto-graph/src/commands/release/derive.rs:542-585,1093), not commands/publish.rs::plan_publish's separate MissingPlatformDependency error.",
       "is_error_case": true
     },
     {
@@ -26,7 +26,7 @@
     },
     {
       "id": "AC-3",
-      "criterion": "Given a graph containing a mixed cycle where one edge is a runtime dependency and another is dev-only, release/derive.rs's DAG build (via toposort_with_edge_filter) still fails with a cycle error -- only the dev-only edge is excluded from cycle detection, not the runtime edge.",
+      "criterion": "Given a cycle that closes only through a dev-only edge (e.g. A runtime-depends on B, B dev-depends on A), release/derive.rs orders it by excluding the dev edge. Given a cycle made only of runtime/build/optional edges, derivation fails with GraphError::Cycle even when dev edges are also present; dev edges are never used to break a non-dev cycle.",
       "is_error_case": true
     },
     {
@@ -79,5 +79,6 @@
   "linked_requirement": "REQ-DX-V1",
   "reasoning": "Grounded against origin/fix/release-run-simplify@9be31095: ReleaseSelectionInvalidReason (error.rs:678-685) confirmed to currently have only {Duplicate, NotInPlan, DuplicateRegistryTarget} -- PlatformDependencyNotSelected, NotARelease, NoDispatchableTarget are new variants. ForgeReleaseOperation (provider/mod.rs:66-70) confirmed to have only {tag, prerelease}, no notes field. prepared_registry_binding (binding.rs:42) and canonical_registry_url (registry_endpoint.rs:63) confirmed as the existing single-validator target, with canonical_registry_url's scheme check running before host-match. crate::toposort (toposort.rs: toposort_impl, toposort_with_edge_filter) confirmed to exist as the natural shared-filter target. registry_argv.rs's npm_publish_flags/npm_publish_argv confirmed to exist with inline access handling but no npm_default_access helper -- this spec adds it. PublishTarget::is_implemented (ecosystem.rs:197) and Ecosystem::is_implemented (ecosystem.rs:81, matches Cargo|Npm|Pypi) confirmed to exist already; AC-11 requires derive.rs to consult it and fail hard rather than degrade. Added AC-1b to make the release-already-published exemption in AC-1's rationale testable rather than left implicit.",
   "spec_file_path": "docs/specs/SPEC-DX-CORRECTNESS-PARITY.json",
-  "status": "design"
+  "status": "design",
+  "revision_note": "2026-09-24 drift pass: AC-1 rewritten -- the code uses a generalized DependencyNotSelected variant (any unreleased runtime/optional/peer workspace dependency), not a Platform-specific PlatformDependencyNotSelected variant."
 }

@@ -7,7 +7,7 @@
     "`release --dry-run`'s own plan-derivation correctness -- SPEC-DX-RELEASE-COMMAND.",
     "The 8-command `--help` inventory and jargon ban -- SPEC-DX-CLI-SURFACE.",
     "`.github/actions/callisto-validate`'s and callisto-action's own workflow YAML wiring beyond the CLI commands they invoke.",
-    "Dependency-graph crosscheck diagnostics status already emits independent of this spec (e.g. via `strict_graph`)."
+    "Dependency-graph crosscheck diagnostics status already emits independent of this spec."
   ],
   "acceptance_criteria": [
     {
@@ -25,7 +25,7 @@
     },
     {
       "id": "AC-04",
-      "criterion": "`callisto status --check` is a conventional errors-only gate: exits 0 when the workspace has no error-level diagnostics (including the AC-03 set), regardless of pending changesets; exits 1 when one or more error-level diagnostics exist, regardless of pending changesets. `--strict`/`--strict-graph` promoting a warning to error-level shifts the exit code from 0 to 1 accordingly. Plain `status` (no `--check`) always exits 0 unless the command itself fails (e.g. workspace load or I/O error) -- it never gates on diagnostic severity. Pending state does not affect either exit code; it is read from `StatusReport`'s `pending` field (count of packages with a planned bump) in `--format json`, and from a summary line in text output."
+      "criterion": "`callisto status --check` is a conventional errors-only gate: exits 0 when the workspace has no error-level diagnostics (including the AC-03 set), regardless of pending changesets; exits 1 when one or more error-level diagnostics exist, regardless of pending changesets. `--strict` promoting a warning to error-level shifts the exit code from 0 to 1 accordingly (`--strict-graph` was removed in f3b1c1bcf along with the moon cross-check it escalated). Plain `status` (no `--check`) always exits 0 unless the command itself fails (e.g. workspace load or I/O error) -- it never gates on diagnostic severity. Pending state does not affect either exit code; it is read from `StatusReport`'s `pending` field (count of packages with a planned bump) in `--format json`, and from a summary line in text output."
     },
     {
       "id": "AC-05",
@@ -42,7 +42,7 @@
     },
     {
       "id": "AC-08",
-      "criterion": "`callisto add --package name:severity` (one or more, repeatable) records the changeset without prompting, whether or not stdin/stdout is a TTY."
+      "criterion": "`callisto add --package name:severity --summary <text>` (one or more `--package`, repeatable; `--summary` required) records the changeset without prompting, whether or not stdin/stdout is a TTY. Without `--summary` the flags path is rejected: \"--summary is required when specifying packages via CLI flags in non-interactive mode\" (crates/callisto-cli/src/commands/add.rs:168-171)."
     },
     {
       "id": "AC-09",
@@ -52,5 +52,6 @@
   ],
   "reasoning": "Grounded against origin/fix/release-run-simplify (HEAD 9be31095): crates/callisto-graph/src/cascade.rs:16-23 gives CascadeDecision's real fields (severity: Severity, not the revisions doc's informal 'PlannedBump.severity'), and cascade_action at line 25 is the function that computes it -- AC-01 cites the grounded names. crates/callisto-graph/src/commands/validate.rs enumerates exactly five DiagnosticCode variants it emits (EmptyChangeset, EmptySummary, UnknownPackage, AmbiguousPackageName, InvalidPackageName); a grep of crates/callisto-graph/src/commands/status.rs found zero DiagnosticCode::-emitting call sites, confirming status does not already cover any of the five -- AC-03's set is exhaustive against validate's real diagnostics, not approximated. crates/callisto-cli/src/cli.rs confirms `validate` is still a live Command variant today (AC-02 describes pending removal, not already-shipped). crates/callisto-cli/src/tty.rs's doc comment and body confirm is_interactive() tests std::io::stdin().is_terminal() only, never stdout -- correcting a stdin-and-stdout misreading, grounding AC-07. crates/callisto-moon/src/extension_pdk.rs:66-72 gives the exact 'validate' dispatch arm AC-05 requires migrated. AC-04's errors-only 0/1 exit-code scheme and AC-06's callisto-validate action migration are the owner's stated defaults -- an earlier draft of AC-04 specified a four-way 0/1/2/3 scheme conflating error state with pending state; the owner corrected it post-implementation to a conventional 0/1 gate (pending state moved to `StatusReport.pending` instead), which this revision records. No `.github/actions/callisto-validate` directory exists in the workspace yet, so AC-06 specifies target behavior for an action to be created or updated, not a verified current wiring.",
   "spec_file_path": "docs/specs/SPEC-DX-STATUS-ADD.json",
-  "status": "design"
+  "status": "design",
+  "revision_note": "2026-09-24 drift pass: dropped removed --strict-graph/strict_graph mentions (f3b1c1bcf); AC-08 now requires --summary with --package flags."
 }

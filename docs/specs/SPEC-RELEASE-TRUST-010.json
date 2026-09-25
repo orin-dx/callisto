@@ -23,7 +23,7 @@
     },
     {
       "id": "AC-002",
-      "criterion": "Version 1 accepts only a SHA-1 Git repository and a detached HEAD at the exact 40-hex GitCommit SourceIdentity in the received ReleaseIntentV1. It rejects SHA-256 Git-object-format repositories, a symbolic HEAD even when it currently resolves to the same commit, an absent/unresolvable HEAD, a non-canonical or non-equal commit, and a shallow/incomplete checkout when the required commit or tag inspection cannot be performed. Equality uses CommitSha values, never prefix or raw-string comparison.",
+      "criterion": "[UPDATED 2026-09-24] Version 1 accepts only a SHA-1 Git repository at the exact 40-hex GitCommit SourceIdentity in the received ReleaseIntentV1. The detached-HEAD-only requirement is scoped to the CI route (`ReleaseCheckout::Detached`, crates/callisto-graph/src/commands/release/capability.rs:227-235); the local `callisto release` route (`validate_local_release_intent`, `ReleaseCheckout::AnyHead`, capability.rs:324, crates/callisto-graph/src/commands/release/local.rs:260-291) accepts a branch checkout. It rejects SHA-256 Git-object-format repositories, an absent/unresolvable HEAD, a non-canonical or non-equal commit, and a shallow/incomplete checkout when the required commit or tag inspection cannot be performed; on the CI route only, a symbolic HEAD is also rejected even when it currently resolves to the same commit. Equality uses CommitSha values, never prefix or raw-string comparison.",
       "is_error_case": true
     },
     {
@@ -48,9 +48,9 @@
     }
   ],
   "implementation_notes": [
-    "GitAccess/ShellGit should expose structured observation rather than making graph parse porcelain or command text. The existing CommitSha type is the equality boundary.",
+    "GitAccess (the sole shell-backed Git type since f3b1c1bcf dropped GitRepository/ShellGit/GitDataSource) should expose structured observation rather than making graph parse porcelain or command text. The existing CommitSha type is the equality boundary.",
     "A future closed-root byte observer may add HermeticContent under a separate schema/profile version. It must not weaken the GitCommit behavior specified here."
   ],
   "reasoning": "A Git commit only becomes a release trust boundary when the executor proves it is operating at the approved checkout. Mandatory fresh observation before every effect preserves correctness when another tool changes the workspace.",
-  "revision_note": "Revised for PR #120: release trust allows every gitignored path; tracked modifications and untracked non-ignored files still block, naming the path. Revised for PR #124: every run adopts already-landed effects, execution state is in memory only, and the receipt is built from recorded state evidence."
+  "revision_note": "2026-09-24 drift pass: AC-002 rewritten -- detached-HEAD-only is scoped to the CI route; the local route accepts AnyHead (branch checkout). ShellGit/GitDataSource references updated to GitAccess (f3b1c1bcf). AC-006/AC-007 left as-is (code looks wrong / test gaps, see drift report). Prior: revised for PR #120: release trust allows every gitignored path; tracked modifications and untracked non-ignored files still block, naming the path. Revised for PR #124: every run adopts already-landed effects, execution state is in memory only, and the receipt is built from recorded state evidence."
 }
