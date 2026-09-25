@@ -1,0 +1,1 @@
+Can we consider the changes in the stack and account for them? And add this to the top of the stack to avoid conflicts?
