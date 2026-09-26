@@ -5,7 +5,7 @@ use callisto_graph::commands::PrBodyOptions;
 
 use crate::cli::{ComposePrBodyArgs, GlobalArgs, OutputFormat};
 use crate::error::CliError;
-use crate::output::write_json;
+use crate::output::emit_report;
 use crate::render;
 use crate::runner::CliCommandRunner;
 use crate::workspace::{load_workspace, select_inference};
@@ -33,7 +33,7 @@ pub fn handle(args: ComposePrBodyArgs, global: &GlobalArgs) -> Result<ExitCode, 
     let report = callisto_graph::commands::compose_pr_body(&ws, &inference, &opts)?;
 
     match global.format {
-        OutputFormat::Json => write_json(&mut std::io::stdout(), &report)?,
+        OutputFormat::Json => emit_report(&mut std::io::stdout(), &report, global.dry_run)?,
         OutputFormat::Text => render::render_compose_pr_body(&report, &mut std::io::stdout())?,
     }
 

@@ -57,6 +57,7 @@ use callisto_cli::commands::*;
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    let command_name = cli.command.name();
 
     let res = match cli.command {
         Command::Add(args) => add::handle(args, &cli.global),
@@ -77,7 +78,7 @@ fn main() -> ExitCode {
         Ok(code) => code,
         Err(err) => {
             if cli.global.format == callisto_cli::cli::OutputFormat::Json {
-                let report = callisto_cli::error::format_error_json(&err);
+                let report = callisto_cli::error::format_error_json(command_name, &err);
                 let _res = callisto_cli::output::write_json(&mut std::io::stderr(), &report);
             } else {
                 eprintln!("{:?}", miette::Report::new(err));

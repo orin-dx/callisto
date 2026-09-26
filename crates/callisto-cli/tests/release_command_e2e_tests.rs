@@ -336,6 +336,14 @@ fn dry_run_without_origin_notes_unbound_tags() {
         "{}",
         stderr(&preview)
     );
+    // The missing-origin probe (`optional_git_remote`, called more than once
+    // while deriving this preview) must never leak git's own raw stderr for
+    // an absent remote -- only the one deliberate note above.
+    assert!(
+        !stderr(&preview).contains("No such remote"),
+        "git's own probe stderr must not leak: {}",
+        stderr(&preview)
+    );
 
     let run = rig.run(root, &["release"]);
     assert!(!run.status.success());

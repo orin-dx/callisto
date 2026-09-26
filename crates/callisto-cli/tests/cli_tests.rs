@@ -558,7 +558,13 @@ fn matrix_empty_workspace_produces_exact_empty_report_shape() {
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(
         json,
-        serde_json::json!({"schemaVersion": 1, "platformTargets": {}, "runtimeVersions": {}})
+        serde_json::json!({
+            "schemaVersion": 1,
+            "command": "matrix",
+            "dryRun": false,
+            "platformTargets": {},
+            "runtimeVersions": {}
+        })
     );
     assert!(
         json.as_object().unwrap().get("diagnostics").is_none(),
@@ -767,6 +773,41 @@ fn assert_error_exit_no_report(output: &std::process::Output) {
     assert!(
         serde_json::from_slice::<serde_json::Value>(&output.stdout).is_err() || output.stdout.is_empty(),
         "no MatrixReport JSON must be printed to stdout on error"
+    );
+}
+
+/// `--format json`'s error envelope must carry `command` (the subcommand
+/// that was actually parsed, here `"matrix"`) and an `error.path` key
+/// (`null` for an error that carries no structured filesystem path), not
+/// just `schemaVersion`/`error.code`/`error.message`/`error.help`.
+#[test]
+fn json_error_envelope_carries_command_and_path_keys() {
+    let tmp = base_workspace();
+    let dir = tmp.path().join("conflict-pkg");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("package.json"),
+        r#"{"name":"conflict-pkg","napi":{"targets":["aarch64-apple-darwin"]}}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("pyproject.toml"),
+        "[project]\nname = \"conflict-pkg\"\nversion = \"0.1.0\"\n\n[tool.maturin]\ntargets = [\"x86_64-unknown-linux-gnu\"]\n",
+    )
+    .unwrap();
+
+    let output = run_matrix_json(tmp.path());
+    assert_error_exit_no_report(&output);
+
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stderr).expect("stderr must be one JSON error envelope");
+    assert_eq!(json["command"], "matrix", "got: {json}");
+    assert_eq!(json["schemaVersion"], 1, "got: {json}");
+    assert!(json["error"]["code"].is_string(), "got: {json}");
+    assert!(json["error"]["message"].is_string(), "got: {json}");
+    assert!(
+        json["error"]["path"].is_null(),
+        "this error carries no structured path; got: {json}"
     );
 }
 

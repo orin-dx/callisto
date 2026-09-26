@@ -127,11 +127,11 @@
     },
     {
       "id": "CLI-OUT-05",
-      "criterion": "With `--format json`, the status, add, init, pre and snapshot reports on stdout are single JSON objects with camelCase keys and a top-level `schemaVersion`."
+      "criterion": "With `--format json`, the status, add, init, pre and snapshot reports on stdout are single JSON objects with camelCase keys and a top-level `schemaVersion`, `command` (the subcommand name) and `dryRun`."
     },
     {
       "id": "CLI-OUT-06",
-      "criterion": "When a command fails under `--format json`, stderr ends with a JSON object `{\"schemaVersion\", \"error\": {\"code\", \"message\", \"help\"}}` and the exit code is 1.",
+      "criterion": "When a command fails under `--format json`, stderr ends with a JSON object `{\"schemaVersion\", \"command\", \"error\": {\"code\", \"message\", \"help\", \"path\"}}` and the exit code is 1; `command` is the subcommand that was parsed and `path` is `null` unless the error carries a structured filesystem path.",
       "is_error_case": true
     },
     {
@@ -143,6 +143,10 @@
       "id": "CLI-OUT-08",
       "criterion": "Argument parsing errors (unknown flag, missing required argument, invalid value) exit 2 with clap's usage message; every other failure exits 1 and every success exits 0, including --dry-run previews and `release` reporting `Nothing to release.`",
       "is_error_case": true
+    },
+    {
+      "id": "CLI-OUT-09",
+      "criterion": "`completions <shell>` and `schema` exit 0 without printing an error or panicking when stdout's reading end is already closed (e.g. piped into a command that exits early); a `--format json` report command's write error in that same situation propagates as `E213` and exits 1."
     },
     {
       "id": "CLI-STATUS-01",
@@ -176,7 +180,7 @@
     },
     {
       "id": "CLI-ADD-02",
-      "criterion": "`add --format json` prints `{\"schemaVersion\", \"command\": \"add\", \"path\"}`; with --dry-run it prints `dryRun: true`, the path and the file content, and creates no file or directory."
+      "criterion": "`add --format json` prints `{\"schemaVersion\", \"command\": \"add\", \"dryRun\": false, \"path\"}`; with --dry-run it prints `\"dryRun\": true`, the path and the file content, and creates no file or directory."
     },
     {
       "id": "CLI-ADD-03",
@@ -252,7 +256,7 @@
     },
     {
       "id": "CLI-INIT-13",
-      "criterion": "`init --format json` writes the human-readable detection, config and preview to stderr and a report `{schemaVersion, initialized, configPath, config}` (plus `diagnostics` when any) to stdout; with --dry-run `initialized` is false and no file is written."
+      "criterion": "`init --format json` writes the human-readable detection, config and preview to stderr and a report `{schemaVersion, command: \"init\", dryRun, initialized, configPath, config}` (plus `diagnostics` when any) to stdout; with --dry-run `dryRun` is true, `initialized` is false, and no file is written."
     },
     {
       "id": "CLI-INIT-14",

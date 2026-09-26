@@ -8,26 +8,37 @@ use miette::Diagnostic;
 /// ```json
 /// {
 ///   "schemaVersion": 1,
+///   "command": "add",
 ///   "error": {
 ///     "code": "E211",
 ///     "message": "human-readable error text",
-///     "help": "optional guidance string or null"
+///     "help": "optional guidance string or null",
+///     "path": "optional filesystem path or null"
 ///   }
 /// }
 /// ```
 ///
-/// `"code"`, `"message"`, and `"help"` are always present; `"help"` is `null`
-/// when the diagnostic provides no help text.  This guarantees a stable shape
-/// regardless of which [`CliError`] variant is serialized.
-pub fn format_error_json(err: &CliError) -> serde_json::Value {
+/// `command` is the subcommand that was parsed before the error occurred
+/// (see [`crate::cli::Command::name`]), not derived from the error itself --
+/// an error can occur before enough context exists to reconstruct it any
+/// other way (e.g. an argument-parsing failure).
+///
+/// `"code"`, `"message"`, `"help"`, and `"path"` are always present;
+/// `"help"`/`"path"` are `null` when the diagnostic provides none. This
+/// guarantees a stable shape regardless of which [`CliError`] variant is
+/// serialized.
+pub fn format_error_json(command: &str, err: &CliError) -> serde_json::Value {
     let code = err.code().map(|c| c.to_string()).unwrap_or_else(|| "E000".to_string());
     let help = err.help().map(|h| h.to_string());
+    let path = err.path().map(|p| p.display().to_string());
     serde_json::json!({
         "schemaVersion": callisto_model::SCHEMA_VERSION,
+        "command": command,
         "error": {
             "code": code,
             "message": err.to_string(),
             "help": help,
+            "path": path,
         }
     })
 }
@@ -350,17 +361,37 @@ impl From<std::io::Error> for CliError {
     }
 }
 
+impl CliError {
+    /// The filesystem path this error concerns, when it carries a
+    /// structured one. `Io` is the only variant with a real `PathBuf`
+    /// field; every other path-carrying variant already embeds its path as
+    /// a `String` inside its own message (covered by `error.message`), so
+    /// this stays `None` for those rather than re-parsing a message string.
+    fn path(&self) -> Option<&std::path::Path> {
+        match self {
+            CliError::Io { path, .. } => path.as_deref(),
+            _ => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Every JSON error object must have `"code"`, `"message"`, and `"help"` keys
-    /// regardless of which variant is serialized.
-    fn assert_envelope_shape(json: &serde_json::Value) {
+    /// Every JSON error object must have `"code"`, `"message"`, `"help"`, and
+    /// `"path"` keys, plus a top-level `"command"`, regardless of which
+    /// variant is serialized.
+    fn assert_envelope_shape(command: &str, json: &serde_json::Value) {
         assert_eq!(
             json["schemaVersion"],
             serde_json::json!(callisto_model::SCHEMA_VERSION),
             "schemaVersion must be present and match SCHEMA_VERSION"
+        );
+        assert_eq!(
+            json["command"],
+            serde_json::json!(command),
+            "command must be present and match"
         );
         let error = &json["error"];
         assert!(
@@ -377,11 +408,16 @@ mod tests {
             "error.message must always be a string, got: {:?}",
             error["message"]
         );
-        // help is present as a key always; its value is either a string or null
+        // help/path are present as keys always; each value is either a string or null
         assert!(
             error["help"].is_string() || error["help"].is_null(),
             "error.help must be a string or null, got: {:?}",
             error["help"]
+        );
+        assert!(
+            error["path"].is_string() || error["path"].is_null(),
+            "error.path must be a string or null, got: {:?}",
+            error["path"]
         );
     }
 
@@ -401,18 +437,19 @@ mod tests {
     #[test]
     fn format_error_json_typed_variant_has_stable_envelope() {
         let err = CliError::AddSummaryEmpty;
-        let json = format_error_json(&err);
-        assert_envelope_shape(&json);
+        let json = format_error_json("add", &err);
+        assert_envelope_shape("add", &json);
         assert_eq!(json["error"]["code"], "E275");
         assert_eq!(json["error"]["message"], "--summary cannot be empty");
         assert!(json["error"]["help"].is_string());
+        assert!(json["error"]["path"].is_null(), "AddSummaryEmpty carries no path");
     }
 
     #[test]
     fn format_error_json_not_a_tty_includes_code_and_help() {
         let err = CliError::NotATty;
-        let json = format_error_json(&err);
-        assert_envelope_shape(&json);
+        let json = format_error_json("add", &err);
+        assert_envelope_shape("add", &json);
         assert_eq!(json["error"]["code"], "E214");
         assert!(
             !json["error"]["message"].as_str().unwrap().is_empty(),
@@ -426,17 +463,21 @@ mod tests {
     }
 
     #[test]
-    fn format_error_json_io_error_includes_code_and_help() {
+    fn format_error_json_io_error_includes_code_help_and_path() {
         let err = CliError::Io {
             source: std::io::Error::new(std::io::ErrorKind::NotFound, "file missing"),
             path: Some(std::path::PathBuf::from("/some/path")),
         };
-        let json = format_error_json(&err);
-        assert_envelope_shape(&json);
+        let json = format_error_json("status", &err);
+        assert_envelope_shape("status", &json);
         assert_eq!(json["error"]["code"], "E213");
         assert!(
             json["error"]["message"].as_str().unwrap().contains("/some/path"),
             "I/O error message should include the path"
+        );
+        assert_eq!(
+            json["error"]["path"], "/some/path",
+            "error.path must carry the structured path, not just the message text"
         );
         let help = json["error"]["help"].as_str().expect("Io must have help text");
         assert!(
@@ -450,9 +491,9 @@ mod tests {
     #[test]
     fn format_error_json_structure_is_consistent_across_variants() {
         let errors: &[CliError] = &[CliError::AddSummaryEmpty, CliError::NotATty];
-        let jsons: Vec<serde_json::Value> = errors.iter().map(format_error_json).collect();
+        let jsons: Vec<serde_json::Value> = errors.iter().map(|e| format_error_json("add", e)).collect();
         for json in &jsons {
-            assert_envelope_shape(json);
+            assert_envelope_shape("add", json);
         }
         // Both must have the same top-level keys
         let keys_0: std::collections::BTreeSet<String> =
@@ -526,7 +567,7 @@ mod tests {
             },
         ];
         for error in &errors {
-            let json = format_error_json(error);
+            let json = format_error_json("release", error);
             let code = json["error"]["code"].as_str().unwrap();
             assert!(
                 code.starts_with('E') && code[1..].chars().all(|c| c.is_ascii_digit()),
@@ -536,7 +577,7 @@ mod tests {
         }
         let codes: std::collections::BTreeSet<_> = errors
             .iter()
-            .map(|e| format_error_json(e)["error"]["code"].to_string())
+            .map(|e| format_error_json("release", e)["error"]["code"].to_string())
             .collect();
         assert_eq!(codes.len(), errors.len(), "release error codes must be unique");
     }
@@ -569,7 +610,7 @@ mod tests {
             CliError::ReleasePrCommitPlanDryRun,
         ];
         for error in &errors {
-            let json = format_error_json(error);
+            let json = format_error_json("add", error);
             let code = json["error"]["code"].as_str().unwrap();
             assert!(
                 code.starts_with('E') && code[1..].chars().all(|c| c.is_ascii_digit()),
@@ -579,7 +620,7 @@ mod tests {
         }
         let codes: std::collections::BTreeSet<_> = errors
             .iter()
-            .map(|e| format_error_json(e)["error"]["code"].to_string())
+            .map(|e| format_error_json("add", e)["error"]["code"].to_string())
             .collect();
         assert_eq!(codes.len(), errors.len(), "retired-Other error codes must be unique");
     }

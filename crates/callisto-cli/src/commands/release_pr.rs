@@ -18,7 +18,7 @@ use crate::cli::{
 };
 use crate::commands::read_json_arg;
 use crate::error::CliError;
-use crate::output::write_json;
+use crate::output::{emit_line, write_json};
 use crate::runner::CliCommandRunner;
 use crate::workspace::load_workspace;
 
@@ -53,7 +53,7 @@ fn verify(args: ReleasePrVerifyArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
             &mut std::io::stdout(),
             &serde_json::json!({"schemaVersion": ReleasePrDecisionV2::SCHEMA_VERSION, "ok": true}),
         )?,
-        OutputFormat::Text => println!("release PR decision still matches forge snapshot"),
+        OutputFormat::Text => emit_line("release PR decision still matches forge snapshot")?,
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -75,7 +75,7 @@ fn decide(args: ReleasePrDecideArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
 
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &decision)?,
-        OutputFormat::Text => render_decision(&decision),
+        OutputFormat::Text => render_decision(&decision)?,
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -107,23 +107,24 @@ fn commit_plan(args: ReleasePrCommitPlanArgs, global: &GlobalArgs) -> Result<Exi
     Ok(ExitCode::SUCCESS)
 }
 
-fn render_decision(decision: &ReleasePrDecisionV2) {
+fn render_decision(decision: &ReleasePrDecisionV2) -> Result<(), CliError> {
     match &decision.action {
-        ReleasePrActionV2::Noop { reason } => println!("release PR: no-op ({reason:?})"),
+        ReleasePrActionV2::Noop { reason } => emit_line(&format!("release PR: no-op ({reason:?})"))?,
         ReleasePrActionV2::Create { branch, staging_branch } => {
-            println!("release PR: create {branch} (staging {staging_branch})")
+            emit_line(&format!("release PR: create {branch} (staging {staging_branch})"))?
         }
         ReleasePrActionV2::Update {
             pull_request_number,
             branch,
             expected_head_commit,
             staging_branch,
-        } => println!(
+        } => emit_line(&format!(
             "release PR: update #{pull_request_number} ({branch}, expected head {}, staging {staging_branch})",
             expected_head_commit.as_str()
-        ),
-        _ => println!("release PR: unsupported decision"),
+        ))?,
+        _ => emit_line("release PR: unsupported decision")?,
     }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -747,6 +747,67 @@ mod tag_report_tests {
     }
 }
 
+/// Report output from `callisto add --format json`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AddReport {
+    pub schema_version: u32,
+    /// Workspace-relative path of the changeset file written, or that would
+    /// be written under `--dry-run`.
+    pub path: String,
+    /// The changeset's Markdown content. Present only under `--dry-run`,
+    /// where nothing is written to disk and this is the only way to see it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+impl Report for AddReport {
+    const COMMAND: &'static str = "add";
+
+    fn schema_version(&self) -> u32 {
+        self.schema_version
+    }
+
+    fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
+    }
+}
+
+/// Report output from `callisto pre enter`/`callisto pre exit --format json`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PreReport {
+    pub schema_version: u32,
+    /// `"pre"` after `enter`, `"exit"` after `exit`.
+    pub mode: String,
+    pub tag: String,
+    /// Workspace-relative path of `.changeset/pre.json`. Present only under
+    /// `--dry-run`, alongside `content`, since a real run's path is already
+    /// implied by the fixed `.changeset/pre.json` location.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+impl Report for PreReport {
+    const COMMAND: &'static str = "pre";
+
+    fn schema_version(&self) -> u32 {
+        self.schema_version
+    }
+
+    fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
+    }
+}
+
 /// Init report output from `callisto init --format json`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
