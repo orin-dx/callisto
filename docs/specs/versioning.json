@@ -176,11 +176,11 @@
     },
     {
       "id": "VER-PRE-07",
-      "criterion": "`callisto snapshot --tag <tag>` sets every workspace package, and every attached platform package and fixed-group platform manifest, to the single version `0.0.0-{tag}-{sha7}`, where sha7 is the first 7 characters of HEAD; it fails if HEAD cannot be resolved."
+      "criterion": "`callisto snapshot --tag <tag>` sets every workspace package, and every attached platform package and fixed-group platform manifest, to a snapshot version built from the same tag and sha7 (the first 7 characters of HEAD) in the package's own grammar: `0.0.0-{tag}-{sha7}` for a SemVer package, `0.0.0.dev0+{tag}.{sha7}` for a Pep440 package; it fails if HEAD cannot be resolved."
     },
     {
       "id": "VER-PRE-08",
-      "criterion": "A snapshot writes manifests and refreshes each active ecosystem's existing lockfile, unconditionally (there is no `--no-refresh-lockfiles` for `snapshot`), so a subsequent locked install resolves against the snapshot version; it ignores and keeps pending changesets, writes no changelog or `pre.json`, and stages nothing in git; under `--dry-run` it writes nothing. A Pypi package's snapshot tag is not a valid PEP 440 version, so a workspace with a Pypi package fails to snapshot."
+      "criterion": "A snapshot writes manifests and refreshes each active ecosystem's existing lockfile, unconditionally (there is no `--no-refresh-lockfiles` for `snapshot`), so a subsequent locked install resolves against the snapshot version; it ignores and keeps pending changesets, writes no changelog or `pre.json`, and stages nothing in git; under `--dry-run` it writes nothing."
     },
     {
       "id": "VER-PRE-09",
