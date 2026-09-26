@@ -8,7 +8,7 @@ use dialoguer::{Confirm, Input, MultiSelect};
 
 use crate::cli::{AddArgs, GlobalArgs, OutputFormat};
 use crate::error::CliError;
-use crate::output::{emit_line, emit_report, log_line};
+use crate::output::{emit_line, emit_report, log_line, prompt_line};
 use crate::runner::CliCommandRunner;
 use crate::tty;
 use crate::workspace::load_workspace;
@@ -50,7 +50,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         }
 
         // Step 1: Package Selection
-        emit_line("Which packages would you like to include in this changeset?")?;
+        prompt_line("Which packages would you like to include in this changeset?");
         let selected_indices = MultiSelect::new().items(&all_packages).interact()?;
 
         if selected_indices.is_empty() {
@@ -60,8 +60,8 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         let selected_packages: Vec<String> = selected_indices.into_iter().map(|i| all_packages[i].clone()).collect();
 
         // Step 2: Major Bump Selection
-        emit_line("\nWhich of these packages should be a MAJOR bump?")?;
-        emit_line("(Select none if there are no breaking changes)")?;
+        prompt_line("\nWhich of these packages should be a MAJOR bump?");
+        prompt_line("(Select none if there are no breaking changes)");
         let major_indices = MultiSelect::new().items(&selected_packages).interact()?;
 
         let major_set: std::collections::HashSet<usize> = major_indices.into_iter().collect();
@@ -75,8 +75,8 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             .collect();
 
         let minor_indices = if !minor_candidates.is_empty() {
-            emit_line("\nWhich of these packages should be a MINOR bump?")?;
-            emit_line("(Any remaining packages will default to a PATCH bump)")?;
+            prompt_line("\nWhich of these packages should be a MINOR bump?");
+            prompt_line("(Any remaining packages will default to a PATCH bump)");
             MultiSelect::new().items(&minor_candidates).interact()?
         } else {
             Vec::new()
@@ -105,7 +105,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
 
         // Step 4: Summary Entry
         if summary.is_none() {
-            emit_line("\nPlease enter a summary for this change:")?;
+            prompt_line("\nPlease enter a summary for this change:");
             let input_summary: String = Input::new()
                 .validate_with(|input: &String| -> Result<(), &str> {
                     if input.trim().is_empty() {
@@ -126,7 +126,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         };
 
         let preview_text = callisto_format::write_changeset(&temp_changeset)?;
-        emit_line(&format!("\n=== Changeset Preview ===\n{preview_text}"))?;
+        prompt_line(&format!("\n=== Changeset Preview ===\n{preview_text}"));
 
         let confirm = Confirm::new()
             .with_prompt("Is this your desired changeset?")
@@ -134,7 +134,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             .interact()?;
 
         if !confirm {
-            emit_line("Changeset creation cancelled.")?;
+            prompt_line("Changeset creation cancelled.");
             return Ok(ExitCode::SUCCESS);
         }
     } else {

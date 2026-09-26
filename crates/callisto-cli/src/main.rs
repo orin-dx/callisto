@@ -72,6 +72,7 @@ fn main() -> ExitCode {
         Command::ReleasePr(args) => release_pr::handle(args, &cli.global),
         Command::Completions(args) => completions::handle(args, &cli.global),
         Command::Schema(args) => schema::handle(args, &cli.global),
+        Command::Help(args) => help::handle(args, &cli.global),
     };
 
     match res {

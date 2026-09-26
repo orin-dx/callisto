@@ -86,9 +86,17 @@
     {
       "name": "schema (hidden)",
       "signature": "callisto schema [--type <TYPE>]",
-      "description": "Prints the JSON Schema for a report type (status by default; also version, snapshot, validate, init, changeset, pre, matrix, release-receipt).",
+      "description": "Prints the JSON Schema for a report type (status by default; also version, snapshot, init, changeset, pre-state, matrix, release-receipt). `pre-state` is the on-disk `.changeset/pre.json` file shape, not `pre`'s own `--format json` report.",
       "error_conditions": [
-        "An unknown --type exits 1 listing the supported types."
+        "An unknown --type is a clap usage error (exit 2) listing the supported values."
+      ]
+    },
+    {
+      "name": "help (hidden)",
+      "signature": "callisto help [<command>...]",
+      "description": "Prints the root help, or a named subcommand's help (nested subcommands accepted as multiple words, e.g. `callisto help pre enter`); fills the role clap's own disabled help subcommand would otherwise have.",
+      "error_conditions": [
+        "A command name that does not exist exits 1 naming it."
       ]
     }
   ],
@@ -99,7 +107,11 @@
     },
     {
       "id": "CLI-SURF-02",
-      "criterion": "`matrix`, `schema`, `compose-pr-body`, `release-pr`, and `release plan|inspect|artifact-manifest|execute` are absent from `--help` output but still parse and run when invoked."
+      "criterion": "`matrix`, `schema`, `help`, `compose-pr-body`, `release-pr`, and `release plan|inspect|artifact-manifest|execute` are absent from `--help` output but still parse and run when invoked."
+    },
+    {
+      "id": "CLI-SURF-06",
+      "criterion": "`callisto help` prints the root help; `callisto help <command>` (nested names accepted as multiple words) prints that subcommand's help; an unknown command name exits 1 naming it. `callisto completions <shell>` never offers a hidden subcommand, at any nesting depth."
     },
     {
       "id": "CLI-SURF-04",
@@ -184,7 +196,7 @@
     },
     {
       "id": "CLI-ADD-03",
-      "criterion": "`callisto add` with no --package and a terminal stdin runs a wizard asking, in order, which packages to include, which are major, which remaining are minor (the rest are patch), a non-empty summary unless --summary was given, and a final confirmation; declining the confirmation writes nothing and exits 0."
+      "criterion": "`callisto add` with no --package and a terminal stdin runs a wizard asking, in order, which packages to include, which are major, which remaining are minor (the rest are patch), a non-empty summary unless --summary was given, and a final confirmation; declining the confirmation writes nothing and exits 0. Every wizard prompt and preview line prints to stderr, not stdout."
     },
     {
       "id": "CLI-ADD-04",
@@ -313,7 +325,7 @@
     },
     {
       "id": "CLI-SCHEMA-01",
-      "criterion": "`callisto schema` prints the StatusReport JSON Schema; `--type` selects another report type, and an unknown type exits 1 listing the supported types."
+      "criterion": "`callisto schema` prints the StatusReport JSON Schema; `--type` is a fixed value enum selecting another report type, and an unrecognized value is a clap usage error (exit 2) listing the supported values."
     }
   ],
   "spec_file_path": "docs/specs/cli.json"

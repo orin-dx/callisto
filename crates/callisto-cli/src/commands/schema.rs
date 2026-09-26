@@ -1,31 +1,23 @@
 use std::process::ExitCode;
 
 use callisto_format::{Changeset, PreState};
-use callisto_model::{
-    InitReport, MatrixReport, ReleaseReceiptV1, SnapshotReport, StatusReport, ValidateReport, VersionReport,
-};
+use callisto_model::{InitReport, MatrixReport, ReleaseReceiptV1, SnapshotReport, StatusReport, VersionReport};
 use schemars::schema_for;
 
-use crate::cli::{GlobalArgs, SchemaArgs};
+use crate::cli::{GlobalArgs, SchemaArgs, SchemaReportType};
 use crate::error::CliError;
 use crate::output::write_stdout;
 
 pub fn handle(args: SchemaArgs, _global: &GlobalArgs) -> Result<ExitCode, CliError> {
-    let schema = match args.target_type.as_deref().unwrap_or("status") {
-        "status" => schema_for!(StatusReport),
-        "version" => schema_for!(VersionReport),
-        "snapshot" => schema_for!(SnapshotReport),
-        "validate" => schema_for!(ValidateReport),
-        "init" => schema_for!(InitReport),
-        "changeset" => schema_for!(Changeset),
-        "pre" => schema_for!(PreState),
-        "matrix" => schema_for!(MatrixReport),
-        "release-receipt" => schema_for!(ReleaseReceiptV1),
-        other => {
-            return Err(CliError::UnknownSchemaType {
-                requested: other.to_string(),
-            });
-        }
+    let schema = match args.target_type.unwrap_or_default() {
+        SchemaReportType::Status => schema_for!(StatusReport),
+        SchemaReportType::Version => schema_for!(VersionReport),
+        SchemaReportType::Snapshot => schema_for!(SnapshotReport),
+        SchemaReportType::Init => schema_for!(InitReport),
+        SchemaReportType::Changeset => schema_for!(Changeset),
+        SchemaReportType::PreState => schema_for!(PreState),
+        SchemaReportType::Matrix => schema_for!(MatrixReport),
+        SchemaReportType::ReleaseReceipt => schema_for!(ReleaseReceiptV1),
     };
 
     // A `schemars::Schema` is a plain JSON tree of strings, numbers, and nested maps;
@@ -47,22 +39,29 @@ mod tests {
         }
     }
 
+    /// Every registry entry actually produces a schema; an unknown `--type`
+    /// value is rejected earlier, at clap parse time (see `cli.rs`'s
+    /// `schema_type_rejects_unknown_value_as_a_usage_error`), so this
+    /// handler-level test only needs to cover the exhaustive match's arms.
     #[test]
-    fn handle_rejects_unknown_target_type() {
-        let result = handle(
-            SchemaArgs {
-                target_type: Some("bogus".to_string()),
-            },
-            &global(),
-        );
-        match result {
-            Err(CliError::UnknownSchemaType { requested }) => {
-                assert_eq!(requested, "bogus");
-                let msg = CliError::UnknownSchemaType { requested }.to_string();
-                assert!(msg.contains("Unknown schema target type `bogus`"), "got: {msg}");
-                assert!(msg.contains("Supported types:"), "got: {msg}");
-            }
-            other => panic!("expected CliError::UnknownSchemaType, got: {other:?}"),
+    fn handle_succeeds_for_every_registered_type() {
+        for target_type in [
+            SchemaReportType::Status,
+            SchemaReportType::Version,
+            SchemaReportType::Snapshot,
+            SchemaReportType::Init,
+            SchemaReportType::Changeset,
+            SchemaReportType::PreState,
+            SchemaReportType::Matrix,
+            SchemaReportType::ReleaseReceipt,
+        ] {
+            let result = handle(
+                SchemaArgs {
+                    target_type: Some(target_type),
+                },
+                &global(),
+            );
+            assert!(result.is_ok(), "target_type={target_type:?}");
         }
     }
 }

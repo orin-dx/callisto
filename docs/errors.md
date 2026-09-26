@@ -265,11 +265,11 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E275 | `add --summary` is empty or whitespace-only | provide a non-empty description of the change |
 | E276 | `version --emit-decision` was run with `--dry-run`, but emitting the decision writes a file | remove --dry-run, or drop --emit-decision |
 | E277 | `--strict` escalated one or more workspace graph diagnostics to errors | resolve each listed diagnostic, or drop --strict if it is expected |
-| E278 | `schema --type` names a type `callisto schema` doesn't generate | pass one of the supported --type values |
 | E279 | `pre enter` was given an empty or whitespace-only tag | pass a non-empty tag, for example `callisto pre enter beta` |
 | E280 | `pre exit` was run after prerelease mode was already exited | run `callisto version` to finalize the release |
 | E281 | A `release-pr` `--decision`/`--snapshot` argument is not valid JSON | check the JSON is well-formed and matches the expected schema |
 | E282 | `release-pr commit-plan` was run with both `--out` and `--dry-run` | re-run without --dry-run, or drop --out |
+| E283 | `help` named a subcommand that doesn't exist | run `callisto --help` to list commands |
 
 
 225 numeric E#### codes total in one registry.
