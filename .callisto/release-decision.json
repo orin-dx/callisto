@@ -1,9 +1,9 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "entries": [
     {
       "package": "cargo/callisto-changelog",
-      "targetVersion": "0.8.0",
+      "targetVersion": "0.9.0",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -13,7 +13,7 @@
     },
     {
       "package": "cargo/callisto-cli",
-      "targetVersion": "0.8.0",
+      "targetVersion": "0.9.0",
       "reasons": [
         {
           "kind": "changeset"
@@ -22,7 +22,7 @@
     },
     {
       "package": "cargo/callisto-conventional",
-      "targetVersion": "0.8.0",
+      "targetVersion": "0.9.0",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -32,7 +32,7 @@
     },
     {
       "package": "cargo/callisto-fixtures",
-      "targetVersion": "0.8.0",
+      "targetVersion": "0.9.0",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -42,7 +42,7 @@
     },
     {
       "package": "cargo/callisto-format",
-      "targetVersion": "0.8.0",
+      "targetVersion": "0.9.0",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -52,7 +52,7 @@
     },
     {
       "package": "cargo/callisto-graph",
-      "targetVersion": "0.8.0",
+      "targetVersion": "0.9.0",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -62,7 +62,7 @@
     },
     {
       "package": "cargo/callisto-manifests",
-      "targetVersion": "0.8.0",
+      "targetVersion": "0.9.0",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -72,17 +72,7 @@
     },
     {
       "package": "cargo/callisto-model",
-      "targetVersion": "0.8.0",
-      "reasons": [
-        {
-          "kind": "fixedGroup",
-          "groupId": "workspace"
-        }
-      ]
-    },
-    {
-      "package": "cargo/callisto-moon",
-      "targetVersion": "0.8.0",
+      "targetVersion": "0.9.0",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -92,14 +82,13 @@
     },
     {
       "package": "cargo/callisto-vcs",
-      "targetVersion": "0.8.0",
+      "targetVersion": "0.9.0",
       "reasons": [
         {
-          "kind": "fixedGroup",
-          "groupId": "workspace"
+          "kind": "changeset"
         }
       ]
     }
   ],
-  "digest": "153df2b672c1687584d86248a8273645cb1ba13af54900cfc55a173be3eb0e2f"
+  "digest": "508a8b3a81ac987a2883bc75efc08d4c515a86133b8043079d0e2a2345f33218"
 }
