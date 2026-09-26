@@ -1340,6 +1340,46 @@ mod tests {
     }
 
     #[test]
+    fn promotion_changes_the_display_id_but_not_the_key_or_default_tags() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "crates/native-core", Ecosystem::Cargo, "native-core");
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let before = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("load");
+        let unique = before
+            .graph
+            .get(&PackageId::Bare("native-core".to_string()))
+            .expect("bare id")
+            .clone();
+
+        write_pkg(root, "packages/native-core", Ecosystem::Npm, "native-core");
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let after = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("load");
+        let cargo_id = after.identity.resolve("cargo/native-core").expect("qualified selector");
+        let promoted = after.graph.get(&cargo_id).expect("promoted package");
+
+        assert_eq!(unique.id.display_name(), "native-core");
+        assert_eq!(promoted.id.display_name(), "cargo/native-core");
+        assert_eq!(promoted.key(), unique.key());
+        assert_eq!(
+            unique.key(),
+            Some(callisto_model::PackageKey::new("crates/native-core"))
+        );
+        assert_eq!(
+            callisto_model::TagTemplate::default_for(&promoted.id),
+            callisto_model::TagTemplate::default_for(&unique.id)
+        );
+        assert_eq!(
+            before
+                .identity
+                .resolve("cargo/native-core")
+                .expect("qualified before promotion"),
+            unique.id
+        );
+    }
+
+    #[test]
     fn promoted_name_removed_from_index_bare() {
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();

@@ -67,9 +67,10 @@ impl TagTemplate {
         })
     }
 
+    /// `{name}@{version}` from the package's native name, so promotion to `eco/name` never changes its tags.
     pub fn default_for(id: &PackageId) -> Self {
         TagTemplate {
-            prefix: format!("{}@", id.display_name()),
+            prefix: format!("{}@", id.name()),
             suffix: String::new(),
         }
     }
@@ -416,6 +417,16 @@ mod tests {
 
         let ver = Version::parse("1.0.0", VersionGrammar::SemVer).unwrap();
         assert_eq!(tmpl.render(&ver).as_str(), "my-pkg@1.0.0");
+    }
+
+    #[test]
+    fn default_for_is_unchanged_by_promotion() {
+        let bare = PackageId::Bare("foo".to_string());
+        let promoted = PackageId::Prefixed {
+            ecosystem: crate::Ecosystem::Cargo,
+            name: "foo".to_string(),
+        };
+        assert_eq!(TagTemplate::default_for(&promoted), TagTemplate::default_for(&bare));
     }
 
     #[test]

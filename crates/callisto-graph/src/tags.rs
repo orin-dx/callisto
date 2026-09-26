@@ -91,6 +91,27 @@ fn select_from_tags_cached<'a>(
     select_last_tag(template, grammar, candidates).map_err(GraphError::from)
 }
 
+/// E101 when a package's default template (`{name}@{version}`) is also another package's template.
+fn reject_shared_default_templates<D: DependencyResolver>(graph: &D) -> Result<(), GraphError> {
+    let mut by_template: BTreeMap<String, (bool, Vec<PackageId>)> = BTreeMap::new();
+    for pkg in graph.packages() {
+        let tmpl = pkg
+            .tag_template
+            .clone()
+            .unwrap_or_else(|| TagTemplate::default_for(&pkg.id));
+        let (has_default, ids) = by_template.entry(tmpl.as_str()).or_default();
+        *has_default |= pkg.tag_template.is_none();
+        ids.push(pkg.id.clone());
+    }
+    match by_template
+        .into_iter()
+        .find(|(_, (has_default, ids))| *has_default && ids.len() > 1)
+    {
+        Some((template, (_, packages))) => Err(GraphError::SharedDefaultTagTemplate { template, packages }),
+        None => Ok(()),
+    }
+}
+
 pub struct TagIndex {
     last: BTreeMap<PackageId, Option<LastTag>>,
     templates: BTreeMap<PackageId, TagTemplate>,
@@ -110,6 +131,7 @@ impl TagIndex {
         graph: &D,
         cfg: &ResolvedConfig,
     ) -> Result<Self, GraphError> {
+        reject_shared_default_templates(graph)?;
         let mut last = BTreeMap::new();
         let mut templates = BTreeMap::new();
         let mut pre_cursor = BTreeMap::new();
