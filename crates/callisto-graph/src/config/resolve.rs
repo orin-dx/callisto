@@ -23,12 +23,12 @@ pub struct ResolvedConfig {
     pub registries: BTreeMap<RegistryKey, RegistryConfig>,
     /// Per-package override rules from `[[package]]` blocks, in TOML declaration order.
     ///
-    /// Lookup uses two-pass specificity (see `resolve_package_config`):
-    /// - Pass 1 (Prefixed tier): the first entry whose `rule_id.ecosystem().is_some()` AND
-    ///   `rule_id.matches(pkg_id)` is true wins, regardless of its position relative to Bare rules.
-    /// - Pass 2 (Bare tier): only if Pass 1 finds nothing, the first entry where
-    ///   `rule_id.matches(pkg_id)` is true wins.
-    ///   Within each tier, first-match-wins in TOML declaration order.
+    /// Lookup uses two-pass specificity (see `resolve_package_config`, `rule_applies`):
+    /// - Pass 1 (Prefixed tier): the first entry whose rule is ecosystem-qualified AND
+    ///   applies (name matches, and the package actually has a manifest in that ecosystem)
+    ///   wins, regardless of its position relative to Bare rules.
+    /// - Pass 2 (Bare tier): only if Pass 1 finds nothing, the first entry whose rule
+    ///   applies wins. Within each tier, first-match-wins in TOML declaration order.
     pub packages: Vec<(PackageId, PackageConfig)>,
     /// Bulk config-override rules from `[[package-set]]` blocks, in TOML declaration order.
     /// Applied as a fallback when no `[[package]]` rule matches a package.
@@ -298,15 +298,35 @@ pub fn parse_release_trigger(s: &str) -> Result<ReleaseTrigger, ConfigError> {
     }
 }
 
+/// A `[[package]]` rule applies to `id` when the names match and, for a
+/// Prefixed rule, `id`'s package actually has a manifest in that ecosystem.
+///
+/// `PackageId::matches` alone is not enough here: it treats a Bare id as an
+/// ecosystem wildcard, so a Prefixed rule for one ecosystem (`pypi:foo`)
+/// would otherwise match a same-named package that only exists in another
+/// (a Cargo-only `foo`) -- `package_ecosystems` is the package's real,
+/// manifest-derived ecosystem set, independent of whether its `PackageId`
+/// happens to be Bare (unpromoted) or Prefixed.
+pub(crate) fn rule_applies(rule_id: &PackageId, id: &PackageId, package_ecosystems: &[Ecosystem]) -> bool {
+    if rule_id.name() != id.name() {
+        return false;
+    }
+    match rule_id.ecosystem() {
+        None => true,
+        Some(eco) => package_ecosystems.contains(&eco),
+    }
+}
+
 /// Two-pass `[[package]]` rule lookup with Prefixed-over-Bare specificity.
 ///
 /// Pass 1: iterate `cfg.packages` in TOML-declaration order, return the
 /// first entry where `rule_id.ecosystem().is_some()` AND
-/// `rule_id.matches(id)` -- prefixed rules (`cargo/`, `npm/`, `pypi/`)
-/// always beat bare ones regardless of declaration order.
+/// [`rule_applies`] -- prefixed rules (`cargo/`, `npm/`, `pypi/`) always beat
+/// bare ones regardless of declaration order, but only among rules whose
+/// ecosystem the package actually has.
 ///
 /// Pass 2 (only if Pass 1 found nothing): same order, first entry where
-/// `rule_id.matches(id)` with no ecosystem restriction.
+/// [`rule_applies`].
 ///
 /// `None` if neither pass matches.
 ///
@@ -314,16 +334,21 @@ pub fn parse_release_trigger(s: &str) -> Result<ReleaseTrigger, ConfigError> {
 /// from two separate linear scans over the unmodified slice.
 pub(crate) fn resolve_package_config<'a>(
     id: &PackageId,
+    package_ecosystems: &[Ecosystem],
     cfg: &'a ResolvedConfig,
 ) -> Result<Option<&'a PackageConfig>, GraphError> {
     if let Some((_, pcfg)) = cfg
         .packages
         .iter()
-        .find(|(rule_id, _)| rule_id.ecosystem().is_some() && rule_id.matches(id))
+        .find(|(rule_id, _)| rule_id.ecosystem().is_some() && rule_applies(rule_id, id, package_ecosystems))
     {
         return Ok(Some(pcfg));
     }
-    if let Some((_, pcfg)) = cfg.packages.iter().find(|(rule_id, _)| rule_id.matches(id)) {
+    if let Some((_, pcfg)) = cfg
+        .packages
+        .iter()
+        .find(|(rule_id, _)| rule_applies(rule_id, id, package_ecosystems))
+    {
         if let Some(siblings) = cfg.promoted_siblings.get(id.name()) {
             return Err(GraphError::AmbiguousName {
                 name: id.name().to_string(),
@@ -861,7 +886,7 @@ mod tests {
         .expect("write callisto.toml");
         let cfg = load(root).expect("load should succeed");
         let id = PackageId::parse("foo").unwrap();
-        let pcfg = resolve_package_config(&id, &cfg)
+        let pcfg = resolve_package_config(&id, &[Ecosystem::Npm], &cfg)
             .unwrap()
             .expect("resolve_package_config must return Some for npm/foo (Prefixed)");
         assert_eq!(
@@ -890,7 +915,7 @@ mod tests {
         .expect("write callisto.toml");
         let cfg = load(root).expect("load should succeed");
         let id = PackageId::parse("pkg").unwrap();
-        let pcfg = resolve_package_config(&id, &cfg)
+        let pcfg = resolve_package_config(&id, &[Ecosystem::Npm], &cfg)
             .unwrap()
             .expect("resolve_package_config must return Some for npm/pkg matching pkg");
         assert!(
@@ -920,7 +945,7 @@ mod tests {
         .expect("write callisto.toml");
         let cfg = load(root).expect("load should succeed");
         let id = PackageId::parse("pkg").unwrap();
-        let pcfg = resolve_package_config(&id, &cfg)
+        let pcfg = resolve_package_config(&id, &[], &cfg)
             .unwrap()
             .expect("resolve_package_config must return Some via pass 2 for Bare(\"pkg\")");
         assert_eq!(
@@ -946,7 +971,7 @@ mod tests {
         .expect("write callisto.toml");
         let cfg = load(root).expect("load should succeed");
         let id = PackageId::parse("pkg").unwrap();
-        let result = resolve_package_config(&id, &cfg).unwrap();
+        let result = resolve_package_config(&id, &[], &cfg).unwrap();
         assert!(
             result.is_none(),
             "resolve_package_config must return None when no rule matches; got Some(...)"
@@ -969,7 +994,7 @@ mod tests {
         );
         for id_str in &["pkg", "npm/pkg", "cargo/pkg"] {
             let id = PackageId::parse(id_str).unwrap();
-            let result = resolve_package_config(&id, &cfg).unwrap();
+            let result = resolve_package_config(&id, &[], &cfg).unwrap();
             assert!(
                 result.is_none(),
                 "resolve_package_config must return None for empty packages, \
@@ -1000,7 +1025,7 @@ mod tests {
         .expect("write callisto.toml");
         let cfg = load(root).expect("load should succeed");
         let id = PackageId::parse("foo").unwrap();
-        let pcfg = resolve_package_config(&id, &cfg)
+        let pcfg = resolve_package_config(&id, &[Ecosystem::Npm, Ecosystem::Cargo], &cfg)
             .unwrap()
             .expect("resolve_package_config must return Some for Bare(\"foo\")");
         assert_eq!(
@@ -1041,7 +1066,7 @@ mod tests {
             vec![(cargo_id.clone(), cargo_set), (npm_id, npm_set)],
         );
 
-        let err = resolve_package_config(&cargo_id, &cfg).unwrap_err();
+        let err = resolve_package_config(&cargo_id, &[Ecosystem::Cargo], &cfg).unwrap_err();
         match err {
             GraphError::AmbiguousName { name, candidates } => {
                 assert_eq!(name, "native-core");
@@ -1049,6 +1074,29 @@ mod tests {
             }
             other => panic!("expected AmbiguousName, got {other:?}"),
         }
+    }
+
+    /// repro/ws-rule: a `pypi:foo` rule must not apply to a Cargo-only `foo`.
+    /// Before the fix, `PackageId::matches` treated the Bare query id as an
+    /// ecosystem wildcard, so a Prefixed rule for any ecosystem matched by
+    /// name alone -- `package_ecosystems` (the package's real, manifest-derived
+    /// ecosystems) is what makes the rule ecosystem-exact.
+    #[test]
+    fn resolve_package_config_prefixed_rule_does_not_apply_to_a_different_ecosystem_package() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        fs::write(
+            root.join("callisto.toml"),
+            "[[package]]\nmatch = \"pypi:foo\"\nrelease-trigger = \"changeset\"\n",
+        )
+        .expect("write callisto.toml");
+        let cfg = load(root).expect("load should succeed");
+        let id = PackageId::parse("foo").unwrap();
+        let result = resolve_package_config(&id, &[Ecosystem::Cargo], &cfg).unwrap();
+        assert!(
+            result.is_none(),
+            "a `pypi:foo` rule must not apply to a package whose only real ecosystem is Cargo; got {result:?}"
+        );
     }
 
     // --- parse_publish_target / parse_release_trigger direct coverage ------

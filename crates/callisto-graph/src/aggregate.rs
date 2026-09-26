@@ -4,13 +4,16 @@ use std::path::{Path, PathBuf};
 
 use callisto_changelog::{ChangeSource, ChangelogEntry, ChangelogInput};
 use callisto_format::{parse_changeset, Changeset};
-use callisto_model::{BumpReason, CommitSha, Diagnostic, Package, PackageId, ReleaseTrigger, Severity, Version};
+use callisto_model::{
+    BumpReason, CommitSha, Diagnostic, Ecosystem, Package, PackageId, ReleaseTrigger, Severity, Version,
+};
 use callisto_vcs::GitAccess;
 
 use crate::config::resolve::resolve_package_config;
 use crate::config::GroupTable;
 use crate::config::{PreMajorInferencePolicy, ResolvedConfig};
 use crate::error::GraphError;
+use crate::identity::IdentityIndex;
 use crate::infer::SeverityInference;
 use crate::resolver::DependencyResolver;
 use crate::tags::TagIndex;
@@ -132,34 +135,31 @@ fn resolve_since(git: &GitAccess<'_>, tag_name: &str) -> Option<CommitSha> {
     git.resolve_commit(tag_name).ok().flatten()
 }
 
-/// Resolves a changeset entry's parsed `PackageId` against the packages in
-/// the graph.
-///
-/// `PackageId::matches` is pairwise: a bare id and a prefixed id with the
-/// same name are compatible, since bare doesn't specify an ecosystem. But
-/// a polyglot workspace can legitimately have the same name in two-plus
-/// ecosystems (`cargo/foo`, `npm/foo`), and a bare `foo` can't resolve to
-/// either without more context. `.find()` over such a graph would silently
-/// pick whichever candidate comes first -- the ambiguity bug this function
-/// fixes by collecting *all* matches and only succeeding when there's
-/// exactly one.
+/// Resolves a changeset entry's or `--package` argument's parsed `PackageId`
+/// against the packages in the graph, through [`IdentityIndex::resolve_id`] --
+/// the one selector resolver, not a `PackageId::matches` scan (which treats a
+/// Bare query as an ecosystem wildcard and would wrongly let a qualified
+/// selector for one ecosystem select a same-named package in another).
 ///
 /// `Ok(None)`: no match (unknown package, reported separately by
 /// `validate`). `Ok(Some(pkg))`: unambiguous. `Err(AmbiguousName)`: two or
-/// more matches.
+/// more matches (E103).
 pub(crate) fn resolve_target_package<'a>(
     packages: impl Iterator<Item = &'a Package>,
+    identity: &IdentityIndex,
     id: &PackageId,
 ) -> Result<Option<&'a Package>, GraphError> {
-    id.resolve_unique(packages, |p| &p.id)
-        .map_err(|candidates| GraphError::AmbiguousName {
-            name: id.display_name(),
-            candidates: candidates.iter().map(|p| p.id.clone()).collect(),
-        })
+    match identity.resolve_id(id) {
+        Ok(resolved) => Ok(packages.into_iter().find(|p| p.id == resolved)),
+        Err(GraphError::UnknownPackage { .. }) => Ok(None),
+        Err(e) => Err(e),
+    }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn aggregate<D, I>(
     graph: &D,
+    identity: &IdentityIndex,
     config: &ResolvedConfig,
     git: &GitAccess<'_>,
     tags: &TagIndex,
@@ -188,7 +188,8 @@ where
                 })
             })?;
 
-        let policy = resolve_package_config(&pkg.id, config)?
+        let package_ecosystems: Vec<Ecosystem> = pkg.canonical_manifests().map(|m| m.ecosystem()).collect();
+        let policy = resolve_package_config(&pkg.id, &package_ecosystems, config)?
             .and_then(|pcfg| pcfg.pre_major_inference)
             .unwrap_or(PreMajorInferencePolicy::Off);
 
@@ -273,7 +274,7 @@ where
                     continue;
                 }
             };
-            match resolve_target_package(graph.packages(), &id)? {
+            match resolve_target_package(graph.packages(), identity, &id)? {
                 Some(target_pkg) => {
                     matched_any = true;
                     let canonical_id = target_pkg.id.clone();
@@ -648,6 +649,29 @@ mod tests {
         assert_eq!(runner.calls.load(Ordering::SeqCst), 1);
     }
 
+    /// An `IdentityIndex` reflecting `pkg`'s own canonical manifests, as
+    /// `ManifestWalkResolver::build` would populate it for a real workspace --
+    /// `resolve_target_package` resolves through this, not through `pkg.id`
+    /// directly, so every `aggregate()` test needs one to resolve its
+    /// changeset entries at all.
+    fn identity_for(pkg: &Package) -> IdentityIndex {
+        identity_for_all(std::iter::once(pkg))
+    }
+
+    /// [`identity_for`] over several packages at once, for the
+    /// `resolve_target_package` cross-ecosystem-ambiguity tests below.
+    fn identity_for_all<'a>(packages: impl IntoIterator<Item = &'a Package>) -> IdentityIndex {
+        let mut index = IdentityIndex::default();
+        for pkg in packages {
+            for manifest in pkg.canonical_manifests() {
+                index
+                    .native
+                    .insert((manifest.ecosystem(), pkg.id.name().to_string()), pkg.id.clone());
+            }
+        }
+        index
+    }
+
     struct SinglePackageGraph {
         pkg: Package,
     }
@@ -749,7 +773,17 @@ mod tests {
         let inference = RecordingInference::default();
         let base_versions = BTreeMap::new();
 
-        aggregate(&graph, &cfg, &git, &tags, &base_versions, None, &inference).unwrap();
+        aggregate(
+            &graph,
+            &identity_for(&graph.pkg),
+            &cfg,
+            &git,
+            &tags,
+            &base_versions,
+            None,
+            &inference,
+        )
+        .unwrap();
 
         let captured = inference.captured_since.lock().unwrap().clone();
         assert_eq!(
@@ -820,7 +854,17 @@ mod tests {
         let mut base_versions = BTreeMap::new();
         base_versions.insert(pkg_id, Version::semver(0, 1, 0));
 
-        aggregate(&graph, &cfg, &git, &tags, &base_versions, None, &inference).unwrap();
+        aggregate(
+            &graph,
+            &identity_for(&graph.pkg),
+            &cfg,
+            &git,
+            &tags,
+            &base_versions,
+            None,
+            &inference,
+        )
+        .unwrap();
 
         let captured = inference.captured_pathspecs.lock().unwrap().clone();
         assert_eq!(
@@ -888,7 +932,17 @@ mod tests {
             commits: vec![(sha_recent.clone(), "feat: recent".to_string())],
         };
 
-        let agg = aggregate(&graph, &cfg, &git, &tags, &base_versions, None, &inference).unwrap();
+        let agg = aggregate(
+            &graph,
+            &identity_for(&graph.pkg),
+            &cfg,
+            &git,
+            &tags,
+            &base_versions,
+            None,
+            &inference,
+        )
+        .unwrap();
 
         assert_eq!(
             agg.inference_commits.get(&pkg_id),
@@ -949,7 +1003,17 @@ mod tests {
         base_versions.insert(pkg_id, callisto_model::Version::semver(1, 0, 0));
 
         let inference = CountingInference::default();
-        aggregate(&graph, &cfg, &git, &tags, &base_versions, None, &inference).unwrap();
+        aggregate(
+            &graph,
+            &identity_for(&graph.pkg),
+            &cfg,
+            &git,
+            &tags,
+            &base_versions,
+            None,
+            &inference,
+        )
+        .unwrap();
 
         assert_eq!(
             inference.calls.load(Ordering::SeqCst),
@@ -997,7 +1061,17 @@ mod tests {
             commits: vec![(CommitSha::parse(&"b".repeat(40)).unwrap(), "feat: auto".to_string())],
         };
 
-        let agg = aggregate(&graph, &cfg, &git, &tags, &base_versions, None, &inference).unwrap();
+        let agg = aggregate(
+            &graph,
+            &identity_for(&graph.pkg),
+            &cfg,
+            &git,
+            &tags,
+            &base_versions,
+            None,
+            &inference,
+        )
+        .unwrap();
 
         assert_eq!(
             agg.severities.get(&pkg_id),
@@ -1059,7 +1133,17 @@ mod tests {
         let inference = RecordingInference::default();
         let base_versions = BTreeMap::new();
 
-        aggregate(&graph, &cfg, &git, &tags, &base_versions, None, &inference).unwrap();
+        aggregate(
+            &graph,
+            &identity_for(&graph.pkg),
+            &cfg,
+            &git,
+            &tags,
+            &base_versions,
+            None,
+            &inference,
+        )
+        .unwrap();
 
         let captured = inference.captured_since.lock().unwrap().clone();
         assert_eq!(
@@ -1071,8 +1155,19 @@ mod tests {
 
     // Auto so aggregate() invokes inference for callers of this fixture that
     // exercise SeverityInference; trigger itself is irrelevant to the rest.
+    //
+    // The manifest's format must match `id`'s own ecosystem: `identity_for_all`
+    // (and, in production, `ManifestWalkResolver::build`) derives native-name
+    // ecosystems from the manifest, not from the id, so a `npm/foo` id with a
+    // `Cargo.toml` manifest would register as Cargo and defeat the
+    // cross-ecosystem-ambiguity tests this fixture backs.
     fn make_pkg(id: PackageId) -> Package {
-        let manifest = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
+        let (filename, format) = match id.ecosystem() {
+            Some(Ecosystem::Npm) => ("package.json", ManifestFormat::PackageJson),
+            Some(Ecosystem::Pypi) => ("pyproject.toml", ManifestFormat::PyprojectToml),
+            _ => ("Cargo.toml", ManifestFormat::CargoToml),
+        };
+        let manifest = ManifestDecl::new(filename, ManifestRole::Canonical, format).unwrap();
         Package {
             id,
             manifests: vec![manifest],
@@ -1094,9 +1189,10 @@ mod tests {
         let pkg_cargo = make_pkg(PackageId::parse("cargo/foo").unwrap());
         let pkg_npm = make_pkg(PackageId::parse("npm/foo").unwrap());
         let packages = [pkg_cargo, pkg_npm];
+        let identity = identity_for_all(&packages);
         let bare = PackageId::parse("foo").unwrap();
 
-        let result = resolve_target_package(packages.iter(), &bare);
+        let result = resolve_target_package(packages.iter(), &identity, &bare);
 
         match result {
             Err(GraphError::AmbiguousName { name, candidates }) => {
@@ -1117,9 +1213,10 @@ mod tests {
         let pkg_cargo = make_pkg(PackageId::parse("cargo/foo").unwrap());
         let pkg_other = make_pkg(PackageId::parse("cargo/bar").unwrap());
         let packages = [pkg_cargo, pkg_other];
+        let identity = identity_for_all(&packages);
         let bare = PackageId::parse("foo").unwrap();
 
-        let result = resolve_target_package(packages.iter(), &bare).unwrap();
+        let result = resolve_target_package(packages.iter(), &identity, &bare).unwrap();
 
         assert_eq!(
             result.map(|p| p.id.clone()),
@@ -1134,9 +1231,10 @@ mod tests {
     fn test_resolve_target_package_unknown_name_returns_none() {
         let pkg_cargo = make_pkg(PackageId::parse("cargo/foo").unwrap());
         let packages = [pkg_cargo];
+        let identity = identity_for_all(&packages);
         let bare = PackageId::parse("does-not-exist").unwrap();
 
-        let result = resolve_target_package(packages.iter(), &bare).unwrap();
+        let result = resolve_target_package(packages.iter(), &identity, &bare).unwrap();
 
         assert!(result.is_none());
     }
@@ -1153,9 +1251,10 @@ mod tests {
         let pkg_npm = make_pkg(PackageId::parse("npm/foo").unwrap());
         let pkg_pypi = make_pkg(PackageId::parse("pypi/foo").unwrap());
         let packages = [pkg_cargo, pkg_npm, pkg_pypi];
+        let identity = identity_for_all(&packages);
         let bare = PackageId::parse("foo").unwrap();
 
-        let result = resolve_target_package(packages.iter(), &bare);
+        let result = resolve_target_package(packages.iter(), &identity, &bare);
 
         match result {
             Err(GraphError::AmbiguousName { name, candidates }) => {
@@ -1180,9 +1279,10 @@ mod tests {
     fn test_resolve_target_package_bare_name_matching_is_case_sensitive() {
         let pkg_cargo = make_pkg(PackageId::parse("cargo/Foo").unwrap());
         let packages = [pkg_cargo];
+        let identity = identity_for_all(&packages);
         let bare = PackageId::parse("foo").unwrap();
 
-        let result = resolve_target_package(packages.iter(), &bare).unwrap();
+        let result = resolve_target_package(packages.iter(), &identity, &bare).unwrap();
 
         assert!(
             result.is_none(),
@@ -1230,7 +1330,17 @@ mod tests {
         base_versions.insert(pkg_bar_id.clone(), Version::semver(1, 0, 0));
 
         let inference = RecordingInference::default();
-        let agg = aggregate(&graph, &cfg, &git, &tags, &base_versions, None, &inference).unwrap();
+        let agg = aggregate(
+            &graph,
+            &identity_for(&graph.pkg),
+            &cfg,
+            &git,
+            &tags,
+            &base_versions,
+            None,
+            &inference,
+        )
+        .unwrap();
 
         assert!(
             agg.consumed.is_empty(),
@@ -1445,7 +1555,17 @@ mod tests {
             }
         }
 
-        let agg = aggregate(&graph, &cfg, &git, &tags, &base_versions, None, &AlwaysErrorInference).unwrap();
+        let agg = aggregate(
+            &graph,
+            &identity_for(&graph.pkg),
+            &cfg,
+            &git,
+            &tags,
+            &base_versions,
+            None,
+            &AlwaysErrorInference,
+        )
+        .unwrap();
 
         assert!(
             !agg.diagnostics.is_empty(),
@@ -1509,7 +1629,17 @@ mod tests {
         let capturing = PolicyCapturingInference2 {
             saw_non_off: AtomicBool::new(false),
         };
-        aggregate(&graph, &cfg, &git, &tags, &base_versions, None, &capturing).unwrap();
+        aggregate(
+            &graph,
+            &identity_for(&graph.pkg),
+            &cfg,
+            &git,
+            &tags,
+            &base_versions,
+            None,
+            &capturing,
+        )
+        .unwrap();
 
         assert!(
             capturing.saw_non_off.load(Ordering::SeqCst),
@@ -1555,7 +1685,17 @@ mod tests {
         let pre_state = callisto_format::PreState::entering("next", [("pkg-a".to_string(), Version::semver(1, 0, 0))]);
 
         let inference = RecordingInference::default();
-        let agg = aggregate(&graph, &cfg, &git, &tags, &base_versions, Some(&pre_state), &inference).unwrap();
+        let agg = aggregate(
+            &graph,
+            &identity_for(&graph.pkg),
+            &cfg,
+            &git,
+            &tags,
+            &base_versions,
+            Some(&pre_state),
+            &inference,
+        )
+        .unwrap();
 
         assert!(
             agg.consumed.is_empty(),
@@ -1600,7 +1740,17 @@ mod tests {
         let pre_state = callisto_format::PreState::entering("next", [("pkg-a".to_string(), Version::semver(1, 2, 3))]);
 
         let inference = RecordingInference::default();
-        let agg = aggregate(&graph, &cfg, &git, &tags, &base_versions, Some(&pre_state), &inference).unwrap();
+        let agg = aggregate(
+            &graph,
+            &identity_for(&graph.pkg),
+            &cfg,
+            &git,
+            &tags,
+            &base_versions,
+            Some(&pre_state),
+            &inference,
+        )
+        .unwrap();
 
         let cl_input = agg
             .changelog_inputs
@@ -1671,7 +1821,17 @@ mod tests {
         let capturing = PolicyCapturingInference {
             saw_non_off: AtomicBool::new(false),
         };
-        aggregate(&graph, &cfg, &git, &tags, &base_versions, None, &capturing).unwrap();
+        aggregate(
+            &graph,
+            &identity_for(&graph.pkg),
+            &cfg,
+            &git,
+            &tags,
+            &base_versions,
+            None,
+            &capturing,
+        )
+        .unwrap();
 
         assert!(
             capturing.saw_non_off.load(Ordering::SeqCst),
@@ -1706,13 +1866,20 @@ mod tests {
         // Prefixed rule declared SECOND: match = "npm:pkg", pre-major-inference = "off"
         // Single-pass find() returns pkg (Bare, declared first) -> conservative applied.
         // Two-pass resolve_package_config: pass 1 finds npm:pkg (Prefixed) -> OFF applied.
+        // The package's own manifest is npm (`make_pkg`'s ecosystem-derived-from-id, via a
+        // Prefixed id here) so the `npm:pkg` rule is actually ecosystem-eligible, not just
+        // name-eligible -- this test is about two-pass declaration-order precedence, not
+        // about a rule applying to a package that was never really in that ecosystem.
         std::fs::write(
             root.join("callisto.toml"),
             "[[package]]\nmatch = \"pkg\"\npre-major-inference = \"conservative\"\n\n[[package]]\nmatch = \"npm:pkg\"\npre-major-inference = \"off\"\n",
         )
         .unwrap();
 
-        let pkg_id = PackageId::parse("pkg").unwrap();
+        let pkg_id = PackageId::Prefixed {
+            ecosystem: Ecosystem::Npm,
+            name: "pkg".to_string(),
+        };
         let graph = SinglePackageGraph {
             pkg: make_pkg(pkg_id.clone()),
         };
@@ -1749,7 +1916,17 @@ mod tests {
             invoked: AtomicBool::new(false),
             saw_non_off: AtomicBool::new(false),
         };
-        aggregate(&graph, &cfg, &git, &tags, &base_versions, None, &capturing).unwrap();
+        aggregate(
+            &graph,
+            &identity_for(&graph.pkg),
+            &cfg,
+            &git,
+            &tags,
+            &base_versions,
+            None,
+            &capturing,
+        )
+        .unwrap();
 
         assert!(
             capturing.invoked.load(Ordering::SeqCst),
@@ -1804,7 +1981,17 @@ mod tests {
         };
 
         let inference = crate::infer::NoInference;
-        let agg = aggregate(&graph, &cfg, &git, &tags, &base_versions, Some(&pre_state), &inference).unwrap();
+        let agg = aggregate(
+            &graph,
+            &identity_for(&graph.pkg),
+            &cfg,
+            &git,
+            &tags,
+            &base_versions,
+            Some(&pre_state),
+            &inference,
+        )
+        .unwrap();
 
         assert_eq!(
             agg.new_pre_changesets,
@@ -1863,7 +2050,17 @@ mod tests {
         };
 
         let inference = crate::infer::NoInference;
-        let agg = aggregate(&graph, &cfg, &git, &tags, &base_versions, Some(&pre_state), &inference).unwrap();
+        let agg = aggregate(
+            &graph,
+            &identity_for(&graph.pkg),
+            &cfg,
+            &git,
+            &tags,
+            &base_versions,
+            Some(&pre_state),
+            &inference,
+        )
+        .unwrap();
 
         assert!(
             agg.new_pre_changesets.is_empty(),
@@ -1924,7 +2121,17 @@ mod tests {
         };
 
         let inference = crate::infer::NoInference;
-        let agg = aggregate(&graph, &cfg, &git, &tags, &base_versions, Some(&pre_state), &inference).unwrap();
+        let agg = aggregate(
+            &graph,
+            &identity_for(&graph.pkg),
+            &cfg,
+            &git,
+            &tags,
+            &base_versions,
+            Some(&pre_state),
+            &inference,
+        )
+        .unwrap();
 
         assert!(!agg.pre_mode_has_active_changeset);
         assert!(agg.new_pre_changesets.is_empty());

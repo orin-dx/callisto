@@ -150,31 +150,45 @@ impl GroupTable {
             for rg in raw_groups {
                 let mut members = Vec::new();
                 for name in &rg.members {
-                    if let Ok(id) = index.resolve_human(name, &[]) {
-                        if let Some(other) = claimed_by.get(&id) {
-                            if other != &rg.name {
-                                return Err(GraphError::ConflictingGroupMembership {
-                                    package: id.clone(),
-                                    groups: vec![other.clone(), rg.name.clone()],
-                                });
-                            }
-                        } else {
-                            claimed_by.insert(id.clone(), rg.name.clone());
-                        }
-                        members.push(GroupMember::Package(id.clone()));
-                        membership.insert(id, rg.name.clone());
-                    } else if let Some((owner, path, role)) = index.platform.get(name) {
+                    // Platform manifests take priority: their own native name
+                    // is also registered in `index.native` (pointing at their
+                    // owner), so `index.resolve` would otherwise resolve them
+                    // to `GroupMember::Package(owner)` and silently drop the
+                    // platform-manifest membership version.rs's platform-write
+                    // derivation depends on.
+                    if let Some((owner, path, role)) = index.platform.get(name) {
                         members.push(GroupMember::PlatformManifest {
                             owner: owner.clone(),
                             role: role.clone(),
                             path: path.clone(),
                             name: name.clone(),
                         });
-                    } else {
-                        return Err(GraphError::MissingGroupMember {
-                            group: rg.name.clone(),
-                            member: name.clone(),
-                        });
+                        continue;
+                    }
+                    match index.resolve(name) {
+                        Ok(id) => {
+                            if let Some(other) = claimed_by.get(&id) {
+                                if other != &rg.name {
+                                    return Err(GraphError::ConflictingGroupMembership {
+                                        package: id.clone(),
+                                        groups: vec![other.clone(), rg.name.clone()],
+                                    });
+                                }
+                            } else {
+                                claimed_by.insert(id.clone(), rg.name.clone());
+                            }
+                            members.push(GroupMember::Package(id.clone()));
+                            membership.insert(id, rg.name.clone());
+                        }
+                        // Ambiguous is a real, reportable error (E103), not a
+                        // "try the next lookup" miss.
+                        Err(err @ GraphError::AmbiguousName { .. }) => return Err(err),
+                        Err(_) => {
+                            return Err(GraphError::MissingGroupMember {
+                                group: rg.name.clone(),
+                                member: name.clone(),
+                            });
+                        }
                     }
                 }
                 members.sort();
@@ -257,6 +271,7 @@ impl GroupTable {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use callisto_model::Ecosystem;
 
     fn raw_group(name: &str, members: &[&str]) -> RawGroup {
         RawGroup {
@@ -357,5 +372,31 @@ mod tests {
             }
             other => panic!("expected ConflictingGroupNames, got {other:?}"),
         }
+    }
+
+    /// An ambiguous member must surface as E103 (`GraphError::AmbiguousName`),
+    /// not E108 (`MissingGroupMember`).
+    #[test]
+    fn resolve_reports_ambiguous_name_as_e103_not_missing_member() {
+        let mut index = IdentityIndex::default();
+        let cargo_shared = PackageId::Bare("shared".to_string());
+        let npm_shared = PackageId::Prefixed {
+            ecosystem: Ecosystem::Npm,
+            name: "shared".to_string(),
+        };
+        index
+            .native
+            .insert((Ecosystem::Cargo, "shared".to_string()), cargo_shared);
+        index.native.insert((Ecosystem::Npm, "shared".to_string()), npm_shared);
+
+        let raw = RawGroupTable {
+            fixed: vec![raw_group("g", &["shared"])],
+            linked: vec![],
+        };
+        let err = GroupTable::resolve(&raw, &index).unwrap_err();
+        assert!(
+            matches!(err, GraphError::AmbiguousName { .. }),
+            "expected AmbiguousName (E103), got {err:?}"
+        );
     }
 }

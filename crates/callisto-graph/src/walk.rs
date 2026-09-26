@@ -11,7 +11,7 @@ use callisto_model::{
     ManifestRole, Package, PackageId, PublishTarget,
 };
 
-use crate::config::resolve::resolve_package_config;
+use crate::config::resolve::{resolve_package_config, rule_applies};
 use crate::config::ResolvedConfig;
 use crate::error::GraphError;
 use crate::identity::IdentityIndex;
@@ -36,10 +36,12 @@ fn compute_claiming_ecosystems_and_native_keys(
     (claiming, native_keys)
 }
 
-/// The PROMOTION PREDICATE: true only when the two paths' name-scoped
-/// claiming-ecosystem sets share no ecosystem. This is a disjointness test,
-/// not an inequality test -- {Cargo,Npm} and {Npm} are unequal but not
-/// disjoint, and must NOT promote.
+/// Disjointness test for two paths' name-scoped claiming-ecosystem sets --
+/// {Cargo,Npm} and {Npm} are unequal but not disjoint. Kept for the
+/// `is_promoted_bare_name` unit tests below; actual duplicate detection is
+/// `native_owner` in `build`, keyed by every declared (ecosystem, name), not
+/// just each path's primary name.
+#[cfg(test)]
 fn claiming_sets_disjoint(a: &BTreeSet<Ecosystem>, b: &BTreeSet<Ecosystem>) -> bool {
     a.is_disjoint(b)
 }
@@ -83,6 +85,9 @@ impl ManifestWalkResolver {
         let mut index = IdentityIndex::default();
         let mut diagnostics = Vec::new();
         let mut claiming_ecosystems: BTreeMap<PathBuf, BTreeSet<Ecosystem>> = BTreeMap::new();
+        // Every (ecosystem, native name) any path declares, anywhere in that path's
+        // manifest list -- not only its primary name -- belongs to exactly one directory.
+        let mut native_owner: BTreeMap<(Ecosystem, String), PathBuf> = BTreeMap::new();
         let mut path_native_keys: BTreeMap<PathBuf, Vec<(Ecosystem, String)>> = BTreeMap::new();
         let mut path_platform_keys: BTreeMap<PathBuf, Vec<String>> = BTreeMap::new();
         let mut primary_ecosystems: BTreeMap<PathBuf, Ecosystem> = BTreeMap::new();
@@ -97,8 +102,14 @@ impl ManifestWalkResolver {
                 .push((proj.ecosystem, proj.id.clone()));
         }
 
-        let attached_platforms =
-            platform_owners(&by_path, &platform_candidates, manifest_cache, &ctx, &mut diagnostics);
+        let attached_platforms = platform_owners(
+            root,
+            &by_path,
+            &platform_candidates,
+            manifest_cache,
+            &ctx,
+            &mut diagnostics,
+        );
 
         for (rel_path, mut list) in by_path {
             if attached_platforms.contains_key(&rel_path) {
@@ -109,6 +120,27 @@ impl ManifestWalkResolver {
             // priority function so the precedence survives future variant
             // additions to `Ecosystem`.
             list.sort_by_key(|a| ecosystem_primary_priority(a.0));
+
+            // E100 whenever any (ecosystem, native name) this path declares -- primary
+            // or not -- is already owned by a different path; names both. Checked before
+            // any promotion bookkeeping so a dual-manifest directory's non-primary name
+            // (e.g. an npm sibling of a Cargo-primary package) is covered too, not just
+            // each path's own primary name.
+            if let Some((eco, id)) = list.iter().find(|(eco, id)| {
+                native_owner
+                    .get(&(*eco, id.name().to_string()))
+                    .is_some_and(|p| *p != rel_path)
+            }) {
+                let owner_path = native_owner[&(*eco, id.name().to_string())].clone();
+                return Err(GraphError::DuplicatePackage {
+                    id: id.clone(),
+                    paths: vec![owner_path, rel_path],
+                });
+            }
+            for (eco, id) in &list {
+                native_owner.insert((*eco, id.name().to_string()), rel_path.clone());
+            }
+
             let mut primary_id = list[0].1.clone();
             let (this_claiming, this_native_keys) = compute_claiming_ecosystems_and_native_keys(&list, &primary_id);
             claiming_ecosystems.insert(rel_path.clone(), this_claiming.clone());
@@ -116,22 +148,8 @@ impl ManifestWalkResolver {
             primary_ecosystems.insert(rel_path.clone(), list[0].0);
 
             let mut branch_ii_promoted = false;
-            if let Some(existing_members) = promoted_siblings.get(primary_id.name()) {
+            if promoted_siblings.contains_key(primary_id.name()) {
                 let this_set = claiming_ecosystems.get(&rel_path).cloned().unwrap_or_default();
-                let conflict = existing_members
-                    .iter()
-                    .find(|(_, member_set)| !claiming_sets_disjoint(&this_set, member_set));
-                if let Some((conflicting_id, _)) = conflict {
-                    let offending_path = package_manifest_decls
-                        .iter()
-                        .find(|(id, _)| *id == conflicting_id)
-                        .map(|(_, (p, _))| p.clone())
-                        .unwrap_or_default();
-                    return Err(GraphError::DuplicatePackage {
-                        id: primary_id,
-                        paths: vec![offending_path, rel_path],
-                    });
-                }
                 let promoted_id = PackageId::Prefixed {
                     ecosystem: primary_ecosystems[&rel_path],
                     name: primary_id.name().to_string(),
@@ -209,15 +227,9 @@ impl ManifestWalkResolver {
             if let Some((existing_path, existing_decls)) =
                 package_manifest_decls.insert(primary_id.clone(), (rel_path.clone(), decls))
             {
+                // Both paths' claiming ecosystems are guaranteed disjoint here: an
+                // overlap would already have failed at the native_owner check above.
                 let name = primary_id.name().to_string();
-                let existing_set = claiming_ecosystems.get(&existing_path).cloned().unwrap_or_default();
-                let current_set = claiming_ecosystems.get(&rel_path).cloned().unwrap_or_default();
-                if !claiming_sets_disjoint(&existing_set, &current_set) {
-                    return Err(GraphError::DuplicatePackage {
-                        id: primary_id,
-                        paths: vec![existing_path, rel_path],
-                    });
-                }
                 // STALE-KEY REWRITE location (4): re-key package_manifest_decls under
                 // each path's own newly-promoted Prefixed id, sourcing each path's own
                 // decls -- captured via the `existing_decls` returned by `insert` above
@@ -284,6 +296,8 @@ impl ManifestWalkResolver {
                         }
                     }
                 }
+                let existing_set = claiming_ecosystems.get(&existing_path).cloned().unwrap_or_default();
+                let current_set = claiming_ecosystems.get(&rel_path).cloned().unwrap_or_default();
                 promoted_siblings
                     .entry(name.clone())
                     .or_default()
@@ -315,6 +329,11 @@ impl ManifestWalkResolver {
         // ecosystem prefix (see PackageSetMatchedNothing below) rather than
         // intentional, so it must be surfaced instead of silently ignored.
         let mut package_set_matched = vec![false; cfg.package_sets.len()];
+
+        // Same tracking, for `[[package]]` rules: an exact-id rule that matches zero real
+        // packages (e.g. an ecosystem prefix the package doesn't actually have) is just as
+        // likely a typo as an empty `[[package-set]]` glob, so it gets the same diagnostic.
+        let mut package_rule_matched = vec![false; cfg.packages.len()];
 
         let mut packages = BTreeMap::new();
         for (id, (rel_path, decls)) in package_manifest_decls {
@@ -349,7 +368,7 @@ impl ManifestWalkResolver {
             //         (any rule, since no Prefixed rule matched, the first match
             //          is necessarily Bare) that matches this package's ID.
             // Within each pass, first-match-wins (TOML declaration order) applies.
-            let pkg_override = resolve_package_config(&id, &cfg)?;
+            let pkg_override = resolve_package_config(&id, &package_ecosystems, &cfg)?;
 
             // Record which [[package-set]] patterns match this package,
             // independent of whether a [[package]] rule ends up shadowing the
@@ -358,6 +377,11 @@ impl ManifestWalkResolver {
             for (idx, (pattern, _)) in cfg.package_sets.iter().enumerate() {
                 if pattern.matches_in_ecosystems(id.name(), &package_ecosystems) {
                     package_set_matched[idx] = true;
+                }
+            }
+            for (idx, (rule_id, _)) in cfg.packages.iter().enumerate() {
+                if rule_applies(rule_id, &id, &package_ecosystems) {
+                    package_rule_matched[idx] = true;
                 }
             }
 
@@ -455,6 +479,24 @@ impl ManifestWalkResolver {
                     code: DiagnosticCode::PackageSetMatchedNothing,
                     severity: DiagnosticSeverity::Warning,
                     message: format!("[[package-set]] `{}` matched no packages", pattern.as_str()),
+                    package: None,
+                    path: None,
+                    escalated_by: None,
+                    governed_by: None,
+                });
+            }
+        }
+
+        // A [[package]] rule that matched zero real packages is the same kind of mistake as an
+        // empty [[package-set]] match above (e.g. `cargo/foo` when `foo` only exists in npm) --
+        // advisory for the same reason: a monorepo-wide callisto.toml against a partial checkout
+        // can legitimately match nothing.
+        for (idx, (rule_id, _)) in cfg.packages.iter().enumerate() {
+            if !package_rule_matched[idx] {
+                diagnostics.push(Diagnostic {
+                    code: DiagnosticCode::PackageRuleMatchedNothing,
+                    severity: DiagnosticSeverity::Warning,
+                    message: format!("[[package]] `{rule_id}` matched no packages"),
                     package: None,
                     path: None,
                     escalated_by: None,
@@ -580,6 +622,7 @@ impl ManifestWalkResolver {
 /// platform named by no owner, or by more than one, stays its own package with a
 /// diagnostic.
 fn platform_owners(
+    root: &Path,
     by_path: &BTreeMap<PathBuf, Vec<(Ecosystem, PackageId)>>,
     non_members: &[callisto_model::ProjectRoot],
     manifest_cache: &RefCell<BTreeMap<PathBuf, Arc<dyn Manifest>>>,
@@ -624,6 +667,15 @@ fn platform_owners(
     }
     for candidate in non_members {
         if by_path.contains_key(&candidate.path) {
+            continue;
+        }
+        // A Cargo/Python package physically sits beside this candidate's package.json even
+        // though it wasn't discovered as a workspace member here (e.g. filtered out by that
+        // ecosystem's own membership) -- attaching it as a bare platform manifest would
+        // misattach a directory that already hosts a real, distinct package.
+        if root.join(&candidate.path).join("Cargo.toml").is_file()
+            || root.join(&candidate.path).join("pyproject.toml").is_file()
+        {
             continue;
         }
         if let Some(role) = open_npm(&candidate.path).as_ref().and_then(platform_role) {
@@ -1221,6 +1273,37 @@ mod tests {
         }
     }
 
+    /// A dual-manifest directory's non-primary native name (its npm name,
+    /// with Cargo as primary) colliding with a separate directory's only
+    /// name must still error, not silently overwrite `index.native` and
+    /// route dependency edges to the wrong package.
+    #[test]
+    fn duplicate_on_non_primary_native_name_still_errors() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "a", Ecosystem::Cargo, "core");
+        std::fs::write(root.join("a/package.json"), r#"{"name":"@x/core","version":"1.0.0"}"#).unwrap();
+        write_pkg(root, "b", Ecosystem::Npm, "@x/core");
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let err = match crate::Workspace::load(root.to_path_buf(), &locator, &runner) {
+            Err(e) => e,
+            Ok(_) => panic!("expected DuplicatePackage error, got Ok"),
+        };
+        match err {
+            GraphError::DuplicatePackage { id, paths } => {
+                assert_eq!(id, PackageId::Bare("@x/core".to_string()));
+                let paths: std::collections::BTreeSet<_> = paths.into_iter().collect();
+                assert_eq!(
+                    paths,
+                    [PathBuf::from("a"), PathBuf::from("b")].into_iter().collect(),
+                    "must name both the dual-manifest directory and the colliding npm-only directory"
+                );
+            }
+            other => panic!("expected DuplicatePackage, got {other:?}"),
+        }
+    }
+
     #[test]
     fn disjoint_cross_ecosystem_collision_promotes_instead_of_duplicate_package() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -1430,6 +1513,169 @@ mod tests {
         assert_eq!(
             resolved, bare_id,
             "cargo:single human lookup must resolve to the Bare ID"
+        );
+    }
+
+    /// A platform package that IS a workspace member, named by no owner's
+    /// `optionalDependencies` anywhere: `PlatformPackageWithoutOwner` fires with the
+    /// member-specific suffix ("released as its own package").
+    #[test]
+    fn platform_member_without_any_owner_gets_the_released_as_its_own_package_message() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("packages/orphan-linux-x64-gnu")).unwrap();
+        std::fs::write(
+            root.join("packages/orphan-linux-x64-gnu/package.json"),
+            r#"{"name":"orphan-linux-x64-gnu","version":"0.1.0","os":["linux"],"cpu":["x64"]}"#,
+        )
+        .unwrap();
+
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load must succeed");
+
+        let diag = ws
+            .graph
+            .diagnostics
+            .iter()
+            .find(|d| d.code == DiagnosticCode::PlatformPackageWithoutOwner)
+            .expect("expected a PlatformPackageWithoutOwner diagnostic");
+        assert!(
+            diag.message
+                .contains("is not named in any npm package's optionalDependencies"),
+            "got: {}",
+            diag.message
+        );
+        assert!(
+            diag.message
+                .contains("it is released as its own package instead of as a platform manifest of its owner"),
+            "got: {}",
+            diag.message
+        );
+    }
+
+    /// A platform candidate OUTSIDE the npm workspace's membership, named by two different
+    /// admitted packages' `optionalDependencies` (ambiguous, so still ownerless):
+    /// `PlatformPackageWithoutOwner` fires with the non-member suffix ("not released at all").
+    #[test]
+    fn platform_non_member_with_ambiguous_owners_gets_the_not_released_at_all_message() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        std::fs::write(root.join("package.json"), r#"{"workspaces": ["packages/*"]}"#).unwrap();
+        std::fs::create_dir_all(root.join("packages/first")).unwrap();
+        std::fs::write(
+            root.join("packages/first/package.json"),
+            r#"{"name":"first","version":"0.1.0","optionalDependencies":{"shared-linux-x64-gnu":"0.1.0"}}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("packages/second")).unwrap();
+        std::fs::write(
+            root.join("packages/second/package.json"),
+            r#"{"name":"second","version":"0.1.0","optionalDependencies":{"shared-linux-x64-gnu":"0.1.0"}}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("tools/shared-linux-x64-gnu")).unwrap();
+        std::fs::write(
+            root.join("tools/shared-linux-x64-gnu/package.json"),
+            r#"{"name":"shared-linux-x64-gnu","version":"0.1.0","os":["linux"],"cpu":["x64"]}"#,
+        )
+        .unwrap();
+
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load must succeed");
+
+        let diag = ws
+            .graph
+            .diagnostics
+            .iter()
+            .find(|d| d.code == DiagnosticCode::PlatformPackageWithoutOwner)
+            .expect("expected a PlatformPackageWithoutOwner diagnostic");
+        assert!(
+            diag.message
+                .contains("is named in the optionalDependencies of 2 packages"),
+            "got: {}",
+            diag.message
+        );
+        assert!(
+            diag.message
+                .contains("it is outside the npm workspace, so it is not released at all"),
+            "got: {}",
+            diag.message
+        );
+    }
+
+    /// An npm platform candidate (`os`+`cpu`) that sits outside the npm workspace's own
+    /// membership glob, but whose directory is ALSO a real Cargo package (excluded from the
+    /// Cargo workspace's membership too, so genuinely a separate, undiscovered package) must
+    /// never be attached as a bare platform manifest onto an unrelated owner -- `by_path` alone
+    /// (admitted members) doesn't see it, but a Cargo.toml sitting right there means it's a real
+    /// package directory, not a detached platform blob.
+    #[test]
+    fn platform_candidate_beside_a_foreign_cargo_toml_is_never_attached() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/*\"]\nresolver = \"2\"\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("package.json"), r#"{"workspaces": ["packages/*"]}"#).unwrap();
+        std::fs::create_dir_all(root.join("packages/consumer")).unwrap();
+        std::fs::write(
+            root.join("packages/consumer/package.json"),
+            r#"{"name":"consumer","version":"0.1.0","optionalDependencies":{"outsider-linux-x64-gnu":"0.1.0"}}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("tools/outsider")).unwrap();
+        std::fs::write(
+            root.join("tools/outsider/package.json"),
+            r#"{"name":"outsider-linux-x64-gnu","version":"0.1.0","os":["linux"],"cpu":["x64"]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("tools/outsider/Cargo.toml"),
+            "[package]\nname = \"outsider\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load must succeed");
+
+        assert!(
+            !ws.graph.identity().platform.contains_key("outsider-linux-x64-gnu"),
+            "a platform candidate beside a foreign Cargo.toml must never be attached, got: {:?}",
+            ws.graph.identity().platform
+        );
+    }
+
+    /// A `[[package]]` rule naming an ecosystem the target package doesn't actually have (a
+    /// `pypi:foo` rule when `foo` only exists as a Cargo crate) matches zero real packages --
+    /// this must surface as a `PackageRuleMatchedNothing` diagnostic, the same as an empty
+    /// `[[package-set]]` glob, not be silently absorbed.
+    #[test]
+    fn package_rule_matching_no_ecosystem_the_package_has_gets_a_matched_nothing_diagnostic() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "foo", Ecosystem::Cargo, "foo");
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[package]]\nmatch = \"pypi:foo\"\npublish-to = [\"npm\"]\n",
+        )
+        .unwrap();
+
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load must succeed");
+
+        assert!(
+            ws.graph
+                .diagnostics
+                .iter()
+                .any(|d| d.code == DiagnosticCode::PackageRuleMatchedNothing && d.message.contains("pypi/foo")),
+            "expected a PackageRuleMatchedNothing diagnostic naming pypi/foo, got: {:?}",
+            ws.graph.diagnostics
         );
     }
 

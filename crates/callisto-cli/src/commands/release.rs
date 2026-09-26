@@ -15,7 +15,7 @@ use callisto_graph::commands::{
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_model::{
     ApplyPermit, ArtifactDigest, ArtifactManifestEntryV1, ArtifactManifestV1, ExecutionTrustProfileV1,
-    GitHubArtifactAttestationV1, ReleaseIntentV1, ReleasePackageId, ReleaseReceiptV1, ReleaseRunEnvelopeV1,
+    GitHubArtifactAttestationV1, PackageId, ReleaseIntentV1, ReleasePackageId, ReleaseReceiptV1, ReleaseRunEnvelopeV1,
 };
 
 use crate::cli::{
@@ -138,15 +138,27 @@ fn print_nothing_to_release(global: &GlobalArgs) -> Result<(), CliError> {
 }
 
 fn parse_selections(packages: &[String]) -> Result<Vec<ReleasePackageId>, CliError> {
-    packages
-        .iter()
-        .map(|raw| {
-            ReleasePackageId::parse(raw).map_err(|error| CliError::ReleasePackageInvalid {
-                raw: raw.clone(),
+    packages.iter().map(|raw| parse_release_selection(raw)).collect()
+}
+
+/// Parses one `--package` release selection, accepting `eco:name` as an input
+/// alias for the canonical `eco/name` form (one id grammar, everywhere) --
+/// `ReleasePackageId::parse`'s own strict `eco/name`-only grammar stays as is
+/// for its durable, on-disk encoding (the release-decision file), which this
+/// never reads back through.
+fn parse_release_selection(raw: &str) -> Result<ReleasePackageId, CliError> {
+    match PackageId::parse(raw) {
+        Ok(PackageId::Prefixed { ecosystem, name }) => {
+            ReleasePackageId::new(ecosystem, name).map_err(|error| CliError::ReleasePackageInvalid {
+                raw: raw.to_string(),
                 detail: error.to_string(),
             })
-        })
-        .collect()
+        }
+        _ => Err(CliError::ReleasePackageInvalid {
+            raw: raw.to_string(),
+            detail: "expected an ecosystem-qualified package id, e.g. `cargo/pkg` or `cargo:pkg`".to_string(),
+        }),
+    }
 }
 
 /// One-line description of a release operation, shared by both the plain and table renderers.
@@ -577,6 +589,23 @@ fn write_receipt(path: &std::path::Path, receipt: &ReleaseReceiptV1, permit: &Ap
 
 #[cfg(test)]
 mod tests {
+    /// `--package cargo:pkg` (colon form) must be accepted as an alias of
+    /// `cargo/pkg` -- `ReleasePackageId::parse` alone rejects `:` for its
+    /// durable on-disk encoding, but the CLI selector grammar is one grammar
+    /// everywhere, so this file's own selection parser normalizes first.
+    #[test]
+    fn parse_release_selection_accepts_colon_as_an_alias_of_slash() {
+        let colon = super::parse_release_selection("cargo:pkg").expect("colon form must be accepted");
+        let slash = super::parse_release_selection("cargo/pkg").expect("slash form must be accepted");
+        assert_eq!(colon, slash);
+    }
+
+    #[test]
+    fn parse_release_selection_rejects_a_bare_name() {
+        let err = super::parse_release_selection("pkg").unwrap_err();
+        assert!(matches!(err, CliError::ReleasePackageInvalid { .. }));
+    }
+
     use callisto_model::{
         RegistryBindingDigest, RegistryBindingId, ReleaseDecisionEntry, ReleaseDecisionV1, ReleaseInclusionReason,
         ReleaseInputSnapshotV1, ReleaseOperation, ReleasePackageId, ReleasePackageInputV1, SemanticInputDigest,

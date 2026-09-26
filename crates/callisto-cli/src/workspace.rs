@@ -33,7 +33,7 @@ pub fn workspace_root(global: &GlobalArgs, runner: &dyn CommandRunner) -> Result
         path: Some(global.cwd.clone()),
     })?;
     ensure_git_supported(runner, &start)?;
-    Ok(find_workspace_root(&start)?)
+    Ok(find_workspace_root(&start, runner)?)
 }
 
 /// Commit inference; `release-trigger` decides per package whether it runs.

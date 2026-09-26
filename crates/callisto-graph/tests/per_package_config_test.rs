@@ -250,15 +250,15 @@ changelog = "RELEASES.md"
         pkg.release_trigger,
     );
 }
-/// A prefixed [[package]] rule wins by name alone — no ecosystem check
-/// is performed against the package's actual manifests. Here, `npm/cross-eco`
-/// is prefixed for npm but the package is Cargo-only; the prefixed rule still wins.
+/// repro/ws-rule: a prefixed `[[package]]` rule must apply only to a package
+/// that actually has a manifest in that ecosystem. Here, `npm/cross-eco` is
+/// prefixed for npm but the package is Cargo-only, so it must be ignored,
+/// leaving the Bare rule ("cross-eco") as the sole match.
 #[test]
-fn prefixed_rule_wins_by_name_alone_no_ecosystem_check() {
+fn prefixed_rule_does_not_apply_to_a_package_outside_its_ecosystem() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path();
     write_cargo_workspace(root, "cross-eco");
-    // bare rule FIRST, prefixed npm rule SECOND — prefixed must win regardless
     fs::write(
         root.join("callisto.toml"),
         r#"
@@ -279,15 +279,18 @@ changelog = "RELEASES.md"
         .packages()
         .find(|p| p.id.matches(&PackageId::parse("cross-eco").unwrap()))
         .expect("cross-eco should be discovered");
-    let changelog = pkg.changelog.as_ref().expect("changelog should be set");
+    let changelog = pkg
+        .changelog
+        .as_ref()
+        .expect("changelog defaults to CHANGELOG.md even with no override");
     assert!(
-        changelog.ends_with("RELEASES.md"),
-        "prefixed rule must win regardless of ecosystem match: got {changelog:?}",
+        changelog.ends_with("CHANGELOG.md") && !changelog.ends_with("RELEASES.md"),
+        "npm/cross-eco must not apply to a Cargo-only package; got changelog {changelog:?}",
     );
     assert_eq!(
         pkg.release_trigger,
-        ReleaseTrigger::Changeset,
-        "bare rule release-trigger must not apply; got {:?}",
+        ReleaseTrigger::Auto,
+        "the Bare rule is the only one that actually applies; got {:?}",
         pkg.release_trigger,
     );
 }

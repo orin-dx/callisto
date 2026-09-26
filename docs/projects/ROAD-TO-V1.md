@@ -21,7 +21,7 @@ Open work only. Verified against the code on 2026-09-25; git history holds the s
 
 ## v1 fix plan
 
-Stacked PRs, merged in this order. Each PR fixes the bugs that break one guarantee and updates its spec criteria in the same change. Most items were reproduced against 0.8.0. PRs 1, 2b and 3 each add an ADR in `docs/adr/`: tag identity, native resolution after `version`, and directory-keyed identity.
+Stacked PRs, merged in this order. Each PR fixes the bugs that break one guarantee and updates its spec criteria in the same change. Most items were reproduced against 0.8.0. PRs 1 and 2b each add an ADR in `docs/adr/`: tag identity and native resolution after `version`. Re-keying packages by directory, with its ADR, is a later PR.
 
 Decisions (owner, 2026-09-25):
 - A tag is the same landed effect when it names the same commit and is annotated; the annotation text is not compared, locally or remotely.
@@ -42,20 +42,6 @@ Decisions (owner, 2026-09-25):
 
 ### 2b. `snapshot` resolves natively for every ecosystem
 - `plan_snapshot` (`crates/callisto-graph/src/commands/snapshot.rs`) parses the snapshot tag as SemVer for every package, so a workspace with a Pypi package fails to snapshot: the tag is not a valid PEP 440 version. `cargo metadata --locked`, `npm ci` and `pnpm install --frozen-lockfile` are covered end-to-end (`crates/callisto-cli/tests/native_resolution_e2e_tests.rs`); `uv lock --check` is covered only after `version`, not after `snapshot`.
-
-### 3. Every package resolves by any of its names
-- A qualified selector matches any ecosystem (`--package cargo/foo` selects npm-only `foo`); prefixed `[[package]]` rules ignore ecosystems (a resolve.rs test locks this in). One `IdentityIndex::resolve(selector)`: qualified is an exact (ecosystem, name) lookup, bare searches every name; used by changesets, `add`, `--package`, `[[package]]`, `[[fixed-group]]`, product-package, artifacts, matrix.
-- A dual-manifest package cannot be named by its non-primary name.
-- Duplicate names are checked only on primary names (two directories can publish `@x/core`). E100 on any (ecosystem, name) claimed twice.
-- Three id grammars; `[[package-set]] match = "cargo/foo-*"` matches nothing. Output `eco/name`; accept `eco:name` everywhere; fix E103 help.
-- The `unknown-package` warning lists primary names; its advice is impossible to follow.
-- An unparseable manifest silently drops its package (or half of a dual-manifest one). Error when admitted; warn otherwise.
-- Root detection matches text (`# [workspace]` counts). Parse with toml_edit.
-- Delete E101 `SplitIdentity` (divergent names are allowed).
-- Group member ambiguity reports E108 instead of E103; E102 help points at a nonexistent config key; `[[package]]` rules that match nothing get no diagnostic.
-- Test: the not-released platform warning's two messages.
-- Root detection looks for `.git` on disk instead of asking git, so `GIT_DIR`, `GIT_WORK_TREE` and `GIT_CEILING_DIRECTORIES` are ignored (`locate/root.rs`).
-- An attached platform outside the workspace globs attaches even when a `Cargo.toml` or `pyproject.toml` sits beside it (`walk.rs`, only `by_path` is checked).
 
 ### 4. Anything `@changesets/cli` accepts, callisto accepts
 - An empty changeset (`changeset add --empty`) is rejected with E048. Accept it.

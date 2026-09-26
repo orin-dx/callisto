@@ -19,8 +19,8 @@
     },
     {
       "name": "[[package-set]] match",
-      "signature": "match = \"<glob>\" | \"<ecosystem>:<glob>\"",
-      "description": "Glob over package names. Only the colon form scopes the glob to an ecosystem.",
+      "signature": "match = \"<glob>\" | \"<ecosystem>:<glob>\" | \"<ecosystem>/<glob>\"",
+      "description": "Glob over package names. The colon and slash forms both scope the glob to an ecosystem; a bare glob matches any ecosystem.",
       "error_conditions": [
         "An invalid glob fails config loading."
       ]
@@ -38,7 +38,7 @@
     },
     {
       "id": "WS-DISC-03",
-      "criterion": "Discovery treats every directory under the root whose Cargo.toml, package.json or pyproject.toml parses and declares a package name as a candidate, following symlinks up to 32 levels deep and skipping hidden and gitignored paths and directories named target, node_modules, .git, .moon and dist; a manifest without a name is not a package."
+      "criterion": "Discovery treats every directory under the root whose Cargo.toml, package.json or pyproject.toml parses and declares a package name as a candidate, following symlinks up to 32 levels deep and skipping hidden and gitignored paths and directories named target, node_modules, .git, .moon and dist; a manifest without a name is not a package. A manifest that fails to parse is a coded error naming its path and the parse error when the path is admitted by explicit workspace membership or shares a directory with an admitted manifest, otherwise it is a warning naming the path and the parse error, and discovery continues without it."
     },
     {
       "id": "WS-DISC-04",
@@ -76,7 +76,7 @@
     },
     {
       "id": "WS-ID-02",
-      "criterion": "A dual-manifest package (one directory with several admitted manifests) is one package whose id comes from Cargo.toml, else package.json, else pyproject.toml, and each manifest's own name still resolves to that package within its ecosystem."
+      "criterion": "A dual-manifest package (one directory with several admitted manifests) is one package whose id comes from Cargo.toml, else package.json, else pyproject.toml, and each manifest's own name still resolves to that package within its ecosystem -- including through `--package`, `add` and a changeset entry naming the package by a non-primary manifest's own name, not only its primary name."
     },
     {
       "id": "WS-ID-03",
@@ -89,12 +89,12 @@
     },
     {
       "id": "WS-ID-05",
-      "criterion": "A `[[fixed-group]]` member written `cargo:foo` or `cargo/foo` resolves to package `foo` when a Cargo manifest declares `foo`, promoted or not; a member naming an ecosystem with no such manifest fails loading with E108.",
+      "criterion": "A `[[fixed-group]]` or `[[linked-group]]` member written `cargo:foo` or `cargo/foo` resolves to package `foo` when a Cargo manifest declares `foo`, promoted or not, through the same selector resolver used for `--package` and changesets; a member naming an ecosystem with no such manifest fails loading with E108, and a bare member name ambiguous across ecosystems fails loading with E103 (not E108).",
       "is_error_case": true
     },
     {
       "id": "WS-ID-06",
-      "criterion": "A changeset or `callisto matrix --package` naming the bare name of promoted packages fails with E103 listing every qualified candidate.",
+      "criterion": "A changeset, `callisto add --package` or `callisto matrix --package` naming the bare name of promoted packages fails with E103 listing every qualified candidate; naming a package that does not exist under that name in that ecosystem fails with E102.",
       "is_error_case": true
     },
     {
@@ -103,7 +103,7 @@
     },
     {
       "id": "WS-CFG-01",
-      "criterion": "For each package, the first ecosystem-prefixed `[[package]]` rule matching it applies, regardless of declaration order; if none matches, the first matching bare rule applies."
+      "criterion": "For each package, the first ecosystem-prefixed `[[package]]` rule whose ecosystem the package actually has a manifest in and whose name matches applies, regardless of declaration order relative to bare rules; a prefixed rule for an ecosystem the package has no manifest in never applies, even to a same-named package in another ecosystem. If no prefixed rule applies, the first matching bare rule applies."
     },
     {
       "id": "WS-CFG-03",
@@ -112,7 +112,7 @@
     },
     {
       "id": "WS-CFG-04",
-      "criterion": "A `[[package-set]]` rule applies only when no `[[package]]` rule matches, the first matching set in declaration order wins, and a `cargo:`, `npm:` or `pypi:` prefix restricts it to packages with a manifest in that ecosystem."
+      "criterion": "A `[[package-set]]` rule applies only when no `[[package]]` rule matches, the first matching set in declaration order wins, and a `cargo:`/`cargo/`, `npm:`/`npm/` or `pypi:`/`pypi/` prefix restricts it to packages with a manifest in that ecosystem."
     },
     {
       "id": "WS-CFG-05",
@@ -131,6 +131,11 @@
     {
       "id": "WS-CFG-08",
       "criterion": "A bare `[[package]]` rule matching packages whose manifests span two or more ecosystems, such as a dual-manifest package, emits one non-fatal `bare-rule-matches-multiple-ecosystems` warning; prefixed rules and `[[package-set]]` rules never emit it.",
+      "is_error_case": true
+    },
+    {
+      "id": "WS-CFG-09",
+      "criterion": "A `[[package]]` rule that matches no package emits one `package-rule-matched-nothing` warning naming the rule.",
       "is_error_case": true
     },
     {

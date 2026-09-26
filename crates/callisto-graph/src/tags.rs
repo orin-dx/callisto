@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use callisto_model::{
-    select_last_tag, CommitSha, Diagnostic, LastTag, LastTagSelection, PackageId, TagTemplate, VersionGrammar,
+    select_last_tag, CommitSha, Diagnostic, Ecosystem, LastTag, LastTagSelection, PackageId, TagTemplate,
+    VersionGrammar,
 };
 use callisto_vcs::GitAccess;
 
@@ -137,8 +138,10 @@ impl TagIndex {
             let grammar = pkg.version_grammar()?;
             let mut chosen = select_from_tags_cached(&all_tags, &tmpl, grammar, &mut glob_cache)?.chosen;
             if chosen.is_none() {
-                if let Some(previous) = crate::config::resolve::resolve_package_config(&pkg.id, cfg)?
-                    .map(|package_config| package_config.previous_tag_templates.as_slice())
+                let package_ecosystems: Vec<Ecosystem> = pkg.canonical_manifests().map(|m| m.ecosystem()).collect();
+                if let Some(previous) =
+                    crate::config::resolve::resolve_package_config(&pkg.id, &package_ecosystems, cfg)?
+                        .map(|package_config| package_config.previous_tag_templates.as_slice())
                 {
                     for template in previous {
                         chosen = select_from_tags_cached(&all_tags, template, grammar, &mut glob_cache)?.chosen;
