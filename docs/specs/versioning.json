@@ -40,7 +40,7 @@
     },
     {
       "id": "VER-CS-04",
-      "criterion": "Parsing fails with E040 when line 1 is not `---`, E041 when the frontmatter is never closed, E048 when there are no entries and no summary, and E055 when there are entries but the summary is empty or whitespace-only.",
+      "criterion": "Parsing fails with E040 when line 1 is not `---`, E041 when the frontmatter is never closed, and E055 when there are entries but the summary is empty or whitespace-only. A changeset with no entries and no summary (the shape `@changesets/cli add --empty` writes) parses as a valid, empty changeset.",
       "is_error_case": true
     },
     {
