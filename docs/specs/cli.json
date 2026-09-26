@@ -69,7 +69,7 @@
     },
     {
       "name": "release",
-      "signature": "callisto release [--package <ECOSYSTEM/NAME>]... [--receipt <FILE>]",
+      "signature": "callisto release [--package <ECOSYSTEM/NAME>|<ECOSYSTEM:NAME>]... [--receipt <FILE>]",
       "description": "Publishes every package whose current version is unreleased; with --dry-run prints the release plan only.",
       "error_conditions": [
         "Any planning or publishing failure exits 1; `Nothing to release.` exits 0."
@@ -194,7 +194,7 @@
     },
     {
       "id": "CLI-ADD-06",
-      "criterion": "A --package value missing `:severity`, with an unknown severity, or naming a package not in the workspace exits 1 with a message naming the bad value (and, for an unknown package, listing the known packages) and writes nothing.",
+      "criterion": "A --package value missing `:severity`, with an unknown severity, or naming a package not in the workspace exits 1 and writes nothing; an unknown package name reports E102, and a bare name ambiguous across ecosystems reports E103 listing the qualified candidates.",
       "is_error_case": true
     },
     {

@@ -68,21 +68,17 @@ pub enum GraphError {
     #[diagnostic(code(E100), help("Ensure package IDs are unique across workspace manifest paths."))]
     DuplicatePackage { id: PackageId, paths: Vec<PathBuf> },
 
-    #[error("package at `{path}` declares conflicting identities: {}", .ids.iter().map(|i| i.display_name()).collect::<Vec<_>>().join(", "))]
-    #[diagnostic(code(E101), help("Align package name declarations in manifest files."))]
-    SplitIdentity { path: PathBuf, ids: Vec<PackageId> },
-
     #[error("package `{id}` was not found in the workspace")]
     #[diagnostic(
         code(E102),
-        help("Verify package is included in workspace members in callisto.toml.")
+        help("Check the package's name and ecosystem, or that its directory has a manifest callisto discovers.")
     )]
     UnknownPackage { id: PackageId },
 
     #[error("name `{name}` is ambiguous in this workspace; candidates: {}", .candidates.iter().map(|c| c.display_name()).collect::<Vec<_>>().join(", "))]
     #[diagnostic(
         code(E103),
-        help("Use fully-qualified package ID with ecosystem prefix (e.g. cargo:pkg).")
+        help("Qualify the name with its ecosystem, e.g. `cargo/pkg` or `cargo:pkg`.")
     )]
     AmbiguousName { name: String, candidates: Vec<PackageId> },
 

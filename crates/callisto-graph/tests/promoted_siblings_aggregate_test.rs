@@ -106,6 +106,7 @@ fn workspace_load_populates_promoted_siblings_and_aggregate_propagates_ambiguity
     );
     let err = callisto_graph::aggregate(
         &workspace.graph,
+        &workspace.identity,
         &config2,
         git,
         &tags,

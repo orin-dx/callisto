@@ -135,6 +135,24 @@ pub struct InMemoryGraph {
     in_index: BTreeMap<PackageId, Vec<usize>>,
 }
 
+/// An `IdentityIndex` reflecting every package's own canonical manifests, as
+/// `ManifestWalkResolver::build` would populate it for a real workspace --
+/// package-selector resolution (`--package`, `[[package]]`, `[[fixed-group]]`)
+/// runs through `IdentityIndex`, not a `GraphBuilder`-built graph directly, so
+/// a hand-built `Workspace` fixture needs one to resolve anything at all.
+#[allow(dead_code)]
+pub fn identity_for(graph: &InMemoryGraph) -> callisto_graph::IdentityIndex {
+    let mut index = callisto_graph::IdentityIndex::default();
+    for pkg in graph.packages() {
+        for manifest in pkg.canonical_manifests() {
+            index
+                .native
+                .insert((manifest.ecosystem(), pkg.id.name().to_string()), pkg.id.clone());
+        }
+    }
+    index
+}
+
 impl DependencyResolver for InMemoryGraph {
     fn packages(&self) -> impl Iterator<Item = &Package> {
         self.packages.values()

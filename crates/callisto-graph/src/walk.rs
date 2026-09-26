@@ -349,7 +349,7 @@ impl ManifestWalkResolver {
             //         (any rule, since no Prefixed rule matched, the first match
             //          is necessarily Bare) that matches this package's ID.
             // Within each pass, first-match-wins (TOML declaration order) applies.
-            let pkg_override = resolve_package_config(&id, &cfg)?;
+            let pkg_override = resolve_package_config(&id, &package_ecosystems, &cfg)?;
 
             // Record which [[package-set]] patterns match this package,
             // independent of whether a [[package]] rule ends up shadowing the
