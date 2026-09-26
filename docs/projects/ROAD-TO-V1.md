@@ -40,10 +40,6 @@ Decisions (owner, 2026-09-25):
 ### 2a. Versions are computed correctly
 - `resolve()` never inserts explicit provenance for `FIXED_GROUP`, `LINKED_GROUP`, `TAG_TEMPLATE` or `PRE_MAJOR_INFERENCE`, so diagnostics governed by those keys always render "(default)" even when explicitly configured (`crates/callisto-graph/src/config/resolve.rs`).
 
-### 2b. The workspace resolves natively after `version` and `snapshot`
-- Invariant: after `version` or `snapshot`, each ecosystem's locked install succeeds (`cargo metadata --locked`, `npm ci`, `pnpm install --frozen-lockfile`, `uv lock --check`).
-- Test: dual-manifest apply writes both manifests.
-
 ### 3. Every package resolves by any of its names
 - A qualified selector matches any ecosystem (`--package cargo/foo` selects npm-only `foo`); prefixed `[[package]]` rules ignore ecosystems (a resolve.rs test locks this in). One `IdentityIndex::resolve(selector)`: qualified is an exact (ecosystem, name) lookup, bare searches every name; used by changesets, `add`, `--package`, `[[package]]`, `[[fixed-group]]`, product-package, artifacts, matrix.
 - A dual-manifest package cannot be named by its non-primary name.

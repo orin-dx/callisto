@@ -221,6 +221,19 @@ fn apply_version_plan_succeeds_for_dual_identity_cross_ecosystem_rewrite() {
         !dep_app_manifest.contains("\"^1.0.0\""),
         "dep-app's dependency spec on my-native-lib must have been rewritten away from the now out-of-range \"^1.0.0\"; got:\n{dep_app_manifest}"
     );
+
+    // Both of the owning package's own manifests -- Cargo.toml and package.json, same directory --
+    // must reach the bumped version, not just the dependent's rewritten spec.
+    let owner_cargo_toml = fs::read_to_string(root.join("crates/my-native-lib/Cargo.toml")).unwrap();
+    assert!(
+        owner_cargo_toml.contains("version = \"2.0.0\""),
+        "my-native-lib's Cargo.toml must reach the major-bumped version 2.0.0; got:\n{owner_cargo_toml}"
+    );
+    let owner_package_json = fs::read_to_string(root.join("crates/my-native-lib/package.json")).unwrap();
+    assert!(
+        owner_package_json.contains("\"2.0.0\""),
+        "my-native-lib's package.json must reach the major-bumped version 2.0.0; got:\n{owner_package_json}"
+    );
 }
 
 /// A fixed group with two members, each named by its OWN, separate changeset
