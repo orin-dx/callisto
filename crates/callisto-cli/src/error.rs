@@ -121,7 +121,7 @@ pub enum CliError {
         path: Option<std::path::PathBuf>,
     },
 
-    #[error("refusing to prompt interactively: stdin is not a terminal and no non-interactive flags were given")]
+    #[error("refusing to prompt interactively: stdin is not a terminal; missing: --package")]
     #[diagnostic(
         code(E214),
         help("specify package names explicitly via `callisto add --package <name>:<severity>` in CI environments")
@@ -332,12 +332,6 @@ pub enum CliError {
     )]
     StrictDiagnosticsPresent { messages: Vec<String> },
 
-    #[error(
-        "Unknown schema target type `{requested}`. Supported types: status, version, snapshot, validate, init, changeset, pre, matrix, release-receipt"
-    )]
-    #[diagnostic(code(E278), help("pass one of the supported --type values"))]
-    UnknownSchemaType { requested: String },
-
     #[error("pre-release tag cannot be empty")]
     #[diagnostic(code(E279), help("pass a non-empty tag, for example `callisto pre enter beta`"))]
     PreTagEmpty,
@@ -353,6 +347,10 @@ pub enum CliError {
     #[error("release-pr commit-plan cannot write --out with --dry-run; omit --out")]
     #[diagnostic(code(E282), help("re-run without --dry-run, or drop --out"))]
     ReleasePrCommitPlanDryRun,
+
+    #[error("no such subcommand `{name}`")]
+    #[diagnostic(code(E283), help("run `callisto --help` to list commands"))]
+    HelpUnknownCommand { name: String },
 }
 
 impl From<std::io::Error> for CliError {
@@ -459,6 +457,18 @@ mod tests {
         assert!(
             help.contains("callisto add --package"),
             "help should reference the --package flag; got: {help}"
+        );
+    }
+
+    /// `add --summary x` with no `--package` and a non-terminal stdin must
+    /// name the actually-missing flag (`--package`), not claim generically
+    /// that no flags at all were given -- `--summary` was one.
+    #[test]
+    fn not_a_tty_message_names_the_missing_package_flag() {
+        let message = CliError::NotATty.to_string();
+        assert!(
+            message.contains("missing: --package"),
+            "message must name --package as the missing flag; got: {message}"
         );
     }
 
@@ -598,11 +608,9 @@ mod tests {
             CliError::StrictDiagnosticsPresent {
                 messages: vec!["x".to_owned()],
             },
-            CliError::UnknownSchemaType {
-                requested: "x".to_owned(),
-            },
             CliError::PreTagEmpty,
             CliError::PreAlreadyExited,
+            CliError::HelpUnknownCommand { name: "x".to_owned() },
             CliError::ReleasePrArgJsonInvalid {
                 flag: "snapshot",
                 detail: "x".to_owned(),

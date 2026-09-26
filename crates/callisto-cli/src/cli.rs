@@ -70,6 +70,9 @@ pub enum Command {
     /// Print the JSON schema for a report type.
     #[command(hide = true)]
     Schema(SchemaArgs),
+    /// Print a subcommand's help text.
+    #[command(hide = true)]
+    Help(HelpArgs),
 }
 
 impl Command {
@@ -90,6 +93,7 @@ impl Command {
             Command::ReleasePr(_) => "release-pr",
             Command::Completions(_) => "completions",
             Command::Schema(_) => "schema",
+            Command::Help(_) => "help",
         }
     }
 }
@@ -97,9 +101,37 @@ impl Command {
 /// Arguments for the `schema` command.
 #[derive(Args, Clone, Debug, Default)]
 pub struct SchemaArgs {
-    /// Report type to print the schema for (status, version, snapshot, validate, init, changeset, pre, matrix, release-receipt); defaults to status.
-    #[arg(long = "type", value_name = "TYPE")]
-    pub target_type: Option<String>,
+    /// Report type to print the schema for; defaults to status.
+    #[arg(long = "type", value_enum)]
+    pub target_type: Option<SchemaReportType>,
+}
+
+/// The one registry of report/document types `schema --type` can print --
+/// the sole source `SchemaArgs.target_type` and `callisto-cli::commands::schema`
+/// both parse and match against, so a new report type is added in one place.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum SchemaReportType {
+    #[default]
+    Status,
+    Version,
+    Snapshot,
+    Init,
+    Changeset,
+    /// The on-disk `.changeset/pre.json` file shape -- not `callisto pre`'s
+    /// own `--format json` report, which `PreReport` describes instead.
+    #[value(name = "pre-state")]
+    PreState,
+    Matrix,
+    ReleaseReceipt,
+}
+
+/// Arguments for the hidden `help` subcommand: prints a subcommand's help
+/// text even though `disable_help_subcommand` turns off clap's own
+/// automatic one, so the visible `--help` listing stays at eight commands.
+#[derive(Args, Clone, Debug, Default)]
+pub struct HelpArgs {
+    /// Subcommand (and nested subcommand) to print help for, e.g. `release plan`; omit for the root help.
+    pub command: Vec<String>,
 }
 
 /// Arguments for the `add` command.
@@ -116,10 +148,10 @@ pub struct AddArgs {
 /// Arguments for the `status` command.
 #[derive(Args, Clone, Debug)]
 pub struct StatusArgs {
-    /// Enable strict mode: promote warning-level diagnostics to errors, causing a non-zero exit.
+    /// Treat warnings as errors (fails with --check)
     #[arg(long)]
     pub strict: bool,
-    /// Exit with a distinct status code indicating whether any changesets are pending.
+    /// Exit 1 if any diagnostic is an error (pending changesets never fail it)
     #[arg(long)]
     pub check: bool,
 }
@@ -459,6 +491,7 @@ mod tests {
                 shell: clap_complete::Shell::Bash,
             }),
             Command::Schema(SchemaArgs::default()),
+            Command::Help(HelpArgs::default()),
         ];
         for variant in &variants {
             assert!(
@@ -469,43 +502,32 @@ mod tests {
         }
     }
 
-    /// QW-5: --strict flag on status subcommand must have a meaningful help string.
+    /// `status --strict`/`--check` help text is exact, user-facing wording,
+    /// not clap's placeholder or a jargon-laden restatement of the flag name.
     #[test]
-    fn strict_flag_help_text_is_meaningful() {
+    fn status_strict_and_check_help_text_is_exact() {
         let mut cmd = Cli::command();
         cmd.build();
 
-        // Find the "status" subcommand.
         let status_sub = cmd
             .get_subcommands()
             .find(|s| s.get_name() == "status")
             .expect("status subcommand must exist");
 
-        // Find the --strict argument.
-        let strict_arg = status_sub
-            .get_arguments()
-            .find(|a| a.get_long() == Some("strict"))
-            .expect("--strict argument must exist on status subcommand");
+        let help_for = |long: &str| {
+            status_sub
+                .get_arguments()
+                .find(|a| a.get_long() == Some(long))
+                .unwrap_or_else(|| panic!("--{long} argument must exist on status subcommand"))
+                .get_help()
+                .map(|h| h.to_string())
+                .unwrap_or_default()
+        };
 
-        let help = strict_arg
-            .get_help()
-            .map(|h| h.to_string())
-            .unwrap_or_default()
-            .to_lowercase();
-
-        // Must contain "strict" and describe what it does.
-        assert!(
-            help.contains("strict"),
-            "--strict help text must contain the word 'strict'; got: {help:?}"
-        );
-        assert!(
-            help.contains("warning") || help.contains("error"),
-            "--strict help text must mention 'warning' or 'error'; got: {help:?}"
-        );
-        // Must be longer than a placeholder.
-        assert!(
-            help.len() > 20,
-            "--strict help text is too short to be meaningful: {help:?}"
+        assert_eq!(help_for("strict"), "Treat warnings as errors (fails with --check)");
+        assert_eq!(
+            help_for("check"),
+            "Exit 1 if any diagnostic is an error (pending changesets never fail it)"
         );
     }
 
@@ -710,21 +732,20 @@ mod tests {
         }
     }
 
-    /// The automatic `help` subcommand is disabled,
-    /// but `-h`/`--help` still work on the root command and on subcommands.
+    /// clap's automatic `help` subcommand is disabled (it would otherwise
+    /// widen the eight-command `--help` listing's implicit surface), but a
+    /// hidden `help` subcommand of our own parses in its place, and
+    /// `-h`/`--help` still work on the root command and on subcommands.
     #[test]
-    fn help_subcommand_is_disabled_but_flag_help_works() {
+    fn help_subcommand_parses_and_flag_help_still_works() {
         use clap::Parser;
 
-        let help_sub = Cli::try_parse_from(["callisto", "help"]);
-        assert!(help_sub.is_err(), "`callisto help` must fail to parse");
-        assert_eq!(
-            help_sub.err().unwrap().kind(),
-            clap::error::ErrorKind::InvalidSubcommand
-        );
+        let help_sub = Cli::try_parse_from(["callisto", "help"]).expect("`callisto help` must parse");
+        assert!(matches!(help_sub.command, Command::Help(HelpArgs { command }) if command.is_empty()));
 
-        let help_sub_command = Cli::try_parse_from(["callisto", "help", "status"]);
-        assert!(help_sub_command.is_err(), "`callisto help status` must fail to parse");
+        let help_sub_command =
+            Cli::try_parse_from(["callisto", "help", "status"]).expect("`callisto help status` must parse");
+        assert!(matches!(help_sub_command.command, Command::Help(HelpArgs { command }) if command == ["status"]));
 
         let root_flag = Cli::try_parse_from(["callisto", "--help"]);
         assert_eq!(
@@ -748,7 +769,7 @@ mod tests {
         let mut cmd = Cli::command();
         cmd.build();
 
-        for name in ["matrix", "schema", "compose-pr-body", "release-pr"] {
+        for name in ["matrix", "schema", "compose-pr-body", "release-pr", "help"] {
             let sub = cmd
                 .get_subcommands()
                 .find(|s| s.get_name() == name)
@@ -773,6 +794,7 @@ mod tests {
         assert!(Cli::try_parse_from(["callisto", "matrix"]).is_ok());
         assert!(Cli::try_parse_from(["callisto", "schema"]).is_ok());
         assert!(Cli::try_parse_from(["callisto", "compose-pr-body"]).is_ok());
+        assert!(Cli::try_parse_from(["callisto", "help"]).is_ok());
         assert!(Cli::try_parse_from([
             "callisto",
             "release",
@@ -821,5 +843,32 @@ mod tests {
             panic!("expected Init command");
         };
         assert_eq!(args.artifact_targets, vec!["a", "", "b"]);
+    }
+
+    /// `schema --type` is a `ValueEnum`: an unrecognized value is now a clap
+    /// usage error (exit 2), not our own `E278` -- there is nothing left to
+    /// validate at the command-handler level once the registry is one enum.
+    #[test]
+    fn schema_type_rejects_unknown_value_as_a_usage_error() {
+        use clap::Parser;
+        let err = match Cli::try_parse_from(["callisto", "schema", "--type", "validate"]) {
+            Ok(_) => panic!("expected `--type validate` to be rejected"),
+            Err(err) => err,
+        };
+        assert_eq!(err.kind(), clap::error::ErrorKind::InvalidValue);
+    }
+
+    /// The on-disk `.changeset/pre.json` file schema is named `pre-state`,
+    /// distinct from `callisto pre`'s own `--format json` report -- the
+    /// rename this replaces `--type pre` with, since it described the file,
+    /// not the command's report.
+    #[test]
+    fn schema_type_accepts_pre_state() {
+        use clap::Parser;
+        let cli = Cli::parse_from(["callisto", "schema", "--type", "pre-state"]);
+        let Command::Schema(args) = cli.command else {
+            panic!("expected Schema command");
+        };
+        assert_eq!(args.target_type, Some(SchemaReportType::PreState));
     }
 }

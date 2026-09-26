@@ -51,6 +51,13 @@ pub fn emit_line(line: &str) -> io::Result<()> {
     write_stdout(format!("{line}\n").as_bytes())
 }
 
+/// Writes one line to stderr -- for interactive wizard narration
+/// (`callisto add`'s step prompts), which must stay off stdout so a script
+/// piping stdout never sees prompt text mixed into a report or changeset preview.
+pub fn prompt_line(line: &str) {
+    eprintln!("{line}");
+}
+
 pub fn log_line(format: OutputFormat, line: &str) -> io::Result<()> {
     match format {
         OutputFormat::Json => {

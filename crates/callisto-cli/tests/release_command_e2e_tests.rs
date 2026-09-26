@@ -162,7 +162,7 @@ fn dirty_worktree_blocks_release_before_any_effect() {
     assert!(preview.status.success(), "{}", stderr(&preview));
     let text = String::from_utf8_lossy(&preview.stdout);
     assert!(
-        text.contains("cargo/core-crate 0.2.0") && text.contains("publish to cratesIo"),
+        text.contains("cargo/core-crate 0.2.0") && text.contains("publish to crates.io"),
         "{text}"
     );
     assert_no_effects(&rig, root);

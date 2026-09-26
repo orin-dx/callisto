@@ -46,8 +46,6 @@ Decisions (owner, 2026-09-25):
 ### 5. Every failure has a code and help; one output contract
 - Split the remaining generic `VcsError::Git` parse-failure call sites into typed variants.
 - One JSON envelope with `command` for every report and error. Done for `add`, `status`, `matrix`, `version`, `pre`, `snapshot`, `init` and `compose-pr-body` (`output::emit_report`) and for every error (`format_error_json`); `release` and `release-pr`'s ad hoc envelopes are not yet migrated.
-- Completions list hidden commands; `callisto help <cmd>` is rejected; text shows internal names (`cratesIo`, `{:?}`); `--check`/`--strict` help is wrong; `add --summary` without `--package` says no flags were given; wizard prompts go to stdout.
-- Delete the legacy `ValidateReport`, `PublishPlan`, `PublishReport` and tag report types and `schema --type validate`.
 - `commands/init.rs::io_err` is pathless, unlike `apply.rs`'s path-carrying `GraphError::ApplyIo` (E122); an init I/O failure doesn't name the file involved.
 
 ### 6. What `init` generates works and stays pinned

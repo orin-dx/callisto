@@ -194,10 +194,14 @@ fn parse_release_selection(raw: &str) -> Result<ReleasePackageId, CliError> {
 fn describe_operation(operation: &callisto_model::ReleaseOperation) -> String {
     match &operation.id().role {
         callisto_model::ReleaseOperationRole::RegistryPublish { registry } => {
-            format!("publish to {}", registry.registry_key().as_str())
+            format!("publish to {}", registry.registry_key().display_name())
         }
         callisto_model::ReleaseOperationRole::PlatformPublish { registry, platform } => {
-            format!("publish {} to {}", platform.name(), registry.registry_key().as_str())
+            format!(
+                "publish {} to {}",
+                platform.name(),
+                registry.registry_key().display_name()
+            )
         }
         callisto_model::ReleaseOperationRole::Tag => "create git tag".to_owned(),
         callisto_model::ReleaseOperationRole::ForgeRelease => "create GitHub release draft".to_owned(),
@@ -700,6 +704,16 @@ mod tests {
             );
         }
         assert_eq!(text.matches("    - ").count(), intent.operations.len(), "{text}");
+    }
+
+    /// A registry publish step names the registry's display name
+    /// (`crates.io`), not its internal wire key (`cratesIo`).
+    #[test]
+    fn plan_text_names_registries_by_display_name_not_wire_key() {
+        let intent = sample();
+        let text = render_release_plan(&intent, false);
+        assert!(text.contains("publish to crates.io"), "{text}");
+        assert!(!text.contains("cratesIo"), "{text}");
     }
 
     /// `use_color: true` renders the release plan as a box-drawing table.

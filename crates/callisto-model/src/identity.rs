@@ -285,6 +285,19 @@ impl RegistryKey {
     pub const PYPI: &'static str = "pypi";
     /// Well-known registry key for NuGet.
     pub const NUGET: &'static str = "nuget";
+
+    /// User-facing registry name for help text and rendered output --
+    /// distinct from `as_str()`'s wire key (e.g. `"cratesIo"`), which stays
+    /// internal.
+    pub fn display_name(&self) -> &str {
+        match self.as_str() {
+            Self::CRATES_IO => "crates.io",
+            Self::NPM => "npm",
+            Self::PYPI => "PyPI",
+            Self::NUGET => "NuGet",
+            other => other,
+        }
+    }
 }
 
 /// A 40-character hex Git commit SHA.
