@@ -558,9 +558,7 @@ pub fn apply_version_plan<R: CommandRunner>(
     Ok(outcome)
 }
 
-/// Runs one lockfile's refresh command, converting a subprocess exec failure
-/// into `GraphError::Command` and a non-zero exit into `GraphError::LockfileRefreshFailed`
-/// naming the lockfile and the command that failed.
+/// Maps a non-zero exit to `GraphError::LockfileRefreshFailed`, an exec failure to `GraphError::Command`.
 fn run_lockfile_refresh<R: CommandRunner>(
     runner: &R,
     root: &Path,

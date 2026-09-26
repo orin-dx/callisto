@@ -188,7 +188,7 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`
 | E205 | Fixed group aligns on a tagged member that has no base version in the workspace | Ensure the tagged group member is still a live workspace package, or re-tag against a current member. |
 | E206 | Fixed group has no live members with a base version to align on | Ensure at least one member of the fixed group resolves to a workspace package. |
 | E207 | Computed bump for a package would move its version backwards | This indicates a corrupted alignment base (bad tag, pre.json, or group config); verify release state before retrying. |
-| E208 | A lockfile refresh command exited non-zero while applying the version plan | Run the named command in the workspace root to see the full failure, fix it, then re-run `callisto version`. |
+| E208 | A lockfile refresh command exited non-zero while applying the version plan | Run the named command to see the full failure, fix it, then re-run `callisto version`. |
 
 ## callisto-cli (`callisto::*` namespace)
 

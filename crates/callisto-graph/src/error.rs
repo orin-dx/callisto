@@ -709,7 +709,7 @@ pub enum GraphError {
     )]
     #[diagnostic(
         code(E208),
-        help("Run `{refresh_command}` in the workspace root to see the full failure, fix it, then re-run `callisto version`.")
+        help("Run `{refresh_command}` to see the full failure, fix it, then re-run `callisto version`.")
     )]
     LockfileRefreshFailed {
         filename: PathBuf,
