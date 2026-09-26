@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.11.3-nightly.202609240627.b2779c9eb",
+  "checkpoint_id": "01M3DP4F19CJM9FJQDAS83WFKG",
+  "strategy": "manual-commit",
+  "branch": "docs/crate-consolidation-plan",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 4218,
+    "cache_read_tokens": 2382146,
+    "output_tokens": 3563,
+    "api_call_count": 7,
+    "subagent_tokens": {
+      "input_tokens": 4620,
+      "cache_creation_tokens": 5619052,
+      "cache_read_tokens": 216173291,
+      "output_tokens": 137546,
+      "api_call_count": 1510
+    }
+  }
+}
