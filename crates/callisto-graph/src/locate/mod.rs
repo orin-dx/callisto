@@ -51,11 +51,7 @@ pub enum LocateError {
     #[error("failed to parse manifest `{}`: {message}", .path.display())]
     #[diagnostic(
         code(E209),
-        help(
-            "Fix the manifest's syntax so it can be parsed. This path is a workspace member (by \
-              explicit membership or by sharing a directory with one), so a discovery-breaking \
-              manifest here cannot be silently skipped."
-        )
+        help("Fix the manifest's syntax; a workspace member's manifest is never skipped.")
     )]
     ManifestParseError { path: PathBuf, message: String },
 
