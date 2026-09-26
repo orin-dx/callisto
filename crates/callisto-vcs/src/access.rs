@@ -149,6 +149,13 @@ impl<'r> GitAccess<'r> {
         self.resolved_toplevel(&format!("in `{}`", self.root.display()))
     }
 
+    /// The repository's toplevel directory, via `git rev-parse --show-toplevel` -- honors
+    /// `GIT_DIR`/`GIT_WORK_TREE`/`GIT_CEILING_DIRECTORIES` the way `git` itself does, unlike a
+    /// hand-rolled walk up the filesystem looking for a `.git` entry.
+    pub fn toplevel(&self) -> Result<PathBuf, VcsError> {
+        self.repo_root()
+    }
+
     /// The `git rev-parse --show-toplevel` resolution shared by every caller; `context` names the caller on failure.
     fn resolved_toplevel(&self, context: &str) -> Result<PathBuf, VcsError> {
         let output = self.runner.run("git", &["rev-parse", "--show-toplevel"], &self.root)?;

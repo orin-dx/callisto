@@ -182,6 +182,10 @@ pub enum DiagnosticCode {
     /// `callisto init` wrote a release workflow: a merge to the named default branch
     /// publishes, so that branch should require pull requests and reviews.
     WorkflowMergePublishes,
+    /// A `[[package]]` config rule matched no packages after the workspace walk (e.g. an
+    /// ecosystem-prefixed pattern for a package that doesn't exist in that ecosystem) --
+    /// advisory rather than a hard error, mirroring `PackageSetMatchedNothing`.
+    PackageRuleMatchedNothing,
 }
 
 #[cfg(test)]
@@ -230,6 +234,21 @@ mod tests {
         assert_eq!(
             json, r#""unrecognised-platform-triple""#,
             "DiagnosticCode::UnrecognisedPlatformTriple must serialize to \"unrecognised-platform-triple\"",
+        );
+        let roundtrip: DiagnosticCode = serde_json::from_str(&json).unwrap();
+        assert_eq!(roundtrip, code, "deserialized value must equal the original variant",);
+    }
+
+    /// DiagnosticCode::PackageRuleMatchedNothing must serialize to the
+    /// kebab-case string "package-rule-matched-nothing" and deserialize back
+    /// to the same variant.
+    #[test]
+    fn package_rule_matched_nothing_serializes_to_kebab_case() {
+        let code = DiagnosticCode::PackageRuleMatchedNothing;
+        let json = serde_json::to_string(&code).unwrap();
+        assert_eq!(
+            json, r#""package-rule-matched-nothing""#,
+            "DiagnosticCode::PackageRuleMatchedNothing must serialize to \"package-rule-matched-nothing\"",
         );
         let roundtrip: DiagnosticCode = serde_json::from_str(&json).unwrap();
         assert_eq!(roundtrip, code, "deserialized value must equal the original variant",);

@@ -132,8 +132,8 @@ mod tests {
     #[test]
     fn handle_text_format_succeeds_on_empty_workspace() {
         let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::create_dir(tmp.path().join(".git")).unwrap();
         let root = tmp.path();
+        callisto_fixtures::git::init_repo(root);
         std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
         std::fs::write(root.join("callisto.toml"), "").unwrap();
 
