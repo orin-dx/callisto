@@ -1,5 +1,17 @@
 # callisto-graph
 
+## 0.9.0
+
+- **PyPI publish stops forcing `--skip-existing` against private indexes**
+  
+  Twine 5+ refuses to run at all with that flag against any repository other than the public warehouses (`upload.pypi.org` / `test.pypi.org`), so it's now included only when the target is one of those.
+- **`release-trigger = "changeset"` skips commit inference**
+  
+  Only packages with `release-trigger = "auto"` get commit-inferred bumps.
+- Resolve the PyPI publish interpreter to python3, falling back to python, instead of hardcoding python.
+- Error E172 now says to rerun the release instead of pointing at the removed `release reconcile` command; E197 no longer claims four required artifact targets. Removed the never-emitted `ConfigError` variants `PackageSetMatchedNothing`, `PackageMatchedNothing` and `OverlappingPackageSets`.
+- Released together with the `workspace` fixed group.
+
 ## 0.8.0
 
 - Released together with the `workspace` fixed group.
