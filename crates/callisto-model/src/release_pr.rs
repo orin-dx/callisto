@@ -659,6 +659,67 @@ impl<'de> Deserialize<'de> for ReleasePrCommitPlanV1 {
     }
 }
 
+/// `callisto release-pr verify --format json` report: no persisted decision/snapshot
+/// payload, only the pass/fail this subcommand exists to report.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReleasePrVerifyReport {
+    pub ok: bool,
+}
+
+impl crate::report::Report for ReleasePrVerifyReport {
+    const COMMAND: &'static str = "release-pr verify";
+
+    fn schema_version(&self) -> u32 {
+        u32::from(ReleasePrDecisionV2::SCHEMA_VERSION)
+    }
+
+    fn diagnostics(&self) -> &[crate::Diagnostic] {
+        &[]
+    }
+}
+
+/// `callisto release-pr decide --format json` report: flattens [`ReleasePrDecisionV2`].
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReleasePrDecideReport {
+    #[serde(flatten)]
+    pub decision: ReleasePrDecisionV2,
+}
+
+impl crate::report::Report for ReleasePrDecideReport {
+    const COMMAND: &'static str = "release-pr decide";
+
+    fn schema_version(&self) -> u32 {
+        u32::from(ReleasePrDecisionV2::SCHEMA_VERSION)
+    }
+
+    fn diagnostics(&self) -> &[crate::Diagnostic] {
+        &[]
+    }
+}
+
+/// `callisto release-pr commit-plan --format json` report (no `--out`): flattens
+/// [`ReleasePrCommitPlanV1`].
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReleasePrCommitPlanReport {
+    #[serde(flatten)]
+    pub plan: ReleasePrCommitPlanV1,
+}
+
+impl crate::report::Report for ReleasePrCommitPlanReport {
+    const COMMAND: &'static str = "release-pr commit-plan";
+
+    fn schema_version(&self) -> u32 {
+        u32::from(ReleasePrCommitPlanV1::SCHEMA_VERSION)
+    }
+
+    fn diagnostics(&self) -> &[crate::Diagnostic] {
+        &[]
+    }
+}
+
 fn validate_commit_plan_path(path: &str) -> Result<(), ReleasePrDecisionError> {
     let forbidden = path.is_empty()
         || path.starts_with('/')

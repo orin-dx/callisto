@@ -217,9 +217,9 @@ impl<'r> GitAccess<'r> {
                 "could not resolve a commit for release trust".to_string(),
             ));
         }
-        let head = CommitSha::parse(head.stdout_trimmed()).map_err(|error| {
-            drop(error);
-            VcsError::Git("Git returned an invalid full HEAD commit for release trust".to_string())
+        let head = CommitSha::parse(head.stdout_trimmed()).map_err(|error| VcsError::InvalidCommitSha {
+            context: "for release trust".to_string(),
+            message: error.to_string(),
         })?;
 
         let symbolic_head = self
@@ -271,31 +271,34 @@ fn parse_raw_diff_z(raw: &str) -> Result<Vec<RawDiffEntry>, VcsError> {
     let mut tokens = raw.split('\0').filter(|token| !token.is_empty());
     while let Some(meta) = tokens.next() {
         let Some(meta) = meta.strip_prefix(':') else {
-            return Err(VcsError::Git(format!(
-                "unexpected token in `git diff --raw -z` output: {meta:?}"
-            )));
+            return Err(VcsError::MalformedDiffOutput {
+                detail: format!("unexpected token, expected a metadata line starting with `:`: {meta:?}"),
+            });
         };
-        let path = tokens.next().ok_or_else(|| {
-            VcsError::Git("truncated `git diff --raw -z` output: missing a path after its metadata line".to_string())
+        let path = tokens.next().ok_or_else(|| VcsError::MalformedDiffOutput {
+            detail: "truncated output: missing a path after its metadata line".to_string(),
         })?;
         let fields: Vec<&str> = meta.split(' ').collect();
         let [_old_mode, new_mode, _old_sha, new_sha, status_field] = fields.as_slice() else {
-            return Err(VcsError::Git(format!(
-                "malformed `git diff --raw -z` metadata line: {meta:?}"
-            )));
+            return Err(VcsError::MalformedDiffOutput {
+                detail: format!("malformed metadata line: {meta:?}"),
+            });
         };
         let status = status_field
             .chars()
             .next()
-            .ok_or_else(|| VcsError::Git(format!("empty status in `git diff --raw -z` metadata line: {meta:?}")))?;
-        let new_mode =
-            if status == 'D' {
-                None
-            } else {
-                Some(u32::from_str_radix(new_mode, 8).map_err(|error| {
-                    VcsError::Git(format!("invalid Git mode `{new_mode}` in raw diff output: {error}"))
-                })?)
-            };
+            .ok_or_else(|| VcsError::MalformedDiffOutput {
+                detail: format!("empty status in metadata line: {meta:?}"),
+            })?;
+        let new_mode = if status == 'D' {
+            None
+        } else {
+            Some(
+                u32::from_str_radix(new_mode, 8).map_err(|error| VcsError::MalformedDiffOutput {
+                    detail: format!("invalid Git mode `{new_mode}`: {error}"),
+                })?,
+            )
+        };
         entries.push(RawDiffEntry {
             path: path.to_string(),
             new_mode,
@@ -325,13 +328,12 @@ fn staged_change_kind(status: char) -> StagedChangeKindV1 {
 
 fn canonical_git_root(raw_root: &str) -> Result<PathBuf, VcsError> {
     if raw_root.is_empty() {
-        return Err(VcsError::Git(
-            "Git returned an empty repository root for release trust".to_string(),
-        ));
+        return Err(VcsError::InvalidRepositoryRoot {
+            detail: "Git returned an empty repository root".to_string(),
+        });
     }
-    dunce::canonicalize(raw_root).map_err(|error| {
-        drop(error);
-        VcsError::Git("could not canonicalize the Git repository root for release trust".to_string())
+    dunce::canonicalize(raw_root).map_err(|error| VcsError::InvalidRepositoryRoot {
+        detail: format!("could not canonicalize `{raw_root}`: {error}"),
     })
 }
 
@@ -357,7 +359,10 @@ impl GitAccess<'_> {
             )));
         }
         let sha_str = output.stdout_trimmed();
-        CommitSha::parse(sha_str).map_err(|e| VcsError::Git(format!("could not parse HEAD SHA `{sha_str}`: {e}")))
+        CommitSha::parse(sha_str).map_err(|e| VcsError::InvalidCommitSha {
+            context: format!("in `git rev-parse HEAD` output `{sha_str}`"),
+            message: e.to_string(),
+        })
     }
 
     /// Lists tag names, optionally filtered by `glob` (a [`globset::Glob`]
@@ -638,18 +643,17 @@ fn parse_git_log_output(stdout: &str, cwd: &Path) -> Result<Vec<GitCommit>, VcsE
         }
 
         let Some((sha_str, message)) = record.split_once(FIELD_SEP) else {
-            return Err(VcsError::Git(format!(
-                "could not parse `git log` output in `{}` into commit records: expected a \
-                 `<sha>{FIELD_SEP:?}<message>` record, got: {record:?}",
-                cwd.display()
-            )));
+            return Err(VcsError::MalformedLogOutput {
+                detail: format!(
+                    "in `{}`: expected a `<sha>{FIELD_SEP:?}<message>` record, got: {record:?}",
+                    cwd.display()
+                ),
+            });
         };
 
-        let sha = CommitSha::parse(sha_str).map_err(|e| {
-            VcsError::Git(format!(
-                "could not parse `git log` output in `{}`: invalid commit SHA `{sha_str}`: {e}",
-                cwd.display()
-            ))
+        let sha = CommitSha::parse(sha_str).map_err(|e| VcsError::InvalidCommitSha {
+            context: format!("in `git log` output in `{}`", cwd.display()),
+            message: e.to_string(),
         })?;
 
         let message = message.replace("\r\n", "\n");
@@ -909,6 +913,55 @@ mod tests {
         assert_eq!(
             git.resolve_commit("v1.0.0").unwrap(),
             Some(CommitSha::parse(&sha).unwrap())
+        );
+    }
+
+    /// An empty `git rev-parse --show-toplevel` result is a distinct, typed
+    /// [`VcsError::InvalidRepositoryRoot`] (E303), not the generic `VcsError::Git`.
+    #[test]
+    fn canonical_git_root_rejects_an_empty_root() {
+        let err = canonical_git_root("").expect_err("empty root must fail");
+        assert!(matches!(err, VcsError::InvalidRepositoryRoot { .. }), "got {err:?}");
+        assert_eq!(
+            miette::Diagnostic::code(&err).map(|c| c.to_string()),
+            Some("E303".to_string())
+        );
+    }
+
+    /// `git rev-parse HEAD` returning a value that is not a valid commit SHA is a
+    /// distinct, typed [`VcsError::InvalidCommitSha`] (E302), not the generic `VcsError::Git`.
+    #[test]
+    fn head_sha_rejects_a_malformed_sha() {
+        let runner = FakeRunner {
+            calls: Mutex::new(Vec::new()),
+            response: Box::new(|_args| Ok(ok("not-a-sha\n"))),
+        };
+        let git = GitAccess::new(PathBuf::from("."), &runner);
+        let err = git.head_sha().expect_err("malformed SHA must fail");
+        assert!(matches!(err, VcsError::InvalidCommitSha { .. }), "got {err:?}");
+        assert_eq!(
+            miette::Diagnostic::code(&err).map(|c| c.to_string()),
+            Some("E302".to_string())
+        );
+    }
+
+    /// `git log`'s custom `--format=` output missing the `FIELD_SEP`-delimited message is a
+    /// distinct, typed [`VcsError::MalformedLogOutput`] (E301).
+    #[test]
+    fn commits_since_rejects_a_record_with_no_field_separator() {
+        let stdout = format!("{RECORD_SEP}{}", "a".repeat(40));
+        let runner = FakeRunner {
+            calls: Mutex::new(Vec::new()),
+            response: Box::new(move |_args| Ok(ok(stdout.clone()))),
+        };
+        let git = GitAccess::new(PathBuf::from("."), &runner);
+        let err = git
+            .commits_since(None, &[])
+            .expect_err("missing field separator must fail");
+        assert!(matches!(err, VcsError::MalformedLogOutput { .. }), "got {err:?}");
+        assert_eq!(
+            miette::Diagnostic::code(&err).map(|c| c.to_string()),
+            Some("E301".to_string())
         );
     }
 
@@ -1246,15 +1299,30 @@ mod tests {
 
     #[test]
     fn parse_raw_diff_z_rejects_truncated_or_malformed_input() {
-        assert!(
-            parse_raw_diff_z(":100644 100644 aaa bbb M\0").is_err(),
-            "metadata with no following path"
+        for (raw, reason) in [
+            (":100644 100644 aaa bbb M\0", "metadata with no following path"),
+            ("not-a-metadata-line\0path\0", "missing leading colon"),
+            (":bad M\0path\0", "too few metadata fields"),
+        ] {
+            let err = parse_raw_diff_z(raw).err();
+            assert!(
+                matches!(err, Some(VcsError::MalformedDiffOutput { .. })),
+                "{reason}: got {err:?}"
+            );
+        }
+    }
+
+    /// An unparseable Git mode octal in `--raw -z` output is a distinct, typed
+    /// [`VcsError::MalformedDiffOutput`] (E300), not the generic `VcsError::Git`.
+    #[test]
+    fn parse_raw_diff_z_rejects_invalid_mode() {
+        let raw = ":000000 zzzzzz 0000000000000000000000000000000000000000 1111111111111111111111111111111111111111 A\0VERSION\0";
+        let err = parse_raw_diff_z(raw).err();
+        assert!(matches!(err, Some(VcsError::MalformedDiffOutput { .. })), "got {err:?}");
+        assert_eq!(
+            err.and_then(|e| miette::Diagnostic::code(&e).map(|c| c.to_string())),
+            Some("E300".to_string())
         );
-        assert!(
-            parse_raw_diff_z("not-a-metadata-line\0path\0").is_err(),
-            "missing leading colon"
-        );
-        assert!(parse_raw_diff_z(":bad M\0path\0").is_err(), "too few metadata fields");
     }
 
     #[test]

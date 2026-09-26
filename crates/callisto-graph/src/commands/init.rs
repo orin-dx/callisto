@@ -133,11 +133,11 @@ pub struct InitAnswers {
     pub binaries: Option<BinaryRelease>,
 }
 
-fn io_err(error: std::io::Error) -> GraphError {
-    GraphError::Command(callisto_model::CommandError::Io {
-        program: "fs".to_string(),
+fn io_err(path: &Path) -> impl Fn(std::io::Error) -> GraphError + '_ {
+    move |error| GraphError::InitIo {
+        path: path.to_path_buf(),
         message: error.to_string(),
-    })
+    }
 }
 
 fn ensure_uninitialized(root: &Path) -> Result<(), GraphError> {
@@ -500,7 +500,7 @@ pub fn write(root: &Path, config: &str, permit: &ApplyPermit) -> Result<InitRepo
     ensure_uninitialized(root)?;
     let config_path = root.join("callisto.toml");
     let files = init_files(root, false);
-    callisto_model::atomic::atomic_write(&config_path, config, permit).map_err(io_err)?;
+    callisto_model::atomic::atomic_write(&config_path, config, permit).map_err(io_err(&config_path))?;
     write_changeset_readme(root, permit)?;
     Ok(InitReport {
         schema_version: SCHEMA_VERSION,
@@ -522,8 +522,9 @@ pub fn write_changeset_readme(root: &Path, permit: &ApplyPermit) -> Result<(), G
     if readme.exists() {
         return Ok(());
     }
-    std::fs::create_dir_all(root.join(".changeset")).map_err(io_err)?;
-    callisto_model::atomic::atomic_write(&readme, CHANGESET_README, permit).map_err(io_err)
+    let changeset_dir = root.join(".changeset");
+    std::fs::create_dir_all(&changeset_dir).map_err(io_err(&changeset_dir))?;
+    callisto_model::atomic::atomic_write(&readme, CHANGESET_README, permit).map_err(io_err(&readme))
 }
 
 /// `@changesets/cli` `config.json` keys callisto never reads, and the callisto.toml construct
@@ -1116,7 +1117,8 @@ pub fn ensure_workflow_absent(root: &Path) -> Result<(), GraphError> {
 /// A workflow file already exists at [`workflow_path`], or the write fails.
 pub fn write_workflow(root: &Path, content: &str, permit: &ApplyPermit) -> Result<(), GraphError> {
     ensure_workflow_absent(root)?;
-    callisto_model::atomic::atomic_write(&workflow_path(root), content, permit).map_err(io_err)
+    let path = workflow_path(root);
+    callisto_model::atomic::atomic_write(&path, content, permit).map_err(io_err(&path))
 }
 
 #[cfg(test)]
@@ -1266,6 +1268,30 @@ mod tests {
             write(dir.path(), empty_config(), &permit).unwrap_err(),
             GraphError::InitAlreadyInitialized { .. }
         ));
+    }
+
+    /// A write failure during `init` names the exact file it failed to write
+    /// (`GraphError::InitIo`, E278), mirroring `apply.rs`'s path-carrying
+    /// `GraphError::ApplyIo` (E122) rather than a pathless generic error.
+    #[test]
+    fn write_changeset_readme_names_the_failing_path() {
+        let dir = tempfile::tempdir().unwrap();
+        // A file (not a directory) at `.changeset` makes `create_dir_all` fail.
+        std::fs::write(dir.path().join(".changeset"), "not a directory").unwrap();
+        let permit = ApplyPermit::force_for_tests();
+
+        let error = write_changeset_readme(dir.path(), &permit).unwrap_err();
+
+        let expected_path = dir.path().join(".changeset");
+        assert!(
+            matches!(&error, GraphError::InitIo { path, .. } if path == &expected_path),
+            "expected InitIo naming {}, got {error:?}",
+            expected_path.display()
+        );
+        assert_eq!(
+            miette::Diagnostic::code(&error).map(|c| c.to_string()),
+            Some("E278".to_string())
+        );
     }
 
     #[test]

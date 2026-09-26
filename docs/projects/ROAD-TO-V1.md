@@ -37,11 +37,6 @@ Decisions (owner, 2026-09-25):
 ### 1. A release is complete and consistent
 - Cargo real-registry e2e next to the npm (Verdaccio) and PyPI (pypiserver) ones. There is no drop-in local cargo registry; pick one before writing it.
 
-### 5. Every failure has a code and help; one output contract
-- Split the remaining generic `VcsError::Git` parse-failure call sites into typed variants.
-- One JSON envelope with `command` for every report and error. Done for `add`, `status`, `matrix`, `version`, `pre`, `snapshot`, `init` and `compose-pr-body` (`output::emit_report`) and for every error (`format_error_json`); `release` and `release-pr`'s ad hoc envelopes are not yet migrated.
-- `commands/init.rs::io_err` is pathless, unlike `apply.rs`'s path-carrying `GraphError::ApplyIo` (E122); an init I/O failure doesn't name the file involved.
-
 ### 7. Retired crates
 - Publish a final release of `callisto-format`, `callisto-vcs`, `callisto-conventional` and `callisto-changelog` whose README names the new home (`callisto-model` or `callisto-graph`).
 

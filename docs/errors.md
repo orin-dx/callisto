@@ -111,6 +111,10 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E265 | Release trust requires a SHA-1 Git object format; found `<found>` | Run release trust checks against a repository using the SHA-1 object format. |
 | E266 | Release trust requires a complete, non-shallow Git repository | Fetch full history with `git fetch --unshallow` before retrying. |
 | E267 | Release trust requires a clean worktree; found `<path>` | Commit, stash, or remove the listed tracked or untracked change before retrying. |
+| E300 | Could not parse `git diff --raw -z` output: <detail> | Retry; a `git diff` invocation returning output in this shape suggests a Git version mismatch. |
+| E301 | Could not parse `git log` output into commit records: <detail> | Retry; a `git log` invocation returning output in this shape suggests a Git version mismatch. |
+| E302 | Git returned an invalid commit SHA <context>: <message> | Retry; Git returning a commit reference in this shape suggests a Git version mismatch. |
+| E303 | Could not resolve the Git repository root: <detail> | Ensure the repository's toplevel directory exists and is readable. |
 
 ## callisto-graph — changelog
 
@@ -212,6 +216,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E189 | `--product-package` value is invalid | Name one of the binary-producing packages (candidates are listed in the error). |
 | E190 | `callisto init` target already exists; workspace is already initialized | Edit callisto.toml directly; `callisto init` only scaffolds a workspace without one. |
 | E191 | Workspace root is not a Git repository | Run `git init` in the workspace root, then re-run `callisto init`. |
+| E278 | `callisto init` failed to write a file it needed to write | Check file permissions and that the path still exists, then re-run `callisto init`. |
 | E193 | Package matches more than one tag naming convention | Write a [[package]] entry for it with `tag-template` set to the current convention and `previous-tag-templates` listing the older ones. |
 | E194 | More than one package shares a `v{version}` tag | Give each package its own [[package]] `tag-template` (and `previous-tag-templates` for the shared `v{version}` tags). |
 | E195 | `--forge-repository` value is invalid | Use the GitHub `owner/repo` the product releases to. |

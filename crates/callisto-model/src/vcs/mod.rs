@@ -57,6 +57,34 @@ pub enum VcsError {
     )]
     StagedContentMismatch { path: String, expected_sha: String },
 
+    #[error("could not parse `git diff --raw -z` output: {detail}")]
+    #[diagnostic(
+        code(E300),
+        help("Retry; a `git diff` invocation returning output in this shape suggests a Git version mismatch.")
+    )]
+    MalformedDiffOutput { detail: String },
+
+    #[error("could not parse `git log` output into commit records: {detail}")]
+    #[diagnostic(
+        code(E301),
+        help("Retry; a `git log` invocation returning output in this shape suggests a Git version mismatch.")
+    )]
+    MalformedLogOutput { detail: String },
+
+    #[error("Git returned an invalid commit SHA {context}: {message}")]
+    #[diagnostic(
+        code(E302),
+        help("Retry; Git returning a commit reference in this shape suggests a Git version mismatch.")
+    )]
+    InvalidCommitSha { context: String, message: String },
+
+    #[error("could not resolve the Git repository root: {detail}")]
+    #[diagnostic(
+        code(E303),
+        help("Ensure the repository's toplevel directory exists and is readable.")
+    )]
+    InvalidRepositoryRoot { detail: String },
+
     /// The `git` binary itself could not be run. `transparent` so callers
     /// can match the underlying [`CommandError`] through it.
     #[error(transparent)]

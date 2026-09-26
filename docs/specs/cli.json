@@ -275,6 +275,11 @@
       "criterion": "When `.changeset/config.json` exists and declares `fixed`, `linked`, `ignore`, `access`, `baseBranch`, or `updateInternalDependencies` -- none of which callisto translates -- init emits a `changesets-config-key-dropped` warning diagnostic per such key present, naming `[[fixed-group]]` as `fixed`'s callisto.toml equivalent and stating no equivalent exists for the others."
     },
     {
+      "id": "CLI-INIT-15",
+      "criterion": "When init fails to write callisto.toml, .changeset/README.md, or a generated workflow file, it exits 1 with E278 naming the exact path it failed to write.",
+      "is_error_case": true
+    },
+    {
       "id": "CLI-WF-01",
       "criterion": "A workflow is written to .github/workflows/callisto-release.yml only when --workflow is given or the interactive workflow question is answered yes; after writing, init prints that merging to the default branch publishes and advises requiring pull requests and reviews on it."
     },
