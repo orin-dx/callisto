@@ -40,12 +40,8 @@ Decisions (owner, 2026-09-25):
 ### 2a. Versions are computed correctly
 - `resolve()` never inserts explicit provenance for `FIXED_GROUP`, `LINKED_GROUP`, `TAG_TEMPLATE` or `PRE_MAJOR_INFERENCE`, so diagnostics governed by those keys always render "(default)" even when explicitly configured (`crates/callisto-graph/src/config/resolve.rs`).
 
-### 2b. The workspace resolves natively after `version` and `snapshot`
-- Invariant: after `version` or `snapshot`, each ecosystem's locked install succeeds (`cargo metadata --locked`, `npm ci`, `pnpm install --frozen-lockfile`, `uv lock --check`).
-- Raise the floor of co-released dependents (0.7.2 shipped requiring `callisto-graph = "0.7.0"`).
-- Refresh lockfiles by default; add npm, pnpm, yarn, bun and pdm refreshers; a failed refresh is a coded error.
-- `snapshot` rewrites only specs a patch bump would break, so `cargo metadata` fails after it. Rewrite every spec that does not cover the snapshot version, in the dependent's ecosystem.
-- Test: dual-manifest apply writes both manifests.
+### 2b. `snapshot` resolves natively for every ecosystem
+- `plan_snapshot` (`crates/callisto-graph/src/commands/snapshot.rs`) parses the snapshot tag as SemVer for every package, so a workspace with a Pypi package fails to snapshot: the tag is not a valid PEP 440 version. `cargo metadata --locked`, `npm ci` and `pnpm install --frozen-lockfile` are covered end-to-end (`crates/callisto-cli/tests/native_resolution_e2e_tests.rs`); `uv lock --check` is covered only after `version`, not after `snapshot`.
 
 ### 3. Every package resolves by any of its names
 - A qualified selector matches any ecosystem (`--package cargo/foo` selects npm-only `foo`); prefixed `[[package]]` rules ignore ecosystems (a resolve.rs test locks this in). One `IdentityIndex::resolve(selector)`: qualified is an exact (ecosystem, name) lookup, bare searches every name; used by changesets, `add`, `--package`, `[[package]]`, `[[fixed-group]]`, product-package, artifacts, matrix.

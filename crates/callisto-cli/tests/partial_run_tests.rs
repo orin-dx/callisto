@@ -31,6 +31,7 @@ fn test_version_twice_without_commit_is_refused_as_partial_run() {
     commands::version::handle(
         VersionArgs {
             refresh_lockfiles: false,
+            no_refresh_lockfiles: true,
             strict: false,
             allow_empty_changesets: false,
             emit_decision: None,
@@ -42,6 +43,7 @@ fn test_version_twice_without_commit_is_refused_as_partial_run() {
     let second = commands::version::handle(
         VersionArgs {
             refresh_lockfiles: false,
+            no_refresh_lockfiles: true,
             strict: false,
             allow_empty_changesets: false,
             emit_decision: None,

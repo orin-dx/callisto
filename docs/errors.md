@@ -2,7 +2,7 @@
 
 Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`. A `callisto-model` test fails when a numeric code is missing here.
 
-185 codes exist across two namespaces: 152 numeric `E###` codes (`callisto-model`, `callisto-format`, `callisto-vcs`, `callisto-changelog`, `callisto-graph`) and 33 `callisto::snake_case` codes (`callisto-cli`'s own top-level errors — the ones the CLI surface actually raises). `callisto-conventional` errors carry no diagnostic code at all. `callisto-cli`'s `CliError` also has 9 variants that wrap another crate's error transparently (`#[diagnostic(transparent)]`, no `code(...)` of its own) — those are intentionally out of scope here since they have no code to document; the code you see for them at runtime is whichever code above their wrapped error already carries.
+186 codes exist across two namespaces: 153 numeric `E###` codes (`callisto-model`, `callisto-format`, `callisto-vcs`, `callisto-changelog`, `callisto-graph`) and 33 `callisto::snake_case` codes (`callisto-cli`'s own top-level errors — the ones the CLI surface actually raises). `callisto-conventional` errors carry no diagnostic code at all. `callisto-cli`'s `CliError` also has 9 variants that wrap another crate's error transparently (`#[diagnostic(transparent)]`, no `code(...)` of its own) — those are intentionally out of scope here since they have no code to document; the code you see for them at runtime is whichever code above their wrapped error already carries.
 
 "Fix" is the code's `help(...)` text verbatim. "—" means the variant has no help text in the source.
 
@@ -188,6 +188,7 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`
 | E205 | Fixed group aligns on a tagged member that has no base version in the workspace | Ensure the tagged group member is still a live workspace package, or re-tag against a current member. |
 | E206 | Fixed group has no live members with a base version to align on | Ensure at least one member of the fixed group resolves to a workspace package. |
 | E207 | Computed bump for a package would move its version backwards | This indicates a corrupted alignment base (bad tag, pre.json, or group config); verify release state before retrying. |
+| E208 | A lockfile refresh command exited non-zero while applying the version plan | Run the named command to see the full failure, fix it, then re-run `callisto version`. |
 
 ## callisto-cli (`callisto::*` namespace)
 
@@ -227,4 +228,4 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`
 | `callisto::init_workflow_flags_conflict` | `--workflow` and `--no-workflow` are mutually exclusive | pass only one of --workflow or --no-workflow |
 | `callisto::error` | Fallback/untyped error; message is whatever string was wrapped | — |
 
-185 codes total: 152 numeric (45 callisto-model, 18 callisto-format, 4 callisto-vcs, 4 callisto-changelog, 81 callisto-graph: 5 config + 76 graph) + 33 `callisto::*` in callisto-cli.
+186 codes total: 153 numeric (45 callisto-model, 18 callisto-format, 4 callisto-vcs, 4 callisto-changelog, 82 callisto-graph: 5 config + 77 graph) + 33 `callisto::*` in callisto-cli.

@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use callisto_manifests::{open, OpenContext, WorkspaceCargoResolver};
-use callisto_model::{ApplyPermit, CommandError, CommandOutput, CommandRunner, LockfileRefreshResult, ManifestRole};
+use callisto_model::{ApplyPermit, CommandError, CommandRunner, LockfileRefreshResult, ManifestRole};
 
 use crate::cascade::DepWriteTarget;
 use crate::error::GraphError;
@@ -12,8 +12,7 @@ use crate::plan::{VersionPlan, VersionWriteTarget};
 /// Options governing how a version plan is applied to the workspace.
 #[derive(Clone, Debug, Default)]
 pub struct ApplyOptions {
-    /// Plumbed from `--refresh-lockfiles` but not yet consulted here;
-    /// `ApplyOutcome::lockfile_refresh_results` is consequently always `None`.
+    /// When true, regenerate each affected ecosystem's lockfile after applying, in transient mode too.
     pub refresh_lockfiles: bool,
     /// When true (snapshot mode), manifest mutations are written to disk
     /// but changelog prepends (step 7), changeset deletions (step 8), and
@@ -24,7 +23,7 @@ pub struct ApplyOptions {
 /// The result of a successful [`apply_version_plan`] call, describing which paths were written and staged.
 #[derive(Clone, Debug, Default)]
 pub struct ApplyOutcome {
-    /// Reserved for lockfile refresh results; currently always `None`.
+    /// One entry per lockfile refreshed by this apply; `None` when refresh was skipped or nothing ran.
     pub lockfile_refresh_results: Option<Vec<LockfileRefreshResult>>,
     /// Paths written and staged via `git add`, relative to the workspace root.
     pub staged: Vec<PathBuf>,
@@ -402,55 +401,86 @@ pub fn apply_version_plan<R: CommandRunner>(
         )
         .collect();
 
-    // Regenerate lockfiles when the caller requested a refresh and mode is not transient.
-    // This must run BEFORE the git-staging loop so the refreshed files are on disk when they
-    // are picked up by the staging pass below.
-    if !opts.transient && opts.refresh_lockfiles {
+    // Must run before the git-staging loop below, so refreshed lockfiles are on disk to be staged.
+    if opts.refresh_lockfiles {
         let mut refresh_results: Vec<LockfileRefreshResult> = Vec::new();
 
         if active_ecosystems.contains(&Ecosystem::Cargo) {
-            let out = runner
-                .run("cargo", &["update", "--workspace"], root)
-                .unwrap_or_else(|e| CommandOutput {
-                    exit_code: None,
-                    stdout: String::new(),
-                    stderr: e.to_string(),
-                });
-            refresh_results.push(LockfileRefreshResult {
-                filename: PathBuf::from("Cargo.lock"),
-                refresh_command: "cargo update --workspace".to_string(),
-                success: out.success(),
-                exit_code: out.exit_code,
-            });
+            refresh_results.push(run_lockfile_refresh(
+                runner,
+                root,
+                "Cargo.lock",
+                "cargo",
+                &["update", "--workspace"],
+            )?);
         }
 
         if active_ecosystems.contains(&Ecosystem::Pypi) {
             if root.join("uv.lock").exists() {
-                let out = runner.run("uv", &["lock"], root).unwrap_or_else(|e| CommandOutput {
-                    exit_code: None,
-                    stdout: String::new(),
-                    stderr: e.to_string(),
-                });
-                refresh_results.push(LockfileRefreshResult {
-                    filename: PathBuf::from("uv.lock"),
-                    refresh_command: "uv lock".to_string(),
-                    success: out.success(),
-                    exit_code: out.exit_code,
-                });
+                refresh_results.push(run_lockfile_refresh(runner, root, "uv.lock", "uv", &["lock"])?);
             } else if root.join("poetry.lock").exists() {
-                let out = runner
-                    .run("poetry", &["lock", "--no-update"], root)
-                    .unwrap_or_else(|e| CommandOutput {
-                        exit_code: None,
-                        stdout: String::new(),
-                        stderr: e.to_string(),
-                    });
-                refresh_results.push(LockfileRefreshResult {
-                    filename: PathBuf::from("poetry.lock"),
-                    refresh_command: "poetry lock --no-update".to_string(),
-                    success: out.success(),
-                    exit_code: out.exit_code,
-                });
+                refresh_results.push(run_lockfile_refresh(
+                    runner,
+                    root,
+                    "poetry.lock",
+                    "poetry",
+                    &["lock", "--no-update"],
+                )?);
+            } else if root.join("pdm.lock").exists() {
+                refresh_results.push(run_lockfile_refresh(
+                    runner,
+                    root,
+                    "pdm.lock",
+                    "pdm",
+                    &["lock", "--update-reuse"],
+                )?);
+            }
+        }
+
+        if active_ecosystems.contains(&Ecosystem::Npm) {
+            if root.join("package-lock.json").exists() {
+                refresh_results.push(run_lockfile_refresh(
+                    runner,
+                    root,
+                    "package-lock.json",
+                    "npm",
+                    &["install", "--package-lock-only", "--ignore-scripts"],
+                )?);
+            }
+            if root.join("pnpm-lock.yaml").exists() {
+                refresh_results.push(run_lockfile_refresh(
+                    runner,
+                    root,
+                    "pnpm-lock.yaml",
+                    "pnpm",
+                    &["install", "--lockfile-only"],
+                )?);
+            }
+            if root.join("yarn.lock").exists() {
+                refresh_results.push(run_lockfile_refresh(
+                    runner,
+                    root,
+                    "yarn.lock",
+                    "yarn",
+                    &["install", "--mode", "update-lockfile"],
+                )?);
+            }
+            if root.join("bun.lock").exists() {
+                refresh_results.push(run_lockfile_refresh(
+                    runner,
+                    root,
+                    "bun.lock",
+                    "bun",
+                    &["install", "--lockfile-only"],
+                )?);
+            } else if root.join("bun.lockb").exists() {
+                refresh_results.push(run_lockfile_refresh(
+                    runner,
+                    root,
+                    "bun.lockb",
+                    "bun",
+                    &["install", "--lockfile-only"],
+                )?);
             }
         }
 
@@ -466,6 +496,7 @@ pub fn apply_version_plan<R: CommandRunner>(
         ("package-lock.json", Ecosystem::Npm),
         ("pnpm-lock.yaml", Ecosystem::Npm),
         ("yarn.lock", Ecosystem::Npm),
+        ("bun.lock", Ecosystem::Npm),
         ("bun.lockb", Ecosystem::Npm),
         ("uv.lock", Ecosystem::Pypi),
         ("poetry.lock", Ecosystem::Pypi),
@@ -521,6 +552,32 @@ pub fn apply_version_plan<R: CommandRunner>(
     }
 
     Ok(outcome)
+}
+
+/// Maps a non-zero exit to `GraphError::LockfileRefreshFailed`, an exec failure to `GraphError::Command`.
+fn run_lockfile_refresh<R: CommandRunner>(
+    runner: &R,
+    root: &Path,
+    filename: &str,
+    program: &str,
+    args: &[&str],
+) -> Result<LockfileRefreshResult, GraphError> {
+    let refresh_command = format!("{program} {}", args.join(" "));
+    let out = runner.run(program, args, root)?;
+    if !out.success() {
+        return Err(GraphError::LockfileRefreshFailed {
+            filename: PathBuf::from(filename),
+            refresh_command,
+            exit_code: out.exit_code,
+            stderr: out.redacted_stderr(),
+        });
+    }
+    Ok(LockfileRefreshResult {
+        filename: PathBuf::from(filename),
+        refresh_command,
+        success: true,
+        exit_code: out.exit_code,
+    })
 }
 
 #[cfg(test)]
@@ -896,6 +953,192 @@ mod tests {
         assert!(
             outcome.lockfile_refresh_results.is_none(),
             "lockfile_refresh_results must be None when refresh_lockfiles=false"
+        );
+    }
+
+    fn npm_bump() -> PlannedBump {
+        PlannedBump {
+            package: PackageId::parse("npm:my-pkg").expect("valid package id"),
+            from: cargo_version("1.0.0"),
+            to: cargo_version("1.1.0"),
+            severity: Severity::Minor,
+            governed_by: None,
+            reason: None,
+            writes: vec![],
+        }
+    }
+
+    fn pypi_bump() -> PlannedBump {
+        PlannedBump {
+            package: PackageId::parse("pypi:my-pkg").expect("valid package id"),
+            from: cargo_version("1.0.0"),
+            to: cargo_version("1.1.0"),
+            severity: Severity::Minor,
+            governed_by: None,
+            reason: None,
+            writes: vec![],
+        }
+    }
+
+    /// Each npm-family lockfile gets its own refresh command when it exists
+    /// on disk and an npm package was bumped.
+    #[test]
+    fn refresh_lockfiles_calls_the_right_npm_family_command_per_lockfile() {
+        let cases: &[(&str, &str, &[&str])] = &[
+            (
+                "package-lock.json",
+                "npm",
+                &["install", "--package-lock-only", "--ignore-scripts"],
+            ),
+            ("pnpm-lock.yaml", "pnpm", &["install", "--lockfile-only"]),
+            ("yarn.lock", "yarn", &["install", "--mode", "update-lockfile"]),
+            ("bun.lock", "bun", &["install", "--lockfile-only"]),
+            ("bun.lockb", "bun", &["install", "--lockfile-only"]),
+        ];
+
+        for (lockfile, program, args) in cases {
+            let dir = tempfile::tempdir().expect("create tempdir");
+            let root = dir.path();
+            std::fs::write(root.join(lockfile), "# lock").unwrap();
+
+            let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            let runner = RecordingRunner {
+                calls: std::sync::Arc::clone(&calls),
+            };
+
+            let plan = VersionPlan {
+                bumps: vec![npm_bump()],
+                ..Default::default()
+            };
+
+            let permit = ApplyPermit::force_for_tests();
+            let opts = ApplyOptions {
+                refresh_lockfiles: true,
+                transient: false,
+            };
+            let outcome =
+                apply_version_plan(root, &plan, &runner, &opts, &permit).expect("apply_version_plan should succeed");
+
+            let recorded = calls.lock().unwrap().clone();
+            let expected_args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+            assert!(
+                recorded.iter().any(|(p, a)| p == program && a == &expected_args),
+                "expected `{program} {}` to run for {lockfile}; calls: {recorded:?}",
+                expected_args.join(" ")
+            );
+
+            let results = outcome
+                .lockfile_refresh_results
+                .expect("lockfile_refresh_results must be Some");
+            assert!(
+                results.iter().any(|r| r.filename.as_os_str() == *lockfile),
+                "{lockfile} must appear in lockfile_refresh_results; got: {results:?}"
+            );
+        }
+    }
+
+    /// pdm is the third alternative in the pypi lockfile chain, tried only
+    /// when neither uv.lock nor poetry.lock exist.
+    #[test]
+    fn refresh_lockfiles_calls_pdm_lock_update_reuse_when_only_pdm_lock_exists() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let root = dir.path();
+        std::fs::write(root.join("pdm.lock"), "# lock").unwrap();
+
+        let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let runner = RecordingRunner {
+            calls: std::sync::Arc::clone(&calls),
+        };
+
+        let plan = VersionPlan {
+            bumps: vec![pypi_bump()],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions {
+            refresh_lockfiles: true,
+            transient: false,
+        };
+        let outcome =
+            apply_version_plan(root, &plan, &runner, &opts, &permit).expect("apply_version_plan should succeed");
+
+        let recorded = calls.lock().unwrap().clone();
+        assert!(
+            recorded
+                .iter()
+                .any(|(p, a)| p == "pdm" && a == &["lock".to_string(), "--update-reuse".to_string()]),
+            "expected `pdm lock --update-reuse`; calls: {recorded:?}"
+        );
+        let results = outcome.lockfile_refresh_results.expect("must be Some");
+        assert!(results.iter().any(|r| r.filename.as_os_str() == "pdm.lock"));
+    }
+
+    /// A `CommandRunner` whose configured program always fails with a fixed
+    /// exit code and stderr; every other program succeeds.
+    struct FailingProgramRunner {
+        failing_program: &'static str,
+        exit_code: i32,
+        stderr: &'static str,
+    }
+
+    impl CommandRunner for FailingProgramRunner {
+        fn run(&self, program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
+            if program == self.failing_program {
+                return Ok(CommandOutput {
+                    exit_code: Some(self.exit_code),
+                    stdout: String::new(),
+                    stderr: self.stderr.to_string(),
+                });
+            }
+            Ok(CommandOutput {
+                exit_code: Some(0),
+                stdout: String::new(),
+                stderr: String::new(),
+            })
+        }
+    }
+
+    /// A lockfile refresh command that exits non-zero must stop `version`
+    /// with a coded error naming the command and the lockfile, instead of
+    /// being swallowed into a result entry.
+    #[test]
+    fn refresh_lockfiles_failure_stops_apply_with_coded_error_naming_command_and_lockfile() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let root = dir.path();
+        std::fs::write(root.join("pnpm-lock.yaml"), "# lock").unwrap();
+
+        let runner = FailingProgramRunner {
+            failing_program: "pnpm",
+            exit_code: 1,
+            stderr: "ERR_PNPM_NO_LOCKFILE",
+        };
+
+        let plan = VersionPlan {
+            bumps: vec![npm_bump()],
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions {
+            refresh_lockfiles: true,
+            transient: false,
+        };
+        let result = apply_version_plan(root, &plan, &runner, &opts, &permit);
+
+        let err = result.expect_err("a failed lockfile refresh must stop apply_version_plan");
+        assert!(
+            matches!(err, GraphError::LockfileRefreshFailed { .. }),
+            "expected LockfileRefreshFailed; got: {err:?}"
+        );
+        let rendered = format!("{err}");
+        assert!(
+            rendered.contains("pnpm-lock.yaml"),
+            "error must name the lockfile: {rendered}"
+        );
+        assert!(
+            rendered.contains("pnpm install --lockfile-only"),
+            "error must name the command: {rendered}"
         );
     }
 
@@ -2241,11 +2484,10 @@ mod tests {
     /// pointing at an npm-ecosystem manifest must still stage the npm
     /// lockfile present on disk. `active_ecosystems` was previously derived
     /// solely from `plan.bumps`, so an npm lockfile went unstaged whenever
-    /// only `platform_writes` touched npm. Staging only: apply_version_plan
-    /// has no npm lockfile refresh subprocess at all, so
-    /// `lockfile_refresh_results` must contain no npm entry either way.
+    /// only `platform_writes` touched npm. It must also refresh, since the
+    /// npm ecosystem is active regardless of which plan section triggered it.
     #[test]
-    fn platform_writes_only_plan_stages_npm_lockfile_without_refresh() {
+    fn platform_writes_only_plan_stages_and_refreshes_npm_lockfile() {
         let dir = tempfile::tempdir().expect("create tempdir");
         let root = dir.path();
 
@@ -2286,8 +2528,8 @@ mod tests {
             .as_ref()
             .is_some_and(|results| results.iter().any(|r| r.filename.as_os_str() == "package-lock.json"));
         assert!(
-            !has_npm_refresh,
-            "no npm entry may appear in lockfile_refresh_results; apply_version_plan has no npm refresh subprocess: {:?}",
+            has_npm_refresh,
+            "npm entry must appear in lockfile_refresh_results when the npm ecosystem is active: {:?}",
             outcome.lockfile_refresh_results
         );
     }
@@ -2295,7 +2537,7 @@ mod tests {
     /// Same as the Cargo byte-identity check, but the npm manifest is touched via
     /// `optional_dep_updates` instead of `platform_writes`.
     #[test]
-    fn optional_dep_updates_only_plan_stages_npm_lockfile_without_refresh() {
+    fn optional_dep_updates_only_plan_stages_and_refreshes_npm_lockfile() {
         let dir = tempfile::tempdir().expect("create tempdir");
         let root = dir.path();
 
@@ -2334,8 +2576,8 @@ mod tests {
             .as_ref()
             .is_some_and(|results| results.iter().any(|r| r.filename.as_os_str() == "package-lock.json"));
         assert!(
-            !has_npm_refresh,
-            "no npm entry may appear in lockfile_refresh_results; apply_version_plan has no npm refresh subprocess: {:?}",
+            has_npm_refresh,
+            "npm entry must appear in lockfile_refresh_results when the npm ecosystem is active: {:?}",
             outcome.lockfile_refresh_results
         );
     }

@@ -72,6 +72,7 @@ fn lifecycle(dir: &tempfile::TempDir, package: &str, manifest: &str, bumped: &st
     );
     let version = VersionArgs {
         refresh_lockfiles: false,
+        no_refresh_lockfiles: true,
         strict: false,
         allow_empty_changesets: false,
         emit_decision: None,
