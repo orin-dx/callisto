@@ -19,6 +19,13 @@ pub struct VersionPlan {
     pub changelog_writes: Vec<ChangelogWrite>,
     pub consumed_changesets: Vec<PathBuf>,
     pub pre_state_update: Option<PreState>,
+    /// Workspace-relative `pre.json` path, from `ResolvedConfig::pre_json_path`. The single source
+    /// `apply_version_plan` reads instead of guessing the changesets dir from `consumed_changesets`, which is
+    /// empty in pre mode.
+    pub pre_json_path: PathBuf,
+    /// Raw `pre.json` text as read from disk this run, so a write of `pre_state_update` can preserve its line
+    /// endings, BOM and indent instead of the default 2-space bare-LF shape. `None` when no `pre.json` existed.
+    pub pre_json_original_text: Option<String>,
     pub delete_pre_json: Option<PathBuf>,
     pub pre_cursor_updates: Vec<(PackageId, CommitSha)>,
     pub observed_versions: BTreeMap<PackageId, Version>,

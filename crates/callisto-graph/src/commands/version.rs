@@ -75,13 +75,14 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     let base_versions = ws.base_versions()?;
     let tags = ws.tags()?;
 
-    let pre_path = ws.root.join(".changeset/pre.json");
-    let pre_state = if pre_path.exists() {
+    let pre_path = ws.root.join(ws.config.pre_json_path());
+    let (pre_state, pre_json_original_text) = if pre_path.exists() {
         let text =
             std::fs::read_to_string(&pre_path).map_err(|e| GraphError::PreJsonRead { message: e.to_string() })?;
-        Some(callisto_format::parse_pre_json(&text).map_err(GraphError::PreJson)?)
+        let state = callisto_format::parse_pre_json(&text).map_err(GraphError::PreJson)?;
+        (Some(state), Some(text))
     } else {
-        None
+        (None, None)
     };
 
     let mut agg = aggregate(
@@ -185,6 +186,14 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
                     }
                 }
                 agg_input
+            } else if agg.pre_mode_recorded_only.contains(id) {
+                // Re-affirms an already-recorded pre-mode changeset, so no changelog entry is re-logged here.
+                ChangelogInput {
+                    package: id.clone(),
+                    from: from.clone(),
+                    to: Some(to.clone()),
+                    entries: Vec::new(),
+                }
             } else {
                 // No changeset drove this bump (cascade, group, inference, pre-release).
                 // Synthesize a single entry describing the reason so that render_section()
@@ -225,16 +234,30 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
                 });
             }
 
-            changelog_writes.push(crate::plan::ChangelogWrite {
-                changelog_path: ch_path.clone(),
-                input,
-            });
+            // An already-recorded pre-mode changeset with nothing else to log produces no entries; skip the write.
+            if !input.entries.is_empty() {
+                changelog_writes.push(crate::plan::ChangelogWrite {
+                    changelog_path: ch_path.clone(),
+                    input,
+                });
+            }
         }
     }
 
+    let is_pre_mode = pre_state
+        .as_ref()
+        .map(|s| s.mode == callisto_format::PreMode::Pre)
+        .unwrap_or(false);
+    // The "no pending changesets" warning fires only when no changeset, new or already recorded, is active this run.
+    let nothing_pending = if is_pre_mode {
+        !agg.pre_mode_has_active_changeset
+    } else {
+        agg.consumed.is_empty()
+    };
+
     let mut diagnostics = outcome.diagnostics;
     diagnostics.extend(group_check.diagnostics);
-    if agg.consumed.is_empty() && !opts.allow_empty_changesets && !ws.config.validation.allow_empty_changesets {
+    if nothing_pending && !opts.allow_empty_changesets && !ws.config.validation.allow_empty_changesets {
         diagnostics.push(callisto_model::Diagnostic {
             code: callisto_model::DiagnosticCode::EmptyChangeset,
             severity: callisto_model::DiagnosticSeverity::Warning,
@@ -250,21 +273,12 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
 
     let (pre_state_update, delete_pre_json) = if let Some(mut state) = pre_state {
         if state.mode == callisto_format::PreMode::Exit {
-            let rel_pre_path = ws.config.changesets_dir.join("pre.json");
-            (None, Some(rel_pre_path))
+            (None, Some(ws.config.pre_json_path()))
         } else {
-            // Update pre-release state changesets.
-            // PERF-008: build an owned HashSet so each membership check is O(1)
-            // instead of O(|state.changesets|); owned strings avoid the borrow
-            // conflict that would arise from holding &str refs into the Vec
-            // while also pushing to it.
-            let seen: HashSet<String> = state.changesets.iter().cloned().collect();
-            for cs in &agg.consumed {
-                if let Some(name) = cs.file_name().and_then(|n| n.to_str()) {
-                    let stem = name.strip_suffix(".md").unwrap_or(name).to_string();
-                    if !seen.contains(&stem) {
-                        state.changesets.push(stem);
-                    }
+            // Records ids aggregate() determined are newly-seen this run; see Aggregation::new_pre_changesets.
+            for id in &agg.new_pre_changesets {
+                if !state.changesets.iter().any(|s| s == id) {
+                    state.changesets.push(id.clone());
                 }
             }
             (Some(state), None)
@@ -284,11 +298,147 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         changelog_writes,
         consumed_changesets: agg.consumed,
         pre_state_update,
+        pre_json_path: ws.config.pre_json_path(),
+        pre_json_original_text,
         delete_pre_json,
         pre_cursor_updates: Vec::new(),
         observed_versions: base_versions,
         diagnostics,
     })
+}
+
+/// Refuses when the workspace shows the signature of a crashed `version` run: a manifest's on-disk version has
+/// moved past `HEAD` while either a changeset is still pending there, or (outside an active pre-release cycle) the
+/// manifest is staged but uncommitted. Continuing would compound the drift instead of surfacing it.
+pub fn check_partial_run<R: CommandRunner, D: DependencyResolver>(ws: &Workspace<'_, R, D>) -> Result<(), GraphError> {
+    let Ok(head) = ws.git_access().head_sha() else {
+        return Ok(());
+    };
+    let head = head.as_str();
+
+    // A pre-release cycle legitimately reruns `version` uncommitted; the staged-manifest check is scoped past it.
+    let in_pre_release_cycle = ws.root.join(ws.config.pre_json_path()).exists();
+
+    let pending = head_has_pending_changeset(ws, head)?
+        || (!in_pre_release_cycle && any_canonical_manifest_staged_uncommitted(ws)?);
+    if !pending {
+        return Ok(());
+    }
+
+    let base_versions = ws.base_versions()?;
+    for pkg in ws.graph.packages() {
+        let Some(disk) = base_versions.get(&pkg.id) else {
+            continue;
+        };
+        for decl in pkg.canonical_manifests() {
+            let Some(head_version) = manifest_version_at(ws, head, &decl.path)? else {
+                continue;
+            };
+            if *disk != head_version {
+                return Err(GraphError::PartialVersionRun {
+                    path: decl.path.clone(),
+                    disk: disk.clone(),
+                    head: head_version,
+                });
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// True when a canonical manifest differs between index and HEAD: `git add`ed by a prior `apply` but never committed.
+fn any_canonical_manifest_staged_uncommitted<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+) -> Result<bool, GraphError> {
+    for pkg in ws.graph.packages() {
+        for decl in pkg.canonical_manifests() {
+            let path_str = decl.path.to_string_lossy();
+            let output = ws
+                .runner
+                .run(
+                    "git",
+                    &["diff", "--cached", "--quiet", "--", path_str.as_ref()],
+                    &ws.root,
+                )
+                .map_err(GraphError::Command)?;
+            // `git diff --quiet` exits 1 on a difference, 0 on none; any other exit code is treated as no signal.
+            if output.exit_code == Some(1) {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Whether `<rev>:<path>` names an object; `--quiet` keeps a missing path from printing to stderr.
+fn head_object_exists<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+    spec: &str,
+) -> Result<bool, GraphError> {
+    let output = ws
+        .runner
+        .run("git", &["rev-parse", "--verify", "--quiet", spec], &ws.root)
+        .map_err(GraphError::Command)?;
+    Ok(output.success())
+}
+
+/// True when `HEAD`'s tree still has an unconsumed changeset file, read from the commit, not the working tree.
+fn head_has_pending_changeset<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+    head: &str,
+) -> Result<bool, GraphError> {
+    let dir = ws.config.changesets_dir.to_string_lossy();
+    let spec = format!("{head}:{dir}");
+    if !head_object_exists(ws, &spec)? {
+        // The changesets directory didn't exist at HEAD (e.g. the first `version` run); nothing left pending.
+        return Ok(false);
+    }
+    let output = ws
+        .runner
+        .run("git", &["ls-tree", "--name-only", &spec], &ws.root)
+        .map_err(GraphError::Command)?;
+    if !output.success() {
+        return Ok(false);
+    }
+    Ok(output.stdout.lines().any(|name| {
+        let name = name.trim();
+        name.ends_with(".md") && name != "README.md"
+    }))
+}
+
+/// The version a canonical manifest declared at `head`, or `None` if it didn't exist there or can't be parsed.
+fn manifest_version_at<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+    head: &str,
+    path: &std::path::Path,
+) -> Result<Option<callisto_model::Version>, GraphError> {
+    let Ok(format) = callisto_model::ManifestFormat::from_path(path) else {
+        return Ok(None);
+    };
+    let path_str = path.to_string_lossy();
+    let spec = format!("{head}:{path_str}");
+    if !head_object_exists(ws, &spec)? {
+        return Ok(None);
+    }
+    let output = ws
+        .runner
+        .run("git", &["show", &spec], &ws.root)
+        .map_err(GraphError::Command)?;
+    if !output.success() {
+        return Ok(None);
+    }
+    let identity = match callisto_manifests::read_identity(format, &output.stdout, path) {
+        Ok(identity) => identity,
+        Err(_) => return Ok(None),
+    };
+    let Some(callisto_manifests::VersionSource::Literal(raw)) = identity.version else {
+        return Ok(None);
+    };
+    match callisto_model::Version::parse(&raw, format.ecosystem().version_grammar()) {
+        Ok(version) => Ok(Some(version)),
+        Err(_) => Ok(None),
+    }
 }
 
 /// Platform manifest version writes and owner `optionalDependencies` pin updates
@@ -369,7 +519,7 @@ pub(crate) fn platform_version_writes<R: CommandRunner, D: DependencyResolver>(
 mod tests {
     use std::path::Path;
 
-    use super::{plan_version, VersionOptions};
+    use super::{check_partial_run, plan_version, VersionOptions};
     use crate::error::GraphError;
     use crate::infer::NoInference;
     use crate::locate::IgnoreWalkLocator;
@@ -407,6 +557,83 @@ mod tests {
             .current_dir(root)
             .output()
             .expect("git commit");
+    }
+
+    fn write_pkg_a(root: &Path, version: &str) {
+        std::fs::create_dir_all(root.join("pkg-a")).unwrap();
+        std::fs::write(
+            root.join("pkg-a/Cargo.toml"),
+            format!("[package]\nname = \"pkg-a\"\nversion = \"{version}\"\n"),
+        )
+        .unwrap();
+    }
+
+    fn write_changeset(root: &Path, name: &str) {
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(root.join(".changeset").join(name), "---\npkg-a: minor\n---\n\nfeat\n").unwrap();
+    }
+
+    /// A pending changeset at `HEAD` plus a manifest already bumped past `HEAD` on disk must be refused.
+    #[test]
+    fn check_partial_run_refuses_when_disk_is_ahead_of_head_with_a_pending_changeset() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        write_pkg_a(root, "1.0.0");
+        commit_all(root, "add pkg-a");
+        write_changeset(root, "a.md");
+        commit_all(root, "cs");
+
+        // Never committed: simulates apply having bumped the manifest on disk before the run crashed.
+        write_pkg_a(root, "1.1.0");
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = GitRunner;
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        let result = check_partial_run(&ws);
+        assert!(
+            matches!(result, Err(GraphError::PartialVersionRun { .. })),
+            "must refuse a workspace with a pending-at-HEAD changeset and a manifest already ahead of HEAD, got: {result:?}"
+        );
+    }
+
+    /// A changeset pending at `HEAD` with disk exactly matching `HEAD` must never be refused.
+    #[test]
+    fn check_partial_run_allows_an_ordinary_pending_changeset() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        write_pkg_a(root, "1.0.0");
+        commit_all(root, "add pkg-a");
+        write_changeset(root, "a.md");
+        commit_all(root, "cs");
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = GitRunner;
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        assert!(
+            check_partial_run(&ws).is_ok(),
+            "an ordinary pending changeset with disk matching HEAD must not be refused"
+        );
+    }
+
+    /// A repo with no commits yet has no `HEAD` to compare against.
+    #[test]
+    fn check_partial_run_allows_a_repo_with_no_commits() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        callisto_fixtures::git::init_repo(root);
+        write_pkg_a(root, "1.0.0");
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = GitRunner;
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        assert!(check_partial_run(&ws).is_ok(), "an unborn repo must not be refused");
     }
 
     /// A Fixed group whose

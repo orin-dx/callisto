@@ -123,11 +123,16 @@
     },
     {
       "id": "VER-GRP-01",
-      "criterion": "All package members of a `[[fixed-group]]` receive the group's highest severity and one shared version: the on-disk version of the group's released members (members with a release tag) bumped by that severity."
+      "criterion": "All package members of a `[[fixed-group]]` receive the group's highest severity and one shared version, computed the same grammar- and pre-release-aware way as any other bump (VER-PRE-03): the alignment base is the on-disk version of the group's released member (a member with a release tag) if the group has one, otherwise the highest on-disk version among its members, bumped by that severity."
     },
     {
       "id": "VER-GRP-02",
-      "criterion": "A fixed group whose released members have different on-disk versions aborts the run with E106, and one whose released members use different version grammars aborts with E107.",
+      "criterion": "A fixed group whose released members have different on-disk versions aborts the run with E106, one whose released members use different version grammars (or whose untagged members do) aborts with E107, one whose released member has no on-disk base version aborts with E205, and one with no live member carrying a base version aborts with E206.",
+      "is_error_case": true
+    },
+    {
+      "id": "VER-GRP-06",
+      "criterion": "A computed bump — for a single package or a fixed group's shared target — that would sort behind the version it was bumped from aborts the run with E207 instead of writing the regressed version to disk.",
       "is_error_case": true
     },
     {
@@ -155,6 +160,10 @@
     {
       "id": "VER-PRE-03",
       "criterion": "In pre mode, a bumped package's version is its `initialVersions` entry bumped by its severity plus `-{tag}.N`, where N starts at 0 and increments while the release part is unchanged (0.1.0 with a minor changeset and tag `beta` gives 0.2.0-beta.0, then 0.2.0-beta.1); PEP 440 packages use `aN` for tags `a`/`alpha`, `bN` for `b`/`beta`, `rcN` for `rc`/`c`/`pre`/`preview` (case-insensitive), and `.devN` for any other tag."
+    },
+    {
+      "id": "VER-PRE-04",
+      "criterion": "In pre mode, `version` never deletes a changeset from disk. A changeset whose id is not yet in `pre.json`'s `changesets` list counts toward severity, produces a changelog entry, and has its id added to `changesets`; a changeset whose id is already there still counts toward severity and the prerelease counter (VER-PRE-03) but produces no additional changelog entry. The `allow-empty-changesets`/`--strict` handling from VER-AGG-06 triggers only when no changeset -- new or already recorded -- resolves to a package this run, not merely when nothing new was added."
     },
     {
       "id": "VER-PRE-05",
@@ -212,11 +221,21 @@
     },
     {
       "id": "VER-APPLY-10",
-      "criterion": "`version --emit-decision <path>` writes the release decision JSON to `<path>` relative to the workspace root before applying the plan: `schemaVersion` 2, a digest, and one entry per canonical manifest of each bumped package (ecosystem-qualified name, target version, reasons) sorted by package. Reason `kind` is `changeset`, `inference`, `fixedGroup` or `linkedGroup` (with `groupId`), `cascade` (with source package and edge kind, `peer` for peer escalation) or `preReleasePolicy` (with the prerelease tag)."
+      "criterion": "`version --emit-decision <path>` writes the release decision JSON to `<path>` relative to the workspace root after the plan has been applied successfully: `schemaVersion` 2, a digest, and one entry per canonical manifest of each bumped package (ecosystem-qualified name, target version, reasons) sorted by package. Reason `kind` is `changeset`, `inference`, `fixedGroup` or `linkedGroup` (with `groupId`), `cascade` (with source package and edge kind, `peer` for peer escalation) or `preReleasePolicy` (with the prerelease tag)."
     },
     {
       "id": "VER-APPLY-11",
       "criterion": "`--emit-decision` with `--dry-run` is rejected before any work, and a plan with no bumps, or whose group members have different target versions, fails to produce a decision before any file is written.",
+      "is_error_case": true
+    },
+    {
+      "id": "VER-APPLY-12",
+      "criterion": "A diagnostic escalated to an error (for example `--strict` on the empty-changeset warning) is evaluated right after planning: `version` writes nothing -- not the manifests and changelog, not `pre.json`, not the `--emit-decision` file -- and exits with a failure status, instead of applying the plan and only then failing.",
+      "is_error_case": true
+    },
+    {
+      "id": "VER-APPLY-13",
+      "criterion": "After planning but before any write, `version` refuses with E121 when a canonical manifest's on-disk version differs from its version at `HEAD` and either: the workspace's changesets directory still has a pending changeset as of `HEAD` (not yet consumed by a commit); or, outside an active pre-release cycle (`.changeset/pre.json` absent), a canonical manifest is staged in the git index but not yet committed. Both are the signature of a `version` run that wrote and staged its changes but never committed -- the second covers a changeset that was only ever a working-tree file (added and consumed by `version` without ever being committed), which the first check cannot see. A repository with no commits yet, a manifest/changesets directory that didn't exist at `HEAD`, or an active pre-release cycle (which legitimately reruns `version` without a commit in between) is never refused this way.",
       "is_error_case": true
     }
   ],

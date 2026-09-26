@@ -32,7 +32,7 @@ pub use release_decision::{
 pub use release_execution::execute_release;
 pub use snapshot::plan_snapshot;
 pub use status::{status, StatusOptions};
-pub use version::{plan_version, VersionOptions};
+pub use version::{check_partial_run, plan_version, VersionOptions};
 
 pub fn escalate(diagnostics: &mut [Diagnostic], strict: bool) {
     for d in diagnostics {

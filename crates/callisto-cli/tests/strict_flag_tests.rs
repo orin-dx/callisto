@@ -123,6 +123,76 @@ fn test_version_no_strict_no_changesets_succeeds() {
     );
 }
 
+/// A pre-release exit's synthetic bump never clears `nothing_pending`, so `--strict` must fail before writing.
+#[test]
+fn test_version_strict_fails_before_writing_a_pre_exit_bump() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+
+    callisto_fixtures::git::init_repo(root);
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"pkg-a\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    let pkg = root.join("pkg-a");
+    fs::create_dir_all(&pkg).unwrap();
+    let manifest_before = "[package]\nname = \"pkg-a\"\nversion = \"1.1.0-beta.1\"\nedition = \"2021\"\n";
+    fs::write(pkg.join("Cargo.toml"), manifest_before).unwrap();
+
+    callisto_fixtures::scaffold_callisto(root);
+    fs::write(
+        root.join(".changeset/pre.json"),
+        r#"{"mode":"exit","tag":"beta","initialVersions":{"pkg-a":"1.0.0"},"changesets":[]}"#,
+    )
+    .unwrap();
+
+    callisto_fixtures::git::run_git(root, &["add", "."]);
+    callisto_fixtures::git::run_git(root, &["commit", "-q", "-m", "init"]);
+
+    let global = GlobalArgs {
+        format: OutputFormat::Json,
+        cwd: root.to_path_buf(),
+        dry_run: false,
+    };
+    let args = VersionArgs {
+        strict: true,
+        allow_empty_changesets: false,
+        refresh_lockfiles: false,
+        emit_decision: None,
+    };
+
+    let result = commands::version::handle(args, &global);
+    assert!(
+        result.is_ok(),
+        "version --strict should return Ok(ExitCode); got Err: {result:?}"
+    );
+    assert_ne!(
+        format!("{:?}", result.unwrap()),
+        format!("{:?}", ExitCode::SUCCESS),
+        "the pre-exit bump plus escalated empty-changeset warning must exit non-zero"
+    );
+
+    assert_eq!(
+        fs::read_to_string(pkg.join("Cargo.toml")).unwrap(),
+        manifest_before,
+        "a --strict failure must not write the bumped manifest to disk"
+    );
+    assert!(
+        String::from_utf8(
+            std::process::Command::new("git")
+                .args(["status", "--porcelain"])
+                .current_dir(root)
+                .output()
+                .unwrap()
+                .stdout
+        )
+        .unwrap()
+        .is_empty(),
+        "a --strict failure must leave the working tree and index untouched"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Snapshot --strict tests
 // ---------------------------------------------------------------------------
