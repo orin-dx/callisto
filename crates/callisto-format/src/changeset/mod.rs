@@ -99,11 +99,6 @@ pub enum ParseError {
         name: String,
     },
 
-    /// Empty frontmatter is valid iff the summary is non-empty.
-    #[error("changeset has no frontmatter entries and an empty summary")]
-    #[diagnostic(code(E048))]
-    EmptyChangeset,
-
     /// A changeset with one or more entries must have a non-empty summary.
     #[error("changeset has entries but an empty or whitespace-only summary")]
     #[diagnostic(code(E055), help("Add a non-empty summary after the closing `---` delimiter."))]
@@ -113,11 +108,6 @@ pub enum ParseError {
 #[derive(Debug, thiserror::Error, miette::Diagnostic, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum WriteError {
-    /// Mirrors `ParseError::EmptyChangeset`.
-    #[error("cannot write changeset: no entries and an empty summary")]
-    #[diagnostic(code(E049))]
-    EmptyChangeset,
-
     /// A changeset with one or more entries must have a non-empty summary.
     #[error("cannot write changeset: entries present but summary is empty or whitespace-only")]
     #[diagnostic(code(E056), help("Provide a non-empty summary describing the change."))]
@@ -182,9 +172,8 @@ pub fn parse_changeset(source: &str) -> Result<Changeset, ParseError> {
 
     let summary = lines[closing_index + 1..].join("\n").trim().to_string();
 
-    if entries.is_empty() && summary.is_empty() {
-        return Err(ParseError::EmptyChangeset);
-    }
+    // No entries and no summary is a valid empty changeset (the shape `@changesets/cli add
+    // --empty` writes) -- entries and an empty summary is still rejected below.
     if !entries.is_empty() && summary.is_empty() {
         return Err(ParseError::EmptySummary);
     }
@@ -206,11 +195,9 @@ fn promote_line_error(err: LineError, line: usize) -> ParseError {
 ///
 /// Names are quoted only when necessary. Severities are always written lowercase. Output
 /// always uses `\n` line endings and ends with a single trailing newline after the summary.
+/// An empty changeset (no entries, no summary) writes as `---\n---\n\n`.
 pub fn write_changeset(changeset: &Changeset) -> Result<String, WriteError> {
-    if changeset.summary.trim().is_empty() {
-        if changeset.entries.is_empty() {
-            return Err(WriteError::EmptyChangeset);
-        }
+    if changeset.summary.trim().is_empty() && !changeset.entries.is_empty() {
         return Err(WriteError::EmptySummary);
     }
     for (index, entry) in changeset.entries.iter().enumerate() {
@@ -233,8 +220,12 @@ pub fn write_changeset(changeset: &Changeset) -> Result<String, WriteError> {
             out.push_str(&format!("{}: {}\n", entry.name, entry.severity));
         }
     }
-    out.push_str("---\n\n");
-    out.push_str(changeset.summary.trim());
+    out.push_str("---\n");
+    let summary = changeset.summary.trim();
+    if !summary.is_empty() {
+        out.push('\n');
+        out.push_str(summary);
+    }
     out.push('\n');
     Ok(out)
 }

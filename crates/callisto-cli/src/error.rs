@@ -303,6 +303,17 @@ pub enum CliError {
     )]
     InitWorkflowFlagsConflict,
 
+    #[error("workspace is already in pre-release mode")]
+    #[diagnostic(
+        code(callisto::pre_already_active),
+        help("run `callisto pre exit` first, or delete .changeset/pre.json manually to reset")
+    )]
+    PreAlreadyActive,
+
+    #[error("workspace is not in pre-release mode")]
+    #[diagnostic(code(callisto::pre_not_active), help("callisto pre enter <tag>"))]
+    PreNotActive,
+
     #[error("{0}")]
     #[diagnostic(code(callisto::error))]
     Other(String),

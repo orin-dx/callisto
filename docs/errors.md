@@ -73,8 +73,6 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`
 | E045 | Line <line>: package name is empty | — |
 | E046 | Line <line>: invalid severity for package <name>: <source> | — |
 | E047 | Line <line>: package <name> is named more than once in this changeset's frontmatter (first on line <first_line>) | — |
-| E048 | Changeset has no frontmatter entries and an empty summary | — |
-| E049 | Cannot write changeset: no entries and an empty summary | — |
 | E055 | Changeset has entries but an empty or whitespace-only summary | Add a non-empty summary after the closing `---` delimiter. |
 | E056 | Cannot write changeset: entries present but summary is empty or whitespace-only | Provide a non-empty summary describing the change. |
 | E057 | Entry <index> has an empty package name | — |
@@ -118,6 +116,7 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`
 | E033 | VCS error during workspace location: <0> | — |
 | E058 | `<path>` is not inside a Git repository | Callisto needs a Git repository: run `git init` in the workspace root. |
 | E209 | Failed to parse manifest `<path>`: <message> | Fix the manifest's syntax; a workspace member's manifest is never skipped. |
+| E210 | A `.changeset/*.md` file failed to parse: `<path>`: <source> | — |
 | E100 | Package ID is defined at more than one manifest path | Ensure package IDs are unique across workspace manifest paths. |
 | E102 | Named package was not found in the workspace | Check the package's name and ecosystem, or that its directory has a manifest callisto discovers. |
 | E103 | Bare package name is ambiguous; more than one candidate matches | Qualify the name with its ecosystem, e.g. `cargo/pkg` or `cargo:pkg`. |
@@ -226,6 +225,8 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`
 | `callisto::init_requires_yes` | stdin is not a terminal, so `init` needs flags instead of prompts, and required flags are missing | re-run `callisto init --yes` with the listed flags, or run it in a terminal to be asked |
 | `callisto::init_missing_flags` | `init --yes` is missing required flag(s) | supply the listed flags; see `callisto init --help` |
 | `callisto::init_workflow_flags_conflict` | `--workflow` and `--no-workflow` are mutually exclusive | pass only one of --workflow or --no-workflow |
+| `callisto::pre_already_active` | `pre enter` was run while `.changeset/pre.json`'s mode is already `pre` | run `callisto pre exit` first, or delete .changeset/pre.json manually to reset |
+| `callisto::pre_not_active` | `pre exit` was run with no `.changeset/pre.json` on disk | callisto pre enter <tag> |
 | `callisto::error` | Fallback/untyped error; message is whatever string was wrapped | — |
 
-186 codes total: 153 numeric (45 callisto-model, 18 callisto-format, 4 callisto-vcs, 4 callisto-changelog, 82 callisto-graph: 5 config + 77 graph) + 33 `callisto::*` in callisto-cli.
+188 codes total: 153 numeric (45 callisto-model, 18 callisto-format, 4 callisto-vcs, 4 callisto-changelog, 82 callisto-graph: 5 config + 77 graph) + 35 `callisto::*` in callisto-cli.

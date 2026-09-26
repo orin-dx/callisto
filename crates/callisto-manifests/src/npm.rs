@@ -197,6 +197,15 @@ pub fn npm_role_from_source(source: &str) -> Option<NpmRole> {
     }
 }
 
+/// True when raw `package.json` `source` sets `"private": true`. `false` on
+/// invalid JSON or an absent/non-true `private` field.
+pub fn npm_declares_private(source: &str) -> bool {
+    match serde_json::from_str::<Value>(source).ok() {
+        Some(Value::Object(doc)) => doc.get("private").and_then(Value::as_bool).unwrap_or(false),
+        _ => false,
+    }
+}
+
 fn npm_role_from_doc(doc: &Map<String, Value>) -> Option<NpmRole> {
     let has_os = doc.get("os").and_then(|v| v.as_array()).is_some_and(|a| !a.is_empty());
     let has_cpu = doc.get("cpu").and_then(|v| v.as_array()).is_some_and(|a| !a.is_empty());
@@ -1256,6 +1265,14 @@ mod tests {
             matches!(result, Err(ManifestError::MissingField { field: "version", .. })),
             "missing version field must return MissingField error, got: {result:?}"
         );
+    }
+
+    #[test]
+    fn npm_declares_private_reads_the_private_field() {
+        assert!(npm_declares_private(r#"{"name":"root","private":true}"#));
+        assert!(!npm_declares_private(r#"{"name":"root","private":false}"#));
+        assert!(!npm_declares_private(r#"{"name":"root"}"#));
+        assert!(!npm_declares_private("not json"));
     }
 
     /// Tab-indented package.json files must have their indentation preserved after a

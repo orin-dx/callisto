@@ -40,7 +40,7 @@
     },
     {
       "id": "VER-CS-04",
-      "criterion": "Parsing fails with E040 when line 1 is not `---`, E041 when the frontmatter is never closed, E048 when there are no entries and no summary, and E055 when there are entries but the summary is empty or whitespace-only.",
+      "criterion": "Parsing fails with E040 when line 1 is not `---`, E041 when the frontmatter is never closed, and E055 when there are entries but the summary is empty or whitespace-only. A changeset with no entries and no summary (the shape `@changesets/cli add --empty` writes) parses as a valid, empty changeset.",
       "is_error_case": true
     },
     {
@@ -73,7 +73,7 @@
     },
     {
       "id": "VER-AGG-03",
-      "criterion": "An entry naming a package not in the workspace, or an invalid name, produces an unknown-package warning, and a changeset in which no entry resolves stays on disk unconsumed. An entry with severity `none` causes no bump and no changelog line, but its changeset is still consumed."
+      "criterion": "An entry naming a package not in the workspace, or an invalid name, produces an unknown-package warning, and a changeset with any such unresolved entry stays on disk unconsumed, even when its other entries resolve. An entry with severity `none` causes no bump and no changelog line, but its changeset is still consumed."
     },
     {
       "id": "VER-AGG-04",
@@ -154,7 +154,7 @@
     },
     {
       "id": "VER-PRE-02",
-      "criterion": "`pre enter` fails when the tag is empty or whitespace or `.changeset/pre.json` already exists (also under `--dry-run`); `callisto pre exit` sets `mode` to `exit` and fails when the file is missing or already in `exit` mode.",
+      "criterion": "`pre enter` fails when the tag is empty or whitespace, or when `.changeset/pre.json` exists with mode `pre` (also under `--dry-run`); when it exists with mode `exit`, `pre enter` instead resumes the cycle under the new tag, keeping its recorded `initialVersions` and `changesets`. `callisto pre exit` sets `mode` to `exit` and fails when the file is missing or already in `exit` mode.",
       "is_error_case": true
     },
     {

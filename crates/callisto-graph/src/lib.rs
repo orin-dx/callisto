@@ -32,7 +32,9 @@ pub mod tags;
 pub mod toposort;
 pub mod walk;
 
-pub use aggregate::{aggregate, load_changesets, Aggregation, LoadedChangeset, NamedBy};
+pub use aggregate::{
+    aggregate, load_changesets, load_changesets_permissive, Aggregation, ChangesetLoadFailure, LoadedChangeset, NamedBy,
+};
 pub use apply::{apply_version_plan, ApplyOptions, ApplyOutcome};
 pub use cascade::{
     cascade_action, coverage, rewrite_spec, run_cascade, CascadeDecision, CascadeInput, CascadeOutcome, DepWriteTarget,

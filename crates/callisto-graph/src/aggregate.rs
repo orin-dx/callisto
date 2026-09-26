@@ -56,10 +56,26 @@ pub enum NamedBy {
     Inference,
 }
 
-pub fn load_changesets(root: &Path, cfg: &ResolvedConfig) -> Result<Vec<LoadedChangeset>, GraphError> {
+/// One `.changeset/*.md` file that failed `parse_changeset`, kept alongside its (workspace-root-
+/// relative) path so a caller that must survive a malformed changeset -- `status` -- can report
+/// it as a diagnostic instead of aborting.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChangesetLoadFailure {
+    pub path: PathBuf,
+    pub source: callisto_format::ParseError,
+}
+
+/// Loads and parses every `.changeset/*.md` file, splitting successes from parse failures
+/// rather than aborting on the first one -- `status` must report every unparseable changeset,
+/// not just the first. [`load_changesets`] collapses this to the first failure for callers
+/// (`aggregate`/`version`) that must hard-fail instead.
+pub fn load_changesets_permissive(
+    root: &Path,
+    cfg: &ResolvedConfig,
+) -> Result<(Vec<LoadedChangeset>, Vec<ChangesetLoadFailure>), GraphError> {
     let dir = root.join(&cfg.changesets_dir);
     if !dir.exists() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     }
 
     let entries = fs::read_dir(&dir).map_err(|e| callisto_model::ManifestError::Read {
@@ -82,24 +98,38 @@ pub fn load_changesets(root: &Path, cfg: &ResolvedConfig) -> Result<Vec<LoadedCh
     files.sort();
 
     let mut loaded = Vec::new();
+    let mut failures = Vec::new();
     for path in files {
         let content = fs::read_to_string(&path).map_err(|e| callisto_model::ManifestError::Read {
             path: path.clone(),
             message: e.to_string(),
         })?;
-        let changeset = parse_changeset(&content).map_err(|e| GraphError::ParseChangeset {
-            path: path.clone(),
-            source: e,
-        })?;
-        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
         let rel_path = path.strip_prefix(root).unwrap_or(&path).to_path_buf();
-        loaded.push(LoadedChangeset {
-            path: rel_path,
-            id: stem,
-            changeset,
-        });
+        match parse_changeset(&content) {
+            Ok(changeset) => {
+                let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+                loaded.push(LoadedChangeset {
+                    path: rel_path,
+                    id: stem,
+                    changeset,
+                });
+            }
+            Err(source) => failures.push(ChangesetLoadFailure { path: rel_path, source }),
+        }
     }
 
+    Ok((loaded, failures))
+}
+
+pub fn load_changesets(root: &Path, cfg: &ResolvedConfig) -> Result<Vec<LoadedChangeset>, GraphError> {
+    let (loaded, mut failures) = load_changesets_permissive(root, cfg)?;
+    if !failures.is_empty() {
+        let failure = failures.remove(0);
+        return Err(GraphError::ParseChangeset {
+            path: failure.path,
+            source: failure.source,
+        });
+    }
     Ok(loaded)
 }
 
@@ -249,20 +279,28 @@ where
     for cs in loaded {
         let is_already_recorded = is_pre_mode && already_recorded.contains(cs.id.as_str());
         // Defer adding to `consumed` until after we confirm at least one entry
-        // resolved to a real workspace package.  A changeset where every entry
+        // resolved to a real workspace package. A changeset where every entry
         // names a removed package must NOT be consumed (which would delete it
         // on disk); instead, an UnknownPackage diagnostic is emitted and the
         // file is left for the user to clean up manually.
+        //
+        // A changeset with a MIX of resolved and unresolved entries must also
+        // stay unconsumed: consuming it would delete the file (or, in pre
+        // mode, mark it as already-applied) and permanently lose the
+        // unresolved entry's bump once that entry's target reappears.
         let mut matched_any = false;
+        let mut has_unresolved = false;
         for entry in cs.changeset.entries {
             let id = match PackageId::parse(&entry.name) {
                 Ok(id) => id,
                 Err(_) => {
+                    has_unresolved = true;
                     agg.diagnostics.push(Diagnostic {
                         code: callisto_model::DiagnosticCode::UnknownPackage,
                         severity: callisto_model::DiagnosticSeverity::Warning,
                         message: format!(
-                            "Changeset `{}` contains invalid package name `{}`",
+                            "Changeset `{}` contains invalid package name `{}`; the changeset \
+                             will not be consumed until this entry is resolved",
                             cs.path.display(),
                             entry.name
                         ),
@@ -332,6 +370,7 @@ where
                     // Emit a diagnostic so the user knows, but do NOT count
                     // this as a match -- a fully-orphaned changeset stays on
                     // disk rather than being silently deleted.
+                    has_unresolved = true;
                     agg.diagnostics.push(Diagnostic {
                         code: callisto_model::DiagnosticCode::UnknownPackage,
                         severity: callisto_model::DiagnosticSeverity::Warning,
@@ -350,8 +389,9 @@ where
                 }
             }
         }
-        // A fully-orphaned changeset (no entry resolved) is left on disk and unrecorded regardless of mode.
-        if matched_any {
+        // A changeset with any unresolved entry (orphaned or invalid) is left on disk and
+        // unrecorded regardless of mode, so a later rerun can still pick up its bump.
+        if matched_any && !has_unresolved {
             if is_pre_mode {
                 agg.pre_mode_has_active_changeset = true;
                 // Records newly-seen ids so a rerun treats them as already-applied and skips the changelog entry.
@@ -679,6 +719,24 @@ mod tests {
     impl DependencyResolver for SinglePackageGraph {
         fn packages(&self) -> impl Iterator<Item = &Package> {
             std::iter::once(&self.pkg)
+        }
+
+        fn dependencies_of(&self, _id: &PackageId) -> impl Iterator<Item = &DepEdge> {
+            std::iter::empty()
+        }
+
+        fn dependents_of(&self, _id: &PackageId) -> impl Iterator<Item = &DepEdge> {
+            std::iter::empty()
+        }
+    }
+
+    struct TwoPackageGraph {
+        packages: Vec<Package>,
+    }
+
+    impl DependencyResolver for TwoPackageGraph {
+        fn packages(&self) -> impl Iterator<Item = &Package> {
+            self.packages.iter()
         }
 
         fn dependencies_of(&self, _id: &PackageId) -> impl Iterator<Item = &DepEdge> {
@@ -1358,6 +1416,81 @@ mod tests {
             !unknown_pkg_diags.is_empty(),
             "must emit at least one UnknownPackage diagnostic for orphaned changeset entries; \
              got diagnostics: {:?}",
+            agg.diagnostics
+        );
+    }
+
+    /// Spec: a changeset with a MIX of a known and an unknown package entry
+    /// must NOT be consumed. Consuming it (as the previous code did once
+    /// `matched_any` went true) deletes the changeset file while the unknown
+    /// entry's bump is never recorded anywhere, silently losing it -- despite
+    /// the accompanying diagnostic claiming the changeset "will not be
+    /// consumed until this entry is resolved".
+    #[test]
+    fn test_changeset_with_one_unknown_entry_not_consumed() {
+        let ws_dir = tempfile::tempdir().unwrap();
+        let root = ws_dir.path();
+
+        init_repo(root);
+        std::fs::write(root.join("README.md"), "hello\n").unwrap();
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "initial commit"]);
+
+        // One entry names a real workspace package, the other names a package
+        // that has since been removed from the workspace.
+        let cs_dir = root.join(".changeset");
+        std::fs::create_dir_all(&cs_dir).unwrap();
+        std::fs::write(
+            cs_dir.join("mixed-cs.md"),
+            "---\n\"pkg-bar\": patch\n\"pkg-removed\": minor\n---\n\nMixed changeset.\n",
+        )
+        .unwrap();
+
+        let pkg_bar_id = PackageId::parse("pkg-bar").unwrap();
+        let pkg_bar = make_pkg(pkg_bar_id.clone());
+        let graph = TwoPackageGraph {
+            packages: vec![pkg_bar.clone()],
+        };
+        let cfg = crate::config::load(root).unwrap();
+        let runner = RealGitRunner;
+        let git = GitAccess::new(root, &runner);
+        let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
+
+        let mut base_versions = BTreeMap::new();
+        base_versions.insert(pkg_bar_id.clone(), Version::semver(1, 0, 0));
+
+        let inference = RecordingInference::default();
+        let agg = aggregate(
+            &graph,
+            &identity_for(&pkg_bar),
+            &cfg,
+            &git,
+            &tags,
+            &base_versions,
+            None,
+            &inference,
+        )
+        .unwrap();
+
+        assert!(
+            agg.consumed.is_empty(),
+            "a changeset with any unresolved entry must NOT be added to consumed (which would \
+             delete it on disk and permanently lose the unresolved entry's bump): got {:?}",
+            agg.consumed
+        );
+
+        // The known entry's severity must still be tracked for this run, even
+        // though the changeset itself stays on disk pending the unknown entry.
+        assert_eq!(agg.severities.get(&pkg_bar_id).copied(), Some(Severity::Patch));
+
+        let unknown_pkg_diags: Vec<_> = agg
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == callisto_model::DiagnosticCode::UnknownPackage)
+            .collect();
+        assert!(
+            !unknown_pkg_diags.is_empty(),
+            "must emit an UnknownPackage diagnostic for the unresolved entry; got diagnostics: {:?}",
             agg.diagnostics
         );
     }

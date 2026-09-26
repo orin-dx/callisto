@@ -60,8 +60,10 @@ fn preview(global: &GlobalArgs, mode: &str, tag: &str, rel_path: &Path, content:
 ///
 /// # Errors
 ///
-/// Returns [`CliError::Io`] if reading the existing `pre.json` fails (`exit`
-/// subcommand), or if any write fails (`enter` subcommand on a real run).
+/// Returns [`CliError::PreAlreadyActive`] if `enter` runs while `pre.json`'s mode
+/// is already `pre`, and [`CliError::PreNotActive`] if `exit` runs with no
+/// `pre.json` on disk. Otherwise returns [`CliError::Io`] if reading an existing
+/// `pre.json` fails, or if any write fails (`enter` subcommand on a real run).
 pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     let runner = CliCommandRunner;
     let permit = ApplyPermit::granted_unless_dry_run(global.dry_run);
@@ -75,27 +77,36 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
 
             let ws = load_workspace(global, &runner)?;
 
-            // Bug 1: reject re-entering pre mode when already active.
-            // The check runs for both real and dry-run paths so a dry-run
-            // never silently simulates overwriting live pre-release state.
+            // Reject re-entering only while a cycle is actually active (mode `pre`); a `pre.json` left
+            // behind in `exit` mode is a finished cycle, so entering starts a new one from where it
+            // left off instead of erroring on a file that merely still exists on disk.
             let rel_pre_path = ws.config.pre_json_path();
             let pre_path = ws.root.join(&rel_pre_path);
             let pre_dir = pre_path.parent().unwrap_or(&ws.root).to_path_buf();
-            if pre_path.exists() {
-                return Err(CliError::Other(
-                    "Workspace is already in pre-release mode. Run `callisto pre exit` first, \
-                     or delete .changeset/pre.json manually to reset."
-                        .to_string(),
-                ));
-            }
-
-            let initial = ws.initial_versions()?;
-            let mut snapshot = indexmap::IndexMap::new();
-            for (k, v) in initial {
-                snapshot.insert(k, v);
-            }
-
-            let pre_state = PreState::entering(tag.clone(), snapshot);
+            let pre_state = if pre_path.exists() {
+                let existing_text = fs::read_to_string(&pre_path).map_err(|source| CliError::Io {
+                    source,
+                    path: Some(pre_path.clone()),
+                })?;
+                let existing = parse_pre_json(&existing_text)?;
+                if existing.mode == PreMode::Pre {
+                    return Err(CliError::PreAlreadyActive);
+                }
+                // Re-entering after `exit` carries the same initial-versions baseline and recorded
+                // changesets forward under the new tag, matching a resumed rather than a fresh cycle.
+                PreState {
+                    mode: PreMode::Pre,
+                    tag: tag.clone(),
+                    ..existing
+                }
+            } else {
+                let initial = ws.initial_versions()?;
+                let mut snapshot = indexmap::IndexMap::new();
+                for (k, v) in initial {
+                    snapshot.insert(k, v);
+                }
+                PreState::entering(tag.clone(), snapshot)
+            };
             let text = write_pre_json(&pre_state);
 
             let Some(permit) = permit else {
@@ -134,13 +145,16 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             let rel_pre_path = config.pre_json_path();
             let pre_path = root.join(&rel_pre_path);
 
+            if !pre_path.exists() {
+                return Err(CliError::PreNotActive);
+            }
             let text = fs::read_to_string(&pre_path).map_err(|source| CliError::Io {
                 source,
                 path: Some(pre_path.clone()),
             })?;
             let mut pre_state = parse_pre_json(&text)?;
 
-            // Bug 2: reject double-exit.
+            // Reject double-exit.
             if pre_state.mode == PreMode::Exit {
                 return Err(CliError::Other(
                     "Workspace is not in pre-release mode (already exited). \
@@ -220,6 +234,102 @@ mod tests {
         assert!(
             !root.join(".changeset/pre.json").exists(),
             "dry-run must not write pre.json"
+        );
+    }
+
+    /// After `pre enter` -> `pre exit`, a second `pre enter` with a new tag must succeed (not the old
+    /// "already in pre-release mode" error) and must carry the recorded changesets forward under the
+    /// new tag rather than resetting to an empty list.
+    #[test]
+    fn handle_enter_after_exit_succeeds_and_keeps_changesets() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        callisto_fixtures::git::init_repo(root);
+        std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
+        std::fs::write(root.join("callisto.toml"), "").unwrap();
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(
+            root.join(".changeset/pre.json"),
+            r#"{
+  "mode": "exit",
+  "tag": "beta",
+  "initialVersions": {
+    "a": "1.0.0"
+  },
+  "changesets": [
+    "cool-dragons-fly"
+  ]
+}
+"#,
+        )
+        .unwrap();
+
+        let global = GlobalArgs {
+            format: OutputFormat::Text,
+            cwd: root.to_path_buf(),
+            dry_run: false,
+        };
+
+        let result = handle(PreArgs::Enter { tag: "rc".to_string() }, &global);
+        assert!(result.is_ok(), "expected Ok, got: {result:?}");
+
+        let written = std::fs::read_to_string(root.join(".changeset/pre.json")).unwrap();
+        let state = callisto_format::parse_pre_json(&written).unwrap();
+        assert_eq!(state.mode, callisto_format::PreMode::Pre);
+        assert_eq!(state.tag, "rc");
+        assert_eq!(state.changesets, vec!["cool-dragons-fly".to_string()]);
+        assert_eq!(state.initial_versions["a"].raw(), "1.0.0");
+    }
+
+    /// `pre enter` while `pre.json`'s mode is already `pre` must fail with the typed
+    /// `PreAlreadyActive` diagnostic, not a raw string error.
+    #[test]
+    fn handle_enter_while_mode_pre_returns_typed_pre_already_active() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        callisto_fixtures::git::init_repo(root);
+        std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
+        std::fs::write(root.join("callisto.toml"), "").unwrap();
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(
+            root.join(".changeset/pre.json"),
+            r#"{"mode": "pre", "tag": "beta", "initialVersions": {}, "changesets": []}"#,
+        )
+        .unwrap();
+
+        let global = GlobalArgs {
+            format: OutputFormat::Text,
+            cwd: root.to_path_buf(),
+            dry_run: false,
+        };
+
+        let result = handle(PreArgs::Enter { tag: "rc".to_string() }, &global);
+        assert!(
+            matches!(result, Err(crate::error::CliError::PreAlreadyActive)),
+            "expected PreAlreadyActive, got: {result:?}"
+        );
+    }
+
+    /// `pre exit` with no `.changeset/pre.json` on disk must fail with the typed
+    /// `PreNotActive` diagnostic, not a raw I/O error.
+    #[test]
+    fn handle_exit_with_no_pre_json_returns_typed_pre_not_active() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        callisto_fixtures::git::init_repo(root);
+        std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
+        std::fs::write(root.join("callisto.toml"), "").unwrap();
+
+        let global = GlobalArgs {
+            format: OutputFormat::Text,
+            cwd: root.to_path_buf(),
+            dry_run: false,
+        };
+
+        let result = handle(PreArgs::Exit, &global);
+        assert!(
+            matches!(result, Err(crate::error::CliError::PreNotActive)),
+            "expected PreNotActive, got: {result:?}"
         );
     }
 

@@ -131,7 +131,7 @@ pub fn run<R: CommandRunner>(
     let prompting = interactive && !args.yes;
     let answers = collect_answers(&args, &facts, prompting, prompter)?;
 
-    let mut diagnostics = Vec::new();
+    let mut diagnostics = scaffold::changesets_config_diagnostics(&facts.root);
     let shape = match scaffold::workflow_shape(&facts, &answers) {
         Err(reason) if args.workflow => {
             return Err(GraphError::InitWorkflowUnsupported {
@@ -1150,6 +1150,46 @@ mod tests {
                 .is_none_or(|d| d.as_array().unwrap().is_empty()),
             "{report}"
         );
+    }
+
+    // A pre-existing `.changeset/config.json` warns per unhonoured key it declares, naming
+    // `fixed`'s callisto.toml replacement; init still writes normally alongside the warning.
+    #[test]
+    fn preexisting_changesets_config_json_warns_per_unhonoured_key() {
+        let dir = workspace(0);
+        std::fs::create_dir_all(dir.path().join(".changeset")).unwrap();
+        std::fs::write(
+            dir.path().join(".changeset/config.json"),
+            r#"{"fixed": [["core"]], "linked": [["core"]]}"#,
+        )
+        .unwrap();
+
+        let out = Shared::default();
+        let err = Shared::default();
+        run_with_json(dir.path(), yes(InitVersioning::Independent), false, &out, &err);
+        let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
+        let diagnostics = report["diagnostics"].as_array().unwrap();
+        assert_eq!(diagnostics.len(), 2, "{report}");
+        assert!(diagnostics
+            .iter()
+            .all(|d| d["code"] == "changesets-config-key-dropped" && d["severity"] == "warning"));
+        let fixed = diagnostics
+            .iter()
+            .find(|d| d["message"].as_str().unwrap().contains("`fixed`"))
+            .unwrap();
+        assert!(
+            fixed["message"].as_str().unwrap().contains("[[fixed-group]]"),
+            "{fixed}"
+        );
+        let linked = diagnostics
+            .iter()
+            .find(|d| d["message"].as_str().unwrap().contains("`linked`"))
+            .unwrap();
+        assert!(
+            linked["message"].as_str().unwrap().contains("no equivalent"),
+            "{linked}"
+        );
+        assert!(dir.path().join("callisto.toml").exists());
     }
 
     fn run_with_json(root: &Path, args: InitArgs, dry_run: bool, out: &Shared, err: &Shared) {

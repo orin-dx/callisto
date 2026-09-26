@@ -50,11 +50,13 @@ fn empty_frontmatter_with_nonempty_summary_is_valid() {
     assert_eq!(changeset, cs(vec![], "Docs-only change, no version bump."));
 }
 
+/// `@changesets/cli add --empty` writes exactly this shape; callisto must accept it, not
+/// just the packages it happens to already know about.
 #[test]
-fn empty_frontmatter_and_empty_summary_is_invalid() {
+fn empty_frontmatter_and_empty_summary_is_valid() {
     let source = "---\n---\n\n";
-    let err = parse_changeset(source).unwrap_err();
-    assert_eq!(err, ParseError::EmptyChangeset);
+    let changeset = parse_changeset(source).unwrap();
+    assert_eq!(changeset, cs(vec![], ""));
 }
 
 #[test]
@@ -135,11 +137,14 @@ fn write_always_uses_lf_and_ends_with_trailing_newline() {
     assert!(!written.ends_with("\n\n"));
 }
 
+/// Writing an empty changeset (no entries, no summary) must succeed, byte-for-byte matching
+/// what `@changesets/cli add --empty` writes -- the two must round-trip through each other.
 #[test]
-fn write_rejects_empty_changeset() {
+fn write_accepts_empty_changeset() {
     let changeset = cs(vec![], "");
-    let err = write_changeset(&changeset).unwrap_err();
-    assert_eq!(err, WriteError::EmptyChangeset);
+    let written = write_changeset(&changeset).unwrap();
+    assert_eq!(written, "---\n---\n\n");
+    assert_eq!(parse_changeset(&written).unwrap(), changeset);
 }
 
 #[test]
