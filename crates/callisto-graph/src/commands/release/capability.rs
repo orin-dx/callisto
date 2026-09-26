@@ -170,6 +170,7 @@ pub fn build_release_intent<L: ProjectLocator, R: CommandRunner>(
         trust_profile,
         None,
         GitRemoteRequirement::Required,
+        &mut Vec::new(),
     )?;
 
     // Recheck after all input reads. A concurrent edit or checkout cannot be
@@ -185,6 +186,9 @@ pub fn build_release_intent<L: ProjectLocator, R: CommandRunner>(
 /// Builds an intent whose declared binary slots are bound to the current
 /// coordinator workflow. Callers recovering an old release source must pass
 /// the current coordinator revision here, never substitute the source SHA.
+///
+/// Returns advisory diagnostics from derivation (e.g. an artifact owner selected
+/// without its product) alongside the intent, for a caller to surface.
 pub fn build_release_intent_with_artifacts<L: ProjectLocator, R: CommandRunner>(
     root: &Path,
     locator: &L,
@@ -192,10 +196,11 @@ pub fn build_release_intent_with_artifacts<L: ProjectLocator, R: CommandRunner>(
     decision: &ReleaseDecisionV1,
     trust_profile: ExecutionTrustProfileV1,
     artifact_policy: ArtifactBuildPolicy,
-) -> Result<ReleaseIntentV1, GraphError> {
+) -> Result<(ReleaseIntentV1, Vec<callisto_model::Diagnostic>), GraphError> {
     let root = canonical_root(root)?;
     let workspace = Workspace::load(root.clone(), locator, runner)?;
     let source = observe_source(&workspace, trust_profile, ReleaseCheckout::Detached)?;
+    let mut diagnostics = Vec::new();
     let intent = derive_release_intent(
         &workspace,
         decision,
@@ -203,13 +208,14 @@ pub fn build_release_intent_with_artifacts<L: ProjectLocator, R: CommandRunner>(
         trust_profile,
         Some(&artifact_policy),
         GitRemoteRequirement::Required,
+        &mut diagnostics,
     )?;
     if observe_source(&workspace, trust_profile, ReleaseCheckout::Detached)? != source {
         return Err(GraphError::ReleaseIntentStale {
             reason: StaleReason::source_identity_changed(),
         });
     }
-    Ok(intent)
+    Ok((intent, diagnostics))
 }
 
 /// Re-observes root, config, package discovery, manifests, Git evidence, and
@@ -245,12 +251,15 @@ fn validate_intent<'a, L: ProjectLocator, R: CommandRunner>(
     let trust = observe_git_trust(&workspace, received.trust_profile, checkout)?;
     let source = source_from_trust(&trust);
     let artifact_policy = artifact_policy_from_intent(&received)?;
+    // This is an integrity re-derivation, not a fresh plan: any diagnostic it would
+    // raise was already surfaced when `received` was first derived.
     let (expected, prepared) = derive_release_intent_with_prepared(
         &workspace,
         &received.decision,
         source.clone(),
         received.trust_profile,
         artifact_policy.as_ref(),
+        &mut Vec::new(),
     )?;
     let final_trust = observe_git_trust(&workspace, received.trust_profile, checkout)?;
     if expected != received || final_trust.identity() != trust.identity() {

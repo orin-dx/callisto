@@ -76,6 +76,8 @@ pub struct LocalReleasePlan {
     pub intent: ReleaseIntentV1,
     /// A preview only: `origin` has no push URL, so tags carry no remote and a run would refuse.
     pub tags_unbound: bool,
+    /// Advisory findings from derivation (e.g. an artifact owner selected without its product).
+    pub diagnostics: Vec<callisto_model::Diagnostic>,
 }
 
 /// Derives the intent for every unreleased package (or exactly `selections`).
@@ -125,6 +127,7 @@ pub fn plan_workspace_release<R: CommandRunner, D: DependencyResolver>(
         LocalReleaseSource::Preview => GitRemoteRequirement::OptionalForPreview,
         LocalReleaseSource::Trusted => GitRemoteRequirement::Required,
     };
+    let mut diagnostics = Vec::new();
     let intent = derive_release_intent(
         workspace,
         &decision,
@@ -132,6 +135,7 @@ pub fn plan_workspace_release<R: CommandRunner, D: DependencyResolver>(
         profile,
         artifact_policy.as_ref(),
         remote,
+        &mut diagnostics,
     )?;
     let tags_unbound = mode == LocalReleaseSource::Preview
         && intent
@@ -144,7 +148,11 @@ pub fn plan_workspace_release<R: CommandRunner, D: DependencyResolver>(
             reason: StaleReason::source_identity_changed(),
         });
     }
-    Ok(Some(LocalReleasePlan { intent, tags_unbound }))
+    Ok(Some(LocalReleasePlan {
+        intent,
+        tags_unbound,
+        diagnostics,
+    }))
 }
 
 #[cfg(test)]

@@ -44,13 +44,12 @@ Decisions (owner, 2026-09-25):
 - `plan_snapshot` (`crates/callisto-graph/src/commands/snapshot.rs`) parses the snapshot tag as SemVer for every package, so a workspace with a Pypi package fails to snapshot: the tag is not a valid PEP 440 version. `cargo metadata --locked`, `npm ci` and `pnpm install --frozen-lockfile` are covered end-to-end (`crates/callisto-cli/tests/native_resolution_e2e_tests.rs`); `uv lock --check` is covered only after `version`, not after `snapshot`.
 
 ### 5. Every failure has a code and help; one output contract
-- Split the remaining generic `VcsError::Git` parse-failure call sites into typed variants; retire `CliError::Other`; keep domain validation out of `Deserialize` (release-pr decide loses E142/E143).
+- Split the remaining generic `VcsError::Git` parse-failure call sites into typed variants.
 - One JSON envelope with `command` for every report and error.
 - `status`, `schema` and `completions` fail or panic on a closed pipe. One output sink; broken pipe exits quietly.
 - Git probes echo stderr (`init` without origin, `release --dry-run`). Split probe from exec.
 - Completions list hidden commands; `callisto help <cmd>` is rejected; text shows internal names (`cratesIo`, `{:?}`); `--check`/`--strict` help is wrong; `add --summary` without `--package` says no flags were given; wizard prompts go to stdout.
 - Delete the legacy `ValidateReport`, `PublishPlan`, `PublishReport` and tag report types and `schema --type validate`.
-- Release derivation has no diagnostics channel: the owner-without-product warning is an `eprintln!` (`commands/release/derive.rs`), so JSON output does not carry it.
 - `commands/init.rs::io_err` is pathless, unlike `apply.rs`'s path-carrying `GraphError::ApplyIo` (E122); an init I/O failure doesn't name the file involved.
 
 ### 6. What `init` generates works and stays pinned

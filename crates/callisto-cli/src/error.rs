@@ -79,6 +79,17 @@ pub enum CliError {
     ReleasePrDecision(#[from] callisto_model::ReleasePrDecisionError),
 
     #[error(transparent)]
+    #[diagnostic(transparent)]
+    Model(#[from] callisto_model::ModelError),
+
+    #[error("interactive prompt failed: {0}")]
+    #[diagnostic(
+        code(E269),
+        help("pass flags explicitly to skip interactive prompts, or run in a terminal")
+    )]
+    Interactive(#[from] dialoguer::Error),
+
+    #[error(transparent)]
     #[diagnostic(
         code(E212),
         help("Check that .changeset/pre.json is valid JSON and was not partially written.")
@@ -269,9 +280,68 @@ pub enum CliError {
     #[diagnostic(code(E244), help("callisto pre enter <tag>"))]
     PreNotActive,
 
-    #[error("{0}")]
-    #[diagnostic(code(E245), help("Inspect the reported message; no more specific fix is known."))]
-    Other(String),
+    #[error("invalid package spec `{spec}`; expected `package-name:severity`")]
+    #[diagnostic(code(E270), help("pass a colon-separated pair, for example `cargo/foo:patch`"))]
+    AddInvalidPackageSpec { spec: String },
+
+    #[error("Invalid severity `{value}`. Must be none, patch, minor, or major.")]
+    #[diagnostic(code(E271), help("pass one of: none, patch, minor, major"))]
+    InvalidSeverity { value: String },
+
+    #[error("no packages found in workspace")]
+    #[diagnostic(
+        code(E272),
+        help("check that callisto.toml and package manifests are discoverable from the current directory")
+    )]
+    AddNoPackagesInWorkspace,
+
+    #[error("no packages selected for changeset")]
+    #[diagnostic(
+        code(E273),
+        help("select at least one package, or pass `--package` flags instead of running interactively")
+    )]
+    AddNoPackagesSelected,
+
+    #[error("--summary is required when specifying packages via --package in non-interactive mode")]
+    #[diagnostic(code(E274), help("pass `--summary \"description\"` alongside `--package`"))]
+    AddSummaryRequired,
+
+    #[error("--summary cannot be empty")]
+    #[diagnostic(code(E275), help("provide a non-empty description of the change"))]
+    AddSummaryEmpty,
+
+    #[error("--emit-decision writes a file; remove --dry-run or drop --emit-decision")]
+    #[diagnostic(code(E276), help("remove --dry-run, or drop --emit-decision"))]
+    VersionEmitDecisionDryRun,
+
+    #[error("--strict: workspace graph has error diagnostics:\n{}", .messages.join("\n"))]
+    #[diagnostic(
+        code(E277),
+        help("resolve each listed diagnostic, or drop --strict if it is expected")
+    )]
+    StrictDiagnosticsPresent { messages: Vec<String> },
+
+    #[error(
+        "Unknown schema target type `{requested}`. Supported types: status, version, snapshot, validate, init, changeset, pre, matrix, release-receipt"
+    )]
+    #[diagnostic(code(E278), help("pass one of the supported --type values"))]
+    UnknownSchemaType { requested: String },
+
+    #[error("pre-release tag cannot be empty")]
+    #[diagnostic(code(E279), help("pass a non-empty tag, for example `callisto pre enter beta`"))]
+    PreTagEmpty,
+
+    #[error("workspace is not in pre-release mode (already exited)")]
+    #[diagnostic(code(E280), help("run `callisto version` to finalize the release"))]
+    PreAlreadyExited,
+
+    #[error("--{flag} is not valid JSON: {detail}")]
+    #[diagnostic(code(E281), help("check the JSON is well-formed and matches the expected schema"))]
+    ReleasePrArgJsonInvalid { flag: &'static str, detail: String },
+
+    #[error("release-pr commit-plan cannot write --out with --dry-run; omit --out")]
+    #[diagnostic(code(E282), help("re-run without --dry-run, or drop --out"))]
+    ReleasePrCommitPlanDryRun,
 }
 
 impl From<std::io::Error> for CliError {
@@ -329,12 +399,12 @@ mod tests {
     }
 
     #[test]
-    fn format_error_json_other_has_stable_envelope() {
-        let err = CliError::Other("something went wrong".to_string());
+    fn format_error_json_typed_variant_has_stable_envelope() {
+        let err = CliError::AddSummaryEmpty;
         let json = format_error_json(&err);
         assert_envelope_shape(&json);
-        assert_eq!(json["error"]["code"], "E245");
-        assert_eq!(json["error"]["message"], "something went wrong");
+        assert_eq!(json["error"]["code"], "E275");
+        assert_eq!(json["error"]["message"], "--summary cannot be empty");
         assert!(json["error"]["help"].is_string());
     }
 
@@ -379,7 +449,7 @@ mod tests {
     /// top-level key set (code + message + help always present).
     #[test]
     fn format_error_json_structure_is_consistent_across_variants() {
-        let errors: &[CliError] = &[CliError::Other("first".to_string()), CliError::NotATty];
+        let errors: &[CliError] = &[CliError::AddSummaryEmpty, CliError::NotATty];
         let jsons: Vec<serde_json::Value> = errors.iter().map(format_error_json).collect();
         for json in &jsons {
             assert_envelope_shape(json);
@@ -469,5 +539,48 @@ mod tests {
             .map(|e| format_error_json(e)["error"]["code"].to_string())
             .collect();
         assert_eq!(codes.len(), errors.len(), "release error codes must be unique");
+    }
+
+    /// Every variant that replaced a `CliError::Other(String)` call site carries its own
+    /// code and help, and the codes are pairwise distinct.
+    #[test]
+    fn retired_other_call_sites_now_carry_code_and_help() {
+        let errors = [
+            CliError::Interactive(dialoguer::Error::IO(std::io::Error::other("x"))),
+            CliError::AddInvalidPackageSpec { spec: "x".to_owned() },
+            CliError::InvalidSeverity { value: "x".to_owned() },
+            CliError::AddNoPackagesInWorkspace,
+            CliError::AddNoPackagesSelected,
+            CliError::AddSummaryRequired,
+            CliError::AddSummaryEmpty,
+            CliError::VersionEmitDecisionDryRun,
+            CliError::StrictDiagnosticsPresent {
+                messages: vec!["x".to_owned()],
+            },
+            CliError::UnknownSchemaType {
+                requested: "x".to_owned(),
+            },
+            CliError::PreTagEmpty,
+            CliError::PreAlreadyExited,
+            CliError::ReleasePrArgJsonInvalid {
+                flag: "snapshot",
+                detail: "x".to_owned(),
+            },
+            CliError::ReleasePrCommitPlanDryRun,
+        ];
+        for error in &errors {
+            let json = format_error_json(error);
+            let code = json["error"]["code"].as_str().unwrap();
+            assert!(
+                code.starts_with('E') && code[1..].chars().all(|c| c.is_ascii_digit()),
+                "{code}"
+            );
+            assert!(json["error"]["help"].is_string(), "{code} lacks help");
+        }
+        let codes: std::collections::BTreeSet<_> = errors
+            .iter()
+            .map(|e| format_error_json(e)["error"]["code"].to_string())
+            .collect();
+        assert_eq!(codes.len(), errors.len(), "retired-Other error codes must be unique");
     }
 }

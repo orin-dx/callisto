@@ -394,6 +394,7 @@ pub(crate) mod tests {
             source,
             ExecutionTrustProfileV1::GitCommit,
             None,
+            &mut Vec::new(),
         )
         .unwrap();
 

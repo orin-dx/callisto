@@ -55,6 +55,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E152 | Commit plan is <bytes> bytes, exceeding the <limit> byte limit | Split the release into smaller changesets, or reduce large generated files (for example a monolithic CHANGELOG) before retrying. |
 | E153 | Path `<path>` may not appear in a forge commit plan | The executor never writes `.github/workflows/*`, `.git/*`, or unsafe paths through the forge commit API; those are inherited unchanged from the base commit. |
 | E154 | Pull request #<number> targets the internal staging branch | The `<release-branch>--staging` branch is reserved for the executor's own commit staging; close or rename a pull request opened against it before retrying. |
+| E155 | Unsupported release-PR wire schema version | re-derive this file with the current build; a release-PR wire shape is never reused across versions |
 | E259 | Tag template contains no `{version}` placeholder | Add a `{version}` placeholder to the tag template. |
 | E260 | Tag template contains `{version}` more than once | Use exactly one `{version}` placeholder in the tag template. |
 | E261 | Tag template contains an unknown placeholder | Remove the unknown placeholder; `{version}` is the only placeholder supported. |
@@ -255,7 +256,20 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E242 | `--workflow` and `--no-workflow` are mutually exclusive | pass only one of --workflow or --no-workflow |
 | E243 | `pre enter` was run while `.changeset/pre.json`'s mode is already `pre` | run `callisto pre exit` first, or delete .changeset/pre.json manually to reset |
 | E244 | `pre exit` was run with no `.changeset/pre.json` on disk | callisto pre enter <tag> |
-| E245 | Fallback/untyped error; message is whatever string was wrapped | Inspect the reported message; no more specific fix is known. |
+| E269 | An interactive prompt (selection, confirmation, or text input) failed | pass flags explicitly to skip interactive prompts, or run in a terminal |
+| E270 | `add --package` value is not a `name:severity` pair | pass a colon-separated pair, for example `cargo/foo:patch` |
+| E271 | `add --package` severity is not `none`, `patch`, `minor`, or `major` | pass one of: none, patch, minor, major |
+| E272 | `add` found no packages in the workspace to select from interactively | check that callisto.toml and package manifests are discoverable from the current directory |
+| E273 | `add`'s interactive wizard ended with no packages selected | select at least one package, or pass `--package` flags instead of running interactively |
+| E274 | `add --package` was given with no `--summary` in non-interactive mode | pass `--summary "description"` alongside `--package` |
+| E275 | `add --summary` is empty or whitespace-only | provide a non-empty description of the change |
+| E276 | `version --emit-decision` was run with `--dry-run`, but emitting the decision writes a file | remove --dry-run, or drop --emit-decision |
+| E277 | `--strict` escalated one or more workspace graph diagnostics to errors | resolve each listed diagnostic, or drop --strict if it is expected |
+| E278 | `schema --type` names a type `callisto schema` doesn't generate | pass one of the supported --type values |
+| E279 | `pre enter` was given an empty or whitespace-only tag | pass a non-empty tag, for example `callisto pre enter beta` |
+| E280 | `pre exit` was run after prerelease mode was already exited | run `callisto version` to finalize the release |
+| E281 | A `release-pr` `--decision`/`--snapshot` argument is not valid JSON | check the JSON is well-formed and matches the expected schema |
+| E282 | `release-pr commit-plan` was run with both `--out` and `--dry-run` | re-run without --dry-run, or drop --out |
 
 
-211 numeric E#### codes total in one registry.
+225 numeric E#### codes total in one registry.

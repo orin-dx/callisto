@@ -68,6 +68,9 @@ fn release(
         print_nothing_to_release(global)?;
         return Ok(ExitCode::SUCCESS);
     };
+    for diagnostic in &plan.diagnostics {
+        eprintln!("warning: {}", diagnostic.message);
+    }
     let intent = plan.intent;
     let permit = ApplyPermit::granted_unless_dry_run(false).expect("non-dry-run permits writes");
     // A receipt records only full success; a partial run is recovered by rerunning.
@@ -118,15 +121,38 @@ pub(crate) fn write_release_preview(
     match (plan, format) {
         (None, OutputFormat::Json) => write_json(&mut &mut *out, &serde_json::json!({ "nothingToRelease": true }))?,
         (None, OutputFormat::Text) => writeln!(out, "{NOTHING_TO_RELEASE}")?,
-        (Some(plan), OutputFormat::Json) => write_json(&mut &mut *out, &plan.intent)?,
+        (Some(plan), OutputFormat::Json) => {
+            write_json(&mut &mut *out, &intent_envelope(&plan.intent, &plan.diagnostics))?
+        }
         (Some(plan), OutputFormat::Text) => {
             write!(out, "{}", render_release_plan(&plan.intent, crate::color::enabled()))?
         }
     }
-    if plan.is_some_and(|plan| plan.tags_unbound) {
-        eprintln!("{TAGS_UNBOUND_NOTE}");
+    if let Some(plan) = plan {
+        if plan.tags_unbound {
+            eprintln!("{TAGS_UNBOUND_NOTE}");
+        }
+        for diagnostic in &plan.diagnostics {
+            eprintln!("warning: {}", diagnostic.message);
+        }
     }
     Ok(())
+}
+
+/// A release intent's own JSON shape, with a sibling `diagnostics` array added when
+/// derivation raised any -- the persisted intent file (read back by `verify`/`execute`)
+/// never carries this field; only the CLI's own stdout/preview output does.
+fn intent_envelope(intent: &ReleaseIntentV1, diagnostics: &[callisto_model::Diagnostic]) -> serde_json::Value {
+    let mut value = serde_json::to_value(intent).expect("release intent serializes");
+    if !diagnostics.is_empty() {
+        if let serde_json::Value::Object(ref mut map) = value {
+            map.insert(
+                "diagnostics".to_string(),
+                serde_json::to_value(diagnostics).expect("diagnostics serialize"),
+            );
+        }
+    }
+    value
 }
 
 fn print_nothing_to_release(global: &GlobalArgs) -> Result<(), CliError> {
@@ -352,7 +378,7 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
         }
     };
     let locator = IgnoreWalkLocator::new(&workspace.root);
-    let intent = match (
+    let (intent, diagnostics) = match (
         &workspace.config.product_release,
         &args.orchestration_revision,
         &args.artifact_repository,
@@ -407,20 +433,26 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
                     "notice: --orchestration-revision and --artifact-repository ignored: the source has no [release] section; planning with zero artifact slots",
                 );
             }
-            build_release_intent(
-                &workspace.root,
-                &locator,
-                &runner,
-                &decision,
-                ExecutionTrustProfileV1::GitCommit,
-            )?
+            (
+                build_release_intent(
+                    &workspace.root,
+                    &locator,
+                    &runner,
+                    &decision,
+                    ExecutionTrustProfileV1::GitCommit,
+                )?,
+                Vec::new(),
+            )
         }
     };
     let permit = ApplyPermit::granted_unless_dry_run(global.dry_run)
         .expect("release plan rejects --dry-run before creating its explicit output");
     write_intent(&args.out, &intent, &permit)?;
+    for diagnostic in &diagnostics {
+        eprintln!("warning: {}", diagnostic.message);
+    }
     match global.format {
-        OutputFormat::Json => write_json(&mut std::io::stdout(), &intent)?,
+        OutputFormat::Json => write_json(&mut std::io::stdout(), &intent_envelope(&intent, &diagnostics))?,
         OutputFormat::Text => println!("Wrote release intent {} to {}", intent.digest(), args.out.display()),
     }
     Ok(ExitCode::SUCCESS)

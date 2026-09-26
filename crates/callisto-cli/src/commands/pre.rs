@@ -15,15 +15,14 @@ use crate::workspace::load_workspace;
 /// Extracted from [`handle`] so a fake [`CommandRunner`] can exercise the `git add` without shelling out for real.
 fn stage_pre_json(runner: &dyn CommandRunner, root: &Path, rel_path: &Path) -> Result<(), CliError> {
     let rel_str = rel_path.to_string_lossy();
-    let output = runner
-        .run("git", &["add", rel_str.as_ref()], root)
-        .map_err(|e| CliError::Other(format!("git add failed: {e}")))?;
+    let output = runner.run("git", &["add", rel_str.as_ref()], root)?;
     if !output.success() {
-        return Err(CliError::Other(format!(
-            "git add {rel_str} failed (exit {:?}): {}",
-            output.exit_code,
-            output.redacted_stderr()
-        )));
+        return Err(callisto_model::CommandError::Failed {
+            program: "git".to_string(),
+            exit_code: output.exit_code,
+            stderr: output.redacted_stderr(),
+        }
+        .into());
     }
     Ok(())
 }
@@ -72,7 +71,7 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         PreArgs::Enter { tag } => {
             // Bug 3: reject empty tags before any workspace I/O.
             if tag.trim().is_empty() {
-                return Err(CliError::Other("Pre-release tag cannot be empty".to_string()));
+                return Err(CliError::PreTagEmpty);
             }
 
             let ws = load_workspace(global, &runner)?;
@@ -156,11 +155,7 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
 
             // Reject double-exit.
             if pre_state.mode == PreMode::Exit {
-                return Err(CliError::Other(
-                    "Workspace is not in pre-release mode (already exited). \
-                     Run `callisto version` to finalize the release."
-                        .to_string(),
-                ));
+                return Err(CliError::PreAlreadyExited);
             }
 
             pre_state.mode = PreMode::Exit;

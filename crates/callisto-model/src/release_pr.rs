@@ -56,26 +56,37 @@ impl ReleasePrConfigV1 {
     }
 }
 
+/// The on-the-wire shape of [`ReleasePrConfigV1`], before its invariants are checked.
+///
+/// Deserializing this (rather than `ReleasePrConfigV1` itself) then calling
+/// [`ReleasePrConfigV1::from_wire`] keeps a caller's own typed
+/// [`ReleasePrDecisionError`] (e.g. `E142`) intact -- deserializing straight into
+/// `ReleasePrConfigV1` still validates, but folds a validation failure into a generic
+/// `serde` string error, losing the code.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReleasePrConfigWireV1 {
+    pub schema_version: u8,
+    pub repository: GitHubRepository,
+    pub base_branch: String,
+    pub release_branch: String,
+}
+
+impl ReleasePrConfigV1 {
+    /// Validates an already-parsed wire value into a well-formed config.
+    pub fn from_wire(wire: ReleasePrConfigWireV1) -> Result<Self, ReleasePrDecisionError> {
+        check_schema_version(wire.schema_version, Self::SCHEMA_VERSION, "release PR configuration")?;
+        Self::new(wire.repository, wire.base_branch, wire.release_branch)
+    }
+}
+
 impl<'de> Deserialize<'de> for ReleasePrConfigV1 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase", deny_unknown_fields)]
-        struct Wire {
-            schema_version: u8,
-            repository: GitHubRepository,
-            base_branch: String,
-            release_branch: String,
-        }
-        let wire = Wire::deserialize(deserializer)?;
-        crate::release::check_schema_version::<D::Error>(
-            wire.schema_version,
-            Self::SCHEMA_VERSION,
-            "release PR configuration",
-        )?;
-        Self::new(wire.repository, wire.base_branch, wire.release_branch).map_err(serde::de::Error::custom)
+        let wire = ReleasePrConfigWireV1::deserialize(deserializer)?;
+        Self::from_wire(wire).map_err(serde::de::Error::custom)
     }
 }
 
@@ -116,33 +127,39 @@ impl ReleasePrSnapshotV2 {
     }
 }
 
-impl<'de> Deserialize<'de> for ReleasePrSnapshotV2 {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase", deny_unknown_fields)]
-        struct Wire {
-            schema_version: u8,
-            repository: GitHubRepository,
-            base_branch: String,
-            base_commit: CommitSha,
-            open_pull_requests: Vec<ReleasePrPullRequestV2>,
-        }
-        let wire = Wire::deserialize(deserializer)?;
-        crate::release::check_schema_version::<D::Error>(
-            wire.schema_version,
-            Self::SCHEMA_VERSION,
-            "release PR snapshot",
-        )?;
+/// The on-the-wire shape of [`ReleasePrSnapshotV2`], before its invariants are checked.
+/// See [`ReleasePrConfigWireV1`] for why the CLI deserializes this instead of
+/// `ReleasePrSnapshotV2` directly.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReleasePrSnapshotWireV2 {
+    pub schema_version: u8,
+    pub repository: GitHubRepository,
+    pub base_branch: String,
+    pub base_commit: CommitSha,
+    pub open_pull_requests: Vec<ReleasePrPullRequestV2>,
+}
+
+impl ReleasePrSnapshotV2 {
+    /// Validates an already-parsed wire value into a well-formed snapshot.
+    pub fn from_wire(wire: ReleasePrSnapshotWireV2) -> Result<Self, ReleasePrDecisionError> {
+        check_schema_version(wire.schema_version, Self::SCHEMA_VERSION, "release PR snapshot")?;
         Self::new(
             wire.repository,
             wire.base_branch,
             wire.base_commit,
             wire.open_pull_requests,
         )
-        .map_err(serde::de::Error::custom)
+    }
+}
+
+impl<'de> Deserialize<'de> for ReleasePrSnapshotV2 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = ReleasePrSnapshotWireV2::deserialize(deserializer)?;
+        Self::from_wire(wire).map_err(serde::de::Error::custom)
     }
 }
 
@@ -270,31 +287,39 @@ impl ReleasePrDecisionV2 {
     }
 }
 
+/// The on-the-wire shape of [`ReleasePrDecisionV2`], with its nested config and
+/// snapshot still unvalidated. See [`ReleasePrConfigWireV1`] for why the CLI
+/// deserializes this instead of `ReleasePrDecisionV2` directly.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReleasePrDecisionWireV2 {
+    pub schema_version: u8,
+    pub config: ReleasePrConfigWireV1,
+    pub snapshot: ReleasePrSnapshotWireV2,
+    pub action: ReleasePrActionV2,
+}
+
+impl ReleasePrDecisionV2 {
+    /// Validates an already-parsed wire value, including its nested config and snapshot,
+    /// into a well-formed decision.
+    pub fn from_wire(wire: ReleasePrDecisionWireV2) -> Result<Self, ReleasePrDecisionError> {
+        check_schema_version(wire.schema_version, Self::SCHEMA_VERSION, "release PR decision")?;
+        Ok(Self {
+            schema_version: wire.schema_version,
+            config: ReleasePrConfigV1::from_wire(wire.config)?,
+            snapshot: ReleasePrSnapshotV2::from_wire(wire.snapshot)?,
+            action: wire.action,
+        })
+    }
+}
+
 impl<'de> Deserialize<'de> for ReleasePrDecisionV2 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase", deny_unknown_fields)]
-        struct Wire {
-            schema_version: u8,
-            config: ReleasePrConfigV1,
-            snapshot: ReleasePrSnapshotV2,
-            action: ReleasePrActionV2,
-        }
-        let wire = Wire::deserialize(deserializer)?;
-        crate::release::check_schema_version::<D::Error>(
-            wire.schema_version,
-            Self::SCHEMA_VERSION,
-            "release PR decision",
-        )?;
-        Ok(Self {
-            schema_version: wire.schema_version,
-            config: wire.config,
-            snapshot: wire.snapshot,
-            action: wire.action,
-        })
+        let wire = ReleasePrDecisionWireV2::deserialize(deserializer)?;
+        Self::from_wire(wire).map_err(serde::de::Error::custom)
     }
 }
 
@@ -387,6 +412,30 @@ pub enum ReleasePrDecisionError {
         help("The `<release-branch>--staging` branch is reserved for the executor's own commit staging; close or rename a pull request opened against it before retrying.")
     )]
     StagingBranchPullRequest { number: u64 },
+    #[error("unsupported {type_name} schema version {found}; this build reads version {expected}")]
+    #[diagnostic(
+        code(E155),
+        help("re-derive this file with the current build; a release-PR wire shape is never reused across versions")
+    )]
+    UnsupportedSchemaVersion {
+        type_name: &'static str,
+        found: u8,
+        expected: u8,
+    },
+}
+
+/// Checked directly by [`ReleasePrConfigV1::from_wire`] and friends, so a schema mismatch
+/// keeps its own typed error instead of folding into a generic `serde` string.
+fn check_schema_version(found: u8, expected: u8, type_name: &'static str) -> Result<(), ReleasePrDecisionError> {
+    if found == expected {
+        Ok(())
+    } else {
+        Err(ReleasePrDecisionError::UnsupportedSchemaVersion {
+            type_name,
+            found,
+            expected,
+        })
+    }
 }
 
 fn validate_branch(kind: &'static str, branch: &str) -> Result<(), ReleasePrDecisionError> {
@@ -786,6 +835,71 @@ mod tests {
 
         let wrong_version = r#"{"schemaVersion":1,"repository":"orin-dx/callisto","baseBranch":"main","baseCommit":"0123456789abcdef0123456789abcdef01234567","openPullRequests":[]}"#;
         assert!(serde_json::from_str::<ReleasePrSnapshotV2>(wrong_version).is_err());
+    }
+
+    /// A duplicate pull request number in a snapshot deserialized via the wire type then
+    /// validated with `from_wire` must surface as the typed `DuplicatePullRequestNumber`
+    /// (`E143`), not a generic `serde` string -- unlike deserializing straight into
+    /// `ReleasePrSnapshotV2`, which loses the code (see `snapshot_v2_rejects_v1_wire_and_unknown_fields`
+    /// for that generic path, kept for other callers).
+    #[test]
+    fn snapshot_from_wire_preserves_duplicate_pull_request_number_code() {
+        let raw = r#"{"schemaVersion":2,"repository":"orin-dx/callisto","baseBranch":"main","baseCommit":"0123456789abcdef0123456789abcdef01234567","openPullRequests":[{"number":1,"headRepository":"orin-dx/callisto","headBranch":"a","headCommit":"0123456789abcdef0123456789abcdef01234567"},{"number":1,"headRepository":"orin-dx/callisto","headBranch":"b","headCommit":"0123456789abcdef0123456789abcdef01234567"}]}"#;
+        let wire: ReleasePrSnapshotWireV2 = serde_json::from_str(raw).unwrap();
+        assert!(matches!(
+            ReleasePrSnapshotV2::from_wire(wire),
+            Err(ReleasePrDecisionError::DuplicatePullRequestNumber)
+        ));
+    }
+
+    /// An unsafe branch name in a config deserialized via the wire type then validated with
+    /// `from_wire` must surface as the typed `InvalidBranch` (`E142`), not a generic `serde`
+    /// string.
+    #[test]
+    fn config_from_wire_preserves_invalid_branch_code() {
+        let raw = r#"{"schemaVersion":1,"repository":"orin-dx/callisto","baseBranch":"ma..in","releaseBranch":"callisto/version-packages"}"#;
+        let wire: ReleasePrConfigWireV1 = serde_json::from_str(raw).unwrap();
+        assert!(matches!(
+            ReleasePrConfigV1::from_wire(wire),
+            Err(ReleasePrDecisionError::InvalidBranch {
+                kind: "base branch",
+                ..
+            })
+        ));
+    }
+
+    /// A decision's nested config and snapshot are validated (not merely structurally
+    /// deserialized) by `ReleasePrDecisionV2::from_wire`, so a duplicate pull request number
+    /// nested inside a decision still surfaces its typed `E143`.
+    #[test]
+    fn decision_from_wire_validates_nested_snapshot() {
+        let raw = format!(
+            r#"{{"schemaVersion":2,"config":{{"schemaVersion":1,"repository":"orin-dx/callisto","baseBranch":"main","releaseBranch":"callisto/version-packages"}},"snapshot":{{"schemaVersion":2,"repository":"orin-dx/callisto","baseBranch":"main","baseCommit":"{sha}","openPullRequests":[{{"number":1,"headRepository":"orin-dx/callisto","headBranch":"a","headCommit":"{sha}"}},{{"number":1,"headRepository":"orin-dx/callisto","headBranch":"b","headCommit":"{sha}"}}]}},"action":{{"kind":"noop","reason":{{"kind":"noPendingChangesets"}}}}}}"#,
+            sha = "0123456789abcdef0123456789abcdef01234567"
+        );
+        let wire: ReleasePrDecisionWireV2 = serde_json::from_str(&raw).unwrap();
+        assert!(matches!(
+            ReleasePrDecisionV2::from_wire(wire),
+            Err(ReleasePrDecisionError::DuplicatePullRequestNumber)
+        ));
+    }
+
+    #[test]
+    fn from_wire_reports_unsupported_schema_version() {
+        let wire = ReleasePrConfigWireV1 {
+            schema_version: 99,
+            repository: repository(),
+            base_branch: "main".to_string(),
+            release_branch: "callisto/version-packages".to_string(),
+        };
+        assert!(matches!(
+            ReleasePrConfigV1::from_wire(wire),
+            Err(ReleasePrDecisionError::UnsupportedSchemaVersion {
+                found: 99,
+                expected: 1,
+                ..
+            })
+        ));
     }
 
     #[test]

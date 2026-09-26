@@ -24,11 +24,9 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     if !args.packages.is_empty() {
         // Non-interactive mode (flags supplied via CLI or agent)
         for pkg_str in args.packages {
-            let (name, sev_str) = pkg_str.rsplit_once(':').ok_or_else(|| {
-                CliError::Other(format!(
-                    "Invalid package spec `{pkg_str}`. Expected format: `package-name:severity`"
-                ))
-            })?;
+            let (name, sev_str) = pkg_str
+                .rsplit_once(':')
+                .ok_or_else(|| CliError::AddInvalidPackageSpec { spec: pkg_str.clone() })?;
 
             let severity = parse_severity(sev_str)?;
 
@@ -49,18 +47,15 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         let all_packages: Vec<String> = collect_package_names(ws.graph.packages());
 
         if all_packages.is_empty() {
-            return Err(CliError::Other("No packages found in workspace.".to_string()));
+            return Err(CliError::AddNoPackagesInWorkspace);
         }
 
         // Step 1: Package Selection
         println!("Which packages would you like to include in this changeset?");
-        let selected_indices = MultiSelect::new()
-            .items(&all_packages)
-            .interact()
-            .map_err(|e| CliError::Other(format!("Interactive selection failed: {e}")))?;
+        let selected_indices = MultiSelect::new().items(&all_packages).interact()?;
 
         if selected_indices.is_empty() {
-            return Err(CliError::Other("No packages selected for changeset.".to_string()));
+            return Err(CliError::AddNoPackagesSelected);
         }
 
         let selected_packages: Vec<String> = selected_indices.into_iter().map(|i| all_packages[i].clone()).collect();
@@ -68,10 +63,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         // Step 2: Major Bump Selection
         println!("\nWhich of these packages should be a MAJOR bump?");
         println!("(Select none if there are no breaking changes)");
-        let major_indices = MultiSelect::new()
-            .items(&selected_packages)
-            .interact()
-            .map_err(|e| CliError::Other(format!("Interactive selection failed: {e}")))?;
+        let major_indices = MultiSelect::new().items(&selected_packages).interact()?;
 
         let major_set: std::collections::HashSet<usize> = major_indices.into_iter().collect();
 
@@ -86,10 +78,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         let minor_indices = if !minor_candidates.is_empty() {
             println!("\nWhich of these packages should be a MINOR bump?");
             println!("(Any remaining packages will default to a PATCH bump)");
-            MultiSelect::new()
-                .items(&minor_candidates)
-                .interact()
-                .map_err(|e| CliError::Other(format!("Interactive selection failed: {e}")))?
+            MultiSelect::new().items(&minor_candidates).interact()?
         } else {
             Vec::new()
         };
@@ -126,8 +115,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
                         Ok(())
                     }
                 })
-                .interact_text()
-                .map_err(|e| CliError::Other(format!("Interactive prompt failed: {e}")))?;
+                .interact_text()?;
             summary = Some(input_summary);
         }
 
@@ -144,8 +132,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         let confirm = Confirm::new()
             .with_prompt("Is this your desired changeset?")
             .default(true)
-            .interact()
-            .map_err(|e| CliError::Other(format!("Interactive confirmation failed: {e}")))?;
+            .interact()?;
 
         if !confirm {
             println!("Changeset creation cancelled.");
@@ -155,11 +142,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         return Err(CliError::NotATty);
     }
 
-    let raw_summary = summary.ok_or_else(|| {
-        CliError::Other(
-            "--summary is required when specifying packages via CLI flags in non-interactive mode".to_string(),
-        )
-    })?;
+    let raw_summary = summary.ok_or(CliError::AddSummaryRequired)?;
     let summary_text = validate_summary(&raw_summary)?;
     let changeset = Changeset {
         entries,
@@ -217,10 +200,8 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
 /// actually accepts (`none`, `patch`, `minor`, `major`) on failure -- not a
 /// stale subset that omits `none`.
 fn parse_severity(sev_str: &str) -> Result<Severity, CliError> {
-    sev_str.parse().map_err(|_err| {
-        CliError::Other(format!(
-            "Invalid severity `{sev_str}`. Must be none, patch, minor, or major."
-        ))
+    sev_str.parse().map_err(|_err| CliError::InvalidSeverity {
+        value: sev_str.to_string(),
     })
 }
 
@@ -230,9 +211,7 @@ fn parse_severity(sev_str: &str) -> Result<Severity, CliError> {
 fn validate_summary(summary: &str) -> Result<String, CliError> {
     let trimmed = summary.trim().to_string();
     if trimmed.is_empty() {
-        return Err(CliError::Other(
-            "--summary cannot be empty. Provide a non-empty description of the change.".to_string(),
-        ));
+        return Err(CliError::AddSummaryEmpty);
     }
     Ok(trimmed)
 }
