@@ -34,9 +34,6 @@ Decisions (owner, 2026-09-25):
 - `version` refreshes lockfiles by default; `--no-refresh-lockfiles` opts out.
 - Four published crates: `callisto-model` absorbed `callisto-format` and `callisto-vcs`; `callisto-graph` absorbed `callisto-conventional` and `callisto-changelog` (owner, 2026-09-25).
 
-### 1. A release is complete and consistent
-- Cargo real-registry e2e next to the npm (Verdaccio) and PyPI (pypiserver) ones. There is no drop-in local cargo registry; pick one before writing it.
-
 ### 7. Retired crates
 - Publish a final release of `callisto-format`, `callisto-vcs`, `callisto-conventional` and `callisto-changelog` whose README names the new home (`callisto-model` or `callisto-graph`).
 
