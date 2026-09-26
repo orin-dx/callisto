@@ -1,0 +1,224 @@
+{
+  "id": "SPEC-VERSIONING",
+  "purpose": "Define how `callisto version`, `pre` and `snapshot` turn pending changesets and commits into new package versions, dependency rewrites, changelog sections and an optional release decision file.",
+  "scope": "Changeset file format, severity aggregation and commit inference, dependency cascade, fixed and linked groups, prerelease and snapshot versions, and applying the plan to disk.",
+  "non_goals": [
+    "Creating changesets interactively with `callisto add`.",
+    "Publishing, tagging, and verifying a committed release decision during `release`.",
+    "Package discovery, workspace config parsing and dependency graph construction.",
+    "Release PR body composition."
+  ],
+  "api_surface": [
+    {
+      "name": "callisto version",
+      "signature": "callisto version [--strict] [--allow-empty-changesets] [--refresh-lockfiles] [--emit-decision <PATH>] [--dry-run]",
+      "description": "Computes the version plan from pending changesets, inference, cascade and groups, then applies it to disk and stages it in git."
+    },
+    {
+      "name": "callisto pre",
+      "signature": "callisto pre enter <TAG> | callisto pre exit",
+      "description": "Enters or exits prerelease mode by writing `.changeset/pre.json`."
+    },
+    {
+      "name": "callisto snapshot",
+      "signature": "callisto snapshot --tag <TAG> [--strict] [--dry-run]",
+      "description": "Sets every package to a throwaway `0.0.0-{tag}-{sha7}` version without consuming changesets."
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "VER-CS-01",
+      "criterion": "A changeset is a Markdown file whose line 1 is `---`, followed by one `name: severity` entry per line, a closing `---` line and a free-text summary; blank lines and lines starting with `#` inside the frontmatter are ignored. Severities are `major`, `minor`, `patch` and `none` (ordered none < patch < minor < major), read case-insensitively and written lowercase."
+    },
+    {
+      "id": "VER-CS-02",
+      "criterion": "A package name may be double-quoted, and a quoted name may contain `:` (`\"maven/org.example:foo-core\": major` parses as that name with severity major); an unquoted name is split at its last `:`."
+    },
+    {
+      "id": "VER-CS-03",
+      "criterion": "A leading UTF-8 BOM is ignored, CRLF and CR line endings parse the same as LF, the summary is trimmed of surrounding whitespace, and a changeset with a summary but no entries is valid."
+    },
+    {
+      "id": "VER-CS-04",
+      "criterion": "Parsing fails with E040 when line 1 is not `---`, E041 when the frontmatter is never closed, E048 when there are no entries and no summary, and E055 when there are entries but the summary is empty or whitespace-only.",
+      "is_error_case": true
+    },
+    {
+      "id": "VER-CS-05",
+      "criterion": "Parsing fails on a bad entry line and reports its line number: unclosed quoted name (E042), text between a quoted name and its `:` (E043), no `:` (E044), empty name (E045), unknown severity (E046), or a name already used in the same file (E047, also citing the first line).",
+      "is_error_case": true
+    },
+    {
+      "id": "VER-CS-06",
+      "criterion": "Writing a changeset emits `---`, one `name: severity` line per entry in order, `---`, a blank line, the trimmed summary and a trailing newline; a name is quoted when it starts with a YAML-significant character (such as `@`, `-`, `#`, `\"` or a space), contains `:` or `#`, or ends with a space."
+    },
+    {
+      "id": "VER-CS-07",
+      "criterion": "Writing fails for an empty summary (E049 with no entries, E056 with entries), an empty package name (E057), or a name containing `\"`.",
+      "is_error_case": true
+    },
+    {
+      "id": "VER-CS-08",
+      "criterion": "`version` reads every `.md` file directly inside the configured changesets directory (default `.changeset`) except `README.md`, in path order; a missing directory means no changesets, and one unparsable file aborts the run with an error naming that file.",
+      "is_error_case": true
+    },
+    {
+      "id": "VER-AGG-01",
+      "criterion": "A package's severity is the highest severity among all changeset entries naming it and its inferred severity."
+    },
+    {
+      "id": "VER-AGG-02",
+      "criterion": "An entry name resolves to a workspace package by prefixed id (`cargo/foo`) or bare name; a bare name that matches packages in two or more ecosystems aborts the run with an ambiguous-name error (E103).",
+      "is_error_case": true
+    },
+    {
+      "id": "VER-AGG-03",
+      "criterion": "An entry naming a package not in the workspace, or an invalid name, produces an unknown-package warning, and a changeset in which no entry resolves stays on disk unconsumed. An entry with severity `none` causes no bump and no changelog line, but its changeset is still consumed."
+    },
+    {
+      "id": "VER-AGG-04",
+      "criterion": "Commit inference runs only for packages with `release-trigger = \"auto\"`; packages with the default `release-trigger = \"changeset\"` take severity from changesets alone. Inference reads conventional commits touching the package's directory since its last release tag (all history when untagged): a `!` marker or `BREAKING CHANGE`/`BREAKING-CHANGE` footer maps to major, `feat` to minor, `fix`/`perf`/`revert` to patch, anything else to none."
+    },
+    {
+      "id": "VER-AGG-05",
+      "criterion": "`pre-major-inference` changes only inferred severity, and only for a package with a prior release tag whose current version is `0.y.z` with y >= 1: `conservative` maps major to minor, `conservative-feat` also maps minor to patch, and `off` (default) changes nothing."
+    },
+    {
+      "id": "VER-AGG-06",
+      "criterion": "When no changeset is consumed, `version` warns \"No pending changesets found in workspace\" unless `--allow-empty-changesets` or `[validation] allow-empty-changesets = true` is set; with `--strict` the warning is an error and `version` exits with a failure status.",
+      "is_error_case": true
+    },
+    {
+      "id": "VER-CAS-01",
+      "criterion": "When a package is bumped, each dependent's spec on it is tested against the new version. Under `[cascade] mode = \"out-of-range\"` (default) a runtime, optional, build or peer dependent is bumped only when its spec no longer covers the new version; under `mode = \"always\"` it is bumped regardless."
+    },
+    {
+      "id": "VER-CAS-02",
+      "criterion": "A cascaded bump has severity `bump-severity` (`patch` default, or `minor`), never lowers a severity the dependent already has, and propagates to that dependent's own dependents."
+    },
+    {
+      "id": "VER-CAS-03",
+      "criterion": "With `peer-escalation = true` (default), a peer dependent whose spec no longer covers a minor or major bump of its dependency receives a major bump; a patch bump of the dependency cascades at `bump-severity`."
+    },
+    {
+      "id": "VER-CAS-04",
+      "criterion": "A dev dependent is never bumped by the cascade, but its spec is still rewritten when it no longer covers the new version."
+    },
+    {
+      "id": "VER-CAS-05",
+      "criterion": "Coverage: an exact spec covers only the equal version, a bare Cargo version is a caret requirement, a caret requirement never covers a prerelease, a Cargo `workspace = true` spec is tested using the root `[workspace.dependencies]` spec, and an npm `workspace:` spec always covers. A catalog or other untestable spec is treated as covering and never rewritten; a catalog spec emits a CatalogSpecNotRewritten warning."
+    },
+    {
+      "id": "VER-CAS-06",
+      "criterion": "A spec that no longer covers the new version is rewritten to it, keeping the operator and precision for Cargo and npm (`^1.2` becomes `^2.0` for 2.0.0), or to the exact version for npm when `preserve-npm-ranges = false`. A spec that cannot be rewritten mechanically, such as an npm range with spaces, `||`, a hyphen or a wildcard, is left unchanged with a RangeNotRoundTrippable warning."
+    },
+    {
+      "id": "VER-CAS-07",
+      "criterion": "A rewrite names the dependency as the dependent's own ecosystem spells it, so an npm dependent of a dual-manifest package with different Cargo and npm names is rewritten under the npm name. A Cargo dependency inherited with `workspace = true` is rewritten in the workspace root's `[workspace.dependencies]`, not in the member manifest."
+    },
+    {
+      "id": "VER-CAS-08",
+      "criterion": "The cascade aborts with E105 when it does not settle within 4 x (package count) + 1 steps, and with a grammar-mismatch error when a spec and the new version use different version grammars (SemVer vs PEP 440).",
+      "is_error_case": true
+    },
+    {
+      "id": "VER-GRP-01",
+      "criterion": "All package members of a `[[fixed-group]]` receive the group's highest severity and one shared version: the on-disk version of the group's released members (members with a release tag) bumped by that severity."
+    },
+    {
+      "id": "VER-GRP-02",
+      "criterion": "A fixed group whose released members have different on-disk versions aborts the run with E106, and one whose released members use different version grammars aborts with E107.",
+      "is_error_case": true
+    },
+    {
+      "id": "VER-GRP-03",
+      "criterion": "When any member of a `[[linked-group]]` is bumped, every member receives the group's highest severity and all members move to the highest version any member's own bump produces (members at 1.4.0 and 2.7.3 with a minor bump both become 2.8.0)."
+    },
+    {
+      "id": "VER-GRP-04",
+      "criterion": "A package claimed by two groups is rejected: E109 when the claims use different spellings of the same package, and a group-conflict error when they use the same spelling.",
+      "is_error_case": true
+    },
+    {
+      "id": "VER-GRP-05",
+      "criterion": "An attached platform package, or a fixed-group member naming a platform manifest, is not bumped as a package: when its owner is bumped, the platform manifest gets the owner's new version and the owner's `optionalDependencies` entry for it is pinned to that version. A co-located platform manifest that is also one of the owner's canonical manifests is written once, as part of the owner's own bump."
+    },
+    {
+      "id": "VER-PRE-01",
+      "criterion": "`callisto pre enter <tag>` writes `.changeset/pre.json` with `mode` `pre`, the tag, every package's current version under `initialVersions` and an empty `changesets` list, then stages the file with git; under `--dry-run` it prints the content and writes nothing."
+    },
+    {
+      "id": "VER-PRE-02",
+      "criterion": "`pre enter` fails when the tag is empty or whitespace or `.changeset/pre.json` already exists (also under `--dry-run`); `callisto pre exit` sets `mode` to `exit` and fails when the file is missing or already in `exit` mode.",
+      "is_error_case": true
+    },
+    {
+      "id": "VER-PRE-03",
+      "criterion": "In pre mode, a bumped package's version is its `initialVersions` entry bumped by its severity plus `-{tag}.N`, where N starts at 0 and increments while the release part is unchanged (0.1.0 with a minor changeset and tag `beta` gives 0.2.0-beta.0, then 0.2.0-beta.1); PEP 440 packages use `aN` for tags `a`/`alpha`, `bN` for `b`/`beta`, `rcN` for `rc`/`c`/`pre`/`preview` (case-insensitive), and `.devN` for any other tag."
+    },
+    {
+      "id": "VER-PRE-05",
+      "criterion": "After `pre exit`, the next `version` moves every package at a prerelease version to its stable release (0.2.0-beta.1 becomes 0.2.0), consumes and deletes the pending changesets, and deletes `pre.json`."
+    },
+    {
+      "id": "VER-PRE-06",
+      "criterion": "A malformed `.changeset/pre.json` (invalid JSON, a missing `mode`, `tag`, `initialVersions` or `changesets` field, a mode other than `pre` or `exit`, or an unparsable version) makes `version` fail with E114 and write nothing; an unreadable file fails with E115.",
+      "is_error_case": true
+    },
+    {
+      "id": "VER-PRE-07",
+      "criterion": "`callisto snapshot --tag <tag>` sets every workspace package, and every attached platform package and fixed-group platform manifest, to the single version `0.0.0-{tag}-{sha7}`, where sha7 is the first 7 characters of HEAD; it fails if HEAD cannot be resolved."
+    },
+    {
+      "id": "VER-PRE-08",
+      "criterion": "A snapshot writes manifests only: it ignores and keeps pending changesets, writes no changelog or `pre.json`, and stages nothing in git; under `--dry-run` it writes nothing."
+    },
+    {
+      "id": "VER-APPLY-01",
+      "criterion": "`version` writes the new version to every canonical manifest of a bumped package, so both manifests of a dual-manifest package move together."
+    },
+    {
+      "id": "VER-APPLY-02",
+      "criterion": "Before writing a package or platform manifest, apply reads its current version: equal to the planned `from` it is written, equal to the target it is left unchanged, so applying the same plan again is safe."
+    },
+    {
+      "id": "VER-APPLY-03",
+      "criterion": "A manifest whose current version is neither the planned `from` nor the target aborts apply with E117 naming the path, the found version and both expected versions.",
+      "is_error_case": true
+    },
+    {
+      "id": "VER-APPLY-04",
+      "criterion": "A manifest that receives a version bump and dependency rewrites in the same run is read once and written once with all changes, and a manifest already at its target with no rewrites is not rewritten. An owner's `optionalDependencies` pins, and edits to a workspace root `Cargo.toml` that is also a package manifest, are written separately."
+    },
+    {
+      "id": "VER-APPLY-05",
+      "criterion": "Files are written one at a time, each by atomic replacement, so an interrupted run never leaves a partially written file; a failing write stops the run and leaves earlier files in place."
+    },
+    {
+      "id": "VER-APPLY-06",
+      "criterion": "For each bumped package, apply prepends a `## {version}` section under the `# {package}` heading of its changelog (default `CHANGELOG.md` in the package directory, overridable with `changelog`), creating the file if missing and keeping CRLF line endings; a changelog that already has that heading is left unchanged."
+    },
+    {
+      "id": "VER-APPLY-07",
+      "criterion": "A changelog section lists each changeset summary as a bullet (continuation lines indented), an inferred bump as a commit subject with its short sha, a group bump as \"Released together with the `{group}` {fixed|linked} group.\", a new fixed-group member as \"Joined the `{group}` group at this version.\", a peer escalation as \"Peer dependency `{dep}` requires `{version}`\", and cascaded bumps as \"`{dep}` → `{version}`\" lines under a \"Dependency updates\" bullet."
+    },
+    {
+      "id": "VER-APPLY-08",
+      "criterion": "Outside pre mode, a successful `version` deletes the consumed changeset files, then stages every written manifest and changelog, `pre.json` changes, the existing lockfiles of affected ecosystems, and the changeset deletions (via `git rm --cached --ignore-unmatch`, which also succeeds for an already-deleted file)."
+    },
+    {
+      "id": "VER-APPLY-09",
+      "criterion": "`version --dry-run` prints the computed plan (text output starts with `[DRY-RUN]`) and writes, deletes and stages nothing."
+    },
+    {
+      "id": "VER-APPLY-10",
+      "criterion": "`version --emit-decision <path>` writes the release decision JSON to `<path>` relative to the workspace root before applying the plan: `schemaVersion` 2, a digest, and one entry per canonical manifest of each bumped package (ecosystem-qualified name, target version, reasons) sorted by package. Reason `kind` is `changeset`, `inference`, `fixedGroup` or `linkedGroup` (with `groupId`), `cascade` (with source package and edge kind, `peer` for peer escalation) or `preReleasePolicy` (with the prerelease tag)."
+    },
+    {
+      "id": "VER-APPLY-11",
+      "criterion": "`--emit-decision` with `--dry-run` is rejected before any work, and a plan with no bumps, or whose group members have different target versions, fails to produce a decision before any file is written.",
+      "is_error_case": true
+    }
+  ],
+  "spec_file_path": "docs/specs/versioning.json"
+}

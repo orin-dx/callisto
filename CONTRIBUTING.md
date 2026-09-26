@@ -6,7 +6,7 @@
 
 By participating in this project, you agree to abide by the [Code of Conduct](./CODE_OF_CONDUCT.md). Found a security issue? See [SECURITY.md](./SECURITY.md) instead of opening a public issue.
 
-Agent-specific rules (invariants, fixing-bugs workflow, specs/plans, crate/license table) live in [AGENTS.md](./AGENTS.md) — this file covers human setup and PR process and does not duplicate them.
+Agent-specific rules (invariants, fixing-bugs workflow, specs/plans, crate/license table) live in [AGENTS.md](./AGENTS.md) — this file covers human setup and PR process and does not duplicate them. How the code fits together: [ARCHITECTURE.md](./ARCHITECTURE.md) and [docs/architecture/](./docs/architecture/).
 
 ---
 
@@ -87,3 +87,7 @@ CI (`.github/workflows/callisto-ci.yml`) gates on:
 - **`workflow-contracts`** — actionlint, zizmor, action pin verification, and the release-workflow contract/policy tests
 
 Before opening a PR: run `just ci` locally (covers everything above except the Docker-based actionlint step and the binary-dependent artifact-preflight build) and make sure `just pre-push` is clean. Add a changeset for any user-facing change (see above). Follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages.
+
+## Merging to main
+
+The `main` ruleset requires one approving review, signed commits, squash merges and every CI job passing. Merging a release PR publishes it; there is no second approval. The owner's ruleset bypass is for emergency recovery only.

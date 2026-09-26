@@ -1,0 +1,133 @@
+{
+  "id": "SPEC-MATRIX",
+  "purpose": "`callisto matrix` reads native build targets and runtime-version constraints from workspace manifests and prints one deterministic report that CI uses as its build matrix.",
+  "scope": "The hidden `callisto matrix [--package <name>]` command, its JSON and text output, and its errors and warnings.",
+  "non_goals": [
+    ".NET and Java target or runtime discovery.",
+    "Validating or expanding engines.node and requires-python ranges; they pass through verbatim.",
+    "Inferring maturin targets from manylinux tags or any source other than the declared target fields.",
+    "Generating CI workflow YAML."
+  ],
+  "api_surface": [
+    {
+      "name": "callisto matrix",
+      "signature": "callisto [--format text|json] matrix [--package <name>]",
+      "description": "Prints a MatrixReport with schemaVersion, platformTargets and runtimeVersions keyed by package id, plus diagnostics when any exist. Hidden from --help.",
+      "error_conditions": [
+        "E102: --package names no registered package.",
+        "E103: bare --package name matches packages in more than one ecosystem.",
+        "E118: one package declares both napi.targets and [tool.maturin].targets.",
+        "E203: a package with napi or maturin targets is also a cargo [[release.artifact]] package.",
+        "E204: a napi package's addon crate does not resolve to exactly one workspace crate.",
+        "Malformed package.json or pyproject.toml, or a target or runtime field of the wrong type."
+      ]
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "MX-DISC-01",
+      "criterion": "A package whose package.json declares napi.targets gets a platformTargets entry with kind \"napi\" and source \"napi.targets\"; one whose pyproject.toml declares [tool.maturin].targets gets kind \"maturin\" and source \"[tool.maturin].targets\"."
+    },
+    {
+      "id": "MX-DISC-02",
+      "criterion": "A declared but empty target array yields an entry with an empty targets list, while a package declaring neither field has no platformTargets entry."
+    },
+    {
+      "id": "MX-DISC-03",
+      "criterion": "engines.node in package.json yields a runtimeVersions item {\"ecosystem\":\"npm\",\"field\":\"engines.node\"} and requires-python in pyproject.toml yields {\"ecosystem\":\"python\",\"field\":\"requires-python\"}, each with range set to the raw manifest string; a package with both lists npm first, and a package with neither has no runtimeVersions entry."
+    },
+    {
+      "id": "MX-DISC-04",
+      "criterion": "Each recognised triple yields platform, arch, abi, hostRunner and useCross from one shared table, so napi and maturin packages declaring the same triple get identical values for those fields."
+    },
+    {
+      "id": "MX-DISC-05",
+      "criterion": "abi is a string for linux triples (for example \"gnu\", \"musl\", \"gnueabihf\") and JSON null for darwin, win32, freebsd, android and wasm32 triples."
+    },
+    {
+      "id": "MX-DISC-06",
+      "criterion": "hostRunner is \"macos-latest\" for aarch64-apple-darwin, \"macos-13\" for x86_64-apple-darwin, \"windows-latest\" for windows triples and \"ubuntu-latest\" for all others; useCross is true for every ubuntu-hosted triple except x86_64-unknown-linux-gnu and the two wasm32 triples."
+    },
+    {
+      "id": "MX-DISC-07",
+      "criterion": "For napi and maturin targets, artifactName is the package's bare name with every \"/\" replaced by \"-\", then \"-<platform>-<arch>\", then \"-<abi>\" only when abi is non-null (for example \"addon-linux-x64-gnu\")."
+    },
+    {
+      "id": "MX-DISC-08",
+      "criterion": "A napi target carries no manifestPath when a workspace napi addon crate (a cdylib depending on napi) has its Cargo.toml in the package's own directory; otherwise manifestPath is the workspace-relative Cargo.toml of the one addon crate whose lib name equals napi.binaryName."
+    },
+    {
+      "id": "MX-DISC-09",
+      "criterion": "The binary name is napi.binaryName, else napi.name, else \"index\", and a crate's lib name is its [lib] name, else its package name, with \"-\" replaced by \"_\"."
+    },
+    {
+      "id": "MX-DISC-10",
+      "criterion": "Each cargo [[release.artifact]] entry naming a workspace cargo package adds a target to a platformTargets entry with kind \"cargo\" and source \"[[release.artifact]]\", whose artifactName is the entry's asset-name and whose packageDir is the cargo manifest's directory."
+    },
+    {
+      "id": "MX-DISC-11",
+      "criterion": "`--package <name>` limits platformTargets and runtimeVersions to the one package it resolves to; a bare name resolves only when it matches exactly one package, and a qualified id such as `cargo/foo` selects the promoted package in that ecosystem."
+    },
+    {
+      "id": "MX-OUT-01",
+      "criterion": "platformTargets and runtimeVersions are keyed by the package's display id: the bare name, or `<ecosystem>/<name>` when packages in two ecosystems share that name, so a cargo crate and an npm package named alike get separate entries."
+    },
+    {
+      "id": "MX-OUT-02",
+      "criterion": "Map keys are in lexicographic order, and each entry's targets are sorted by triple (cargo targets then by artifactName)."
+    },
+    {
+      "id": "MX-OUT-03",
+      "criterion": "`--format json` prints pretty JSON with no \"command\" key; an empty workspace prints exactly {\"schemaVersion\":1,\"platformTargets\":{},\"runtimeVersions\":{}} and exits 0, and the diagnostics key appears only when there is at least one diagnostic."
+    },
+    {
+      "id": "MX-OUT-04",
+      "criterion": "Each target object has triple, platform, arch, abi, hostRunner, useCross, artifactName, packageDir and packageName, plus manifestPath only when set."
+    },
+    {
+      "id": "MX-OUT-05",
+      "criterion": "`--format text` and a bare `callisto matrix` print the same non-JSON table and exit 0."
+    },
+    {
+      "id": "MX-ERR-01",
+      "criterion": "A triple outside the recognised table is left out of targets and reported as a warning with code \"unrecognised-platform-triple\"; the command still exits 0, and a cargo entry left with no targets is dropped.",
+      "is_error_case": true
+    },
+    {
+      "id": "MX-ERR-02",
+      "criterion": "A triple repeated within one package's target list keeps its first occurrence and reports a warning with code \"duplicate-platform-triple\".",
+      "is_error_case": true
+    },
+    {
+      "id": "MX-ERR-03",
+      "criterion": "A cargo [[release.artifact]] whose package is not a workspace cargo package produces a warning with code \"unknown-package\" naming the package and asset, adds no entry, and the command exits 0.",
+      "is_error_case": true
+    },
+    {
+      "id": "MX-ERR-04",
+      "criterion": "A napi package with at least one recognised target whose binary name matches zero or several addon crates fails with E204, naming the binary name and listing the matching crates, or every addon crate when none match.",
+      "is_error_case": true
+    },
+    {
+      "id": "MX-ERR-05",
+      "criterion": "A package declaring both napi.targets and [tool.maturin].targets fails with E118 naming the package and both fields; a package with napi or maturin targets that is also a cargo [[release.artifact]] package fails with E203.",
+      "is_error_case": true
+    },
+    {
+      "id": "MX-ERR-06",
+      "criterion": "A napi.targets or [tool.maturin].targets value that is not an array of strings, an engines.node or requires-python value that is not a string, or an unparsable manifest belonging to a registered package exits 1 with an error naming the manifest path.",
+      "is_error_case": true
+    },
+    {
+      "id": "MX-ERR-07",
+      "criterion": "`--package` naming no registered package exits 1 with E102 naming it, and a bare name matching packages in several ecosystems exits 1 with E103 listing the qualified candidates.",
+      "is_error_case": true
+    },
+    {
+      "id": "MX-ERR-08",
+      "criterion": "Every failing run prints no MatrixReport JSON on stdout.",
+      "is_error_case": true
+    }
+  ],
+  "spec_file_path": "docs/specs/matrix.json"
+}

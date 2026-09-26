@@ -9,9 +9,11 @@
 1. **Safe Rust only.** `unsafe_code = "forbid"` workspace-wide.
 2. **License boundary.** `callisto-model`, `callisto-format`, `callisto-vcs` are MIT and must never depend on an FSL-1.1-MIT crate. Every other crate is FSL-1.1-MIT. Check with `grep -H "^license" crates/*/Cargo.toml`.
 3. **Format-preserving manifest edits.** `Cargo.toml` goes through `toml_edit`'s CST; `package.json` is fingerprinted for indent style and line endings before a `serde_json` (`preserve_order`) round trip. No regex or line-based edits to manifests.
-4. **One disk-write primitive, capability-gated.** `callisto_model::atomic::atomic_write` (`NamedTempFile` in the target's own directory, `fsync`, `persist` via `fs::rename`, then `fsync` the parent and grandparent directories) is the only way anything in the workspace touches disk. It takes `&ApplyPermit`, a token with a private field that only `ApplyPermit::granted_unless_dry_run(dry_run)` can construct, returning `None` on a dry run. A write path that forgets to check `--dry-run` has no permit to pass and fails to compile — this replaced an earlier convention-based check that had already been forgotten twice (`pre enter`/`pre exit`, `init`).
+4. **One file-write primitive, capability-gated.** `callisto_model::atomic::atomic_write` (`NamedTempFile` in the target's own directory, `fsync`, `persist` via `fs::rename`, then `fsync` the parent and grandparent directories) is the only way file content is written; deletions and directory creation use `std::fs`. It takes `&ApplyPermit`, a token with a private field that only `ApplyPermit::granted_unless_dry_run(dry_run)` can construct, returning `None` on a dry run. A write path that forgets to check `--dry-run` has no permit to pass and fails to compile.
 5. **System Git only.** All VCS reads and writes shell out to the user's `git` binary (`callisto-vcs`), so Callisto sees exactly the repository, config, and identity Git itself does. No embedded Git implementation.
-6. **User-facing errors are diagnosable.** Every error surfaced to a user derives `miette::Diagnostic` with a stable code and, where the fix isn't obvious from the message, `help` text. Full list: [`docs/errors.md`](docs/errors.md).
+6. **User-facing errors are diagnosable.** Every error surfaced to a user derives `miette::Diagnostic` with a stable code and, where the fix isn't obvious from the message, `help` text. A wrapper around another crate's error (for example `GraphError::Config`) is `#[diagnostic(transparent)]` and declares no code of its own, so the inner code reaches the user. Full list: [`docs/errors.md`](docs/errors.md).
+
+Design decisions, with the options they rejected and why: [`docs/adr/README.md`](docs/adr/README.md).
 
 ## Crate map
 
@@ -40,43 +42,37 @@ Dependencies only point down the layers (`cli` → `graph` → {`manifests`, `vc
 ## Data flow
 
 ```
-discover projects (ProjectLocator, ignore-aware walk)
-  -> read manifests (Manifest trait: Cargo.toml / package.json / pyproject.toml)
-     read VCS state (GitAccess: commits since, tags, staged changes)
-  -> build the dependency graph (ManifestWalkResolver)
-     detect cycles (petgraph::algo::tarjan_scc) -> miette diagnostic on a cycle
-  -> aggregate changesets + Conventional Commits into per-package severities
-  -> cascade: propagate a bump along Runtime/Build/Optional edges to dependents;
-     Dev-only edges never force a version bump
-  -> version plan: target version per package, with reason (changeset, fixed
-     group, linked group, cascade, or pre-release policy)
-  -> render unified diffs (preview) or persist:
-     CST rewrite (toml_edit / serde_json) -> atomic_write (needs ApplyPermit)
-  -> release: for each package whose current version has no tag yet,
-     registry publish -> git tag -> GitHub release
+Workspace::load
+  config::load -> config::resolve                       callisto.toml -> ResolvedConfig
+  ManifestWalkResolver::build                           discover (ProjectLocator), read manifests (Manifest),
+                                                        assign ids, attach platform packages, apply per-package config
+  GroupTable::resolve                                   bind [[fixed-group]] / [[linked-group]] members
+plan_version -> VersionPlan (in memory)
+  aggregate                                             changesets + opt-in commit inference -> severity per package
+  run_cascade                                           dependents (runtime, build, optional, peer; never dev), groups, pre mode
+                                                        -> target version per package, with its reasons
+version --emit-decision                                 writes the release decision, before apply
+apply_version_plan (needs ApplyPermit)                  CST edits -> atomic_write, changelogs, git staging
+release                                                 decision -> intent -> envelope -> execute_release -> receipt
+  per operation                                         observe provider -> adopt, or perform and confirm
 ```
 
-`callisto version --emit-decision <file>` writes the exact version plan (package, target version, inclusion reason) alongside the manifest/changelog edits. A merged release PR's commit carrying that file is later the sole authority `callisto release plan --from-release-commit` verifies against — CI never re-derives cascade or group policy at that boundary, only confirms the committed diff matches what `version` already decided. See [`docs/releasing.md`](docs/releasing.md) for the full release lifecycle.
+Cycles are detected with `petgraph::algo::tarjan_scc`. Git access goes through `GitAccess` (`callisto-vcs`).
 
-## Version groups
+Depth:
 
-- `[[fixed-group]]` — members bump in lock-step to the max severity computed across the group.
-- `[[linked-group]]` — members share severity, keep independent base versions.
-
-Key reference: [`docs/config.md`](docs/config.md).
+- [`docs/architecture/identity.md`](docs/architecture/identity.md): package ids, bare-name matching, config rule specificity, workspace loading, platform packages.
+- [`docs/architecture/versioning.md`](docs/architecture/versioning.md): plan and apply, idempotent re-apply after a crash.
+- [`docs/architecture/release.md`](docs/architecture/release.md): release terms, the two routes, run envelope, observation and proof tokens, the transition table, verification tiers.
 
 ## Extension seams
 
 Four traits decouple the engine from platform I/O (`callisto-model::exec`, `callisto-model::discovery`, `callisto-manifests`, `callisto-graph::locate`):
 
 - `ProjectLocator` — enumerates workspace project roots.
-- `CommandRunner` — runs a subprocess; `run_with_timeout` exists separately so a hung publish command doesn't block forever (the default `run` has no timeout).
+- `CommandRunner` — runs a subprocess. `run_with_timeout`'s default implementation ignores the timeout; the CLI's runner enforces it, so a hung publish command cannot block forever.
 - `Manifest` — per-ecosystem read/write. Mutations only touch the in-memory CST; nothing reaches disk until `persist(&ApplyPermit)`, so one open manifest can take several mutations before one write.
 - `DependencyResolver` — supplies graph nodes and edges; `ManifestWalkResolver` is the only current implementation.
-
-## Native target matrix (`callisto matrix`)
-
-Auto-discovers napi-rs (`napi.targets`) and Maturin (`[tool.maturin].targets`) platform targets, plus `engines.node` / `requires-python` runtime constraints, straight from manifests — no hand-maintained CI matrix YAML. Java and .NET native-target discovery are not implemented. `callisto matrix [--package <name>]`, `--format json` via the global flag.
 
 ## Not covered here
 
@@ -84,3 +80,4 @@ Auto-discovers napi-rs (`napi.targets`) and Maturin (`[tool.maturin].targets`) p
 - Registry authentication: [`docs/publishing.md`](docs/publishing.md).
 - `callisto.toml` keys: [`docs/config.md`](docs/config.md).
 - Diagnostic codes: [`docs/errors.md`](docs/errors.md).
+- Behavior, including `callisto matrix`: [`docs/specs/`](docs/specs/INDEX.md).

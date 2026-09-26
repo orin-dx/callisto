@@ -82,7 +82,7 @@ Every user-facing error carries a stable diagnostic code and a fix. Full list: [
 
 ## More
 
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — crate map, data flow, invariants.
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — crate map, data flow, invariants; depth in [`docs/architecture/`](docs/architecture/).
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — setup, `just` recipes, PR checklist.
 - [`docs/specs/`](docs/specs/) — current behavior specs.
 - [`SECURITY.md`](SECURITY.md) — reporting a vulnerability.
