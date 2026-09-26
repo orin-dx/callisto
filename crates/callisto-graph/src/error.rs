@@ -29,7 +29,10 @@ pub enum GraphError {
     Format(#[from] callisto_format::ParseError),
 
     #[error("{}: {source}", .path.display())]
-    #[diagnostic(code(E210))]
+    #[diagnostic(
+        code(E210),
+        help("Fix the changeset file's frontmatter, or delete it and write a new one.")
+    )]
     ParseChangeset {
         path: PathBuf,
         source: callisto_format::ParseError,
@@ -44,9 +47,11 @@ pub enum GraphError {
     Changelog(#[from] callisto_changelog::ChangelogError),
 
     #[error(transparent)]
+    #[diagnostic(transparent)]
     Conventional(#[from] callisto_conventional::ConventionalError),
 
     #[error(transparent)]
+    #[diagnostic(transparent)]
     TagTemplate(#[from] callisto_model::TagTemplateError),
 
     #[error(transparent)]
@@ -102,14 +107,17 @@ pub enum GraphError {
     },
 
     #[error("group `{group}` members use incompatible versioning grammars: {}", .members.iter().map(|(id, v)| format!("{}={:?}", id.display_name(), v.grammar())).collect::<Vec<_>>().join(", "))]
-    #[diagnostic(code(E107))]
+    #[diagnostic(code(E107), help("Use the same version grammar for every member of the group."))]
     GroupGrammarMismatch {
         group: GroupName,
         members: Vec<(PackageId, callisto_model::Version)>,
     },
 
     #[error("group `{group}` lists member `{member}`, which was not found in the workspace")]
-    #[diagnostic(code(E108))]
+    #[diagnostic(
+        code(E108),
+        help("Remove the member from the group, or add its manifest to the workspace.")
+    )]
     MissingGroupMember { group: GroupName, member: String },
 
     #[error(
@@ -144,10 +152,14 @@ pub enum GraphError {
     },
 
     #[error("package `{package}` is listed in multiple conflicting groups: {}", .groups.iter().map(|g| g.as_str()).collect::<Vec<_>>().join(", "))]
-    #[diagnostic(code(E109))]
+    #[diagnostic(code(E109), help("List the package in only one fixed or linked group."))]
     ConflictingGroupMembership { package: PackageId, groups: Vec<GroupName> },
 
     #[error("version dependency edge from `{from}` to `{to}` involves incompatible grammars: {source}")]
+    #[diagnostic(
+        code(E246),
+        help("Use the same version grammar on both sides of the dependency edge, or drop the edge.")
+    )]
     GrammarMismatch {
         from: PackageId,
         to: PackageId,
@@ -156,6 +168,10 @@ pub enum GraphError {
     },
 
     #[error("on-disk versions changed since plan was generated for `{package}`: expected {}, found {}", .expected.render(), .found.render())]
+    #[diagnostic(
+        code(E247),
+        help("Regenerate the version plan against the current workspace state before applying it.")
+    )]
     OnDiskVersionDrift {
         package: PackageId,
         expected: callisto_model::Version,
@@ -178,6 +194,10 @@ pub enum GraphError {
     },
 
     #[error("workspace root `{root_manifest}` has conflicting version updates: {details}")]
+    #[diagnostic(
+        code(E248),
+        help("Reconcile the workspace root manifest's version updates before retrying.")
+    )]
     WorkspaceVersionConflict { root_manifest: PathBuf, details: String },
 
     #[error(
@@ -909,7 +929,7 @@ mod tests {
 #[non_exhaustive]
 pub enum ConfigError {
     #[error("failed to read `{path}`: {message}")]
-    #[diagnostic(code(E110))]
+    #[diagnostic(code(E110), help("Check that `{}` exists and is readable.", path.display()))]
     Read { path: PathBuf, message: String },
 
     #[error("`{path}` is not valid TOML: {message}")]
@@ -917,28 +937,48 @@ pub enum ConfigError {
     ParseToml { path: PathBuf, message: String },
 
     #[error("group `{group}` and group `{other}` both list `{member}`")]
+    #[diagnostic(code(E249), help("List the member in only one group; remove it from all but one."))]
     ConflictingGroupNames {
         group: GroupName,
         other: GroupName,
         member: String,
     },
 
+    #[error("group `{group}` lists `{member}` more than once")]
+    #[diagnostic(code(E250), help("Remove the duplicate member from the group's member list."))]
+    DuplicateMemberInGroup { group: GroupName, member: String },
+
     #[error("group `{group}` has no members")]
+    #[diagnostic(code(E251), help("Add at least one member to the group, or remove the group."))]
     EmptyGroup { group: GroupName },
 
     #[error("duplicate group name `{group}`")]
+    #[diagnostic(code(E252), help("Rename one of the two groups sharing this name."))]
     DuplicateGroupName { group: GroupName },
 
     #[error("`publish-to` names registry key `{key}`, which no [registries.*] block defines")]
+    #[diagnostic(
+        code(E253),
+        help("Add a `[registries.{key}]` block to callisto.toml, or fix the typo.")
+    )]
     UnknownRegistry { key: String },
 
     #[error("`{path}` sets unknown callisto key `{key}`")]
+    #[diagnostic(code(E254), help("Remove or fix the unrecognized key `{}` in `{}`.", key, path.display()))]
     UnknownKey { path: PathBuf, key: String },
 
     #[error("`cascade.bump-severity` is `{found}`; expected `patch` or `minor`")]
+    #[diagnostic(
+        code(E255),
+        help("Set `cascade.bump-severity` to `patch` or `minor` in callisto.toml.")
+    )]
     InvalidBumpSeverity { found: String },
 
     #[error("`pre-major-inference` is `{found}`; expected `off`, `conservative`, or `conservative-feat`")]
+    #[diagnostic(
+        code(E256),
+        help("Set `pre-major-inference` to `off`, `conservative`, or `conservative-feat` in callisto.toml.")
+    )]
     InvalidPreMajorInference { found: String },
 
     #[error(
@@ -965,6 +1005,7 @@ pub enum ConfigError {
     InvalidProductRelease { detail: String },
 
     #[error(transparent)]
+    #[diagnostic(transparent)]
     Tag(#[from] TagTemplateError),
 
     #[error(transparent)]

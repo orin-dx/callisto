@@ -16,8 +16,8 @@
       "description": "Publishes every untagged package from the current checkout on any branch. With --dry-run it prints the plan and performs no effect.",
       "error_conditions": [
         "Dirty worktree: E051.",
-        "Workspace needs the CI route: callisto::release_requires_ci_route.",
-        "Invalid --package: callisto::release_package_invalid, E102 or E169.",
+        "Workspace needs the CI route: E239.",
+        "Invalid --package: E227, E102 or E169.",
         "Missing or unsafe origin push URL: E132."
       ]
     },
@@ -26,9 +26,9 @@
       "signature": "callisto release plan [--source-root DIR] (--from-release-commit SHA --decision FILE | --package ECOSYSTEM/NAME...) [--orchestration-revision SHA --artifact-repository OWNER/REPO] --out FILE",
       "description": "Writes a release plan file (JSON, schemaVersion 5) for a detached source checkout. With --from-release-commit it verifies the committed decision file. With --package it derives the roster from a fresh version plan.",
       "error_conditions": [
-        "--dry-run: callisto::release_plan_dry_run.",
+        "--dry-run: E217.",
         "Commit verification failure: E165.",
-        "[release] present without both orchestration flags: callisto::release_orchestration_flags_required."
+        "[release] present without both orchestration flags: E231."
       ]
     },
     {
@@ -36,8 +36,8 @@
       "signature": "callisto release artifact-manifest --intent FILE --artifact-dir DIR --out FILE",
       "description": "Hashes one regular file per declared artifact slot and writes the artifact manifest.",
       "error_conditions": [
-        "Plan declares no slots: callisto::release_no_artifact_slots.",
-        "Asset missing, a symlink or not a regular file: callisto::release_artifact_not_regular_file."
+        "Plan declares no slots: E219.",
+        "Asset missing, a symlink or not a regular file: E221."
       ]
     },
     {
@@ -45,7 +45,7 @@
       "signature": "callisto release execute [--source-root DIR] --intent FILE [--artifact-manifest FILE --artifact-dir DIR] --receipt FILE --orchestration-revision SHA",
       "description": "Validates the plan file against a fresh derivation from the source checkout, runs every operation, and writes the receipt on full success.",
       "error_conditions": [
-        "--dry-run: callisto::release_execute_dry_run.",
+        "--dry-run: E218.",
         "Stale plan: E124.",
         "Incomplete run: E172."
       ]
@@ -108,7 +108,7 @@
     },
     {
       "id": "REL-CMD-08",
-      "criterion": "A malformed `--package` value fails with `callisto::release_package_invalid` and an unknown package with E102. A duplicate selection, an already-tagged version, or a package with no publish target fails with E169.",
+      "criterion": "A malformed `--package` value fails with `E227` and an unknown package with E102. A duplicate selection, an already-tagged version, or a package with no publish target fails with E169.",
       "is_error_case": true
     },
     {
@@ -118,7 +118,7 @@
     },
     {
       "id": "REL-CMD-10",
-      "criterion": "In a workspace with `[[release.artifact]]` slots or a napi/maturin platform package, `callisto release` fails with `callisto::release_requires_ci_route` before any effect. The help names `release plan`, `release artifact-manifest` and `release execute`.",
+      "criterion": "In a workspace with `[[release.artifact]]` slots or a napi/maturin platform package, `callisto release` fails with `E239` before any effect. The help names `release plan`, `release artifact-manifest` and `release execute`.",
       "is_error_case": true
     },
     {
@@ -141,7 +141,7 @@
     },
     {
       "id": "REL-AUTH-04",
-      "criterion": "An abbreviated or unknown `--from-release-commit` SHA, a non-40-hex `--orchestration-revision` for a source with `[release]`, or an `--intent` file with a different `schemaVersion` (`callisto::release_intent_schema_unsupported`, naming found and expected versions) fails before any output file is written or any effect runs.",
+      "criterion": "An abbreviated or unknown `--from-release-commit` SHA, a non-40-hex `--orchestration-revision` for a source with `[release]`, or an `--intent` file with a different `schemaVersion` (`E215`, naming found and expected versions) fails before any output file is written or any effect runs.",
       "is_error_case": true
     },
     {
@@ -161,12 +161,12 @@
     },
     {
       "id": "REL-AUTH-08",
-      "criterion": "`release plan` for a source with `[release]` requires `--orchestration-revision` and `--artifact-repository` (`callisto::release_orchestration_flags_required`). For a source without `[release]` it ignores both flags, prints a notice, and plans zero artifact slots.",
+      "criterion": "`release plan` for a source with `[release]` requires `--orchestration-revision` and `--artifact-repository` (`E231`). For a source without `[release]` it ignores both flags, prints a notice, and plans zero artifact slots.",
       "is_error_case": true
     },
     {
       "id": "REL-AUTH-09",
-      "criterion": "`[release].forge-repository` is the only GitHub destination. Planning rejects an `--artifact-repository` that differs from it (`callisto::release_forge_repository_mismatch`) or from the `origin` GitHub repository (E175). Execution rejects artifact slots that target another repository, and a `[release]` section without it fails planning with E198.",
+      "criterion": "`[release].forge-repository` is the only GitHub destination. Planning rejects an `--artifact-repository` that differs from it (`E230`) or from the `origin` GitHub repository (E175). Execution rejects artifact slots that target another repository, and a `[release]` section without it fails planning with E198.",
       "is_error_case": true
     },
     {
@@ -275,7 +275,7 @@
     },
     {
       "id": "REL-GH-05",
-      "criterion": "`release artifact-manifest` requires, for each slot, a regular non-symlink file named `asset-name` directly in `--artifact-dir` (`callisto::release_artifact_not_regular_file` for a symlink or non-file, an I/O error when missing) and records its sha256 and byte length. With slots, `release execute` requires both `--artifact-manifest` and `--artifact-dir` (`callisto::release_missing_artifact_inputs`); without slots it rejects either flag (`callisto::release_unexpected_artifact_inputs`).",
+      "criterion": "`release artifact-manifest` requires, for each slot, a regular non-symlink file named `asset-name` directly in `--artifact-dir` (`E221` for a symlink or non-file, an I/O error when missing) and records its sha256 and byte length. With slots, `release execute` requires both `--artifact-manifest` and `--artifact-dir` (`E233`); without slots it rejects either flag (`E232`).",
       "is_error_case": true
     },
     {
@@ -311,11 +311,11 @@
     },
     {
       "id": "REL-ERR-01",
-      "criterion": "Every release failure exits 1 with a diagnostic carrying a code (`E###`, or `callisto::<name>` for CLI-level errors)."
+      "criterion": "Every release failure exits 1 with a diagnostic carrying an `E####` code."
     },
     {
       "id": "REL-ERR-02",
-      "criterion": "`--dry-run` with `release plan`, `release artifact-manifest` or `release execute` fails with `callisto::release_plan_dry_run`, `callisto::release_artifact_manifest_dry_run` or `callisto::release_execute_dry_run` and writes nothing.",
+      "criterion": "`--dry-run` with `release plan`, `release artifact-manifest` or `release execute` fails with `E217`, `E216` or `E218` and writes nothing.",
       "is_error_case": true
     },
     {

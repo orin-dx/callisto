@@ -128,11 +128,11 @@ pub enum CommandError {
     },
 
     #[error("executing `{program}` is not supported on this surface: {reason}")]
-    #[diagnostic(code(E022))]
+    #[diagnostic(code(E022), help("Run this command on a surface where `{program}` can be executed."))]
     Unsupported { program: String, reason: String },
 
     #[error("`{program}` failed with exit code {exit_code:?}: {stderr}")]
-    #[diagnostic(code(E023))]
+    #[diagnostic(code(E023), help("Inspect the reported stderr to diagnose why `{program}` failed."))]
     Failed {
         program: String,
         exit_code: Option<i32>,
@@ -140,7 +140,7 @@ pub enum CommandError {
     },
 
     #[error("failed to run `{program}`: {message}")]
-    #[diagnostic(code(E024))]
+    #[diagnostic(code(E024), help("Check that `{program}` is installed and executable, then retry."))]
     Io { program: String, message: String },
 
     #[error("`{program}` timed out after {seconds}s")]

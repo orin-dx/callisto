@@ -301,25 +301,40 @@ pub fn select_last_tag<'a>(
     Ok(LastTagSelection { chosen, skipped })
 }
 
-#[derive(Clone, Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Clone, Debug, thiserror::Error, miette::Diagnostic, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum TagTemplateError {
     #[error("tag template `{template}` contains no `{{version}}` placeholder")]
+    #[diagnostic(code(E259), help("Add a `{{version}}` placeholder to the tag template."))]
     MissingVersionPlaceholder { template: String },
 
     #[error("tag template `{template}` contains `{{version}}` {count} times; exactly one is required")]
+    #[diagnostic(code(E260), help("Use exactly one `{{version}}` placeholder in the tag template."))]
     MultipleVersionPlaceholders { template: String, count: usize },
 
     #[error("tag template `{template}` contains unknown placeholder `{{{placeholder}}}`; the only placeholder is `{{version}}`")]
+    #[diagnostic(
+        code(E261),
+        help("Remove the unknown placeholder; `{{version}}` is the only placeholder supported.")
+    )]
     UnknownPlaceholder { template: String, placeholder: String },
 
     #[error("tag template `{template}` contains glob metacharacter `{ch}` outside the `{{version}}` placeholder")]
+    #[diagnostic(code(E262), help("Remove the glob metacharacter from the template's literal text."))]
     GlobMetacharacterInLiteral { template: String, ch: char },
 
     #[error("tag template `{template}` has no literal text around `{{version}}`; its tag glob would be `*`")]
+    #[diagnostic(
+        code(E263),
+        help("Add literal text before or after `{{version}}` so the tag glob is not `*`.")
+    )]
     NoLiteralAnchor { template: String },
 
     #[error("tag template `{template}` renders `{rendered}`, which is not a legal git ref name")]
+    #[diagnostic(
+        code(E264),
+        help("Change the tag template so its rendered form is a legal Git ref name.")
+    )]
     InvalidGitRefName { template: String, rendered: String },
 }
 

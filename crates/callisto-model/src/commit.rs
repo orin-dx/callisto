@@ -39,6 +39,7 @@ pub enum CommitWalkError {
     /// The walk was served by shelling out, and the subprocess itself failed
     /// (e.g. no `git` binary on `PATH`).
     #[error(transparent)]
+    #[diagnostic(transparent)]
     Command(#[from] CommandError),
 
     /// An explicitly requested `since_ref` does not resolve to a commit.
@@ -57,7 +58,10 @@ pub enum CommitWalkError {
     /// repository that could not be opened, a corrupt object database, an
     /// unparsable log stream. `message` carries the backend's own rendering.
     #[error("commit walk failed: {message}")]
-    #[diagnostic(code(E026))]
+    #[diagnostic(
+        code(E026),
+        help("Inspect the reported backend failure; no more specific fix is known.")
+    )]
     Backend { message: String },
 }
 

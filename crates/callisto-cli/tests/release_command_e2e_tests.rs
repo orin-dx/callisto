@@ -222,7 +222,7 @@ fn artifact_slot_workspace_names_the_ci_route() {
     let run = rig.run(root, &["--format", "json", "release"]);
     assert!(!run.status.success());
     let err = stderr(&run);
-    assert!(err.contains("release_requires_ci_route"), "{err}");
+    assert!(err.contains("E239"), "{err}");
     for route in ["release plan", "release artifact-manifest", "release execute"] {
         assert!(err.contains(route), "missing `{route}`: {err}");
     }

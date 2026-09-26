@@ -9,7 +9,7 @@ use miette::Diagnostic;
 /// {
 ///   "schemaVersion": 1,
 ///   "error": {
-///     "code": "callisto::some_code",
+///     "code": "E211",
 ///     "message": "human-readable error text",
 ///     "help": "optional guidance string or null"
 ///   }
@@ -20,10 +20,7 @@ use miette::Diagnostic;
 /// when the diagnostic provides no help text.  This guarantees a stable shape
 /// regardless of which [`CliError`] variant is serialized.
 pub fn format_error_json(err: &CliError) -> serde_json::Value {
-    let code = err
-        .code()
-        .map(|c| c.to_string())
-        .unwrap_or_else(|| "callisto::error".to_string());
+    let code = err.code().map(|c| c.to_string()).unwrap_or_else(|| "E000".to_string());
     let help = err.help().map(|h| h.to_string());
     serde_json::json!({
         "schemaVersion": callisto_model::SCHEMA_VERSION,
@@ -56,7 +53,7 @@ pub enum CliError {
 
     #[error(transparent)]
     #[diagnostic(
-        code(callisto::registry_error),
+        code(E211),
         help("verify registry credentials/authentication and network connectivity, then retry")
     )]
     Registry(#[from] callisto_model::RegistryError),
@@ -82,7 +79,10 @@ pub enum CliError {
     ReleasePrDecision(#[from] callisto_model::ReleasePrDecisionError),
 
     #[error(transparent)]
-    #[diagnostic(code(callisto::pre_json_error))]
+    #[diagnostic(
+        code(E212),
+        help("Check that .changeset/pre.json is valid JSON and was not partially written.")
+    )]
     PreJson(#[from] callisto_format::PreJsonError),
 
     #[error("I/O error{}", match &path {
@@ -90,7 +90,7 @@ pub enum CliError {
         None => String::new(),
     })]
     #[diagnostic(
-        code(callisto::io_error),
+        code(E213),
         help("check that the path exists and that you have permission to access it")
     )]
     Io {
@@ -101,14 +101,14 @@ pub enum CliError {
 
     #[error("refusing to prompt interactively: stdin is not a terminal and no non-interactive flags were given")]
     #[diagnostic(
-        code(callisto::not_a_tty),
+        code(E214),
         help("specify package names explicitly via `callisto add --package <name>:<severity>` in CI environments")
     )]
     NotATty,
 
     #[error("release intent `{}` declares schema version {found}, but this build reads version {expected}", path.display())]
     #[diagnostic(
-        code(callisto::release_intent_schema_unsupported),
+        code(E215),
         help("re-run `callisto release plan` to derive a fresh intent: an intent is bound to one build's operation graph and is never reused across versions")
     )]
     ReleaseIntentSchemaUnsupported {
@@ -118,204 +118,159 @@ pub enum CliError {
     },
 
     #[error("release artifact-manifest needs an output file; remove --dry-run because it records build output")]
-    #[diagnostic(
-        code(callisto::release_artifact_manifest_dry_run),
-        help("re-run `callisto release artifact-manifest` without --dry-run")
-    )]
+    #[diagnostic(code(E216), help("re-run `callisto release artifact-manifest` without --dry-run"))]
     ReleaseArtifactManifestDryRun,
 
     #[error("release plan needs an output file; remove --dry-run because planning is already read-only")]
-    #[diagnostic(
-        code(callisto::release_plan_dry_run),
-        help("re-run `callisto release plan --out <file>` without --dry-run")
-    )]
+    #[diagnostic(code(E217), help("re-run `callisto release plan --out <file>` without --dry-run"))]
     ReleasePlanDryRun,
 
     #[error("release execute cannot run with --dry-run")]
-    #[diagnostic(
-        code(callisto::release_execute_dry_run),
-        help("remove --dry-run; release execute has no read-only mode")
-    )]
+    #[diagnostic(code(E218), help("remove --dry-run; release execute has no read-only mode"))]
     ReleaseExecuteDryRun,
 
     #[error("release intent declares no binary artifact slots; no artifact manifest can be created")]
-    #[diagnostic(code(callisto::release_no_artifact_slots), help("plan the release with --orchestration-revision and --artifact-repository so the intent declares artifact slots"))]
+    #[diagnostic(code(E219), help("plan the release with --orchestration-revision and --artifact-repository so the intent declares artifact slots"))]
     ReleaseNoArtifactSlots,
 
     #[error("artifact manifests require a Git commit release source")]
-    #[diagnostic(
-        code(callisto::release_manifest_source_not_git),
-        help("plan the release from a Git commit source")
-    )]
+    #[diagnostic(code(E220), help("plan the release from a Git commit source"))]
     ReleaseManifestSourceNotGit,
 
     #[error("artifact `{asset}` must be a regular file directly in `{dir}`")]
     #[diagnostic(
-        code(callisto::release_artifact_not_regular_file),
+        code(E221),
         help("place the built asset as a plain file (not a symlink or directory) directly in the artifact directory")
     )]
     ReleaseArtifactNotRegularFile { asset: String, dir: String },
 
     #[error("artifact `{asset}` resolves outside `{dir}`")]
     #[diagnostic(
-        code(callisto::release_artifact_escapes_directory),
+        code(E222),
         help("remove symlinks so every asset resolves inside the artifact directory")
     )]
     ReleaseArtifactEscapesDirectory { asset: String, dir: String },
 
     #[error("cannot create artifact manifest: {detail}")]
     #[diagnostic(
-        code(callisto::release_manifest_creation_failed),
+        code(E223),
         help("check that the artifact directory holds exactly the assets the intent declares")
     )]
     ReleaseManifestInvalid { detail: String },
 
     #[error("invalid merged release commit `{raw}`: {detail}")]
-    #[diagnostic(
-        code(callisto::release_commit_invalid),
-        help("pass the full commit SHA of the merged release commit")
-    )]
+    #[diagnostic(code(E224), help("pass the full commit SHA of the merged release commit"))]
     ReleaseCommitInvalid { raw: String, detail: String },
 
     #[error("release decision {decision} must be inside selected source root {root}")]
     #[diagnostic(
-        code(callisto::release_decision_outside_source),
+        code(E225),
         help("point --decision at a file inside the source root selected with --source-root")
     )]
     ReleaseDecisionOutsideSource { decision: String, root: String },
 
     #[error("invalid release decision path {path}: {detail}")]
-    #[diagnostic(
-        code(callisto::release_decision_path_invalid),
-        help("pass a repository-relative decision path without `..` components")
-    )]
+    #[diagnostic(code(E226), help("pass a repository-relative decision path without `..` components"))]
     ReleaseDecisionPathInvalid { path: String, detail: String },
 
     #[error("invalid release package `{raw}`: {detail}; use an exact ecosystem-qualified identity such as cargo/callisto-cli")]
     #[diagnostic(
-        code(callisto::release_package_invalid),
+        code(E227),
         help("name each package as <ecosystem>/<name>, for example cargo/callisto-cli")
     )]
     ReleasePackageInvalid { raw: String, detail: String },
 
     #[error("invalid orchestration revision `{revision}`: {detail}")]
-    #[diagnostic(
-        code(callisto::release_orchestration_revision_invalid),
-        help("pass the full commit SHA of the orchestration workflow revision")
-    )]
+    #[diagnostic(code(E228), help("pass the full commit SHA of the orchestration workflow revision"))]
     ReleaseOrchestrationRevisionInvalid { revision: String, detail: String },
 
     #[error("invalid artifact repository `{repository}`: {detail}")]
-    #[diagnostic(
-        code(callisto::release_artifact_repository_invalid),
-        help("pass the forge repository as <owner>/<repo>")
-    )]
+    #[diagnostic(code(E229), help("pass the forge repository as <owner>/<repo>"))]
     ReleaseArtifactRepositoryInvalid { repository: String, detail: String },
 
     #[error("[release].forge-repository is `{configured}`, but the release targets `{requested}`")]
     #[diagnostic(
-        code(callisto::release_forge_repository_mismatch),
+        code(E230),
         help("plan with an --artifact-repository matching [release].forge-repository in callisto.toml")
     )]
     ReleaseForgeRepositoryMismatch { configured: String, requested: String },
 
     #[error("product release planning requires --orchestration-revision and --artifact-repository")]
-    #[diagnostic(
-        code(callisto::release_orchestration_flags_required),
-        help("pass both --orchestration-revision and --artifact-repository")
-    )]
+    #[diagnostic(code(E231), help("pass both --orchestration-revision and --artifact-repository"))]
     ReleaseOrchestrationFlagsRequired,
 
     #[error("release intent declares no binary artifact slots; omit --artifact-manifest and --artifact-dir")]
     #[diagnostic(
-        code(callisto::release_unexpected_artifact_inputs),
+        code(E232),
         help("drop --artifact-manifest and --artifact-dir for an intent without artifact slots")
     )]
     ReleaseUnexpectedArtifactInputs,
 
     #[error("release intent declares binary artifact slots; provide both --artifact-manifest and --artifact-dir")]
-    #[diagnostic(
-        code(callisto::release_missing_artifact_inputs),
-        help("pass both --artifact-manifest and --artifact-dir")
-    )]
+    #[diagnostic(code(E233), help("pass both --artifact-manifest and --artifact-dir"))]
     ReleaseMissingArtifactInputs,
 
     #[error("release run envelope is not valid for this intent: {detail}")]
     #[diagnostic(
-        code(callisto::release_envelope_invalid),
+        code(E234),
         help("re-check the orchestration revision and artifact manifest against the intent")
     )]
     ReleaseEnvelopeInvalid { detail: String },
 
     #[error("cannot issue terminal release receipt: {detail}")]
     #[diagnostic(
-        code(callisto::release_receipt_issue_failed),
+        code(E235),
         help("re-run `callisto release execute`; it adopts effects that already landed")
     )]
     ReleaseReceiptIssue { detail: String },
 
     #[error("invalid release intent {path}: {detail}")]
-    #[diagnostic(
-        code(callisto::release_intent_invalid),
-        help("re-run `callisto release plan` to derive a fresh intent")
-    )]
+    #[diagnostic(code(E236), help("re-run `callisto release plan` to derive a fresh intent"))]
     ReleaseIntentInvalid { path: String, detail: String },
 
     #[error("invalid artifact manifest {path}: {detail}")]
-    #[diagnostic(
-        code(callisto::release_artifact_manifest_invalid),
-        help("re-run `callisto release artifact-manifest` to regenerate it")
-    )]
+    #[diagnostic(code(E237), help("re-run `callisto release artifact-manifest` to regenerate it"))]
     ArtifactManifestFileInvalid { path: String, detail: String },
 
     #[error("invalid JSON in {path}: {detail}")]
-    #[diagnostic(
-        code(callisto::release_json_invalid),
-        help("check the file is complete, well-formed JSON")
-    )]
+    #[diagnostic(code(E238), help("check the file is complete, well-formed JSON"))]
     ReleaseJsonInvalid { path: String, detail: String },
 
     #[error("this workspace cannot release locally: {reason}")]
     #[diagnostic(
-        code(callisto::release_requires_ci_route),
+        code(E239),
         help("release it from CI with `callisto release plan`, `callisto release artifact-manifest`, then `callisto release execute`; `callisto release --dry-run` still previews it locally")
     )]
     ReleaseRequiresCiRoute { reason: String },
 
     #[error("stdin is not a terminal, so init needs flags instead of prompts; missing: {}", .missing.join(", "))]
     #[diagnostic(
-        code(callisto::init_requires_yes),
+        code(E240),
         help("re-run `callisto init --yes` with the listed flags, or run it in a terminal to be asked")
     )]
     InitRequiresYes { missing: Vec<&'static str> },
 
     #[error("init --yes is missing required flag(s): {}", .missing.join(", "))]
-    #[diagnostic(
-        code(callisto::init_missing_flags),
-        help("supply the listed flags; see `callisto init --help`")
-    )]
+    #[diagnostic(code(E241), help("supply the listed flags; see `callisto init --help`"))]
     InitMissingFlags { missing: Vec<&'static str> },
 
     #[error("--workflow and --no-workflow are mutually exclusive")]
-    #[diagnostic(
-        code(callisto::init_workflow_flags_conflict),
-        help("pass only one of --workflow or --no-workflow")
-    )]
+    #[diagnostic(code(E242), help("pass only one of --workflow or --no-workflow"))]
     InitWorkflowFlagsConflict,
 
     #[error("workspace is already in pre-release mode")]
     #[diagnostic(
-        code(callisto::pre_already_active),
+        code(E243),
         help("run `callisto pre exit` first, or delete .changeset/pre.json manually to reset")
     )]
     PreAlreadyActive,
 
     #[error("workspace is not in pre-release mode")]
-    #[diagnostic(code(callisto::pre_not_active), help("callisto pre enter <tag>"))]
+    #[diagnostic(code(E244), help("callisto pre enter <tag>"))]
     PreNotActive,
 
     #[error("{0}")]
-    #[diagnostic(code(callisto::error))]
+    #[diagnostic(code(E245), help("Inspect the reported message; no more specific fix is known."))]
     Other(String),
 }
 
@@ -378,10 +333,9 @@ mod tests {
         let err = CliError::Other("something went wrong".to_string());
         let json = format_error_json(&err);
         assert_envelope_shape(&json);
-        assert_eq!(json["error"]["code"], "callisto::error");
+        assert_eq!(json["error"]["code"], "E245");
         assert_eq!(json["error"]["message"], "something went wrong");
-        // Other has no help text
-        assert!(json["error"]["help"].is_null());
+        assert!(json["error"]["help"].is_string());
     }
 
     #[test]
@@ -389,7 +343,7 @@ mod tests {
         let err = CliError::NotATty;
         let json = format_error_json(&err);
         assert_envelope_shape(&json);
-        assert_eq!(json["error"]["code"], "callisto::not_a_tty");
+        assert_eq!(json["error"]["code"], "E214");
         assert!(
             !json["error"]["message"].as_str().unwrap().is_empty(),
             "message must be non-empty"
@@ -409,7 +363,7 @@ mod tests {
         };
         let json = format_error_json(&err);
         assert_envelope_shape(&json);
-        assert_eq!(json["error"]["code"], "callisto::io_error");
+        assert_eq!(json["error"]["code"], "E213");
         assert!(
             json["error"]["message"].as_str().unwrap().contains("/some/path"),
             "I/O error message should include the path"
@@ -505,7 +459,7 @@ mod tests {
             let json = format_error_json(error);
             let code = json["error"]["code"].as_str().unwrap();
             assert!(
-                code.starts_with("callisto::release_") && code != "callisto::error",
+                code.starts_with('E') && code[1..].chars().all(|c| c.is_ascii_digit()),
                 "{code}"
             );
             assert!(json["error"]["help"].is_string(), "{code} lacks help");

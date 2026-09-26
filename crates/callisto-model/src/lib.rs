@@ -108,6 +108,7 @@ mod tests {
         ("callisto-model/src/exec.rs", include_str!("exec.rs")),
         ("callisto-model/src/commit.rs", include_str!("commit.rs")),
         ("callisto-model/src/version.rs", include_str!("version.rs")),
+        ("callisto-model/src/tag.rs", include_str!("tag.rs")),
         (
             "callisto-graph/src/locate/mod.rs",
             include_str!("../../callisto-graph/src/locate/mod.rs"),
@@ -129,6 +130,14 @@ mod tests {
             "callisto-changelog/src/error.rs",
             include_str!("../../callisto-changelog/src/error.rs"),
         ),
+        (
+            "callisto-conventional/src/error.rs",
+            include_str!("../../callisto-conventional/src/error.rs"),
+        ),
+        (
+            "callisto-cli/src/error.rs",
+            include_str!("../../callisto-cli/src/error.rs"),
+        ),
     ];
 
     /// Extracts every `code(E<digits>)` occurrence from `text`, in order of appearance. Deliberately
@@ -143,10 +152,7 @@ mod tests {
                 .find(|c: char| !c.is_ascii_digit() && c != 'E')
                 .unwrap_or(after_marker.len());
             let candidate = &after_marker[..digit_end];
-            // `code(` is also used for things like `code(callisto::foo)` in test-double
-            // diagnostics elsewhere in the workspace (out of scope for this scan, since those
-            // files aren't in `DIAGNOSTIC_CODE_SOURCE_FILES`) -- guard here anyway so a stray
-            // non-numeric match can't silently produce a bogus "code".
+            // Guards against a non-numeric `code(...)` producing a bogus match.
             if candidate.len() > 1 && candidate[1..].chars().all(|c| c.is_ascii_digit()) {
                 codes.push(candidate.to_string());
             }

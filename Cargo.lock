@@ -243,6 +243,7 @@ dependencies = [
  "callisto-fixtures",
  "callisto-model",
  "callisto-vcs",
+ "miette",
  "proptest",
  "tempfile",
  "thiserror",
