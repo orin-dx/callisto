@@ -150,7 +150,7 @@
     },
     {
       "id": "VER-PRE-01",
-      "criterion": "`callisto pre enter <tag>` writes `.changeset/pre.json` with `mode` `pre`, the tag, every package's current version under `initialVersions` and an empty `changesets` list, then stages the file with git; under `--dry-run` it prints the content and writes nothing."
+      "criterion": "`callisto pre enter <tag>` writes `.changeset/pre.json` with `mode` `pre`, the tag, every package's current version under `initialVersions`, keyed by its display id (`foo`, or `cargo/foo` when another ecosystem has a `foo`; a bare-name key from an older file is still read) and an empty `changesets` list, then stages the file with git; under `--dry-run` it prints the content and writes nothing."
     },
     {
       "id": "VER-PRE-02",
