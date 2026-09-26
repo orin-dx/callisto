@@ -28,7 +28,8 @@ pub enum GraphError {
     #[diagnostic(transparent)]
     Format(#[from] callisto_format::ParseError),
 
-    #[error("parsing changeset {}: {source}", .path.display())]
+    #[error("{}: {source}", .path.display())]
+    #[diagnostic(code(E210))]
     ParseChangeset {
         path: PathBuf,
         source: callisto_format::ParseError,

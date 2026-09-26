@@ -184,6 +184,10 @@ pub enum DiagnosticCode {
     WorkflowMergePublishes,
     /// A `[[package]]` config rule matched no packages.
     PackageRuleMatchedNothing,
+    /// A `.changeset/*.md` file failed to parse -- malformed frontmatter, an invalid entry
+    /// line, or entries present with an empty summary. The file stays on disk unconsumed;
+    /// `status` reports one of these per unparseable file instead of aborting.
+    ChangesetParseFailed,
 }
 
 #[cfg(test)]

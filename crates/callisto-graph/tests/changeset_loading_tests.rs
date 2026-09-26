@@ -2,16 +2,20 @@
 //! validate_command_tests.rs when `validate` was removed.
 //! These test `load_changesets` itself, not the removed `validate` command.
 
+/// `@changesets/cli add --empty` writes exactly `---\n---\n`; `load_changesets` must accept it
+/// as a valid, entries-empty, summary-empty changeset rather than erroring.
 #[test]
-fn test_load_changesets_detects_empty_changesets() {
+fn test_load_changesets_accepts_empty_changesets() {
     let temp_dir = tempfile::tempdir().unwrap();
     let cs_dir = temp_dir.path().join(".changeset");
     std::fs::create_dir_all(&cs_dir).unwrap();
     std::fs::write(cs_dir.join("empty.md"), "---\n---\n").unwrap();
 
     let cfg = callisto_graph::config::load(&temp_dir.path().join("callisto.toml")).unwrap();
-    let loaded = callisto_graph::load_changesets(temp_dir.path(), &cfg);
-    assert!(loaded.is_err());
+    let loaded = callisto_graph::load_changesets(temp_dir.path(), &cfg).expect("empty changeset must load");
+    assert_eq!(loaded.len(), 1);
+    assert!(loaded[0].changeset.entries.is_empty());
+    assert!(loaded[0].changeset.summary.is_empty());
 }
 
 /// A changeset file that has entries but an empty summary body must be rejected when

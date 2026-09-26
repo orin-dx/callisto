@@ -56,10 +56,26 @@ pub enum NamedBy {
     Inference,
 }
 
-pub fn load_changesets(root: &Path, cfg: &ResolvedConfig) -> Result<Vec<LoadedChangeset>, GraphError> {
+/// One `.changeset/*.md` file that failed `parse_changeset`, kept alongside its (workspace-root-
+/// relative) path so a caller that must survive a malformed changeset -- `status` -- can report
+/// it as a diagnostic instead of aborting.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChangesetLoadFailure {
+    pub path: PathBuf,
+    pub source: callisto_format::ParseError,
+}
+
+/// Loads and parses every `.changeset/*.md` file, splitting successes from parse failures
+/// rather than aborting on the first one -- `status` must report every unparseable changeset,
+/// not just the first. [`load_changesets`] collapses this to the first failure for callers
+/// (`aggregate`/`version`) that must hard-fail instead.
+pub fn load_changesets_permissive(
+    root: &Path,
+    cfg: &ResolvedConfig,
+) -> Result<(Vec<LoadedChangeset>, Vec<ChangesetLoadFailure>), GraphError> {
     let dir = root.join(&cfg.changesets_dir);
     if !dir.exists() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     }
 
     let entries = fs::read_dir(&dir).map_err(|e| callisto_model::ManifestError::Read {
@@ -82,24 +98,38 @@ pub fn load_changesets(root: &Path, cfg: &ResolvedConfig) -> Result<Vec<LoadedCh
     files.sort();
 
     let mut loaded = Vec::new();
+    let mut failures = Vec::new();
     for path in files {
         let content = fs::read_to_string(&path).map_err(|e| callisto_model::ManifestError::Read {
             path: path.clone(),
             message: e.to_string(),
         })?;
-        let changeset = parse_changeset(&content).map_err(|e| GraphError::ParseChangeset {
-            path: path.clone(),
-            source: e,
-        })?;
-        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
         let rel_path = path.strip_prefix(root).unwrap_or(&path).to_path_buf();
-        loaded.push(LoadedChangeset {
-            path: rel_path,
-            id: stem,
-            changeset,
-        });
+        match parse_changeset(&content) {
+            Ok(changeset) => {
+                let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+                loaded.push(LoadedChangeset {
+                    path: rel_path,
+                    id: stem,
+                    changeset,
+                });
+            }
+            Err(source) => failures.push(ChangesetLoadFailure { path: rel_path, source }),
+        }
     }
 
+    Ok((loaded, failures))
+}
+
+pub fn load_changesets(root: &Path, cfg: &ResolvedConfig) -> Result<Vec<LoadedChangeset>, GraphError> {
+    let (loaded, mut failures) = load_changesets_permissive(root, cfg)?;
+    if !failures.is_empty() {
+        let failure = failures.remove(0);
+        return Err(GraphError::ParseChangeset {
+            path: failure.path,
+            source: failure.source,
+        });
+    }
     Ok(loaded)
 }
 

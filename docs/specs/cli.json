@@ -162,7 +162,7 @@
     },
     {
       "id": "CLI-STATUS-05",
-      "criterion": "A changeset naming an unknown, ambiguous or invalid package produces an error-level diagnostic naming the changeset file, so `status --check` exits 1; a changeset that fails to parse (empty, blank summary, malformed entry) makes `status` exit 1 with the parse error.",
+      "criterion": "A changeset naming an unknown, ambiguous or invalid package produces an error-level diagnostic naming the changeset file, so `status --check` exits 1; a changeset with no entries at all is an info-level diagnostic and never fails `status --check`; a changeset that fails to parse (blank summary with entries, malformed entry, missing or unclosed frontmatter) produces an error-level diagnostic naming the file and the parse error, so `status --check` exits 1.",
       "is_error_case": true
     },
     {
