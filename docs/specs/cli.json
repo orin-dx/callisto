@@ -40,7 +40,7 @@
       "signature": "callisto pre enter <TAG> | callisto pre exit",
       "description": "Enters or exits prerelease mode by writing .changeset/pre.json.",
       "error_conditions": [
-        "`pre enter` while already in prerelease mode.",
+        "`pre enter` while pre.json's mode is already `pre`.",
         "`pre exit` after prerelease mode was already exited, or with no .changeset/pre.json."
       ]
     },
@@ -162,7 +162,7 @@
     },
     {
       "id": "CLI-STATUS-05",
-      "criterion": "A changeset naming an unknown, ambiguous or invalid package produces an error-level diagnostic naming the changeset file, so `status --check` exits 1; a changeset that fails to parse (empty, blank summary, malformed entry) makes `status` exit 1 with the parse error.",
+      "criterion": "A changeset naming an unknown, ambiguous or invalid package produces an error-level diagnostic naming the changeset file, so `status --check` exits 1; a changeset with no entries at all is an info-level diagnostic and never fails `status --check`; a changeset that fails to parse (blank summary with entries, malformed entry, missing or unclosed frontmatter) produces an error-level diagnostic naming the file and the parse error, so `status --check` exits 1.",
       "is_error_case": true
     },
     {
@@ -255,6 +255,10 @@
       "criterion": "`init --format json` writes the human-readable detection, config and preview to stderr and a report `{schemaVersion, initialized, configPath, config}` (plus `diagnostics` when any) to stdout; with --dry-run `initialized` is false and no file is written."
     },
     {
+      "id": "CLI-INIT-14",
+      "criterion": "When `.changeset/config.json` exists and declares `fixed`, `linked`, `ignore`, `access`, `baseBranch`, or `updateInternalDependencies` -- none of which callisto translates -- init emits a `changesets-config-key-dropped` warning diagnostic per such key present, naming `[[fixed-group]]` as `fixed`'s callisto.toml equivalent and stating no equivalent exists for the others."
+    },
+    {
       "id": "CLI-WF-01",
       "criterion": "A workflow is written to .github/workflows/callisto-release.yml only when --workflow is given or the interactive workflow question is answered yes; after writing, init prints that merging to the default branch publishes and advises requiring pull requests and reviews on it."
     },
@@ -288,11 +292,11 @@
     },
     {
       "id": "CLI-PRE-01",
-      "criterion": "`callisto pre enter <tag>` writes .changeset/pre.json with mode `pre`, the tag and each package's initial version; `callisto pre exit` sets its mode to `exit`."
+      "criterion": "`callisto pre enter <tag>` writes .changeset/pre.json with mode `pre`, the tag and each package's initial version; `callisto pre exit` sets its mode to `exit`. When pre.json already exists with mode `exit`, `pre enter` resumes the cycle: it keeps the existing `initialVersions` and `changesets` and only updates `mode` to `pre` and `tag` to the new value."
     },
     {
       "id": "CLI-PRE-02",
-      "criterion": "`pre enter` while in prerelease mode, and `pre exit` after prerelease mode was already exited, exit 1 naming the next step; `pre exit` with no .changeset/pre.json exits 1.",
+      "criterion": "`pre enter` while pre.json's mode is `pre` exits 1 naming the next step; `pre exit` after prerelease mode was already exited exits 1 naming the next step; `pre exit` with no .changeset/pre.json exits 1 naming `callisto pre enter <tag>`.",
       "is_error_case": true
     },
     {

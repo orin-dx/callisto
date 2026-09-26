@@ -263,11 +263,11 @@ fn snapshot_dry_run_text_output_has_dry_run_marker() {
     );
 }
 
-/// `pre exit` reads `.changeset/pre.json` before checking the dry-run permit.
-/// When the file does not exist the function must return `CliError::Io`, not
-/// panic or produce a misleading error variant.
+/// `pre exit` checks for `.changeset/pre.json` before reading it or checking the dry-run permit.
+/// When the file does not exist the function must return the typed `CliError::PreNotActive`
+/// (naming `pre enter` as the fix), not a raw `CliError::Io` or a panic.
 #[test]
-fn pre_exit_without_pre_json_returns_io_error() {
+fn pre_exit_without_pre_json_returns_pre_not_active() {
     let dir = tempdir().unwrap();
     let root = dir.path();
     callisto_fixtures::git::init_repo(root);
@@ -283,8 +283,8 @@ fn pre_exit_without_pre_json_returns_io_error() {
 
     let result = commands::pre::handle(PreArgs::Exit, &g);
     assert!(
-        matches!(result, Err(callisto_cli::error::CliError::Io { .. })),
-        "expected CliError::Io when .changeset/pre.json is absent, got: {:?}",
+        matches!(result, Err(callisto_cli::error::CliError::PreNotActive)),
+        "expected CliError::PreNotActive when .changeset/pre.json is absent, got: {:?}",
         result
     );
 }

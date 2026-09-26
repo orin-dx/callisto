@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use callisto_model::{
-    ApplyPermit, CommandRunner, Ecosystem, GitHubRepository, InitReport, PublishTarget, TagName, TagTemplate, Version,
-    SCHEMA_VERSION,
+    ApplyPermit, CommandRunner, Diagnostic, DiagnosticCode, DiagnosticSeverity, Ecosystem, GitHubRepository,
+    InitReport, PublishTarget, TagName, TagTemplate, Version, SCHEMA_VERSION,
 };
 
 use crate::commands::release::{
@@ -508,6 +508,52 @@ pub fn write_changeset_readme(root: &Path, permit: &ApplyPermit) -> Result<(), G
     }
     std::fs::create_dir_all(root.join(".changeset")).map_err(io_err)?;
     callisto_model::atomic::atomic_write(&readme, CHANGESET_README, permit).map_err(io_err)
+}
+
+/// `@changesets/cli` `config.json` keys callisto never reads, and the callisto.toml construct
+/// that replaces each one, when one exists.
+const CHANGESETS_CONFIG_KEYS: [(&str, Option<&str>); 6] = [
+    ("fixed", Some("[[fixed-group]]")),
+    ("linked", None),
+    ("ignore", None),
+    ("access", None),
+    ("baseBranch", None),
+    ("updateInternalDependencies", None),
+];
+
+/// Warns, per key, about every `.changeset/config.json` key callisto ignores.
+///
+/// callisto never translates this file; a present, unhonoured key is silently inert otherwise.
+/// Returns no diagnostics when the file is absent or is not a JSON object.
+pub fn changesets_config_diagnostics(root: &Path) -> Vec<Diagnostic> {
+    let path = root.join(".changeset/config.json");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return Vec::new();
+    };
+    let Ok(serde_json::Value::Object(config)) = serde_json::from_str(&text) else {
+        return Vec::new();
+    };
+    CHANGESETS_CONFIG_KEYS
+        .iter()
+        .filter(|(key, _)| config.contains_key(*key))
+        .map(|(key, equivalent)| {
+            let message = match equivalent {
+                Some(equivalent) => {
+                    format!("`.changeset/config.json` key `{key}` is not honoured; use {equivalent} instead")
+                }
+                None => format!("`.changeset/config.json` key `{key}` is not honoured; callisto has no equivalent"),
+            };
+            Diagnostic {
+                code: DiagnosticCode::ChangesetsConfigKeyDropped,
+                severity: DiagnosticSeverity::Warning,
+                message,
+                package: None,
+                path: Some(path.clone()),
+                escalated_by: None,
+                governed_by: None,
+            }
+        })
+        .collect()
 }
 
 /// The config `write` would produce for `root` with no answers: a header only.
@@ -2015,5 +2061,69 @@ mod tests {
         let error = write_workflow(dir.path(), "other\n", &permit).unwrap_err();
         assert!(matches!(&error, GraphError::InitWorkflowExists { .. }), "{error}");
         assert_eq!(std::fs::read_to_string(workflow_path(dir.path())).unwrap(), "content\n");
+    }
+
+    // Every unhonoured `@changesets/cli` key present warns once; `fixed` names its
+    // callisto.toml replacement, the rest have none to name.
+    #[test]
+    fn changesets_config_diagnostics_warns_per_unhonoured_key_present() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".changeset")).unwrap();
+        std::fs::write(
+            dir.path().join(".changeset/config.json"),
+            r#"{
+                "fixed": [["pkg-a", "pkg-b"]],
+                "linked": [["pkg-c", "pkg-d"]],
+                "access": "public",
+                "changelog": false
+            }"#,
+        )
+        .unwrap();
+
+        let diagnostics = changesets_config_diagnostics(dir.path());
+        let codes: Vec<_> = diagnostics.iter().map(|d| d.code).collect();
+        assert_eq!(
+            codes,
+            vec![DiagnosticCode::ChangesetsConfigKeyDropped; 3],
+            "only fixed, linked and access are present among the known keys; changelog is out of scope"
+        );
+        assert!(diagnostics.iter().all(|d| d.severity == DiagnosticSeverity::Warning));
+        assert!(diagnostics
+            .iter()
+            .all(|d| d.path.as_deref() == Some(dir.path().join(".changeset/config.json").as_path())));
+
+        let fixed = diagnostics.iter().find(|d| d.message.contains("`fixed`")).unwrap();
+        assert!(
+            fixed.message.contains("[[fixed-group]]"),
+            "fixed must name its callisto.toml equivalent: {}",
+            fixed.message
+        );
+        let linked = diagnostics.iter().find(|d| d.message.contains("`linked`")).unwrap();
+        assert!(
+            linked.message.contains("no equivalent"),
+            "linked has no callisto.toml equivalent: {}",
+            linked.message
+        );
+    }
+
+    // No config.json, or one that isn't a JSON object, is silently ignored -- not every
+    // workspace has opted into `@changesets/cli` compatibility.
+    #[test]
+    fn changesets_config_diagnostics_is_empty_without_a_config_object() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(changesets_config_diagnostics(dir.path()).is_empty(), "no file at all");
+
+        std::fs::create_dir_all(dir.path().join(".changeset")).unwrap();
+        std::fs::write(dir.path().join(".changeset/config.json"), "[1, 2, 3]").unwrap();
+        assert!(
+            changesets_config_diagnostics(dir.path()).is_empty(),
+            "not a JSON object"
+        );
+
+        std::fs::write(dir.path().join(".changeset/config.json"), "{\"commit\": true}").unwrap();
+        assert!(
+            changesets_config_diagnostics(dir.path()).is_empty(),
+            "no unhonoured key present"
+        );
     }
 }

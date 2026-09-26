@@ -70,7 +70,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
 ) -> Result<StatusReport, GraphError> {
     let mut packages = Vec::new();
     let base_versions = ws.base_versions()?;
-    let loaded_changesets = crate::load_changesets(&ws.root, &ws.config)?;
+    let (loaded_changesets, changeset_load_failures) = crate::load_changesets_permissive(&ws.root, &ws.config)?;
     let tags = ws.tags()?;
 
     let all_packages: Vec<&Package> = ws.graph.packages().collect();
@@ -84,14 +84,15 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
         strict: opts.strict,
         allow_empty_changesets: true,
     };
-    // An ambiguous changeset entry makes `plan_version` (via `aggregate`)
-    // hard-error -- the right behavior for a real `version`/`release` run, but
-    // `status` must survive it and report `AmbiguousPackageName` below instead.
-    // Severity planning is skipped for this run rather than duplicating
-    // `aggregate`'s own resolution to route around its error.
+    // An ambiguous changeset entry, or an unparseable changeset file, makes `plan_version`
+    // (via `aggregate`'s own strict `load_changesets`) hard-error -- the right behavior for a
+    // real `version`/`release` run, but `status` must survive both and report
+    // `AmbiguousPackageName`/the parse failure diagnostic below instead. Severity planning is
+    // skipped for this run rather than duplicating `aggregate`'s own resolution to route
+    // around its error.
     let plan = match plan_version(ws, inference, &version_opts) {
         Ok(plan) => Some(plan),
-        Err(GraphError::AmbiguousName { .. }) => None,
+        Err(GraphError::AmbiguousName { .. } | GraphError::ParseChangeset { .. }) => None,
         Err(e) => return Err(e),
     };
     let planned_severity: BTreeMap<PackageId, Severity> = plan
@@ -130,12 +131,23 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
 
     let mut diagnostics = ws.graph.diagnostics().to_vec();
     // Fold in every well-formedness diagnostic `validate` used to
-    // report (EmptyChangeset, EmptySummary, UnknownPackage,
-    // AmbiguousPackageName, InvalidPackageName) now that `validate` is gone.
+    // report (EmptyChangeset, UnknownPackage, AmbiguousPackageName,
+    // InvalidPackageName) now that `validate` is gone.
     diagnostics.extend(changeset_wellformedness_diagnostics(
         all_packages.iter().copied(),
         &loaded_changesets,
     ));
+    for failure in &changeset_load_failures {
+        diagnostics.push(Diagnostic {
+            code: DiagnosticCode::ChangesetParseFailed,
+            severity: DiagnosticSeverity::Error,
+            message: format!("{}: {}", failure.path.display(), failure.source),
+            package: None,
+            path: Some(failure.path.clone()),
+            governed_by: None,
+            escalated_by: None,
+        });
+    }
     escalate(&mut diagnostics, opts.strict);
 
     let has_changesets = packages.iter().any(|p| !p.pending_changesets.is_empty());
@@ -154,11 +166,17 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
 }
 
 /// The per-changeset well-formedness diagnostics `validate` used to emit
-/// (crates/callisto-graph/src/commands/validate.rs, now removed), ported verbatim: entries/summary shape and package-name resolution,
-/// all at Error severity. Uses the same `resolve_unique` primitive
+/// (crates/callisto-graph/src/commands/validate.rs, now removed): entries shape and
+/// package-name resolution. Uses the same `resolve_unique` primitive
 /// `resolve_pending_changesets` does, but this scan must never abort early,
 /// so an unknown or ambiguous entry becomes a diagnostic instead of an
 /// early return.
+///
+/// An entries-empty changeset is advisory only (`Info`): `@changesets/cli add --empty`
+/// produces one deliberately, so it is not a well-formedness problem. A changeset with
+/// entries but an empty summary never reaches this scan at all -- `load_changesets_permissive`
+/// already rejects that shape at parse time, surfacing it as a `ChangesetParseFailed`
+/// diagnostic instead.
 fn changeset_wellformedness_diagnostics<'a>(
     packages: impl Iterator<Item = &'a Package> + Clone,
     loaded: &[LoadedChangeset],
@@ -168,20 +186,8 @@ fn changeset_wellformedness_diagnostics<'a>(
         if cs.changeset.entries.is_empty() {
             diagnostics.push(Diagnostic {
                 code: DiagnosticCode::EmptyChangeset,
-                severity: DiagnosticSeverity::Error,
+                severity: DiagnosticSeverity::Info,
                 message: format!("Changeset `{}` is empty", cs.path.display()),
-                package: None,
-                path: Some(cs.path.clone()),
-                governed_by: None,
-                escalated_by: None,
-            });
-        }
-
-        if !cs.changeset.entries.is_empty() && cs.changeset.summary.trim().is_empty() {
-            diagnostics.push(Diagnostic {
-                code: DiagnosticCode::EmptySummary,
-                severity: DiagnosticSeverity::Error,
-                message: format!("Changeset `{}` has entries but an empty summary", cs.path.display()),
                 package: None,
                 path: Some(cs.path.clone()),
                 governed_by: None,

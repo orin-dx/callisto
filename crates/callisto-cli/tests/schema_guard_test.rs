@@ -73,6 +73,7 @@ fn diagnostic_code_enum_gains_only_changelog_read_error() {
         "pre-major-inference-inert",
         "changelog-section-not-found",
         "changeset-read-error",
+        "changeset-parse-failed",
         "git-discovery-failed",
         "bare-rule-matches-multiple-ecosystems",
         "unrecognised-platform-triple",

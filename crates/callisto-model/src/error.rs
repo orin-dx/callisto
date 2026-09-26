@@ -93,7 +93,7 @@ pub enum ManifestError {
     },
 
     #[error("`{path}` has no `{field}` field")]
-    #[diagnostic(code(E013))]
+    #[diagnostic(code(E013), help("Add a `{field}` field to `{}`, or exclude it from workspace discovery.", path.display()))]
     MissingField { path: PathBuf, field: &'static str },
 
     #[error("`{path}` declares `{raw}` as its version, which is invalid: {source}")]

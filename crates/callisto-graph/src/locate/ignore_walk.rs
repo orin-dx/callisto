@@ -145,6 +145,17 @@ impl ProjectLocator for IgnoreWalkLocator {
                     continue;
                 };
 
+                // A private, versionless root package.json (standard npm/pnpm workspace-root
+                // layout, e.g. `@changesets/cli`) declares a name only to hold `workspaces`; it
+                // is never itself a released package, so it never becomes a project.
+                if is_root
+                    && ecosystem == Ecosystem::Npm
+                    && identity.version.is_none()
+                    && callisto_manifests::npm_declares_private(&content)
+                {
+                    continue;
+                }
+
                 let admitted = admits(ecosystem);
                 let id = PackageId::parse(&name).unwrap_or_else(|_| PackageId::Bare(name.clone()));
                 let project = ProjectRoot {
@@ -738,6 +749,72 @@ mod tests {
         assert!(
             !projects.iter().any(|p| p.ecosystem == Ecosystem::Npm),
             "no npm entries expected when workspaces = [], got: {projects:?}"
+        );
+    }
+
+    /// A private, versionless root package.json (the standard npm/pnpm
+    /// workspace-root layout, e.g. `@changesets/cli`) declares a name only to
+    /// hold `workspaces` -- it must never surface as an Npm project itself,
+    /// even though it would otherwise qualify as a hybrid root. The real
+    /// member package is still discovered normally.
+    #[test]
+    fn private_versionless_root_package_json_is_not_a_project() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"name":"root","private":true,"workspaces":["packages/*"]}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("packages/x")).unwrap();
+        std::fs::write(
+            root.join("packages/x/package.json"),
+            r#"{"name":"x","version":"1.0.0"}"#,
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(
+            !projects
+                .iter()
+                .any(|p| p.path == Path::new(".") && p.ecosystem == Ecosystem::Npm),
+            "private, versionless root must not be a project, got: {projects:?}"
+        );
+        assert!(
+            projects
+                .iter()
+                .any(|p| p.path == Path::new("packages/x") && p.ecosystem == Ecosystem::Npm),
+            "packages/x must still be discovered, got: {projects:?}"
+        );
+    }
+
+    /// A root package.json that is private but DOES declare a version is a
+    /// real, releasable hybrid-root package (e.g. a CLI's own root manifest)
+    /// and must still be discovered, unlike the versionless case above.
+    #[test]
+    fn private_root_package_json_with_a_version_is_still_a_project() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"name":"root","version":"0.0.0","private":true,"workspaces":["packages/*"]}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("packages/x")).unwrap();
+        std::fs::write(
+            root.join("packages/x/package.json"),
+            r#"{"name":"x","version":"1.0.0"}"#,
+        )
+        .unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        assert!(
+            projects
+                .iter()
+                .any(|p| p.path == Path::new(".") && p.ecosystem == Ecosystem::Npm),
+            "private root with a version must still be a project, got: {projects:?}"
         );
     }
 

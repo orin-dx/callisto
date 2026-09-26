@@ -58,7 +58,7 @@
     },
     {
       "id": "WS-DISC-08",
-      "criterion": "A hybrid root (root Cargo.toml with both [package] and [workspace], root pyproject.toml with both [project] and [tool.uv.workspace], or a root package.json with a `name`) is always admitted, even when `exclude` matches `.` or the member globs do not."
+      "criterion": "A hybrid root (root Cargo.toml with both [package] and [workspace], root pyproject.toml with both [project] and [tool.uv.workspace], or a root package.json with a `name`) is always admitted, even when `exclude` matches `.` or the member globs do not. A root package.json that is both `private` and versionless is never discovered as an npm package (it only holds `workspaces`), regardless of admission."
     },
     {
       "id": "WS-DISC-09",
