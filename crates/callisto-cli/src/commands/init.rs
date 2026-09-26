@@ -53,26 +53,13 @@ pub trait Prompter {
 
 struct TerminalPrompter;
 
-fn prompt_failed(error: dialoguer::Error) -> CliError {
-    CliError::Other(format!("Interactive prompt failed: {error}"))
-}
-
 impl Prompter for TerminalPrompter {
     fn select(&mut self, prompt: &str, items: &[String]) -> Result<usize, CliError> {
-        Select::new()
-            .with_prompt(prompt)
-            .items(items)
-            .default(0)
-            .interact()
-            .map_err(prompt_failed)
+        Ok(Select::new().with_prompt(prompt).items(items).default(0).interact()?)
     }
 
     fn confirm(&mut self, prompt: &str, default: bool) -> Result<bool, CliError> {
-        Confirm::new()
-            .with_prompt(prompt)
-            .default(default)
-            .interact()
-            .map_err(prompt_failed)
+        Ok(Confirm::new().with_prompt(prompt).default(default).interact()?)
     }
 
     fn input(&mut self, prompt: &str, default: Option<&str>) -> Result<String, CliError> {
@@ -80,7 +67,7 @@ impl Prompter for TerminalPrompter {
         if let Some(default) = default {
             input = input.default(default.to_owned());
         }
-        input.interact_text().map_err(prompt_failed)
+        Ok(input.interact_text()?)
     }
 }
 

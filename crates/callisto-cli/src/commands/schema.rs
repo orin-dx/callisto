@@ -21,14 +21,15 @@ pub fn handle(args: SchemaArgs, _global: &GlobalArgs) -> Result<ExitCode, CliErr
         "matrix" => schema_for!(MatrixReport),
         "release-receipt" => schema_for!(ReleaseReceiptV1),
         other => {
-            return Err(CliError::Other(format!(
-                "Unknown schema target type `{other}`. Supported types: status, version, snapshot, validate, init, changeset, pre, matrix, release-receipt"
-            )));
+            return Err(CliError::UnknownSchemaType {
+                requested: other.to_string(),
+            });
         }
     };
 
-    let json = serde_json::to_string_pretty(&schema)
-        .map_err(|e| CliError::Other(format!("Failed to serialize JSON schema: {e}")))?;
+    // A `schemars::Schema` is a plain JSON tree of strings, numbers, and nested maps;
+    // it always serializes.
+    let json = serde_json::to_string_pretty(&schema).expect("schema serializes");
     println!("{json}");
     Ok(ExitCode::SUCCESS)
 }
@@ -54,11 +55,13 @@ mod tests {
             &global(),
         );
         match result {
-            Err(CliError::Other(msg)) => {
+            Err(CliError::UnknownSchemaType { requested }) => {
+                assert_eq!(requested, "bogus");
+                let msg = CliError::UnknownSchemaType { requested }.to_string();
                 assert!(msg.contains("Unknown schema target type `bogus`"), "got: {msg}");
                 assert!(msg.contains("Supported types:"), "got: {msg}");
             }
-            other => panic!("expected CliError::Other, got: {other:?}"),
+            other => panic!("expected CliError::UnknownSchemaType, got: {other:?}"),
         }
     }
 }

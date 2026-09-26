@@ -90,7 +90,7 @@
     },
     {
       "id": "REL-CMD-04",
-      "criterion": "`callisto release --dry-run` prints each package as `<ecosystem/name> <version>` with its operations (a table on a colour terminal, `Release plan:` lines otherwise) and performs no effect. This holds on a dirty worktree, without an `origin` remote, and in a workspace that needs the CI route. With `--format json` it prints the plan document, whose `digest` equals the receipt's `intentDigest` from a following `callisto release` on the same state."
+      "criterion": "`callisto release --dry-run` prints each package as `<ecosystem/name> <version>` with its operations (a table on a colour terminal, `Release plan:` lines otherwise) and performs no effect. This holds on a dirty worktree, without an `origin` remote, and in a workspace that needs the CI route. With `--format json` it prints the plan document, whose `digest` equals the receipt's `intentDigest` from a following `callisto release` on the same state; the document carries a sibling `diagnostics` array (e.g. an artifact owner selected without its product) when derivation raised any, and omits the field otherwise. `release plan`'s JSON output carries the same `diagnostics` array; the `--out` file it writes never does."
     },
     {
       "id": "REL-CMD-05",
@@ -270,7 +270,7 @@
     },
     {
       "id": "REL-GH-04",
-      "criterion": "Each `[[release.artifact]]` becomes one upload named `asset-name` on the product package's GitHub release, tagged with the product's own tag and prerelease flag regardless of the asset owner package's version. An artifact whose `package` is not in the release fails with E179, and a `product-package` that is missing or does not target `github-release` fails with E197. When an artifact's owner package is selected but the product package is not, Callisto warns on stderr and derives no slot for that asset.",
+      "criterion": "Each `[[release.artifact]]` becomes one upload named `asset-name` on the product package's GitHub release, tagged with the product's own tag and prerelease flag regardless of the asset owner package's version. An artifact whose `package` is not in the release fails with E179, and a `product-package` that is missing or does not target `github-release` fails with E197. When an artifact's owner package is selected but the product package is not, Callisto warns on stderr, records a `product-artifact-owner-without-product` diagnostic (surfaced in `--format json`; see REL-CMD-04), and derives no slot for that asset.",
       "is_error_case": true
     },
     {
@@ -293,7 +293,7 @@
     },
     {
       "id": "REL-PR-02",
-      "criterion": "`release-pr decide` fails in these cases: an invalid repository (E141), an unsafe branch name (E142), duplicate PR numbers, a snapshot for another repository or base branch (E144), a managed-branch PR from a fork (E145), more than one managed PR (E146), a malformed SHA suffix (E147), or a PR headed at `<release-branch>--staging` (E154). `release-pr verify` exits 0 when a fresh snapshot equals the decision's snapshot and fails with E148 otherwise.",
+      "criterion": "`release-pr decide` fails in these cases: an invalid repository (E141), an unsafe branch name (E142), duplicate PR numbers (E143), a snapshot for another repository or base branch (E144), a managed-branch PR from a fork (E145), more than one managed PR (E146), a malformed SHA suffix (E147), or a PR headed at `<release-branch>--staging` (E154). Each of these carries its own code even when `--snapshot`/`--decision` is a file, inline JSON, or stdin. `release-pr verify` exits 0 when a fresh snapshot equals the decision's snapshot and fails with E148 otherwise.",
       "is_error_case": true
     },
     {

@@ -13,9 +13,7 @@ use crate::workspace::{load_workspace, select_inference};
 
 pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     if global.dry_run && args.emit_decision.is_some() {
-        return Err(CliError::Other(
-            "--emit-decision writes a file; remove --dry-run or drop --emit-decision".to_string(),
-        ));
+        return Err(CliError::VersionEmitDecisionDryRun);
     }
 
     let runner = CliCommandRunner;

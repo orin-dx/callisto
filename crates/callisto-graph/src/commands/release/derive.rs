@@ -6,10 +6,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use callisto_model::{
-    ArtifactSlotId, CanonicalTranscript, CommandRunner, CommitSha, DepKind, ExecutionTrustProfileV1, GitHubRepository,
-    PlatformPackageV1, PublishTarget, RegistryBindingDigest, RegistryBindingId, ReleaseDecisionV1,
-    ReleaseInputSnapshotV1, ReleaseIntentV1, ReleaseOperation, ReleaseOperationId, ReleasePackageId,
-    ReleasePackageInputV1, SemanticInputDigest, SourceIdentity, Version,
+    ArtifactSlotId, CanonicalTranscript, CommandRunner, CommitSha, DepKind, Diagnostic, DiagnosticCode,
+    DiagnosticSeverity, ExecutionTrustProfileV1, GitHubRepository, PlatformPackageV1, PublishTarget,
+    RegistryBindingDigest, RegistryBindingId, ReleaseDecisionV1, ReleaseInputSnapshotV1, ReleaseIntentV1,
+    ReleaseOperation, ReleaseOperationId, ReleasePackageId, ReleasePackageInputV1, SemanticInputDigest, SourceIdentity,
+    Version,
 };
 
 use crate::error::{ReleasePreconditionRequirement, ReleaseSelectionInvalidReason, UnsupportedReleaseFeature};
@@ -65,6 +66,10 @@ pub(crate) enum GitRemoteRequirement {
     OptionalForPreview,
 }
 
+/// `diagnostics` accumulates advisory findings from this derivation (e.g. an
+/// artifact owner selected without its product); the caller decides whether and
+/// where to surface them, since a re-derivation for integrity verification has no
+/// use for them.
 pub(crate) fn derive_release_intent<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     decision: &ReleaseDecisionV1,
@@ -72,9 +77,10 @@ pub(crate) fn derive_release_intent<R: CommandRunner, D: DependencyResolver>(
     trust_profile: ExecutionTrustProfileV1,
     artifact_policy: Option<&ArtifactBuildPolicy>,
     remote: GitRemoteRequirement,
+    diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<ReleaseIntentV1, GraphError> {
     let (snapshot, operations, _, _, slots) =
-        derive_release_inputs_with(workspace, decision, source, artifact_policy, remote)?;
+        derive_release_inputs_with(workspace, decision, source, artifact_policy, remote, diagnostics)?;
     Ok(ReleaseIntentV1::new(
         decision.clone(),
         snapshot,
@@ -84,15 +90,17 @@ pub(crate) fn derive_release_intent<R: CommandRunner, D: DependencyResolver>(
     )?)
 }
 
+/// See [`derive_release_intent`] for `diagnostics`.
 pub(crate) fn derive_release_intent_with_prepared<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     decision: &ReleaseDecisionV1,
     source: SourceIdentity,
     trust_profile: ExecutionTrustProfileV1,
     artifact_policy: Option<&ArtifactBuildPolicy>,
+    diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<(ReleaseIntentV1, PreparedDerivation), GraphError> {
     let (snapshot, operations, prepared, git_remote, slots) =
-        derive_release_inputs(workspace, decision, source, artifact_policy)?;
+        derive_release_inputs(workspace, decision, source, artifact_policy, diagnostics)?;
     let intent = ReleaseIntentV1::new(decision.clone(), snapshot, trust_profile, operations, slots)?;
     Ok((
         intent,
@@ -129,6 +137,7 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
     decision: &ReleaseDecisionV1,
     source: SourceIdentity,
     artifact_policy: Option<&ArtifactBuildPolicy>,
+    diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<DerivedReleaseInputs, GraphError> {
     derive_release_inputs_with(
         workspace,
@@ -136,6 +145,7 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
         source,
         artifact_policy,
         GitRemoteRequirement::Required,
+        diagnostics,
     )
 }
 
@@ -145,6 +155,7 @@ fn derive_release_inputs_with<R: CommandRunner, D: DependencyResolver>(
     source: SourceIdentity,
     artifact_policy: Option<&ArtifactBuildPolicy>,
     remote: GitRemoteRequirement,
+    diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<DerivedReleaseInputs, GraphError> {
     if workspace
         .config
@@ -446,10 +457,11 @@ fn derive_release_inputs_with<R: CommandRunner, D: DependencyResolver>(
                     .iter()
                     .find(|(_, (pkg, _))| workspace.identity.identifies(&artifact.package, &pkg.id))
                 {
-                    eprintln!(
-                        "{}",
-                        unreleased_product_artifact_warning(&product.package, artifact, owner_id)
-                    );
+                    diagnostics.push(unreleased_product_artifact_diagnostic(
+                        &product.package,
+                        artifact,
+                        owner_id,
+                    ));
                 }
             }
         }
@@ -628,15 +640,23 @@ fn require_product_package_publishes_to_forge<R: CommandRunner, D: DependencyRes
 }
 
 /// Warns that `owner`'s asset has no release to attach to, since its product isn't selected for release.
-fn unreleased_product_artifact_warning(
+fn unreleased_product_artifact_diagnostic(
     product: &callisto_model::PackageId,
     artifact: &crate::config::resolve::ProductArtifactConfig,
     owner: &ReleasePackageId,
-) -> String {
-    format!(
-        "warning: {owner} is selected but product `{product}` is not; its `{}` asset will not be uploaded",
-        artifact.asset_name
-    )
+) -> Diagnostic {
+    Diagnostic {
+        code: DiagnosticCode::ProductArtifactOwnerWithoutProduct,
+        severity: DiagnosticSeverity::Warning,
+        message: format!(
+            "{owner} is selected but product `{product}` is not; its `{}` asset will not be uploaded",
+            artifact.asset_name
+        ),
+        package: callisto_model::PackageId::parse(&owner.to_string()).ok(),
+        path: None,
+        escalated_by: None,
+        governed_by: None,
+    }
 }
 
 fn package_fingerprint<R: CommandRunner, D: DependencyResolver>(
@@ -828,8 +848,14 @@ mod tests {
             super::super::capability::ReleaseCheckout::Detached,
         )
         .unwrap();
-        let (before_snapshot, before_operations, _, _, _) =
-            derive_release_inputs(&workspace, &super::super::tests::decision(), source.clone(), None).unwrap();
+        let (before_snapshot, before_operations, _, _, _) = derive_release_inputs(
+            &workspace,
+            &super::super::tests::decision(),
+            source.clone(),
+            None,
+            &mut Vec::new(),
+        )
+        .unwrap();
 
         std::fs::write(
             root.join("callisto.toml"),
@@ -838,7 +864,7 @@ mod tests {
         .unwrap();
         let reread = Workspace::load(root, &locator, &runner).unwrap();
         let (after_snapshot, after_operations, _, _, _) =
-            derive_release_inputs(&reread, &super::super::tests::decision(), source, None).unwrap();
+            derive_release_inputs(&reread, &super::super::tests::decision(), source, None, &mut Vec::new()).unwrap();
 
         assert_eq!(before_snapshot, after_snapshot);
         assert_eq!(before_operations, after_operations);
@@ -864,7 +890,13 @@ mod tests {
         .unwrap();
         let workspace = Workspace::load(root, &locator, &runner).unwrap();
         assert!(matches!(
-            derive_release_inputs(&workspace, &super::super::tests::decision(), source, None),
+            derive_release_inputs(
+                &workspace,
+                &super::super::tests::decision(),
+                source,
+                None,
+                &mut Vec::new()
+            ),
             Err(GraphError::ReleaseForgeRepositoryMissing)
         ));
     }
@@ -927,7 +959,7 @@ mod tests {
             super::super::capability::ReleaseCheckout::Detached,
         )
         .unwrap();
-        derive_release_inputs(&workspace, decision, source, None)
+        derive_release_inputs(&workspace, decision, source, None, &mut Vec::new())
     }
 
     fn registry_publish<'a>(operations: &'a [ReleaseOperation], name: &str) -> &'a ReleaseOperation {
@@ -1191,6 +1223,7 @@ mod tests {
             &release(&[(Ecosystem::Npm, "@s/lib", "1.0.0")]),
             source,
             None,
+            &mut Vec::new(),
         )
         .unwrap();
         let access: Vec<_> = prepared
@@ -1284,7 +1317,8 @@ mod tests {
             super::super::capability::ReleaseCheckout::Detached,
         )
         .unwrap();
-        let error = derive_release_inputs(&workspace, &cargo_release(&["core"]), source, None).unwrap_err();
+        let error =
+            derive_release_inputs(&workspace, &cargo_release(&["core"]), source, None, &mut Vec::new()).unwrap_err();
         assert!(
             matches!(
                 &error,
@@ -1337,7 +1371,7 @@ mod tests {
         .unwrap();
         std::fs::write(dir.path().join("CHANGELOG.md"), "# core\n\n## 1.0.0\n\n").unwrap();
         let (after_snapshot, after_operations, after_prepared, _, _) =
-            derive_release_inputs(&workspace, &decision, source, None).unwrap();
+            derive_release_inputs(&workspace, &decision, source, None, &mut Vec::new()).unwrap();
         assert_eq!(
             forge_notes(&after_prepared),
             ReleaseNotes::Generated {
@@ -1374,7 +1408,7 @@ mod tests {
     fn derive_with_artifact_policy(
         dir: &tempfile::TempDir,
         decision: &ReleaseDecisionV1,
-    ) -> Result<DerivedReleaseInputs, GraphError> {
+    ) -> Result<(DerivedReleaseInputs, Vec<Diagnostic>), GraphError> {
         let locator = crate::IgnoreWalkLocator::new(dir.path());
         let root = super::super::capability::canonical_root(dir.path()).unwrap();
         let workspace = Workspace::load(root, &locator, &RealGitRunner).unwrap();
@@ -1400,7 +1434,9 @@ mod tests {
             workflow_path: callisto_model::RELEASE_COORDINATOR_WORKFLOW_PATH.to_owned(),
             workflow_commit: sha,
         };
-        derive_release_inputs(&workspace, decision, source, Some(&policy))
+        let mut diagnostics = Vec::new();
+        let inputs = derive_release_inputs(&workspace, decision, source, Some(&policy), &mut diagnostics)?;
+        Ok((inputs, diagnostics))
     }
 
     fn artifact_upload(prepared: &BTreeMap<ReleaseOperationId, PreparedOperation>) -> &ArtifactUploadOperation {
@@ -1428,7 +1464,7 @@ mod tests {
     fn plugin_owned_artifact_gates_product_forge_publish() {
         let dir = product_and_plugin_repo("1.0.0", "2.0.0");
         let decision = cargo_release(&["core", "plugin"]);
-        let (_, operations, prepared, _, slots) = derive_with_artifact_policy(&dir, &decision).unwrap();
+        let ((_, operations, prepared, _, slots), _) = derive_with_artifact_policy(&dir, &decision).unwrap();
         assert_eq!(slots.len(), 1, "one configured artifact slot");
 
         let upload_id = prepared
@@ -1455,7 +1491,7 @@ mod tests {
             (Ecosystem::Cargo, "core", "1.0.0"),
             (Ecosystem::Cargo, "plugin", "2.0.0-beta.1"),
         ]);
-        let (_, _, prepared, _, _) = derive_with_artifact_policy(&dir, &decision).unwrap();
+        let ((_, _, prepared, _, _), _) = derive_with_artifact_policy(&dir, &decision).unwrap();
         let upload = artifact_upload(&prepared);
         assert!(
             !upload.prerelease,
@@ -1464,12 +1500,13 @@ mod tests {
         );
     }
 
-    /// Derivation must still succeed without registering a dangling slot; the warning path replaces silence.
+    /// Derivation must still succeed without registering a dangling slot, and must report the
+    /// condition as a diagnostic (reaching `--format json`) rather than only an `eprintln!`.
     #[test]
-    fn owner_selected_without_product_derives_no_slot() {
+    fn owner_selected_without_product_derives_no_slot_and_diagnoses_it() {
         let dir = product_and_plugin_repo("1.0.0", "2.0.0");
         let decision = cargo_release(&["plugin"]);
-        let (_, _, prepared, _, slots) = derive_with_artifact_policy(&dir, &decision).unwrap();
+        let ((_, _, prepared, _, slots), diagnostics) = derive_with_artifact_policy(&dir, &decision).unwrap();
         assert!(
             slots.is_empty(),
             "no slot should be derived when the product isn't released"
@@ -1480,11 +1517,14 @@ mod tests {
                 .any(|op| matches!(op, PreparedOperation::ArtifactUpload(_))),
             "no artifact upload operation should be prepared when the product isn't released"
         );
+        assert_eq!(diagnostics.len(), 1, "got: {diagnostics:?}");
+        assert_eq!(diagnostics[0].code, DiagnosticCode::ProductArtifactOwnerWithoutProduct);
+        assert_eq!(diagnostics[0].severity, DiagnosticSeverity::Warning);
     }
 
-    /// Unit coverage for the warning text, since `eprintln!` output can't be captured from inside derivation.
+    /// Unit coverage for the diagnostic's message text and package field.
     #[test]
-    fn unreleased_product_artifact_warning_names_owner_product_and_asset() {
+    fn unreleased_product_artifact_diagnostic_names_owner_product_and_asset() {
         let product = callisto_model::PackageId::parse("cargo/core").unwrap();
         let artifact = crate::config::resolve::ProductArtifactConfig {
             package: callisto_model::PackageId::parse("cargo/plugin").unwrap(),
@@ -1492,10 +1532,14 @@ mod tests {
             asset_name: "a.tar.gz".to_owned(),
         };
         let owner = ReleasePackageId::new(Ecosystem::Cargo, "plugin").unwrap();
-        let message = unreleased_product_artifact_warning(&product, &artifact, &owner);
+        let diagnostic = unreleased_product_artifact_diagnostic(&product, &artifact, &owner);
         assert_eq!(
-            message,
-            "warning: cargo/plugin is selected but product `cargo/core` is not; its `a.tar.gz` asset will not be uploaded"
+            diagnostic.message,
+            "cargo/plugin is selected but product `cargo/core` is not; its `a.tar.gz` asset will not be uploaded"
+        );
+        assert_eq!(
+            diagnostic.package,
+            callisto_model::PackageId::parse("cargo/plugin").ok()
         );
     }
 }
