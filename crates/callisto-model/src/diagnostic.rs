@@ -76,6 +76,16 @@ pub enum DiagnosticSeverity {
     Error,
 }
 
+impl fmt::Display for DiagnosticSeverity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            DiagnosticSeverity::Info => "info",
+            DiagnosticSeverity::Warning => "warning",
+            DiagnosticSeverity::Error => "error",
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum StrictFlag {
@@ -187,6 +197,10 @@ pub enum DiagnosticCode {
     /// line, or entries present with an empty summary. The file stays on disk unconsumed;
     /// `status` reports one of these per unparseable file instead of aborting.
     ChangesetParseFailed,
+    /// Release derivation selected a `[release].product` artifact's owner package without
+    /// selecting the product package itself, so the owner's declared asset has no release to
+    /// upload into.
+    ProductArtifactOwnerWithoutProduct,
 }
 
 #[cfg(test)]

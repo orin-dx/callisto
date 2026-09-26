@@ -102,7 +102,7 @@ fn execute_rejects_an_intent_whose_artifact_repository_is_not_the_configured_one
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(!out.status.success());
     assert!(
-        err.contains("release_forge_repository_mismatch")
+        err.contains("E230")
             && err.contains("`example/moved`")
             && err.contains("`example/core-crate`")
             && !err.contains("profile"),
@@ -513,9 +513,7 @@ fn release_plan_dry_run_is_rejected_and_writes_nothing() {
     );
     assert!(!result.status.success(), "release plan --dry-run must be rejected");
     assert!(
-        diagnostic_codes(&result)
-            .iter()
-            .any(|code| code == "callisto::release_plan_dry_run"),
+        diagnostic_codes(&result).iter().any(|code| code == "E217"),
         "release plan --dry-run must surface release_plan_dry_run: {}",
         stderr_of(&result)
     );
@@ -544,9 +542,7 @@ fn release_execute_dry_run_is_rejected_and_writes_nothing() {
     );
     assert!(!result.status.success(), "release execute --dry-run must be rejected");
     assert!(
-        diagnostic_codes(&result)
-            .iter()
-            .any(|code| code == "callisto::release_execute_dry_run"),
+        diagnostic_codes(&result).iter().any(|code| code == "E218"),
         "release execute --dry-run must surface release_execute_dry_run: {}",
         stderr_of(&result)
     );
@@ -578,9 +574,7 @@ fn release_artifact_manifest_dry_run_is_rejected_and_writes_nothing() {
         "release artifact-manifest --dry-run must be rejected"
     );
     assert!(
-        diagnostic_codes(&result)
-            .iter()
-            .any(|code| code == "callisto::release_artifact_manifest_dry_run"),
+        diagnostic_codes(&result).iter().any(|code| code == "E216"),
         "release artifact-manifest --dry-run must surface release_artifact_manifest_dry_run: {}",
         stderr_of(&result)
     );

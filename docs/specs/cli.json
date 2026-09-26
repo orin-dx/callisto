@@ -86,9 +86,17 @@
     {
       "name": "schema (hidden)",
       "signature": "callisto schema [--type <TYPE>]",
-      "description": "Prints the JSON Schema for a report type (status by default; also version, snapshot, validate, init, changeset, pre, matrix, release-receipt).",
+      "description": "Prints the JSON Schema for a report type (status by default; also version, snapshot, init, changeset, pre-state, matrix, release-receipt). `pre-state` is the on-disk `.changeset/pre.json` file shape, not `pre`'s own `--format json` report.",
       "error_conditions": [
-        "An unknown --type exits 1 listing the supported types."
+        "An unknown --type is a clap usage error (exit 2) listing the supported values."
+      ]
+    },
+    {
+      "name": "help (hidden)",
+      "signature": "callisto help [<command>...]",
+      "description": "Prints the root help, or a named subcommand's help (nested subcommands accepted as multiple words, e.g. `callisto help pre enter`); fills the role clap's own disabled help subcommand would otherwise have.",
+      "error_conditions": [
+        "A command name that does not exist exits 1 naming it."
       ]
     }
   ],
@@ -99,7 +107,11 @@
     },
     {
       "id": "CLI-SURF-02",
-      "criterion": "`matrix`, `schema`, `compose-pr-body`, `release-pr`, and `release plan|inspect|artifact-manifest|execute` are absent from `--help` output but still parse and run when invoked."
+      "criterion": "`matrix`, `schema`, `help`, `compose-pr-body`, `release-pr`, and `release plan|inspect|artifact-manifest|execute` are absent from `--help` output but still parse and run when invoked."
+    },
+    {
+      "id": "CLI-SURF-06",
+      "criterion": "`callisto help` prints the root help; `callisto help <command>` (nested names accepted as multiple words) prints that subcommand's help; an unknown command name exits 1 naming it. `callisto completions <shell>` never offers a hidden subcommand, at any nesting depth."
     },
     {
       "id": "CLI-SURF-04",
@@ -127,11 +139,11 @@
     },
     {
       "id": "CLI-OUT-05",
-      "criterion": "With `--format json`, the status, add, init, pre and snapshot reports on stdout are single JSON objects with camelCase keys and a top-level `schemaVersion`."
+      "criterion": "With `--format json`, the status, add, init, pre and snapshot reports on stdout are single JSON objects with camelCase keys and a top-level `schemaVersion`, `command` (the subcommand name) and `dryRun`."
     },
     {
       "id": "CLI-OUT-06",
-      "criterion": "When a command fails under `--format json`, stderr ends with a JSON object `{\"schemaVersion\", \"error\": {\"code\", \"message\", \"help\"}}` and the exit code is 1.",
+      "criterion": "When a command fails under `--format json`, stderr ends with a JSON object `{\"schemaVersion\", \"command\", \"error\": {\"code\", \"message\", \"help\", \"path\"}}` and the exit code is 1; `command` is the subcommand that was parsed and `path` is `null` unless the error carries a structured filesystem path.",
       "is_error_case": true
     },
     {
@@ -143,6 +155,10 @@
       "id": "CLI-OUT-08",
       "criterion": "Argument parsing errors (unknown flag, missing required argument, invalid value) exit 2 with clap's usage message; every other failure exits 1 and every success exits 0, including --dry-run previews and `release` reporting `Nothing to release.`",
       "is_error_case": true
+    },
+    {
+      "id": "CLI-OUT-09",
+      "criterion": "`completions <shell>` and `schema` exit 0 without printing an error or panicking when stdout's reading end is already closed (e.g. piped into a command that exits early); a `--format json` report command's write error in that same situation propagates as `E213` and exits 1."
     },
     {
       "id": "CLI-STATUS-01",
@@ -176,15 +192,15 @@
     },
     {
       "id": "CLI-ADD-02",
-      "criterion": "`add --format json` prints `{\"schemaVersion\", \"command\": \"add\", \"path\"}`; with --dry-run it prints `dryRun: true`, the path and the file content, and creates no file or directory."
+      "criterion": "`add --format json` prints `{\"schemaVersion\", \"command\": \"add\", \"dryRun\": false, \"path\"}`; with --dry-run it prints `\"dryRun\": true`, the path and the file content, and creates no file or directory."
     },
     {
       "id": "CLI-ADD-03",
-      "criterion": "`callisto add` with no --package and a terminal stdin runs a wizard asking, in order, which packages to include, which are major, which remaining are minor (the rest are patch), a non-empty summary unless --summary was given, and a final confirmation; declining the confirmation writes nothing and exits 0."
+      "criterion": "`callisto add` with no --package and a terminal stdin runs a wizard asking, in order, which packages to include, which are major, which remaining are minor (the rest are patch), a non-empty summary unless --summary was given, and a final confirmation; declining the confirmation writes nothing and exits 0. Every wizard prompt and preview line prints to stderr, not stdout."
     },
     {
       "id": "CLI-ADD-04",
-      "criterion": "`callisto add` with no --package and a non-terminal stdin exits 1 with error `callisto::not_a_tty` whose help names `callisto add --package <name>:<severity>`.",
+      "criterion": "`callisto add` with no --package and a non-terminal stdin exits 1 with error `E214` whose help names `callisto add --package <name>:<severity>`.",
       "is_error_case": true
     },
     {
@@ -237,12 +253,12 @@
     },
     {
       "id": "CLI-INIT-10",
-      "criterion": "With a non-terminal stdin and no --yes, init exits 1 with `callisto::init_requires_yes` naming --yes and every other missing flag; with --yes it exits 1 with `callisto::init_missing_flags` naming each missing flag: --versioning always, --forge-repository when --artifact-target is given, and --product-package when --artifact-target is given and more than one package produces a binary.",
+      "criterion": "With a non-terminal stdin and no --yes, init exits 1 with `E240` naming --yes and every other missing flag; with --yes it exits 1 with `E241` naming each missing flag: --versioning always, --forge-repository when --artifact-target is given, and --product-package when --artifact-target is given and more than one package produces a binary.",
       "is_error_case": true
     },
     {
       "id": "CLI-INIT-11",
-      "criterion": "With --yes, omitting --artifact-target writes no `[release]` table; --artifact-target is repeatable and comma-separated, and --workflow with --no-workflow exits 1 with `callisto::init_workflow_flags_conflict` before writing.",
+      "criterion": "With --yes, omitting --artifact-target writes no `[release]` table; --artifact-target is repeatable and comma-separated, and --workflow with --no-workflow exits 1 with `E242` before writing.",
       "is_error_case": true
     },
     {
@@ -252,7 +268,7 @@
     },
     {
       "id": "CLI-INIT-13",
-      "criterion": "`init --format json` writes the human-readable detection, config and preview to stderr and a report `{schemaVersion, initialized, configPath, config}` (plus `diagnostics` when any) to stdout; with --dry-run `initialized` is false and no file is written."
+      "criterion": "`init --format json` writes the human-readable detection, config and preview to stderr and a report `{schemaVersion, command: \"init\", dryRun, initialized, configPath, config}` (plus `diagnostics` when any) to stdout; with --dry-run `dryRun` is true, `initialized` is false, and no file is written."
     },
     {
       "id": "CLI-INIT-14",
@@ -309,7 +325,7 @@
     },
     {
       "id": "CLI-SCHEMA-01",
-      "criterion": "`callisto schema` prints the StatusReport JSON Schema; `--type` selects another report type, and an unknown type exits 1 listing the supported types."
+      "criterion": "`callisto schema` prints the StatusReport JSON Schema; `--type` is a fixed value enum selecting another report type, and an unrecognized value is a clap usage error (exit 2) listing the supported values."
     }
   ],
   "spec_file_path": "docs/specs/cli.json"

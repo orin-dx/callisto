@@ -198,17 +198,15 @@ impl<'r> GitAccess<'r> {
             .runner
             .run("git", &["rev-parse", "--show-object-format"], &self.root)?;
         if !object_format.success() || object_format.stdout_trimmed() != "sha1" {
-            return Err(VcsError::Git(
-                "release trust requires a SHA-1 Git object format".to_string(),
-            ));
+            return Err(VcsError::UnsupportedObjectFormat {
+                found: object_format.stdout_trimmed().to_string(),
+            });
         }
         let shallow = self
             .runner
             .run("git", &["rev-parse", "--is-shallow-repository"], &self.root)?;
         if !shallow.success() || shallow.stdout_trimmed() != "false" {
-            return Err(VcsError::Git(
-                "release trust requires a complete, non-shallow Git repository".to_string(),
-            ));
+            return Err(VcsError::ShallowRepository);
         }
 
         let head = self
@@ -341,10 +339,9 @@ fn canonical_git_root(raw_root: &str) -> Result<PathBuf, VcsError> {
 fn check_release_worktree_status(status: &str) -> Result<(), VcsError> {
     match status.split('\0').find(|record| !record.is_empty()) {
         None => Ok(()),
-        Some(record) => Err(VcsError::Git(format!(
-            "release trust requires a clean worktree; found `{}`",
-            record.get(3..).unwrap_or(record)
-        ))),
+        Some(record) => Err(VcsError::DirtyWorktree {
+            path: record.get(3..).unwrap_or(record).to_string(),
+        }),
     }
 }
 
@@ -754,9 +751,7 @@ mod tests {
             .observe_git_commit_trust()
             .expect_err("untracked source must reject trust");
 
-        assert!(
-            matches!(error, VcsError::Git(message) if message.contains("clean worktree; found `release-input.txt`"))
-        );
+        assert!(matches!(error, VcsError::DirtyWorktree { path } if path == "release-input.txt"));
     }
 
     #[test]
@@ -769,7 +764,7 @@ mod tests {
         let error = GitAccess::new(temp.path(), &runner)
             .observe_git_commit_trust()
             .expect_err("modified tracked source must reject trust");
-        assert!(matches!(error, VcsError::Git(message) if message.contains("found `Cargo.toml`")));
+        assert!(matches!(error, VcsError::DirtyWorktree { path } if path == "Cargo.toml"));
     }
 
     #[test]
@@ -792,7 +787,7 @@ mod tests {
             let error = GitAccess::new(temp.path(), &runner)
                 .observe_git_commit_trust()
                 .expect_err("unsupported repository trust evidence must reject");
-            assert!(matches!(error, VcsError::Git(message) if message.contains(response)));
+            assert!(error.to_string().contains(response), "got: {error}");
         }
     }
 

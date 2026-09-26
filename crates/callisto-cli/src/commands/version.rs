@@ -6,16 +6,14 @@ use callisto_model::{ApplyPermit, DiagnosticSeverity};
 
 use crate::cli::{GlobalArgs, OutputFormat, VersionArgs};
 use crate::error::CliError;
-use crate::output::write_json;
+use crate::output::{emit_line, emit_report};
 use crate::render;
 use crate::runner::CliCommandRunner;
 use crate::workspace::{load_workspace, select_inference};
 
 pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     if global.dry_run && args.emit_decision.is_some() {
-        return Err(CliError::Other(
-            "--emit-decision writes a file; remove --dry-run or drop --emit-decision".to_string(),
-        ));
+        return Err(CliError::VersionEmitDecisionDryRun);
     }
 
     let runner = CliCommandRunner;
@@ -76,11 +74,11 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
     let report = plan.to_report(outcome.lockfile_refresh_results);
 
     if global.dry_run && global.format == OutputFormat::Text {
-        println!("[DRY-RUN] Version Plan Calculated (no files modified):");
+        emit_line("[DRY-RUN] Version Plan Calculated (no files modified):")?;
     }
 
     match global.format {
-        OutputFormat::Json => write_json(&mut std::io::stdout(), &report)?,
+        OutputFormat::Json => emit_report(&mut std::io::stdout(), &report, global.dry_run)?,
         OutputFormat::Text => render::render_version(&report, &ws.config, &mut std::io::stdout())?,
     }
 

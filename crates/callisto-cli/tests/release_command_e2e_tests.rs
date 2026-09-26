@@ -162,7 +162,7 @@ fn dirty_worktree_blocks_release_before_any_effect() {
     assert!(preview.status.success(), "{}", stderr(&preview));
     let text = String::from_utf8_lossy(&preview.stdout);
     assert!(
-        text.contains("cargo/core-crate 0.2.0") && text.contains("publish to cratesIo"),
+        text.contains("cargo/core-crate 0.2.0") && text.contains("publish to crates.io"),
         "{text}"
     );
     assert_no_effects(&rig, root);
@@ -222,7 +222,7 @@ fn artifact_slot_workspace_names_the_ci_route() {
     let run = rig.run(root, &["--format", "json", "release"]);
     assert!(!run.status.success());
     let err = stderr(&run);
-    assert!(err.contains("release_requires_ci_route"), "{err}");
+    assert!(err.contains("E239"), "{err}");
     for route in ["release plan", "release artifact-manifest", "release execute"] {
         assert!(err.contains(route), "missing `{route}`: {err}");
     }
@@ -334,6 +334,14 @@ fn dry_run_without_origin_notes_unbound_tags() {
         stderr(&preview).matches("tag operations are unbound").count(),
         1,
         "{}",
+        stderr(&preview)
+    );
+    // The missing-origin probe (`optional_git_remote`, called more than once
+    // while deriving this preview) must never leak git's own raw stderr for
+    // an absent remote -- only the one deliberate note above.
+    assert!(
+        !stderr(&preview).contains("No such remote"),
+        "git's own probe stderr must not leak: {}",
         stderr(&preview)
     );
 

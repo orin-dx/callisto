@@ -1,8 +1,8 @@
 # Error codes
 
-Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`. A `callisto-model` test fails when a numeric code is missing here.
+Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`. A `callisto-model` test fails when a numeric code is missing here; a `callisto-graph` architecture test fails when an error variant carries neither a code nor `#[diagnostic(transparent)]`, or when a `callisto::`-style code survives anywhere in the workspace.
 
-186 codes exist across two namespaces: 153 numeric `E###` codes (`callisto-model`, `callisto-format`, `callisto-vcs`, `callisto-changelog`, `callisto-graph`) and 33 `callisto::snake_case` codes (`callisto-cli`'s own top-level errors — the ones the CLI surface actually raises). `callisto-conventional` errors carry no diagnostic code at all. `callisto-cli`'s `CliError` also has 9 variants that wrap another crate's error transparently (`#[diagnostic(transparent)]`, no `code(...)` of its own) — those are intentionally out of scope here since they have no code to document; the code you see for them at runtime is whichever code above their wrapped error already carries.
+One registry: every diagnostic code is a numeric `E####`, across every crate (`callisto-model`, `callisto-format`, `callisto-vcs`, `callisto-changelog`, `callisto-conventional`, `callisto-graph`, `callisto-cli`). `callisto-cli`'s `CliError` also has variants that wrap another crate's error transparently (`#[diagnostic(transparent)]`, no `code(...)` of its own) — those are intentionally out of scope here since they have no code to document; the code you see for them at runtime is whichever code above their wrapped error already carries. The same applies to `callisto-graph`'s `GraphError::Conventional`/`GraphError::TagTemplate` and `callisto-vcs`/`callisto-graph`'s other transparent wraps.
 
 "Fix" is the code's `help(...)` text verbatim. "—" means the variant has no help text in the source.
 
@@ -22,7 +22,7 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`
 | E010 | Failed to read a manifest file | Check file permissions and path validity. |
 | E011 | Failed to write a manifest file | Check write permissions on target directory. |
 | E012 | Manifest is not valid for its declared format | Verify manifest syntax formatting. |
-| E013 | Manifest is missing a required field | — |
+| E013 | Manifest is missing a required field | Add a `<field>` field to the manifest, or exclude it from workspace discovery. |
 | E014 | Manifest's declared version string is invalid | Fix version string to follow valid semver or ecosystem grammar. |
 | E015 | Manifest inherits a key from the workspace root; that key must be written on the root manifest instead | Update workspace inheritance key in root manifest. |
 | E016 | Manifest format is not a supported write target | — |
@@ -31,11 +31,11 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`
 | E019 | Format-preserving write would not round-trip | Ensure CST document retains formatting structure. |
 | E020 | `<program>` was not found; callisto requires it to be available | Ensure program is installed and available on system PATH. |
 | E021 | `<program>` reports version `<found>`, but callisto requires <required> | Upgrade program to meet version requirement. |
-| E022 | Executing `<program>` is not supported on this surface: <reason> | — |
-| E023 | `<program>` failed with exit code <exit_code>: <stderr> | — |
-| E024 | Failed to run `<program>`: <message> | — |
+| E022 | Executing `<program>` is not supported on this surface: <reason> | Run this command on a surface where `<program>` can be executed. |
+| E023 | `<program>` failed with exit code <exit_code>: <stderr> | Inspect the reported stderr to diagnose why `<program>` failed. |
+| E024 | Failed to run `<program>`: <message> | Check that `<program>` is installed and executable, then retry. |
 | E025 | `<program>` timed out after <seconds>s | The process did not exit within the allowed time. This usually indicates a network stall or a registry that is unreachable. |
-| E026 | Commit walk failed: <message> | — |
+| E026 | Commit walk failed: <message> | Inspect the reported backend failure; no more specific fix is known. |
 | E027 | Internal invariant violated while operating on a manifest path | — |
 | E028 | Manifest dependency has a TOML value that is neither a string nor a table; refusing to silently no-op the rewrite | Fix the dependency's TOML shape to a plain string or a table before running callisto again. |
 | E029 | `<raw>` is not a valid <grammar> version: <message> | Ensure the version string strictly adheres to the <grammar> specification. |
@@ -55,6 +55,27 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`
 | E152 | Commit plan is <bytes> bytes, exceeding the <limit> byte limit | Split the release into smaller changesets, or reduce large generated files (for example a monolithic CHANGELOG) before retrying. |
 | E153 | Path `<path>` may not appear in a forge commit plan | The executor never writes `.github/workflows/*`, `.git/*`, or unsafe paths through the forge commit API; those are inherited unchanged from the base commit. |
 | E154 | Pull request #<number> targets the internal staging branch | The `<release-branch>--staging` branch is reserved for the executor's own commit staging; close or rename a pull request opened against it before retrying. |
+| E155 | Unsupported release-PR wire schema version | re-derive this file with the current build; a release-PR wire shape is never reused across versions |
+| E259 | Tag template contains no `{version}` placeholder | Add a `{version}` placeholder to the tag template. |
+| E260 | Tag template contains `{version}` more than once | Use exactly one `{version}` placeholder in the tag template. |
+| E261 | Tag template contains an unknown placeholder | Remove the unknown placeholder; `{version}` is the only placeholder supported. |
+| E262 | Tag template contains a glob metacharacter outside the `{version}` placeholder | Remove the glob metacharacter from the template's literal text. |
+| E263 | Tag template has no literal text around `{version}`; its tag glob would be `*` | Add literal text before or after `{version}` so the tag glob is not `*`. |
+| E264 | Tag template renders a value that is not a legal Git ref name | Change the tag template so its rendered form is a legal Git ref name. |
+| E284 | Durable release intent uses a trust profile other than a clean Git commit | build the intent from a clean Git commit source with the GitCommit trust profile |
+| E285 | Release operation is not authorized by the embedded release decision | only include operations for packages present in the release decision |
+| E286 | Release intent repeats an artifact slot | list each artifact slot at most once |
+| E287 | Release intent artifact slot's asset is built by a package outside the release | release the asset's package too, or put it in the product's [[fixed-group]] |
+| E288 | Release intent's artifact upload operations don't match its artifact slots | make each artifact slot correspond to exactly one artifact upload operation |
+| E289 | Release intent operations are not in canonical order | re-derive the intent instead of hand-editing operation order |
+| E290 | Release intent repeats a release operation | list each release operation at most once |
+| E291 | Release intent operation's prerequisites are not in canonical order | re-derive the intent instead of hand-editing prerequisite order |
+| E292 | Release intent operation requires an unknown prerequisite | only reference prerequisites that are also in the intent's operation list |
+| E293 | Release intent operation requires itself as a prerequisite | remove the operation from its own prerequisite list |
+| E294 | Release intent operation DAG contains a cycle | break the prerequisite cycle among release operations |
+| E295 | Unsupported release intent (or nested decision/snapshot) wire schema version | re-derive this file with the current build; a release-intent wire shape is never reused across versions |
+| E296 | Release intent's input snapshot packages are not canonical | re-derive the intent instead of hand-editing package order |
+| E297 | Release intent digest does not match its canonical content | re-derive the intent instead of hand-editing its fields |
 
 ## callisto-format
 
@@ -76,16 +97,20 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`
 | E055 | Changeset has entries but an empty or whitespace-only summary | Add a non-empty summary after the closing `---` delimiter. |
 | E056 | Cannot write changeset: entries present but summary is empty or whitespace-only | Provide a non-empty summary describing the change. |
 | E057 | Entry <index> has an empty package name | — |
+| E268 | Entry <index> name contains a literal `"`, which cannot be written (no escaping convention is defined for this grammar) | Remove the literal `"` from the package name before writing the changeset. |
 
 ## callisto-vcs
 
 | Code | Meaning | Fix |
 | --- | --- | --- |
 | E050 | Failed to discover Git repository at `<path>`: <message> | Ensure target directory is inside a valid Git repository. |
-| E051 | Git error: <0> | — |
+| E051 | Git error: <0> | Inspect the reported Git failure and its context; no more specific fix is known. |
 | E052 | Reference `<ref_name>` was not found | Check if reference or tag exists in local or remote Git refs. |
 | E053 | Tag glob pattern `<pattern>` is not a valid glob: <message> | Fix the glob syntax (e.g. balance `{`/`}` and `[`/`]`) or use a literal tag name. |
 | E059 | Staged content for `<path>` no longer matches the index (worktree bytes hash to a different blob than the staged `<expected_sha>`) | Re-stage the file with `git add` so the worktree matches the index, or read it again after staging. |
+| E265 | Release trust requires a SHA-1 Git object format; found `<found>` | Run release trust checks against a repository using the SHA-1 object format. |
+| E266 | Release trust requires a complete, non-shallow Git repository | Fetch full history with `git fetch --unshallow` before retrying. |
+| E267 | Release trust requires a clean worktree; found `<path>` | Commit, stash, or remove the listed tracked or untracked change before retrying. |
 
 ## callisto-changelog
 
@@ -96,15 +121,30 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`
 | E062 | Failed to read the changelog file | — |
 | E063 | Failed to write the changelog file | — |
 
+## callisto-conventional
+
+| Code | Meaning | Fix |
+| --- | --- | --- |
+| E257 | Pre-cursor ref could not be resolved | Check that the pre-cursor ref exists in local or remote Git refs. |
+| E258 | Failed to advance the pre-cursor ref to a commit | Check repository write permissions and that the target is a valid commit. |
+
 ## callisto-graph — config (`callisto.toml`)
 
 | Code | Meaning | Fix |
 | --- | --- | --- |
-| E110 | Failed to read `callisto.toml` | — |
+| E110 | Failed to read `callisto.toml` | Check that the file exists and is readable. |
 | E111 | `callisto.toml` is not valid TOML | Verify callisto.toml TOML syntax formatting. |
 | E113 | A package's `changelog` path is absolute or contains `..`, and would escape the workspace root | Use a forward-slash-separated path relative to the package root that does not contain '..' components. |
 | E116 | `changesets.dir` is absolute or contains `..`, and would escape the workspace root | Use a forward-slash-separated path relative to the workspace root that is not absolute and does not contain '..' components. |
 | E197 | Invalid `[release]` product configuration | Configure one supported product package and its artifact targets. |
+| E249 | Two different groups both list the same member | List the member in only one group; remove it from all but one. |
+| E250 | One group lists the same member more than once | Remove the duplicate member from the group's member list. |
+| E251 | Group has no members | Add at least one member to the group, or remove the group. |
+| E252 | Duplicate group name | Rename one of the two groups sharing this name. |
+| E253 | `publish-to` names a registry key no `[registries.*]` block defines | Add a `[registries.<key>]` block to callisto.toml, or fix the typo. |
+| E254 | Config sets an unknown callisto key | Remove or fix the unrecognized key. |
+| E255 | `cascade.bump-severity` is invalid | Set `cascade.bump-severity` to `patch` or `minor` in callisto.toml. |
+| E256 | `pre-major-inference` is invalid | Set `pre-major-inference` to `off`, `conservative`, or `conservative-feat` in callisto.toml. |
 
 ## callisto-graph — workspace graph
 
@@ -116,16 +156,16 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`
 | E033 | VCS error during workspace location: <0> | — |
 | E058 | `<path>` is not inside a Git repository | Callisto needs a Git repository: run `git init` in the workspace root. |
 | E209 | Failed to parse manifest `<path>`: <message> | Fix the manifest's syntax; a workspace member's manifest is never skipped. |
-| E210 | A `.changeset/*.md` file failed to parse: `<path>`: <source> | — |
+| E210 | A `.changeset/*.md` file failed to parse: `<path>`: <source> | Fix the changeset file's frontmatter, or delete it and write a new one. |
 | E100 | Package ID is defined at more than one manifest path | Ensure package IDs are unique across workspace manifest paths. |
 | E102 | Named package was not found in the workspace | Check the package's name and ecosystem, or that its directory has a manifest callisto discovers. |
 | E103 | Bare package name is ambiguous; more than one candidate matches | Qualify the name with its ecosystem, e.g. `cargo/pkg` or `cargo:pkg`. |
 | E104 | Dependency cycle detected among workspace packages | Refactor workspace dependencies to break the cyclic dependency chain. |
 | E105 | Version cascade failed to converge after its iteration limit | Check for oscillating peer or linked group dependencies. |
 | E106 | Fixed group's members have divergent on-disk versions | Align on-disk versions for all members of the fixed group. |
-| E107 | Group's members use incompatible version grammars | — |
-| E108 | Group lists a member not found in the workspace | — |
-| E109 | Package is listed in more than one conflicting group | — |
+| E107 | Group's members use incompatible version grammars | Use the same version grammar for every member of the group. |
+| E108 | Group lists a member not found in the workspace | Remove the member from the group, or add its manifest to the workspace. |
+| E109 | Package is listed in more than one conflicting group | List the package in only one fixed or linked group. |
 | E114 | Failed to parse `.changeset/pre.json` | Check that .changeset/pre.json is valid JSON and was not partially written. Delete the file and re-run `callisto pre enter` to recover. |
 | E115 | Failed to read `.changeset/pre.json` | Check that .changeset/pre.json is readable. Delete the file and re-run `callisto pre enter` to recover. |
 | E117 | Manifest's on-disk version doesn't match the version plan's expected from/to version | The manifest version does not match the plan's from or to version. This may indicate the manifest was modified outside of callisto after the plan was generated. |
@@ -188,45 +228,62 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`
 | E206 | Fixed group has no live members with a base version to align on | Ensure at least one member of the fixed group resolves to a workspace package. |
 | E207 | Computed bump for a package would move its version backwards | This indicates a corrupted alignment base (bad tag, pre.json, or group config); verify release state before retrying. |
 | E208 | A lockfile refresh command exited non-zero while applying the version plan | Run the named command to see the full failure, fix it, then re-run `callisto version`. |
+| E246 | Version dependency edge involves incompatible version grammars | Use the same version grammar on both sides of the dependency edge, or drop the edge. |
+| E247 | On-disk versions changed since the version plan was generated | Regenerate the version plan against the current workspace state before applying it. |
+| E248 | Workspace root manifest has conflicting version updates | Reconcile the workspace root manifest's version updates before retrying. |
 
-## callisto-cli (`callisto::*` namespace)
+## callisto-cli
 
 | Code | Meaning | Fix |
 | --- | --- | --- |
-| `callisto::registry_error` | Wraps a registry client error (message is the underlying error's own text) | verify registry credentials/authentication and network connectivity, then retry |
-| `callisto::pre_json_error` | Wraps a `.changeset/pre.json` parse error (message is the underlying error's own text) | — |
-| `callisto::io_error` | An I/O error, optionally naming the path being accessed | check that the path exists and that you have permission to access it |
-| `callisto::not_a_tty` | Refusing to prompt interactively: stdin is not a terminal and no non-interactive flags were given | specify package names explicitly via `callisto add --package <name>:<severity>` in CI environments |
-| `callisto::release_intent_schema_unsupported` | Release intent's schema version doesn't match what this build reads | re-run `callisto release plan` to derive a fresh intent: an intent is bound to one build's operation graph and is never reused across versions |
-| `callisto::release_artifact_manifest_dry_run` | `release artifact-manifest` was run with `--dry-run`, but it needs an output file | re-run `callisto release artifact-manifest` without --dry-run |
-| `callisto::release_plan_dry_run` | `release plan` was run with `--dry-run`, but planning is already read-only and needs an output file | re-run `callisto release plan --out <file>` without --dry-run |
-| `callisto::release_execute_dry_run` | `release execute` was run with `--dry-run`, which it doesn't support | remove --dry-run; release execute has no read-only mode |
-| `callisto::release_no_artifact_slots` | Release intent declares no binary artifact slots; no artifact manifest can be created | plan the release with --orchestration-revision and --artifact-repository so the intent declares artifact slots |
-| `callisto::release_manifest_source_not_git` | Artifact manifests require a Git commit release source | plan the release from a Git commit source |
-| `callisto::release_artifact_not_regular_file` | A declared artifact isn't a regular file directly in the artifact directory | place the built asset as a plain file (not a symlink or directory) directly in the artifact directory |
-| `callisto::release_artifact_escapes_directory` | A declared artifact resolves outside the artifact directory | remove symlinks so every asset resolves inside the artifact directory |
-| `callisto::release_manifest_creation_failed` | Cannot create the artifact manifest | check that the artifact directory holds exactly the assets the intent declares |
-| `callisto::release_commit_invalid` | `--from-release-commit` value is not a valid merged release commit | pass the full commit SHA of the merged release commit |
-| `callisto::release_decision_outside_source` | `--decision` file is outside the selected `--source-root` | point --decision at a file inside the source root selected with --source-root |
-| `callisto::release_decision_path_invalid` | `--decision` path is invalid | pass a repository-relative decision path without `..` components |
-| `callisto::release_package_invalid` | `--package` value is not a valid ecosystem-qualified package identity | name each package as <ecosystem>/<name>, for example cargo/callisto-cli |
-| `callisto::release_orchestration_revision_invalid` | `--orchestration-revision` value is invalid | pass the full commit SHA of the orchestration workflow revision |
-| `callisto::release_artifact_repository_invalid` | `--artifact-repository` value is invalid | pass the forge repository as <owner>/<repo> |
-| `callisto::release_forge_repository_mismatch` | `--artifact-repository` doesn't match `[release].forge-repository` in callisto.toml | plan with an --artifact-repository matching [release].forge-repository in callisto.toml |
-| `callisto::release_orchestration_flags_required` | Product release planning requires both `--orchestration-revision` and `--artifact-repository` | pass both --orchestration-revision and --artifact-repository |
-| `callisto::release_unexpected_artifact_inputs` | `--artifact-manifest`/`--artifact-dir` given, but the intent declares no artifact slots | drop --artifact-manifest and --artifact-dir for an intent without artifact slots |
-| `callisto::release_missing_artifact_inputs` | Intent declares artifact slots, but `--artifact-manifest`/`--artifact-dir` are missing | pass both --artifact-manifest and --artifact-dir |
-| `callisto::release_envelope_invalid` | Release run envelope is not valid for this intent | re-check the orchestration revision and artifact manifest against the intent |
-| `callisto::release_receipt_issue_failed` | Cannot issue the terminal release receipt | re-run `callisto release execute`; it adopts effects that already landed |
-| `callisto::release_intent_invalid` | Release intent file is invalid | re-run `callisto release plan` to derive a fresh intent |
-| `callisto::release_artifact_manifest_invalid` | Artifact manifest file is invalid | re-run `callisto release artifact-manifest` to regenerate it |
-| `callisto::release_json_invalid` | A release JSON file (intent, decision, manifest) is not well-formed | check the file is complete, well-formed JSON |
-| `callisto::release_requires_ci_route` | This workspace cannot release locally | release it from CI with `callisto release plan`, `callisto release artifact-manifest`, then `callisto release execute`; `callisto release --dry-run` still previews it locally |
-| `callisto::init_requires_yes` | stdin is not a terminal, so `init` needs flags instead of prompts, and required flags are missing | re-run `callisto init --yes` with the listed flags, or run it in a terminal to be asked |
-| `callisto::init_missing_flags` | `init --yes` is missing required flag(s) | supply the listed flags; see `callisto init --help` |
-| `callisto::init_workflow_flags_conflict` | `--workflow` and `--no-workflow` are mutually exclusive | pass only one of --workflow or --no-workflow |
-| `callisto::pre_already_active` | `pre enter` was run while `.changeset/pre.json`'s mode is already `pre` | run `callisto pre exit` first, or delete .changeset/pre.json manually to reset |
-| `callisto::pre_not_active` | `pre exit` was run with no `.changeset/pre.json` on disk | callisto pre enter <tag> |
-| `callisto::error` | Fallback/untyped error; message is whatever string was wrapped | — |
+| E211 | Wraps a registry client error (message is the underlying error's own text) | verify registry credentials/authentication and network connectivity, then retry |
+| E212 | Wraps a `.changeset/pre.json` parse error (message is the underlying error's own text) | Check that .changeset/pre.json is valid JSON and was not partially written. |
+| E213 | An I/O error, optionally naming the path being accessed | check that the path exists and that you have permission to access it |
+| E214 | Refusing to prompt interactively: stdin is not a terminal and no non-interactive flags were given | specify package names explicitly via `callisto add --package <name>:<severity>` in CI environments |
+| E215 | Release intent's schema version doesn't match what this build reads | re-run `callisto release plan` to derive a fresh intent: an intent is bound to one build's operation graph and is never reused across versions |
+| E216 | `release artifact-manifest` was run with `--dry-run`, but it needs an output file | re-run `callisto release artifact-manifest` without --dry-run |
+| E217 | `release plan` was run with `--dry-run`, but planning is already read-only and needs an output file | re-run `callisto release plan --out <file>` without --dry-run |
+| E218 | `release execute` was run with `--dry-run`, which it doesn't support | remove --dry-run; release execute has no read-only mode |
+| E219 | Release intent declares no binary artifact slots; no artifact manifest can be created | plan the release with --orchestration-revision and --artifact-repository so the intent declares artifact slots |
+| E220 | Artifact manifests require a Git commit release source | plan the release from a Git commit source |
+| E221 | A declared artifact isn't a regular file directly in the artifact directory | place the built asset as a plain file (not a symlink or directory) directly in the artifact directory |
+| E222 | A declared artifact resolves outside the artifact directory | remove symlinks so every asset resolves inside the artifact directory |
+| E223 | Cannot create the artifact manifest | check that the artifact directory holds exactly the assets the intent declares |
+| E224 | `--from-release-commit` value is not a valid merged release commit | pass the full commit SHA of the merged release commit |
+| E225 | `--decision` file is outside the selected `--source-root` | point --decision at a file inside the source root selected with --source-root |
+| E226 | `--decision` path is invalid | pass a repository-relative decision path without `..` components |
+| E227 | `--package` value is not a valid ecosystem-qualified package identity | name each package as <ecosystem>/<name>, for example cargo/callisto-cli |
+| E228 | `--orchestration-revision` value is invalid | pass the full commit SHA of the orchestration workflow revision |
+| E229 | `--artifact-repository` value is invalid | pass the forge repository as <owner>/<repo> |
+| E230 | `--artifact-repository` doesn't match `[release].forge-repository` in callisto.toml | plan with an --artifact-repository matching [release].forge-repository in callisto.toml |
+| E231 | Product release planning requires both `--orchestration-revision` and `--artifact-repository` | pass both --orchestration-revision and --artifact-repository |
+| E232 | `--artifact-manifest`/`--artifact-dir` given, but the intent declares no artifact slots | drop --artifact-manifest and --artifact-dir for an intent without artifact slots |
+| E233 | Intent declares artifact slots, but `--artifact-manifest`/`--artifact-dir` are missing | pass both --artifact-manifest and --artifact-dir |
+| E234 | Release run envelope is not valid for this intent | re-check the orchestration revision and artifact manifest against the intent |
+| E235 | Cannot issue the terminal release receipt | re-run `callisto release execute`; it adopts effects that already landed |
+| E236 | Release intent file is invalid | re-run `callisto release plan` to derive a fresh intent |
+| E237 | Artifact manifest file is invalid | re-run `callisto release artifact-manifest` to regenerate it |
+| E238 | A release JSON file (intent, decision, manifest) is not well-formed | check the file is complete, well-formed JSON |
+| E239 | This workspace cannot release locally | release it from CI with `callisto release plan`, `callisto release artifact-manifest`, then `callisto release execute`; `callisto release --dry-run` still previews it locally |
+| E240 | stdin is not a terminal, so `init` needs flags instead of prompts, and required flags are missing | re-run `callisto init --yes` with the listed flags, or run it in a terminal to be asked |
+| E241 | `init --yes` is missing required flag(s) | supply the listed flags; see `callisto init --help` |
+| E242 | `--workflow` and `--no-workflow` are mutually exclusive | pass only one of --workflow or --no-workflow |
+| E243 | `pre enter` was run while `.changeset/pre.json`'s mode is already `pre` | run `callisto pre exit` first, or delete .changeset/pre.json manually to reset |
+| E244 | `pre exit` was run with no `.changeset/pre.json` on disk | callisto pre enter <tag> |
+| E269 | An interactive prompt (selection, confirmation, or text input) failed | pass flags explicitly to skip interactive prompts, or run in a terminal |
+| E270 | `add --package` value is not a `name:severity` pair | pass a colon-separated pair, for example `cargo/foo:patch` |
+| E271 | `add --package` severity is not `none`, `patch`, `minor`, or `major` | pass one of: none, patch, minor, major |
+| E272 | `add` found no packages in the workspace to select from interactively | check that callisto.toml and package manifests are discoverable from the current directory |
+| E273 | `add`'s interactive wizard ended with no packages selected | select at least one package, or pass `--package` flags instead of running interactively |
+| E274 | `add --package` was given with no `--summary` in non-interactive mode | pass `--summary "description"` alongside `--package` |
+| E275 | `add --summary` is empty or whitespace-only | provide a non-empty description of the change |
+| E276 | `version --emit-decision` was run with `--dry-run`, but emitting the decision writes a file | remove --dry-run, or drop --emit-decision |
+| E277 | `--strict` escalated one or more workspace graph diagnostics to errors | resolve each listed diagnostic, or drop --strict if it is expected |
+| E279 | `pre enter` was given an empty or whitespace-only tag | pass a non-empty tag, for example `callisto pre enter beta` |
+| E280 | `pre exit` was run after prerelease mode was already exited | run `callisto version` to finalize the release |
+| E281 | A `release-pr` `--decision`/`--snapshot` argument is not valid JSON | check the JSON is well-formed and matches the expected schema |
+| E282 | `release-pr commit-plan` was run with both `--out` and `--dry-run` | re-run without --dry-run, or drop --out |
+| E283 | `help` named a subcommand that doesn't exist | run `callisto --help` to list commands |
 
-188 codes total: 153 numeric (45 callisto-model, 18 callisto-format, 4 callisto-vcs, 4 callisto-changelog, 82 callisto-graph: 5 config + 77 graph) + 35 `callisto::*` in callisto-cli.
+
+239 numeric E#### codes total in one registry.

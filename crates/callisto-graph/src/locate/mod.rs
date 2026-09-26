@@ -64,6 +64,7 @@ pub enum LocateError {
     Vcs(Box<callisto_vcs::VcsError>),
 
     #[error(transparent)]
+    #[diagnostic(transparent)]
     Graph(#[from] Box<crate::error::GraphError>),
 }
 

@@ -3,13 +3,12 @@ use std::process::ExitCode;
 
 use callisto_format::{Changeset, Entry};
 use callisto_graph::DependencyResolver;
-use callisto_model::{ApplyPermit, Severity, SCHEMA_VERSION};
+use callisto_model::{AddReport, ApplyPermit, Severity, SCHEMA_VERSION};
 use dialoguer::{Confirm, Input, MultiSelect};
-use serde_json::json;
 
 use crate::cli::{AddArgs, GlobalArgs, OutputFormat};
 use crate::error::CliError;
-use crate::output::{log_line, write_json};
+use crate::output::{emit_line, emit_report, log_line, prompt_line};
 use crate::runner::CliCommandRunner;
 use crate::tty;
 use crate::workspace::load_workspace;
@@ -24,11 +23,9 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     if !args.packages.is_empty() {
         // Non-interactive mode (flags supplied via CLI or agent)
         for pkg_str in args.packages {
-            let (name, sev_str) = pkg_str.rsplit_once(':').ok_or_else(|| {
-                CliError::Other(format!(
-                    "Invalid package spec `{pkg_str}`. Expected format: `package-name:severity`"
-                ))
-            })?;
+            let (name, sev_str) = pkg_str
+                .rsplit_once(':')
+                .ok_or_else(|| CliError::AddInvalidPackageSpec { spec: pkg_str.clone() })?;
 
             let severity = parse_severity(sev_str)?;
 
@@ -49,29 +46,23 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         let all_packages: Vec<String> = collect_package_names(ws.graph.packages());
 
         if all_packages.is_empty() {
-            return Err(CliError::Other("No packages found in workspace.".to_string()));
+            return Err(CliError::AddNoPackagesInWorkspace);
         }
 
         // Step 1: Package Selection
-        println!("Which packages would you like to include in this changeset?");
-        let selected_indices = MultiSelect::new()
-            .items(&all_packages)
-            .interact()
-            .map_err(|e| CliError::Other(format!("Interactive selection failed: {e}")))?;
+        prompt_line("Which packages would you like to include in this changeset?");
+        let selected_indices = MultiSelect::new().items(&all_packages).interact()?;
 
         if selected_indices.is_empty() {
-            return Err(CliError::Other("No packages selected for changeset.".to_string()));
+            return Err(CliError::AddNoPackagesSelected);
         }
 
         let selected_packages: Vec<String> = selected_indices.into_iter().map(|i| all_packages[i].clone()).collect();
 
         // Step 2: Major Bump Selection
-        println!("\nWhich of these packages should be a MAJOR bump?");
-        println!("(Select none if there are no breaking changes)");
-        let major_indices = MultiSelect::new()
-            .items(&selected_packages)
-            .interact()
-            .map_err(|e| CliError::Other(format!("Interactive selection failed: {e}")))?;
+        prompt_line("\nWhich of these packages should be a MAJOR bump?");
+        prompt_line("(Select none if there are no breaking changes)");
+        let major_indices = MultiSelect::new().items(&selected_packages).interact()?;
 
         let major_set: std::collections::HashSet<usize> = major_indices.into_iter().collect();
 
@@ -84,12 +75,9 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             .collect();
 
         let minor_indices = if !minor_candidates.is_empty() {
-            println!("\nWhich of these packages should be a MINOR bump?");
-            println!("(Any remaining packages will default to a PATCH bump)");
-            MultiSelect::new()
-                .items(&minor_candidates)
-                .interact()
-                .map_err(|e| CliError::Other(format!("Interactive selection failed: {e}")))?
+            prompt_line("\nWhich of these packages should be a MINOR bump?");
+            prompt_line("(Any remaining packages will default to a PATCH bump)");
+            MultiSelect::new().items(&minor_candidates).interact()?
         } else {
             Vec::new()
         };
@@ -117,7 +105,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
 
         // Step 4: Summary Entry
         if summary.is_none() {
-            println!("\nPlease enter a summary for this change:");
+            prompt_line("\nPlease enter a summary for this change:");
             let input_summary: String = Input::new()
                 .validate_with(|input: &String| -> Result<(), &str> {
                     if input.trim().is_empty() {
@@ -126,8 +114,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
                         Ok(())
                     }
                 })
-                .interact_text()
-                .map_err(|e| CliError::Other(format!("Interactive prompt failed: {e}")))?;
+                .interact_text()?;
             summary = Some(input_summary);
         }
 
@@ -139,27 +126,22 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         };
 
         let preview_text = callisto_format::write_changeset(&temp_changeset)?;
-        println!("\n=== Changeset Preview ===\n{preview_text}");
+        prompt_line(&format!("\n=== Changeset Preview ===\n{preview_text}"));
 
         let confirm = Confirm::new()
             .with_prompt("Is this your desired changeset?")
             .default(true)
-            .interact()
-            .map_err(|e| CliError::Other(format!("Interactive confirmation failed: {e}")))?;
+            .interact()?;
 
         if !confirm {
-            println!("Changeset creation cancelled.");
+            prompt_line("Changeset creation cancelled.");
             return Ok(ExitCode::SUCCESS);
         }
     } else {
         return Err(CliError::NotATty);
     }
 
-    let raw_summary = summary.ok_or_else(|| {
-        CliError::Other(
-            "--summary is required when specifying packages via CLI flags in non-interactive mode".to_string(),
-        )
-    })?;
+    let raw_summary = summary.ok_or(CliError::AddSummaryRequired)?;
     let summary_text = validate_summary(&raw_summary)?;
     let changeset = Changeset {
         entries,
@@ -176,17 +158,18 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         // Compute what WOULD be written, but never touch disk.
         match global.format {
             OutputFormat::Json => {
-                let env = json!({
-                    "schemaVersion": SCHEMA_VERSION,
-                    "command": "add",
-                    "dryRun": true,
-                    "path": rel_path,
-                    "content": text
-                });
-                write_json(&mut std::io::stdout(), &env)?;
+                let report = AddReport {
+                    schema_version: SCHEMA_VERSION,
+                    path: rel_path,
+                    content: Some(text),
+                    diagnostics: vec![],
+                };
+                emit_report(&mut std::io::stdout(), &report, true)?;
             }
             OutputFormat::Text => {
-                println!("[DRY-RUN] Would add changeset: {rel_path} (no files written)\n\n{text}");
+                emit_line(&format!(
+                    "[DRY-RUN] Would add changeset: {rel_path} (no files written)\n\n{text}"
+                ))?;
             }
         }
         return Ok(ExitCode::SUCCESS);
@@ -198,15 +181,16 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
 
     match global.format {
         OutputFormat::Json => {
-            let env = json!({
-                "schemaVersion": SCHEMA_VERSION,
-                "command": "add",
-                "path": rel_path
-            });
-            write_json(&mut std::io::stdout(), &env)?;
+            let report = AddReport {
+                schema_version: SCHEMA_VERSION,
+                path: rel_path,
+                content: None,
+                diagnostics: vec![],
+            };
+            emit_report(&mut std::io::stdout(), &report, false)?;
         }
         OutputFormat::Text => {
-            log_line(global.format, &format!("Added changeset: {rel_path}"));
+            log_line(global.format, &format!("Added changeset: {rel_path}"))?;
         }
     }
 
@@ -217,10 +201,8 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
 /// actually accepts (`none`, `patch`, `minor`, `major`) on failure -- not a
 /// stale subset that omits `none`.
 fn parse_severity(sev_str: &str) -> Result<Severity, CliError> {
-    sev_str.parse().map_err(|_err| {
-        CliError::Other(format!(
-            "Invalid severity `{sev_str}`. Must be none, patch, minor, or major."
-        ))
+    sev_str.parse().map_err(|_err| CliError::InvalidSeverity {
+        value: sev_str.to_string(),
     })
 }
 
@@ -230,9 +212,7 @@ fn parse_severity(sev_str: &str) -> Result<Severity, CliError> {
 fn validate_summary(summary: &str) -> Result<String, CliError> {
     let trimmed = summary.trim().to_string();
     if trimmed.is_empty() {
-        return Err(CliError::Other(
-            "--summary cannot be empty. Provide a non-empty description of the change.".to_string(),
-        ));
+        return Err(CliError::AddSummaryEmpty);
     }
     Ok(trimmed)
 }

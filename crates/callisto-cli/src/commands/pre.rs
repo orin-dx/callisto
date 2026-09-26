@@ -3,27 +3,25 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use callisto_format::{parse_pre_json, write_pre_json, write_pre_json_preserving, PreMode, PreState};
-use callisto_model::{ApplyPermit, CommandRunner, SCHEMA_VERSION};
-use serde_json::json;
+use callisto_model::{ApplyPermit, CommandRunner, PreReport, SCHEMA_VERSION};
 
 use crate::cli::{GlobalArgs, OutputFormat, PreArgs};
 use crate::error::CliError;
-use crate::output::{log_line, write_json};
+use crate::output::{emit_line, emit_report, log_line};
 use crate::runner::CliCommandRunner;
 use crate::workspace::load_workspace;
 
 /// Extracted from [`handle`] so a fake [`CommandRunner`] can exercise the `git add` without shelling out for real.
 fn stage_pre_json(runner: &dyn CommandRunner, root: &Path, rel_path: &Path) -> Result<(), CliError> {
     let rel_str = rel_path.to_string_lossy();
-    let output = runner
-        .run("git", &["add", rel_str.as_ref()], root)
-        .map_err(|e| CliError::Other(format!("git add failed: {e}")))?;
+    let output = runner.run("git", &["add", rel_str.as_ref()], root)?;
     if !output.success() {
-        return Err(CliError::Other(format!(
-            "git add {rel_str} failed (exit {:?}): {}",
-            output.exit_code,
-            output.redacted_stderr()
-        )));
+        return Err(callisto_model::CommandError::Failed {
+            program: "git".to_string(),
+            exit_code: output.exit_code,
+            stderr: output.redacted_stderr(),
+        }
+        .into());
     }
     Ok(())
 }
@@ -33,19 +31,20 @@ fn preview(global: &GlobalArgs, mode: &str, tag: &str, rel_path: &Path, content:
     let rel_str = rel_path.to_string_lossy();
     match global.format {
         OutputFormat::Json => {
-            let env = json!({
-                "schemaVersion": SCHEMA_VERSION,
-                "command": "pre",
-                "dryRun": true,
-                "mode": mode,
-                "tag": tag,
-                "path": rel_str,
-                "content": content
-            });
-            write_json(&mut std::io::stdout(), &env)?;
+            let report = PreReport {
+                schema_version: SCHEMA_VERSION,
+                mode: mode.to_string(),
+                tag: tag.to_string(),
+                path: Some(rel_str.into_owned()),
+                content: Some(content.to_string()),
+                diagnostics: vec![],
+            };
+            emit_report(&mut std::io::stdout(), &report, true)?;
         }
         OutputFormat::Text => {
-            println!("[DRY-RUN] Would write {rel_str} (no files written)\n\n{content}");
+            emit_line(&format!(
+                "[DRY-RUN] Would write {rel_str} (no files written)\n\n{content}"
+            ))?;
         }
     }
     Ok(())
@@ -72,7 +71,7 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         PreArgs::Enter { tag } => {
             // Bug 3: reject empty tags before any workspace I/O.
             if tag.trim().is_empty() {
-                return Err(CliError::Other("Pre-release tag cannot be empty".to_string()));
+                return Err(CliError::PreTagEmpty);
             }
 
             let ws = load_workspace(global, &runner)?;
@@ -122,16 +121,18 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
 
             match global.format {
                 OutputFormat::Json => {
-                    let env = json!({
-                        "schemaVersion": SCHEMA_VERSION,
-                        "command": "pre",
-                        "mode": "pre",
-                        "tag": tag
-                    });
-                    write_json(&mut std::io::stdout(), &env)?;
+                    let report = PreReport {
+                        schema_version: SCHEMA_VERSION,
+                        mode: "pre".to_string(),
+                        tag: tag.clone(),
+                        path: None,
+                        content: None,
+                        diagnostics: vec![],
+                    };
+                    emit_report(&mut std::io::stdout(), &report, false)?;
                 }
                 OutputFormat::Text => {
-                    log_line(global.format, &format!("Entered pre mode with tag `{tag}`"));
+                    log_line(global.format, &format!("Entered pre mode with tag `{tag}`"))?;
                 }
             }
         }
@@ -156,11 +157,7 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
 
             // Reject double-exit.
             if pre_state.mode == PreMode::Exit {
-                return Err(CliError::Other(
-                    "Workspace is not in pre-release mode (already exited). \
-                     Run `callisto version` to finalize the release."
-                        .to_string(),
-                ));
+                return Err(CliError::PreAlreadyExited);
             }
 
             pre_state.mode = PreMode::Exit;
@@ -179,16 +176,18 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
 
             match global.format {
                 OutputFormat::Json => {
-                    let env = json!({
-                        "schemaVersion": SCHEMA_VERSION,
-                        "command": "pre",
-                        "mode": "exit",
-                        "tag": pre_state.tag
-                    });
-                    write_json(&mut std::io::stdout(), &env)?;
+                    let report = PreReport {
+                        schema_version: SCHEMA_VERSION,
+                        mode: "exit".to_string(),
+                        tag: pre_state.tag.clone(),
+                        path: None,
+                        content: None,
+                        diagnostics: vec![],
+                    };
+                    emit_report(&mut std::io::stdout(), &report, false)?;
                 }
                 OutputFormat::Text => {
-                    log_line(global.format, "Exiting pre mode");
+                    log_line(global.format, "Exiting pre mode")?;
                 }
             }
         }

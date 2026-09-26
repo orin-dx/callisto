@@ -1,6 +1,7 @@
 pub mod add;
 pub mod completions;
 pub mod compose_pr_body;
+pub mod help;
 pub mod init;
 pub mod matrix;
 pub mod pre;
@@ -55,10 +56,7 @@ pub(crate) fn abort_on_graph_errors(
     if messages.is_empty() {
         Ok(())
     } else {
-        Err(crate::error::CliError::Other(format!(
-            "--strict: workspace graph has error diagnostics:\n{}",
-            messages.join("\n")
-        )))
+        Err(crate::error::CliError::StrictDiagnosticsPresent { messages })
     }
 }
 

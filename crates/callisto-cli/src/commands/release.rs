@@ -15,7 +15,8 @@ use callisto_graph::commands::{
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_model::{
     ApplyPermit, ArtifactDigest, ArtifactManifestEntryV1, ArtifactManifestV1, ExecutionTrustProfileV1,
-    GitHubArtifactAttestationV1, PackageId, ReleaseIntentV1, ReleasePackageId, ReleaseReceiptV1, ReleaseRunEnvelopeV1,
+    GitHubArtifactAttestationV1, PackageId, ReleaseIntentV1, ReleaseIntentV1Wire, ReleasePackageId, ReleaseReceiptV1,
+    ReleaseRunEnvelopeV1,
 };
 
 use crate::cli::{
@@ -23,7 +24,7 @@ use crate::cli::{
     ReleaseInspectArgs, ReleasePlanArgs,
 };
 use crate::error::CliError;
-use crate::output::{log_line, write_json};
+use crate::output::{emit_line, log_line, write_json};
 use crate::runner::CliCommandRunner;
 use crate::workspace::{load_workspace, select_inference};
 
@@ -68,6 +69,9 @@ fn release(
         print_nothing_to_release(global)?;
         return Ok(ExitCode::SUCCESS);
     };
+    for diagnostic in &plan.diagnostics {
+        eprintln!("warning: {}", diagnostic.message);
+    }
     let intent = plan.intent;
     let permit = ApplyPermit::granted_unless_dry_run(false).expect("non-dry-run permits writes");
     // A receipt records only full success; a partial run is recovered by rerunning.
@@ -101,8 +105,11 @@ fn release(
         OutputFormat::Text => {
             let released = capability.intent().decision.entries.len();
             match &receipt {
-                Some(path) => println!("Released {released} package(s); receipt saved to {}", path.display()),
-                None => println!("Released {released} package(s)"),
+                Some(path) => emit_line(&format!(
+                    "Released {released} package(s); receipt saved to {}",
+                    path.display()
+                ))?,
+                None => emit_line(&format!("Released {released} package(s)"))?,
             }
         }
     }
@@ -118,21 +125,44 @@ pub(crate) fn write_release_preview(
     match (plan, format) {
         (None, OutputFormat::Json) => write_json(&mut &mut *out, &serde_json::json!({ "nothingToRelease": true }))?,
         (None, OutputFormat::Text) => writeln!(out, "{NOTHING_TO_RELEASE}")?,
-        (Some(plan), OutputFormat::Json) => write_json(&mut &mut *out, &plan.intent)?,
+        (Some(plan), OutputFormat::Json) => {
+            write_json(&mut &mut *out, &intent_envelope(&plan.intent, &plan.diagnostics))?
+        }
         (Some(plan), OutputFormat::Text) => {
             write!(out, "{}", render_release_plan(&plan.intent, crate::color::enabled()))?
         }
     }
-    if plan.is_some_and(|plan| plan.tags_unbound) {
-        eprintln!("{TAGS_UNBOUND_NOTE}");
+    if let Some(plan) = plan {
+        if plan.tags_unbound {
+            eprintln!("{TAGS_UNBOUND_NOTE}");
+        }
+        for diagnostic in &plan.diagnostics {
+            eprintln!("warning: {}", diagnostic.message);
+        }
     }
     Ok(())
+}
+
+/// A release intent's own JSON shape, with a sibling `diagnostics` array added when
+/// derivation raised any -- the persisted intent file (read back by `verify`/`execute`)
+/// never carries this field; only the CLI's own stdout/preview output does.
+fn intent_envelope(intent: &ReleaseIntentV1, diagnostics: &[callisto_model::Diagnostic]) -> serde_json::Value {
+    let mut value = serde_json::to_value(intent).expect("release intent serializes");
+    if !diagnostics.is_empty() {
+        if let serde_json::Value::Object(ref mut map) = value {
+            map.insert(
+                "diagnostics".to_string(),
+                serde_json::to_value(diagnostics).expect("diagnostics serialize"),
+            );
+        }
+    }
+    value
 }
 
 fn print_nothing_to_release(global: &GlobalArgs) -> Result<(), CliError> {
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &serde_json::json!({ "nothingToRelease": true }))?,
-        OutputFormat::Text => println!("{NOTHING_TO_RELEASE}"),
+        OutputFormat::Text => emit_line(NOTHING_TO_RELEASE)?,
     }
     Ok(())
 }
@@ -165,10 +195,14 @@ fn parse_release_selection(raw: &str) -> Result<ReleasePackageId, CliError> {
 fn describe_operation(operation: &callisto_model::ReleaseOperation) -> String {
     match &operation.id().role {
         callisto_model::ReleaseOperationRole::RegistryPublish { registry } => {
-            format!("publish to {}", registry.registry_key().as_str())
+            format!("publish to {}", registry.registry_key().display_name())
         }
         callisto_model::ReleaseOperationRole::PlatformPublish { registry, platform } => {
-            format!("publish {} to {}", platform.name(), registry.registry_key().as_str())
+            format!(
+                "publish {} to {}",
+                platform.name(),
+                registry.registry_key().display_name()
+            )
         }
         callisto_model::ReleaseOperationRole::Tag => "create git tag".to_owned(),
         callisto_model::ReleaseOperationRole::ForgeRelease => "create GitHub release draft".to_owned(),
@@ -293,7 +327,7 @@ fn artifact_manifest(args: ReleaseArtifactManifestArgs, global: &GlobalArgs) -> 
     })?;
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &manifest)?,
-        OutputFormat::Text => println!("Artifact manifest saved to {}", args.out.display()),
+        OutputFormat::Text => emit_line(&format!("Artifact manifest saved to {}", args.out.display()))?,
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -352,7 +386,7 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
         }
     };
     let locator = IgnoreWalkLocator::new(&workspace.root);
-    let intent = match (
+    let (intent, diagnostics) = match (
         &workspace.config.product_release,
         &args.orchestration_revision,
         &args.artifact_repository,
@@ -405,23 +439,33 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
                 log_line(
                     global.format,
                     "notice: --orchestration-revision and --artifact-repository ignored: the source has no [release] section; planning with zero artifact slots",
-                );
+                )?;
             }
-            build_release_intent(
-                &workspace.root,
-                &locator,
-                &runner,
-                &decision,
-                ExecutionTrustProfileV1::GitCommit,
-            )?
+            (
+                build_release_intent(
+                    &workspace.root,
+                    &locator,
+                    &runner,
+                    &decision,
+                    ExecutionTrustProfileV1::GitCommit,
+                )?,
+                Vec::new(),
+            )
         }
     };
     let permit = ApplyPermit::granted_unless_dry_run(global.dry_run)
         .expect("release plan rejects --dry-run before creating its explicit output");
     write_intent(&args.out, &intent, &permit)?;
+    for diagnostic in &diagnostics {
+        eprintln!("warning: {}", diagnostic.message);
+    }
     match global.format {
-        OutputFormat::Json => write_json(&mut std::io::stdout(), &intent)?,
-        OutputFormat::Text => println!("Wrote release intent {} to {}", intent.digest(), args.out.display()),
+        OutputFormat::Json => write_json(&mut std::io::stdout(), &intent_envelope(&intent, &diagnostics))?,
+        OutputFormat::Text => emit_line(&format!(
+            "Wrote release intent {} to {}",
+            intent.digest(),
+            args.out.display()
+        ))?,
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -430,10 +474,7 @@ fn inspect(args: ReleaseInspectArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
     let value = read_json_file(&args.input)?;
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &value)?,
-        OutputFormat::Text => println!(
-            "{}",
-            serde_json::to_string_pretty(&value).expect("JSON value serializes")
-        ),
+        OutputFormat::Text => emit_line(&serde_json::to_string_pretty(&value).expect("JSON value serializes"))?,
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -521,7 +562,7 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
     write_receipt(&args.receipt, &receipt, &permit)?;
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &receipt)?,
-        OutputFormat::Text => println!("Release receipt saved to {}", args.receipt.display()),
+        OutputFormat::Text => emit_line(&format!("Release receipt saved to {}", args.receipt.display()))?,
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -546,10 +587,11 @@ fn read_intent(path: &std::path::Path) -> Result<ReleaseIntentV1, CliError> {
             expected: ReleaseIntentV1::SCHEMA_VERSION,
         });
     }
-    serde_json::from_value(value).map_err(|error| CliError::ReleaseIntentInvalid {
+    let wire: ReleaseIntentV1Wire = serde_json::from_value(value).map_err(|error| CliError::ReleaseIntentInvalid {
         path: path.display().to_string(),
         detail: error.to_string(),
-    })
+    })?;
+    Ok(ReleaseIntentV1::from_wire(wire)?)
 }
 
 fn read_artifact_manifest(path: &std::path::Path) -> Result<ArtifactManifestV1, CliError> {
@@ -611,6 +653,7 @@ mod tests {
         ReleaseInputSnapshotV1, ReleaseOperation, ReleasePackageId, ReleasePackageInputV1, SemanticInputDigest,
         SourceIdentity, Version, VersionGrammar,
     };
+    use miette::Diagnostic as _;
 
     use super::*;
 
@@ -652,6 +695,34 @@ mod tests {
         .unwrap()
     }
 
+    /// A persisted intent file whose operations were hand-edited into an invalid DAG
+    /// (here, a duplicate operation id) must surface the domain-specific `ReleaseIntentError`
+    /// code, not the generic `E236` a `serde` string error would report.
+    #[test]
+    fn read_intent_preserves_the_typed_release_intent_error_code() {
+        let mut value = serde_json::to_value(sample()).expect("intent serializes");
+        let operations = value["operations"].as_array().expect("operations array").clone();
+        let duplicate = operations[0].clone();
+        value["operations"]
+            .as_array_mut()
+            .expect("operations array")
+            .push(duplicate);
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("intent.json");
+        std::fs::write(&path, serde_json::to_string(&value).expect("json")).expect("write intent");
+
+        let err = read_intent(&path).expect_err("duplicate operation must be rejected");
+        assert!(
+            matches!(
+                err,
+                CliError::ReleaseIntent(callisto_model::ReleaseIntentError::DuplicateOperation { .. })
+            ),
+            "{err:?}"
+        );
+        assert_eq!(err.code().map(|c| c.to_string()), Some("E290".to_string()));
+    }
+
     #[test]
     fn plan_text_lists_each_package_version_and_operation() {
         let intent = sample();
@@ -664,6 +735,16 @@ mod tests {
             );
         }
         assert_eq!(text.matches("    - ").count(), intent.operations.len(), "{text}");
+    }
+
+    /// A registry publish step names the registry's display name
+    /// (`crates.io`), not its internal wire key (`cratesIo`).
+    #[test]
+    fn plan_text_names_registries_by_display_name_not_wire_key() {
+        let intent = sample();
+        let text = render_release_plan(&intent, false);
+        assert!(text.contains("publish to crates.io"), "{text}");
+        assert!(!text.contains("cratesIo"), "{text}");
     }
 
     /// `use_color: true` renders the release plan as a box-drawing table.
