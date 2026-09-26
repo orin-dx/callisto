@@ -12,8 +12,7 @@ use crate::plan::{VersionPlan, VersionWriteTarget};
 /// Options governing how a version plan is applied to the workspace.
 #[derive(Clone, Debug, Default)]
 pub struct ApplyOptions {
-    /// When true, regenerate each affected ecosystem's lockfile after applying, in transient mode too --
-    /// a snapshot's manifests need a matching lockfile for `--locked` resolution to keep working.
+    /// When true, regenerate each affected ecosystem's lockfile after applying, in transient mode too.
     pub refresh_lockfiles: bool,
     /// When true (snapshot mode), manifest mutations are written to disk
     /// but changelog prepends (step 7), changeset deletions (step 8), and
@@ -402,10 +401,7 @@ pub fn apply_version_plan<R: CommandRunner>(
         )
         .collect();
 
-    // Regenerate lockfiles whenever the caller requested a refresh, transient or not: a lockfile
-    // left stale after a version bump fails `--locked` resolution regardless of git staging.
-    // This must run BEFORE the git-staging loop so the refreshed files are on disk when they
-    // are picked up by the staging pass below.
+    // Must run before the git-staging loop below, so refreshed lockfiles are on disk to be staged.
     if opts.refresh_lockfiles {
         let mut refresh_results: Vec<LockfileRefreshResult> = Vec::new();
 

@@ -180,7 +180,7 @@
     },
     {
       "id": "VER-PRE-08",
-      "criterion": "A snapshot writes manifests and refreshes each active ecosystem's existing lockfile, unconditionally (there is no `--no-refresh-lockfiles` for `snapshot`), so a subsequent locked install resolves against the snapshot version; it ignores and keeps pending changesets, writes no changelog or `pre.json`, and stages nothing in git; under `--dry-run` it writes nothing."
+      "criterion": "A snapshot writes manifests and refreshes each active ecosystem's existing lockfile, unconditionally (there is no `--no-refresh-lockfiles` for `snapshot`), so a subsequent locked install resolves against the snapshot version; it ignores and keeps pending changesets, writes no changelog or `pre.json`, and stages nothing in git; under `--dry-run` it writes nothing. A Pypi package's snapshot tag is not a valid PEP 440 version, so a workspace with a Pypi package fails to snapshot."
     },
     {
       "id": "VER-PRE-09",

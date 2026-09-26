@@ -9,16 +9,11 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     tag: &str,
 ) -> Result<(VersionPlan, SnapshotReport), GraphError> {
-    // The sha component is a real, resolved
-    // HEAD commit sha — never a fake placeholder. A resolution failure here must surface
-    // as a real error rather than silently proceeding with a value that risks colliding
-    // with snapshots from unrelated runs.
+    // Resolve HEAD for real rather than faking it, so unrelated snapshot runs never collide.
     let sha = ws.git_access().head_sha()?;
     let sha_short = sha.short();
 
-    // Base is literally `0.0.0`, never the package's own version, and every package in
-    // the workspace gets this identical, hyphen-joined string — not
-    // a per-package, dot-joined prerelease of that package's real version.
+    // Every package converges on the identical `0.0.0-<tag>-<sha>` tag, not a per-package prerelease.
     let snapshot_tag = format!("0.0.0-{tag}-{sha_short}");
     let snapshot_ver =
         callisto_model::Version::parse(&snapshot_tag, callisto_model::VersionGrammar::SemVer).map_err(|_err| {
@@ -28,9 +23,7 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
             })
         })?;
     let base_versions = ws.base_versions()?;
-    // Snapshot has no severity cascade: every package converges on the identical
-    // `snapshot_ver`, so `ws.tags()` is only consulted for the propagate-failure
-    // invariant below, not to seed a cascade.
+    // No severity cascade to seed here; `ws.tags()` only checks the propagate-failure invariant below.
     ws.tags()?;
 
     let mut bumps = Vec::new();
@@ -74,10 +67,7 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
         });
     }
 
-    // Every package converges on the identical `snapshot_ver`, so unlike the ordinary
-    // cascade there is no severity to propagate -- just every workspace dependency edge
-    // whose current spec does not cover `snapshot_ver`, rewritten in the dependent's own
-    // ecosystem (never the dependency's), mirroring cascade::solve_cascade's rewrite step.
+    // No severity to propagate; just rewrite each dependent spec that doesn't cover `snapshot_ver`.
     let mut rewrites: std::collections::BTreeMap<crate::cascade::RewriteKey, crate::cascade::SpecRewrite> =
         std::collections::BTreeMap::new();
     let mut diagnostics = Vec::new();
@@ -111,6 +101,7 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
             let Some(snap_to) = snapshot_versions.get(&edge.to) else {
                 continue;
             };
+            // snap_to is always SemVer-parsed, so a Pep440 edge here surfaces as a GrammarMismatch, not silently.
             let covers =
                 crate::cascade::coverage(&edge.spec, snap_to).map_err(|source| GraphError::GrammarMismatch {
                     from: edge.from.clone(),
@@ -358,11 +349,7 @@ mod tests {
         );
     }
 
-    /// End-to-end regression for the same scenario as the test above: after
-    /// `plan_snapshot`'s rewrite is actually applied to disk, `cargo metadata`
-    /// must resolve the workspace -- the whole point of rewriting the spec is
-    /// that the on-disk manifest stops citing a version range the snapshot
-    /// version falls outside of.
+    /// Same scenario as above, but applied to disk: `cargo metadata` must resolve once the rewritten spec lands.
     #[test]
     fn plan_snapshot_apply_then_cargo_metadata_succeeds() {
         let tmp = tempfile::tempdir().unwrap();

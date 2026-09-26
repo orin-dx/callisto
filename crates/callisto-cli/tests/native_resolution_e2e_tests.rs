@@ -1,7 +1,4 @@
-//! Native-resolution invariant: after `version` and after `snapshot`, each ecosystem's
-//! locked install must still succeed against a mixed Cargo + npm workspace with real
-//! path/version and cross-workspace dependency edges. See docs/projects/ROAD-TO-V1.md,
-//! "The workspace resolves natively after `version` and `snapshot`".
+//! After `version`/`snapshot`, each ecosystem's locked install must still succeed against a real subprocess.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -10,8 +7,7 @@ use std::process::Command;
 use callisto_cli::cli::{AddArgs, GlobalArgs, OutputFormat, SnapshotArgs, VersionArgs};
 use callisto_cli::commands;
 
-/// Finds `program` on `PATH`, the way a shell would. Never panics, so an npm-specific
-/// assertion can skip cleanly when npm isn't installed.
+/// Finds `program` on `PATH`, the way a shell would; never panics, so a tool-specific assertion can skip cleanly.
 fn find_on_path(program: &str) -> Option<PathBuf> {
     std::env::var_os("PATH").and_then(|path| {
         std::env::split_paths(&path)
@@ -20,10 +16,7 @@ fn find_on_path(program: &str) -> Option<PathBuf> {
     })
 }
 
-/// A mixed Cargo + npm workspace, committed to git with its lockfiles already generated
-/// (matching a real checked-in repo): a Cargo path+version dependency edge (`app` on
-/// `core`), and an npm workspace (`packages/*`) with a dependent (`@ws/app` on `@ws/lib`
-/// via `^1.0.0`).
+/// A mixed Cargo + npm workspace with real lockfiles and cross-workspace dependency edges, committed to git.
 fn setup_mixed_native_resolution_workspace(root: &Path) {
     callisto_fixtures::git::init_repo(root);
 
@@ -67,9 +60,7 @@ fn setup_mixed_native_resolution_workspace(root: &Path) {
     )
     .unwrap();
 
-    // Generate the lockfiles a real repo would have checked in, before any callisto
-    // command runs, so a later `--locked`/`ci` check is a genuine regression check
-    // instead of a freshly-generated file papering over a stale one.
+    // Lockfiles are generated before any callisto command runs, so the later check is a real regression test.
     assert!(Command::new("cargo")
         .args(["generate-lockfile"])
         .current_dir(root)
@@ -100,9 +91,7 @@ fn setup_mixed_native_resolution_workspace(root: &Path) {
         .success());
 }
 
-/// Both ecosystems must resolve natively from their on-disk lockfile: `cargo metadata
-/// --locked --offline` always; `npm ci` too, when npm is on PATH (matching the lockfile
-/// setup in `setup_mixed_native_resolution_workspace`).
+/// `cargo metadata --locked --offline` always; `npm ci` too, when npm is on PATH.
 fn assert_native_resolution(root: &Path) {
     let cargo_out = Command::new("cargo")
         .args(["metadata", "--locked", "--offline", "--format-version", "1"])
@@ -183,4 +172,170 @@ fn workspace_resolves_natively_after_snapshot() {
     .unwrap();
 
     assert_native_resolution(root);
+}
+
+/// A pnpm workspace, plus a real uv one when `include_python`; false for snapshot -- see ROAD-TO-V1.md 2b.
+fn setup_pnpm_and_uv_workspace(root: &Path, include_python: bool) {
+    callisto_fixtures::git::init_repo(root);
+
+    fs::write(
+        root.join("package.json"),
+        r#"{"name":"pnpm-root","private":true,"version":"0.0.0"}"#,
+    )
+    .unwrap();
+    fs::write(root.join("pnpm-workspace.yaml"), "packages:\n  - \"packages/*\"\n").unwrap();
+    fs::create_dir_all(root.join("packages/lib")).unwrap();
+    fs::write(
+        root.join("packages/lib/package.json"),
+        r#"{"name":"@ws/lib","version":"1.0.0"}"#,
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("packages/app")).unwrap();
+    fs::write(
+        root.join("packages/app/package.json"),
+        r#"{"name":"@ws/app","version":"1.0.0","dependencies":{"@ws/lib":"workspace:^1.0.0"}}"#,
+    )
+    .unwrap();
+
+    if include_python {
+        fs::write(
+            root.join("pyproject.toml"),
+            "[tool.uv.workspace]\nmembers = [\"py/core\", \"py/app\"]\n",
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("py/core")).unwrap();
+        fs::write(
+            root.join("py/core/pyproject.toml"),
+            "[project]\nname = \"core-py\"\nversion = \"1.0.0\"\nrequires-python = \">=3.9\"\ndependencies = []\n",
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("py/app")).unwrap();
+        fs::write(
+            root.join("py/app/pyproject.toml"),
+            "[project]\nname = \"app-py\"\nversion = \"1.0.0\"\nrequires-python = \">=3.9\"\n\
+             dependencies = [\"core-py>=1.0.0,<2.0.0\"]\n\n\
+             [tool.uv.sources]\ncore-py = { workspace = true }\n",
+        )
+        .unwrap();
+    }
+
+    if find_on_path("pnpm").is_some() {
+        assert!(Command::new("pnpm")
+            .args(["install", "--lockfile-only"])
+            .current_dir(root)
+            .status()
+            .unwrap()
+            .success());
+    }
+    if include_python && find_on_path("uv").is_some() {
+        assert!(Command::new("uv")
+            .args(["lock"])
+            .current_dir(root)
+            .status()
+            .unwrap()
+            .success());
+    }
+
+    assert!(Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(root)
+        .status()
+        .unwrap()
+        .success());
+    assert!(Command::new("git")
+        .args(["-c", "commit.gpgSign=false", "commit", "-q", "-m", "Initial commit"])
+        .current_dir(root)
+        .status()
+        .unwrap()
+        .success());
+}
+
+/// `pnpm install --frozen-lockfile` always; `uv lock --check` too when `include_python`; each tool-gated.
+fn assert_pnpm_and_uv_resolution(root: &Path, include_python: bool) {
+    if find_on_path("pnpm").is_some() {
+        let pnpm_out = Command::new("pnpm")
+            .args(["install", "--frozen-lockfile"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        assert!(
+            pnpm_out.status.success(),
+            "pnpm install --frozen-lockfile must succeed after the workspace's manifests are bumped; stderr: {}",
+            String::from_utf8_lossy(&pnpm_out.stderr)
+        );
+    }
+
+    if include_python && find_on_path("uv").is_some() {
+        let uv_out = Command::new("uv")
+            .args(["lock", "--check"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        assert!(
+            uv_out.status.success(),
+            "uv lock --check must succeed after the workspace's manifests are bumped; stderr: {}",
+            String::from_utf8_lossy(&uv_out.stderr)
+        );
+    }
+}
+
+#[test]
+fn pnpm_and_uv_workspace_resolves_natively_after_version() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    setup_pnpm_and_uv_workspace(root, true);
+
+    let global = GlobalArgs {
+        format: OutputFormat::Json,
+        cwd: root.to_path_buf(),
+        dry_run: false,
+    };
+
+    commands::add::handle(
+        AddArgs {
+            packages: vec!["@ws/lib:major".to_string(), "core-py:major".to_string()],
+            summary: Some("Bump lib and core-py".to_string()),
+        },
+        &global,
+    )
+    .unwrap();
+
+    commands::version::handle(
+        VersionArgs {
+            refresh_lockfiles: false,
+            no_refresh_lockfiles: false,
+            strict: false,
+            allow_empty_changesets: false,
+            emit_decision: None,
+        },
+        &global,
+    )
+    .unwrap();
+
+    assert_pnpm_and_uv_resolution(root, true);
+}
+
+/// No Python package here: see `setup_pnpm_and_uv_workspace`'s doc comment for why `snapshot` can't take one.
+#[test]
+fn pnpm_workspace_resolves_natively_after_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    setup_pnpm_and_uv_workspace(root, false);
+
+    let global = GlobalArgs {
+        format: OutputFormat::Json,
+        cwd: root.to_path_buf(),
+        dry_run: false,
+    };
+
+    commands::snapshot::handle(
+        SnapshotArgs {
+            tag: "canary".to_string(),
+            strict: false,
+        },
+        &global,
+    )
+    .unwrap();
+
+    assert_pnpm_and_uv_resolution(root, false);
 }

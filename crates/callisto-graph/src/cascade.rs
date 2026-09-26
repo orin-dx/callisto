@@ -2386,18 +2386,13 @@ mod tests {
         );
     }
 
-    /// The main convergence loop and the floor-raise pass both see this edge (pkg-a
-    /// depends on pkg-b, and pkg-a is itself releasing), so an unrewritable spec must
-    /// only warn once, not once per pass.
+    /// Both the main loop and the floor-raise pass see this edge, so an unrewritable spec must warn once, not twice.
     #[test]
     fn test_unrewritable_spec_on_edge_both_passes_visit_warns_once() {
         let pkg_a = PackageId::parse("pkg-a").unwrap();
         let pkg_b = PackageId::parse("pkg-b").unwrap();
 
-        // ">=1.0.0, <2.0.0" does not cover a Major bump to 2.0.0 (triggers a rewrite
-        // attempt in the main loop) and its upper bound makes the rewrite impossible
-        // (round_trip returns None), so it also surfaces in the floor-raise pass once
-        // pkg-a is carried along by the bump.
+        // Upper-bounded range: out of range for the Major bump, and round_trip can't rewrite it either.
         let edge = make_dep_edge(&pkg_a, &pkg_b, ">=1.0.0, <2.0.0", Ecosystem::Cargo);
 
         let graph = TestGraph {
