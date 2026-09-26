@@ -20,12 +20,12 @@ Open work only. Verified against the code on 2026-09-25; git history holds the s
 
 ## v1 fix plan
 
-Stacked PRs, merged in this order. Each PR fixes the bugs that break one guarantee and updates its spec criteria in the same change. Most items were reproduced against 0.8.0. PRs 1 and 2b each add an ADR in `docs/adr/`: tag identity and native resolution after `version`.
+Stacked PRs, merged in this order. Each PR fixes the bugs that break one guarantee and updates its spec criteria in the same change. Most items were reproduced against 0.8.0. PRs 1 and 2b each add an ADR in `docs/adr/`: tag identity and native resolution after `version`. Re-keying packages by directory, with its ADR, is a later PR.
 
 Decisions (owner, 2026-09-25):
 - A tag is the same landed effect when it names the same commit and is annotated; the annotation text is not compared, locally or remotely.
 - `version` refuses with a coded error when manifests differ from HEAD while changesets are pending (no journal).
-- Promotion changes a package's id (`foo` becomes `cargo/foo` when another ecosystem adds `foo`). Keying packages by directory is not planned for v1.
+- Packages are keyed internally by directory; promotion to `eco/name` is display-only.
 - `init` without `origin` writes the config, skips the workflow and forge questions with a warning, and `release` refuses later.
 - `status` reports every unparseable changeset as an error diagnostic; `version` still fails on the first.
 - One error-code scheme: `E####`, existing numbers kept, `callisto::x` codes mapped into a CLI range, one registry.
