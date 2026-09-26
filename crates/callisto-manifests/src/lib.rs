@@ -16,7 +16,8 @@ pub mod python;
 
 pub use cargo::{cargo_package_name, CargoToml, InheritedDep, WorkspaceCargoResolver, WorkspaceInheritance};
 pub use npm::{
-    detect_npm_workspace_kind, napi_binary_name, npm_package_name, npm_role_from_source, read_napi_targets, PackageJson,
+    detect_npm_workspace_kind, napi_binary_name, npm_declares_private, npm_package_name, npm_role_from_source,
+    read_napi_targets, PackageJson,
 };
 pub use python::{python_package_name, PyprojectToml, Requirement};
 

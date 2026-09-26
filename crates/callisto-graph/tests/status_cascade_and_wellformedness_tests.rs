@@ -102,6 +102,52 @@ fn status_pending_severity_reflects_fixed_group_cascade() {
     );
 }
 
+/// A private, versionless root `package.json` with `workspaces` (the standard
+/// npm/pnpm monorepo layout, e.g. `@changesets/cli`) is workspace-root
+/// metadata, not a package -- `status` must succeed and report only the real
+/// member package, never fail with E013 for the root's missing `version`.
+#[test]
+fn status_skips_private_versionless_root_package_json() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    git_init_with_commit(root);
+
+    fs::write(
+        root.join("package.json"),
+        r#"{"name":"root","private":true,"workspaces":["packages/*"]}"#,
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("packages/x")).unwrap();
+    fs::write(
+        root.join("packages/x/package.json"),
+        r#"{"name":"x","version":"1.0.0"}"#,
+    )
+    .unwrap();
+    std::process::Command::new("git")
+        .args(["add", "."])
+        .current_dir(root)
+        .output()
+        .unwrap();
+    std::process::Command::new("git")
+        .args(["commit", "-q", "-m", "add packages"])
+        .current_dir(root)
+        .output()
+        .unwrap();
+
+    let locator = IgnoreWalkLocator::new(root);
+    let runner = NoopRunner;
+    let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+    let report = status(&ws, &NoInference, &StatusOptions::default()).expect("status must succeed, not E013");
+
+    assert_eq!(
+        report.packages.len(),
+        1,
+        "only the real member package must be reported, got: {:?}",
+        report.packages
+    );
+    assert_eq!(report.packages[0].package, PackageId::parse("x").unwrap());
+}
+
 /// A package with no planned bump at all shows `None`, not a stale
 /// leftover severity from a directly-named-but-inert changeset entry.
 #[test]
