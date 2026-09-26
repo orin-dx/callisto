@@ -14,7 +14,7 @@ pub fn write_json<W: io::Write, S: Serialize + ?Sized>(w: &mut W, val: &S) -> io
 /// diagnostics}`. `command` comes from `R::COMMAND`, `schemaVersion` from
 /// the payload's own `Report::schema_version()` (re-inserted at the top
 /// level rather than left flattened, so it appears exactly once). Callers
-/// no longer hand-build a JSON envelope per command.
+/// pass their `Report` to this function instead of hand-building a JSON envelope.
 pub fn emit_report<W: io::Write, R: callisto_model::Report>(w: &mut W, val: &R, dry_run: bool) -> io::Result<()> {
     let mut value = serde_json::to_value(val)?;
     if let serde_json::Value::Object(map) = &mut value {
