@@ -7,10 +7,10 @@
 ## Invariants
 
 1. **Safe Rust only.** `unsafe_code = "forbid"` workspace-wide.
-2. **License boundary.** `callisto-model`, `callisto-format`, `callisto-vcs` are MIT and must never depend on an FSL-1.1-MIT crate. Every other crate is FSL-1.1-MIT. Check with `grep -H "^license" crates/*/Cargo.toml`.
+2. **License boundary.** `callisto-model` is MIT and must never depend on an FSL-1.1-MIT crate. Every other crate is FSL-1.1-MIT. Check with `grep -H "^license" crates/*/Cargo.toml`.
 3. **Format-preserving manifest edits.** `Cargo.toml` goes through `toml_edit`'s CST; `package.json` is fingerprinted for indent style and line endings before a `serde_json` (`preserve_order`) round trip. No regex or line-based edits to manifests.
 4. **One file-write primitive, capability-gated.** `callisto_model::atomic::atomic_write` (`NamedTempFile` in the target's own directory, `fsync`, `persist` via `fs::rename`, then `fsync` the parent and grandparent directories) is the only way file content is written; deletions and directory creation use `std::fs`. It takes `&ApplyPermit`, a token with a private field that only `ApplyPermit::granted_unless_dry_run(dry_run)` can construct, returning `None` on a dry run. A write path that forgets to check `--dry-run` has no permit to pass and fails to compile.
-5. **System Git only.** All VCS reads and writes shell out to the user's `git` binary (`callisto-vcs`), so Callisto sees exactly the repository, config, and identity Git itself does. No embedded Git implementation.
+5. **System Git only.** All VCS reads and writes shell out to the user's `git` binary (`callisto_model::vcs`), so Callisto sees exactly the repository, config, and identity Git itself does. No embedded Git implementation.
 6. **User-facing errors are diagnosable.** Every error surfaced to a user derives `miette::Diagnostic` with a stable code and, where the fix isn't obvious from the message, `help` text. A wrapper around another crate's error (for example `GraphError::Config`) is `#[diagnostic(transparent)]` and declares no code of its own, so the inner code reaches the user. Full list: [`docs/errors.md`](docs/errors.md).
 
 Design decisions, with the options they rejected and why: [`docs/adr/README.md`](docs/adr/README.md).
@@ -18,8 +18,8 @@ Design decisions, with the options they rejected and why: [`docs/adr/README.md`]
 ## Crate map
 
 ```
-Layer 1 (leaf)     callisto-model  callisto-format  callisto-conventional  callisto-changelog
-Layer 2 (I/O)      callisto-manifests  callisto-vcs
+Layer 1 (leaf)     callisto-model
+Layer 2 (I/O)      callisto-manifests
 Layer 3 (engine)   callisto-graph
 Layer 4 (surface)  callisto-cli
 Dev-only           callisto-fixtures
@@ -27,17 +27,13 @@ Dev-only           callisto-fixtures
 
 | Crate | License | Depends on | Purpose |
 | :--- | :--- | :--- | :--- |
-| [`callisto-model`](crates/callisto-model) | MIT | none | Domain primitives (`PackageId`, `Version`, `Severity`, `Changeset`, `PreState`), `atomic_write`, `ApplyPermit`, the `CommandRunner`/`DependencyResolver` trait seams |
-| [`callisto-format`](crates/callisto-format) | MIT | model | `.changeset/*.md` and `pre.json` parser/writer |
-| [`callisto-vcs`](crates/callisto-vcs) | MIT | model | `GitAccess` — every Git operation as a subprocess through `CommandRunner` |
-| [`callisto-conventional`](crates/callisto-conventional) | FSL-1.1-MIT | model | Conventional Commit parsing and bump-severity classification |
-| [`callisto-changelog`](crates/callisto-changelog) | FSL-1.1-MIT | model | Markdown changelog rendering |
+| [`callisto-model`](crates/callisto-model) | MIT | none | Domain primitives (`PackageId`, `Version`, `Severity`, `Changeset`, `PreState`), `atomic_write`, `ApplyPermit`, the `CommandRunner`/`DependencyResolver` trait seams; `format`: `.changeset/*.md` and `pre.json` parser/writer; `vcs`: `GitAccess`, every Git operation as a subprocess through `CommandRunner` |
 | [`callisto-manifests`](crates/callisto-manifests) | FSL-1.1-MIT | model | `Manifest` trait; format-preserving Cargo/npm/PyPI manifest editors |
-| [`callisto-graph`](crates/callisto-graph) | FSL-1.1-MIT | model, vcs, manifests, format, changelog, conventional | Dependency graph, cascade engine, version planning, release execution |
-| [`callisto-cli`](crates/callisto-cli) | FSL-1.1-MIT | all of the above | `clap` CLI surface, `miette` diagnostic rendering |
+| [`callisto-graph`](crates/callisto-graph) | FSL-1.1-MIT | model, manifests | Dependency graph, cascade engine, version planning, release execution; `conventional`: Conventional Commit parsing and bump inference; `changelog`: Markdown changelog rendering |
+| [`callisto-cli`](crates/callisto-cli) | FSL-1.1-MIT | model, manifests, graph | `clap` CLI surface, `miette` diagnostic rendering |
 | [`callisto-fixtures`](crates/callisto-fixtures) | FSL-1.1-MIT | model (dev-only) | Multi-ecosystem test corpus and in-memory test doubles |
 
-Dependencies only point down the layers (`cli` → `graph` → {`manifests`, `vcs`, `format`, `conventional`, `changelog`} → `model`). Nothing in Layer 1–3 depends on `callisto-cli`.
+Dependencies only point down the layers (`cli` → `graph` → `manifests` → `model`). Nothing in Layer 1–3 depends on `callisto-cli`.
 
 ## Data flow
 
@@ -57,7 +53,7 @@ release                                                 decision -> intent -> en
   per operation                                         observe provider -> adopt, or perform and confirm
 ```
 
-Cycles are detected with `petgraph::algo::tarjan_scc`. Git access goes through `GitAccess` (`callisto-vcs`).
+Cycles are detected with `petgraph::algo::tarjan_scc`. Git access goes through `GitAccess` (`callisto_model::vcs`).
 
 Depth:
 

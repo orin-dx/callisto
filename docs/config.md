@@ -134,7 +134,7 @@ Example (this repo's own `callisto.toml`):
 ```toml
 [[fixed-group]]
 name = "workspace"
-members = ["callisto-model", "callisto-format", "callisto-graph", "callisto-cli"]
+members = ["callisto-model", "callisto-manifests", "callisto-graph", "callisto-cli"]
 ```
 
 ## `[init]`

@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
+use callisto_model::vcs::GitAccess;
 use callisto_model::{
     select_last_tag, CommitSha, Diagnostic, LastTag, LastTagSelection, PackageId, TagTemplate, VersionGrammar,
 };
-use callisto_vcs::GitAccess;
 
 use crate::config::ResolvedConfig;
 use crate::error::GraphError;
@@ -21,7 +21,7 @@ pub(crate) fn fetch_all_tags(git: &GitAccess<'_>) -> Result<Vec<String>, GraphEr
 
 /// Filters `all_tags` down to those matching `template`'s glob.
 ///
-/// Compiles the glob via [`callisto_vcs::compile_tag_glob`] -- the same
+/// Compiles the glob via [`callisto_model::vcs::compile_tag_glob`] -- the same
 /// helper `GitAccess::list_tags` uses -- so tag selection is identical
 /// either way. Includes error behavior: a
 /// `template.glob()` that fails to compile surfaces as
@@ -31,7 +31,7 @@ pub(crate) fn fetch_all_tags(git: &GitAccess<'_>) -> Result<Vec<String>, GraphEr
 fn matching_tags<'a>(all_tags: &'a [String], template: &TagTemplate) -> Result<Vec<&'a str>, GraphError> {
     let glob = template.glob();
     GLOB_COMPILE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    let matcher = callisto_vcs::compile_tag_glob(&glob).map_err(GraphError::Vcs)?;
+    let matcher = callisto_model::vcs::compile_tag_glob(&glob).map_err(GraphError::Vcs)?;
 
     Ok(all_tags
         .iter()
@@ -364,7 +364,10 @@ mod tests {
         let result = matching_tags(&all, &tmpl);
 
         assert!(
-            matches!(result, Err(GraphError::Vcs(callisto_vcs::VcsError::InvalidGlob { .. }))),
+            matches!(
+                result,
+                Err(GraphError::Vcs(callisto_model::vcs::VcsError::InvalidGlob { .. }))
+            ),
             "malformed glob must be surfaced as Err, not silently match every tag; got {result:?}"
         );
     }
@@ -387,7 +390,7 @@ mod tests {
         let git = GitAccess::new(dir.path(), &runner);
 
         match TagIndex::build(&git, &graph, &cfg) {
-            Err(GraphError::Vcs(callisto_vcs::VcsError::InvalidGlob { .. })) => {}
+            Err(GraphError::Vcs(callisto_model::vcs::VcsError::InvalidGlob { .. })) => {}
             Err(other) => panic!("expected InvalidGlob, got a different GraphError: {other:?}"),
             Ok(_) => panic!("TagIndex::build must propagate the malformed-glob error, got Ok"),
         }
@@ -567,7 +570,7 @@ mod tests {
 
         let is_command_err = matches!(
             TagIndex::build(&git, &graph, &cfg),
-            Err(GraphError::Vcs(callisto_vcs::VcsError::Command(_)))
+            Err(GraphError::Vcs(callisto_model::vcs::VcsError::Command(_)))
         );
 
         assert!(

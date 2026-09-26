@@ -13,7 +13,7 @@ fn changelog_section(root: &Path, changelog: &Path, version: &Version) -> Result
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Err(NotesFallback::FileMissing),
         Err(_) => return Err(NotesFallback::Unreadable),
     };
-    match callisto_changelog::find_section(&content, version) {
+    match crate::changelog::find_section(&content, version) {
         None => Err(NotesFallback::SectionMissing),
         Some("") => Err(NotesFallback::SectionEmpty),
         Some(section) => Ok(section.to_owned()),

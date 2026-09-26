@@ -7,11 +7,11 @@
 use std::process::ExitCode;
 
 use callisto_graph::commands::{status, StatusOptions};
+use callisto_model::vcs::GitAccess;
 use callisto_model::{
     ApplyPermit, CommitSha, GitHubRepository, ReleasePrActionV2, ReleasePrCommitPlanV1, ReleasePrConfigV1,
     ReleasePrDecisionError, ReleasePrDecisionV2, ReleasePrSnapshotV2,
 };
-use callisto_vcs::GitAccess;
 
 use crate::cli::{
     GlobalArgs, OutputFormat, ReleasePrArgs, ReleasePrCommitPlanArgs, ReleasePrDecideArgs, ReleasePrVerifyArgs,

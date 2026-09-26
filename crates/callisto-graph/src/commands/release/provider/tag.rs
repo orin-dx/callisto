@@ -2,11 +2,11 @@
 
 use std::path::Path;
 
+use callisto_model::vcs::{GitAccess, TagSignPolicy};
 use callisto_model::{
     CommandRunner, CommitSha, ExactEvidence, ProviderConflictReason, ProviderEvidenceV1, ProviderIndeterminateCause,
     ProviderObservationV1, TagName,
 };
-use callisto_vcs::{GitAccess, TagSignPolicy};
 
 use crate::error::{CommandFailure, RemoteConflict};
 use crate::GraphError;

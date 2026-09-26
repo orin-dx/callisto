@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::process::ExitCode;
 
-use callisto_format::{parse_pre_json, write_pre_json, write_pre_json_preserving, PreMode, PreState};
+use callisto_model::format::{parse_pre_json, write_pre_json, write_pre_json_preserving, PreMode, PreState};
 use callisto_model::{ApplyPermit, CommandRunner, SCHEMA_VERSION};
 use serde_json::json;
 

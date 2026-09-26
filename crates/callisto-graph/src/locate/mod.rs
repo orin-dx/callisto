@@ -54,14 +54,14 @@ pub enum LocateError {
     /// that could not be opened or queried during locate) can do so.
     #[error("VCS error during workspace location: {0}")]
     #[diagnostic(code(E033))]
-    Vcs(Box<callisto_vcs::VcsError>),
+    Vcs(Box<callisto_model::vcs::VcsError>),
 
     #[error(transparent)]
     Graph(#[from] Box<crate::error::GraphError>),
 }
 
-impl From<callisto_vcs::VcsError> for LocateError {
-    fn from(e: callisto_vcs::VcsError) -> Self {
+impl From<callisto_model::vcs::VcsError> for LocateError {
+    fn from(e: callisto_model::vcs::VcsError) -> Self {
         LocateError::Vcs(Box::new(e))
     }
 }

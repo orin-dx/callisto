@@ -136,7 +136,7 @@ pub struct CascadeInput<'a, D: DependencyResolver> {
     pub reasons: &'a BTreeMap<PackageId, BumpReason>,
     pub named_by: &'a BTreeMap<PackageId, crate::aggregate::NamedBy>,
     pub base: &'a BTreeMap<PackageId, Version>,
-    pub pre: Option<&'a callisto_format::PreState>,
+    pub pre: Option<&'a callisto_model::format::PreState>,
     pub tags: &'a TagIndex,
     pub identity: &'a IdentityIndex,
 }
@@ -1265,8 +1265,8 @@ mod tests {
         );
 
         // PreMode::Exit: the release cycle is being finalized.
-        let pre = callisto_format::PreState {
-            mode: callisto_format::PreMode::Exit,
+        let pre = callisto_model::format::PreState {
+            mode: callisto_model::format::PreMode::Exit,
             tag: "alpha".to_string(),
             initial_versions,
             changesets: Vec::new(),
@@ -1476,8 +1476,8 @@ mod tests {
             Version::parse("1.0.0", callisto_model::VersionGrammar::SemVer).unwrap(),
         );
 
-        let pre = callisto_format::PreState {
-            mode: callisto_format::PreMode::Pre,
+        let pre = callisto_model::format::PreState {
+            mode: callisto_model::format::PreMode::Pre,
             tag: "alpha".to_string(),
             initial_versions,
             changesets: Vec::new(),
@@ -1568,8 +1568,8 @@ mod tests {
             "pkg-a".to_string(),
             Version::parse("1.0.0", callisto_model::VersionGrammar::SemVer).unwrap(),
         );
-        let pre = callisto_format::PreState {
-            mode: callisto_format::PreMode::Pre,
+        let pre = callisto_model::format::PreState {
+            mode: callisto_model::format::PreMode::Pre,
             tag: "next".to_string(),
             initial_versions,
             changesets: Vec::new(),
@@ -1744,7 +1744,7 @@ mod tests {
             calls: AtomicUsize::new(0),
             tags: vec!["pkg-a@2.0.0".to_string()],
         };
-        let git = callisto_vcs::GitAccess::new(dir, &runner);
+        let git = callisto_model::vcs::GitAccess::new(dir, &runner);
         let cfg_resolved = crate::config::load(dir).unwrap();
         let tags = crate::tags::TagIndex::build(&git, &graph, &cfg_resolved).unwrap();
 
@@ -1947,7 +1947,7 @@ mod tests {
             calls: AtomicUsize::new(0),
             tags: vec!["pkg-stale@9.9.9".to_string(), "pkg-live@3.0.0".to_string()],
         };
-        let git = callisto_vcs::GitAccess::new(dir, &runner);
+        let git = callisto_model::vcs::GitAccess::new(dir, &runner);
         let cfg_resolved = crate::config::load(dir).unwrap();
         let tags = crate::tags::TagIndex::build(&git, &graph, &cfg_resolved).unwrap();
 
@@ -2039,7 +2039,7 @@ mod tests {
             calls: AtomicUsize::new(0),
             tags: vec!["pkg-tagged@2.0.0".to_string()],
         };
-        let git = callisto_vcs::GitAccess::new(dir, &runner);
+        let git = callisto_model::vcs::GitAccess::new(dir, &runner);
         let cfg_resolved = crate::config::load(dir).unwrap();
         let tags = TagIndex::build(&git, &graph, &cfg_resolved).unwrap();
         assert!(tags.last_tag(&pkg_tagged).is_some(), "must carry a real release tag");

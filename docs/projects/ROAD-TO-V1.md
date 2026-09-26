@@ -6,7 +6,6 @@ Open work only. Verified against the code on 2026-09-25; git history holds the s
 
 - Build or drop a workspace-wide check that no `map_err` discards its source error. No gate script or CI wiring exists; `map_err_ignore = "deny"` in `Cargo.toml` is the only partial guard.
 - Derive the default tag template from fixed or independent mode, or drop the idea. Today `tag-template` is `None` unless set (`crates/callisto-graph/src/config/resolve.rs`).
-- Crate consolidation and the MIT/FSL split.
 - Release-commit provenance: `release plan --from-release-commit` accepts any commit whose decision file, consumed changeset and manifest diff agree; the decision digest is unkeyed. Decide whether that is enough.
 - Owner items pending decision: the rust-cache pin in orin-dx/actions, the bot-PR check policy, token rotation.
 
@@ -33,6 +32,7 @@ Decisions (owner, 2026-09-25):
 - An artifact whose owner is selected but whose product is not emits a warning.
 - A dependent released in the same run has its spec on a bumped internal dependency raised to the new version.
 - `version` refreshes lockfiles by default; `--no-refresh-lockfiles` opts out.
+- Four published crates: `callisto-model` absorbed `callisto-format` and `callisto-vcs`; `callisto-graph` absorbed `callisto-conventional` and `callisto-changelog` (owner, 2026-09-25).
 
 ### 1. A release is complete and consistent
 - Cargo real-registry e2e next to the npm (Verdaccio) and PyPI (pypiserver) ones. There is no drop-in local cargo registry; pick one before writing it.
@@ -66,7 +66,7 @@ Decisions (owner, 2026-09-25):
 - `.changeset/config.json` is not translated; `ChangesetsConfigKeyDropped` is defined but never emitted.
 
 ### 5. Every failure has a code and help; one output contract
-- Architecture test: every error variant has a code and help or is `transparent`. Fixes codeless variants (ParseChangeset, OnDiskVersionDrift, GrammarMismatch, WorkspaceVersionConflict, ConflictingGroupNames and other ConfigError variants), missing help (E013, E022-E024, E051, E107-E110). `GraphError::Command`/`ConfigError::VersionParse`/`GraphError::VersionParse` are now `#[diagnostic(transparent)]`; `GraphError::Conventional` and `GraphError::TagTemplate` still hide their inner error's code because `ConventionalError` and `TagTemplateError` don't derive `miette::Diagnostic` at all (`callisto-conventional` has no `miette` dependency yet; `docs/errors.md` documents "callisto-conventional errors carry no diagnostic code at all" as current behavior) -- giving them codes is its own decision (new codes, a new dependency, an errors.md rewrite), not a one-line `transparent`.
+- Architecture test: every error variant has a code and help or is `transparent`. Fixes codeless variants (ParseChangeset, OnDiskVersionDrift, GrammarMismatch, WorkspaceVersionConflict, ConflictingGroupNames and other ConfigError variants), missing help (E013, E022-E024, E051, E107-E110). `GraphError::Command`/`ConfigError::VersionParse`/`GraphError::VersionParse` are now `#[diagnostic(transparent)]`; `GraphError::Conventional` and `GraphError::TagTemplate` still hide their inner error's code because `ConventionalError` and `TagTemplateError` don't derive `miette::Diagnostic` at all (`docs/errors.md` documents that `conventional` errors carry no diagnostic code) -- giving them codes is its own decision (new codes, an errors.md rewrite), not a one-line `transparent`.
 - `E####` registry; split `VcsError::Git` into typed variants; retire `CliError::Other`; keep domain validation out of `Deserialize` (release-pr decide loses E142/E143).
 - One JSON envelope with `command` for every report and error.
 - `status`, `schema` and `completions` fail or panic on a closed pipe. One output sink; broken pipe exits quietly.
@@ -83,6 +83,9 @@ Decisions (owner, 2026-09-25):
 - `init --dry-run` omits the workflow and README from its file list.
 - `init` without `origin` per the decision above.
 - SECURITY.md hardcodes the current version.
+
+### 7. Retired crates
+- Publish a final release of `callisto-format`, `callisto-vcs`, `callisto-conventional` and `callisto-changelog` whose README names the new home (`callisto-model` or `callisto-graph`).
 
 ## Design
 

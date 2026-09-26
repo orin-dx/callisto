@@ -89,4 +89,4 @@ Every user-facing error carries a stable diagnostic code and a fix. Full list: [
 
 ## License
 
-Mixed: `callisto-model`, `callisto-format`, and `callisto-vcs` are MIT; the rest of the workspace is [FSL-1.1-MIT](LICENSE) (becomes MIT two years after each version's release). See [`AGENTS.md`](AGENTS.md) for the full per-crate table.
+Mixed: `callisto-model` is MIT; the rest of the workspace is [FSL-1.1-MIT](LICENSE) (becomes MIT two years after each version's release). See [`AGENTS.md`](AGENTS.md) for the full per-crate table.

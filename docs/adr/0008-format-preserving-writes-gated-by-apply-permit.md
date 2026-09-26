@@ -10,7 +10,7 @@ Status: Accepted (implemented in 2c27f8d0b)
 
 ## Decision
 
-- TOML edits go through `toml_edit`, changing the existing item in place. `package.json` goes through `serde_json` with `preserve_order`, and indentation, line endings and BOM are detected on read and reproduced on write (`FormatFingerprint`). Callisto-owned JSON such as `pre.json` is regenerated canonically (`crates/callisto-format/src/pre.rs`).
+- TOML edits go through `toml_edit`, changing the existing item in place. `package.json` goes through `serde_json` with `preserve_order`, and indentation, line endings and BOM are detected on read and reproduced on write (`FormatFingerprint`). Callisto-owned JSON such as `pre.json` is regenerated canonically (`crates/callisto-model/src/format/pre.rs`).
 - Every file content write goes through `callisto_model::atomic::atomic_write`: temp file in the target's directory, fsync, rename, then fsync the parent and grandparent. Deletions (consumed changesets, `pre.json`) and directory creation use `std::fs` directly.
 - Write primitives take `&ApplyPermit`. Its only field is private; outside tests the only constructor is `ApplyPermit::granted_unless_dry_run(dry_run)`, which returns `None` on a dry run.
 

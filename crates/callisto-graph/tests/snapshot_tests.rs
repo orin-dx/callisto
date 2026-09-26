@@ -44,7 +44,7 @@ fn test_snapshot_version_template_placeholders() {
 
     let cfg = callisto_graph::config::load(&root.join("callisto.toml")).unwrap();
     let graph = GraphBuilder::new().build().unwrap();
-    let git = callisto_vcs::GitAccess::new(root, &runner);
+    let git = callisto_model::vcs::GitAccess::new(root, &runner);
     let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
         root: root.to_path_buf(),
@@ -107,7 +107,7 @@ fn test_snapshot_version_format_matches_spec() {
         .unwrap();
 
     let cfg = callisto_graph::config::load(&root.join("callisto.toml")).unwrap();
-    let git = callisto_vcs::GitAccess::new(root, &runner);
+    let git = callisto_model::vcs::GitAccess::new(root, &runner);
     let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
         root: root.to_path_buf(),
@@ -158,7 +158,7 @@ fn test_snapshot_sha_resolution_failure_is_surfaced_error() {
     // so HEAD sha resolution must fail.
     let cfg = callisto_graph::config::load(&ws_dir.path().join("callisto.toml")).unwrap();
     let graph = GraphBuilder::new().build().unwrap();
-    let git = callisto_vcs::GitAccess::new(ws_dir.path(), &runner);
+    let git = callisto_model::vcs::GitAccess::new(ws_dir.path(), &runner);
     let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
         root: ws_dir.path().to_path_buf(),
@@ -220,7 +220,7 @@ fn test_snapshot_resolves_head_sha_through_the_command_runner() {
 
     let cfg = callisto_graph::config::load(&ws_dir.path().join("callisto.toml")).unwrap();
     let graph = GraphBuilder::new().build().unwrap();
-    let git = callisto_vcs::GitAccess::new(ws_dir.path(), &runner);
+    let git = callisto_model::vcs::GitAccess::new(ws_dir.path(), &runner);
     let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
         root: ws_dir.path().to_path_buf(),

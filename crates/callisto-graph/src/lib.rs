@@ -8,15 +8,17 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use callisto_manifests::Manifest;
+use callisto_model::vcs::GitAccess;
 use callisto_model::{CommandRunner, Ecosystem, PackageId, Version};
-use callisto_vcs::GitAccess;
 
 pub mod aggregate;
 pub mod apply;
 pub mod cascade;
 pub mod changed;
+pub mod changelog;
 pub mod commands;
 pub mod config;
+pub mod conventional;
 pub mod error;
 pub mod groups;
 pub mod identity;

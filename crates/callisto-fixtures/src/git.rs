@@ -6,7 +6,7 @@ use std::path::Path;
 use callisto_model::{CommandError, CommandOutput, CommandRunner};
 
 /// A [`CommandRunner`] that runs the real `git`, for tests that read a
-/// fixture repository through `callisto_vcs::GitAccess`. Every other program
+/// fixture repository through `callisto_model::vcs::GitAccess`. Every other program
 /// succeeds with no output.
 pub struct GitRunner;
 

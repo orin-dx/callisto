@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use callisto_changelog::ChangelogInput;
-use callisto_format::PreState;
+use crate::changelog::ChangelogInput;
+use callisto_model::format::PreState;
 use callisto_model::{
     BumpReason, BumpRecord, CommitSha, ConfigKey, Diagnostic, LockfileRefreshResult, PackageId, Severity, Version,
     VersionReport, SCHEMA_VERSION,
