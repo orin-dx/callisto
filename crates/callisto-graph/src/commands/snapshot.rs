@@ -9,16 +9,11 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     tag: &str,
 ) -> Result<(VersionPlan, SnapshotReport), GraphError> {
-    // The sha component is a real, resolved
-    // HEAD commit sha — never a fake placeholder. A resolution failure here must surface
-    // as a real error rather than silently proceeding with a value that risks colliding
-    // with snapshots from unrelated runs.
+    // Resolve HEAD for real rather than faking it, so unrelated snapshot runs never collide.
     let sha = ws.git_access().head_sha()?;
     let sha_short = sha.short();
 
-    // Base is literally `0.0.0`, never the package's own version, and every package in
-    // the workspace gets this identical, hyphen-joined string — not
-    // a per-package, dot-joined prerelease of that package's real version.
+    // Every package converges on the identical `0.0.0-<tag>-<sha>` tag, not a per-package prerelease.
     let snapshot_tag = format!("0.0.0-{tag}-{sha_short}");
     let snapshot_ver =
         callisto_model::Version::parse(&snapshot_tag, callisto_model::VersionGrammar::SemVer).map_err(|_err| {
@@ -28,34 +23,8 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
             })
         })?;
     let base_versions = ws.base_versions()?;
-    let tags = ws.tags()?;
-    let mut initial_severities = std::collections::BTreeMap::new();
-    let mut initial_reasons = std::collections::BTreeMap::new();
-    let mut initial_named_by = std::collections::BTreeMap::new();
-
-    for pkg in ws.graph.packages() {
-        initial_severities.insert(pkg.id.clone(), callisto_model::Severity::Patch);
-        initial_reasons.insert(
-            pkg.id.clone(),
-            callisto_model::BumpReason::PreRelease { tag: tag.to_string() },
-        );
-        initial_named_by.insert(pkg.id.clone(), crate::aggregate::NamedBy::Changeset);
-    }
-
-    let cascade_input = crate::cascade::CascadeInput {
-        graph: &ws.graph,
-        groups: &ws.config.groups,
-        cfg: &ws.config.cascade,
-        seed: &initial_severities,
-        reasons: &initial_reasons,
-        named_by: &initial_named_by,
-        base: &base_versions,
-        pre: None,
-        tags,
-        identity: &ws.identity,
-    };
-
-    let cascade_out = crate::cascade::run_cascade(cascade_input)?;
+    // No severity cascade to seed here; `ws.tags()` only checks the propagate-failure invariant below.
+    ws.tags()?;
 
     let mut bumps = Vec::new();
     let mut plan_bumps = Vec::new();
@@ -98,23 +67,92 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
         });
     }
 
-    let mut rewrites: Vec<_> = cascade_out.rewrites.into_values().collect();
-    for rewrite in &mut rewrites {
-        if let Some(snap_to) = snapshot_versions.get(&rewrite.dependency) {
-            let eco = rewrite
-                .dependency
-                .ecosystem()
-                .unwrap_or(callisto_model::Ecosystem::Cargo);
-            match crate::cascade::rewrite_spec(&rewrite.from, snap_to, eco, &ws.config.cascade) {
-                crate::cascade::RewriteOutcome::Rewritten(new_spec) => {
-                    rewrite.to = new_spec;
+    // No severity to propagate; just rewrite each dependent spec that doesn't cover `snapshot_ver`.
+    let mut rewrites: std::collections::BTreeMap<crate::cascade::RewriteKey, crate::cascade::SpecRewrite> =
+        std::collections::BTreeMap::new();
+    let mut diagnostics = Vec::new();
+
+    for pkg in ws.graph.packages() {
+        for edge in ws.graph.dependencies_of(&pkg.id) {
+            if matches!(
+                edge.spec,
+                callisto_model::DepSpec::Workspace(_) | callisto_model::DepSpec::Catalog(_)
+            ) {
+                if matches!(edge.spec, callisto_model::DepSpec::Catalog(_)) {
+                    diagnostics.push(callisto_model::Diagnostic {
+                        code: callisto_model::DiagnosticCode::CatalogSpecNotRewritten,
+                        severity: callisto_model::DiagnosticSeverity::Warning,
+                        message: format!(
+                            "spec `{}` for `{}` could not be tested for coverage",
+                            edge.spec.render(),
+                            edge.to.display_name()
+                        ),
+                        package: Some(edge.from.clone()),
+                        path: Some(edge.from_manifest.clone()),
+                        governed_by: Some(callisto_model::ConfigKey::CASCADE_PRESERVE_NPM_RANGES),
+                        escalated_by: None,
+                    });
                 }
-                _ => {
-                    rewrite.to = callisto_model::DepSpec::Exact(snap_to.clone());
+                continue;
+            }
+            if matches!(edge.spec, callisto_model::DepSpec::Opaque(_)) {
+                continue;
+            }
+            let Some(snap_to) = snapshot_versions.get(&edge.to) else {
+                continue;
+            };
+            // snap_to is always SemVer-parsed, so a Pep440 edge here surfaces as a GrammarMismatch, not silently.
+            let covers =
+                crate::cascade::coverage(&edge.spec, snap_to).map_err(|source| GraphError::GrammarMismatch {
+                    from: edge.from.clone(),
+                    to: edge.to.clone(),
+                    source,
+                })?;
+            if matches!(covers, callisto_model::Coverage::Covers) {
+                continue;
+            }
+
+            let eco = edge.from.ecosystem().unwrap_or_else(|| {
+                if edge.from_manifest.to_string_lossy().ends_with("Cargo.toml") {
+                    callisto_model::Ecosystem::Cargo
+                } else {
+                    callisto_model::Ecosystem::Npm
+                }
+            });
+
+            match crate::cascade::rewrite_spec(&edge.spec, snap_to, eco, &ws.config.cascade) {
+                crate::cascade::RewriteOutcome::Rewritten(to_spec) => {
+                    let key = crate::cascade::RewriteKey {
+                        target: if edge.inherited {
+                            crate::cascade::DepWriteTarget::CargoWorkspaceDependency {
+                                root_manifest: edge.from_manifest.clone(),
+                            }
+                        } else {
+                            crate::cascade::DepWriteTarget::Manifest(edge.from_manifest.clone())
+                        },
+                        name: ws
+                            .identity
+                            .native_name(&edge.to, eco)
+                            .map(str::to_string)
+                            .unwrap_or_else(|| edge.to.name().to_string()),
+                        kind: if edge.inherited { None } else { Some(edge.kind) },
+                    };
+                    rewrites
+                        .entry(key.clone())
+                        .or_insert_with(|| crate::cascade::SpecRewrite {
+                            key,
+                            dependency: edge.to.clone(),
+                            from: edge.spec.clone(),
+                            to: to_spec,
+                        });
+                }
+                crate::cascade::RewriteOutcome::LeftAlone(dg) => {
+                    diagnostics.push(dg);
                 }
             }
         }
     }
+    let rewrites: Vec<_> = rewrites.into_values().collect();
 
     let (platform_writes, optional_dep_updates) =
         crate::commands::version::platform_version_writes(ws, &snapshot_versions)?;
@@ -132,7 +170,7 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
         delete_pre_json: None,
         pre_cursor_updates: Vec::new(),
         observed_versions: std::collections::BTreeMap::new(),
-        diagnostics: cascade_out.diagnostics,
+        diagnostics,
     };
 
     let report = SnapshotReport {
@@ -262,6 +300,108 @@ mod tests {
                 bump.to.render()
             );
         }
+    }
+
+    /// `core = "1.0.0"` covers the patch-bumped 1.0.1 but not the snapshot pre-release.
+    #[test]
+    fn plan_snapshot_rewrites_spec_that_only_the_snapshot_version_leaves_out_of_range() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        std::fs::create_dir_all(root.join("crates/core/src")).unwrap();
+        std::fs::write(
+            root.join("crates/core/Cargo.toml"),
+            "[package]\nname = \"core\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("crates/core/src/lib.rs"), "").unwrap();
+
+        std::fs::create_dir_all(root.join("crates/app/src")).unwrap();
+        std::fs::write(
+            root.join("crates/app/Cargo.toml"),
+            "[package]\nname = \"app\"\nversion = \"1.0.0\"\nedition = \"2021\"\n\n[dependencies]\ncore = { path = \"../core\", version = \"1.0.0\" }\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("crates/app/src/lib.rs"), "").unwrap();
+
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/core\", \"crates/app\"]\nresolver = \"2\"\n",
+        )
+        .unwrap();
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = callisto_fixtures::git::GitRunner;
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        let (plan, _report) = plan_snapshot(&ws, "canary").expect("plan_snapshot must succeed");
+
+        let app_core_rewrite = plan
+            .rewrites
+            .iter()
+            .find(|r| r.dependency.name() == "core")
+            .expect("the out-of-range `core = \"1.0.0\"` spec on app must be rewritten");
+
+        assert_ne!(
+            app_core_rewrite.from, app_core_rewrite.to,
+            "the spec must actually change, not be left at the stale `1.0.0` bare requirement"
+        );
+    }
+
+    /// Same scenario as above, but applied to disk: `cargo metadata` must resolve once the rewritten spec lands.
+    #[test]
+    fn plan_snapshot_apply_then_cargo_metadata_succeeds() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        std::fs::create_dir_all(root.join("crates/core/src")).unwrap();
+        std::fs::write(
+            root.join("crates/core/Cargo.toml"),
+            "[package]\nname = \"core\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("crates/core/src/lib.rs"), "").unwrap();
+
+        std::fs::create_dir_all(root.join("crates/app/src")).unwrap();
+        std::fs::write(
+            root.join("crates/app/Cargo.toml"),
+            "[package]\nname = \"app\"\nversion = \"1.0.0\"\nedition = \"2021\"\n\n\
+             [dependencies]\ncore = { path = \"../core\", version = \"1.0.0\" }\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("crates/app/src/lib.rs"), "").unwrap();
+
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/core\", \"crates/app\"]\nresolver = \"2\"\n",
+        )
+        .unwrap();
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = callisto_fixtures::git::GitRunner;
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        let (plan, _report) = plan_snapshot(&ws, "canary").expect("plan_snapshot must succeed");
+
+        let permit = callisto_model::ApplyPermit::force_for_tests();
+        let opts = crate::apply::ApplyOptions::default();
+        crate::apply::apply_version_plan(root, &plan, &runner, &opts, &permit).expect("apply must succeed");
+
+        let target_dir = tmp.path().join("target");
+        let output = std::process::Command::new("cargo")
+            .args(["metadata", "--no-deps", "--format-version", "1"])
+            .env("CARGO_TARGET_DIR", &target_dir)
+            .current_dir(root)
+            .output()
+            .expect("cargo must be installed");
+
+        assert!(
+            output.status.success(),
+            "cargo metadata must succeed after snapshot rewrites `core`'s spec; stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     /// Plan_snapshot must never call

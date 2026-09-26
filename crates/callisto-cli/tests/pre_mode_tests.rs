@@ -43,6 +43,7 @@ fn test_pre_mode_blackbox_lifecycle() {
     let version_res = commands::version::handle(
         VersionArgs {
             refresh_lockfiles: false,
+            no_refresh_lockfiles: true,
             strict: false,
             allow_empty_changesets: false,
             emit_decision: None,
@@ -62,6 +63,7 @@ fn test_pre_mode_blackbox_lifecycle() {
     let final_version_res = commands::version::handle(
         VersionArgs {
             refresh_lockfiles: false,
+            no_refresh_lockfiles: true,
             strict: false,
             allow_empty_changesets: true,
             emit_decision: None,
@@ -111,6 +113,7 @@ fn test_malformed_pre_json_returns_error_not_silent_normal_release() {
     let version_res = commands::version::handle(
         VersionArgs {
             refresh_lockfiles: false,
+            no_refresh_lockfiles: true,
             strict: false,
             allow_empty_changesets: false,
             emit_decision: None,
@@ -367,6 +370,7 @@ fn test_pre_mode_rerun_does_not_duplicate_changelog_entry() {
         commands::version::handle(
             VersionArgs {
                 refresh_lockfiles: false,
+                no_refresh_lockfiles: true,
                 strict: false,
                 allow_empty_changesets: false,
                 emit_decision: None,

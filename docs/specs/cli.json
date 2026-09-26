@@ -29,7 +29,7 @@
     },
     {
       "name": "version",
-      "signature": "callisto version [--refresh-lockfiles] [--strict] [--allow-empty-changesets] [--emit-decision <PATH>]",
+      "signature": "callisto version [--no-refresh-lockfiles] [--strict] [--allow-empty-changesets] [--emit-decision <PATH>]",
       "description": "Consumes pending changesets and applies the planned version bumps.",
       "error_conditions": [
         "With --strict, no pending changesets exits 1 with an error diagnostic."

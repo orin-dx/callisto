@@ -21,8 +21,10 @@ pub fn handle(args: SnapshotArgs, global: &GlobalArgs) -> Result<ExitCode, CliEr
 
     let (plan, report) = callisto_graph::commands::plan_snapshot(&ws, &args.tag)?;
 
+    // Every package converges on the same synthetic version, so each ecosystem's lockfile must
+    // refresh too -- otherwise a stale lockfile fails `--locked` resolution right after the snapshot.
     let apply_opts = ApplyOptions {
-        refresh_lockfiles: false,
+        refresh_lockfiles: true,
         transient: true,
     };
 
@@ -62,12 +64,15 @@ mod tests {
         )
         .unwrap();
         let pkg = root.join("crates/pkg-a");
-        std::fs::create_dir_all(&pkg).unwrap();
+        std::fs::create_dir_all(pkg.join("src")).unwrap();
         std::fs::write(
             pkg.join("Cargo.toml"),
             "[package]\nname = \"pkg-a\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
         )
         .unwrap();
+        // A real target so `cargo update --workspace` (now run in snapshot's transient apply too)
+        // can load the manifest.
+        std::fs::write(pkg.join("src/lib.rs"), "").unwrap();
 
         let global = GlobalArgs {
             format: OutputFormat::Json,

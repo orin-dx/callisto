@@ -189,6 +189,8 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
     let mut worklist: BTreeSet<PackageId> = out.targets.keys().cloned().collect();
     let mut iterations = 0;
     let bound = convergence_bound(input.graph.packages().count());
+    // Edges already run through rewrite_spec, so the floor-raise pass below doesn't re-diagnose them.
+    let mut rewrite_attempted: BTreeSet<RewriteKey> = BTreeSet::new();
 
     let mut changed = true;
     while changed {
@@ -258,6 +260,7 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
                                     .unwrap_or_else(|| edge.to.name().to_string()),
                                 kind: if edge.inherited { None } else { Some(edge.kind) },
                             };
+                            rewrite_attempted.insert(key.clone());
                             out.rewrites.insert(
                                 key.clone(),
                                 SpecRewrite {
@@ -269,6 +272,21 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
                             );
                         }
                         RewriteOutcome::LeftAlone(dg) => {
+                            rewrite_attempted.insert(RewriteKey {
+                                target: if edge.inherited {
+                                    DepWriteTarget::CargoWorkspaceDependency {
+                                        root_manifest: edge.from_manifest.clone(),
+                                    }
+                                } else {
+                                    DepWriteTarget::Manifest(edge.from_manifest.clone())
+                                },
+                                name: input
+                                    .identity
+                                    .native_name(&edge.to, eco)
+                                    .map(str::to_string)
+                                    .unwrap_or_else(|| edge.to.name().to_string()),
+                                kind: if edge.inherited { None } else { Some(edge.kind) },
+                            });
                             out.diagnostics.push(dg);
                         }
                     }
@@ -421,6 +439,66 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
                         .insert(id.clone(), BumpReason::FixedGroupUnion { group: g.name.clone() });
                     worklist.insert(id.clone());
                     changed = true;
+                }
+            }
+        }
+    }
+
+    // A releasing package's floor on a co-released dependency is always raised, even when the old spec still covers it.
+    for pkg in out.severities.keys().cloned().collect::<Vec<_>>() {
+        let deps: Vec<DepEdge> = input.graph.dependencies_of(&pkg).cloned().collect();
+        for edge in deps {
+            if edge.kind == DepKind::Dev {
+                continue;
+            }
+            if matches!(
+                edge.spec,
+                DepSpec::Workspace(_) | DepSpec::Catalog(_) | DepSpec::Opaque(_)
+            ) {
+                continue;
+            }
+            let Some(new_version) = out.targets.get(&edge.to).cloned() else {
+                continue;
+            };
+
+            let eco = edge.from.ecosystem().unwrap_or_else(|| {
+                if edge.from_manifest.to_string_lossy().ends_with("Cargo.toml") {
+                    Ecosystem::Cargo
+                } else {
+                    Ecosystem::Npm
+                }
+            });
+
+            let key = RewriteKey {
+                target: if edge.inherited {
+                    DepWriteTarget::CargoWorkspaceDependency {
+                        root_manifest: edge.from_manifest.clone(),
+                    }
+                } else {
+                    DepWriteTarget::Manifest(edge.from_manifest.clone())
+                },
+                name: input
+                    .identity
+                    .native_name(&edge.to, eco)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| edge.to.name().to_string()),
+                kind: if edge.inherited { None } else { Some(edge.kind) },
+            };
+            if rewrite_attempted.contains(&key) {
+                continue;
+            }
+
+            match rewrite_spec(&edge.spec, &new_version, eco, input.cfg) {
+                RewriteOutcome::Rewritten(to_spec) => {
+                    out.rewrites.entry(key.clone()).or_insert_with(|| SpecRewrite {
+                        key,
+                        dependency: edge.to.clone(),
+                        from: edge.spec.clone(),
+                        to: to_spec,
+                    });
+                }
+                RewriteOutcome::LeftAlone(dg) => {
+                    out.diagnostics.push(dg);
                 }
             }
         }
@@ -2053,8 +2131,9 @@ mod tests {
             outcome.severities
         );
         assert!(
-            !outcome.rewrites.values().any(|r| r.dependency == upstream),
-            "the spec still covers the new version, so it must not be rewritten: {:?}",
+            outcome.rewrites.values().any(|r| r.dependency == upstream),
+            "pkg-app is releasing this run, so its floor on pkg-core must be raised \
+             even though \"^1.0.0\" already covers 1.1.0: {:?}",
             outcome.rewrites
         );
     }
@@ -2230,6 +2309,145 @@ mod tests {
         assert!(
             matches!(err, GraphError::CascadeNotConverged { .. }),
             "expected GraphError::CascadeNotConverged (E105), got {err:?}"
+        );
+    }
+
+    /// Regression for the callisto-cli 0.7.2 / callisto-graph 0.7.0 incident: a fixed group
+    /// releasing together must raise every internal spec to the new shared version, even
+    /// though the old caret spec already covers it (0.7.1 -> 0.7.2 is in-range for "^0.7.1").
+    #[test]
+    fn test_fixed_group_release_raises_in_range_internal_spec_to_new_version() {
+        let pkg_a = PackageId::parse("pkg-a").unwrap();
+        let pkg_b = PackageId::parse("pkg-b").unwrap();
+
+        // pkg-a depends on pkg-b; "^0.7.1" already covers 0.7.2, so out-of-range
+        // cascade rewriting alone would leave it unchanged.
+        let edge = make_dep_edge(&pkg_a, &pkg_b, "^0.7.1", Ecosystem::Cargo);
+
+        let graph = TestGraph {
+            packages: vec![bare_package(&pkg_a), bare_package(&pkg_b)],
+            edges: vec![edge],
+        };
+
+        let mut base = BTreeMap::new();
+        base.insert(pkg_a.clone(), Version::semver(0, 7, 1));
+        base.insert(pkg_b.clone(), Version::semver(0, 7, 1));
+
+        // Only pkg_b is seeded (e.g. by a changeset); the fixed group must carry
+        // pkg_a along at the same severity and shared target.
+        let mut seed = BTreeMap::new();
+        seed.insert(pkg_b.clone(), Severity::Patch);
+
+        let mut groups = GroupTable::default();
+        let group_def = GroupDef {
+            name: GroupName("ab-fixed".to_string()),
+            kind: GroupKind::Fixed,
+            members: vec![GroupMember::Package(pkg_a.clone()), GroupMember::Package(pkg_b.clone())],
+        };
+        groups.fixed.insert(group_def.name.clone(), group_def);
+
+        let cfg = CascadeConfig {
+            mode: CascadeMode::OutOfRange,
+            bump_severity: CascadeBumpSeverity::Patch,
+            peer_escalation: true,
+            preserve_npm_ranges: false,
+        };
+        let reasons = BTreeMap::new();
+        let named_by = BTreeMap::new();
+
+        let input = CascadeInput {
+            graph: &graph,
+            groups: &groups,
+            cfg: &cfg,
+            seed: &seed,
+            reasons: &reasons,
+            named_by: &named_by,
+            base: &base,
+            pre: None,
+            tags: &TagIndex::empty(),
+            identity: &IdentityIndex::default(),
+        };
+
+        let outcome = run_cascade(input).unwrap();
+
+        assert_eq!(outcome.targets.get(&pkg_a).unwrap().render(), "0.7.2");
+        assert_eq!(outcome.targets.get(&pkg_b).unwrap().render(), "0.7.2");
+
+        let rewrite = outcome
+            .rewrites
+            .values()
+            .find(|r| r.dependency == pkg_b)
+            .expect("pkg-a's spec on pkg-b must be rewritten even though \"^0.7.1\" already covers 0.7.2");
+
+        assert_eq!(
+            rewrite.to.render(),
+            "^0.7.2",
+            "the floor must be raised to the new shared version, keeping the caret operator and precision"
+        );
+    }
+
+    /// Both the main loop and the floor-raise pass see this edge, so an unrewritable spec must warn once, not twice.
+    #[test]
+    fn test_unrewritable_spec_on_edge_both_passes_visit_warns_once() {
+        let pkg_a = PackageId::parse("pkg-a").unwrap();
+        let pkg_b = PackageId::parse("pkg-b").unwrap();
+
+        // Upper-bounded range: out of range for the Major bump, and round_trip can't rewrite it either.
+        let edge = make_dep_edge(&pkg_a, &pkg_b, ">=1.0.0, <2.0.0", Ecosystem::Cargo);
+
+        let graph = TestGraph {
+            packages: vec![bare_package(&pkg_a), bare_package(&pkg_b)],
+            edges: vec![edge],
+        };
+
+        let mut base = BTreeMap::new();
+        base.insert(pkg_a.clone(), Version::semver(1, 0, 0));
+        base.insert(pkg_b.clone(), Version::semver(1, 0, 0));
+
+        let mut seed = BTreeMap::new();
+        seed.insert(pkg_b.clone(), Severity::Major);
+
+        let groups = GroupTable::default();
+        let cfg = CascadeConfig {
+            mode: CascadeMode::OutOfRange,
+            bump_severity: CascadeBumpSeverity::Patch,
+            peer_escalation: true,
+            preserve_npm_ranges: false,
+        };
+        let reasons = BTreeMap::new();
+        let named_by = BTreeMap::new();
+        let identity = IdentityIndex::default();
+
+        let input = CascadeInput {
+            graph: &graph,
+            groups: &groups,
+            cfg: &cfg,
+            seed: &seed,
+            reasons: &reasons,
+            named_by: &named_by,
+            base: &base,
+            pre: None,
+            tags: &TagIndex::empty(),
+            identity: &identity,
+        };
+
+        let outcome = run_cascade(input).expect("cascade must converge");
+
+        assert!(
+            outcome.severities.contains_key(&pkg_a),
+            "pkg-a must be carried along since its spec on pkg-b does not cover the Major bump"
+        );
+
+        let warnings: Vec<&Diagnostic> = outcome
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == DiagnosticCode::RangeNotRoundTrippable)
+            .collect();
+        assert_eq!(
+            warnings.len(),
+            1,
+            "the same unrewritable edge must warn once even though both the convergence \
+             loop and the floor-raise pass visit it: {warnings:?}"
         );
     }
 }

@@ -11,7 +11,7 @@
   "api_surface": [
     {
       "name": "callisto version",
-      "signature": "callisto version [--strict] [--allow-empty-changesets] [--refresh-lockfiles] [--emit-decision <PATH>] [--dry-run]",
+      "signature": "callisto version [--strict] [--allow-empty-changesets] [--no-refresh-lockfiles] [--emit-decision <PATH>] [--dry-run]",
       "description": "Computes the version plan from pending changesets, inference, cascade and groups, then applies it to disk and stages it in git."
     },
     {
@@ -90,7 +90,7 @@
     },
     {
       "id": "VER-CAS-01",
-      "criterion": "When a package is bumped, each dependent's spec on it is tested against the new version. Under `[cascade] mode = \"out-of-range\"` (default) a runtime, optional, build or peer dependent is bumped only when its spec no longer covers the new version; under `mode = \"always\"` it is bumped regardless."
+      "criterion": "When a package is bumped, each dependent's spec on it is tested against the new version. Under `[cascade] mode = \"out-of-range\"` (default) a runtime, optional, build or peer dependent is bumped only when its spec no longer covers the new version; under `mode = \"always\"` it is bumped regardless. Coverage governs only the dependent's own severity bump; whether its spec is rewritten follows VER-CAS-06."
     },
     {
       "id": "VER-CAS-02",
@@ -110,7 +110,7 @@
     },
     {
       "id": "VER-CAS-06",
-      "criterion": "A spec that no longer covers the new version is rewritten to it, keeping the operator and precision for Cargo and npm (`^1.2` becomes `^2.0` for 2.0.0), or to the exact version for npm when `preserve-npm-ranges = false`. A spec that cannot be rewritten mechanically, such as an npm range with spaces, `||`, a hyphen or a wildcard, is left unchanged with a RangeNotRoundTrippable warning."
+      "criterion": "A spec that no longer covers the new version is rewritten to it, keeping the operator and precision for Cargo and npm (`^1.2` becomes `^2.0` for 2.0.0), or to the exact version for npm when `preserve-npm-ranges = false`. A runtime, optional, build or peer dependent that is itself released in this run, for any reason, has every such spec on a bumped internal dependency raised to the dependency's new version the same way, even when the spec still covers it; a dependent that is not releasing keeps its spec unless out of range. `workspace = true`, npm `workspace:` and catalog specs are never rewritten by either rule, and a dev dependent's spec is rewritten only when out of range. A spec that cannot be rewritten mechanically, such as an npm range with spaces, `||`, a hyphen or a wildcard, is left unchanged with a RangeNotRoundTrippable warning."
     },
     {
       "id": "VER-CAS-07",
@@ -180,7 +180,11 @@
     },
     {
       "id": "VER-PRE-08",
-      "criterion": "A snapshot writes manifests only: it ignores and keeps pending changesets, writes no changelog or `pre.json`, and stages nothing in git; under `--dry-run` it writes nothing."
+      "criterion": "A snapshot writes manifests and refreshes each active ecosystem's existing lockfile, unconditionally (there is no `--no-refresh-lockfiles` for `snapshot`), so a subsequent locked install resolves against the snapshot version; it ignores and keeps pending changesets, writes no changelog or `pre.json`, and stages nothing in git; under `--dry-run` it writes nothing. A Pypi package's snapshot tag is not a valid PEP 440 version, so a workspace with a Pypi package fails to snapshot."
+    },
+    {
+      "id": "VER-PRE-09",
+      "criterion": "For every workspace dependency whose current spec does not cover the snapshot version, `snapshot` rewrites that spec in the dependent's own manifest, using the dependent's ecosystem and the dependency's name as registered for that ecosystem; a spec that already covers the snapshot version is left unchanged."
     },
     {
       "id": "VER-APPLY-01",
@@ -236,6 +240,15 @@
     {
       "id": "VER-APPLY-13",
       "criterion": "After planning but before any write, `version` refuses with E121 when a canonical manifest's on-disk version differs from its version at `HEAD` and either: the workspace's changesets directory still has a pending changeset as of `HEAD` (not yet consumed by a commit); or, outside an active pre-release cycle (`.changeset/pre.json` absent), a canonical manifest is staged in the git index but not yet committed. Both are the signature of a `version` run that wrote and staged its changes but never committed -- the second covers a changeset that was only ever a working-tree file (added and consumed by `version` without ever being committed), which the first check cannot see. A repository with no commits yet, a manifest/changesets directory that didn't exist at `HEAD`, or an active pre-release cycle (which legitimately reruns `version` without a commit in between) is never refused this way.",
+      "is_error_case": true
+    },
+    {
+      "id": "VER-APPLY-14",
+      "criterion": "By default, applying a plan refreshes each active ecosystem's lockfile that exists on disk: `cargo update --workspace` for Cargo; for Pypi, `uv lock` if `uv.lock` exists, else `poetry lock --no-update` if `poetry.lock` exists, else `pdm lock --update-reuse` if `pdm.lock` exists; for Npm, `npm install --package-lock-only --ignore-scripts` for `package-lock.json`, `pnpm install --lockfile-only` for `pnpm-lock.yaml`, `yarn install --mode update-lockfile` for `yarn.lock`, and `bun install --lockfile-only` for `bun.lock` or `bun.lockb`, each independently when its lockfile is present. `--no-refresh-lockfiles` skips this; `--refresh-lockfiles` is accepted but has no effect."
+    },
+    {
+      "id": "VER-APPLY-15",
+      "criterion": "A lockfile refresh command that exits non-zero aborts `version` with E208 naming the lockfile and the exact command that failed, instead of recording the failure and continuing.",
       "is_error_case": true
     }
   ],

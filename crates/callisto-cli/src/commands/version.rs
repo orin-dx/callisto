@@ -52,7 +52,7 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
     };
 
     let apply_opts = ApplyOptions {
-        refresh_lockfiles: args.refresh_lockfiles,
+        refresh_lockfiles: !args.no_refresh_lockfiles,
         transient: false,
     };
 
@@ -432,6 +432,7 @@ mod tests {
             strict: false,
             allow_empty_changesets: true,
             refresh_lockfiles: false,
+            no_refresh_lockfiles: true,
             emit_decision: None,
         };
         let result = super::handle(args, &global);

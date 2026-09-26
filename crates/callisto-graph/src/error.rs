@@ -702,6 +702,21 @@ pub enum GraphError {
         help("omit --workflow and write .github/workflows/callisto-release.yml by hand")
     )]
     InitWorkflowUnsupported { reason: String },
+
+    #[error(
+        "refreshing `{}` with `{refresh_command}` failed (exit {:?}): {stderr}",
+        .filename.display(), .exit_code
+    )]
+    #[diagnostic(
+        code(E208),
+        help("Run `{refresh_command}` to see the full failure, fix it, then re-run `callisto version`.")
+    )]
+    LockfileRefreshFailed {
+        filename: PathBuf,
+        refresh_command: String,
+        exit_code: Option<i32>,
+        stderr: String,
+    },
 }
 
 /// Source of a [`GraphError::ReleaseCommand`] (E164) failure: either the

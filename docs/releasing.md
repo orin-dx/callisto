@@ -71,7 +71,7 @@ Progress is derived from provider observation (registry, remote tag, forge relea
 
 | Input | Default | Purpose |
 | :--- | :--- | :--- |
-| `version_command` | `callisto version --refresh-lockfiles` | Versioning command; `--emit-decision <decision_path>` is appended automatically. |
+| `version_command` | `callisto version` | Versioning command; refreshes lockfiles by default. `--emit-decision <decision_path>` is appended automatically. |
 | `decision_path` | `.callisto/release-decision.json` | Where the version command records the exact release decision the PR carries; `release plan --from-release-commit` verifies the merged commit against this file. |
 | `commit_message` | `chore(release): version packages` | Release-PR commit message. |
 | `title` | `chore(release): version packages` | Release-PR title. |

@@ -62,7 +62,7 @@
     },
     {
       "name": "callisto version --emit-decision",
-      "signature": "callisto version [--refresh-lockfiles] --emit-decision PATH",
+      "signature": "callisto version [--no-refresh-lockfiles] --emit-decision PATH",
       "description": "Writes the release decision (package, target version, inclusion reasons) next to the manifest and changelog edits it applies."
     },
     {

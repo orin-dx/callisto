@@ -37,6 +37,7 @@ fn test_changelog_content_uses_real_changeset_summary() {
     commands::version::handle(
         VersionArgs {
             refresh_lockfiles: false,
+            no_refresh_lockfiles: true,
             strict: false,
             allow_empty_changesets: false,
             emit_decision: None,
@@ -100,6 +101,7 @@ fn test_changelog_content_includes_all_changeset_summaries() {
     commands::version::handle(
         VersionArgs {
             refresh_lockfiles: false,
+            no_refresh_lockfiles: true,
             strict: false,
             allow_empty_changesets: false,
             emit_decision: None,

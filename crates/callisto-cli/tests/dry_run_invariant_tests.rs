@@ -109,6 +109,7 @@ fn version_dry_run_writes_nothing() {
         commands::version::handle(
             VersionArgs {
                 refresh_lockfiles: false,
+                no_refresh_lockfiles: true,
                 strict: false,
                 allow_empty_changesets: false,
                 emit_decision: None,
