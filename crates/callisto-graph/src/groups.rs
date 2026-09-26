@@ -6,7 +6,6 @@ use crate::error::GraphError;
 use crate::napi::{napi_drift, NapiTargetsIndex};
 use crate::resolver::DependencyResolver;
 use crate::tags::TagIndex;
-use callisto_format::Versioning;
 use callisto_model::{Diagnostic, GroupName, PackageId, Severity, Version};
 
 #[derive(Clone, Debug, Default)]
@@ -78,39 +77,96 @@ pub fn pre_mutation_checks<D: DependencyResolver>(
     Ok(outcome)
 }
 
-/// Computes a fixed group's shared alignment target.
-///
-/// `live_members` must already be filtered to package ids present in
-/// `base` (see `solve_cascade`'s Track-1 block) -- a stale group member
-/// (still declared in callisto.toml but no longer in the workspace) has
-/// no entry in `base`, so if it were included here and happened to carry
-/// a release tag, `base.get(&released[0])` would miss and silently fall
-/// back to the `1.0.0` default below, corrupting the alignment base for
-/// every live sibling. Accepting a pre-filtered slice instead of the raw
-/// `GroupDef` makes that corruption unrepresentable at the call site.
+/// Computes `base`'s next version under `severity`, grammar-aware (SemVer vs PEP 440) and, in pre-release mode,
+/// anchored on `pre.json`'s pinned `initialVersions` entry rather than the live on-disk version. Shared by
+/// `cascade::bump_target` and `fixed_group_target`, and rejects any result that sorts behind `base`.
+pub fn versioned_bump(
+    package: &PackageId,
+    base: &Version,
+    severity: Severity,
+    pre: Option<&callisto_format::PreState>,
+) -> Result<Version, GraphError> {
+    let versioning = callisto_format::versioning_for(base.grammar())
+        .ok_or(callisto_format::BumpError::UnsupportedGrammar {
+            grammar: base.grammar(),
+        })
+        .map_err(GraphError::Bump)?;
+
+    // Compares against the pinned anchor in pre mode, not live on-disk, which may lead a different pre-release cycle.
+    let (bumped_from, next) = match pre {
+        Some(pre) if pre.mode == callisto_format::PreMode::Pre => {
+            let pinned_base = pre.initial_versions.get(crate::pre_json_key(package)).unwrap_or(base);
+            let next = versioning
+                .bump_prerelease(pinned_base, severity, &pre.tag, base)
+                .map_err(GraphError::Bump)?;
+            (pinned_base.clone(), next)
+        }
+        _ => {
+            let next = versioning.bump(base, severity).map_err(GraphError::Bump)?;
+            (base.clone(), next)
+        }
+    };
+
+    if matches!(Version::compare(&next, &bumped_from), Ok(std::cmp::Ordering::Less)) {
+        return Err(GraphError::VersionRegression {
+            package: package.clone(),
+            from: bumped_from,
+            to: next,
+        });
+    }
+
+    Ok(next)
+}
+
+/// Computes a fixed group's shared alignment target. `live_members` must already be filtered to ids present in
+/// `base` (`solve_cascade` drops stale members). The alignment base is a released member's on-disk version (an
+/// error, not a silent default, if that member is missing from `base`), or else the highest on-disk untagged version.
 pub fn fixed_group_target(
+    group: &GroupName,
     live_members: &[PackageId],
     base: &BTreeMap<PackageId, Version>,
     max_sev: Severity,
     tags: &TagIndex,
+    pre: Option<&callisto_format::PreState>,
 ) -> Result<Version, GraphError> {
-    let released: Vec<PackageId> = live_members
-        .iter()
-        .filter(|id| tags.last_tag(id).is_some())
-        .cloned()
-        .collect();
+    let released: Vec<&PackageId> = live_members.iter().filter(|id| tags.last_tag(id).is_some()).collect();
 
-    let aligned_base = if !released.is_empty() {
-        base.get(&released[0])
+    let (anchor, aligned_base) = if !released.is_empty() {
+        let anchor = released[0];
+        let v = base
+            .get(anchor)
             .cloned()
-            .unwrap_or_else(|| Version::semver(1, 0, 0))
+            .ok_or_else(|| GraphError::FixedGroupTaggedMemberMissingBase {
+                group: group.clone(),
+                member: anchor.clone(),
+            })?;
+        (anchor.clone(), v)
     } else {
-        Version::semver(0, 0, 0)
+        let mut untagged = live_members
+            .iter()
+            .filter_map(|id| base.get(id).map(|v| (id.clone(), v.clone())));
+        let mut best = untagged
+            .next()
+            .ok_or_else(|| GraphError::FixedGroupEmpty { group: group.clone() })?;
+        for (id, v) in untagged {
+            match Version::compare(&v, &best.1) {
+                Ok(std::cmp::Ordering::Greater) => best = (id, v),
+                Ok(_) => {}
+                Err(_) => {
+                    return Err(GraphError::GroupGrammarMismatch {
+                        group: group.clone(),
+                        members: live_members
+                            .iter()
+                            .filter_map(|m| base.get(m).map(|v| (m.clone(), v.clone())))
+                            .collect(),
+                    });
+                }
+            }
+        }
+        best
     };
 
-    let versioning = callisto_format::SemVerVersioning;
-
-    versioning.bump(&aligned_base, max_sev).map_err(GraphError::Bump)
+    versioned_bump(&anchor, &aligned_base, max_sev, pre)
 }
 
 #[cfg(test)]
@@ -194,6 +250,80 @@ mod tests {
         assert!(
             !outcome.diagnostics.is_empty(),
             "expected at least one napi_drift diagnostic"
+        );
+    }
+
+    /// An untagged fixed group's alignment base must be the highest on-disk member version, not a hardcoded `0.0.0`.
+    #[test]
+    fn fixed_group_target_untagged_base_is_highest_ondisk_not_zero() {
+        let pkg_core = PackageId::Bare("core".to_string());
+        let pkg_app = PackageId::Bare("app".to_string());
+        let group = GroupName("g".to_string());
+
+        let mut base = BTreeMap::new();
+        base.insert(pkg_core.clone(), Version::semver(1, 0, 0));
+        base.insert(pkg_app.clone(), Version::semver(0, 5, 0));
+
+        let live_members = vec![pkg_core.clone(), pkg_app.clone()];
+        let tags = TagIndex::empty();
+
+        let target =
+            fixed_group_target(&group, &live_members, &base, Severity::Minor, &tags, None).expect("must compute");
+
+        assert_eq!(
+            target.render(),
+            "1.1.0",
+            "untagged base must be the highest on-disk member version (1.0.0), not 0.0.0"
+        );
+    }
+
+    /// Fixed-group alignment must honor the base version's own grammar, not always bump as SemVer.
+    #[test]
+    fn fixed_group_target_honors_pep440_grammar() {
+        let pkg = PackageId::Bare("pya".to_string());
+        let group = GroupName("g".to_string());
+
+        let mut base = BTreeMap::new();
+        base.insert(
+            pkg.clone(),
+            Version::parse("1.0.0", callisto_model::VersionGrammar::Pep440).unwrap(),
+        );
+        let live_members = vec![pkg.clone()];
+        let tags = TagIndex::empty();
+
+        let target = fixed_group_target(&group, &live_members, &base, Severity::Minor, &tags, None)
+            .expect("PEP 440 base must not error as NotSemVer");
+
+        assert_eq!(target.render(), "1.1.0");
+    }
+
+    /// Fixed-group alignment must honor pre-release mode via `pre.json`'s `initialVersions`, not finalize to stable.
+    #[test]
+    fn fixed_group_target_honors_pre_mode() {
+        let pkg = PackageId::Bare("core".to_string());
+        let group = GroupName("g".to_string());
+
+        let mut base = BTreeMap::new();
+        base.insert(pkg.clone(), Version::semver(1, 0, 0));
+        let live_members = vec![pkg.clone()];
+        let tags = TagIndex::empty();
+
+        let mut initial_versions = indexmap::IndexMap::new();
+        initial_versions.insert("core".to_string(), Version::semver(1, 0, 0));
+        let pre = callisto_format::PreState {
+            mode: callisto_format::PreMode::Pre,
+            tag: "beta".to_string(),
+            initial_versions,
+            changesets: Vec::new(),
+        };
+
+        let target = fixed_group_target(&group, &live_members, &base, Severity::Minor, &tags, Some(&pre))
+            .expect("must compute a pre-release target");
+
+        assert_eq!(
+            target.render(),
+            "1.1.0-beta.0",
+            "pre mode must produce a pre-release target, not a stable 1.1.0"
         );
     }
 }

@@ -4,9 +4,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use callisto_manifests::{Manifest, OpenContext};
+#[cfg(test)]
+use callisto_model::ReleaseTrigger;
 use callisto_model::{
     CommandRunner, DepEdge, Diagnostic, DiagnosticCode, DiagnosticSeverity, Ecosystem, ManifestDecl, ManifestFormat,
-    ManifestRole, Package, PackageId, PublishTarget, ReleaseTrigger,
+    ManifestRole, Package, PackageId, PublishTarget,
 };
 
 use crate::config::resolve::resolve_package_config;
@@ -373,9 +375,8 @@ impl ManifestWalkResolver {
 
             let active_override = pkg_override.or(set_override);
 
-            let release_trigger = active_override
-                .and_then(|o| o.release_trigger)
-                .unwrap_or(ReleaseTrigger::Changeset);
+            // Single source of truth for the default: ReleaseTrigger's #[default].
+            let release_trigger = active_override.and_then(|o| o.release_trigger).unwrap_or_default();
 
             let tag_template = active_override.and_then(|o| o.tag_template.clone());
 

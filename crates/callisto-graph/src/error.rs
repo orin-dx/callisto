@@ -115,6 +115,37 @@ pub enum GraphError {
     #[diagnostic(code(E108))]
     MissingGroupMember { group: GroupName, member: String },
 
+    #[error(
+        "fixed group `{group}` aligns on tagged member `{}`, but it has no base version in the workspace",
+        .member.display_name()
+    )]
+    #[diagnostic(
+        code(E205),
+        help("Ensure the tagged group member is still a live workspace package, or re-tag against a current member.")
+    )]
+    FixedGroupTaggedMemberMissingBase { group: GroupName, member: PackageId },
+
+    #[error("fixed group `{group}` has no live members with a base version to align on")]
+    #[diagnostic(
+        code(E206),
+        help("Ensure at least one member of the fixed group resolves to a workspace package.")
+    )]
+    FixedGroupEmpty { group: GroupName },
+
+    #[error(
+        "computed bump for `{}` would move the version backwards: {} -> {}",
+        .package.display_name(), .from.render(), .to.render()
+    )]
+    #[diagnostic(
+        code(E207),
+        help("This indicates a corrupted alignment base (bad tag, pre.json, or group config); verify release state before retrying.")
+    )]
+    VersionRegression {
+        package: PackageId,
+        from: callisto_model::Version,
+        to: callisto_model::Version,
+    },
+
     #[error("package `{package}` is listed in multiple conflicting groups: {}", .groups.iter().map(|g| g.as_str()).collect::<Vec<_>>().join(", "))]
     #[diagnostic(code(E109))]
     ConflictingGroupMembership { package: PackageId, groups: Vec<GroupName> },
@@ -151,6 +182,30 @@ pub enum GraphError {
 
     #[error("workspace root `{root_manifest}` has conflicting version updates: {details}")]
     WorkspaceVersionConflict { root_manifest: PathBuf, details: String },
+
+    #[error(
+        "`{}` is at {} on disk but {} at HEAD, and a changeset is still pending: this looks like a `version` run that wrote and staged its changes but never committed",
+        .path.display(), .disk.render(), .head.render()
+    )]
+    #[diagnostic(
+        code(E121),
+        help(
+            "Finish the interrupted run (review the staged changes and `git commit` them), or reset it \
+             (`git reset --hard HEAD`, discarding the staged work) before running `version` again."
+        )
+    )]
+    PartialVersionRun {
+        path: PathBuf,
+        disk: callisto_model::Version,
+        head: callisto_model::Version,
+    },
+
+    #[error("failed to update `{}` while applying the version plan: {message}", .path.display())]
+    #[diagnostic(
+        code(E122),
+        help("Check file permissions and that the path still exists, then re-run `callisto version`.")
+    )]
+    ApplyIo { path: PathBuf, message: String },
 
     #[error("failed to parse .changeset/pre.json: {0}")]
     #[diagnostic(

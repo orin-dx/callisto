@@ -38,15 +38,7 @@ Decisions (owner, 2026-09-25):
 - Cargo real-registry e2e next to the npm (Verdaccio) and PyPI (pypiserver) ones. There is no drop-in local cargo registry; pick one before writing it.
 
 ### 2a. Versions are computed correctly
-- Fixed groups do their own version arithmetic (`groups.rs::fixed_group_target`): an untagged group bumps from 0.0.0 (1.0.0 + minor gives 0.1.0), pre mode yields a stable version, PEP 440 errors. One bump function shared with `bump_target`; untagged base is the highest member version.
-- Pre mode never records consumed changesets, so every run re-applies them. Separate "used this run" from "delete from disk"; skip ids already in `pre.json`.
-- `pre.json` location is spelled in four places; with `[changesets] dir` set, exit mode sticks forever. One `pre_json_path()`; `add` honours `[changesets] dir`; `pre exit` stages `pre.json`.
-- `version --strict` writes and stages before failing; `--emit-decision` is written before apply. Validate before any write.
-- A rerun after a crash bumps again. Refuse per the decision above.
-- `pre.json` `initialVersions` keys disagree between aggregate and cascade (`id.name()` vs `display_name()`).
-- Tests: cascade `always`, `bump-severity = minor`, dev dependents, E105; `version --dry-run` output.
-- The `release-trigger` default is defined twice (`walk.rs` fallback and `#[default]` in `ecosystem.rs`), and attribution text says `auto (default)` when the default is `changeset` (`render/attribution.rs`, and a test asserts it).
-- `pre.json` is rewritten with LF and no format fingerprint (`callisto-format/src/pre.rs`).
+- `resolve()` never inserts explicit provenance for `FIXED_GROUP`, `LINKED_GROUP`, `TAG_TEMPLATE` or `PRE_MAJOR_INFERENCE`, so diagnostics governed by those keys always render "(default)" even when explicitly configured (`crates/callisto-graph/src/config/resolve.rs`).
 
 ### 2b. The workspace resolves natively after `version` and `snapshot`
 - Invariant: after `version` or `snapshot`, each ecosystem's locked install succeeds (`cargo metadata --locked`, `npm ci`, `pnpm install --frozen-lockfile`, `uv lock --check`).
@@ -86,6 +78,7 @@ Decisions (owner, 2026-09-25):
 - Completions list hidden commands; `callisto help <cmd>` is rejected; text shows internal names (`cratesIo`, `{:?}`); `--check`/`--strict` help is wrong; `add --summary` without `--package` says no flags were given; wizard prompts go to stdout.
 - Delete the legacy `ValidateReport`, `PublishPlan`, `PublishReport` and tag report types and `schema --type validate`.
 - Release derivation has no diagnostics channel: the owner-without-product warning is an `eprintln!` (`commands/release/derive.rs`), so JSON output does not carry it.
+- `commands/init.rs::io_err` is pathless, unlike `apply.rs`'s path-carrying `GraphError::ApplyIo` (E122); an init I/O failure doesn't name the file involved.
 
 ### 6. What `init` generates works and stays pinned
 - The action installs `latest`, ignoring its pinned commit. Install the binary matching the action's commit.

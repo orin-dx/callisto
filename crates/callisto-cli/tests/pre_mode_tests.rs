@@ -289,3 +289,129 @@ fn test_pre_enter_stages_pre_json_via_git_add() {
         "pre.json must NOT be untracked after pre enter, but git status shows:\n{stdout}"
     );
 }
+
+/// `pre exit` must stage `pre.json` the same way `pre enter` does.
+#[test]
+fn test_pre_exit_stages_pre_json_via_git_add() {
+    let dir = setup_polyglot_git_repo();
+    let root = dir.path();
+
+    let global = GlobalArgs {
+        format: OutputFormat::Text,
+        cwd: root.to_path_buf(),
+        dry_run: false,
+    };
+
+    commands::pre::handle(
+        PreArgs::Enter {
+            tag: "alpha".to_string(),
+        },
+        &global,
+    )
+    .expect("pre enter must succeed");
+    Command::new("git")
+        .args(["commit", "-m", "enter pre mode"])
+        .current_dir(root)
+        .status()
+        .unwrap();
+
+    commands::pre::handle(PreArgs::Exit, &global).expect("pre exit must succeed");
+
+    let output = Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(root)
+        .output()
+        .expect("git status must run");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    let is_staged = stdout
+        .lines()
+        .any(|line| (line.starts_with('M') || line.starts_with("AM")) && line.contains("pre.json"));
+
+    assert!(
+        is_staged,
+        "pre.json must be staged (git add) after pre exit, but git status shows:\n{stdout}"
+    );
+}
+
+/// Running `version` twice in pre mode with no new changeset must not duplicate the changelog entry.
+#[test]
+fn test_pre_mode_rerun_does_not_duplicate_changelog_entry() {
+    let dir = setup_polyglot_git_repo();
+    let root = dir.path();
+
+    let global = GlobalArgs {
+        format: OutputFormat::Json,
+        cwd: root.to_path_buf(),
+        dry_run: false,
+    };
+
+    commands::pre::handle(
+        PreArgs::Enter {
+            tag: "beta".to_string(),
+        },
+        &global,
+    )
+    .expect("pre enter must succeed");
+
+    commands::add::handle(
+        AddArgs {
+            packages: vec!["core-crate:minor".to_string()],
+            summary: Some("Beta feature".to_string()),
+        },
+        &global,
+    )
+    .expect("add must succeed");
+
+    for _ in 0..2 {
+        commands::version::handle(
+            VersionArgs {
+                refresh_lockfiles: false,
+                strict: false,
+                allow_empty_changesets: false,
+                emit_decision: None,
+            },
+            &global,
+        )
+        .expect("version must succeed in pre mode");
+    }
+
+    let pre_json = fs::read_to_string(root.join(".changeset/pre.json")).unwrap();
+    let pre_state = callisto_format::parse_pre_json(&pre_json).unwrap();
+    assert_eq!(
+        pre_state.changesets.len(),
+        1,
+        "pre.json must record exactly one changeset id (the one `add` created), not zero and not \
+         duplicated across two `version` runs; got: {:?}",
+        pre_state.changesets
+    );
+
+    let changelog = fs::read_to_string(root.join("crates/core/CHANGELOG.md")).unwrap();
+    let occurrences = changelog.matches("Beta feature").count();
+    assert_eq!(
+        occurrences, 1,
+        "the changeset's changelog line must appear exactly once even after two `version` runs \
+         in pre mode, got {occurrences} occurrences in:\n{changelog}"
+    );
+
+    // Counts total bullet entries, not just a substring match, so a second synthesized entry can't hide alongside it.
+    let total_entries = changelog.lines().filter(|l| l.starts_with("- ")).count();
+    assert_eq!(
+        total_entries, 1,
+        "the changelog must have exactly one entry after two `version` runs in pre mode with no \
+         commit between them, got {total_entries} in:\n{changelog}"
+    );
+
+    // The changeset file must remain on disk -- pre mode never deletes it until `pre exit`'s consuming run.
+    let cs_dir = root.join(".changeset");
+    let remaining_md: Vec<_> = fs::read_dir(&cs_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("md"))
+        .filter(|e| e.file_name() != "README.md")
+        .collect();
+    assert!(
+        !remaining_md.is_empty(),
+        "the pre-mode changeset file must remain on disk until `pre exit`"
+    );
+}

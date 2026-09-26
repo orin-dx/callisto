@@ -329,41 +329,33 @@ pub fn apply_version_plan<R: CommandRunner>(
         for cs_path in &plan.consumed_changesets {
             let full = root.join(cs_path);
             if full.exists() {
-                fs::remove_file(&full).map_err(|e| {
-                    GraphError::Command(CommandError::Io {
-                        program: "fs".to_string(),
-                        message: e.to_string(),
-                    })
+                fs::remove_file(&full).map_err(|e| GraphError::ApplyIo {
+                    path: cs_path.clone(),
+                    message: e.to_string(),
                 })?;
             }
             modified_paths.push(cs_path.clone());
         }
 
         if let Some(ref pre_state) = plan.pre_state_update {
-            let default_dir = PathBuf::from(".changeset");
-            let pre_dir = plan
-                .consumed_changesets
-                .first()
-                .and_then(|p| p.parent())
-                .unwrap_or(&default_dir);
-            let rel_pre_path = pre_dir.join("pre.json");
+            // Written from `plan.pre_json_path`, not derived from `consumed_changesets` (always empty in pre mode).
+            let rel_pre_path = plan.pre_json_path.clone();
             let pre_path = root.join(&rel_pre_path);
-            let text = callisto_format::write_pre_json(pre_state);
-            callisto_manifests::atomic::atomic_write(&pre_path, &text, permit).map_err(|e| {
-                GraphError::Command(CommandError::Io {
-                    program: "fs".to_string(),
-                    message: e.to_string(),
-                })
+            let text = match &plan.pre_json_original_text {
+                Some(existing) => callisto_format::write_pre_json_preserving(pre_state, existing),
+                None => callisto_format::write_pre_json(pre_state),
+            };
+            callisto_manifests::atomic::atomic_write(&pre_path, &text, permit).map_err(|e| GraphError::ApplyIo {
+                path: rel_pre_path.clone(),
+                message: e.to_string(),
             })?;
             modified_paths.push(rel_pre_path);
         } else if let Some(rel_pre_path) = &plan.delete_pre_json {
             let pre_path = root.join(rel_pre_path);
             if pre_path.exists() {
-                fs::remove_file(&pre_path).map_err(|e| {
-                    GraphError::Command(CommandError::Io {
-                        program: "fs".to_string(),
-                        message: e.to_string(),
-                    })
+                fs::remove_file(&pre_path).map_err(|e| GraphError::ApplyIo {
+                    path: rel_pre_path.clone(),
+                    message: e.to_string(),
                 })?;
                 modified_paths.push(rel_pre_path.clone());
             }
@@ -2345,6 +2337,34 @@ mod tests {
             !has_npm_refresh,
             "no npm entry may appear in lockfile_refresh_results; apply_version_plan has no npm refresh subprocess: {:?}",
             outcome.lockfile_refresh_results
+        );
+    }
+
+    /// A `pre_state_update` write must land at `plan.pre_json_path`, not a `.changeset` default guessed elsewhere.
+    #[test]
+    fn pre_state_update_writes_to_plan_pre_json_path_not_hardcoded_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        let pre_state = callisto_format::PreState::entering("beta", Vec::new());
+        let plan = VersionPlan {
+            pre_state_update: Some(pre_state),
+            pre_json_path: PathBuf::from("changes/pre.json"),
+            pre_json_original_text: None,
+            ..Default::default()
+        };
+
+        let permit = ApplyPermit::force_for_tests();
+        let opts = ApplyOptions::default();
+        apply_version_plan(root, &plan, &NoopRunner, &opts, &permit).expect("apply_version_plan should succeed");
+
+        assert!(
+            root.join("changes/pre.json").exists(),
+            "pre.json must be written at the configured changesets dir (changes/pre.json)"
+        );
+        assert!(
+            !root.join(".changeset/pre.json").exists(),
+            "pre.json must NOT fall back to the hardcoded .changeset default"
         );
     }
 }

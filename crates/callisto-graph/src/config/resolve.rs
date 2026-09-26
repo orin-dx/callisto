@@ -74,6 +74,13 @@ impl ResolvedConfig {
         self.provenance.get(key).copied().unwrap_or(ConfigProvenance::Default)
     }
 
+    /// The workspace-relative path to `pre.json`, inside `[changesets] dir`. The single source of truth for this
+    /// path: `pre enter`/`pre exit`, `version`'s read and delete, and `apply_version_plan`'s write all resolve it
+    /// through this method rather than re-deriving it.
+    pub fn pre_json_path(&self) -> PathBuf {
+        self.changesets_dir.join("pre.json")
+    }
+
     pub fn rendered_value(&self, key: &ConfigKey) -> Option<String> {
         if key == &ConfigKey::CASCADE_MODE {
             Some(match self.cascade.mode {
