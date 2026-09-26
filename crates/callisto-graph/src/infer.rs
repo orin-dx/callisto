@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
+use callisto_model::vcs::GitAccess;
 use callisto_model::{CommitSha, Package, Severity, Version};
-use callisto_vcs::GitAccess;
 
 use crate::config::PreMajorInferencePolicy;
 use crate::error::GraphError;
@@ -49,7 +49,7 @@ impl SeverityInference for NoInference {
 }
 
 /// The shipped impl. A thin, stateless adapter over
-/// `callisto_conventional::infer_severity` -- it holds no fields of its own; the caller's
+/// `crate::conventional::infer_severity` -- it holds no fields of its own; the caller's
 /// [`GitAccess`] is handed in per call via [`SeverityInference::infer`]'s `git` parameter
 /// rather than discovered here, so this type carries nothing to discover it with.
 pub struct CommitInference;
@@ -61,7 +61,7 @@ impl SeverityInference for CommitInference {
         git: &GitAccess<'_>,
         window: InferenceWindowSpec<'_>,
     ) -> Result<Option<InferenceOutcome>, GraphError> {
-        use callisto_conventional::{infer_severity, InferenceInput, InferenceWindow};
+        use crate::conventional::{infer_severity, InferenceInput, InferenceWindow};
 
         let inf_window = match window.since {
             Some(sha) => InferenceWindow::SinceCommit(sha),
@@ -76,7 +76,7 @@ impl SeverityInference for CommitInference {
             has_prior_release: window.has_prior_release,
         };
 
-        // Selecting the VCS backend is this layer's job now: callisto-conventional
+        // Selecting the VCS backend is this layer's job: `conventional`
         // takes any `callisto_model::CommitWalker` and never names a VCS crate.
         let raw = infer_severity(git, &input)?;
         if raw.commit_count == 0 {

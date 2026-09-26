@@ -10,7 +10,7 @@ Status: Accepted (implemented in #145)
 
 ## Decision
 
-Every Git command in the `callisto` binary runs the user's `git` through `CommandRunner`. `callisto-vcs` has one Git access type, `GitAccess`, and defines no backend trait; `GitAccess` implements callisto-model's `CommitWalker` for severity inference (`crates/callisto-vcs/src/lib.rs`). Git operations use the user's git config and identity, except release tags: with no identity set, the target commit's committer becomes the tagger, and `TagSignPolicy::ForceUnsigned` adds `--no-sign` (`crates/callisto-vcs/src/access.rs`). Workspace-root discovery looks for a `.git` entry on disk (`crates/callisto-graph/src/locate/root.rs`).
+Every Git command in the `callisto` binary runs the user's `git` through `CommandRunner`. `callisto_model::vcs` has one Git access type, `GitAccess`, and defines no backend trait; `GitAccess` implements callisto-model's `CommitWalker` for severity inference (`crates/callisto-vcs/src/lib.rs`). Git operations use the user's git config and identity, except release tags: with no identity set, the target commit's committer becomes the tagger, and `TagSignPolicy::ForceUnsigned` adds `--no-sign` (`crates/callisto-vcs/src/access.rs`). Workspace-root discovery looks for a `.git` entry on disk (`crates/callisto-graph/src/locate/root.rs`).
 
 ## Options considered
 
@@ -27,7 +27,7 @@ Every Git command in the `callisto` binary runs the user's `git` through `Comman
 
 ## Enforcement
 
-- `callisto-vcs` has no gix dependency and one `GitAccess` type (`crates/callisto-vcs/src/access.rs`).
+- `callisto_model::vcs` has no gix dependency and one `GitAccess` type (`crates/callisto-model/src/vcs/access.rs`).
 - Nothing bans gix in `deny.toml`; reintroducing it needs a new ADR.
 
 ## Revisit when

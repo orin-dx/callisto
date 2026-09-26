@@ -84,17 +84,17 @@ pub fn versioned_bump(
     package: &PackageId,
     base: &Version,
     severity: Severity,
-    pre: Option<&callisto_format::PreState>,
+    pre: Option<&callisto_model::format::PreState>,
 ) -> Result<Version, GraphError> {
-    let versioning = callisto_format::versioning_for(base.grammar())
-        .ok_or(callisto_format::BumpError::UnsupportedGrammar {
+    let versioning = callisto_model::format::versioning_for(base.grammar())
+        .ok_or(callisto_model::format::BumpError::UnsupportedGrammar {
             grammar: base.grammar(),
         })
         .map_err(GraphError::Bump)?;
 
     // Compares against the pinned anchor in pre mode, not live on-disk, which may lead a different pre-release cycle.
     let (bumped_from, next) = match pre {
-        Some(pre) if pre.mode == callisto_format::PreMode::Pre => {
+        Some(pre) if pre.mode == callisto_model::format::PreMode::Pre => {
             let pinned_base = pre.initial_versions.get(crate::pre_json_key(package)).unwrap_or(base);
             let next = versioning
                 .bump_prerelease(pinned_base, severity, &pre.tag, base)
@@ -127,7 +127,7 @@ pub fn fixed_group_target(
     base: &BTreeMap<PackageId, Version>,
     max_sev: Severity,
     tags: &TagIndex,
-    pre: Option<&callisto_format::PreState>,
+    pre: Option<&callisto_model::format::PreState>,
 ) -> Result<Version, GraphError> {
     let released: Vec<&PackageId> = live_members.iter().filter(|id| tags.last_tag(id).is_some()).collect();
 
@@ -310,8 +310,8 @@ mod tests {
 
         let mut initial_versions = indexmap::IndexMap::new();
         initial_versions.insert("core".to_string(), Version::semver(1, 0, 0));
-        let pre = callisto_format::PreState {
-            mode: callisto_format::PreMode::Pre,
+        let pre = callisto_model::format::PreState {
+            mode: callisto_model::format::PreMode::Pre,
             tag: "beta".to_string(),
             initial_versions,
             changesets: Vec::new(),

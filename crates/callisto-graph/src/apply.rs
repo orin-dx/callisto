@@ -314,8 +314,8 @@ pub fn apply_version_plan<R: CommandRunner>(
 
     if !opts.transient {
         for cl in &plan.changelog_writes {
-            let rendered = callisto_changelog::render_section(&cl.input)?;
-            callisto_changelog::prepend(
+            let rendered = crate::changelog::render_section(&cl.input)?;
+            crate::changelog::prepend(
                 root,
                 &cl.changelog_path,
                 &cl.input.package.display_name(),
@@ -341,8 +341,8 @@ pub fn apply_version_plan<R: CommandRunner>(
             let rel_pre_path = plan.pre_json_path.clone();
             let pre_path = root.join(&rel_pre_path);
             let text = match &plan.pre_json_original_text {
-                Some(existing) => callisto_format::write_pre_json_preserving(pre_state, existing),
-                None => callisto_format::write_pre_json(pre_state),
+                Some(existing) => callisto_model::format::write_pre_json_preserving(pre_state, existing),
+                None => callisto_model::format::write_pre_json(pre_state),
             };
             callisto_manifests::atomic::atomic_write(&pre_path, &text, permit).map_err(|e| GraphError::ApplyIo {
                 path: rel_pre_path.clone(),
@@ -2269,13 +2269,13 @@ mod tests {
             }],
             changelog_writes: vec![crate::plan::ChangelogWrite {
                 changelog_path: PathBuf::from("CHANGELOG.md"),
-                input: callisto_changelog::ChangelogInput {
+                input: crate::changelog::ChangelogInput {
                     package: pkg,
                     from: cargo_version("1.0.0"),
                     to: Some(cargo_version("0.0.0-snapshot-abc1234")),
-                    entries: vec![callisto_changelog::ChangelogEntry {
+                    entries: vec![crate::changelog::ChangelogEntry {
                         severity: Severity::Patch,
-                        source: callisto_changelog::ChangeSource::Changeset {
+                        source: crate::changelog::ChangeSource::Changeset {
                             filename: "test-change.md".to_string(),
                             summary: "Some fix".to_string(),
                         },
@@ -2588,7 +2588,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
 
-        let pre_state = callisto_format::PreState::entering("beta", Vec::new());
+        let pre_state = callisto_model::format::PreState::entering("beta", Vec::new());
         let plan = VersionPlan {
             pre_state_update: Some(pre_state),
             pre_json_path: PathBuf::from("changes/pre.json"),

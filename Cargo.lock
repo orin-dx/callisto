@@ -194,29 +194,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "callisto-changelog"
-version = "0.8.0"
-dependencies = [
- "callisto-model",
- "miette",
- "tempfile",
- "thiserror",
-]
-
-[[package]]
 name = "callisto-cli"
 version = "0.8.0"
 dependencies = [
  "anstream 0.6.21",
  "base64",
- "callisto-changelog",
- "callisto-conventional",
  "callisto-fixtures",
- "callisto-format",
  "callisto-graph",
  "callisto-manifests",
  "callisto-model",
- "callisto-vcs",
  "clap",
  "clap_complete",
  "comfy-table",
@@ -237,18 +223,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "callisto-conventional"
-version = "0.8.0"
-dependencies = [
- "callisto-fixtures",
- "callisto-model",
- "callisto-vcs",
- "proptest",
- "tempfile",
- "thiserror",
-]
-
-[[package]]
 name = "callisto-fixtures"
 version = "0.8.0"
 dependencies = [
@@ -257,32 +231,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "callisto-format"
-version = "0.8.0"
-dependencies = [
- "callisto-model",
- "indexmap",
- "miette",
- "pep440_rs",
- "proptest",
- "rstest",
- "schemars",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
 name = "callisto-graph"
 version = "0.8.0"
 dependencies = [
- "callisto-changelog",
- "callisto-conventional",
  "callisto-fixtures",
- "callisto-format",
  "callisto-manifests",
  "callisto-model",
- "callisto-vcs",
  "dunce",
  "globset",
  "ignore",
@@ -290,6 +244,7 @@ dependencies = [
  "insta",
  "miette",
  "petgraph",
+ "proptest",
  "rstest",
  "serde",
  "serde_json",
@@ -325,27 +280,19 @@ version = "0.8.0"
 dependencies = [
  "base64",
  "camino",
+ "dunce",
+ "globset",
+ "indexmap",
  "miette",
  "path-slash",
  "pep440_rs",
  "proptest",
+ "rstest",
  "schemars",
  "semver",
  "serde",
  "serde_json",
  "sha2",
- "tempfile",
- "thiserror",
-]
-
-[[package]]
-name = "callisto-vcs"
-version = "0.8.0"
-dependencies = [
- "callisto-model",
- "dunce",
- "globset",
- "miette",
  "tempfile",
  "thiserror",
 ]

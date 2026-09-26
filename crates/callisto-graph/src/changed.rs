@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use callisto_model::vcs::{GitAccess, VcsError};
 use callisto_model::{Package, PackageId};
-use callisto_vcs::{GitAccess, VcsError};
 
 use crate::error::GraphError;
 use crate::tags::TagIndex;

@@ -63,11 +63,11 @@ pub enum CliError {
 
     #[error(transparent)]
     #[diagnostic(transparent)]
-    ChangesetParse(#[from] callisto_format::ParseError),
+    ChangesetParse(#[from] callisto_model::format::ParseError),
 
     #[error(transparent)]
     #[diagnostic(transparent)]
-    ChangesetWrite(#[from] callisto_format::WriteError),
+    ChangesetWrite(#[from] callisto_model::format::WriteError),
 
     #[error(transparent)]
     #[diagnostic(transparent)]
@@ -75,7 +75,7 @@ pub enum CliError {
 
     #[error(transparent)]
     #[diagnostic(transparent)]
-    Vcs(#[from] callisto_vcs::VcsError),
+    Vcs(#[from] callisto_model::vcs::VcsError),
 
     #[error(transparent)]
     #[diagnostic(transparent)]
@@ -83,7 +83,7 @@ pub enum CliError {
 
     #[error(transparent)]
     #[diagnostic(code(callisto::pre_json_error))]
-    PreJson(#[from] callisto_format::PreJsonError),
+    PreJson(#[from] callisto_model::format::PreJsonError),
 
     #[error("I/O error{}", match &path {
         Some(p) => format!(" accessing `{}`", p.display()),

@@ -1,7 +1,12 @@
 //! Shared types and traits for callisto: package identity, versions, manifests, dependency
-//! specs, and the versioned JSON report contract.
+//! specs, and the versioned JSON report contract. [`format`] reads and writes changeset files and
+//! `pre.json`; [`vcs`] is Git access through the git CLI.
 
 pub mod atomic;
+
+pub mod format;
+
+pub mod vcs;
 
 pub mod permit;
 pub use permit::*;
@@ -116,18 +121,15 @@ mod tests {
             "callisto-graph/src/error.rs",
             include_str!("../../callisto-graph/src/error.rs"),
         ),
+        ("callisto-model/src/format/bump.rs", include_str!("format/bump.rs")),
         (
-            "callisto-format/src/bump.rs",
-            include_str!("../../callisto-format/src/bump.rs"),
+            "callisto-model/src/format/changeset/mod.rs",
+            include_str!("format/changeset/mod.rs"),
         ),
+        ("callisto-model/src/vcs/mod.rs", include_str!("vcs/mod.rs")),
         (
-            "callisto-format/src/changeset/mod.rs",
-            include_str!("../../callisto-format/src/changeset/mod.rs"),
-        ),
-        ("callisto-vcs/src/lib.rs", include_str!("../../callisto-vcs/src/lib.rs")),
-        (
-            "callisto-changelog/src/error.rs",
-            include_str!("../../callisto-changelog/src/error.rs"),
+            "callisto-graph/src/changelog/error.rs",
+            include_str!("../../callisto-graph/src/changelog/error.rs"),
         ),
     ];
 

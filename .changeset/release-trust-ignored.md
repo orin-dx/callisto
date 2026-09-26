@@ -1,5 +1,5 @@
 ---
-callisto-vcs: minor
+callisto-cli: minor
 ---
 
 **Release trust allows gitignored build output**

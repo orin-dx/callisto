@@ -26,8 +26,8 @@ The human-written change record is a `.changeset/*.md` file in `@changesets/cli`
 
 ## Enforcement
 
-- Parser and writer tests, including a write-then-parse proptest: `crates/callisto-format/src/changeset/tests.rs`.
-- Bump arithmetic tests: `crates/callisto-format/src/bump.rs`.
+- Parser and writer tests, including a write-then-parse proptest: `crates/callisto-model/src/format/changeset/tests.rs`.
+- Bump arithmetic tests: `crates/callisto-model/src/format/bump.rs`.
 - No test runs against `@changesets/cli`; compatibility rests on hand-written unit cases.
 
 ## Revisit when

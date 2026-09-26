@@ -1,8 +1,8 @@
 use std::fs;
 use std::process::ExitCode;
 
-use callisto_format::{Changeset, Entry};
 use callisto_graph::DependencyResolver;
+use callisto_model::format::{Changeset, Entry};
 use callisto_model::{ApplyPermit, PackageId, Severity, SCHEMA_VERSION};
 use dialoguer::{Confirm, Input, MultiSelect};
 use serde_json::json;
@@ -148,7 +148,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             summary: summary_text.to_string(),
         };
 
-        let preview_text = callisto_format::write_changeset(&temp_changeset)?;
+        let preview_text = callisto_model::format::write_changeset(&temp_changeset)?;
         println!("\n=== Changeset Preview ===\n{preview_text}");
 
         let confirm = Confirm::new()
@@ -175,7 +175,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         entries,
         summary: summary_text,
     };
-    let text = callisto_format::write_changeset(&changeset)?;
+    let text = callisto_model::format::write_changeset(&changeset)?;
 
     let changeset_dir = ws.root.join(&ws.config.changesets_dir);
     let slug = generate_human_slug();

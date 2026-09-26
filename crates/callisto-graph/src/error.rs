@@ -26,24 +26,24 @@ pub enum GraphError {
 
     #[error(transparent)]
     #[diagnostic(transparent)]
-    Format(#[from] callisto_format::ParseError),
+    Format(#[from] callisto_model::format::ParseError),
 
     #[error("parsing changeset {}: {source}", .path.display())]
     ParseChangeset {
         path: PathBuf,
-        source: callisto_format::ParseError,
+        source: callisto_model::format::ParseError,
     },
 
     #[error(transparent)]
     #[diagnostic(transparent)]
-    Bump(#[from] callisto_format::BumpError),
+    Bump(#[from] callisto_model::format::BumpError),
 
     #[error(transparent)]
     #[diagnostic(transparent)]
-    Changelog(#[from] callisto_changelog::ChangelogError),
+    Changelog(#[from] crate::changelog::ChangelogError),
 
     #[error(transparent)]
-    Conventional(#[from] callisto_conventional::ConventionalError),
+    Conventional(#[from] crate::conventional::ConventionalError),
 
     #[error(transparent)]
     TagTemplate(#[from] callisto_model::TagTemplateError),
@@ -58,7 +58,7 @@ pub enum GraphError {
 
     #[error(transparent)]
     #[diagnostic(transparent)]
-    Vcs(#[from] callisto_vcs::VcsError),
+    Vcs(#[from] callisto_model::vcs::VcsError),
 
     #[error("command error: {0}")]
     #[diagnostic(transparent)]
@@ -212,7 +212,7 @@ pub enum GraphError {
         code(E114),
         help("Check that .changeset/pre.json is valid JSON and was not partially written. Delete the file and re-run `callisto pre enter` to recover.")
     )]
-    PreJson(callisto_format::PreJsonError),
+    PreJson(callisto_model::format::PreJsonError),
 
     #[error("failed to read .changeset/pre.json: {message}")]
     #[diagnostic(
@@ -842,7 +842,7 @@ pub enum ReleasePreconditionRequirement {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use callisto_vcs::VcsError;
+    use callisto_model::vcs::VcsError;
 
     /// Spec: GraphError::Vcs must be transparent — wrapping a VcsError must
     /// not add any prefix (e.g. "vcs error: ") to the display message.

@@ -7,16 +7,12 @@ Rules for AI agents working in this repo.
 | Crate | License | Depends on |
 | --- | --- | --- |
 | callisto-model | MIT | none |
-| callisto-format | MIT | model |
-| callisto-vcs | MIT | model |
 | callisto-manifests | FSL-1.1-MIT | model |
-| callisto-conventional | FSL-1.1-MIT | model |
-| callisto-changelog | FSL-1.1-MIT | model |
-| callisto-graph | FSL-1.1-MIT | model, vcs, manifests, format, changelog, conventional |
-| callisto-cli | FSL-1.1-MIT | all of the above |
+| callisto-graph | FSL-1.1-MIT | model, manifests |
+| callisto-cli | FSL-1.1-MIT | model, manifests, graph |
 | callisto-fixtures | FSL-1.1-MIT | model (dev-only) |
 
-- MIT crates must never depend on FSL crates.
+- `callisto-model` (MIT) must never depend on an FSL crate.
 - Check with `grep -H "^license" crates/*/Cargo.toml` after adding or moving a crate.
 
 ## Commands
