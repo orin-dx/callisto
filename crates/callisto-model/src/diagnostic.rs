@@ -182,9 +182,7 @@ pub enum DiagnosticCode {
     /// `callisto init` wrote a release workflow: a merge to the named default branch
     /// publishes, so that branch should require pull requests and reviews.
     WorkflowMergePublishes,
-    /// A `[[package]]` config rule matched no packages after the workspace walk (e.g. an
-    /// ecosystem-prefixed pattern for a package that doesn't exist in that ecosystem) --
-    /// advisory rather than a hard error, mirroring `PackageSetMatchedNothing`.
+    /// A `[[package]]` config rule matched no packages.
     PackageRuleMatchedNothing,
 }
 
