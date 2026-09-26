@@ -36,10 +36,12 @@ fn compute_claiming_ecosystems_and_native_keys(
     (claiming, native_keys)
 }
 
-/// The PROMOTION PREDICATE: true only when the two paths' name-scoped
-/// claiming-ecosystem sets share no ecosystem. This is a disjointness test,
-/// not an inequality test -- {Cargo,Npm} and {Npm} are unequal but not
-/// disjoint, and must NOT promote.
+/// Disjointness test for two paths' name-scoped claiming-ecosystem sets --
+/// {Cargo,Npm} and {Npm} are unequal but not disjoint. Kept for the
+/// `is_promoted_bare_name` unit tests below; actual duplicate detection is
+/// `native_owner` in `build`, keyed by every declared (ecosystem, name), not
+/// just each path's primary name.
+#[cfg(test)]
 fn claiming_sets_disjoint(a: &BTreeSet<Ecosystem>, b: &BTreeSet<Ecosystem>) -> bool {
     a.is_disjoint(b)
 }
@@ -83,6 +85,9 @@ impl ManifestWalkResolver {
         let mut index = IdentityIndex::default();
         let mut diagnostics = Vec::new();
         let mut claiming_ecosystems: BTreeMap<PathBuf, BTreeSet<Ecosystem>> = BTreeMap::new();
+        // Every (ecosystem, native name) any path declares, anywhere in that path's
+        // manifest list -- not only its primary name -- belongs to exactly one directory.
+        let mut native_owner: BTreeMap<(Ecosystem, String), PathBuf> = BTreeMap::new();
         let mut path_native_keys: BTreeMap<PathBuf, Vec<(Ecosystem, String)>> = BTreeMap::new();
         let mut path_platform_keys: BTreeMap<PathBuf, Vec<String>> = BTreeMap::new();
         let mut primary_ecosystems: BTreeMap<PathBuf, Ecosystem> = BTreeMap::new();
@@ -109,6 +114,27 @@ impl ManifestWalkResolver {
             // priority function so the precedence survives future variant
             // additions to `Ecosystem`.
             list.sort_by_key(|a| ecosystem_primary_priority(a.0));
+
+            // E100 whenever any (ecosystem, native name) this path declares -- primary
+            // or not -- is already owned by a different path; names both. Checked before
+            // any promotion bookkeeping so a dual-manifest directory's non-primary name
+            // (e.g. an npm sibling of a Cargo-primary package) is covered too, not just
+            // each path's own primary name.
+            if let Some((eco, id)) = list.iter().find(|(eco, id)| {
+                native_owner
+                    .get(&(*eco, id.name().to_string()))
+                    .is_some_and(|p| *p != rel_path)
+            }) {
+                let owner_path = native_owner[&(*eco, id.name().to_string())].clone();
+                return Err(GraphError::DuplicatePackage {
+                    id: id.clone(),
+                    paths: vec![owner_path, rel_path],
+                });
+            }
+            for (eco, id) in &list {
+                native_owner.insert((*eco, id.name().to_string()), rel_path.clone());
+            }
+
             let mut primary_id = list[0].1.clone();
             let (this_claiming, this_native_keys) = compute_claiming_ecosystems_and_native_keys(&list, &primary_id);
             claiming_ecosystems.insert(rel_path.clone(), this_claiming.clone());
@@ -116,22 +142,8 @@ impl ManifestWalkResolver {
             primary_ecosystems.insert(rel_path.clone(), list[0].0);
 
             let mut branch_ii_promoted = false;
-            if let Some(existing_members) = promoted_siblings.get(primary_id.name()) {
+            if promoted_siblings.contains_key(primary_id.name()) {
                 let this_set = claiming_ecosystems.get(&rel_path).cloned().unwrap_or_default();
-                let conflict = existing_members
-                    .iter()
-                    .find(|(_, member_set)| !claiming_sets_disjoint(&this_set, member_set));
-                if let Some((conflicting_id, _)) = conflict {
-                    let offending_path = package_manifest_decls
-                        .iter()
-                        .find(|(id, _)| *id == conflicting_id)
-                        .map(|(_, (p, _))| p.clone())
-                        .unwrap_or_default();
-                    return Err(GraphError::DuplicatePackage {
-                        id: primary_id,
-                        paths: vec![offending_path, rel_path],
-                    });
-                }
                 let promoted_id = PackageId::Prefixed {
                     ecosystem: primary_ecosystems[&rel_path],
                     name: primary_id.name().to_string(),
@@ -209,15 +221,9 @@ impl ManifestWalkResolver {
             if let Some((existing_path, existing_decls)) =
                 package_manifest_decls.insert(primary_id.clone(), (rel_path.clone(), decls))
             {
+                // Both paths' claiming ecosystems are guaranteed disjoint here: an
+                // overlap would already have failed at the native_owner check above.
                 let name = primary_id.name().to_string();
-                let existing_set = claiming_ecosystems.get(&existing_path).cloned().unwrap_or_default();
-                let current_set = claiming_ecosystems.get(&rel_path).cloned().unwrap_or_default();
-                if !claiming_sets_disjoint(&existing_set, &current_set) {
-                    return Err(GraphError::DuplicatePackage {
-                        id: primary_id,
-                        paths: vec![existing_path, rel_path],
-                    });
-                }
                 // STALE-KEY REWRITE location (4): re-key package_manifest_decls under
                 // each path's own newly-promoted Prefixed id, sourcing each path's own
                 // decls -- captured via the `existing_decls` returned by `insert` above
@@ -284,6 +290,8 @@ impl ManifestWalkResolver {
                         }
                     }
                 }
+                let existing_set = claiming_ecosystems.get(&existing_path).cloned().unwrap_or_default();
+                let current_set = claiming_ecosystems.get(&rel_path).cloned().unwrap_or_default();
                 promoted_siblings
                     .entry(name.clone())
                     .or_default()
@@ -1216,6 +1224,37 @@ mod tests {
             GraphError::DuplicatePackage { id, paths } => {
                 assert_eq!(id, PackageId::Bare("hybrid".to_string()));
                 assert_eq!(paths.len(), 2);
+            }
+            other => panic!("expected DuplicatePackage, got {other:?}"),
+        }
+    }
+
+    /// A dual-manifest directory's non-primary native name (its npm name,
+    /// with Cargo as primary) colliding with a separate directory's only
+    /// name must still error, not silently overwrite `index.native` and
+    /// route dependency edges to the wrong package.
+    #[test]
+    fn duplicate_on_non_primary_native_name_still_errors() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write_pkg(root, "a", Ecosystem::Cargo, "core");
+        std::fs::write(root.join("a/package.json"), r#"{"name":"@x/core","version":"1.0.0"}"#).unwrap();
+        write_pkg(root, "b", Ecosystem::Npm, "@x/core");
+        let locator = crate::locate::IgnoreWalkLocator::new(root);
+        let runner = NoopRunner;
+        let err = match crate::Workspace::load(root.to_path_buf(), &locator, &runner) {
+            Err(e) => e,
+            Ok(_) => panic!("expected DuplicatePackage error, got Ok"),
+        };
+        match err {
+            GraphError::DuplicatePackage { id, paths } => {
+                assert_eq!(id, PackageId::Bare("@x/core".to_string()));
+                let paths: std::collections::BTreeSet<_> = paths.into_iter().collect();
+                assert_eq!(
+                    paths,
+                    [PathBuf::from("a"), PathBuf::from("b")].into_iter().collect(),
+                    "must name both the dual-manifest directory and the colliding npm-only directory"
+                );
             }
             other => panic!("expected DuplicatePackage, got {other:?}"),
         }

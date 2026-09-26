@@ -44,7 +44,6 @@ Decisions (owner, 2026-09-25):
 - `plan_snapshot` (`crates/callisto-graph/src/commands/snapshot.rs`) parses the snapshot tag as SemVer for every package, so a workspace with a Pypi package fails to snapshot: the tag is not a valid PEP 440 version. `cargo metadata --locked`, `npm ci` and `pnpm install --frozen-lockfile` are covered end-to-end (`crates/callisto-cli/tests/native_resolution_e2e_tests.rs`); `uv lock --check` is covered only after `version`, not after `snapshot`.
 
 ### 3. Every package resolves by any of its names
-- Duplicate names are checked only on primary names (two directories can publish `@x/core`). E100 on any (ecosystem, name) claimed twice.
 - An unparseable manifest silently drops its package (or half of a dual-manifest one). Error when admitted; warn otherwise.
 - Root detection matches text (`# [workspace]` counts). Parse with toml_edit.
 - `[[package]]` rules that match nothing get no diagnostic (unlike `[[package-set]]`'s `package-set-matched-nothing`).
