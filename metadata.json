@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.11.3-nightly.202609240627.b2779c9eb",
+  "checkpoint_id": "01M3FS4TCGT50YR8HTQRQHQ5AD",
+  "strategy": "manual-commit",
+  "branch": "fix/remaining-v1",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/pre-json-distinct-keys.md",
+    "crates/callisto-graph/src/aggregate.rs",
+    "crates/callisto-graph/src/groups.rs",
+    "crates/callisto-graph/src/lib.rs",
+    "docs/specs/versioning.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 11012,
+    "cache_read_tokens": 4433948,
+    "output_tokens": 6439,
+    "api_call_count": 9
+  }
+}
