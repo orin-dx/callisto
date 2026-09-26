@@ -285,7 +285,7 @@
     },
     {
       "id": "CLI-WF-03",
-      "criterion": "Without artifact slots or platform packages, the generated workflow triggers on push to the default branch (from origin/HEAD, else `main`) and has two jobs: `version-pr` running callisto-action with `mode: version-pr`, and `release` running it with `mode: release` and a token secret per detected ecosystem (CARGO_REGISTRY_TOKEN, NPM_TOKEN with NPM_CONFIG_PROVENANCE, PYPI_TOKEN) plus GH_TOKEN."
+      "criterion": "Without artifact slots or platform packages, the generated workflow triggers on push to the detected default branch (local `origin/HEAD`, else a live query of `origin`, else the checked-out branch, else `main`) and has two jobs: `version-pr` running callisto-action with `mode: version-pr` and that same `branch`, and `release` running it with `mode: release` and a token secret per detected ecosystem (CARGO_REGISTRY_TOKEN, NPM_TOKEN with NPM_CONFIG_PROVENANCE, PYPI_TOKEN) plus GH_TOKEN. init's human-readable output names which of those sources resolved the branch."
     },
     {
       "id": "CLI-WF-04",

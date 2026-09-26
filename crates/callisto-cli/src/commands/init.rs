@@ -153,10 +153,11 @@ pub fn run<R: CommandRunner>(
         Some(shape) => {
             scaffold::ensure_workflow_absent(&facts.root)?;
             let branch = scaffold::default_branch(runner, &facts.root);
+            writeln!(human, "  default branch: {} (from {})", branch.name, branch.source)?;
             let version = env!("CARGO_PKG_VERSION");
             let commit = scaffold::resolve_release_commit(runner, &facts.root, version)?;
-            let content = scaffold::render_workflow(&facts, shape, &branch, &commit, version);
-            Some((content, branch))
+            let content = scaffold::render_workflow(&facts, shape, &branch.name, &commit, version);
+            Some((content, branch.name))
         }
         None => None,
     };
@@ -1061,7 +1062,7 @@ mod tests {
             )),
             "{workflow}"
         );
-        assert!(workflow.contains("with: {mode: version-pr}"));
+        assert!(workflow.contains("with: {mode: version-pr, branch: main}"));
         assert!(workflow.contains("with: {mode: release}"));
         assert!(
             run.out.contains(".github/workflows/callisto-release.yml:"),
@@ -1353,7 +1354,7 @@ mod tests {
             "callisto release plan --from-release-commit",
             "include: ${{ fromJSON(needs.plan.outputs.matrix) }}",
             "callisto release execute",
-            "with: {mode: version-pr}",
+            "with: {mode: version-pr, branch: main}",
         ] {
             assert!(workflow.contains(expected), "`{expected}` missing:\n{workflow}");
         }
