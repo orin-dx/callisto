@@ -42,7 +42,6 @@ Decisions (owner, 2026-09-25):
 
 ### 2b. The workspace resolves natively after `version` and `snapshot`
 - Invariant: after `version` or `snapshot`, each ecosystem's locked install succeeds (`cargo metadata --locked`, `npm ci`, `pnpm install --frozen-lockfile`, `uv lock --check`).
-- `snapshot` rewrites only specs a patch bump would break, so `cargo metadata` fails after it. Rewrite every spec that does not cover the snapshot version, in the dependent's ecosystem.
 - Test: dual-manifest apply writes both manifests.
 
 ### 3. Every package resolves by any of its names

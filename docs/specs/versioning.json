@@ -183,6 +183,10 @@
       "criterion": "A snapshot writes manifests only: it ignores and keeps pending changesets, writes no changelog or `pre.json`, and stages nothing in git; under `--dry-run` it writes nothing."
     },
     {
+      "id": "VER-PRE-09",
+      "criterion": "For every workspace dependency whose current spec does not cover the snapshot version, `snapshot` rewrites that spec in the dependent's own manifest, using the dependent's ecosystem and the dependency's name as registered for that ecosystem; a spec that already covers the snapshot version is left unchanged."
+    },
+    {
       "id": "VER-APPLY-01",
       "criterion": "`version` writes the new version to every canonical manifest of a bumped package, so both manifests of a dual-manifest package move together."
     },
