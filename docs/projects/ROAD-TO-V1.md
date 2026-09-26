@@ -49,7 +49,6 @@ Decisions (owner, 2026-09-25):
 - `commands/init.rs::io_err` is pathless, unlike `apply.rs`'s path-carrying `GraphError::ApplyIo` (E122); an init I/O failure doesn't name the file involved.
 
 ### 6. What `init` generates works and stays pinned
-- The action installs `latest`, ignoring its pinned commit. Install the binary matching the action's commit.
 - The workflow passes no `branch:` to callisto-action (defaults to `main`); `default_branch` silently falls back to `main`.
 - `--forge-repository` and `--product-package` are dropped without binaries. Validate every init flag up front.
 - `init --dry-run` omits the workflow and README from its file list.
