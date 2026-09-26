@@ -6,7 +6,7 @@ use callisto_model::ApplyPermit;
 use crate::cli::{GlobalArgs, OutputFormat, SnapshotArgs};
 use crate::commands::abort_on_graph_errors;
 use crate::error::CliError;
-use crate::output::write_json;
+use crate::output::{emit_line, emit_report};
 use crate::render;
 use crate::runner::CliCommandRunner;
 use crate::workspace::load_workspace;
@@ -33,10 +33,10 @@ pub fn handle(args: SnapshotArgs, global: &GlobalArgs) -> Result<ExitCode, CliEr
     }
 
     match global.format {
-        OutputFormat::Json => write_json(&mut std::io::stdout(), &report)?,
+        OutputFormat::Json => emit_report(&mut std::io::stdout(), &report, global.dry_run)?,
         OutputFormat::Text => {
             if global.dry_run {
-                println!("[DRY-RUN] Snapshot preview (no files modified):");
+                emit_line("[DRY-RUN] Snapshot preview (no files modified):")?;
             }
             render::render_snapshot(&report, &mut std::io::stdout())?;
         }

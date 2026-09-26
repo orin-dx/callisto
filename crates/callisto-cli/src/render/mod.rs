@@ -1,7 +1,7 @@
 use std::io;
 
 use callisto_graph::config::ResolvedConfig;
-use callisto_model::{ComposePrBodyReport, InitReport, SnapshotReport, StatusReport, ValidateReport, VersionReport};
+use callisto_model::{ComposePrBodyReport, InitReport, SnapshotReport, StatusReport, VersionReport};
 
 pub mod attribution;
 pub mod diff;
@@ -19,7 +19,7 @@ pub fn render_diagnostics<W: io::Write>(
     if !diagnostics.is_empty() {
         writeln!(w, "\nDiagnostics:")?;
         for d in diagnostics {
-            writeln!(w, "  [{:?}] {}", d.severity, d.message)?;
+            writeln!(w, "  [{}] {}", d.severity, d.message)?;
             if let (Some(cfg), Some(key)) = (cfg, d.governed_by.as_ref()) {
                 writeln!(w, "    {}", attribution::attribution_line(key, cfg))?;
             }
@@ -118,16 +118,6 @@ pub fn render_snapshot<W: io::Write>(report: &SnapshotReport, w: &mut W) -> io::
     Ok(())
 }
 
-pub fn render_validate<W: io::Write>(report: &ValidateReport, w: &mut W) -> io::Result<()> {
-    if report.ok {
-        writeln!(w, "Validation passed.")?;
-    } else {
-        writeln!(w, "Validation failed with diagnostics:")?;
-        render_diagnostics(&report.diagnostics, None, w)?;
-    }
-    Ok(())
-}
-
 pub fn render_compose_pr_body<W: io::Write>(report: &ComposePrBodyReport, w: &mut W) -> io::Result<()> {
     write!(w, "{}", report.body)?;
     Ok(())
@@ -157,7 +147,7 @@ pub fn render_matrix<W: io::Write>(report: &callisto_model::MatrixReport, w: &mu
     }
 
     for (pkg, group) in &report.platform_targets {
-        writeln!(w, "  {pkg} [{:?} <- {}]:", group.kind, group.source)?;
+        writeln!(w, "  {pkg} [{} <- {}]:", group.kind, group.source)?;
         for t in &group.targets {
             writeln!(
                 w,
@@ -173,7 +163,7 @@ pub fn render_matrix<W: io::Write>(report: &callisto_model::MatrixReport, w: &mu
 
     for (pkg, entries) in &report.runtime_versions {
         for e in entries {
-            writeln!(w, "  {pkg} [{:?}] {} = {}", e.ecosystem, e.field, e.range)?;
+            writeln!(w, "  {pkg} [{}] {} = {}", e.ecosystem, e.field, e.range)?;
         }
     }
 
@@ -231,6 +221,32 @@ mod tests {
         assert!(
             text.contains("minor"),
             "render_status output should contain severity 'minor'; got: {text}"
+        );
+    }
+
+    /// `render_diagnostics` prints each diagnostic's severity with its
+    /// `Display` impl (lowercase, e.g. `warning`), not `{:?}`'s PascalCase
+    /// Rust variant name.
+    #[test]
+    fn render_diagnostics_prints_lowercase_severity() {
+        use callisto_model::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
+
+        let diagnostics = vec![Diagnostic {
+            code: DiagnosticCode::EmptyChangeset,
+            severity: DiagnosticSeverity::Warning,
+            message: "no pending changesets".to_string(),
+            package: None,
+            path: None,
+            escalated_by: None,
+            governed_by: None,
+        }];
+        let mut out = Vec::new();
+        render_diagnostics(&diagnostics, None, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("[warning]"), "got: {text}");
+        assert!(
+            !text.contains("Warning"),
+            "must not print Debug's PascalCase form; got: {text}"
         );
     }
 
@@ -357,43 +373,6 @@ mod tests {
         let text = String::from_utf8(out).unwrap();
         assert!(text.contains("0.0.0-canary-abc1234"), "got: {text}");
         assert!(text.contains("crate-a"), "got: {text}");
-    }
-
-    #[test]
-    fn render_validate_ok_reports_pass() {
-        let report = ValidateReport {
-            schema_version: callisto_model::SCHEMA_VERSION,
-            ok: true,
-            diagnostics: vec![],
-        };
-        let mut out = Vec::new();
-        render_validate(&report, &mut out).unwrap();
-        let text = String::from_utf8(out).unwrap();
-        assert!(text.contains("Validation passed"), "got: {text}");
-    }
-
-    #[test]
-    fn render_validate_failure_lists_diagnostics() {
-        use callisto_model::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
-
-        let report = ValidateReport {
-            schema_version: callisto_model::SCHEMA_VERSION,
-            ok: false,
-            diagnostics: vec![Diagnostic {
-                code: DiagnosticCode::UnrecognisedPlatformTriple,
-                severity: DiagnosticSeverity::Error,
-                message: "something is wrong".to_string(),
-                package: None,
-                path: None,
-                escalated_by: None,
-                governed_by: None,
-            }],
-        };
-        let mut out = Vec::new();
-        render_validate(&report, &mut out).unwrap();
-        let text = String::from_utf8(out).unwrap();
-        assert!(text.contains("Validation failed"), "got: {text}");
-        assert!(text.contains("something is wrong"), "got: {text}");
     }
 
     #[test]

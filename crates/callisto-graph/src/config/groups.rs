@@ -118,6 +118,12 @@ impl GroupTable {
             for g in group_list {
                 for m in &g.members {
                     if let Some(other) = claimed.insert(m.as_str(), &g.name) {
+                        if other == &g.name {
+                            return Err(ConfigError::DuplicateMemberInGroup {
+                                group: g.name.clone(),
+                                member: m.clone(),
+                            });
+                        }
                         return Err(ConfigError::ConflictingGroupNames {
                             group: g.name.clone(),
                             other: other.clone(),
@@ -350,6 +356,20 @@ mod tests {
         };
         let err = GroupTable::validate_syntactic(&raw).unwrap_err();
         assert!(matches!(err, ConfigError::ConflictingGroupNames { member, .. } if member == "shared"));
+    }
+
+    /// A group listing the same member twice is a distinct condition from two
+    /// different groups conflicting, and gets its own variant and message.
+    #[test]
+    fn validate_syntactic_rejects_member_repeated_within_one_group() {
+        let raw = RawGroupTable {
+            fixed: vec![raw_group("a", &["shared", "shared"])],
+            linked: vec![],
+        };
+        let err = GroupTable::validate_syntactic(&raw).unwrap_err();
+        assert!(
+            matches!(err, ConfigError::DuplicateMemberInGroup { ref group, ref member } if group.as_str() == "a" && member == "shared")
+        );
     }
 
     /// The cross-kind check is one-directional: a linked group's member

@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -61,6 +62,16 @@ pub enum PlatformTargetKind {
     Cargo,
 }
 
+impl fmt::Display for PlatformTargetKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            PlatformTargetKind::Napi => "napi",
+            PlatformTargetKind::Maturin => "maturin",
+            PlatformTargetKind::Cargo => "cargo",
+        })
+    }
+}
+
 /// One platform build target within a PlatformTargetGroup. No `rid` field
 /// (napi/maturin only, no dotnet-aot).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -104,6 +115,15 @@ pub struct RuntimeVersionEntry {
 pub enum RuntimeEcosystem {
     Npm,
     Python,
+}
+
+impl fmt::Display for RuntimeEcosystem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            RuntimeEcosystem::Npm => "npm",
+            RuntimeEcosystem::Python => "python",
+        })
+    }
 }
 
 #[cfg(test)]

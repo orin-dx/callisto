@@ -5,7 +5,7 @@ use callisto_model::{DiagnosticSeverity, StatusReport};
 
 use crate::cli::{GlobalArgs, OutputFormat, StatusArgs};
 use crate::error::CliError;
-use crate::output::write_json;
+use crate::output::emit_report;
 use crate::render;
 use crate::runner::CliCommandRunner;
 use crate::workspace::load_workspace;
@@ -31,7 +31,7 @@ pub fn handle(args: StatusArgs, global: &GlobalArgs) -> Result<ExitCode, CliErro
     let report = callisto_graph::commands::status(&ws, &inference, &opts)?;
 
     match global.format {
-        OutputFormat::Json => write_json(&mut std::io::stdout(), &report)?,
+        OutputFormat::Json => emit_report(&mut std::io::stdout(), &report, global.dry_run)?,
         OutputFormat::Text => render::render_status(&report, crate::color::enabled(), &mut crate::color::stdout())?,
     }
 

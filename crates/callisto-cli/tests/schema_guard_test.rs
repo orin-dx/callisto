@@ -1,9 +1,9 @@
-//! Guards every report struct's field shape. Permitted schema deltas: the additive
-//! DiagnosticCode::ChangelogReadError variant; the additive, mandatory `StatusReport.pending` field (count of packages with a
-//! planned bump -- `status --check`'s 0/1 exit code no longer signals pending state, so
-//! this is how a script detects it). The `tag` and `plan-publish` report schemas left
-//! with their commands. Expected sets below were captured from `callisto schema`
-//! against the live repository.
+//! Guards every report struct's field shape against an accidental schema change. The
+//! `StatusReport.pending` field is mandatory (count of packages with a planned bump --
+//! `status --check`'s 0/1 exit code doesn't itself signal pending state, so this is how a
+//! script detects it). The `tag` and `plan-publish` report schemas left with their commands.
+//! Expected sets below were captured from `callisto schema` against the live repository;
+//! update them deliberately alongside a `DiagnosticCode` or report field change.
 
 use std::collections::BTreeSet;
 use std::process::Command;
@@ -49,7 +49,7 @@ fn report_struct_field_shapes_are_unchanged() {
 }
 
 #[test]
-fn diagnostic_code_enum_gains_only_changelog_read_error() {
+fn diagnostic_code_enum_variants_match_expected_set() {
     let status_schema = run_schema("status");
     let variants: BTreeSet<String> = status_schema["definitions"]["DiagnosticCode"]["oneOf"]
         .as_array()
@@ -86,6 +86,7 @@ fn diagnostic_code_enum_gains_only_changelog_read_error() {
         "workflow-generation-unsupported",
         "workflow-merge-publishes",
         "package-rule-matched-nothing",
+        "product-artifact-owner-without-product",
     ]);
 
     assert_eq!(

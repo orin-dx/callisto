@@ -134,7 +134,10 @@ fn github_repository_parse_error_reason(error: &GitHubRepositoryParseError) -> &
 }
 
 pub(crate) fn prepared_git_remote(root: &Path, runner: &dyn CommandRunner) -> Result<PreparedGitRemote, GraphError> {
-    let output = runner.run_with_timeout(
+    // A missing/unset `origin` is an answer this call interprets itself (into
+    // `UnsafeGitRemote`), not an unexpected failure worth echoing git's own
+    // "No such remote" to the terminal -- so this is a quiet probe.
+    let output = runner.run_quiet(
         programs::GIT,
         &["remote", "get-url", "--push", programs::GIT_REMOTE],
         root,
@@ -153,7 +156,10 @@ pub(crate) fn optional_git_remote(
     root: &Path,
     runner: &dyn CommandRunner,
 ) -> Result<Option<PreparedGitRemote>, GraphError> {
-    let output = runner.run_with_timeout(
+    // A repository with no `origin` is an expected, common case here (e.g.
+    // before `init` adds one), not a failure -- probe quietly so git's own
+    // "error: No such remote 'origin'" never reaches the terminal.
+    let output = runner.run_quiet(
         programs::GIT,
         &["remote", "get-url", "--push", programs::GIT_REMOTE],
         root,
@@ -324,6 +330,88 @@ mod tests {
                 stderr: String::new(),
             })
         }
+    }
+
+    /// Answers `git remote get-url` with a failure (no `origin`) and records
+    /// whether the probe went through the live-echoing `run_with_timeout` path
+    /// or the quiet one -- `prepared_git_remote`/`optional_git_remote` must
+    /// never let git's own "No such remote" reach the terminal for this
+    /// expected, common case.
+    struct NoRemote {
+        used_live_echo: std::sync::atomic::AtomicBool,
+    }
+
+    impl NoRemote {
+        fn new() -> Self {
+            Self {
+                used_live_echo: std::sync::atomic::AtomicBool::new(false),
+            }
+        }
+
+        fn failing_output() -> callisto_model::CommandOutput {
+            callisto_model::CommandOutput {
+                exit_code: Some(2),
+                stdout: String::new(),
+                stderr: "error: No such remote 'origin'".to_string(),
+            }
+        }
+    }
+
+    impl callisto_model::CommandRunner for NoRemote {
+        fn run(
+            &self,
+            _program: &str,
+            _args: &[&str],
+            _cwd: &Path,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            Ok(Self::failing_output())
+        }
+
+        fn run_with_timeout(
+            &self,
+            _program: &str,
+            _args: &[&str],
+            _cwd: &Path,
+            _timeout: std::time::Duration,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            self.used_live_echo.store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(Self::failing_output())
+        }
+
+        fn run_quiet(
+            &self,
+            _program: &str,
+            _args: &[&str],
+            _cwd: &Path,
+            _timeout: std::time::Duration,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            Ok(Self::failing_output())
+        }
+    }
+
+    #[test]
+    fn optional_git_remote_probes_quietly_when_origin_is_missing() {
+        let runner = NoRemote::new();
+        let result = optional_git_remote(Path::new("."), &runner);
+        assert!(matches!(result, Ok(None)), "got: {result:?}");
+        assert!(
+            !runner.used_live_echo.load(std::sync::atomic::Ordering::SeqCst),
+            "optional_git_remote must probe via run_quiet, not the live-echoing run_with_timeout"
+        );
+    }
+
+    #[test]
+    fn prepared_git_remote_probes_quietly_when_origin_is_missing() {
+        let runner = NoRemote::new();
+        let result = prepared_git_remote(Path::new("."), &runner);
+        assert!(
+            matches!(result, Err(GraphError::UnsafeGitRemote { .. })),
+            "got: {result:?}"
+        );
+        assert!(
+            !runner.used_live_echo.load(std::sync::atomic::Ordering::SeqCst),
+            "prepared_git_remote must probe via run_quiet, not the live-echoing run_with_timeout"
+        );
     }
 
     #[test]

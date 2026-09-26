@@ -121,6 +121,10 @@ pub enum WriteError {
     /// `entries[index]`'s name contains a literal `"`, which cannot be written — no escaping
     /// convention is defined for this grammar.
     #[error("entry {index} name {name:?} contains a literal `\"`, which cannot be written (no escaping convention is defined for this grammar)")]
+    #[diagnostic(
+        code(E268),
+        help("Remove the literal `\"` from the package name before writing the changeset.")
+    )]
     NameContainsQuote { index: usize, name: String },
 }
 

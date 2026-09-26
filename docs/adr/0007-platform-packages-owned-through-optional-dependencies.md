@@ -22,7 +22,7 @@ A `package.json` with no co-located admitted package of another ecosystem, with 
 
 - A changeset naming a platform package directly resolves to unknown; changesets must target the owner package.
 - Discovery is npm-only and directory-scoped, so maturin platform packages are not covered (docs/projects/ROAD-TO-V1.md, Design). A platform named by several owners is diagnosed, not attached (`walk.rs`).
-- `callisto release` refuses a workspace with attached platforms (`callisto::release_requires_ci_route`, via `ci_release_route`); it must release through `release plan`, `release artifact-manifest` and `release execute` in CI (`crates/callisto-cli/src/error.rs`).
+- `callisto release` refuses a workspace with attached platforms (`E239`, via `ci_release_route`); it must release through `release plan`, `release artifact-manifest` and `release execute` in CI (`crates/callisto-cli/src/error.rs`).
 
 ## Enforcement
 
