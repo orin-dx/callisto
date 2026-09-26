@@ -6,8 +6,6 @@ use std::{fs, path::Path};
 
 use release_harness::{callisto, git, DECISION_PATH};
 
-const NPM_FOO_TAG_TEMPLATE: &str = "[[package]]\nmatch = \"npm/foo\"\ntag-template = \"npm-foo@{version}\"\n";
-
 /// Cargo `foo` 1.0.0 in `crates/foo`, released as `foo@1.0.0`.
 fn released_cargo_foo() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
@@ -37,7 +35,7 @@ fn released_cargo_foo() -> tempfile::TempDir {
     dir
 }
 
-/// npm `foo` in `packages/foo`, with the tag template its name collision requires.
+/// npm `foo` in `packages/foo`, with no tag configuration.
 fn add_npm_foo(root: &Path) {
     fs::create_dir_all(root.join("packages/foo")).unwrap();
     fs::write(
@@ -45,8 +43,6 @@ fn add_npm_foo(root: &Path) {
         "{\n  \"name\": \"foo\",\n  \"version\": \"3.0.0\"\n}\n",
     )
     .unwrap();
-    let config = fs::read_to_string(root.join("callisto.toml")).unwrap();
-    fs::write(root.join("callisto.toml"), format!("{config}\n{NPM_FOO_TAG_TEMPLATE}")).unwrap();
     commit(root, "add npm foo");
 }
 
@@ -110,24 +106,38 @@ fn promotion_keeps_the_last_tag_and_the_changelog() {
 }
 
 #[test]
-fn same_named_packages_without_a_tag_template_fail_with_e101() {
+fn same_named_packages_need_no_tag_configuration() {
     let dir = released_cargo_foo();
     let root = dir.path();
-    fs::create_dir_all(root.join("packages/foo")).unwrap();
-    fs::write(
-        root.join("packages/foo/package.json"),
-        "{\n  \"name\": \"foo\",\n  \"version\": \"3.0.0\"\n}\n",
-    )
-    .unwrap();
-    commit(root, "add npm foo");
+    add_npm_foo(root);
     add_changeset(root, "feature", "cargo/foo", "minor");
+
+    let status = run_ok(root, &["status"]);
+    let npm = status_package(&status, "npm/foo").unwrap_or_else(|| panic!("no npm/foo in status: {status}"));
+    assert!(
+        npm["lastReleasedVersion"].is_null(),
+        "npm/foo must not claim cargo foo's tags: {status}"
+    );
+
+    run_ok(root, &["version", "--no-refresh-lockfiles"]);
+    assert_eq!(cargo_foo_version(root), "1.1.0");
+}
+
+#[test]
+fn a_bare_changeset_name_after_promotion_says_how_to_qualify_it() {
+    let dir = released_cargo_foo();
+    let root = dir.path();
+    add_npm_foo(root);
+    add_changeset(root, "feature", "foo", "minor");
 
     let out = callisto(root, &["version", "--no-refresh-lockfiles"]);
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(!out.status.success(), "version must refuse shared default tags");
-    assert!(stderr.contains("E101"), "{stderr}");
-    assert!(stderr.contains("cargo/foo") && stderr.contains("npm/foo"), "{stderr}");
-    assert_eq!(cargo_foo_version(root), "1.0.0");
+    assert!(!out.status.success());
+    assert!(
+        stderr.contains("E103") && stderr.contains("`cargo/foo`") && stderr.contains("`npm/foo`"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("cargo/foo: minor"), "{stderr}");
 }
 
 #[test]

@@ -162,9 +162,9 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E209 | Failed to parse manifest `<path>`: <message> | Fix the manifest's syntax; a workspace member's manifest is never skipped. |
 | E210 | A `.changeset/*.md` file failed to parse: `<path>`: <source> | Fix the changeset file's frontmatter, or delete it and write a new one. |
 | E100 | Package ID is defined at more than one manifest path | Ensure package IDs are unique across workspace manifest paths. |
-| E101 | Packages with the same native name in different ecosystems would share the default `{name}@{version}` tags | Give all but one of them its own `tag-template` in a `[[package]]` rule, e.g. `match = "npm/foo"` with `tag-template = "npm-foo@{version}"`. |
+| E101 | A package's explicit `tag-template` equals another package's default tags | Change that `tag-template`, or remove it so the package uses its default. |
 | E102 | Named package was not found in the workspace | Check the package's name and ecosystem, or that its directory has a manifest callisto discovers. |
-| E103 | Bare package name is ambiguous; more than one candidate matches | Qualify the name with its ecosystem, e.g. `cargo/pkg` or `cargo:pkg`. |
+| E103 | A bare name matches more than one package; the message lists their qualified ids | Write the qualified id instead of `{name}`, e.g. in a changeset `cargo/{name}: minor`. |
 | E104 | Dependency cycle detected among workspace packages | Refactor workspace dependencies to break the cyclic dependency chain. |
 | E105 | Version cascade failed to converge after its iteration limit | Check for oscillating peer or linked group dependencies. |
 | E106 | Fixed group's members have divergent on-disk versions | Align on-disk versions for all members of the fixed group. |
@@ -233,6 +233,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E206 | Fixed group has no live members with a base version to align on | Ensure at least one member of the fixed group resolves to a workspace package. |
 | E207 | Computed bump for a package would move its version backwards | This indicates a corrupted alignment base (bad tag, pre.json, or group config); verify release state before retrying. |
 | E208 | A lockfile refresh command exited non-zero while applying the version plan | Run the named command to see the full failure, fix it, then re-run `callisto version`. |
+| E245 | `pre.json` records a bare name that now names several packages, and none was the only one when `pre.json` was added | In `pre.json` `initialVersions`, rename the `{key}` key to the qualified id of the package it was recorded for. |
 | E246 | Version dependency edge involves incompatible version grammars | Use the same version grammar on both sides of the dependency edge, or drop the edge. |
 | E247 | On-disk versions changed since the version plan was generated | Regenerate the version plan against the current workspace state before applying it. |
 | E248 | Workspace root manifest has conflicting version updates | Reconcile the workspace root manifest's version updates before retrying. |

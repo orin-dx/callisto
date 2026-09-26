@@ -96,7 +96,7 @@
     },
     {
       "id": "WS-ID-03",
-      "criterion": "When two or more directories declare the same name and no ecosystem declares it in more than one of them, each package is promoted to an ecosystem-qualified id (`cargo:foo`, `npm:foo`, `pypi:foo`), displayed as `cargo/foo`. Promotion is display-only: the package's key (its workspace-relative directory), its default tag template (`foo@{version}`), its last-tag lookup, its CHANGELOG path and its `pre.json` baseline are the same before and after, and `cargo/foo` selects it in both states."
+      "criterion": "When two or more directories declare the same name and no ecosystem declares it in more than one of them, each package is promoted to an ecosystem-qualified id, displayed as `cargo/foo`. Promotion is display-only: the package's key (its workspace-relative directory), its CHANGELOG path and its release history are the same before and after, and `cargo/foo` selects it in both states. Default tags are `{display id}@{version}`; a promoted package's last tag is also found among `foo@*` tags whose commit contains its manifest and no other same-named package's. A bare `pre.json` `initialVersions` key moves to the one same-named package that existed when `pre.json` was added, else `version` fails with E245."
     },
     {
       "id": "WS-ID-04",
@@ -110,7 +110,7 @@
     },
     {
       "id": "WS-ID-06",
-      "criterion": "A changeset, `callisto add --package` or `callisto matrix --package` naming the bare name of promoted packages fails with E103 listing every qualified candidate; naming a package that does not exist under that name in that ecosystem fails with E102.",
+      "criterion": "A changeset, `callisto add --package` or `callisto matrix --package` naming the bare name of promoted packages fails with E103 listing every qualified candidate and showing the qualified form to write; naming a package that does not exist under that name in that ecosystem fails with E102.",
       "is_error_case": true
     },
     {
@@ -119,7 +119,7 @@
     },
     {
       "id": "WS-ID-08",
-      "criterion": "When two packages would share a tag template and at least one of them uses the default `{name}@{version}` (for example promoted `cargo/foo` and `npm/foo` with no `tag-template`), `status` and `version` fail with E101 naming both packages and the template; a `[[package]]` `tag-template` on all but one of them clears it.",
+      "criterion": "A package whose explicit `tag-template` equals another package's default tag template makes `status` and `version` fail with E101 naming both packages and the template.",
       "is_error_case": true
     },
     {

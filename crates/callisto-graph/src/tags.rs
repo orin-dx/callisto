@@ -173,6 +173,23 @@ impl TagIndex {
                     }
                 }
             }
+            if chosen.is_none() && pkg.tag_template.is_none() && pkg.id.ecosystem().is_some() {
+                // A promoted package keeps the `{name}@` tags it made while its name was unique.
+                let unqualified = TagTemplate::default_for(&PackageId::Bare(pkg.id.name().to_string()));
+                let same: Vec<&callisto_model::Package> = graph
+                    .packages()
+                    .filter(|p| p.id.ecosystem().is_some() && p.id.name() == pkg.id.name())
+                    .collect();
+                let mut owned = Vec::new();
+                for tag in matching_tags(&all_tags, &unqualified)? {
+                    if crate::sole_owner_at(git, tag, &same)?.is_some_and(|owner| owner.id == pkg.id) {
+                        owned.push(tag);
+                    }
+                }
+                chosen = select_last_tag(&unqualified, grammar, owned)
+                    .map_err(GraphError::from)?
+                    .chosen;
+            }
             last.insert(pkg.id.clone(), chosen);
             templates.insert(pkg.id.clone(), tmpl);
             pre_cursor.insert(pkg.id.clone(), None);

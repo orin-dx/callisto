@@ -10,7 +10,7 @@
 - [8. Format-preserving manifest writes gated by ApplyPermit](0008-format-preserving-writes-gated-by-apply-permit.md) — `toml_edit` and fingerprinted JSON through `atomic_write(&ApplyPermit)`; guardrail: do not use typed serde round-trips for TOML, unfingerprinted `package.json` rewrites, regex edits or unpermitted writes without a new ADR.
 - [9. A tag's identity is its commit and being annotated](0009-tag-identity-is-commit-and-annotation.md) — an existing annotated tag on the planned commit is adopted whatever its message; guardrail: do not compare annotation text or accept lightweight tags without a new ADR.
 - [10. The workspace resolves natively after `version` or `snapshot`](0010-native-resolution-after-version.md) — a co-released dependent's spec is always raised to the new version and lockfiles refresh by default; guardrail: do not go back to rewriting only out-of-range specs or make lockfile refresh opt-in without a new ADR.
-- [11. Packages are keyed by directory; promotion is display-only](0011-directory-keyed-package-identity.md) — a package's stable identity is its directory and its default tags use its native name, so promotion to `eco/name` changes only how it prints; guardrail: do not derive tags, paths or persisted keys from the display id without a new ADR.
+- [11. Packages are keyed by directory; promotion is display-only](0011-directory-keyed-package-identity.md) — a package's stable identity is its directory; promotion changes how it prints, and tags and `pre.json` entries recorded under a bare name follow the package that owned it; guardrail: do not derive paths or persisted state from the display id without a new ADR.
 
 ## Rules
 
