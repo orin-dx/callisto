@@ -15,8 +15,29 @@ pub enum VcsError {
     RepoNotFound { path: PathBuf, message: String },
 
     #[error("git error: {0}")]
-    #[diagnostic(code(E051))]
+    #[diagnostic(
+        code(E051),
+        help("Inspect the reported Git failure and its context; no more specific fix is known.")
+    )]
     Git(String),
+
+    #[error("release trust requires a SHA-1 Git object format; found `{found}`")]
+    #[diagnostic(
+        code(E265),
+        help("Run release trust checks against a repository using the SHA-1 object format.")
+    )]
+    UnsupportedObjectFormat { found: String },
+
+    #[error("release trust requires a complete, non-shallow Git repository")]
+    #[diagnostic(code(E266), help("Fetch full history with `git fetch --unshallow` before retrying."))]
+    ShallowRepository,
+
+    #[error("release trust requires a clean worktree; found `{path}`")]
+    #[diagnostic(
+        code(E267),
+        help("Commit, stash, or remove the listed tracked or untracked change before retrying.")
+    )]
+    DirtyWorktree { path: String },
 
     #[error("reference `{ref_name}` was not found")]
     #[diagnostic(code(E052), help("Check if reference or tag exists in local or remote Git refs."))]
@@ -39,6 +60,7 @@ pub enum VcsError {
     /// The `git` binary itself could not be run. `transparent` so callers
     /// can match the underlying [`CommandError`] through it.
     #[error(transparent)]
+    #[diagnostic(transparent)]
     Command(#[from] CommandError),
 }
 

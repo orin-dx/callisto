@@ -184,7 +184,7 @@
     },
     {
       "id": "CLI-ADD-04",
-      "criterion": "`callisto add` with no --package and a non-terminal stdin exits 1 with error `callisto::not_a_tty` whose help names `callisto add --package <name>:<severity>`.",
+      "criterion": "`callisto add` with no --package and a non-terminal stdin exits 1 with error `E214` whose help names `callisto add --package <name>:<severity>`.",
       "is_error_case": true
     },
     {
@@ -237,12 +237,12 @@
     },
     {
       "id": "CLI-INIT-10",
-      "criterion": "With a non-terminal stdin and no --yes, init exits 1 with `callisto::init_requires_yes` naming --yes and every other missing flag; with --yes it exits 1 with `callisto::init_missing_flags` naming each missing flag: --versioning always, --forge-repository when --artifact-target is given, and --product-package when --artifact-target is given and more than one package produces a binary.",
+      "criterion": "With a non-terminal stdin and no --yes, init exits 1 with `E240` naming --yes and every other missing flag; with --yes it exits 1 with `E241` naming each missing flag: --versioning always, --forge-repository when --artifact-target is given, and --product-package when --artifact-target is given and more than one package produces a binary.",
       "is_error_case": true
     },
     {
       "id": "CLI-INIT-11",
-      "criterion": "With --yes, omitting --artifact-target writes no `[release]` table; --artifact-target is repeatable and comma-separated, and --workflow with --no-workflow exits 1 with `callisto::init_workflow_flags_conflict` before writing.",
+      "criterion": "With --yes, omitting --artifact-target writes no `[release]` table; --artifact-target is repeatable and comma-separated, and --workflow with --no-workflow exits 1 with `E242` before writing.",
       "is_error_case": true
     },
     {
