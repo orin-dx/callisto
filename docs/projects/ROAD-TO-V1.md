@@ -37,9 +37,6 @@ Decisions (owner, 2026-09-25):
 ### 1. A release is complete and consistent
 - Cargo real-registry e2e next to the npm (Verdaccio) and PyPI (pypiserver) ones. There is no drop-in local cargo registry; pick one before writing it.
 
-### 2a. Versions are computed correctly
-- `resolve()` never inserts explicit provenance for `FIXED_GROUP`, `LINKED_GROUP`, `TAG_TEMPLATE` or `PRE_MAJOR_INFERENCE`, so diagnostics governed by those keys always render "(default)" even when explicitly configured (`crates/callisto-graph/src/config/resolve.rs`).
-
 ### 2b. `snapshot` resolves natively for every ecosystem
 - `plan_snapshot` (`crates/callisto-graph/src/commands/snapshot.rs`) parses the snapshot tag as SemVer for every package, so a workspace with a Pypi package fails to snapshot: the tag is not a valid PEP 440 version. `cargo metadata --locked`, `npm ci` and `pnpm install --frozen-lockfile` are covered end-to-end (`crates/callisto-cli/tests/native_resolution_e2e_tests.rs`); `uv lock --check` is covered only after `version`, not after `snapshot`.
 
