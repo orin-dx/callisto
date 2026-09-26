@@ -1,4 +1,3 @@
-use std::io;
 use std::process::ExitCode;
 
 use clap::CommandFactory;
@@ -6,10 +5,16 @@ use clap_complete::generate;
 
 use crate::cli::{Cli, CompletionsArgs, GlobalArgs};
 use crate::error::CliError;
+use crate::output::write_stdout;
 
 pub fn handle(args: CompletionsArgs, _global: &GlobalArgs) -> Result<ExitCode, CliError> {
     let mut cmd = Cli::command();
-    generate(args.shell, &mut cmd, "callisto", &mut io::stdout());
+    // Generated into a buffer, then written through the one fallible sink --
+    // `generate` writing straight to stdout would panic on a closed pipe
+    // (e.g. `callisto completions bash | head`) instead of exiting quietly.
+    let mut buf = Vec::new();
+    generate(args.shell, &mut cmd, "callisto", &mut buf);
+    write_stdout(&buf)?;
     Ok(ExitCode::SUCCESS)
 }
 

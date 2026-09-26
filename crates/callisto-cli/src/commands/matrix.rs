@@ -4,7 +4,7 @@ use callisto_graph::commands::MatrixOptions;
 
 use crate::cli::{GlobalArgs, MatrixArgs, OutputFormat};
 use crate::error::CliError;
-use crate::output::write_json;
+use crate::output::emit_report;
 use crate::render;
 use crate::runner::CliCommandRunner;
 use crate::workspace::load_workspace;
@@ -20,7 +20,7 @@ pub fn handle(args: MatrixArgs, global: &GlobalArgs) -> Result<ExitCode, CliErro
     let report = callisto_graph::commands::matrix(&ws, &opts)?;
 
     match global.format {
-        OutputFormat::Json => write_json(&mut std::io::stdout(), &report)?,
+        OutputFormat::Json => emit_report(&mut std::io::stdout(), &report, global.dry_run)?,
         OutputFormat::Text => render::render_matrix(&report, &mut std::io::stdout())?,
     }
 

@@ -13,7 +13,7 @@ use dialoguer::{Confirm, Input, Select};
 
 use crate::cli::{GlobalArgs, InitArgs, InitVersioning, OutputFormat};
 use crate::error::CliError;
-use crate::output::write_json;
+use crate::output::emit_report;
 use crate::render;
 use crate::runner::CliCommandRunner;
 use crate::tty;
@@ -216,7 +216,7 @@ pub fn run<R: CommandRunner>(
     };
     report.diagnostics.extend(diagnostics);
     if json {
-        write_json(&mut &mut *out, &report)?;
+        emit_report(&mut &mut *out, &report, global.dry_run)?;
     } else {
         render::render_init(&report, &mut &mut *out)?;
     }

@@ -72,6 +72,28 @@ pub enum Command {
     Schema(SchemaArgs),
 }
 
+impl Command {
+    /// This subcommand's name exactly as clap parses it, for the JSON error
+    /// envelope's `"command"` field -- computed from the parsed subcommand
+    /// rather than duplicated as a literal at each error call site.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Command::Add(_) => "add",
+            Command::Status(_) => "status",
+            Command::Matrix(_) => "matrix",
+            Command::Version(_) => "version",
+            Command::Pre(_) => "pre",
+            Command::Snapshot(_) => "snapshot",
+            Command::Init(_) => "init",
+            Command::ComposePrBody(_) => "compose-pr-body",
+            Command::Release(_) => "release",
+            Command::ReleasePr(_) => "release-pr",
+            Command::Completions(_) => "completions",
+            Command::Schema(_) => "schema",
+        }
+    }
+}
+
 /// Arguments for the `schema` command.
 #[derive(Args, Clone, Debug, Default)]
 pub struct SchemaArgs {
@@ -385,6 +407,67 @@ pub struct CompletionsArgs {
 mod tests {
     use super::*;
     use clap::CommandFactory;
+
+    /// `Command::name()` is hand-maintained (a `match` per variant), so it can
+    /// drift from what clap actually parses each subcommand as; this checks
+    /// every one of its outputs against clap's own registered subcommand
+    /// names.
+    #[test]
+    fn command_name_matches_every_clap_subcommand_name() {
+        let mut cmd = Cli::command();
+        cmd.build();
+        let clap_names: std::collections::BTreeSet<&str> = cmd.get_subcommands().map(|s| s.get_name()).collect();
+
+        let variants = [
+            Command::Add(AddArgs {
+                packages: vec![],
+                summary: None,
+            }),
+            Command::Status(StatusArgs {
+                strict: false,
+                check: false,
+            }),
+            Command::Matrix(MatrixArgs::default()),
+            Command::Version(VersionArgs {
+                refresh_lockfiles: false,
+                no_refresh_lockfiles: false,
+                strict: false,
+                allow_empty_changesets: false,
+                emit_decision: None,
+            }),
+            Command::Pre(PreArgs::Exit),
+            Command::Snapshot(SnapshotArgs {
+                tag: String::new(),
+                strict: false,
+            }),
+            Command::Init(InitArgs::default()),
+            Command::ComposePrBody(ComposePrBodyArgs {
+                existing_body: None,
+                branch: None,
+            }),
+            Command::Release(ReleaseCommandArgs {
+                command: None,
+                packages: vec![],
+                receipt: None,
+            }),
+            Command::ReleasePr(ReleasePrArgs::CommitPlan(ReleasePrCommitPlanArgs {
+                base_commit: String::new(),
+                message: String::new(),
+                out: None,
+            })),
+            Command::Completions(CompletionsArgs {
+                shell: clap_complete::Shell::Bash,
+            }),
+            Command::Schema(SchemaArgs::default()),
+        ];
+        for variant in &variants {
+            assert!(
+                clap_names.contains(variant.name()),
+                "Command::name() returned {:?}, which clap does not register as a subcommand name; got: {clap_names:?}",
+                variant.name()
+            );
+        }
+    }
 
     /// QW-5: --strict flag on status subcommand must have a meaningful help string.
     #[test]

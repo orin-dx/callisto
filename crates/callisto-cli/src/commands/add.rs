@@ -3,13 +3,12 @@ use std::process::ExitCode;
 
 use callisto_format::{Changeset, Entry};
 use callisto_graph::DependencyResolver;
-use callisto_model::{ApplyPermit, Severity, SCHEMA_VERSION};
+use callisto_model::{AddReport, ApplyPermit, Severity, SCHEMA_VERSION};
 use dialoguer::{Confirm, Input, MultiSelect};
-use serde_json::json;
 
 use crate::cli::{AddArgs, GlobalArgs, OutputFormat};
 use crate::error::CliError;
-use crate::output::{log_line, write_json};
+use crate::output::{emit_line, emit_report, log_line};
 use crate::runner::CliCommandRunner;
 use crate::tty;
 use crate::workspace::load_workspace;
@@ -51,7 +50,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         }
 
         // Step 1: Package Selection
-        println!("Which packages would you like to include in this changeset?");
+        emit_line("Which packages would you like to include in this changeset?")?;
         let selected_indices = MultiSelect::new().items(&all_packages).interact()?;
 
         if selected_indices.is_empty() {
@@ -61,8 +60,8 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         let selected_packages: Vec<String> = selected_indices.into_iter().map(|i| all_packages[i].clone()).collect();
 
         // Step 2: Major Bump Selection
-        println!("\nWhich of these packages should be a MAJOR bump?");
-        println!("(Select none if there are no breaking changes)");
+        emit_line("\nWhich of these packages should be a MAJOR bump?")?;
+        emit_line("(Select none if there are no breaking changes)")?;
         let major_indices = MultiSelect::new().items(&selected_packages).interact()?;
 
         let major_set: std::collections::HashSet<usize> = major_indices.into_iter().collect();
@@ -76,8 +75,8 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             .collect();
 
         let minor_indices = if !minor_candidates.is_empty() {
-            println!("\nWhich of these packages should be a MINOR bump?");
-            println!("(Any remaining packages will default to a PATCH bump)");
+            emit_line("\nWhich of these packages should be a MINOR bump?")?;
+            emit_line("(Any remaining packages will default to a PATCH bump)")?;
             MultiSelect::new().items(&minor_candidates).interact()?
         } else {
             Vec::new()
@@ -106,7 +105,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
 
         // Step 4: Summary Entry
         if summary.is_none() {
-            println!("\nPlease enter a summary for this change:");
+            emit_line("\nPlease enter a summary for this change:")?;
             let input_summary: String = Input::new()
                 .validate_with(|input: &String| -> Result<(), &str> {
                     if input.trim().is_empty() {
@@ -127,7 +126,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         };
 
         let preview_text = callisto_format::write_changeset(&temp_changeset)?;
-        println!("\n=== Changeset Preview ===\n{preview_text}");
+        emit_line(&format!("\n=== Changeset Preview ===\n{preview_text}"))?;
 
         let confirm = Confirm::new()
             .with_prompt("Is this your desired changeset?")
@@ -135,7 +134,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             .interact()?;
 
         if !confirm {
-            println!("Changeset creation cancelled.");
+            emit_line("Changeset creation cancelled.")?;
             return Ok(ExitCode::SUCCESS);
         }
     } else {
@@ -159,17 +158,18 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         // Compute what WOULD be written, but never touch disk.
         match global.format {
             OutputFormat::Json => {
-                let env = json!({
-                    "schemaVersion": SCHEMA_VERSION,
-                    "command": "add",
-                    "dryRun": true,
-                    "path": rel_path,
-                    "content": text
-                });
-                write_json(&mut std::io::stdout(), &env)?;
+                let report = AddReport {
+                    schema_version: SCHEMA_VERSION,
+                    path: rel_path,
+                    content: Some(text),
+                    diagnostics: vec![],
+                };
+                emit_report(&mut std::io::stdout(), &report, true)?;
             }
             OutputFormat::Text => {
-                println!("[DRY-RUN] Would add changeset: {rel_path} (no files written)\n\n{text}");
+                emit_line(&format!(
+                    "[DRY-RUN] Would add changeset: {rel_path} (no files written)\n\n{text}"
+                ))?;
             }
         }
         return Ok(ExitCode::SUCCESS);
@@ -181,15 +181,16 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
 
     match global.format {
         OutputFormat::Json => {
-            let env = json!({
-                "schemaVersion": SCHEMA_VERSION,
-                "command": "add",
-                "path": rel_path
-            });
-            write_json(&mut std::io::stdout(), &env)?;
+            let report = AddReport {
+                schema_version: SCHEMA_VERSION,
+                path: rel_path,
+                content: None,
+                diagnostics: vec![],
+            };
+            emit_report(&mut std::io::stdout(), &report, false)?;
         }
         OutputFormat::Text => {
-            log_line(global.format, &format!("Added changeset: {rel_path}"));
+            log_line(global.format, &format!("Added changeset: {rel_path}"))?;
         }
     }
 

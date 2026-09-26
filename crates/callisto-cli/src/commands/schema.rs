@@ -8,6 +8,7 @@ use schemars::schema_for;
 
 use crate::cli::{GlobalArgs, SchemaArgs};
 use crate::error::CliError;
+use crate::output::write_stdout;
 
 pub fn handle(args: SchemaArgs, _global: &GlobalArgs) -> Result<ExitCode, CliError> {
     let schema = match args.target_type.as_deref().unwrap_or("status") {
@@ -30,7 +31,7 @@ pub fn handle(args: SchemaArgs, _global: &GlobalArgs) -> Result<ExitCode, CliErr
     // A `schemars::Schema` is a plain JSON tree of strings, numbers, and nested maps;
     // it always serializes.
     let json = serde_json::to_string_pretty(&schema).expect("schema serializes");
-    println!("{json}");
+    write_stdout(format!("{json}\n").as_bytes())?;
     Ok(ExitCode::SUCCESS)
 }
 

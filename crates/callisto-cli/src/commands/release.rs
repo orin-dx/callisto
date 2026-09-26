@@ -23,7 +23,7 @@ use crate::cli::{
     ReleaseInspectArgs, ReleasePlanArgs,
 };
 use crate::error::CliError;
-use crate::output::{log_line, write_json};
+use crate::output::{emit_line, log_line, write_json};
 use crate::runner::CliCommandRunner;
 use crate::workspace::{load_workspace, select_inference};
 
@@ -104,8 +104,11 @@ fn release(
         OutputFormat::Text => {
             let released = capability.intent().decision.entries.len();
             match &receipt {
-                Some(path) => println!("Released {released} package(s); receipt saved to {}", path.display()),
-                None => println!("Released {released} package(s)"),
+                Some(path) => emit_line(&format!(
+                    "Released {released} package(s); receipt saved to {}",
+                    path.display()
+                ))?,
+                None => emit_line(&format!("Released {released} package(s)"))?,
             }
         }
     }
@@ -158,7 +161,7 @@ fn intent_envelope(intent: &ReleaseIntentV1, diagnostics: &[callisto_model::Diag
 fn print_nothing_to_release(global: &GlobalArgs) -> Result<(), CliError> {
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &serde_json::json!({ "nothingToRelease": true }))?,
-        OutputFormat::Text => println!("{NOTHING_TO_RELEASE}"),
+        OutputFormat::Text => emit_line(NOTHING_TO_RELEASE)?,
     }
     Ok(())
 }
@@ -319,7 +322,7 @@ fn artifact_manifest(args: ReleaseArtifactManifestArgs, global: &GlobalArgs) -> 
     })?;
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &manifest)?,
-        OutputFormat::Text => println!("Artifact manifest saved to {}", args.out.display()),
+        OutputFormat::Text => emit_line(&format!("Artifact manifest saved to {}", args.out.display()))?,
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -431,7 +434,7 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
                 log_line(
                     global.format,
                     "notice: --orchestration-revision and --artifact-repository ignored: the source has no [release] section; planning with zero artifact slots",
-                );
+                )?;
             }
             (
                 build_release_intent(
@@ -453,7 +456,11 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
     }
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &intent_envelope(&intent, &diagnostics))?,
-        OutputFormat::Text => println!("Wrote release intent {} to {}", intent.digest(), args.out.display()),
+        OutputFormat::Text => emit_line(&format!(
+            "Wrote release intent {} to {}",
+            intent.digest(),
+            args.out.display()
+        ))?,
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -462,10 +469,7 @@ fn inspect(args: ReleaseInspectArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
     let value = read_json_file(&args.input)?;
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &value)?,
-        OutputFormat::Text => println!(
-            "{}",
-            serde_json::to_string_pretty(&value).expect("JSON value serializes")
-        ),
+        OutputFormat::Text => emit_line(&serde_json::to_string_pretty(&value).expect("JSON value serializes"))?,
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -553,7 +557,7 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
     write_receipt(&args.receipt, &receipt, &permit)?;
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &receipt)?,
-        OutputFormat::Text => println!("Release receipt saved to {}", args.receipt.display()),
+        OutputFormat::Text => emit_line(&format!("Release receipt saved to {}", args.receipt.display()))?,
     }
     Ok(ExitCode::SUCCESS)
 }
