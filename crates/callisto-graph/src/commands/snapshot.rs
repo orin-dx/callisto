@@ -264,6 +264,53 @@ mod tests {
         }
     }
 
+    /// `core = "1.0.0"` covers the patch-bumped 1.0.1 but not the snapshot pre-release.
+    #[test]
+    fn plan_snapshot_rewrites_spec_that_only_the_snapshot_version_leaves_out_of_range() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        std::fs::create_dir_all(root.join("crates/core/src")).unwrap();
+        std::fs::write(
+            root.join("crates/core/Cargo.toml"),
+            "[package]\nname = \"core\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("crates/core/src/lib.rs"), "").unwrap();
+
+        std::fs::create_dir_all(root.join("crates/app/src")).unwrap();
+        std::fs::write(
+            root.join("crates/app/Cargo.toml"),
+            "[package]\nname = \"app\"\nversion = \"1.0.0\"\nedition = \"2021\"\n\n[dependencies]\ncore = { path = \"../core\", version = \"1.0.0\" }\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("crates/app/src/lib.rs"), "").unwrap();
+
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/core\", \"crates/app\"]\nresolver = \"2\"\n",
+        )
+        .unwrap();
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = callisto_fixtures::git::GitRunner;
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        let (plan, _report) = plan_snapshot(&ws, "canary").expect("plan_snapshot must succeed");
+
+        let app_core_rewrite = plan
+            .rewrites
+            .iter()
+            .find(|r| r.dependency.name() == "core")
+            .expect("the out-of-range `core = \"1.0.0\"` spec on app must be rewritten");
+
+        assert_ne!(
+            app_core_rewrite.from, app_core_rewrite.to,
+            "the spec must actually change, not be left at the stale `1.0.0` bare requirement"
+        );
+    }
+
     /// Plan_snapshot must never call
     /// pre_mutation_checks -- snapshot mode assigns every package the
     /// identical synthetic version, so there is no distinct-target
