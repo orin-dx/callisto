@@ -73,7 +73,7 @@
     },
     {
       "id": "VER-AGG-03",
-      "criterion": "An entry naming a package not in the workspace, or an invalid name, produces an unknown-package warning, and a changeset in which no entry resolves stays on disk unconsumed. An entry with severity `none` causes no bump and no changelog line, but its changeset is still consumed."
+      "criterion": "An entry naming a package not in the workspace, or an invalid name, produces an unknown-package warning, and a changeset with any such unresolved entry stays on disk unconsumed, even when its other entries resolve. An entry with severity `none` causes no bump and no changelog line, but its changeset is still consumed."
     },
     {
       "id": "VER-AGG-04",
