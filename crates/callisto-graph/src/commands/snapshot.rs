@@ -13,15 +13,8 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
     let sha = ws.git_access().head_sha()?;
     let sha_short = sha.short();
 
-    // Every package converges on the identical `0.0.0-<tag>-<sha>` tag, not a per-package prerelease.
+    // Label for the report only; each package's actual version is built in its own grammar below.
     let snapshot_tag = format!("0.0.0-{tag}-{sha_short}");
-    let snapshot_ver =
-        callisto_model::Version::parse(&snapshot_tag, callisto_model::VersionGrammar::SemVer).map_err(|_err| {
-            GraphError::Bump(callisto_model::format::BumpError::NotSemVer {
-                raw: snapshot_tag.clone(),
-                grammar: callisto_model::VersionGrammar::SemVer,
-            })
-        })?;
     let base_versions = ws.base_versions()?;
     // No severity cascade to seed here; `ws.tags()` only checks the propagate-failure invariant below.
     ws.tags()?;
@@ -38,6 +31,8 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
                 field: "version",
             })
         })?;
+        let grammar = pkg.version_grammar()?;
+        let snapshot_ver = snapshot_version_for(grammar, tag, sha_short)?;
         snapshot_versions.insert(pkg.id.clone(), snapshot_ver.clone());
 
         let mut writes = Vec::new();
@@ -112,13 +107,7 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
                 continue;
             }
 
-            let eco = edge.from.ecosystem().unwrap_or_else(|| {
-                if edge.from_manifest.to_string_lossy().ends_with("Cargo.toml") {
-                    callisto_model::Ecosystem::Cargo
-                } else {
-                    callisto_model::Ecosystem::Npm
-                }
-            });
+            let eco = crate::cascade::manifest_ecosystem(edge.from.ecosystem(), &edge.from_manifest);
 
             match crate::cascade::rewrite_spec(&edge.spec, snap_to, eco, &ws.config.cascade) {
                 crate::cascade::RewriteOutcome::Rewritten(to_spec) => {
@@ -181,6 +170,30 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
     };
 
     Ok((plan, report))
+}
+
+/// Builds a package's snapshot version in its own grammar: `0.0.0-<tag>-<sha>` for SemVer,
+/// the equivalent PEP 440 dev/local form `0.0.0.dev0+<tag>.<sha>` for Pep440.
+fn snapshot_version_for(
+    grammar: callisto_model::VersionGrammar,
+    tag: &str,
+    sha_short: &str,
+) -> Result<callisto_model::Version, GraphError> {
+    let raw = match grammar {
+        callisto_model::VersionGrammar::SemVer => format!("0.0.0-{tag}-{sha_short}"),
+        callisto_model::VersionGrammar::Pep440 => format!("0.0.0.dev0+{tag}.{sha_short}"),
+        _ => {
+            return Err(GraphError::Bump(
+                callisto_model::format::BumpError::UnsupportedGrammar { grammar },
+            ));
+        }
+    };
+    callisto_model::Version::parse(&raw, grammar).map_err(|err| {
+        GraphError::Bump(callisto_model::format::BumpError::ComputedVersionInvalid {
+            raw,
+            message: err.message,
+        })
+    })
 }
 
 #[cfg(test)]
@@ -346,6 +359,67 @@ mod tests {
         assert_ne!(
             app_core_rewrite.from, app_core_rewrite.to,
             "the spec must actually change, not be left at the stale `1.0.0` bare requirement"
+        );
+    }
+
+    /// A Pypi package's snapshot version must be built under PEP 440, not SemVer: the tag's
+    /// SemVer form (`0.0.0-canary-<sha>`) is not a valid PEP 440 version, so parsing it under
+    /// `VersionGrammar::SemVer` for every package (the prior behavior) fails the whole snapshot
+    /// as soon as a Pypi package is present.
+    #[test]
+    fn plan_snapshot_builds_pep440_version_for_a_pypi_package() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+
+        std::fs::write(
+            root.join("pyproject.toml"),
+            "[tool.uv.workspace]\nmembers = [\"py/core\", \"py/app\"]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("py/core")).unwrap();
+        std::fs::write(
+            root.join("py/core/pyproject.toml"),
+            "[project]\nname = \"core-py\"\nversion = \"1.0.0\"\nrequires-python = \">=3.9\"\ndependencies = []\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("py/app")).unwrap();
+        std::fs::write(
+            root.join("py/app/pyproject.toml"),
+            "[project]\nname = \"app-py\"\nversion = \"1.0.0\"\nrequires-python = \">=3.9\"\n\
+             dependencies = [\"core-py>=1.0.0,<2.0.0\"]\n\n\
+             [tool.uv.sources]\ncore-py = { workspace = true }\n",
+        )
+        .unwrap();
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = callisto_fixtures::git::GitRunner;
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        let (plan, report) = plan_snapshot(&ws, "canary").expect("plan_snapshot must succeed for a Pypi package");
+
+        for bump in &report.bumps {
+            assert!(
+                bump.to.grammar() == callisto_model::VersionGrammar::Pep440,
+                "package {:?}'s snapshot version must parse as PEP 440, got {}",
+                bump.package,
+                bump.to.render()
+            );
+            assert!(
+                bump.to.render().starts_with("0.0.0.dev0+canary."),
+                "expected the PEP 440 dev/local snapshot form, got {}",
+                bump.to.render()
+            );
+        }
+
+        let dep_rewrite = plan
+            .rewrites
+            .iter()
+            .find(|r| r.dependency.name() == "core-py")
+            .expect("the out-of-range `core-py>=1.0.0,<2.0.0` spec on app-py must be rewritten");
+        assert_ne!(
+            dep_rewrite.from, dep_rewrite.to,
+            "the PEP 440 spec must actually change to cover the snapshot's dev/local version"
         );
     }
 
