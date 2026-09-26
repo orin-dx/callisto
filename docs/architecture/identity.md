@@ -17,6 +17,7 @@ How the workspace names packages, why bare names match across ecosystems, and wh
 
 - `parse` treats text before the first `:` or `/` as a prefix only when `Ecosystem::from_prefix` knows it, so `@scope/foo` stays bare.
 - `display_name` renders a prefixed id as `ecosystem/name`.
+- `PackageId` is display and selector only; `Package::key()` (the package's directory) is the stable identity, and default tags use the native `name()` (ADR 11).
 - `matches` is a weak "could be the same package" relation, not equality:
   - Different names never match.
   - A bare id matches any id with the same name, in either direction: bare is an ecosystem wildcard.

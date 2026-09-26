@@ -74,6 +74,13 @@ pub enum GraphError {
     #[diagnostic(code(E100), help("Ensure package IDs are unique across workspace manifest paths."))]
     DuplicatePackage { id: PackageId, paths: Vec<PathBuf> },
 
+    #[error("packages {} share the default tag template `{template}`", .packages.iter().map(|p| p.display_name()).collect::<Vec<_>>().join(", "))]
+    #[diagnostic(
+        code(E101),
+        help("Give all but one of them its own `tag-template` in a `[[package]]` rule, e.g. `match = \"npm/foo\"` with `tag-template = \"npm-foo@{{version}}\"`.")
+    )]
+    SharedDefaultTagTemplate { template: String, packages: Vec<PackageId> },
+
     #[error("package `{id}` was not found in the workspace")]
     #[diagnostic(
         code(E102),

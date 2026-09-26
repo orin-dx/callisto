@@ -1,11 +1,32 @@
 use std::cmp::Ordering;
 use std::fmt;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{Ecosystem, ModelError};
+
+/// A package's stable internal key: its workspace-relative directory. Promotion to `eco/name` never changes it.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct PackageKey(PathBuf);
+
+impl PackageKey {
+    pub fn new(dir: impl Into<PathBuf>) -> Self {
+        PackageKey(dir.into())
+    }
+
+    pub fn as_path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl fmt::Display for PackageKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0.display())
+    }
+}
 
 /// Package identity across ecosystems.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, JsonSchema)]

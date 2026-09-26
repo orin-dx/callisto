@@ -144,10 +144,5 @@ fn workspace_napi_crates<R: CommandRunner, D: DependencyResolver>(
 }
 
 fn package_dir_rel(package: &callisto_model::Package) -> String {
-    package
-        .manifests
-        .first()
-        .and_then(|manifest| manifest.path.parent())
-        .map(|dir| dir.to_string_lossy().to_string())
-        .unwrap_or_default()
+    package.key().map(|key| key.to_string()).unwrap_or_default()
 }

@@ -162,6 +162,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E209 | Failed to parse manifest `<path>`: <message> | Fix the manifest's syntax; a workspace member's manifest is never skipped. |
 | E210 | A `.changeset/*.md` file failed to parse: `<path>`: <source> | Fix the changeset file's frontmatter, or delete it and write a new one. |
 | E100 | Package ID is defined at more than one manifest path | Ensure package IDs are unique across workspace manifest paths. |
+| E101 | Packages with the same native name in different ecosystems would share the default `{name}@{version}` tags | Give all but one of them its own `tag-template` in a `[[package]]` rule, e.g. `match = "npm/foo"` with `tag-template = "npm-foo@{version}"`. |
 | E102 | Named package was not found in the workspace | Check the package's name and ecosystem, or that its directory has a manifest callisto discovers. |
 | E103 | Bare package name is ambiguous; more than one candidate matches | Qualify the name with its ecosystem, e.g. `cargo/pkg` or `cargo:pkg`. |
 | E104 | Dependency cycle detected among workspace packages | Refactor workspace dependencies to break the cyclic dependency chain. |
