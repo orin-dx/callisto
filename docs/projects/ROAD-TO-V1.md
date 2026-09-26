@@ -6,7 +6,6 @@ Open work only. Verified against the code on 2026-09-25; git history holds the s
 
 - Build or drop a workspace-wide check that no `map_err` discards its source error. No gate script or CI wiring exists; `map_err_ignore = "deny"` in `Cargo.toml` is the only partial guard.
 - Derive the default tag template from fixed or independent mode, or drop the idea. Today `tag-template` is `None` unless set (`crates/callisto-graph/src/config/resolve.rs`).
-- Crate consolidation and the MIT/FSL split.
 - Release-commit provenance: `release plan --from-release-commit` accepts any commit whose decision file, consumed changeset and manifest diff agree; the decision digest is unkeyed. Decide whether that is enough.
 - Owner items pending decision: the rust-cache pin in orin-dx/actions, the bot-PR check policy, token rotation.
 
@@ -33,6 +32,7 @@ Decisions (owner, 2026-09-25):
 - An artifact whose owner is selected but whose product is not emits a warning.
 - A dependent released in the same run has its spec on a bumped internal dependency raised to the new version.
 - `version` refreshes lockfiles by default; `--no-refresh-lockfiles` opts out.
+- Four published crates, after PR 6 (owner, 2026-09-25). See PR 7.
 
 ### 1. A release is complete and consistent
 - Cargo real-registry e2e next to the npm (Verdaccio) and PyPI (pypiserver) ones. There is no drop-in local cargo registry; pick one before writing it.
@@ -83,6 +83,15 @@ Decisions (owner, 2026-09-25):
 - `init --dry-run` omits the workflow and README from its file list.
 - `init` without `origin` per the decision above.
 - SECURITY.md hardcodes the current version.
+
+### 7. Four published crates
+One PR that only moves code; no behavior changes. After PR 6 so no fix PR rebases onto new paths.
+- `callisto-model` (MIT) absorbs `callisto-format` and `callisto-vcs`. It keeps its name, history and tags; `callisto-core` is taken on crates.io by an unrelated project.
+- `callisto-graph` absorbs `callisto-conventional` and `callisto-changelog` as modules; graph is their only user.
+- `callisto-manifests` and `callisto-cli` stay. `callisto-fixtures` stays unpublished.
+- Retired crates get a final release whose README names the new home.
+- Update the AGENTS.md crate table, the `workspace` fixed group, tag templates, coverage paths and the license check (MIT is `callisto-model` only). Drop the stray `LICENSE-APACHE` files; the license is MIT.
+- Measure `cargo build --timings` and a one-file incremental rebuild before and after.
 
 ## Design
 
