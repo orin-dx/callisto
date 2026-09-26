@@ -36,6 +36,22 @@
 //! repository URL (`UnsupportedConfiguration`) -- fixed to be conditional;
 //! see the `fix(publish)` commit on this branch and the `pypi_publish_argv_*`
 //! `--skip-existing` tests in `registry_argv.rs`.
+//!
+//! Cargo drives `registry_argv::cargo_publish_argv` directly against a real
+//! local `cargo-http-registry`, for a third, different reason than PyPI's:
+//! `cargo publish --registry <key>` and `cargo info --registry <key>` never
+//! carry a URL at all, only the registry's *name* -- the URL lives entirely
+//! in `.cargo/config.toml`, which callisto never writes. So the one
+//! `PreparedRegistryBinding` requirement that would block this (an `https`
+//! callisto-side binding) never applies: a `[registries]` entry with a
+//! `kind` and no `url` leaves `endpoint` at `None` and the key still reaches
+//! `cargo` as `--registry local-e2e`. Driving `cargo_publish_argv` directly
+//! here (rather than through `callisto release execute`) keeps this test
+//! independent of the git-remote scheme check (`https`/`ssh` only), which is
+//! an orthogonal gate on the *release commit's* origin, not on the registry.
+//! `cargo-http-registry` serves a git-protocol index (not sparse), so
+//! `.cargo/config.toml` also needs `net.git-fetch-with-cli = true` --
+//! libgit2's HTTP client rejects the server's dumb-protocol content type.
 
 #[path = "common/release_harness.rs"]
 mod release_harness;
@@ -46,7 +62,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use callisto_graph::commands::registry_argv::{pypi_publish_argv, Argv};
+use callisto_graph::commands::registry_argv::{cargo_publish_argv, pypi_publish_argv, Argv};
 use callisto_model::{Version, VersionGrammar};
 use release_harness::*;
 
@@ -521,5 +537,117 @@ fn pypi_publish_against_a_real_pypiserver_registry_is_retrievable_afterward() {
         simple_index.contains(&format!("{PYPI_PACKAGE}-{PYPI_VERSION}"))
             || simple_index.contains(&format!("{}-{PYPI_VERSION}", PYPI_PACKAGE.replace('-', "_"))),
         "published version must be retrievable from the registry's own simple index: {simple_index}"
+    );
+}
+
+// -------------------------------------------------------------------- cargo
+
+const CARGO_PACKAGE: &str = "callisto-e2e-cargo-probe";
+const CARGO_VERSION: &str = "0.1.0";
+
+/// A minimal real crate: just enough for `cargo publish` to package, verify
+/// and upload it for real.
+fn cargo_package_fixture(root: &Path, package_name: &str, version: &str) {
+    fs::write(
+        root.join("Cargo.toml"),
+        format!(
+            "[package]\nname = \"{package_name}\"\nversion = \"{version}\"\nedition = \"2021\"\n\
+             description = \"e2e probe\"\nlicense = \"MIT\"\n"
+        ),
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::write(root.join("src/lib.rs"), "pub fn probe() {}\n").unwrap();
+}
+
+/// Starts a real local `cargo-http-registry` on an ephemeral loopback port,
+/// serving `registry_root` as its git-protocol index and package store; no
+/// authentication is enforced (any registry token is accepted).
+fn start_cargo_http_registry(external: &Path, registry_root: &Path) -> (ServerGuard, u16) {
+    fs::create_dir_all(registry_root).unwrap();
+    let port = free_loopback_port();
+    let mut command = Command::new("cargo-http-registry");
+    command.args(["-a", &format!("127.0.0.1:{port}"), registry_root.to_str().unwrap()]);
+    let log_path = log_to_file(&mut command, external, "cargo-http-registry.log");
+    let child = command.spawn().expect("cargo-http-registry must be spawnable");
+    let mut guard = ServerGuard { child, log_path };
+    wait_for_port(&mut guard, port, Duration::from_secs(20));
+    (guard, port)
+}
+
+/// A real local `cargo-http-registry`, `registry_argv::cargo_publish_argv`'s
+/// exact production argv (`--manifest-path`, `--locked`, `--registry`), and
+/// an assertion against the registry's own download endpoint afterward --
+/// not just `cargo publish`'s exit code.
+#[test]
+fn cargo_publish_against_a_real_cargo_http_registry_is_retrievable_afterward() {
+    if find_on_path("cargo-http-registry").is_none() {
+        eprintln!("SKIPPED cargo real-registry e2e: `cargo-http-registry` is not installed");
+        return;
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    cargo_package_fixture(root, CARGO_PACKAGE, CARGO_VERSION);
+
+    let external = tempfile::tempdir().unwrap();
+    let (_registry_guard, port) = start_cargo_http_registry(external.path(), &external.path().join("registry"));
+
+    // No callisto-side registry binding: the key resolves purely through
+    // `.cargo/config.toml`, exactly the loophole this file's module doc
+    // explains. `net.git-fetch-with-cli`: this server's index is dumb-HTTP
+    // git, which libgit2's own client refuses (content-type mismatch).
+    fs::create_dir_all(root.join(".cargo")).unwrap();
+    fs::write(
+        root.join(".cargo/config.toml"),
+        format!(
+            "[registries.local-e2e]\nindex = \"http://127.0.0.1:{port}/git\"\n\n[net]\ngit-fetch-with-cli = true\n"
+        ),
+    )
+    .unwrap();
+
+    let version = Version::parse(CARGO_VERSION, VersionGrammar::SemVer).unwrap();
+    let argv = cargo_publish_argv(root, Path::new("."), CARGO_PACKAGE, &version, Some("local-e2e")).unwrap();
+    assert!(
+        argv.args.contains(&"--registry".to_string()) && argv.args.contains(&"local-e2e".to_string()),
+        "cargo must be routed via --registry <key>, not a URL: {:?}",
+        argv.args
+    );
+
+    // A fresh, scratch `CARGO_HOME`: the registry needs no real credential,
+    // but `cargo publish` still refuses with none configured at all.
+    let cargo_home = external.path().join("cargo-home");
+    fs::create_dir_all(&cargo_home).unwrap();
+    let published = run_argv(
+        &argv,
+        &[
+            ("CARGO_HOME", cargo_home.to_str().unwrap()),
+            ("CARGO_REGISTRIES_LOCAL_E2E_TOKEN", "callisto-e2e-test-token"),
+        ],
+    );
+    assert!(
+        published.status.success(),
+        "real-registry cargo publish failed: {}",
+        String::from_utf8_lossy(&published.stderr)
+    );
+
+    // Independent verification against the registry itself: the published
+    // crate must be downloadable from the registry's own API, not just
+    // inferred from `cargo publish`'s exit code.
+    let downloaded = Command::new("curl")
+        .args([
+            "-sSL",
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{http_code}",
+            &format!("http://127.0.0.1:{port}/api/v1/crates/{CARGO_PACKAGE}/{CARGO_VERSION}/download"),
+        ])
+        .output()
+        .expect("curl must be runnable");
+    assert_eq!(
+        String::from_utf8_lossy(&downloaded.stdout),
+        "200",
+        "published crate must be downloadable from the registry's own API"
     );
 }

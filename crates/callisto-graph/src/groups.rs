@@ -95,7 +95,7 @@ pub fn versioned_bump(
     // Compares against the pinned anchor in pre mode, not live on-disk, which may lead a different pre-release cycle.
     let (bumped_from, next) = match pre {
         Some(pre) if pre.mode == callisto_model::format::PreMode::Pre => {
-            let pinned_base = pre.initial_versions.get(crate::pre_json_key(package)).unwrap_or(base);
+            let pinned_base = crate::pre_initial_version(pre, package).unwrap_or(base);
             let next = versioning
                 .bump_prerelease(pinned_base, severity, &pre.tag, base)
                 .map_err(GraphError::Bump)?;

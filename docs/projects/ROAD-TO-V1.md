@@ -34,20 +34,6 @@ Decisions (owner, 2026-09-25):
 - `version` refreshes lockfiles by default; `--no-refresh-lockfiles` opts out.
 - Four published crates: `callisto-model` absorbed `callisto-format` and `callisto-vcs`; `callisto-graph` absorbed `callisto-conventional` and `callisto-changelog` (owner, 2026-09-25).
 
-### 1. A release is complete and consistent
-- Cargo real-registry e2e next to the npm (Verdaccio) and PyPI (pypiserver) ones. There is no drop-in local cargo registry; pick one before writing it.
-
-### 2a. Versions are computed correctly
-- `resolve()` never inserts explicit provenance for `FIXED_GROUP`, `LINKED_GROUP`, `TAG_TEMPLATE` or `PRE_MAJOR_INFERENCE`, so diagnostics governed by those keys always render "(default)" even when explicitly configured (`crates/callisto-graph/src/config/resolve.rs`).
-
-### 2b. `snapshot` resolves natively for every ecosystem
-- `plan_snapshot` (`crates/callisto-graph/src/commands/snapshot.rs`) parses the snapshot tag as SemVer for every package, so a workspace with a Pypi package fails to snapshot: the tag is not a valid PEP 440 version. `cargo metadata --locked`, `npm ci` and `pnpm install --frozen-lockfile` are covered end-to-end (`crates/callisto-cli/tests/native_resolution_e2e_tests.rs`); `uv lock --check` is covered only after `version`, not after `snapshot`.
-
-### 5. Every failure has a code and help; one output contract
-- Split the remaining generic `VcsError::Git` parse-failure call sites into typed variants.
-- One JSON envelope with `command` for every report and error. Done for `add`, `status`, `matrix`, `version`, `pre`, `snapshot`, `init` and `compose-pr-body` (`output::emit_report`) and for every error (`format_error_json`); `release` and `release-pr`'s ad hoc envelopes are not yet migrated.
-- `commands/init.rs::io_err` is pathless, unlike `apply.rs`'s path-carrying `GraphError::ApplyIo` (E122); an init I/O failure doesn't name the file involved.
-
 ### 7. Retired crates
 - Publish a final release of `callisto-format`, `callisto-vcs`, `callisto-conventional` and `callisto-changelog` whose README names the new home (`callisto-model` or `callisto-graph`).
 

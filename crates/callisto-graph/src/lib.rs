@@ -189,22 +189,58 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
         Ok(versions)
     }
 
-    pub fn pre_json_key<'b>(&self, id: &'b PackageId) -> Result<&'b str, GraphError> {
-        Ok(pre_json_key(id))
-    }
-
     pub fn initial_versions(&self) -> Result<Vec<(String, Version)>, GraphError> {
         let base = self.base_versions()?;
-        Ok(base
-            .into_iter()
-            .map(|(id, v)| (pre_json_key(&id).to_string(), v))
-            .collect())
+        Ok(base.into_iter().map(|(id, v)| (pre_json_key(&id), v)).collect())
     }
 }
 
-/// The canonical `.changeset/pre.json` `initialVersions` key for `id`: the bare package name, unqualified by
-/// ecosystem prefix. Every reader and writer of `initialVersions` must share this definition -- keying by
-/// `display_name()` instead would silently miss every entry for a `PackageId::Prefixed` id.
-pub fn pre_json_key(id: &PackageId) -> &str {
-    id.name()
+/// The `pre.json` `initialVersions` key for `id`: its display id, so `cargo/foo` and `npm/foo` never share an entry.
+pub fn pre_json_key(id: &PackageId) -> String {
+    id.display_name()
+}
+
+/// `id`'s pinned pre-release baseline, also accepting the bare-name key older `pre.json` files used.
+pub fn pre_initial_version<'a>(pre: &'a callisto_model::format::PreState, id: &PackageId) -> Option<&'a Version> {
+    pre.initial_versions
+        .get(&pre_json_key(id))
+        .or_else(|| pre.initial_versions.get(id.name()))
+}
+
+#[cfg(test)]
+mod pre_json_key_tests {
+    use super::*;
+    use callisto_model::format::PreState;
+    use callisto_model::Ecosystem;
+
+    fn prefixed(ecosystem: Ecosystem, name: &str) -> PackageId {
+        PackageId::Prefixed {
+            ecosystem,
+            name: name.to_string(),
+        }
+    }
+
+    #[test]
+    fn same_named_packages_in_two_ecosystems_keep_separate_baselines() {
+        let cargo = prefixed(Ecosystem::Cargo, "foo");
+        let npm = prefixed(Ecosystem::Npm, "foo");
+        let pre = PreState::entering(
+            "beta",
+            [
+                (pre_json_key(&cargo), Version::semver(1, 0, 0)),
+                (pre_json_key(&npm), Version::semver(2, 0, 0)),
+            ],
+        );
+        assert_eq!(pre_initial_version(&pre, &cargo), Some(&Version::semver(1, 0, 0)));
+        assert_eq!(pre_initial_version(&pre, &npm), Some(&Version::semver(2, 0, 0)));
+    }
+
+    #[test]
+    fn a_bare_name_key_from_an_older_pre_json_still_resolves() {
+        let pre = PreState::entering("beta", [("foo".to_string(), Version::semver(1, 0, 0))]);
+        assert_eq!(
+            pre_initial_version(&pre, &prefixed(Ecosystem::Cargo, "foo")),
+            Some(&Version::semver(1, 0, 0))
+        );
+    }
 }

@@ -641,6 +641,13 @@ pub enum GraphError {
     )]
     InitAlreadyInitialized { path: PathBuf },
 
+    #[error("failed to write `{}`: {message}", .path.display())]
+    #[diagnostic(
+        code(E278),
+        help("Check file permissions and that the path still exists, then re-run `callisto init`.")
+    )]
+    InitIo { path: PathBuf, message: String },
+
     #[error("`{}` is not a Git repository", .root.display())]
     #[diagnostic(
         code(E191),
