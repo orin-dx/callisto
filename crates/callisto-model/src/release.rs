@@ -1619,9 +1619,15 @@ pub struct ReleaseIntentV1 {
     digest: IntentDigest,
 }
 
+/// The on-the-wire shape of [`ReleaseIntentV1`], before its invariants are checked.
+///
+/// Deserializing this (rather than `ReleaseIntentV1` itself) then calling
+/// [`ReleaseIntentV1::from_wire`] keeps a caller's own typed [`ReleaseIntentError`]
+/// intact -- deserializing straight into `ReleaseIntentV1` still validates, but folds a
+/// validation failure into a generic `serde` string error, losing the code.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ReleaseIntentV1Wire {
+pub struct ReleaseIntentV1Wire {
     schema_version: u8,
     decision: ReleaseDecisionV1,
     snapshot: ReleaseInputSnapshotV1,
@@ -1631,21 +1637,32 @@ struct ReleaseIntentV1Wire {
     digest: IntentDigest,
 }
 
-impl<'de> Deserialize<'de> for ReleaseIntentV1 {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = ReleaseIntentV1Wire::deserialize(deserializer)?;
-        check_schema_version::<D::Error>(wire.schema_version, Self::SCHEMA_VERSION, "release intent")?;
-        check_decision_schema_version::<D::Error>(wire.decision.schema_version, "release intent")?;
-        check_schema_version::<D::Error>(
-            wire.snapshot.schema_version,
-            ReleaseInputSnapshotV1::SCHEMA_VERSION,
-            "release intent",
-        )?;
+impl ReleaseIntentV1 {
+    /// Validates an already-parsed wire value into a well-formed intent.
+    pub fn from_wire(wire: ReleaseIntentV1Wire) -> Result<Self, ReleaseIntentError> {
+        if wire.schema_version != Self::SCHEMA_VERSION {
+            return Err(ReleaseIntentError::UnsupportedSchemaVersion {
+                type_name: "release intent",
+                found: wire.schema_version,
+                expected: Self::SCHEMA_VERSION,
+            });
+        }
+        if !ReleaseDecisionV1::READABLE_SCHEMA_VERSIONS.contains(&wire.decision.schema_version) {
+            return Err(ReleaseIntentError::UnsupportedSchemaVersion {
+                type_name: "release intent decision",
+                found: wire.decision.schema_version,
+                expected: *ReleaseDecisionV1::READABLE_SCHEMA_VERSIONS.last().expect("nonempty"),
+            });
+        }
+        if wire.snapshot.schema_version != ReleaseInputSnapshotV1::SCHEMA_VERSION {
+            return Err(ReleaseIntentError::UnsupportedSchemaVersion {
+                type_name: "release intent snapshot",
+                found: wire.snapshot.schema_version,
+                expected: ReleaseInputSnapshotV1::SCHEMA_VERSION,
+            });
+        }
         if wire.snapshot.packages.windows(2).any(|pair| pair[0] >= pair[1]) {
-            return Err(serde::de::Error::custom("release input packages are not canonical"));
+            return Err(ReleaseIntentError::PackagesNotCanonical);
         }
         let intent = Self::new(
             wire.decision,
@@ -1653,14 +1670,21 @@ impl<'de> Deserialize<'de> for ReleaseIntentV1 {
             wire.trust_profile,
             wire.operations,
             wire.artifact_slots,
-        )
-        .map_err(serde::de::Error::custom)?;
+        )?;
         if intent.digest != wire.digest {
-            return Err(serde::de::Error::custom(
-                "release intent digest does not match canonical content",
-            ));
+            return Err(ReleaseIntentError::DigestMismatch);
         }
         Ok(intent)
+    }
+}
+
+impl<'de> Deserialize<'de> for ReleaseIntentV1 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = ReleaseIntentV1Wire::deserialize(deserializer)?;
+        Self::from_wire(wire).map_err(serde::de::Error::custom)
     }
 }
 
@@ -1903,18 +1927,31 @@ fn stable_kahn_order(
 }
 
 /// Validation failure for a durable intent DAG.
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error, miette::Diagnostic)]
 #[non_exhaustive]
 pub enum ReleaseIntentError {
     #[error("durable release intents support only clean Git commit trust in v1")]
+    #[diagnostic(
+        code(E284),
+        help("build the intent from a clean Git commit source with the GitCommit trust profile")
+    )]
     UnsupportedTrustProfile,
     #[error("release operation `{id:?}` is not authorized by the embedded release decision")]
+    #[diagnostic(
+        code(E285),
+        help("only include operations for packages present in the release decision")
+    )]
     OperationOutsideDecision { id: Box<ReleaseOperationId> },
     #[error("release intent repeats an artifact slot")]
+    #[diagnostic(code(E286), help("list each artifact slot at most once"))]
     DuplicateArtifactSlot,
     #[error(
         "asset `{asset}` is built by `{package}@{version}`, which is not in this release; \
          release it too, or put it in the product's [[fixed-group]]"
+    )]
+    #[diagnostic(
+        code(E287),
+        help("release the asset's package too, or put it in the product's [[fixed-group]]")
     )]
     ArtifactSlotOutsideDecision {
         package: String,
@@ -1922,22 +1959,53 @@ pub enum ReleaseIntentError {
         asset: String,
     },
     #[error("artifact upload operations must exactly match the declared artifact slots")]
+    #[diagnostic(
+        code(E288),
+        help("make each artifact slot correspond to exactly one artifact upload operation")
+    )]
     MismatchedArtifactUploadRoster,
     #[error("release operations are not in canonical order")]
+    #[diagnostic(code(E289), help("re-derive the intent instead of hand-editing operation order"))]
     NonCanonicalOperationOrder,
     #[error("duplicate release operation `{id:?}`")]
+    #[diagnostic(code(E290), help("list each release operation at most once"))]
     DuplicateOperation { id: Box<ReleaseOperationId> },
     #[error("prerequisites for `{id:?}` are not in canonical order")]
+    #[diagnostic(code(E291), help("re-derive the intent instead of hand-editing prerequisite order"))]
     NonCanonicalPrerequisiteOrder { id: Box<ReleaseOperationId> },
     #[error("release operation `{id:?}` requires unknown operation `{prerequisite:?}`")]
+    #[diagnostic(
+        code(E292),
+        help("only reference prerequisites that are also in the intent's operation list")
+    )]
     UnknownPrerequisite {
         id: Box<ReleaseOperationId>,
         prerequisite: Box<ReleaseOperationId>,
     },
     #[error("release operation `{id:?}` requires itself")]
+    #[diagnostic(code(E293), help("remove the operation from its own prerequisite list"))]
     SelfPrerequisite { id: Box<ReleaseOperationId> },
     #[error("release operation DAG contains a cycle at `{id:?}`")]
+    #[diagnostic(code(E294), help("break the prerequisite cycle among release operations"))]
     Cycle { id: Box<ReleaseOperationId> },
+    #[error("unsupported {type_name} schema version {found}; this build reads version {expected}")]
+    #[diagnostic(
+        code(E295),
+        help(
+            "re-derive this file with the current build; a release-intent wire shape is never reused across versions"
+        )
+    )]
+    UnsupportedSchemaVersion {
+        type_name: &'static str,
+        found: u8,
+        expected: u8,
+    },
+    #[error("release input packages are not canonical")]
+    #[diagnostic(code(E296), help("re-derive the intent instead of hand-editing package order"))]
+    PackagesNotCanonical,
+    #[error("release intent digest does not match canonical content")]
+    #[diagnostic(code(E297), help("re-derive the intent instead of hand-editing its fields"))]
+    DigestMismatch,
 }
 
 /// A closed, credential-safe reason why an operation was blocked.

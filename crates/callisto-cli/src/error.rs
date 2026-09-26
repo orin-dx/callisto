@@ -91,6 +91,10 @@ pub enum CliError {
 
     #[error(transparent)]
     #[diagnostic(transparent)]
+    ReleaseIntent(#[from] callisto_model::ReleaseIntentError),
+
+    #[error(transparent)]
+    #[diagnostic(transparent)]
     Model(#[from] callisto_model::ModelError),
 
     #[error("interactive prompt failed: {0}")]

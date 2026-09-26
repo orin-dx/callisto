@@ -15,7 +15,8 @@ use callisto_graph::commands::{
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_model::{
     ApplyPermit, ArtifactDigest, ArtifactManifestEntryV1, ArtifactManifestV1, ExecutionTrustProfileV1,
-    GitHubArtifactAttestationV1, PackageId, ReleaseIntentV1, ReleasePackageId, ReleaseReceiptV1, ReleaseRunEnvelopeV1,
+    GitHubArtifactAttestationV1, PackageId, ReleaseIntentV1, ReleaseIntentV1Wire, ReleasePackageId, ReleaseReceiptV1,
+    ReleaseRunEnvelopeV1,
 };
 
 use crate::cli::{
@@ -586,10 +587,11 @@ fn read_intent(path: &std::path::Path) -> Result<ReleaseIntentV1, CliError> {
             expected: ReleaseIntentV1::SCHEMA_VERSION,
         });
     }
-    serde_json::from_value(value).map_err(|error| CliError::ReleaseIntentInvalid {
+    let wire: ReleaseIntentV1Wire = serde_json::from_value(value).map_err(|error| CliError::ReleaseIntentInvalid {
         path: path.display().to_string(),
         detail: error.to_string(),
-    })
+    })?;
+    Ok(ReleaseIntentV1::from_wire(wire)?)
 }
 
 fn read_artifact_manifest(path: &std::path::Path) -> Result<ArtifactManifestV1, CliError> {
@@ -651,6 +653,7 @@ mod tests {
         ReleaseInputSnapshotV1, ReleaseOperation, ReleasePackageId, ReleasePackageInputV1, SemanticInputDigest,
         SourceIdentity, Version, VersionGrammar,
     };
+    use miette::Diagnostic as _;
 
     use super::*;
 
@@ -690,6 +693,34 @@ mod tests {
             vec![],
         )
         .unwrap()
+    }
+
+    /// A persisted intent file whose operations were hand-edited into an invalid DAG
+    /// (here, a duplicate operation id) must surface the domain-specific `ReleaseIntentError`
+    /// code, not the generic `E236` a `serde` string error would report.
+    #[test]
+    fn read_intent_preserves_the_typed_release_intent_error_code() {
+        let mut value = serde_json::to_value(sample()).expect("intent serializes");
+        let operations = value["operations"].as_array().expect("operations array").clone();
+        let duplicate = operations[0].clone();
+        value["operations"]
+            .as_array_mut()
+            .expect("operations array")
+            .push(duplicate);
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("intent.json");
+        std::fs::write(&path, serde_json::to_string(&value).expect("json")).expect("write intent");
+
+        let err = read_intent(&path).expect_err("duplicate operation must be rejected");
+        assert!(
+            matches!(
+                err,
+                CliError::ReleaseIntent(callisto_model::ReleaseIntentError::DuplicateOperation { .. })
+            ),
+            "{err:?}"
+        );
+        assert_eq!(err.code().map(|c| c.to_string()), Some("E290".to_string()));
     }
 
     #[test]

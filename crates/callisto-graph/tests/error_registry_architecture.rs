@@ -4,7 +4,7 @@
 //! to forward an inner error's code -- never neither, which silently drops
 //! the diagnostic code a `--format json` consumer or a support conversation
 //! keys off. It also fails if any `callisto::<name>`-style code survives
-//! anywhere in a `code(...)` attribute; every code is now a numeric `E####`.
+//! anywhere in a `code(...)` attribute; every code is a numeric `E####`.
 //!
 //! This is a coarse, source-text scan (no `syn` dependency in this crate),
 //! not a full parser -- see `strip_cfg_test_modules` and `find_enum_body` for

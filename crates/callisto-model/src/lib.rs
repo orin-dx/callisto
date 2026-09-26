@@ -102,6 +102,7 @@ mod tests {
     /// code it ever gains is covered from then on.
     const DIAGNOSTIC_CODE_SOURCE_FILES: &[(&str, &str)] = &[
         ("callisto-model/src/error.rs", include_str!("error.rs")),
+        ("callisto-model/src/release.rs", include_str!("release.rs")),
         ("callisto-model/src/release_pr.rs", include_str!("release_pr.rs")),
         ("callisto-model/src/exec.rs", include_str!("exec.rs")),
         ("callisto-model/src/commit.rs", include_str!("commit.rs")),

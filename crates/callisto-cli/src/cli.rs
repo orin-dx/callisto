@@ -845,9 +845,8 @@ mod tests {
         assert_eq!(args.artifact_targets, vec!["a", "", "b"]);
     }
 
-    /// `schema --type` is a `ValueEnum`: an unrecognized value is now a clap
-    /// usage error (exit 2), not our own `E278` -- there is nothing left to
-    /// validate at the command-handler level once the registry is one enum.
+    /// `schema --type` is a `ValueEnum`: an unrecognized value is a clap usage
+    /// error (exit 2); there is no `CliError` variant for this case.
     #[test]
     fn schema_type_rejects_unknown_value_as_a_usage_error() {
         use clap::Parser;

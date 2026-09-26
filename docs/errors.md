@@ -62,6 +62,20 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E262 | Tag template contains a glob metacharacter outside the `{version}` placeholder | Remove the glob metacharacter from the template's literal text. |
 | E263 | Tag template has no literal text around `{version}`; its tag glob would be `*` | Add literal text before or after `{version}` so the tag glob is not `*`. |
 | E264 | Tag template renders a value that is not a legal Git ref name | Change the tag template so its rendered form is a legal Git ref name. |
+| E284 | Durable release intent uses a trust profile other than a clean Git commit | build the intent from a clean Git commit source with the GitCommit trust profile |
+| E285 | Release operation is not authorized by the embedded release decision | only include operations for packages present in the release decision |
+| E286 | Release intent repeats an artifact slot | list each artifact slot at most once |
+| E287 | Release intent artifact slot's asset is built by a package outside the release | release the asset's package too, or put it in the product's [[fixed-group]] |
+| E288 | Release intent's artifact upload operations don't match its artifact slots | make each artifact slot correspond to exactly one artifact upload operation |
+| E289 | Release intent operations are not in canonical order | re-derive the intent instead of hand-editing operation order |
+| E290 | Release intent repeats a release operation | list each release operation at most once |
+| E291 | Release intent operation's prerequisites are not in canonical order | re-derive the intent instead of hand-editing prerequisite order |
+| E292 | Release intent operation requires an unknown prerequisite | only reference prerequisites that are also in the intent's operation list |
+| E293 | Release intent operation requires itself as a prerequisite | remove the operation from its own prerequisite list |
+| E294 | Release intent operation DAG contains a cycle | break the prerequisite cycle among release operations |
+| E295 | Unsupported release intent (or nested decision/snapshot) wire schema version | re-derive this file with the current build; a release-intent wire shape is never reused across versions |
+| E296 | Release intent's input snapshot packages are not canonical | re-derive the intent instead of hand-editing package order |
+| E297 | Release intent digest does not match its canonical content | re-derive the intent instead of hand-editing its fields |
 
 ## callisto-format
 
@@ -272,4 +286,4 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E283 | `help` named a subcommand that doesn't exist | run `callisto --help` to list commands |
 
 
-225 numeric E#### codes total in one registry.
+239 numeric E#### codes total in one registry.
