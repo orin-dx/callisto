@@ -75,6 +75,7 @@ fn diagnostic_code_enum_variants_match_expected_set() {
         "changeset-read-error",
         "changeset-parse-failed",
         "git-discovery-failed",
+        "init-origin-missing",
         "bare-rule-matches-multiple-ecosystems",
         "unrecognised-platform-triple",
         "publish-target-not-implemented",

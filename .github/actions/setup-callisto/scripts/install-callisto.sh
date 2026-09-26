@@ -18,6 +18,22 @@ if [[ "$SOURCE" != "auto" && "$SOURCE" != "local" ]]; then
   exit 1
 fi
 
+# With no explicit version override, install the release this action's own
+# invocation is pinned to (GITHUB_ACTION_REF, github.action_ref) rather than
+# whatever is newest, so `callisto-action@<sha> # callisto@X.Y.Z` always
+# installs X.Y.Z. Falls back to true "latest" when the ref is unset (local or
+# unpinned invocation) or matches no published callisto@ tag.
+if [[ "$TAG_NAME" == "latest" && -n "${GITHUB_ACTION_REF:-}" ]]; then
+  resolved_tag=$(git ls-remote --tags https://github.com/orin-dx/callisto.git 'callisto@*' 2>/dev/null \
+    | awk -v ref="$GITHUB_ACTION_REF" '$1 == ref { print $2 }' \
+    | sed -e 's#^refs/tags/##' -e 's/\^{}$//' \
+    | sort -V | tail -n1) || true
+  if [[ -n "$resolved_tag" ]]; then
+    echo "Resolved action ref $GITHUB_ACTION_REF to $resolved_tag"
+    TAG_NAME="$resolved_tag"
+  fi
+fi
+
 # Validate verification mode
 VERIFICATION="${INPUT_CALLISTO_VERIFICATION:-fallback}"
 case "$VERIFICATION" in

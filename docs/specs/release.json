@@ -310,6 +310,10 @@
       "criterion": "`callisto-action` with `mode: release` runs `callisto --format json release --receipt <tmp>` and sets `published` and `publishedPackages` from registry and platform publish operations whose outcome is `published`. A `mode` other than `version-pr` or `release` fails the step."
     },
     {
+      "id": "REL-PR-06",
+      "criterion": "`callisto-action` and `setup-callisto` default `version` input `latest` installs the callisto release the action's own invocation is pinned to (`github.action_ref` resolved against `orin-dx/callisto`'s `callisto@` tags), falling back to the newest published release only when that ref is unset or matches no tag. An explicit `version` input overrides this resolution."
+    },
+    {
       "id": "REL-ERR-01",
       "criterion": "Every release failure exits 1 with a diagnostic carrying an `E####` code."
     },

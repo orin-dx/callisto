@@ -648,13 +648,6 @@ pub enum GraphError {
     )]
     InitNotGitRepository { root: PathBuf },
 
-    #[error("no `origin` remote is configured")]
-    #[diagnostic(
-        code(E192),
-        help("Add the repository's remote as `origin`: `git remote add origin <url>`.")
-    )]
-    InitOriginMissing,
-
     #[error("package `{package}` matches more than one tag convention: {}", .matches.join("; "))]
     #[diagnostic(
         code(E193),

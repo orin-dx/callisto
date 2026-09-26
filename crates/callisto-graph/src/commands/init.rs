@@ -73,8 +73,8 @@ pub struct InitFacts {
     pub root: PathBuf,
     pub ecosystems: BTreeSet<Ecosystem>,
     pub packages: Vec<InitPackage>,
-    /// Canonical `origin` push URL.
-    pub origin: String,
+    /// Canonical `origin` push URL, or `None` when no `origin` remote is configured.
+    pub origin: Option<String>,
     /// `origin` as a GitHub `owner/repo`, when it is one.
     pub origin_repository: Option<GitHubRepository>,
     /// Non-default tag templates to write, keyed by qualified package id.
@@ -172,7 +172,7 @@ pub fn detect<L: ProjectLocator, R: CommandRunner>(
     if git_dir.exit_code != Some(0) {
         return Err(GraphError::InitNotGitRepository { root });
     }
-    let origin = optional_git_remote(&root, runner)?.ok_or(GraphError::InitOriginMissing)?;
+    let origin = optional_git_remote(&root, runner)?;
     let head = runner.run_with_timeout(
         programs::GIT,
         &["rev-parse", "--verify", "--quiet", "HEAD"],
@@ -186,8 +186,8 @@ pub fn detect<L: ProjectLocator, R: CommandRunner>(
         root: root.clone(),
         ecosystems: BTreeSet::new(),
         packages: Vec::new(),
-        origin: origin.endpoint.clone(),
-        origin_repository: origin.github_repository.clone(),
+        origin: origin.as_ref().map(|remote| remote.endpoint.clone()),
+        origin_repository: origin.as_ref().and_then(|remote| remote.github_repository.clone()),
         tag_templates,
         has_commit: head.exit_code == Some(0),
         has_platform_packages: false,
@@ -449,7 +449,7 @@ pub fn forge_repository(facts: &InitFacts, value: &str) -> Result<GitHubReposito
     if facts.origin_repository.as_ref() != Some(&repository) {
         return Err(GraphError::InitForgeRepositoryMismatch {
             configured: repository.as_slug(),
-            origin: facts.origin.clone(),
+            origin: facts.origin.clone().unwrap_or_else(|| "none".to_owned()),
         });
     }
     Ok(repository)
@@ -477,6 +477,20 @@ pub fn validate_targets(targets: &[String]) -> Result<Vec<String>, GraphError> {
     Ok(targets.to_vec())
 }
 
+/// Files `init` writes, or would write under `--dry-run`: `callisto.toml`, `.changeset/README.md`
+/// unless it already exists, and the release workflow when `workflow` is `true`. Reads current
+/// disk state, so callers compute this before writing anything.
+pub fn init_files(root: &Path, workflow: bool) -> Vec<PathBuf> {
+    let mut files = vec![root.join("callisto.toml")];
+    if !root.join(".changeset/README.md").exists() {
+        files.push(root.join(".changeset/README.md"));
+    }
+    if workflow {
+        files.push(workflow_path(root));
+    }
+    files
+}
+
 /// Writes `callisto.toml` and, when absent, `.changeset/README.md`.
 ///
 /// # Errors
@@ -485,6 +499,7 @@ pub fn validate_targets(targets: &[String]) -> Result<Vec<String>, GraphError> {
 pub fn write(root: &Path, config: &str, permit: &ApplyPermit) -> Result<InitReport, GraphError> {
     ensure_uninitialized(root)?;
     let config_path = root.join("callisto.toml");
+    let files = init_files(root, false);
     callisto_model::atomic::atomic_write(&config_path, config, permit).map_err(io_err)?;
     write_changeset_readme(root, permit)?;
     Ok(InitReport {
@@ -492,6 +507,7 @@ pub fn write(root: &Path, config: &str, permit: &ApplyPermit) -> Result<InitRepo
         initialized: true,
         config_path,
         config: config.to_owned(),
+        files,
         diagnostics: Vec::new(),
     })
 }
@@ -616,30 +632,124 @@ pub fn workflow_shape(facts: &InitFacts, answers: &InitAnswers) -> Result<Workfl
     }
 }
 
-/// The repository's default branch, read from `origin/HEAD`; `main` when it cannot be resolved.
-pub fn default_branch<R: CommandRunner>(runner: &R, root: &Path) -> String {
-    const FALLBACK: &str = "main";
-    // A repository with no `origin/HEAD` (a fresh clone, or one built by hand,
-    // as in tests) fails this on the common path, not just exceptionally.
-    let Ok(output) = runner.run_quiet(
-        programs::GIT,
-        &["symbolic-ref", "refs/remotes/origin/HEAD"],
-        root,
-        timeouts::LOCAL_GIT,
-    ) else {
-        return FALLBACK.to_owned();
-    };
-    if output.exit_code != Some(0) {
-        return FALLBACK.to_owned();
+/// Where [`default_branch`]'s branch name came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DefaultBranchSource {
+    /// The local `refs/remotes/origin/HEAD` ref, set by `git clone` or `git remote set-head`.
+    OriginHead,
+    /// `git ls-remote --symref origin HEAD`, queried when the local ref above is unset.
+    RemoteHead,
+    /// The branch currently checked out: no remote reports a HEAD (e.g. `origin` is unset).
+    CurrentBranch,
+    /// No remote and no checked-out branch (e.g. a fresh repo with no commits): `main`.
+    Fallback,
+}
+
+impl std::fmt::Display for DefaultBranchSource {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::OriginHead => "origin/HEAD",
+            Self::RemoteHead => "origin, queried live",
+            Self::CurrentBranch => "the current branch",
+            Self::Fallback => "fallback: none of the above resolved",
+        })
     }
-    output
-        .stdout
-        .trim()
-        .rsplit('/')
-        .next()
-        .filter(|branch| !branch.is_empty())
-        .unwrap_or(FALLBACK)
-        .to_owned()
+}
+
+/// The repository's default branch and where that name came from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DefaultBranch {
+    pub name: String,
+    pub source: DefaultBranchSource,
+}
+
+/// The repository's default branch: local `origin/HEAD`, else a live query of `origin`,
+/// else the branch currently checked out, else `main`.
+pub fn default_branch<R: CommandRunner>(runner: &R, root: &Path) -> DefaultBranch {
+    if let Some(name) = local_origin_head(runner, root) {
+        return DefaultBranch {
+            name,
+            source: DefaultBranchSource::OriginHead,
+        };
+    }
+    if let Some(name) = remote_origin_head(runner, root) {
+        return DefaultBranch {
+            name,
+            source: DefaultBranchSource::RemoteHead,
+        };
+    }
+    if let Some(name) = current_branch(runner, root) {
+        return DefaultBranch {
+            name,
+            source: DefaultBranchSource::CurrentBranch,
+        };
+    }
+    DefaultBranch {
+        name: "main".to_owned(),
+        source: DefaultBranchSource::Fallback,
+    }
+}
+
+/// The last path segment of a `refs/...` line, e.g. `refs/heads/trunk` -> `trunk`.
+fn last_ref_segment(reference: &str) -> Option<String> {
+    let branch = reference.trim().rsplit('/').next()?;
+    (!branch.is_empty()).then(|| branch.to_owned())
+}
+
+// A repository with no `origin/HEAD` (a fresh clone, or one built by hand, as in tests)
+// fails this on the common path, not just exceptionally.
+fn local_origin_head<R: CommandRunner>(runner: &R, root: &Path) -> Option<String> {
+    let output = runner
+        .run_quiet(
+            programs::GIT,
+            &["symbolic-ref", "refs/remotes/origin/HEAD"],
+            root,
+            timeouts::LOCAL_GIT,
+        )
+        .ok()?;
+    if output.exit_code != Some(0) {
+        return None;
+    }
+    last_ref_segment(&output.stdout)
+}
+
+// A shallow or hand-built clone (or one `remote set-head` never ran on) has no local
+// `origin/HEAD`; asking the remote directly still resolves it without a fetch.
+fn remote_origin_head<R: CommandRunner>(runner: &R, root: &Path) -> Option<String> {
+    let output = runner
+        .run_quiet(
+            programs::GIT,
+            &["ls-remote", "--symref", "origin", "HEAD"],
+            root,
+            timeouts::GIT_LS_REMOTE,
+        )
+        .ok()?;
+    if output.exit_code != Some(0) {
+        return None;
+    }
+    // Output line shape: "ref: refs/heads/<branch>\tHEAD".
+    output.stdout.lines().find_map(|line| {
+        let (target, name) = line.strip_prefix("ref: ")?.split_once('\t')?;
+        (name.trim() == "HEAD").then(|| last_ref_segment(target))?
+    })
+}
+
+// No remote at all (e.g. `init` in a repo built by hand with no `origin`): the branch
+// actually checked out is a better guess than a hardcoded `main`.
+fn current_branch<R: CommandRunner>(runner: &R, root: &Path) -> Option<String> {
+    let output = runner
+        .run_quiet(
+            programs::GIT,
+            &["symbolic-ref", "--short", "HEAD"],
+            root,
+            timeouts::LOCAL_GIT,
+        )
+        .ok()?;
+    if output.exit_code != Some(0) {
+        return None;
+    }
+    let branch = output.stdout.trim();
+    (!branch.is_empty()).then(|| branch.to_owned())
 }
 
 // Braces are literal here (not a `format!` template) so `${{ ... }}` GitHub
@@ -660,7 +770,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: {fetch-depth: 0, persist-credentials: false}
       - uses: orin-dx/callisto/.github/actions/callisto-action@__COMMIT__ # callisto@__VERSION__
-        with: {mode: version-pr}
+        with: {mode: version-pr, branch: __BRANCH__}
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -696,7 +806,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: {fetch-depth: 0, persist-credentials: false}
       - uses: orin-dx/callisto/.github/actions/callisto-action@__COMMIT__ # callisto@__VERSION__
-        with: {mode: version-pr}
+        with: {mode: version-pr, branch: __BRANCH__}
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -1105,7 +1215,7 @@ mod tests {
         assert_eq!(facts.ecosystems, BTreeSet::from([Ecosystem::Cargo, Ecosystem::Npm]));
         let ids: Vec<&str> = facts.packages.iter().map(|package| package.id.as_str()).collect();
         assert_eq!(ids, ["cargo/app", "cargo/core", "npm/web"]);
-        assert_eq!(facts.origin, ORIGIN);
+        assert_eq!(facts.origin.as_deref(), Some(ORIGIN));
         assert!(facts.has_commit);
         assert_eq!(facts.origin_repository.as_ref().unwrap().as_slug(), "example/tools");
         assert_eq!(
@@ -1167,9 +1277,10 @@ mod tests {
         assert!(error.to_string().contains("not a Git repository"));
     }
 
-    // No `origin` errors, with zero remotes or only other remotes.
+    // No `origin` (zero remotes, or only other remotes) detects successfully, with `origin` and
+    // `origin_repository` unset; the caller decides how to proceed without one.
     #[test]
-    fn missing_origin_is_an_error() {
+    fn missing_origin_detects_with_origin_unset() {
         let files = [("Cargo.toml", cargo("app", "1.0.0"))];
         let files: Vec<(&str, &str)> = files.iter().map(|(path, body)| (*path, body.as_str())).collect();
         let none = repo(&files, None);
@@ -1177,11 +1288,9 @@ mod tests {
         git(other.path(), &["remote", "add", "upstream", ORIGIN]);
         git(other.path(), &["remote", "add", "fork", ORIGIN]);
         for dir in [none, other] {
-            let error = detect_in(dir.path()).unwrap_err();
-            assert!(matches!(error, GraphError::InitOriginMissing), "{error}");
-            assert!(error.to_string().contains("origin"));
-            assert!(format!("{:?}", miette::Diagnostic::help(&error).unwrap().to_string())
-                .contains("git remote add origin"));
+            let facts = detect_in(dir.path()).unwrap();
+            assert_eq!(facts.origin, None);
+            assert_eq!(facts.origin_repository, None);
         }
     }
 
@@ -1199,7 +1308,7 @@ mod tests {
 
         let gitlab = repo(&files, Some("git@gitlab.com:example/tools.git"));
         let facts = detect_in(gitlab.path()).unwrap();
-        assert_eq!(facts.origin, "ssh://git@gitlab.com/example/tools.git");
+        assert_eq!(facts.origin.as_deref(), Some("ssh://git@gitlab.com/example/tools.git"));
         assert_eq!(facts.origin_repository, None);
     }
 
@@ -1286,7 +1395,7 @@ mod tests {
                 package("cargo/core", &[], false),
                 package("npm/web-linux-x64-gnu", &[], true),
             ],
-            origin: ORIGIN.to_owned(),
+            origin: Some(ORIGIN.to_owned()),
             origin_repository: GitHubRepository::parse("example/tools").ok(),
             tag_templates: BTreeMap::new(),
             has_commit: true,
@@ -1528,6 +1637,26 @@ mod tests {
         render_workflow(facts, WorkflowShape::Simple, branch, FAKE_COMMIT, "0.8.0")
     }
 
+    // A non-`main` default branch must reach both the push trigger and the release-PR
+    // action's own `branch:` input, in both workflow shapes -- callisto-action defaults
+    // that input to `main`, so a trunk repo without it opens its PR against the wrong base.
+    #[test]
+    fn render_workflow_passes_the_detected_branch_to_the_release_pr_action() {
+        let simple = render_workflow_0_8_0(&cargo_only_facts(), "trunk");
+        assert!(simple.contains("branches: [trunk]"), "{simple}");
+        assert!(simple.contains("with: {mode: version-pr, branch: trunk}"), "{simple}");
+
+        let matrix = render_workflow(
+            &facts_for_render(),
+            WorkflowShape::BuildMatrix,
+            "trunk",
+            FAKE_COMMIT,
+            "0.8.0",
+        );
+        assert!(matrix.contains("branches: [trunk]"), "{matrix}");
+        assert!(matrix.contains("with: {mode: version-pr, branch: trunk}"), "{matrix}");
+    }
+
     // Two jobs, no matrix/recovery/SHA-gating machinery,
     // per-job permissions, and secrets scoped to the cargo-only workspace's own ecosystem.
     #[test]
@@ -1538,7 +1667,10 @@ mod tests {
         assert!(line_count <= 40, "{line_count} lines:\n{workflow}");
         assert_eq!(workflow.matches("runs-on: ubuntu-latest").count(), 2, "{workflow}");
         assert!(workflow.contains("branches: [main]"), "{workflow}");
-        assert!(workflow.contains("with: {mode: version-pr}"), "{workflow}");
+        assert!(
+            workflow.contains("with: {mode: version-pr, branch: main}"),
+            "{workflow}"
+        );
         assert!(workflow.contains("with: {mode: release}"), "{workflow}");
         assert!(
             workflow.contains(&format!(
@@ -1819,7 +1951,7 @@ mod tests {
         let simple = render_workflow_0_8_0(&cargo_only_facts(), "main");
         let matrix = render_matrix_workflow();
         assert_eq!(job(&matrix, "version-pr"), job(&simple, "version-pr"));
-        assert!(job(&matrix, "version-pr").contains("with: {mode: version-pr}"));
+        assert!(job(&matrix, "version-pr").contains("with: {mode: version-pr, branch: main}"));
     }
 
     // No recovery, coordinator, or SHA-based release-candidate detection; the
@@ -1850,11 +1982,47 @@ mod tests {
         );
     }
 
-    // The push trigger targets `origin/HEAD`'s branch, falling back to `main`.
+    /// Real git, except `ls-remote --symref` answers from `remote_head` instead of touching
+    /// the network -- `workspace()`'s `origin` is a real GitHub URL that must never be contacted.
+    struct StubRemoteHead {
+        remote_head: Option<&'static str>,
+    }
+    impl CommandRunner for StubRemoteHead {
+        fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
+            RealGitRunner.run(program, args, cwd)
+        }
+        fn run_quiet(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+            timeout: std::time::Duration,
+        ) -> Result<CommandOutput, CommandError> {
+            if args.first() == Some(&"ls-remote") {
+                return Ok(match self.remote_head {
+                    Some(branch) => CommandOutput {
+                        exit_code: Some(0),
+                        stdout: format!(
+                            "ref: refs/heads/{branch}\tHEAD\n0000000000000000000000000000000000000000\tHEAD\n"
+                        ),
+                        stderr: String::new(),
+                    },
+                    None => CommandOutput {
+                        exit_code: Some(128),
+                        stdout: String::new(),
+                        stderr: "fatal: could not read Username for 'https://github.com': terminal prompts disabled\n"
+                            .to_owned(),
+                    },
+                });
+            }
+            RealGitRunner.run_with_timeout(program, args, cwd, timeout)
+        }
+    }
+
+    // Local `origin/HEAD` wins over everything else, including a live remote answer.
     #[test]
-    fn default_branch_reads_origin_head_and_falls_back_to_main() {
+    fn default_branch_prefers_local_origin_head() {
         let dir = workspace();
-        assert_eq!(default_branch(&RealGitRunner, dir.path()), "main");
         git(dir.path(), &["branch", "develop"]);
         git(
             dir.path(),
@@ -1864,10 +2032,47 @@ mod tests {
                 "refs/remotes/origin/develop",
             ],
         );
-        assert_eq!(default_branch(&RealGitRunner, dir.path()), "develop");
+        let resolved = default_branch(
+            &StubRemoteHead {
+                remote_head: Some("trunk"),
+            },
+            dir.path(),
+        );
+        assert_eq!(resolved.name, "develop");
+        assert_eq!(resolved.source, DefaultBranchSource::OriginHead);
+    }
 
+    // No local `origin/HEAD`: a live query of `origin` resolves it without a fetch.
+    #[test]
+    fn default_branch_queries_the_remote_when_local_origin_head_is_unset() {
+        let dir = workspace();
+        let resolved = default_branch(
+            &StubRemoteHead {
+                remote_head: Some("trunk"),
+            },
+            dir.path(),
+        );
+        assert_eq!(resolved.name, "trunk");
+        assert_eq!(resolved.source, DefaultBranchSource::RemoteHead);
+    }
+
+    // Neither local nor remote resolves a HEAD: falls back to the branch checked out.
+    #[test]
+    fn default_branch_falls_back_to_the_current_branch() {
+        let dir = workspace();
+        git(dir.path(), &["checkout", "-q", "-b", "release"]);
+        let resolved = default_branch(&StubRemoteHead { remote_head: None }, dir.path());
+        assert_eq!(resolved.name, "release");
+        assert_eq!(resolved.source, DefaultBranchSource::CurrentBranch);
+    }
+
+    // No git repository at all: nothing resolves, so `main` is the last resort.
+    #[test]
+    fn default_branch_falls_back_to_main_when_nothing_resolves() {
         let none = tempfile::tempdir().unwrap();
-        assert_eq!(default_branch(&RealGitRunner, none.path()), "main");
+        let resolved = default_branch(&RealGitRunner, none.path());
+        assert_eq!(resolved.name, "main");
+        assert_eq!(resolved.source, DefaultBranchSource::Fallback);
     }
 
     // Artifact slots or napi platform packages route to the build matrix; maturin,

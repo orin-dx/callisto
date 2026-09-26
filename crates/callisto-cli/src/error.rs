@@ -284,6 +284,20 @@ pub enum CliError {
     #[diagnostic(code(E242), help("pass only one of --workflow or --no-workflow"))]
     InitWorkflowFlagsConflict,
 
+    #[error("`--{flag}` only applies with --artifact-target")]
+    #[diagnostic(
+        code(E298),
+        help("drop --{flag}, or pass --artifact-target to ship the product's binaries")
+    )]
+    InitFlagRequiresArtifactTarget { flag: &'static str },
+
+    #[error("`--{flag}` requires an `origin` remote, and none is configured")]
+    #[diagnostic(
+        code(E299),
+        help("add the repository's remote as `origin` (`git remote add origin <url>`), then re-run init")
+    )]
+    InitFlagRequiresOrigin { flag: &'static str },
+
     #[error("workspace is already in pre-release mode")]
     #[diagnostic(
         code(E243),
