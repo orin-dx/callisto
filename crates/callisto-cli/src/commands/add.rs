@@ -3,7 +3,7 @@ use std::process::ExitCode;
 
 use callisto_format::{Changeset, Entry};
 use callisto_graph::DependencyResolver;
-use callisto_model::{ApplyPermit, PackageId, Severity, SCHEMA_VERSION};
+use callisto_model::{ApplyPermit, Severity, SCHEMA_VERSION};
 use dialoguer::{Confirm, Input, MultiSelect};
 use serde_json::json;
 
@@ -32,25 +32,15 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
 
             let severity = parse_severity(sev_str)?;
 
-            let id =
-                PackageId::parse(name).map_err(|e| CliError::Other(format!("Invalid package name `{name}`: {e}")))?;
-
-            // Validate that the package exists in the workspace. A changeset for a
-            // non-existent package would fail silently during `callisto version` once
-            // the changeset is consumed — better to catch it here.
-            let known = ws.graph.packages().any(|p| p.id.matches(&id) || id.matches(&p.id));
-            if !known {
-                let known_names: Vec<String> = ws.graph.packages().map(|p| p.id.display_name()).collect();
-                return Err(CliError::Other(format!(
-                    "Unknown package `{name}`. Known packages: {}",
-                    known_names.join(", ")
-                )));
-            }
+            // Resolves by any registered native name (not just a package's
+            // primary/display name), reporting E102/E103 on a miss or
+            // ecosystem-ambiguous bare name.
+            let resolved = ws.identity.resolve(name)?;
 
             entries.push(Entry {
                 // Use display_name() so "cargo/foo" is preserved, not just "foo".
                 // In a polyglot workspace, the bare name is ambiguous across ecosystems.
-                name: id.display_name(),
+                name: resolved.display_name(),
                 severity,
             });
         }
@@ -302,7 +292,7 @@ fn generate_human_slug() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use callisto_model::{ManifestDecl, ManifestFormat, ManifestRole, Package, ReleaseTrigger};
+    use callisto_model::{ManifestDecl, ManifestFormat, ManifestRole, Package, PackageId, ReleaseTrigger};
     use std::collections::HashSet;
     use std::path::PathBuf;
 

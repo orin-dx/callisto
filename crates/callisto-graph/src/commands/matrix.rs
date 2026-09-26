@@ -1,6 +1,5 @@
 use callisto_model::{CommandRunner, Diagnostic, DiagnosticCode, DiagnosticSeverity, MatrixReport, PackageId};
 
-use crate::aggregate::resolve_target_package;
 use crate::error::GraphError;
 use crate::matrix::{
     add_release_artifact_groups, build_matrix_report, MatrixPackageInput, NapiCrate, ReleaseArtifactInput,
@@ -15,8 +14,9 @@ pub struct MatrixOptions {
     /// registered package (`GraphError::AmbiguousName` otherwise, listing
     /// the qualified candidates) -- or an ecosystem-qualified id
     /// (`cargo/foo`, `npm/foo`). Err(GraphError::UnknownPackage) when no
-    /// registered package matches. Same resolution rule as changeset
-    /// package-name resolution (`resolve_target_package`).
+    /// registered package matches. Resolved through
+    /// [`crate::IdentityIndex::resolve`], the one selector resolver shared
+    /// with every other package-selecting surface.
     pub package: Option<String>,
     /// Resolve each napi package's addon crate into `manifestPath` (E204 when not exactly one).
     pub napi_crates: bool,
@@ -31,7 +31,7 @@ pub fn matrix<R: CommandRunner, D: DependencyResolver>(
     let selected = opts
         .package
         .as_deref()
-        .map(|raw| resolve_selected_package(&all_packages, raw))
+        .map(|raw| resolve_selected_package(&all_packages, &ws.identity, raw))
         .transpose()?;
 
     let inputs: Vec<MatrixPackageInput> = all_packages
@@ -60,13 +60,19 @@ pub fn matrix<R: CommandRunner, D: DependencyResolver>(
         .iter()
         .flat_map(|release| &release.artifacts)
         .filter(|artifact| artifact.package.ecosystem() == Some(callisto_model::Ecosystem::Cargo))
-        .filter(|artifact| selected.as_ref().is_none_or(|id| artifact.package.matches(id)))
+        .filter(|artifact| {
+            selected
+                .as_ref()
+                .is_none_or(|id| ws.identity.identifies(&artifact.package, id))
+        })
     {
         let resolved = all_packages.iter().find_map(|package| {
             let manifest = package
                 .canonical_manifests()
                 .find(|manifest| manifest.ecosystem() == callisto_model::Ecosystem::Cargo)?;
-            package.id.matches(&artifact.package).then_some((package, manifest))
+            ws.identity
+                .identifies(&artifact.package, &package.id)
+                .then_some((package, manifest))
         });
         let Some((package, manifest)) = resolved else {
             report.diagnostics.push(Diagnostic {
@@ -100,13 +106,18 @@ pub fn matrix<R: CommandRunner, D: DependencyResolver>(
 }
 
 /// Resolves a human-typed `--package` argument (bare or ecosystem-qualified)
-/// against `all_packages`, reusing `resolve_target_package`'s ambiguity rule
-/// -- a bare name is accepted only when it names exactly one package.
-fn resolve_selected_package(all_packages: &[&callisto_model::Package], raw: &str) -> Result<PackageId, GraphError> {
-    let parsed = PackageId::parse(raw).unwrap_or_else(|_| PackageId::Bare(raw.to_string()));
-    match resolve_target_package(all_packages.iter().copied(), &parsed)? {
-        Some(pkg) => Ok(pkg.id.clone()),
-        None => Err(GraphError::UnknownPackage { id: parsed }),
+/// through the one selector resolver, [`crate::IdentityIndex::resolve`] --
+/// a bare name is accepted only when it names exactly one package.
+fn resolve_selected_package(
+    all_packages: &[&callisto_model::Package],
+    identity: &crate::IdentityIndex,
+    raw: &str,
+) -> Result<PackageId, GraphError> {
+    let resolved = identity.resolve(raw)?;
+    if all_packages.iter().any(|p| p.id == resolved) {
+        Ok(resolved)
+    } else {
+        Err(GraphError::UnknownPackage { id: resolved })
     }
 }
 

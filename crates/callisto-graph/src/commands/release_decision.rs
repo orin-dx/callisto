@@ -282,9 +282,13 @@ fn release_groups_of<R: callisto_model::CommandRunner, D: DependencyResolver>(
     let groups = &workspace.config.groups;
     let fixed = groups.fixed_of.iter().map(|(member, group)| ("fixed", member, group));
     let linked = groups.linked_of.iter().map(|(member, group)| ("linked", member, group));
+    // `member` keys are already canonical (`GroupTable::resolve` resolved
+    // them through `IdentityIndex::resolve`), so exact equality is correct
+    // here -- `PackageId::matches` would treat a Bare member key as an
+    // ecosystem wildcard and could match a same-named package elsewhere.
     fixed
         .chain(linked)
-        .filter(|(_, member, _)| member.matches(&package.id))
+        .filter(|(_, member, _)| **member == package.id)
         .map(|(kind, _, group)| (kind, group.clone()))
         .collect()
 }
