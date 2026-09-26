@@ -22,10 +22,9 @@ pub struct PackagePattern {
 
 impl PackagePattern {
     pub fn parse(s: &str) -> Result<Self, globset::Error> {
-        // `eco:` and `eco/` are the same grammar as `PackageId::parse`'s two
-        // qualified forms; try `:` first so `cargo:pkg-*` keeps its existing
-        // meaning, then `/` so `cargo/pkg-*` (previously matched literally,
-        // and therefore matched no real package) is accepted too.
+        // Try `:` first so `cargo:pkg-*` keeps its existing meaning, then `/`
+        // so `cargo/pkg-*` is accepted too, matching `PackageId::parse`'s two
+        // qualified forms.
         let (ecosystem, rest) = [':', '/']
             .into_iter()
             .find_map(|sep| {
