@@ -2666,9 +2666,7 @@ impl crate::report::Report for ReleaseExecuteReport {
     }
 }
 
-/// `callisto release plan --format json` report: flattens [`ReleaseIntentV1`] and adds
-/// the sibling `diagnostics` array derivation raised, omitted when empty (see
-/// `SPEC-RELEASE` `REL-CMD-04`); the persisted intent file never carries this field.
+/// `release plan` JSON report: the intent plus derivation diagnostics, which the intent file never carries.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReleasePlanReport {

@@ -362,10 +362,7 @@ mod tests {
         );
     }
 
-    /// A Pypi package's snapshot version must be built under PEP 440, not SemVer: the tag's
-    /// SemVer form (`0.0.0-canary-<sha>`) is not a valid PEP 440 version, so parsing it under
-    /// `VersionGrammar::SemVer` for every package (the prior behavior) fails the whole snapshot
-    /// as soon as a Pypi package is present.
+    /// `0.0.0-canary-<sha>` is not valid PEP 440, so a Pypi package needs its own snapshot form.
     #[test]
     fn plan_snapshot_builds_pep440_version_for_a_pypi_package() {
         let tmp = tempfile::tempdir().unwrap();

@@ -156,9 +156,7 @@ pub fn run_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Result<
     solve_cascade(input)
 }
 
-/// Falls back to the dependent's manifest filename when its `PackageId` carries no ecosystem
-/// (packages are keyed by directory internally): covers every canonical manifest format, not
-/// just Cargo vs. npm, so a Pypi dependent's spec is rewritten with Pypi's own grammar.
+/// Dependent's ecosystem, inferred from its manifest filename when the `PackageId` carries none.
 pub(crate) fn manifest_ecosystem(edge_from_ecosystem: Option<Ecosystem>, from_manifest: &std::path::Path) -> Ecosystem {
     edge_from_ecosystem.unwrap_or_else(|| {
         callisto_model::ManifestFormat::from_path(from_manifest)
