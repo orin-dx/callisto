@@ -201,6 +201,9 @@ pub enum DiagnosticCode {
     /// selecting the product package itself, so the owner's declared asset has no release to
     /// upload into.
     ProductArtifactOwnerWithoutProduct,
+    /// `callisto init` found no `origin` remote: it writes the config but skips the release
+    /// workflow and shipping-binaries questions until one is added.
+    InitOriginMissing,
 }
 
 #[cfg(test)]

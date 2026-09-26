@@ -41,6 +41,13 @@ inputs:
     description: 'Install the Callisto environment before running'
     required: false
     default: 'true'
+  version:
+    description: >-
+      Version tag of Callisto to install. Default 'latest' installs the release this action's own
+      invocation is pinned to (github.action_ref resolved against callisto@ tags), falling back to
+      the newest published release when that ref is unset or unresolvable.
+    required: false
+    default: 'latest'
   cwd:
     description: 'Workspace directory'
     required: false
@@ -95,8 +102,9 @@ runs:
       shell: bash
       env:
         INPUT_CALLISTO_SOURCE: auto
-        INPUT_CALLISTO_VERSION: latest
+        INPUT_CALLISTO_VERSION: ${{ inputs.version }}
         INPUT_CALLISTO_VERIFICATION: fallback
+        GITHUB_ACTION_REF: ${{ github.action_ref }}
         GH_TOKEN: ${{ inputs.github_token || github.token }}
       run: bash "${{ github.action_path }}/../setup-callisto/scripts/install-callisto.sh" # zizmor: ignore[github-env] the PATH entry is a fixed child of the trusted runner temporary directory, not action input or downloaded archive content.
     - name: Create or update release PR

@@ -81,6 +81,7 @@ Progress is derived from provider observation (registry, remote tag, forge relea
 | `release_branch` | `callisto/version-packages` | Managed head branch for the release PR. |
 | `github_token` | `""` | Optional token for PR and forge commit API operations. The default `GITHUB_TOKEN` is sufficient even on a public repository, since the executor never writes `.github/workflows/*`. |
 | `setup_callisto` | `true` | Install the Callisto environment before running. |
+| `version` | `latest` | Callisto version to install. `latest` installs the release this action's own invocation is pinned to (`github.action_ref` resolved against `callisto@` tags), falling back to the newest published release when that ref is unset or unresolvable. |
 | `cwd` | `.` | Workspace directory. |
 | `mode` | `version-pr` | `version-pr`: create/update the release PR. `release`: run `callisto release`. |
 

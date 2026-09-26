@@ -93,6 +93,7 @@ pub fn run<R: CommandRunner>(
     err: &mut dyn Write,
     runner: &R,
 ) -> Result<ExitCode, CliError> {
+    validate_flags(&args)?;
     let root = workspace_root(global, runner)?;
     let locator = IgnoreWalkLocator::new(&root);
     let facts = scaffold::detect(&root, &locator, runner)?;
@@ -101,8 +102,15 @@ pub fn run<R: CommandRunner>(
     let human: &mut dyn Write = if json { &mut *err } else { &mut *out };
     write_facts(&facts, human)?;
 
-    if args.workflow && args.no_workflow {
-        return Err(CliError::InitWorkflowFlagsConflict);
+    if facts.origin.is_none() {
+        if args.workflow {
+            return Err(CliError::InitFlagRequiresOrigin { flag: "workflow" });
+        }
+        if !args.artifact_targets.is_empty() {
+            return Err(CliError::InitFlagRequiresOrigin {
+                flag: "artifact-target",
+            });
+        }
     }
     if !interactive && !args.yes {
         let mut missing = vec!["--yes"];
@@ -119,6 +127,18 @@ pub fn run<R: CommandRunner>(
     let answers = collect_answers(&args, &facts, prompting, prompter)?;
 
     let mut diagnostics = scaffold::changesets_config_diagnostics(&facts.root);
+    if facts.origin.is_none() {
+        writeln!(human, "{ORIGIN_MISSING_NOTE}")?;
+        diagnostics.push(callisto_model::Diagnostic {
+            code: callisto_model::DiagnosticCode::InitOriginMissing,
+            severity: callisto_model::DiagnosticSeverity::Warning,
+            message: ORIGIN_MISSING_NOTE.to_owned(),
+            package: None,
+            path: None,
+            escalated_by: None,
+            governed_by: None,
+        });
+    }
     let shape = match scaffold::workflow_shape(&facts, &answers) {
         Err(reason) if args.workflow => {
             return Err(GraphError::InitWorkflowUnsupported {
@@ -146,17 +166,18 @@ pub fn run<R: CommandRunner>(
         None => false,
         Some(_) if args.workflow => true,
         Some(_) if args.no_workflow => false,
-        Some(_) if prompting => prompter.confirm(WORKFLOW_PROMPT, false)?,
+        Some(_) if prompting && facts.origin.is_some() => prompter.confirm(WORKFLOW_PROMPT, false)?,
         Some(_) => false,
     };
     let workflow = match shape.filter(|_| want_workflow) {
         Some(shape) => {
             scaffold::ensure_workflow_absent(&facts.root)?;
             let branch = scaffold::default_branch(runner, &facts.root);
+            writeln!(human, "  default branch: {} (from {})", branch.name, branch.source)?;
             let version = env!("CARGO_PKG_VERSION");
             let commit = scaffold::resolve_release_commit(runner, &facts.root, version)?;
-            let content = scaffold::render_workflow(&facts, shape, &branch, &commit, version);
-            Some((content, branch))
+            let content = scaffold::render_workflow(&facts, shape, &branch.name, &commit, version);
+            Some((content, branch.name))
         }
         None => None,
     };
@@ -183,12 +204,15 @@ pub fn run<R: CommandRunner>(
         )?;
     }
 
+    // Computed before any write, so the `.changeset/README.md` existence check sees disk state as-is.
+    let files = scaffold::init_files(&facts.root, workflow.is_some());
     let mut report = if global.dry_run {
         InitReport {
             schema_version: SCHEMA_VERSION,
             initialized: false,
             config_path: facts.root.join("callisto.toml"),
             config,
+            files,
             diagnostics: Vec::new(),
         }
     } else {
@@ -197,7 +221,7 @@ pub fn run<R: CommandRunner>(
             return Ok(ExitCode::SUCCESS);
         }
         let permit = ApplyPermit::granted_unless_dry_run(false).expect("non-dry-run permits writes");
-        let report = scaffold::write(&facts.root, &config, &permit)?;
+        let mut report = scaffold::write(&facts.root, &config, &permit)?;
         if let Some((workflow, branch)) = &workflow {
             scaffold::write_workflow(&facts.root, workflow, &permit)?;
             let note = merge_publishes_note(branch);
@@ -212,6 +236,7 @@ pub fn run<R: CommandRunner>(
                 governed_by: None,
             });
         }
+        report.files = files;
         report
     };
     report.diagnostics.extend(diagnostics);
@@ -223,11 +248,35 @@ pub fn run<R: CommandRunner>(
     Ok(ExitCode::SUCCESS)
 }
 
+/// Printed, and recorded as a warning diagnostic, when no `origin` remote is configured.
+const ORIGIN_MISSING_NOTE: &str = "No `origin` remote is configured: skipping the release workflow and \
+shipping-binaries questions; `callisto release` will refuse until one is added.";
+
+/// Rejects flag combinations invalid regardless of workspace facts.
+fn validate_flags(args: &InitArgs) -> Result<(), CliError> {
+    if args.workflow && args.no_workflow {
+        return Err(CliError::InitWorkflowFlagsConflict);
+    }
+    if args.artifact_targets.is_empty() {
+        if args.forge_repository.is_some() {
+            return Err(CliError::InitFlagRequiresArtifactTarget {
+                flag: "forge-repository",
+            });
+        }
+        if args.product_package.is_some() {
+            return Err(CliError::InitFlagRequiresArtifactTarget {
+                flag: "product-package",
+            });
+        }
+    }
+    Ok(())
+}
+
 fn write_facts(facts: &InitFacts, out: &mut dyn Write) -> Result<(), CliError> {
     let ecosystems: Vec<&str> = facts.ecosystems.iter().map(|ecosystem| ecosystem.prefix()).collect();
     writeln!(out, "Detected:")?;
     writeln!(out, "  ecosystems: {}", ecosystems.join(", "))?;
-    writeln!(out, "  origin: {}", facts.origin)?;
+    writeln!(out, "  origin: {}", facts.origin.as_deref().unwrap_or("none"))?;
     writeln!(out, "  packages:")?;
     for package in &facts.packages {
         let tag = package.last_tag.as_ref().map_or("none", |tag| tag.as_str());
@@ -296,7 +345,11 @@ fn collect_answers(
     if binaries.is_empty() {
         return Ok(no_binaries);
     }
-    let ship = !args.artifact_targets.is_empty() || (prompting && prompter.confirm(SHIP_PROMPT, false)?);
+    // No `origin`: the forge question below has nothing to validate a repository against, so
+    // shipping is never offered (skips straight to `no_binaries`); `--artifact-target` without
+    // `origin` is already rejected up front in `run`.
+    let ship = !args.artifact_targets.is_empty()
+        || (facts.origin.is_some() && prompting && prompter.confirm(SHIP_PROMPT, false)?);
     if !ship {
         return Ok(no_binaries);
     }
@@ -442,8 +495,17 @@ mod tests {
         assert!(status.success(), "git {args:?}");
     }
 
-    /// A Cargo workspace: `bins` binary crates (`app`, `tool`) plus library `core`.
+    /// A Cargo workspace: `bins` binary crates (`app`, `tool`) plus library `core`, with `origin`.
     fn workspace(bins: usize) -> tempfile::TempDir {
+        workspace_with_origin(bins, true)
+    }
+
+    /// Same workspace shape as [`workspace`], with no `origin` remote configured.
+    fn workspace_without_origin(bins: usize) -> tempfile::TempDir {
+        workspace_with_origin(bins, false)
+    }
+
+    fn workspace_with_origin(bins: usize, origin: bool) -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let mut members = vec!["core"];
@@ -465,10 +527,12 @@ mod tests {
             std::fs::write(root.join(member).join("src").join(source), "\n").unwrap();
         }
         callisto_fixtures::git::init_repo(root);
-        git(
-            root,
-            &["remote", "add", "origin", "https://github.com/example/tools.git"],
-        );
+        if origin {
+            git(
+                root,
+                &["remote", "add", "origin", "https://github.com/example/tools.git"],
+            );
+        }
         git(root, &["add", "."]);
         git(root, &["commit", "-q", "-m", "fixture"]);
         dir
@@ -867,6 +931,101 @@ mod tests {
         assert!(nothing_written(none.path()));
     }
 
+    // --forge-repository/--product-package are validated up front, before facts are even
+    // detected: dropped silently without --artifact-target is the bug this rejects.
+    #[test]
+    fn forge_or_product_without_artifact_target_errors_up_front() {
+        let dir = workspace(2);
+        for args in [
+            InitArgs {
+                forge_repository: Some("example/tools".to_owned()),
+                ..yes(InitVersioning::Independent)
+            },
+            InitArgs {
+                product_package: Some("app".to_owned()),
+                ..yes(InitVersioning::Independent)
+            },
+        ] {
+            let error = run_init(dir.path(), args, false, vec![], false).result.unwrap_err();
+            assert!(
+                matches!(&error, CliError::InitFlagRequiresArtifactTarget { .. }),
+                "{error}"
+            );
+            assert!(
+                error.to_string().contains("only applies with --artifact-target"),
+                "{error}"
+            );
+            assert!(nothing_written(dir.path()));
+        }
+    }
+
+    // No `origin`: init still writes the config, with a warning diagnostic, and skips the
+    // shipping-binaries question entirely (even with binary packages present).
+    #[test]
+    fn missing_origin_writes_config_with_warning_and_skips_shipping() {
+        let dir = workspace_without_origin(1);
+        let out = Shared::default();
+        let err = Shared::default();
+        run_with_json(dir.path(), yes(InitVersioning::Independent), false, &out, &err);
+        assert!(
+            err.text().contains("No `origin` remote is configured"),
+            "{}",
+            err.text()
+        );
+        let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
+        assert_eq!(report["initialized"], true);
+        let diagnostics = report["diagnostics"].as_array().unwrap();
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d["code"] == "init-origin-missing" && d["severity"] == "warning"),
+            "{report}"
+        );
+        assert!(dir.path().join("callisto.toml").exists());
+
+        // Interactively, with a binary package present, the ship question is never asked.
+        let interactive_dir = workspace_without_origin(1);
+        let run = run_init(
+            interactive_dir.path(),
+            InitArgs::default(),
+            true,
+            vec![Answer::Select(0), Answer::Confirm(true)],
+            false,
+        );
+        run.result.unwrap();
+        assert_eq!(run.prompter.prompts(), [VERSIONING_PROMPT, WRITE_PROMPT]);
+        assert!(!config(interactive_dir.path()).contains("[release]"));
+    }
+
+    // `--workflow` and `--artifact-target` each require `origin`; both error up front, naming it.
+    #[test]
+    fn workflow_or_artifact_target_without_origin_errors() {
+        let workflow_dir = workspace_without_origin(0);
+        let args = InitArgs {
+            workflow: true,
+            ..yes(InitVersioning::Independent)
+        };
+        let error = run_init(workflow_dir.path(), args, false, vec![], false)
+            .result
+            .unwrap_err();
+        assert!(
+            matches!(&error, CliError::InitFlagRequiresOrigin { flag } if *flag == "workflow"),
+            "{error}"
+        );
+        assert!(nothing_written(workflow_dir.path()));
+
+        let target_dir = workspace_without_origin(1);
+        let args = with_targets(&["x86_64-unknown-linux-gnu"]);
+        let error = run_init(target_dir.path(), args, false, vec![], false)
+            .result
+            .unwrap_err();
+        assert!(
+            matches!(&error, CliError::InitFlagRequiresOrigin { flag } if *flag == "artifact-target"),
+            "{error}"
+        );
+        assert!(nothing_written(target_dir.path()));
+    }
+
     // Flags produce the interactive run's config and preview, without prompting.
     #[test]
     fn non_interactive_matches_interactive() {
@@ -944,6 +1103,45 @@ mod tests {
         assert_eq!(run.prompter.prompts(), [VERSIONING_PROMPT, WORKFLOW_PROMPT]);
         assert!(run.out.contains("Release plan:"), "{}", run.out);
         assert!(run.out.contains("[DRY-RUN]"));
+        assert!(nothing_written(dir.path()));
+    }
+
+    // --dry-run --workflow lists every file it would write: config, changeset README and workflow.
+    #[test]
+    fn dry_run_with_workflow_lists_every_file() {
+        let dir = workspace(0);
+        let args = InitArgs {
+            workflow: true,
+            ..yes(InitVersioning::Independent)
+        };
+        let out = Shared::default();
+        let err = Shared::default();
+        run(
+            args,
+            &global(dir.path(), OutputFormat::Json, true),
+            false,
+            &mut Scripted::new(vec![], &out),
+            &mut out.clone(),
+            &mut err.clone(),
+            &fake_ls_remote(env!("CARGO_PKG_VERSION")),
+        )
+        .unwrap();
+        let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
+        let files: Vec<&str> = report["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|file| file.as_str().unwrap())
+            .collect();
+        assert!(files.iter().any(|file| file.ends_with("callisto.toml")), "{files:?}");
+        assert!(
+            files.iter().any(|file| file.ends_with(".changeset/README.md")),
+            "{files:?}"
+        );
+        assert!(
+            files.iter().any(|file| file.ends_with("callisto-release.yml")),
+            "{files:?}"
+        );
         assert!(nothing_written(dir.path()));
     }
 
@@ -1061,7 +1259,7 @@ mod tests {
             )),
             "{workflow}"
         );
-        assert!(workflow.contains("with: {mode: version-pr}"));
+        assert!(workflow.contains("with: {mode: version-pr, branch: main}"));
         assert!(workflow.contains("with: {mode: release}"));
         assert!(
             run.out.contains(".github/workflows/callisto-release.yml:"),
@@ -1353,7 +1551,7 @@ mod tests {
             "callisto release plan --from-release-commit",
             "include: ${{ fromJSON(needs.plan.outputs.matrix) }}",
             "callisto release execute",
-            "with: {mode: version-pr}",
+            "with: {mode: version-pr, branch: main}",
         ] {
             assert!(workflow.contains(expected), "`{expected}` missing:\n{workflow}");
         }

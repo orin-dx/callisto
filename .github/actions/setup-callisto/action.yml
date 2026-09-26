@@ -6,7 +6,10 @@ inputs:
     required: false
     default: 'auto'
   version:
-    description: 'Version tag of Callisto to install'
+    description: >-
+      Version tag of Callisto to install. Default 'latest' installs the release this action's
+      own invocation is pinned to (github.action_ref resolved against callisto@ tags), falling
+      back to the newest published release when that ref is unset or unresolvable.
     required: false
     default: 'latest'
   verification:
@@ -46,5 +49,6 @@ runs:
         INPUT_CALLISTO_SOURCE: ${{ inputs.source }}
         INPUT_CALLISTO_VERSION: ${{ inputs.version }}
         INPUT_CALLISTO_VERIFICATION: ${{ inputs.verification }}
+        GITHUB_ACTION_REF: ${{ github.action_ref }}
         GH_TOKEN: ${{ github.token }}
       run: bash "$GITHUB_ACTION_PATH/scripts/install-callisto.sh" # zizmor: ignore[github-env] the PATH entry is a fixed child of the trusted runner temporary directory, not action input or downloaded archive content.
