@@ -127,9 +127,8 @@ pub enum DiagnosticCode {
     /// A tag matched a `tag_template`-derived glob, but the substring at the `{version}`
     /// placeholder position did not parse as a valid version under the expected grammar.
     TagGlobNonVersionMatch,
-    /// Reserved for `init`'s `.changeset/config.json` translation reporting a
-    /// config key from `@changesets/cli` that has no callisto equivalent and was dropped; not
-    /// emitted by any current code path.
+    /// `init` found a `.changeset/config.json` key from `@changesets/cli` that callisto never
+    /// reads; no translation happens, the key is just inert.
     ChangesetsConfigKeyDropped,
     /// Commit-severity inference failed for a package (e.g. a `git log` error) — the package's
     /// inferred severity is treated as absent rather than the run failing outright.

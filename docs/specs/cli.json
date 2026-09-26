@@ -255,6 +255,10 @@
       "criterion": "`init --format json` writes the human-readable detection, config and preview to stderr and a report `{schemaVersion, initialized, configPath, config}` (plus `diagnostics` when any) to stdout; with --dry-run `initialized` is false and no file is written."
     },
     {
+      "id": "CLI-INIT-14",
+      "criterion": "When `.changeset/config.json` exists and declares `fixed`, `linked`, `ignore`, `access`, `baseBranch`, or `updateInternalDependencies` -- none of which callisto translates -- init emits a `changesets-config-key-dropped` warning diagnostic per such key present, naming `[[fixed-group]]` as `fixed`'s callisto.toml equivalent and stating no equivalent exists for the others."
+    },
+    {
       "id": "CLI-WF-01",
       "criterion": "A workflow is written to .github/workflows/callisto-release.yml only when --workflow is given or the interactive workflow question is answered yes; after writing, init prints that merging to the default branch publishes and advises requiring pull requests and reviews on it."
     },
