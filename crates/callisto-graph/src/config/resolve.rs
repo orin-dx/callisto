@@ -577,6 +577,9 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
             key: format!("[[package]] match = {:?}: {e}", raw_pkg.pattern),
         })?;
 
+        if raw_pkg.release_trigger.is_some() {
+            provenance.insert(ConfigKey::RELEASE_TRIGGER, ConfigProvenance::Explicit);
+        }
         if raw_pkg.tag_template.is_some() {
             provenance.insert(ConfigKey::TAG_TEMPLATE, ConfigProvenance::Explicit);
         }
@@ -609,6 +612,9 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
             key: format!("[[package-set]] match = {:?}: {e}", raw_pkg.pattern),
         })?;
 
+        if raw_pkg.release_trigger.is_some() {
+            provenance.insert(ConfigKey::RELEASE_TRIGGER, ConfigProvenance::Explicit);
+        }
         if raw_pkg.tag_template.is_some() {
             provenance.insert(ConfigKey::TAG_TEMPLATE, ConfigProvenance::Explicit);
         }
@@ -1422,6 +1428,24 @@ mod tests {
     fn linked_group_provenance_is_default_when_absent() {
         let cfg = bare_resolve("");
         assert_eq!(cfg.provenance(&ConfigKey::LINKED_GROUP), ConfigProvenance::Default);
+    }
+
+    #[test]
+    fn release_trigger_provenance_is_explicit_when_set_on_a_package_rule() {
+        let cfg = bare_resolve("[[package]]\nmatch = \"cargo/demo\"\nrelease-trigger = \"auto\"\n");
+        assert_eq!(cfg.provenance(&ConfigKey::RELEASE_TRIGGER), ConfigProvenance::Explicit);
+    }
+
+    #[test]
+    fn release_trigger_provenance_is_explicit_when_set_on_a_package_set_rule() {
+        let cfg = bare_resolve("[[package-set]]\nmatch = \"cargo/*\"\nrelease-trigger = \"auto\"\n");
+        assert_eq!(cfg.provenance(&ConfigKey::RELEASE_TRIGGER), ConfigProvenance::Explicit);
+    }
+
+    #[test]
+    fn release_trigger_provenance_is_default_when_absent() {
+        let cfg = bare_resolve("[[package]]\nmatch = \"cargo/demo\"\n");
+        assert_eq!(cfg.provenance(&ConfigKey::RELEASE_TRIGGER), ConfigProvenance::Default);
     }
 
     #[test]
