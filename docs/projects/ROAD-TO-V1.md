@@ -44,7 +44,6 @@ Decisions (owner, 2026-09-25):
 - `plan_snapshot` (`crates/callisto-graph/src/commands/snapshot.rs`) parses the snapshot tag as SemVer for every package, so a workspace with a Pypi package fails to snapshot: the tag is not a valid PEP 440 version. `cargo metadata --locked`, `npm ci` and `pnpm install --frozen-lockfile` are covered end-to-end (`crates/callisto-cli/tests/native_resolution_e2e_tests.rs`); `uv lock --check` is covered only after `version`, not after `snapshot`.
 
 ### 4. Anything `@changesets/cli` accepts, callisto accepts
-- `pre enter` after `pre exit` is rejected. Re-enter from exit mode.
 - A changeset with one unknown entry is consumed, losing the known entries. Do not consume it.
 - `.changeset/config.json` is not translated; `ChangesetsConfigKeyDropped` is defined but never emitted.
 

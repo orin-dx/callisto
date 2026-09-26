@@ -154,7 +154,7 @@
     },
     {
       "id": "VER-PRE-02",
-      "criterion": "`pre enter` fails when the tag is empty or whitespace or `.changeset/pre.json` already exists (also under `--dry-run`); `callisto pre exit` sets `mode` to `exit` and fails when the file is missing or already in `exit` mode.",
+      "criterion": "`pre enter` fails when the tag is empty or whitespace, or when `.changeset/pre.json` exists with mode `pre` (also under `--dry-run`); when it exists with mode `exit`, `pre enter` instead resumes the cycle under the new tag, keeping its recorded `initialVersions` and `changesets`. `callisto pre exit` sets `mode` to `exit` and fails when the file is missing or already in `exit` mode.",
       "is_error_case": true
     },
     {
