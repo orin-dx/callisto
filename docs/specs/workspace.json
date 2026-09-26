@@ -80,7 +80,7 @@
     },
     {
       "id": "WS-ID-03",
-      "criterion": "When two or more directories declare the same name and no ecosystem declares it in more than one of them, each package is promoted to an ecosystem-qualified id (`cargo:foo`, `npm:foo`, `pypi:foo`), displayed as `cargo/foo`."
+      "criterion": "When two or more directories declare the same name and no ecosystem declares it in more than one of them, each package is promoted to an ecosystem-qualified id (`cargo/foo`, `npm/foo`, `pypi/foo`), displayed as `cargo/foo`. Promotion changes the package's id in output and in `pre.json`."
     },
     {
       "id": "WS-ID-04",
