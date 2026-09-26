@@ -1,5 +1,5 @@
 //! Shared types and traits for callisto: package identity, versions, manifests, dependency
-//! specs, and the versioned JSON report contract. [`format`] reads and writes changeset files and
+//! specs, and the versioned JSON report contract. [`format`](mod@format) reads and writes changeset files and
 //! `pre.json`; [`vcs`] is Git access through the git CLI.
 
 pub mod atomic;
