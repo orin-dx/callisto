@@ -26,8 +26,8 @@ impl IgnoreWalkLocator {
         IgnoreWalkLocator { root: canonical, skip }
     }
 
-    pub fn discover(start: &Path) -> Result<Self, LocateError> {
-        let root = find_workspace_root(start)?;
+    pub fn discover(start: &Path, runner: &dyn callisto_model::CommandRunner) -> Result<Self, LocateError> {
+        let root = find_workspace_root(start, runner)?;
         Ok(Self::new(&root))
     }
 }
@@ -76,6 +76,29 @@ impl ProjectLocator for IgnoreWalkLocator {
                 continue;
             }
 
+            let rel = to_workspace_relative(path, &self.root)?;
+            let is_root = rel == Path::new(".");
+            let admits = |ecosystem: Ecosystem| match ecosystem {
+                Ecosystem::Cargo => cargo_membership.admits(&rel, is_root),
+                Ecosystem::Npm => npm_membership.admits(&rel, is_root),
+                Ecosystem::Pypi => python_membership.admits(&rel, is_root),
+                _ => false,
+            };
+            // Own-path check for a *failed* manifest: only a real, explicit members/workspaces
+            // match counts -- the admit-all fallback (no restriction present, e.g. because this
+            // very manifest is the one that failed to parse) must not count as membership.
+            let admits_explicitly = |ecosystem: Ecosystem| match ecosystem {
+                Ecosystem::Cargo => cargo_membership.admits_explicitly(&rel, is_root),
+                Ecosystem::Npm => npm_membership.admits_explicitly(&rel, is_root),
+                Ecosystem::Pypi => python_membership.admits_explicitly(&rel, is_root),
+                _ => false,
+            };
+
+            // First pass: read and parse every canonical manifest present in this
+            // directory, so a parse failure below can check whether a *sibling*
+            // manifest here was admitted, not only its own ecosystem's membership.
+            let mut parsed: Vec<(Ecosystem, String, callisto_manifests::ManifestIdentity)> = Vec::new();
+            let mut failures: Vec<(PathBuf, String)> = Vec::new();
             for ecosystem in Ecosystem::CANONICAL {
                 // Every `Ecosystem::CANONICAL` member has a canonical
                 // manifest format by construction -- see its doc comment.
@@ -86,25 +109,47 @@ impl ProjectLocator for IgnoreWalkLocator {
                 let Ok(content) = fs::read_to_string(&manifest_path) else {
                     continue;
                 };
-                let Ok(identity) = callisto_manifests::read_identity(format, &content, &manifest_path) else {
-                    continue;
-                };
+                match callisto_manifests::read_identity(format, &content, &manifest_path) {
+                    Ok(identity) => parsed.push((ecosystem, content, identity)),
+                    Err(e) => failures.push((manifest_path, e.to_string())),
+                }
+            }
+
+            // Explicit only, like `self_admitted` below -- a sibling that's merely admitted by
+            // the fallback admit-all (no restriction present for that ecosystem) doesn't make
+            // this directory a real, deliberate workspace member; only a genuine members/
+            // workspaces match does.
+            let any_sibling_admitted = parsed
+                .iter()
+                .any(|(ecosystem, _, identity)| identity.name.is_some() && admits_explicitly(*ecosystem));
+
+            for (manifest_path, message) in failures {
+                // Determine which ecosystem this failed manifest belongs to from its
+                // file name, to check its own membership independent of any sibling.
+                let ecosystem = Ecosystem::CANONICAL.into_iter().find(|eco| {
+                    eco.canonical_manifest_format()
+                        .is_some_and(|f| Some(f.file_name()) == manifest_path.file_name().and_then(|n| n.to_str()))
+                });
+                let self_admitted = ecosystem.is_some_and(admits_explicitly);
+                if self_admitted || any_sibling_admitted {
+                    return Err(LocateError::ManifestParseError {
+                        path: manifest_path,
+                        message,
+                    });
+                }
+                eprintln!("{}", unparseable_manifest_warning(&manifest_path, &message));
+            }
+
+            for (ecosystem, content, identity) in parsed {
                 let Some(name) = identity.name else {
                     continue;
                 };
 
-                let rel = to_workspace_relative(path, &self.root)?;
-                let is_root = rel == Path::new(".");
-                let admitted = match ecosystem {
-                    Ecosystem::Cargo => cargo_membership.admits(&rel, is_root),
-                    Ecosystem::Npm => npm_membership.admits(&rel, is_root),
-                    Ecosystem::Pypi => python_membership.admits(&rel, is_root),
-                    _ => false,
-                };
+                let admitted = admits(ecosystem);
                 let id = PackageId::parse(&name).unwrap_or_else(|_| PackageId::Bare(name.clone()));
                 let project = ProjectRoot {
                     id,
-                    path: rel,
+                    path: rel.clone(),
                     ecosystem,
                 };
                 if admitted {
@@ -119,6 +164,13 @@ impl ProjectLocator for IgnoreWalkLocator {
         platform_candidates.sort_by(|a, b| a.path.cmp(&b.path));
         Ok((results, platform_candidates))
     }
+}
+
+/// Warning text for a manifest that fails to parse but isn't a workspace member (its own
+/// ecosystem doesn't admit it, and it shares no directory with an admitted manifest) --
+/// tested directly, since `eprintln!` output can't be captured from inside discovery.
+fn unparseable_manifest_warning(path: &Path, message: &str) -> String {
+    format!("warning: failed to parse manifest `{}`: {message}", path.display())
 }
 
 fn to_workspace_relative(path: &Path, root: &Path) -> Result<PathBuf, LocateError> {
@@ -283,10 +335,26 @@ mod tests {
     /// accidentally swallow or mistype this error.
     #[test]
     fn discover_returns_workspace_root_not_found_for_non_workspace_dir() {
+        struct FakeGitToplevel;
+        impl callisto_model::CommandRunner for FakeGitToplevel {
+            fn run(
+                &self,
+                _program: &str,
+                _args: &[&str],
+                cwd: &std::path::Path,
+            ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+                Ok(callisto_model::CommandOutput {
+                    exit_code: Some(0),
+                    stdout: format!("{}\n", cwd.display()),
+                    stderr: String::new(),
+                })
+            }
+        }
+
         let tmp = tempfile::tempdir().unwrap();
         // A Git repository with deliberately no workspace or package markers.
         std::fs::create_dir(tmp.path().join(".git")).unwrap();
-        let result = IgnoreWalkLocator::discover(tmp.path());
+        let result = IgnoreWalkLocator::discover(tmp.path(), &FakeGitToplevel);
         let is_correct = matches!(result, Err(LocateError::WorkspaceRootNotFound { .. }));
         let err_display = result
             .as_ref()
@@ -1963,5 +2031,93 @@ mod tests {
                 "packages/kept must be admitted, got: {projects:?}"
             );
         }
+    }
+
+    #[test]
+    fn unparseable_manifest_warning_names_path_and_message() {
+        let msg = unparseable_manifest_warning(Path::new("tools/scratch/package.json"), "trailing comma");
+        assert_eq!(
+            msg,
+            "warning: failed to parse manifest `tools/scratch/package.json`: trailing comma"
+        );
+    }
+
+    /// A manifest admitted by an explicit workspace-membership entry that fails to parse must
+    /// error with a coded, path-naming diagnostic instead of being silently dropped.
+    #[test]
+    fn unparseable_manifest_explicitly_admitted_by_its_own_ecosystem_errors() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path();
+        fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = [\"a\", \"b\"]\n").unwrap();
+        fs::create_dir_all(root.join("a")).unwrap();
+        fs::write(
+            root.join("a/Cargo.toml"),
+            "[package]\nname = \"a\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("b")).unwrap();
+        fs::write(
+            root.join("b/Cargo.toml"),
+            "[package]\nname = \"b\"\nversion = \"1.0.0\"\n<<<<<<< HEAD\n",
+        )
+        .unwrap();
+
+        let err = IgnoreWalkLocator::new(root).projects().unwrap_err();
+        assert!(
+            matches!(&err, LocateError::ManifestParseError { path, .. } if path.ends_with("b/Cargo.toml")),
+            "expected ManifestParseError naming b/Cargo.toml, got: {err:?}"
+        );
+    }
+
+    /// A manifest that fails to parse and shares its directory with a manifest of a *different*
+    /// ecosystem that IS admitted must also error, even though its own ecosystem's membership
+    /// (npm workspaces) doesn't separately name it.
+    #[test]
+    fn unparseable_manifest_sharing_a_directory_with_an_admitted_sibling_errors() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path();
+        fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = [\"a\", \"b\"]\n").unwrap();
+        fs::write(root.join("package.json"), r#"{"private":true,"workspaces":["a"]}"#).unwrap();
+        fs::create_dir_all(root.join("a")).unwrap();
+        fs::write(
+            root.join("a/Cargo.toml"),
+            "[package]\nname = \"a\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        fs::write(root.join("a/package.json"), r#"{"name":"a","version":"1.0.0",}"#).unwrap();
+
+        let err = IgnoreWalkLocator::new(root).projects().unwrap_err();
+        assert!(
+            matches!(&err, LocateError::ManifestParseError { path, .. } if path.ends_with("a/package.json")),
+            "expected ManifestParseError naming a/package.json, got: {err:?}"
+        );
+    }
+
+    /// A manifest that fails to parse, is admitted by no explicit membership, and shares no
+    /// directory with an admitted manifest is a non-fatal, silently-skipped warning -- matching
+    /// the long-standing malformed-root-manifest fallback tests above.
+    #[test]
+    fn unparseable_manifest_outside_any_membership_is_skipped_not_fatal() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path();
+        fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = [\"kept\"]\n").unwrap();
+        fs::create_dir_all(root.join("kept")).unwrap();
+        fs::write(
+            root.join("kept/Cargo.toml"),
+            "[package]\nname = \"kept\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("scratch")).unwrap();
+        fs::write(root.join("scratch/Cargo.toml"), "[package\nname = \"broken\"\n").unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+        assert!(
+            projects.iter().any(|p| p.path == Path::new("kept")),
+            "non-broken admitted member must still be discovered, got: {projects:?}"
+        );
+        assert!(
+            !projects.iter().any(|p| p.path == Path::new("scratch")),
+            "the unparseable, non-admitted manifest must not appear as a discovered project, got: {projects:?}"
+        );
     }
 }

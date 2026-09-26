@@ -434,16 +434,18 @@ fn derive_release_inputs_with<R: CommandRunner, D: DependencyResolver>(
     let mut uploads_by_package = BTreeMap::<ReleasePackageId, Vec<ReleaseOperationId>>::new();
     if let (Some(product), Some(policy)) = (&workspace.config.product_release, artifact_policy) {
         require_product_package_publishes_to_forge(workspace, &product.package)?;
-        // Bare identities still need the ecosystem check, so a same-name package in another ecosystem can't match.
-        let matches_product = |id: &ReleasePackageId, package: &callisto_model::Package| {
-            product.package.matches(&package.id) && product.package.ecosystem() == Some(id.ecosystem())
-        };
-        if !selected.iter().any(|(id, (package, _))| matches_product(id, package)) {
+        // Resolved through IdentityIndex, not `PackageId::matches`: a Bare
+        // package id is not an ecosystem wildcard here -- a same-name
+        // package in another ecosystem must never match the product/artifact selector.
+        let matches_product =
+            |package: &callisto_model::Package| workspace.identity.identifies(&product.package, &package.id);
+        if !selected.values().any(|(package, _)| matches_product(package)) {
             // The product isn't in this release, so warn instead of leaving the artifact owner's asset unregistered.
             for artifact in &product.artifacts {
-                if let Some((owner_id, _)) = selected.iter().find(|(candidate, (pkg, _))| {
-                    artifact.package.matches(&pkg.id) && artifact.package.ecosystem() == Some(candidate.ecosystem())
-                }) {
+                if let Some((owner_id, _)) = selected
+                    .iter()
+                    .find(|(_, (pkg, _))| workspace.identity.identifies(&artifact.package, &pkg.id))
+                {
                     eprintln!(
                         "{}",
                         unreleased_product_artifact_warning(&product.package, artifact, owner_id)
@@ -452,7 +454,7 @@ fn derive_release_inputs_with<R: CommandRunner, D: DependencyResolver>(
             }
         }
         for (id, (package, _)) in &selected {
-            if !matches_product(id, package) {
+            if !matches_product(package) {
                 continue;
             }
             let forge = forge_by_package.get(id).ok_or_else(|| GraphError::ReleaseInvariant {
@@ -474,9 +476,7 @@ fn derive_release_inputs_with<R: CommandRunner, D: DependencyResolver>(
                 // release. Every slot still attaches to the product's one release.
                 let (owner_id, owner_version) = selected
                     .iter()
-                    .find(|(candidate, (pkg, _))| {
-                        artifact.package.matches(&pkg.id) && artifact.package.ecosystem() == Some(candidate.ecosystem())
-                    })
+                    .find(|(_, (pkg, _))| workspace.identity.identifies(&artifact.package, &pkg.id))
                     .map(|(candidate, (_, owner_version))| (candidate.clone(), owner_version.clone()))
                     .ok_or_else(|| GraphError::ReleaseArtifactOwnerNotReleased {
                         asset: artifact.asset_name.clone(),
@@ -607,10 +607,7 @@ fn require_product_package_publishes_to_forge<R: CommandRunner, D: DependencyRes
 ) -> Result<(), GraphError> {
     let mut found = false;
     for package in workspace.graph.packages() {
-        let is_product = crate::commands::release_decision::release_package_ids(&workspace.identity, package)?
-            .iter()
-            .any(|id| product.matches(&package.id) && product.ecosystem() == Some(id.ecosystem()));
-        if !is_product {
+        if !workspace.identity.identifies(product, &package.id) {
             continue;
         }
         found = true;

@@ -22,13 +22,16 @@ pub struct PackagePattern {
 
 impl PackagePattern {
     pub fn parse(s: &str) -> Result<Self, globset::Error> {
-        let (ecosystem, rest) = match s.split_once(':') {
-            Some((prefix, rest)) => match Ecosystem::from_prefix(prefix) {
-                Some(eco) => (Some(eco), rest),
-                None => (None, s),
-            },
-            None => (None, s),
-        };
+        // Try `:` first so `cargo:pkg-*` keeps its existing meaning, then `/`
+        // so `cargo/pkg-*` is accepted too, matching `PackageId::parse`'s two
+        // qualified forms.
+        let (ecosystem, rest) = [':', '/']
+            .into_iter()
+            .find_map(|sep| {
+                let (prefix, rest) = s.split_once(sep)?;
+                Ecosystem::from_prefix(prefix).map(|eco| (Some(eco), rest))
+            })
+            .unwrap_or((None, s));
         let glob = Glob::new(rest)?;
         Ok(Self {
             raw: s.to_string(),
@@ -106,6 +109,26 @@ mod tests {
         assert!(
             !pattern.matches(&npm_pkg),
             "'cargo:internal-*' must NOT match the npm package 'internal-foo'"
+        );
+    }
+
+    /// `eco/glob` must be accepted as an alias of `eco:glob` -- before the
+    /// fix, `/` was never checked as a separator, so the whole string
+    /// (`"cargo/foo-*"`) was compiled as one literal glob that could never
+    /// match a bare package name like `foo-a`.
+    #[test]
+    fn slash_separated_pattern_matches_the_same_as_colon_separated() {
+        let pattern = PackagePattern::parse("cargo/foo-*").expect("valid glob");
+        let cargo_pkg = PackageId::parse("cargo:foo-a").expect("valid package id");
+        let npm_pkg = PackageId::parse("npm:foo-a").expect("valid package id");
+
+        assert!(
+            pattern.matches(&cargo_pkg),
+            "'cargo/foo-*' must match the Cargo package 'foo-a'"
+        );
+        assert!(
+            !pattern.matches(&npm_pkg),
+            "'cargo/foo-*' must not match the npm package 'foo-a'"
         );
     }
 }

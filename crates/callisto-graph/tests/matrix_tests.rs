@@ -1,7 +1,7 @@
 mod fixtures;
 use callisto_graph::commands::{matrix, MatrixOptions};
 use callisto_model::PackageId;
-use fixtures::{GraphBuilder, PackageBuilder};
+use fixtures::{identity_for, GraphBuilder, PackageBuilder};
 use std::cell::OnceCell;
 
 struct DummyRunner;
@@ -60,6 +60,7 @@ fn matrix_package_filter_restricts_to_one_package() {
 
     let cfg = callisto_graph::config::load(root).unwrap();
     let runner = DummyRunner;
+    let identity = identity_for(&graph);
     let ws = callisto_graph::Workspace {
         root: root.to_path_buf(),
         config: cfg,
@@ -68,7 +69,7 @@ fn matrix_package_filter_restricts_to_one_package() {
         git: OnceCell::new(),
         runner: &runner,
         manifest_cache: Default::default(),
-        identity: callisto_graph::IdentityIndex::default(),
+        identity,
     };
 
     let opts = MatrixOptions {
@@ -100,6 +101,7 @@ fn matrix_unknown_package_errors() {
     let graph = GraphBuilder::new().build().unwrap();
     let cfg = callisto_graph::config::load(root).unwrap();
     let runner = DummyRunner;
+    let identity = identity_for(&graph);
     let ws = callisto_graph::Workspace {
         root: root.to_path_buf(),
         config: cfg,
@@ -108,7 +110,7 @@ fn matrix_unknown_package_errors() {
         git: OnceCell::new(),
         runner: &runner,
         manifest_cache: Default::default(),
-        identity: callisto_graph::IdentityIndex::default(),
+        identity,
     };
 
     let opts = MatrixOptions {
@@ -192,6 +194,7 @@ fn matrix_same_bare_name_across_ecosystems_keys_by_qualified_id_and_binds_artifa
 
     let cfg = callisto_graph::config::load(root).unwrap();
     let runner = DummyRunner;
+    let identity = identity_for(&graph);
     let ws = callisto_graph::Workspace {
         root: root.to_path_buf(),
         config: cfg,
@@ -200,7 +203,7 @@ fn matrix_same_bare_name_across_ecosystems_keys_by_qualified_id_and_binds_artifa
         git: OnceCell::new(),
         runner: &runner,
         manifest_cache: Default::default(),
-        identity: callisto_graph::IdentityIndex::default(),
+        identity,
     };
 
     let report = matrix(&ws, &MatrixOptions::default()).expect("matrix should succeed");
@@ -247,6 +250,7 @@ fn matrix_package_filter_bare_name_ambiguous_across_ecosystems_lists_both_candid
 
     let cfg = callisto_graph::config::load(root).unwrap();
     let runner = DummyRunner;
+    let identity = identity_for(&graph);
     let ws = callisto_graph::Workspace {
         root: root.to_path_buf(),
         config: cfg,
@@ -255,7 +259,7 @@ fn matrix_package_filter_bare_name_ambiguous_across_ecosystems_lists_both_candid
         git: OnceCell::new(),
         runner: &runner,
         manifest_cache: Default::default(),
-        identity: callisto_graph::IdentityIndex::default(),
+        identity,
     };
 
     let opts = MatrixOptions {
@@ -286,6 +290,7 @@ fn matrix_package_filter_qualified_name_selects_only_that_ecosystem() {
 
     let cfg = callisto_graph::config::load(root).unwrap();
     let runner = DummyRunner;
+    let identity = identity_for(&graph);
     let ws = callisto_graph::Workspace {
         root: root.to_path_buf(),
         config: cfg,
@@ -294,7 +299,7 @@ fn matrix_package_filter_qualified_name_selects_only_that_ecosystem() {
         git: OnceCell::new(),
         runner: &runner,
         manifest_cache: Default::default(),
-        identity: callisto_graph::IdentityIndex::default(),
+        identity,
     };
 
     let opts = MatrixOptions {

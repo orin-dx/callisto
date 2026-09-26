@@ -129,7 +129,7 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
                 source,
                 path: Some(global.cwd.clone()),
             })?;
-            let root = callisto_graph::locate::find_workspace_root(&start)?;
+            let root = callisto_graph::locate::find_workspace_root(&start, &runner)?;
             let config = callisto_graph::load_config(&root)?;
             let rel_pre_path = config.pre_json_path();
             let pre_path = root.join(&rel_pre_path);
@@ -198,8 +198,8 @@ mod tests {
     #[test]
     fn handle_enter_dry_run_text_format_previews_without_writing() {
         let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::create_dir(tmp.path().join(".git")).unwrap();
         let root = tmp.path();
+        callisto_fixtures::git::init_repo(root);
         std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
         std::fs::write(root.join("callisto.toml"), "").unwrap();
 

@@ -117,10 +117,10 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`
 | E032 | Project path `<path>` is outside the workspace root `<root>` | — |
 | E033 | VCS error during workspace location: <0> | — |
 | E058 | `<path>` is not inside a Git repository | Callisto needs a Git repository: run `git init` in the workspace root. |
+| E209 | Failed to parse manifest `<path>`: <message> | Fix the manifest's syntax; a workspace member's manifest is never skipped. |
 | E100 | Package ID is defined at more than one manifest path | Ensure package IDs are unique across workspace manifest paths. |
-| E101 | Package at one path declares conflicting identities | Align package name declarations in manifest files. |
-| E102 | Named package was not found in the workspace | Verify package is included in workspace members in callisto.toml. |
-| E103 | Bare package name is ambiguous; more than one candidate matches | Use fully-qualified package ID with ecosystem prefix (e.g. cargo:pkg). |
+| E102 | Named package was not found in the workspace | Check the package's name and ecosystem, or that its directory has a manifest callisto discovers. |
+| E103 | Bare package name is ambiguous; more than one candidate matches | Qualify the name with its ecosystem, e.g. `cargo/pkg` or `cargo:pkg`. |
 | E104 | Dependency cycle detected among workspace packages | Refactor workspace dependencies to break the cyclic dependency chain. |
 | E105 | Version cascade failed to converge after its iteration limit | Check for oscillating peer or linked group dependencies. |
 | E106 | Fixed group's members have divergent on-disk versions | Align on-disk versions for all members of the fixed group. |
