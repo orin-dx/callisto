@@ -251,7 +251,7 @@ fn changeset_wellformedness_diagnostics<'a>(
 mod tests {
     use std::path::PathBuf;
 
-    use callisto_format::{Changeset, Entry};
+    use callisto_model::format::{Changeset, Entry};
     use callisto_model::{Ecosystem, ReleaseTrigger, Severity};
 
     use super::*;

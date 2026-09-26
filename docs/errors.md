@@ -2,7 +2,7 @@
 
 Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`. A `callisto-model` test fails when a numeric code is missing here.
 
-186 codes exist across two namespaces: 153 numeric `E###` codes (`callisto-model`, `callisto-format`, `callisto-vcs`, `callisto-changelog`, `callisto-graph`) and 33 `callisto::snake_case` codes (`callisto-cli`'s own top-level errors — the ones the CLI surface actually raises). `callisto-conventional` errors carry no diagnostic code at all. `callisto-cli`'s `CliError` also has 9 variants that wrap another crate's error transparently (`#[diagnostic(transparent)]`, no `code(...)` of its own) — those are intentionally out of scope here since they have no code to document; the code you see for them at runtime is whichever code above their wrapped error already carries.
+186 codes exist across two namespaces: 153 numeric `E###` codes (`callisto-model`, `callisto-graph`) and 33 `callisto::snake_case` codes (`callisto-cli`'s own top-level errors — the ones the CLI surface actually raises). `callisto_graph::conventional` errors carry no diagnostic code at all. `callisto-cli`'s `CliError` also has 9 variants that wrap another crate's error transparently (`#[diagnostic(transparent)]`, no `code(...)` of its own) — those are intentionally out of scope here since they have no code to document; the code you see for them at runtime is whichever code above their wrapped error already carries.
 
 "Fix" is the code's `help(...)` text verbatim. "—" means the variant has no help text in the source.
 
@@ -56,7 +56,7 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`
 | E153 | Path `<path>` may not appear in a forge commit plan | The executor never writes `.github/workflows/*`, `.git/*`, or unsafe paths through the forge commit API; those are inherited unchanged from the base commit. |
 | E154 | Pull request #<number> targets the internal staging branch | The `<release-branch>--staging` branch is reserved for the executor's own commit staging; close or rename a pull request opened against it before retrying. |
 
-## callisto-format
+## callisto-model — changeset and `pre.json` formats
 
 | Code | Meaning | Fix |
 | --- | --- | --- |
@@ -79,7 +79,7 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`
 | E056 | Cannot write changeset: entries present but summary is empty or whitespace-only | Provide a non-empty summary describing the change. |
 | E057 | Entry <index> has an empty package name | — |
 
-## callisto-vcs
+## callisto-model — Git access
 
 | Code | Meaning | Fix |
 | --- | --- | --- |
@@ -89,7 +89,7 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`
 | E053 | Tag glob pattern `<pattern>` is not a valid glob: <message> | Fix the glob syntax (e.g. balance `{`/`}` and `[`/`]`) or use a literal tag name. |
 | E059 | Staged content for `<path>` no longer matches the index (worktree bytes hash to a different blob than the staged `<expected_sha>`) | Re-stage the file with `git add` so the worktree matches the index, or read it again after staging. |
 
-## callisto-changelog
+## callisto-graph — changelog
 
 | Code | Meaning | Fix |
 | --- | --- | --- |
@@ -228,4 +228,4 @@ Hand-maintained from the `#[diagnostic(code(...))]` attributes in `crates/*/src`
 | `callisto::init_workflow_flags_conflict` | `--workflow` and `--no-workflow` are mutually exclusive | pass only one of --workflow or --no-workflow |
 | `callisto::error` | Fallback/untyped error; message is whatever string was wrapped | — |
 
-186 codes total: 153 numeric (45 callisto-model, 18 callisto-format, 4 callisto-vcs, 4 callisto-changelog, 82 callisto-graph: 5 config + 77 graph) + 33 `callisto::*` in callisto-cli.
+186 codes total: 153 numeric (67 callisto-model: 45 core + 18 formats + 4 Git; 86 callisto-graph: 4 changelog + 5 config + 77 graph) + 33 `callisto::*` in callisto-cli.

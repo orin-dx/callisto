@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use indexmap::IndexMap;
 
-use callisto_changelog::ChangeSource;
+use crate::changelog::ChangeSource;
 use callisto_model::{CommandRunner, ComposePrBodyReport, PackageId, Severity, SCHEMA_VERSION};
 
 use crate::commands::version::plan_version;
@@ -80,7 +80,7 @@ impl ChangeGroup {
 }
 
 /// Renders one changelog entry's bullet text in isolation, mirroring
-/// `callisto_changelog::render_section`'s per-source formatting exactly
+/// `crate::changelog::render_section`'s per-source formatting exactly
 /// (minus its cross-entry `DependencyUpdate` batching, which does not apply
 /// once entries are regrouped across packages by shared identity instead of
 /// by owning package). Returns `None` for a `Changeset`/`Commit`-equivalent
@@ -338,7 +338,7 @@ pub fn render_pr_body_from_plan(
     for bump in &plan.bumps {
         let matching_write = changelog_write_map.get(&bump.package).copied();
 
-        let section_ok = matching_write.is_some_and(|w| callisto_changelog::render_section(&w.input).is_ok());
+        let section_ok = matching_write.is_some_and(|w| crate::changelog::render_section(&w.input).is_ok());
 
         if section_ok {
             let entries = &matching_write
@@ -631,13 +631,13 @@ mod tests {
             writes: vec![],
         };
 
-        let input = callisto_changelog::ChangelogInput {
+        let input = crate::changelog::ChangelogInput {
             package: pkg_a.clone(),
             from: Version::semver(1, 0, 0),
             to: Some(Version::semver(1, 1, 0)),
-            entries: vec![callisto_changelog::ChangelogEntry {
+            entries: vec![crate::changelog::ChangelogEntry {
                 severity: Severity::Minor,
-                source: callisto_changelog::ChangeSource::Changeset {
+                source: crate::changelog::ChangeSource::Changeset {
                     filename: "swift-foxes.md".to_string(),
                     summary: "A real changeset summary.".to_string(),
                 },
@@ -647,7 +647,7 @@ mod tests {
         // real gate `render_pr_body_from_plan` checks) without asserting on
         // its whole-section output, which includes a "## {version}" heading
         // no longer meaningful once entries are regrouped across packages.
-        callisto_changelog::render_section(&input).unwrap();
+        crate::changelog::render_section(&input).unwrap();
 
         let plan = VersionPlan {
             bumps: vec![bump],
@@ -718,19 +718,19 @@ mod tests {
             writes: vec![],
         };
 
-        let good_input = callisto_changelog::ChangelogInput {
+        let good_input = crate::changelog::ChangelogInput {
             package: pkg_b.clone(),
             from: Version::semver(1, 0, 0),
             to: Some(Version::semver(1, 0, 1)),
-            entries: vec![callisto_changelog::ChangelogEntry {
+            entries: vec![crate::changelog::ChangelogEntry {
                 severity: Severity::Patch,
-                source: callisto_changelog::ChangeSource::Changeset {
+                source: crate::changelog::ChangeSource::Changeset {
                     filename: "fix-1.md".to_string(),
                     summary: "A fix.".to_string(),
                 },
             }],
         };
-        callisto_changelog::render_section(&good_input).unwrap();
+        crate::changelog::render_section(&good_input).unwrap();
 
         let plan = VersionPlan {
             bumps: vec![bump_a, bump_b],
@@ -740,7 +740,7 @@ mod tests {
             changelog_writes: vec![
                 crate::plan::ChangelogWrite {
                     changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
-                    input: callisto_changelog::ChangelogInput {
+                    input: crate::changelog::ChangelogInput {
                         package: pkg_a.clone(),
                         from: Version::semver(1, 0, 0),
                         to: Some(Version::semver(1, 1, 0)),
@@ -804,13 +804,13 @@ mod tests {
             optional_dep_updates: vec![],
             changelog_writes: vec![crate::plan::ChangelogWrite {
                 changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
-                input: callisto_changelog::ChangelogInput {
+                input: crate::changelog::ChangelogInput {
                     package: pkg_a.clone(),
                     from: Version::semver(1, 0, 0),
                     to: Some(Version::semver(1, 1, 0)),
-                    entries: vec![callisto_changelog::ChangelogEntry {
+                    entries: vec![crate::changelog::ChangelogEntry {
                         severity: Severity::None,
-                        source: callisto_changelog::ChangeSource::Changeset {
+                        source: crate::changelog::ChangeSource::Changeset {
                             filename: "x.md".to_string(),
                             summary: "whatever".to_string(),
                         },
@@ -854,7 +854,7 @@ mod tests {
             optional_dep_updates: vec![],
             changelog_writes: vec![crate::plan::ChangelogWrite {
                 changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
-                input: callisto_changelog::ChangelogInput {
+                input: crate::changelog::ChangelogInput {
                     package: pkg_a.clone(),
                     from: Version::semver(1, 0, 0),
                     to: Some(Version::semver(1, 1, 0)),
@@ -893,13 +893,13 @@ mod tests {
 
         let make_write = |package: PackageId| crate::plan::ChangelogWrite {
             changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
-            input: callisto_changelog::ChangelogInput {
+            input: crate::changelog::ChangelogInput {
                 package: package.clone(),
                 from: Version::semver(1, 0, 0),
                 to: Some(Version::semver(1, 1, 0)),
-                entries: vec![callisto_changelog::ChangelogEntry {
+                entries: vec![crate::changelog::ChangelogEntry {
                     severity: Severity::Minor,
-                    source: callisto_changelog::ChangeSource::Changeset {
+                    source: crate::changelog::ChangeSource::Changeset {
                         filename: "delete-dead-abstractions.md".to_string(),
                         summary: shared_summary.to_string(),
                     },
@@ -1049,13 +1049,13 @@ mod tests {
             optional_dep_updates: vec![],
             changelog_writes: vec![crate::plan::ChangelogWrite {
                 changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
-                input: callisto_changelog::ChangelogInput {
+                input: crate::changelog::ChangelogInput {
                     package: pkg_a.clone(),
                     from: Version::semver(1, 0, 0),
                     to: Some(Version::semver(1, 1, 0)),
-                    entries: vec![callisto_changelog::ChangelogEntry {
+                    entries: vec![crate::changelog::ChangelogEntry {
                         severity: Severity::Minor,
-                        source: callisto_changelog::ChangeSource::GroupUnion {
+                        source: crate::changelog::ChangeSource::GroupUnion {
                             group: callisto_model::GroupName("workspace".to_string()),
                             kind: callisto_model::GroupKind::Fixed,
                         },

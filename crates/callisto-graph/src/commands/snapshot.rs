@@ -17,7 +17,7 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
     let snapshot_tag = format!("0.0.0-{tag}-{sha_short}");
     let snapshot_ver =
         callisto_model::Version::parse(&snapshot_tag, callisto_model::VersionGrammar::SemVer).map_err(|_err| {
-            GraphError::Bump(callisto_format::BumpError::NotSemVer {
+            GraphError::Bump(callisto_model::format::BumpError::NotSemVer {
                 raw: snapshot_tag.clone(),
                 grammar: callisto_model::VersionGrammar::SemVer,
             })

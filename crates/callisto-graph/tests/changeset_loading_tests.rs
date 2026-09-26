@@ -36,7 +36,7 @@ fn test_load_changesets_rejects_entries_with_empty_summary() {
         callisto_graph::GraphError::ParseChangeset { source, .. } => {
             assert_eq!(
                 source,
-                callisto_format::ParseError::EmptySummary,
+                callisto_model::format::ParseError::EmptySummary,
                 "expected EmptySummary parse error"
             );
         }
@@ -60,7 +60,7 @@ fn test_load_changesets_rejects_entries_with_whitespace_only_summary() {
     );
     match loaded.unwrap_err() {
         callisto_graph::GraphError::ParseChangeset { source, .. } => {
-            assert_eq!(source, callisto_format::ParseError::EmptySummary);
+            assert_eq!(source, callisto_model::format::ParseError::EmptySummary);
         }
         other => panic!("expected ParseChangeset error, got {other:?}"),
     }

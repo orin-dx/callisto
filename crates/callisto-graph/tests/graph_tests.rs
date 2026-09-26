@@ -30,7 +30,7 @@ fn test_compose_pr_body_custom_branch_flag() {
     let ws_dir = tempfile::tempdir().unwrap();
     let cfg = callisto_graph::config::load(&ws_dir.path().join("callisto.toml")).unwrap();
     let graph = GraphBuilder::new().build().unwrap();
-    let git = callisto_vcs::GitAccess::new(ws_dir.path(), &runner);
+    let git = callisto_model::vcs::GitAccess::new(ws_dir.path(), &runner);
     let tags = callisto_graph::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
     let ws = callisto_graph::Workspace {
         root: ws_dir.path().to_path_buf(),
@@ -89,7 +89,7 @@ fn test_apply_version_plan_reports_git_add_failure() {
     let ws_dir = tempfile::tempdir().unwrap();
     callisto_fixtures::git::init_repo(ws_dir.path());
 
-    let pre_state = callisto_format::PreState::entering("canary", Vec::new());
+    let pre_state = callisto_model::format::PreState::entering("canary", Vec::new());
     let plan = VersionPlan {
         pre_state_update: Some(pre_state),
         pre_json_path: std::path::PathBuf::from(".changeset/pre.json"),

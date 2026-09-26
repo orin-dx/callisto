@@ -10,7 +10,6 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 callisto-model = { path = "../crates/callisto-model" }
-callisto-format = { path = "../crates/callisto-format" }
 
 [[bin]]
 name = "parse_package_id"

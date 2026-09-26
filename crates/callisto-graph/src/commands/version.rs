@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use callisto_changelog::{ChangeSource, ChangelogEntry, ChangelogInput};
+use crate::changelog::{ChangeSource, ChangelogEntry, ChangelogInput};
 use callisto_manifests::{open, OpenContext};
 use callisto_model::{BumpReason, CommandRunner, GroupKind, ManifestRole, Severity};
 
@@ -79,7 +79,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     let (pre_state, pre_json_original_text) = if pre_path.exists() {
         let text =
             std::fs::read_to_string(&pre_path).map_err(|e| GraphError::PreJsonRead { message: e.to_string() })?;
-        let state = callisto_format::parse_pre_json(&text).map_err(GraphError::PreJson)?;
+        let state = callisto_model::format::parse_pre_json(&text).map_err(GraphError::PreJson)?;
         (Some(state), Some(text))
     } else {
         (None, None)
@@ -102,7 +102,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     // exist on disk — they were consumed and deleted during the pre-release phase
     // and their stems recorded in pre.json.
     if let Some(ref pre) = pre_state {
-        if pre.mode == callisto_format::PreMode::Exit {
+        if pre.mode == callisto_model::format::PreMode::Exit {
             for (id, ver) in &base_versions {
                 if ver.is_prerelease() {
                     agg.severities.entry(id.clone()).or_insert(Severity::Patch);
@@ -246,7 +246,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
 
     let is_pre_mode = pre_state
         .as_ref()
-        .map(|s| s.mode == callisto_format::PreMode::Pre)
+        .map(|s| s.mode == callisto_model::format::PreMode::Pre)
         .unwrap_or(false);
     // The "no pending changesets" warning fires only when no changeset, new or already recorded, is active this run.
     let nothing_pending = if is_pre_mode {
@@ -272,7 +272,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     escalate(&mut diagnostics, opts.strict);
 
     let (pre_state_update, delete_pre_json) = if let Some(mut state) = pre_state {
-        if state.mode == callisto_format::PreMode::Exit {
+        if state.mode == callisto_model::format::PreMode::Exit {
             (None, Some(ws.config.pre_json_path()))
         } else {
             // Records ids aggregate() determined are newly-seen this run; see Aggregation::new_pre_changesets.
@@ -889,7 +889,7 @@ mod tests {
             write.input.entries
         );
         match &write.input.entries[0].source {
-            callisto_changelog::ChangeSource::Changeset { filename, summary } => {
+            crate::changelog::ChangeSource::Changeset { filename, summary } => {
                 assert_eq!(filename, "");
                 assert_eq!(summary, "Version bump (patch)");
             }
@@ -1689,7 +1689,7 @@ mod tests {
         fn infer(
             &self,
             _pkg: &callisto_model::Package,
-            _git: &callisto_vcs::GitAccess<'_>,
+            _git: &callisto_model::vcs::GitAccess<'_>,
             _window: crate::infer::InferenceWindowSpec<'_>,
         ) -> Result<Option<crate::infer::InferenceOutcome>, GraphError> {
             Ok(Some(self.outcome.clone()))
@@ -1699,7 +1699,7 @@ mod tests {
     /// Inference-driven bump with a real,
     /// non-empty InferenceOutcome.commits must produce exactly one
     /// ChangelogEntry with ChangeSource::Commit from commits[0] (newest,
-    /// since callisto-vcs shells `git log --no-merges` with no reversing
+    /// since `callisto_model::vcs` shells `git log --no-merges` with no reversing
     /// flag -- git's default newest-first order).
     #[test]
     fn plan_version_inference_reason_maps_to_most_recent_commit() {
@@ -1755,7 +1755,7 @@ mod tests {
         assert_eq!(write.input.entries.len(), 1);
         assert_eq!(write.input.entries[0].severity, callisto_model::Severity::Minor);
         match &write.input.entries[0].source {
-            callisto_changelog::ChangeSource::Commit { sha, subject } => {
+            crate::changelog::ChangeSource::Commit { sha, subject } => {
                 assert_eq!(sha, &sha_recent);
                 assert_eq!(subject, "feat: recent");
             }
@@ -1814,7 +1814,7 @@ mod tests {
 
         assert_eq!(write.input.entries.len(), 1);
         match &write.input.entries[0].source {
-            callisto_changelog::ChangeSource::Changeset { filename, summary } => {
+            crate::changelog::ChangeSource::Changeset { filename, summary } => {
                 assert_eq!(filename, "");
                 assert_eq!(summary, "Inferred version bump (2 commit(s))");
             }
@@ -1881,11 +1881,11 @@ mod tests {
         assert_eq!(write.input.entries.len(), 2, "got: {:?}", write.input.entries);
         assert!(matches!(
             write.input.entries[0].source,
-            callisto_changelog::ChangeSource::Changeset { .. }
+            crate::changelog::ChangeSource::Changeset { .. }
         ));
         assert!(matches!(
             write.input.entries[1].source,
-            callisto_changelog::ChangeSource::DependencyUpdate { .. }
+            crate::changelog::ChangeSource::DependencyUpdate { .. }
         ));
     }
 
@@ -1950,10 +1950,10 @@ mod tests {
         assert_eq!(write.input.entries.len(), 2, "got: {:?}", write.input.entries);
         assert!(matches!(
             write.input.entries[0].source,
-            callisto_changelog::ChangeSource::Changeset { .. }
+            crate::changelog::ChangeSource::Changeset { .. }
         ));
         match &write.input.entries[1].source {
-            callisto_changelog::ChangeSource::Commit { sha: got_sha, subject } => {
+            crate::changelog::ChangeSource::Commit { sha: got_sha, subject } => {
                 assert_eq!(got_sha, &sha);
                 assert_eq!(subject, "feat: bigger change");
             }
@@ -2014,11 +2014,11 @@ mod tests {
         assert_eq!(write.input.entries.len(), 2, "got: {:?}", write.input.entries);
         assert!(matches!(
             write.input.entries[0].source,
-            callisto_changelog::ChangeSource::Changeset { .. }
+            crate::changelog::ChangeSource::Changeset { .. }
         ));
         assert!(matches!(
             write.input.entries[1].source,
-            callisto_changelog::ChangeSource::NewGroupMember { .. }
+            crate::changelog::ChangeSource::NewGroupMember { .. }
         ));
     }
 
@@ -2190,15 +2190,15 @@ mod tests {
         assert_eq!(write.input.entries.len(), 3, "got: {:?}", write.input.entries);
         assert!(matches!(
             write.input.entries[0].source,
-            callisto_changelog::ChangeSource::Changeset { .. }
+            crate::changelog::ChangeSource::Changeset { .. }
         ));
         assert!(matches!(
             write.input.entries[1].source,
-            callisto_changelog::ChangeSource::DependencyUpdate { .. }
+            crate::changelog::ChangeSource::DependencyUpdate { .. }
         ));
         assert!(matches!(
             write.input.entries[2].source,
-            callisto_changelog::ChangeSource::NewGroupMember { .. }
+            crate::changelog::ChangeSource::NewGroupMember { .. }
         ));
     }
 }

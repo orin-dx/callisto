@@ -3,11 +3,11 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use callisto_model::vcs::access::{GitCommitTrustEvidence, GitHeadDisposition};
 use callisto_model::{
     AbsentProof, ApplyPermit, CommandRunner, ExactEvidence, ExecutionTrustProfileV1, ProviderObservationV1,
     ReleaseDecisionV1, ReleaseIntentError, ReleaseIntentV1, ReleaseOperationId, SourceIdentity,
 };
-use callisto_vcs::access::{GitCommitTrustEvidence, GitHeadDisposition};
 
 use crate::error::ReleasePreconditionRequirement;
 use crate::{DependencyResolver, GraphError, ProjectLocator, Workspace};
@@ -86,7 +86,8 @@ impl ReleaseProviderSet for ValidatedReleaseIntent<'_> {
     }
 
     fn recheck_trust(&self) -> Result<(), GraphError> {
-        let evidence = callisto_vcs::GitAccess::new(&self.prepared.root, self.runner).observe_git_commit_trust()?;
+        let evidence =
+            callisto_model::vcs::GitAccess::new(&self.prepared.root, self.runner).observe_git_commit_trust()?;
         if evidence.identity() != self.prepared.trust.identity() || source_from_trust(&evidence) != self.prepared.source
         {
             return Err(GraphError::ReleaseIntentStale {

@@ -1,6 +1,6 @@
 use std::process::ExitCode;
 
-use callisto_format::{Changeset, PreState};
+use callisto_model::format::{Changeset, PreState};
 use callisto_model::{
     InitReport, MatrixReport, ReleaseReceiptV1, SnapshotReport, StatusReport, ValidateReport, VersionReport,
 };

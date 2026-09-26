@@ -381,7 +381,7 @@ fn test_pre_mode_rerun_does_not_duplicate_changelog_entry() {
     }
 
     let pre_json = fs::read_to_string(root.join(".changeset/pre.json")).unwrap();
-    let pre_state = callisto_format::parse_pre_json(&pre_json).unwrap();
+    let pre_state = callisto_model::format::parse_pre_json(&pre_json).unwrap();
     assert_eq!(
         pre_state.changesets.len(),
         1,

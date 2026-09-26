@@ -2,10 +2,10 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use callisto_changelog::{ChangeSource, ChangelogEntry, ChangelogInput};
-use callisto_format::{parse_changeset, Changeset};
+use crate::changelog::{ChangeSource, ChangelogEntry, ChangelogInput};
+use callisto_model::format::{parse_changeset, Changeset};
+use callisto_model::vcs::GitAccess;
 use callisto_model::{BumpReason, CommitSha, Diagnostic, Package, PackageId, ReleaseTrigger, Severity, Version};
-use callisto_vcs::GitAccess;
 
 use crate::config::resolve::resolve_package_config;
 use crate::config::GroupTable;
@@ -164,7 +164,7 @@ pub fn aggregate<D, I>(
     git: &GitAccess<'_>,
     tags: &TagIndex,
     base_versions: &BTreeMap<PackageId, Version>,
-    pre: Option<&callisto_format::PreState>,
+    pre: Option<&callisto_model::format::PreState>,
     inference: &I,
 ) -> Result<Aggregation, GraphError>
 where
@@ -239,7 +239,9 @@ where
 
     // During a pre-release cycle (PreMode::Pre) changesets must NOT be consumed:
     // they remain on disk so they can be re-applied when the cycle exits.
-    let is_pre_mode = pre.map(|s| s.mode == callisto_format::PreMode::Pre).unwrap_or(false);
+    let is_pre_mode = pre
+        .map(|s| s.mode == callisto_model::format::PreMode::Pre)
+        .unwrap_or(false);
     // Ids already recorded in pre.json still resolve for severity, but are not re-added to the changelog.
     let already_recorded: std::collections::HashSet<&str> = pre
         .map(|s| s.changesets.iter().map(String::as_str).collect())
@@ -690,7 +692,7 @@ mod tests {
     /// building a real one-package repo with a real release tag, then
     /// asserting the `since` field handed to `SeverityInference::infer`
     /// carries the commit SHA the tag points at (not `None`, which forces a
-    /// full-history walk in `callisto_conventional::window::fetch_commits`).
+    /// full-history walk in `crate::conventional::window::fetch_commits`).
     #[test]
     fn test_aggregate_scopes_inference_window_to_last_tag() {
         let ws_dir = tempfile::tempdir().unwrap();
@@ -1439,7 +1441,7 @@ mod tests {
                 _git: &GitAccess<'_>,
                 _window: InferenceWindowSpec<'_>,
             ) -> Result<Option<InferenceOutcome>, GraphError> {
-                Err(GraphError::Vcs(callisto_vcs::VcsError::Git(
+                Err(GraphError::Vcs(callisto_model::vcs::VcsError::Git(
                     "simulated inference failure".into(),
                 )))
             }
@@ -1552,7 +1554,8 @@ mod tests {
         let mut base_versions = BTreeMap::new();
         base_versions.insert(pkg_id.clone(), Version::semver(1, 0, 0));
 
-        let pre_state = callisto_format::PreState::entering("next", [("pkg-a".to_string(), Version::semver(1, 0, 0))]);
+        let pre_state =
+            callisto_model::format::PreState::entering("next", [("pkg-a".to_string(), Version::semver(1, 0, 0))]);
 
         let inference = RecordingInference::default();
         let agg = aggregate(&graph, &cfg, &git, &tags, &base_versions, Some(&pre_state), &inference).unwrap();
@@ -1597,7 +1600,8 @@ mod tests {
         base_versions.insert(pkg_id.clone(), Version::semver(9, 9, 9));
 
         // Keyed by the bare name ("pkg-a"), as `Workspace::initial_versions` (via `pre_json_key`) writes it.
-        let pre_state = callisto_format::PreState::entering("next", [("pkg-a".to_string(), Version::semver(1, 2, 3))]);
+        let pre_state =
+            callisto_model::format::PreState::entering("next", [("pkg-a".to_string(), Version::semver(1, 2, 3))]);
 
         let inference = RecordingInference::default();
         let agg = aggregate(&graph, &cfg, &git, &tags, &base_versions, Some(&pre_state), &inference).unwrap();
@@ -1796,8 +1800,8 @@ mod tests {
 
         let mut initial_versions = indexmap::IndexMap::new();
         initial_versions.insert("pkg-a".to_string(), Version::semver(0, 1, 0));
-        let pre_state = callisto_format::PreState {
-            mode: callisto_format::PreMode::Pre,
+        let pre_state = callisto_model::format::PreState {
+            mode: callisto_model::format::PreMode::Pre,
             tag: "beta".to_string(),
             initial_versions,
             changesets: Vec::new(),
@@ -1854,8 +1858,8 @@ mod tests {
 
         let mut initial_versions = indexmap::IndexMap::new();
         initial_versions.insert("pkg-a".to_string(), Version::semver(0, 1, 0));
-        let pre_state = callisto_format::PreState {
-            mode: callisto_format::PreMode::Pre,
+        let pre_state = callisto_model::format::PreState {
+            mode: callisto_model::format::PreMode::Pre,
             tag: "beta".to_string(),
             initial_versions,
             // Simulates a prior `version` run already having recorded this id.
@@ -1916,8 +1920,8 @@ mod tests {
 
         let mut initial_versions = indexmap::IndexMap::new();
         initial_versions.insert("pkg-a".to_string(), Version::semver(0, 1, 0));
-        let pre_state = callisto_format::PreState {
-            mode: callisto_format::PreMode::Pre,
+        let pre_state = callisto_model::format::PreState {
+            mode: callisto_model::format::PreMode::Pre,
             tag: "beta".to_string(),
             initial_versions,
             changesets: Vec::new(),

@@ -10,11 +10,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use callisto_graph::resolver::DependencyResolver;
 use callisto_graph::tags::TagIndex;
+use callisto_model::vcs::GitAccess;
 use callisto_model::{
     CommandError, CommandOutput, CommandRunner, DepEdge, ManifestDecl, ManifestFormat, ManifestRole, Package,
     PackageId, TagTemplate,
 };
-use callisto_vcs::GitAccess;
 use serial_test::serial;
 
 fn make_pkg(name: &str, tag_template: Option<TagTemplate>) -> Package {

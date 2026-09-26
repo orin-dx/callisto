@@ -1,5 +1,0 @@
-# callisto-changelog
-
-Markdown changelog generation and management for callisto.
-
-License: FSL-1.1-MIT. See [ARCHITECTURE.md](../../ARCHITECTURE.md) for the full crate map and [the root README](../../README.md) for the CLI.
