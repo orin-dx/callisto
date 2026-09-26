@@ -119,7 +119,7 @@ pub fn versioned_bump(
 }
 
 /// Computes a fixed group's shared alignment target. `live_members` must already be filtered to ids present in
-/// `base` (see `solve_cascade`'s Track-1 block). The alignment base is a released member's on-disk version (an
+/// `base` (`solve_cascade` drops stale members). The alignment base is a released member's on-disk version (an
 /// error, not a silent default, if that member is missing from `base`), or else the highest on-disk untagged version.
 pub fn fixed_group_target(
     group: &GroupName,

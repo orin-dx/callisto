@@ -37,7 +37,7 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
 
     let permit = ApplyPermit::granted_unless_dry_run(global.dry_run);
 
-    // Decision is derived only once the plan validates (VER-APPLY-11), but written only after apply below succeeds.
+    // Derived before any write so an invalid plan fails early; written only after apply succeeds.
     let pending_decision = if !has_errors {
         match args.emit_decision.as_deref() {
             Some(path) => {
