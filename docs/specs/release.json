@@ -171,7 +171,7 @@
     },
     {
       "id": "REL-ORD-01",
-      "criterion": "A package's tag is created only after all of its registry publishes succeed, and its GitHub release draft only after its tag. Its asset uploads follow the draft, and the release is published only after the draft and every upload."
+      "criterion": "A package's tag is created only after all of its registry publishes succeed, and its GitHub release draft only after its tag. A `[[release.artifact]]` slot's upload follows the product's draft and gates the product's publish even when a different selected package owns the asset, and the release is published only after the draft and every upload."
     },
     {
       "id": "REL-ORD-02",
@@ -235,11 +235,11 @@
     },
     {
       "id": "REL-RERUN-02",
-      "criterion": "After a run fails partway, rerunning the same command with no state file from the failed run performs only the missing operations and writes a receipt. A local tag with the expected target and annotation that is missing on the remote is pushed before the receipt is written."
+      "criterion": "After a run fails partway, rerunning the same command with no state file from the failed run performs only the missing operations and writes a receipt. A local annotated tag on the expected commit that is missing on the remote is pushed before the receipt is written, regardless of its annotation text."
     },
     {
       "id": "REL-RERUN-03",
-      "criterion": "Any of these fails with E167 and is never adopted: a local or remote tag on another commit or with another annotation, a lightweight tag, a GitHub release with a different prerelease flag, an asset of the same name with a different size or sha256, or two assets with the same name.",
+      "criterion": "Any of these fails with E167 and is never adopted: a local or remote tag on another commit, a lightweight tag, a GitHub release with a different prerelease flag, an asset of the same name with a different size or sha256, or two assets with the same name. A tag's identity is its target commit plus being annotated; annotation text is never compared.",
       "is_error_case": true
     },
     {
@@ -270,7 +270,7 @@
     },
     {
       "id": "REL-GH-04",
-      "criterion": "Each `[[release.artifact]]` becomes one upload named `asset-name` on the product package's GitHub release. An artifact whose `package` is not in the release fails with E179, and a `product-package` that is missing or does not target `github-release` fails with E197.",
+      "criterion": "Each `[[release.artifact]]` becomes one upload named `asset-name` on the product package's GitHub release, tagged with the product's own tag and prerelease flag regardless of the asset owner package's version. An artifact whose `package` is not in the release fails with E179, and a `product-package` that is missing or does not target `github-release` fails with E197. When an artifact's owner package is selected but the product package is not, Callisto warns on stderr and derives no slot for that asset.",
       "is_error_case": true
     },
     {
@@ -298,7 +298,7 @@
     },
     {
       "id": "REL-PR-03",
-      "criterion": "`release-pr commit-plan` emits base64 additions and deletions for the index staged against `--base-commit`. It fails for: no changes (E149); a mode other than 100644 (E150); a type change or unmerged path (E151); over 4 MiB of content (E152); or a path under `.github/workflows/` or `.git/`, an absolute path, or one containing `..` (E153).",
+      "criterion": "`release-pr commit-plan` resolves the repository root with `git rev-parse --show-toplevel`, so it works from any subdirectory of the checkout, and emits base64 additions and deletions for the index staged against `--base-commit`. Each added or modified file's content is verified against the index blob sha before it is emitted; a worktree file edited again after staging fails the read (E059) rather than emitting content that does not match what is staged. It fails for: no changes (E149); a mode other than 100644 (E150); a type change or unmerged path (E151); over 4 MiB of content (E152); or a path under `.github/workflows/` or `.git/`, an absolute path, or one containing `..` (E153).",
       "is_error_case": true
     },
     {

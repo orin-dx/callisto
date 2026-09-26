@@ -384,6 +384,47 @@ fn annotated_tag_falls_back_to_the_target_committer_without_an_identity() {
 }
 
 #[test]
+fn staged_changes_since_resolves_paths_from_a_subdirectory() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init_repo(root);
+    commit_file(root, "crates/pkg-a/keep.txt", b"seed\n", "feat: seed");
+    let base = head(root);
+    std::fs::write(root.join("crates/pkg-a/new.txt"), b"added\n").unwrap();
+    git(root, &["add", "crates/pkg-a/new.txt"]);
+
+    // Rooted at a subdirectory of the checkout, not its toplevel.
+    let changes = GitAccess::new(root.join("crates/pkg-a"), &SystemGit)
+        .staged_changes_since(&base)
+        .unwrap();
+
+    assert_eq!(changes.len(), 1);
+    assert_eq!(changes[0].path, "crates/pkg-a/new.txt");
+    assert_eq!(changes[0].contents.as_deref(), Some(b"added\n".as_slice()));
+}
+
+/// A worktree file edited again after `git add` no longer matches what is staged; reading it must fail, not
+/// silently emit the wrong (unstaged) bytes as staged content.
+#[test]
+fn staged_changes_since_rejects_worktree_content_edited_after_staging() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init_repo(root);
+    commit_file(root, "a.txt", b"seed\n", "feat: seed");
+    let base = head(root);
+    std::fs::write(root.join("a.txt"), b"staged\n").unwrap();
+    git(root, &["add", "a.txt"]);
+    std::fs::write(root.join("a.txt"), b"edited-after-add\n").unwrap();
+
+    let result = GitAccess::new(root, &SystemGit).staged_changes_since(&base);
+
+    assert!(
+        matches!(result, Err(VcsError::StagedContentMismatch { ref path, .. }) if path == "a.txt"),
+        "got {result:?}"
+    );
+}
+
+#[test]
 fn create_tag_refuses_an_existing_tag() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();

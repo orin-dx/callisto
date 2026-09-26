@@ -434,20 +434,34 @@ fn derive_release_inputs_with<R: CommandRunner, D: DependencyResolver>(
     let mut uploads_by_package = BTreeMap::<ReleasePackageId, Vec<ReleaseOperationId>>::new();
     if let (Some(product), Some(policy)) = (&workspace.config.product_release, artifact_policy) {
         require_product_package_publishes_to_forge(workspace, &product.package)?;
+        // Bare identities still need the ecosystem check, so a same-name package in another ecosystem can't match.
+        let matches_product = |id: &ReleasePackageId, package: &callisto_model::Package| {
+            product.package.matches(&package.id) && product.package.ecosystem() == Some(id.ecosystem())
+        };
+        if !selected.iter().any(|(id, (package, _))| matches_product(id, package)) {
+            // The product isn't in this release, so warn instead of leaving the artifact owner's asset unregistered.
+            for artifact in &product.artifacts {
+                if let Some((owner_id, _)) = selected.iter().find(|(candidate, (pkg, _))| {
+                    artifact.package.matches(&pkg.id) && artifact.package.ecosystem() == Some(candidate.ecosystem())
+                }) {
+                    eprintln!(
+                        "{}",
+                        unreleased_product_artifact_warning(&product.package, artifact, owner_id)
+                    );
+                }
+            }
+        }
         for (id, (package, _)) in &selected {
-            // Workspace package identities may remain bare even when a
-            // policy intentionally qualifies the product by ecosystem. Use
-            // the model's compatibility relation and retain the explicit
-            // ecosystem check so a same-name package in another ecosystem
-            // cannot acquire the product's binary release slots.
-            if !product.package.matches(&package.id) || product.package.ecosystem() != Some(id.ecosystem()) {
+            if !matches_product(id, package) {
                 continue;
             }
             let forge = forge_by_package.get(id).ok_or_else(|| GraphError::ReleaseInvariant {
                 detail: format!("product package `{id}` has no forge release operation"),
             })?;
-            let tag = match prepared.get(forge) {
-                Some(PreparedOperation::ForgeRelease(prepared_forge)) => prepared_forge.tag.clone(),
+            let (tag, prerelease) = match prepared.get(forge) {
+                Some(PreparedOperation::ForgeRelease(prepared_forge)) => {
+                    (prepared_forge.tag.clone(), prepared_forge.prerelease)
+                }
                 _ => {
                     return Err(GraphError::ReleaseInvariant {
                         detail: format!("product forge release `{forge:?}` is not prepared"),
@@ -486,11 +500,12 @@ fn derive_release_inputs_with<R: CommandRunner, D: DependencyResolver>(
                     PreparedOperation::ArtifactUpload(ArtifactUploadOperation {
                         slot: slot.clone(),
                         tag: tag.clone(),
-                        prerelease: owner_version.is_prerelease(),
+                        prerelease,
                     }),
                 );
+                // Keyed by the product's id: a plugin-built asset must still gate the product's own forge-publish.
                 uploads_by_package
-                    .entry(owner_id.clone())
+                    .entry(id.clone())
                     .or_default()
                     .push(operation.id().clone());
                 operations.insert(operation.id().clone(), operation);
@@ -613,6 +628,18 @@ fn require_product_package_publishes_to_forge<R: CommandRunner, D: DependencyRes
         format!("product-package `{product}` is not a package in this workspace")
     };
     Err(crate::error::ConfigError::InvalidProductRelease { detail }.into())
+}
+
+/// Warns that `owner`'s asset has no release to attach to, since its product isn't selected for release.
+fn unreleased_product_artifact_warning(
+    product: &callisto_model::PackageId,
+    artifact: &crate::config::resolve::ProductArtifactConfig,
+    owner: &ReleasePackageId,
+) -> String {
+    format!(
+        "warning: {owner} is selected but product `{product}` is not; its `{}` asset will not be uploaded",
+        artifact.asset_name
+    )
 }
 
 fn package_fingerprint<R: CommandRunner, D: DependencyResolver>(
@@ -1322,5 +1349,156 @@ mod tests {
         );
         assert_eq!(snapshot, after_snapshot);
         assert_eq!(operations, after_operations);
+    }
+
+    /// core publishes to github-release; plugin owns one `[[release.artifact]]` slot on core's release.
+    fn product_and_plugin_repo(core_version: &str, plugin_version: &str) -> tempfile::TempDir {
+        repo(&[
+            ("Cargo.toml", "[workspace]\nmembers = [\"core\", \"plugin\"]\n"),
+            (
+                "core/Cargo.toml",
+                &format!("[package]\nname = \"core\"\nversion = \"{core_version}\"\nedition = \"2021\"\n"),
+            ),
+            (
+                "plugin/Cargo.toml",
+                &format!("[package]\nname = \"plugin\"\nversion = \"{plugin_version}\"\nedition = \"2021\"\n"),
+            ),
+            (
+                "callisto.toml",
+                "[release]\nproduct-package = \"cargo/core\"\nforge-repository = \"example/parity\"\n\n\
+                 [[release.artifact]]\npackage = \"cargo/plugin\"\ntarget = \"t\"\nasset-name = \"a.tar.gz\"\n\n\
+                 [[package]]\nmatch = \"core\"\npublish-to = [\"github-release\"]\n\n\
+                 [[package]]\nmatch = \"plugin\"\npublish-to = [\"crates-io\"]\n",
+            ),
+        ])
+    }
+
+    /// Same derivation as `derive`, but with the `ArtifactBuildPolicy` a real release run would build.
+    fn derive_with_artifact_policy(
+        dir: &tempfile::TempDir,
+        decision: &ReleaseDecisionV1,
+    ) -> Result<DerivedReleaseInputs, GraphError> {
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let root = super::super::capability::canonical_root(dir.path()).unwrap();
+        let workspace = Workspace::load(root, &locator, &RealGitRunner).unwrap();
+        let source = super::super::capability::observe_source(
+            &workspace,
+            ExecutionTrustProfileV1::GitCommit,
+            super::super::capability::ReleaseCheckout::Detached,
+        )
+        .unwrap();
+        let sha = match &source {
+            SourceIdentity::GitCommit { sha } => sha.clone(),
+            SourceIdentity::HermeticContent { .. } => unreachable!("fixture always observes a git commit"),
+        };
+        let policy = ArtifactBuildPolicy {
+            repository: workspace
+                .config
+                .product_release
+                .as_ref()
+                .unwrap()
+                .forge_repository
+                .clone()
+                .unwrap(),
+            workflow_path: callisto_model::RELEASE_COORDINATOR_WORKFLOW_PATH.to_owned(),
+            workflow_commit: sha,
+        };
+        derive_release_inputs(&workspace, decision, source, Some(&policy))
+    }
+
+    fn artifact_upload(prepared: &BTreeMap<ReleaseOperationId, PreparedOperation>) -> &ArtifactUploadOperation {
+        prepared
+            .values()
+            .find_map(|op| match op {
+                PreparedOperation::ArtifactUpload(upload) => Some(upload),
+                _ => None,
+            })
+            .expect("no artifact upload operation was prepared")
+    }
+
+    fn forge_publish_operation<'a>(operations: &'a [ReleaseOperation], package: &str) -> &'a ReleaseOperation {
+        operations
+            .iter()
+            .find(|operation| {
+                matches!(operation.id().role, callisto_model::ReleaseOperationRole::ForgePublish)
+                    && operation.id().package.name() == package
+            })
+            .unwrap_or_else(|| panic!("no forge publish for {package}"))
+    }
+
+    /// A slot owned by a different package than the product must still gate the product's forge-publish.
+    #[test]
+    fn plugin_owned_artifact_gates_product_forge_publish() {
+        let dir = product_and_plugin_repo("1.0.0", "2.0.0");
+        let decision = cargo_release(&["core", "plugin"]);
+        let (_, operations, prepared, _, slots) = derive_with_artifact_policy(&dir, &decision).unwrap();
+        assert_eq!(slots.len(), 1, "one configured artifact slot");
+
+        let upload_id = prepared
+            .iter()
+            .find_map(|(id, op)| matches!(op, PreparedOperation::ArtifactUpload(_)).then(|| id.clone()))
+            .expect("an artifact upload operation was prepared");
+
+        let core_publish = forge_publish_operation(&operations, "core");
+        assert!(
+            core_publish.prerequisites().contains(&upload_id),
+            "core's forge-publish must depend on plugin's artifact upload, not just its own forge-release; \
+             prerequisites were {:?}",
+            core_publish.prerequisites()
+        );
+    }
+
+    /// The product's release stability must set the upload's prerelease flag, not the owning package's, or
+    /// `forge.rs::publish` rejects the mismatch (E167).
+    #[test]
+    fn artifact_upload_prerelease_flag_follows_the_product_not_the_owner() {
+        let dir = product_and_plugin_repo("1.0.0", "2.0.0-beta.1");
+        // `cargo_release` targets every package at 1.0.0; build the decision directly for plugin's own version.
+        let decision = release(&[
+            (Ecosystem::Cargo, "core", "1.0.0"),
+            (Ecosystem::Cargo, "plugin", "2.0.0-beta.1"),
+        ]);
+        let (_, _, prepared, _, _) = derive_with_artifact_policy(&dir, &decision).unwrap();
+        let upload = artifact_upload(&prepared);
+        assert!(
+            !upload.prerelease,
+            "core (the product) released 1.0.0, a stable version, so its artifact upload must not be \
+             flagged prerelease even though plugin (the asset's owner) released a prerelease version"
+        );
+    }
+
+    /// Derivation must still succeed without registering a dangling slot; the warning path replaces silence.
+    #[test]
+    fn owner_selected_without_product_derives_no_slot() {
+        let dir = product_and_plugin_repo("1.0.0", "2.0.0");
+        let decision = cargo_release(&["plugin"]);
+        let (_, _, prepared, _, slots) = derive_with_artifact_policy(&dir, &decision).unwrap();
+        assert!(
+            slots.is_empty(),
+            "no slot should be derived when the product isn't released"
+        );
+        assert!(
+            !prepared
+                .values()
+                .any(|op| matches!(op, PreparedOperation::ArtifactUpload(_))),
+            "no artifact upload operation should be prepared when the product isn't released"
+        );
+    }
+
+    /// Unit coverage for the warning text, since `eprintln!` output can't be captured from inside derivation.
+    #[test]
+    fn unreleased_product_artifact_warning_names_owner_product_and_asset() {
+        let product = callisto_model::PackageId::parse("cargo/core").unwrap();
+        let artifact = crate::config::resolve::ProductArtifactConfig {
+            package: callisto_model::PackageId::parse("cargo/plugin").unwrap(),
+            target: "t".to_owned(),
+            asset_name: "a.tar.gz".to_owned(),
+        };
+        let owner = ReleasePackageId::new(Ecosystem::Cargo, "plugin").unwrap();
+        let message = unreleased_product_artifact_warning(&product, &artifact, &owner);
+        assert_eq!(
+            message,
+            "warning: cargo/plugin is selected but product `cargo/core` is not; its `a.tar.gz` asset will not be uploaded"
+        );
     }
 }

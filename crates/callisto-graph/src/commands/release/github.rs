@@ -11,13 +11,17 @@ use crate::error::CommandFailure;
 use crate::GraphError;
 
 use super::provider::http::{parse_http_response, HttpResponse};
-use super::provider::policy::{programs, retry_observation, timeouts, Attempt, Sleeper};
+use super::provider::policy::{programs, retry_observation, run_observation, timeouts, Attempt, Sleeper};
 
 /// One GitHub release lookup, shared by the forge-release and asset adapters.
 #[derive(Debug)]
 pub(crate) enum GitHubReleaseLookup {
     Absent,
-    Indeterminate { status: u16 },
+    Indeterminate {
+        status: u16,
+    },
+    /// `gh api` failed to run at all, so there is no HTTP status to report, unlike [`Self::Indeterminate`].
+    CommandFailed,
     Found(serde_json::Value),
 }
 
@@ -150,19 +154,25 @@ fn github_api_get_once(
     endpoint: &str,
 ) -> Result<Attempt<GitHubReleaseLookup>, GraphError> {
     let api_args = github_release_api_args(endpoint);
-    let observed = runner.run_with_timeout(programs::GH, &api_args, root, timeouts::FORGE_API)?;
+    let observed = match run_observation(runner, programs::GH, &api_args, root, timeouts::FORGE_API, false)? {
+        Ok(output) => output,
+        Err(_unavailable) => {
+            return Ok(Attempt::Transient {
+                value: GitHubReleaseLookup::CommandFailed,
+                retry_after: None,
+            })
+        }
+    };
     let response = github_api_response(programs::GH, &api_args, &observed)?;
     if let Some(lookup) = github_release_response_status(response.status) {
-        return Ok(
-            if matches!(response.status, 429 | 500..=599) || (response.status == 403 && response.is_rate_limited()) {
-                Attempt::Transient {
-                    value: lookup,
-                    retry_after: response.retry_after(),
-                }
-            } else {
-                Attempt::Settled(lookup)
-            },
-        );
+        return Ok(if response.is_transient() {
+            Attempt::Transient {
+                value: lookup,
+                retry_after: response.retry_after(),
+            }
+        } else {
+            Attempt::Settled(lookup)
+        });
     }
     let value: serde_json::Value =
         serde_json::from_str(&response.body).map_err(|error| GraphError::ReleaseCommand {
@@ -178,6 +188,47 @@ fn github_api_get_once(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Regression: a timed-out `gh api` call must retry, not hand `CommandError::TimedOut` straight to `?`.
+    #[test]
+    fn a_timed_out_gh_api_call_retries_and_settles() {
+        struct FlakyGh(
+            std::sync::Mutex<std::collections::VecDeque<Result<CommandOutput, callisto_model::CommandError>>>,
+        );
+        impl CommandRunner for FlakyGh {
+            fn run(
+                &self,
+                program: &str,
+                _args: &[&str],
+                _cwd: &Path,
+            ) -> Result<CommandOutput, callisto_model::CommandError> {
+                assert_eq!(program, "gh");
+                self.0.lock().unwrap().pop_front().expect("script exhausted")
+            }
+        }
+        let runner = FlakyGh(std::sync::Mutex::new(
+            vec![
+                Err(callisto_model::CommandError::TimedOut {
+                    program: "gh".to_owned(),
+                    seconds: 60,
+                }),
+                Ok(CommandOutput {
+                    exit_code: Some(1),
+                    stdout: "HTTP/2 404\r\ncontent-type: application/json\r\n\r\n{\"message\":\"Not Found\"}"
+                        .to_owned(),
+                    stderr: "gh: Not Found (HTTP 404)".to_owned(),
+                }),
+            ]
+            .into(),
+        ));
+        let sleeper = super::super::provider::policy::tests::RecordingSleeper::new();
+        let root = std::env::temp_dir();
+        let result = retry_observation(&sleeper, || {
+            github_api_get_once(&root, &runner, "repos/o/r/releases/tags/v1")
+        });
+        assert!(matches!(result, Ok(GitHubReleaseLookup::Absent)));
+        assert_eq!(sleeper.waits(), vec![std::time::Duration::from_secs(2)]);
+    }
 
     #[test]
     fn github_api_observation_parser_requires_an_explicit_http_status() {

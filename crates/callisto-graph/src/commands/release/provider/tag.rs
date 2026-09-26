@@ -11,19 +11,18 @@ use callisto_vcs::{GitAccess, TagSignPolicy};
 use crate::error::{CommandFailure, RemoteConflict};
 use crate::GraphError;
 
-use super::policy::{self, programs, timeouts, Attempt};
+use super::policy::{self, programs, run_observation, timeouts, Attempt};
 use super::{
     confirmed_evidence, wrong_role, EffectAuthorization, PreparedOperation, ProviderCapabilities, ProviderContext,
     ProviderRequest, ReleaseProvider, TagOperation,
 };
 
-/// What the local repository holds at `refs/tags/<name>`.
+/// What the local repository holds at `refs/tags/<name>`; identity is the target commit plus being annotated.
 #[derive(Debug, PartialEq, Eq)]
 enum LocalTagObservation {
     Absent,
     Annotated {
         target: CommitSha,
-        annotation: String,
     },
     /// A lightweight tag, or any other object this adapter did not write.
     Unannotated,
@@ -143,10 +142,7 @@ fn tag_observation(
 ) -> Result<ProviderObservationV1, GraphError> {
     match observed_local_tag(context, &operation.name)? {
         LocalTagObservation::Absent => {}
-        LocalTagObservation::Annotated {
-            target: observed,
-            annotation: observed_annotation,
-        } if observed == operation.target && observed_annotation == operation.annotation => {}
+        LocalTagObservation::Annotated { target: observed } if observed == operation.target => {}
         _ => {
             return Ok(ProviderObservationV1::Conflict {
                 reason: ProviderConflictReason::LocalTagDiffers,
@@ -189,9 +185,22 @@ fn observed_remote_tag(
     // tag has no peeled line at all.
     let peeled = format!("{reference}^{{}}");
     let args = ["ls-remote", endpoint.as_str(), reference.as_str(), peeled.as_str()];
-    let observed = context
-        .runner()
-        .run_quiet(programs::GIT, &args, context.root(), timeouts::GIT_LS_REMOTE)?;
+    let observed = match run_observation(
+        context.runner(),
+        programs::GIT,
+        &args,
+        context.root(),
+        timeouts::GIT_LS_REMOTE,
+        true,
+    )? {
+        Ok(observed) => observed,
+        Err(_unavailable) => {
+            return Ok(Attempt::Transient {
+                value: RemoteTagObservation::Indeterminate,
+                retry_after: None,
+            })
+        }
+    };
     if observed.exit_code != Some(0) {
         return Ok(Attempt::Transient {
             value: RemoteTagObservation::Indeterminate,
@@ -291,19 +300,157 @@ fn observed_local_tag(context: &ProviderContext<'_>, name: &TagName) -> Result<L
             },
         });
     }
-    let annotation = annotation.ok_or_else(|| GraphError::ReleaseInvariant {
+    // The annotation's presence confirms a well-formed tag object; its text is never part of tag identity.
+    annotation.ok_or_else(|| GraphError::ReleaseInvariant {
         detail: "for-each-ref line validated as `tag`/empty-body but carried no annotation field".to_string(),
     })?;
-    Ok(LocalTagObservation::Annotated {
-        target,
-        annotation: annotation.to_string(),
-    })
+    Ok(LocalTagObservation::Annotated { target })
 }
 
 #[cfg(test)]
 mod tests {
     use super::super::loopback::fixtures;
     use super::*;
+
+    /// Delegates local git plumbing to a real repo at `root`, but scripts `remote`/`ls-remote` for test control.
+    struct LocalRepoRemoteScript {
+        url: &'static str,
+        ls_remote_stdout: &'static str,
+    }
+
+    impl CommandRunner for LocalRepoRemoteScript {
+        fn run(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            assert_eq!(program, "git");
+            match args.first() {
+                Some(&"remote") => Ok(callisto_model::CommandOutput {
+                    exit_code: Some(0),
+                    stdout: self.url.to_owned(),
+                    stderr: String::new(),
+                }),
+                Some(&"ls-remote") => Ok(callisto_model::CommandOutput {
+                    exit_code: Some(0),
+                    stdout: self.ls_remote_stdout.to_owned(),
+                    stderr: String::new(),
+                }),
+                _ => callisto_fixtures::git::GitRunner.run(program, args, cwd),
+            }
+        }
+    }
+
+    /// `git rev-parse HEAD` against the real repo at `root`, via the same runner `LocalRepoRemoteScript` delegates to.
+    fn head_sha(root: &Path) -> CommitSha {
+        let output = callisto_fixtures::git::GitRunner
+            .run("git", &["rev-parse", "HEAD"], root)
+            .unwrap();
+        CommitSha::parse(output.stdout.trim()).unwrap()
+    }
+
+    fn local_annotated_tag_operation(root: &Path, name: &str, message: &str) -> TagOperation {
+        let target = head_sha(root);
+        let git = GitAccess::new(root, &callisto_fixtures::git::GitRunner);
+        git.create_tag(
+            name,
+            &target,
+            Some(message),
+            TagSignPolicy::ForceUnsigned,
+            &callisto_model::ApplyPermit::force_for_tests(),
+        )
+        .unwrap();
+        TagOperation {
+            name: TagName::new_unchecked(name.to_owned()),
+            target,
+            annotation: message.to_owned(),
+        }
+    }
+
+    /// A local annotated tag naming the prepared commit with different annotation text is the same landed effect,
+    /// not a conflict: annotation text is never part of tag identity.
+    #[test]
+    fn local_tag_with_matching_target_and_different_annotation_text_is_not_a_conflict() {
+        let dir = tempfile::tempdir().unwrap();
+        callisto_fixtures::git::init_repo(dir.path());
+        callisto_fixtures::git::run_git(dir.path(), &["commit", "--allow-empty", "-q", "-m", "root"]);
+        let mut operation = local_annotated_tag_operation(dir.path(), "callisto@0.8.0", "operation's own message");
+        operation.annotation = "a completely different message than the local tag carries".to_owned();
+
+        let remote =
+            crate::commands::release::binding::canonical_git_remote("https://github.com/orin-dx/callisto").unwrap();
+        let runner = LocalRepoRemoteScript {
+            url: "https://github.com/orin-dx/callisto",
+            ls_remote_stdout: fixtures::LS_REMOTE_ABSENT,
+        };
+        let context = ProviderContext::new(dir.path(), &runner, Some(&remote));
+
+        assert_eq!(
+            tag_observation(&context, &operation).unwrap(),
+            ProviderObservationV1::Absent
+        );
+    }
+
+    /// A local lightweight tag at the right commit still conflicts: only annotation text stopped mattering, not
+    /// whether the tag is annotated at all.
+    #[test]
+    fn local_lightweight_tag_at_the_right_commit_still_conflicts() {
+        let dir = tempfile::tempdir().unwrap();
+        callisto_fixtures::git::init_repo(dir.path());
+        callisto_fixtures::git::run_git(dir.path(), &["commit", "--allow-empty", "-q", "-m", "root"]);
+        let target = head_sha(dir.path());
+        callisto_fixtures::git::run_git(dir.path(), &["tag", "callisto@0.8.0", target.as_str()]);
+        let operation = TagOperation {
+            name: TagName::new_unchecked("callisto@0.8.0".to_owned()),
+            target,
+            annotation: "Release callisto@0.8.0".to_owned(),
+        };
+
+        let remote =
+            crate::commands::release::binding::canonical_git_remote("https://github.com/orin-dx/callisto").unwrap();
+        let runner = LocalRepoRemoteScript {
+            url: "https://github.com/orin-dx/callisto",
+            ls_remote_stdout: fixtures::LS_REMOTE_ABSENT,
+        };
+        let context = ProviderContext::new(dir.path(), &runner, Some(&remote));
+
+        assert_eq!(
+            tag_observation(&context, &operation).unwrap(),
+            ProviderObservationV1::Conflict {
+                reason: ProviderConflictReason::LocalTagDiffers,
+            }
+        );
+    }
+
+    /// `ls-remote` only ever compares the peeled commit, so an annotated remote tag on the right commit is adopted
+    /// regardless of the prepared operation's own annotation text.
+    #[test]
+    fn remote_tag_on_the_right_commit_is_adopted_regardless_of_annotation_text() {
+        let dir = tempfile::tempdir().unwrap();
+        callisto_fixtures::git::init_repo(dir.path());
+        let operation = TagOperation {
+            name: TagName::new_unchecked("callisto-changelog@0.3.1".to_owned()),
+            target: CommitSha::parse("caf945cc9d5a11a71c57f419d1a73d0627c1756b").unwrap(),
+            annotation: "a message that has nothing to do with the remote tag's own message".to_owned(),
+        };
+        let remote =
+            crate::commands::release::binding::canonical_git_remote("https://github.com/orin-dx/callisto").unwrap();
+        let runner = LocalRepoRemoteScript {
+            url: "https://github.com/orin-dx/callisto",
+            ls_remote_stdout: fixtures::LS_REMOTE_ANNOTATED,
+        };
+        let context = ProviderContext::new(dir.path(), &runner, Some(&remote));
+
+        assert_eq!(
+            tag_observation(&context, &operation).unwrap(),
+            ProviderObservationV1::Exact {
+                evidence: ProviderEvidenceV1::GitTag {
+                    peeled_commit: CommitSha::parse("caf945cc9d5a11a71c57f419d1a73d0627c1756b").unwrap(),
+                },
+            }
+        );
+    }
 
     fn classify(captured: &str, tag: &str) -> Result<RemoteTagObservation, GraphError> {
         let reference = format!("refs/tags/{tag}");
@@ -343,6 +490,65 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    /// Answers `git remote get-url` deterministically, then hands back one scripted `ls-remote` result per call.
+    struct FlakyLsRemote {
+        url: &'static str,
+        results: std::sync::Mutex<
+            std::collections::VecDeque<Result<callisto_model::CommandOutput, callisto_model::CommandError>>,
+        >,
+    }
+
+    impl CommandRunner for FlakyLsRemote {
+        fn run(
+            &self,
+            program: &str,
+            args: &[&str],
+            _cwd: &Path,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            assert_eq!(program, "git");
+            if args.first() == Some(&"remote") {
+                return Ok(callisto_model::CommandOutput {
+                    exit_code: Some(0),
+                    stdout: self.url.to_owned(),
+                    stderr: String::new(),
+                });
+            }
+            assert_eq!(args.first(), Some(&"ls-remote"));
+            self.results.lock().unwrap().pop_front().expect("script exhausted")
+        }
+    }
+
+    /// A `git ls-remote` that times out once must retry and settle, not abort the whole observation with a hard error.
+    #[test]
+    fn observed_remote_tag_retries_past_a_timed_out_ls_remote() {
+        let remote =
+            crate::commands::release::binding::canonical_git_remote("https://github.com/orin-dx/callisto").unwrap();
+        let runner = FlakyLsRemote {
+            url: "https://github.com/orin-dx/callisto",
+            results: std::sync::Mutex::new(
+                vec![
+                    Err(callisto_model::CommandError::TimedOut {
+                        program: "git".to_owned(),
+                        seconds: 60,
+                    }),
+                    Ok(callisto_model::CommandOutput {
+                        exit_code: Some(0),
+                        stdout: fixtures::LS_REMOTE_ABSENT.to_owned(),
+                        stderr: String::new(),
+                    }),
+                ]
+                .into(),
+            ),
+        };
+        let sleeper = policy::tests::RecordingSleeper::new();
+        let root = std::env::temp_dir();
+        let context = ProviderContext::new(&root, &runner, Some(&remote)).with_sleeper(&sleeper);
+        let name = TagName::new_unchecked("callisto-no-such-tag".to_owned());
+        let result = policy::retry_observation(context.sleeper(), || observed_remote_tag(&context, &name));
+        assert_eq!(result, Ok(RemoteTagObservation::Absent));
+        assert_eq!(sleeper.waits(), vec![std::time::Duration::from_secs(2)]);
     }
 
     struct FailedPush(&'static str);

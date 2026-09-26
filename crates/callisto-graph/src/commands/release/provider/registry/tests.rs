@@ -536,6 +536,79 @@ fn an_unexpected_status_is_transient_malformed_response() {
     );
 }
 
+/// PyPI shares GitHub's status-based classifier: a 429 retries on the server's own `Retry-After`, not a fixed backoff.
+#[test]
+fn a_rate_limited_pypi_response_retries_on_its_own_retry_after() {
+    let output = curl_output("HTTP/1.1 429 Too Many Requests\r\nRetry-After: 30\r\n\r\nslow down");
+    assert_eq!(
+        classify_pypi_simple(&output, &pep440("1.0.0")),
+        Attempt::Transient {
+            value: ProviderObservationV1::Indeterminate {
+                cause: ProviderIndeterminateCause::MalformedResponse
+            },
+            retry_after: Some(std::time::Duration::from_secs(30))
+        }
+    );
+}
+
+/// A plain 401 is not a rate limit and cannot resolve by retrying, so it settles immediately instead of retrying.
+#[test]
+fn a_permanent_401_settles_instead_of_retrying() {
+    let output = curl_output("HTTP/1.1 401 Unauthorized\r\ncontent-type: text/plain\r\n\r\nno auth");
+    assert_eq!(
+        classify_pypi_simple(&output, &pep440("1.0.0")),
+        Attempt::Settled(ProviderObservationV1::Indeterminate {
+            cause: ProviderIndeterminateCause::MalformedResponse
+        })
+    );
+}
+
+/// Regression: a `curl` call that times out once must retry, not hand `CommandError::TimedOut` straight to `?`.
+#[test]
+fn a_timed_out_curl_call_retries_and_settles() {
+    struct FlakyCurl(std::sync::Mutex<std::collections::VecDeque<Result<CommandOutput, callisto_model::CommandError>>>);
+    impl callisto_model::CommandRunner for FlakyCurl {
+        fn run(
+            &self,
+            program: &str,
+            _args: &[&str],
+            _cwd: &std::path::Path,
+        ) -> Result<CommandOutput, callisto_model::CommandError> {
+            assert_eq!(program, "curl");
+            self.0.lock().unwrap().pop_front().expect("script exhausted")
+        }
+    }
+    let runner = FlakyCurl(std::sync::Mutex::new(
+        vec![
+            Err(callisto_model::CommandError::TimedOut {
+                program: "curl".to_owned(),
+                seconds: 300,
+            }),
+            Ok(curl_output(fixtures::PYPI_SIMPLE_ABSENT)),
+        ]
+        .into(),
+    ));
+    let sleeper = super::super::policy::tests::RecordingSleeper::new();
+    let root = std::env::temp_dir();
+    let context = ProviderContext::new(&root, &runner, None).with_sleeper(&sleeper);
+    let operation = RegistryPublishOperation {
+        package_dir: PathBuf::from("."),
+        package_name: "left-pad".to_owned(),
+        version: pep440("1.0.0"),
+        registry: PreparedRegistryBinding {
+            key: RegistryKey("pypi".to_owned()),
+            endpoint: None,
+            identity: RegistryBindingDigest::from_normalized_binding(b"pypi"),
+        },
+        npm_access: None,
+        npm_tag: None,
+        by_directory: false,
+    };
+    let result = policy::retry_observation(context.sleeper(), || PypiRegistry.observe_once(&context, &operation));
+    assert_eq!(result, Ok(ProviderObservationV1::Absent));
+    assert_eq!(sleeper.waits(), vec![std::time::Duration::from_secs(2)]);
+}
+
 /// A private index that ignores `Accept` and serves its legacy HTML page
 /// fails the JSON parse and must not be misread as an answer either way.
 #[test]

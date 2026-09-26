@@ -340,6 +340,52 @@ fn changed_checkout_after_planning_never_reaches_a_publish_boundary() {
     assert!(!receipt.exists());
 }
 
+/// Committing (unlike the dirty-worktree case above) reaches the fresh-derivation check, so this expects E124.
+#[test]
+fn committed_change_after_planning_is_rejected_as_a_stale_intent() {
+    let (dir, release_commit) = release_commit_fixture();
+    let external = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let intent = plan_intent(root, external.path(), &release_commit);
+    let receipt = external.path().join("release-receipt.json");
+    let (bin, log, forge_marker, git_trace) = fake_publishers(external.path(), &release_commit, false);
+
+    // The tree is clean here, so this must fail via the fresh-derivation mismatch, not the dirty-tree check.
+    fs::write(
+        root.join("crates/core/Cargo.toml"),
+        "[package]\nname = \"core-crate\"\nversion = \"0.2.1\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-m", "further change after approval"]);
+    assert!(
+        git(root, &["status", "--porcelain"]).is_empty(),
+        "the checkout must be clean, not merely re-committed"
+    );
+
+    let publishers = FakePublishers {
+        bin: &bin,
+        log: &log,
+        forge_marker: &forge_marker,
+        git_trace: &git_trace,
+    };
+    let output = execute(root, &intent, &receipt, publishers);
+    assert!(
+        !output.status.success(),
+        "a committed change after planning must invalidate the approved release intent"
+    );
+    assert!(
+        diagnostic_codes(&output).iter().any(|code| code == "E124"),
+        "a fresh-derivation mismatch must surface E124: {}",
+        stderr_of(&output)
+    );
+    assert!(
+        !log.exists(),
+        "intent validation must fail before any external release side effect"
+    );
+    assert!(!receipt.exists());
+}
+
 /// A decision file that deserializes cleanly (its digest matches its own
 /// entries) but whose claimed target version doesn't match what the commit
 /// actually changed the manifest to. This is the diff-vs-decision cross-check,
@@ -445,4 +491,98 @@ fn release_plan_rejects_a_commit_that_is_not_checked_out_and_writes_nothing() {
         !out.exists(),
         "a stale release commit must not produce an intent that could later be executed; current release commit was {release_commit}"
     );
+}
+
+/// No read-only mode exists: planning already writes only `--out`, so `--dry-run` is rejected outright.
+#[test]
+fn release_plan_dry_run_is_rejected_and_writes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let out = root.join("must-not-exist.json");
+    let result = callisto(
+        root,
+        &[
+            "--dry-run",
+            "release",
+            "plan",
+            "--package",
+            "cargo/example",
+            "--out",
+            out.to_str().unwrap(),
+        ],
+    );
+    assert!(!result.status.success(), "release plan --dry-run must be rejected");
+    assert!(
+        diagnostic_codes(&result)
+            .iter()
+            .any(|code| code == "callisto::release_plan_dry_run"),
+        "release plan --dry-run must surface release_plan_dry_run: {}",
+        stderr_of(&result)
+    );
+    assert!(!out.exists());
+}
+
+/// No read-only mode exists: execution either performs remote effects under authorization or does not run.
+#[test]
+fn release_execute_dry_run_is_rejected_and_writes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let receipt = root.join("must-not-exist-receipt.json");
+    let result = callisto(
+        root,
+        &[
+            "--dry-run",
+            "release",
+            "execute",
+            "--intent",
+            "does-not-exist-intent.json",
+            "--receipt",
+            receipt.to_str().unwrap(),
+            "--orchestration-revision",
+            "0000000000000000000000000000000000000000",
+        ],
+    );
+    assert!(!result.status.success(), "release execute --dry-run must be rejected");
+    assert!(
+        diagnostic_codes(&result)
+            .iter()
+            .any(|code| code == "callisto::release_execute_dry_run"),
+        "release execute --dry-run must surface release_execute_dry_run: {}",
+        stderr_of(&result)
+    );
+    assert!(!receipt.exists());
+}
+
+/// No read-only mode exists: the manifest records what was actually built, never a hypothetical preview.
+#[test]
+fn release_artifact_manifest_dry_run_is_rejected_and_writes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let out = root.join("must-not-exist-manifest.json");
+    let result = callisto(
+        root,
+        &[
+            "--dry-run",
+            "release",
+            "artifact-manifest",
+            "--intent",
+            "does-not-exist-intent.json",
+            "--artifact-dir",
+            "does-not-exist-dir",
+            "--out",
+            out.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        !result.status.success(),
+        "release artifact-manifest --dry-run must be rejected"
+    );
+    assert!(
+        diagnostic_codes(&result)
+            .iter()
+            .any(|code| code == "callisto::release_artifact_manifest_dry_run"),
+        "release artifact-manifest --dry-run must surface release_artifact_manifest_dry_run: {}",
+        stderr_of(&result)
+    );
+    assert!(!out.exists());
 }

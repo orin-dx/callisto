@@ -258,7 +258,7 @@ fn c4_source_without_release_section_plans_and_ignores_artifact_flags() {
     assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stderr));
     assert!(String::from_utf8_lossy(&r.stderr).contains("no [release] section"));
     let intent: serde_json::Value = serde_json::from_slice(&fs::read(&out_path).unwrap()).unwrap();
-    assert!(intent["artifact_slots"].as_array().is_none_or(Vec::is_empty));
+    assert!(intent["artifactSlots"].as_array().is_none_or(Vec::is_empty));
 }
 
 #[test]

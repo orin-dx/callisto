@@ -36,6 +36,12 @@ impl HttpResponse {
                 .header("x-ratelimit-remaining")
                 .is_some_and(|value| value.trim() == "0")
     }
+
+    /// A rate limit or server error may resolve on its own, unlike a client error or malformed body. Shared by
+    /// every status-reading provider (`gh api`, PyPI) so they can't drift on which statuses retry.
+    pub(crate) fn is_transient(&self) -> bool {
+        matches!(self.status, 429 | 500..=599) || (self.status == 403 && self.is_rate_limited())
+    }
 }
 
 fn now_unix_seconds() -> u64 {

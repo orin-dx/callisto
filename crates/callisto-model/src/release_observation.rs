@@ -74,7 +74,7 @@ impl ProviderEvidenceV1 {
 #[serde(rename_all = "camelCase")]
 #[non_exhaustive]
 pub enum ProviderConflictReason {
-    /// A local tag ref disagrees with the prepared tag target or annotation.
+    /// A local tag ref names another commit, or is lightweight.
     LocalTagDiffers,
     /// The remote tag resolves to a different commit.
     RemoteTagTargetDiffers,

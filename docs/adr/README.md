@@ -8,6 +8,7 @@
 - [6. moon integrates through a proto plugin, not a WASM extension](0006-moon-through-proto-plugin-not-wasm-extension.md) — moon users install the native CLI with a proto TOML plugin; guardrail: do not add a moon WASM extension or WASM build without a new ADR.
 - [7. Platform packages are owned through optionalDependencies and release with their owner](0007-platform-packages-owned-through-optional-dependencies.md) — an `os`+`cpu` package with one owner releases with that owner; guardrail: do not require fixed-group entries or explicit config for platform packages without a new ADR.
 - [8. Format-preserving manifest writes gated by ApplyPermit](0008-format-preserving-writes-gated-by-apply-permit.md) — `toml_edit` and fingerprinted JSON through `atomic_write(&ApplyPermit)`; guardrail: do not use typed serde round-trips for TOML, unfingerprinted `package.json` rewrites, regex edits or unpermitted writes without a new ADR.
+- [9. A tag's identity is its commit and being annotated](0009-tag-identity-is-commit-and-annotation.md) — an existing annotated tag on the planned commit is adopted whatever its message; guardrail: do not compare annotation text or accept lightweight tags without a new ADR.
 
 ## Rules
 

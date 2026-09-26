@@ -10,7 +10,7 @@ use crate::error::{CommandFailure, ReleasePreconditionRequirement, RemoteConflic
 use crate::GraphError;
 
 use super::http::parse_http_response;
-use super::policy::{self, programs, require_registry_confirmation, timeouts, Attempt};
+use super::policy::{self, programs, require_registry_confirmation, run_observation, timeouts, Attempt};
 use super::{
     preflight_from_observation, wrong_role, EffectAuthorization, PreparedOperation, ProviderCapabilities,
     ProviderContext, ProviderRequest, RegistryPublishOperation, ReleasePreflight, ReleaseProvider,
@@ -247,9 +247,17 @@ impl RegistryEcosystem for CargoRegistry {
         let spec = format!("{}@{}", operation.package_name, operation.version.render());
         let registry = cargo_registry_name(&operation.registry.key);
         let args = cargo_info_args(&spec, registry);
-        let output = context
-            .runner()
-            .run_quiet(programs::CARGO, &args, context.root(), timeouts::REGISTRY_QUERY)?;
+        let output = match run_observation(
+            context.runner(),
+            programs::CARGO,
+            &args,
+            context.root(),
+            timeouts::REGISTRY_QUERY,
+            true,
+        )? {
+            Ok(output) => output,
+            Err(_unavailable) => return Ok(transient(ProviderIndeterminateCause::CommandFailed, None)),
+        };
         Ok(classify_cargo_info(&output, &spec, &operation.version))
     }
 
@@ -344,9 +352,17 @@ impl RegistryEcosystem for NpmRegistry {
         if let Some(registry) = operation.registry.endpoint.as_deref() {
             args.extend(["--registry", registry]);
         }
-        let output = context
-            .runner()
-            .run_quiet(programs::NPM, &args, context.root(), timeouts::REGISTRY_QUERY)?;
+        let output = match run_observation(
+            context.runner(),
+            programs::NPM,
+            &args,
+            context.root(),
+            timeouts::REGISTRY_QUERY,
+            true,
+        )? {
+            Ok(output) => output,
+            Err(_unavailable) => return Ok(transient(ProviderIndeterminateCause::CommandFailed, None)),
+        };
         if output.success() {
             return Ok(if output.stdout_trimmed().is_empty() {
                 settled(ProviderObservationV1::Absent)
@@ -510,6 +526,9 @@ fn classify_pypi_simple_body(body: &str, version: &Version) -> Attempt<ProviderO
 /// that ignores `Accept` and serves its legacy HTML page fails the JSON parse
 /// inside [`classify_pypi_simple_body`] and reads as `MalformedResponse`, same
 /// as any other body PEP 691 JSON parsing cannot make sense of.
+///
+/// Any other status shares [`HttpResponse::is_transient`] with GitHub's `gh api` reads, so it retries on
+/// `Retry-After` instead of settling immediately as `MalformedResponse`.
 fn classify_pypi_simple(output: &CommandOutput, version: &Version) -> Attempt<ProviderObservationV1> {
     let response = match parse_http_response(&output.stdout) {
         Ok(response) => response,
@@ -519,7 +538,12 @@ fn classify_pypi_simple(output: &CommandOutput, version: &Version) -> Attempt<Pr
     match response.status {
         200 => classify_pypi_simple_body(&response.body, version),
         404 => settled(ProviderObservationV1::Absent),
-        _ => transient(ProviderIndeterminateCause::MalformedResponse, None),
+        _ if response.is_transient() => {
+            transient(ProviderIndeterminateCause::MalformedResponse, response.retry_after())
+        }
+        _ => settled(ProviderObservationV1::Indeterminate {
+            cause: ProviderIndeterminateCause::MalformedResponse,
+        }),
     }
 }
 
@@ -540,10 +564,17 @@ impl RegistryEcosystem for PypiRegistry {
         let url = pypi_simple_index_url(operation.registry.endpoint.as_deref(), &operation.package_name);
         let accept_header = format!("Accept: {PYPI_SIMPLE_ACCEPT}");
         let args = ["-sS", "-i", "-H", accept_header.as_str(), url.as_str()];
-        let output =
-            context
-                .runner()
-                .run_with_timeout(programs::CURL, &args, context.root(), timeouts::REGISTRY_QUERY)?;
+        let output = match run_observation(
+            context.runner(),
+            programs::CURL,
+            &args,
+            context.root(),
+            timeouts::REGISTRY_QUERY,
+            false,
+        )? {
+            Ok(output) => output,
+            Err(_unavailable) => return Ok(transient(ProviderIndeterminateCause::CommandFailed, None)),
+        };
         Ok(classify_pypi_simple(&output, &operation.version))
     }
 
