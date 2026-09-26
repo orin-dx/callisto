@@ -114,9 +114,12 @@ pub struct MatrixArgs {
 /// Arguments for the `version` command.
 #[derive(Args, Clone, Debug)]
 pub struct VersionArgs {
-    /// Regenerate lockfiles after applying the version bumps.
-    #[arg(long)]
+    /// Accepted for compatibility; lockfile refresh is on by default now, so this is a no-op.
+    #[arg(long, hide = true)]
     pub refresh_lockfiles: bool,
+    /// Skip regenerating lockfiles after applying the version bumps.
+    #[arg(long)]
+    pub no_refresh_lockfiles: bool,
     /// Treat warning-level diagnostics as errors.
     #[arg(long)]
     pub strict: bool,

@@ -11,7 +11,7 @@
   "api_surface": [
     {
       "name": "callisto version",
-      "signature": "callisto version [--strict] [--allow-empty-changesets] [--refresh-lockfiles] [--emit-decision <PATH>] [--dry-run]",
+      "signature": "callisto version [--strict] [--allow-empty-changesets] [--no-refresh-lockfiles] [--emit-decision <PATH>] [--dry-run]",
       "description": "Computes the version plan from pending changesets, inference, cascade and groups, then applies it to disk and stages it in git."
     },
     {
@@ -236,6 +236,15 @@
     {
       "id": "VER-APPLY-13",
       "criterion": "After planning but before any write, `version` refuses with E121 when a canonical manifest's on-disk version differs from its version at `HEAD` and either: the workspace's changesets directory still has a pending changeset as of `HEAD` (not yet consumed by a commit); or, outside an active pre-release cycle (`.changeset/pre.json` absent), a canonical manifest is staged in the git index but not yet committed. Both are the signature of a `version` run that wrote and staged its changes but never committed -- the second covers a changeset that was only ever a working-tree file (added and consumed by `version` without ever being committed), which the first check cannot see. A repository with no commits yet, a manifest/changesets directory that didn't exist at `HEAD`, or an active pre-release cycle (which legitimately reruns `version` without a commit in between) is never refused this way.",
+      "is_error_case": true
+    },
+    {
+      "id": "VER-APPLY-14",
+      "criterion": "By default, applying a plan refreshes each active ecosystem's lockfile that exists on disk: `cargo update --workspace` for Cargo; for Pypi, `uv lock` if `uv.lock` exists, else `poetry lock --no-update` if `poetry.lock` exists, else `pdm lock --update-reuse` if `pdm.lock` exists; for Npm, `npm install --package-lock-only --ignore-scripts` for `package-lock.json`, `pnpm install --lockfile-only` for `pnpm-lock.yaml`, `yarn install --mode update-lockfile` for `yarn.lock`, and `bun install --lockfile-only` for `bun.lock` or `bun.lockb`, each independently when its lockfile is present. `--no-refresh-lockfiles` skips this; `--refresh-lockfiles` is accepted but has no effect."
+    },
+    {
+      "id": "VER-APPLY-15",
+      "criterion": "A lockfile refresh command that exits non-zero aborts `version` with E208 naming the lockfile and the exact command that failed, instead of recording the failure and continuing.",
       "is_error_case": true
     }
   ],
