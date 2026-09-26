@@ -90,7 +90,7 @@
     },
     {
       "id": "VER-CAS-01",
-      "criterion": "When a package is bumped, each dependent's spec on it is tested against the new version. Under `[cascade] mode = \"out-of-range\"` (default) a runtime, optional, build or peer dependent is bumped only when its spec no longer covers the new version; under `mode = \"always\"` it is bumped regardless."
+      "criterion": "When a package is bumped, each dependent's spec on it is tested against the new version. Under `[cascade] mode = \"out-of-range\"` (default) a runtime, optional, build or peer dependent is bumped only when its spec no longer covers the new version; under `mode = \"always\"` it is bumped regardless. Coverage governs only the dependent's own severity bump; whether its spec is rewritten follows VER-CAS-06."
     },
     {
       "id": "VER-CAS-02",
@@ -110,7 +110,7 @@
     },
     {
       "id": "VER-CAS-06",
-      "criterion": "A spec that no longer covers the new version is rewritten to it, keeping the operator and precision for Cargo and npm (`^1.2` becomes `^2.0` for 2.0.0), or to the exact version for npm when `preserve-npm-ranges = false`. A spec that cannot be rewritten mechanically, such as an npm range with spaces, `||`, a hyphen or a wildcard, is left unchanged with a RangeNotRoundTrippable warning."
+      "criterion": "A spec that no longer covers the new version is rewritten to it, keeping the operator and precision for Cargo and npm (`^1.2` becomes `^2.0` for 2.0.0), or to the exact version for npm when `preserve-npm-ranges = false`. A runtime, optional, build or peer dependent that is itself released in this run, for any reason, has every such spec on a bumped internal dependency raised to the dependency's new version the same way, even when the spec still covers it; a dependent that is not releasing keeps its spec unless out of range. `workspace = true`, npm `workspace:` and catalog specs are never rewritten by either rule, and a dev dependent's spec is rewritten only when out of range. A spec that cannot be rewritten mechanically, such as an npm range with spaces, `||`, a hyphen or a wildcard, is left unchanged with a RangeNotRoundTrippable warning."
     },
     {
       "id": "VER-CAS-07",
