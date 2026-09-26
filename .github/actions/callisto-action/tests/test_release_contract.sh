@@ -126,4 +126,16 @@ else
   echo 'PASS: published/publishedPackages read the release step, falling back to false/[]'
 fi
 
+# callisto-action installs the version it is itself pinned to by default,
+# not a hardcoded 'latest', and exposes an explicit override input.
+if [[ "$action_contents" != *$'  version:\n'* ]] \
+  || [[ "$action_contents" == *'INPUT_CALLISTO_VERSION: latest'* ]] \
+  || [[ "$action_contents" != *'INPUT_CALLISTO_VERSION: ${{ inputs.version }}'* ]] \
+  || [[ "$action_contents" != *'GITHUB_ACTION_REF: ${{ github.action_ref }}'* ]]; then
+  echo 'FAIL: callisto-action must expose a version input and pass it and github.action_ref to install-callisto.sh'
+  fail=1
+else
+  echo 'PASS: callisto-action exposes a version input and passes it and github.action_ref through'
+fi
+
 exit "$fail"
