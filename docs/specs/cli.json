@@ -248,7 +248,7 @@
     },
     {
       "id": "CLI-INIT-09",
-      "criterion": "init exits 1 without writing when callisto.toml already exists, when the directory is not inside a Git repository, or when no `origin` remote is configured, each with a help line naming the fix.",
+      "criterion": "init exits 1 without writing when callisto.toml already exists or when the directory is not inside a Git repository, each with a help line naming the fix. With no `origin` remote configured, init instead writes callisto.toml, skips the workflow and shipping-binaries questions, and emits an `init-origin-missing` warning diagnostic; `--workflow` or `--artifact-target` without `origin` exits 1 naming the fix, and `callisto release` refuses later.",
       "is_error_case": true
     },
     {
@@ -263,12 +263,12 @@
     },
     {
       "id": "CLI-INIT-12",
-      "criterion": "init exits 1 without writing for an empty or repeated target triple, --artifact-target when no package produces a binary, a --product-package that is absent or not binary-producing, or, when binaries ship, a --forge-repository that is not `owner/repo` or differs from origin's GitHub repository.",
+      "criterion": "init exits 1 without writing for an empty or repeated target triple, --artifact-target when no package produces a binary, a --product-package that is absent or not binary-producing, a --forge-repository that is not `owner/repo` or differs from origin's GitHub repository, or --forge-repository or --product-package given without --artifact-target.",
       "is_error_case": true
     },
     {
       "id": "CLI-INIT-13",
-      "criterion": "`init --format json` writes the human-readable detection, config and preview to stderr and a report `{schemaVersion, command: \"init\", dryRun, initialized, configPath, config}` (plus `diagnostics` when any) to stdout; with --dry-run `dryRun` is true, `initialized` is false, and no file is written."
+      "criterion": "`init --format json` writes the human-readable detection, config and preview to stderr and a report `{schemaVersion, command: \"init\", dryRun, initialized, configPath, config, files}` (plus `diagnostics` when any) to stdout; with --dry-run `dryRun` is true, `initialized` is false, `files` lists every file that would be written, and no file is written."
     },
     {
       "id": "CLI-INIT-14",

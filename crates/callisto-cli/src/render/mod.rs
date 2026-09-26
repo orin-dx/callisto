@@ -129,14 +129,20 @@ pub fn render_init<W: io::Write>(report: &InitReport, w: &mut W) -> io::Result<(
             w,
             "Initialized callisto configuration at {}",
             report.config_path.display()
-        )
+        )?;
     } else {
         writeln!(
             w,
             "[DRY-RUN] Would write {} (no files written)",
             report.config_path.display()
-        )
+        )?;
     }
+    // Every other file init wrote (or, under --dry-run, would write): the config path above
+    // already named it, so only the rest of `files` needs listing.
+    for file in report.files.iter().filter(|file| **file != report.config_path) {
+        writeln!(w, "  {}", file.display())?;
+    }
+    Ok(())
 }
 
 pub fn render_matrix<W: io::Write>(report: &callisto_model::MatrixReport, w: &mut W) -> io::Result<()> {
@@ -382,6 +388,7 @@ mod tests {
             initialized,
             config_path: std::path::PathBuf::from("callisto.toml"),
             config: String::new(),
+            files: vec![std::path::PathBuf::from("callisto.toml")],
             diagnostics: vec![],
         };
         let render = |report| {
@@ -394,6 +401,28 @@ mod tests {
             "Initialized callisto configuration at callisto.toml\n"
         );
         assert!(render(report(false)).starts_with("[DRY-RUN]"));
+    }
+
+    // Every file beyond `config_path` (workflow, changeset README) is listed too, dry-run included.
+    #[test]
+    fn render_init_lists_every_file_including_under_dry_run() {
+        let report = InitReport {
+            schema_version: callisto_model::SCHEMA_VERSION,
+            initialized: false,
+            config_path: std::path::PathBuf::from("callisto.toml"),
+            config: String::new(),
+            files: vec![
+                std::path::PathBuf::from("callisto.toml"),
+                std::path::PathBuf::from(".changeset/README.md"),
+                std::path::PathBuf::from(".github/workflows/callisto-release.yml"),
+            ],
+            diagnostics: vec![],
+        };
+        let mut out = Vec::new();
+        render_init(&report, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains(".changeset/README.md"), "got: {text}");
+        assert!(text.contains(".github/workflows/callisto-release.yml"), "got: {text}");
     }
 
     /// `render_version` must call

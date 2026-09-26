@@ -415,6 +415,9 @@ pub struct InitReport {
     pub config_path: PathBuf,
     /// The `callisto.toml` content written, or that would be written.
     pub config: String,
+    /// Every file init wrote, or would write under `--dry-run`: `config_path`, `.changeset/README.md`
+    /// unless it already existed, and the release workflow when one was generated.
+    pub files: Vec<PathBuf>,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub diagnostics: Vec<Diagnostic>,
