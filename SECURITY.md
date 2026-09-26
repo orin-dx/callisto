@@ -27,4 +27,4 @@ Out of scope: vulnerabilities in Cargo, npm, PyPI, or GitHub Actions themselves 
 
 ## Supported Versions
 
-Security fixes land on `main` and the latest published release of each affected crate. Given Callisto is pre-1.0 (`0.8.0`), older minor versions are not backported — upgrade to the latest release.
+Security fixes land on `main` and the latest published release of each affected crate. Given Callisto is pre-1.0, older minor versions are not backported — upgrade to the latest release.

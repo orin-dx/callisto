@@ -73,8 +73,8 @@ pub struct InitFacts {
     pub root: PathBuf,
     pub ecosystems: BTreeSet<Ecosystem>,
     pub packages: Vec<InitPackage>,
-    /// Canonical `origin` push URL.
-    pub origin: String,
+    /// Canonical `origin` push URL, or `None` when no `origin` remote is configured.
+    pub origin: Option<String>,
     /// `origin` as a GitHub `owner/repo`, when it is one.
     pub origin_repository: Option<GitHubRepository>,
     /// Non-default tag templates to write, keyed by qualified package id.
@@ -172,7 +172,7 @@ pub fn detect<L: ProjectLocator, R: CommandRunner>(
     if git_dir.exit_code != Some(0) {
         return Err(GraphError::InitNotGitRepository { root });
     }
-    let origin = optional_git_remote(&root, runner)?.ok_or(GraphError::InitOriginMissing)?;
+    let origin = optional_git_remote(&root, runner)?;
     let head = runner.run_with_timeout(
         programs::GIT,
         &["rev-parse", "--verify", "--quiet", "HEAD"],
@@ -186,8 +186,8 @@ pub fn detect<L: ProjectLocator, R: CommandRunner>(
         root: root.clone(),
         ecosystems: BTreeSet::new(),
         packages: Vec::new(),
-        origin: origin.endpoint.clone(),
-        origin_repository: origin.github_repository.clone(),
+        origin: origin.as_ref().map(|remote| remote.endpoint.clone()),
+        origin_repository: origin.as_ref().and_then(|remote| remote.github_repository.clone()),
         tag_templates,
         has_commit: head.exit_code == Some(0),
         has_platform_packages: false,
@@ -449,7 +449,7 @@ pub fn forge_repository(facts: &InitFacts, value: &str) -> Result<GitHubReposito
     if facts.origin_repository.as_ref() != Some(&repository) {
         return Err(GraphError::InitForgeRepositoryMismatch {
             configured: repository.as_slug(),
-            origin: facts.origin.clone(),
+            origin: facts.origin.clone().unwrap_or_else(|| "none".to_owned()),
         });
     }
     Ok(repository)
@@ -477,6 +477,20 @@ pub fn validate_targets(targets: &[String]) -> Result<Vec<String>, GraphError> {
     Ok(targets.to_vec())
 }
 
+/// Files `init` writes, or would write under `--dry-run`: `callisto.toml`, `.changeset/README.md`
+/// unless it already exists, and the release workflow when `workflow` is `true`. Reads current
+/// disk state, so callers compute this before writing anything.
+pub fn init_files(root: &Path, workflow: bool) -> Vec<PathBuf> {
+    let mut files = vec![root.join("callisto.toml")];
+    if !root.join(".changeset/README.md").exists() {
+        files.push(root.join(".changeset/README.md"));
+    }
+    if workflow {
+        files.push(workflow_path(root));
+    }
+    files
+}
+
 /// Writes `callisto.toml` and, when absent, `.changeset/README.md`.
 ///
 /// # Errors
@@ -485,6 +499,7 @@ pub fn validate_targets(targets: &[String]) -> Result<Vec<String>, GraphError> {
 pub fn write(root: &Path, config: &str, permit: &ApplyPermit) -> Result<InitReport, GraphError> {
     ensure_uninitialized(root)?;
     let config_path = root.join("callisto.toml");
+    let files = init_files(root, false);
     callisto_model::atomic::atomic_write(&config_path, config, permit).map_err(io_err)?;
     write_changeset_readme(root, permit)?;
     Ok(InitReport {
@@ -492,6 +507,7 @@ pub fn write(root: &Path, config: &str, permit: &ApplyPermit) -> Result<InitRepo
         initialized: true,
         config_path,
         config: config.to_owned(),
+        files,
         diagnostics: Vec::new(),
     })
 }
@@ -1199,7 +1215,7 @@ mod tests {
         assert_eq!(facts.ecosystems, BTreeSet::from([Ecosystem::Cargo, Ecosystem::Npm]));
         let ids: Vec<&str> = facts.packages.iter().map(|package| package.id.as_str()).collect();
         assert_eq!(ids, ["cargo/app", "cargo/core", "npm/web"]);
-        assert_eq!(facts.origin, ORIGIN);
+        assert_eq!(facts.origin.as_deref(), Some(ORIGIN));
         assert!(facts.has_commit);
         assert_eq!(facts.origin_repository.as_ref().unwrap().as_slug(), "example/tools");
         assert_eq!(
@@ -1261,9 +1277,10 @@ mod tests {
         assert!(error.to_string().contains("not a Git repository"));
     }
 
-    // No `origin` errors, with zero remotes or only other remotes.
+    // No `origin` (zero remotes, or only other remotes) detects successfully, with `origin` and
+    // `origin_repository` unset; the caller decides how to proceed without one.
     #[test]
-    fn missing_origin_is_an_error() {
+    fn missing_origin_detects_with_origin_unset() {
         let files = [("Cargo.toml", cargo("app", "1.0.0"))];
         let files: Vec<(&str, &str)> = files.iter().map(|(path, body)| (*path, body.as_str())).collect();
         let none = repo(&files, None);
@@ -1271,11 +1288,9 @@ mod tests {
         git(other.path(), &["remote", "add", "upstream", ORIGIN]);
         git(other.path(), &["remote", "add", "fork", ORIGIN]);
         for dir in [none, other] {
-            let error = detect_in(dir.path()).unwrap_err();
-            assert!(matches!(error, GraphError::InitOriginMissing), "{error}");
-            assert!(error.to_string().contains("origin"));
-            assert!(format!("{:?}", miette::Diagnostic::help(&error).unwrap().to_string())
-                .contains("git remote add origin"));
+            let facts = detect_in(dir.path()).unwrap();
+            assert_eq!(facts.origin, None);
+            assert_eq!(facts.origin_repository, None);
         }
     }
 
@@ -1293,7 +1308,7 @@ mod tests {
 
         let gitlab = repo(&files, Some("git@gitlab.com:example/tools.git"));
         let facts = detect_in(gitlab.path()).unwrap();
-        assert_eq!(facts.origin, "ssh://git@gitlab.com/example/tools.git");
+        assert_eq!(facts.origin.as_deref(), Some("ssh://git@gitlab.com/example/tools.git"));
         assert_eq!(facts.origin_repository, None);
     }
 
@@ -1380,7 +1395,7 @@ mod tests {
                 package("cargo/core", &[], false),
                 package("npm/web-linux-x64-gnu", &[], true),
             ],
-            origin: ORIGIN.to_owned(),
+            origin: Some(ORIGIN.to_owned()),
             origin_repository: GitHubRepository::parse("example/tools").ok(),
             tag_templates: BTreeMap::new(),
             has_commit: true,

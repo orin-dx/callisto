@@ -212,7 +212,6 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E189 | `--product-package` value is invalid | Name one of the binary-producing packages (candidates are listed in the error). |
 | E190 | `callisto init` target already exists; workspace is already initialized | Edit callisto.toml directly; `callisto init` only scaffolds a workspace without one. |
 | E191 | Workspace root is not a Git repository | Run `git init` in the workspace root, then re-run `callisto init`. |
-| E192 | No `origin` remote is configured | Add the repository's remote as `origin`: `git remote add origin <url>`. |
 | E193 | Package matches more than one tag naming convention | Write a [[package]] entry for it with `tag-template` set to the current convention and `previous-tag-templates` listing the older ones. |
 | E194 | More than one package shares a `v{version}` tag | Give each package its own [[package]] `tag-template` (and `previous-tag-templates` for the shared `v{version}` tags). |
 | E195 | `--forge-repository` value is invalid | Use the GitHub `owner/repo` the product releases to. |
@@ -284,6 +283,8 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E281 | A `release-pr` `--decision`/`--snapshot` argument is not valid JSON | check the JSON is well-formed and matches the expected schema |
 | E282 | `release-pr commit-plan` was run with both `--out` and `--dry-run` | re-run without --dry-run, or drop --out |
 | E283 | `help` named a subcommand that doesn't exist | run `callisto --help` to list commands |
+| E298 | `init --forge-repository`/`--product-package` given without `--artifact-target` | Drop the flag, or pass --artifact-target to ship the product's binaries (flag named in the error). |
+| E299 | `init --workflow`/`--artifact-target` given with no `origin` remote configured | Add the repository's remote as origin (`git remote add origin <url>`), then re-run init. |
 
 
-239 numeric E#### codes total in one registry.
+240 numeric E#### codes total in one registry.
