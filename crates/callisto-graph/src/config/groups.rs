@@ -374,10 +374,8 @@ mod tests {
         }
     }
 
-    /// A `[[fixed-group]]` member name ambiguous across ecosystems must
-    /// report E103 (`GraphError::AmbiguousName`), not fall through to E108
-    /// (`MissingGroupMember`) -- `resolve`'s `Err` used to be swallowed by
-    /// `if let Ok`, treating "ambiguous" the same as "not found at all".
+    /// An ambiguous member must surface as E103 (`GraphError::AmbiguousName`),
+    /// not E108 (`MissingGroupMember`).
     #[test]
     fn resolve_reports_ambiguous_name_as_e103_not_missing_member() {
         let mut index = IdentityIndex::default();

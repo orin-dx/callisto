@@ -134,6 +134,11 @@
       "is_error_case": true
     },
     {
+      "id": "WS-CFG-09",
+      "criterion": "A `[[package]]` rule that matches no package emits one `package-rule-matched-nothing` warning naming the rule.",
+      "is_error_case": true
+    },
+    {
       "id": "WS-PLAT-01",
       "criterion": "A package.json with non-empty `os` and `cpu` arrays is an npm platform package whose platform and arch are the first entries; for Linux its ABI is `gnueabihf`, `gnu` or `musl` from the name's `-<abi>` suffix, otherwise none."
     },
