@@ -307,7 +307,7 @@ pub fn parse_release_trigger(s: &str) -> Result<ReleaseTrigger, ConfigError> {
 /// (a Cargo-only `foo`) -- `package_ecosystems` is the package's real,
 /// manifest-derived ecosystem set, independent of whether its `PackageId`
 /// happens to be Bare (unpromoted) or Prefixed.
-fn rule_applies(rule_id: &PackageId, id: &PackageId, package_ecosystems: &[Ecosystem]) -> bool {
+pub(crate) fn rule_applies(rule_id: &PackageId, id: &PackageId, package_ecosystems: &[Ecosystem]) -> bool {
     if rule_id.name() != id.name() {
         return false;
     }

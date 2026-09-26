@@ -48,6 +48,17 @@ pub enum LocateError {
     #[diagnostic(code(E032))]
     OutsideWorkspaceRoot { path: PathBuf, root: PathBuf },
 
+    #[error("failed to parse manifest `{}`: {message}", .path.display())]
+    #[diagnostic(
+        code(E209),
+        help(
+            "Fix the manifest's syntax so it can be parsed. This path is a workspace member (by \
+              explicit membership or by sharing a directory with one), so a discovery-breaking \
+              manifest here cannot be silently skipped."
+        )
+    )]
+    ManifestParseError { path: PathBuf, message: String },
+
     /// A VCS operation failed during workspace location. This variant exists
     /// so that callers who need to distinguish filesystem-structure errors
     /// (WorkspaceRootNotFound, Walk) from VCS errors (e.g., a git repository

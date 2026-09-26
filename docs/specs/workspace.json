@@ -38,7 +38,7 @@
     },
     {
       "id": "WS-DISC-03",
-      "criterion": "Discovery treats every directory under the root whose Cargo.toml, package.json or pyproject.toml parses and declares a package name as a candidate, following symlinks up to 32 levels deep and skipping hidden and gitignored paths and directories named target, node_modules, .git, .moon and dist; a manifest without a name is not a package."
+      "criterion": "Discovery treats every directory under the root whose Cargo.toml, package.json or pyproject.toml parses and declares a package name as a candidate, following symlinks up to 32 levels deep and skipping hidden and gitignored paths and directories named target, node_modules, .git, .moon and dist; a manifest without a name is not a package. A manifest that fails to parse is a coded error naming its path and the parse error when the path is admitted by explicit workspace membership or shares a directory with an admitted manifest, otherwise it is a warning naming the path and the parse error, and discovery continues without it."
     },
     {
       "id": "WS-DISC-04",

@@ -101,6 +101,20 @@ impl Membership {
         }
     }
 
+    /// Unlike [`Self::admits`], `None` `members` (no `[workspace]` restriction present, or the
+    /// root manifest itself failed to parse) never counts here -- only a real `members`/
+    /// `exclude` glob match, or the hybrid-root case, both derived from a manifest that
+    /// actually parsed.
+    pub(crate) fn admits_explicitly(&self, rel: &Path, is_root: bool) -> bool {
+        if is_root && self.hybrid_root {
+            return true;
+        }
+        match &self.members {
+            Some(members) => !self.exclude.is_match(rel) && members.is_match(rel),
+            None => false,
+        }
+    }
+
     fn absent() -> Self {
         Membership {
             members: None,
@@ -334,6 +348,17 @@ impl NpmMembership {
         match &self.globs {
             None => true,
             Some(globs) => globs.is_match(rel),
+        }
+    }
+
+    /// See [`Membership::admits_explicitly`]: `None` globs never counts here.
+    pub(crate) fn admits_explicitly(&self, rel: &Path, is_root: bool) -> bool {
+        if is_root && self.hybrid_root {
+            return true;
+        }
+        match &self.globs {
+            Some(globs) => globs.is_match(rel),
+            None => false,
         }
     }
 }
