@@ -1,0 +1,60 @@
+{
+  "cli_version": "0.11.4-nightly.202609260624.c369a70d2",
+  "checkpoint_id": "01M3JGFWYNM5KN3DJNVZRJNYSP",
+  "session_id": "01a0e02c-c67f-7d70-b5a4-1cb433d80074",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-27T22:41:44.626298Z",
+  "branch": "fix/release-pr-verify-envelope",
+  "checkpoints_count": 2,
+  "save_step_count": 3,
+  "files_touched": [],
+  "agent": "Codex",
+  "model": "gpt-6-luna",
+  "turn_id": "67ad1028f55f",
+  "checkpoint_transcript_start": 5672,
+  "transcript_lines_at_start": 5672,
+  "compact_transcript_start": 674,
+  "token_usage": {
+    "input_tokens": 5221,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 984832,
+    "output_tokens": 704,
+    "api_call_count": 5
+  },
+  "session_metrics": {
+    "turn_count": 14
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 15,
+      "user_lines_removed": 0,
+      "agent_lines_added": 4692,
+      "agent_lines_removed": 238,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 12
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 15,
+      "user_lines_removed": 0,
+      "agent_lines_added": 6827,
+      "agent_lines_removed": 388,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 12
+      }
+    }
+  ]
+}
