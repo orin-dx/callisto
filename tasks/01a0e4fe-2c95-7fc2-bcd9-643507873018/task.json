@@ -1,0 +1,14 @@
+{
+  "tool_use_id": "01a0e4fe-2c95-7fc2-bcd9-643507873018",
+  "agent_id": "01a0e4fe-2c95-7fc2-bcd9-643507873018",
+  "subagent_type": "bug-hunter",
+  "token_usage": {
+    "input_tokens": 97779,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1069824,
+    "output_tokens": 6120,
+    "api_call_count": 17
+  },
+  "started_at": "2026-09-27T15:31:00.107376-07:00",
+  "completed_at": "2026-09-27T15:54:01.082218-07:00"
+}
