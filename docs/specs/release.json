@@ -323,7 +323,7 @@
     },
     {
       "id": "REL-PR-07",
-      "criterion": "`--format json` output of `release-pr verify`, `release-pr decide` and `release-pr commit-plan` (without `--out`) goes through the same envelope every other command's JSON report uses: a top-level `schemaVersion`, `command` and `dryRun`, alongside that subcommand's own payload fields unchanged."
+      "criterion": "`--format json` output of `release-pr verify`, `release-pr decide` and `release-pr commit-plan` (without `--out`) goes through the same envelope every other command's JSON report uses: a top-level `schemaVersion`, `command` and `dryRun`, alongside that subcommand's own payload fields unchanged. `release-pr verify --decision` accepts `release-pr decide --format json` output as-is."
     },
     {
       "id": "REL-ERR-01",

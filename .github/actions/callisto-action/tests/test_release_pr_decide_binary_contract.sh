@@ -104,7 +104,13 @@ assert_jq_matches_real_output() {
       return
     fi
   fi
-  echo "PASS ($label): real binary output round-trips through the script's jq expressions"
+  # The script hands decide's output to verify unchanged.
+  if ! verify_output=$("$callisto_bin" release-pr verify --decision "$decision" --snapshot "$snapshot" --cwd "$repo" 2>&1); then
+    echo "FAIL ($label): release-pr verify rejected release-pr decide's own output: $verify_output"
+    fail=1
+    return
+  fi
+  echo "PASS ($label): real binary output round-trips through the script's jq expressions and verify"
 }
 
 repo=$(build_temp_repo)
@@ -124,6 +130,9 @@ decision_kind=$(jq -r '.action.kind' <<< "$decision")
 staging_branch=$(jq -r '.action.stagingBranch' <<< "$decision")
 if [[ "$decision_kind" != create || "$staging_branch" != "callisto/version-packages--staging" ]]; then
   echo "FAIL (create, no existing PR): expected kind=create with the deterministic staging branch, got: $decision"
+  fail=1
+elif ! verify_output=$("$callisto_bin" release-pr verify --decision "$decision" --snapshot "$snapshot" --cwd "$repo" 2>&1); then
+  echo "FAIL (create, no existing PR): release-pr verify rejected release-pr decide's own output: $verify_output"
   fail=1
 else
   echo 'PASS (create, no existing PR): real binary output round-trips through the script'"'"'s jq expressions'
