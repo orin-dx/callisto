@@ -1826,3 +1826,11 @@ There are no other open PRs, isn't e281 fixed?
 ---
 
 I thought we fixed that in an earlier PR, check latest main
+
+---
+
+Yes, stack it
+
+---
+
+What's the ADR 8 decision we're waiting on?
