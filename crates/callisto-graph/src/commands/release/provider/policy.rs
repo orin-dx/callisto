@@ -57,11 +57,10 @@ pub(crate) fn observation_backoff(attempt: u32) -> Duration {
     Duration::from_secs(2u64.saturating_pow(attempt + 1)).min(OBSERVATION_BACKOFF_CAP)
 }
 
-/// Checks of this run's own write before it counts as unobserved: GitHub's reads lag its writes
-/// by seconds, so the waits (2s, 4s, 8s, 16s, 32s) cover about a minute.
+/// GitHub's reads lag its writes by seconds; waits of 2s to 32s cover about a minute.
 pub(crate) const EFFECT_VISIBILITY_ATTEMPTS: u32 = 6;
 
-/// Observes until an effect this run made is visible. Only `Absent` is retried: every other answer is final.
+/// Re-observes this run's own effect while it reads `Absent`; any other answer is final.
 pub(crate) fn observe_until_visible(
     sleeper: &dyn Sleeper,
     mut observe: impl FnMut() -> Result<ProviderObservationV1, GraphError>,

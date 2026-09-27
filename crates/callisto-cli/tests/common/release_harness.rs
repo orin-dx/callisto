@@ -1073,16 +1073,8 @@ fn write_fixture_templates(bin: &Path) {
     .unwrap();
 }
 
-/// The GitHub Releases model the fake `gh` shares across harnesses.
-///
-/// It reproduces the facts the provider depends on: a release starts as a
-/// draft, the GraphQL lookup by tag finds drafts and published releases alike
-/// (release ID 1), and `GET /releases/1` serves that release. After a create,
-/// the next `$CALLISTO_TEST_FORGE_LAG` GraphQL lookups still miss the release,
-/// as GitHub's reads lag its writes. `$CALLISTO_TEST_FORGE_MARKER` holds `draft`
-/// or `published`; an empty marker is a pre-existing published release, which
-/// is how a test seeds one directly. Bodies are `$fx/release.tmpl` and
-/// `$fx/asset.tmpl` (the captured release shape) with values substituted.
+/// GitHub Releases for the fake `gh`: GraphQL finds a draft or published release (ID 1) that `GET /releases/1` serves.
+/// After a create, `$CALLISTO_TEST_FORGE_LAG` GraphQL lookups still miss it, as GitHub's reads lag its writes.
 const FAKE_GH_FORGE: &str = r#"
 forge_state() {
   if [ ! -f "$CALLISTO_TEST_FORGE_MARKER" ]; then printf 'absent'; return; fi

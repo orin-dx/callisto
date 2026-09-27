@@ -29,7 +29,7 @@ pub(crate) fn github_release_endpoint(repository: &str, id: u64) -> String {
     format!("repos/{repository}/releases/{id}")
 }
 
-/// Finds a release by tag, draft or published; `GET /releases/tags/{tag}` serves only published ones.
+/// Finds drafts too, unlike `GET /releases/tags/{tag}`.
 const RELEASE_ID_QUERY: &str = "query($owner:String!,$name:String!,$tagName:String!)\
 {repository(owner:$owner,name:$name){release(tagName:$tagName){databaseId}}}";
 
@@ -77,8 +77,7 @@ fn github_release_response_status(status: u16) -> Option<GitHubReleaseLookup> {
     }
 }
 
-/// Finds the release for `tag` whether it is published or still a draft: the GraphQL
-/// lookup by tag, then the release by ID, which is how `gh release view` finds drafts.
+/// GraphQL for the release ID by tag, then REST by ID: how `gh release view` finds drafts.
 pub(crate) fn github_release_for_tag(
     root: &Path,
     runner: &dyn CommandRunner,
@@ -158,7 +157,7 @@ fn github_release_id_once(
     }
     let value: serde_json::Value =
         serde_json::from_str(&response.body).map_err(|error| malformed(&error.to_string()))?;
-    // GraphQL reports failures, including rate limits and an unreadable repository, as a 200 with `errors`.
+    // GraphQL returns failures, rate limits included, as a 200 with `errors`.
     let repository_node = value.pointer("/data/repository").filter(|node| !node.is_null());
     let Some(repository_node) = repository_node.filter(|_| value.get("errors").is_none()) else {
         return transient(GitHubReleaseLookup::CommandFailed);

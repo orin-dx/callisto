@@ -262,7 +262,6 @@ fn a_published_release_missing_an_asset_re_uploads_only_that_asset() {
     );
 }
 
-/// The tag endpoint never serves drafts; the lookup by tag must still find an existing one.
 #[test]
 fn an_existing_draft_is_found_by_tag_and_never_recreated() {
     let run = ProductRun::new();
@@ -283,8 +282,6 @@ fn an_existing_draft_is_found_by_tag_and_never_recreated() {
     assert!(effects.iter().any(|call| call.contains("--draft=false")), "{effects:?}");
 }
 
-/// GitHub's reads can lag its writes: a draft missing from the first lookups after its create is waited for,
-/// not reported as a conflict, and is created exactly once.
 #[test]
 fn a_draft_that_is_not_yet_visible_after_create_is_waited_for() {
     let mut run = ProductRun::new();

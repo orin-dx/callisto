@@ -103,7 +103,7 @@ split_http "$work/nf"
 drop_headers "$work/nf.head" "^content-length:|$ACCOUNT_HEADERS"
 cat "$work/nf.head" "$work/nf.body" >"$out/github/release-404.http"
 
-# The release-by-tag lookup: GraphQL finds drafts, which the REST tag endpoint does not serve.
+# GraphQL finds drafts; the REST tag endpoint does not.
 release_id_query='query($owner:String!,$name:String!,$tagName:String!){repository(owner:$owner,name:$name){release(tagName:$tagName){databaseId}}}'
 gql_release_id() {
   gh api --include graphql -f "query=$release_id_query" -f "owner=$1" -f "name=$2" -f "tagName=$3" >"$work/$4" 2>/dev/null || true

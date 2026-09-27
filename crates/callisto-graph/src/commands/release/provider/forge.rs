@@ -160,7 +160,7 @@ impl ReleaseProvider for ForgePublishProvider {
     ) -> Result<ExactEvidence, GraphError> {
         let operation = publish_operation(request)?;
         let repository = context.github_repository_slug()?;
-        // `gh release edit` finds the draft by the same lookup, so wait until the draft this run created is visible.
+        // `gh release edit` looks the draft up the same way.
         confirmed_evidence(
             observe_until_visible(context.sleeper(), || {
                 observed_forge_release(
@@ -313,8 +313,7 @@ mod tests {
     use super::super::policy::tests::RecordingSleeper;
     use super::*;
 
-    /// A `gh` that answers only the two reads with raw `gh api --include` stdout: the GraphQL lookup by tag
-    /// (the captured found or absent answer) and the release by ID (`release`, or the captured 404).
+    /// Answers the GraphQL lookup by tag and the release by ID with captured `gh api --include` output.
     struct ScriptedGh {
         release: Option<String>,
         graphql: Option<&'static str>,
