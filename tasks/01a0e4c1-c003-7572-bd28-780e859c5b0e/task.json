@@ -1,0 +1,23 @@
+{
+  "tool_use_id": "01a0e4c1-c003-7572-bd28-780e859c5b0e",
+  "agent_id": "01a0e4c1-c003-7572-bd28-780e859c5b0e",
+  "subagent_type": "default",
+  "files": [
+    "crates/callisto-manifests/src/cargo.rs",
+    "crates/callisto-manifests/src/lib.rs",
+    "crates/callisto-graph/src/commands/release_decision.rs",
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-cli/tests/durable_release_e2e_tests.rs",
+    "crates/callisto-cli/tests/partial_run_tests.rs",
+    "crates/callisto-cli/tests/single_package_root_tests.rs"
+  ],
+  "token_usage": {
+    "input_tokens": 151261,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3436544,
+    "output_tokens": 27838,
+    "api_call_count": 33
+  },
+  "started_at": "2026-09-27T14:24:59.191398-07:00",
+  "completed_at": "2026-09-27T14:40:08.774111-07:00"
+}

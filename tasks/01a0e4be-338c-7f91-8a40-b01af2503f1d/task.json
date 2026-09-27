@@ -1,0 +1,21 @@
+{
+  "tool_use_id": "01a0e4be-338c-7f91-8a40-b01af2503f1d",
+  "agent_id": "01a0e4be-338c-7f91-8a40-b01af2503f1d",
+  "subagent_type": "default",
+  "files": [
+    "crates/callisto-cli/src/commands/pre.rs",
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-graph/src/lib.rs",
+    "crates/callisto-model/src/format/pre.rs",
+    "crates/callisto-cli/tests/pre_mode_tests.rs"
+  ],
+  "token_usage": {
+    "input_tokens": 131304,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2754176,
+    "output_tokens": 19626,
+    "api_call_count": 28
+  },
+  "started_at": "2026-09-27T14:21:07.362811-07:00",
+  "completed_at": "2026-09-27T14:40:08.774057-07:00"
+}
