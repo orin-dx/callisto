@@ -104,7 +104,6 @@ assert_jq_matches_real_output() {
       return
     fi
   fi
-  # The script hands decide's output to verify unchanged.
   if ! verify_output=$("$callisto_bin" release-pr verify --decision "$decision" --snapshot "$snapshot" --cwd "$repo" 2>&1); then
     echo "FAIL ($label): release-pr verify rejected release-pr decide's own output: $verify_output"
     fail=1

@@ -43,8 +43,7 @@ fn read_json_arg_as<T: serde::de::DeserializeOwned>(flag: &'static str, arg: &st
     })
 }
 
-/// `--decision` accepts `release-pr decide --format json` output unchanged: the report fields it adds are
-/// dropped before the strict parse.
+/// Accepts `release-pr decide --format json` output as-is by dropping its report fields.
 fn read_decision_arg(arg: &str) -> Result<ReleasePrDecisionWireV2, CliError> {
     let invalid = |error: serde_json::Error| CliError::ReleasePrArgJsonInvalid {
         flag: "decision",
