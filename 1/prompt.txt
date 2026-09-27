@@ -1834,3 +1834,7 @@ Yes, stack it
 ---
 
 What's the ADR 8 decision we're waiting on?
+
+---
+
+We seem to have very wordy comments that don't wrap at 120 char. What happened to the directions to be succinct and to the point?
