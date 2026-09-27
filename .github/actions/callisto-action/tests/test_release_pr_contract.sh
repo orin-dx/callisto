@@ -28,10 +28,27 @@ callisto() {
   echo "callisto $*" >> "$CALLS_FILE"
   if [[ " $* " == *' release-pr decide '* ]]; then printf '%s\n' "$DECISION"; return 0; fi
   if [[ " $* " == *' release-pr verify '* ]]; then
-    local n
+    local n arg previous='' applied_head='' snapshot=''
     n=$(( $(cat "$VERIFY_COUNT_FILE" 2>/dev/null || echo 0) + 1 ))
     echo "$n" > "$VERIFY_COUNT_FILE"
     if [[ "$VERIFY_FAIL_AT" != 0 && "$n" == "$VERIFY_FAIL_AT" ]]; then return 1; fi
+    if [[ "$REQUIRE_APPLIED_HEAD" == true && "$n" == 3 ]]; then
+      for arg in "$@"; do
+        case "$previous" in
+          --applied-head) applied_head="$arg" ;;
+          --snapshot) snapshot="$arg" ;;
+        esac
+        previous="$arg"
+      done
+      if [[ "$applied_head" != "$NEW_SHA" ]]; then
+        echo 'verification rejected missing or wrong applied head' >> "$CALLS_FILE"
+        return 1
+      fi
+      jq -e --argjson number "$(jq -r '.action.pullRequestNumber' <<< "$DECISION")" --arg head "$NEW_SHA" \
+        'any(.openPullRequests[]; .number == $number and .headCommit == $head)' <<< "$snapshot" >/dev/null \
+        || return 1
+      echo 'verification accepted the applied head observed on the moved PR' >> "$CALLS_FILE"
+    fi
     return 0
   fi
   if [[ " $* " == *' release-pr commit-plan '* ]]; then
@@ -87,7 +104,14 @@ gh() {
         [[ "$joined" == *' -X PATCH '* ]] && return "$STAGING_PATCH_CODE"
         return 0
       fi
-      [[ "$joined" == *' -X PATCH '* ]] && return "$MOVE_PATCH_CODE"
+      if [[ "$joined" == *' -X PATCH '* ]]; then
+        [[ "$MOVE_PATCH_CODE" == 0 ]] || return "$MOVE_PATCH_CODE"
+        if [[ "$REQUIRE_APPLIED_HEAD" == true ]]; then
+          PR_LIST=$(jq --argjson number "$(jq -r '.action.pullRequestNumber' <<< "$DECISION")" --arg head "$NEW_SHA" \
+            'map(if .number == $number then .headRefOid = $head else . end)' <<< "$PR_LIST")
+        fi
+        return 0
+      fi
       printf '%s\n' "$NEW_SHA"
       return 0
     fi
@@ -110,6 +134,7 @@ STUBS
   set +e
   CALLS_FILE="$calls_file" PR_LIST="$prs" DECISION="$decision" LABEL_EXISTS="$label_exists" \
     VERIFY_FAIL_AT="${VERIFY_FAIL_AT:-0}" VERIFY_COUNT_FILE="$verify_count_file" \
+    REQUIRE_APPLIED_HEAD="${REQUIRE_APPLIED_HEAD:-false}" \
     STAGING_PATCH_CODE="${STAGING_PATCH_CODE:-0}" GRAPHQL_CODE="${GRAPHQL_CODE:-0}" \
     MOVE_PATCH_CODE="${MOVE_PATCH_CODE:-0}" MOVE_POST_CODE="${MOVE_POST_CODE:-0}" \
     COMMIT_PLAN_CODE="${COMMIT_PLAN_CODE:-0}" COMMIT_PLAN="${COMMIT_PLAN:-$default_commit_plan}" \
@@ -148,6 +173,28 @@ noop='{"schemaVersion":2,"action":{"kind":"noop","reason":{"kind":"noPendingChan
 
 fail=0
 
+assert_verify_flags() {
+  local label="$1" output="$2" applied_head="$3" line
+  local -a verifies=()
+  while IFS= read -r line; do
+    if [[ "$line" == 'callisto release-pr verify '* ]]; then
+      verifies+=("$line")
+    fi
+  done <<< "$output"
+  if [[ ${#verifies[@]} -ne 3 ]] \
+    || [[ "${verifies[0]}" == *' --applied-head '* ]] \
+    || [[ "${verifies[1]}" == *' --applied-head '* ]]; then
+    echo "FAIL: $label must keep the first two verification calls strict: $output"
+    fail=1
+  elif [[ -n "$applied_head" && "${verifies[2]}" != *" --applied-head $applied_head" ]] \
+    || [[ -z "$applied_head" && "${verifies[2]}" == *' --applied-head '* ]]; then
+    echo "FAIL: $label final verification used the wrong applied head: $output"
+    fail=1
+  else
+    echo "PASS: $label verification flags"
+  fi
+}
+
 output="$(run_case '[]' "$create")"
 if [[ "$output" != 0$'\n'* ]] \
   || [[ "$output" != *'callisto --format json release-pr decide'* ]] \
@@ -165,6 +212,7 @@ if [[ "$output" != 0$'\n'* ]] \
 else
   echo 'PASS: executes Callisto create decision'
 fi
+assert_verify_flags create "$output" ''
 
 output="$(run_case '[{"number":42,"headRefName":"callisto/version-packages","headRepository":{"nameWithOwner":"orin-dx/callisto"},"headRefOid":"0123456789abcdef0123456789abcdef01234567"}]' "$update" false)"
 if [[ "$output" != 0$'\n'* ]] \
@@ -179,6 +227,7 @@ if [[ "$output" != 0$'\n'* ]] \
 else
   echo 'PASS: executes Callisto update decision'
 fi
+assert_verify_flags update "$output" "$default_new_sha"
 
 output="$(run_case "[{\"number\":99,\"headRefName\":\"$fallback_branch\",\"headRepository\":{\"nameWithOwner\":\"orin-dx/callisto\"},\"headRefOid\":\"0123456789abcdef0123456789abcdef01234567\"}]" "$retained")"
 if [[ "$output" != 0$'\n'* ]] \
@@ -192,6 +241,21 @@ if [[ "$output" != 0$'\n'* ]] \
 else
   echo 'PASS: retains and updates a SHA-suffixed replacement branch'
 fi
+assert_verify_flags 'retained update' "$output" "$default_new_sha"
+
+NEW_SHA='abcdefabcdefabcdefabcdefabcdefabcdefabcd'
+REQUIRE_APPLIED_HEAD=true
+output="$(run_case '[{"number":42,"headRefName":"callisto/version-packages","headRepository":{"nameWithOwner":"orin-dx/callisto"},"headRefOid":"0123456789abcdef0123456789abcdef01234567"}]' "$update")"
+if [[ "$output" != 0$'\n'* ]] \
+  || [[ "$output" != *'verification accepted the applied head observed on the moved PR'* ]] \
+  || [[ "$output" != *'gh pr edit 42'* ]]; then
+  echo "FAIL: update must verify the applied head after the forge moves the PR head: $output"
+  fail=1
+else
+  echo 'PASS: update verifies the applied head after the forge moves the PR head'
+fi
+assert_verify_flags 'update with another commit' "$output" "$NEW_SHA"
+unset NEW_SHA REQUIRE_APPLIED_HEAD
 
 output="$(run_case '[]' "$noop")"
 if [[ "$output" != 0$'\n'* ]] \
@@ -235,6 +299,29 @@ if [[ "$output" != 1$'\n'* ]] \
 else
   echo 'PASS: a moved head before the ref move leaves the real branch untouched and cleans up staging'
 fi
+
+for kind in create update; do
+  VERIFY_FAIL_AT=3
+  if [[ "$kind" == update ]]; then
+    output="$(run_case '[{"number":42,"headRefName":"callisto/version-packages","headRepository":{"nameWithOwner":"orin-dx/callisto"},"headRefOid":"0123456789abcdef0123456789abcdef01234567"}]' "$update" false)"
+    assert_verify_flags 'failed update' "$output" "$default_new_sha"
+  else
+    output="$(run_case '[]' "$create" false)"
+    assert_verify_flags 'failed create' "$output" ''
+  fi
+  unset VERIFY_FAIL_AT
+  if [[ "$output" != 1$'\n'* ]] \
+    || [[ "$output" != *"refs/heads/callisto/version-packages -f sha=$default_new_sha"* ]] \
+    || [[ "$output" != *'gh api -X DELETE repos/orin-dx/callisto/git/refs/heads/callisto/version-packages--staging'* ]] \
+    || [[ "$output" == *'gh label '* ]] \
+    || [[ "$output" == *'gh pr create'* ]] \
+    || [[ "$output" == *'gh pr edit'* ]]; then
+    echo "FAIL: failed final $kind verification must prevent label and PR writes and clean up staging: $output"
+    fail=1
+  else
+    echo "PASS: failed final $kind verification prevents label and PR writes and cleans up staging"
+  fi
+done
 
 REMOTE_TREE='tree-bbbb'
 output="$(run_case '[]' "$create")"
