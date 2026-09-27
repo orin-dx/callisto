@@ -561,6 +561,13 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
     };
     GroupTable::validate_syntactic(&raw_groups)?;
 
+    if !raw_groups.fixed.is_empty() {
+        provenance.insert(ConfigKey::FIXED_GROUP, ConfigProvenance::Explicit);
+    }
+    if !raw_groups.linked.is_empty() {
+        provenance.insert(ConfigKey::LINKED_GROUP, ConfigProvenance::Explicit);
+    }
+
     // Resolve [[package]] blocks into per-package override rules.
     // Order is preserved: first matching rule wins during package construction.
     let mut packages: Vec<(PackageId, PackageConfig)> = Vec::new();
@@ -569,6 +576,16 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
             path: callisto_toml.clone(),
             key: format!("[[package]] match = {:?}: {e}", raw_pkg.pattern),
         })?;
+
+        if raw_pkg.release_trigger.is_some() {
+            provenance.insert(ConfigKey::RELEASE_TRIGGER, ConfigProvenance::Explicit);
+        }
+        if raw_pkg.tag_template.is_some() {
+            provenance.insert(ConfigKey::TAG_TEMPLATE, ConfigProvenance::Explicit);
+        }
+        if raw_pkg.pre_major_inference.is_some() {
+            provenance.insert(ConfigKey::PRE_MAJOR_INFERENCE, ConfigProvenance::Explicit);
+        }
 
         let cfg = parse_package_config_fields(
             &callisto_toml,
@@ -594,6 +611,16 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
             path: callisto_toml.clone(),
             key: format!("[[package-set]] match = {:?}: {e}", raw_pkg.pattern),
         })?;
+
+        if raw_pkg.release_trigger.is_some() {
+            provenance.insert(ConfigKey::RELEASE_TRIGGER, ConfigProvenance::Explicit);
+        }
+        if raw_pkg.tag_template.is_some() {
+            provenance.insert(ConfigKey::TAG_TEMPLATE, ConfigProvenance::Explicit);
+        }
+        if raw_pkg.pre_major_inference.is_some() {
+            provenance.insert(ConfigKey::PRE_MAJOR_INFERENCE, ConfigProvenance::Explicit);
+        }
 
         let cfg = parse_package_config_fields(
             &callisto_toml,
@@ -1372,5 +1399,97 @@ mod tests {
         assert_eq!(format!("{loaded:?}"), format!("{resolved:?}"));
         assert_eq!(loaded.cascade.mode, CascadeMode::Always);
         assert_eq!(forge(&loaded).as_deref(), Some("orin-dx/callisto"));
+    }
+
+    fn bare_resolve(body: &str) -> ResolvedConfig {
+        let raw = toml::from_str::<RawConfig>(body).expect("parse");
+        resolve(Path::new("/workspace"), raw).expect("resolve")
+    }
+
+    #[test]
+    fn fixed_group_provenance_is_explicit_when_configured() {
+        let cfg = bare_resolve("[[fixed-group]]\nname = \"ab\"\nmembers = [\"pkg-a\", \"pkg-b\"]\n");
+        assert_eq!(cfg.provenance(&ConfigKey::FIXED_GROUP), ConfigProvenance::Explicit);
+    }
+
+    #[test]
+    fn fixed_group_provenance_is_default_when_absent() {
+        let cfg = bare_resolve("");
+        assert_eq!(cfg.provenance(&ConfigKey::FIXED_GROUP), ConfigProvenance::Default);
+    }
+
+    #[test]
+    fn linked_group_provenance_is_explicit_when_configured() {
+        let cfg = bare_resolve("[[linked-group]]\nname = \"ab\"\nmembers = [\"pkg-a\", \"pkg-b\"]\n");
+        assert_eq!(cfg.provenance(&ConfigKey::LINKED_GROUP), ConfigProvenance::Explicit);
+    }
+
+    #[test]
+    fn linked_group_provenance_is_default_when_absent() {
+        let cfg = bare_resolve("");
+        assert_eq!(cfg.provenance(&ConfigKey::LINKED_GROUP), ConfigProvenance::Default);
+    }
+
+    #[test]
+    fn release_trigger_provenance_is_explicit_when_set_on_a_package_rule() {
+        let cfg = bare_resolve("[[package]]\nmatch = \"cargo/demo\"\nrelease-trigger = \"auto\"\n");
+        assert_eq!(cfg.provenance(&ConfigKey::RELEASE_TRIGGER), ConfigProvenance::Explicit);
+    }
+
+    #[test]
+    fn release_trigger_provenance_is_explicit_when_set_on_a_package_set_rule() {
+        let cfg = bare_resolve("[[package-set]]\nmatch = \"cargo/*\"\nrelease-trigger = \"auto\"\n");
+        assert_eq!(cfg.provenance(&ConfigKey::RELEASE_TRIGGER), ConfigProvenance::Explicit);
+    }
+
+    #[test]
+    fn release_trigger_provenance_is_default_when_absent() {
+        let cfg = bare_resolve("[[package]]\nmatch = \"cargo/demo\"\n");
+        assert_eq!(cfg.provenance(&ConfigKey::RELEASE_TRIGGER), ConfigProvenance::Default);
+    }
+
+    #[test]
+    fn tag_template_provenance_is_explicit_when_set_on_a_package_rule() {
+        let cfg = bare_resolve("[[package]]\nmatch = \"cargo/demo\"\ntag-template = \"v{version}\"\n");
+        assert_eq!(cfg.provenance(&ConfigKey::TAG_TEMPLATE), ConfigProvenance::Explicit);
+    }
+
+    #[test]
+    fn tag_template_provenance_is_explicit_when_set_on_a_package_set_rule() {
+        let cfg = bare_resolve("[[package-set]]\nmatch = \"cargo/*\"\ntag-template = \"v{version}\"\n");
+        assert_eq!(cfg.provenance(&ConfigKey::TAG_TEMPLATE), ConfigProvenance::Explicit);
+    }
+
+    #[test]
+    fn tag_template_provenance_is_default_when_absent() {
+        let cfg = bare_resolve("[[package]]\nmatch = \"cargo/demo\"\n");
+        assert_eq!(cfg.provenance(&ConfigKey::TAG_TEMPLATE), ConfigProvenance::Default);
+    }
+
+    #[test]
+    fn pre_major_inference_provenance_is_explicit_when_set_on_a_package_rule() {
+        let cfg = bare_resolve("[[package]]\nmatch = \"cargo/demo\"\npre-major-inference = \"conservative\"\n");
+        assert_eq!(
+            cfg.provenance(&ConfigKey::PRE_MAJOR_INFERENCE),
+            ConfigProvenance::Explicit
+        );
+    }
+
+    #[test]
+    fn pre_major_inference_provenance_is_explicit_when_set_on_a_package_set_rule() {
+        let cfg = bare_resolve("[[package-set]]\nmatch = \"cargo/*\"\npre-major-inference = \"conservative\"\n");
+        assert_eq!(
+            cfg.provenance(&ConfigKey::PRE_MAJOR_INFERENCE),
+            ConfigProvenance::Explicit
+        );
+    }
+
+    #[test]
+    fn pre_major_inference_provenance_is_default_when_absent() {
+        let cfg = bare_resolve("[[package]]\nmatch = \"cargo/demo\"\n");
+        assert_eq!(
+            cfg.provenance(&ConfigKey::PRE_MAJOR_INFERENCE),
+            ConfigProvenance::Default
+        );
     }
 }

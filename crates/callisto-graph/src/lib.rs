@@ -189,22 +189,106 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
         Ok(versions)
     }
 
-    pub fn pre_json_key<'b>(&self, id: &'b PackageId) -> Result<&'b str, GraphError> {
-        Ok(pre_json_key(id))
-    }
-
     pub fn initial_versions(&self) -> Result<Vec<(String, Version)>, GraphError> {
         let base = self.base_versions()?;
-        Ok(base
-            .into_iter()
-            .map(|(id, v)| (pre_json_key(&id).to_string(), v))
-            .collect())
+        Ok(base.into_iter().map(|(id, v)| (pre_json_key(&id), v)).collect())
     }
 }
 
-/// The canonical `.changeset/pre.json` `initialVersions` key for `id`: the bare package name, unqualified by
-/// ecosystem prefix. Every reader and writer of `initialVersions` must share this definition -- keying by
-/// `display_name()` instead would silently miss every entry for a `PackageId::Prefixed` id.
-pub fn pre_json_key(id: &PackageId) -> &str {
-    id.name()
+/// The `pre.json` `initialVersions` key for `id`: its display id, so `cargo/foo` and `npm/foo` never share an entry.
+pub fn pre_json_key(id: &PackageId) -> String {
+    id.display_name()
+}
+
+/// `id`'s pinned pre-release baseline.
+pub fn pre_initial_version<'a>(pre: &'a callisto_model::format::PreState, id: &PackageId) -> Option<&'a Version> {
+    pre.initial_versions.get(&pre_json_key(id))
+}
+
+/// The one package among `candidates` whose canonical manifest existed at `rev`, if exactly one did: the owner
+/// of anything recorded under their shared bare name at that point.
+pub(crate) fn sole_owner_at<'p>(
+    git: &GitAccess<'_>,
+    rev: &str,
+    candidates: &[&'p callisto_model::Package],
+) -> Result<Option<&'p callisto_model::Package>, GraphError> {
+    let mut owner = None;
+    for pkg in candidates {
+        let Some(manifest) = pkg.canonical_manifests().next() else {
+            continue;
+        };
+        if git.path_exists_at(rev, &manifest.path).map_err(GraphError::Vcs)? {
+            if owner.is_some() {
+                return Ok(None);
+            }
+            owner = Some(*pkg);
+        }
+    }
+    Ok(owner)
+}
+
+/// Re-keys each `initialVersions` entry recorded under a bare name that has since been promoted to the one
+/// same-named package that existed when `pre.json` was added.
+pub(crate) fn assign_promoted_pre_keys<D: DependencyResolver>(
+    git: &GitAccess<'_>,
+    graph: &D,
+    pre_json: &std::path::Path,
+    mut state: callisto_model::format::PreState,
+) -> Result<callisto_model::format::PreState, GraphError> {
+    let keys: Vec<String> = state.initial_versions.keys().cloned().collect();
+    for key in keys {
+        if graph.packages().any(|p| pre_json_key(&p.id) == key) {
+            continue;
+        }
+        let same: Vec<&callisto_model::Package> = graph
+            .packages()
+            .filter(|p| p.id.ecosystem().is_some() && p.id.name() == key)
+            .collect();
+        if same.is_empty() {
+            continue;
+        }
+        let owner = match git.commit_adding(pre_json).map_err(GraphError::Vcs)? {
+            Some(added) => sole_owner_at(git, &added, &same)?,
+            None => None,
+        };
+        let Some(owner) = owner else {
+            return Err(GraphError::AmbiguousPreJsonKey {
+                key,
+                candidates: same.iter().map(|p| p.id.clone()).collect(),
+            });
+        };
+        if let Some(version) = state.initial_versions.shift_remove(&key) {
+            state.initial_versions.entry(pre_json_key(&owner.id)).or_insert(version);
+        }
+    }
+    Ok(state)
+}
+
+#[cfg(test)]
+mod pre_json_key_tests {
+    use super::*;
+    use callisto_model::format::PreState;
+    use callisto_model::Ecosystem;
+
+    fn prefixed(ecosystem: Ecosystem, name: &str) -> PackageId {
+        PackageId::Prefixed {
+            ecosystem,
+            name: name.to_string(),
+        }
+    }
+
+    #[test]
+    fn same_named_packages_in_two_ecosystems_keep_separate_baselines() {
+        let cargo = prefixed(Ecosystem::Cargo, "foo");
+        let npm = prefixed(Ecosystem::Npm, "foo");
+        let pre = PreState::entering(
+            "beta",
+            [
+                (pre_json_key(&cargo), Version::semver(1, 0, 0)),
+                (pre_json_key(&npm), Version::semver(2, 0, 0)),
+            ],
+        );
+        assert_eq!(pre_initial_version(&pre, &cargo), Some(&Version::semver(1, 0, 0)));
+        assert_eq!(pre_initial_version(&pre, &npm), Some(&Version::semver(2, 0, 0)));
+    }
 }

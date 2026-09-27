@@ -174,7 +174,7 @@ fn workspace_resolves_natively_after_snapshot() {
     assert_native_resolution(root);
 }
 
-/// A pnpm workspace, plus a real uv one when `include_python`; false for snapshot -- see ROAD-TO-V1.md 2b.
+/// A pnpm workspace, plus a real uv one when `include_python`.
 fn setup_pnpm_and_uv_workspace(root: &Path, include_python: bool) {
     callisto_fixtures::git::init_repo(root);
 
@@ -315,12 +315,11 @@ fn pnpm_and_uv_workspace_resolves_natively_after_version() {
     assert_pnpm_and_uv_resolution(root, true);
 }
 
-/// No Python package here: see `setup_pnpm_and_uv_workspace`'s doc comment for why `snapshot` can't take one.
 #[test]
-fn pnpm_workspace_resolves_natively_after_snapshot() {
+fn pnpm_and_uv_workspace_resolves_natively_after_snapshot() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    setup_pnpm_and_uv_workspace(root, false);
+    setup_pnpm_and_uv_workspace(root, true);
 
     let global = GlobalArgs {
         format: OutputFormat::Json,
@@ -337,5 +336,5 @@ fn pnpm_workspace_resolves_natively_after_snapshot() {
     )
     .unwrap();
 
-    assert_pnpm_and_uv_resolution(root, false);
+    assert_pnpm_and_uv_resolution(root, true);
 }

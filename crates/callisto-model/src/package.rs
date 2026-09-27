@@ -5,7 +5,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    workspace_relative, Ecosystem, ModelError, PackageId, PublishTarget, ReleaseTrigger, TagTemplate, VersionGrammar,
+    workspace_relative, Ecosystem, ModelError, PackageId, PackageKey, PublishTarget, ReleaseTrigger, TagTemplate,
+    VersionGrammar,
 };
 
 /// A package in the workspace graph.
@@ -20,6 +21,12 @@ pub struct Package {
 }
 
 impl Package {
+    /// The directory of the first canonical manifest; `None` only for a package without one.
+    pub fn key(&self) -> Option<PackageKey> {
+        let manifest = self.canonical_manifests().next()?;
+        Some(PackageKey::new(manifest.path.parent().unwrap_or(Path::new(""))))
+    }
+
     pub fn canonical_manifests(&self) -> impl Iterator<Item = &ManifestDecl> {
         self.manifests.iter().filter(|m| m.role == ManifestRole::Canonical)
     }

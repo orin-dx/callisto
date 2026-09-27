@@ -156,6 +156,15 @@ pub fn run_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Result<
     solve_cascade(input)
 }
 
+/// Dependent's ecosystem, inferred from its manifest filename when the `PackageId` carries none.
+pub(crate) fn manifest_ecosystem(edge_from_ecosystem: Option<Ecosystem>, from_manifest: &std::path::Path) -> Ecosystem {
+    edge_from_ecosystem.unwrap_or_else(|| {
+        callisto_model::ManifestFormat::from_path(from_manifest)
+            .map(|fmt| fmt.ecosystem())
+            .unwrap_or(Ecosystem::Npm)
+    })
+}
+
 /// Propagates `input.seed`'s severities outward to dependents until no
 /// target version changes, or `convergence_bound`'s iteration cap is
 /// exceeded ([`GraphError::CascadeNotConverged`]) -- turns a would-be
@@ -236,13 +245,7 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
                 }
 
                 if d.rewrite {
-                    let eco = edge.from.ecosystem().unwrap_or_else(|| {
-                        if edge.from_manifest.to_string_lossy().ends_with("Cargo.toml") {
-                            Ecosystem::Cargo
-                        } else {
-                            Ecosystem::Npm
-                        }
-                    });
+                    let eco = manifest_ecosystem(edge.from.ecosystem(), &edge.from_manifest);
                     match rewrite_spec(&edge.spec, &new_version, eco, input.cfg) {
                         RewriteOutcome::Rewritten(to_spec) => {
                             let key = RewriteKey {
@@ -461,13 +464,7 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
                 continue;
             };
 
-            let eco = edge.from.ecosystem().unwrap_or_else(|| {
-                if edge.from_manifest.to_string_lossy().ends_with("Cargo.toml") {
-                    Ecosystem::Cargo
-                } else {
-                    Ecosystem::Npm
-                }
-            });
+            let eco = manifest_ecosystem(edge.from.ecosystem(), &edge.from_manifest);
 
             let key = RewriteKey {
                 target: if edge.inherited {

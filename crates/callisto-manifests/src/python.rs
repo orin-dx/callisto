@@ -729,21 +729,20 @@ impl Manifest for PyprojectToml {
 /// - `>=X.Y.Z,<A.B` — two-clause range — is rewritten to `>=NEW,<NEXT_MAJOR`
 ///   where `NEXT_MAJOR` equals `target.major() + 1`.
 ///
+/// A pre-release or dev/local target (e.g. a `snapshot` version) is rendered
+/// in full rather than truncated to `major.minor.patch`, the same precision
+/// rule `cargo::round_trip` applies for SemVer.
+///
 /// All other forms return `None` — including upper-bound-only (`<`, `<=`),
 /// exclusion (`!=`), compound expressions beyond the two-clause range above,
-/// wildcard `*`, and pre-release targets.  Callers must leave the original
-/// constraint unchanged when `None` is returned.
+/// and wildcard `*`. Callers must leave the original constraint unchanged
+/// when `None` is returned.
 pub fn round_trip(spec: &DepSpec, target: &Version) -> Option<DepSpec> {
     // Only Range specs are produced by iter_dependencies for Python.
     let original = match spec {
         DepSpec::Range(_, raw) => raw.as_str(),
         _ => return None,
     };
-
-    // Pre-release targets are not safe to rewrite automatically.
-    if target.is_prerelease() {
-        return None;
-    }
 
     let trimmed = original.trim();
 
@@ -772,12 +771,25 @@ fn rewrite_single(original: &str, op: &str, target: &Version) -> Option<DepSpec>
     // Validate that the original clause parses correctly (guards against
     // unknown version syntax that happens to start with a known prefix).
     let _rest = original.strip_prefix(op)?;
-    let maj = target.major()?;
-    let min = target.minor()?;
-    let pat = target.patch()?;
-    let rendered = format!("{op}{maj}.{min}.{pat}");
+    let rendered = format!("{op}{}", render_target(op, target)?);
     let req = VersionReq::parse(&rendered, Ecosystem::Pypi).ok()?;
     Some(DepSpec::Range(req, rendered))
+}
+
+/// Renders `target` at the precision a rewritten spec should carry, for use after `op`:
+/// `major.minor.patch` for a stable release; the version in full for a pre-release or
+/// dev target paired with `==`/`!=` (the only operators PEP 440 allows on a local version);
+/// the version with its local segment stripped for every other operator, since PEP 440
+/// forbids `>=`, `<=`, `>`, `<` and `~=` from carrying one.
+fn render_target(op: &str, target: &Version) -> Option<String> {
+    if target.is_prerelease() {
+        let full = target.render();
+        if op == "==" || op == "!=" {
+            return Some(full.to_string());
+        }
+        return Some(full.split('+').next().unwrap_or(full).to_string());
+    }
+    Some(format!("{}.{}.{}", target.major()?, target.minor()?, target.patch()?))
 }
 
 /// Rewrites a two-clause `>=X.Y.Z,<A.B` range to `>=NEW,<NEXT_MAJOR`.
@@ -806,11 +818,8 @@ fn rewrite_range(original: &str, target: &Version) -> Option<DepSpec> {
         return None;
     }
 
-    let maj = target.major()?;
-    let min = target.minor()?;
-    let pat = target.patch()?;
-    let next_major = maj + 1;
-    let rendered = format!(">={maj}.{min}.{pat},<{next_major}");
+    let next_major = target.major()? + 1;
+    let rendered = format!(">={},<{next_major}", render_target(">=", target)?);
     let req = VersionReq::parse(&rendered, Ecosystem::Pypi).ok()?;
     Some(DepSpec::Range(req, rendered))
 }
@@ -1768,10 +1777,31 @@ dependencies = [
     }
 
     #[test]
-    fn round_trip_prerelease_target_returns_none() {
+    fn round_trip_prerelease_target_rewrites_to_full_version() {
         let spec = make_pypi_spec(">=1.0.0");
         let target = make_pep440_version("2.0.0a1");
-        assert!(round_trip(&spec, &target).is_none());
+        assert_eq!(raw_of(round_trip(&spec, &target)).as_deref(), Some(">=2.0.0a1"));
+    }
+
+    /// PEP 440 forbids a local version identifier on `>=`, so the lower bound carries the
+    /// target's public segments (release + dev) only; the local segment is dropped, not the
+    /// dev qualifier that keeps the bound below the eventual stable release.
+    #[test]
+    fn round_trip_dev_local_target_drops_local_segment_from_ordered_bound() {
+        let spec = make_pypi_spec(">=1.0.0,<2.0");
+        let target = make_pep440_version("0.0.0.dev0+canary.abc1234");
+        assert_eq!(raw_of(round_trip(&spec, &target)).as_deref(), Some(">=0.0.0.dev0,<1"));
+    }
+
+    /// `==` is local-compatible, so an exact pin keeps the snapshot's local segment in full.
+    #[test]
+    fn round_trip_dev_local_target_exact_pin_preserves_the_full_identifier() {
+        let spec = make_pypi_spec("==1.0.0");
+        let target = make_pep440_version("0.0.0.dev0+canary.abc1234");
+        assert_eq!(
+            raw_of(round_trip(&spec, &target)).as_deref(),
+            Some("==0.0.0.dev0+canary.abc1234")
+        );
     }
 
     #[test]

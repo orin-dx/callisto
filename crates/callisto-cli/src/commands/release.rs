@@ -15,8 +15,9 @@ use callisto_graph::commands::{
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_model::{
     ApplyPermit, ArtifactDigest, ArtifactManifestEntryV1, ArtifactManifestV1, ExecutionTrustProfileV1,
-    GitHubArtifactAttestationV1, PackageId, ReleaseIntentV1, ReleaseIntentV1Wire, ReleasePackageId, ReleaseReceiptV1,
-    ReleaseRunEnvelopeV1,
+    GitHubArtifactAttestationV1, PackageId, ReleaseArtifactManifestReport, ReleaseDryRunReport, ReleaseExecuteReport,
+    ReleaseIntentV1, ReleaseIntentV1Wire, ReleaseNothingReport, ReleasePackageId, ReleasePlanReport, ReleaseReceiptV1,
+    ReleaseReport, ReleaseRunEnvelopeV1,
 };
 
 use crate::cli::{
@@ -24,7 +25,7 @@ use crate::cli::{
     ReleaseInspectArgs, ReleasePlanArgs,
 };
 use crate::error::CliError;
-use crate::output::{emit_line, log_line, write_json};
+use crate::output::{emit_line, emit_report, log_line, write_json};
 use crate::runner::CliCommandRunner;
 use crate::workspace::{load_workspace, select_inference};
 
@@ -101,7 +102,13 @@ fn release(
         write_receipt(path, &receipt_document, &permit)?;
     }
     match global.format {
-        OutputFormat::Json => write_json(&mut std::io::stdout(), &receipt_document)?,
+        OutputFormat::Json => emit_report(
+            &mut std::io::stdout(),
+            &ReleaseReport {
+                receipt: receipt_document.clone(),
+            },
+            global.dry_run,
+        )?,
         OutputFormat::Text => {
             let released = capability.intent().decision.entries.len();
             match &receipt {
@@ -123,11 +130,22 @@ pub(crate) fn write_release_preview(
     out: &mut dyn std::io::Write,
 ) -> Result<(), CliError> {
     match (plan, format) {
-        (None, OutputFormat::Json) => write_json(&mut &mut *out, &serde_json::json!({ "nothingToRelease": true }))?,
+        (None, OutputFormat::Json) => emit_report(
+            &mut &mut *out,
+            &ReleaseNothingReport {
+                nothing_to_release: true,
+            },
+            true,
+        )?,
         (None, OutputFormat::Text) => writeln!(out, "{NOTHING_TO_RELEASE}")?,
-        (Some(plan), OutputFormat::Json) => {
-            write_json(&mut &mut *out, &intent_envelope(&plan.intent, &plan.diagnostics))?
-        }
+        (Some(plan), OutputFormat::Json) => emit_report(
+            &mut &mut *out,
+            &ReleaseDryRunReport {
+                intent: plan.intent.clone(),
+                diagnostics: plan.diagnostics.clone(),
+            },
+            true,
+        )?,
         (Some(plan), OutputFormat::Text) => {
             write!(out, "{}", render_release_plan(&plan.intent, crate::color::enabled()))?
         }
@@ -143,25 +161,15 @@ pub(crate) fn write_release_preview(
     Ok(())
 }
 
-/// A release intent's own JSON shape, with a sibling `diagnostics` array added when
-/// derivation raised any -- the persisted intent file (read back by `verify`/`execute`)
-/// never carries this field; only the CLI's own stdout/preview output does.
-fn intent_envelope(intent: &ReleaseIntentV1, diagnostics: &[callisto_model::Diagnostic]) -> serde_json::Value {
-    let mut value = serde_json::to_value(intent).expect("release intent serializes");
-    if !diagnostics.is_empty() {
-        if let serde_json::Value::Object(ref mut map) = value {
-            map.insert(
-                "diagnostics".to_string(),
-                serde_json::to_value(diagnostics).expect("diagnostics serialize"),
-            );
-        }
-    }
-    value
-}
-
 fn print_nothing_to_release(global: &GlobalArgs) -> Result<(), CliError> {
     match global.format {
-        OutputFormat::Json => write_json(&mut std::io::stdout(), &serde_json::json!({ "nothingToRelease": true }))?,
+        OutputFormat::Json => emit_report(
+            &mut std::io::stdout(),
+            &ReleaseNothingReport {
+                nothing_to_release: true,
+            },
+            global.dry_run,
+        )?,
         OutputFormat::Text => emit_line(NOTHING_TO_RELEASE)?,
     }
     Ok(())
@@ -326,7 +334,13 @@ fn artifact_manifest(args: ReleaseArtifactManifestArgs, global: &GlobalArgs) -> 
         path: Some(args.out.clone()),
     })?;
     match global.format {
-        OutputFormat::Json => write_json(&mut std::io::stdout(), &manifest)?,
+        OutputFormat::Json => emit_report(
+            &mut std::io::stdout(),
+            &ReleaseArtifactManifestReport {
+                manifest: manifest.clone(),
+            },
+            global.dry_run,
+        )?,
         OutputFormat::Text => emit_line(&format!("Artifact manifest saved to {}", args.out.display()))?,
     }
     Ok(ExitCode::SUCCESS)
@@ -460,7 +474,14 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
         eprintln!("warning: {}", diagnostic.message);
     }
     match global.format {
-        OutputFormat::Json => write_json(&mut std::io::stdout(), &intent_envelope(&intent, &diagnostics))?,
+        OutputFormat::Json => emit_report(
+            &mut std::io::stdout(),
+            &ReleasePlanReport {
+                intent: intent.clone(),
+                diagnostics: diagnostics.clone(),
+            },
+            global.dry_run,
+        )?,
         OutputFormat::Text => emit_line(&format!(
             "Wrote release intent {} to {}",
             intent.digest(),
@@ -561,7 +582,13 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
         })?;
     write_receipt(&args.receipt, &receipt, &permit)?;
     match global.format {
-        OutputFormat::Json => write_json(&mut std::io::stdout(), &receipt)?,
+        OutputFormat::Json => emit_report(
+            &mut std::io::stdout(),
+            &ReleaseExecuteReport {
+                receipt: receipt.clone(),
+            },
+            global.dry_run,
+        )?,
         OutputFormat::Text => emit_line(&format!("Release receipt saved to {}", args.receipt.display()))?,
     }
     Ok(ExitCode::SUCCESS)

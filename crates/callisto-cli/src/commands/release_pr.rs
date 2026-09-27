@@ -9,8 +9,9 @@ use std::process::ExitCode;
 use callisto_graph::commands::{status, StatusOptions};
 use callisto_model::vcs::GitAccess;
 use callisto_model::{
-    ApplyPermit, CommitSha, GitHubRepository, ReleasePrActionV2, ReleasePrCommitPlanV1, ReleasePrConfigV1,
-    ReleasePrDecisionError, ReleasePrDecisionV2, ReleasePrDecisionWireV2, ReleasePrSnapshotV2, ReleasePrSnapshotWireV2,
+    ApplyPermit, CommitSha, GitHubRepository, ReleasePrActionV2, ReleasePrCommitPlanReport, ReleasePrCommitPlanV1,
+    ReleasePrConfigV1, ReleasePrDecideReport, ReleasePrDecisionError, ReleasePrDecisionV2, ReleasePrDecisionWireV2,
+    ReleasePrSnapshotV2, ReleasePrSnapshotWireV2, ReleasePrVerifyReport,
 };
 
 use crate::cli::{
@@ -18,7 +19,7 @@ use crate::cli::{
 };
 use crate::commands::read_json_arg;
 use crate::error::CliError;
-use crate::output::{emit_line, write_json};
+use crate::output::{emit_line, emit_report};
 use crate::runner::CliCommandRunner;
 use crate::workspace::load_workspace;
 
@@ -49,9 +50,10 @@ fn verify(args: ReleasePrVerifyArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
     let snapshot = ReleasePrSnapshotV2::from_wire(snapshot_wire)?;
     decision.verify_snapshot(&snapshot)?;
     match global.format {
-        OutputFormat::Json => write_json(
+        OutputFormat::Json => emit_report(
             &mut std::io::stdout(),
-            &serde_json::json!({"schemaVersion": ReleasePrDecisionV2::SCHEMA_VERSION, "ok": true}),
+            &ReleasePrVerifyReport { ok: true },
+            global.dry_run,
         )?,
         OutputFormat::Text => emit_line("release PR decision still matches forge snapshot")?,
     }
@@ -74,7 +76,11 @@ fn decide(args: ReleasePrDecideArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
     let decision = ReleasePrDecisionV2::derive(status.has_changesets, &config, &snapshot)?;
 
     match global.format {
-        OutputFormat::Json => write_json(&mut std::io::stdout(), &decision)?,
+        OutputFormat::Json => emit_report(
+            &mut std::io::stdout(),
+            &ReleasePrDecideReport { decision },
+            global.dry_run,
+        )?,
         OutputFormat::Text => render_decision(&decision)?,
     }
     Ok(ExitCode::SUCCESS)
@@ -102,7 +108,11 @@ fn commit_plan(args: ReleasePrCommitPlanArgs, global: &GlobalArgs) -> Result<Exi
                 path: Some(path),
             })?;
         }
-        None => write_json(&mut std::io::stdout(), &plan)?,
+        None => emit_report(
+            &mut std::io::stdout(),
+            &ReleasePrCommitPlanReport { plan },
+            global.dry_run,
+        )?,
     }
     Ok(ExitCode::SUCCESS)
 }

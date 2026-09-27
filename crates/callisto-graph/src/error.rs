@@ -74,6 +74,13 @@ pub enum GraphError {
     #[diagnostic(code(E100), help("Ensure package IDs are unique across workspace manifest paths."))]
     DuplicatePackage { id: PackageId, paths: Vec<PathBuf> },
 
+    #[error("packages {} share the default tag template `{template}`", .packages.iter().map(|p| p.display_name()).collect::<Vec<_>>().join(", "))]
+    #[diagnostic(
+        code(E101),
+        help("Change that `tag-template`, or remove it so the package uses its default.")
+    )]
+    SharedDefaultTagTemplate { template: String, packages: Vec<PackageId> },
+
     #[error("package `{id}` was not found in the workspace")]
     #[diagnostic(
         code(E102),
@@ -81,12 +88,19 @@ pub enum GraphError {
     )]
     UnknownPackage { id: PackageId },
 
-    #[error("name `{name}` is ambiguous in this workspace; candidates: {}", .candidates.iter().map(|c| c.display_name()).collect::<Vec<_>>().join(", "))]
+    #[error("`{name}` names more than one package: {}", .candidates.iter().map(|c| format!("`{}`", c.display_name())).collect::<Vec<_>>().join(", "))]
     #[diagnostic(
         code(E103),
-        help("Qualify the name with its ecosystem, e.g. `cargo/pkg` or `cargo:pkg`.")
+        help("Write the qualified id instead of `{name}`, e.g. in a changeset `cargo/{name}: minor`.")
     )]
     AmbiguousName { name: String, candidates: Vec<PackageId> },
+
+    #[error("`pre.json` records `{key}`, which now names {}; callisto can't tell which one it meant", .candidates.iter().map(|c| format!("`{}`", c.display_name())).collect::<Vec<_>>().join(" and "))]
+    #[diagnostic(
+        code(E245),
+        help("In `pre.json` `initialVersions`, rename the `{key}` key to the qualified id of the package it was recorded for.")
+    )]
+    AmbiguousPreJsonKey { key: String, candidates: Vec<PackageId> },
 
     #[error("dependency cycle detected: {}", .cycle.iter().map(|i| i.display_name()).collect::<Vec<_>>().join(" -> "))]
     #[diagnostic(
@@ -640,6 +654,13 @@ pub enum GraphError {
         help("Edit callisto.toml directly; `callisto init` only scaffolds a workspace without one.")
     )]
     InitAlreadyInitialized { path: PathBuf },
+
+    #[error("failed to write `{}`: {message}", .path.display())]
+    #[diagnostic(
+        code(E278),
+        help("Check file permissions and that the path still exists, then re-run `callisto init`.")
+    )]
+    InitIo { path: PathBuf, message: String },
 
     #[error("`{}` is not a Git repository", .root.display())]
     #[diagnostic(

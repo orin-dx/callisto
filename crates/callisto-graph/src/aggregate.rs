@@ -338,7 +338,7 @@ where
                         // changelog "from" baseline so the log covers the full pre
                         // range rather than reflecting live (pre-tagged) versions.
                         let pkg_ver = if is_pre_mode {
-                            pre.and_then(|s| s.initial_versions.get(crate::pre_json_key(&canonical_id)))
+                            pre.and_then(|s| crate::pre_initial_version(s, &canonical_id))
                                 .cloned()
                                 .or_else(|| base_versions.get(&canonical_id).cloned())
                                 .unwrap_or_else(|| Version::semver(0, 0, 0))
@@ -1843,7 +1843,7 @@ mod tests {
 
     /// The pre-mode changelog baseline must key `initialVersions` by `PackageId::name()`, not `display_name()`.
     #[test]
-    fn test_aggregate_pre_mode_changelog_baseline_uses_pre_json_key_not_display_name() {
+    fn test_aggregate_pre_mode_changelog_baseline_reads_the_qualified_key() {
         let ws_dir = tempfile::tempdir().unwrap();
         let root = ws_dir.path();
 
@@ -1872,9 +1872,8 @@ mod tests {
         // Far from the pinned pre-cycle baseline, so a key-lookup miss falling back to this is caught below.
         base_versions.insert(pkg_id.clone(), Version::semver(9, 9, 9));
 
-        // Keyed by the bare name ("pkg-a"), as `Workspace::initial_versions` (via `pre_json_key`) writes it.
         let pre_state =
-            callisto_model::format::PreState::entering("next", [("pkg-a".to_string(), Version::semver(1, 2, 3))]);
+            callisto_model::format::PreState::entering("next", [("npm/pkg-a".to_string(), Version::semver(1, 2, 3))]);
 
         let inference = RecordingInference::default();
         let agg = aggregate(

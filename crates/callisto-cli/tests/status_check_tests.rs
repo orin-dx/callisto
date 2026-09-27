@@ -133,6 +133,12 @@ fn test_status_check_ambiguous_bare_name_reports_diagnostic_not_hard_error() {
     let global = global(root);
 
     callisto_fixtures::scaffold_callisto(&global.cwd);
+    // Same-named packages need distinct tag templates (E101).
+    fs::write(
+        root.join("callisto.toml"),
+        "[[package]]\nmatch = \"npm/foo\"\ntag-template = \"npm-foo@{version}\"\n",
+    )
+    .unwrap();
 
     let changeset_dir = root.join(".changeset");
     fs::write(

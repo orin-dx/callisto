@@ -706,10 +706,8 @@ fn package_fingerprint<R: CommandRunner, D: DependencyResolver>(
 
 pub(crate) fn package_dir(package: &callisto_model::Package) -> Result<std::path::PathBuf, GraphError> {
     package
-        .canonical_manifests()
-        .next()
-        .and_then(|manifest| manifest.path.parent())
-        .map(std::path::Path::to_path_buf)
+        .key()
+        .map(|key| key.as_path().to_path_buf())
         .ok_or_else(|| GraphError::ReleaseInvariant {
             detail: format!("selected release package `{}` has no canonical manifest", package.id),
         })

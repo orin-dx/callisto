@@ -10,6 +10,22 @@
   ],
   "api_surface": [
     {
+      "name": "Package key",
+      "signature": "Package::key() -> Option<PackageKey>",
+      "description": "A package's stable internal identity: the workspace-relative directory of its first canonical manifest. Promotion never changes it. Never printed as a package id.",
+      "error_conditions": [
+        "`None` only for a package with no canonical manifest, which workspace loading never produces."
+      ]
+    },
+    {
+      "name": "Package id",
+      "signature": "PackageId = \"<name>\" | \"<ecosystem>/<name>\"",
+      "description": "Display and selector form: the bare manifest name, or `<ecosystem>/<name>` once another ecosystem declares the same name. JSON output, messages, changeset entries and `pre.json` keys use it; `<ecosystem>/<name>` and `<ecosystem>:<name>` select the package whether or not it is promoted.",
+      "error_conditions": [
+        "A bare name shared by promoted packages is E103; a qualified name with no such manifest is E102."
+      ]
+    },
+    {
       "name": "[[package]] match",
       "signature": "match = \"<name>\" | \"<ecosystem>:<name>\" | \"<ecosystem>/<name>\"",
       "description": "Exact package id. Ecosystem prefixes: cargo, npm, pypi.",
@@ -80,7 +96,7 @@
     },
     {
       "id": "WS-ID-03",
-      "criterion": "When two or more directories declare the same name and no ecosystem declares it in more than one of them, each package is promoted to an ecosystem-qualified id (`cargo:foo`, `npm:foo`, `pypi:foo`), displayed as `cargo/foo`."
+      "criterion": "When two or more directories declare the same name and no ecosystem declares it in more than one of them, each package is promoted to an ecosystem-qualified id, displayed as `cargo/foo`. Promotion is display-only: the package's key (its workspace-relative directory), its CHANGELOG path and its release history are the same before and after, and `cargo/foo` selects it in both states. Default tags are `{display id}@{version}`; a promoted package's last tag is also found among `foo@*` tags whose commit contains its manifest and no other same-named package's. A bare `pre.json` `initialVersions` key moves to the one same-named package that existed when `pre.json` was added, else `version` fails with E245."
     },
     {
       "id": "WS-ID-04",
@@ -94,12 +110,17 @@
     },
     {
       "id": "WS-ID-06",
-      "criterion": "A changeset, `callisto add --package` or `callisto matrix --package` naming the bare name of promoted packages fails with E103 listing every qualified candidate; naming a package that does not exist under that name in that ecosystem fails with E102.",
+      "criterion": "A changeset, `callisto add --package` or `callisto matrix --package` naming the bare name of promoted packages fails with E103 listing every qualified candidate and showing the qualified form to write; naming a package that does not exist under that name in that ecosystem fails with E102.",
       "is_error_case": true
     },
     {
       "id": "WS-ID-07",
       "criterion": "A dependency edge is created only to a workspace package that declares the dependency's name in the depending manifest's own ecosystem; a name declared only in other ecosystems creates no edge and one `unknown-package` warning listing the candidates (`cargo:foo`), and a name no workspace package declares creates no edge and no diagnostic."
+    },
+    {
+      "id": "WS-ID-08",
+      "criterion": "A package whose explicit `tag-template` equals another package's default tag template makes `status` and `version` fail with E101 naming both packages and the template.",
+      "is_error_case": true
     },
     {
       "id": "WS-CFG-01",

@@ -111,6 +111,10 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E265 | Release trust requires a SHA-1 Git object format; found `<found>` | Run release trust checks against a repository using the SHA-1 object format. |
 | E266 | Release trust requires a complete, non-shallow Git repository | Fetch full history with `git fetch --unshallow` before retrying. |
 | E267 | Release trust requires a clean worktree; found `<path>` | Commit, stash, or remove the listed tracked or untracked change before retrying. |
+| E300 | Could not parse `git diff --raw -z` output: <detail> | Retry; a `git diff` invocation returning output in this shape suggests a Git version mismatch. |
+| E301 | Could not parse `git log` output into commit records: <detail> | Retry; a `git log` invocation returning output in this shape suggests a Git version mismatch. |
+| E302 | Git returned an invalid commit SHA <context>: <message> | Retry; Git returning a commit reference in this shape suggests a Git version mismatch. |
+| E303 | Could not resolve the Git repository root: <detail> | Ensure the repository's toplevel directory exists and is readable. |
 
 ## callisto-graph — changelog
 
@@ -158,8 +162,9 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E209 | Failed to parse manifest `<path>`: <message> | Fix the manifest's syntax; a workspace member's manifest is never skipped. |
 | E210 | A `.changeset/*.md` file failed to parse: `<path>`: <source> | Fix the changeset file's frontmatter, or delete it and write a new one. |
 | E100 | Package ID is defined at more than one manifest path | Ensure package IDs are unique across workspace manifest paths. |
+| E101 | A package's explicit `tag-template` equals another package's default tags | Change that `tag-template`, or remove it so the package uses its default. |
 | E102 | Named package was not found in the workspace | Check the package's name and ecosystem, or that its directory has a manifest callisto discovers. |
-| E103 | Bare package name is ambiguous; more than one candidate matches | Qualify the name with its ecosystem, e.g. `cargo/pkg` or `cargo:pkg`. |
+| E103 | A bare name matches more than one package; the message lists their qualified ids | Write the qualified id instead of `{name}`, e.g. in a changeset `cargo/{name}: minor`. |
 | E104 | Dependency cycle detected among workspace packages | Refactor workspace dependencies to break the cyclic dependency chain. |
 | E105 | Version cascade failed to converge after its iteration limit | Check for oscillating peer or linked group dependencies. |
 | E106 | Fixed group's members have divergent on-disk versions | Align on-disk versions for all members of the fixed group. |
@@ -212,6 +217,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E189 | `--product-package` value is invalid | Name one of the binary-producing packages (candidates are listed in the error). |
 | E190 | `callisto init` target already exists; workspace is already initialized | Edit callisto.toml directly; `callisto init` only scaffolds a workspace without one. |
 | E191 | Workspace root is not a Git repository | Run `git init` in the workspace root, then re-run `callisto init`. |
+| E278 | `callisto init` failed to write a file it needed to write | Check file permissions and that the path still exists, then re-run `callisto init`. |
 | E193 | Package matches more than one tag naming convention | Write a [[package]] entry for it with `tag-template` set to the current convention and `previous-tag-templates` listing the older ones. |
 | E194 | More than one package shares a `v{version}` tag | Give each package its own [[package]] `tag-template` (and `previous-tag-templates` for the shared `v{version}` tags). |
 | E195 | `--forge-repository` value is invalid | Use the GitHub `owner/repo` the product releases to. |
@@ -227,6 +233,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E206 | Fixed group has no live members with a base version to align on | Ensure at least one member of the fixed group resolves to a workspace package. |
 | E207 | Computed bump for a package would move its version backwards | This indicates a corrupted alignment base (bad tag, pre.json, or group config); verify release state before retrying. |
 | E208 | A lockfile refresh command exited non-zero while applying the version plan | Run the named command to see the full failure, fix it, then re-run `callisto version`. |
+| E245 | `pre.json` records a bare name that now names several packages, and none was the only one when `pre.json` was added | In `pre.json` `initialVersions`, rename the `{key}` key to the qualified id of the package it was recorded for. |
 | E246 | Version dependency edge involves incompatible version grammars | Use the same version grammar on both sides of the dependency edge, or drop the edge. |
 | E247 | On-disk versions changed since the version plan was generated | Regenerate the version plan against the current workspace state before applying it. |
 | E248 | Workspace root manifest has conflicting version updates | Reconcile the workspace root manifest's version updates before retrying. |
