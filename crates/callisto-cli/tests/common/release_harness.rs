@@ -729,7 +729,7 @@ pub const TOOL_SHAPES: &[ToolShape] = &[
     ToolShape {
         tool: "gh",
         subcommand: &["api"],
-        flags: &["--include", "--method"],
+        flags: &["--include", "--method", "-f"],
     },
     ToolShape {
         tool: "gh",
@@ -1017,6 +1017,7 @@ done
 case "$key" in
   attestation-verify) exit 0 ;;
   api)
+    if [ "$3" = graphql ]; then gh_graphql "$@"; exit $?; fi
     for a in "$@"; do endpoint=$a; done
     gh_api "$endpoint"
     exit $?
@@ -1044,7 +1045,7 @@ fn write_fixture_templates(bin: &Path) {
     fs::create_dir_all(&dir).unwrap();
     let head = |raw: &str| fixtures::split_raw_http(raw).0.to_owned();
     fs::write(dir.join("gh-200.head"), head(fixtures::GITHUB_RELEASE_PUBLISHED)).unwrap();
-    fs::write(dir.join("gh-list.head"), head(fixtures::GITHUB_RELEASE_LIST)).unwrap();
+    fs::write(dir.join("gql-200.head"), head(fixtures::GITHUB_GRAPHQL_RELEASE_FOUND)).unwrap();
     fs::write(dir.join("gh-404.head"), head(fixtures::GITHUB_RELEASE_404)).unwrap();
     fs::write(dir.join("gh-404.body"), fixtures::body_of(fixtures::GITHUB_RELEASE_404)).unwrap();
     let mut release = fixtures::github_release(
@@ -1074,11 +1075,13 @@ fn write_fixture_templates(bin: &Path) {
 
 /// The GitHub Releases model the fake `gh` shares across harnesses.
 ///
-/// It reproduces the three facts the provider depends on: a release starts as
-/// a draft, `GET /releases/tags/{tag}` does not serve drafts, and the list
-/// endpoint does (paginated). `$CALLISTO_TEST_FORGE_MARKER` holds `draft` or
-/// `published`; an empty marker is a pre-existing published release, which is
-/// how a test seeds one directly. Bodies are `$fx/release.tmpl` and
+/// It reproduces the facts the provider depends on: a release starts as a
+/// draft, the GraphQL lookup by tag finds drafts and published releases alike
+/// (release ID 1), and `GET /releases/1` serves that release. After a create,
+/// the next `$CALLISTO_TEST_FORGE_LAG` GraphQL lookups still miss the release,
+/// as GitHub's reads lag its writes. `$CALLISTO_TEST_FORGE_MARKER` holds `draft`
+/// or `published`; an empty marker is a pre-existing published release, which
+/// is how a test seeds one directly. Bodies are `$fx/release.tmpl` and
 /// `$fx/asset.tmpl` (the captured release shape) with values substituted.
 const FAKE_GH_FORGE: &str = r#"
 forge_state() {
@@ -1111,24 +1114,29 @@ release_json() {
 }
 http_ok() { cat "$fx/$1"; printf '%s' "$2"; }
 http_404() { cat "$fx/gh-404.head" "$fx/gh-404.body"; printf 'gh: Not Found (HTTP 404)\n' >&2; return 1; }
+lagging() {
+  lag="$CALLISTO_TEST_FORGE_MARKER.lag"
+  [ -f "$lag" ] || return 1
+  left=$(cat "$lag")
+  [ "$left" -gt 0 ] || return 1
+  printf '%s' $((left - 1)) > "$lag"
+}
+gh_graphql() {
+  tag=''
+  for a in "$@"; do
+    case "$a" in tagName=*) tag=${a#tagName=} ;; esac
+  done
+  if [ "$(forge_state)" = absent ] || [ "$tag" != "$CALLISTO_TEST_FORGE_TAG" ] || lagging; then
+    http_ok gql-200.head '{"data":{"repository":{"release":null}}}'
+  else
+    http_ok gql-200.head '{"data":{"repository":{"release":{"databaseId":1}}}}'
+  fi
+}
 gh_api() {
   endpoint=$1
-  state=$(forge_state)
   case "$endpoint" in
-    */releases/tags/*)
-      if [ "$state" = published ]; then http_ok gh-200.head "$(release_json)"; else http_404; fi
-      ;;
-    *'/releases?'*)
-      page=${endpoint##*page=}
-      if [ "$state" = absent ]; then http_ok gh-list.head '[]'; return; fi
-      listed=${CALLISTO_TEST_FORGE_PAGE:-1}
-      if [ "$page" = "$listed" ]; then
-        http_ok gh-list.head "[$(release_json)]"
-      elif [ "$page" -lt "$listed" ]; then
-        http_ok gh-list.head "[$(render_release 'unrelated@0.0.1' false false '')]"
-      else
-        http_ok gh-list.head '[]'
-      fi
+    */releases/1)
+      if [ "$(forge_state)" = absent ]; then http_404; else http_ok gh-200.head "$(release_json)"; fi
       ;;
     *) http_404 ;;
   esac
@@ -1146,6 +1154,7 @@ gh_release() {
         esac
       done
       printf '%s' "$state" > "$CALLISTO_TEST_FORGE_MARKER"
+      printf '%s' "${CALLISTO_TEST_FORGE_LAG:-0}" > "$CALLISTO_TEST_FORGE_MARKER.lag"
       ;;
     edit)
       for a in "$@"; do

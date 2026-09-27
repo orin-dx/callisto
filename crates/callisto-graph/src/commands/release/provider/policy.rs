@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use callisto_model::{CommandError, CommandOutput, CommandRunner, Version};
+use callisto_model::{CommandError, CommandOutput, CommandRunner, ProviderObservationV1, Version};
 
 use crate::GraphError;
 
@@ -55,6 +55,26 @@ pub(crate) const OBSERVATION_BACKOFF_CAP: Duration = Duration::from_secs(300);
 /// Exponential backoff between observation attempts: 2s, 4s, 8s, 16s.
 pub(crate) fn observation_backoff(attempt: u32) -> Duration {
     Duration::from_secs(2u64.saturating_pow(attempt + 1)).min(OBSERVATION_BACKOFF_CAP)
+}
+
+/// Checks of this run's own write before it counts as unobserved: GitHub's reads lag its writes
+/// by seconds, so the waits (2s, 4s, 8s, 16s, 32s) cover about a minute.
+pub(crate) const EFFECT_VISIBILITY_ATTEMPTS: u32 = 6;
+
+/// Observes until an effect this run made is visible. Only `Absent` is retried: every other answer is final.
+pub(crate) fn observe_until_visible(
+    sleeper: &dyn Sleeper,
+    mut observe: impl FnMut() -> Result<ProviderObservationV1, GraphError>,
+) -> Result<ProviderObservationV1, GraphError> {
+    let mut index = 0;
+    loop {
+        let observation = observe()?;
+        if !matches!(observation, ProviderObservationV1::Absent) || index + 1 >= EFFECT_VISIBILITY_ATTEMPTS {
+            return Ok(observation);
+        }
+        sleeper.sleep(observation_backoff(index));
+        index += 1;
+    }
 }
 
 /// One attempt's result: either it settled the question, or it left the answer
@@ -236,6 +256,36 @@ pub(crate) mod tests {
     }
 
     /// Composes `run_observation` with `retry_observation` so a command that times out once still retries and settles.
+    #[test]
+    fn a_write_not_yet_visible_is_observed_again_until_it_appears() {
+        let sleeper = RecordingSleeper::new();
+        let mut answers = vec![
+            ProviderObservationV1::Absent,
+            ProviderObservationV1::Absent,
+            ProviderObservationV1::Indeterminate {
+                cause: callisto_model::ProviderIndeterminateCause::CommandFailed,
+            },
+        ]
+        .into_iter();
+        let observed = observe_until_visible(&sleeper, || Ok(answers.next().unwrap())).unwrap();
+        assert!(matches!(observed, ProviderObservationV1::Indeterminate { .. }));
+        assert_eq!(sleeper.waits(), vec![Duration::from_secs(2), Duration::from_secs(4)]);
+    }
+
+    #[test]
+    fn a_write_that_never_appears_is_reported_absent_after_about_a_minute() {
+        let sleeper = RecordingSleeper::new();
+        let mut calls = 0;
+        let observed = observe_until_visible(&sleeper, || {
+            calls += 1;
+            Ok(ProviderObservationV1::Absent)
+        })
+        .unwrap();
+        assert!(matches!(observed, ProviderObservationV1::Absent));
+        assert_eq!(calls, EFFECT_VISIBILITY_ATTEMPTS);
+        assert_eq!(sleeper.waits().iter().sum::<Duration>(), Duration::from_secs(62));
+    }
+
     #[test]
     fn retry_observation_recovers_from_one_timed_out_attempt() {
         let runner = ScriptedCommand::new(vec![

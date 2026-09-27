@@ -95,7 +95,11 @@ pub mod fixtures {
     pub const GITHUB_RELEASE_PUBLISHED: &str = include_str!("fixtures/providers/github/release-published.http");
     pub const GITHUB_RELEASE_DRAFT: &str = include_str!("fixtures/providers/github/release-draft.http");
     pub const GITHUB_RELEASE_PRERELEASE: &str = include_str!("fixtures/providers/github/release-prerelease.http");
-    pub const GITHUB_RELEASE_LIST: &str = include_str!("fixtures/providers/github/release-list-page.http");
+    pub const GITHUB_GRAPHQL_RELEASE_FOUND: &str = include_str!("fixtures/providers/github/graphql-release-found.http");
+    pub const GITHUB_GRAPHQL_RELEASE_ABSENT: &str =
+        include_str!("fixtures/providers/github/graphql-release-absent.http");
+    pub const GITHUB_GRAPHQL_REPOSITORY_ERROR: &str =
+        include_str!("fixtures/providers/github/graphql-release-repository-error.http");
     pub const GITHUB_RELEASE_404: &str = include_str!("fixtures/providers/github/release-404.http");
     pub const PYPI_SIMPLE_FOUND: &str = include_str!("fixtures/providers/pypi-simple/found.http");
     pub const PYPI_SIMPLE_YANKED: &str = include_str!("fixtures/providers/pypi-simple/yanked.http");

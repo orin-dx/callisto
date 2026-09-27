@@ -294,7 +294,7 @@ impl FakeBin {
     }
 }
 
-const RELEASE_ENDPOINT: &str = "repos/example/core/releases/tags/callisto@0.2.0";
+const RELEASE_ENDPOINT: &str = "repos/example/core/releases/1";
 
 /// The fake forge is templated from the captured release, so its answers carry
 /// exactly the captured status line, header names and JSON key set.
@@ -319,30 +319,36 @@ fn the_fake_gh_serves_the_captured_release_shape() {
     assert_eq!(release["draft"], false);
 
     fs::write(&fake.rig.forge_marker, "draft").unwrap();
-    let (code, stdout, stderr) = fake.run("gh", &["api", "--include", "--method", "GET", RELEASE_ENDPOINT]);
-    assert_eq!(
-        code,
-        Some(1),
-        "the tag endpoint does not serve drafts and gh exits 1 for a 404"
-    );
-    assert!(stdout.starts_with("HTTP/2.0 404 Not Found"), "{stdout}");
-    assert!(stderr.contains("HTTP 404"), "{stderr}");
-    let (_, listing, _) = fake.run(
-        "gh",
-        &[
-            "api",
-            "--include",
-            "--method",
-            "GET",
-            "repos/example/core/releases?per_page=100&page=1",
-        ],
-    );
-    let (list_head, list_body) = fixtures::split_raw_http(&listing);
-    let (captured_list_head, captured_list_body) = fixtures::split_raw_http(fixtures::GITHUB_RELEASE_LIST);
-    assert_eq!(header_names(list_head), header_names(captured_list_head));
-    assert_eq!(shape_of_body(list_body), shape_of_body(captured_list_body));
-    let listed: Value = serde_json::from_str(list_body).unwrap();
-    assert_eq!(listed[0]["draft"], true);
+    let lookup = |tag: &str| {
+        fake.run(
+            "gh",
+            &[
+                "api",
+                "--include",
+                "graphql",
+                "-f",
+                "query=q",
+                "-f",
+                "owner=example",
+                "-f",
+                "name=core",
+                "-f",
+                &format!("tagName={tag}"),
+            ],
+        )
+    };
+    let (code, stdout, _) = lookup("callisto@0.2.0");
+    assert_eq!(code, Some(0));
+    let (head, body) = fixtures::split_raw_http(&stdout);
+    let (captured_head, captured_body) = fixtures::split_raw_http(fixtures::GITHUB_GRAPHQL_RELEASE_FOUND);
+    assert_eq!(header_names(head), header_names(captured_head));
+    assert_eq!(shape_of_body(body), shape_of_body(captured_body));
+    let (_, stdout, _) = lookup("other@1.0.0");
+    let (_, absent_body) = fixtures::split_raw_http(fixtures::GITHUB_GRAPHQL_RELEASE_ABSENT);
+    assert_eq!(fixtures::body_of(&stdout), absent_body);
+    let (_, stdout, _) = fake.run("gh", &["api", "--include", "--method", "GET", RELEASE_ENDPOINT]);
+    let release: Value = serde_json::from_str(fixtures::body_of(&stdout)).unwrap();
+    assert_eq!(release["draft"], true, "a draft is served by ID");
 }
 
 #[test]
@@ -401,7 +407,7 @@ fn every_fake_rejects_unknown_subcommands_and_flags_like_the_real_tool() {
 fn the_argv_allow_list_check_flags_an_unlisted_flag_or_command() {
     let mut violations = Vec::new();
     for line in [
-        "gh api --include --method GET repos/o/r/releases/tags/t",
+        "gh api --include --method GET repos/o/r/releases/1",
         "gh api --repo o/r x",
         "gh pr list",
         "cargo publish --manifest-path /x --locked",

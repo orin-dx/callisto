@@ -66,7 +66,8 @@ both:   intent -> ReleaseRunEnvelopeV1::new -> execute_release -> ReleaseReceipt
 ## Forge ordering
 
 - A GitHub release is created as a draft, assets upload to the draft, and publication is a separate last operation that depends on every upload. A published release can be immutable and refuse new assets.
-- GitHub's release-by-tag endpoint omits drafts, so the forge lookup falls back to paging the release list (`provider/forge.rs`).
+- GitHub's release-by-tag endpoint omits drafts, so the forge lookup finds the release ID by tag through GraphQL, then reads the release by ID (`release/github.rs`).
+- GitHub's reads lag its writes by seconds. The check right after this run's own create, upload or publish retries an absent answer for about a minute before it reports a conflict (`observe_until_visible`).
 
 ## Verification tiers
 

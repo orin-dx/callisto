@@ -262,18 +262,16 @@ fn a_published_release_missing_an_asset_re_uploads_only_that_asset() {
     );
 }
 
-/// The one gap the tag endpoint cannot see: a draft is only visible in the
-/// list endpoint, and it may not be on the first page.
+/// The tag endpoint never serves drafts; the lookup by tag must still find an existing one.
 #[test]
-fn a_draft_listed_on_the_second_page_is_found_and_never_recreated() {
-    let mut run = ProductRun::new();
+fn an_existing_draft_is_found_by_tag_and_never_recreated() {
+    let run = ProductRun::new();
     fs::write(&run.rig.forge_marker, "draft").unwrap();
-    run.rig.set("CALLISTO_TEST_FORGE_PAGE", "2");
 
     let output = run.execute(&[]);
     assert!(
         output.status.success(),
-        "a draft on page 2 must still be observed: {}\n{:?}",
+        "an existing draft must be observed: {}\n{:?}",
         stderr_of(&output),
         run.rig.gh_calls()
     );
@@ -282,6 +280,26 @@ fn a_draft_listed_on_the_second_page_is_found_and_never_recreated() {
         !effects.iter().any(|call| call.starts_with("release create")),
         "{effects:?}"
     );
+    assert!(effects.iter().any(|call| call.contains("--draft=false")), "{effects:?}");
+}
+
+/// GitHub's reads can lag its writes: a draft missing from the first lookups after its create is waited for,
+/// not reported as a conflict, and is created exactly once.
+#[test]
+fn a_draft_that_is_not_yet_visible_after_create_is_waited_for() {
+    let mut run = ProductRun::new();
+    run.rig.set("CALLISTO_TEST_FORGE_LAG", "2");
+
+    let output = run.execute(&[]);
+    assert!(
+        output.status.success(),
+        "a lagging read must not fail the release: {}\n{:?}",
+        stderr_of(&output),
+        run.rig.gh_calls()
+    );
+    let effects = run.release_effects();
+    let creates = effects.iter().filter(|call| call.starts_with("release create")).count();
+    assert_eq!(creates, 1, "{effects:?}");
     assert!(effects.iter().any(|call| call.contains("--draft=false")), "{effects:?}");
 }
 
