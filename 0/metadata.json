@@ -1,0 +1,412 @@
+{
+  "cli_version": "0.11.4-nightly.202609260624.c369a70d2",
+  "checkpoint_id": "01M3JMY733PY7GT96MWQ15CZ4E",
+  "session_id": "320aa0c9-2df0-4319-88b7-ed0e66679ed8",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-27T23:59:23.60277Z",
+  "branch": "fix/release-pr-verify-envelope",
+  "checkpoints_count": 1,
+  "save_step_count": 13,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "a09114fca9f9",
+  "checkpoint_transcript_start": 7571,
+  "transcript_lines_at_start": 7571,
+  "compact_transcript_start": 848,
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01Anb4z8faL2Av5SApa1owjE",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "09e9238126f7",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 2356,
+        "end": 2357,
+        "entry_ids": [
+          "25456281-c128-4002-9e8b-a4d30ff3b767"
+        ],
+        "tool_use_id": "toolu_01Anb4z8faL2Av5SApa1owjE"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01Anb4z8faL2Av5SApa1owjE"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 29
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 4917,
+      "user_lines_removed": 250,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".changeset/calm-lions-surge.md": 5,
+        ".changeset/native-dependency-names.md": 5,
+        ".changeset/native-json-schema.md": 5,
+        ".changeset/python-release-versions.md": 5,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 12,
+        ".github/actions/setup-callisto/action.yml": 1,
+        ".github/actions/setup-callisto/scripts/install-callisto.sh": 29,
+        ".github/actions/setup-callisto/tests/test_action_ref_version_resolution.sh": 112,
+        ".github/actions/setup-callisto/tests/test_crates_io_fallback.sh": 13,
+        ".github/actions/setup-callisto/tests/test_download_extraction_format.sh": 4,
+        "ARCHITECTURE.md": 11,
+        "Cargo.lock": 368,
+        "README.md": 20,
+        "crates/callisto-cli/Cargo.toml": 1,
+        "crates/callisto-cli/tests/durable_release_e2e_tests.rs": 408,
+        "crates/callisto-cli/tests/identity_promotion_tests.rs": 165,
+        "crates/callisto-cli/tests/native_resolution_e2e_tests.rs": 117,
+        "crates/callisto-cli/tests/schema_guard_test.rs": 459,
+        "crates/callisto-graph/src/cascade.rs": 31,
+        "crates/callisto-graph/src/commands/snapshot.rs": 2,
+        "crates/callisto-graph/src/identity.rs": 117,
+        "crates/callisto-graph/src/walk.rs": 2,
+        "crates/callisto-graph/tests/cascade_tests.rs": 143,
+        "crates/callisto-graph/tests/ecosystem_bugs_test.rs": 79,
+        "crates/callisto-graph/tests/fixtures/graph_builder.rs": 103,
+        "crates/callisto-graph/tests/snapshot_tests.rs": 108,
+        "crates/callisto-manifests/src/cargo.rs": 38,
+        "crates/callisto-manifests/src/npm.rs": 1,
+        "crates/callisto-manifests/src/python.rs": 2,
+        "crates/callisto-manifests/tests/cargo_tests.rs": 148,
+        "crates/callisto-model/src/dependency.rs": 5,
+        "crates/callisto-model/src/identity.rs": 75,
+        "crates/callisto-model/src/release.rs": 470,
+        "crates/callisto-model/src/release_observation.rs": 224,
+        "crates/callisto-model/src/version.rs": 57,
+        "docs/adr/0002-committed-decision-is-release-authority.md": 1,
+        "docs/adr/0003-reruns-adopt-landed-effects.md": 1,
+        "docs/adr/0004-ecosystem-tools-publish-and-own-auth.md": 2,
+        "docs/adr/0011-directory-keyed-package-identity.md": 3,
+        "docs/adr/0012-canonical-distribution-release-ownership.md": 36,
+        "docs/adr/README.md": 2,
+        "docs/architecture/identity.md": 12,
+        "docs/architecture/polyglot-v1.md": 72,
+        "docs/architecture/release.md": 15,
+        "docs/architecture/versioning.md": 10,
+        "docs/config.md": 7,
+        "docs/projects/ROAD-TO-V1.md": 77,
+        "docs/projects/V1-FINDINGS.md": 61,
+        "docs/projects/V1-IMPLEMENTATION.md": 154,
+        "docs/projects/V1-SYSTEM-HARDENING.json": 993,
+        "docs/projects/V1-VERIFICATION.md": 49,
+        "docs/publishing.md": 17,
+        "docs/releasing.md": 17,
+        "docs/specs/INDEX.md": 2,
+        "docs/specs/REQ-DX-V1.md": 19,
+        "docs/specs/cli.json": 5,
+        "docs/specs/release.json": 4,
+        "docs/specs/versioning.json": 4,
+        "docs/specs/workspace.json": 6
+      },
+      "user_removed_per_file": {
+        ".github/actions/setup-callisto/action.yml": 1,
+        ".github/actions/setup-callisto/scripts/install-callisto.sh": 7,
+        ".github/actions/setup-callisto/tests/test_download_extraction_format.sh": 7,
+        "ARCHITECTURE.md": 3,
+        "README.md": 8,
+        "crates/callisto-cli/tests/native_resolution_e2e_tests.rs": 1,
+        "crates/callisto-cli/tests/schema_guard_test.rs": 7,
+        "crates/callisto-graph/src/cascade.rs": 68,
+        "crates/callisto-graph/src/commands/snapshot.rs": 16,
+        "crates/callisto-graph/src/identity.rs": 11,
+        "crates/callisto-graph/src/walk.rs": 1,
+        "crates/callisto-graph/tests/ecosystem_bugs_test.rs": 1,
+        "crates/callisto-manifests/src/cargo.rs": 14,
+        "crates/callisto-model/src/identity.rs": 4,
+        "crates/callisto-model/src/release.rs": 10,
+        "crates/callisto-model/src/release_observation.rs": 3,
+        "crates/callisto-model/src/version.rs": 6,
+        "docs/adr/0002-committed-decision-is-release-authority.md": 1,
+        "docs/adr/0003-reruns-adopt-landed-effects.md": 1,
+        "docs/adr/0004-ecosystem-tools-publish-and-own-auth.md": 2,
+        "docs/adr/0011-directory-keyed-package-identity.md": 3,
+        "docs/adr/README.md": 1,
+        "docs/architecture/identity.md": 5,
+        "docs/architecture/release.md": 2,
+        "docs/architecture/versioning.md": 2,
+        "docs/config.md": 4,
+        "docs/projects/ROAD-TO-V1.md": 39,
+        "docs/publishing.md": 1,
+        "docs/releasing.md": 5,
+        "docs/specs/REQ-DX-V1.md": 2,
+        "docs/specs/cli.json": 5,
+        "docs/specs/release.json": 4,
+        "docs/specs/versioning.json": 4,
+        "docs/specs/workspace.json": 1
+      }
+    },
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 15,
+      "user_lines_removed": 0,
+      "agent_lines_added": 4902,
+      "agent_lines_removed": 250,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 12
+      }
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 1203,
+      "user_lines_removed": 142,
+      "agent_lines_added": 4902,
+      "agent_lines_removed": 250,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 12,
+        "crates/callisto-cli/src/commands/pre.rs": 3,
+        "crates/callisto-cli/tests/durable_release_e2e_tests.rs": 162,
+        "crates/callisto-cli/tests/pre_mode_tests.rs": 388,
+        "crates/callisto-graph/src/cascade.rs": 45,
+        "crates/callisto-graph/src/commands/release_decision.rs": 73,
+        "crates/callisto-graph/src/commands/version.rs": 57,
+        "crates/callisto-graph/src/lib.rs": 60,
+        "crates/callisto-manifests/src/cargo.rs": 30,
+        "crates/callisto-manifests/src/lib.rs": 43,
+        "crates/callisto-manifests/src/npm.rs": 133,
+        "crates/callisto-model/src/dependency.rs": 126,
+        "crates/callisto-model/src/format/pre.rs": 62,
+        "docs/projects/V1-FINDINGS.md": 3,
+        "docs/projects/V1-IMPLEMENTATION.md": 2,
+        "docs/specs/release.json": 1
+      },
+      "user_removed_per_file": {
+        "crates/callisto-graph/src/cascade.rs": 1,
+        "crates/callisto-graph/src/commands/release_decision.rs": 49,
+        "crates/callisto-graph/src/commands/version.rs": 38,
+        "crates/callisto-graph/src/lib.rs": 18,
+        "crates/callisto-manifests/src/cargo.rs": 24,
+        "crates/callisto-manifests/src/npm.rs": 4,
+        "crates/callisto-model/src/dependency.rs": 1,
+        "crates/callisto-model/src/format/pre.rs": 1,
+        "docs/projects/V1-FINDINGS.md": 3,
+        "docs/projects/V1-IMPLEMENTATION.md": 2,
+        "docs/specs/release.json": 1
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 499,
+      "user_lines_removed": 76,
+      "agent_lines_added": 6302,
+      "agent_lines_removed": 386,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 12,
+        "crates/callisto-cli/tests/durable_release_e2e_tests.rs": 42,
+        "crates/callisto-cli/tests/native_resolution_e2e_tests.rs": 187,
+        "crates/callisto-cli/tests/partial_run_tests.rs": 5,
+        "crates/callisto-cli/tests/single_package_root_tests.rs": 111,
+        "crates/callisto-graph/src/cascade.rs": 34,
+        "crates/callisto-manifests/src/npm.rs": 72,
+        "crates/callisto-model/src/dependency.rs": 33
+      },
+      "user_removed_per_file": {
+        "crates/callisto-cli/tests/durable_release_e2e_tests.rs": 7,
+        "crates/callisto-cli/tests/native_resolution_e2e_tests.rs": 31,
+        "crates/callisto-cli/tests/partial_run_tests.rs": 1,
+        "crates/callisto-graph/src/cascade.rs": 11,
+        "crates/callisto-manifests/src/npm.rs": 15,
+        "crates/callisto-model/src/dependency.rs": 11
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 7,
+      "user_lines_added": 88,
+      "user_lines_removed": 0,
+      "agent_lines_added": 6723,
+      "agent_lines_removed": 386,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 12,
+        "crates/callisto-cli/tests/durable_release_e2e_tests.rs": 73
+      }
+    },
+    {
+      "checkpoint_number": 8,
+      "user_lines_added": 15,
+      "user_lines_removed": 0,
+      "agent_lines_added": 6827,
+      "agent_lines_removed": 388,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 12
+      }
+    },
+    {
+      "checkpoint_number": 9,
+      "user_lines_added": 15,
+      "user_lines_removed": 0,
+      "agent_lines_added": 6827,
+      "agent_lines_removed": 388,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 12
+      }
+    },
+    {
+      "checkpoint_number": 10,
+      "user_lines_added": 103,
+      "user_lines_removed": 28,
+      "agent_lines_added": 6979,
+      "agent_lines_removed": 393,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".changeset/historical-release-authority.md": 5,
+        ".changeset/native-prerelease-baselines.md": 5,
+        ".changeset/pnpm-workspace-ranges.md": 5,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 12,
+        "crates/callisto-cli/tests/durable_release_e2e_tests.rs": 41,
+        "crates/callisto-cli/tests/partial_run_tests.rs": 5,
+        "crates/callisto-graph/src/commands/release_decision.rs": 8,
+        "crates/callisto-graph/src/walk.rs": 5,
+        "crates/callisto-manifests/src/cargo.rs": 3,
+        "docs/specs/versioning.json": 6,
+        "docs/specs/workspace.json": 5
+      },
+      "user_removed_per_file": {
+        "crates/callisto-cli/tests/durable_release_e2e_tests.rs": 17,
+        "crates/callisto-cli/tests/partial_run_tests.rs": 1,
+        "crates/callisto-graph/src/commands/release_decision.rs": 4,
+        "crates/callisto-graph/src/walk.rs": 2,
+        "crates/callisto-manifests/src/cargo.rs": 1,
+        "docs/specs/versioning.json": 2,
+        "docs/specs/workspace.json": 1
+      }
+    },
+    {
+      "checkpoint_number": 11,
+      "user_lines_added": 30,
+      "user_lines_removed": 0,
+      "agent_lines_added": 7027,
+      "agent_lines_removed": 396,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".changeset/historical-release-authority.md": 5,
+        ".changeset/native-prerelease-baselines.md": 5,
+        ".changeset/pnpm-workspace-ranges.md": 5,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 12
+      }
+    },
+    {
+      "checkpoint_number": 12,
+      "user_lines_added": 30,
+      "user_lines_removed": 0,
+      "agent_lines_added": 7027,
+      "agent_lines_removed": 396,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".changeset/historical-release-authority.md": 5,
+        ".changeset/native-prerelease-baselines.md": 5,
+        ".changeset/pnpm-workspace-ranges.md": 5,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 12
+      }
+    },
+    {
+      "checkpoint_number": 13,
+      "user_lines_added": 174,
+      "user_lines_removed": 17,
+      "agent_lines_added": 7053,
+      "agent_lines_removed": 396,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".changeset/historical-release-authority.md": 5,
+        ".changeset/native-prerelease-baselines.md": 5,
+        ".changeset/pnpm-workspace-ranges.md": 5,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 12,
+        "crates/callisto-cli/tests/native_resolution_e2e_tests.rs": 41,
+        "crates/callisto-cli/tests/pre_mode_tests.rs": 12,
+        "crates/callisto-graph/src/commands/version.rs": 54,
+        "crates/callisto-graph/src/lib.rs": 2,
+        "crates/callisto-graph/src/walk.rs": 14,
+        "docs/projects/V1-FINDINGS.md": 5,
+        "docs/projects/V1-IMPLEMENTATION.md": 3,
+        "docs/projects/V1-VERIFICATION.md": 13
+      },
+      "user_removed_per_file": {
+        "crates/callisto-graph/src/commands/version.rs": 3,
+        "crates/callisto-graph/src/lib.rs": 1,
+        "crates/callisto-graph/src/walk.rs": 5,
+        "docs/projects/V1-FINDINGS.md": 5,
+        "docs/projects/V1-IMPLEMENTATION.md": 3
+      }
+    },
+    {
+      "checkpoint_number": 14,
+      "user_lines_added": 51,
+      "user_lines_removed": 8,
+      "agent_lines_added": 7262,
+      "agent_lines_removed": 399,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".changeset/historical-release-authority.md": 5,
+        ".changeset/native-prerelease-baselines.md": 5,
+        ".changeset/pnpm-workspace-ranges.md": 5,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 12,
+        "docs/projects/V1-FINDINGS.md": 5,
+        "docs/projects/V1-IMPLEMENTATION.md": 3,
+        "docs/projects/V1-VERIFICATION.md": 13
+      },
+      "user_removed_per_file": {
+        "docs/projects/V1-FINDINGS.md": 5,
+        "docs/projects/V1-IMPLEMENTATION.md": 3
+      }
+    }
+  ]
+}
