@@ -2,4 +2,4 @@
 callisto-cli: minor
 ---
 
-Adding a package with the same name in another ecosystem no longer changes the existing package's tags: default tags are `{name}@{version}` from the manifest name, so a Cargo `foo` keeps finding `foo@1.0.0` after it is shown as `cargo/foo`. Two packages that would share default tags now fail with E101; give all but one a `tag-template`. An already-promoted package without a `tag-template` previously tagged `cargo/foo@{version}`; set `tag-template = "cargo/foo@{version}"` to keep that.
+Adding a package with the same name in another ecosystem needs no configuration: the existing package keeps its release history, tags and changelog, and new tags use the qualified name (`cargo/foo@1.1.0`). A pre-release cycle started before the new package keeps working. A changeset that names a now-ambiguous `foo` fails with E103 and shows the qualified form to write.

@@ -80,6 +80,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         let text =
             std::fs::read_to_string(&pre_path).map_err(|e| GraphError::PreJsonRead { message: e.to_string() })?;
         let state = callisto_model::format::parse_pre_json(&text).map_err(GraphError::PreJson)?;
+        let state = crate::assign_promoted_pre_keys(ws.git_access(), &ws.graph, &ws.config.pre_json_path(), state)?;
         (Some(state), Some(text))
     } else {
         (None, None)

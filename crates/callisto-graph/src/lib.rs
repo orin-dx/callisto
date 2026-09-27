@@ -200,11 +200,68 @@ pub fn pre_json_key(id: &PackageId) -> String {
     id.display_name()
 }
 
-/// `id`'s pinned pre-release baseline, also accepting the bare-name key older `pre.json` files used.
+/// `id`'s pinned pre-release baseline.
 pub fn pre_initial_version<'a>(pre: &'a callisto_model::format::PreState, id: &PackageId) -> Option<&'a Version> {
-    pre.initial_versions
-        .get(&pre_json_key(id))
-        .or_else(|| pre.initial_versions.get(id.name()))
+    pre.initial_versions.get(&pre_json_key(id))
+}
+
+/// The one package among `candidates` whose canonical manifest existed at `rev`, if exactly one did: the owner
+/// of anything recorded under their shared bare name at that point.
+pub(crate) fn sole_owner_at<'p>(
+    git: &GitAccess<'_>,
+    rev: &str,
+    candidates: &[&'p callisto_model::Package],
+) -> Result<Option<&'p callisto_model::Package>, GraphError> {
+    let mut owner = None;
+    for pkg in candidates {
+        let Some(manifest) = pkg.canonical_manifests().next() else {
+            continue;
+        };
+        if git.path_exists_at(rev, &manifest.path).map_err(GraphError::Vcs)? {
+            if owner.is_some() {
+                return Ok(None);
+            }
+            owner = Some(*pkg);
+        }
+    }
+    Ok(owner)
+}
+
+/// Re-keys each `initialVersions` entry recorded under a bare name that has since been promoted to the one
+/// same-named package that existed when `pre.json` was added.
+pub(crate) fn assign_promoted_pre_keys<D: DependencyResolver>(
+    git: &GitAccess<'_>,
+    graph: &D,
+    pre_json: &std::path::Path,
+    mut state: callisto_model::format::PreState,
+) -> Result<callisto_model::format::PreState, GraphError> {
+    let keys: Vec<String> = state.initial_versions.keys().cloned().collect();
+    for key in keys {
+        if graph.packages().any(|p| pre_json_key(&p.id) == key) {
+            continue;
+        }
+        let same: Vec<&callisto_model::Package> = graph
+            .packages()
+            .filter(|p| p.id.ecosystem().is_some() && p.id.name() == key)
+            .collect();
+        if same.is_empty() {
+            continue;
+        }
+        let owner = match git.commit_adding(pre_json).map_err(GraphError::Vcs)? {
+            Some(added) => sole_owner_at(git, &added, &same)?,
+            None => None,
+        };
+        let Some(owner) = owner else {
+            return Err(GraphError::AmbiguousPreJsonKey {
+                key,
+                candidates: same.iter().map(|p| p.id.clone()).collect(),
+            });
+        };
+        if let Some(version) = state.initial_versions.shift_remove(&key) {
+            state.initial_versions.entry(pre_json_key(&owner.id)).or_insert(version);
+        }
+    }
+    Ok(state)
 }
 
 #[cfg(test)]
@@ -233,14 +290,5 @@ mod pre_json_key_tests {
         );
         assert_eq!(pre_initial_version(&pre, &cargo), Some(&Version::semver(1, 0, 0)));
         assert_eq!(pre_initial_version(&pre, &npm), Some(&Version::semver(2, 0, 0)));
-    }
-
-    #[test]
-    fn a_bare_name_key_from_an_older_pre_json_still_resolves() {
-        let pre = PreState::entering("beta", [("foo".to_string(), Version::semver(1, 0, 0))]);
-        assert_eq!(
-            pre_initial_version(&pre, &prefixed(Ecosystem::Cargo, "foo")),
-            Some(&Version::semver(1, 0, 0))
-        );
     }
 }

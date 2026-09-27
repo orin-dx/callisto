@@ -77,7 +77,7 @@ pub enum GraphError {
     #[error("packages {} share the default tag template `{template}`", .packages.iter().map(|p| p.display_name()).collect::<Vec<_>>().join(", "))]
     #[diagnostic(
         code(E101),
-        help("Give all but one of them its own `tag-template` in a `[[package]]` rule, e.g. `match = \"npm/foo\"` with `tag-template = \"npm-foo@{{version}}\"`.")
+        help("Change that `tag-template`, or remove it so the package uses its default.")
     )]
     SharedDefaultTagTemplate { template: String, packages: Vec<PackageId> },
 
@@ -88,12 +88,19 @@ pub enum GraphError {
     )]
     UnknownPackage { id: PackageId },
 
-    #[error("name `{name}` is ambiguous in this workspace; candidates: {}", .candidates.iter().map(|c| c.display_name()).collect::<Vec<_>>().join(", "))]
+    #[error("`{name}` names more than one package: {}", .candidates.iter().map(|c| format!("`{}`", c.display_name())).collect::<Vec<_>>().join(", "))]
     #[diagnostic(
         code(E103),
-        help("Qualify the name with its ecosystem, e.g. `cargo/pkg` or `cargo:pkg`.")
+        help("Write the qualified id instead of `{name}`, e.g. in a changeset `cargo/{name}: minor`.")
     )]
     AmbiguousName { name: String, candidates: Vec<PackageId> },
+
+    #[error("`pre.json` records `{key}`, which now names {}; callisto can't tell which one it meant", .candidates.iter().map(|c| format!("`{}`", c.display_name())).collect::<Vec<_>>().join(" and "))]
+    #[diagnostic(
+        code(E245),
+        help("In `pre.json` `initialVersions`, rename the `{key}` key to the qualified id of the package it was recorded for.")
+    )]
+    AmbiguousPreJsonKey { key: String, candidates: Vec<PackageId> },
 
     #[error("dependency cycle detected: {}", .cycle.iter().map(|i| i.display_name()).collect::<Vec<_>>().join(" -> "))]
     #[diagnostic(

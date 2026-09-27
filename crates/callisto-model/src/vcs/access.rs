@@ -365,6 +365,27 @@ impl GitAccess<'_> {
         })
     }
 
+    /// Whether `path` (relative to this root) exists in `rev`'s tree.
+    pub fn path_exists_at(&self, rev: &str, path: &Path) -> Result<bool, VcsError> {
+        let spec = format!("{rev}:./{}", path.display());
+        let output = self
+            .runner
+            .run("git", &["rev-parse", "--verify", "--quiet", &spec], &self.root)?;
+        Ok(output.success())
+    }
+
+    /// The most recent commit that added `path`, if it is committed.
+    pub fn commit_adding(&self, path: &Path) -> Result<Option<String>, VcsError> {
+        let path = path.to_string_lossy();
+        let output = self.runner.run(
+            "git",
+            &["log", "--diff-filter=A", "--format=%H", "-1", "--", &path],
+            &self.root,
+        )?;
+        let sha = output.stdout_trimmed();
+        Ok((output.success() && !sha.is_empty()).then(|| sha.to_string()))
+    }
+
     /// Lists tag names, optionally filtered by `glob` (a [`globset::Glob`]
     /// pattern; `None` matches every tag).
     ///

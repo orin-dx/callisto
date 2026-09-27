@@ -1340,7 +1340,7 @@ mod tests {
     }
 
     #[test]
-    fn promotion_changes_the_display_id_but_not_the_key_or_default_tags() {
+    fn promotion_changes_the_display_id_but_not_the_key() {
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
         write_pkg(root, "crates/native-core", Ecosystem::Cargo, "native-core");
@@ -1365,10 +1365,6 @@ mod tests {
         assert_eq!(
             unique.key(),
             Some(callisto_model::PackageKey::new("crates/native-core"))
-        );
-        assert_eq!(
-            callisto_model::TagTemplate::default_for(&promoted.id),
-            callisto_model::TagTemplate::default_for(&unique.id)
         );
         assert_eq!(
             before
