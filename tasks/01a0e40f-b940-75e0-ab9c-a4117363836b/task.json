@@ -1,0 +1,21 @@
+{
+  "tool_use_id": "01a0e40f-b940-75e0-ab9c-a4117363836b",
+  "agent_id": "01a0e40f-b940-75e0-ab9c-a4117363836b",
+  "subagent_type": "worker",
+  "files": [
+    ".github/actions/setup-callisto/tests/test_action_ref_version_resolution.sh",
+    ".github/actions/setup-callisto/tests/test_crates_io_fallback.sh",
+    ".github/actions/setup-callisto/tests/test_download_extraction_format.sh",
+    ".github/actions/setup-callisto/action.yml",
+    ".github/actions/setup-callisto/scripts/install-callisto.sh"
+  ],
+  "token_usage": {
+    "input_tokens": 55815,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 378368,
+    "output_tokens": 7464,
+    "api_call_count": 10
+  },
+  "started_at": "2026-09-27T11:10:32.891884-07:00",
+  "completed_at": "2026-09-27T11:35:11.231063-07:00"
+}

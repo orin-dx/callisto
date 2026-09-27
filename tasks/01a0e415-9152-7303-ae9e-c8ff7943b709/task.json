@@ -1,0 +1,18 @@
+{
+  "tool_use_id": "01a0e415-9152-7303-ae9e-c8ff7943b709",
+  "agent_id": "01a0e415-9152-7303-ae9e-c8ff7943b709",
+  "subagent_type": "worker",
+  "files": [
+    ".github/actions/callisto-action/tests/test_release_pr_contract.sh",
+    ".github/actions/callisto-action/scripts/create-or-update-release-pr.sh"
+  ],
+  "token_usage": {
+    "input_tokens": 160244,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2828800,
+    "output_tokens": 16167,
+    "api_call_count": 28
+  },
+  "started_at": "2026-09-27T11:16:55.079055-07:00",
+  "completed_at": "2026-09-27T11:35:11.231081-07:00"
+}

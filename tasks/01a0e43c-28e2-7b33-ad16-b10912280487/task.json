@@ -1,0 +1,27 @@
+{
+  "tool_use_id": "01a0e43c-28e2-7b33-ad16-b10912280487",
+  "agent_id": "01a0e43c-28e2-7b33-ad16-b10912280487",
+  "subagent_type": "worker",
+  "files": [
+    "crates/callisto-graph/src/walk.rs",
+    "crates/callisto-manifests/src/cargo.rs",
+    "crates/callisto-manifests/src/npm.rs",
+    "crates/callisto-manifests/src/python.rs",
+    "crates/callisto-model/src/dependency.rs",
+    "crates/callisto-graph/src/cascade.rs",
+    "crates/callisto-graph/src/commands/snapshot.rs",
+    "crates/callisto-graph/tests/fixtures/graph_builder.rs",
+    "crates/callisto-manifests/tests/cargo_tests.rs",
+    "crates/callisto-graph/tests/cascade_tests.rs",
+    "crates/callisto-graph/tests/snapshot_tests.rs"
+  ],
+  "token_usage": {
+    "input_tokens": 117066,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2117248,
+    "output_tokens": 20201,
+    "api_call_count": 26
+  },
+  "started_at": "2026-09-27T11:59:05.644424-07:00",
+  "completed_at": "2026-09-27T12:15:34.530092-07:00"
+}

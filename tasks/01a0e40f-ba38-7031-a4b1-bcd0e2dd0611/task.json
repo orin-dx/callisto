@@ -1,0 +1,17 @@
+{
+  "tool_use_id": "01a0e40f-ba38-7031-a4b1-bcd0e2dd0611",
+  "agent_id": "01a0e40f-ba38-7031-a4b1-bcd0e2dd0611",
+  "subagent_type": "worker",
+  "files": [
+    ".github/actions/callisto-action/tests/test_release_pr_decide_binary_contract.sh"
+  ],
+  "token_usage": {
+    "input_tokens": 54132,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 524800,
+    "output_tokens": 6394,
+    "api_call_count": 14
+  },
+  "started_at": "2026-09-27T11:10:33.165802-07:00",
+  "completed_at": "2026-09-27T11:35:11.23107-07:00"
+}

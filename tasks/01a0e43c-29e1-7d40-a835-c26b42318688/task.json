@@ -1,0 +1,18 @@
+{
+  "tool_use_id": "01a0e43c-29e1-7d40-a835-c26b42318688",
+  "agent_id": "01a0e43c-29e1-7d40-a835-c26b42318688",
+  "subagent_type": "worker",
+  "files": [
+    "crates/callisto-cli/tests/identity_promotion_tests.rs",
+    "crates/callisto-cli/tests/native_resolution_e2e_tests.rs"
+  ],
+  "token_usage": {
+    "input_tokens": 70907,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 713216,
+    "output_tokens": 14016,
+    "api_call_count": 14
+  },
+  "started_at": "2026-09-27T11:59:04.546109-07:00",
+  "completed_at": "2026-09-27T12:15:34.530034-07:00"
+}

@@ -1,0 +1,17 @@
+{
+  "tool_use_id": "01a0e43c-280a-75c3-ae80-fe106b7f7fb1",
+  "agent_id": "01a0e43c-280a-75c3-ae80-fe106b7f7fb1",
+  "subagent_type": "worker",
+  "files": [
+    "crates/callisto-cli/tests/schema_guard_test.rs"
+  ],
+  "token_usage": {
+    "input_tokens": 87954,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1027328,
+    "output_tokens": 10794,
+    "api_call_count": 16
+  },
+  "started_at": "2026-09-27T11:59:04.685261-07:00",
+  "completed_at": "2026-09-27T12:15:34.530042-07:00"
+}

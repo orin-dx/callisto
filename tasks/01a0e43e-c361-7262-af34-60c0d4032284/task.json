@@ -1,0 +1,17 @@
+{
+  "tool_use_id": "01a0e43e-c361-7262-af34-60c0d4032284",
+  "agent_id": "01a0e43e-c361-7262-af34-60c0d4032284",
+  "subagent_type": "worker",
+  "files": [
+    "crates/callisto-cli/tests/durable_release_e2e_tests.rs"
+  ],
+  "token_usage": {
+    "input_tokens": 97734,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1307520,
+    "output_tokens": 13875,
+    "api_call_count": 18
+  },
+  "started_at": "2026-09-27T12:01:54.978652-07:00",
+  "completed_at": "2026-09-27T12:15:34.530098-07:00"
+}
