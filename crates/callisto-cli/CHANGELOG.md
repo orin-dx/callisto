@@ -1,5 +1,180 @@
 # callisto-cli
 
+## 0.9.0
+
+- callisto release --dry-run and callisto release plan now include a diagnostics array in their JSON output when an artifact owner package is selected without its product package, instead of only printing a stderr warning.
+- callisto version now refreshes npm, pnpm, yarn, bun and pdm lockfiles by default (in addition to Cargo, uv and poetry), opt out with --no-refresh-lockfiles; a failed refresh now stops the command with a coded error naming the lockfile and command
+- A dependent released in the same run has its spec on a bumped internal dependency raised to the new version, even when the old spec still covers it.
+- Generated release workflows pass the detected default branch to the release-PR action, and `init` now resolves it from a live remote query or the checked-out branch when `origin/HEAD` isn't set locally, instead of silently defaulting to `main`.
+- **Git runs through the system `git` binary only**
+  
+  The in-process gitoxide backend is gone; every Git read and write already had to work through the `git` binary the CLI requires. Commit inference keeps a commit that touched a package even when a later merge discarded its change (`git log --full-history`), matching the removed backend. An annotated release tag made with no Git identity configured takes the target commit's committer as its tagger.
+  
+  Breaking:
+  - `callisto_model::vcs` (was `callisto-vcs`): removed `GitRepository`, `ShellGit`, the `GitDataSource` trait and the revwalk visit counter. `GitAccess::discover(root, runner)` is now `GitAccess::new(root, runner)` with inherent methods.
+  - `callisto_model::vcs`: `commits_since` with an unresolvable `since` ref returns `VcsError::RefNotFound` (was `VcsError::Git` from the shell path).
+- Shell completions no longer offer hidden plumbing subcommands, at any nesting depth
+- snapshot rewrites every dependency spec the snapshot version falls outside of, so cargo metadata resolves after a snapshot
+- Loading a workspace now fails with a clear error naming both directories when two of them declare the same ecosystem and name, instead of silently routing dependency edges to the wrong package.
+- Fixed groups compute their shared version from the highest member version when no member is tagged, support PEP 440 versions, and follow pre-release mode. Before, an untagged group could be bumped down to 0.x.
+- `callisto init` can generate `.github/workflows/callisto-release.yml` (the workflow path release artifact attestations are bound to) for a workspace with no napi/maturin platform packages and no shipped release artifacts: interactive question or `--workflow`/`--no-workflow` (mutually exclusive), refuses to overwrite an existing file (checked before the preview, including under `--dry-run`). After writing the file, init prints that a merge to the default branch publishes, so that branch should require pull requests and reviews. JSON output carries the same text as a `workflow-merge-publishes` diagnostic with the new `info` severity. The generated file is two jobs (`version-pr`, `release`) under 40 lines, triggered on push to the detected default branch, with per-job permissions and secrets wired per detected ecosystem (`CARGO_REGISTRY_TOKEN`, `NPM_TOKEN`, `PYPI_TOKEN`; npm workspaces also set `NPM_CONFIG_PROVENANCE` so publishes carry provenance), pinned to `orin-dx/callisto/.github/actions/callisto-action@<commit>` -- resolved from the `callisto@<version>` release tag, since a GitHub Actions `uses:` ref is split at the *last* `@` in the string, so the tag can't be written into `uses:` directly.
+  
+  `callisto-action` gains a `mode: version-pr | release` input (default `version-pr`, unchanged behavior); `mode: release` installs Callisto and runs `callisto release`, filling `published`/`publishedPackages` from its receipt. An invalid mode fails naming the accepted values. Its environment-setup step no longer references sibling action `setup-callisto` through `uses:` (`$/` and an external `owner/repo/path@ref` both resolve against whichever ref invoked the *top-level* workflow, not necessarily this action's own) -- it now calls `setup-callisto`'s install script directly by `github.action_path`, so it always uses its own checked-out ref, including when invoked from another repository's workflow.
+- Workspace discovery no longer silently drops or misattaches packages: a manifest that fails to parse now fails with a clear error naming the path when it's a real workspace member, and warns otherwise; root detection asks git itself instead of hand-walking for .git, so GIT_DIR and worktrees are respected, and it reads [workspace]/[package] as real TOML tables instead of matching the text (a commented-out mention no longer counts); a platform package sitting beside its own Cargo.toml or pyproject.toml is never misattached to an unrelated owner; and a [[package]] rule that matches no packages gets a warning, matching the existing [[package-set]] one.
+- Every add/version/schema/pre/release-pr error now carries its own code and help text instead of a generic message; release-pr decide/verify report the exact invalid-branch or duplicate-pull-request code instead of a plain string when reading a snapshot or decision from a file, inline JSON, or stdin.
+- callisto init and callisto release --dry-run in a repository without an origin remote no longer print a stray git error about the missing remote.
+- **`callisto init` asks for intent and previews the first release**
+  
+  `init` prints what it detected (ecosystems, packages, `origin`, last tags, binaries), then asks only for versioning mode and, when a package builds a binary, whether to ship binaries (product package, GitHub repository, target triples). It shows the resulting `callisto.toml` and the first release plan from the same derivation as `release --dry-run`, then writes after confirmation. Non-default tag conventions (`{name}-v{version}`, `{name}-{version}`, `v{version}`) are detected and kept. Non-interactive: `--yes --versioning <fixed|independent>`, plus `--artifact-target`, `--forge-repository`, `--product-package` to ship binaries. In a repository with no commit yet, `init` writes the config and skips the preview.
+  
+  Root discovery stays inside the Git repository: the nearest workspace manifest wins, otherwise the outermost package manifest (`Cargo.toml` with `[package]`, `package.json`, or `pyproject.toml`), so a single-package repository works for every command and `vendor/` or `node_modules/` packages never shadow it.
+  
+  Breaking:
+  - `init` refuses an existing `callisto.toml`; the `[init]` reconcile flow is gone (an `[init]` table still loads and is ignored).
+  - A non-terminal run needs `--yes --versioning`; `init --yes` alone errors.
+  - `init` requires a Git repository with an `origin` remote.
+  - Every command errors outside a Git repository (E058) and never searches above its root.
+  - A forge repository other than `origin`'s GitHub repository is refused.
+  - The written config holds only answers: no `[changesets]`, `[cascade]`, or `[init]` defaults.
+  - `InitReport` JSON drops `diff` and adds `config`.
+- Fix: a changeset with any unresolved package entry is no longer consumed, so its bump is not silently lost
+- Text output now names registries (crates.io, npm, PyPI) and diagnostic severities in plain, lowercase words instead of internal identifiers
+- Skip a private, versionless root package.json (standard npm/pnpm monorepo layout) instead of failing status/version with a missing-version error.
+- callisto help <command> now prints that command's help text, including nested subcommands like callisto help pre enter
+- init warns about each .changeset/config.json key it does not honour
+- init rejects --forge-repository and --product-package up front when --artifact-target isn't given, instead of silently ignoring them
+- An empty changeset (the shape `@changesets/cli add --empty` writes) is now accepted instead of rejected; status reports an entries-empty changeset as advisory instead of an error, and reports each unparseable changeset as a per-file error instead of aborting the whole command
+- Install callisto with proto: `proto/callisto.toml` downloads the release binary for macOS arm64 and Linux x86_64 (glibc or musl). moon tasks run the installed CLI.
+  
+  Breaking:
+  - Removed the moon extension (`callisto-moon` crate) and the `callisto-moon.wasm` release asset. Use the proto plugin and run `callisto` from moon tasks.
+  - Removed the moon project-graph cross-check: `ProjectLocator::declared_edges`, `DeclaredEdge`, `DeclaredEdgeKind`, `DiagnosticCode::GraphEdgeDisagreement` and `LocateError::{MoonUnavailable, MoonOutputParse, IncompatibleMoonVersion}`. With it go `--strict-graph` on `status`, `version` and `snapshot`, `StrictFlag::StrictGraph`, and the `strict_graph` fields of `StatusOptions`/`VersionOptions`; `escalate` takes only `strict`.
+  - Removed `IdentityResolver` and its errors `GraphError::UnsupportedIdentityEcosystem` (E155) and `GraphError::PackageIdentifierParse` (E156); the `callisto-cli` `wrapper` feature is gone.
+- **Generated release workflows build split napi layouts**
+  
+  `callisto matrix` adds `manifestPath` to a napi target whose addon crate is outside the npm package's directory (e.g. `packages/napi` with the crate in `crates/binding`): the workspace `cdylib` depending on `napi` whose lib name equals `napi.binaryName`. The generated workflow passes it to `napi build --manifest-path`. No single match fails with E204, listing the candidates.
+  
+  The generated workflow also runs `npx --package @napi-rs/cli@3.10.4 napi ...`: the bare `npx @napi-rs/cli@3.10.4` form fails because the package has two bins.
+- init's report now lists every file it wrote (or, under --dry-run, would write), including the generated workflow and .changeset/README.md
+- **npm platform packages release with their owner**
+  
+  An `os`/`cpu` package listed in another package's `optionalDependencies` is now part of that owner: same version, no tag, pins kept in sync, published with `npm publish <dir>` before the owner. Covers napi addons and esbuild-style CLIs, including `npm/<platform>` dirs outside workspace globs. No `[[fixed-group]]` entry needed.
+  
+  Breaking:
+  - Release intents are schema v4; re-plan intents made by older versions.
+  - A dir with both `Cargo.toml` and `package.json` uses the `package.json` name as its npm release id (`npm/michi-node` → `npm/@orin-axi/michi`). Update `--package` selections and re-emit decision files.
+  - Changesets must name the owner, not a platform package.
+- `pre.json` and new changesets always live in the configured `[changesets] dir`, `pre exit` stages `pre.json`, and rewrites keep its line endings and indentation.
+- In pre-release mode, `version` records the changesets it used in `pre.json`, so a rerun with no new changeset changes nothing instead of bumping the prerelease number and repeating changelog entries. Packages with ecosystem-qualified names (`cargo/foo`) also get correct changelog entries during a pre-release cycle.
+- callisto add's interactive wizard prompts and preview now print to stderr, keeping stdout clean for scripts
+- Add discoverable --help surface (8 user commands, plumbing hidden), NO_COLOR/CLICOLOR_FORCE/FORCE_COLOR-driven color and box-drawing tables for status and release --dry-run, and remove schema-version text from default output.
+- **`publish-to` overrides keep `publishConfig`**
+  
+  A `publish-to = ["npm"]` override no longer drops `publishConfig.access` and `registry` from `package.json`, which made scoped packages publish as restricted. Explicit config still wins.
+- **PyPI publish targets work in durable releases**
+  
+  Versions are checked via the PEP 691 JSON simple index instead of `pip`; yanked versions count as absent. Private indexes must serve the JSON simple index. Requires `curl` on the release runner.
+- Package selectors (--package, add, matrix, release, config rules) now resolve consistently by any registered ecosystem-qualified or native manifest name; a mismatched-ecosystem rule or selector no longer silently matches the wrong package, and a package-set rule like `cargo/foo-*` now correctly restricts matches to Cargo packages instead of matching any ecosystem.
+- **`callisto release` replaces the legacy publish commands**
+  
+  `callisto release` publishes, tags, and creates GitHub releases for every package whose current version has no tag, from any branch with a clean worktree. `--dry-run` previews the plan anywhere; `--package` restricts it and keeps fixed and linked group members together; an unreleased runtime, optional, or peer dependency must be selected with its dependent; `--receipt <file>` writes the receipt.
+  
+  Breaking:
+  - Removed `callisto publish`, `plan-publish`, `tag` (including `--floating-major`), and `filter-plan`. Use `callisto release` or `callisto release --dry-run`.
+  - Removed `schema --type tag` and `schema --type plan-publish`.
+  - Removed graph `plan_publish`, `filter_plan_by_report`, `create_tags`, `toposort::publish_order`.
+  - `release plan --package` now also keeps config-declared linked-group members, and both routes refuse an unselected unreleased dependency (`ReleaseSelectionInvalidReason::DependencyNotSelected`, was `PlatformDependencyNotSelected`).
+  - Release decisions are written as schema 2 (adds `unreleasedVersion`). Schema 1 files still read; an earlier build cannot read a schema-2 decision.
+- status --check and --strict now describe what they do in --help, instead of a vague placeholder
+- Generated release actions install the version they're pinned to instead of always the newest release
+- callisto completions and callisto schema no longer crash when piped into a command that closes its input early; they now exit cleanly.
+- `init --artifact-target a,,b` (flag or interactive) errors naming the empty target instead of silently dropping it.
+  The PyPI real-registry e2e test now builds offline (`--no-isolation` against the CI venv pinned setuptools/wheel); no network fetch during `python -m build`.
+  `status --check` reports an ambiguous bare package name in a changeset as the `AmbiguousPackageName` diagnostic (exit 1) instead of hard-erroring.
+- snapshot refreshes each ecosystem's lockfile too, so a locked install resolves right after it
+- pre enter after pre exit resumes the cycle under the new tag instead of failing with a stale already-in-pre-release-mode error; pre exit with no pre.json now reports a clear fix instead of a raw I/O error
+- init works without an origin remote: it writes the config and warns instead of refusing, skipping the workflow and shipping-binaries questions until origin is added
+- **Faster failure on unreachable registries**
+  
+  Registry checks disable cargo's and npm's own retries and rely on Callisto's bounded retry. An unreachable registry now reports in seconds instead of 1–6 minutes.
+- **Release artifacts are declared per package**
+  
+  Any targets and asset names are now accepted, not only Callisto's own four. Each artifact is recorded under the package that builds it; one whose package isn't in the release fails with E179. `--package` on one `[[fixed-group]]` member releases the whole group.
+  
+  Breaking: replace `[release] artifact-targets` with one block per target:
+  
+  ```toml
+  [[release.artifact]]
+  package = "cargo/my-cli"
+  target = "aarch64-apple-darwin"
+  asset-name = "my-cli-aarch64-apple-darwin.tar.gz"
+  ```
+- `callisto release` publishes a product's GitHub release only after every configured asset has uploaded, including assets built by other packages, and uploads use the product's prerelease flag. Before, such releases could publish incomplete or fail with E167.
+- Release checks against crates.io, npm, PyPI, GitHub and the git remote retry on timeouts and connection failures, and a PyPI rate limit waits for `Retry-After`, instead of failing the release.
+- **One release destination: `[release].forge-repository`**
+  
+  The forge destination moves to `forge-repository = "owner/repo"` directly under `[release]`. Each publish target uses its own registry key (`[registries.<key>]` or the built-in default). A legacy `[release.profiles.production].forge-repository` is still read when the new key is absent.
+  
+  Breaking:
+  - `--profile` is removed from `release plan` and `release execute`.
+  - `[release.profiles.<name>]` other than `production` is rejected; `registry-routes` is ignored.
+  - Setting both `[release].forge-repository` and a different `[release.profiles.production].forge-repository` is rejected.
+  - Release intents are schema v5 and run envelopes v3; re-plan intents made by older versions.
+- **`release plan` checks what `publish` checks**
+  
+  Release planning now rejects an untrusted or non-https npm `publishConfig.registry`, requires an unreleased npm platform dependency to be selected with its owner, orders dev-only dependency cycles instead of failing, publishes scoped npm packages as public by default, and uses the changelog section as GitHub release notes (falling back to generated notes with a stderr notice).
+  
+  Breaking:
+  - `--package` for a package with no pending release fails with "nothing pending to release"; one with no publish target fails with "no publish target"; a name not in the workspace is an unknown package.
+  - `release plan` fails with E199 for a `publish-to` target it cannot dispatch (NuGet) instead of skipping it.
+  - `callisto_graph::commands::registry_argv::npm_publish_directory_argv` takes the package name.
+- The release PR action commits exactly the staged content and works when run from a subdirectory; a mismatch fails with E059.
+- A release rerun adopts an existing annotated tag on the right commit even when its message differs, instead of failing depending on whether the tag had been fetched.
+- **Rerunning a failed release completes it**
+  
+  `release execute` now adopts every effect that already landed, including a published registry version (one warning line each), and builds the receipt from in-memory execution state, so "Re-run failed jobs" finishes a partial release instead of failing with E174. Execution state is no longer persisted, and E173 and E174 are gone.
+  
+  Breaking:
+  - `release execute --recovery` and `--state` are removed.
+  - `release reconcile` and `callisto schema --type release-state` are removed.
+  - The receipt's run envelope drops `kind` and is envelope schema v2.
+- Output that explains why a package is released reports `release-trigger = changeset` as the default, not `auto`.
+- **Release trust allows gitignored build output**
+  
+  A release no longer aborts because a gitignored path exists (built `.node` files, `dist/`, `node_modules/`). Modified tracked files and untracked files still block it, and the error names the path.
+- Every CLI error now carries a numeric E#### code instead of a callisto::name string
+- A malformed release intent file (duplicate operation, cycle, mismatched artifact roster, digest mismatch, or unsupported trust profile) reports its own specific error code from release verify and release execute, instead of one generic code for every case.
+- **One build: every ecosystem and commit inference always compiled in**
+  
+  Commit inference now ships in the release binary. It runs only for packages with `release-trigger = "auto"`; the default `changeset` trigger is unchanged.
+  
+  Breaking:
+  - Removed Cargo features `cargo`, `npm`, `inference` (`callisto-cli`, `callisto-graph`) and `cargo`, `npm`, `pypi`, `go`, `maven`, `nuget`, `deno` (`callisto-manifests`).
+- `callisto init` now generates a release workflow for workspaces that ship `[[release.artifact]]` binaries or napi platform packages, instead of skipping them. The file is `.github/workflows/callisto-release.yml` with four jobs: `version-pr`, `plan` (`callisto release plan`), `build` (a matrix of the napi targets from `callisto matrix` plus one entry per artifact slot in the release intent) and `execute` (`napi artifacts`, then `callisto release artifact-manifest`, then `callisto release execute`). In npm workspaces, `execute` sets `NPM_CONFIG_PROVENANCE` so npm publishes carry provenance. Planning runs only when the pushed commit writes `.callisto/release-decision.json`, so ordinary pushes leave `plan`, `build` and `execute` skipped.
+  
+  Workspaces with maturin platform builds, or with platform packages and no `napi.targets`, still get no generated workflow. Passing `--workflow` for one of them fails with E202 and names the reason. Otherwise `init` skips the question and prints a note, which also appears in `InitReport.diagnostics` as `workflow-generation-unsupported`.
+  
+  `callisto matrix --format json` now lists each cargo `[[release.artifact]]` binary as a `cargo` entry in `platformTargets`, with the slot's asset name as its `artifactName`. A package that declares both platform targets and release artifacts fails with E203. A cargo `[[release.artifact]]` naming no workspace package is reported as an `unknown-package` warning instead of being dropped silently.
+- The `callisto-format` and `callisto-vcs` crates are merged into `callisto-model`, and `callisto-conventional` and `callisto-changelog` into `callisto-graph`. The CLI is unchanged; library users import `callisto_model::format`, `callisto_model::vcs`, `callisto_graph::conventional` and `callisto_graph::changelog`.
+- `callisto matrix` no longer collides a Cargo crate and an npm package that share a bare name (the common napi split layout).
+  
+  `--package` now accepts an ecosystem-qualified id (`cargo/foo`, `npm/foo`); a bare name resolves only when it names exactly one package, otherwise it errors listing the qualified candidates. A `[[release.artifact]]` binary now binds only to its own cargo package, never to a same-named package in another ecosystem.
+  
+  Breaking:
+  - `platformTargets`/`runtimeVersions` map keys are each package's ecosystem-qualified id once a same-named package in another ecosystem exists, not always the bare name. Consumers indexing by bare name must switch to the qualified id (or keep working unchanged for any package whose name is unique in the workspace).
+- callisto add --summary without --package on a non-terminal stdin now names --package as the missing flag, instead of claiming no flags were given
+- **E180 for GitHub's tag-push workflow guard**
+  
+  When GitHub refuses a tag push from `GITHUB_TOKEN` (the tagged commit's workflows differ from every branch tip, e.g. when recovering an older release), `callisto release` reports E180 with the tag and the fix: push the tags with a PAT or deploy key, then re-run the release. Previously a generic E164.
+- schema --type validate is removed and --type pre is renamed to --type pre-state (the .changeset/pre.json file shape, not pre's own report); an unrecognized --type value is now a usage error listing the supported values
+- `version` checks `--strict` before writing anything, and refuses with E121 while an earlier run's changes are uncommitted and its changesets are still pending.
+- `callisto status` shows real pending severity (cascade, fixed/linked groups) and folds in `validate`'s well-formedness checks under `--check`; `callisto validate` is removed.
+  
+  Breaking:
+  - `callisto validate` is removed. Use `callisto status --check` and `callisto release --dry-run`.
+  - `status --check` exits 0/1: a conventional gate on error-level diagnostics only, regardless of pending changesets. Use `status --format json`'s `.pending` (count of packages with a planned bump) to detect pending changesets.
+- JSON reports (add, status, matrix, version, pre, snapshot, init, compose-pr-body) now include command and dryRun fields, and JSON error output includes command and path fields.
+
 ## 0.8.0
 
 - **Recoverable, validated product releases**
