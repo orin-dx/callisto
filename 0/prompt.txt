@@ -1,0 +1,1 @@
+Both findings are now patched: normalized PEP 503 matching in IdentityIndex with PEP 621 and Poetry graph edge regressions; the promoted snapshot fixture now writes packages/app/src/lib.rs and its focused CLI test passes. Please independently inspect these corrections and the current T04 delta, read-only, and return updated scoped verdict. No Cargo/stage/commit.
