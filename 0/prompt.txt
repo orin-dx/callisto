@@ -1,0 +1,1 @@
+Please send a brief progress/ETA now. Need code patch soon so main can queue serial graph tests; prioritize a minimal correct implementation and add both PEP 621/Poetry regressions.
