@@ -1,5 +1,17 @@
 # callisto-cli
 
+## 0.10.0
+
+- Output that explains why a package is released reports `release-trigger`, fixed groups, linked groups, the tag template and pre-major inference as configured when you set them, instead of "(default)".
+- `snapshot` works for PyPI packages: their snapshot version and dependents' specs use PEP 440.
+- Git errors that came from parsing git's own output now have specific codes and help text, instead of one generic git error code.
+- release, release plan, release execute, release artifact-manifest, and release-pr's JSON output now carry schemaVersion, command, and dryRun fields like every other command's JSON output.
+- `callisto release-pr verify` accepts `callisto release-pr decide --format json` output as-is again, so the release action can open and update the release PR. 0.9.0 failed with E281.
+- Adding a package with the same name in another ecosystem needs no configuration: the existing package keeps its release history, tags and changelog, and new tags use the qualified name (`cargo/foo@1.1.0`). A pre-release cycle started before the new package keeps working. A changeset that names a now-ambiguous `foo` fails with E103 and shows the qualified form to write.
+- init now names the exact file it failed to write when a write fails, instead of a pathless error.
+- In pre-release mode, packages with the same name in two ecosystems (`cargo/foo`, `npm/foo`) keep separate starting versions in `pre.json` instead of sharing one.
+- `callisto release` no longer fails with E167 when GitHub is slow to show a release or asset it just created, uploaded or published; it waits up to a minute.
+
 ## 0.9.0
 
 - callisto release --dry-run and callisto release plan now include a diagnostics array in their JSON output when an artifact owner package is selected without its product package, instead of only printing a stderr warning.
