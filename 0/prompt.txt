@@ -1,0 +1,1 @@
+Let's launch the rest of the work in as many parallel steps as possible please. Avoid stepping all over yourself but speedup the work in parallel steps, at least for the code writing part perhaps? Build, test, etc could be inlined?
