@@ -1,0 +1,1 @@
+Please specifically assess new --offline metadata precondition on a cold GitHub runner vs real cache. Cargo no-deps metadata may still need resolution/index, and build was allowed native dependency fetching before. Also target-dir moved to RUNNER_TEMP ignores setup-rust's restored workspace target cache. No Cargo execution until coordinator pipeline finishes.
