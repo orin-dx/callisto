@@ -1,0 +1,3 @@
+We're working on callisto's road to v1. There is a doc file with that. I also want you to understand the last week's worth of PRs and what we've been tackling.
+
+PLease evaluate the work we've done. The current state of our codebase, architecture and semantic model against the overall goals of callisto and how it compares to our competition (changesets, knope, nx release and release please).
