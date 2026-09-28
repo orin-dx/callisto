@@ -308,6 +308,9 @@ impl ReleasePrDecisionV2 {
             .iter_mut()
             .find(|pr| pr.number == *pull_request_number)
             .ok_or(ReleasePrDecisionError::SnapshotChanged)?;
+        if &pr.head_commit == applied_head {
+            return Err(ReleasePrDecisionError::SnapshotChanged);
+        }
         pr.head_commit = applied_head.clone();
         expected.verify_snapshot(observed)
     }
@@ -1018,8 +1021,9 @@ mod tests {
         let mut applied = original.clone();
         applied.open_pull_requests[0].head_commit = sha();
         assert!(decision.verify_snapshot_after_update(&applied, &sha()).is_ok());
-        assert!(decision.verify_snapshot(&applied).is_err());
         assert!(decision.verify_snapshot_after_update(&original, &sha()).is_err());
+        assert!(decision.verify_snapshot(&applied).is_err());
+        assert!(decision.verify_snapshot_after_update(&original, &other_sha()).is_err());
         assert!(decision.verify_snapshot_after_update(&applied, &other_sha()).is_err());
 
         let mut unrelated_head = applied.clone();
