@@ -232,3 +232,17 @@ Are you done that work already? Do it
 ---
 
 What's next?
+
+---
+
+Continue through all of this work please
+
+---
+
+Let's make sure we're commiting logically as we go
+
+---
+
+<send_user_message_question_reply>
+[{"answer":"Confirm exact commit","question":"Confirm commit `docs(architecture): record proposed polyglot v1 model` with exactly these 5 staged files: `docs/adr/0012-canonical-distribution-release-ownership.md`, `docs/adr/README.md`, `docs/architecture/polyglot-v1.md`, `docs/projects/V1-IMPLEMENTATION.md`, `docs/projects/V1-SYSTEM-HARDENING.json`?","questionItemId":"[\"request_user_input_async\",\"REDACTED\",0]"}]
+</send_user_message_question_reply>
