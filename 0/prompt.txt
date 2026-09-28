@@ -1,0 +1,1 @@
+Please converge and return your bounded findings now after finishing current trace. Need verified generated-workflow differences vs self-release and artifact matrix selection scope. No exhaustive micro-pattern hunting. Main synthesis ready; report confirmed/plausible/refuted and direct paths.
