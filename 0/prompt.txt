@@ -1,0 +1,1 @@
+Once you have a plan of execution please consider the usage of our plugins and how we can execute this in stacked PRs. If possible lets parallelize any work we can. Leverage agents, subagents, smaller models with less effort where possibble and advisable
