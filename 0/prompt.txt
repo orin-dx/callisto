@@ -1,0 +1,60 @@
+Claude found this that you seem to have missed:
+
+No, don't merge #113. It won't release anything, because the Release workflow on main is broken and #113 is stale.
+
+- The failure: the Release workflow has failed on every merge since #166 (the runs for #166, #167 and #168). It dies in the "Create or update the Callisto release PR" step with E281 --decision is not valid JSON: unknown field command.
+- The cause: #166 put release-pr decide --format json output inside the shared JSON wrapper, which adds command and dryRun fields. create-or-update-release-pr.sh passes that output straight to release-pr verify --decision, which rejects fields it doesn't know. No test runs that pair: the binary contract test calls decide but never passes the result to verify.
+- #113 is out of date: it was generated from #163, so it lacks #166, #167 and #168 and its release-decision.json is from before them. The bot can't refresh it until the workflow is fixed. Merging it now would publish 0.9.0 without the identity and v1 fixes.
+- The publish path looks safe from the same bug: release plan, artifact-manifest and release write their intent, manifest and receipt files without the wrapper, so it shouldn't recur there. I've only read the code, though; the publish jobs haven't run since #166.
+
+Proposed fix, as one small PR done directly:
+1. Make release-pr verify --decision accept decide's output as-is, ignoring the wrapper fields. That's more robust than having the script strip them.
+2. Extend test_release_pr_decide_binary_contract.sh so it pipes decide into verify.
+3. Add a patch changeset.
+
+Once that merges, the bot regenerates #113 from current main. You approve its CI and merge, and 0.9.0 goes out. Go?
+
+On the Codex text you pasted: it's about the plugins repo (voice.md, dist/codex, versions for ranger, scribe and muse), not Callisto. I haven't acted on it. If it was meant for this session, say what you want; otherwise it probably belongs in the session working on the plugins repo.
+
+And it also said of your input:
+
+For v0.9, Codex's review changes nothing: E281 is the only blocker. It found the same bug independently. Its second finding is real, but it's a v1 item, not a v0.9 one.
+
+1. Release PR workflow broken (E281): this blocks v0.9. The fix is what I proposed: verify accepts decide's output as-is, plus a test that pipes decide into verify.
+
+2. A retried local release can skip unfinished work: real (I checked the code), but it doesn't affect v0.9.
+- derive_unreleased_decision (release_decision.rs:195) skips every package whose current version already has a tag, and it counts local tags.
+- If a local callisto release creates the tag and then the push or the GitHub Release fails, a retry skips that package and reports nothing left to release.
+- v0.9 goes through CI, which releases exactly the packages in the committed release-decision.json, so this path isn't used.
+- It is a real v1 gap. One fix: when a package's tag exists, still check its remaining steps (push, GitHub Release, assets) instead of skipping it. I haven't designed this in detail yet.
+
+3. Its other points are v1 work, not v0.9 blockers. I haven't verified each one yet:
+
+┌───────────────────────────────────────────────────────────────────────────────────────┬──────────────────────────────────────────────────┐
+│                                        Finding                                        │                     My take                      │
+├───────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────┤
+│ Architecture diagram and identity docs are outdated                                   │ Likely true after #167/#168; fix before v1       │
+├───────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────┤
+│ ADR 11's "promotion is display-only" overstates it: new default tags change after     │ Fair; one sentence in ADR 11                     │
+│ promotion                                                                             │                                                  │
+├───────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────┤
+│ The v1 requirement doc still lists Cargo registry testing as missing                  │ Probably outdated; check it                      │
+├───────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────┤
+│ README quick start is missing --versioning, the commit step and credentials           │ Quick docs fix                                   │
+├───────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────┤
+│ No evidence for the "first release in under ten minutes" goal                         │ Needs a real run in fresh repos; a v1 gate, not  │
+│                                                                                       │ code                                             │
+├───────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────┤
+│ Registry checks confirm only that a version exists, not a checksum                    │ Known; decide whether v1 needs more              │
+├───────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────┤
+│ Cargo and PyPI end-to-end coverage is thinner than npm's                              │ True; hardening                                  │
+└───────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────┘
+
+Its overall recommendation (fix the two release bugs, do one real self-release, then reconcile the docs and state v1's support limits) matches mine. The v0.9 release itself is that real self-release.
+
+Proposed order:
+1. Now: the E281 fix PR. Then #113 regenerates, you approve its CI and merge, and 0.9.0 goes out.
+2. Next: the local-retry fix, the documentation reconciliation (diagram, identity, ADR 11 wording, README quick start) and the quick wins.
+3. Then: fresh-repo onboarding runs and the owner decisions before v1.
+
+What do you think? What should we tackle to include in the v0.9. Feel free to disagree if you think there are improtant fixes to go in
