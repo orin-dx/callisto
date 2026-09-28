@@ -1,0 +1,1 @@
+Please recheck your T05 findings against the current working tree (read-only, no Cargo). Confirm whether staging input deletions before unlinking fixes the pre.json-only and untracked no-op changeset cases, and whether comparing effective index version addresses restored worktree state. Report any residual concrete defect or explicitly confirm those cases are covered.
