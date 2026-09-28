@@ -1,0 +1,1 @@
+Can we upload all of the assets at once? In batches? How to we make this robust for our users?
