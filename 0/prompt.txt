@@ -1,0 +1,1 @@
+Things like never cite specs is not an ADR is it? It's a AI agent memoryt thing. Why is it in the ADR? What else did you jam in there that doesn't make sense?
