@@ -11,7 +11,7 @@ use super::super::github::{
     github_release_endpoint, github_release_for_tag, malformed_github_response, GitHubReleaseLookup,
 };
 use super::forge::observed_draft_or_published_release;
-use super::policy::{programs, timeouts};
+use super::policy::{observe_until_visible, programs, timeouts};
 use super::{
     confirmed_evidence, wrong_role, ArtifactUploadOperation, EffectAuthorization, PreparedOperation,
     ProviderCapabilities, ProviderContext, ProviderRequest, ReleaseProvider,
@@ -65,9 +65,11 @@ impl ReleaseProvider for ArtifactUploadProvider {
         let path = artifacts.path_for(&operation.slot)?;
         let repository = operation.slot.attestation_policy.repository.as_slug();
         confirmed_evidence(
-            observed_draft_or_published_release(context, &operation.tag, operation.prerelease, &repository)?,
+            observe_until_visible(context.sleeper(), || {
+                observed_draft_or_published_release(context, &operation.tag, operation.prerelease, &repository)
+            })?,
             request.id,
-            RemoteConflict::ForgeReleaseDiffers,
+            RemoteConflict::ForgeReleaseNotObservedAfterCreate,
         )?;
         let path_argument = path.to_string_lossy();
         let args = [
@@ -93,7 +95,9 @@ impl ReleaseProvider for ArtifactUploadProvider {
             });
         }
         confirmed_evidence(
-            observe_artifact_upload(context, operation, Some(artifacts))?,
+            observe_until_visible(context.sleeper(), || {
+                observe_artifact_upload(context, operation, Some(artifacts))
+            })?,
             request.id,
             RemoteConflict::ArtifactNotObservedAfterUpload,
         )
@@ -144,7 +148,13 @@ fn observe_artifact_upload(
         .and_then(serde_json::Value::as_array)
         .ok_or_else(|| {
             malformed_github_response(
-                &github_release_endpoint(&repository, &operation.tag),
+                &github_release_endpoint(
+                    &repository,
+                    release
+                        .get("id")
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or_default(),
+                ),
                 "GitHub release response has no assets array",
             )
         })?;

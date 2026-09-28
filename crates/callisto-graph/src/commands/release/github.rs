@@ -25,18 +25,13 @@ pub(crate) enum GitHubReleaseLookup {
     Found(serde_json::Value),
 }
 
-pub(crate) fn github_release_endpoint(repository: &str, tag: &TagName) -> String {
-    format!("repos/{repository}/releases/tags/{tag}")
+pub(crate) fn github_release_endpoint(repository: &str, id: u64) -> String {
+    format!("repos/{repository}/releases/{id}")
 }
 
-/// GitHub serves at most 100 releases per page; ten pages is the bound this
-/// scan will spend looking for one draft before reporting it unobservable.
-const RELEASE_LIST_PAGE_SIZE: usize = 100;
-const RELEASE_LIST_PAGE_LIMIT: usize = 10;
-
-fn github_release_list_endpoint(repository: &str, page: usize) -> String {
-    format!("repos/{repository}/releases?per_page={RELEASE_LIST_PAGE_SIZE}&page={page}")
-}
+/// Finds drafts too, unlike `GET /releases/tags/{tag}`.
+const RELEASE_ID_QUERY: &str = "query($owner:String!,$name:String!,$tagName:String!)\
+{repository(owner:$owner,name:$name){release(tagName:$tagName){databaseId}}}";
 
 /// `gh api` defines no `--repo`; the endpoint already carries owner and repository.
 pub(crate) fn github_release_api_args(endpoint: &str) -> [&str; 5] {
@@ -82,26 +77,7 @@ fn github_release_response_status(status: u16) -> Option<GitHubReleaseLookup> {
     }
 }
 
-/// The one GET every forge observation shares, under the same bounded retry as
-/// every other read-only observation.
-///
-/// This endpoint never serves drafts, so it proves publication, not existence;
-/// [`github_release_for_tag`] is what the roles call.
-fn github_release_by_tag(
-    root: &Path,
-    runner: &dyn CommandRunner,
-    sleeper: &dyn Sleeper,
-    repository: &str,
-    tag: &TagName,
-) -> Result<GitHubReleaseLookup, GraphError> {
-    let endpoint = github_release_endpoint(repository, tag);
-    retry_observation(sleeper, || github_api_get_once(root, runner, &endpoint))
-}
-
-/// Finds the release for `tag` whether it is published or still a draft.
-///
-/// `GET /releases/tags/{tag}` omits drafts entirely, so a 404 there is not
-/// absence: the bounded list scan below is the only way to observe a draft.
+/// GraphQL for the release ID by tag, then REST by ID: how `gh release view` finds drafts.
 pub(crate) fn github_release_for_tag(
     root: &Path,
     runner: &dyn CommandRunner,
@@ -109,30 +85,92 @@ pub(crate) fn github_release_for_tag(
     repository: &str,
     tag: &TagName,
 ) -> Result<GitHubReleaseLookup, GraphError> {
-    match github_release_by_tag(root, runner, sleeper, repository, tag)? {
-        GitHubReleaseLookup::Absent => {}
-        found_or_unknown => return Ok(found_or_unknown),
-    }
-    for page in 1..=RELEASE_LIST_PAGE_LIMIT {
-        let endpoint = github_release_list_endpoint(repository, page);
-        let listed = match retry_observation(sleeper, || github_api_get_once(root, runner, &endpoint))? {
-            GitHubReleaseLookup::Found(listed) => listed,
-            absent_or_unknown => return Ok(absent_or_unknown),
+    let id = match retry_observation(sleeper, || github_release_id_once(root, runner, repository, tag))? {
+        ReleaseIdLookup::Found(id) => id,
+        ReleaseIdLookup::Unknown(lookup) => return Ok(lookup),
+    };
+    let endpoint = github_release_endpoint(repository, id);
+    retry_observation(sleeper, || github_api_get_once(root, runner, &endpoint))
+}
+
+enum ReleaseIdLookup {
+    Found(u64),
+    Unknown(GitHubReleaseLookup),
+}
+
+fn github_release_id_once(
+    root: &Path,
+    runner: &dyn CommandRunner,
+    repository: &str,
+    tag: &TagName,
+) -> Result<Attempt<ReleaseIdLookup>, GraphError> {
+    let (owner, name) = repository
+        .split_once('/')
+        .ok_or_else(|| malformed_github_response(repository, "GitHub repository is not OWNER/NAME"))?;
+    let query = format!("query={RELEASE_ID_QUERY}");
+    let owner = format!("owner={owner}");
+    let name = format!("name={name}");
+    let tag_name = format!("tagName={tag}");
+    let args = [
+        "api",
+        "--include",
+        "graphql",
+        "-f",
+        &query,
+        "-f",
+        &owner,
+        "-f",
+        &name,
+        "-f",
+        &tag_name,
+    ];
+    let malformed = |detail: &str| GraphError::ReleaseCommand {
+        program: programs::GH.to_owned(),
+        args: args.iter().map(ToString::to_string).collect(),
+        failure: CommandFailure::MalformedOutput {
+            detail: detail.to_owned(),
+        },
+    };
+    let transient = |value| {
+        Ok(Attempt::Transient {
+            value: ReleaseIdLookup::Unknown(value),
+            retry_after: None,
+        })
+    };
+    let observed = match run_observation(runner, programs::GH, &args, root, timeouts::FORGE_API, false)? {
+        Ok(output) => output,
+        Err(_unavailable) => return transient(GitHubReleaseLookup::CommandFailed),
+    };
+    let response = github_api_response(programs::GH, &args, &observed)?;
+    if response.status != 200 {
+        let lookup = GitHubReleaseLookup::Indeterminate {
+            status: response.status,
         };
-        let releases = listed
-            .as_array()
-            .ok_or_else(|| malformed_github_response(&endpoint, "GitHub release list response is not an array"))?;
-        if releases.is_empty() {
-            break;
-        }
-        if let Some(release) = releases
-            .iter()
-            .find(|release| release.get("tag_name").and_then(serde_json::Value::as_str) == Some(tag.as_str()))
-        {
-            return Ok(GitHubReleaseLookup::Found(release.clone()));
-        }
+        return Ok(if response.is_transient() {
+            Attempt::Transient {
+                value: ReleaseIdLookup::Unknown(lookup),
+                retry_after: response.retry_after(),
+            }
+        } else {
+            Attempt::Settled(ReleaseIdLookup::Unknown(lookup))
+        });
     }
-    Ok(GitHubReleaseLookup::Absent)
+    let value: serde_json::Value =
+        serde_json::from_str(&response.body).map_err(|error| malformed(&error.to_string()))?;
+    // GraphQL returns failures, rate limits included, as a 200 with `errors`.
+    let repository_node = value.pointer("/data/repository").filter(|node| !node.is_null());
+    let Some(repository_node) = repository_node.filter(|_| value.get("errors").is_none()) else {
+        return transient(GitHubReleaseLookup::CommandFailed);
+    };
+    match repository_node.get("release") {
+        Some(serde_json::Value::Null) => Ok(Attempt::Settled(ReleaseIdLookup::Unknown(GitHubReleaseLookup::Absent))),
+        Some(release) => release
+            .get("databaseId")
+            .and_then(serde_json::Value::as_u64)
+            .map(|id| Attempt::Settled(ReleaseIdLookup::Found(id)))
+            .ok_or_else(|| malformed("GitHub release has no databaseId")),
+        None => Err(malformed("GitHub response has no release field")),
+    }
 }
 
 pub(crate) fn malformed_github_response(endpoint: &str, detail: &str) -> GraphError {

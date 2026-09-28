@@ -516,9 +516,9 @@ pub enum GraphError {
     #[diagnostic(
         code(E167),
         help(
-            "A tag or forge release already exists remotely with content that differs from this \
-             release intent. Reconcile the remote state by hand -- this intent's authorization is \
-             not in question."
+            "Either remote state differs from this release intent, or an effect this run made was not \
+             visible within a minute. Re-run to adopt a completed effect; if the conflict remains, \
+             reconcile the remote state by hand -- this intent's authorization is not in question."
         )
     )]
     ReleaseRemoteConflict {

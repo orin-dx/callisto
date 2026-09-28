@@ -98,16 +98,22 @@ cat "$work/rel.head" "$work/rel.draft" >"$out/github/release-draft.http"
 jq -c '.prerelease = true' <"$work/rel.trim" >"$work/rel.pre"
 cat "$work/rel.head" "$work/rel.pre" >"$out/github/release-prerelease.http"
 
-gh api --include 'repos/cli/cli/releases?per_page=2&page=1' >"$work/list"
-split_http "$work/list"
-drop_headers "$work/list.head" "^content-length:|$ACCOUNT_HEADERS"
-jq -c "map($trim_release)" <"$work/list.body" >"$work/list.trim"
-cat "$work/list.head" "$work/list.trim" >"$out/github/release-list-page.http"
-
 gh api --include repos/cli/cli/releases/tags/callisto-no-such-tag >"$work/nf" 2>/dev/null || true
 split_http "$work/nf"
 drop_headers "$work/nf.head" "^content-length:|$ACCOUNT_HEADERS"
 cat "$work/nf.head" "$work/nf.body" >"$out/github/release-404.http"
+
+# GraphQL finds drafts; the REST tag endpoint does not.
+release_id_query='query($owner:String!,$name:String!,$tagName:String!){repository(owner:$owner,name:$name){release(tagName:$tagName){databaseId}}}'
+gql_release_id() {
+  gh api --include graphql -f "query=$release_id_query" -f "owner=$1" -f "name=$2" -f "tagName=$3" >"$work/$4" 2>/dev/null || true
+  split_http "$work/$4"
+  drop_headers "$work/$4.head" "^content-length:|^date:|^etag:|^x-github-request-id:|^x-ratelimit-|$ACCOUNT_HEADERS"
+  cat "$work/$4.head" "$work/$4.body" >"$out/github/$5"
+}
+gql_release_id cli cli "$(jq -r .tag_name <"$work/rel.body")" gql-found graphql-release-found.http
+gql_release_id cli cli callisto-no-such-tag gql-absent graphql-release-absent.http
+gql_release_id cli callisto-no-such-repo-xyz v1 gql-norepo graphql-release-repository-error.http
 
 # --- PyPI simple index via curl ---------------------------------------------
 PYPI_VOLATILE='^date:|^etag:|^x-served-by:|^x-cache:|^x-cache-hits:|^x-timer:|^x-pypi-last-serial:|^content-length:'

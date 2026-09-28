@@ -292,6 +292,10 @@
       "criterion": "In the release workflow, `CARGO_REGISTRY_TOKEN` reaches only the `execute` job's execute step. The workflow's default permissions are empty, and the plan and build jobs receive no registry credential."
     },
     {
+      "id": "REL-GH-08",
+      "criterion": "Callisto finds a GitHub release by tag, draft or published, with the GraphQL `release(tagName:)` lookup followed by `GET /repos/{owner}/{repo}/releases/{id}`; it never reads the release list. After its own release create, asset upload or publish, a release or asset still absent is looked up again with 2s, 4s, 8s, 16s and 32s waits before the run fails with E167."
+    },
+    {
       "id": "REL-PR-01",
       "criterion": "`release-pr decide` returns `noop` when there are no pending changesets. It returns `update` when one open PR from the same repository has head `<release-branch>` or `<release-branch>--<40 lowercase hex>`, and `create` otherwise."
     },
