@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bvad8cbhs</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/320aa0c9-2df0-4319-88b7-ed0e66679ed8/tasks/bvad8cbhs.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the 2a polish commit" completed (exit code 0)</summary>
+</task-notification>
