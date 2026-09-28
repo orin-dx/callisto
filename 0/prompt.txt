@@ -1,0 +1,1 @@
+Please clarify the concrete T03-HISTORY repro: which ecosystem/package persists and what native name/path changed such that `identity.resolve(key)` returns Unknown? Is the current key still in pre.json when a sibling has disappeared, or is it from historical pre state?
