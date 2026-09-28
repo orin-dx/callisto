@@ -2,7 +2,7 @@ name: 'Setup Callisto Environment'
 description: 'Sets up Rust toolchain, Cargo cache, moon and the .prototools toolchain, and Callisto CLI'
 inputs:
   source:
-    description: 'Where to obtain Callisto: local requires this checkout; release jobs must use local.'
+    description: 'Where to obtain Callisto: auto installs the requested release version; local builds validated Callisto checkout source and ignores version. Release jobs must use local.'
     required: false
     default: 'auto'
   version:

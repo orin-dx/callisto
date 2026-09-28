@@ -72,4 +72,116 @@ else
   echo "PASS test_explicit_version_override_skips_resolution"
 fi
 
+run_installer() (
+  local source="$1" version="$2" checkout="$3" action_ref="${4:-}"
+  local fixture code
+  fixture=$(mktemp -d)
+  fixture=$(cd "$fixture" && pwd -P)
+  export GITHUB_WORKSPACE="$fixture/checkout with spaces" RUNNER_TEMP="$fixture/runner"
+  export GITHUB_PATH="$fixture/github-path" GITHUB_ACTION_REF="$action_ref"
+  export INPUT_CALLISTO_SOURCE="$source" INPUT_CALLISTO_VERSION="$version" INPUT_CALLISTO_VERIFICATION=skip
+  mkdir -p "$GITHUB_WORKSPACE/crates/callisto-cli/src" "$RUNNER_TEMP"
+  printf '# consumer depends on callisto-cli\n' > "$GITHUB_WORKSPACE/Cargo.toml"
+  : > "$GITHUB_WORKSPACE/crates/callisto-cli/Cargo.toml"
+  : > "$GITHUB_WORKSPACE/crates/callisto-cli/src/main.rs"
+  : > "$fixture/calls"
+  git() {
+    echo "git $*" >> "$fixture/calls"
+    case "$*" in
+      ls-remote*) printf '%s' "$TAGS" ;;
+      *rev-parse*) [[ "$checkout" != untracked ]] && printf '%s\n' "$GITHUB_WORKSPACE" ;;
+      *ls-files*) [[ "$checkout" != untracked ]] ;;
+      *) return 99 ;;
+    esac
+  }
+  cargo() {
+    echo "cargo $*" >> "$fixture/calls"
+    case "$1" in
+      metadata)
+        [[ "$checkout" != metadata-failure ]] || return 1
+        command jq -n --arg root "$GITHUB_WORKSPACE" --arg mode "$checkout" '
+          {workspace_root: (if $mode == "foreign-root" then $root + "/other" else $root end),
+           workspace_members: (if $mode == "nonmember" then [] else ["cli-id"] end),
+           packages: [{id: "cli-id", name: "callisto-cli", source: null,
+             manifest_path: (if $mode == "dependency" then "/registry/Cargo.toml"
+               else $root + "/crates/callisto-cli/Cargo.toml" end),
+             targets: [{name: "callisto", kind: ["bin"],
+               src_path: (if $mode == "foreign-target" then "/other/main.rs"
+                 else $root + "/crates/callisto-cli/src/main.rs" end)}]}]}'
+        ;;
+      build) ;;
+      install) [[ "$checkout" != install-failure ]] ;;
+      *) return 99 ;;
+    esac
+  }
+  jq() { echo "jq $*" >> "$fixture/calls"; command jq "$@"; }
+  uname() { [[ "$1" == -s ]] && echo Linux || echo x86_64; }
+  curl() { echo "curl $*" >> "$fixture/calls"; return 1; }
+  gh() { echo "unexpected gh $*" >> "$fixture/calls"; return 99; }
+  tar() { echo "unexpected tar $*" >> "$fixture/calls"; return 99; }
+  unzip() { echo "unexpected unzip $*" >> "$fixture/calls"; return 99; }
+  cp() { echo "cp $*" >> "$fixture/calls"; }
+  (cd "$fixture" && source "$INSTALL_SCRIPT")
+  code=$?
+  cat "$fixture/calls"
+  rm -rf "$fixture"
+  return "$code"
+)
+
+for checkout in dependency owned; do
+  out=$(run_installer auto callisto@0.5.0 "$checkout"); code=$?
+  if [[ $code -ne 0 || "$out" != *"cargo install callisto-cli --version 0.5.0 "* \
+    || "$out" == *"cargo build"* || "$out" == *"cargo metadata"* || "$out" == *"git ls-remote"* ]]; then
+    echo "FAIL auto_explicit_pin_$checkout: code=$code out=$out"; fail=1
+  else
+    echo "PASS auto_explicit_pin_$checkout"
+  fi
+done
+
+out=$(run_installer auto latest owned abc1230000000000000000000000000000000002); code=$?
+if [[ $code -ne 0 || "$out" != *"cargo install callisto-cli --version 0.8.0 "* || "$out" == *"cargo build"* ]]; then
+  echo "FAIL auto_action_ref_pin_owned: code=$code out=$out"; fail=1
+else
+  echo "PASS auto_action_ref_pin_owned"
+fi
+
+out=$(run_installer local latest owned abc1230000000000000000000000000000000002); code=$?
+if [[ $code -ne 0 || "$out" != *"cargo metadata --locked --offline --no-deps --format-version 1 --manifest-path "* \
+  || "$out" != *"cargo build --locked --manifest-path "* || "$out" != *"--target-dir "*"/checkout with spaces/target"* \
+  || "$out" != *"cp "*"/checkout with spaces/target/debug/callisto "* \
+  || "$out" == *"git ls-remote"* || "$out" == *"cargo install"* || "$out" == *"curl "* ]]; then
+  echo "FAIL local_owned_checkout: code=$code out=$out"; fail=1
+else
+  echo "PASS local_owned_checkout"
+fi
+
+for checkout in dependency nonmember foreign-root foreign-target untracked metadata-failure; do
+  out=$(run_installer local callisto@0.5.0 "$checkout"); code=$?
+  if [[ $code -eq 0 || "$out" != *"source=local requires a Callisto workspace checkout"* \
+    || "$out" == *"cargo build"* || "$out" == *"cargo install"* || "$out" == *"curl "* \
+    || ( "$checkout" != untracked && "$out" != *"cargo metadata "* ) ]]; then
+    echo "FAIL local_rejects_$checkout: code=$code out=$out"; fail=1
+  else
+    echo "PASS local_rejects_$checkout"
+  fi
+done
+
+for action_ref in '' 0000000000000000000000000000000000000f; do
+  out=$(run_installer auto latest dependency "$action_ref"); code=$?
+  if [[ $code -ne 0 || "$out" != *"cargo install callisto-cli --locked "* \
+    || "$out" == *"--version"* || "$out" == *"cargo build"* || "$out" == *"cargo metadata"* ]]; then
+    echo "FAIL auto_latest_consumer_${action_ref:-unset}: code=$code out=$out"; fail=1
+  else
+    echo "PASS auto_latest_consumer_${action_ref:-unset}"
+  fi
+done
+
+out=$(run_installer local callisto@0.5.0 owned); code=$?
+if [[ $code -ne 0 || "$out" != *"cargo build --locked --manifest-path "* \
+  || "$out" == *"cargo install"* || "$out" == *"curl "* ]]; then
+  echo "FAIL local_explicit_pin_builds_checkout: code=$code out=$out"; fail=1
+else
+  echo "PASS local_explicit_pin_builds_checkout"
+fi
+
 exit "$fail"
