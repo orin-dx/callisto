@@ -1,0 +1,1 @@
+Please re-review the T01 verify_snapshot_after_update change and regression test. Confirm unchanged applied head is rejected and legitimate changed head accepted, look for sibling/API impact. Return concrete findings or no findings.
