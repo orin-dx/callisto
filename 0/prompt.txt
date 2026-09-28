@@ -1,0 +1,1 @@
+Post-remediation verification: relative workspace specs now bypass name fallback when directory matching fails; added an e2e same-name non-member regression and it passes. Independently verify this fix and sibling alias/relative handling for the same class. Read-only, no Cargo. Return resolved/not resolved with evidence and any remaining finding.
