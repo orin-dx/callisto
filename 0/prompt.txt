@@ -1,0 +1,3 @@
+<send_user_message_question_reply>
+[{"answer":"I'm not sure what you mean by publishing scripts. The publish process is driven by the CLI and GH actions use callisto CLI commands, no?","question":"npm publish scripts","questionItemId":"[\"request_user_input_async\",\"call_BfhueXIS0pA1ezRYlV4F8XVL\",0]"}]
+</send_user_message_question_reply>
