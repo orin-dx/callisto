@@ -1,0 +1,1 @@
+/compact keep the context needed to keep going on the quick wins, the road to v1 mediums and the learnings from this session
