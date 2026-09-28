@@ -1,0 +1,1 @@
+Please re-review the latest npm credential change. Temporary npmrc now stores literal `${NPM_TOKEN}` rather than raw secret; Python builds filter NPM_TOKEN, NPM_CONFIG_USERCONFIG, and NODE_AUTH_TOKEN. Inspect shell/runtime env flow and tests for remaining secret exposure, interpolation regressions, or missing cases. Return concrete findings or no findings.
