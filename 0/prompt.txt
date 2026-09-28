@@ -1,0 +1,1 @@
+Does this account for all the variations you thought through? Any research and checking you need to do? Look for prior art, check what our polyglot comptetition does? Understand the corner cases and differences between the systems? We don't want to over-engineer though.
