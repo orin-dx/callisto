@@ -1,0 +1,1 @@
+Main adds dev-only jsonschema 0.53 (already cached) default-features=false. Official upstream API inspected; local source available /Users/gabe/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonschema-0.53.0. validator_for/iter_errors API supported. Use that version; avoid0.58-specific error helper changes.
