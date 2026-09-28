@@ -1,0 +1,1 @@
+We should have ADRs but you should really think about what ADRs are, what they mean in the industry, where they add value, specially in an agentic world. What is worth bringing to context? What is worth saving for matainer?
