@@ -1,5 +1,9 @@
 # callisto-graph
 
+## 0.10.0
+
+- Released together with the `workspace` fixed group.
+
 ## 0.9.0
 
 - **PyPI publish stops forcing `--skip-existing` against private indexes**

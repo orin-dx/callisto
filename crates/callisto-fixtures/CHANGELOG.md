@@ -1,5 +1,9 @@
 # callisto-fixtures
 
+## 0.10.0
+
+- Released together with the `workspace` fixed group.
+
 ## 0.9.0
 
 - Released together with the `workspace` fixed group.
