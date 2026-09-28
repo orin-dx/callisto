@@ -1,0 +1,1 @@
+Production worker confirms fixed internal semantics: DependencyEntry.name remains declared key, package_name is native target; DepEdge.name declared key, to resolved owner. No CLI changes needed. Test retained aliases even different Cargo target names and inherited aliases. Main integration follows after writer-ready.
