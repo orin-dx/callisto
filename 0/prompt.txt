@@ -1,0 +1,1 @@
+I replaced the duplicate assertion with the direct unchanged-head case `verify_snapshot_after_update(&original, &other_sha())`. Please confirm the test now discriminates removal of the equality guard; no broader re-review needed.
