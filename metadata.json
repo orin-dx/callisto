@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.11.4-nightly.202609260624.c369a70d2",
+  "checkpoint_id": "01M3K4XBQCGMFEGSQX53TGNQ7W",
+  "strategy": "manual-commit",
+  "branch": "work/v1-implementation-stack",
+  "checkpoints_count": 4,
+  "files_touched": [
+    ".changeset/calm-lions-surge.md",
+    ".github/actions/setup-callisto/action.yml",
+    ".github/actions/setup-callisto/scripts/install-callisto.sh",
+    ".github/actions/setup-callisto/tests/test_action_ref_version_resolution.sh",
+    ".github/actions/setup-callisto/tests/test_crates_io_fallback.sh",
+    ".github/actions/setup-callisto/tests/test_download_extraction_format.sh"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1319946,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 84935424,
+    "output_tokens": 223321,
+    "api_call_count": 660,
+    "subagent_tokens_complete": false
+  }
+}
