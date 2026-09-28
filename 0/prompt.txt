@@ -1,0 +1,1 @@
+Is the second ADR about how we setup our repo or is it that important to callistor itself?
