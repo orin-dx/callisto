@@ -1,0 +1,1 @@
+Please send a concise status now and flag any interface/behavior decision that prevents a small safe fix. Prioritize preserving package-owner npm hook environment exactly. If the scoped child-env API is expanding into a broad runner refactor, stop and report the smallest contract-compatible option rather than broadening scope.
