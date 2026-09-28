@@ -1,0 +1,1 @@
+Need first Python emitteddecision regression ready soon for main serialized red-run; productionmodelT02 done359tests andschema13green independentreviewunderway. Scope canstopatactualemit→commit→plan+schema1/2 ifexecuteharnesswouldbloat. Preserve realGit sourceauthority; no commonharnesswrites. MainhandlesT03 after schema boundaryreview. Sendboundedreadiness ifstillreading.
