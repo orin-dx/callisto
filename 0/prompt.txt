@@ -1,0 +1,1 @@
+The user is responsible for setting any prepublish and postpublish they want or require. We are not here to second-guess their system or break it
