@@ -1,0 +1,1 @@
+Schema writer and test writer both terminal, allsource+testsdiffs read. Your productionconstructor migration seems complete; coordinator needs compilecheck now. Is current production boundary stable? Please return remainingtests readiness promptly; noCargo worker. I'll run schema_guard once your stable signal arrives.
