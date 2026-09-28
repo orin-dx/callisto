@@ -1,0 +1,185 @@
+{
+  "cli_version": "0.11.4-nightly.202609260624.c369a70d2",
+  "checkpoint_id": "01M3N4PCPT9M922WA6AYJ7TGVP",
+  "session_id": "e2fe6504-b7f2-430b-a234-1e8197320f97",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-28T23:13:30.773572Z",
+  "branch": "work/v1-implementation-stack",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    ".claude/worktrees/agent-a1633d46aaa9892cd/crates/callisto-cli/tests/common/release_harness.rs",
+    ".claude/worktrees/agent-a4243b93513988e40/crates/callisto-graph/src/commands/publish.rs",
+    ".claude/worktrees/agent-a4243b93513988e40/crates/callisto-graph/src/commands/release/mod.rs",
+    ".claude/worktrees/agent-a4243b93513988e40/crates/callisto-graph/tests/npm_platform_packages_test.rs",
+    ".claude/worktrees/agent-a6806182b2a33793e/.changeset/release-run-simplify.md",
+    ".claude/worktrees/agent-a6806182b2a33793e/.github/tests/release-workflow-behavior/README.md",
+    ".claude/worktrees/agent-a6806182b2a33793e/crates/callisto-cli/tests/schema_guard_test.rs",
+    ".claude/worktrees/agent-a6806182b2a33793e/crates/callisto-model/src/release_transition.rs",
+    ".claude/worktrees/agent-a9d4006ea436b0a63/.changeset/receipt-from-state.md",
+    ".claude/worktrees/agent-a9d4006ea436b0a63/crates/callisto-graph/src/commands/release_execution.rs",
+    ".claude/worktrees/agent-aa758702333565b00/.changeset/tag-push-workflow-guard.md",
+    ".claude/worktrees/agent-aa758702333565b00/.claude/semantic-model/release-lifecycle.md",
+    ".claude/worktrees/agent-aa758702333565b00/crates/callisto-graph/src/commands/release/provider/tag.rs",
+    ".claude/worktrees/agent-aa758702333565b00/crates/callisto-graph/src/error.rs",
+    ".claude/worktrees/agent-aa758702333565b00/docs/07-self-release-lifecycle.md",
+    ".claude/worktrees/agent-ac9b6af7f4014db03/.changeset/publish-to-keeps-npm-access.md",
+    ".claude/worktrees/agent-ac9b6af7f4014db03/crates/callisto-graph/src/walk.rs",
+    ".claude/worktrees/agent-ac9b6af7f4014db03/crates/callisto-graph/tests/publish_tests.rs",
+    ".claude/worktrees/agent-ac9b6af7f4014db03/crates/callisto-model/src/ecosystem.rs",
+    ".claude/worktrees/agent-acf88411b27bcc103/Cargo.toml",
+    ".claude/worktrees/agent-acf88411b27bcc103/Justfile",
+    ".claude/worktrees/agent-acf88411b27bcc103/crates/callisto-cli/tests/common/release_harness.rs",
+    ".claude/worktrees/agent-acf88411b27bcc103/crates/callisto-cli/tests/release_hardening_tests.rs",
+    ".claude/worktrees/agent-acf88411b27bcc103/crates/callisto-graph/src/commands/release/provider/policy.rs",
+    ".claude/worktrees/agent-acf88411b27bcc103/crates/callisto-graph/src/commands/release/provider/registry/tests.rs",
+    ".claude/worktrees/agent-acf88411b27bcc103/crates/callisto-moon/Cargo.toml",
+    ".claude/worktrees/agent-acf88411b27bcc103/crates/callisto-moon/tests/moon_wasm_sandbox.rs",
+    ".claude/worktrees/agent-adb92d3fb4e0491ca/crates/callisto-cli/tests/release_plan_pypi_default_registry_test.rs",
+    ".claude/worktrees/agent-adb92d3fb4e0491ca/crates/callisto-graph/src/commands/release/provider/policy.rs",
+    ".claude/worktrees/agent-adb92d3fb4e0491ca/crates/callisto-graph/src/commands/release/provider/registry.rs",
+    ".claude/worktrees/agent-adb92d3fb4e0491ca/crates/callisto-graph/src/commands/release/provider/registry/tests.rs",
+    ".claude/worktrees/agent-adb92d3fb4e0491ca/crates/callisto-graph/src/error.rs",
+    ".claude/worktrees/agent-adb92d3fb4e0491ca/crates/callisto-model/src/release_observation.rs",
+    ".claude/worktrees/agent-adb92d3fb4e0491ca/testing/fixtures/providers/pypi-simple/PROVENANCE.md",
+    ".claude/worktrees/agent-adb92d3fb4e0491ca/testing/loopback_http.rs",
+    ".claude/worktrees/agent-adb92d3fb4e0491ca/testing/refresh-provider-fixtures.sh"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "5daebc7f54b0",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 3276,
+    "cache_creation_tokens": 8955621,
+    "cache_read_tokens": 697918193,
+    "output_tokens": 942633,
+    "api_call_count": 1474
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01CUpXW5NHBVQ34MSDhwtUdJ",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "update-config"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "5327ee12e470",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 4245,
+        "end": 4246,
+        "entry_ids": [
+          "05bffd7a-fbc9-46e0-8e50-0f765596178c"
+        ],
+        "tool_use_id": "toolu_01CUpXW5NHBVQ34MSDhwtUdJ"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01CUpXW5NHBVQ34MSDhwtUdJ"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: update-config",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 8
+  },
+  "summary": {
+    "intent": "Fix callisto's self-release pipeline (0.8.0 never published) after a prior agent's mess, then clean up docs/branches and decide and execute roadmap items, notably consolidating 8 published crates into 4.",
+    "outcome": "Verified PR #104's checksum fix and found a P0 (empty has_artifacts from swallowed jq failure), refuted a false receipt-rename premise, merged docs cleanup (#151), deleted 173 stale branches, and rebased the crate consolidation PR #157 (8 to 4 crates) on top of the #156/#158 stack with all 1639 tests passing.",
+    "learnings": {
+      "repo": [
+        "Release workflow: a job with a skipped transitive ancestor is skipped unless its own if has a status function; policy script requires always() plus explicit needs.X.result checks on every job with needs.",
+        "`echo \"x=$(cmd)\"` under set -euo pipefail swallows cmd failure; assign in its own statement so set -e fires. Only one such instance existed in .github (callisto-release.yml:243).",
+        "Artifact name uniqueness in upload-artifact is scoped per run attempt, so run 34702634375 uploaded fixed-name release-intent in attempts 1-3 without conflict; the per-attempt receipt rename in #104 rests on a false premise.",
+        "Workspace version in Cargo.toml:6 is stale (0.3.3) and unused because no crate uses version.workspace = true.",
+        "Crate consolidation: callisto-format and vcs fold into callisto-model (MIT); conventional and changelog fold into callisto-graph; manifests and cli stay; callisto-core name is taken on crates.io by an unrelated project, so keep callisto-model.",
+        "Stack of PRs here is plain PR base chains (156 on main, 158 on 156, 157 on 158), not gh stack; retarget with gh pr edit.",
+        "Emoji rule in AGENTS.md is about superfluous emojis; severity markers in generated PR bodies are fine.",
+        "Bot PRs opened with GITHUB_TOKEN run no CI; the main ruleset has a merge queue but no required checks and CI lacks a merge_group trigger.",
+        "map_err_ignore clippy lint only catches |_|; 14 sites with |_err| remain in src/."
+      ],
+      "code": [
+        {
+          "path": ".github/workflows/callisto-release.yml",
+          "line": 243,
+          "end_line": 243,
+          "finding": "has_artifacts is written via echo with an inline jq command substitution, so a jq failure yields an empty output and build-artifact/build/execute all skip while the run is green."
+        },
+        {
+          "path": ".github/workflows/callisto-release.yml",
+          "line": 466,
+          "end_line": 468,
+          "finding": "execute adds --artifact-manifest only if the manifest file exists, with no else branch; the assistant refuted the teammate's claim this silently degrades, citing Rust-side missing-artifact-inputs errors."
+        },
+        {
+          "path": ".github/tests/verify-release-workflow-policy.sh",
+          "line": 390,
+          "finding": "Policy rule and error string enforce run_attempt in the receipt artifact name based on a collision that cannot occur."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/pr_body.rs",
+          "line": 22,
+          "end_line": 24,
+          "finding": "PR body generator adds red/yellow/green emoji severity markers in the Bump column; the user approved keeping them."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "The auto-mode classifier blocked local branch deletion twice even after user go-ahead.",
+      "GitHub token lacked the delete_repo scope, so the user had to delete the rehearsal repo.",
+      "Another Claude session ran an overlapping docs cleanup (#153, feat/docs-cleanup) that conflicted with #151's files.",
+      "Rebasing #157 onto #158 hit six code conflicts, resolved by keeping the stack's versions and re-applying the path rewrite.",
+      "The teammate hunter's finding 2 was circular and was retracted.",
+      "The PR description agent inserted a session link despite instructions not to."
+    ],
+    "open_items": [
+      "P0 fix for has_artifacts (split assignment, case check for true/false, plus policy rule and mutant) was prototyped but not pushed to #104; it awaits user approval.",
+      "#104 still needs the owner's merge and the 0.8.0 recovery dispatch; the release must be verified end to end (registry, tags, GitHub Release, receipt).",
+      "Merge order: #156, #158, #157, with #113 (0.9.0) ideally after so it releases as 4 crates.",
+      "Publish a final release of each retired crate (format, vcs, conventional, changelog) with a README pointing to its new home.",
+      "Decisions still open: error-source gate build/drop (recommend build), default tag template (recommend drop), release-commit provenance ADR, rust-cache pin in orin-dx/actions, bot PR checks via merge_group, and #153 merge.",
+      "Token rotation deferred by the user; the empty release environment could be deleted.",
+      "AGENTS.md emoji rule could be reworded to 'no superfluous emojis'.",
+      "Unpublished 0.6.0 to 0.7.2 backfill and release notes for breaking changes remain undecided.",
+      "Stale plugin list in .claude/settings.json left for the owner.",
+      "Fixed-name artifact upload behavior on partial re-run (which release-intent download-artifact resolves) was not verified."
+    ]
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-28T23:13:12.82891Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 11765,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 11765,
+    "total_lines_changed": 14490,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 15,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/scheduled_tasks.lock": 1,
+        ".claude/settings.local.json": 12
+      }
+    }
+  ]
+}
