@@ -1,0 +1,93 @@
+Sorry, I meant to post this:
+
+
+
+<pasted_content id="52d9">
+Completed - My broader assessment is that the semantic model is coherent, with a local release recovery gap and documentation drift around identity and recovery. Baseline: local **#167 `80d8dff`**, plus **#168 `8ef9aa5`** inspected from existing Git...
+There’s a second recovery gap in the local route. After a tag is created, a failed push or GitHub release can leave unfinished work, but the next bare callisto release excludes the tagged package and reports nothing left to release. CI retains the committed package roster and can recover through the executor.
+
+The architecture is coherent overall. The remaining risk is concentrated where contracts meet: command output and input, release selection and completion, and the documented guarantees and their actual support boundaries.
+• Ran rtk proxy git status --short
+  └ (no output)
+Callisto has made substantial progress toward v1. The architecture is coherent, the release model has a clear purpose, and the past week’s work mostly strengthens the right guarantees. I would hold v1 today because two release paths still violate the intended behavior: the managed release PR workflow currently fails, and a bare local retry can omit unfinished work.
+
+The strongest competitive position is dependency-aware releases across Cargo, npm, Python, and binary artifacts, with explicit source identity and recovery semantics. Changesets-style input alone is already available elsewhere.
+
+I reviewed the roadmap (docs/projects/ROAD-TO-V1.md), v1 requirement (docs/specs/REQ-DX-V1.md), architecture, implementation, and roughly 60 merged PRs from September 19–26 Pacific. The checkout is at #167; I also inspected #168’s changes on GitHub.
+
+The week’s work follows a coherent direction:
+
+Release correctness: immutable intent, provider observation, recovery without persisted execution state, consistent tag identity, and assets gating product publication. #101 (https://github.com/orin-dx/callisto/pull/101), #124 (https://github.com/orin-dx/callisto/pull/124), #154 (https://github.com/orin-dx/callisto/pull/154).
+
+A simpler product: eight visible commands, one release verb, status showing actual planned bumps, and setup that detects facts and asks intent. Removing credential preflight, shipped features, and the WASM integration also reduced maintenance burden. #134 (https://github.com/orin-dx/callisto/pull/134), #136 (https://github.com/orin-dx/callisto/pull/136), #143 (https://github.com/orin-dx/callisto/pull/143).
+
+Native ecosystem correctness: fixed groups and prereleases, dependency floors, lockfile refreshes, PEP 440 snapshots, and Changesets input compatibility. These address whether the resulting repository actually works with its native tools. #156 (https://github.com/orin-dx/callisto/pull/156), #158 (https://github.com/orin-dx/callisto/pull/158), #161 (https://github.com/orin-dx/callisto/pull/161), #166 (https://github.com/orin-dx/callisto/pull/166).
+
+Identity and maintainability: one selector resolver, directory identity, historical ownership checks, four published crates, and typed diagnostics. #160 (https://github.com/orin-dx/callisto/pull/160), #157 (https://github.com/orin-dx/callisto/pull/157), #168 (https://github.com/orin-dx/callisto/pull/168).
+
+My assessment is that this was valuable consolidation and correction. The recurring weakness is that individually sound changes can still break their composition.
+
+The four-crate structure is reasonable. Manifest editing, graph policy, and CLI presentation remain separated; dependencies point downward. Consolidation reduces packaging overhead without requiring another decomposition before v1. One naming qualification matters: callisto-model now contains Git and file I/O as well as domain types, so it is a foundational crate rather than a purely inert model. That is manageable when documented clearly. Architecture (ARCHITECTURE.md:25).
+
+The semantic model’s best feature is its separation of responsibilities. A package owns a version and changelog; native release identities identify its registry publications; an artifact represents produced bytes; the product determines their GitHub Release destination. The decision records what will release, while intent records how those effects depend on each other. This handles a Cargo/npm package or an asset built by one package and distributed through another without inventing independent versions for every output. Package model (crates/callisto-model/src/package.rs:14), release derivation (crates/callisto-graph/src/commands/release/derive.rs:485).
+
+Identity is also improving, but the wording currently overstates the implementation. PackageKey represents directory identity; most in-run maps still use PackageId, deliberately. #168 preserves earlier release history through ownership checks, while new default tags use the qualified display ID after promotion. “Promotion is display-only” therefore needs qualification: ownership remains stable, but newly generated tag names can change. Accepted ADR (https://github.com/orin-dx/callisto/blob/8ef9aa5a4fc01242221fa59dd4cbcb4893794778/docs/adr/0011-directory-keyed-package-identity.md).
+
+The release executor is particularly strong. It distinguishes absence, matching effects, conflicts, and uncertainty; success requires observed evidence; prerequisites control ordering; receipts come from recorded execution evidence. The simulator tests recovery across faults. Those are substantive engineering advantages. The assurance still depends on what each provider proves: registry adoption currently establishes that a version exists, with no package checksum, while binary assets have stronger byte identity checks. Observations (crates/callisto-model/src/release_observation.rs:23), executor (crates/callisto-graph/src/commands/release_execution.rs:26).
+
+Two issues deserve immediate attention:
+
+The release PR workflow is broken on latest main. release-pr decide emits command and dryRun; the action passes that output unchanged to release-pr verify, whose strict input type rejects those fields with E281. I reproduced this using the compiled CLI. Latest main has green CI but a failed Release run (https://github.com/orin-dx/callisto/actions/runs/36281315129). The contract tests check jq extraction without exercising this real producer-to-consumer handoff. Producer (crates/callisto-cli/src/commands/release_pr.rs:79), consumer (crates/callisto-cli/src/commands/release_pr.rs:47).
+
+Bare local release recovery loses unfinished packages after tag creation. The local route selects packages by tag absence. If tag creation succeeds and its push—or a subsequent forge operation—fails, the next bare release excludes that package. It can report “Nothing to release” despite unfinished effects. CI retains its committed roster and can recover through the executor. This is a reachable code-path finding; I verified the tag-based exclusion with the existing test, but did not dynamically inject the complete failure sequence. Selection (crates/callisto-graph/src/commands/release_decision.rs:195), tag effect (crates/callisto-graph/src/commands/release/provider/tag.rs:72).
+
+Against the competitors, the comparison is:
+
+ Tool                                   Changesets
+ Existing strength                      Explicit change files, dependency-aware versioning, fixed/linked groups, prereleases. Its documented
+                                        non-npm approach still requires package.json. Docs (https://changesets.dev/guide/beyond-npm).
+ Callisto’s opportunity and limitation  Native Cargo/Python manifests and coordinated publication are meaningful advantages. Accepting change
+                                        files does not establish configuration or behavioral equivalence; Callisto currently warns about
+                                        discarded configuration keys.
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Tool                                   Knope
+ Existing strength                      Changesets and commit inference, multiple versioned files, automatic workspace detection, configurable
+                                        workflows, and draft–upload–publish release assets. Defaults (https://knope.tech/reference/default-
+                                        config/), releases (https://knope.tech/reference/config-file/steps/release/).
+ Callisto’s opportunity and limitation  The closest conceptual competitor. Callisto offers more prescribed graph and recovery semantics; Knope
+                                        offers broader workflow flexibility. Draft asset ordering is shared functionality.
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Tool                                   Nx Release
+ Existing strength                      Project graph integration, release groups, commit inference, first-class version-plan files, and a
+                                        programmatic API. Rust publishing is documented through a plugin. Version plans (https://nx.dev/docs/
+                                        guides/nx-release/file-based-versioning-version-plans), Rust (https://nx.dev/docs/kb/publish-rust-
+                                        crates).
+ Callisto’s opportunity and limitation  Callisto can appeal to repositories that want release management without adopting Nx’s workspace
+                                        tooling. File-based versioning and graph awareness are already competitive requirements.
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Tool                                   Release Please
+ Existing strength                      Maintained release PRs, many language strategies, and Cargo workspace support. It explicitly leaves
+                                        registry publication to other tooling. README (https://github.com/googleapis/release-please).
+ Callisto’s opportunity and limitation  Callisto’s coordinated publication and recovery cover work users otherwise assemble themselves. Release
+                                        PR automation alone is shared functionality.
+
+That comparison supports Callisto’s design direction; it does not establish superior real-world reliability.
+
+The remaining evidence is uneven. Native-resolution checks and real local registries are significant improvements, but Cargo/PyPI publication tests exercise less of the complete executor than npm’s test, and several checks skip when prerequisite tools are absent. Generated maturin workflows remain unsupported. The “first published release in under ten minutes” goal has no measured onboarding evidence, and the README’s quick start omits required --versioning, commit steps, and credential preparation. Registry tests (crates/callisto-cli/tests/release_real_registry_e2e_tests.rs), workflow support (crates/callisto-graph/src/commands/init.rs:624).
+
+Documentation also needs another reconciliation. The architecture diagram still says the decision is written before apply; identity documentation describes superseded tag behavior; the requirement still lists Cargo registry testing as missing. These inaccuracies affect the guarantees maintainers and users think they have.
+
+My recommended order is:
+
+Fix the two release failures and test the complete command handoffs, including local failure after tag creation.
+
+Complete a real self-release and exercise first-release setup in representative fresh repositories.
+
+Reconcile documentation and state the v1 support boundaries precisely, especially Python bindings, generated workflows, migration, formatting, and recovery.
+
+Finish the remaining declared guarantees and owner decisions before expanding platform scope. Separate reachable correctness problems from hardening items such as the currently test-only group constructor.
+
+I would preserve the current architecture and focus the next work on those boundaries. Callisto already has a credible design; v1 needs convincing evidence that users can complete the promised lifecycle.
+
+No repository files changed. Local verification included a build, ten release-command tests, the tag-selection test, and the reproduced E281 failure. Entire transcript history was unavailable because authentication was missing, so historical intent came from PR descriptions and repository documents.
+</pasted_content id="52d9">
