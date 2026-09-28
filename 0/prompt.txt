@@ -1,0 +1,1 @@
+Overlap alert: T03-PRE finished and owns changes in crates/callisto-graph/src/commands/version.rs. Your T03-HISTORY plan also lists that file. Before editing it, inspect the latest shared version; preserve T03-PRE's resolve_pre_state path and layer your historical-reader changes around it. T03-PRE scoped model/CLI checks are green. Avoid overwriting its changes.
