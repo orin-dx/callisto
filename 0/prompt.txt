@@ -1,0 +1,5 @@
+What is the more use-friendly and polyglot friendly solution here? Is there a good zero config way?
+
+For #2 I think the best is to error-out and give clear details for how it should be used, right?
+
+#3 seems sane and most use-friendly way right?
