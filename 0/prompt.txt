@@ -1,0 +1,1 @@
+ADR 1 calls it byte-compatibility with changesets but it's not byte per-se right? It's an MD file format that is pretty flexible, right?
