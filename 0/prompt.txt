@@ -1,0 +1,1 @@
+When a release is created do we get back the ID or info we need? Is there a way to block on creation of wait with the gh cli?
