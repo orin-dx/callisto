@@ -1,0 +1,3 @@
+Are the comments in this PR: https://github.com/orin-dx/callisto/pull/154/changes user friendly, succinct and to the point? Are they wrapped at 120 char like our setup is?
+
+Is our changeset up-to-par with our plugin standards for changesets? User friendly, keeping in mind this becomes the changelog entry?
