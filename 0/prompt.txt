@@ -1,0 +1,1 @@
+Can this be resilitent when the next version starts too and detect and automatically recover by deleting the file? Is that possible? safe? Advisable? What does that mean for our architecture? Is it worth it on top of the retry?
