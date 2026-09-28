@@ -1,0 +1,1 @@
+Please review the rebased local T01 diff against origin/main in release_pr.rs and its tests, read-only/no Cargo. Focus producer/consumer flow, verification semantics, compatibility, exact applied-head transition. Return evidence-backed findings with paths/lines or explicitly no must-fix.
