@@ -1,0 +1,1 @@
+NativeCLI run4pass1newfixturefail E208: newlyaddedpackages/app Cargo.toml hasnoCargo target. Main addsapp/src/lib.rs tobothCLI fixtures, notproduction; runrerunmain. This fixture DOEStriggerrealCargo lockrefresh (workerclaimedno-native incorrectly), soevidencewillrecordactualnativeCargo. No productionregression foundyet; reviewerknowupdatedtestsdiff.
