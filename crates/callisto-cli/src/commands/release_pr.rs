@@ -43,8 +43,26 @@ fn read_json_arg_as<T: serde::de::DeserializeOwned>(flag: &'static str, arg: &st
     })
 }
 
+/// Accepts `release-pr decide --format json` output as-is by dropping its report fields.
+fn read_decision_arg(arg: &str) -> Result<ReleasePrDecisionWireV2, CliError> {
+    let invalid = |error: serde_json::Error| CliError::ReleasePrArgJsonInvalid {
+        flag: "decision",
+        detail: error.to_string(),
+    };
+    let mut value: serde_json::Value = serde_json::from_str(&read_json_arg(arg)?).map_err(invalid)?;
+    if let Some(fields) = value.as_object_mut() {
+        let command = fields.get("command").and_then(serde_json::Value::as_str);
+        if command == Some(<ReleasePrDecideReport as callisto_model::Report>::COMMAND) {
+            for report_field in ["command", "dryRun", "diagnostics"] {
+                fields.remove(report_field);
+            }
+        }
+    }
+    serde_json::from_value(value).map_err(invalid)
+}
+
 fn verify(args: ReleasePrVerifyArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
-    let decision_wire: ReleasePrDecisionWireV2 = read_json_arg_as("decision", &args.decision)?;
+    let decision_wire = read_decision_arg(&args.decision)?;
     let decision = ReleasePrDecisionV2::from_wire(decision_wire)?;
     let snapshot_wire: ReleasePrSnapshotWireV2 = read_json_arg_as("snapshot", &args.snapshot)?;
     let snapshot = ReleasePrSnapshotV2::from_wire(snapshot_wire)?;
