@@ -1,0 +1,3 @@
+<subagent_notification>
+{"agent_path":"01a0e40f-ba38-7031-a4b1-bcd0e2dd0611","status":{"completed":"Added regression cases in [.github/actions/callisto-action/tests/test_release_pr_decide_binary_contract.sh](/Users/gabe/Projects/callisto/.github/actions/callisto-action/tests/test_release_pr_decide_binary_contract.sh).\n\nThe cases cover create, update, and no-op decide-to-verify round trips through inline JSON, file, and stdin; bare decision compatibility; `E281` for malformed metadata and unknown payload fields; typed `E142`/`E155` for invalid nested domain data; and `E148` for a stale snapshot.\n\n`rtk bash -n` passed. I did not build or run the binary-dependent suite."}}
+</subagent_notification>
