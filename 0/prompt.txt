@@ -1,0 +1,1 @@
+T02 tests all13pass afterpointerfix; production remainsfrozen. Please terminalboundedreview whenready. Main next contextual durable repair depends on releasing release.rs/version.rs after yourreview. Notasking broadv1auditorpolicydesign.
