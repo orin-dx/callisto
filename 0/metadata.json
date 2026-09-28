@@ -1,0 +1,237 @@
+{
+  "cli_version": "0.11.4-nightly.202609260624.c369a70d2",
+  "checkpoint_id": "01M3N4M0X52ZQBNXMG5EYD84C0",
+  "session_id": "01a0e02c-c67f-7d70-b5a4-1cb433d80074",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-28T23:12:24.847404Z",
+  "branch": "work/v1-implementation-stack",
+  "checkpoints_count": 5,
+  "save_step_count": 6,
+  "files_touched": [
+    "docs/adr/0012-canonical-distribution-release-ownership.md",
+    "docs/adr/README.md",
+    "docs/architecture/polyglot-v1.md",
+    "docs/projects/V1-IMPLEMENTATION.md",
+    "docs/projects/V1-SYSTEM-HARDENING.json"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-luna",
+  "turn_id": "17686eaa2d16",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 5324147,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 228436096,
+    "output_tokens": 781968,
+    "api_call_count": 1851,
+    "subagent_tokens_complete": false
+  },
+  "session_metrics": {
+    "turn_count": 24
+  },
+  "summary": {
+    "intent": "Assess Callisto's road to v1 (codebase, architecture, semantic model, competitors), find system-level gaps from the last week's PRs, then implement the fixes and package them into logical, reviewable commits/PR stacks.",
+    "outcome": "Identified and reproduced multiple cross-layer defects (E281 release-PR JSON mismatch, tag-based retry skipping, Python version decoding, multi-manifest ecosystem handling, etc.), implemented fixes with full CI green (1,861 tests, ~93.4% coverage), and committed T11, the T01 guard, and the D01 architecture packet locally. Nothing has been pushed and no PR opened; the broader implementation still needs hunk-level commit splitting.",
+    "learnings": {
+      "repo": [
+        "Callisto models one directory as one package with multiple canonical manifests and native release identities, but several paths (cascade rewrites, lockfile refresh, publish ordering) still assume one ecosystem per package.",
+        "The Release workflow's E281 failure came from #166 wrapping `release-pr decide` JSON in the shared envelope (command/dryRun) while `release-pr verify --decision` strictly rejects unknown fields; the binary contract test never piped decide into verify.",
+        "Bare local `callisto release` selects packages by tag absence, so a created-but-unpushed tag makes retries report 'Nothing to release'; CI's durable path keeps the committed roster and avoids this.",
+        "Python stable versions like 1.0.1 are valid SemVer and PEP 440, so decision decoding (SemVer) and manifest readers (PEP 440) produce unequal typed versions, causing E165/E037 failures.",
+        "Owner policy: Callisto never inspects, suppresses, rewrites or rejects package-owner npm lifecycle hooks; native package-manager behavior is preserved and hooks are trusted repo code.",
+        "Owner policy: E121 partial-run guard stays fail-closed with no automatic deletion of pre.json or persisted apply checkpoint; improve guidance instead.",
+        "Full `just ci` in the sandbox needs UV_CACHE_DIR, a fixture-local CARGO_HOME, and a cargo-deny advisory-db path redirected to temp dirs; actionlint, real-binary release-PR contract, and artifact preflight are outside `just ci`.",
+        "npm partial versions like `1.2` are X-ranges (1.2.x), not tilde ranges; shared normalization was corrected with an upper-bound regression.",
+        "Commit workflow requires the user to confirm each exact commit message and file set; `.git` is read-only in the sandbox so commits/staging need an elevated exception."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "line": 195,
+          "finding": "derive_unreleased_decision skips every package whose current version already has a tag (including local tags), hiding unfinished push/GH release/remaining registry work on retry."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/release_pr.rs",
+          "line": 47,
+          "finding": "verify's strict decision input type rejects the envelope fields emitted by decide (line 79), producing E281."
+        },
+        {
+          "path": "crates/callisto-graph/src/cascade.rs",
+          "line": 160,
+          "finding": "Shared dependency-rewrite helper picks ecosystem from the display ID rather than the dependency edge's manifest, causing E017 after display-ID promotion."
+        },
+        {
+          "path": "crates/callisto-graph/src/apply.rs",
+          "line": 368,
+          "finding": "Lockfile refresh selects one ecosystem per bump, leaving secondary ecosystem lockfiles (e.g. npm in a Cargo/npm package) stale."
+        },
+        {
+          "path": "crates/callisto-graph/src/apply.rs",
+          "line": 505,
+          "finding": "Apply stages outputs then `git rm --cached` inputs before unlinking; a staging failure leaves pre.json plus staged stable outputs that trip check_partial_run (E121)."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/derive.rs",
+          "line": 380,
+          "finding": "Tag prerequisites include only one registry identity's publishes, so a shared tag/GH release can complete before the second registry publish in dual-manifest packages."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "line": 440,
+          "finding": "Root package changelog path `./CHANGELOG.md` differs from Git's `CHANGELOG.md`, so valid version commits fail E165."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/init.rs",
+          "line": 853,
+          "finding": "Generated napi build rows/placement visit every addon rather than release-intent-scoped ones."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "Entire transcript search unavailable due to missing authentication, so intent had to be reconstructed from PR descriptions.",
+      "Sandbox blocked writes to .git (index.lock), uv cache, ~/.cargo, and cargo-deny advisory DB, requiring elevated writes or redirected cache dirs.",
+      "The `callisto add` helper failed because the CLI rejected the repository's existing `[release]` config, forcing a hand-written changeset.",
+      "A T05 pre-exit guard change broke normal `pre exit` finalization tests until the state check was tightened.",
+      "First full CI run hit a Clippy too_many_arguments warning and a bad pnpm lockfile test assertion (link: vs registry version).",
+      "Repeated commit-confirmation prompts and shared-file overlap (apply.rs, version.rs, versioning.json) make hunk-level splitting laborious.",
+      "Codex text for an unrelated plugins repo was mixed into the session."
+    ],
+    "open_items": [
+      "Split the remaining ~73 changed files into topic commits/PRs (T04/T05/schema/version-history/native deps etc.), then push and open PRs in dependency order.",
+      "Ship the E281 fix (verify accepts decide output as-is, plus decide→verify contract test and patch changeset) so #113 regenerates and 0.9.0 can release.",
+      "D01/ADR 12 remains Proposed and needs owner acceptance; migration details and wire/version-output contracts are still open.",
+      "Fix local retry selection so tagged packages still get remaining-step checks, and add shared publish barriers for dual-manifest packages.",
+      "Decide whether inference-only versioning augments or replaces changesets in release-PR automation.",
+      "Reconcile stale docs (architecture diagram, identity docs, ADR 11 'display-only' wording, README quick start, requirement doc on Cargo registry testing).",
+      "Historical identity transitions (rename, added manifest, sibling removal) still lose earlier release tags; inherited Cargo versions and root-package paths need historical resolution.",
+      "Run real fresh-repo onboarding to validate the 'first release under ten minutes' goal; thicker Cargo/PyPI end-to-end coverage; decide whether registry adoption needs checksums.",
+      "Revisit automatic pre.json recovery only if the staging-failure case recurs."
+    ]
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 2,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    },
+    {
+      "checkpoint_number": 3,
+      "user_lines_added": 75,
+      "user_lines_removed": 136,
+      "agent_lines_added": 8375,
+      "agent_lines_removed": 493,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".changeset/brave-cheetahs-dash.md": 5,
+        ".changeset/complete-lock-targets.md": 5,
+        ".changeset/historical-release-authority.md": 5,
+        ".changeset/lively-dolphins-climb.md": 5,
+        ".changeset/native-dependency-names.md": 5,
+        ".changeset/native-json-schema.md": 5,
+        ".changeset/native-prerelease-baselines.md": 5,
+        ".changeset/pnpm-workspace-ranges.md": 5,
+        ".changeset/python-release-versions.md": 5,
+        ".changeset/supported-cargo-artifacts.md": 5,
+        ".claude/settings.json": 11,
+        ".claude/settings.local.json": 12
+      },
+      "user_removed_per_file": {
+        ".gemini/settings.json": 136
+      }
+    },
+    {
+      "checkpoint_number": 4,
+      "user_lines_added": 75,
+      "user_lines_removed": 136,
+      "agent_lines_added": 8375,
+      "agent_lines_removed": 493,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".changeset/brave-cheetahs-dash.md": 5,
+        ".changeset/complete-lock-targets.md": 5,
+        ".changeset/historical-release-authority.md": 5,
+        ".changeset/lively-dolphins-climb.md": 5,
+        ".changeset/native-dependency-names.md": 5,
+        ".changeset/native-json-schema.md": 5,
+        ".changeset/native-prerelease-baselines.md": 5,
+        ".changeset/pnpm-workspace-ranges.md": 5,
+        ".changeset/python-release-versions.md": 5,
+        ".changeset/supported-cargo-artifacts.md": 5,
+        ".claude/settings.json": 11,
+        ".claude/settings.local.json": 12
+      },
+      "user_removed_per_file": {
+        ".gemini/settings.json": 136
+      }
+    },
+    {
+      "checkpoint_number": 5,
+      "user_lines_added": 75,
+      "user_lines_removed": 136,
+      "agent_lines_added": 8375,
+      "agent_lines_removed": 493,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".changeset/brave-cheetahs-dash.md": 5,
+        ".changeset/complete-lock-targets.md": 5,
+        ".changeset/historical-release-authority.md": 5,
+        ".changeset/lively-dolphins-climb.md": 5,
+        ".changeset/native-dependency-names.md": 5,
+        ".changeset/native-json-schema.md": 5,
+        ".changeset/native-prerelease-baselines.md": 5,
+        ".changeset/pnpm-workspace-ranges.md": 5,
+        ".changeset/python-release-versions.md": 5,
+        ".changeset/supported-cargo-artifacts.md": 5,
+        ".claude/settings.json": 11,
+        ".claude/settings.local.json": 12
+      },
+      "user_removed_per_file": {
+        ".gemini/settings.json": 136
+      }
+    },
+    {
+      "checkpoint_number": 6,
+      "user_lines_added": 75,
+      "user_lines_removed": 136,
+      "agent_lines_added": 8396,
+      "agent_lines_removed": 493,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".changeset/brave-cheetahs-dash.md": 5,
+        ".changeset/complete-lock-targets.md": 5,
+        ".changeset/historical-release-authority.md": 5,
+        ".changeset/lively-dolphins-climb.md": 5,
+        ".changeset/native-dependency-names.md": 5,
+        ".changeset/native-json-schema.md": 5,
+        ".changeset/native-prerelease-baselines.md": 5,
+        ".changeset/pnpm-workspace-ranges.md": 5,
+        ".changeset/python-release-versions.md": 5,
+        ".changeset/supported-cargo-artifacts.md": 5,
+        ".claude/settings.json": 11,
+        ".claude/settings.local.json": 12
+      },
+      "user_removed_per_file": {
+        ".gemini/settings.json": 136
+      }
+    },
+    {
+      "checkpoint_number": 7,
+      "user_lines_added": 33,
+      "user_lines_removed": 136,
+      "agent_lines_added": 8943,
+      "agent_lines_removed": 518,
+      "user_added_per_file": {
+        ".cargo/config.toml": 2,
+        ".claude/settings.json": 11,
+        ".claude/settings.local.json": 12,
+        "docs/projects/V1-VERIFICATION.md": 8
+      },
+      "user_removed_per_file": {
+        ".gemini/settings.json": 136
+      }
+    }
+  ]
+}
