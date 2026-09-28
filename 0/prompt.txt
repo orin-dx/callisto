@@ -1,0 +1,1 @@
+Can we simplify the process and reduce the number of calls?
