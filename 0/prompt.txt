@@ -1,0 +1,1 @@
+Please recheck the current T10-AUTH state read-only, no Cargo. Specifically verify: Python build uses run_with_timeout_env_filtered with the release credential list; NPM_TOKEN interpolation is preserved; Bun selects NPM_CONFIG_TOKEN on Bun lockfiles; tests cover those. Report any residual concrete issue or confirm both original findings are addressed.
