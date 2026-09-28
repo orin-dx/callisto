@@ -1,0 +1,1 @@
+This sounds good. We can scope the work to what is most relevant right now for rust, npm/pnpm, python/pypi but make sure our architecture and model can support the complications when we add go and C#/NuGet/.NET
