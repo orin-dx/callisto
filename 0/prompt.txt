@@ -1,0 +1,3 @@
+Should we just use canonical IDs vs allowing the flex ones then? This avoids future confusion when adding new ones and it simplifies the mental model for our users. It doesn't sound as simple to start but the magic might be more confusing (and it complicates our code).
+
+Should NPM publish happent before tag and GH release? Should we consider it as a graph as we add more languages and the possibility of cross dependencies? Could a NPM package depend on a RS crate and a PyPi package? Or in the future a Go package or Nuget package? Is it possible for a Nuget package to depend on rust, go, or python? or vice-versa?
