@@ -1,0 +1,1 @@
+Is there anything uncommited in the main branch locally? If so what is it? Should it be in a worktree? In a PR?
