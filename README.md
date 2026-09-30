@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="assets/callisto-logo.png" width="140" alt="Callisto logo" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/hero-dark.png">
+    <img src="assets/brand/hero-light.png" alt="callisto, an Orin DX tool" width="360">
+  </picture>
 </p>
 
 <p align="center">
