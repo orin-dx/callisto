@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.11.5-nightly.202610120640.a564a68c8",
+  "checkpoint_id": "01M4VD63MS0T6M67JRJF1FYS5Y",
+  "strategy": "manual-commit",
+  "branch": "refactor/release-serde",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-model/src/release/decision.rs",
+    "crates/callisto-model/src/release/digest.rs",
+    "crates/callisto-model/src/release/execution.rs",
+    "crates/callisto-model/src/release/github.rs",
+    "crates/callisto-model/src/release/intent.rs",
+    "crates/callisto-model/src/release/operation.rs",
+    "crates/callisto-model/src/release/package_id.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 36,
+    "cache_creation_tokens": 24118,
+    "cache_read_tokens": 4603143,
+    "output_tokens": 14437,
+    "api_call_count": 17
+  }
+}
