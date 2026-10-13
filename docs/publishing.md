@@ -2,7 +2,7 @@
 
 Registry credential setup only. For the release lifecycle itself (local `callisto release`, generated workflows, recovery, execution semantics), see [`releasing.md`](releasing.md). For the `[registries.<name>]` config schema, see [`config.md`](config.md).
 
-Callisto never reads registry credentials directly — it delegates publishing to each ecosystem's own CLI (`cargo`, `npm`/`pnpm`, `twine`), so whatever auth that CLI can see when it runs is what gets used.
+Callisto delegates authentication to `cargo`, `npm`/`pnpm`, and `twine`. Configure credentials for those tools in the publishing job.
 
 ---
 
@@ -23,7 +23,7 @@ Set an `NPM_TOKEN` secret. Add this only in the protected `execute` job, immedia
 - run: callisto release execute --intent "$RUNNER_TEMP/release-intent/release-intent.json" --receipt "$RUNNER_TEMP/release-receipt.json" --orchestration-revision "$GITHUB_SHA"
 ```
 
-`npm config set` writes to the user-level `.npmrc`, which npm reads for every subsequent publish call in the same job. The version-PR action never receives this token — it only creates or updates a reviewed PR.
+`npm config set` writes the user-level `.npmrc` for later publish calls in the job. The version-PR action receives no token.
 
 ### Pattern B: `actions/setup-node` with `registry-url`
 
@@ -40,7 +40,7 @@ Set an `NPM_TOKEN` secret. Add this only in the protected `execute` job, immedia
     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 ```
 
-`NODE_AUTH_TOKEN` is silently ignored by npm unless an `.npmrc` contains a `${NODE_AUTH_TOKEN}` interpolation — that line only exists if `setup-node` ran with `registry-url` set. Setting the env var without that step fails with an auth error, not a variable-not-found error.
+`NODE_AUTH_TOKEN` needs an `.npmrc` entry containing `${NODE_AUTH_TOKEN}`. `setup-node` writes it only when `registry-url` is set. The environment variable alone does not authenticate npm.
 
 ### Choosing a pattern
 
@@ -66,7 +66,7 @@ env:
   CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 ```
 
-No `.cargo/credentials` setup step needed — cargo reads the environment variable natively.
+Cargo reads this variable directly; no `.cargo/credentials` step is needed. In this repo, inject it only into `execute`.
 
 ---
 
@@ -82,14 +82,19 @@ env:
 
 Do not use `TWINE_API_TOKEN` — twine does not recognize that variable name.
 
----
+Map the generated workflow's `PYPI_TOKEN` secret to `TWINE_PASSWORD` in the publishing job. The secret name alone does not configure Twine.
 
-## Installer verification (consuming a released binary)
+### Generated Callisto workflows
 
-`setup-callisto` verifies a downloaded prebuilt asset with `gh attestation verify` (repository `orin-dx/callisto`, signer workflow `.github/workflows/callisto-release.yml`, using the job's `github.token`) before extracting or using it, and extracts only the `callisto` binary from the archive. `verification` input:
+Generated release workflows accept `CARGO_REGISTRY_TOKEN`, `NPM_TOKEN`, and `PYPI_TOKEN` as secrets. They supply each token only during publishing. Custom npm registries need their own native configuration.
 
-- `require`: verification failure or a missing `gh` aborts the step; the asset is never run.
-- `fallback` (default): on failure or missing `gh`, warn, delete the asset, and install from crates.io instead (version pinned to the requested tag; unpinned only for `latest`). The unverified asset is never run.
-- `skip`: no verification; warn and use the asset.
+Native publish hooks, including `prepare` and `prepublishOnly`, run unchanged with their usual publishing environment.
 
-`fallback` is the default because releases built before the first attested release carry no attestation, so `require` would hard-fail existing users; a tampered asset is never run in `require` or `fallback`.
+### Current Python support limits
+
+Callisto supports static PEP 621 or Poetry versions with `python -m build` and Twine. Current limits:
+
+- Co-located Cargo/Maturin projects fail discovery with E007, including Cargo-owned dynamic Python versions.
+- Registry observation checks version presence, not the complete wheel/sdist set. A retry can skip files after a partial upload.
+- One configured URL serves both simple-index reads and Twine uploads. Private indexes with separate routes, read authentication, or HTML-only responses need explicit support. Twine credentials do not authenticate `curl`.
+- Snapshots use a PEP 440 local label (`0.0.0.dev0+<tag>.<sha>`), which public PyPI rejects. See [PEP 440](https://packaging.python.org/en/latest/specifications/version-specifiers/).

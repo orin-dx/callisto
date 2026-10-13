@@ -1,56 +1,94 @@
 # Road to v1
 
-Open work only. Verified against the code on 2026-09-25; git history holds the shipped items and the reasoning behind them.
+Unshipped work only. Baseline: main `8ef9aa5a4` (#168), audited on 2026-09-26. T01 and T11 are implemented and verified locally, awaiting merge; [batch evidence](V1-VERIFICATION.md) records the scope. Proposed model work remains unimplemented, and local checks do not mark a release ready. [Owner requirement](../specs/REQ-DX-V1.md), [findings](V1-FINDINGS.md), [implementation and stacked-PR execution](V1-IMPLEMENTATION.md), [task definitions](V1-SYSTEM-HARDENING.json), [scoped model and prior art](../architecture/polyglot-v1.md).
 
-## Decisions for the owner
+## Scope and guardrails
 
-- Build or drop a workspace-wide check that no `map_err` discards its source error. No gate script or CI wiring exists; `map_err_ignore = "deny"` in `Cargo.toml` is the only partial guard.
-- Derive the default tag template from fixed or independent mode, or drop the idea. Today `tag-template` is `None` unless set (`crates/callisto-graph/src/config/resolve.rs`).
-- Release-commit provenance: `release plan --from-release-commit` accepts any commit whose decision file, consumed changeset and manifest diff agree; the decision digest is unkeyed. Decide whether that is enough.
-- Owner items pending decision: the rust-cache pin in orin-dx/actions, the bot-PR check policy, token rotation.
+- Rust/Cargo, npm/pnpm and Python/PyPI now, including concrete napi-rs and Cargo/Maturin layouts. Go and C#/.NET/NuGet are architecture examples only.
+- Canonical native distribution references; deliberate legacy migration; separate release ownership and version authority.
+- Reuse the dependency graph and operation DAG. Native dependency, build input and version coupling do not mean the same thing.
+- Native tools/CI own building, packing and authentication. No universal package manager, build scheduler, public plugin platform, service graph or cross-registry transaction.
+- Keep committed release authority and provider-observed recovery with no execution journal. Only execute receives registry secrets; no GitHub Environment or separate reviewer gate in this repo.
+- Each implementation PR updates affected specs, tests and docs, with one changeset per independent user-facing topic. Future behavior is not inserted into current specs before its implementation.
 
-## Correctness
+## Sequence
 
-- `ApplyPermit` is minted with a literal `false` in `commands/release.rs` (two sites) and cli `init.rs`, so the type does not enforce the dry-run check there.
-- npm manifest writes re-serialize the whole file (`callisto-manifests/src/npm.rs`), normalizing hand-formatted layout such as inline arrays.
+The execution portfolio splits the themes below into 24 bounded work units, including the D01 owner-contract checkpoint. Independent release/wire, native-resolution and installer lanes can begin in parallel; generated workflows and architectural stacks follow their actual dependencies. The execution guide defines plugin routing, agent write ownership, serial Cargo verification and main-targeted stacked PRs under the existing CI trigger.
 
-- `Indeterminate` observations drop stderr (`crates/callisto-graph/src/commands/release/provider/registry.rs`, the `ProviderIndeterminateCause::CommandFailed` sites). Add redacted stderr to `ProviderIndeterminateCause`; do not stream it live (`run_quiet` redacts `CARGO_REGISTRY_TOKEN`).
-- `GroupTable::from_groups` (`crates/callisto-graph/src/config/groups.rs`) skips the conflict check `resolve()` enforces. Test-only today; close it before it gains a real caller.
-- The receipt `run_attempt` rationale is wrong: artifact names are already scoped per attempt (run 34702634375 uploaded one name in attempts 1-3). Fix the comment in `.github/workflows/callisto-release.yml` and the message in `.github/tests/verify-release-workflow-policy.sh`.
+### 1. Restore the managed release path
 
-## v1 fix plan
+T01 is verified locally: decide-to-verify JSON compatibility and the action's exact post-update head transition, with real binary, model and stateful shell tests. Strict payload and unrelated-change rejection remain intact. Merge that correction before the bot can refresh its release PR.
 
-Stacked PRs, merged in this order. Each PR fixes the bugs that break one guarantee and updates its spec criteria in the same change. Most items were reproduced against 0.8.0. PRs 1 and 2b each add an ADR in `docs/adr/`: tag identity and native resolution after `version`. Directory-keyed identity is ADR 11.
+Then let the bot reconstruct the release PR from current main, verify its committed decision/source and CI, and perform the actual self-release. Do not merge stale #113 as a workaround or claim source inspection proves publication. v0.9 is the immediate release-path priority, not evidence that all v1 defects are fixed.
 
-Decisions (owner, 2026-09-25):
-- A tag is the same landed effect when it names the same commit and is annotated; the annotation text is not compared, locally or remotely.
-- `version` refuses with a coded error when manifests differ from HEAD while changesets are pending (no journal).
-- Packages are keyed internally by directory; promotion to `eco/name` is display-only.
-- `init` without `origin` writes the config, skips the workflow and forge questions with a warning, and `release` refuses later.
-- `status` reports every unparseable changeset as an error diagnostic; `version` still fails on the first.
-- One error-code scheme: `E####`, existing numbers kept, `callisto::x` codes mapped into a CLI range, one registry.
-- An artifact whose owner is selected but whose product is not emits a warning.
-- A dependent released in the same run has its spec on a bumped internal dependency raised to the new version.
-- `version` refreshes lockfiles by default; `--no-refresh-lockfiles` opts out.
-- Four published crates: `callisto-model` absorbed `callisto-format` and `callisto-vcs`; `callisto-graph` absorbed `callisto-conventional` and `callisto-changelog` (owner, 2026-09-25).
+### 2. Close existing contract failures
 
-### 7. Retired crates
-- Publish a final release of `callisto-format`, `callisto-vcs`, `callisto-conventional` and `callisto-changelog` whose README names the new home (`callisto-model` or `callisto-graph`).
+- T02: wire-shaped schemas and complete real-document validation, not only top-level fields.
+- T03, T03-PRE and T03-HISTORY: ecosystem-context version decoding, Python pre-state, historical inherited Cargo version authority and Git-relative paths.
+- T04, T04-PNPM and T04-LOCK: manifest-local dependency names/constraints and lock refresh for every affected canonical ecosystem. Exercise pnpm workspace ranges, aliases, paths and catalogs with native packing.
+- T05: interrupted versioning across refresh/staging/decision output without losing input or silently reporting success.
+- T11: locally verified, awaiting merge. Installer source ownership and requested-version fidelity; a consumer mentioning callisto-cli never selects a local build.
 
-## Design
+These fix existing promises. Do not weaken retry, native-resolution or ordering contracts to excuse their failures.
 
-- Target resolution is Rust-shaped: `triple_host_runner_use_cross` in `crates/callisto-graph/src/matrix.rs` is an 18-triple table. Replace it with facts from `rustc --print cfg`.
-- npm platform-manifest discovery is npm-only and directory-scoped (`crates/callisto-graph/src/walk.rs`; [`docs/architecture/identity.md`](../architecture/identity.md)). Needed for maturin platform wheels and for a platform package shared by several owners.
-- Require `kind` in `[registries]` entries.
-- Attest napi `.node` artifacts.
+### 3. Correct the model in bounded changes
+
+- D01: confirm exact ownership, compatibility, native authority and registry-output proof contracts before architectural code; existing-contract repairs do not wait for it.
+- T06 and T06-HISTORY: canonical new references and legacy/history migration across selectors, config, groups, changesets, reports, pre-state and tags. Rename, manifest additions, promotion and demotion retain the right owner's history. [ADR 12](../adr/0012-canonical-distribution-release-ownership.md) remains proposed until implementation.
+- T07: supported version authority and native distribution representations. Cover co-located Cargo/Maturin with Cargo-owned dynamic Python version and inspect built metadata; do not insert a second static version or build a universal converter.
+- T08 and T08-RETRY: shared physical effect ownership, publication/announcement prerequisites and retry selection after a tag exists. Retain the committed roster and no-journal executor. A future Go source tag is publication, not a universal completion marker.
+- T09 and T09-ROUTES: declared registry-output inventory, Python partial-file recovery, yank/conflict semantics and private-index routing. Complete only required selected files/platforms, without guessed platform matrices or unapproved checksum/channel policy.
+
+The plan is an implementation portfolio, not an approved future-behavior spec. Resolve wire/compatibility choices and update the matching area spec with implementation; do not treat architectural packets as fully gated implementer handoffs before D01.
+
+### 4. Reconcile generated workflows
+
+T10-BINS and T10-AUTH handle binary inventory, early unsupported-builder rejection and native authentication independently of the future wire model. T10 then derives build/placement rosters from the verified intent. Native lifecycle hooks remain package-owner-defined and outside Callisto's release-operation graph; Callisto does not inspect or alter them.
+
+A native Python argv test does not imply a generated Maturin workflow, authenticated private-index observation or complete wheel-set recovery.
+
+### 5. Verify supported workflows and onboarding
+
+Each implementation unit adds its own regression/fault tests. T12 integrates these representative cases through production/native paths; T12-DX measures onboarding:
+
+| Fixture | Evidence needed |
+| --- | --- |
+| Cargo workspace | Inherited/root versions, renamed dependencies, locked resolution and index propagation |
+| npm/pnpm | Workspace ranges, aliases, paths, catalogs, peer/optional/private policy and packed metadata |
+| Python | Native versions, extras/markers, prereleases, required wheel/sdist set and partial upload |
+| Cargo+napi | Selected target builds, owner-defined lifecycle hooks preserved, Callisto-owned publication ordering and clean install/load |
+| Cargo+Maturin | Co-located static/dynamic metadata, native version mapping and wheel metadata |
+| Mixed workspace | No unrelated addon builds, foreign-name rewrites or missed affected lockfiles |
+| History/retry | Correct ownership through transitions; missing push/forge/assets/files completed with original artifacts |
+
+Retain local real-registry tests and record missing prerequisites as skips. Run `just ci` for implementation handoffs and workflow contract/policy checks for workflow changes. Measure fresh-repo first publication against the owner's ten-minute goal. Go/NuGet examples check model assumptions only; they are not new runtime gates.
+
+## Owner decisions
+
+- Canonical-reference compatibility, including colon form; source-owner representation and versioned wire migration.
+- Authenticated private PyPI/HTML-only scope, npm channel policy, universal checksum requirements and wrapper bump severity.
+- Inferred-only/manual releases: managed PR selection depends on changesets and verification requires a consumed changeset (ADR 2). Decide before broadening authorization.
+- Build or drop a workspace-wide source-error-discard check; the Cargo lint is only a partial guard.
+- Default tags for fixed/independent mode must be settled with canonical ownership, not a second tag-selection mechanism.
+- Release-commit provenance: an unkeyed digest and decision/diff agreement do not prove which producer created the file. Decide whether existing authority is sufficient.
+- Rust-cache pin in orin-dx/actions, bot-PR check policy and token rotation remain owner items.
+
+## Other open work retained
+
+- Audit literal-false ApplyPermit construction in release/init; enforce dry-run safety at entry boundaries.
+- npm writes normalize arbitrary JSON layout; decide whether more than key order/indentation/line endings is needed.
+- Preserve redacted stderr for indeterminate provider failures; never stream unredacted native-tool output.
+- GroupTable::from_groups skips resolve's conflict check; close before a production caller appears.
+- Correct receipt run_attempt rationale: artifact names are already attempt-scoped; update workflow comment and policy-check message.
+- Publish final migration notices for retired callisto-format, callisto-vcs, callisto-conventional and callisto-changelog, naming callisto-model or callisto-graph.
+- Evaluate rustc-provided target facts instead of the 18-triple table without making the core model Rust-target-specific.
+- Require kind in explicit registry entries and attest napi .node outputs; define scope before adding a gate.
+- Pin the floating moon minor in .prototools after checking proto compatibility.
 
 ## After 1.0 (additive)
 
-- Effective-config explain surface, built on `ConfigProvenance`. Then drop the default-valued `[cascade]` and `[changesets]` keys from `callisto.toml`.
-- `.sha256` sidecars for release assets (also lets the proto plugin verify checksums).
-- Glob members in `[[fixed-group]]`.
+- Effective-config explain from ConfigProvenance; remove redundant default-valued config afterward.
+- .sha256 release-asset sidecars and proto verification.
+- Glob fixed-group members.
 - Auto-include README, LICENSE and CHANGELOG in release archives.
-
-## Tooling
-
-- `.prototools` floats `moon = "2"`. A moon self-upgrade once required a newer proto than was installed locally; pin the minor.
+- Go/NuGet adapters and additional relationships only when concrete use cases and native tests justify them.

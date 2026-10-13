@@ -22,7 +22,7 @@
     {
       "name": "callisto snapshot",
       "signature": "callisto snapshot --tag <TAG> [--strict] [--dry-run]",
-      "description": "Sets every package to a throwaway `0.0.0-{tag}-{sha7}` version without consuming changesets."
+      "description": "Sets every package to a throwaway native-grammar snapshot version without consuming changesets: `0.0.0-{tag}-{sha7}` for SemVer and `0.0.0.dev0+{tag}.{sha7}` for PEP 440."
     }
   ],
   "acceptance_criteria": [
@@ -106,15 +106,15 @@
     },
     {
       "id": "VER-CAS-05",
-      "criterion": "Coverage: an exact spec covers only the equal version, a bare Cargo version is a caret requirement, a caret requirement never covers a prerelease, a Cargo `workspace = true` spec is tested using the root `[workspace.dependencies]` spec, and an npm `workspace:` spec always covers. A catalog or other untestable spec is treated as covering and never rewritten; a catalog spec emits a CatalogSpecNotRewritten warning."
+      "criterion": "Coverage: an exact spec covers only the equal version, a bare Cargo version is a caret requirement, a caret requirement never covers a prerelease, a Cargo `workspace = true` spec is tested using the root `[workspace.dependencies]` spec, and an npm `workspace:` shorthand (`workspace:`, `workspace:*`, `workspace:^` or `workspace:~`) always covers. A pnpm `workspace:` explicit range or exact version is tested using npm SemVer rules; an alias uses the range after its final `@`, and a relative path binds only to the admitted npm member at that directory. A catalog or other untestable spec is treated as covering and never rewritten; a catalog spec emits a CatalogSpecNotRewritten warning."
     },
     {
       "id": "VER-CAS-06",
-      "criterion": "A spec that no longer covers the new version is rewritten to it, keeping the operator and precision for Cargo and npm (`^1.2` becomes `^2.0` for 2.0.0), or to the exact version for npm when `preserve-npm-ranges = false`. A runtime, optional, build or peer dependent that is itself released in this run, for any reason, has every such spec on a bumped internal dependency raised to the dependency's new version the same way, even when the spec still covers it; a dependent that is not releasing keeps its spec unless out of range. `workspace = true`, npm `workspace:` and catalog specs are never rewritten by either rule, and a dev dependent's spec is rewritten only when out of range. A spec that cannot be rewritten mechanically, such as an npm range with spaces, `||`, a hyphen or a wildcard, is left unchanged with a RangeNotRoundTrippable warning."
+      "criterion": "A spec that no longer covers the new version is rewritten to it, keeping the operator and precision for Cargo and npm (`^1.2` becomes `^2.0` for 2.0.0), or to the exact version for npm when `preserve-npm-ranges = false`. A runtime, optional, build or peer dependent that is itself released in this run, for any reason, has every such spec on a bumped internal dependency raised to the dependency's new version the same way, even when the spec still covers it; a dependent that is not releasing keeps its spec unless out of range. `workspace = true`, pnpm rolling `workspace:` shorthands and catalog specs are never rewritten by either rule; an out-of-range pnpm explicit range is rewritten while retaining its `workspace:` protocol and alias. A dev dependent's spec is rewritten only when out of range. A spec that cannot be rewritten mechanically, such as an npm range with spaces, `||`, a hyphen or a wildcard, is left unchanged with a RangeNotRoundTrippable warning."
     },
     {
       "id": "VER-CAS-07",
-      "criterion": "A rewrite names the dependency as the dependent's own ecosystem spells it, so an npm dependent of a dual-manifest package with different Cargo and npm names is rewritten under the npm name. A Cargo dependency inherited with `workspace = true` is rewritten in the workspace root's `[workspace.dependencies]`, not in the member manifest."
+      "criterion": "A rewrite uses the source declaration's manifest ecosystem and preserves its declared dependency key or spelling, independent of either package's display prefix. A Cargo dependency's `package` name resolves its native target while edits retain its alias; inherited aliases resolve the workspace root's declaration. Python distribution names match using PEP 503 normalization while edits retain the spelling in the dependency declaration. A Cargo dependency inherited with `workspace = true` is rewritten in the workspace root's `[workspace.dependencies]`, not in the member manifest."
     },
     {
       "id": "VER-CAS-08",
@@ -150,7 +150,7 @@
     },
     {
       "id": "VER-PRE-01",
-      "criterion": "`callisto pre enter <tag>` writes `.changeset/pre.json` with `mode` `pre`, the tag, every package's current version under `initialVersions`, keyed by its display id (`foo`, or `cargo/foo` when another ecosystem has a `foo`; a bare-name key from an older file is still read) and an empty `changesets` list, then stages the file with git; under `--dry-run` it prints the content and writes nothing."
+      "criterion": "`callisto pre enter <tag>` writes `.changeset/pre.json` with `mode` `pre`, the tag, every package's current version under `initialVersions`, keyed by its display id (`foo`, or `cargo/foo` when another ecosystem has a `foo`) and an empty `changesets` list, then stages the file with git; under `--dry-run` it prints the content and writes nothing. For promoted packages, an older bare key is assigned to the unique historical owner at the commit that added pre.json; if no unique owner exists, version fails with E245."
     },
     {
       "id": "VER-PRE-02",
@@ -184,7 +184,11 @@
     },
     {
       "id": "VER-PRE-09",
-      "criterion": "For every workspace dependency whose current spec does not cover the snapshot version, `snapshot` rewrites that spec in the dependent's own manifest, using the dependent's ecosystem and the dependency's name as registered for that ecosystem; a spec that already covers the snapshot version is left unchanged."
+      "criterion": "For every workspace dependency whose current spec does not cover the snapshot version, `snapshot` rewrites that spec using the source declaration's manifest ecosystem and declared key or spelling, including Cargo aliases. Inherited Cargo declarations are rewritten in the workspace root rather than the member manifest. A spec that already covers the snapshot version is left unchanged."
+    },
+    {
+      "id": "VER-PRE-10",
+      "criterion": "Every `pre.json` initial version is validated using the owning package's native grammar after historical and promoted identity resolution; the original JSON string is validated, not a spelling normalized by a cross-ecosystem fallback. A malformed owned baseline fails with E114 before version, changelog, pre-state or changeset writes during `version`, `pre exit` or resuming with `pre enter`."
     },
     {
       "id": "VER-APPLY-01",
@@ -217,7 +221,7 @@
     },
     {
       "id": "VER-APPLY-08",
-      "criterion": "Outside pre mode, a successful `version` deletes the consumed changeset files, then stages every written manifest and changelog, `pre.json` changes, the existing lockfiles of affected ecosystems, and the changeset deletions (via `git rm --cached --ignore-unmatch`, which also succeeds for an already-deleted file)."
+      "criterion": "Outside pre mode, `version` refreshes affected lockfiles and stages written manifests, changelogs, `pre.json` changes and existing lockfiles before consuming release inputs. It stages consumed changeset and `pre.json` deletions via `git rm --cached --ignore-unmatch` before unlinking those files from disk. If refresh, generated-state staging or input-deletion staging fails, changesets and pre-state deletion inputs remain on disk for retry."
     },
     {
       "id": "VER-APPLY-09",
@@ -239,16 +243,21 @@
     },
     {
       "id": "VER-APPLY-13",
-      "criterion": "After planning but before any write, `version` refuses with E121 when a canonical manifest's on-disk version differs from its version at `HEAD` and either: the workspace's changesets directory still has a pending changeset as of `HEAD` (not yet consumed by a commit); or, outside an active pre-release cycle (`.changeset/pre.json` absent), a canonical manifest is staged in the git index but not yet committed. Both are the signature of a `version` run that wrote and staged its changes but never committed -- the second covers a changeset that was only ever a working-tree file (added and consumed by `version` without ever being committed), which the first check cannot see. A repository with no commits yet, a manifest/changesets directory that didn't exist at `HEAD`, or an active pre-release cycle (which legitimately reruns `version` without a commit in between) is never refused this way.",
+      "criterion": "Outside `mode: pre`, after planning but before any write, `version` refuses with E121 when a canonical manifest's on-disk effective version differs from its version at `HEAD`, or when its effective version staged in the git index differs from `HEAD`, provided a changeset remains in the `HEAD` tree or configured working-tree changesets directory (including untracked files), or a canonical manifest is staged. Staged metadata-only edits with unchanged effective versions are allowed. During `mode: exit`, already-written prerelease versions may be finalized to stable versions; a changed stable version is not exempt and is refused on retry. This detects interrupted applies without consuming retained inputs or stacking a second bump. E121 directs users to inspect staged and unstaged diffs; when outputs are verified as belonging to an interrupted apply, users finish removing its retained changeset or pre-state input with `git rm -- <path>` and commit, otherwise they commit intended version changes or restore affected files to `HEAD`. A repository with no commits yet, a manifest/changesets directory that didn't exist at `HEAD`, or an active `mode: pre` cycle (which legitimately reruns `version` without a commit in between) is not refused this way.",
       "is_error_case": true
     },
     {
       "id": "VER-APPLY-14",
-      "criterion": "By default, applying a plan refreshes each active ecosystem's lockfile that exists on disk: `cargo update --workspace` for Cargo; for Pypi, `uv lock` if `uv.lock` exists, else `poetry lock --no-update` if `poetry.lock` exists, else `pdm lock --update-reuse` if `pdm.lock` exists; for Npm, `npm install --package-lock-only --ignore-scripts` for `package-lock.json`, `pnpm install --lockfile-only` for `pnpm-lock.yaml`, `yarn install --mode update-lockfile` for `yarn.lock`, and `bun install --lockfile-only` for `bun.lock` or `bun.lockb`, each independently when its lockfile is present. `--no-refresh-lockfiles` skips this; `--refresh-lockfiles` is accepted but has no effect."
+      "criterion": "By default, applying a plan refreshes and stages lockfiles for every ecosystem represented by an actual version, dependency, platform or optional-dependency write target, including all manifests of a dual-manifest package and workspace-root Cargo writes. It refreshes each existing lockfile: `cargo update --workspace` for Cargo; for Pypi, `uv lock` if `uv.lock` exists, else `poetry lock --no-update` if `poetry.lock` exists, else `pdm lock --update-reuse` if `pdm.lock` exists; for Npm, `npm install --package-lock-only --ignore-scripts` for `package-lock.json`, `pnpm install --lockfile-only` for `pnpm-lock.yaml`, `yarn install --mode update-lockfile` for `yarn.lock`, and `bun install --lockfile-only` for `bun.lock` or `bun.lockb`, each independently when its lockfile is present. `--no-refresh-lockfiles` skips refresh; applicable existing lockfiles are still staged."
     },
     {
       "id": "VER-APPLY-15",
       "criterion": "A lockfile refresh command that exits non-zero aborts `version` with E208 naming the lockfile and the exact command that failed, instead of recording the failure and continuing.",
+      "is_error_case": true
+    },
+    {
+      "id": "VER-APPLY-16",
+      "criterion": "When E121 checks a staged canonical manifest outside prerelease mode, `version` compares its effective version in the Git index as well as the working tree against `HEAD`. It refuses if either copy contains an uncommitted version change, even when the other copy matches `HEAD`; staged metadata-only changes with the same effective version remain allowed.",
       "is_error_case": true
     }
   ],

@@ -21,7 +21,7 @@ Status: Accepted (implemented in #54)
 - The decision file is a wire contract. Its schema is versioned: `ReleaseDecisionV1::SCHEMA_VERSION` is 2, and the reader accepts 1 and 2 so an older release PR still plans (commit 7027bbfb0).
 - A decision whose entries do not match its own digest fails to decode (E166) before the diff cross-check. The digest is an unkeyed SHA-256, not a signature, so an edit with a recomputed digest that still passes the decoder's roster checks is caught only by the diff cross-check.
 - A release commit that does not add or modify the decision file, consumes no changeset, whose manifest versions disagree with the decision, or that leaves a claimed package's changelog untouched is refused (E165). Nothing checks that the decision file was produced by `callisto version --emit-decision`.
-- Today `--emit-decision` writes the decision before apply instead of after validation (docs/projects/ROAD-TO-V1.md, v1 fix plan §2a).
+- `--emit-decision` derives and validates the decision before writes, then writes its file only after apply succeeds (`crates/callisto-cli/src/commands/version.rs`). A failed apply can leave earlier manifest writes without a decision; interrupted-command recovery is tracked separately.
 
 ## Enforcement
 

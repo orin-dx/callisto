@@ -116,6 +116,12 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E302 | Git returned an invalid commit SHA <context>: <message> | Retry; Git returning a commit reference in this shape suggests a Git version mismatch. |
 | E303 | Could not resolve the Git repository root: <detail> | Ensure the repository's toplevel directory exists and is readable. |
 
+## callisto-graph — initialization
+
+| Code | Meaning | Fix |
+| --- | --- | --- |
+| E304 | Package `<package>` produces an executable, but init cannot build binary artifacts for `<ecosystem>` | Use `--no-workflow` for a registry-only release, or select a Cargo package with a supported binary target for `--artifact-target`. |
+
 ## callisto-graph — changelog
 
 | Code | Meaning | Fix |
@@ -177,7 +183,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E118 | Package declares platform targets through both `napi.targets` and `[tool.maturin].targets` | Remove one of the two target declarations -- either napi.targets in package.json or [tool.maturin].targets in pyproject.toml -- from the package's manifest. |
 | E119 | Package's `publish-to` target ecosystem doesn't match its detected ecosystem | Remove the mismatched target from publish-to, or fix the [[package]]/[[package-set]] rule so it only matches packages in that ecosystem. |
 | E120 | Package's `publishConfig.registry` (npm) is not an operator-approved registry | `publishConfig.registry` in package.json is manifest-controlled data (a PR author can set it in their own package.json), not operator config, so it is never trusted verbatim as a publish destination. The URL must use the `https` scheme and must exactly match a `url` configured on an `npm`-kind entry in `[registries]` in callisto.toml. Add the registry there if it is a legitimate private registry, or remove the override from package.json. |
-| E121 | A canonical manifest's on-disk version differs from its version at `HEAD` while a changeset is still pending there -- a prior `version` run wrote and staged its changes but never committed | Finish the interrupted run (review the staged changes and `git commit` them), or reset it (`git reset --hard HEAD`, discarding the staged work) before running `version` again. |
+| E121 | A canonical manifest's on-disk or staged version differs from its version at `HEAD` while release inputs remain in `HEAD` or the working tree, or a staged version change remains outside pre mode | Inspect `git diff` and `git diff --cached`. If these are correct outputs from an interrupted run, finish removing its retained changeset or pre-state input with `git rm -- <path>` and commit; otherwise commit the intended version changes or restore the affected files to `HEAD` before running `version` again. |
 | E122 | A filesystem operation failed while applying the version plan | Check file permissions and that the path still exists, then re-run `callisto version`. |
 | E123 | Release intent references a package that is not an exact selected workspace package | Rebuild the release intent from the current workspace instead of reusing a selection from another workspace. |
 | E124 | Release intent no longer matches the current workspace snapshot | Regenerate and reapprove the release intent; no release operation was authorized. |
