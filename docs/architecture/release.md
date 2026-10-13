@@ -16,7 +16,7 @@ The types that make a release run safe to crash and rerun, and how the two relea
 
 | Layer | Crate | Contents |
 | --- | --- | --- |
-| Authorities | `callisto-model` (MIT) | Run envelope and execution state (`release.rs`), observations and evidence (`release_observation.rs`), transition table (`release_transition.rs`) |
+| Authorities | `callisto-model` (MIT) | Run envelope and execution state (`release/execution.rs`), observations and evidence (`release_observation.rs`), transition table (`release_transition.rs`) |
 | Derivation and execution | `callisto-graph` | Decisions (`commands/release_decision.rs`), intent derivation (`commands/release/derive.rs`), local route (`commands/release/local.rs`), executor (`commands/release_execution.rs`), provider adapters (`commands/release/provider/`) |
 | Entry points | `callisto-cli` | `commands/release.rs`: `release`, `release plan`, `release artifact-manifest`, `release execute` |
 
@@ -53,7 +53,7 @@ The generated release action maps credentials without changing owner-defined pub
 - PyPI: map `PYPI_TOKEN` to `TWINE_USERNAME=__token__` and `TWINE_PASSWORD` for upload. The build backend receives no registry or forge credentials.
 - Cargo: pass `CARGO_REGISTRY_TOKEN` through to Cargo.
 
-## Run envelope and state (`release.rs`)
+## Run envelope and state (`release/execution.rs`)
 
 - `ReleaseRunEnvelopeV1` is one run's identity: orchestration revision, release-source revision, intent digest, artifact-manifest digest.
 - `ReleaseRunEnvelopeV1::new` is its only constructor. The source revision and intent digest are read from the intent, so a caller cannot assert them; the constructor cross-checks the rest against the intent before any effect.

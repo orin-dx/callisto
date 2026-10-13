@@ -12,7 +12,7 @@ CONFIG = "callisto.toml"
 CI_WORKFLOW = ".github/workflows/callisto-ci.yml"
 BUILD_SCRIPT = ".github/scripts/build-release-artifact.sh"
 INSTALLER = ".github/actions/setup-callisto/scripts/install-callisto.sh"
-COORDINATOR_CONST_SRC = "crates/callisto-model/src/release.rs"
+COORDINATOR_CONST_SRC = "crates/callisto-model/src/release/github.rs"
 CONTENTS_WRITE = {"execute", "version-pr"}  # version-pr commits the managed branch via the forge API
 OIDC_JOBS = {"build-artifact"}
 # Deny-by-default: every `write` scope a job may hold, named explicitly. A scope
