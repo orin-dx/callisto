@@ -481,6 +481,7 @@ impl Manifest for PyprojectToml {
                         };
                         entries.push(DependencyEntry {
                             name: req.name.clone(),
+                            package_name: req.name.clone(),
                             inherited: false,
                             kind: DepKind::Runtime,
                             spec,
@@ -548,6 +549,7 @@ impl Manifest for PyprojectToml {
 
                 entries.push(DependencyEntry {
                     name: name.to_string(),
+                    package_name: name.to_string(),
                     inherited: false,
                     kind: DepKind::Runtime,
                     spec,

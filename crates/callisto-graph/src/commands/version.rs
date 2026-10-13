@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::changelog::{ChangeSource, ChangelogEntry, ChangelogInput};
 use callisto_manifests::{open, OpenContext};
@@ -80,7 +80,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         let text =
             std::fs::read_to_string(&pre_path).map_err(|e| GraphError::PreJsonRead { message: e.to_string() })?;
         let state = callisto_model::format::parse_pre_json(&text).map_err(GraphError::PreJson)?;
-        let state = crate::assign_promoted_pre_keys(ws.git_access(), &ws.graph, &ws.config.pre_json_path(), state)?;
+        let state = ws.resolve_pre_state_from_json(state, &text)?;
         (Some(state), Some(text))
     } else {
         (None, None)
@@ -309,38 +309,118 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     })
 }
 
-/// Refuses when the workspace shows the signature of a crashed `version` run: a manifest's on-disk version has
-/// moved past `HEAD` while either a changeset is still pending there, or (outside an active pre-release cycle) the
-/// manifest is staged but uncommitted. Continuing would compound the drift instead of surfacing it.
+/// Refuses when a canonical manifest version differs from `HEAD` while release inputs remain or the change is staged.
 pub fn check_partial_run<R: CommandRunner, D: DependencyResolver>(ws: &Workspace<'_, R, D>) -> Result<(), GraphError> {
-    let Ok(head) = ws.git_access().head_sha() else {
-        return Ok(());
+    let head = match ws.git_access().head_sha() {
+        Ok(head) => head,
+        Err(error) => {
+            let output = ws
+                .runner
+                .run("git", &["rev-parse", "--verify", "--quiet", "HEAD"], &ws.root)
+                .map_err(GraphError::Command)?;
+            match output.exit_code {
+                Some(1) => return Ok(()),
+                Some(0) => return Err(error.into()),
+                exit_code => {
+                    return Err(GraphError::Command(callisto_model::CommandError::Failed {
+                        program: "git".to_string(),
+                        exit_code,
+                        stderr: output.stderr,
+                    }))
+                }
+            }
+        }
     };
     let head = head.as_str();
 
     // A pre-release cycle legitimately reruns `version` uncommitted; the staged-manifest check is scoped past it.
-    let in_pre_release_cycle = ws.root.join(ws.config.pre_json_path()).exists();
+    let pre_mode = {
+        let path = ws.root.join(ws.config.pre_json_path());
+        if path.exists() {
+            let text =
+                std::fs::read_to_string(&path).map_err(|e| GraphError::PreJsonRead { message: e.to_string() })?;
+            let state = callisto_model::format::parse_pre_json(&text).map_err(GraphError::PreJson)?;
+            Some(state.mode)
+        } else {
+            None
+        }
+    };
+    let in_pre_release_cycle = pre_mode == Some(callisto_model::format::PreMode::Pre);
 
-    let pending = head_has_pending_changeset(ws, head)?
-        || (!in_pre_release_cycle && any_canonical_manifest_staged_uncommitted(ws)?);
+    let staged_manifests = if in_pre_release_cycle {
+        BTreeSet::new()
+    } else {
+        canonical_manifest_staged_paths(ws)?
+    };
+    let pending = !in_pre_release_cycle
+        && (head_has_pending_changeset(ws, head)?
+            || working_tree_has_pending_changeset(ws)?
+            || !staged_manifests.is_empty());
     if !pending {
         return Ok(());
     }
 
+    let cargo_root = if ws
+        .graph
+        .packages()
+        .flat_map(|pkg| pkg.canonical_manifests())
+        .any(|decl| decl.ecosystem() == callisto_model::Ecosystem::Cargo)
+    {
+        manifest_blob_at(ws, head, "Cargo.toml")?
+    } else {
+        None
+    };
+    let cargo_index_needed = !staged_manifests.is_empty()
+        && ws.graph.packages().any(|pkg| {
+            pkg.canonical_manifests()
+                .any(|decl| decl.ecosystem() == callisto_model::Ecosystem::Cargo)
+        });
+    let cargo_root_index = if cargo_index_needed {
+        manifest_blob_in_index(ws, "Cargo.toml")?.or_else(|| cargo_root.clone())
+    } else {
+        None
+    };
     let base_versions = ws.base_versions()?;
     for pkg in ws.graph.packages() {
         let Some(disk) = base_versions.get(&pkg.id) else {
             continue;
         };
         for decl in pkg.canonical_manifests() {
-            let Some(head_version) = manifest_version_at(ws, head, &decl.path)? else {
+            let path = super::release_decision::normalized_git_path(&decl.path)?;
+            let Some(head_version) = manifest_version_at(ws, head, &path, cargo_root.as_deref())? else {
                 continue;
             };
-            if *disk != head_version {
+            let index_path_changed = staged_manifests.contains(&path)
+                || (decl.ecosystem() == callisto_model::Ecosystem::Cargo && staged_manifests.contains("Cargo.toml"));
+            let index_version = if index_path_changed {
+                manifest_version_in_index(ws, &path, cargo_root_index.as_deref())?
+            } else {
+                None
+            };
+            let index_display = match &index_version {
+                Some(version) => version.version.render().to_string(),
+                None if index_path_changed => "absent".to_string(),
+                None => head_version.version.render().to_string(),
+            };
+            let index_differs = index_path_changed
+                && index_version
+                    .as_ref()
+                    .is_none_or(|version| version.version != head_version.version);
+            let completing_prerelease = pre_mode == Some(callisto_model::format::PreMode::Exit)
+                && disk.is_prerelease()
+                && (!index_path_changed
+                    || index_version
+                        .as_ref()
+                        .is_some_and(|version| version.version.is_prerelease()));
+            if completing_prerelease {
+                continue;
+            }
+            if *disk != head_version.version || index_differs {
                 return Err(GraphError::PartialVersionRun {
-                    path: decl.path.clone(),
+                    path: head_version.authority,
                     disk: disk.clone(),
-                    head: head_version,
+                    index: index_display,
+                    head: head_version.version,
                 });
             }
         }
@@ -349,28 +429,71 @@ pub fn check_partial_run<R: CommandRunner, D: DependencyResolver>(ws: &Workspace
     Ok(())
 }
 
-/// True when a canonical manifest differs between index and HEAD: `git add`ed by a prior `apply` but never committed.
-fn any_canonical_manifest_staged_uncommitted<R: CommandRunner, D: DependencyResolver>(
+/// True when an untracked or tracked changeset remains in the configured directory on disk.
+fn working_tree_has_pending_changeset<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
 ) -> Result<bool, GraphError> {
-    for pkg in ws.graph.packages() {
-        for decl in pkg.canonical_manifests() {
-            let path_str = decl.path.to_string_lossy();
-            let output = ws
-                .runner
-                .run(
-                    "git",
-                    &["diff", "--cached", "--quiet", "--", path_str.as_ref()],
-                    &ws.root,
-                )
-                .map_err(GraphError::Command)?;
-            // `git diff --quiet` exits 1 on a difference, 0 on none; any other exit code is treated as no signal.
-            if output.exit_code == Some(1) {
-                return Ok(true);
-            }
+    let dir = ws.root.join(&ws.config.changesets_dir);
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => {
+            return Err(GraphError::ApplyIo {
+                path: ws.config.changesets_dir.clone(),
+                message: error.to_string(),
+            })
+        }
+    };
+    for entry in entries {
+        let entry = entry.map_err(|error| GraphError::ApplyIo {
+            path: ws.config.changesets_dir.clone(),
+            message: error.to_string(),
+        })?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let is_file = entry.file_type().map_err(|error| GraphError::ApplyIo {
+            path: ws.config.changesets_dir.join(&*name),
+            message: error.to_string(),
+        })?;
+        if is_file.is_file() && name.ends_with(".md") && name != "README.md" {
+            return Ok(true);
         }
     }
     Ok(false)
+}
+
+/// True when a canonical manifest differs between index and HEAD: `git add`ed by a prior `apply` but never committed.
+fn canonical_manifest_staged_paths<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+) -> Result<BTreeSet<String>, GraphError> {
+    let mut paths = BTreeSet::new();
+    for decl in ws.graph.packages().flat_map(|pkg| pkg.canonical_manifests()) {
+        paths.insert(super::release_decision::normalized_git_path(&decl.path)?);
+        if decl.ecosystem() == callisto_model::Ecosystem::Cargo {
+            paths.insert("Cargo.toml".to_string());
+        }
+    }
+    let mut staged = BTreeSet::new();
+    for path in paths {
+        let output = ws
+            .runner
+            .run("git", &["diff", "--cached", "--quiet", "--", &path], &ws.root)
+            .map_err(GraphError::Command)?;
+        match output.exit_code {
+            Some(0) => {}
+            Some(1) => {
+                staged.insert(path);
+            }
+            exit_code => {
+                return Err(GraphError::Command(callisto_model::CommandError::Failed {
+                    program: "git".to_string(),
+                    exit_code,
+                    stderr: output.stderr,
+                }))
+            }
+        }
+    }
+    Ok(staged)
 }
 
 /// Whether `<rev>:<path>` names an object; `--quiet` keeps a missing path from printing to stderr.
@@ -382,7 +505,15 @@ fn head_object_exists<R: CommandRunner, D: DependencyResolver>(
         .runner
         .run("git", &["rev-parse", "--verify", "--quiet", spec], &ws.root)
         .map_err(GraphError::Command)?;
-    Ok(output.success())
+    match output.exit_code {
+        Some(0) => Ok(true),
+        Some(1) => Ok(false),
+        exit_code => Err(GraphError::Command(callisto_model::CommandError::Failed {
+            program: "git".to_string(),
+            exit_code,
+            stderr: output.stderr,
+        })),
+    }
 }
 
 /// True when `HEAD`'s tree still has an unconsumed changeset file, read from the commit, not the working tree.
@@ -390,7 +521,7 @@ fn head_has_pending_changeset<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     head: &str,
 ) -> Result<bool, GraphError> {
-    let dir = ws.config.changesets_dir.to_string_lossy();
+    let dir = super::release_decision::normalized_git_path(&ws.config.changesets_dir)?;
     let spec = format!("{head}:{dir}");
     if !head_object_exists(ws, &spec)? {
         // The changesets directory didn't exist at HEAD (e.g. the first `version` run); nothing left pending.
@@ -401,7 +532,11 @@ fn head_has_pending_changeset<R: CommandRunner, D: DependencyResolver>(
         .run("git", &["ls-tree", "--name-only", &spec], &ws.root)
         .map_err(GraphError::Command)?;
     if !output.success() {
-        return Ok(false);
+        return Err(GraphError::Command(callisto_model::CommandError::Failed {
+            program: "git".to_string(),
+            exit_code: output.exit_code,
+            stderr: output.stderr,
+        }));
     }
     Ok(output.stdout.lines().any(|name| {
         let name = name.trim();
@@ -409,17 +544,12 @@ fn head_has_pending_changeset<R: CommandRunner, D: DependencyResolver>(
     }))
 }
 
-/// The version a canonical manifest declared at `head`, or `None` if it didn't exist there or can't be parsed.
-fn manifest_version_at<R: CommandRunner, D: DependencyResolver>(
+fn manifest_blob_at<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     head: &str,
-    path: &std::path::Path,
-) -> Result<Option<callisto_model::Version>, GraphError> {
-    let Ok(format) = callisto_model::ManifestFormat::from_path(path) else {
-        return Ok(None);
-    };
-    let path_str = path.to_string_lossy();
-    let spec = format!("{head}:{path_str}");
+    path: &str,
+) -> Result<Option<String>, GraphError> {
+    let spec = format!("{head}:{path}");
     if !head_object_exists(ws, &spec)? {
         return Ok(None);
     }
@@ -428,19 +558,77 @@ fn manifest_version_at<R: CommandRunner, D: DependencyResolver>(
         .run("git", &["show", &spec], &ws.root)
         .map_err(GraphError::Command)?;
     if !output.success() {
+        return Err(GraphError::Command(callisto_model::CommandError::Failed {
+            program: "git".to_string(),
+            exit_code: output.exit_code,
+            stderr: output.stderr,
+        }));
+    }
+    Ok(Some(output.stdout))
+}
+
+fn manifest_blob_in_index<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+    path: &str,
+) -> Result<Option<String>, GraphError> {
+    let spec = format!(":{path}");
+    if !head_object_exists(ws, &spec)? {
         return Ok(None);
     }
-    let identity = match callisto_manifests::read_identity(format, &output.stdout, path) {
-        Ok(identity) => identity,
-        Err(_) => return Ok(None),
-    };
-    let Some(callisto_manifests::VersionSource::Literal(raw)) = identity.version else {
+    let output = ws
+        .runner
+        .run("git", &["show", &spec], &ws.root)
+        .map_err(GraphError::Command)?;
+    if !output.success() {
+        return Err(GraphError::Command(callisto_model::CommandError::Failed {
+            program: "git".to_string(),
+            exit_code: output.exit_code,
+            stderr: output.stderr,
+        }));
+    }
+    Ok(Some(output.stdout))
+}
+
+fn manifest_version_at<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+    head: &str,
+    path: &str,
+    cargo_root: Option<&str>,
+) -> Result<Option<callisto_manifests::EffectiveManifestVersion>, GraphError> {
+    let path = std::path::Path::new(path);
+    let Ok(format) = callisto_model::ManifestFormat::from_path(path) else {
         return Ok(None);
     };
-    match callisto_model::Version::parse(&raw, format.ecosystem().version_grammar()) {
-        Ok(version) => Ok(Some(version)),
-        Err(_) => Ok(None),
-    }
+    let Some(source) = manifest_blob_at(ws, head, &path.to_string_lossy())? else {
+        return Ok(None);
+    };
+    Ok(callisto_manifests::read_effective_version(
+        format,
+        &source,
+        path,
+        cargo_root.map(|source| (std::path::Path::new("Cargo.toml"), source)),
+    )?)
+}
+
+fn manifest_version_in_index<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+    path: &str,
+    cargo_root: Option<&str>,
+) -> Result<Option<callisto_manifests::EffectiveManifestVersion>, GraphError> {
+    let manifest_path = std::path::Path::new(path);
+    let Ok(format) = callisto_model::ManifestFormat::from_path(manifest_path) else {
+        return Ok(None);
+    };
+    let Some(source) = manifest_blob_in_index(ws, path)? else {
+        return Ok(None);
+    };
+    callisto_manifests::read_effective_version(
+        format,
+        &source,
+        manifest_path,
+        cargo_root.map(|source| (std::path::Path::new("Cargo.toml"), source)),
+    )
+    .map_err(GraphError::from)
 }
 
 /// Platform manifest version writes and owner `optionalDependencies` pin updates
@@ -521,12 +709,33 @@ pub(crate) fn platform_version_writes<R: CommandRunner, D: DependencyResolver>(
 mod tests {
     use std::path::Path;
 
-    use super::{check_partial_run, plan_version, VersionOptions};
+    use super::{
+        check_partial_run, head_has_pending_changeset, head_object_exists, manifest_blob_at, plan_version,
+        VersionOptions,
+    };
     use crate::error::GraphError;
     use crate::infer::NoInference;
     use crate::locate::IgnoreWalkLocator;
     use crate::Workspace;
     use callisto_fixtures::git::GitRunner;
+    use callisto_model::{CommandError, CommandOutput, CommandRunner};
+
+    struct IndexInspectionFailureRunner {
+        failed_args: Vec<String>,
+    }
+
+    impl CommandRunner for IndexInspectionFailureRunner {
+        fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
+            if program == "git" && args.iter().copied().eq(self.failed_args.iter().map(String::as_str)) {
+                return Ok(CommandOutput {
+                    exit_code: Some(128),
+                    stdout: String::new(),
+                    stderr: "fatal: unable to read index".to_string(),
+                });
+            }
+            GitRunner.run(program, args, cwd)
+        }
+    }
 
     fn git_init_with_commit(root: &Path) {
         callisto_fixtures::git::init_repo(root);
@@ -621,6 +830,110 @@ mod tests {
             check_partial_run(&ws).is_ok(),
             "an ordinary pending changeset with disk matching HEAD must not be refused"
         );
+    }
+
+    #[test]
+    fn check_partial_run_propagates_fatal_staged_manifest_inspection_errors() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+        write_pkg_a(root, "1.0.0");
+        commit_all(root, "add pkg-a");
+        write_pkg_a(root, "1.1.0");
+        std::process::Command::new("git")
+            .args(["add", "pkg-a/Cargo.toml"])
+            .current_dir(root)
+            .output()
+            .expect("git add must run");
+
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = IndexInspectionFailureRunner {
+            failed_args: ["diff", "--cached", "--quiet", "--", "pkg-a/Cargo.toml"]
+                .map(str::to_string)
+                .to_vec(),
+        };
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let error = check_partial_run(&ws).unwrap_err();
+        assert!(matches!(
+                &error,
+                GraphError::Command(CommandError::Failed {
+                    program,
+                    exit_code: Some(128),
+                    stderr
+                }) if program == "git" && stderr.contains("unable to read index")
+        ));
+    }
+
+    #[test]
+    fn check_partial_run_propagates_fatal_head_sha_errors() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+        write_pkg_a(root, "1.0.0");
+        commit_all(root, "add package");
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = IndexInspectionFailureRunner {
+            failed_args: ["rev-parse", "HEAD"].map(str::to_string).to_vec(),
+        };
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+        let error = check_partial_run(&ws).expect_err("fatal HEAD lookup must not be mistaken for an unborn repo");
+        assert!(matches!(
+            error,
+            GraphError::Vcs(callisto_model::vcs::VcsError::Git(message))
+                if message.contains("git rev-parse HEAD")
+        ));
+    }
+
+    #[test]
+    fn check_partial_run_propagates_fatal_historical_git_read_errors() {
+        for failed_command in ["rev-parse", "ls-tree", "show"] {
+            let tmp = tempfile::tempdir().unwrap();
+            let root = tmp.path();
+            git_init_with_commit(root);
+            write_pkg_a(root, "1.0.0");
+            write_changeset(root, "a.md");
+            commit_all(root, "add package and inputs");
+
+            let locator = IgnoreWalkLocator::new(root);
+            let changeset_dir = {
+                let ws = Workspace::load(root.to_path_buf(), &locator, &GitRunner).expect("workspace must load");
+                crate::commands::release_decision::normalized_git_path(&ws.config.changesets_dir).unwrap()
+            };
+            let changeset_spec = format!("HEAD:{changeset_dir}");
+            let failed_args = match failed_command {
+                "rev-parse" => vec![
+                    "rev-parse".to_string(),
+                    "--verify".to_string(),
+                    "--quiet".to_string(),
+                    changeset_spec.clone(),
+                ],
+                "ls-tree" => vec!["ls-tree".to_string(), "--name-only".to_string(), changeset_spec.clone()],
+                _ => vec!["show".to_string(), "HEAD:pkg-a/Cargo.toml".to_string()],
+            };
+            let runner = IndexInspectionFailureRunner {
+                failed_args: failed_args.clone(),
+            };
+            let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+            let result = match failed_command {
+                "rev-parse" => head_object_exists(&ws, &changeset_spec).map(|_| ()),
+                "ls-tree" => head_has_pending_changeset(&ws, "HEAD").map(|_| ()),
+                _ => manifest_blob_at(&ws, "HEAD", "pkg-a/Cargo.toml").map(|_| ()),
+            };
+            let error = result
+                .err()
+                .unwrap_or_else(|| panic!("expected failure for {failed_args:?}"));
+            assert!(
+                matches!(
+                    &error,
+                    GraphError::Command(CommandError::Failed {
+                        program,
+                        exit_code: Some(128),
+                        stderr
+                    }) if program == "git" && stderr.contains("unable to read index")
+                ),
+                "unexpected result for {failed_args:?}: {error:?}"
+            );
+        }
     }
 
     /// A repo with no commits yet has no `HEAD` to compare against.

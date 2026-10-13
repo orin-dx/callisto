@@ -8,6 +8,27 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{Ecosystem, ModelError};
 
+// String wire leaves retain their domain names when used as schema definitions.
+macro_rules! string_json_schema {
+    ($name:ident) => {
+        impl ::schemars::JsonSchema for $name {
+            fn schema_name() -> String {
+                stringify!($name).to_string()
+            }
+
+            fn schema_id() -> ::std::borrow::Cow<'static, str> {
+                ::std::borrow::Cow::Borrowed(concat!(module_path!(), "::", stringify!($name)))
+            }
+
+            fn json_schema(generator: &mut ::schemars::gen::SchemaGenerator) -> ::schemars::schema::Schema {
+                <String as ::schemars::JsonSchema>::json_schema(generator)
+            }
+        }
+    };
+}
+
+pub(crate) use string_json_schema;
+
 /// A package's stable internal key: its workspace-relative directory. Promotion to `eco/name` never changes it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct PackageKey(PathBuf);
@@ -29,12 +50,13 @@ impl fmt::Display for PackageKey {
 }
 
 /// Package identity across ecosystems.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, JsonSchema)]
-#[schemars(with = "String")]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum PackageId {
     Bare(String),
     Prefixed { ecosystem: Ecosystem, name: String },
 }
+
+string_json_schema!(PackageId);
 
 impl PackageId {
     /// Parses package identity string.
@@ -322,9 +344,10 @@ impl RegistryKey {
 }
 
 /// A 40-character hex Git commit SHA.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, JsonSchema)]
-#[schemars(with = "String")]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct CommitSha(String);
+
+string_json_schema!(CommitSha);
 
 impl AsRef<str> for CommitSha {
     fn as_ref(&self) -> &str {
@@ -380,8 +403,56 @@ impl<'de> Deserialize<'de> for CommitSha {
 }
 
 #[cfg(test)]
+pub(crate) fn assert_string_wire_schema<T>(value: &T, name: &str, wire: &str)
+where
+    T: JsonSchema + Serialize + serde::de::DeserializeOwned,
+{
+    assert_eq!(
+        serde_json::to_string(value).unwrap(),
+        serde_json::to_string(wire).unwrap()
+    );
+
+    let root = serde_json::to_value(schemars::schema_for!(T)).unwrap();
+    assert_eq!(root["title"], name);
+    assert_eq!(root["type"], "string");
+    assert_eq!(root["$schema"], "http://json-schema.org/draft-07/schema#");
+
+    let mut generator = schemars::gen::SchemaGenerator::default();
+    let reference = serde_json::to_value(generator.subschema_for::<T>()).unwrap();
+    assert_eq!(reference["$ref"], format!("#/definitions/{name}"));
+    assert_eq!(
+        generator.definitions()[name],
+        <String as JsonSchema>::json_schema(&mut schemars::gen::SchemaGenerator::default())
+    );
+
+    for invalid in [
+        serde_json::json!({ "raw": wire }),
+        serde_json::json!([wire]),
+        serde_json::json!(1),
+        serde_json::json!(true),
+        serde_json::Value::Null,
+    ] {
+        assert!(serde_json::from_value::<T>(invalid).is_err());
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn package_id_schema_describes_bare_and_qualified_strings() {
+        for raw in ["foo", "@scope/foo", "cargo/foo", "npm/@scope/foo", "npm:@scope/foo"] {
+            let id = PackageId::parse(raw).unwrap();
+            assert_string_wire_schema(&id, "PackageId", &id.display_name());
+        }
+    }
+
+    #[test]
+    fn commit_sha_schema_describes_the_normalized_string() {
+        let sha = CommitSha::parse(&format!(" {} ", "A".repeat(40))).unwrap();
+        assert_string_wire_schema(&sha, "CommitSha", &"a".repeat(40));
+    }
 
     #[test]
     fn parses_package_ids() {

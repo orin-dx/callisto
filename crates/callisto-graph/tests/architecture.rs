@@ -45,6 +45,11 @@ const ALLOWLIST: &[(&str, &str)] = &[
          (engines.node, requires-python, [tool.maturin]); napi.targets extraction itself is \
          delegated to the shared callisto_manifests::read_napi_targets",
     ),
+    (
+        "crates/callisto-graph/src/commands/release_decision.rs",
+        "the serde_json parse decodes the committed release decision; historical manifest blobs \
+         are parsed by callisto_manifests::read_effective_version",
+    ),
 ];
 
 const MANIFEST_LITERALS: [&str; 3] = ["\"Cargo.toml\"", "\"package.json\"", "\"pyproject.toml\""];

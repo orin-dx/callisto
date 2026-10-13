@@ -215,19 +215,22 @@ pub enum GraphError {
     WorkspaceVersionConflict { root_manifest: PathBuf, details: String },
 
     #[error(
-        "`{}` is at {} on disk but {} at HEAD, and a changeset is still pending: this looks like a `version` run that wrote and staged its changes but never committed",
-        .path.display(), .disk.render(), .head.render()
+        "`{}` is {} on disk and {} in the Git index, but {} at HEAD while release inputs or staged version changes remain: this looks like an interrupted `version` run",
+        .path.display(), .disk.render(), .index, .head.render()
     )]
     #[diagnostic(
         code(E121),
         help(
-            "Finish the interrupted run (review the staged changes and `git commit` them), or reset it \
-             (`git reset --hard HEAD`, discarding the staged work) before running `version` again."
+            "Inspect the manifest and release inputs in both `git diff` and `git diff --cached`. If these are correct \
+             outputs from an interrupted run, finish removing its retained changeset or pre-state input with `git rm -- \
+             <path>` and commit the result. Otherwise, commit the intended version changes or restore the affected files \
+             to HEAD before running `version` again."
         )
     )]
     PartialVersionRun {
         path: PathBuf,
         disk: callisto_model::Version,
+        index: String,
         head: callisto_model::Version,
     },
 
@@ -705,6 +708,13 @@ pub enum GraphError {
     )]
     InitNoBinaryPackage,
 
+    #[error("package `{package}` produces an executable, but init cannot build binary artifacts for `{ecosystem}`")]
+    #[diagnostic(
+        code(E304),
+        help("Use `--no-workflow` for a registry-only release, or select a Cargo package with a supported binary target for `--artifact-target`.")
+    )]
+    InitUnsupportedArtifactBuilder { package: String, ecosystem: String },
+
     #[error("product package `{package}` is invalid: {reason}")]
     #[diagnostic(code(E189), help("Name one of the binary-producing packages: {}.", .candidates.join(", ")))]
     InitInvalidProductPackage {
@@ -915,6 +925,20 @@ mod tests {
             callisto_model::Version::parse("not-a-version", callisto_model::VersionGrammar::SemVer).unwrap_err();
         let graph_err = GraphError::VersionParse(inner);
         assert!(miette::Diagnostic::code(&graph_err).is_some());
+    }
+
+    #[test]
+    fn partial_version_run_help_explains_safe_manual_recovery() {
+        let error = GraphError::PartialVersionRun {
+            path: PathBuf::from("Cargo.toml"),
+            disk: callisto_model::Version::parse("1.1.0", callisto_model::VersionGrammar::SemVer).unwrap(),
+            index: "1.1.0".to_string(),
+            head: callisto_model::Version::parse("1.0.0", callisto_model::VersionGrammar::SemVer).unwrap(),
+        };
+        let help = miette::Diagnostic::help(&error).unwrap().to_string();
+        assert!(help.contains("git diff --cached"));
+        assert!(help.contains("retained changeset or pre-state input"));
+        assert!(help.contains("git rm -- <path>"));
     }
 
     /// ConflictingPlatformTargetSources must name the

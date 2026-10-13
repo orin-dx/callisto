@@ -13,6 +13,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256};
 
+use crate::identity::string_json_schema;
 use crate::release_observation::{
     ProviderEvidenceV1, ProviderObservationError, ProviderObservationV1, ReleaseOperationObservationV1,
 };
@@ -40,12 +41,13 @@ fn version_ord_key(v: &Version) -> (VersionGrammar, &str) {
 ///
 /// Unlike PackageId, this type has no bare form and therefore cannot use
 /// wildcard matching across ecosystems.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, JsonSchema)]
-#[schemars(with = "String")]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ReleasePackageId {
     ecosystem: Ecosystem,
     name: String,
 }
+
+string_json_schema!(ReleasePackageId);
 
 impl ReleasePackageId {
     /// Creates an exact release package identity.
@@ -285,12 +287,13 @@ fn check_pypi_name(name: &str) -> Result<(), &'static str> {
 /// restriction, a stricter ASCII-alphanumeric-plus-`-_.` check, and an
 /// entirely unvalidated `format!("{owner}/{repository}")`); every caller now
 /// parses through this single charset rule instead.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, JsonSchema)]
-#[schemars(with = "String")]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct GitHubRepository {
     owner: String,
     repo: String,
 }
+
+string_json_schema!(GitHubRepository);
 
 impl GitHubRepository {
     /// Parses an exact `owner/repo` GitHub repository identity.
@@ -416,9 +419,10 @@ pub enum GitHubRepositoryParseError {
 macro_rules! release_digest {
     ($name:ident, $description:literal) => {
         #[doc = $description]
-        #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, JsonSchema)]
-        #[schemars(with = "String")]
+        #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
         pub struct $name(String);
+
+        string_json_schema!($name);
 
         impl $name {
             /// Parses a lowercase hexadecimal SHA-256 digest.
@@ -559,12 +563,36 @@ pub enum ReleaseInclusionReason {
 }
 
 /// One exact package and version authorized by a release decision.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReleaseDecisionEntry {
     pub package: ReleasePackageId,
     pub target_version: Version,
     pub reasons: Vec<ReleaseInclusionReason>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ReleaseDecisionEntryWire {
+    package: ReleasePackageId,
+    target_version: String,
+    reasons: Vec<ReleaseInclusionReason>,
+}
+
+impl<'de> Deserialize<'de> for ReleaseDecisionEntry {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = ReleaseDecisionEntryWire::deserialize(deserializer)?;
+        let target_version = Version::parse_for_ecosystem(&wire.target_version, wire.package.ecosystem())
+            .map_err(serde::de::Error::custom)?;
+        Ok(Self {
+            package: wire.package,
+            target_version,
+            reasons: wire.reasons,
+        })
+    }
 }
 
 /// Rejects a wire schema version that doesn't match `expected`, with the
@@ -1128,7 +1156,7 @@ pub struct ReleaseOperationId {
 struct ReleaseOperationIdWire {
     package: ReleasePackageId,
     role: ReleaseOperationRole,
-    version: Version,
+    version: String,
 }
 
 impl<'de> Deserialize<'de> for ReleaseOperationId {
@@ -1137,10 +1165,12 @@ impl<'de> Deserialize<'de> for ReleaseOperationId {
         D: Deserializer<'de>,
     {
         let wire = ReleaseOperationIdWire::deserialize(deserializer)?;
+        let version =
+            Version::parse_for_ecosystem(&wire.version, wire.package.ecosystem()).map_err(serde::de::Error::custom)?;
         let id = Self {
             package: wire.package,
             role: wire.role,
-            version: wire.version,
+            version,
         };
         id.validate_artifact_slot().map_err(serde::de::Error::custom)?;
         Ok(id)
@@ -1379,7 +1409,7 @@ impl<'de> Deserialize<'de> for GitHubAttestationPolicyV1 {
 }
 
 /// Exact binary asset declaration authorized by a durable release intent.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ArtifactSlotId {
     pub package: ReleasePackageId,
@@ -1387,6 +1417,37 @@ pub struct ArtifactSlotId {
     pub platform: String,
     pub asset_name: String,
     pub attestation_policy: GitHubAttestationPolicyV1,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ArtifactSlotIdWire {
+    package: ReleasePackageId,
+    version: String,
+    platform: String,
+    asset_name: String,
+    attestation_policy: GitHubAttestationPolicyV1,
+}
+
+impl<'de> Deserialize<'de> for ArtifactSlotId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = ArtifactSlotIdWire::deserialize(deserializer)?;
+        let version =
+            Version::parse_for_ecosystem(&wire.version, wire.package.ecosystem()).map_err(serde::de::Error::custom)?;
+        Self::new(
+            wire.package,
+            version,
+            wire.platform,
+            wire.asset_name,
+            wire.attestation_policy.repository,
+            wire.attestation_policy.workflow_path,
+            wire.attestation_policy.workflow_commit,
+        )
+        .map_err(serde::de::Error::custom)
+    }
 }
 
 impl ArtifactSlotId {
@@ -2711,8 +2772,65 @@ impl crate::report::Report for ReleaseArtifactManifestReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::identity::assert_string_wire_schema;
     use crate::release_observation::ProviderEvidenceV1;
     use crate::Ecosystem;
+
+    #[test]
+    fn release_package_id_schema_describes_canonical_strings() {
+        for raw in ["cargo/example", "npm/@scope/example", "pypi/example-package"] {
+            let id = ReleasePackageId::parse(raw).unwrap();
+            assert_string_wire_schema(&id, "ReleasePackageId", raw);
+        }
+    }
+
+    #[test]
+    fn github_repository_schema_describes_the_normalized_slug() {
+        let repository = GitHubRepository::parse("Owner/Repository.git").unwrap();
+        assert_string_wire_schema(&repository, "GitHubRepository", "owner/repository");
+    }
+
+    #[test]
+    fn release_digest_schemas_keep_distinct_names_for_string_values() {
+        let raw = "a".repeat(64);
+        assert_string_wire_schema(&ArtifactDigest::parse(&raw).unwrap(), "ArtifactDigest", &raw);
+        assert_string_wire_schema(&DecisionDigest::parse(&raw).unwrap(), "DecisionDigest", &raw);
+        assert_string_wire_schema(&SemanticInputDigest::parse(&raw).unwrap(), "SemanticInputDigest", &raw);
+        assert_string_wire_schema(&IntentDigest::parse(&raw).unwrap(), "IntentDigest", &raw);
+        assert_string_wire_schema(
+            &RegistryBindingDigest::parse(&raw).unwrap(),
+            "RegistryBindingDigest",
+            &raw,
+        );
+    }
+
+    #[test]
+    fn string_leaf_definitions_stay_distinct_in_a_shared_schema() {
+        let mut generator = schemars::gen::SchemaGenerator::default();
+        let references = [
+            ("PackageId", generator.subschema_for::<PackageId>()),
+            ("CommitSha", generator.subschema_for::<CommitSha>()),
+            ("Version", generator.subschema_for::<Version>()),
+            ("VersionReq", generator.subschema_for::<crate::VersionReq>()),
+            ("ReleasePackageId", generator.subschema_for::<ReleasePackageId>()),
+            ("GitHubRepository", generator.subschema_for::<GitHubRepository>()),
+            ("ArtifactDigest", generator.subschema_for::<ArtifactDigest>()),
+            ("DecisionDigest", generator.subschema_for::<DecisionDigest>()),
+            ("SemanticInputDigest", generator.subschema_for::<SemanticInputDigest>()),
+            ("IntentDigest", generator.subschema_for::<IntentDigest>()),
+            (
+                "RegistryBindingDigest",
+                generator.subschema_for::<RegistryBindingDigest>(),
+            ),
+        ];
+        assert_eq!(generator.definitions().len(), references.len());
+        for (name, reference) in references {
+            let reference = serde_json::to_value(reference).unwrap();
+            assert_eq!(reference["$ref"], format!("#/definitions/{name}"));
+            let definition = serde_json::to_value(&generator.definitions()[name]).unwrap();
+            assert_eq!(definition["type"], "string");
+        }
+    }
 
     fn test_envelope(intent: &ReleaseIntentV1) -> ReleaseRunEnvelopeV1 {
         let orchestration = intent
@@ -2826,6 +2944,348 @@ mod tests {
             RegistryBindingDigest::from_normalized_binding(format!("https://{key}.example.test/index")),
         )
         .unwrap()
+    }
+
+    fn native_versions() -> [(Ecosystem, &'static str); 8] {
+        [
+            (Ecosystem::Pypi, "1.2.3"),
+            (Ecosystem::Pypi, "1.2.3rc1"),
+            (Ecosystem::Pypi, "1!2.3.post1.dev2"),
+            (Ecosystem::Pypi, "1.2"),
+            (Ecosystem::Cargo, "1.2.3"),
+            (Ecosystem::Cargo, "1.2.3-beta.1+build.2"),
+            (Ecosystem::Npm, "1.2.3"),
+            (Ecosystem::Npm, "1.2.3-beta.1+build.2"),
+        ]
+    }
+
+    fn native_intent_with_slot(ecosystem: Ecosystem, raw: &str) -> ReleaseIntentV1 {
+        let package = ReleasePackageId::new(ecosystem, "example").unwrap();
+        let version = Version::parse_for_ecosystem(raw, ecosystem).unwrap();
+        let slot = ArtifactSlotId::new(
+            package.clone(),
+            version.clone(),
+            "linux-x64",
+            "example.tar.gz",
+            GitHubRepository::parse("owner/repo").unwrap(),
+            RELEASE_COORDINATOR_WORKFLOW_PATH,
+            CommitSha::parse(&"b".repeat(40)).unwrap(),
+        )
+        .unwrap();
+        let mut operations = Vec::new();
+        let mut prerequisites = Vec::new();
+        if ecosystem == Ecosystem::Npm {
+            let platform = ReleaseOperation::new(
+                ReleaseOperationId::platform_publish(
+                    package.clone(),
+                    version.clone(),
+                    registry_binding("native"),
+                    PlatformPackageV1::new(ReleasePackageId::parse("npm/example-linux").unwrap(), "platform/linux")
+                        .unwrap(),
+                ),
+                vec![],
+            )
+            .unwrap();
+            prerequisites.push(platform.id.clone());
+            operations.push(platform);
+        }
+        let publish = ReleaseOperation::registry_publish(
+            package.clone(),
+            version.clone(),
+            registry_binding("native"),
+            prerequisites,
+        )
+        .unwrap();
+        let tag = ReleaseOperation::tag(package.clone(), version.clone(), vec![publish.id().clone()]).unwrap();
+        let forge = ReleaseOperation::forge_release(package.clone(), version.clone(), vec![tag.id().clone()]).unwrap();
+        let upload = ReleaseOperation::artifact_upload(slot.clone(), vec![forge.id().clone()]).unwrap();
+        let complete = ReleaseOperation::forge_publish(package, version, vec![upload.id().clone()]).unwrap();
+        operations.extend([publish, tag, forge, upload, complete]);
+        test_intent_with_slots(
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]),
+            ExecutionTrustProfileV1::GitCommit,
+            operations,
+            vec![slot],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn durable_decisions_decode_native_versions_in_both_readable_schemas() {
+        for (ecosystem, raw) in native_versions() {
+            let decision = ReleaseDecisionV1::new(vec![ReleaseDecisionEntry {
+                package: ReleasePackageId::new(ecosystem, "example").unwrap(),
+                target_version: Version::parse_for_ecosystem(raw, ecosystem).unwrap(),
+                reasons: vec![ReleaseInclusionReason::Cascade {
+                    from: ReleasePackageId::parse("npm/upstream").unwrap(),
+                    edge_kind: "runtime".to_string(),
+                }],
+            }])
+            .unwrap();
+            let serialized = serde_json::to_value(&decision).unwrap();
+            assert_eq!(serialized["entries"][0]["targetVersion"], raw);
+            for schema in ReleaseDecisionV1::READABLE_SCHEMA_VERSIONS {
+                let mut wire = serialized.clone();
+                wire["schemaVersion"] = serde_json::json!(schema);
+                let decoded: ReleaseDecisionV1 = serde_json::from_value(wire).unwrap();
+                assert_eq!(decoded, decision);
+                assert_eq!(serde_json::to_value(decoded).unwrap(), serialized);
+            }
+        }
+    }
+
+    #[test]
+    fn durable_native_intents_preserve_operation_prerequisites_slots_and_digest() {
+        for (ecosystem, raw) in native_versions() {
+            let intent = native_intent_with_slot(ecosystem, raw);
+            let serialized = serde_json::to_vec(&intent).unwrap();
+            let decoded: ReleaseIntentV1 = serde_json::from_slice(&serialized).unwrap();
+            assert_eq!(decoded, intent);
+            assert_eq!(decoded.digest(), intent.digest());
+            assert_eq!(serde_json::to_vec(&decoded).unwrap(), serialized);
+            for operation in &decoded.operations {
+                assert_eq!(operation.id.version.grammar(), ecosystem.version_grammar());
+                assert_eq!(operation.id.version.render(), raw);
+                for prerequisite in &operation.prerequisites {
+                    assert_eq!(prerequisite.version.grammar(), ecosystem.version_grammar());
+                }
+            }
+            assert_eq!(decoded.artifact_slots[0].version.render(), raw);
+            assert_eq!(decoded.artifact_slots[0].version.grammar(), ecosystem.version_grammar());
+        }
+    }
+
+    #[test]
+    fn durable_prerequisites_decode_with_their_own_package_ecosystem() {
+        let cargo = ReleaseOperation::tag(
+            ReleasePackageId::parse("cargo/upstream").unwrap(),
+            Version::semver(1, 2, 3),
+            vec![],
+        )
+        .unwrap();
+        let python = ReleaseOperation::tag(
+            ReleasePackageId::parse("pypi/downstream").unwrap(),
+            Version::parse_for_ecosystem("1.2.3", Ecosystem::Pypi).unwrap(),
+            vec![cargo.id.clone()],
+        )
+        .unwrap();
+        let intent = test_intent(
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![cargo, python],
+        )
+        .unwrap();
+        let decoded: ReleaseIntentV1 = serde_json::from_slice(&serde_json::to_vec(&intent).unwrap()).unwrap();
+        assert_eq!(decoded, intent);
+        assert_eq!(decoded.operations[1].id.version.grammar(), VersionGrammar::Pep440);
+        assert_eq!(
+            decoded.operations[1].prerequisites[0].version.grammar(),
+            VersionGrammar::SemVer
+        );
+    }
+
+    #[test]
+    fn durable_native_artifact_manifests_preserve_slots_and_exact_digest_bytes() {
+        for (ecosystem, raw) in native_versions() {
+            let intent = native_intent_with_slot(ecosystem, raw);
+            let slot = intent.artifact_slots[0].clone();
+            let digest = ArtifactDigest::from_bytes(b"binary");
+            let manifest = ArtifactManifestV1::new(
+                &intent,
+                vec![ArtifactManifestEntryV1 {
+                    attestation: GitHubArtifactAttestationV1 {
+                        repository: slot.attestation_policy.repository.clone(),
+                        workflow_path: slot.attestation_policy.workflow_path.clone(),
+                        workflow_commit: slot.attestation_policy.workflow_commit.clone(),
+                        subject_digest: digest.clone(),
+                        source_commit: slot.attestation_policy.workflow_commit.clone(),
+                    },
+                    slot,
+                    digest,
+                    byte_length: 6,
+                }],
+            )
+            .unwrap();
+            let serialized = serde_json::to_vec(&manifest).unwrap();
+            let decoded: ArtifactManifestV1 = serde_json::from_slice(&serialized).unwrap();
+            assert_eq!(decoded, manifest);
+            decoded.validate_for_intent(&intent).unwrap();
+            assert_eq!(decoded.digest(), manifest.digest());
+            assert_eq!(serde_json::to_vec(&decoded).unwrap(), serialized);
+        }
+    }
+
+    #[test]
+    fn durable_native_receipts_preserve_bound_registry_evidence_and_roster() {
+        for (ecosystem, raw) in native_versions() {
+            let intent = native_intent_with_slot(ecosystem, raw);
+            let mut state = pending_state(&intent);
+            for operation in &intent.operations {
+                publish_operation(&mut state, operation.id());
+            }
+            let receipt = ReleaseReceiptV1::from_state(&intent, &state).unwrap();
+            let serialized = serde_json::to_vec(&receipt).unwrap();
+            let decoded: ReleaseReceiptV1 = serde_json::from_slice(&serialized).unwrap();
+            assert_eq!(decoded, receipt);
+            decoded.validate_for_intent(&intent).unwrap();
+            assert_eq!(serde_json::to_vec(&decoded).unwrap(), serialized);
+            let observation = decoded.observation(intent.operations[0].id()).unwrap();
+            let ProviderObservationV1::Exact {
+                evidence: ProviderEvidenceV1::RegistryVersion { version, .. },
+            } = observation
+            else {
+                panic!("registry receipt must carry its native version");
+            };
+            assert_eq!(version.grammar(), ecosystem.version_grammar());
+            assert_eq!(version.render(), raw);
+        }
+    }
+
+    #[test]
+    fn contextual_release_decoders_reject_cross_grammar_and_non_string_versions() {
+        for (ecosystem, raw) in [
+            (Ecosystem::Cargo, "1!2.3rc1"),
+            (Ecosystem::Npm, "1.2.3a1"),
+            (Ecosystem::Pypi, "1.2.3-alpha.beta"),
+        ] {
+            let intent = native_intent_with_slot(ecosystem, "1.2.3");
+            let mut entry = serde_json::to_value(&intent.decision.entries[0]).unwrap();
+            let mut operation = serde_json::to_value(&intent.operations[0].id).unwrap();
+            let mut slot = serde_json::to_value(&intent.artifact_slots[0]).unwrap();
+            for invalid in [serde_json::json!(raw), serde_json::json!(123), serde_json::Value::Null] {
+                entry["targetVersion"] = invalid.clone();
+                operation["version"] = invalid.clone();
+                slot["version"] = invalid;
+                assert!(serde_json::from_value::<ReleaseDecisionEntry>(entry.clone()).is_err());
+                assert!(serde_json::from_value::<ReleaseOperationId>(operation.clone()).is_err());
+                assert!(serde_json::from_value::<ArtifactSlotId>(slot.clone()).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn contextual_release_decoders_reject_an_unimplemented_version_grammar() {
+        let intent = native_intent_with_slot(Ecosystem::Pypi, "1.2.3");
+        let mut entry = serde_json::to_value(&intent.decision.entries[0]).unwrap();
+        let mut operation = serde_json::to_value(&intent.operations[0].id).unwrap();
+        let mut slot = serde_json::to_value(&intent.artifact_slots[0]).unwrap();
+        entry["package"] = serde_json::json!("maven/example");
+        operation["package"] = serde_json::json!("maven/example");
+        slot["package"] = serde_json::json!("maven/example");
+        for error in [
+            serde_json::from_value::<ReleaseDecisionEntry>(entry).unwrap_err(),
+            serde_json::from_value::<ReleaseOperationId>(operation).unwrap_err(),
+            serde_json::from_value::<ArtifactSlotId>(slot).unwrap_err(),
+        ] {
+            assert!(error.to_string().contains("no versioning implementation"));
+        }
+    }
+
+    #[test]
+    fn native_receipts_reject_tampered_evidence_and_unsupported_schema() {
+        let intent = native_intent_with_slot(Ecosystem::Pypi, "1.2.3");
+        let mut state = pending_state(&intent);
+        for operation in &intent.operations {
+            publish_operation(&mut state, operation.id());
+        }
+        let receipt = ReleaseReceiptV1::from_state(&intent, &state).unwrap();
+        let wire = serde_json::to_value(&receipt).unwrap();
+        let registry_index = wire["observations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|entry| entry["observation"]["evidence"]["kind"] == "registryVersion")
+            .unwrap();
+        let mut changed = wire.clone();
+        changed["observations"][registry_index]["observation"]["evidence"]["version"] = serde_json::json!("1.2.4");
+        assert!(serde_json::from_value::<ReleaseReceiptV1>(changed)
+            .unwrap_err()
+            .to_string()
+            .contains("provider version does not match"));
+        let mut changed = wire.clone();
+        changed["schemaVersion"] = serde_json::json!(9);
+        assert!(serde_json::from_value::<ReleaseReceiptV1>(changed).is_err());
+        let mut changed = wire.clone();
+        let repeated = changed["observations"][registry_index].clone();
+        changed["observations"].as_array_mut().unwrap().push(repeated);
+        assert!(serde_json::from_value::<ReleaseReceiptV1>(changed).is_err());
+        let mut changed = wire;
+        changed["intentDigest"] = serde_json::json!("f".repeat(64));
+        let mismatched: ReleaseReceiptV1 = serde_json::from_value(changed).unwrap();
+        assert!(matches!(
+            mismatched.validate_for_intent(&intent),
+            Err(ReleaseReceiptError::MismatchedIntent)
+        ));
+    }
+
+    #[test]
+    fn native_decision_and_intent_validation_stays_strict() {
+        let intent = native_intent_with_slot(Ecosystem::Pypi, "1.2.3");
+        let decision = serde_json::to_value(&intent.decision).unwrap();
+        for schema in ReleaseDecisionV1::READABLE_SCHEMA_VERSIONS {
+            let mut tampered = decision.clone();
+            tampered["schemaVersion"] = serde_json::json!(schema);
+            tampered["entries"][0]["targetVersion"] = serde_json::json!("1.2.4");
+            let error = serde_json::from_value::<ReleaseDecisionV1>(tampered).unwrap_err();
+            assert!(error.to_string().contains("digest does not match"));
+        }
+        let mut unsupported = decision.clone();
+        unsupported["schemaVersion"] = serde_json::json!(9);
+        assert!(serde_json::from_value::<ReleaseDecisionV1>(unsupported)
+            .unwrap_err()
+            .to_string()
+            .contains("unsupported release decision schema version 9"));
+        let mut missing_reason = decision.clone();
+        missing_reason["entries"][0]["reasons"] = serde_json::json!([]);
+        assert!(serde_json::from_value::<ReleaseDecisionV1>(missing_reason).is_err());
+        let mut duplicate = decision;
+        let entry = duplicate["entries"][0].clone();
+        duplicate["entries"].as_array_mut().unwrap().push(entry);
+        assert!(serde_json::from_value::<ReleaseDecisionV1>(duplicate).is_err());
+
+        let wire = serde_json::to_value(&intent).unwrap();
+        let mut changed = wire.clone();
+        changed["snapshot"]["source"]["sha"] = serde_json::json!("c".repeat(40));
+        assert!(serde_json::from_value::<ReleaseIntentV1>(changed)
+            .unwrap_err()
+            .to_string()
+            .contains("digest"));
+        let mut changed = wire.clone();
+        changed["operations"][0]["id"]["version"] = serde_json::json!("1.2.4");
+        assert!(serde_json::from_value::<ReleaseIntentV1>(changed).is_err());
+        let mut changed = wire.clone();
+        changed["operations"][3]["id"]["role"]["slot"]["version"] = serde_json::json!("1.2.4");
+        assert!(serde_json::from_value::<ReleaseIntentV1>(changed).is_err());
+        let mut changed = wire.clone();
+        changed["trustProfile"] = serde_json::json!("hermeticContent");
+        assert!(serde_json::from_value::<ReleaseIntentV1>(changed).is_err());
+        let mut changed = wire;
+        changed["schemaVersion"] = serde_json::json!(9);
+        assert!(serde_json::from_value::<ReleaseIntentV1>(changed).is_err());
+    }
+
+    #[test]
+    fn contextual_release_wire_keeps_unknown_and_duplicate_field_rejection() {
+        let intent = native_intent_with_slot(Ecosystem::Pypi, "1.2.3");
+        let mut entry = serde_json::to_value(&intent.decision.entries[0]).unwrap();
+        entry["extra"] = serde_json::json!(true);
+        assert!(serde_json::from_value::<ReleaseDecisionEntry>(entry).is_err());
+        let mut operation = serde_json::to_value(&intent.operations[0].id).unwrap();
+        operation["extra"] = serde_json::json!(true);
+        assert!(serde_json::from_value::<ReleaseOperationId>(operation).is_err());
+        let mut slot = serde_json::to_value(&intent.artifact_slots[0]).unwrap();
+        slot["extra"] = serde_json::json!(true);
+        assert!(serde_json::from_value::<ArtifactSlotId>(slot).is_err());
+        assert!(serde_json::from_str::<ReleaseDecisionEntry>(
+            r#"{"package":"pypi/example","targetVersion":"1.2.3","targetVersion":"1.2.3","reasons":[{"kind":"explicitSelection"}]}"#
+        )
+        .is_err());
+        let operation = serde_json::to_string(&intent.operations[0].id).unwrap();
+        let duplicate = operation.replacen('{', "{\"version\":\"1.2.3\",", 1);
+        assert!(serde_json::from_str::<ReleaseOperationId>(&duplicate).is_err());
+        let slot = serde_json::to_string(&intent.artifact_slots[0]).unwrap();
+        let duplicate = slot.replacen('{', "{\"version\":\"1.2.3\",", 1);
+        assert!(serde_json::from_str::<ArtifactSlotId>(&duplicate).is_err());
     }
 
     fn test_intent(

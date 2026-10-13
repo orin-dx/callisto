@@ -189,6 +189,89 @@ fn run_argv(context: &ProviderContext<'_>, argv: &registry_argv::Argv) -> Result
         .run_with_timeout(&argv.program, &args, &argv.cwd, timeouts::PUBLISH)?)
 }
 
+fn run_npm_publish_argv(
+    context: &ProviderContext<'_>,
+    argv: &registry_argv::Argv,
+) -> Result<CommandOutput, GraphError> {
+    let token = std::env::var("NPM_TOKEN").ok().filter(|value| !value.is_empty());
+    let config = std::env::var("CALLISTO_PUBLISH_NPM_CONFIG")
+        .ok()
+        .filter(|value| !value.is_empty());
+    let env = npm_publisher_environment(&argv.program, token.as_deref(), config.as_deref());
+    let args: Vec<&str> = argv.args.iter().map(String::as_str).collect();
+    Ok(context
+        .runner()
+        .run_with_timeout_publisher(&argv.program, &args, &argv.cwd, timeouts::PUBLISH, &env)?)
+}
+
+fn npm_publisher_environment<'a>(
+    program: &str,
+    token: Option<&'a str>,
+    config: Option<&'a str>,
+) -> Vec<(&'static str, &'a str)> {
+    let mut env = Vec::new();
+    if let Some(token) = token {
+        env.push(("NPM_TOKEN", token));
+        if program == "bun" {
+            env.push(("NPM_CONFIG_TOKEN", token));
+        }
+    }
+    if let Some(config) = config {
+        env.push(("NPM_CONFIG_USERCONFIG", config));
+    }
+    env
+}
+
+fn run_pypi_upload_argv(
+    context: &ProviderContext<'_>,
+    argv: &registry_argv::Argv,
+) -> Result<CommandOutput, GraphError> {
+    let username = std::env::var("TWINE_USERNAME").ok();
+    let password = std::env::var("TWINE_PASSWORD").ok();
+    let env = pypi_publisher_environment(username.as_deref(), password.as_deref());
+    let args: Vec<&str> = argv.args.iter().map(String::as_str).collect();
+    Ok(context
+        .runner()
+        .run_with_timeout_publisher(&argv.program, &args, &argv.cwd, timeouts::PUBLISH, &env)?)
+}
+
+fn pypi_publisher_environment<'a>(
+    username: Option<&'a str>,
+    password: Option<&'a str>,
+) -> Vec<(&'static str, &'a str)> {
+    let mut env = Vec::new();
+    if let Some(username) = username {
+        env.push(("TWINE_USERNAME", username));
+    }
+    if let Some(password) = password {
+        env.push(("TWINE_PASSWORD", password));
+    }
+    env
+}
+
+fn run_build_argv(context: &ProviderContext<'_>, argv: &registry_argv::Argv) -> Result<CommandOutput, GraphError> {
+    const RELEASE_CREDENTIALS: &[&str] = &[
+        "CARGO_REGISTRY_TOKEN",
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "NPM_CONFIG_TOKEN",
+        "NPM_CONFIG_USERCONFIG",
+        "NPM_TOKEN",
+        "NODE_AUTH_TOKEN",
+        "PYPI_TOKEN",
+        "TWINE_PASSWORD",
+        "TWINE_USERNAME",
+    ];
+    let args: Vec<&str> = argv.args.iter().map(String::as_str).collect();
+    Ok(context.runner().run_with_timeout_env_filtered(
+        &argv.program,
+        &args,
+        &argv.cwd,
+        timeouts::PUBLISH,
+        RELEASE_CREDENTIALS,
+    )?)
+}
+
 fn transient(
     cause: ProviderIndeterminateCause,
     retry_after: Option<std::time::Duration>,
@@ -403,7 +486,7 @@ impl RegistryEcosystem for NpmRegistry {
                 operation.npm_access,
                 operation.registry.endpoint.as_deref(),
             );
-            return run_argv(context, &argv);
+            return run_npm_publish_argv(context, &argv);
         }
         let package_manager = registry_argv::detect_npm_package_manager(context.root());
         let argv = registry_argv::npm_publish_argv(
@@ -415,7 +498,7 @@ impl RegistryEcosystem for NpmRegistry {
             operation.npm_access,
             operation.registry.endpoint.as_deref(),
         );
-        run_argv(context, &argv)
+        run_npm_publish_argv(context, &argv)
     }
 
     fn classify(&self, output: &CommandOutput) -> Result<PublishOutcome, RegistryError> {
@@ -595,7 +678,7 @@ impl RegistryEcosystem for PypiRegistry {
                 detail: "pypi_publish_argv did not return exactly a build and an upload step".to_string(),
             });
         };
-        let built = run_argv(context, build)?;
+        let built = run_build_argv(context, build)?;
         if built.exit_code != Some(0) {
             return Err(GraphError::ReleaseCommand {
                 program: build.program.clone(),
@@ -606,7 +689,7 @@ impl RegistryEcosystem for PypiRegistry {
                 },
             });
         }
-        run_argv(context, upload)
+        run_pypi_upload_argv(context, upload)
     }
 
     fn classify(&self, output: &CommandOutput) -> Result<PublishOutcome, RegistryError> {

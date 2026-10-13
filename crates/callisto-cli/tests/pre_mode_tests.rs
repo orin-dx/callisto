@@ -79,6 +79,168 @@ fn test_pre_mode_blackbox_lifecycle() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn failed_pre_state_deletion_fails_closed_on_a_fresh_version_retry() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = setup_polyglot_git_repo();
+    let root = dir.path();
+    let pre_json = root.join(".changeset/pre.json");
+
+    let enter = run_callisto_cli(root, &["pre", "enter", "beta"], None);
+    assert!(
+        enter.status.success(),
+        "pre enter failed: {}",
+        String::from_utf8_lossy(&enter.stderr)
+    );
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(root)
+        .status()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "enter prerelease mode"])
+        .current_dir(root)
+        .status()
+        .unwrap();
+
+    let add = run_callisto_cli(
+        root,
+        &[
+            "add",
+            "--package",
+            "core-crate:minor",
+            "--summary",
+            "Exercise failed exit finalization",
+        ],
+        None,
+    );
+    assert!(
+        add.status.success(),
+        "add failed: {}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    let prerelease = run_callisto_cli(root, &["version", "--no-refresh-lockfiles"], None);
+    assert!(
+        prerelease.status.success(),
+        "prerelease version failed: {}",
+        String::from_utf8_lossy(&prerelease.stderr)
+    );
+    let exit = run_callisto_cli(root, &["pre", "exit"], None);
+    assert!(
+        exit.status.success(),
+        "pre exit failed: {}",
+        String::from_utf8_lossy(&exit.stderr)
+    );
+
+    let temp = tempfile::tempdir().unwrap();
+    let fake_bin = temp.path().join("bin");
+    fs::create_dir_all(&fake_bin).unwrap();
+    let real_git = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+        .map(|entry| entry.join("git"))
+        .find(|path| path.is_file())
+        .expect("find the real Git executable");
+    let fake_git = fake_bin.join("git");
+    fs::write(
+        &fake_git,
+        r##"#!/bin/sh
+printf '%s\n' "$*" >> "$CALLISTO_TEST_GIT_TRACE"
+if [ "$1" = "rm" ] && [ "$2" = "--cached" ]; then
+  for path do
+    if [ "$path" = ".changeset/pre.json" ]; then
+      printf 'forced pre-state staging failure\n' >&2
+      exit 1
+    fi
+  done
+fi
+exec "$CALLISTO_TEST_REAL_GIT" "$@"
+"##,
+    )
+    .unwrap();
+    let mut permissions = fs::metadata(&fake_git).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&fake_git, permissions).unwrap();
+    let mut path_entries = vec![fake_bin];
+    path_entries.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap()));
+    let path = std::env::join_paths(path_entries).unwrap();
+    let git_trace = temp.path().join("git-trace");
+
+    let failed_exit_version = run_callisto_cli(
+        root,
+        &["version", "--no-refresh-lockfiles"],
+        Some((path.as_os_str(), &real_git, &git_trace)),
+    );
+    assert!(
+        !failed_exit_version.status.success(),
+        "version must report the forced git rm failure; trace: {}; stdout: {}; stderr: {}",
+        fs::read_to_string(&git_trace).unwrap_or_default(),
+        String::from_utf8_lossy(&failed_exit_version.stdout),
+        String::from_utf8_lossy(&failed_exit_version.stderr)
+    );
+    let git_calls = fs::read_to_string(&git_trace).unwrap();
+    assert!(
+        git_calls
+            .lines()
+            .any(|call| call.starts_with("rm --cached") && call.contains(".changeset/pre.json")),
+        "the fixture must fail the pre-state deletion command, got: {git_calls}"
+    );
+    assert!(
+        String::from_utf8_lossy(&failed_exit_version.stderr).contains("forced pre-state staging failure"),
+        "the first command must surface the injected Git failure: {}",
+        String::from_utf8_lossy(&failed_exit_version.stderr)
+    );
+    assert!(pre_json.exists(), "failed staging must retain pre.json on disk");
+    assert!(
+        fs::read_to_string(root.join("crates/core/Cargo.toml"))
+            .unwrap()
+            .contains("version = \"0.2.0\""),
+        "stable outputs should already be written before deletion staging fails"
+    );
+
+    let retry = run_callisto_cli(root, &["version", "--no-refresh-lockfiles"], None);
+    assert!(!retry.status.success(), "a fresh retry must fail closed with E121");
+    let diagnostic = format!(
+        "{}{}",
+        String::from_utf8_lossy(&retry.stdout),
+        String::from_utf8_lossy(&retry.stderr)
+    )
+    .split_whitespace()
+    .collect::<Vec<_>>()
+    .join(" ");
+    assert!(diagnostic.contains("E121"), "expected E121, got: {diagnostic}");
+    assert!(
+        diagnostic.contains("git diff --cached"),
+        "recovery help must inspect staged changes: {diagnostic}"
+    );
+    assert!(
+        diagnostic.contains("git rm -- <path>"),
+        "recovery help must name manual input removal: {diagnostic}"
+    );
+    assert!(
+        pre_json.exists(),
+        "the refused retry must not delete the retained input"
+    );
+}
+
+fn run_callisto_cli(
+    root: &std::path::Path,
+    args: &[&str],
+    git: Option<(&std::ffi::OsStr, &std::path::Path, &std::path::Path)>,
+) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_callisto"));
+    command
+        .args(["--cwd", root.to_str().unwrap(), "--format", "text"])
+        .args(args);
+    if let Some((path, real_git, trace)) = git {
+        command
+            .env("PATH", path)
+            .env("CALLISTO_TEST_REAL_GIT", real_git)
+            .env("CALLISTO_TEST_GIT_TRACE", trace);
+    }
+    command.output().unwrap()
+}
+
 /// Regression test: if `.changeset/pre.json` exists but is malformed (truncated,
 /// corrupted, etc.), `callisto version` must return `Err`, not silently fall back
 /// to normal release mode and consume changesets as if no pre-release was active.
