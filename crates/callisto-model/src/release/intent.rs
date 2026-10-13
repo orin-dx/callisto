@@ -409,3 +409,211 @@ pub enum ReleaseIntentError {
     #[diagnostic(code(E297), help("re-derive the intent instead of hand-editing its fields"))]
     DigestMismatch,
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::Ecosystem;
+
+    use super::super::test_support::{native_intent_with_slot, native_versions, registry_binding, test_intent};
+    use super::*;
+    use crate::release::*;
+
+    #[test]
+    fn durable_native_intents_preserve_operation_prerequisites_slots_and_digest() {
+        for (ecosystem, raw) in native_versions() {
+            let intent = native_intent_with_slot(ecosystem, raw);
+            let serialized = serde_json::to_vec(&intent).unwrap();
+            let decoded: ReleaseIntentV1 = serde_json::from_slice(&serialized).unwrap();
+            assert_eq!(decoded, intent);
+            assert_eq!(decoded.digest(), intent.digest());
+            assert_eq!(serde_json::to_vec(&decoded).unwrap(), serialized);
+            for operation in &decoded.operations {
+                assert_eq!(operation.id.version.grammar(), ecosystem.version_grammar());
+                assert_eq!(operation.id.version.render(), raw);
+                for prerequisite in &operation.prerequisites {
+                    assert_eq!(prerequisite.version.grammar(), ecosystem.version_grammar());
+                }
+            }
+            assert_eq!(decoded.artifact_slots[0].version.render(), raw);
+            assert_eq!(decoded.artifact_slots[0].version.grammar(), ecosystem.version_grammar());
+        }
+    }
+
+    #[test]
+    fn durable_prerequisites_decode_with_their_own_package_ecosystem() {
+        let cargo = ReleaseOperation::tag(
+            ReleasePackageId::parse("cargo/upstream").unwrap(),
+            Version::semver(1, 2, 3),
+            vec![],
+        )
+        .unwrap();
+        let python = ReleaseOperation::tag(
+            ReleasePackageId::parse("pypi/downstream").unwrap(),
+            Version::parse_for_ecosystem("1.2.3", Ecosystem::Pypi).unwrap(),
+            vec![cargo.id.clone()],
+        )
+        .unwrap();
+        let intent = test_intent(
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![cargo, python],
+        )
+        .unwrap();
+        let decoded: ReleaseIntentV1 = serde_json::from_slice(&serde_json::to_vec(&intent).unwrap()).unwrap();
+        assert_eq!(decoded, intent);
+        assert_eq!(decoded.operations[1].id.version.grammar(), VersionGrammar::Pep440);
+        assert_eq!(
+            decoded.operations[1].prerequisites[0].version.grammar(),
+            VersionGrammar::SemVer
+        );
+    }
+
+    #[test]
+    fn native_decision_and_intent_validation_stays_strict() {
+        let intent = native_intent_with_slot(Ecosystem::Pypi, "1.2.3");
+        let decision = serde_json::to_value(&intent.decision).unwrap();
+        for schema in ReleaseDecisionV1::READABLE_SCHEMA_VERSIONS {
+            let mut tampered = decision.clone();
+            tampered["schemaVersion"] = serde_json::json!(schema);
+            tampered["entries"][0]["targetVersion"] = serde_json::json!("1.2.4");
+            let error = serde_json::from_value::<ReleaseDecisionV1>(tampered).unwrap_err();
+            assert!(error.to_string().contains("digest does not match"));
+        }
+        let mut unsupported = decision.clone();
+        unsupported["schemaVersion"] = serde_json::json!(9);
+        assert!(serde_json::from_value::<ReleaseDecisionV1>(unsupported)
+            .unwrap_err()
+            .to_string()
+            .contains("unsupported release decision schema version 9"));
+        let mut missing_reason = decision.clone();
+        missing_reason["entries"][0]["reasons"] = serde_json::json!([]);
+        assert!(serde_json::from_value::<ReleaseDecisionV1>(missing_reason).is_err());
+        let mut duplicate = decision;
+        let entry = duplicate["entries"][0].clone();
+        duplicate["entries"].as_array_mut().unwrap().push(entry);
+        assert!(serde_json::from_value::<ReleaseDecisionV1>(duplicate).is_err());
+
+        let wire = serde_json::to_value(&intent).unwrap();
+        let mut changed = wire.clone();
+        changed["snapshot"]["source"]["sha"] = serde_json::json!("c".repeat(40));
+        assert!(serde_json::from_value::<ReleaseIntentV1>(changed)
+            .unwrap_err()
+            .to_string()
+            .contains("digest"));
+        let mut changed = wire.clone();
+        changed["operations"][0]["id"]["version"] = serde_json::json!("1.2.4");
+        assert!(serde_json::from_value::<ReleaseIntentV1>(changed).is_err());
+        let mut changed = wire.clone();
+        changed["operations"][3]["id"]["role"]["slot"]["version"] = serde_json::json!("1.2.4");
+        assert!(serde_json::from_value::<ReleaseIntentV1>(changed).is_err());
+        let mut changed = wire.clone();
+        changed["trustProfile"] = serde_json::json!("hermeticContent");
+        assert!(serde_json::from_value::<ReleaseIntentV1>(changed).is_err());
+        let mut changed = wire;
+        changed["schemaVersion"] = serde_json::json!(9);
+        assert!(serde_json::from_value::<ReleaseIntentV1>(changed).is_err());
+    }
+
+    #[test]
+    fn registry_binding_is_credential_free_and_part_of_operation_identity() {
+        let first = RegistryBindingId::new(
+            "cratesIo",
+            RegistryBindingDigest::from_normalized_binding("https://index.example.test/v1"),
+        )
+        .unwrap();
+        let second = RegistryBindingId::new(
+            "cratesIo",
+            RegistryBindingDigest::from_normalized_binding("https://mirror.example.test/v1"),
+        )
+        .unwrap();
+        assert_ne!(first, second);
+
+        let wire = serde_json::to_string(&first).unwrap();
+        assert!(wire.contains("registryKey"));
+        assert!(wire.contains("bindingDigest"));
+        assert!(!wire.contains("example.test"));
+        assert!(!wire.contains("token"));
+
+        let package = ReleasePackageId::parse("cargo/callisto-model").unwrap();
+        let version = Version::semver(1, 2, 3);
+        let first_operation = ReleaseOperationId::registry_publish(package.clone(), version.clone(), first);
+        let second_operation = ReleaseOperationId::registry_publish(package, version, second);
+        assert_ne!(first_operation, second_operation);
+        assert_ne!(
+            operation_id_text(&first_operation),
+            operation_id_text(&second_operation)
+        );
+    }
+
+    #[test]
+    fn release_intent_rejects_noncanonical_duplicate_and_cyclic_dags() {
+        let package = ReleasePackageId::parse("cargo/callisto-model").unwrap();
+        let version = Version::semver(1, 2, 3);
+        let publish =
+            ReleaseOperation::registry_publish(package.clone(), version.clone(), registry_binding("cratesIo"), vec![])
+                .unwrap();
+        let tag = ReleaseOperation::tag(package, version, vec![publish.id().clone()]).unwrap();
+        let snapshot = ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]);
+
+        let reversed = test_intent(
+            snapshot.clone(),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![tag.clone(), publish.clone()],
+        );
+        assert!(matches!(reversed, Err(ReleaseIntentError::NonCanonicalOperationOrder)));
+
+        let duplicate = test_intent(
+            snapshot,
+            ExecutionTrustProfileV1::GitCommit,
+            vec![publish.clone(), publish],
+        );
+        assert!(matches!(duplicate, Err(ReleaseIntentError::DuplicateOperation { .. })));
+
+        let mut cycle_publish = ReleaseOperation::registry_publish(
+            ReleasePackageId::parse("cargo/callisto-model").unwrap(),
+            Version::semver(1, 2, 3),
+            registry_binding("cratesIo"),
+            vec![tag.id().clone()],
+        )
+        .unwrap();
+        // The public constructor permits referring to a distinct operation; intent validation owns cycle detection.
+        cycle_publish.prerequisites = vec![tag.id().clone()];
+        let cycle = test_intent(
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("b".repeat(40)).unwrap(), vec![]),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![cycle_publish, tag],
+        );
+        assert!(matches!(cycle, Err(ReleaseIntentError::Cycle { .. })));
+    }
+
+    #[test]
+    fn durable_intent_wire_rejects_forged_digest_unknown_fields_and_invalid_dag() {
+        let operation = ReleaseOperation::registry_publish(
+            ReleasePackageId::parse("cargo/callisto-model").unwrap(),
+            Version::semver(1, 2, 3),
+            registry_binding("cratesIo"),
+            vec![],
+        )
+        .unwrap();
+        let intent = test_intent(
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("d".repeat(40)).unwrap(), vec![]),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![operation],
+        )
+        .unwrap();
+        let value = serde_json::to_value(intent).unwrap();
+
+        let mut forged_digest = value.clone();
+        forged_digest["digest"] = serde_json::Value::String("0".repeat(64));
+        assert!(serde_json::from_value::<ReleaseIntentV1>(forged_digest).is_err());
+
+        let mut unknown = value.clone();
+        unknown["unexpected"] = serde_json::Value::Bool(true);
+        assert!(serde_json::from_value::<ReleaseIntentV1>(unknown).is_err());
+
+        let mut bad_registry = value;
+        bad_registry["operations"][0]["id"]["role"]["registryKey"] =
+            serde_json::Value::String("https://token@example.test/registry".to_string());
+        assert!(serde_json::from_value::<ReleaseIntentV1>(bad_registry).is_err());
+    }
+}

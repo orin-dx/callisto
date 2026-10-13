@@ -582,3 +582,240 @@ pub enum ReleaseReceiptError {
     #[error("release receipt contains a non-exact provider observation")]
     NonExactReceiptObservation,
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::release_observation::ProviderEvidenceV1;
+    use crate::release_observation::ProviderObservationV1;
+    use crate::release_transition::OperationEvent;
+    use crate::{CommitSha, Ecosystem};
+
+    use super::super::test_support::{
+        attempt_event, exact_observation, native_intent_with_slot, native_versions, pending_state, publish_operation,
+        registry_binding, test_envelope, test_intent,
+    };
+    use super::*;
+    use crate::release::*;
+
+    #[test]
+    fn durable_native_receipts_preserve_bound_registry_evidence_and_roster() {
+        for (ecosystem, raw) in native_versions() {
+            let intent = native_intent_with_slot(ecosystem, raw);
+            let mut state = pending_state(&intent);
+            for operation in &intent.operations {
+                publish_operation(&mut state, operation.id());
+            }
+            let receipt = ReleaseReceiptV1::from_state(&intent, &state).unwrap();
+            let serialized = serde_json::to_vec(&receipt).unwrap();
+            let decoded: ReleaseReceiptV1 = serde_json::from_slice(&serialized).unwrap();
+            assert_eq!(decoded, receipt);
+            decoded.validate_for_intent(&intent).unwrap();
+            assert_eq!(serde_json::to_vec(&decoded).unwrap(), serialized);
+            let observation = decoded.observation(intent.operations[0].id()).unwrap();
+            let ProviderObservationV1::Exact {
+                evidence: ProviderEvidenceV1::RegistryVersion { version, .. },
+            } = observation
+            else {
+                panic!("registry receipt must carry its native version");
+            };
+            assert_eq!(version.grammar(), ecosystem.version_grammar());
+            assert_eq!(version.render(), raw);
+        }
+    }
+
+    #[test]
+    fn native_receipts_reject_tampered_evidence_and_unsupported_schema() {
+        let intent = native_intent_with_slot(Ecosystem::Pypi, "1.2.3");
+        let mut state = pending_state(&intent);
+        for operation in &intent.operations {
+            publish_operation(&mut state, operation.id());
+        }
+        let receipt = ReleaseReceiptV1::from_state(&intent, &state).unwrap();
+        let wire = serde_json::to_value(&receipt).unwrap();
+        let registry_index = wire["observations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|entry| entry["observation"]["evidence"]["kind"] == "registryVersion")
+            .unwrap();
+        let mut changed = wire.clone();
+        changed["observations"][registry_index]["observation"]["evidence"]["version"] = serde_json::json!("1.2.4");
+        assert!(serde_json::from_value::<ReleaseReceiptV1>(changed)
+            .unwrap_err()
+            .to_string()
+            .contains("provider version does not match"));
+        let mut changed = wire.clone();
+        changed["schemaVersion"] = serde_json::json!(9);
+        assert!(serde_json::from_value::<ReleaseReceiptV1>(changed).is_err());
+        let mut changed = wire.clone();
+        let repeated = changed["observations"][registry_index].clone();
+        changed["observations"].as_array_mut().unwrap().push(repeated);
+        assert!(serde_json::from_value::<ReleaseReceiptV1>(changed).is_err());
+        let mut changed = wire;
+        changed["intentDigest"] = serde_json::json!("f".repeat(64));
+        let mismatched: ReleaseReceiptV1 = serde_json::from_value(changed).unwrap();
+        assert!(matches!(
+            mismatched.validate_for_intent(&intent),
+            Err(ReleaseReceiptError::MismatchedIntent)
+        ));
+    }
+
+    #[test]
+    fn release_run_envelope_wire_fails_closed() {
+        let intent = test_intent(
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![ReleaseOperation::tag(
+                ReleasePackageId::parse("cargo/callisto-model").unwrap(),
+                Version::semver(1, 2, 3),
+                vec![],
+            )
+            .unwrap()],
+        )
+        .unwrap();
+        let envelope = test_envelope(&intent);
+        assert_ne!(
+            envelope.orchestration_revision(),
+            envelope.release_source_revision(),
+            "a run must retain distinct coordinator and release-source identities"
+        );
+        let mut wire = serde_json::to_value(&envelope).unwrap();
+        wire["schemaVersion"] = serde_json::Value::from(9);
+        assert!(serde_json::from_value::<ReleaseRunEnvelopeV1>(wire).is_err());
+    }
+
+    #[test]
+    fn receipt_is_bound_to_intent_and_requires_terminal_outcomes() {
+        let package = ReleasePackageId::parse("cargo/callisto-model").unwrap();
+        let operation =
+            ReleaseOperation::registry_publish(package, Version::semver(1, 2, 3), registry_binding("cratesIo"), vec![])
+                .unwrap();
+        let intent = test_intent(
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("c".repeat(40)).unwrap(), vec![]),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![operation.clone()],
+        )
+        .unwrap();
+        let pending = pending_state(&intent);
+        assert!(ReleaseReceiptV1::from_state(&intent, &pending).is_err());
+
+        let mut complete = pending;
+        publish_operation(&mut complete, operation.id());
+        let receipt = ReleaseReceiptV1::from_state(&intent, &complete).unwrap();
+        assert_eq!(receipt.intent_digest(), intent.digest());
+
+        let mut failed = pending_state(&intent);
+        failed.apply(operation.id(), &attempt_event()).unwrap();
+        failed
+            .apply(
+                operation.id(),
+                &OperationEvent::EffectFailedAndAbsent {
+                    proof: ProviderObservationV1::Absent.absent_proof().unwrap(),
+                },
+            )
+            .unwrap();
+        assert!(matches!(
+            ReleaseReceiptV1::from_state(&intent, &failed),
+            Err(ReleaseReceiptError::NonSuccessfulOperation { .. })
+        ));
+        assert_eq!(
+            receipt.observation(operation.id()),
+            Some(&exact_observation(operation.id())),
+            "the receipt must record the evidence persisted at confirmation"
+        );
+    }
+
+    #[test]
+    fn apply_rejects_success_evidence_of_another_role() {
+        let operation = ReleaseOperation::registry_publish(
+            ReleasePackageId::parse("cargo/callisto-model").unwrap(),
+            Version::semver(1, 2, 3),
+            registry_binding("cratesIo"),
+            vec![],
+        )
+        .unwrap();
+        let intent = test_intent(
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("c".repeat(40)).unwrap(), vec![]),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![operation.clone()],
+        )
+        .unwrap();
+        let mut state = pending_state(&intent);
+        let tag_evidence = ProviderObservationV1::Exact {
+            evidence: ProviderEvidenceV1::GitTag {
+                peeled_commit: CommitSha::parse(&"a".repeat(40)).unwrap(),
+            },
+        };
+        let event = OperationEvent::ObservedExactBeforeEffect {
+            evidence: tag_evidence.exact_evidence().unwrap(),
+        };
+        assert!(matches!(
+            state.apply(operation.id(), &event),
+            Err(ReleaseStateError::EvidenceRejected(_))
+        ));
+        assert_eq!(state.operation_state(operation.id()), Some(OperationState::Pending));
+        assert_eq!(state.operation_evidence(operation.id()), None);
+    }
+
+    #[test]
+    fn receipt_wire_rejects_unknown_schema() {
+        let operation = ReleaseOperation::registry_publish(
+            ReleasePackageId::parse("cargo/callisto-model").unwrap(),
+            Version::semver(1, 2, 3),
+            registry_binding("cratesIo"),
+            vec![],
+        )
+        .unwrap();
+        let intent = test_intent(
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("e".repeat(40)).unwrap(), vec![]),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![operation.clone()],
+        )
+        .unwrap();
+        let mut complete = pending_state(&intent);
+        publish_operation(&mut complete, operation.id());
+        let receipt = ReleaseReceiptV1::from_state(&intent, &complete).unwrap();
+        let mut receipt_wire = serde_json::to_value(receipt).unwrap();
+        receipt_wire["schemaVersion"] = serde_json::Value::from(9);
+        assert!(serde_json::from_value::<ReleaseReceiptV1>(receipt_wire).is_err());
+    }
+
+    #[test]
+    fn state_and_receipt_require_exact_intent_digest_and_roster() {
+        let package = ReleasePackageId::parse("cargo/callisto-model").unwrap();
+        let operation = ReleaseOperation::tag(package.clone(), Version::semver(1, 2, 3), vec![]).unwrap();
+        let different_operation = ReleaseOperation::forge_release(package, Version::semver(1, 2, 3), vec![]).unwrap();
+        let first = test_intent(
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("f".repeat(40)).unwrap(), vec![]),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![operation.clone()],
+        )
+        .unwrap();
+        let different_digest = test_intent(
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("0".repeat(40)).unwrap(), vec![]),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![operation.clone()],
+        )
+        .unwrap();
+        let state = pending_state(&first);
+        assert!(matches!(
+            state.validate_for_intent(&different_digest),
+            Err(ReleaseStateError::MismatchedIntent)
+        ));
+
+        let mut complete = state;
+        publish_operation(&mut complete, operation.id());
+        let receipt = ReleaseReceiptV1::from_state(&first, &complete).unwrap();
+        assert!(matches!(
+            receipt.validate_for_intent(&different_digest),
+            Err(ReleaseReceiptError::MismatchedIntent)
+        ));
+        let mut wrong_receipt_wire = serde_json::to_value(&receipt).unwrap();
+        wrong_receipt_wire["outcomes"][0]["operation"] = serde_json::to_value(different_operation.id()).unwrap();
+        let wrong_receipt = serde_json::from_value::<ReleaseReceiptV1>(wrong_receipt_wire).unwrap();
+        assert!(matches!(
+            wrong_receipt.validate_for_intent(&first),
+            Err(ReleaseReceiptError::MismatchedOperationRoster)
+        ));
+    }
+}

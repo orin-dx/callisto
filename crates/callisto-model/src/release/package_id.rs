@@ -249,3 +249,114 @@ fn check_pypi_name(name: &str) -> Result<(), &'static str> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::identity::assert_string_wire_schema;
+    use crate::Ecosystem;
+
+    use super::*;
+
+    #[test]
+    fn release_package_id_schema_describes_canonical_strings() {
+        for raw in ["cargo/example", "npm/@scope/example", "pypi/example-package"] {
+            let id = ReleasePackageId::parse(raw).unwrap();
+            assert_string_wire_schema(&id, "ReleasePackageId", raw);
+        }
+    }
+
+    #[test]
+    fn release_package_id_requires_a_qualified_canonical_identity() {
+        assert_eq!(
+            ReleasePackageId::parse("cargo/shared").unwrap().to_string(),
+            "cargo/shared"
+        );
+        assert_eq!(ReleasePackageId::parse("npm/shared").unwrap().to_string(), "npm/shared");
+        assert!(ReleasePackageId::parse("shared").is_err());
+        assert!(ReleasePackageId::parse("cargo:shared").is_err());
+        assert!(ReleasePackageId::parse("unknown/shared").is_err());
+        assert!(ReleasePackageId::parse("cargo/../shared").is_err());
+        assert!(ReleasePackageId::new(Ecosystem::Cargo, "").is_err());
+    }
+
+    #[test]
+    fn release_package_ids_do_not_conflate_ecosystems() {
+        let cargo = ReleasePackageId::parse("cargo/shared").unwrap();
+        let npm = ReleasePackageId::parse("npm/shared").unwrap();
+        assert_ne!(cargo, npm);
+        assert!(cargo < npm);
+    }
+
+    #[test]
+    fn release_package_id_deserialization_rejects_a_bare_identity() {
+        let parsed = serde_json::from_str::<ReleasePackageId>(r#""shared""#);
+        assert!(parsed.is_err());
+    }
+
+    /// A release package name becomes an argv word (`npm view <name>@<v>`,
+    /// `pnpm publish --filter=<name>`) and a URL path segment (the cargo
+    /// sparse index, the PyPI JSON API). These are the shapes that would
+    /// change the meaning of one of those, so they are refused at plan time.
+    #[test]
+    fn release_package_names_reject_argv_and_url_hazards() {
+        let hazards = [
+            (Ecosystem::Cargo, "-x"),
+            (Ecosystem::Cargo, "--registry"),
+            (Ecosystem::Cargo, "a b"),
+            (Ecosystem::Cargo, "a\nb"),
+            (Ecosystem::Cargo, "a\u{0}b"),
+            (Ecosystem::Cargo, "a/b"),
+            (Ecosystem::Cargo, "a%2fb"),
+            (Ecosystem::Cargo, "a?b"),
+            (Ecosystem::Cargo, "a#b"),
+            (Ecosystem::Cargo, "a\\b"),
+            (Ecosystem::Cargo, "1crate"),
+            (Ecosystem::Cargo, "crate.name"),
+            (Ecosystem::Npm, "-x"),
+            (Ecosystem::Npm, "@scope"),
+            (Ecosystem::Npm, "@scope/a/b"),
+            (Ecosystem::Npm, "scope/name"),
+            (Ecosystem::Npm, ".hidden"),
+            (Ecosystem::Npm, "_hidden"),
+            (Ecosystem::Npm, "@scope/-x"),
+            (Ecosystem::Pypi, "-x"),
+            (Ecosystem::Pypi, "pkg/../etc"),
+            (Ecosystem::Pypi, ".pkg"),
+            (Ecosystem::Pypi, "pkg-"),
+            (Ecosystem::Pypi, "pkg name"),
+        ];
+        for (ecosystem, name) in hazards {
+            assert!(
+                matches!(
+                    ReleasePackageId::new(ecosystem, name),
+                    Err(ReleasePackageIdParseError::UnsafeName { .. } | ReleasePackageIdParseError::Malformed { .. })
+                ),
+                "{ecosystem:?} accepted an unsafe package name: {name:?}"
+            );
+        }
+    }
+
+    /// The real names each ecosystem publishes under must keep working.
+    #[test]
+    fn release_package_names_accept_each_ecosystem_grammar() {
+        for (ecosystem, name) in [
+            (Ecosystem::Cargo, "callisto-model"),
+            (Ecosystem::Cargo, "_private_crate"),
+            (Ecosystem::Cargo, "serde"),
+            (Ecosystem::Npm, "callisto"),
+            (Ecosystem::Npm, "@orin-dx/callisto"),
+            (Ecosystem::Npm, "left.pad"),
+            (Ecosystem::Npm, "JSONStream"),
+            (Ecosystem::Npm, "Base64"),
+            (Ecosystem::Npm, "@_scope/_x"),
+            (Ecosystem::Npm, "@types/node"),
+            (Ecosystem::Pypi, "typing-extensions"),
+            (Ecosystem::Pypi, "zope.interface"),
+            (Ecosystem::Pypi, "Flask"),
+        ] {
+            let id = ReleasePackageId::new(ecosystem, name)
+                .unwrap_or_else(|error| panic!("{ecosystem:?}/{name} must stay valid: {error}"));
+            assert_eq!(id.name(), name);
+        }
+    }
+}

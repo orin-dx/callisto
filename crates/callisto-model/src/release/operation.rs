@@ -451,3 +451,122 @@ pub fn validated_registry_key(raw: String) -> Result<RegistryKey, ReleaseOperati
     }
     Ok(RegistryKey(raw))
 }
+
+#[cfg(test)]
+mod tests {
+    use std::cmp::Ordering;
+    use std::collections::BTreeSet;
+
+    use super::super::test_support::registry_binding;
+    use super::*;
+    use crate::release::*;
+
+    /// Residual instance of the same defect class fixed above for
+    /// `attestation_policy`: `ReleaseOperationId::cmp` used to key on
+    /// `version.render()` alone, dropping `version.grammar()`. The same
+    /// literal string parses under more than one grammar -- `"1.2.3"` is
+    /// valid both as SemVer and PEP 440 -- so two `ReleaseOperationId`s
+    /// that are Eq-distinct only by `Version::grammar` collapsed to
+    /// `Ordering::Equal` under the old `render()`-only `Ord`, violating
+    /// the invariant `BTreeSet`/`BTreeMap` require: `a.cmp(b) == Equal`
+    /// iff `a == b`.
+    #[test]
+    fn operation_ids_differing_only_by_version_grammar_stay_distinct_under_ord() {
+        let package = ReleasePackageId::parse("cargo/demo").unwrap();
+        let v_semver = Version::parse("1.2.3", VersionGrammar::SemVer).unwrap();
+        let v_pep440 = Version::parse("1.2.3", VersionGrammar::Pep440).unwrap();
+
+        // Precondition: the identical literal renders identically under both
+        // grammars, but the parsed Versions are NOT the same value -- this is
+        // exactly the collision `version_ord_key` must resolve.
+        assert_eq!(v_semver.render(), v_pep440.render());
+        assert_ne!(
+            v_semver, v_pep440,
+            "SemVer and PEP 440 parses of the identical literal must remain Eq-distinct"
+        );
+
+        let id_a = ReleaseOperationId::tag(package.clone(), v_semver);
+        let id_b = ReleaseOperationId::tag(package, v_pep440);
+
+        assert_ne!(id_a, id_b, "distinct version grammars must stay Eq-distinct");
+        assert_ne!(
+            id_a.cmp(&id_b),
+            Ordering::Equal,
+            "distinct version grammars must not compare Ord::Equal"
+        );
+
+        let mut ids = BTreeSet::new();
+        assert!(ids.insert(id_a.clone()), "first id must insert");
+        assert!(
+            ids.insert(id_b.clone()),
+            "second id must NOT be displaced by the first in a BTreeSet"
+        );
+        assert_eq!(ids.len(), 2, "BTreeSet must not silently collapse distinct-grammar ids");
+
+        // Sanity check the ordinary case still behaves: several distinct
+        // plain SemVer versions of the same package/role must all survive
+        // as separate BTreeSet entries too, not just the grammar-collision
+        // edge case above.
+        let mut ordinary_ids = BTreeSet::new();
+        for raw in ["1.0.0", "1.2.3", "2.0.0", "0.9.9"] {
+            let id = ReleaseOperationId::tag(
+                ReleasePackageId::parse("cargo/demo").unwrap(),
+                Version::parse(raw, VersionGrammar::SemVer).unwrap(),
+            );
+            assert!(
+                ordinary_ids.insert(id),
+                "version {raw} must not collide with a prior entry"
+            );
+        }
+        assert_eq!(ordinary_ids.len(), 4);
+    }
+
+    #[test]
+    fn platform_publish_round_trips_under_its_owner_and_rejects_unsafe_platforms() {
+        let owner = ReleasePackageId::parse("npm/@s/cli").unwrap();
+        let platform = PlatformPackageV1::new(
+            ReleasePackageId::parse("npm/@s/cli-linux-x64-gnu").unwrap(),
+            "packages/cli/npm/linux-x64-gnu",
+        )
+        .unwrap();
+        let id = ReleaseOperationId::platform_publish(
+            owner.clone(),
+            Version::semver(1, 2, 3),
+            registry_binding("npm"),
+            platform,
+        );
+        assert_eq!(id.package, owner);
+        let wire = serde_json::to_value(&id).unwrap();
+        assert_eq!(wire["role"]["kind"], "platformPublish");
+        assert_eq!(wire["role"]["platform"]["directory"], "packages/cli/npm/linux-x64-gnu");
+        assert_eq!(serde_json::from_value::<ReleaseOperationId>(wire.clone()).unwrap(), id);
+
+        for directory in ["", "/abs", "-flag", "a/../b", "a//b", "./a", "a b"] {
+            let mut bad = wire.clone();
+            bad["role"]["platform"]["directory"] = directory.into();
+            assert!(
+                serde_json::from_value::<ReleaseOperationId>(bad).is_err(),
+                "{directory:?}"
+            );
+        }
+        assert!(PlatformPackageV1::new(ReleasePackageId::parse("cargo/x").unwrap(), "x").is_err());
+    }
+
+    #[test]
+    fn release_operation_orders_exactly_and_rejects_invalid_prerequisites() {
+        let package = ReleasePackageId::parse("cargo/callisto-model").unwrap();
+        let version = Version::semver(1, 2, 3);
+        let publish =
+            ReleaseOperation::registry_publish(package.clone(), version.clone(), registry_binding("cratesIo"), vec![])
+                .unwrap();
+        let tag = ReleaseOperation::tag(package, version, vec![publish.id().clone()]).unwrap();
+
+        assert!(publish.id() < tag.id());
+        assert!(ReleaseOperation::tag(
+            ReleasePackageId::parse("cargo/callisto-model").unwrap(),
+            Version::semver(1, 2, 3),
+            vec![tag.id().clone()],
+        )
+        .is_err());
+    }
+}
