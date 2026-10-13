@@ -3,7 +3,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use schemars::JsonSchema;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 
 use super::ArtifactSlotError;
 use crate::identity::string_json_schema;
@@ -16,7 +16,8 @@ use crate::CommitSha;
 /// restriction, a stricter ASCII-alphanumeric-plus-`-_.` check, and an
 /// entirely unvalidated `format!("{owner}/{repository}")`); every caller now
 /// parses through this single charset rule instead.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
+#[serde(try_from = "String")]
 pub struct GitHubRepository {
     owner: String,
     repo: String,
@@ -110,13 +111,11 @@ impl Serialize for GitHubRepository {
     }
 }
 
-impl<'de> Deserialize<'de> for GitHubRepository {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let raw = String::deserialize(deserializer)?;
-        Self::parse(&raw).map_err(serde::de::Error::custom)
+impl TryFrom<String> for GitHubRepository {
+    type Error = GitHubRepositoryParseError;
+
+    fn try_from(raw: String) -> Result<Self, Self::Error> {
+        Self::parse(&raw)
     }
 }
 
@@ -149,8 +148,12 @@ pub enum GitHubRepositoryParseError {
 pub const RELEASE_COORDINATOR_WORKFLOW_PATH: &str = ".github/workflows/callisto-release.yml";
 
 /// Immutable GitHub provenance policy declared by a binary release slot.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, JsonSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(
+    try_from = "GitHubAttestationPolicyV1Wire",
+    rename_all = "camelCase",
+    deny_unknown_fields
+)]
 pub struct GitHubAttestationPolicyV1 {
     pub repository: GitHubRepository,
     pub workflow_path: String,
@@ -183,13 +186,11 @@ impl GitHubAttestationPolicyV1 {
     }
 }
 
-impl<'de> Deserialize<'de> for GitHubAttestationPolicyV1 {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = GitHubAttestationPolicyV1Wire::deserialize(deserializer)?;
-        Self::new(wire.repository, wire.workflow_path, wire.workflow_commit).map_err(serde::de::Error::custom)
+impl TryFrom<GitHubAttestationPolicyV1Wire> for GitHubAttestationPolicyV1 {
+    type Error = ArtifactSlotError;
+
+    fn try_from(wire: GitHubAttestationPolicyV1Wire) -> Result<Self, Self::Error> {
+        Self::new(wire.repository, wire.workflow_path, wire.workflow_commit)
     }
 }
 

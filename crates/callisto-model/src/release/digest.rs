@@ -1,7 +1,7 @@
 use std::fmt;
 use std::io::Read;
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 use sha2::{Digest, Sha256};
 
 use crate::identity::string_json_schema;
@@ -9,7 +9,8 @@ use crate::identity::string_json_schema;
 macro_rules! release_digest {
     ($name:ident, $description:literal) => {
         #[doc = $description]
-        #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+        #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize)]
+        #[serde(try_from = "String")]
         pub struct $name(String);
 
         string_json_schema!($name);
@@ -56,13 +57,11 @@ macro_rules! release_digest {
             }
         }
 
-        impl<'de> Deserialize<'de> for $name {
-            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-            where
-                D: Deserializer<'de>,
-            {
-                let raw = String::deserialize(deserializer)?;
-                Self::parse(&raw).map_err(serde::de::Error::custom)
+        impl TryFrom<String> for $name {
+            type Error = DigestParseError;
+
+            fn try_from(raw: String) -> Result<Self, Self::Error> {
+                Self::parse(&raw)
             }
         }
     };
