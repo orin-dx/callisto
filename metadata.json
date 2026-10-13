@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.11.5-nightly.202610120640.a564a68c8",
+  "checkpoint_id": "01M4TVDG1QKBD871B0TC2G3NWE",
+  "strategy": "manual-commit",
+  "branch": "work/v1-implementation-stack",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "ARCHITECTURE.md",
+    "README.md",
+    "docs/adr/0002-committed-decision-is-release-authority.md",
+    "docs/adr/0003-reruns-adopt-landed-effects.md",
+    "docs/adr/0004-ecosystem-tools-publish-and-own-auth.md",
+    "docs/adr/0011-directory-keyed-package-identity.md",
+    "docs/architecture/identity.md",
+    "docs/architecture/release.md",
+    "docs/architecture/versioning.md",
+    "docs/config.md",
+    "docs/errors.md",
+    "docs/projects/ROAD-TO-V1.md",
+    "docs/projects/V1-IMPLEMENTATION.md",
+    "docs/projects/V1-SYSTEM-HARDENING.json",
+    "docs/publishing.md",
+    "docs/releasing.md",
+    "docs/specs/INDEX.md",
+    "docs/specs/REQ-DX-V1.md",
+    "docs/specs/cli.json",
+    "docs/specs/release.json",
+    "docs/specs/versioning.json",
+    "docs/specs/workspace.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 32717,
+    "cache_read_tokens": 27922,
+    "output_tokens": 176,
+    "api_call_count": 1
+  }
+}
