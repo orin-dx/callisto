@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.11.5-nightly.202610120640.a564a68c8",
+  "checkpoint_id": "01M4VDRSCT903VA49ATFQ1CQ8E",
+  "session_id": "f98f161c-abe7-472b-92f1-8cfe1cfdf74a",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-13T20:02:56.876665Z",
+  "branch": "refactor/serde-siblings",
+  "checkpoints_count": 3,
+  "save_step_count": 3,
+  "files_touched": [
+    "crates/callisto-model/src/identity.rs",
+    "crates/callisto-model/src/release_pr.rs",
+    "crates/callisto-model/src/tag.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "cb0068785b49",
+  "checkpoint_transcript_start": 1919,
+  "transcript_lines_at_start": 1919,
+  "compact_transcript_start": 185,
+  "token_usage": {
+    "input_tokens": 32,
+    "cache_creation_tokens": 14119,
+    "cache_read_tokens": 4333781,
+    "output_tokens": 9933,
+    "api_call_count": 15
+  },
+  "session_metrics": {
+    "turn_count": 19
+  }
+}
