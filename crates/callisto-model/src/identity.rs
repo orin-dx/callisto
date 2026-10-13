@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use schemars::JsonSchema;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 
 use crate::{Ecosystem, ModelError};
 
@@ -50,7 +50,8 @@ impl fmt::Display for PackageKey {
 }
 
 /// Package identity across ecosystems.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
+#[serde(try_from = "String")]
 pub enum PackageId {
     Bare(String),
     Prefixed { ecosystem: Ecosystem, name: String },
@@ -236,13 +237,11 @@ impl Serialize for PackageId {
     }
 }
 
-impl<'de> Deserialize<'de> for PackageId {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        PackageId::parse(&s).map_err(serde::de::Error::custom)
+impl TryFrom<String> for PackageId {
+    type Error = PackageIdParseError;
+
+    fn try_from(raw: String) -> Result<Self, Self::Error> {
+        Self::parse(&raw)
     }
 }
 
@@ -344,7 +343,8 @@ impl RegistryKey {
 }
 
 /// A 40-character hex Git commit SHA.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize)]
+#[serde(try_from = "String")]
 pub struct CommitSha(String);
 
 string_json_schema!(CommitSha);
@@ -392,13 +392,11 @@ impl Serialize for CommitSha {
     }
 }
 
-impl<'de> Deserialize<'de> for CommitSha {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        CommitSha::parse(&s).map_err(serde::de::Error::custom)
+impl TryFrom<String> for CommitSha {
+    type Error = ModelError;
+
+    fn try_from(raw: String) -> Result<Self, Self::Error> {
+        Self::parse(&raw)
     }
 }
 

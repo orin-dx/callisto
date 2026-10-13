@@ -1,9 +1,10 @@
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 
 use crate::{Diagnostic, DiagnosticCode, DiagnosticSeverity, PackageId, Version, VersionGrammar, VersionParseError};
 
 /// A validated tag template containing prefix, suffix, and exact `{version}` placement.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
+#[serde(try_from = "String")]
 pub struct TagTemplate {
     prefix: String,
     suffix: String,
@@ -125,13 +126,11 @@ impl Serialize for TagTemplate {
     }
 }
 
-impl<'de> Deserialize<'de> for TagTemplate {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        TagTemplate::parse(&s).map_err(serde::de::Error::custom)
+impl TryFrom<String> for TagTemplate {
+    type Error = TagTemplateError;
+
+    fn try_from(raw: String) -> Result<Self, Self::Error> {
+        Self::parse(&raw)
     }
 }
 
@@ -166,8 +165,9 @@ fn is_valid_git_ref_name(s: &str) -> bool {
 use schemars::JsonSchema;
 
 /// Rendered Git tag name.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, JsonSchema, Deserialize)]
 #[schemars(with = "String")]
+#[serde(try_from = "String")]
 pub struct TagName(String);
 
 impl TagName {
@@ -205,13 +205,11 @@ impl Serialize for TagName {
     }
 }
 
-impl<'de> Deserialize<'de> for TagName {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let raw = String::deserialize(deserializer)?;
-        TagName::parse(&raw).map_err(serde::de::Error::custom)
+impl TryFrom<String> for TagName {
+    type Error = TagNameError;
+
+    fn try_from(raw: String) -> Result<Self, Self::Error> {
+        Self::parse(&raw)
     }
 }
 

@@ -22,8 +22,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 use crate::{CommitSha, GitHubRepository};
 
 /// Explicit identity and presentation configuration for one managed release PR.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(try_from = "ReleasePrConfigWireV1", rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReleasePrConfigV1 {
     pub schema_version: u8,
     pub repository: GitHubRepository,
@@ -80,19 +80,17 @@ impl ReleasePrConfigV1 {
     }
 }
 
-impl<'de> Deserialize<'de> for ReleasePrConfigV1 {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = ReleasePrConfigWireV1::deserialize(deserializer)?;
-        Self::from_wire(wire).map_err(serde::de::Error::custom)
+impl TryFrom<ReleasePrConfigWireV1> for ReleasePrConfigV1 {
+    type Error = ReleasePrDecisionError;
+
+    fn try_from(wire: ReleasePrConfigWireV1) -> Result<Self, Self::Error> {
+        Self::from_wire(wire)
     }
 }
 
 /// A credential-free observation supplied by a forge adapter before planning.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(try_from = "ReleasePrSnapshotWireV2", rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReleasePrSnapshotV2 {
     pub schema_version: u8,
     pub repository: GitHubRepository,
@@ -153,13 +151,11 @@ impl ReleasePrSnapshotV2 {
     }
 }
 
-impl<'de> Deserialize<'de> for ReleasePrSnapshotV2 {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = ReleasePrSnapshotWireV2::deserialize(deserializer)?;
-        Self::from_wire(wire).map_err(serde::de::Error::custom)
+impl TryFrom<ReleasePrSnapshotWireV2> for ReleasePrSnapshotV2 {
+    type Error = ReleasePrDecisionError;
+
+    fn try_from(wire: ReleasePrSnapshotWireV2) -> Result<Self, Self::Error> {
+        Self::from_wire(wire)
     }
 }
 
@@ -210,8 +206,8 @@ pub enum ReleasePrNoopReasonV1 {
 }
 
 /// Versioned output of managed release-PR policy derivation.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(try_from = "ReleasePrDecisionWireV2", rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReleasePrDecisionV2 {
     pub schema_version: u8,
     pub config: ReleasePrConfigV1,
@@ -342,13 +338,11 @@ impl ReleasePrDecisionV2 {
     }
 }
 
-impl<'de> Deserialize<'de> for ReleasePrDecisionV2 {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = ReleasePrDecisionWireV2::deserialize(deserializer)?;
-        Self::from_wire(wire).map_err(serde::de::Error::custom)
+impl TryFrom<ReleasePrDecisionWireV2> for ReleasePrDecisionV2 {
+    type Error = ReleasePrDecisionError;
+
+    fn try_from(wire: ReleasePrDecisionWireV2) -> Result<Self, Self::Error> {
+        Self::from_wire(wire)
     }
 }
 
