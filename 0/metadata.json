@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.11.5-nightly.202610120640.a564a68c8",
+  "checkpoint_id": "01M4V3R089QV62CC7BJHGTP5T7",
+  "session_id": "f98f161c-abe7-472b-92f1-8cfe1cfdf74a",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-13T17:07:47.002508Z",
+  "branch": "fix/stack-ff",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/actions/callisto-action/tests/test_release_contract.sh"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "241411452584",
+  "checkpoint_transcript_start": 698,
+  "transcript_lines_at_start": 698,
+  "compact_transcript_start": 65,
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 12129,
+    "cache_read_tokens": 2262579,
+    "output_tokens": 8567,
+    "api_call_count": 15
+  },
+  "session_metrics": {
+    "turn_count": 10
+  }
+}

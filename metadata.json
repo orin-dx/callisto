@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.5-nightly.202610120640.a564a68c8",
+  "checkpoint_id": "01M4V3R089QV62CC7BJHGTP5T7",
+  "strategy": "manual-commit",
+  "branch": "fix/stack-ff",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/actions/callisto-action/tests/test_release_contract.sh"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 12129,
+    "cache_read_tokens": 2262579,
+    "output_tokens": 8567,
+    "api_call_count": 15
+  }
+}
