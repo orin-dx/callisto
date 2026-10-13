@@ -1,0 +1,71 @@
+{
+  "cli_version": "0.11.5-nightly.202610120640.a564a68c8",
+  "checkpoint_id": "01M4TVB2AAQC7ACH7Y86W2ZB0R",
+  "session_id": "f98f161c-abe7-472b-92f1-8cfe1cfdf74a",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-13T14:41:09.343162Z",
+  "branch": "work/v1-implementation-stack",
+  "checkpoints_count": 2,
+  "save_step_count": 2,
+  "files_touched": [
+    "crates/callisto-cli/tests/pre_mode_tests.rs",
+    "crates/callisto-model/src/dependency.rs",
+    "crates/callisto-model/src/exec.rs",
+    "crates/callisto-model/src/format/pre.rs",
+    "crates/callisto-model/src/identity.rs",
+    "crates/callisto-model/src/release.rs",
+    "crates/callisto-model/src/release_observation.rs",
+    "crates/callisto-model/src/version.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "8d639798e7db",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 169190,
+    "cache_read_tokens": 744305,
+    "output_tokens": 10040,
+    "api_call_count": 12
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "summary": {
+    "intent": "Get a status picture of the callisto repo (git, PRs, plans, Entire history), then move on to landing the unpushed v1 work (T01-T05, T11) as a clean stack.",
+    "outcome": "Produced a full status report and agreed on a 5-layer crate-based commit stack (model, manifests, graph, cli, docs/changesets), leaving tool settings out. Started committing the code layers, with only callisto-model and the pre_mode_tests.rs file confirmed modified so far; nothing pushed.",
+    "learnings": {
+      "repo": [
+        "Branch work/v1-implementation-stack has 4 local commits (T01, reject unchanged release PR heads, T11, polyglot model docs) ahead of origin/main, with no PR and nothing pushed.",
+        "Uncommitted work (about 83 files, 7.6k lines) spans T02-T05 and ten changesets; several files (version.rs, release.rs, lib.rs, runner.rs, cascade.rs, CLI e2e tests) mix hunks from multiple changesets, so a per-topic split needs hunk-level patch surgery.",
+        "Cargo.lock +368 lines (36 packages) comes from the new jsonschema 0.53 dev-dependency in callisto-cli, so it is legitimate to commit.",
+        "ROAD-TO-V1.md is stale: its baseline reads 8ef9aa5a4 and 'awaiting merge', and Stage 1 is moot because 0.9.0 and 0.10.0 already shipped.",
+        "Aggregate `just ci` hit a sandbox lock in cargo-deny, so V1-VERIFICATION.md only has component-wise passes (1,862 tests, Clippy, 93.45% coverage, 25 release-workflow cases).",
+        "The repo is public; .entire/settings.json had push_sessions flipped to true, which conflicts with the user's note that session transcripts stay private."
+      ],
+      "code": [],
+      "workflow": [
+        "Stage files by explicit path rather than `git add -A` when the tree has tooling or settings edits that must stay out of commits.",
+        "Run cargo check after each crate layer and full `just ci` on the stack tip before pushing.",
+        "Use a dry-run merge to detect conflicts without touching the working tree.",
+        "Confirm with the user before pushing or choosing between commit-split strategies."
+      ]
+    },
+    "friction": [
+      "Dirty tree mixed v1 work with unrelated Entire/Claude/Gemini tooling edits, including one that would publish session transcripts from a public repo.",
+      "Changeset hunks are interleaved across files, which makes a clean per-topic commit split costly.",
+      "Sandbox lock in cargo-deny prevented a single green `just ci` run.",
+      "Possible overlap between local T01 commit and #170 on main was not verified during the status pass."
+    ],
+    "open_items": [
+      "Finish committing the remaining layers (graph, cli, docs/changesets) and run cargo check per layer.",
+      "Rebase onto current main and resolve the T01 vs #170 overlap.",
+      "Run full `just ci` on the stack tip, then push as a native `gh stack` after user confirmation.",
+      "Merge dependabot PR #175 (all 11 checks pass).",
+      "Refresh ROAD-TO-V1.md baseline and Stage 1.",
+      "Start Stages 3-5: D01 owner-contract checkpoint, T06-T09, T10 generated workflows, T12 onboarding integration.",
+      "Clean up the Sep 27 stash, stale origin branches (fix/native-resolution, fix/release-forge-lookup, fix/release-pr-verify-envelope, docs/spec-rewrite), and Entire issues (hooks out of date, legacy shadow branch, 174 unpushed checkpoints).",
+      "Leave .entire/settings.json, .claude/settings.json and .gemini/settings.json edits out of the stack and decide what to do with them separately."
+    ]
+  }
+}
