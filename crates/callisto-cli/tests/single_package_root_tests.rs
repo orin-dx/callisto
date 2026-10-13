@@ -126,3 +126,114 @@ fn single_python_package_repository_initializes() {
     init(&dir.path().join("src"));
     assert!(dir.path().join("callisto.toml").exists());
 }
+
+#[test]
+fn root_package_release_commit_accepts_default_and_configured_changelog_paths() {
+    let cases = [
+        (
+            "cargo/solo",
+            "crates-io",
+            "Cargo.toml",
+            "[package]\nname = \"solo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+            "src/lib.rs",
+        ),
+        (
+            "npm/solo",
+            "npm",
+            "package.json",
+            "{\"name\":\"solo\",\"version\":\"0.1.0\"}\n",
+            "src/index.js",
+        ),
+        (
+            "pypi/solo",
+            "pypi",
+            "pyproject.toml",
+            "[project]\nname = \"solo\"\nversion = \"0.1.0\"\n",
+            "src/solo/__init__.py",
+        ),
+    ];
+    for (identity, registry, manifest, source, code) in cases {
+        for custom_changelog in [false, true] {
+            let dir = repo(&[(manifest, source), (code, "\n")]);
+            let root = dir.path();
+            init(root);
+            let config = fs::read_to_string(root.join("callisto.toml")).unwrap();
+            let changelog_config = if custom_changelog {
+                "changelog = \"./notes/../RELEASES.md\"\n"
+            } else {
+                ""
+            };
+            callisto_model::atomic::atomic_write(
+                &root.join("callisto.toml"),
+                &format!(
+                    "{config}\n[[package]]\nmatch = \"{identity}\"\npublish-to = [\"{registry}\"]\n\
+                     {changelog_config}",
+                ),
+                &callisto_model::ApplyPermit::force_for_tests(),
+            )
+            .unwrap();
+            commands::add::handle(
+                AddArgs {
+                    packages: vec!["solo:patch".to_owned()],
+                    summary: Some("Fix the root package".to_owned()),
+                },
+                &global(root, false),
+            )
+            .unwrap();
+            run_git(root, &["add", "."]);
+            run_git(root, &["commit", "-q", "-m", "configure and request release"]);
+            let decision_path = ".callisto/release-decision.json";
+            commands::version::handle(
+                VersionArgs {
+                    refresh_lockfiles: false,
+                    no_refresh_lockfiles: true,
+                    strict: false,
+                    allow_empty_changesets: false,
+                    emit_decision: Some(decision_path.into()),
+                },
+                &global(root, false),
+            )
+            .unwrap();
+            let changelog_path = if custom_changelog {
+                "RELEASES.md"
+            } else {
+                "CHANGELOG.md"
+            };
+            assert!(root.join(changelog_path).exists());
+            run_git(root, &["add", "."]);
+            run_git(root, &["commit", "-q", "-m", "release root package"]);
+            let head = std::process::Command::new("git")
+                .args(["rev-parse", "HEAD"])
+                .current_dir(root)
+                .output()
+                .unwrap();
+            assert!(head.status.success());
+            let commit = String::from_utf8(head.stdout).unwrap().trim().to_owned();
+            run_git(root, &["checkout", "--detach", &commit]);
+            let external = tempfile::tempdir().unwrap();
+            let intent_path = external.path().join("intent.json");
+            let out = std::process::Command::new(env!("CARGO_BIN_EXE_callisto"))
+                .args([
+                    "--cwd",
+                    root.to_str().unwrap(),
+                    "release",
+                    "plan",
+                    "--from-release-commit",
+                    &commit,
+                ])
+                .args(["--decision", decision_path, "--out", intent_path.to_str().unwrap()])
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "{identity}, custom changelog {custom_changelog}: {}",
+                String::from_utf8_lossy(&out.stderr),
+            );
+            let intent: callisto_model::ReleaseIntentV1 =
+                serde_json::from_slice(&fs::read(intent_path).unwrap()).unwrap();
+            assert_eq!(intent.decision.entries.len(), 1);
+            assert_eq!(intent.decision.entries[0].package.to_string(), identity);
+            assert_eq!(intent.decision.entries[0].target_version.render(), "0.1.1");
+        }
+    }
+}

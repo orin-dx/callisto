@@ -91,6 +91,7 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
                 if existing.mode == PreMode::Pre {
                     return Err(CliError::PreAlreadyActive);
                 }
+                let existing = ws.resolve_pre_state_from_json(existing, &existing_text)?;
                 // Re-entering after `exit` carries the same initial-versions baseline and recorded
                 // changesets forward under the new tag, matching a resumed rather than a fresh cycle.
                 PreState {
@@ -160,6 +161,8 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
                 return Err(CliError::PreAlreadyExited);
             }
 
+            let ws = load_workspace(global, &runner)?;
+            pre_state = ws.resolve_pre_state_from_json(pre_state, &text)?;
             pre_state.mode = PreMode::Exit;
 
             let updated = write_pre_json_preserving(&pre_state, &text);

@@ -27,7 +27,7 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
 
     let plan = callisto_graph::commands::plan_version(&ws, &inference, &opts)?;
 
-    // Refuses when disk already shows a bump HEAD lacks while a changeset is still pending: a crashed prior run.
+    // Refuses when disk already shows a bump HEAD lacks while release inputs or staged version state remain.
     callisto_graph::commands::check_partial_run(&ws)?;
 
     // Escalated diagnostics (e.g. --strict on "no pending changesets") must fail before anything is written.

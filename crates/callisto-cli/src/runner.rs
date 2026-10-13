@@ -13,13 +13,62 @@ use callisto_model::{known_credential_env_values, redact_known_secrets, CommandE
 /// separately).
 const MAX_CAPTURED_OUTPUT_BYTES: usize = 10 * 1024 * 1024;
 
+const RELEASE_CREDENTIALS: &[&str] = &[
+    "CARGO_REGISTRY_TOKEN",
+    "GH_TOKEN",
+    "GITHUB_TOKEN",
+    "NPM_CONFIG_TOKEN",
+    "NPM_TOKEN",
+    "NODE_AUTH_TOKEN",
+    "PYPI_TOKEN",
+    "CALLISTO_PUBLISH_NPM_CONFIG",
+    "TWINE_USERNAME",
+    "TWINE_PASSWORD",
+];
+
+const ACTION_SECRET_INPUTS: &[&str] = &[
+    "CARGO_REGISTRY_TOKEN",
+    "GH_TOKEN",
+    "GITHUB_TOKEN",
+    "NPM_TOKEN",
+    "PYPI_TOKEN",
+    "CALLISTO_PUBLISH_NPM_CONFIG",
+    "TWINE_USERNAME",
+    "TWINE_PASSWORD",
+];
+
+struct ChildEnvironment<'a> {
+    remove: &'a [&'a str],
+    set: &'a [(&'a str, &'a str)],
+}
+
+fn unrelated_credentials(program: &str) -> Vec<&'static str> {
+    let keep: &[&str] = match program {
+        "npm" | "pnpm" | "yarn" | "bun" => &["NPM_CONFIG_TOKEN", "NPM_TOKEN", "NODE_AUTH_TOKEN"],
+        "cargo" => &["CARGO_REGISTRY_TOKEN"],
+        _ => &[],
+    };
+    RELEASE_CREDENTIALS
+        .iter()
+        .copied()
+        .filter(|credential| !keep.contains(credential))
+        .collect()
+}
+
+fn remove_env(command: &mut std::process::Command, names: &[&str]) {
+    for name in names {
+        command.env_remove(name);
+    }
+}
+
 pub struct CliCommandRunner;
 
 impl CommandRunner for CliCommandRunner {
     fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
-        let output = std::process::Command::new(program)
-            .args(args)
-            .current_dir(cwd)
+        let mut command = std::process::Command::new(program);
+        command.args(args).current_dir(cwd);
+        remove_env(&mut command, &unrelated_credentials(program));
+        let output = command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -62,6 +111,7 @@ impl CommandRunner for CliCommandRunner {
         // keeps the impl fn pure and directly unit-testable with a synthetic
         // secrets list (no process-env mutation, which would race against
         // other tests running in parallel in this binary).
+        let remove = unrelated_credentials(program);
         run_with_timeout_impl(
             program,
             args,
@@ -69,6 +119,62 @@ impl CommandRunner for CliCommandRunner {
             timeout,
             StderrMode::Live,
             known_credential_env_values(std::env::vars()),
+            ChildEnvironment {
+                remove: &remove,
+                set: &[],
+            },
+        )
+    }
+
+    fn run_with_timeout_env_filtered(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: &Path,
+        timeout: Duration,
+        removed: &[&str],
+    ) -> Result<CommandOutput, CommandError> {
+        let remove = unrelated_credentials(program)
+            .into_iter()
+            .chain(removed.iter().copied())
+            .collect::<Vec<_>>();
+        run_with_timeout_impl(
+            program,
+            args,
+            cwd,
+            timeout,
+            StderrMode::Live,
+            known_credential_env_values(std::env::vars()),
+            ChildEnvironment {
+                remove: &remove,
+                set: &[],
+            },
+        )
+    }
+
+    fn run_with_timeout_publisher(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: &Path,
+        timeout: Duration,
+        env: &[(&str, &str)],
+    ) -> Result<CommandOutput, CommandError> {
+        let remove = unrelated_credentials(program)
+            .into_iter()
+            .chain(ACTION_SECRET_INPUTS.iter().copied())
+            .collect::<Vec<_>>();
+        run_with_timeout_impl(
+            program,
+            args,
+            cwd,
+            timeout,
+            StderrMode::Live,
+            known_credential_env_values(std::env::vars()),
+            ChildEnvironment {
+                remove: &remove,
+                set: env,
+            },
         )
     }
 
@@ -82,7 +188,19 @@ impl CommandRunner for CliCommandRunner {
         // Quiet mode never echoes stderr live (see `StderrMode::Quiet`
         // below), so there's nothing to redact -- pass an empty secrets
         // list rather than paying for an env scan that can only go unused.
-        run_with_timeout_impl(program, args, cwd, timeout, StderrMode::Quiet, Vec::new())
+        let remove = unrelated_credentials(program);
+        run_with_timeout_impl(
+            program,
+            args,
+            cwd,
+            timeout,
+            StderrMode::Quiet,
+            Vec::new(),
+            ChildEnvironment {
+                remove: &remove,
+                set: &[],
+            },
+        )
     }
 
     fn run_with_stdin(
@@ -92,9 +210,10 @@ impl CommandRunner for CliCommandRunner {
         cwd: &Path,
         stdin: &[u8],
     ) -> Result<CommandOutput, CommandError> {
-        let mut child = std::process::Command::new(program)
-            .args(args)
-            .current_dir(cwd)
+        let mut command = std::process::Command::new(program);
+        command.args(args).current_dir(cwd);
+        remove_env(&mut command, &unrelated_credentials(program));
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -188,26 +307,33 @@ fn run_with_timeout_impl(
     timeout: Duration,
     stderr_mode: StderrMode,
     live_secrets: Vec<String>,
+    child_env: ChildEnvironment<'_>,
 ) -> Result<CommandOutput, CommandError> {
-    let mut child = std::process::Command::new(program)
+    let mut command = std::process::Command::new(program);
+    command
         .args(args)
         .current_dir(cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                CommandError::NotFound {
-                    program: program.to_string(),
-                }
-            } else {
-                CommandError::Io {
-                    program: program.to_string(),
-                    message: e.to_string(),
-                }
+        .stderr(Stdio::piped());
+    for name in child_env.remove {
+        command.env_remove(name);
+    }
+    for (name, value) in child_env.set {
+        command.env(name, value);
+    }
+    let mut child = command.spawn().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            CommandError::NotFound {
+                program: program.to_string(),
             }
-        })?;
+        } else {
+            CommandError::Io {
+                program: program.to_string(),
+                message: e.to_string(),
+            }
+        }
+    })?;
 
     // Read stdout/stderr in separate threads to prevent pipe-buffer deadlock
     // when the child produces output while we wait for it to exit.
@@ -411,6 +537,69 @@ mod tests {
             .run_with_timeout("true", &[], std::path::Path::new("."), Duration::from_secs(5))
             .unwrap();
         assert!(out.success());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_with_timeout_env_filtered_removes_named_variables() {
+        let runner = CliCommandRunner;
+        let output = runner
+            .run_with_timeout_env_filtered(
+                "/usr/bin/env",
+                &[],
+                std::path::Path::new("."),
+                Duration::from_secs(5),
+                &["PATH"],
+            )
+            .unwrap();
+        assert!(output.success());
+        assert!(
+            !output.stdout.lines().any(|line| line.starts_with("PATH=")),
+            "{}",
+            output.stdout
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn publisher_environment_is_child_local() {
+        let runner = CliCommandRunner;
+        let publisher = runner
+            .run_with_timeout_publisher(
+                "/bin/sh",
+                &[
+                    "-c",
+                    "test \"$NPM_TOKEN\" = publisher-secret && /bin/sh -c 'test \"$NPM_TOKEN\" = publisher-secret'",
+                ],
+                Path::new("."),
+                Duration::from_secs(5),
+                &[("NPM_TOKEN", "publisher-secret")],
+            )
+            .unwrap();
+        assert!(
+            publisher.success(),
+            "the publisher's child must inherit its environment"
+        );
+        let ordinary = runner.run("/usr/bin/env", &[], Path::new(".")).unwrap();
+        assert!(!ordinary.stdout.contains("publisher-secret"));
+    }
+
+    #[test]
+    fn ordinary_child_credentials_follow_the_native_client_boundary() {
+        let npm = unrelated_credentials("npm");
+        assert!(!npm.contains(&"NPM_TOKEN"));
+        assert!(!npm.contains(&"NODE_AUTH_TOKEN"));
+        assert!(npm.contains(&"CARGO_REGISTRY_TOKEN"));
+        assert!(npm.contains(&"GH_TOKEN"));
+
+        let cargo = unrelated_credentials("cargo");
+        assert!(!cargo.contains(&"CARGO_REGISTRY_TOKEN"));
+        assert!(cargo.contains(&"NPM_TOKEN"));
+
+        let git = unrelated_credentials("git");
+        assert!(git.contains(&"NPM_TOKEN"));
+        assert!(git.contains(&"CARGO_REGISTRY_TOKEN"));
+        assert!(git.contains(&"GH_TOKEN"));
     }
 
     /// Regression test for a hung-descendant deadlock: killing the direct
@@ -772,6 +961,7 @@ mod tests {
             Duration::from_secs(5),
             StderrMode::Live,
             vec![secret.to_string()],
+            ChildEnvironment { remove: &[], set: &[] },
         )
         .unwrap();
         assert!(

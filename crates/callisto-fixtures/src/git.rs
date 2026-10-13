@@ -1,6 +1,7 @@
 //! Git-backed test doubles and repo-setup helpers shared across crates'
 //! test suites.
 
+use std::io::Write;
 use std::path::Path;
 
 use callisto_model::{CommandError, CommandOutput, CommandRunner};
@@ -27,6 +28,50 @@ impl CommandRunner for GitRunner {
                 program: program.to_string(),
                 message: e.to_string(),
             })?;
+        Ok(CommandOutput {
+            exit_code: output.status.code(),
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        })
+    }
+
+    fn run_with_stdin(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: &Path,
+        stdin: &[u8],
+    ) -> Result<CommandOutput, CommandError> {
+        if program != "git" {
+            return Err(CommandError::Unsupported {
+                program: program.to_string(),
+                reason: "the fixture runner only pipes input to git".to_string(),
+            });
+        }
+        let mut child = std::process::Command::new(program)
+            .args(args)
+            .current_dir(cwd)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|error| CommandError::Io {
+                program: program.to_string(),
+                message: error.to_string(),
+            })?;
+        child
+            .stdin
+            .take()
+            .expect("piped stdin exists")
+            .write_all(stdin)
+            .map_err(|error| CommandError::Io {
+                program: program.to_string(),
+                message: error.to_string(),
+            })?;
+        let output = child.wait_with_output().map_err(|error| CommandError::Io {
+            program: program.to_string(),
+            message: error.to_string(),
+        })?;
         Ok(CommandOutput {
             exit_code: output.status.code(),
             stdout: String::from_utf8_lossy(&output.stdout).into_owned(),

@@ -335,6 +335,17 @@ fn collect_answers(
 
     let binaries: Vec<&InitPackage> = facts.binary_packages().collect();
     if binaries.is_empty() && !args.artifact_targets.is_empty() {
+        if let Some(package) = facts.unsupported_artifact_packages().next() {
+            return Err(GraphError::InitUnsupportedArtifactBuilder {
+                package: package.id.clone(),
+                ecosystem: package
+                    .id
+                    .split_once('/')
+                    .map_or("unknown", |(ecosystem, _)| ecosystem)
+                    .to_owned(),
+            }
+            .into());
+        }
         return Err(GraphError::InitNoBinaryPackage.into());
     }
     let requested_product = args
@@ -929,6 +940,41 @@ mod tests {
             "{error}"
         );
         assert!(nothing_written(none.path()));
+    }
+
+    #[test]
+    fn unsupported_registry_executable_artifact_fails_before_writing() {
+        let dir = workspace(0);
+        std::fs::create_dir_all(dir.path().join("tool")).unwrap();
+        std::fs::write(
+            dir.path().join("tool/package.json"),
+            r#"{"name":"tool","version":"1.0.0","bin":{"tool":"cli.js"}}"#,
+        )
+        .unwrap();
+        let args = InitArgs {
+            product_package: Some("npm/tool".to_owned()),
+            ..with_targets(&["x86_64-unknown-linux-gnu"])
+        };
+        let error = run_init(dir.path(), args, false, vec![], false).result.unwrap_err();
+        assert!(
+            error.to_string().contains("npm/tool") && error.to_string().contains("npm"),
+            "{error}"
+        );
+        assert!(nothing_written(dir.path()));
+    }
+
+    #[test]
+    fn registry_executable_can_be_initialized_without_artifact_generation() {
+        let dir = workspace(0);
+        std::fs::create_dir_all(dir.path().join("tool")).unwrap();
+        std::fs::write(
+            dir.path().join("tool/package.json"),
+            r#"{"name":"tool","version":"1.0.0","bin":{"tool":"cli.js"}}"#,
+        )
+        .unwrap();
+        let run = run_init(dir.path(), yes(InitVersioning::Independent), false, vec![], false);
+        assert!(run.result.is_ok(), "{}", run.out);
+        assert!(!config(dir.path()).contains("[release]"));
     }
 
     // --forge-repository/--product-package are validated up front, before facts are even
