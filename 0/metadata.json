@@ -1,0 +1,66 @@
+{
+  "cli_version": "0.11.5-nightly.202610120640.a564a68c8",
+  "checkpoint_id": "01M4TVCMTQNJ132S8V1RDD575B",
+  "session_id": "1d1e2454-e53a-4917-8c7f-bdb2326a4f35",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-13T14:41:49.672033Z",
+  "branch": "work/v1-implementation-stack",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    ".github/actions/callisto-action/scripts/run-release.sh",
+    ".github/actions/callisto-action/tests/test_release_contract.sh",
+    "Cargo.lock",
+    "crates/callisto-cli/Cargo.toml",
+    "crates/callisto-cli/src/commands/init.rs",
+    "crates/callisto-cli/src/commands/pre.rs",
+    "crates/callisto-cli/src/commands/version.rs",
+    "crates/callisto-cli/src/runner.rs",
+    "crates/callisto-cli/tests/durable_release_e2e_tests.rs",
+    "crates/callisto-cli/tests/identity_promotion_tests.rs",
+    "crates/callisto-cli/tests/native_resolution_e2e_tests.rs",
+    "crates/callisto-cli/tests/partial_run_tests.rs",
+    "crates/callisto-cli/tests/pre_mode_tests.rs",
+    "crates/callisto-cli/tests/schema_guard_test.rs",
+    "crates/callisto-cli/tests/single_package_root_tests.rs",
+    "crates/callisto-fixtures/src/git.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "9184bbd636ea",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 32717,
+    "cache_read_tokens": 27922,
+    "output_tokens": 176,
+    "api_call_count": 1
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "summary": {
+    "intent": "The user asked what the assistant was doing, apparently checking on session status; no concrete development task was given.",
+    "outcome": "No work was done. The assistant confirmed it had run no tools and changed no files, and asked what to work on. The file list in the transcript reflects pre-existing uncommitted changes, not changes from this session.",
+    "learnings": {
+      "repo": [
+        "The repo is `callisto`, on branch `work/v1-implementation-stack`.",
+        "It had many uncommitted changes across the CLI, graph, manifests and model crates, plus the GitHub action scripts and test fixtures.",
+        "The CLI crate has e2e and integration tests for durable release, identity promotion, native resolution, partial runs, pre mode, schema guard and single-package root.",
+        "The GitHub action at `.github/actions/callisto-action` has a release script (`run-release.sh`) and a contract test (`test_release_contract.sh`)."
+      ],
+      "code": [],
+      "workflow": [
+        "When asked 'what are you doing?' in an idle session, saying plainly that nothing has been done and no files were touched avoids implying the pre-existing uncommitted changes are the assistant's work."
+      ]
+    },
+    "friction": [
+      "The session had no defined task, so there was nothing to analyze or summarize beyond the existing working-tree state.",
+      "The listed modified files could be mistaken for session output, but they were already uncommitted before the session began."
+    ],
+    "open_items": [
+      "The large set of uncommitted changes on `work/v1-implementation-stack` has not been reviewed, committed or described.",
+      "The user has not yet said what they want done."
+    ]
+  }
+}

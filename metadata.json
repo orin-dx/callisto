@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.11.5-nightly.202610120640.a564a68c8",
+  "checkpoint_id": "01M4TVCMTQNJ132S8V1RDD575B",
+  "strategy": "manual-commit",
+  "branch": "work/v1-implementation-stack",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/actions/callisto-action/scripts/run-release.sh",
+    ".github/actions/callisto-action/tests/test_release_contract.sh",
+    "Cargo.lock",
+    "crates/callisto-cli/Cargo.toml",
+    "crates/callisto-cli/src/commands/init.rs",
+    "crates/callisto-cli/src/commands/pre.rs",
+    "crates/callisto-cli/src/commands/version.rs",
+    "crates/callisto-cli/src/runner.rs",
+    "crates/callisto-cli/tests/durable_release_e2e_tests.rs",
+    "crates/callisto-cli/tests/identity_promotion_tests.rs",
+    "crates/callisto-cli/tests/native_resolution_e2e_tests.rs",
+    "crates/callisto-cli/tests/partial_run_tests.rs",
+    "crates/callisto-cli/tests/pre_mode_tests.rs",
+    "crates/callisto-cli/tests/schema_guard_test.rs",
+    "crates/callisto-cli/tests/single_package_root_tests.rs",
+    "crates/callisto-fixtures/src/git.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 32717,
+    "cache_read_tokens": 27922,
+    "output_tokens": 176,
+    "api_call_count": 1
+  }
+}
