@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.11.5-nightly.202610120640.a564a68c8",
+  "checkpoint_id": "01M4TVB2AAQC7ACH7Y86W2ZB0R",
+  "strategy": "manual-commit",
+  "branch": "work/v1-implementation-stack",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/tests/pre_mode_tests.rs",
+    "crates/callisto-model/src/dependency.rs",
+    "crates/callisto-model/src/exec.rs",
+    "crates/callisto-model/src/format/pre.rs",
+    "crates/callisto-model/src/identity.rs",
+    "crates/callisto-model/src/release.rs",
+    "crates/callisto-model/src/release_observation.rs",
+    "crates/callisto-model/src/version.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 32717,
+    "cache_read_tokens": 27922,
+    "output_tokens": 176,
+    "api_call_count": 1
+  }
+}

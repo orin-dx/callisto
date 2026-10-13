@@ -1,0 +1,57 @@
+{
+  "cli_version": "0.11.5-nightly.202610120640.a564a68c8",
+  "checkpoint_id": "01M4TVB2AAQC7ACH7Y86W2ZB0R",
+  "session_id": "1d1e2454-e53a-4917-8c7f-bdb2326a4f35",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-13T14:40:58.672039Z",
+  "branch": "work/v1-implementation-stack",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/tests/pre_mode_tests.rs",
+    "crates/callisto-model/src/dependency.rs",
+    "crates/callisto-model/src/exec.rs",
+    "crates/callisto-model/src/format/pre.rs",
+    "crates/callisto-model/src/identity.rs",
+    "crates/callisto-model/src/release.rs",
+    "crates/callisto-model/src/release_observation.rs",
+    "crates/callisto-model/src/version.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "9184bbd636ea",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 32717,
+    "cache_read_tokens": 27922,
+    "output_tokens": 176,
+    "api_call_count": 1
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "summary": {
+    "intent": "The user asked what the assistant was doing, apparently checking on the state of the session. No concrete development task was given.",
+    "outcome": "No work was done. The assistant said it had run no tools and changed no files, and asked what the user wanted. The file list shows uncommitted changes in the callisto repo, but the assistant did not make them.",
+    "learnings": {
+      "repo": [
+        "The repo is `callisto`, a Rust workspace with crates including callisto-cli and callisto-model, plus graph and manifests crates.",
+        "The branch is `work/v1-implementation-stack` and has many uncommitted changes across the CLI, graph, manifests and model crates.",
+        "The modified files are in callisto-model (dependency, exec, format/pre, identity, release, release_observation, version) and callisto-cli/tests/pre_mode_tests.rs."
+      ],
+      "code": [],
+      "workflow": [
+        "When asked what it is doing in a session with no task, the assistant should say plainly that it has done nothing, rather than infer work from the repo's uncommitted changes."
+      ]
+    },
+    "friction": [
+      "The session had no task, so the user's question could not lead to any work.",
+      "The modified-file list could be mistaken for work done in this session, although the assistant made none of those changes."
+    ],
+    "open_items": [
+      "The uncommitted changes on `work/v1-implementation-stack` are still not committed or reviewed.",
+      "The user has not said what they want to work on next."
+    ]
+  }
+}
