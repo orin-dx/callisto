@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.11.5-nightly.202610120640.a564a68c8",
+  "checkpoint_id": "01M4VC5B4RRPMNW7SHGJKH90Z3",
+  "strategy": "manual-commit",
+  "branch": "refactor/release-split",
+  "checkpoints_count": 4,
+  "files_touched": [
+    ".github/tests/verify-release-workflow-policy.sh",
+    "crates/callisto-model/src/lib.rs",
+    "crates/callisto-model/src/release.rs",
+    "crates/callisto-model/src/release/artifact.rs",
+    "crates/callisto-model/src/release/decision.rs",
+    "crates/callisto-model/src/release/digest.rs",
+    "crates/callisto-model/src/release/execution.rs",
+    "crates/callisto-model/src/release/github.rs",
+    "crates/callisto-model/src/release/intent.rs",
+    "crates/callisto-model/src/release/operation.rs",
+    "crates/callisto-model/src/release/package_id.rs",
+    "crates/callisto-model/src/release/report.rs",
+    "crates/callisto-model/src/release/snapshot.rs",
+    "crates/callisto-model/src/release/tests.rs",
+    "docs/adr/0002-committed-decision-is-release-authority.md",
+    "docs/adr/0003-reruns-adopt-landed-effects.md",
+    "docs/architecture/release.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 116,
+    "cache_creation_tokens": 240645,
+    "cache_read_tokens": 11933088,
+    "output_tokens": 40847,
+    "api_call_count": 57
+  }
+}
