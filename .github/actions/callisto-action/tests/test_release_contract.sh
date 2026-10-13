@@ -96,7 +96,7 @@ cat > "$auth_bin/callisto" <<'STUB'
 [[ "${NPM_TOKEN:-}" == 'secret-npm-value' && -z "${PYPI_TOKEN:-}" ]] || exit 21
 [[ "${TWINE_USERNAME:-}" == '__token__' && "${TWINE_PASSWORD:-}" == 'secret-pypi-value' ]] || exit 25
 [[ -z "${NPM_CONFIG_USERCONFIG:-}" && -z "${NPM_CONFIG_TOKEN:-}" ]] || exit 26
-[[ "$(stat -f '%Lp' "$CALLISTO_PUBLISH_NPM_CONFIG" 2>/dev/null || stat -c '%a' "$CALLISTO_PUBLISH_NPM_CONFIG")" == 600 ]] || exit 22
+[[ "$(stat -c '%a' "$CALLISTO_PUBLISH_NPM_CONFIG" 2>/dev/null || stat -f '%Lp' "$CALLISTO_PUBLISH_NPM_CONFIG")" == 600 ]] || exit 22
 grep -Fxq 'legacy=true' "$CALLISTO_PUBLISH_NPM_CONFIG" || exit 23
 grep -Fxq '//registry.example/:_authToken=${NPM_TOKEN}' "$CALLISTO_PUBLISH_NPM_CONFIG" || exit 30
 grep -Fxq '//registry.npmjs.org/:_authToken=${NPM_TOKEN}' "$CALLISTO_PUBLISH_NPM_CONFIG" || exit 24
