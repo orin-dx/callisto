@@ -153,8 +153,21 @@ if [[ "$moved_sha" != "$new_sha" ]]; then
 fi
 
 if [[ "$decision_kind" == update ]]; then
-  callisto release-pr verify --decision "$decision" --snapshot "$(release_pr_snapshot)" \
-    --applied-head "$new_sha" > /dev/null
+  # The PR list can lag a ref move by a moment, and a stale read looks like a changed snapshot.
+  # A real concurrent change stays visible, so the last attempt still fails.
+  verified=false
+  for _ in 1 2 3 4 5 6 7 8 9; do
+    if callisto release-pr verify --decision "$decision" --snapshot "$(release_pr_snapshot)" \
+      --applied-head "$new_sha" > /dev/null 2>&1; then
+      verified=true
+      break
+    fi
+    sleep 3
+  done
+  if [[ "$verified" != true ]]; then
+    callisto release-pr verify --decision "$decision" --snapshot "$(release_pr_snapshot)" \
+      --applied-head "$new_sha" > /dev/null
+  fi
 else
   callisto release-pr verify --decision "$decision" --snapshot "$(release_pr_snapshot)" > /dev/null
 fi
