@@ -1,0 +1,67 @@
+{
+  "cli_version": "0.11.5-nightly.202610130630.4203b3d42",
+  "checkpoint_id": "01M4Y2FBYG19H3C1X7RJECFMCN",
+  "session_id": "01a0ac6b-e1c0-77a3-afe1-4441f3d9a8c8",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-14T20:43:29.793859Z",
+  "branch": "stack/docs-v1",
+  "checkpoints_count": 1,
+  "save_step_count": 12,
+  "files_touched": null,
+  "agent": "Codex",
+  "model": "",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 440008,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 12554112,
+    "output_tokens": 42679,
+    "api_call_count": 101,
+    "subagent_tokens_complete": false
+  },
+  "summary": {
+    "intent": "Decide on a better licensing strategy for the user's open-source projects, initially motivated by keeping a former employer (StubHub) from using them. It became a Callisto-wide move to MIT for foundational crates and FSL-1.1-MIT for the rest, followed by a PR.",
+    "outcome": "Callisto was migrated locally to MIT-only for callisto-model, callisto-format and callisto-vcs, with canonical FSL-1.1-MIT for the seven product crates. Manifests, license files and docs were updated, and PR #100 was opened on branch feat/layered-fsl-mit-licensing after the user confirmed the commit and scope. Lint and test did not complete, and FSL crate packaging could not be verified.",
+    "learnings": {
+      "repo": [
+        "Callisto licensing before the change: callisto-model, callisto-format and callisto-vcs were MIT or Apache-2.0, and all other crates were AGPL-3.0-only.",
+        "The user's other projects are mostly FSL-1.1-MIT: Monokl, Michi, Prism and Lumen use it for application crates, with MIT/Apache-2.0 for foundation crates. Panda is MIT, and oxc-react-codegen is AGPL-3.0-or-later.",
+        "The FSL LICENSE files in Monokl, Michi, Prism and Lumen are shortened three-clause variants, not canonical FSL-1.1-MIT. They omit the definitions, patent, redistribution and trademark provisions but still use the standard SPDX identifier, so they need correcting.",
+        "Architecture rule adopted: MIT crates must never depend on FSL crates, but FSL crates may depend on MIT crates.",
+        "Policy decision: one active license per crate, with no blanket dual licensing. MIT is reserved for the interoperability surface and FSL covers the rest.",
+        "Callisto has tags through 0.5.0, and those releases stay under their original AGPL or MIT/Apache licenses.",
+        "An Entire history record from July 25 says 'All our work should be AGPL3 licensed please.' A later August discussion about following Lumen's model never produced a completed decision superseding it.",
+        "Callisto is mainly a distributed CLI, GitHub Action and Moon plugin rather than a network service, so AGPL's network clause gives little practical leverage.",
+        "Repo tasks use `just` (`just fmt-check`, `just lint`, `just test`). The push hook reran a cached format gate and skipped lint because no code projects were affected."
+      ],
+      "code": [],
+      "workflow": [
+        "The sandbox cannot read the macOS Keychain, so `entire` looked logged out. Re-running with host credential access showed the login was valid, so check this before assuming an expired login.",
+        "The sandbox mounts `.git` read-only, so staging, committing and pushing need host-level git access.",
+        "A long-running `just lint` held Cargo's build lock and blocked later cargo invocations. Wait for the original process rather than starting competing builds.",
+        "`cargo package` needs crates.io network access, which required a retry with host network access. It also fails for workspace crates whose local version dependencies (0.6.0) are not yet published.",
+        "The commit/PR workflow requires showing the exact commit message, PR scope and verification results, and getting user confirmation before staging, pushing and creating the PR.",
+        "With a dirty worktree, stage only the licensing files explicitly and leave unrelated edits unstaged. Here that gave a 34-file scope matching what was confirmed."
+      ]
+    },
+    "friction": [
+      "The `entire` history search initially failed because of sandbox keychain isolation, which cost several diagnostic steps.",
+      "The assistant initially carried `MIT OR Apache-2.0` forward unnecessarily and was corrected by the user to MIT-only for the foundation crates.",
+      "Full `just lint` and `just test` never completed because an earlier Cargo process held the build lock.",
+      "Packaging the FSL product crates (e.g. callisto-cli) was blocked because the local 0.6.0 dependencies are not published to crates.io.",
+      "The read-only `.git` index in the sandbox blocked staging until host git access was granted.",
+      "The user's original goal of barring StubHub could not be met by AGPL or FSL, since both allow internal use. Only a custom restricted-party license could do it."
+    ],
+    "open_items": [
+      "Complete a contributor/copyright audit before publishing the first FSL release, especially for non-primary contributors.",
+      "Check whether the user's employment invention-assignment agreement affects ownership. The assistant advised having counsel review it.",
+      "Replace the shortened non-canonical FSL text in Monokl, Michi, Prism and Lumen with canonical FSL-1.1-MIT.",
+      "Run the full `just lint` and `just test` and verify FSL crate packaging once the 0.6.0 dependencies are published.",
+      "Wait for CI on PR #100 to finish and review the results.",
+      "Reconcile the earlier 'all work AGPL3' instruction with the new FSL policy.",
+      "If barring StubHub specifically is still wanted, a custom restricted-party source-available license would need lawyer drafting. It was deliberately not added to the FSL policy.",
+      "Consider registering key releases with the U.S. Copyright Office."
+    ]
+  },
+  "kind": "imported"
+}
