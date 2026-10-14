@@ -1,0 +1,19 @@
+{
+  "tool_use_id": "a492e2b419b602157",
+  "agent_id": "a492e2b419b602157",
+  "subagent_type": "workflow-subagent",
+  "files": [
+    ".github/workflows/callisto-ci.yml",
+    "CONTRIBUTING.md"
+  ],
+  "token_usage": {
+    "input_tokens": 56,
+    "cache_creation_tokens": 68474,
+    "cache_read_tokens": 1575792,
+    "output_tokens": 4212,
+    "api_call_count": 28
+  },
+  "started_at": "2026-10-14T15:20:05.344169-07:00",
+  "completed_at": "2026-10-14T15:20:05.344633-07:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}
