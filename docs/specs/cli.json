@@ -298,7 +298,7 @@
     },
     {
       "id": "CLI-WF-04",
-      "criterion": "When binaries ship as artifact slots or the workspace has napi platform packages, the generated workflow has `version-pr`, `plan` (runs `callisto release plan --from-release-commit` when the pushed commit adds or modifies .callisto/release-decision.json), `build` (a matrix from napi targets and artifact slots), and `execute` (runs `callisto release artifact-manifest` and `callisto release execute`) jobs. Registry secrets are scoped to the execute publishing step, never plan or build; npm and Twine receive native auth configuration only during execution, and registry credentials are withheld from Python build subprocesses. Native package-manager publish hooks retain their normal package-owner-defined behavior."
+      "criterion": "When binaries ship as artifact slots or the workspace has napi platform packages, the generated workflow has `version-pr`, `plan` (runs `callisto release plan --from-release-commit` when the pushed commit adds or modifies .callisto/release-decision.json), `build` (a matrix from napi targets and artifact slots), and `execute` (runs `callisto release artifact-manifest` and `callisto release execute`) jobs. Registry secrets are scoped to the execute publishing step, never plan or build; npm and Twine receive native auth configuration only during execution, and registry credentials are withheld from Python build subprocesses. Native package-manager publish hooks retain their normal package-owner-defined behavior. The build matrix and napi artifact placement cover only the packages in the release intent, so an unrelated napi addon adds no build and cannot fail the plan."
     },
     {
       "id": "CLI-WF-05",
