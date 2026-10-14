@@ -1,0 +1,3 @@
+I think we have some work to do on our readme: https://github.com/orin-dx/callisto leading title and GH repo description.
+
+We want to be accurate, this is not just for Rust anymore right? The readme should sell the tool to our potential users without being salesy or slimy. Friendly, succinct, and eng focused
