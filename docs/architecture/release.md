@@ -33,8 +33,6 @@ both:   intent -> ReleaseRunEnvelopeV1::new -> execute_release -> ReleaseReceipt
 - `ci_release_route` sends a workspace with artifact slots or platform builds to the CI route before anything runs.
 - `expand_selection` (group members) and `require_dependencies_selected` (unselected unreleased dependencies) apply to both routes.
 
-Local selection currently counts local tags as released. If tag creation succeeds but its push or GitHub work fails, a fresh bare `release` can exclude that package and report `Nothing to release.`. The executor can recover a retained intent; tag-filtered selection can discard it before execution. The committed-roster route avoids that selection shortcut. This remains a violation of the retry contract, tracked in [the findings register](../projects/V1-FINDINGS.md).
-
 ## Managed release PR and workflow
 
 Callisto's own [release workflow](../../.github/workflows/callisto-release.yml) reconstructs one `callisto/version-packages` PR from `main` when changesets land. It versions manifests and changelogs; merging the PR consumes the changesets on `main` and authorizes publication.
