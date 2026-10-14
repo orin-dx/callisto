@@ -226,3 +226,35 @@ lib-crate = { version = \"=0.1.0\", path = \"../lib\" }
     assert_eq!(cascaded["reason"]["kind"], "cascade");
     assert_eq!(cascaded["reason"]["via"], "lib-crate");
 }
+
+#[test]
+fn a_target_declaration_with_a_different_constraint_is_left_as_written() {
+    let dir = cargo_workspace("{ version = \"=0.1.0\", path = \"../lib\" }");
+    let root = dir.path();
+    let app = "\
+[package]
+name = \"app-crate\"
+version = \"0.1.0\"
+edition = \"2021\"
+
+[dependencies]
+lib-crate = { version = \"=0.1.0\", path = \"../lib\" }
+
+[target.'cfg(windows)'.dependencies]
+lib-crate = { version = \">=0.1, <0.3\", path = \"../lib\" }
+";
+    fs::write(root.join("crates/app/Cargo.toml"), app).unwrap();
+    git(root, &["commit", "-q", "-am", "same crate, different constraint"]);
+    add_changeset(root, "lib-crate", "minor");
+    let out = callisto(root, &["version"]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let after = read(root, "crates/app/Cargo.toml");
+    assert!(
+        after.contains("lib-crate = { version = \"=0.2.0\", path = \"../lib\" }"),
+        "{after}"
+    );
+    assert!(
+        after.contains("lib-crate = { version = \">=0.1, <0.3\", path = \"../lib\" }"),
+        "a range that still covers the new version stays as written:\n{after}"
+    );
+}
