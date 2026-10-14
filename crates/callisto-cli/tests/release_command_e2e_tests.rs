@@ -366,3 +366,27 @@ fn a_failed_run_writes_no_receipt_and_a_rerun_completes() {
     assert!(rerun.status.success(), "{}", stderr(&rerun));
     assert!(receipt.is_file());
 }
+
+/// With nothing left to release, machine consumers get a typed envelope, not prose, from both
+/// the preview and the real run, and neither performs an effect.
+#[test]
+fn nothing_to_release_is_a_typed_envelope_in_json_for_preview_and_run() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    let first = rig.run(root, &["--format", "json", "release"]);
+    assert!(first.status.success(), "{}", stderr(&first));
+    let effects = rig.effects();
+
+    for (args, dry_run) in [
+        (&["--format", "json", "--dry-run", "release"][..], true),
+        (&["--format", "json", "release"][..], false),
+    ] {
+        let out = rig.run(root, args);
+        assert!(out.status.success(), "{args:?}: {}", stderr(&out));
+        let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(report["nothingToRelease"], true, "{args:?}: {report}");
+        assert_eq!(report["dryRun"], dry_run, "{args:?}: {report}");
+    }
+    assert_eq!(rig.effects(), effects, "reporting nothing performs no effect");
+}
