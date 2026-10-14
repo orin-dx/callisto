@@ -12,8 +12,8 @@ use crate::{Ecosystem, RegistryKey, Version};
 /// target was selected, while `binding_digest` commits to the graph-normalized
 /// target that will receive the effect. Durable intents never retain the raw
 /// endpoint, credentials, query parameters, or fragments.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, JsonSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
+#[serde(try_from = "RegistryBindingIdWire", rename_all = "camelCase", deny_unknown_fields)]
 pub struct RegistryBindingId {
     registry_key: RegistryKey,
     binding_digest: RegistryBindingDigest,
@@ -26,13 +26,11 @@ struct RegistryBindingIdWire {
     binding_digest: RegistryBindingDigest,
 }
 
-impl<'de> Deserialize<'de> for RegistryBindingId {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = RegistryBindingIdWire::deserialize(deserializer)?;
-        Self::new(wire.registry_key, wire.binding_digest).map_err(serde::de::Error::custom)
+impl TryFrom<RegistryBindingIdWire> for RegistryBindingId {
+    type Error = ReleaseOperationError;
+
+    fn try_from(wire: RegistryBindingIdWire) -> Result<Self, Self::Error> {
+        Self::new(wire.registry_key, wire.binding_digest)
     }
 }
 
@@ -66,8 +64,13 @@ impl RegistryBindingId {
 /// derived impl folds in every field of every variant -- including
 /// `ArtifactSlotId::attestation_policy` -- consistently with the derived `Eq`,
 /// and stays correct if a role variant ever gains a field.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, JsonSchema)]
-#[serde(rename_all = "camelCase", tag = "kind", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
+#[serde(
+    try_from = "ReleaseOperationRoleWire",
+    rename_all = "camelCase",
+    tag = "kind",
+    deny_unknown_fields
+)]
 pub enum ReleaseOperationRole {
     RegistryPublish {
         #[serde(flatten)]
@@ -94,8 +97,8 @@ pub enum ReleaseOperationRole {
 
 /// The npm platform package a [`ReleaseOperationRole::PlatformPublish`] publishes:
 /// its own npm name and its workspace-relative directory.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, JsonSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
+#[serde(try_from = "PlatformPackageV1Wire", rename_all = "camelCase", deny_unknown_fields)]
 pub struct PlatformPackageV1 {
     name: ReleasePackageId,
     directory: String,
@@ -108,13 +111,11 @@ struct PlatformPackageV1Wire {
     directory: String,
 }
 
-impl<'de> Deserialize<'de> for PlatformPackageV1 {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = PlatformPackageV1Wire::deserialize(deserializer)?;
-        Self::new(wire.name, wire.directory).map_err(serde::de::Error::custom)
+impl TryFrom<PlatformPackageV1Wire> for PlatformPackageV1 {
+    type Error = ReleaseOperationError;
+
+    fn try_from(wire: PlatformPackageV1Wire) -> Result<Self, Self::Error> {
+        Self::new(wire.name, wire.directory)
     }
 }
 
@@ -170,30 +171,30 @@ enum ReleaseOperationRoleWire {
     },
 }
 
-impl<'de> Deserialize<'de> for ReleaseOperationRole {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        match ReleaseOperationRoleWire::deserialize(deserializer)? {
+impl TryFrom<ReleaseOperationRoleWire> for ReleaseOperationRole {
+    type Error = ReleaseOperationError;
+
+    fn try_from(wire: ReleaseOperationRoleWire) -> Result<Self, Self::Error> {
+        Ok(match wire {
             ReleaseOperationRoleWire::RegistryPublish {
                 registry_key,
                 binding_digest,
-            } => RegistryBindingId::new(registry_key, binding_digest)
-                .map(|registry| Self::RegistryPublish { registry })
-                .map_err(serde::de::Error::custom),
-            ReleaseOperationRoleWire::Tag => Ok(Self::Tag),
-            ReleaseOperationRoleWire::ForgeRelease => Ok(Self::ForgeRelease),
-            ReleaseOperationRoleWire::ArtifactUpload { slot } => Ok(Self::ArtifactUpload { slot }),
-            ReleaseOperationRoleWire::ForgePublish => Ok(Self::ForgePublish),
+            } => Self::RegistryPublish {
+                registry: RegistryBindingId::new(registry_key, binding_digest)?,
+            },
+            ReleaseOperationRoleWire::Tag => Self::Tag,
+            ReleaseOperationRoleWire::ForgeRelease => Self::ForgeRelease,
+            ReleaseOperationRoleWire::ArtifactUpload { slot } => Self::ArtifactUpload { slot },
+            ReleaseOperationRoleWire::ForgePublish => Self::ForgePublish,
             ReleaseOperationRoleWire::PlatformPublish {
                 registry_key,
                 binding_digest,
                 platform,
-            } => RegistryBindingId::new(registry_key, binding_digest)
-                .map(|registry| Self::PlatformPublish { registry, platform })
-                .map_err(serde::de::Error::custom),
-        }
+            } => Self::PlatformPublish {
+                registry: RegistryBindingId::new(registry_key, binding_digest)?,
+                platform,
+            },
+        })
     }
 }
 

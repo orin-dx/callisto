@@ -4,7 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use super::{CanonicalTranscript, DecisionDigest, ReleasePackageId};
-use crate::Version;
+use crate::{Version, VersionParseError};
 
 /// The closed set of facts that can include a package in a durable release.
 ///
@@ -40,8 +40,8 @@ pub enum ReleaseInclusionReason {
 }
 
 /// One exact package and version authorized by a release decision.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(try_from = "ReleaseDecisionEntryWire", rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReleaseDecisionEntry {
     pub package: ReleasePackageId,
     pub target_version: Version,
@@ -56,14 +56,11 @@ struct ReleaseDecisionEntryWire {
     reasons: Vec<ReleaseInclusionReason>,
 }
 
-impl<'de> Deserialize<'de> for ReleaseDecisionEntry {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = ReleaseDecisionEntryWire::deserialize(deserializer)?;
-        let target_version = Version::parse_for_ecosystem(&wire.target_version, wire.package.ecosystem())
-            .map_err(serde::de::Error::custom)?;
+impl TryFrom<ReleaseDecisionEntryWire> for ReleaseDecisionEntry {
+    type Error = VersionParseError;
+
+    fn try_from(wire: ReleaseDecisionEntryWire) -> Result<Self, Self::Error> {
+        let target_version = Version::parse_for_ecosystem(&wire.target_version, wire.package.ecosystem())?;
         Ok(Self {
             package: wire.package,
             target_version,

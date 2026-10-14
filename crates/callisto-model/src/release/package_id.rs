@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::str::FromStr;
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 
 use crate::identity::string_json_schema;
 use crate::{Ecosystem, PackageId};
@@ -11,7 +11,8 @@ use crate::{Ecosystem, PackageId};
 ///
 /// Unlike PackageId, this type has no bare form and therefore cannot use
 /// wildcard matching across ecosystems.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
+#[serde(try_from = "String")]
 pub struct ReleasePackageId {
     ecosystem: Ecosystem,
     name: String,
@@ -113,13 +114,11 @@ impl Serialize for ReleasePackageId {
     }
 }
 
-impl<'de> Deserialize<'de> for ReleasePackageId {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let raw = String::deserialize(deserializer)?;
-        Self::parse(&raw).map_err(serde::de::Error::custom)
+impl TryFrom<String> for ReleasePackageId {
+    type Error = ReleasePackageIdParseError;
+
+    fn try_from(raw: String) -> Result<Self, Self::Error> {
+        Self::parse(&raw)
     }
 }
 

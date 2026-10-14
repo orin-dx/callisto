@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use schemars::JsonSchema;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 
 use super::{ArtifactDigest, IntentDigest, ReleaseIntentV1, ReleaseOperationId, SourceIdentity};
 use crate::release_observation::{
@@ -47,8 +47,8 @@ pub enum OperationOutcome {
 /// rather than asserted by a caller, so no fact here has a second authority.
 /// The revisions are intentionally separate even when equal: a run may release
 /// an older merged source with the current coordinator.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(try_from = "ReleaseRunEnvelopeV1Wire", rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReleaseRunEnvelopeV1 {
     schema_version: u8,
     orchestration_revision: CommitSha,
@@ -69,16 +69,14 @@ struct ReleaseRunEnvelopeV1Wire {
     artifact_manifest_digest: Option<ArtifactDigest>,
 }
 
-impl<'de> Deserialize<'de> for ReleaseRunEnvelopeV1 {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = ReleaseRunEnvelopeV1Wire::deserialize(deserializer)?;
+impl TryFrom<ReleaseRunEnvelopeV1Wire> for ReleaseRunEnvelopeV1 {
+    type Error = ReleaseRunEnvelopeError;
+
+    fn try_from(wire: ReleaseRunEnvelopeV1Wire) -> Result<Self, Self::Error> {
         if wire.schema_version != ReleaseRunEnvelopeV1::SCHEMA_VERSION {
-            return Err(serde::de::Error::custom(ReleaseRunEnvelopeError::UnsupportedSchema {
+            return Err(ReleaseRunEnvelopeError::UnsupportedSchema {
                 found: wire.schema_version,
-            }));
+            });
         }
         Ok(Self {
             schema_version: wire.schema_version,
@@ -341,7 +339,8 @@ pub enum ReleaseStateError {
 }
 
 /// A terminal receipt derived only from a complete execution state.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "ReleaseReceiptV1Wire")]
 pub struct ReleaseReceiptV1 {
     schema_version: u8,
     intent_digest: IntentDigest,
@@ -407,13 +406,11 @@ impl JsonSchema for ReleaseReceiptV1 {
     }
 }
 
-impl<'de> Deserialize<'de> for ReleaseReceiptV1 {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = ReleaseReceiptV1Wire::deserialize(deserializer)?;
-        Self::from_wire(wire).map_err(serde::de::Error::custom)
+impl TryFrom<ReleaseReceiptV1Wire> for ReleaseReceiptV1 {
+    type Error = ReleaseReceiptError;
+
+    fn try_from(wire: ReleaseReceiptV1Wire) -> Result<Self, Self::Error> {
+        Self::from_wire(wire)
     }
 }
 

@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use schemars::JsonSchema;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 
 use super::{
     ArtifactSlotId, CanonicalTranscript, ExecutionTrustProfileV1, IntentDigest, ReleaseDecisionV1,
@@ -9,8 +9,8 @@ use super::{
 };
 
 /// An immutable, canonical authorization intent. Graph owns its construction.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(try_from = "ReleaseIntentV1Wire", rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReleaseIntentV1 {
     pub schema_version: u8,
     pub decision: ReleaseDecisionV1,
@@ -80,13 +80,11 @@ impl ReleaseIntentV1 {
     }
 }
 
-impl<'de> Deserialize<'de> for ReleaseIntentV1 {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = ReleaseIntentV1Wire::deserialize(deserializer)?;
-        Self::from_wire(wire).map_err(serde::de::Error::custom)
+impl TryFrom<ReleaseIntentV1Wire> for ReleaseIntentV1 {
+    type Error = ReleaseIntentError;
+
+    fn try_from(wire: ReleaseIntentV1Wire) -> Result<Self, Self::Error> {
+        Self::from_wire(wire)
     }
 }
 
