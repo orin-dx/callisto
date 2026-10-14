@@ -1,0 +1,3 @@
+This comment: I think your recommendations look good, any areas of concern? Any directions we should consider changing? Thinking of the architecture and semantic model as a whole do we need any changes?
+
+Was in the context of the questions and recommendations
