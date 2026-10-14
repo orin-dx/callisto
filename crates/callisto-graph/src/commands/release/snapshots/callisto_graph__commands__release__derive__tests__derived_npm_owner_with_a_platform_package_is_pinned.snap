@@ -1,0 +1,462 @@
+---
+source: crates/callisto-graph/src/commands/release/derive.rs
+expression: "derived_text(&dir, &decision, false)"
+---
+packages:
+[
+    ReleasePackageInputV1 {
+        package: ReleasePackageId {
+            ecosystem: Npm,
+            name: "@s/cli",
+        },
+        fingerprint: SemanticInputDigest(
+            "36c66dcc00495b510817e4c0cecbba2bbd5a0fed6de8032124c6684d750f1ccd",
+        ),
+    },
+]
+
+operations:
+[
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Npm,
+                name: "@s/cli",
+            },
+            role: PlatformPublish {
+                registry: RegistryBindingId {
+                    registry_key: RegistryKey(
+                        "npm",
+                    ),
+                    binding_digest: RegistryBindingDigest(
+                        "9cbb1cf20c84244f3c250e782d9e2819b2160dabe0b270fcfdf2b28ab197bd2b",
+                    ),
+                },
+                platform: PlatformPackageV1 {
+                    name: ReleasePackageId {
+                        ecosystem: Npm,
+                        name: "@s/cli-darwin-arm64",
+                    },
+                    directory: "packages/cli/npm/darwin-arm64",
+                },
+            },
+            version: Version {
+                grammar: SemVer,
+                raw: "0.1.0",
+                parsed: SemVer(
+                    Version {
+                        major: 0,
+                        minor: 1,
+                        patch: 0,
+                    },
+                ),
+            },
+        },
+        prerequisites: [],
+    },
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Npm,
+                name: "@s/cli",
+            },
+            role: PlatformPublish {
+                registry: RegistryBindingId {
+                    registry_key: RegistryKey(
+                        "npm",
+                    ),
+                    binding_digest: RegistryBindingDigest(
+                        "9cbb1cf20c84244f3c250e782d9e2819b2160dabe0b270fcfdf2b28ab197bd2b",
+                    ),
+                },
+                platform: PlatformPackageV1 {
+                    name: ReleasePackageId {
+                        ecosystem: Npm,
+                        name: "@s/cli-linux-x64-gnu",
+                    },
+                    directory: "packages/cli/npm/linux-x64-gnu",
+                },
+            },
+            version: Version {
+                grammar: SemVer,
+                raw: "0.1.0",
+                parsed: SemVer(
+                    Version {
+                        major: 0,
+                        minor: 1,
+                        patch: 0,
+                    },
+                ),
+            },
+        },
+        prerequisites: [],
+    },
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Npm,
+                name: "@s/cli",
+            },
+            role: RegistryPublish {
+                registry: RegistryBindingId {
+                    registry_key: RegistryKey(
+                        "npm",
+                    ),
+                    binding_digest: RegistryBindingDigest(
+                        "9cbb1cf20c84244f3c250e782d9e2819b2160dabe0b270fcfdf2b28ab197bd2b",
+                    ),
+                },
+            },
+            version: Version {
+                grammar: SemVer,
+                raw: "0.1.0",
+                parsed: SemVer(
+                    Version {
+                        major: 0,
+                        minor: 1,
+                        patch: 0,
+                    },
+                ),
+            },
+        },
+        prerequisites: [
+            ReleaseOperationId {
+                package: ReleasePackageId {
+                    ecosystem: Npm,
+                    name: "@s/cli",
+                },
+                role: PlatformPublish {
+                    registry: RegistryBindingId {
+                        registry_key: RegistryKey(
+                            "npm",
+                        ),
+                        binding_digest: RegistryBindingDigest(
+                            "9cbb1cf20c84244f3c250e782d9e2819b2160dabe0b270fcfdf2b28ab197bd2b",
+                        ),
+                    },
+                    platform: PlatformPackageV1 {
+                        name: ReleasePackageId {
+                            ecosystem: Npm,
+                            name: "@s/cli-darwin-arm64",
+                        },
+                        directory: "packages/cli/npm/darwin-arm64",
+                    },
+                },
+                version: Version {
+                    grammar: SemVer,
+                    raw: "0.1.0",
+                    parsed: SemVer(
+                        Version {
+                            major: 0,
+                            minor: 1,
+                            patch: 0,
+                        },
+                    ),
+                },
+            },
+            ReleaseOperationId {
+                package: ReleasePackageId {
+                    ecosystem: Npm,
+                    name: "@s/cli",
+                },
+                role: PlatformPublish {
+                    registry: RegistryBindingId {
+                        registry_key: RegistryKey(
+                            "npm",
+                        ),
+                        binding_digest: RegistryBindingDigest(
+                            "9cbb1cf20c84244f3c250e782d9e2819b2160dabe0b270fcfdf2b28ab197bd2b",
+                        ),
+                    },
+                    platform: PlatformPackageV1 {
+                        name: ReleasePackageId {
+                            ecosystem: Npm,
+                            name: "@s/cli-linux-x64-gnu",
+                        },
+                        directory: "packages/cli/npm/linux-x64-gnu",
+                    },
+                },
+                version: Version {
+                    grammar: SemVer,
+                    raw: "0.1.0",
+                    parsed: SemVer(
+                        Version {
+                            major: 0,
+                            minor: 1,
+                            patch: 0,
+                        },
+                    ),
+                },
+            },
+        ],
+    },
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Npm,
+                name: "@s/cli",
+            },
+            role: Tag,
+            version: Version {
+                grammar: SemVer,
+                raw: "0.1.0",
+                parsed: SemVer(
+                    Version {
+                        major: 0,
+                        minor: 1,
+                        patch: 0,
+                    },
+                ),
+            },
+        },
+        prerequisites: [
+            ReleaseOperationId {
+                package: ReleasePackageId {
+                    ecosystem: Npm,
+                    name: "@s/cli",
+                },
+                role: RegistryPublish {
+                    registry: RegistryBindingId {
+                        registry_key: RegistryKey(
+                            "npm",
+                        ),
+                        binding_digest: RegistryBindingDigest(
+                            "9cbb1cf20c84244f3c250e782d9e2819b2160dabe0b270fcfdf2b28ab197bd2b",
+                        ),
+                    },
+                },
+                version: Version {
+                    grammar: SemVer,
+                    raw: "0.1.0",
+                    parsed: SemVer(
+                        Version {
+                            major: 0,
+                            minor: 1,
+                            patch: 0,
+                        },
+                    ),
+                },
+            },
+        ],
+    },
+]
+
+prepared:
+{
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Npm,
+            name: "@s/cli",
+        },
+        role: RegistryPublish {
+            registry: RegistryBindingId {
+                registry_key: RegistryKey(
+                    "npm",
+                ),
+                binding_digest: RegistryBindingDigest(
+                    "9cbb1cf20c84244f3c250e782d9e2819b2160dabe0b270fcfdf2b28ab197bd2b",
+                ),
+            },
+        },
+        version: Version {
+            grammar: SemVer,
+            raw: "0.1.0",
+            parsed: SemVer(
+                Version {
+                    major: 0,
+                    minor: 1,
+                    patch: 0,
+                },
+            ),
+        },
+    }: RegistryPublish(
+        RegistryPublishOperation {
+            package_dir: "packages/cli",
+            package_name: "@s/cli",
+            version: Version {
+                grammar: SemVer,
+                raw: "0.1.0",
+                parsed: SemVer(
+                    Version {
+                        major: 0,
+                        minor: 1,
+                        patch: 0,
+                    },
+                ),
+            },
+            registry: PreparedRegistryBinding {
+                key: RegistryKey(
+                    "npm",
+                ),
+                endpoint: None,
+                identity: RegistryBindingDigest(
+                    "9cbb1cf20c84244f3c250e782d9e2819b2160dabe0b270fcfdf2b28ab197bd2b",
+                ),
+            },
+            npm_access: Some(
+                Public,
+            ),
+            npm_tag: None,
+            by_directory: false,
+        },
+    ),
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Npm,
+            name: "@s/cli",
+        },
+        role: Tag,
+        version: Version {
+            grammar: SemVer,
+            raw: "0.1.0",
+            parsed: SemVer(
+                Version {
+                    major: 0,
+                    minor: 1,
+                    patch: 0,
+                },
+            ),
+        },
+    }: Tag(
+        TagOperation {
+            name: TagName(
+                "@s/cli@0.1.0",
+            ),
+            target: CommitSha(
+                "<commit>",
+            ),
+            annotation: "Release @s/cli@0.1.0",
+        },
+    ),
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Npm,
+            name: "@s/cli",
+        },
+        role: PlatformPublish {
+            registry: RegistryBindingId {
+                registry_key: RegistryKey(
+                    "npm",
+                ),
+                binding_digest: RegistryBindingDigest(
+                    "9cbb1cf20c84244f3c250e782d9e2819b2160dabe0b270fcfdf2b28ab197bd2b",
+                ),
+            },
+            platform: PlatformPackageV1 {
+                name: ReleasePackageId {
+                    ecosystem: Npm,
+                    name: "@s/cli-darwin-arm64",
+                },
+                directory: "packages/cli/npm/darwin-arm64",
+            },
+        },
+        version: Version {
+            grammar: SemVer,
+            raw: "0.1.0",
+            parsed: SemVer(
+                Version {
+                    major: 0,
+                    minor: 1,
+                    patch: 0,
+                },
+            ),
+        },
+    }: RegistryPublish(
+        RegistryPublishOperation {
+            package_dir: "packages/cli/npm/darwin-arm64",
+            package_name: "@s/cli-darwin-arm64",
+            version: Version {
+                grammar: SemVer,
+                raw: "0.1.0",
+                parsed: SemVer(
+                    Version {
+                        major: 0,
+                        minor: 1,
+                        patch: 0,
+                    },
+                ),
+            },
+            registry: PreparedRegistryBinding {
+                key: RegistryKey(
+                    "npm",
+                ),
+                endpoint: None,
+                identity: RegistryBindingDigest(
+                    "9cbb1cf20c84244f3c250e782d9e2819b2160dabe0b270fcfdf2b28ab197bd2b",
+                ),
+            },
+            npm_access: Some(
+                Public,
+            ),
+            npm_tag: None,
+            by_directory: true,
+        },
+    ),
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Npm,
+            name: "@s/cli",
+        },
+        role: PlatformPublish {
+            registry: RegistryBindingId {
+                registry_key: RegistryKey(
+                    "npm",
+                ),
+                binding_digest: RegistryBindingDigest(
+                    "9cbb1cf20c84244f3c250e782d9e2819b2160dabe0b270fcfdf2b28ab197bd2b",
+                ),
+            },
+            platform: PlatformPackageV1 {
+                name: ReleasePackageId {
+                    ecosystem: Npm,
+                    name: "@s/cli-linux-x64-gnu",
+                },
+                directory: "packages/cli/npm/linux-x64-gnu",
+            },
+        },
+        version: Version {
+            grammar: SemVer,
+            raw: "0.1.0",
+            parsed: SemVer(
+                Version {
+                    major: 0,
+                    minor: 1,
+                    patch: 0,
+                },
+            ),
+        },
+    }: RegistryPublish(
+        RegistryPublishOperation {
+            package_dir: "packages/cli/npm/linux-x64-gnu",
+            package_name: "@s/cli-linux-x64-gnu",
+            version: Version {
+                grammar: SemVer,
+                raw: "0.1.0",
+                parsed: SemVer(
+                    Version {
+                        major: 0,
+                        minor: 1,
+                        patch: 0,
+                    },
+                ),
+            },
+            registry: PreparedRegistryBinding {
+                key: RegistryKey(
+                    "npm",
+                ),
+                endpoint: None,
+                identity: RegistryBindingDigest(
+                    "9cbb1cf20c84244f3c250e782d9e2819b2160dabe0b270fcfdf2b28ab197bd2b",
+                ),
+            },
+            npm_access: Some(
+                Public,
+            ),
+            npm_tag: None,
+            by_directory: true,
+        },
+    ),
+}
+
+slots:
+[]

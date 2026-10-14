@@ -1,0 +1,626 @@
+---
+source: crates/callisto-graph/src/commands/release/derive.rs
+expression: "derived_text(&dir, &decision, false)"
+---
+packages:
+[
+    ReleasePackageInputV1 {
+        package: ReleasePackageId {
+            ecosystem: Cargo,
+            name: "dual",
+        },
+        fingerprint: SemanticInputDigest(
+            "f52cdf7495e5ee2dd30fbfa96e2d7ab75f114cac8ad64aaaf4396ebf09cbaf54",
+        ),
+    },
+    ReleasePackageInputV1 {
+        package: ReleasePackageId {
+            ecosystem: Npm,
+            name: "dual",
+        },
+        fingerprint: SemanticInputDigest(
+            "40c72ebd13aae2db78d11b392e0243340e578ea3875ac6edd10c2e13fa28f9bf",
+        ),
+    },
+]
+
+operations:
+[
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Cargo,
+                name: "dual",
+            },
+            role: RegistryPublish {
+                registry: RegistryBindingId {
+                    registry_key: RegistryKey(
+                        "cratesIo",
+                    ),
+                    binding_digest: RegistryBindingDigest(
+                        "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                    ),
+                },
+            },
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+        },
+        prerequisites: [],
+    },
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Cargo,
+                name: "dual",
+            },
+            role: Tag,
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+        },
+        prerequisites: [
+            ReleaseOperationId {
+                package: ReleasePackageId {
+                    ecosystem: Cargo,
+                    name: "dual",
+                },
+                role: RegistryPublish {
+                    registry: RegistryBindingId {
+                        registry_key: RegistryKey(
+                            "cratesIo",
+                        ),
+                        binding_digest: RegistryBindingDigest(
+                            "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                        ),
+                    },
+                },
+                version: Version {
+                    grammar: SemVer,
+                    raw: "1.0.0",
+                    parsed: SemVer(
+                        Version {
+                            major: 1,
+                            minor: 0,
+                            patch: 0,
+                        },
+                    ),
+                },
+            },
+        ],
+    },
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Cargo,
+                name: "dual",
+            },
+            role: ForgeRelease,
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+        },
+        prerequisites: [
+            ReleaseOperationId {
+                package: ReleasePackageId {
+                    ecosystem: Cargo,
+                    name: "dual",
+                },
+                role: Tag,
+                version: Version {
+                    grammar: SemVer,
+                    raw: "1.0.0",
+                    parsed: SemVer(
+                        Version {
+                            major: 1,
+                            minor: 0,
+                            patch: 0,
+                        },
+                    ),
+                },
+            },
+        ],
+    },
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Cargo,
+                name: "dual",
+            },
+            role: ForgePublish,
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+        },
+        prerequisites: [
+            ReleaseOperationId {
+                package: ReleasePackageId {
+                    ecosystem: Cargo,
+                    name: "dual",
+                },
+                role: ForgeRelease,
+                version: Version {
+                    grammar: SemVer,
+                    raw: "1.0.0",
+                    parsed: SemVer(
+                        Version {
+                            major: 1,
+                            minor: 0,
+                            patch: 0,
+                        },
+                    ),
+                },
+            },
+        ],
+    },
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Npm,
+                name: "dual",
+            },
+            role: RegistryPublish {
+                registry: RegistryBindingId {
+                    registry_key: RegistryKey(
+                        "npm",
+                    ),
+                    binding_digest: RegistryBindingDigest(
+                        "9cbb1cf20c84244f3c250e782d9e2819b2160dabe0b270fcfdf2b28ab197bd2b",
+                    ),
+                },
+            },
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+        },
+        prerequisites: [],
+    },
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Npm,
+                name: "dual",
+            },
+            role: Tag,
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+        },
+        prerequisites: [
+            ReleaseOperationId {
+                package: ReleasePackageId {
+                    ecosystem: Npm,
+                    name: "dual",
+                },
+                role: RegistryPublish {
+                    registry: RegistryBindingId {
+                        registry_key: RegistryKey(
+                            "npm",
+                        ),
+                        binding_digest: RegistryBindingDigest(
+                            "9cbb1cf20c84244f3c250e782d9e2819b2160dabe0b270fcfdf2b28ab197bd2b",
+                        ),
+                    },
+                },
+                version: Version {
+                    grammar: SemVer,
+                    raw: "1.0.0",
+                    parsed: SemVer(
+                        Version {
+                            major: 1,
+                            minor: 0,
+                            patch: 0,
+                        },
+                    ),
+                },
+            },
+        ],
+    },
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Npm,
+                name: "dual",
+            },
+            role: ForgeRelease,
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+        },
+        prerequisites: [
+            ReleaseOperationId {
+                package: ReleasePackageId {
+                    ecosystem: Npm,
+                    name: "dual",
+                },
+                role: Tag,
+                version: Version {
+                    grammar: SemVer,
+                    raw: "1.0.0",
+                    parsed: SemVer(
+                        Version {
+                            major: 1,
+                            minor: 0,
+                            patch: 0,
+                        },
+                    ),
+                },
+            },
+        ],
+    },
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Npm,
+                name: "dual",
+            },
+            role: ForgePublish,
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+        },
+        prerequisites: [
+            ReleaseOperationId {
+                package: ReleasePackageId {
+                    ecosystem: Npm,
+                    name: "dual",
+                },
+                role: ForgeRelease,
+                version: Version {
+                    grammar: SemVer,
+                    raw: "1.0.0",
+                    parsed: SemVer(
+                        Version {
+                            major: 1,
+                            minor: 0,
+                            patch: 0,
+                        },
+                    ),
+                },
+            },
+        ],
+    },
+]
+
+prepared:
+{
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Cargo,
+            name: "dual",
+        },
+        role: RegistryPublish {
+            registry: RegistryBindingId {
+                registry_key: RegistryKey(
+                    "cratesIo",
+                ),
+                binding_digest: RegistryBindingDigest(
+                    "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                ),
+            },
+        },
+        version: Version {
+            grammar: SemVer,
+            raw: "1.0.0",
+            parsed: SemVer(
+                Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                },
+            ),
+        },
+    }: RegistryPublish(
+        RegistryPublishOperation {
+            package_dir: "dual",
+            package_name: "dual",
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+            registry: PreparedRegistryBinding {
+                key: RegistryKey(
+                    "cratesIo",
+                ),
+                endpoint: None,
+                identity: RegistryBindingDigest(
+                    "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                ),
+            },
+            npm_access: None,
+            npm_tag: None,
+            by_directory: false,
+        },
+    ),
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Cargo,
+            name: "dual",
+        },
+        role: Tag,
+        version: Version {
+            grammar: SemVer,
+            raw: "1.0.0",
+            parsed: SemVer(
+                Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                },
+            ),
+        },
+    }: Tag(
+        TagOperation {
+            name: TagName(
+                "dual@1.0.0",
+            ),
+            target: CommitSha(
+                "<commit>",
+            ),
+            annotation: "Release dual@1.0.0",
+        },
+    ),
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Cargo,
+            name: "dual",
+        },
+        role: ForgeRelease,
+        version: Version {
+            grammar: SemVer,
+            raw: "1.0.0",
+            parsed: SemVer(
+                Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                },
+            ),
+        },
+    }: ForgeRelease(
+        ForgeReleaseOperation {
+            tag: TagName(
+                "dual@1.0.0",
+            ),
+            prerelease: false,
+            notes: Generated {
+                reason: FileMissing,
+            },
+        },
+    ),
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Cargo,
+            name: "dual",
+        },
+        role: ForgePublish,
+        version: Version {
+            grammar: SemVer,
+            raw: "1.0.0",
+            parsed: SemVer(
+                Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                },
+            ),
+        },
+    }: ForgePublish(
+        ForgePublishOperation {
+            tag: TagName(
+                "dual@1.0.0",
+            ),
+            prerelease: false,
+        },
+    ),
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Npm,
+            name: "dual",
+        },
+        role: RegistryPublish {
+            registry: RegistryBindingId {
+                registry_key: RegistryKey(
+                    "npm",
+                ),
+                binding_digest: RegistryBindingDigest(
+                    "9cbb1cf20c84244f3c250e782d9e2819b2160dabe0b270fcfdf2b28ab197bd2b",
+                ),
+            },
+        },
+        version: Version {
+            grammar: SemVer,
+            raw: "1.0.0",
+            parsed: SemVer(
+                Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                },
+            ),
+        },
+    }: RegistryPublish(
+        RegistryPublishOperation {
+            package_dir: "dual",
+            package_name: "dual",
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+            registry: PreparedRegistryBinding {
+                key: RegistryKey(
+                    "npm",
+                ),
+                endpoint: None,
+                identity: RegistryBindingDigest(
+                    "9cbb1cf20c84244f3c250e782d9e2819b2160dabe0b270fcfdf2b28ab197bd2b",
+                ),
+            },
+            npm_access: None,
+            npm_tag: None,
+            by_directory: false,
+        },
+    ),
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Npm,
+            name: "dual",
+        },
+        role: Tag,
+        version: Version {
+            grammar: SemVer,
+            raw: "1.0.0",
+            parsed: SemVer(
+                Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                },
+            ),
+        },
+    }: Tag(
+        TagOperation {
+            name: TagName(
+                "dual@1.0.0",
+            ),
+            target: CommitSha(
+                "<commit>",
+            ),
+            annotation: "Release dual@1.0.0",
+        },
+    ),
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Npm,
+            name: "dual",
+        },
+        role: ForgeRelease,
+        version: Version {
+            grammar: SemVer,
+            raw: "1.0.0",
+            parsed: SemVer(
+                Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                },
+            ),
+        },
+    }: ForgeRelease(
+        ForgeReleaseOperation {
+            tag: TagName(
+                "dual@1.0.0",
+            ),
+            prerelease: false,
+            notes: Generated {
+                reason: FileMissing,
+            },
+        },
+    ),
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Npm,
+            name: "dual",
+        },
+        role: ForgePublish,
+        version: Version {
+            grammar: SemVer,
+            raw: "1.0.0",
+            parsed: SemVer(
+                Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                },
+            ),
+        },
+    }: ForgePublish(
+        ForgePublishOperation {
+            tag: TagName(
+                "dual@1.0.0",
+            ),
+            prerelease: false,
+        },
+    ),
+}
+
+slots:
+[]

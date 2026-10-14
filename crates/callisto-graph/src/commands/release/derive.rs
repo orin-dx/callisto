@@ -1540,4 +1540,162 @@ mod tests {
             callisto_model::PackageId::parse("cargo/plugin").ok()
         );
     }
+
+    /// Everything derivation produces, rendered stably: the intent digest covers the operations, so
+    /// their identities, order and prerequisites must not move. Commit hashes and the checkout
+    /// path are redacted.
+    fn derived_text(dir: &tempfile::TempDir, decision: &ReleaseDecisionV1, artifact_policy: bool) -> String {
+        let (snapshot, operations, prepared, _, slots) = if artifact_policy {
+            derive_with_artifact_policy(dir, decision).unwrap().0
+        } else {
+            derive(dir, decision).unwrap()
+        };
+        let text = format!(
+            "packages:\n{:#?}\n\noperations:\n{:#?}\n\nprepared:\n{prepared:#?}\n\nslots:\n{slots:#?}\n",
+            snapshot.packages, operations
+        );
+        let root = super::super::capability::canonical_root(dir.path()).unwrap();
+        let text = text.replace(root.to_str().unwrap(), "<root>");
+        let mut redacted = String::with_capacity(text.len());
+        let mut run = String::new();
+        for character in text.chars().chain(std::iter::once('\0')) {
+            if character.is_ascii_hexdigit() {
+                run.push(character);
+                continue;
+            }
+            redacted.push_str(if run.len() == 40 { "<commit>" } else { &run });
+            run.clear();
+            if character != '\0' {
+                redacted.push(character);
+            }
+        }
+        redacted
+    }
+
+    #[test]
+    fn a_decision_entry_the_workspace_does_not_contain_is_not_selected() {
+        let dir = repo_of(&cargo_workspace(&[("a", "")]));
+        let error = derive(&dir, &cargo_release(&["a", "ghost"])).unwrap_err();
+        assert!(
+            matches!(&error, GraphError::ReleasePackageNotSelected { package } if package.name() == "ghost"),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn a_product_without_its_artifact_owner_cannot_derive_slots() {
+        let dir = product_and_plugin_repo("1.0.0", "2.0.0");
+        let error = derive_with_artifact_policy(&dir, &cargo_release(&["core"])).unwrap_err();
+        assert!(
+            matches!(&error, GraphError::ReleaseArtifactOwnerNotReleased { asset, .. } if asset == "a.tar.gz"),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn an_artifact_policy_for_another_repository_than_origin_is_refused() {
+        let dir = product_and_plugin_repo("1.0.0", "2.0.0");
+        let config = std::fs::read_to_string(dir.path().join("callisto.toml")).unwrap();
+        std::fs::write(
+            dir.path().join("callisto.toml"),
+            config.replace("example/parity", "example/elsewhere"),
+        )
+        .unwrap();
+        git(dir.path(), &["commit", "-qam", "retarget the forge"]);
+        let error = derive_with_artifact_policy(&dir, &cargo_release(&["core", "plugin"])).unwrap_err();
+        assert!(
+            matches!(error, GraphError::ReleaseArtifactRepositoryMismatch { .. }),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn two_targets_for_one_registry_are_a_duplicate() {
+        let mut files = cargo_workspace(&[("a", "")]);
+        files[1].1 = "[[package]]\nmatch = \"a\"\npublish-to = [\"crates-io\", \"crates-io\"]\n".to_owned();
+        let dir = repo_of(&files);
+        let error = derive(&dir, &cargo_release(&["a"])).unwrap_err();
+        assert!(
+            matches!(
+                error,
+                GraphError::ReleaseSelectionInvalid {
+                    reason: ReleaseSelectionInvalidReason::DuplicateRegistryTarget,
+                    ..
+                }
+            ),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn derived_cargo_chain_is_pinned() {
+        let dir = repo_of(&cargo_workspace(&[
+            ("a", "[dependencies]\nb = { path = \"../b\" }\n"),
+            ("b", ""),
+            ("c", "[dev-dependencies]\na = { path = \"../a\" }\n"),
+        ]));
+        insta::assert_snapshot!(derived_text(&dir, &cargo_release(&["a", "b", "c"]), false));
+    }
+
+    #[test]
+    fn derived_product_release_with_a_plugin_artifact_is_pinned() {
+        let dir = product_and_plugin_repo("1.0.0", "2.0.0");
+        insta::assert_snapshot!(derived_text(&dir, &cargo_release(&["core", "plugin"]), true));
+    }
+
+    #[test]
+    fn derived_npm_owner_with_a_platform_package_is_pinned() {
+        let dir = repo(&[
+            ("pnpm-workspace.yaml", "packages:\n  - \"packages/*\"\n"),
+            ("pnpm-lock.yaml", "lockfileVersion: '9.0'\n"),
+            (
+                "packages/cli/package.json",
+                r#"{"name":"@s/cli","version":"0.1.0","publishConfig":{"access":"public"},"optionalDependencies":{"@s/cli-darwin-arm64":"0.1.0","@s/cli-linux-x64-gnu":"0.1.0"}}"#,
+            ),
+            (
+                "packages/cli/npm/darwin-arm64/package.json",
+                r#"{"name":"@s/cli-darwin-arm64","version":"0.1.0","os":["darwin"],"cpu":["arm64"]}"#,
+            ),
+            (
+                "packages/cli/npm/linux-x64-gnu/package.json",
+                r#"{"name":"@s/cli-linux-x64-gnu","version":"0.1.0","os":["linux"],"cpu":["x64"]}"#,
+            ),
+            ("callisto.toml", ""),
+        ]);
+        let decision = release(&[(Ecosystem::Npm, "@s/cli", "0.1.0")]);
+        insta::assert_snapshot!(derived_text(&dir, &decision, false));
+    }
+
+    #[test]
+    fn derived_scoped_npm_prerelease_is_pinned() {
+        let dir = repo(&[
+            ("package.json", r#"{"name":"@s/lib","version":"1.0.0-beta.1"}"#),
+            ("callisto.toml", ""),
+        ]);
+        insta::assert_snapshot!(derived_text(
+            &dir,
+            &release(&[(Ecosystem::Npm, "@s/lib", "1.0.0-beta.1")]),
+            false
+        ));
+    }
+
+    /// One directory with both a Cargo and an npm manifest: the dual owner whose tag and forge
+    /// release are shared between its two registry publishes.
+    #[test]
+    fn derived_dual_cargo_and_npm_owner_is_pinned() {
+        let dir = repo(&[
+            ("Cargo.toml", "[workspace]\nmembers = [\"dual\"]\n"),
+            (
+                "dual/Cargo.toml",
+                "[package]\nname = \"dual\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+            ),
+            ("dual/package.json", r#"{"name":"dual","version":"1.0.0"}"#),
+            (
+                "callisto.toml",
+                "[[package]]\nmatch = \"dual\"\npublish-to = [\"crates-io\", \"npm\", \"github-release\"]\n",
+            ),
+        ]);
+        let decision = release(&[(Ecosystem::Cargo, "dual", "1.0.0"), (Ecosystem::Npm, "dual", "1.0.0")]);
+        insta::assert_snapshot!(derived_text(&dir, &decision, false));
+    }
 }
