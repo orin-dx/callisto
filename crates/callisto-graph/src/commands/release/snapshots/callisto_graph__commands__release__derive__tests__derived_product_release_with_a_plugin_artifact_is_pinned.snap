@@ -1,0 +1,612 @@
+---
+source: crates/callisto-graph/src/commands/release/derive.rs
+expression: "derived_text(&dir, &cargo_release(&[\"core\", \"plugin\"]), true)"
+---
+packages:
+[
+    ReleasePackageInputV1 {
+        package: ReleasePackageId {
+            ecosystem: Cargo,
+            name: "core",
+        },
+        fingerprint: SemanticInputDigest(
+            "68a8b2356a0c27374b982720d6ad12bf2e1a060bff1103848bb259b6a85aebf9",
+        ),
+    },
+    ReleasePackageInputV1 {
+        package: ReleasePackageId {
+            ecosystem: Cargo,
+            name: "plugin",
+        },
+        fingerprint: SemanticInputDigest(
+            "cb2dc111a4a314e1c1eaaa63f43eaf8add9061bfb725d103d926421ea0409551",
+        ),
+    },
+]
+
+operations:
+[
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Cargo,
+                name: "core",
+            },
+            role: Tag,
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+        },
+        prerequisites: [],
+    },
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Cargo,
+                name: "core",
+            },
+            role: ForgeRelease,
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+        },
+        prerequisites: [
+            ReleaseOperationId {
+                package: ReleasePackageId {
+                    ecosystem: Cargo,
+                    name: "core",
+                },
+                role: Tag,
+                version: Version {
+                    grammar: SemVer,
+                    raw: "1.0.0",
+                    parsed: SemVer(
+                        Version {
+                            major: 1,
+                            minor: 0,
+                            patch: 0,
+                        },
+                    ),
+                },
+            },
+        ],
+    },
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Cargo,
+                name: "plugin",
+            },
+            role: RegistryPublish {
+                registry: RegistryBindingId {
+                    registry_key: RegistryKey(
+                        "cratesIo",
+                    ),
+                    binding_digest: RegistryBindingDigest(
+                        "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                    ),
+                },
+            },
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+        },
+        prerequisites: [],
+    },
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Cargo,
+                name: "plugin",
+            },
+            role: Tag,
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+        },
+        prerequisites: [
+            ReleaseOperationId {
+                package: ReleasePackageId {
+                    ecosystem: Cargo,
+                    name: "plugin",
+                },
+                role: RegistryPublish {
+                    registry: RegistryBindingId {
+                        registry_key: RegistryKey(
+                            "cratesIo",
+                        ),
+                        binding_digest: RegistryBindingDigest(
+                            "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                        ),
+                    },
+                },
+                version: Version {
+                    grammar: SemVer,
+                    raw: "1.0.0",
+                    parsed: SemVer(
+                        Version {
+                            major: 1,
+                            minor: 0,
+                            patch: 0,
+                        },
+                    ),
+                },
+            },
+        ],
+    },
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Cargo,
+                name: "plugin",
+            },
+            role: ArtifactUpload {
+                slot: ArtifactSlotId {
+                    package: ReleasePackageId {
+                        ecosystem: Cargo,
+                        name: "plugin",
+                    },
+                    version: Version {
+                        grammar: SemVer,
+                        raw: "1.0.0",
+                        parsed: SemVer(
+                            Version {
+                                major: 1,
+                                minor: 0,
+                                patch: 0,
+                            },
+                        ),
+                    },
+                    platform: "t",
+                    asset_name: "a.tar.gz",
+                    attestation_policy: GitHubAttestationPolicyV1 {
+                        repository: GitHubRepository {
+                            owner: "example",
+                            repo: "parity",
+                        },
+                        workflow_path: ".github/workflows/callisto-release.yml",
+                        workflow_commit: CommitSha(
+                            "<commit>",
+                        ),
+                    },
+                },
+            },
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+        },
+        prerequisites: [
+            ReleaseOperationId {
+                package: ReleasePackageId {
+                    ecosystem: Cargo,
+                    name: "core",
+                },
+                role: ForgeRelease,
+                version: Version {
+                    grammar: SemVer,
+                    raw: "1.0.0",
+                    parsed: SemVer(
+                        Version {
+                            major: 1,
+                            minor: 0,
+                            patch: 0,
+                        },
+                    ),
+                },
+            },
+        ],
+    },
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Cargo,
+                name: "core",
+            },
+            role: ForgePublish,
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+        },
+        prerequisites: [
+            ReleaseOperationId {
+                package: ReleasePackageId {
+                    ecosystem: Cargo,
+                    name: "core",
+                },
+                role: ForgeRelease,
+                version: Version {
+                    grammar: SemVer,
+                    raw: "1.0.0",
+                    parsed: SemVer(
+                        Version {
+                            major: 1,
+                            minor: 0,
+                            patch: 0,
+                        },
+                    ),
+                },
+            },
+            ReleaseOperationId {
+                package: ReleasePackageId {
+                    ecosystem: Cargo,
+                    name: "plugin",
+                },
+                role: ArtifactUpload {
+                    slot: ArtifactSlotId {
+                        package: ReleasePackageId {
+                            ecosystem: Cargo,
+                            name: "plugin",
+                        },
+                        version: Version {
+                            grammar: SemVer,
+                            raw: "1.0.0",
+                            parsed: SemVer(
+                                Version {
+                                    major: 1,
+                                    minor: 0,
+                                    patch: 0,
+                                },
+                            ),
+                        },
+                        platform: "t",
+                        asset_name: "a.tar.gz",
+                        attestation_policy: GitHubAttestationPolicyV1 {
+                            repository: GitHubRepository {
+                                owner: "example",
+                                repo: "parity",
+                            },
+                            workflow_path: ".github/workflows/callisto-release.yml",
+                            workflow_commit: CommitSha(
+                                "<commit>",
+                            ),
+                        },
+                    },
+                },
+                version: Version {
+                    grammar: SemVer,
+                    raw: "1.0.0",
+                    parsed: SemVer(
+                        Version {
+                            major: 1,
+                            minor: 0,
+                            patch: 0,
+                        },
+                    ),
+                },
+            },
+        ],
+    },
+]
+
+prepared:
+{
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Cargo,
+            name: "core",
+        },
+        role: Tag,
+        version: Version {
+            grammar: SemVer,
+            raw: "1.0.0",
+            parsed: SemVer(
+                Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                },
+            ),
+        },
+    }: Tag(
+        TagOperation {
+            name: TagName(
+                "core@1.0.0",
+            ),
+            target: CommitSha(
+                "<commit>",
+            ),
+            annotation: "Release core@1.0.0",
+        },
+    ),
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Cargo,
+            name: "core",
+        },
+        role: ForgeRelease,
+        version: Version {
+            grammar: SemVer,
+            raw: "1.0.0",
+            parsed: SemVer(
+                Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                },
+            ),
+        },
+    }: ForgeRelease(
+        ForgeReleaseOperation {
+            tag: TagName(
+                "core@1.0.0",
+            ),
+            prerelease: false,
+            notes: Generated {
+                reason: FileMissing,
+            },
+        },
+    ),
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Cargo,
+            name: "core",
+        },
+        role: ForgePublish,
+        version: Version {
+            grammar: SemVer,
+            raw: "1.0.0",
+            parsed: SemVer(
+                Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                },
+            ),
+        },
+    }: ForgePublish(
+        ForgePublishOperation {
+            tag: TagName(
+                "core@1.0.0",
+            ),
+            prerelease: false,
+        },
+    ),
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Cargo,
+            name: "plugin",
+        },
+        role: RegistryPublish {
+            registry: RegistryBindingId {
+                registry_key: RegistryKey(
+                    "cratesIo",
+                ),
+                binding_digest: RegistryBindingDigest(
+                    "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                ),
+            },
+        },
+        version: Version {
+            grammar: SemVer,
+            raw: "1.0.0",
+            parsed: SemVer(
+                Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                },
+            ),
+        },
+    }: RegistryPublish(
+        RegistryPublishOperation {
+            package_dir: "plugin",
+            package_name: "plugin",
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+            registry: PreparedRegistryBinding {
+                key: RegistryKey(
+                    "cratesIo",
+                ),
+                endpoint: None,
+                identity: RegistryBindingDigest(
+                    "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                ),
+            },
+            npm_access: None,
+            npm_tag: None,
+            by_directory: false,
+        },
+    ),
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Cargo,
+            name: "plugin",
+        },
+        role: Tag,
+        version: Version {
+            grammar: SemVer,
+            raw: "1.0.0",
+            parsed: SemVer(
+                Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                },
+            ),
+        },
+    }: Tag(
+        TagOperation {
+            name: TagName(
+                "plugin@1.0.0",
+            ),
+            target: CommitSha(
+                "<commit>",
+            ),
+            annotation: "Release plugin@1.0.0",
+        },
+    ),
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Cargo,
+            name: "plugin",
+        },
+        role: ArtifactUpload {
+            slot: ArtifactSlotId {
+                package: ReleasePackageId {
+                    ecosystem: Cargo,
+                    name: "plugin",
+                },
+                version: Version {
+                    grammar: SemVer,
+                    raw: "1.0.0",
+                    parsed: SemVer(
+                        Version {
+                            major: 1,
+                            minor: 0,
+                            patch: 0,
+                        },
+                    ),
+                },
+                platform: "t",
+                asset_name: "a.tar.gz",
+                attestation_policy: GitHubAttestationPolicyV1 {
+                    repository: GitHubRepository {
+                        owner: "example",
+                        repo: "parity",
+                    },
+                    workflow_path: ".github/workflows/callisto-release.yml",
+                    workflow_commit: CommitSha(
+                        "<commit>",
+                    ),
+                },
+            },
+        },
+        version: Version {
+            grammar: SemVer,
+            raw: "1.0.0",
+            parsed: SemVer(
+                Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                },
+            ),
+        },
+    }: ArtifactUpload(
+        ArtifactUploadOperation {
+            slot: ArtifactSlotId {
+                package: ReleasePackageId {
+                    ecosystem: Cargo,
+                    name: "plugin",
+                },
+                version: Version {
+                    grammar: SemVer,
+                    raw: "1.0.0",
+                    parsed: SemVer(
+                        Version {
+                            major: 1,
+                            minor: 0,
+                            patch: 0,
+                        },
+                    ),
+                },
+                platform: "t",
+                asset_name: "a.tar.gz",
+                attestation_policy: GitHubAttestationPolicyV1 {
+                    repository: GitHubRepository {
+                        owner: "example",
+                        repo: "parity",
+                    },
+                    workflow_path: ".github/workflows/callisto-release.yml",
+                    workflow_commit: CommitSha(
+                        "<commit>",
+                    ),
+                },
+            },
+            tag: TagName(
+                "core@1.0.0",
+            ),
+            prerelease: false,
+        },
+    ),
+}
+
+slots:
+[
+    ArtifactSlotId {
+        package: ReleasePackageId {
+            ecosystem: Cargo,
+            name: "plugin",
+        },
+        version: Version {
+            grammar: SemVer,
+            raw: "1.0.0",
+            parsed: SemVer(
+                Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                },
+            ),
+        },
+        platform: "t",
+        asset_name: "a.tar.gz",
+        attestation_policy: GitHubAttestationPolicyV1 {
+            repository: GitHubRepository {
+                owner: "example",
+                repo: "parity",
+            },
+            workflow_path: ".github/workflows/callisto-release.yml",
+            workflow_commit: CommitSha(
+                "<commit>",
+            ),
+        },
+    },
+]

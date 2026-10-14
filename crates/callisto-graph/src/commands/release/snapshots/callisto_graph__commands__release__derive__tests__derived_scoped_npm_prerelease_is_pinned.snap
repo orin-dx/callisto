@@ -1,0 +1,199 @@
+---
+source: crates/callisto-graph/src/commands/release/derive.rs
+expression: "derived_text(&dir, &release(&[(Ecosystem::Npm, \"@s/lib\", \"1.0.0-beta.1\")]),\nfalse)"
+---
+packages:
+[
+    ReleasePackageInputV1 {
+        package: ReleasePackageId {
+            ecosystem: Npm,
+            name: "@s/lib",
+        },
+        fingerprint: SemanticInputDigest(
+            "a3a33ee62aad65f2714c9425808b5babcb2e2bf79c719962e604b2f71d9974d0",
+        ),
+    },
+]
+
+operations:
+[
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Npm,
+                name: "@s/lib",
+            },
+            role: RegistryPublish {
+                registry: RegistryBindingId {
+                    registry_key: RegistryKey(
+                        "npm",
+                    ),
+                    binding_digest: RegistryBindingDigest(
+                        "9cbb1cf20c84244f3c250e782d9e2819b2160dabe0b270fcfdf2b28ab197bd2b",
+                    ),
+                },
+            },
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0-beta.1",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                        pre: Prerelease("beta.1"),
+                    },
+                ),
+            },
+        },
+        prerequisites: [],
+    },
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Npm,
+                name: "@s/lib",
+            },
+            role: Tag,
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0-beta.1",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                        pre: Prerelease("beta.1"),
+                    },
+                ),
+            },
+        },
+        prerequisites: [
+            ReleaseOperationId {
+                package: ReleasePackageId {
+                    ecosystem: Npm,
+                    name: "@s/lib",
+                },
+                role: RegistryPublish {
+                    registry: RegistryBindingId {
+                        registry_key: RegistryKey(
+                            "npm",
+                        ),
+                        binding_digest: RegistryBindingDigest(
+                            "9cbb1cf20c84244f3c250e782d9e2819b2160dabe0b270fcfdf2b28ab197bd2b",
+                        ),
+                    },
+                },
+                version: Version {
+                    grammar: SemVer,
+                    raw: "1.0.0-beta.1",
+                    parsed: SemVer(
+                        Version {
+                            major: 1,
+                            minor: 0,
+                            patch: 0,
+                            pre: Prerelease("beta.1"),
+                        },
+                    ),
+                },
+            },
+        ],
+    },
+]
+
+prepared:
+{
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Npm,
+            name: "@s/lib",
+        },
+        role: RegistryPublish {
+            registry: RegistryBindingId {
+                registry_key: RegistryKey(
+                    "npm",
+                ),
+                binding_digest: RegistryBindingDigest(
+                    "9cbb1cf20c84244f3c250e782d9e2819b2160dabe0b270fcfdf2b28ab197bd2b",
+                ),
+            },
+        },
+        version: Version {
+            grammar: SemVer,
+            raw: "1.0.0-beta.1",
+            parsed: SemVer(
+                Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                    pre: Prerelease("beta.1"),
+                },
+            ),
+        },
+    }: RegistryPublish(
+        RegistryPublishOperation {
+            package_dir: "",
+            package_name: "@s/lib",
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0-beta.1",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                        pre: Prerelease("beta.1"),
+                    },
+                ),
+            },
+            registry: PreparedRegistryBinding {
+                key: RegistryKey(
+                    "npm",
+                ),
+                endpoint: None,
+                identity: RegistryBindingDigest(
+                    "9cbb1cf20c84244f3c250e782d9e2819b2160dabe0b270fcfdf2b28ab197bd2b",
+                ),
+            },
+            npm_access: Some(
+                Public,
+            ),
+            npm_tag: Some(
+                "next",
+            ),
+            by_directory: false,
+        },
+    ),
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Npm,
+            name: "@s/lib",
+        },
+        role: Tag,
+        version: Version {
+            grammar: SemVer,
+            raw: "1.0.0-beta.1",
+            parsed: SemVer(
+                Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                    pre: Prerelease("beta.1"),
+                },
+            ),
+        },
+    }: Tag(
+        TagOperation {
+            name: TagName(
+                "@s/lib@1.0.0-beta.1",
+            ),
+            target: CommitSha(
+                "<commit>",
+            ),
+            annotation: "Release @s/lib@1.0.0-beta.1",
+        },
+    ),
+}
+
+slots:
+[]

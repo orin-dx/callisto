@@ -1,0 +1,587 @@
+---
+source: crates/callisto-graph/src/commands/release/derive.rs
+expression: "derived_text(&dir, &cargo_release(&[\"a\", \"b\", \"c\"]), false)"
+---
+packages:
+[
+    ReleasePackageInputV1 {
+        package: ReleasePackageId {
+            ecosystem: Cargo,
+            name: "a",
+        },
+        fingerprint: SemanticInputDigest(
+            "673474b13a14fd8653979496a5ae81a9fb28e804561b75ca7621359167136ea5",
+        ),
+    },
+    ReleasePackageInputV1 {
+        package: ReleasePackageId {
+            ecosystem: Cargo,
+            name: "b",
+        },
+        fingerprint: SemanticInputDigest(
+            "b7d534b825d7e37ddfc5080d5e8f937140ea8309ba84f100f07fcc3ab2f88358",
+        ),
+    },
+    ReleasePackageInputV1 {
+        package: ReleasePackageId {
+            ecosystem: Cargo,
+            name: "c",
+        },
+        fingerprint: SemanticInputDigest(
+            "1300fda1a693476bd1b29ea1672400c39230313fce6966e6dff0771fb30ab037",
+        ),
+    },
+]
+
+operations:
+[
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Cargo,
+                name: "b",
+            },
+            role: RegistryPublish {
+                registry: RegistryBindingId {
+                    registry_key: RegistryKey(
+                        "cratesIo",
+                    ),
+                    binding_digest: RegistryBindingDigest(
+                        "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                    ),
+                },
+            },
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+        },
+        prerequisites: [],
+    },
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Cargo,
+                name: "a",
+            },
+            role: RegistryPublish {
+                registry: RegistryBindingId {
+                    registry_key: RegistryKey(
+                        "cratesIo",
+                    ),
+                    binding_digest: RegistryBindingDigest(
+                        "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                    ),
+                },
+            },
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+        },
+        prerequisites: [
+            ReleaseOperationId {
+                package: ReleasePackageId {
+                    ecosystem: Cargo,
+                    name: "b",
+                },
+                role: RegistryPublish {
+                    registry: RegistryBindingId {
+                        registry_key: RegistryKey(
+                            "cratesIo",
+                        ),
+                        binding_digest: RegistryBindingDigest(
+                            "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                        ),
+                    },
+                },
+                version: Version {
+                    grammar: SemVer,
+                    raw: "1.0.0",
+                    parsed: SemVer(
+                        Version {
+                            major: 1,
+                            minor: 0,
+                            patch: 0,
+                        },
+                    ),
+                },
+            },
+        ],
+    },
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Cargo,
+                name: "a",
+            },
+            role: Tag,
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+        },
+        prerequisites: [
+            ReleaseOperationId {
+                package: ReleasePackageId {
+                    ecosystem: Cargo,
+                    name: "a",
+                },
+                role: RegistryPublish {
+                    registry: RegistryBindingId {
+                        registry_key: RegistryKey(
+                            "cratesIo",
+                        ),
+                        binding_digest: RegistryBindingDigest(
+                            "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                        ),
+                    },
+                },
+                version: Version {
+                    grammar: SemVer,
+                    raw: "1.0.0",
+                    parsed: SemVer(
+                        Version {
+                            major: 1,
+                            minor: 0,
+                            patch: 0,
+                        },
+                    ),
+                },
+            },
+        ],
+    },
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Cargo,
+                name: "b",
+            },
+            role: Tag,
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+        },
+        prerequisites: [
+            ReleaseOperationId {
+                package: ReleasePackageId {
+                    ecosystem: Cargo,
+                    name: "b",
+                },
+                role: RegistryPublish {
+                    registry: RegistryBindingId {
+                        registry_key: RegistryKey(
+                            "cratesIo",
+                        ),
+                        binding_digest: RegistryBindingDigest(
+                            "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                        ),
+                    },
+                },
+                version: Version {
+                    grammar: SemVer,
+                    raw: "1.0.0",
+                    parsed: SemVer(
+                        Version {
+                            major: 1,
+                            minor: 0,
+                            patch: 0,
+                        },
+                    ),
+                },
+            },
+        ],
+    },
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Cargo,
+                name: "c",
+            },
+            role: RegistryPublish {
+                registry: RegistryBindingId {
+                    registry_key: RegistryKey(
+                        "cratesIo",
+                    ),
+                    binding_digest: RegistryBindingDigest(
+                        "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                    ),
+                },
+            },
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+        },
+        prerequisites: [
+            ReleaseOperationId {
+                package: ReleasePackageId {
+                    ecosystem: Cargo,
+                    name: "a",
+                },
+                role: RegistryPublish {
+                    registry: RegistryBindingId {
+                        registry_key: RegistryKey(
+                            "cratesIo",
+                        ),
+                        binding_digest: RegistryBindingDigest(
+                            "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                        ),
+                    },
+                },
+                version: Version {
+                    grammar: SemVer,
+                    raw: "1.0.0",
+                    parsed: SemVer(
+                        Version {
+                            major: 1,
+                            minor: 0,
+                            patch: 0,
+                        },
+                    ),
+                },
+            },
+        ],
+    },
+    ReleaseOperation {
+        id: ReleaseOperationId {
+            package: ReleasePackageId {
+                ecosystem: Cargo,
+                name: "c",
+            },
+            role: Tag,
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+        },
+        prerequisites: [
+            ReleaseOperationId {
+                package: ReleasePackageId {
+                    ecosystem: Cargo,
+                    name: "c",
+                },
+                role: RegistryPublish {
+                    registry: RegistryBindingId {
+                        registry_key: RegistryKey(
+                            "cratesIo",
+                        ),
+                        binding_digest: RegistryBindingDigest(
+                            "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                        ),
+                    },
+                },
+                version: Version {
+                    grammar: SemVer,
+                    raw: "1.0.0",
+                    parsed: SemVer(
+                        Version {
+                            major: 1,
+                            minor: 0,
+                            patch: 0,
+                        },
+                    ),
+                },
+            },
+        ],
+    },
+]
+
+prepared:
+{
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Cargo,
+            name: "a",
+        },
+        role: RegistryPublish {
+            registry: RegistryBindingId {
+                registry_key: RegistryKey(
+                    "cratesIo",
+                ),
+                binding_digest: RegistryBindingDigest(
+                    "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                ),
+            },
+        },
+        version: Version {
+            grammar: SemVer,
+            raw: "1.0.0",
+            parsed: SemVer(
+                Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                },
+            ),
+        },
+    }: RegistryPublish(
+        RegistryPublishOperation {
+            package_dir: "a",
+            package_name: "a",
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+            registry: PreparedRegistryBinding {
+                key: RegistryKey(
+                    "cratesIo",
+                ),
+                endpoint: None,
+                identity: RegistryBindingDigest(
+                    "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                ),
+            },
+            npm_access: None,
+            npm_tag: None,
+            by_directory: false,
+        },
+    ),
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Cargo,
+            name: "a",
+        },
+        role: Tag,
+        version: Version {
+            grammar: SemVer,
+            raw: "1.0.0",
+            parsed: SemVer(
+                Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                },
+            ),
+        },
+    }: Tag(
+        TagOperation {
+            name: TagName(
+                "a@1.0.0",
+            ),
+            target: CommitSha(
+                "<commit>",
+            ),
+            annotation: "Release a@1.0.0",
+        },
+    ),
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Cargo,
+            name: "b",
+        },
+        role: RegistryPublish {
+            registry: RegistryBindingId {
+                registry_key: RegistryKey(
+                    "cratesIo",
+                ),
+                binding_digest: RegistryBindingDigest(
+                    "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                ),
+            },
+        },
+        version: Version {
+            grammar: SemVer,
+            raw: "1.0.0",
+            parsed: SemVer(
+                Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                },
+            ),
+        },
+    }: RegistryPublish(
+        RegistryPublishOperation {
+            package_dir: "b",
+            package_name: "b",
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+            registry: PreparedRegistryBinding {
+                key: RegistryKey(
+                    "cratesIo",
+                ),
+                endpoint: None,
+                identity: RegistryBindingDigest(
+                    "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                ),
+            },
+            npm_access: None,
+            npm_tag: None,
+            by_directory: false,
+        },
+    ),
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Cargo,
+            name: "b",
+        },
+        role: Tag,
+        version: Version {
+            grammar: SemVer,
+            raw: "1.0.0",
+            parsed: SemVer(
+                Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                },
+            ),
+        },
+    }: Tag(
+        TagOperation {
+            name: TagName(
+                "b@1.0.0",
+            ),
+            target: CommitSha(
+                "<commit>",
+            ),
+            annotation: "Release b@1.0.0",
+        },
+    ),
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Cargo,
+            name: "c",
+        },
+        role: RegistryPublish {
+            registry: RegistryBindingId {
+                registry_key: RegistryKey(
+                    "cratesIo",
+                ),
+                binding_digest: RegistryBindingDigest(
+                    "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                ),
+            },
+        },
+        version: Version {
+            grammar: SemVer,
+            raw: "1.0.0",
+            parsed: SemVer(
+                Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                },
+            ),
+        },
+    }: RegistryPublish(
+        RegistryPublishOperation {
+            package_dir: "c",
+            package_name: "c",
+            version: Version {
+                grammar: SemVer,
+                raw: "1.0.0",
+                parsed: SemVer(
+                    Version {
+                        major: 1,
+                        minor: 0,
+                        patch: 0,
+                    },
+                ),
+            },
+            registry: PreparedRegistryBinding {
+                key: RegistryKey(
+                    "cratesIo",
+                ),
+                endpoint: None,
+                identity: RegistryBindingDigest(
+                    "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
+                ),
+            },
+            npm_access: None,
+            npm_tag: None,
+            by_directory: false,
+        },
+    ),
+    ReleaseOperationId {
+        package: ReleasePackageId {
+            ecosystem: Cargo,
+            name: "c",
+        },
+        role: Tag,
+        version: Version {
+            grammar: SemVer,
+            raw: "1.0.0",
+            parsed: SemVer(
+                Version {
+                    major: 1,
+                    minor: 0,
+                    patch: 0,
+                },
+            ),
+        },
+    }: Tag(
+        TagOperation {
+            name: TagName(
+                "c@1.0.0",
+            ),
+            target: CommitSha(
+                "<commit>",
+            ),
+            annotation: "Release c@1.0.0",
+        },
+    ),
+}
+
+slots:
+[]
