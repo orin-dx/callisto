@@ -1,0 +1,29 @@
+name: Release
+
+on:
+  push:
+    branches: [__BRANCH__]
+
+permissions: {}
+
+jobs:
+  version-pr:
+    runs-on: ubuntu-latest
+    permissions: {contents: write, pull-requests: write}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {fetch-depth: 0, persist-credentials: false}
+      - uses: orin-dx/callisto/.github/actions/callisto-action@__COMMIT__ # callisto@__VERSION__
+        with: {mode: version-pr, branch: __BRANCH__}
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  release:
+    runs-on: ubuntu-latest
+    permissions: {contents: write, id-token: write}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {fetch-depth: 0} # zizmor: ignore[artipacked] tag push needs persisted credentials
+      - uses: orin-dx/callisto/.github/actions/callisto-action@__COMMIT__ # callisto@__VERSION__
+        with: {mode: release}
+        __RELEASE_ENV__
