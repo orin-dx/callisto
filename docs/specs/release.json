@@ -78,7 +78,7 @@
   "acceptance_criteria": [
     {
       "id": "REL-CMD-01",
-      "criterion": "`callisto release` selects every package that has a publish target other than `none` and whose current version has no matching tag. For each one it runs the registry publishes, creates the git tag, and creates the GitHub release when `github-release` is a target."
+      "criterion": "`callisto release` selects every package that has a publish target other than `none` and whose current version has no matching tag, or has a tag on the current commit while any of its operations is not observed already satisfied. For each one it runs the registry publishes, creates the git tag, and creates the GitHub release when `github-release` is a target. A tag on another commit marks the version released without contacting any provider."
     },
     {
       "id": "REL-CMD-02",
@@ -108,7 +108,7 @@
     },
     {
       "id": "REL-CMD-08",
-      "criterion": "A malformed `--package` value fails with `E227` and an unknown package with E102. A duplicate selection, an already-tagged version, or a package with no publish target fails with E169.",
+      "criterion": "A malformed `--package` value fails with `E227` and an unknown package with E102. A duplicate selection, a version whose release is complete, or a package with no publish target fails with E169.",
       "is_error_case": true
     },
     {
@@ -239,7 +239,7 @@
     },
     {
       "id": "REL-RERUN-02",
-      "criterion": "After a run fails partway, rerunning the same command with no state file from the failed run performs only the missing operations and writes a receipt. A local annotated tag on the expected commit that is missing on the remote is pushed before the receipt is written, regardless of its annotation text."
+      "criterion": "After a run fails partway, rerunning the same command with no state file from the failed run performs only the missing operations and writes a receipt. A local annotated tag on the expected commit that is missing on the remote is pushed before the receipt is written, regardless of its annotation text. `Nothing to release.` is reported only when every operation of every package tagged on the current commit is observed already satisfied."
     },
     {
       "id": "REL-RERUN-03",
