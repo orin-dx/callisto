@@ -42,17 +42,26 @@ struct ChildEnvironment<'a> {
     set: &'a [(&'a str, &'a str)],
 }
 
+/// The release credentials a tool reads from its own environment. Every other release
+/// credential is removed from its child process, so a tool never sees a secret it does not use.
+/// A tool absent here needs none; publishers receive theirs explicitly instead.
+fn credentials_needed_by(tool: &str) -> &'static [&'static str] {
+    match tool {
+        "npm" | "pnpm" | "yarn" | "bun" => &["NPM_CONFIG_TOKEN", "NPM_TOKEN", "NODE_AUTH_TOKEN"],
+        "cargo" => &["CARGO_REGISTRY_TOKEN"],
+        // `gh` reads GH_TOKEN, and GITHUB_TOKEN when that is unset; it runs the attestation
+        // check and every forge call, and refuses to run without a token.
+        "gh" => &["GH_TOKEN", "GITHUB_TOKEN"],
+        _ => &[],
+    }
+}
+
 fn unrelated_credentials(program: &str) -> Vec<&'static str> {
     let tool = Path::new(program)
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or(program);
-    let keep: &[&str] = match tool {
-        "npm" | "pnpm" | "yarn" | "bun" => &["NPM_CONFIG_TOKEN", "NPM_TOKEN", "NODE_AUTH_TOKEN"],
-        "cargo" => &["CARGO_REGISTRY_TOKEN"],
-        "gh" => &["GH_TOKEN", "GITHUB_TOKEN"],
-        _ => &[],
-    };
+    let keep = credentials_needed_by(tool);
     RELEASE_CREDENTIALS
         .iter()
         .copied()
@@ -617,6 +626,46 @@ mod tests {
         assert!(gh.contains(&"CARGO_REGISTRY_TOKEN"));
         assert!(gh.contains(&"NPM_TOKEN"));
         assert!(gh.contains(&"PYPI_TOKEN"));
+    }
+
+    /// The whole least-privilege matrix: each release credential survives only in the tools that
+    /// read it, and in no other child process.
+    #[test]
+    fn every_release_credential_reaches_only_the_tools_that_use_it() {
+        let owners: &[(&str, &[&str])] = &[
+            ("NPM_CONFIG_TOKEN", &["npm", "pnpm", "yarn", "bun"]),
+            ("NPM_TOKEN", &["npm", "pnpm", "yarn", "bun"]),
+            ("NODE_AUTH_TOKEN", &["npm", "pnpm", "yarn", "bun"]),
+            ("CARGO_REGISTRY_TOKEN", &["cargo"]),
+            ("GH_TOKEN", &["gh"]),
+            ("GITHUB_TOKEN", &["gh"]),
+            ("PYPI_TOKEN", &[]),
+            ("CALLISTO_PUBLISH_NPM_CONFIG", &[]),
+            ("TWINE_USERNAME", &[]),
+            ("TWINE_PASSWORD", &[]),
+        ];
+        let tools = [
+            "npm", "pnpm", "yarn", "bun", "cargo", "gh", "git", "curl", "uv", "twine", "python3", "env", "sh",
+        ];
+        assert_eq!(
+            owners.len(),
+            RELEASE_CREDENTIALS.len(),
+            "every release credential needs an owner row"
+        );
+        for (credential, owning_tools) in owners {
+            assert!(
+                RELEASE_CREDENTIALS.contains(credential),
+                "{credential} is not a release credential"
+            );
+            for tool in tools {
+                let kept = !unrelated_credentials(tool).contains(credential);
+                assert_eq!(
+                    kept,
+                    owning_tools.contains(&tool),
+                    "{credential} must be kept by exactly {owning_tools:?}, but `{tool}` kept={kept}"
+                );
+            }
+        }
     }
 
     #[test]
