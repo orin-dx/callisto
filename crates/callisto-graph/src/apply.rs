@@ -1,13 +1,17 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use callisto_manifests::{open, OpenContext, WorkspaceCargoResolver};
-use callisto_model::{ApplyPermit, CommandError, CommandRunner, LockfileRefreshResult, ManifestRole};
+use callisto_manifests::{open, Manifest, OpenContext, WorkspaceCargoResolver};
+use callisto_model::{
+    ApplyPermit, CommandError, CommandRunner, DepKind, Ecosystem, LockfileRefreshResult, ManifestFormat, ManifestRole,
+    Version,
+};
 
 use crate::cascade::DepWriteTarget;
+use crate::cascade::SpecRewrite;
 use crate::error::GraphError;
-use crate::plan::{VersionPlan, VersionWriteTarget};
+use crate::plan::{OptionalDepUpdate, PlannedBump, PlatformWrite, VersionPlan, VersionWriteTarget};
 
 /// Options governing how a version plan is applied to the workspace.
 #[derive(Clone, Debug, Default)]
@@ -138,179 +142,10 @@ pub fn apply_version_plan<R: CommandRunner>(
     let mut deferred_deletions = Vec::new();
 
     let ctx = OpenContext::for_workspace_root(root);
-
     let classification = classify_manifest_writes(plan);
 
-    for (path, group) in &classification.batched {
-        let fmt = callisto_model::ManifestFormat::from_path(path)?;
-        let decl = callisto_model::ManifestDecl::new(path.clone(), ManifestRole::Canonical, fmt)?;
-        let mut handle = open(&decl, &ctx)?;
-        let mut mutated = false;
-
-        if let Some((bump_idx, target_version)) = &group.bump {
-            let bump = &plan.bumps[*bump_idx];
-            let current = handle.current_version()?;
-            if current == *target_version {
-                // Already at target — skip write, fall through to rewrites.
-            } else if current == bump.from {
-                handle.write_version(target_version, permit)?;
-                mutated = true;
-            } else {
-                return Err(GraphError::UnexpectedManifestVersion {
-                    path: path.clone(),
-                    expected_from: bump.from.clone(),
-                    expected_to: bump.to.clone(),
-                    found: current,
-                });
-            }
-        }
-
-        for rewrite_idx in &group.rewrite_indices {
-            let rewrite = &plan.rewrites[*rewrite_idx];
-            handle.update_dependency_spec(
-                &rewrite.key.name,
-                rewrite.key.kind.unwrap_or(callisto_model::DepKind::Runtime),
-                rewrite.to.clone(),
-                permit,
-            )?;
-            mutated = true;
-        }
-
-        if mutated {
-            handle.persist(permit)?;
-        }
-        modified_paths.push(path.clone());
-    }
-
-    // Root-manifest paths written exclusively through WorkspaceCargoResolver
-    // (no competing Manifest-trait write to the same physical file, i.e. not
-    // in `classification.excluded`): open once, apply the bump (if any) then
-    // every rewrite in memory, and persist exactly once -- mirroring the
-    // `classification.batched` loop above, but via WorkspaceCargoResolver
-    // instead of `open()`. `CargoWorkspacePackage`/`CargoWorkspaceDependency`
-    // writes have never had an idempotency precondition check (unlike
-    // `VersionWriteTarget::Manifest`/`DepWriteTarget::Manifest`), so none is
-    // introduced here -- both continue to write unconditionally.
-    for (root_manifest, group) in &classification.resolver_batched {
-        let mut ws_res = WorkspaceCargoResolver::load(&root.join(root_manifest))?;
-        let mut mutated = false;
-
-        if let Some((_, target_version)) = &group.bump {
-            ws_res.write_version(target_version, permit)?;
-            mutated = true;
-        }
-
-        for rewrite_idx in &group.rewrite_indices {
-            let rewrite = &plan.rewrites[*rewrite_idx];
-            ws_res.write_dependency(&rewrite.key.name, rewrite.to.clone(), permit)?;
-            mutated = true;
-        }
-
-        if mutated {
-            ws_res.persist(permit)?;
-        }
-        modified_paths.push(root_manifest.clone());
-    }
-
-    for bump in &plan.bumps {
-        for write in &bump.writes {
-            match write {
-                VersionWriteTarget::Manifest(p) => {
-                    if !classification.excluded.contains(p) {
-                        continue;
-                    }
-                    let fmt = callisto_model::ManifestFormat::from_path(p)?;
-                    let decl = callisto_model::ManifestDecl::new(p.clone(), ManifestRole::Canonical, fmt)?;
-                    let mut handle = open(&decl, &ctx)?;
-                    let current = handle.current_version()?;
-                    if current == bump.to {
-                        // Already at target — skip write but still stage so git add re-stages on retry.
-                    } else if current == bump.from {
-                        handle.write_version(&bump.to, permit)?;
-                        handle.persist(permit)?;
-                    } else {
-                        return Err(GraphError::UnexpectedManifestVersion {
-                            path: p.clone(),
-                            expected_from: bump.from.clone(),
-                            expected_to: bump.to.clone(),
-                            found: current,
-                        });
-                    }
-                    modified_paths.push(p.clone());
-                }
-                VersionWriteTarget::CargoWorkspacePackage { root_manifest } => {
-                    if classification.resolver_batched.contains_key(root_manifest) {
-                        // Already applied and persisted by the resolver-batched loop above.
-                        continue;
-                    }
-                    let mut ws_res = WorkspaceCargoResolver::load(&root.join(root_manifest))?;
-                    ws_res.write_version(&bump.to, permit)?;
-                    ws_res.persist(permit)?;
-                    modified_paths.push(root_manifest.clone());
-                }
-            }
-        }
-    }
-
-    for rewrite in &plan.rewrites {
-        match &rewrite.key.target {
-            DepWriteTarget::Manifest(p) => {
-                if !classification.excluded.contains(p) {
-                    continue;
-                }
-                let fmt = callisto_model::ManifestFormat::from_path(p)?;
-                let decl = callisto_model::ManifestDecl::new(p.clone(), ManifestRole::Canonical, fmt)?;
-                let mut handle = open(&decl, &ctx)?;
-                handle.update_dependency_spec(
-                    &rewrite.key.name,
-                    rewrite.key.kind.unwrap_or(callisto_model::DepKind::Runtime),
-                    rewrite.to.clone(),
-                    permit,
-                )?;
-                handle.persist(permit)?;
-                modified_paths.push(p.clone());
-            }
-            DepWriteTarget::CargoWorkspaceDependency { root_manifest } => {
-                if classification.resolver_batched.contains_key(root_manifest) {
-                    // Already applied and persisted by the resolver-batched loop above.
-                    continue;
-                }
-                let mut ws_res = WorkspaceCargoResolver::load(&root.join(root_manifest))?;
-                ws_res.write_dependency(&rewrite.key.name, rewrite.to.clone(), permit)?;
-                ws_res.persist(permit)?;
-                modified_paths.push(root_manifest.clone());
-            }
-        }
-    }
-
-    for pw in &plan.platform_writes {
-        let fmt = callisto_model::ManifestFormat::from_path(&pw.manifest)?;
-        let decl = callisto_model::ManifestDecl::new(pw.manifest.clone(), ManifestRole::Canonical, fmt)?;
-        let mut handle = open(&decl, &ctx)?;
-        let current = handle.current_version()?;
-        if current == pw.version {
-            // Already at target — skip write, but still stage so git add re-stages on retry.
-        } else if current == pw.from {
-            handle.write_version(&pw.version, permit)?;
-            handle.persist(permit)?;
-        } else {
-            return Err(GraphError::UnexpectedManifestVersion {
-                path: pw.manifest.clone(),
-                expected_from: pw.from.clone(),
-                expected_to: pw.version.clone(),
-                found: current,
-            });
-        }
-        modified_paths.push(pw.manifest.clone());
-    }
-
-    for opt in &plan.optional_dep_updates {
-        let fmt = callisto_model::ManifestFormat::from_path(&opt.manifest)?;
-        let decl = callisto_model::ManifestDecl::new(opt.manifest.clone(), ManifestRole::Canonical, fmt)?;
-        let mut handle = open(&decl, &ctx)?;
-        handle.update_optional_dependencies(&opt.updates, permit)?;
-        handle.persist(permit)?;
-        modified_paths.push(opt.manifest.clone());
+    for step in write_steps(plan, &classification) {
+        modified_paths.push(apply_write_step(&step, plan, root, &ctx, permit)?);
     }
 
     if !opts.transient {
@@ -348,131 +183,11 @@ pub fn apply_version_plan<R: CommandRunner>(
         }
     }
 
-    // Collect the set of ecosystems actively involved in this plan so that
-    // only the corresponding lockfiles are staged. Staging lockfiles whose
-    // ecosystem was not touched can sweep up unrelated user changes.
-    use callisto_model::Ecosystem;
-    let active_ecosystems: std::collections::HashSet<Ecosystem> = plan
-        .bumps
-        .iter()
-        .flat_map(|bump| {
-            bump.package
-                .ecosystem()
-                .into_iter()
-                .chain(bump.writes.iter().filter_map(|write| {
-                    match write {
-                        VersionWriteTarget::CargoWorkspacePackage { .. } => Some(Ecosystem::Cargo),
-                        VersionWriteTarget::Manifest(path) => callisto_model::ManifestFormat::from_path(path)
-                            .ok()
-                            .map(|fmt| fmt.ecosystem()),
-                    }
-                }))
-        })
-        .chain(plan.rewrites.iter().filter_map(|rewrite| {
-            match &rewrite.key.target {
-                DepWriteTarget::CargoWorkspaceDependency { .. } => Some(Ecosystem::Cargo),
-                DepWriteTarget::Manifest(path) => callisto_model::ManifestFormat::from_path(path)
-                    .ok()
-                    .map(|fmt| fmt.ecosystem()),
-            }
-        }))
-        .chain(
-            plan.platform_writes
-                .iter()
-                .filter_map(|write| callisto_model::ManifestFormat::from_path(&write.manifest).ok())
-                .map(|fmt| fmt.ecosystem()),
-        )
-        .chain(
-            plan.optional_dep_updates
-                .iter()
-                .filter_map(|update| callisto_model::ManifestFormat::from_path(&update.manifest).ok())
-                .map(|fmt| fmt.ecosystem()),
-        )
-        .collect();
+    let active_ecosystems = active_ecosystems(plan);
 
     // Must run before the git-staging loop below, so refreshed lockfiles are on disk to be staged.
     if opts.refresh_lockfiles {
-        let mut refresh_results: Vec<LockfileRefreshResult> = Vec::new();
-
-        if active_ecosystems.contains(&Ecosystem::Cargo) {
-            refresh_results.push(run_lockfile_refresh(
-                runner,
-                root,
-                "Cargo.lock",
-                "cargo",
-                &["update", "--workspace"],
-            )?);
-        }
-
-        if active_ecosystems.contains(&Ecosystem::Pypi) {
-            if root.join("uv.lock").exists() {
-                refresh_results.push(run_lockfile_refresh(runner, root, "uv.lock", "uv", &["lock"])?);
-            } else if root.join("poetry.lock").exists() {
-                refresh_results.push(run_lockfile_refresh(
-                    runner,
-                    root,
-                    "poetry.lock",
-                    "poetry",
-                    &["lock", "--no-update"],
-                )?);
-            } else if root.join("pdm.lock").exists() {
-                refresh_results.push(run_lockfile_refresh(
-                    runner,
-                    root,
-                    "pdm.lock",
-                    "pdm",
-                    &["lock", "--update-reuse"],
-                )?);
-            }
-        }
-
-        if active_ecosystems.contains(&Ecosystem::Npm) {
-            if root.join("package-lock.json").exists() {
-                refresh_results.push(run_lockfile_refresh(
-                    runner,
-                    root,
-                    "package-lock.json",
-                    "npm",
-                    &["install", "--package-lock-only", "--ignore-scripts"],
-                )?);
-            }
-            if root.join("pnpm-lock.yaml").exists() {
-                refresh_results.push(run_lockfile_refresh(
-                    runner,
-                    root,
-                    "pnpm-lock.yaml",
-                    "pnpm",
-                    &["install", "--lockfile-only"],
-                )?);
-            }
-            if root.join("yarn.lock").exists() {
-                refresh_results.push(run_lockfile_refresh(
-                    runner,
-                    root,
-                    "yarn.lock",
-                    "yarn",
-                    &["install", "--mode", "update-lockfile"],
-                )?);
-            }
-            if root.join("bun.lock").exists() {
-                refresh_results.push(run_lockfile_refresh(
-                    runner,
-                    root,
-                    "bun.lock",
-                    "bun",
-                    &["install", "--lockfile-only"],
-                )?);
-            } else if root.join("bun.lockb").exists() {
-                refresh_results.push(run_lockfile_refresh(
-                    runner,
-                    root,
-                    "bun.lockb",
-                    "bun",
-                    &["install", "--lockfile-only"],
-                )?);
-            }
-        }
-
+        let refresh_results = refresh_lockfiles(runner, root, &active_ecosystems)?;
         if !refresh_results.is_empty() {
             outcome.lockfile_refresh_results = Some(refresh_results);
         }
@@ -509,51 +224,16 @@ pub fn apply_version_plan<R: CommandRunner>(
         let (existing, deleted): (Vec<_>, Vec<_>) = modified_paths.iter().partition(|p| root.join(p).exists());
 
         if !existing.is_empty() {
-            let mut args = vec!["add", "--"];
-            let strs: Vec<String> = existing.iter().map(|p| p.display().to_string()).collect();
-            for s in &strs {
-                args.push(s);
-            }
-            let output = runner.run("git", &args, root)?;
-            if !output.success() {
-                return Err(GraphError::Command(CommandError::Failed {
-                    program: "git".to_string(),
-                    exit_code: output.exit_code,
-                    stderr: output.redacted_stderr(),
-                }));
-            }
+            run_git_on_paths(runner, root, &["add", "--"], &existing)?;
         }
 
         if !deleted.is_empty() {
-            let mut args = vec!["rm", "--cached", "--ignore-unmatch", "--"];
-            let strs: Vec<String> = deleted.iter().map(|p| p.display().to_string()).collect();
-            for s in &strs {
-                args.push(s);
-            }
-            let output = runner.run("git", &args, root)?;
-            if !output.success() {
-                return Err(GraphError::Command(CommandError::Failed {
-                    program: "git".to_string(),
-                    exit_code: output.exit_code,
-                    stderr: output.redacted_stderr(),
-                }));
-            }
+            run_git_on_paths(runner, root, &["rm", "--cached", "--ignore-unmatch", "--"], &deleted)?;
         }
 
         if !deferred_deletions.is_empty() {
-            let mut args = vec!["rm", "--cached", "--ignore-unmatch", "--"];
-            let strs: Vec<String> = deferred_deletions.iter().map(|p| p.display().to_string()).collect();
-            for s in &strs {
-                args.push(s);
-            }
-            let output = runner.run("git", &args, root)?;
-            if !output.success() {
-                return Err(GraphError::Command(CommandError::Failed {
-                    program: "git".to_string(),
-                    exit_code: output.exit_code,
-                    stderr: output.redacted_stderr(),
-                }));
-            }
+            let deferred: Vec<&PathBuf> = deferred_deletions.iter().collect();
+            run_git_on_paths(runner, root, &["rm", "--cached", "--ignore-unmatch", "--"], &deferred)?;
 
             // Keep the inputs on disk until their removal is staged so a failed index update can be retried.
             for path in &deferred_deletions {
@@ -572,6 +252,361 @@ pub fn apply_version_plan<R: CommandRunner>(
     }
 
     Ok(outcome)
+}
+
+/// One physical write of a version plan, in the order it must happen.
+enum WriteStep<'p> {
+    /// One load/mutate/persist cycle over a manifest only the `Manifest` trait writes: the
+    /// version bump (idempotency-guarded) first, then every dependency rewrite, one persist.
+    Manifest {
+        path: &'p PathBuf,
+        group: &'p ManifestWriteGroup,
+    },
+    /// The same cycle for a Cargo workspace root only the `WorkspaceCargoResolver` writes. Its
+    /// writes carry no idempotency precondition.
+    WorkspaceRoot {
+        root_manifest: &'p PathBuf,
+        group: &'p ManifestWriteGroup,
+    },
+    /// Mixed-routing manifests (written through both routes) are never batched: each write is
+    /// its own load/persist, strictly in plan order.
+    MixedManifestVersion {
+        path: &'p PathBuf,
+        bump: &'p PlannedBump,
+    },
+    MixedWorkspaceVersion {
+        root_manifest: &'p PathBuf,
+        to: &'p Version,
+    },
+    MixedManifestRewrite {
+        path: &'p PathBuf,
+        rewrite: &'p SpecRewrite,
+    },
+    MixedWorkspaceRewrite {
+        root_manifest: &'p PathBuf,
+        rewrite: &'p SpecRewrite,
+    },
+    PlatformVersion(&'p PlatformWrite),
+    OptionalDependencies(&'p OptionalDepUpdate),
+}
+
+/// Orders every manifest write once, so execution is a single `match` and the per-file order
+/// (bump, then rewrites, then one persist) is data rather than control flow.
+fn write_steps<'p>(plan: &'p VersionPlan, classification: &'p ManifestWriteClassification) -> Vec<WriteStep<'p>> {
+    let mut steps = Vec::new();
+    for (path, group) in &classification.batched {
+        steps.push(WriteStep::Manifest { path, group });
+    }
+    for (root_manifest, group) in &classification.resolver_batched {
+        steps.push(WriteStep::WorkspaceRoot { root_manifest, group });
+    }
+    for bump in &plan.bumps {
+        for write in &bump.writes {
+            match write {
+                VersionWriteTarget::Manifest(path) if classification.excluded.contains(path) => {
+                    steps.push(WriteStep::MixedManifestVersion { path, bump });
+                }
+                VersionWriteTarget::CargoWorkspacePackage { root_manifest }
+                    if !classification.resolver_batched.contains_key(root_manifest) =>
+                {
+                    steps.push(WriteStep::MixedWorkspaceVersion {
+                        root_manifest,
+                        to: &bump.to,
+                    });
+                }
+                _ => {}
+            }
+        }
+    }
+    for rewrite in &plan.rewrites {
+        match &rewrite.key.target {
+            DepWriteTarget::Manifest(path) if classification.excluded.contains(path) => {
+                steps.push(WriteStep::MixedManifestRewrite { path, rewrite });
+            }
+            DepWriteTarget::CargoWorkspaceDependency { root_manifest }
+                if !classification.resolver_batched.contains_key(root_manifest) =>
+            {
+                steps.push(WriteStep::MixedWorkspaceRewrite { root_manifest, rewrite });
+            }
+            _ => {}
+        }
+    }
+    steps.extend(plan.platform_writes.iter().map(WriteStep::PlatformVersion));
+    steps.extend(plan.optional_dep_updates.iter().map(WriteStep::OptionalDependencies));
+    steps
+}
+
+/// Performs one step and returns the path to stage.
+fn apply_write_step(
+    step: &WriteStep<'_>,
+    plan: &VersionPlan,
+    root: &Path,
+    ctx: &OpenContext<'_>,
+    permit: &ApplyPermit,
+) -> Result<PathBuf, GraphError> {
+    match step {
+        WriteStep::Manifest { path, group } => {
+            let mut handle = open_canonical(path, ctx)?;
+            let mut mutated = false;
+            if let Some((bump_idx, target_version)) = &group.bump {
+                let bump = &plan.bumps[*bump_idx];
+                mutated = write_version_guarded(handle.as_mut(), path, &bump.from, target_version, permit)?;
+            }
+            for rewrite_idx in &group.rewrite_indices {
+                rewrite_dependency(handle.as_mut(), &plan.rewrites[*rewrite_idx], permit)?;
+                mutated = true;
+            }
+            if mutated {
+                handle.persist(permit)?;
+            }
+            Ok((*path).clone())
+        }
+        WriteStep::WorkspaceRoot { root_manifest, group } => {
+            let mut ws_res = WorkspaceCargoResolver::load(&root.join(root_manifest))?;
+            let mut mutated = false;
+            if let Some((_, target_version)) = &group.bump {
+                ws_res.write_version(target_version, permit)?;
+                mutated = true;
+            }
+            for rewrite_idx in &group.rewrite_indices {
+                let rewrite = &plan.rewrites[*rewrite_idx];
+                ws_res.write_dependency(&rewrite.key.name, rewrite.to.clone(), permit)?;
+                mutated = true;
+            }
+            if mutated {
+                ws_res.persist(permit)?;
+            }
+            Ok((*root_manifest).clone())
+        }
+        WriteStep::MixedManifestVersion { path, bump } => {
+            let mut handle = open_canonical(path, ctx)?;
+            if write_version_guarded(handle.as_mut(), path, &bump.from, &bump.to, permit)? {
+                handle.persist(permit)?;
+            }
+            Ok((*path).clone())
+        }
+        WriteStep::MixedWorkspaceVersion { root_manifest, to } => {
+            let mut ws_res = WorkspaceCargoResolver::load(&root.join(root_manifest))?;
+            ws_res.write_version(to, permit)?;
+            ws_res.persist(permit)?;
+            Ok((*root_manifest).clone())
+        }
+        WriteStep::MixedManifestRewrite { path, rewrite } => {
+            let mut handle = open_canonical(path, ctx)?;
+            rewrite_dependency(handle.as_mut(), rewrite, permit)?;
+            handle.persist(permit)?;
+            Ok((*path).clone())
+        }
+        WriteStep::MixedWorkspaceRewrite { root_manifest, rewrite } => {
+            let mut ws_res = WorkspaceCargoResolver::load(&root.join(root_manifest))?;
+            ws_res.write_dependency(&rewrite.key.name, rewrite.to.clone(), permit)?;
+            ws_res.persist(permit)?;
+            Ok((*root_manifest).clone())
+        }
+        WriteStep::PlatformVersion(write) => {
+            let mut handle = open_canonical(&write.manifest, ctx)?;
+            if write_version_guarded(handle.as_mut(), &write.manifest, &write.from, &write.version, permit)? {
+                handle.persist(permit)?;
+            }
+            Ok(write.manifest.clone())
+        }
+        WriteStep::OptionalDependencies(update) => {
+            let mut handle = open_canonical(&update.manifest, ctx)?;
+            handle.update_optional_dependencies(&update.updates, permit)?;
+            handle.persist(permit)?;
+            Ok(update.manifest.clone())
+        }
+    }
+}
+
+fn open_canonical(path: &Path, ctx: &OpenContext<'_>) -> Result<Box<dyn Manifest>, GraphError> {
+    let fmt = callisto_model::ManifestFormat::from_path(path)?;
+    let decl = callisto_model::ManifestDecl::new(path, ManifestRole::Canonical, fmt)?;
+    Ok(open(&decl, ctx)?)
+}
+
+/// Writes `to` unless the manifest already has it, and refuses any version other than `from`:
+/// the precondition that makes re-running an interrupted apply safe. Returns whether it wrote.
+fn write_version_guarded(
+    handle: &mut dyn Manifest,
+    path: &Path,
+    from: &Version,
+    to: &Version,
+    permit: &ApplyPermit,
+) -> Result<bool, GraphError> {
+    let current = handle.current_version()?;
+    if current == *to {
+        return Ok(false);
+    }
+    if current != *from {
+        return Err(GraphError::UnexpectedManifestVersion {
+            path: path.to_path_buf(),
+            expected_from: from.clone(),
+            expected_to: to.clone(),
+            found: current,
+        });
+    }
+    handle.write_version(to, permit)?;
+    Ok(true)
+}
+
+fn rewrite_dependency(
+    handle: &mut dyn Manifest,
+    rewrite: &SpecRewrite,
+    permit: &ApplyPermit,
+) -> Result<(), GraphError> {
+    handle.update_dependency_spec(
+        &rewrite.key.name,
+        rewrite.key.kind.unwrap_or(DepKind::Runtime),
+        rewrite.to.clone(),
+        permit,
+    )?;
+    Ok(())
+}
+
+/// The ecosystems a plan touches, so only their lockfiles are refreshed and staged. Staging
+/// the lockfile of an untouched ecosystem could sweep up unrelated user changes.
+fn active_ecosystems(plan: &VersionPlan) -> HashSet<Ecosystem> {
+    let of_manifest = |path: &Path| ManifestFormat::from_path(path).ok().map(|fmt| fmt.ecosystem());
+    let mut active = HashSet::new();
+    for bump in &plan.bumps {
+        active.extend(bump.package.ecosystem());
+        for write in &bump.writes {
+            active.extend(match write {
+                VersionWriteTarget::CargoWorkspacePackage { .. } => Some(Ecosystem::Cargo),
+                VersionWriteTarget::Manifest(path) => of_manifest(path),
+            });
+        }
+    }
+    for rewrite in &plan.rewrites {
+        active.extend(match &rewrite.key.target {
+            DepWriteTarget::CargoWorkspaceDependency { .. } => Some(Ecosystem::Cargo),
+            DepWriteTarget::Manifest(path) => of_manifest(path),
+        });
+    }
+    active.extend(
+        plan.platform_writes
+            .iter()
+            .filter_map(|write| of_manifest(&write.manifest)),
+    );
+    active.extend(
+        plan.optional_dep_updates
+            .iter()
+            .filter_map(|update| of_manifest(&update.manifest)),
+    );
+    active
+}
+
+/// Runs `git <prefix> <paths...>` in `root`, mapping a non-zero exit to `GraphError::Command`.
+fn run_git_on_paths<R: CommandRunner>(
+    runner: &R,
+    root: &Path,
+    prefix: &[&str],
+    paths: &[&PathBuf],
+) -> Result<(), GraphError> {
+    let rendered: Vec<String> = paths.iter().map(|p| p.display().to_string()).collect();
+    let mut args: Vec<&str> = prefix.to_vec();
+    args.extend(rendered.iter().map(String::as_str));
+    let output = runner.run("git", &args, root)?;
+    if !output.success() {
+        return Err(GraphError::Command(CommandError::Failed {
+            program: "git".to_string(),
+            exit_code: output.exit_code,
+            stderr: output.redacted_stderr(),
+        }));
+    }
+    Ok(())
+}
+
+/// Regenerates the lockfile of each active ecosystem with the ecosystem's own tool. For Python,
+/// exactly one lockfile is refreshed, in uv, poetry, pdm order.
+fn refresh_lockfiles<R: CommandRunner>(
+    runner: &R,
+    root: &Path,
+    active_ecosystems: &HashSet<Ecosystem>,
+) -> Result<Vec<LockfileRefreshResult>, GraphError> {
+    let mut refresh_results: Vec<LockfileRefreshResult> = Vec::new();
+
+    if active_ecosystems.contains(&Ecosystem::Cargo) {
+        refresh_results.push(run_lockfile_refresh(
+            runner,
+            root,
+            "Cargo.lock",
+            "cargo",
+            &["update", "--workspace"],
+        )?);
+    }
+
+    if active_ecosystems.contains(&Ecosystem::Pypi) {
+        if root.join("uv.lock").exists() {
+            refresh_results.push(run_lockfile_refresh(runner, root, "uv.lock", "uv", &["lock"])?);
+        } else if root.join("poetry.lock").exists() {
+            refresh_results.push(run_lockfile_refresh(
+                runner,
+                root,
+                "poetry.lock",
+                "poetry",
+                &["lock", "--no-update"],
+            )?);
+        } else if root.join("pdm.lock").exists() {
+            refresh_results.push(run_lockfile_refresh(
+                runner,
+                root,
+                "pdm.lock",
+                "pdm",
+                &["lock", "--update-reuse"],
+            )?);
+        }
+    }
+
+    if active_ecosystems.contains(&Ecosystem::Npm) {
+        if root.join("package-lock.json").exists() {
+            refresh_results.push(run_lockfile_refresh(
+                runner,
+                root,
+                "package-lock.json",
+                "npm",
+                &["install", "--package-lock-only", "--ignore-scripts"],
+            )?);
+        }
+        if root.join("pnpm-lock.yaml").exists() {
+            refresh_results.push(run_lockfile_refresh(
+                runner,
+                root,
+                "pnpm-lock.yaml",
+                "pnpm",
+                &["install", "--lockfile-only"],
+            )?);
+        }
+        if root.join("yarn.lock").exists() {
+            refresh_results.push(run_lockfile_refresh(
+                runner,
+                root,
+                "yarn.lock",
+                "yarn",
+                &["install", "--mode", "update-lockfile"],
+            )?);
+        }
+        if root.join("bun.lock").exists() {
+            refresh_results.push(run_lockfile_refresh(
+                runner,
+                root,
+                "bun.lock",
+                "bun",
+                &["install", "--lockfile-only"],
+            )?);
+        } else if root.join("bun.lockb").exists() {
+            refresh_results.push(run_lockfile_refresh(
+                runner,
+                root,
+                "bun.lockb",
+                "bun",
+                &["install", "--lockfile-only"],
+            )?);
+        }
+    }
+
+    Ok(refresh_results)
 }
 
 /// Maps a non-zero exit to `GraphError::LockfileRefreshFailed`, an exec failure to `GraphError::Command`.
