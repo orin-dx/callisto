@@ -466,31 +466,29 @@ impl Manifest for PyprojectToml {
             .and_then(|p| p.get("dependencies"))
             .and_then(|d| d.as_array())
         {
-            for item in deps {
-                if let Some(full_req_str) = item.as_str() {
-                    if let Some(req) = Requirement::parse(full_req_str) {
-                        let req_str = req.spec.clone().unwrap_or_else(|| "*".to_string());
-                        let parsed_req_str = req.spec.as_deref().unwrap_or(">=0.0.0");
-                        let spec = match VersionReq::parse(parsed_req_str, Ecosystem::Pypi) {
-                            Ok(spec) => DepSpec::Range(spec, req_str),
-                            // A PEP 508 clause `pep440_rs` can't parse (exotic
-                            // or malformed syntax) -- keep the dependency
-                            // visible in the graph rather than silently
-                            // dropping it.
-                            Err(_) => DepSpec::Opaque(req_str),
-                        };
-                        entries.push(DependencyEntry {
-                            name: req.name.clone(),
-                            package_name: req.name.clone(),
-                            inherited: false,
-                            kind: DepKind::Runtime,
-                            spec,
-                        });
-                    }
-                    // else: `Requirement::parse` couldn't extract even a
-                    // package name (e.g. an empty string or a marker-only
-                    // fragment) -- there's no name to key a `DependencyEntry`
-                    // on, so this genuinely can't be represented.
+            entries.extend(
+                deps.iter()
+                    .filter_map(|item| item.as_str())
+                    .filter_map(|req| pep508_entry(req, DepKind::Runtime)),
+            );
+        }
+
+        // 1b. PEP 621 [project.optional-dependencies]: extras ship in the published metadata, so a
+        // pin there goes stale exactly like a runtime one.
+        if let Some(extras) = self
+            .document
+            .get("project")
+            .and_then(|p| p.get("optional-dependencies"))
+            .and_then(|d| d.as_table_like())
+        {
+            for (_, group) in extras.iter() {
+                if let Some(requirements) = group.as_array() {
+                    entries.extend(
+                        requirements
+                            .iter()
+                            .filter_map(|item| item.as_str())
+                            .filter_map(|req| pep508_entry(req, DepKind::Optional)),
+                    );
                 }
             }
         }
@@ -576,32 +574,61 @@ impl Manifest for PyprojectToml {
         let mut updated = false;
 
         // 1. Update PEP 621 [project].dependencies array entries if present
-        if let Some(deps) = self
-            .document
-            .get_mut("project")
-            .and_then(|p| p.get_mut("dependencies"))
-            .and_then(|d| d.as_array_mut())
-        {
-            for idx in 0..deps.len() {
-                if let Some(full_req) = deps.get(idx).and_then(|item| item.as_str()) {
-                    let Some(req) = Requirement::parse(full_req) else {
+        if kind != DepKind::Optional {
+            if let Some(deps) = self
+                .document
+                .get_mut("project")
+                .and_then(|p| p.get_mut("dependencies"))
+                .and_then(|d| d.as_array_mut())
+            {
+                for idx in 0..deps.len() {
+                    let Some(rewritten) = deps
+                        .get(idx)
+                        .and_then(|item| item.as_str())
+                        .and_then(|full_req| rewrite_requirement(full_req, name, &new_spec_str))
+                    else {
                         continue;
                     };
-                    if normalize_pypi_package_name(&req.name) == normalize_pypi_package_name(name) {
-                        let formatted_spec = if new_spec_str.starts_with(['<', '>', '=', '!', '~']) {
-                            new_spec_str.clone()
-                        } else {
-                            format!(">={new_spec_str}")
+                    deps.replace(idx, rewritten);
+                    updated = true;
+                    break;
+                }
+            }
+        }
+
+        // 1b. Extras: the first declaration in table order is the one the graph sees; only
+        // declarations carrying the same constraint are rewritten with it.
+        if kind == DepKind::Optional {
+            if let Some(extras) = self
+                .document
+                .get_mut("project")
+                .and_then(|p| p.get_mut("optional-dependencies"))
+                .and_then(|d| d.as_table_like_mut())
+            {
+                let mut reference: Option<Option<String>> = None;
+                for (_, group) in extras.iter_mut() {
+                    let Some(requirements) = group.as_array_mut() else {
+                        continue;
+                    };
+                    for idx in 0..requirements.len() {
+                        let Some(full_req) = requirements.get(idx).and_then(|item| item.as_str()) else {
+                            continue;
                         };
-                        let new_req = Requirement {
-                            name: req.name.clone(),
-                            extras: req.extras.clone(),
-                            spec: Some(formatted_spec),
-                            marker: req.marker.clone(),
+                        let Some(req) = Requirement::parse(full_req) else {
+                            continue;
                         };
-                        deps.replace(idx, new_req.render());
-                        updated = true;
-                        break;
+                        if normalize_pypi_package_name(&req.name) != normalize_pypi_package_name(name) {
+                            continue;
+                        }
+                        match &reference {
+                            None => reference = Some(req.spec.clone()),
+                            Some(first) if *first == req.spec => {}
+                            Some(_) => continue,
+                        }
+                        if let Some(rewritten) = rewrite_requirement(full_req, name, &new_spec_str) {
+                            requirements.replace(idx, rewritten);
+                            updated = true;
+                        }
                     }
                 }
             }
@@ -614,6 +641,7 @@ impl Manifest for PyprojectToml {
             .and_then(|t| t.get_mut("poetry"))
             .and_then(|p| p.get_mut("dependencies"))
             .and_then(|d| d.as_table_like_mut())
+            .filter(|_| kind != DepKind::Optional)
         {
             if let Some(existing) = table.get_mut(name) {
                 match existing {
@@ -824,6 +852,51 @@ fn rewrite_range(original: &str, target: &Version) -> Option<DepSpec> {
     let rendered = format!(">={},<{next_major}", render_target(">=", target)?);
     let req = VersionReq::parse(&rendered, Ecosystem::Pypi).ok()?;
     Some(DepSpec::Range(req, rendered))
+}
+
+/// One PEP 508 requirement string as a dependency edge, or `None` when it names no package.
+fn pep508_entry(full_req_str: &str, kind: DepKind) -> Option<DependencyEntry> {
+    // `Requirement::parse` couldn't extract even a package name (an empty string or a
+    // marker-only fragment): there is no name to key an entry on.
+    let req = Requirement::parse(full_req_str)?;
+    let req_str = req.spec.clone().unwrap_or_else(|| "*".to_string());
+    let parsed_req_str = req.spec.as_deref().unwrap_or(">=0.0.0");
+    let spec = match VersionReq::parse(parsed_req_str, Ecosystem::Pypi) {
+        Ok(spec) => DepSpec::Range(spec, req_str),
+        // A PEP 508 clause `pep440_rs` can't parse (exotic or malformed syntax): keep the
+        // dependency visible in the graph rather than silently dropping it.
+        Err(_) => DepSpec::Opaque(req_str),
+    };
+    Some(DependencyEntry {
+        name: req.name.clone(),
+        package_name: req.name.clone(),
+        inherited: false,
+        kind,
+        spec,
+    })
+}
+
+/// The requirement string with `name`'s constraint replaced by `new_spec_str`, or `None` when
+/// the requirement names another package.
+fn rewrite_requirement(full_req: &str, name: &str, new_spec_str: &str) -> Option<String> {
+    let req = Requirement::parse(full_req)?;
+    if normalize_pypi_package_name(&req.name) != normalize_pypi_package_name(name) {
+        return None;
+    }
+    let formatted_spec = if new_spec_str.starts_with(['<', '>', '=', '!', '~']) {
+        new_spec_str.to_string()
+    } else {
+        format!(">={new_spec_str}")
+    };
+    Some(
+        Requirement {
+            name: req.name.clone(),
+            extras: req.extras.clone(),
+            spec: Some(formatted_spec),
+            marker: req.marker.clone(),
+        }
+        .render(),
+    )
 }
 
 #[cfg(test)]
