@@ -23,16 +23,15 @@ The types that make a release run safe to crash and rerun, and how the two relea
 ## Two routes, one executor
 
 ```
-local:  derive_unreleased_decision (untagged versions)  -> plan_local_release -> intent
+local:  derive_release_roster (untagged versions, plus tagged-on-HEAD releases not fully observed)  -> plan_local_release -> intent
 CI:     committed decision file, or --package over plan_version -> release plan -> intent -> build -> release execute
 both:   intent -> ReleaseRunEnvelopeV1::new -> execute_release -> ReleaseReceiptV1::from_state
 ```
 
 - `plan_local_release` is the one derivation behind both `callisto release --dry-run` and the real run.
+- A tag proves only that the tag was created. `incomplete_tagged_releases` observes every operation of the packages tagged on HEAD and keeps any not exactly satisfied; a tag on another commit is never observed.
 - `ci_release_route` sends a workspace with artifact slots or platform builds to the CI route before anything runs.
 - `expand_selection` (group members) and `require_dependencies_selected` (unselected unreleased dependencies) apply to both routes.
-
-Local selection currently counts local tags as released. If tag creation succeeds but its push or GitHub work fails, a fresh bare `release` can exclude that package and report `Nothing to release.`. The executor can recover a retained intent; tag-filtered selection can discard it before execution. The committed-roster route avoids that selection shortcut. This remains a violation of the retry contract, tracked in [the findings register](../projects/V1-FINDINGS.md).
 
 ## Managed release PR and workflow
 

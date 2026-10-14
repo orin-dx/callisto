@@ -1604,6 +1604,8 @@ mod tests {
     fn preview_matches_release_dry_run_without_writing() {
         let dir = workspace();
         tag(dir.path(), "core@1.0.0");
+        // A tag on HEAD is not proof of a finished release; one on an older commit is.
+        git(dir.path(), &["commit", "--allow-empty", "-qm", "later work"]);
         let facts = detect_in(dir.path()).unwrap();
         let config = render_config(&facts, &INDEPENDENT);
         let locator = IgnoreWalkLocator::new(dir.path());
