@@ -1,5 +1,9 @@
 # callisto-cli
 
+## 0.10.2
+
+- Releases that ship artifacts no longer fail with E140: the GitHub CLI that checks attestations and publishes the release keeps its own token instead of running unauthenticated.
+
 ## 0.10.1
 
 - Generated npm and PyPI releases configure native registry authentication for publishing without exposing credentials to Python build backends.
