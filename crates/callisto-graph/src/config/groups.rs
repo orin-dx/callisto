@@ -264,7 +264,17 @@ impl GroupTable {
         let members = |groups: &[GroupDef]| -> Vec<(GroupName, Vec<String>)> {
             groups
                 .iter()
-                .map(|g| (g.name.clone(), g.package_members().map(ToString::to_string).collect()))
+                .map(|g| {
+                    let members = g
+                        .members
+                        .iter()
+                        .map(|member| match member {
+                            GroupMember::Package(id) => id.to_string(),
+                            GroupMember::PlatformManifest { name, .. } => name.clone(),
+                        })
+                        .collect();
+                    (g.name.clone(), members)
+                })
                 .collect()
         };
         Self::validate_membership(&members(&fixed), &members(&linked))?;
@@ -499,6 +509,41 @@ mod tests {
             vec![],
         )
         .unwrap_err();
+        assert!(matches!(err, ConfigError::ConflictingGroupNames { .. }), "{err:?}");
+    }
+
+    fn platform_member(owner: &str, name: &str) -> GroupMember {
+        GroupMember::PlatformManifest {
+            owner: PackageId::Bare(owner.to_string()),
+            role: ManifestRole::Canonical,
+            path: PathBuf::from(format!("platform/{name}/package.json")),
+            name: name.to_string(),
+        }
+    }
+
+    #[test]
+    fn try_from_groups_accepts_a_group_made_only_of_platform_manifests() {
+        let group = GroupDef {
+            name: GroupName("platforms".to_string()),
+            kind: GroupKind::Fixed,
+            members: vec![platform_member("lib", "lib.linux-x64-gnu")],
+        };
+        assert!(GroupTable::try_from_groups(vec![group], vec![]).is_ok());
+    }
+
+    #[test]
+    fn try_from_groups_rejects_a_platform_manifest_claimed_by_two_groups() {
+        let one = GroupDef {
+            name: GroupName("one".to_string()),
+            kind: GroupKind::Fixed,
+            members: vec![platform_member("lib", "lib.linux-x64-gnu")],
+        };
+        let two = GroupDef {
+            name: GroupName("two".to_string()),
+            kind: GroupKind::Linked,
+            members: vec![platform_member("lib", "lib.linux-x64-gnu")],
+        };
+        let err = GroupTable::try_from_groups(vec![one], vec![two]).unwrap_err();
         assert!(matches!(err, ConfigError::ConflictingGroupNames { .. }), "{err:?}");
     }
 
