@@ -573,6 +573,8 @@ pub fn execute(root: &Path, intent: &Path, receipt: &Path, publishers: FakePubli
     command
         .env("PATH", path)
         .env("CALLISTO_TEST_LOG", publishers.log)
+        .env("GH_TOKEN", "fake-forge-token")
+        .env("CARGO_REGISTRY_TOKEN", "fake-registry-token")
         .env("CALLISTO_TEST_GIT_TRACE", publishers.git_trace)
         .env("CALLISTO_TEST_FORGE_MARKER", publishers.forge_marker)
         .env(
@@ -612,6 +614,8 @@ pub fn release_local(root: &Path, args: &[&str], home: &Path, publishers: FakePu
         .env("HOME", home)
         .env("PATH", path)
         .env("CALLISTO_TEST_LOG", publishers.log)
+        .env("GH_TOKEN", "fake-forge-token")
+        .env("CARGO_REGISTRY_TOKEN", "fake-registry-token")
         .env("CALLISTO_TEST_GIT_TRACE", publishers.git_trace)
         .env("CALLISTO_TEST_FORGE_MARKER", publishers.forge_marker)
         .env(
@@ -652,6 +656,8 @@ pub fn execute_from_coordinator(
     command
         .env("PATH", path)
         .env("CALLISTO_TEST_LOG", publishers.log)
+        .env("GH_TOKEN", "fake-forge-token")
+        .env("CARGO_REGISTRY_TOKEN", "fake-registry-token")
         .env("CALLISTO_TEST_GIT_TRACE", publishers.git_trace)
         .env("CALLISTO_TEST_FORGE_MARKER", publishers.forge_marker)
         .env(
@@ -695,6 +701,8 @@ pub fn execute_product(
     command
         .env("PATH", path)
         .env("CALLISTO_TEST_LOG", publishers.log)
+        .env("GH_TOKEN", "fake-forge-token")
+        .env("CARGO_REGISTRY_TOKEN", "fake-registry-token")
         .env("CALLISTO_TEST_GIT_TRACE", publishers.git_trace)
         .env("CALLISTO_TEST_FORGE_MARKER", publishers.forge_marker)
         .env(
@@ -900,6 +908,10 @@ case "$1" in
   publish|info) key=$1 ;;
   *) printf 'error: no such command: `%s`\n' "$1" >&2; exit 1 ;;
 esac
+if [ "$key" = publish ] && [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+  echo "error: no token found, please run \`cargo login\`" >&2
+  exit 101
+fi
 for a in "$@"; do
   case "$a" in
     -*)
@@ -984,6 +996,10 @@ fn rig_gh() -> String {
     format!(
         r#"#!/bin/sh
 fx=$(dirname "$0")/fixtures
+if [ -z "$GH_TOKEN" ]; then
+  echo "gh: To use GitHub CLI in a GitHub Actions workflow, set the GH_TOKEN environment variable." >&2
+  exit 4
+fi
 printf 'gh %s\n' "$*" >> "$CALLISTO_TEST_LOG"
 if [ -n "$CALLISTO_TEST_GH_CALLS" ]; then printf '%s\n' "$*" >> "$CALLISTO_TEST_GH_CALLS"; fi
 {FAKE_GH_FORGE}
@@ -1439,6 +1455,8 @@ pub fn execute_rig_in(
         .args(extra)
         .env("PATH", path)
         .env("CALLISTO_TEST_LOG", &rig.log)
+        .env("GH_TOKEN", "fake-forge-token")
+        .env("CARGO_REGISTRY_TOKEN", "fake-registry-token")
         .env("CALLISTO_TEST_GIT_TRACE", &rig.git_trace)
         .env("CALLISTO_TEST_CARGO_CALLS", &rig.cargo_calls)
         .env("CALLISTO_TEST_GH_CALLS", &rig.gh_calls)

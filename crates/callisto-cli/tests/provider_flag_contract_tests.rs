@@ -271,6 +271,8 @@ impl FakeBin {
         let output = Command::new(self.rig.bin.join(tool))
             .args(args)
             .env("CALLISTO_TEST_LOG", &self.rig.log)
+            .env("GH_TOKEN", "fake-forge-token")
+            .env("CARGO_REGISTRY_TOKEN", "fake-registry-token")
             .env("CALLISTO_TEST_GIT_TRACE", &self.rig.git_trace)
             .env("CALLISTO_TEST_GH_CALLS", &self.rig.gh_calls)
             .env("CALLISTO_TEST_FORGE_MARKER", &self.rig.forge_marker)

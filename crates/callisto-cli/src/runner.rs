@@ -42,12 +42,26 @@ struct ChildEnvironment<'a> {
     set: &'a [(&'a str, &'a str)],
 }
 
-fn unrelated_credentials(program: &str) -> Vec<&'static str> {
-    let keep: &[&str] = match program {
+/// The release credentials a tool reads from its own environment. Every other release
+/// credential is removed from its child process, so a tool never sees a secret it does not use.
+/// A tool absent here needs none; publishers receive theirs explicitly instead.
+fn credentials_needed_by(tool: &str) -> &'static [&'static str] {
+    match tool {
         "npm" | "pnpm" | "yarn" | "bun" => &["NPM_CONFIG_TOKEN", "NPM_TOKEN", "NODE_AUTH_TOKEN"],
         "cargo" => &["CARGO_REGISTRY_TOKEN"],
+        // `gh` reads GH_TOKEN, and GITHUB_TOKEN when that is unset; it runs the attestation
+        // check and every forge call, and refuses to run without a token.
+        "gh" => &["GH_TOKEN", "GITHUB_TOKEN"],
         _ => &[],
-    };
+    }
+}
+
+fn unrelated_credentials(program: &str) -> Vec<&'static str> {
+    let tool = Path::new(program)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(program);
+    let keep = credentials_needed_by(tool);
     RELEASE_CREDENTIALS
         .iter()
         .copied()
@@ -600,6 +614,94 @@ mod tests {
         assert!(git.contains(&"NPM_TOKEN"));
         assert!(git.contains(&"CARGO_REGISTRY_TOKEN"));
         assert!(git.contains(&"GH_TOKEN"));
+    }
+
+    /// `gh attestation verify` and every forge call run as `gh`; without its own token it
+    /// refuses to run, and the release fails before any effect.
+    #[test]
+    fn the_github_cli_keeps_its_own_token_and_nothing_else() {
+        let gh = unrelated_credentials("gh");
+        assert!(!gh.contains(&"GH_TOKEN"));
+        assert!(!gh.contains(&"GITHUB_TOKEN"));
+        assert!(gh.contains(&"CARGO_REGISTRY_TOKEN"));
+        assert!(gh.contains(&"NPM_TOKEN"));
+        assert!(gh.contains(&"PYPI_TOKEN"));
+    }
+
+    /// The whole least-privilege matrix: each release credential survives only in the tools that
+    /// read it, and in no other child process.
+    #[test]
+    fn every_release_credential_reaches_only_the_tools_that_use_it() {
+        let owners: &[(&str, &[&str])] = &[
+            ("NPM_CONFIG_TOKEN", &["npm", "pnpm", "yarn", "bun"]),
+            ("NPM_TOKEN", &["npm", "pnpm", "yarn", "bun"]),
+            ("NODE_AUTH_TOKEN", &["npm", "pnpm", "yarn", "bun"]),
+            ("CARGO_REGISTRY_TOKEN", &["cargo"]),
+            ("GH_TOKEN", &["gh"]),
+            ("GITHUB_TOKEN", &["gh"]),
+            ("PYPI_TOKEN", &[]),
+            ("CALLISTO_PUBLISH_NPM_CONFIG", &[]),
+            ("TWINE_USERNAME", &[]),
+            ("TWINE_PASSWORD", &[]),
+        ];
+        let tools = [
+            "npm", "pnpm", "yarn", "bun", "cargo", "gh", "git", "curl", "uv", "twine", "python3", "env", "sh",
+        ];
+        assert_eq!(
+            owners.len(),
+            RELEASE_CREDENTIALS.len(),
+            "every release credential needs an owner row"
+        );
+        for (credential, owning_tools) in owners {
+            assert!(
+                RELEASE_CREDENTIALS.contains(credential),
+                "{credential} is not a release credential"
+            );
+            for tool in tools {
+                let kept = !unrelated_credentials(tool).contains(credential);
+                assert_eq!(
+                    kept,
+                    owning_tools.contains(&tool),
+                    "{credential} must be kept by exactly {owning_tools:?}, but `{tool}` kept={kept}"
+                );
+            }
+        }
+    }
+
+    /// The real `gh` through the real runner, the way the release executor calls it.
+    ///
+    /// Opt in with `cargo test -p callisto-cli --lib -- --ignored the_runner_gives_the_real_gh`
+    /// after exporting `GH_TOKEN`, a `GH_CONFIG_DIR` pointing at an empty directory (so no stored
+    /// login can stand in for the token), and `CALLISTO_TEST_ATTESTED_ASSET`, the path of a
+    /// release asset attested by this repository's release workflow.
+    #[test]
+    #[ignore = "needs the real gh, network access, GH_TOKEN and an attested release asset"]
+    fn the_runner_gives_the_real_gh_its_token() {
+        let asset = std::env::var("CALLISTO_TEST_ATTESTED_ASSET").expect("CALLISTO_TEST_ATTESTED_ASSET");
+        assert!(std::env::var_os("GH_TOKEN").is_some(), "export GH_TOKEN for this test");
+        let output = CliCommandRunner
+            .run(
+                "gh",
+                &["attestation", "verify", &asset, "--repo", "orin-dx/callisto"],
+                Path::new("."),
+            )
+            .expect("gh runs");
+        assert!(
+            output.success(),
+            "the verification must see the token (exit {:?}): {}",
+            output.exit_code,
+            output.stderr
+        );
+    }
+
+    #[test]
+    fn a_program_given_by_path_gets_the_same_credentials_as_its_name() {
+        assert_eq!(unrelated_credentials("/usr/bin/gh"), unrelated_credentials("gh"));
+        assert_eq!(
+            unrelated_credentials("/usr/local/bin/npm"),
+            unrelated_credentials("npm")
+        );
+        assert_eq!(unrelated_credentials("/usr/bin/env"), unrelated_credentials("env"));
     }
 
     /// Regression test for a hung-descendant deadlock: killing the direct
