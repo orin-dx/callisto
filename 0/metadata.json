@@ -1,0 +1,69 @@
+{
+  "cli_version": "0.11.5-nightly.202610130630.4203b3d42",
+  "checkpoint_id": "01M4XRBXFDA6KS6DMX9B5ZK2ZC",
+  "session_id": "f98f161c-abe7-472b-92f1-8cfe1cfdf74a",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-14T17:46:50.195221Z",
+  "branch": "docs/next-work-plan",
+  "checkpoints_count": 6,
+  "save_step_count": 7,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "1d5616e00e9f",
+  "checkpoint_transcript_start": 6016,
+  "transcript_lines_at_start": 6016,
+  "compact_transcript_start": 582,
+  "token_usage": {
+    "input_tokens": 64,
+    "cache_creation_tokens": 805221,
+    "cache_read_tokens": 22905231,
+    "output_tokens": 30007,
+    "api_call_count": 31
+  },
+  "session_metrics": {
+    "turn_count": 64
+  },
+  "summary": {
+    "intent": "Get the Callisto 0.10.x release unblocked after the executor lost GH_TOKEN during attestation verification (E140), verify the fix end to end, then plan the next body of work for a fresh session.",
+    "outcome": "The gh credential fix (#199) was proven against the real gh, merged, and shipped in release 0.10.2 (all four crates, tags, GitHub release verified); 0.10.1 was never published. A NEXT-WORK.md plan doc was written and a PR opened.",
+    "learnings": {
+      "repo": [
+        "The executor's runner uses a keep-list of environment credentials per tool (`credentials_needed_by`); gh was missing GH_TOKEN/GITHUB_TOKEN, causing `gh attestation verify` to exit 4 in the release run.",
+        "Programs given by path are treated like their name when deciding which credentials to keep.",
+        "cargo publish goes through the plain runner, which keeps CARGO_REGISTRY_TOKEN; npm and PyPI publishers set credentials explicitly and don't depend on the keep-list.",
+        "The Release workflow can be recovered via workflow_dispatch with `release_source_sha`, which re-validates the commit is a GitHub-signed merge of exactly one managed release PR.",
+        "Release effects are idempotent, and re-runs adopt what already landed.",
+        "Merging a new changeset's release PR releases all pending changesets together, so 0.10.1 was skipped and versions jump from 0.10.0 to 0.10.2.",
+        "callisto-fixtures has publish = false and is intentionally not on crates.io.",
+        "The graph init.rs has template consts with placeholders (__BRANCH__, __COMMIT__, __VERSION__, __RELEASE_ENV__) and a roughly 1,300-line inline test module.",
+        "Release workflow changes since 0.10.0 were only dependabot bumps of taiki-e/install-action."
+      ],
+      "code": [],
+      "workflow": [
+        "Reproduce production failures with the real tool through the real runner, not a fake; fake gh and fake cargo now refuse to run without their tokens so the harness catches credential regressions.",
+        "Check actual state (crates.io, tags, releases, Actions runs) before answering whether something published; the user's merge had triggered a different release than assumed.",
+        "Early PR state queries can race the merge; re-query before concluding a PR is unmerged.",
+        "Verify unconfirmed handoff facts against the repo before putting them in a plan doc."
+      ]
+    },
+    "friction": [
+      "The first PR query showed #199 as open because it raced the merge.",
+      "The user's mid-session messages about the branding page logo, hero lede and tool columns didn't match any work in this session; the assistant found no matching page and the request was interrupted and rewound.",
+      "The assistant assumed 0.10.1 would be released, but merging the follow-up release PR shipped 0.10.2 instead.",
+      "A macOS-flaky broken-pipe test had to be fixed along the way."
+    ],
+    "open_items": [
+      "Add a characterization test for the mixed-routing write steps in the apply.rs refactor (#196).",
+      "Add a CI check that runs the executor's `gh attestation verify` against the real latest release asset.",
+      "Confirm the #191 stale-read root cause on the next release PR refresh.",
+      "Clean up leftover stack/*, fix/* and refactor/* branches and the two worktrees under .claude/worktrees/.",
+      "Refresh ROAD-TO-V1.md and V1-FINDINGS.md, including which defects #177 closed.",
+      "Fix the SYS-RETRY, SYS-PYFILES, SYS-BARRIER and SYS-MATURIN product-safety defects; D01 gates part of them.",
+      "Qwen's debt: R1 (walk.rs), R3 (derive.rs, snapshots first), R5 (workflow templates and the graph init.rs test move), and the S1/S4/S5 decisions.",
+      "Decide whether Python dev-only dependency groups need tracking.",
+      "Decide whether distinct Cargo target-table declarations need graph edges, which requires a RewriteKey change.",
+      "The branding page logo (up 52px, left 12px), hero lede wrapping and heading styling requests were never addressed."
+    ]
+  }
+}
