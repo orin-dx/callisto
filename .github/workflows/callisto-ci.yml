@@ -212,3 +212,52 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: $/.github/actions/callisto-validate
+
+  release-asset-attestation:
+    name: Release Asset Attestation
+    # Fork PRs also receive a read-only GITHUB_TOKEN and only lack secrets; same-repo-only is a cost/policy choice.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ASSET: callisto-x86_64-unknown-linux-gnu.tar.gz
+    steps:
+      - name: Select the latest release
+        id: latest
+        run: |
+          set -euo pipefail
+          tag=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 30 \
+            --json tagName,isLatest --jq '.[] | select(.isLatest) | .tagName')
+          if [[ -z "$tag" ]]; then
+            echo "::notice::no published release yet; skipping the release asset attestation check"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Download the release asset
+        if: steps.latest.outputs.tag != ''
+        env:
+          TAG: ${{ steps.latest.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$ASSET" --dir "$RUNNER_TEMP"
+          test -s "$RUNNER_TEMP/$ASSET"
+      - name: Verify the attestation with the installer's flags
+        if: steps.latest.outputs.tag != ''
+        run: |
+          set -euo pipefail
+          verify() {
+            gh attestation verify "$1" \
+              --repo orin-dx/callisto \
+              --signer-workflow orin-dx/callisto/.github/workflows/callisto-release.yml \
+              --deny-self-hosted-runners
+          }
+          verify "$RUNNER_TEMP/$ASSET"
+          # Negative control: a modified copy must fail, so the pass above is not vacuous.
+          cp "$RUNNER_TEMP/$ASSET" "$RUNNER_TEMP/tampered.tar.gz"
+          printf 'x' >> "$RUNNER_TEMP/tampered.tar.gz"
+          if verify "$RUNNER_TEMP/tampered.tar.gz"; then
+            echo "::error::negative control failed: attestation verification accepted a tampered copy of $ASSET"
+            exit 1
+          fi
+          echo "negative control passed: the tampered copy was rejected"

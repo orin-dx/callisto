@@ -84,6 +84,7 @@ CI (`.github/workflows/callisto-ci.yml`) gates on:
 - **`coverage`** — `just coverage 90` (workspace line coverage must not regress below 90%); per-crate coverage runs non-blocking
 - **`security`** — `just audit`
 - **`validate`** — changeset and workspace-status validation
+- **`release-asset-attestation`** — downloads the latest release's Linux asset with CI's read-only token and verifies its attestation (same-repo PRs and pushes to main only; skipped when no release exists)
 - **`workflow-contracts`** — actionlint, zizmor, action pin verification, and the release-workflow contract/policy tests
 
 Before opening a PR: run `just ci` locally (covers everything above except the Docker-based actionlint step and the binary-dependent artifact-preflight build) and make sure `just pre-push` is clean. Add a changeset for any user-facing change (see above). Follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages.
