@@ -40,7 +40,7 @@ jobs:
           source: local
 
       - name: Install just
-        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2
+        uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2
         with:
           tool: just@1.58.0
 
@@ -51,7 +51,7 @@ jobs:
         run: just lint
 
       - name: Install release verification tools
-        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2
+        uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2
         with:
           tool: cargo-nextest,ripgrep
 
@@ -59,7 +59,7 @@ jobs:
         run: just test
 
       - name: Install cargo-deny
-        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2
+        uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2
         with:
           tool: cargo-deny
 
@@ -81,11 +81,11 @@ jobs:
         with:
           persist-credentials: false
       - name: Install ripgrep
-        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2
+        uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2
         with:
           tool: ripgrep
       - name: Install just
-        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2
+        uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2
         with:
           tool: just@1.58.0
       - name: Verify release workflow contracts
@@ -242,7 +242,7 @@ jobs:
             *) echo "::error::artifact slot probe returned '$has_artifacts'"; exit 1 ;;
           esac
           echo "has_artifacts=$has_artifacts" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-intent
           path: ${{ runner.temp }}/release-intent
@@ -297,7 +297,7 @@ jobs:
           path: release-source
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-intent
           path: ${{ runner.temp }}/release-intent
@@ -321,7 +321,7 @@ jobs:
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: ${{ runner.temp }}/release-artifacts/${{ matrix.asset }}
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-build-${{ matrix.id }}
           path: ${{ runner.temp }}/release-artifacts/${{ matrix.asset }}
@@ -352,19 +352,19 @@ jobs:
       - uses: $/.github/actions/setup-callisto
         with:
           source: local
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-intent
           path: ${{ runner.temp }}/release-intent
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-build-macos-arm64
           path: ${{ runner.temp }}/release-artifacts
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-build-linux-gnu
           path: ${{ runner.temp }}/release-artifacts
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-build-linux-musl
           path: ${{ runner.temp }}/release-artifacts
@@ -372,7 +372,7 @@ jobs:
         run: |
           set -euo pipefail
           callisto release artifact-manifest --intent "${RUNNER_TEMP}/release-intent/release-intent.json" --artifact-dir "${RUNNER_TEMP}/release-artifacts" --out "${RUNNER_TEMP}/release-artifacts/manifest.json"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-build
           path: |
@@ -421,12 +421,12 @@ jobs:
       # worktree with no tracked or untracked files -- landing these inside
       # the checkout would dirty it and fail that check before anything
       # gets published.
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-intent
           path: ${{ runner.temp }}/release-intent
       - if: needs.plan.outputs.has_artifacts == 'true'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-build
           path: ${{ runner.temp }}/release-build
@@ -471,7 +471,7 @@ jobs:
           fi
       - name: Upload receipt
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # Per attempt: keeps each attempt's receipt instead of shadowing the prior one.
           name: release-receipt-attempt-${{ github.run_attempt }}
