@@ -1,0 +1,79 @@
+{
+  "cli_version": "0.11.5-nightly.202610130630.4203b3d42",
+  "checkpoint_id": "01M4WAAZQ7XW9174FZ7PK9ZQ19",
+  "session_id": "f98f161c-abe7-472b-92f1-8cfe1cfdf74a",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-14T04:22:27.224656Z",
+  "branch": "fix/python-extras",
+  "checkpoints_count": 4,
+  "save_step_count": 7,
+  "files_touched": [
+    "crates/callisto-manifests/src/python.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "738d78e0d1ef",
+  "checkpoint_transcript_start": 4682,
+  "transcript_lines_at_start": 4682,
+  "compact_transcript_start": 449,
+  "token_usage": {
+    "input_tokens": 44,
+    "cache_creation_tokens": 25113,
+    "cache_read_tokens": 14210749,
+    "output_tokens": 20474,
+    "api_call_count": 22
+  },
+  "session_metrics": {
+    "turn_count": 44
+  },
+  "summary": {
+    "intent": "Land a stack of dependency-cascade and release PRs (#190-#196, release PR #188) for the callisto repo, address Codex's review findings, and then self-audit for any other missed issues of the same defect class.",
+    "outcome": "Fixed Codex's two valid findings (#195 Cargo target-table inheritance, #192 platform-only groups) and found and fixed a sibling gap where Python extras and dependency groups didn't cascade, with three new tests that fail on old code, a changeset, and a full CI run started. #188 is waiting on the user to merge the other PRs and approve its workflow runs.",
+    "learnings": {
+      "repo": [
+        "Release PR #188 is created by the bot using GITHUB_TOKEN, so GitHub holds its workflow runs at action_required until a person approves them in the Checks tab.",
+        "Merge #191 and #195 first. They carry changesets, so the refreshed release PR includes the E148 fix and the target-dependency fix.",
+        "Cargo rejects the same alias pointing to different crates across target tables (different source paths depending on build target), so a key reused across tables must name the same crate.",
+        "Cargo rewrite rule: a rewrite reaches only declarations identical to the first one (same inheritance, same crate, same constraint). Differing declarations are left as written and are not tracked by the graph.",
+        "Tracking fully distinct target declarations needs a discriminator on RewriteKey, which is a public-API change and a separate decision.",
+        "AGENTS.md requires a sibling check: when fixing a defect, look for other code with the same blind spot. Here it exposed the Python extras/dependency-groups gap after the Cargo target-table fix.",
+        "Python manifests: extras and dependency groups were not read as dependencies. The fix reports them as optional dependencies and rewrites them with the same 'first declaration defines the reference' rule used for Cargo.",
+        "The mixed-routing branches in apply.rs (excluded-manifest and workspace-root version and rewrite writes) are never executed by any test, so #196's 'pure move' claim is unproven."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-manifests/src/python.rs",
+          "finding": "Python dependency reader and update_dependency_spec were extended so extras and dependency groups are reported as optional dependencies and rewritten using the first-declaration-defines-the-reference rule."
+        }
+      ],
+      "workflow": [
+        "Verify a fix with tests that fail on the old code and pass on the new, as done for the Python extras tests.",
+        "Attack your own change, for example by asking what happens when two declarations differ, instead of only testing the case that motivated the fix.",
+        "Compare a new constructor against every input shape the consumer (`resolve`) accepts, not only the helper in front of you.",
+        "A 'compiles' or 'my test passes' result is not proof of equivalence. Coverage reports can reveal untested paths, such as the mixed-routing branches.",
+        "Stacked PRs need re-basing awareness: after a lower PR merges and the stack is rebased, re-apply local commits on top of the rebased branch and push normally instead of forcing.",
+        "Probe suspected gaps with the real binary through a scratch test before designing a fix, then delete the scratch test."
+      ]
+    },
+    "friction": [
+      "Codex found two real defects that the assistant's own testing missed, because the tests only confirmed the fix and never tried to break it.",
+      "Layered PRs went red in CI earlier in the session, and guards and caller counts were miscounted.",
+      "The local #195 branch went stale after the user's stack was rebased following #189's merge.",
+      "The user asked about 'color cards for the ladder' and sent an image from a different session, which cost a round trip of clarification.",
+      "The first attempt to patch the Python reader failed on a helper insertion anchor and had to be redone.",
+      "The assistant cannot approve workflow runs on the bot-created release PR #188, so the user has to do it manually."
+    ],
+    "open_items": [
+      "Approve workflow runs on #188 after merging the other PRs, confirm all checks pass on its exact head, then merge to publish 0.10.1.",
+      "After the last merge, verify the Release run on main succeeds. It is the first live run of the post-update retry from #191, and #191's root cause is still inferred.",
+      "Add a characterization test for the mixed-routing path in apply.rs, or hold #196 until it exists.",
+      "Distinct Cargo target declarations that differ from the first are not tracked by the graph, and fixing that needs a RewriteKey discriminator.",
+      "The claim that the coverage drop is an artifact has not been verified with a before-and-after run on the same commit.",
+      "Run an independent adversarial review on each remaining PR before merging.",
+      "R1 (walk.rs), R3 (derive.rs) and R5 (templates and the graph init.rs test move) are not started.",
+      "The SYS-* product-safety defects are untouched.",
+      "Local leftovers to clean up: fix/stack-*, fix/stack-ff and other branches, and the .claude/worktrees/stack-ci worktree.",
+      "The Python extras fix is committed and the full CI run was started, but its result isn't shown. It still needs to be confirmed, pushed and turned into a PR."
+    ]
+  }
+}
