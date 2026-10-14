@@ -138,9 +138,11 @@ mod tests {
         let (mut writer, reader) = UnixStream::pair().expect("create socket pair");
         drop(reader);
 
-        let raw_err = writer
-            .write_all(&[0u8; 4096])
-            .expect_err("writing to a closed UnixStream peer must fail");
+        // The peer's close is not always visible to the very first write, so keep writing until
+        // the broken pipe surfaces.
+        let raw_err = (0..64)
+            .find_map(|_| writer.write_all(&[0u8; 4096]).err())
+            .expect("writing to a closed UnixStream peer must fail");
         assert_eq!(
             raw_err.kind(),
             io::ErrorKind::BrokenPipe,
