@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -179,6 +179,34 @@ pub(crate) fn identity_from_source(source: &str, path: &Path) -> Result<crate::M
     Ok(crate::ManifestIdentity { name, version })
 }
 
+pub(crate) fn workspace_version_from_source(source: &str, path: &Path) -> Result<Option<Version>, ManifestError> {
+    let clean = source.strip_prefix('\u{FEFF}').unwrap_or(source);
+    let doc: toml_edit::DocumentMut = clean.parse().map_err(|e: toml_edit::TomlError| ManifestError::Parse {
+        path: path.to_path_buf(),
+        format: ManifestFormat::CargoToml,
+        message: e.to_string(),
+    })?;
+    workspace_package_version(&doc, path)
+}
+
+fn workspace_package_version(doc: &toml_edit::DocumentMut, path: &Path) -> Result<Option<Version>, ManifestError> {
+    let Some(raw) = doc
+        .get("workspace")
+        .and_then(|w| w.get("package"))
+        .and_then(|p| p.get("version"))
+        .and_then(|v| v.as_str())
+    else {
+        return Ok(None);
+    };
+    Version::parse(raw, VersionGrammar::SemVer)
+        .map(Some)
+        .map_err(|e| ManifestError::Parse {
+            path: path.to_path_buf(),
+            format: ManifestFormat::CargoToml,
+            message: format!("invalid [workspace.package] version: {e}"),
+        })
+}
+
 impl Manifest for CargoToml {
     fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
         let text = self.fingerprint.apply(&self.document.to_string());
@@ -222,21 +250,58 @@ impl Manifest for CargoToml {
         let Some(package) = cargo_package_name(&self.document) else {
             return Vec::new();
         };
-        if let Some(first) = self
+        let mut names = BTreeSet::new();
+        if let Some(bins) = self.document.get("bin").and_then(|bin| bin.as_array_of_tables()) {
+            for target in bins.iter() {
+                let name = target
+                    .get("name")
+                    .and_then(|name| name.as_str())
+                    .map(str::to_owned)
+                    .or_else(|| {
+                        let path = target.get("path").and_then(|path| path.as_str()).map(Path::new)?;
+                        let stem = path.file_stem()?;
+                        if stem == "main" {
+                            path.parent()?.file_name()?.to_str().map(str::to_owned)
+                        } else {
+                            stem.to_str().map(str::to_owned)
+                        }
+                    })
+                    .unwrap_or_else(|| package.to_owned());
+                names.insert(name);
+            }
+        }
+        let autobins = self
             .document
-            .get("bin")
-            .and_then(|bin| bin.as_array_of_tables())
-            .and_then(|bins| bins.iter().next())
-        {
-            let name = first.get("name").and_then(|name| name.as_str()).unwrap_or(package);
-            return vec![name.to_string()];
+            .get("package")
+            .and_then(|item| item.get("autobins"))
+            .and_then(|item| item.as_bool())
+            .unwrap_or(true);
+        if autobins {
+            if self
+                .absolute
+                .parent()
+                .is_some_and(|dir| dir.join("src/main.rs").is_file())
+            {
+                names.insert(package.to_owned());
+            }
+            if let Some(bin_dir) = self.absolute.parent().map(|dir| dir.join("src/bin")) {
+                if let Ok(entries) = fs::read_dir(&bin_dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.is_file() && path.extension().is_some_and(|ext| ext == "rs") {
+                            if let Some(name) = path.file_stem().and_then(|stem| stem.to_str()) {
+                                names.insert(name.to_owned());
+                            }
+                        } else if path.is_dir() && path.join("main.rs").is_file() {
+                            if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+                                names.insert(name.to_owned());
+                            }
+                        }
+                    }
+                }
+            }
         }
-        let main = self.absolute.parent().map(|dir| dir.join("src/main.rs"));
-        if main.is_some_and(|main| main.is_file()) {
-            vec![package.to_string()]
-        } else {
-            Vec::new()
-        }
+        names.into_iter().collect()
     }
 
     fn napi_lib_name(&self) -> Option<String> {
@@ -342,23 +407,27 @@ impl Manifest for CargoToml {
                 for (name, item) in table.iter() {
                     let is_inherited = self.inherited_deps.contains(&(section_kind, name.to_string()));
                     let mut kind = section_kind;
+                    let local_spec = parse_cargo_dep_item(item, &mut kind);
+                    let inherited_dep = self.inheritance.as_ref().and_then(|inh| inh.inherited(name));
+                    let package_name = if is_inherited {
+                        inherited_dep.map(|dep| dep.package_name).unwrap_or(name)
+                    } else {
+                        cargo_dependency_package_name(name, item)
+                    };
 
                     let spec = if is_inherited {
-                        if let Some(ref inh) = self.inheritance {
-                            if let Some(inherited_dep) = inh.inherited(name) {
-                                inherited_dep.spec.clone()
-                            } else {
-                                DepSpec::Opaque("workspace = true (unresolved)".to_string())
-                            }
+                        if let Some(inherited_dep) = inherited_dep {
+                            inherited_dep.spec.clone()
                         } else {
                             DepSpec::Opaque("workspace = true (unresolved)".to_string())
                         }
                     } else {
-                        parse_cargo_dep_item(item, &mut kind)
+                        local_spec
                     };
 
                     entries.push(DependencyEntry {
                         name: name.to_string(),
+                        package_name: package_name.to_string(),
                         kind,
                         spec,
                         inherited: is_inherited,
@@ -385,7 +454,12 @@ impl Manifest for CargoToml {
             });
         }
 
-        if self.inherited_deps.contains(&(kind, name.to_string())) {
+        let section_kind = if kind == DepKind::Optional {
+            DepKind::Runtime
+        } else {
+            kind
+        };
+        if self.inherited_deps.contains(&(section_kind, name.to_string())) {
             let root_cargo = self.workspace_root.join("Cargo.toml");
             if self.absolute == root_cargo {
                 return Err(ManifestError::InvariantViolation {
@@ -445,6 +519,10 @@ impl Manifest for CargoToml {
             operation: "update_optional_dependencies",
         })
     }
+}
+
+fn cargo_dependency_package_name<'a>(name: &'a str, item: &'a toml_edit::Item) -> &'a str {
+    item.get("package").and_then(|package| package.as_str()).unwrap_or(name)
 }
 
 fn parse_cargo_dep_item(item: &toml_edit::Item, kind: &mut DepKind) -> DepSpec {
@@ -556,14 +634,15 @@ fn render_at_precision(target: &Version, original_clause: &str) -> String {
 pub struct WorkspaceInheritance {
     pub root_manifest: PathBuf,
     pub version: Option<Version>,
-    pub dependencies: BTreeMap<String, DepSpec>,
+    pub dependencies: BTreeMap<String, DependencyEntry>,
 }
 
 impl WorkspaceInheritance {
     pub fn inherited(&self, name: &str) -> Option<InheritedDep<'_>> {
-        let spec = self.dependencies.get(name)?;
+        let entry = self.dependencies.get(name)?;
         Some(InheritedDep {
-            spec,
+            spec: &entry.spec,
+            package_name: &entry.package_name,
             declared_in: &self.root_manifest,
         })
     }
@@ -572,6 +651,7 @@ impl WorkspaceInheritance {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct InheritedDep<'a> {
     pub spec: &'a DepSpec,
+    pub package_name: &'a str,
     pub declared_in: &'a Path,
 }
 
@@ -616,13 +696,9 @@ impl WorkspaceCargoResolver {
     }
 
     pub fn inheritance(&self) -> Result<WorkspaceInheritance, ManifestError> {
-        let version = self
-            .document
-            .get("workspace")
-            .and_then(|w| w.get("package"))
-            .and_then(|p| p.get("version"))
-            .and_then(|v| v.as_str())
-            .and_then(|s| Version::parse(s, VersionGrammar::SemVer).ok());
+        let version = workspace_package_version(&self.document, &self.root_path)
+            .ok()
+            .flatten();
 
         let mut dependencies = BTreeMap::new();
         if let Some(table) = self
@@ -632,9 +708,18 @@ impl WorkspaceCargoResolver {
             .and_then(|d| d.as_table_like())
         {
             for (name, item) in table.iter() {
-                let mut dummy_kind = DepKind::Runtime;
-                let spec = parse_cargo_dep_item(item, &mut dummy_kind);
-                dependencies.insert(name.to_string(), spec);
+                let mut kind = DepKind::Runtime;
+                let spec = parse_cargo_dep_item(item, &mut kind);
+                dependencies.insert(
+                    name.to_string(),
+                    DependencyEntry {
+                        name: name.to_string(),
+                        package_name: cargo_dependency_package_name(name, item).to_string(),
+                        kind,
+                        spec,
+                        inherited: false,
+                    },
+                );
             }
         }
 
@@ -649,23 +734,7 @@ impl WorkspaceCargoResolver {
     /// when no such field exists (e.g. the workspace does not declare a shared
     /// version). Used by `apply_version_plan`'s idempotency guard.
     pub fn workspace_version(&self) -> Result<Option<Version>, ManifestError> {
-        let raw = match self
-            .document
-            .get("workspace")
-            .and_then(|w| w.get("package"))
-            .and_then(|p| p.get("version"))
-            .and_then(|v| v.as_str())
-        {
-            Some(s) => s,
-            None => return Ok(None),
-        };
-        Version::parse(raw, VersionGrammar::SemVer)
-            .map(Some)
-            .map_err(|e| ManifestError::Parse {
-                path: self.root_path.clone(),
-                format: ManifestFormat::CargoToml,
-                message: format!("invalid [workspace.package] version: {e}"),
-            })
+        workspace_package_version(&self.document, &self.root_path)
     }
 
     /// Pure in-memory mutation of `[workspace.package] version` -- no disk
@@ -783,7 +852,7 @@ mod tests {
     }
 
     #[test]
-    fn bin_names_follow_first_bin_target_then_src_main() {
+    fn bin_names_include_explicit_and_automatic_targets() {
         let package = "[package]\nname = \"app\"\nversion = \"1.0.0\"\n";
         let dir = tempdir().unwrap();
         assert!(open_cargo(dir.path(), package).bin_names().is_empty(), "library-only");
@@ -793,7 +862,39 @@ mod tests {
         assert_eq!(open_cargo(dir.path(), package).bin_names(), ["app"]);
 
         let bins = format!("{package}\n[[bin]]\nname = \"first\"\n\n[[bin]]\nname = \"second\"\n");
-        assert_eq!(open_cargo(dir.path(), &bins).bin_names(), ["first"]);
+        assert_eq!(open_cargo(dir.path(), &bins).bin_names(), ["app", "first", "second"]);
+    }
+
+    #[test]
+    fn bin_names_discover_src_bin_files_and_nested_main_files() {
+        let dir = tempdir().unwrap();
+        let package = "[package]\nname = \"app\"\nversion = \"1.0.0\"\n";
+        fs::create_dir_all(dir.path().join("src/bin/tool")).unwrap();
+        fs::write(dir.path().join("src/bin/serve.rs"), "fn main() {}\n").unwrap();
+        fs::write(dir.path().join("src/bin/tool/main.rs"), "fn main() {}\n").unwrap();
+        assert_eq!(open_cargo(dir.path(), package).bin_names(), ["serve", "tool"]);
+    }
+
+    #[test]
+    fn autobins_false_keeps_only_declared_binary_targets() {
+        let dir = tempdir().unwrap();
+        let package = "[package]\nname = \"app\"\nversion = \"1.0.0\"\nautobins = false\n";
+        fs::create_dir_all(dir.path().join("src/bin")).unwrap();
+        fs::write(dir.path().join("src/main.rs"), "fn main() {}\n").unwrap();
+        fs::write(dir.path().join("src/bin/auto.rs"), "fn main() {}\n").unwrap();
+        assert!(open_cargo(dir.path(), package).bin_names().is_empty());
+        let declared = format!("{package}\n[[bin]]\nname = \"declared\"\npath = \"tools/entry.rs\"\n");
+        assert_eq!(open_cargo(dir.path(), &declared).bin_names(), ["declared"]);
+    }
+
+    #[test]
+    fn duplicate_explicit_and_automatic_binary_names_are_deduplicated() {
+        let dir = tempdir().unwrap();
+        let package = "[package]\nname = \"app\"\nversion = \"1.0.0\"\n";
+        fs::create_dir_all(dir.path().join("src/bin")).unwrap();
+        fs::write(dir.path().join("src/bin/app.rs"), "fn main() {}\n").unwrap();
+        let declared = format!("{package}\n[[bin]]\nname = \"app\"\npath = \"src/bin/app.rs\"\n");
+        assert_eq!(open_cargo(dir.path(), &declared).bin_names(), ["app"]);
     }
 
     #[test]

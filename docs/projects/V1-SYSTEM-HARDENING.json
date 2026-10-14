@@ -449,16 +449,22 @@
           "crates/callisto-graph/src/aggregate.rs",
           "crates/callisto-graph/src/commands/status.rs",
           "crates/callisto-cli/src/commands/add.rs",
+          "crates/callisto-graph/src/commands/matrix.rs",
+          "crates/callisto-graph/src/commands/release/derive.rs",
           "docs/specs/workspace.json",
           "docs/specs/cli.json",
           "docs/specs/versioning.json",
+          "docs/specs/release.json",
           "docs/adr/0012-canonical-distribution-release-ownership.md",
           "crates/callisto-graph/src/matrix.rs",
           "docs/specs/matrix.json"
         ],
         "test": [
           "crates/callisto-cli/tests/identity_promotion_tests.rs",
-          "crates/callisto-graph/tests/status_cascade_and_wellformedness_tests.rs"
+          "crates/callisto-graph/tests/status_cascade_and_wellformedness_tests.rs",
+          "crates/callisto-graph/tests/matrix_tests.rs",
+          "crates/callisto-cli/tests/cli_tests.rs",
+          "crates/callisto-cli/tests/release_artifact_owner_tests.rs"
         ]
       },
       "steps": [
@@ -466,7 +472,7 @@
         "Implement D01's canonical-reference/migration contract at one shared owner-aware resolver, including native name normalization and actionable legacy ambiguity errors. Emit canonical exact references for add/init/reports/groups/config without conflating different outputs with release owners.",
         "Migrate all selector consumers, both status helpers, package/group rules, changesets, pre-state and CLI selection together. Keep glob matching as an explicitly separate pattern language, not an exact-ID parser.",
         "Align GroupTable::from_groups conflict validation with resolve so no alternate construction path silently bypasses the group invariant; add the sibling constructor regression in config/group tests.",
-        "Add paired status/version tests for non-primary native names, unrelated ecosystem-qualified names, scoped npm names, normalized Python names, duplicate native distribution IDs, rejected new bare/colon aliases, migrated historical records and deterministic report ordering.",
+        "Add paired status/version/matrix/release-selector tests for non-primary native names, unrelated ecosystem-qualified names, scoped npm names, normalized Python names, duplicate native distribution IDs, rejected new bare/colon aliases, migrated historical records and deterministic report ordering. Cover product-package and artifact package selectors alongside groups, package rules and changesets; retain glob patterns as a separate language.",
         "Run rtk cargo test -p callisto-model, rtk cargo test -p callisto-graph and rtk cargo test -p callisto-cli --test identity_promotion_tests plus --test status_check_tests sequentially. Update current specs and migration docs with the behavior; retain historical tag readers for T06-HISTORY."
       ],
       "commit_message": "refactor(identity)!: use canonical distribution references",
@@ -505,14 +511,15 @@
         ],
         "test": [
           "crates/callisto-cli/tests/identity_promotion_tests.rs",
-          "crates/callisto-graph/tests/tag_glob_cache_count_test.rs"
+          "crates/callisto-graph/tests/tag_glob_cache_count_test.rs",
+          "crates/callisto-cli/tests/pre_mode_tests.rs"
         ]
       },
       "steps": [
         "Finding coverage: SYS-OWNER, SYS-DEMOTION. Baseline: sole_owner_at tests a current first-manifest path; demotion drops newly qualified history.",
         "Share historical ownership resolution between tag selection and pre-state attribution using historical native names and the full admitted manifest roster at the relevant commit. Preserve a source owner's correct bare and qualified history after sibling addition/removal or primary-manifest changes.",
         "Apply D01's explicit rename/move support boundary; refuse uncertain transfer with an actionable error rather than assigning another owner's tag. Do not rename existing tags or require an opaque identity ledger.",
-        "Test promotion/demotion, sibling rename, Cargo manifest added to an npm-first directory, changed native names, ambiguous old records, old prerelease keys and custom templates; verify last-release monotonicity and no cross-owner adoption.",
+        "Test promotion/demotion, sibling rename, Cargo manifest added to an npm-first directory, changed native names, ambiguous old records, conflicting legacy and canonical pre-state keys, old prerelease keys and custom templates; verify last-release monotonicity and no cross-owner adoption without silently discarding a baseline.",
         "Run rtk cargo test -p callisto-graph and rtk cargo test -p callisto-cli --test identity_promotion_tests sequentially. Preserve lazy/cached Git discovery and update docs/specs/ADR status only with the implementation."
       ],
       "commit_message": "fix(identity): preserve owned historical release records",

@@ -1,6 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::identity::string_json_schema;
 use crate::Ecosystem;
 
 /// `SemVer` is the only implemented grammar; the rest are declared so `Ecosystem::version_grammar` is total.
@@ -23,16 +24,21 @@ pub(crate) enum ParsedVersion {
 }
 
 /// A parsed version, tagged with the grammar it was parsed under.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, JsonSchema)]
-#[schemars(with = "String")]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Version {
     pub(crate) grammar: VersionGrammar,
     pub(crate) raw: String,
-    #[schemars(skip)]
     pub(crate) parsed: ParsedVersion,
 }
 
+string_json_schema!(Version);
+
 impl Version {
+    /// Parses a native version using its owning distribution's ecosystem.
+    pub fn parse_for_ecosystem(raw: &str, ecosystem: Ecosystem) -> Result<Self, VersionParseError> {
+        Self::parse(raw, ecosystem.version_grammar())
+    }
+
     pub fn parse(raw: &str, grammar: VersionGrammar) -> Result<Self, VersionParseError> {
         match grammar {
             VersionGrammar::SemVer => {
@@ -187,35 +193,58 @@ impl<'de> Deserialize<'de> for Version {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum ParsedVersionReq {
-    SemVer(semver::VersionReq),
+    SemVer(Vec<semver::VersionReq>),
     Pep440(pep440_rs::VersionSpecifiers),
 }
 
 /// Parsed version requirement.
-#[derive(Clone, Debug, PartialEq, Eq, JsonSchema)]
-#[schemars(with = "String")]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VersionReq {
     grammar: VersionGrammar,
     ecosystem: Ecosystem,
-    #[schemars(skip)]
     req: ParsedVersionReq,
     raw: String,
 }
+
+string_json_schema!(VersionReq);
 
 impl VersionReq {
     pub fn parse(raw: &str, ecosystem: Ecosystem) -> Result<Self, VersionParseError> {
         let grammar = ecosystem.version_grammar();
         match grammar {
             VersionGrammar::SemVer => {
-                let req = semver::VersionReq::parse(raw).map_err(|e| VersionParseError {
-                    raw: raw.to_string(),
-                    grammar,
-                    message: e.to_string(),
-                })?;
+                let clauses = if ecosystem == Ecosystem::Npm {
+                    raw.split("||").map(str::trim).collect::<Vec<_>>()
+                } else {
+                    vec![raw]
+                };
+                let mut reqs = Vec::with_capacity(clauses.len());
+                for clause in clauses {
+                    if clause.is_empty() {
+                        return Err(VersionParseError {
+                            raw: raw.to_string(),
+                            grammar,
+                            message: "empty npm range alternative".to_string(),
+                        });
+                    }
+                    let normalized = if ecosystem == Ecosystem::Npm && Version::parse(clause, grammar).is_ok() {
+                        format!("={clause}")
+                    } else if ecosystem == Ecosystem::Npm && is_npm_partial_version(clause) {
+                        format!("{clause}.x")
+                    } else {
+                        clause.to_owned()
+                    };
+                    let req = semver::VersionReq::parse(&normalized).map_err(|e| VersionParseError {
+                        raw: raw.to_string(),
+                        grammar,
+                        message: e.to_string(),
+                    })?;
+                    reqs.push(req);
+                }
                 Ok(VersionReq {
                     grammar,
                     ecosystem,
-                    req: ParsedVersionReq::SemVer(req),
+                    req: ParsedVersionReq::SemVer(reqs),
                     raw: raw.to_string(),
                 })
             }
@@ -263,11 +292,18 @@ impl VersionReq {
             });
         }
         match (&self.req, &v.parsed) {
-            (ParsedVersionReq::SemVer(req), ParsedVersion::SemVer(sv)) => Ok(req.matches(sv)),
+            (ParsedVersionReq::SemVer(reqs), ParsedVersion::SemVer(sv)) => Ok(reqs.iter().any(|req| req.matches(sv))),
             (ParsedVersionReq::Pep440(req), ParsedVersion::Pep440(pv)) => Ok(req.contains(pv)),
             _ => unreachable!(),
         }
     }
+}
+
+fn is_npm_partial_version(raw: &str) -> bool {
+    raw.split('.').count() == 2
+        && raw
+            .split('.')
+            .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
 impl Serialize for VersionReq {
@@ -318,7 +354,71 @@ pub struct GrammarMismatch {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::identity::assert_string_wire_schema;
     use std::hash::Hash as _;
+
+    #[test]
+    fn contextual_versions_use_native_grammar_without_fallback() {
+        let python = Version::parse_for_ecosystem("1.2.3", Ecosystem::Pypi).unwrap();
+        assert_eq!(python.grammar(), VersionGrammar::Pep440);
+        assert_eq!(python.render(), "1.2.3");
+        for ecosystem in [Ecosystem::Cargo, Ecosystem::Npm] {
+            let version = Version::parse_for_ecosystem("1.2.3-beta.1+build.2", ecosystem).unwrap();
+            assert_eq!(version.grammar(), VersionGrammar::SemVer);
+            assert_eq!(version.render(), "1.2.3-beta.1+build.2");
+            assert!(Version::parse_for_ecosystem("1!2.3rc1", ecosystem).is_err());
+        }
+        assert!(Version::parse_for_ecosystem("1.2.3-alpha.beta", Ecosystem::Pypi).is_err());
+        let error = Version::parse_for_ecosystem("1.2.3", Ecosystem::Maven).unwrap_err();
+        assert_eq!(error.grammar, VersionGrammar::Maven);
+        assert!(error.message.contains("no versioning implementation"));
+        let generic: Version = serde_json::from_str(r#""1.2.3""#).unwrap();
+        assert_eq!(generic.grammar(), VersionGrammar::SemVer);
+    }
+
+    #[test]
+    fn version_schema_describes_semver_and_pep440_strings() {
+        for (raw, grammar, wire) in [
+            ("1.2.3-alpha.1+build.5", VersionGrammar::SemVer, "1.2.3-alpha.1+build.5"),
+            ("1.2.3-alpha1", VersionGrammar::Pep440, "1.2.3a1"),
+            ("1!2.3.post1.dev2", VersionGrammar::Pep440, "1!2.3.post1.dev2"),
+        ] {
+            let version = Version::parse(raw, grammar).unwrap();
+            assert_string_wire_schema(&version, "Version", wire);
+        }
+    }
+
+    #[test]
+    fn version_req_schema_describes_native_requirement_strings() {
+        for (raw, ecosystem, wire) in [
+            ("^1.2", Ecosystem::Cargo, "^1.2"),
+            ("~1.2.3", Ecosystem::Npm, "~1.2.3"),
+            (">=1.0.0A1", Ecosystem::Pypi, ">=1.0.0a1"),
+            ("~=1.4.2", Ecosystem::Pypi, "~=1.4.2"),
+        ] {
+            let requirement = VersionReq::parse(raw, ecosystem).unwrap();
+            assert_string_wire_schema(&requirement, "VersionReq", wire);
+        }
+    }
+
+    #[test]
+    fn npm_ranges_match_all_valid_disjunctions_without_changing_wire_spelling() {
+        for (range, candidate, expected) in [
+            ("^1.0.0 || ^2.0.0", "2.4.0", true),
+            ("^1.0.0 || ^2.0.0", "3.0.0", false),
+            ("1.2.3", "1.2.4", false),
+            ("1.2", "1.2.9", true),
+            ("1.2", "1.3.0", false),
+        ] {
+            let requirement = VersionReq::parse(range, Ecosystem::Npm).unwrap();
+            let version = Version::parse(candidate, VersionGrammar::SemVer).unwrap();
+            assert_eq!(requirement.matches(&version).unwrap(), expected, "{range}: {candidate}");
+            assert_eq!(requirement.render(), range);
+        }
+        for invalid in ["^1.0.0 ||", "|| ^1.0.0", "^1.0.0 || nonsense"] {
+            assert!(VersionReq::parse(invalid, Ecosystem::Npm).is_err(), "{invalid}");
+        }
+    }
 
     #[test]
     fn parses_valid_semver_and_exposes_components() {

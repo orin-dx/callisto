@@ -34,6 +34,7 @@ impl GraphBuilder {
         let from_manifest = PathBuf::from(format!("{}/Cargo.toml", from_id.name()));
         self.edges.push(DepEdge {
             from: from_id,
+            name: to_id.name().to_string(),
             to: to_id,
             kind,
             spec,
@@ -177,4 +178,106 @@ impl DependencyResolver for InMemoryGraph {
         }
         result.into_iter()
     }
+}
+
+#[allow(dead_code)]
+pub fn native_dependency_workspace() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let files = [
+        ("callisto.toml", "[cascade]\npreserve-npm-ranges = false\n"),
+        (
+            "Cargo.toml",
+            r#"[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.dependencies]
+workspace_alias = { package = "core-lib", path = "crates/core", version = "^1.0.0" } # inherited
+
+[workspace.dependencies.workspace_optional]
+package = "core-lib"
+path = "crates/core"
+version = "^1.0.0" # optional
+"#,
+        ),
+        (
+            "package.json",
+            "{\"name\":\"workspace\",\"private\":true,\"workspaces\":[\"crates/*\",\"packages/*\"]}\n",
+        ),
+        (
+            "crates/core/Cargo.toml",
+            "[package]\nname = \"core-lib\"\nversion = \"1.0.0\"\nedition = \"2021\"\n\n[features]\nkeep = []\n",
+        ),
+        (
+            "crates/core/package.json",
+            "{\"name\":\"@scope/core\",\"version\":\"1.0.0\"}\n",
+        ),
+        (
+            "crates/app/Cargo.toml",
+            r#"[package]
+name = "app"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+local_alias = { package = "core-lib", path = "../core", version = "^1.0.0", features = ["keep"] } # local
+optional_alias = { package = "core-lib", path = "../core", version = "^1.0.0", optional = true }
+workspace_alias.workspace = true
+workspace_optional = { workspace = true, optional = true } # member
+
+[build-dependencies.build_alias]
+package = "core-lib"
+path = "../core"
+version = "^1.0.0" # build
+
+[dev-dependencies]
+dev_alias = { package = "core-lib", path = "../core", version = "=1.0.0" }
+covered_dev = { package = "core-lib", path = "../core", version = "^1.0.0" }
+"#,
+        ),
+        (
+            "crates/app/package.json",
+            r#"{
+  "name": "@scope/app",
+  "version": "1.0.0",
+  "dependencies": { "@scope/core": "^1.0.0", "external": "^9.0.0" },
+  "optionalDependencies": { "@scope/core": "^1.0.0" },
+  "peerDependencies": { "@scope/core": "^1.0.0" },
+  "devDependencies": { "@scope/core": "=1.0.0" }
+}
+"#,
+        ),
+        (
+            "crates/tools/Cargo.toml",
+            r#"[package]
+name = "tools"
+version = "1.0.0"
+
+[dev-dependencies]
+tool_alias = { package = "core-lib", path = "../core", version = "=1.0.0" } # dev-only
+"#,
+        ),
+        (
+            "packages/core/package.json",
+            "{\"name\":\"core-lib\",\"version\":\"1.0.0\"}\n",
+        ),
+        (
+            "packages/app/package.json",
+            "{\"name\":\"app\",\"version\":\"1.0.0\"}\n",
+        ),
+        (
+            "packages/protocol/package.json",
+            "{\"name\":\"protocol\",\"version\":\"1.0.0\",\"dependencies\":{\"@scope/core\":\"workspace:*\"}}\n",
+        ),
+    ];
+    for (path, source) in files {
+        let path = root.join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, source).unwrap();
+    }
+    callisto_fixtures::git::init_repo(root);
+    callisto_fixtures::git::run_git(root, &["add", "."]);
+    callisto_fixtures::git::run_git(root, &["commit", "-q", "-m", "init"]);
+    dir
 }

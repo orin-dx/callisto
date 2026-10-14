@@ -7,8 +7,8 @@ use callisto_manifests::{Manifest, OpenContext};
 #[cfg(test)]
 use callisto_model::ReleaseTrigger;
 use callisto_model::{
-    CommandRunner, DepEdge, Diagnostic, DiagnosticCode, DiagnosticSeverity, Ecosystem, ManifestDecl, ManifestFormat,
-    ManifestRole, Package, PackageId, PublishTarget,
+    CommandRunner, DepEdge, DepSpec, Diagnostic, DiagnosticCode, DiagnosticSeverity, Ecosystem, ManifestDecl,
+    ManifestFormat, ManifestRole, Package, PackageId, PublishTarget,
 };
 
 use crate::config::resolve::{resolve_package_config, rule_applies};
@@ -17,6 +17,16 @@ use crate::error::GraphError;
 use crate::identity::IdentityIndex;
 use crate::locate::ProjectLocator;
 use crate::manifest_cache::open_cached;
+
+fn relative_workspace_target(root: &Path, declaring_manifest: &Path, relative: &str) -> Option<PathBuf> {
+    let root = root.canonicalize().ok()?;
+    let source = root.join(declaring_manifest).parent()?.canonicalize().ok()?;
+    let target = source.join(relative).canonicalize().ok()?;
+    if !target.starts_with(&root) {
+        return None;
+    }
+    Some(target)
+}
 #[allow(unused_imports)]
 use crate::resolver::{DependencyResolver, ManifestWalkResolver};
 
@@ -582,13 +592,46 @@ impl ManifestWalkResolver {
                             (entry.spec.clone(), decl.path.clone())
                         };
 
-                        if let Some(to) =
-                            index.resolve_native_with_fallback(decl.ecosystem(), &entry.name, &mut diagnostics)
-                        {
+                        let workspace_target = match &spec {
+                            DepSpec::WorkspaceProtocol(workspace) => workspace
+                                .relative_path()
+                                .and_then(|relative| relative_workspace_target(root, &decl.path, relative))
+                                .and_then(|target| {
+                                    packages.values().find(|package| {
+                                        package.canonical_manifests().any(|manifest| {
+                                            manifest.ecosystem() == Ecosystem::Npm
+                                                && root
+                                                    .join(manifest.path.parent().unwrap_or(Path::new("")))
+                                                    .canonicalize()
+                                                    .ok()
+                                                    .as_ref()
+                                                    == Some(&target)
+                                        })
+                                    })
+                                })
+                                .map(|package| package.id.clone()),
+                            _ => None,
+                        };
+                        let to = match &spec {
+                            DepSpec::WorkspaceProtocol(workspace) if workspace.relative_path().is_some() => {
+                                workspace_target
+                            }
+                            _ => workspace_target.or_else(|| {
+                                index
+                                    .resolve_native_with_fallback(
+                                        decl.ecosystem(),
+                                        &entry.package_name,
+                                        &mut diagnostics,
+                                    )
+                                    .cloned()
+                            }),
+                        };
+                        if let Some(to) = to {
                             let idx = edges.len();
                             let edge = DepEdge {
                                 from: pkg.id.clone(),
                                 to: to.clone(),
+                                name: entry.name,
                                 kind: entry.kind,
                                 spec,
                                 from_manifest: declaring_path,
@@ -597,7 +640,22 @@ impl ManifestWalkResolver {
                             edges.push(edge);
 
                             out_index.entry(pkg.id.clone()).or_default().push(idx);
-                            in_index.entry(to.clone()).or_default().push(idx);
+                            in_index.entry(to).or_default().push(idx);
+                        } else if matches!(&spec, DepSpec::WorkspaceProtocol(workspace) if workspace.relative_path().is_some())
+                        {
+                            diagnostics.push(Diagnostic {
+                                code: DiagnosticCode::UnknownPackage,
+                                severity: DiagnosticSeverity::Warning,
+                                message: format!(
+                                    "relative pnpm workspace dependency `{}` from `{}` does not identify an admitted npm workspace member",
+                                    entry.name,
+                                    decl.path.display()
+                                ),
+                                package: Some(pkg.id.clone()),
+                                path: Some(decl.path.clone()),
+                                escalated_by: None,
+                                governed_by: None,
+                            });
                         }
                     }
                 }

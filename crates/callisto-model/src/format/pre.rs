@@ -1,4 +1,4 @@
-use crate::{Version, VersionGrammar};
+use crate::{Ecosystem, Version, VersionGrammar};
 use indexmap::IndexMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -30,6 +30,40 @@ impl PreState {
     pub fn exiting(mut self) -> Self {
         self.mode = PreMode::Exit;
         self
+    }
+
+    /// Applies each baseline owner's native grammar; unresolved entries retain their parsed value.
+    pub fn resolve_initial_versions(
+        &mut self,
+        mut ecosystem_for: impl FnMut(&str) -> Option<Ecosystem>,
+    ) -> Result<(), PreJsonError> {
+        let raw_versions = self
+            .initial_versions
+            .iter()
+            .map(|(key, version)| (key.clone(), version.raw().to_string()))
+            .collect();
+        self.resolve_initial_versions_from_raw(&raw_versions, &mut ecosystem_for)
+    }
+
+    /// Validates the original wire spelling after each baseline owner is known.
+    pub fn resolve_initial_versions_from_raw(
+        &mut self,
+        raw_versions: &IndexMap<String, String>,
+        mut ecosystem_for: impl FnMut(&str) -> Option<Ecosystem>,
+    ) -> Result<(), PreJsonError> {
+        for (package, version) in &mut self.initial_versions {
+            if let Some(ecosystem) = ecosystem_for(package) {
+                let raw = raw_versions.get(package).map(String::as_str).unwrap_or(version.raw());
+                *version = Version::parse_for_ecosystem(raw, ecosystem).map_err(|source| {
+                    PreJsonError::InvalidInitialVersion {
+                        package: package.clone(),
+                        raw: raw.to_string(),
+                        source,
+                    }
+                })?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -290,6 +324,67 @@ mod tests {
         let written = write_pre_json(&state);
         let reparsed = parse_pre_json(&written).unwrap();
         assert_eq!(reparsed.initial_versions["pkg"].raw(), "1.0.0a1");
+    }
+
+    #[test]
+    fn baseline_grammars_follow_their_owners_without_changing_the_wire_shape() {
+        let json = r#"{"mode":"pre","tag":"beta","initialVersions":{"python":"1.2.3","cargo":"1.2.3","npm":"1.2.3","removed":"1.2.3"},"changesets":[]}"#;
+        let mut state = parse_pre_json(json).unwrap();
+        state
+            .resolve_initial_versions(|key| match key {
+                "python" => Some(Ecosystem::Pypi),
+                "cargo" => Some(Ecosystem::Cargo),
+                "npm" => Some(Ecosystem::Npm),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(state.initial_versions["python"].grammar(), VersionGrammar::Pep440);
+        for key in ["cargo", "npm", "removed"] {
+            assert_eq!(state.initial_versions[key].grammar(), VersionGrammar::SemVer);
+        }
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&write_pre_json(&state)).unwrap(),
+            serde_json::from_str::<serde_json::Value>(json).unwrap()
+        );
+    }
+
+    #[test]
+    fn baseline_rejects_a_version_valid_only_in_a_different_ecosystem() {
+        for (raw, ecosystem) in [("1.2.3-alpha.beta", Ecosystem::Pypi), ("1!2.3rc1", Ecosystem::Cargo)] {
+            let mut state = PreState::entering(
+                "beta",
+                [(
+                    "package".to_string(),
+                    Version::parse(raw, VersionGrammar::SemVer)
+                        .or_else(|_| Version::parse(raw, VersionGrammar::Pep440))
+                        .unwrap(),
+                )],
+            );
+            let error = state.resolve_initial_versions(|_| Some(ecosystem)).unwrap_err();
+            assert!(
+                matches!(error, PreJsonError::InvalidInitialVersion { package, raw: found, source }
+                if package == "package" && found == raw && source.grammar == ecosystem.version_grammar())
+            );
+        }
+    }
+
+    #[test]
+    fn baseline_validation_uses_original_wire_spelling_after_pep440_fallback() {
+        for raw in ["v1.2.3", " 1.2.3 "] {
+            let json = serde_json::json!({
+                "mode": "pre",
+                "tag": "beta",
+                "initialVersions": {"cargo/pkg": raw},
+                "changesets": []
+            })
+            .to_string();
+            let mut state = parse_pre_json(&json).unwrap();
+            let raw_versions = IndexMap::from([("cargo/pkg".to_string(), raw.to_string())]);
+            let error = state
+                .resolve_initial_versions_from_raw(&raw_versions, |_| Some(Ecosystem::Cargo))
+                .unwrap_err();
+            assert!(matches!(error, PreJsonError::InvalidInitialVersion { raw: found, .. } if found == raw));
+        }
     }
 
     /// `PreState::exiting()` is the only public way out of pre-release mode

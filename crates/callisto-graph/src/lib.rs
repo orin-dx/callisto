@@ -193,6 +193,56 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
         let base = self.base_versions()?;
         Ok(base.into_iter().map(|(id, v)| (pre_json_key(&id), v)).collect())
     }
+
+    /// Resolves stored baselines to their owners before applying the owners' native version grammars.
+    pub fn resolve_pre_state(
+        &self,
+        state: callisto_model::format::PreState,
+    ) -> Result<callisto_model::format::PreState, GraphError> {
+        let raw_versions = state
+            .initial_versions
+            .iter()
+            .map(|(key, version)| (key.clone(), version.raw().to_string()))
+            .collect();
+        self.resolve_pre_state_with_raw_versions(state, &raw_versions)
+    }
+
+    /// Resolves stored baselines using their original JSON spellings.
+    pub fn resolve_pre_state_from_json(
+        &self,
+        state: callisto_model::format::PreState,
+        original_json: &str,
+    ) -> Result<callisto_model::format::PreState, GraphError> {
+        let clean_json = original_json.strip_prefix('\u{FEFF}').unwrap_or(original_json);
+        let value: serde_json::Value = serde_json::from_str(clean_json).map_err(|error| {
+            GraphError::PreJson(callisto_model::format::PreJsonError::Malformed {
+                message: error.to_string(),
+            })
+        })?;
+        let raw_versions: indexmap::IndexMap<String, String> = value
+            .get("initialVersions")
+            .and_then(serde_json::Value::as_object)
+            .into_iter()
+            .flat_map(|values| values.iter())
+            .filter_map(|(key, value)| value.as_str().map(|raw| (key.clone(), raw.to_string())))
+            .collect();
+        self.resolve_pre_state_with_raw_versions(state, &raw_versions)
+    }
+
+    fn resolve_pre_state_with_raw_versions(
+        &self,
+        state: callisto_model::format::PreState,
+        raw_versions: &indexmap::IndexMap<String, String>,
+    ) -> Result<callisto_model::format::PreState, GraphError> {
+        assign_promoted_pre_keys(
+            self.git_access(),
+            &self.graph,
+            &self.identity,
+            &self.config.pre_json_path(),
+            state,
+            raw_versions,
+        )
+    }
 }
 
 /// The `pre.json` `initialVersions` key for `id`: its display id, so `cargo/foo` and `npm/foo` never share an entry.
@@ -227,38 +277,67 @@ pub(crate) fn sole_owner_at<'p>(
     Ok(owner)
 }
 
-/// Re-keys each `initialVersions` entry recorded under a bare name that has since been promoted to the one
-/// same-named package that existed when `pre.json` was added.
+/// Resolves native baselines, attributing historical bare keys at the commit that added `pre.json`.
 pub(crate) fn assign_promoted_pre_keys<D: DependencyResolver>(
     git: &GitAccess<'_>,
     graph: &D,
+    identity: &IdentityIndex,
     pre_json: &std::path::Path,
     mut state: callisto_model::format::PreState,
+    raw_versions: &indexmap::IndexMap<String, String>,
 ) -> Result<callisto_model::format::PreState, GraphError> {
     let keys: Vec<String> = state.initial_versions.keys().cloned().collect();
-    for key in keys {
-        if graph.packages().any(|p| pre_json_key(&p.id) == key) {
+    let mut owners = BTreeMap::new();
+    for key in &keys {
+        if let Some(owner) = graph.packages().find(|p| pre_json_key(&p.id) == *key) {
+            owners.insert(key.clone(), owner);
             continue;
         }
         let same: Vec<&callisto_model::Package> = graph
             .packages()
-            .filter(|p| p.id.ecosystem().is_some() && p.id.name() == key)
+            .filter(|p| p.id.ecosystem().is_some() && p.id.name() == key.as_str())
             .collect();
-        if same.is_empty() {
-            continue;
-        }
-        let owner = match git.commit_adding(pre_json).map_err(GraphError::Vcs)? {
-            Some(added) => sole_owner_at(git, &added, &same)?,
-            None => None,
-        };
-        let Some(owner) = owner else {
-            return Err(GraphError::AmbiguousPreJsonKey {
-                key,
+        let owner = if same.is_empty() {
+            match identity.resolve(key) {
+                Ok(id) => graph.packages().find(|p| p.id == id),
+                Err(GraphError::UnknownPackage { .. }) => None,
+                Err(GraphError::AmbiguousName { candidates, .. }) => {
+                    return Err(GraphError::AmbiguousPreJsonKey {
+                        key: key.clone(),
+                        candidates,
+                    });
+                }
+                Err(error) => return Err(error),
+            }
+        } else {
+            let owner = match git.commit_adding(pre_json).map_err(GraphError::Vcs)? {
+                Some(added) => sole_owner_at(git, &added, &same)?,
+                None => None,
+            };
+            Some(owner.ok_or_else(|| GraphError::AmbiguousPreJsonKey {
+                key: key.clone(),
                 candidates: same.iter().map(|p| p.id.clone()).collect(),
-            });
+            })?)
         };
-        if let Some(version) = state.initial_versions.shift_remove(&key) {
-            state.initial_versions.entry(pre_json_key(&owner.id)).or_insert(version);
+        if let Some(owner) = owner {
+            owners.insert(key.clone(), owner);
+        }
+    }
+    state
+        .resolve_initial_versions_from_raw(raw_versions, |key| {
+            owners
+                .get(key)
+                .and_then(|owner| owner.canonical_manifests().next().map(|manifest| manifest.ecosystem()))
+        })
+        .map_err(GraphError::PreJson)?;
+    for key in keys {
+        if let Some(owner) = owners.get(&key) {
+            let owner_key = pre_json_key(&owner.id);
+            if owner_key != key {
+                if let Some(version) = state.initial_versions.shift_remove(&key) {
+                    state.initial_versions.entry(owner_key).or_insert(version);
+                }
+            }
         }
     }
     Ok(state)

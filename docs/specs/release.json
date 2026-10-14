@@ -127,7 +127,7 @@
     },
     {
       "id": "REL-CMD-12",
-      "criterion": "`--format json` output of `release`, `release --dry-run`, `release plan`, `release execute` and `release artifact-manifest` goes through the same envelope every other command's JSON report uses: a top-level `schemaVersion`, `command` (the subcommand name) and `dryRun`, alongside that subcommand's own payload fields unchanged."
+      "criterion": "`--format json` output of `release`, `release --dry-run`, `release plan`, `release execute` and `release artifact-manifest` goes through the same envelope every other command's JSON report uses: a top-level `schemaVersion`, `command` (the subcommand name) and `dryRun`, alongside that subcommand's own payload fields unchanged. The intent and artifact-manifest --out files, receipt --receipt file and version --emit-decision file use their durable document shape without command or dryRun wrapper fields."
     },
     {
       "id": "REL-AUTH-01",
@@ -135,12 +135,12 @@
     },
     {
       "id": "REL-AUTH-02",
-      "criterion": "`release plan --from-release-commit` fails with E165 and writes no output file in any of these cases: HEAD is not the given commit; the commit neither adds nor modifies the decision file; it deletes no changeset `.md` file; a claimed package's manifest does not change to its claimed version; a claimed package's changelog is unchanged; an unclaimed manifest version changes; or a claimed package is not found.",
+      "criterion": "`release plan --from-release-commit` fails with E165 and writes no output file in any of these cases: HEAD is not the given commit; the commit neither adds nor modifies the decision file; it deletes no direct-child changeset `.md` file (nested Markdown files and `README.md` do not count); a claimed package's manifest does not change to its claimed version; a claimed package's changelog is unchanged; an unclaimed manifest version changes; or a claimed package is not found.",
       "is_error_case": true
     },
     {
       "id": "REL-AUTH-03",
-      "criterion": "A committed decision file whose digest does not match its entries fails with E166. Decision schema versions 1 and 2 are accepted, and any other version fails with an error naming the version found.",
+      "criterion": "A committed decision file whose digest does not match its entries fails with E166. Each target version is parsed using the grammar of its package ecosystem; durable operation IDs, artifact slots and registry observations bound to an operation use that same grammar. Version values remain strings on the wire, and decision schema versions 1 and 2 are accepted; any other version fails with an error naming the version found.",
       "is_error_case": true
     },
     {
@@ -175,7 +175,7 @@
     },
     {
       "id": "REL-ORD-01",
-      "criterion": "A package's tag is created only after all of its registry publishes succeed, and its GitHub release draft only after its tag. A `[[release.artifact]]` slot's upload follows the product's draft and gates the product's publish even when a different selected package owns the asset, and the release is published only after the draft and every upload."
+      "criterion": "A graph package's tag is created only after all selected registry publishes belonging to its canonical manifests succeed, and its GitHub release draft only after its tag. A `[[release.artifact]]` slot's upload follows the product's draft and gates the product's publish even when a different selected package owns the asset, and the release is published only after the draft and every upload."
     },
     {
       "id": "REL-ORD-02",
@@ -216,7 +216,7 @@
     },
     {
       "id": "REL-PUB-08",
-      "criterion": "PyPI observation fetches `<index>/<normalized-name>/` (default `https://pypi.org/simple`) with `curl` and `Accept: application/vnd.pypi.simple.v1+json`. A 200 JSON body with a matching non-yanked file means present. A 404, no matching file, or a yanked matching file means absent, and a non-JSON body or any other status is indeterminate."
+      "criterion": "PyPI observation fetches `<index>/<normalized-name>/` (default `https://pypi.org/simple`) with `curl` and `Accept: application/vnd.pypi.simple.v1+json`. In a 200 JSON body, any matching yanked file means absent; otherwise at least one matching non-yanked file means present, without checking an expected wheel/sdist set. A 404 or no matching file means absent, and a non-JSON body or other non-retryable status is indeterminate. Transient HTTP statuses use the observation retry policy."
     },
     {
       "id": "REL-PUB-09",
@@ -319,7 +319,7 @@
     },
     {
       "id": "REL-PR-06",
-      "criterion": "`callisto-action` and `setup-callisto` default `version` input `latest` installs the callisto release the action's own invocation is pinned to (`github.action_ref` resolved against `orin-dx/callisto`'s `callisto@` tags), falling back to the newest published release only when that ref is unset or matches no tag. An explicit `version` input overrides this resolution."
+      "criterion": "With `source: auto`, `callisto-action` and `setup-callisto` default `version` input `latest` installs the callisto release the action's own invocation is pinned to (`github.action_ref` resolved against `orin-dx/callisto`'s `callisto@` tags), falling back to the newest published release only when that ref is unset or matches no tag. An explicit `version` input overrides this resolution, including inside a Callisto checkout. A consumer manifest mentioning callisto-cli never selects a local build. `source: local` ignores version pins and requires Git-tracked Callisto source at the checkout root plus Cargo metadata confirming the local callisto-cli workspace member, manifest path and callisto binary target. Local builds use explicit manifest and output-directory paths; invalid local source fails without falling back to a downloaded or registry installation."
     },
     {
       "id": "REL-PR-07",

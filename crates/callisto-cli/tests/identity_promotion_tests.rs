@@ -84,6 +84,77 @@ fn status_package<'a>(status: &'a serde_json::Value, id: &str) -> Option<&'a ser
     status["packages"].as_array()?.iter().find(|pkg| pkg["package"] == id)
 }
 
+fn promoted_dual_npm_source_workspace() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    callisto_fixtures::git::init_repo(root);
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/source\", \"packages/app\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("crates/source/src")).unwrap();
+    fs::write(
+        root.join("crates/source/Cargo.toml"),
+        "[package]\nname = \"source\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    fs::write(root.join("crates/source/src/lib.rs"), "\n").unwrap();
+    add_cargo_package(root, "packages/app", "app", "");
+    fs::write(
+        root.join("crates/source/package.json"),
+        "{\n  \"name\": \"@native/source\",\n  \"version\": \"1.0.0\"\n}\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("packages/source")).unwrap();
+    fs::write(
+        root.join("packages/source/package.json"),
+        "{\n  \"name\": \"source\",\n  \"version\": \"1.0.0\"\n}\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("packages/app/src")).unwrap();
+    fs::write(root.join("packages/app/src/lib.rs"), "\n").unwrap();
+    fs::write(
+        root.join("packages/app/package.json"),
+        "{\n  \"name\": \"@native/app\",\n  \"version\": \"1.0.0\",\n  \"dependencies\": {\"@native/source\": \"^1.0.0\"},\n  \"optionalDependencies\": {\"@native/source\": \"^1.0.0\"},\n  \"peerDependencies\": {\"@native/source\": \"^1.0.0\"},\n  \"devDependencies\": {\"@native/source\": \"^1.0.0\"}\n}\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("packages/app-sibling")).unwrap();
+    fs::write(
+        root.join("packages/app-sibling/package.json"),
+        "{\n  \"name\": \"app\",\n  \"version\": \"1.0.0\"\n}\n",
+    )
+    .unwrap();
+    callisto_fixtures::scaffold_callisto(root);
+    commit(root, "initial promoted dual npm source");
+    dir
+}
+
+fn cargo_workspace(root: &Path, members: &[&str]) {
+    callisto_fixtures::git::init_repo(root);
+    let member_list = members
+        .iter()
+        .map(|member| format!("\"{member}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
+    fs::write(
+        root.join("Cargo.toml"),
+        format!("[workspace]\nmembers = [{member_list}]\nresolver = \"2\"\n"),
+    )
+    .unwrap();
+    callisto_fixtures::scaffold_callisto(root);
+}
+
+fn add_cargo_package(root: &Path, relative: &str, name: &str, extra: &str) {
+    fs::create_dir_all(root.join(relative).join("src")).unwrap();
+    fs::write(
+        root.join(relative).join("Cargo.toml"),
+        format!("[package]\nname = \"{name}\"\nversion = \"1.0.0\"\nedition = \"2021\"\n{extra}"),
+    )
+    .unwrap();
+    fs::write(root.join(relative).join("src/lib.rs"), "\n").unwrap();
+}
+
 #[test]
 fn promotion_keeps_the_last_tag_and_the_changelog() {
     let dir = released_cargo_foo();
@@ -215,4 +286,98 @@ fn display_id_is_bare_when_unique_and_qualified_when_promoted() {
     let out = callisto(root, &["add", "--package", "foo:patch", "--summary", "Ambiguous"]);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("E103") && stderr.contains("cargo/foo"), "{stderr}");
+}
+
+#[test]
+fn version_rewrites_npm_dependency_names_for_promoted_dual_source() {
+    let dir = promoted_dual_npm_source_workspace();
+    let root = dir.path();
+    add_changeset(root, "source", "cargo/source", "major");
+
+    let status = run_ok(root, &["status"]);
+    assert!(status_package(&status, "cargo/app").is_some(), "status: {status}");
+    assert!(status_package(&status, "npm/app").is_some(), "status: {status}");
+
+    run_ok(root, &["version", "--no-refresh-lockfiles"]);
+
+    let dependent: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join("packages/app/package.json")).unwrap()).unwrap();
+    for section in [
+        "dependencies",
+        "optionalDependencies",
+        "peerDependencies",
+        "devDependencies",
+    ] {
+        assert_eq!(dependent[section]["@native/source"], "^2.0.0", "{section}: {dependent}");
+        assert!(dependent[section].get("source").is_none(), "{section}: {dependent}");
+    }
+    let npm_owner: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join("crates/source/package.json")).unwrap()).unwrap();
+    assert_eq!(npm_owner["name"], "@native/source");
+    assert_eq!(npm_owner["version"], "2.0.0");
+    let npm_dependent: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join("packages/app/package.json")).unwrap()).unwrap();
+    assert_eq!(npm_dependent["name"], "@native/app");
+}
+
+#[test]
+fn version_rewrites_a_renamed_cargo_dependency_without_losing_its_alias() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    cargo_workspace(root, &["crates/source", "crates/app"]);
+    add_cargo_package(root, "crates/source", "native-source", "");
+    add_cargo_package(
+        root,
+        "crates/app",
+        "app",
+        "\n[dependencies]\nsource-alias = { package = \"native-source\", path = \"../source\", version = \"^1.0.0\" }\n",
+    );
+    commit(root, "initial renamed cargo dependency");
+    add_changeset(root, "source", "cargo/native-source", "major");
+
+    run_ok(root, &["version", "--no-refresh-lockfiles"]);
+
+    let manifest = fs::read_to_string(root.join("crates/app/Cargo.toml")).unwrap();
+    assert!(
+        manifest.contains("source-alias = { package = \"native-source\""),
+        "{manifest}"
+    );
+    assert!(manifest.contains("version = \"^2.0.0\""), "{manifest}");
+    assert!(!manifest.contains("native-source = {"), "{manifest}");
+}
+
+#[test]
+fn version_rewrites_an_inherited_cargo_alias_in_the_workspace_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    cargo_workspace(root, &["crates/source", "crates/app"]);
+    add_cargo_package(root, "crates/source", "native-source", "");
+    add_cargo_package(
+        root,
+        "crates/app",
+        "app",
+        "\n[dependencies]\nsource-alias = { workspace = true }\n",
+    );
+    let workspace = fs::read_to_string(root.join("Cargo.toml")).unwrap();
+    fs::write(
+        root.join("Cargo.toml"),
+        format!(
+            "{workspace}\n[workspace.dependencies]\nsource-alias = {{ package = \"native-source\", path = \"crates/source\", version = \"^1.0.0\" }}\n"
+        ),
+    )
+    .unwrap();
+    commit(root, "initial inherited cargo alias");
+    add_changeset(root, "source", "cargo/native-source", "major");
+
+    run_ok(root, &["version", "--no-refresh-lockfiles"]);
+
+    let workspace = fs::read_to_string(root.join("Cargo.toml")).unwrap();
+    assert!(
+        workspace.contains("source-alias = { package = \"native-source\""),
+        "{workspace}"
+    );
+    assert!(workspace.contains("version = \"^2.0.0\""), "{workspace}");
+    assert!(!workspace.contains("native-source = {"), "{workspace}");
+    let member = fs::read_to_string(root.join("crates/app/Cargo.toml")).unwrap();
+    assert!(member.contains("source-alias = { workspace = true }"), "{member}");
 }

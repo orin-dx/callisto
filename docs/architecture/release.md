@@ -4,8 +4,9 @@ The types that make a release run safe to crash and rerun, and how the two relea
 
 ## Terms
 
-- Package: a dependency-graph node. It is versioned, cascaded, tagged and published.
-- Artifact: the bytes of one *(package, version, target)*, declared by `[[release.artifact]]`. It has no version, tag or changelog of its own. Callisto never parses `target` and never builds; it records where the bytes go.
+- Package: a dependency-graph node owned by a directory; it can expose several canonical manifest/distribution identities.
+- Distribution identity: `ReleasePackageId`, an ecosystem-qualified native package name. Several identities can currently derive operations addressing the same physical tag or forge release; shared ownership is not yet a separate authority.
+- Artifact: the bytes of one *(package, version, target)*, declared by `[[release.artifact]]`. It has no version, tag or changelog of its own. Callisto does not parse `target`; CI supplies product-slot bytes and Callisto records where they go. Registry publishing can invoke native build/pack tools, including Python's build backend.
 - Product package: `[release].product-package`. Every artifact slot uploads to the product's one GitHub Release, even when another package built the bytes (`ArtifactSlotId.package`).
 - Decision: the package and version roster (`ReleaseDecisionV1`).
 - Intent: the decision plus the source snapshot, every operation with its prerequisites, and the artifact slots, sealed by a digest (`ReleaseIntentV1`).
@@ -31,6 +32,27 @@ both:   intent -> ReleaseRunEnvelopeV1::new -> execute_release -> ReleaseReceipt
 - `ci_release_route` sends a workspace with artifact slots or platform builds to the CI route before anything runs.
 - `expand_selection` (group members) and `require_dependencies_selected` (unselected unreleased dependencies) apply to both routes.
 
+Local selection currently counts local tags as released. If tag creation succeeds but its push or GitHub work fails, a fresh bare `release` can exclude that package and report `Nothing to release.`. The executor can recover a retained intent; tag-filtered selection can discard it before execution. The committed-roster route avoids that selection shortcut. This remains a violation of the retry contract, tracked in [the findings register](../projects/V1-FINDINGS.md).
+
+## Managed release PR and workflow
+
+Callisto's own [release workflow](../../.github/workflows/callisto-release.yml) reconstructs one `callisto/version-packages` PR from `main` when changesets land. It versions manifests and changelogs; merging the PR consumes the changesets on `main` and authorizes publication.
+
+- The action commits non-workflow changes through `createCommitOnBranch`, then moves the release ref through REST. It does not run a local `git push`. Workflow files remain unchanged, so the built-in `GITHUB_TOKEN` needs no workflow-write permission.
+- Commits are GitHub-signed as `github-actions[bot]`. An App or fine-grained token can use another identity.
+- Branch protection must require reviews and CI checks. CODEOWNERS alone does not enforce review.
+- `version-pr` maintains the PR; `release` runs the local release route. Artifact and platform packages use plan/build/execute. Deprecated `publish` and `create_github_release` action inputs are ignored. The [action manifest](../../.github/actions/callisto-action/action.yml) defines current inputs and outputs.
+- Only `execute` receives registry credentials. Plan and build jobs receive none. Temporary intent, receipt, artifacts, and build output live under `RUNNER_TEMP`, outside the checkout.
+
+GitHub Actions schedules jobs, transports artifacts, and injects credentials. Callisto validates source, provenance, plan, observations, transitions, terminality, receipts, and artifacts. Workflow shell must not reimplement those semantics. Recovery dispatch uses current orchestration on `main` with an explicit merged source SHA and runs credential-free `recovery-checks` instead of full `verify`.
+
+The generated release action maps credentials without changing owner-defined publish hooks:
+
+- npm: copy existing user config to a mode-0600 temporary file, add an npmjs entry interpolating `NPM_TOKEN`, point npm-compatible tools at it, and remove it on exit. The original config is unchanged. `NPM_TOKEN` remains available for native hooks and `.npmrc` interpolation. Custom registries use native configuration.
+- Bun: also set `NPM_CONFIG_TOKEN`, because Bun does not honor `NPM_CONFIG_USERCONFIG`.
+- PyPI: map `PYPI_TOKEN` to `TWINE_USERNAME=__token__` and `TWINE_PASSWORD` for upload. The build backend receives no registry or forge credentials.
+- Cargo: pass `CARGO_REGISTRY_TOKEN` through to Cargo.
+
 ## Run envelope and state (`release.rs`)
 
 - `ReleaseRunEnvelopeV1` is one run's identity: orchestration revision, release-source revision, intent digest, artifact-manifest digest.
@@ -46,6 +68,14 @@ both:   intent -> ReleaseRunEnvelopeV1::new -> execute_release -> ReleaseReceipt
 - `ReleaseOperationObservationV1::new` rejects evidence whose shape does not belong to the operation's role; deserialization goes through it too.
 - Proof tokens: `AbsentProof` is minted only from `Absent`, `ExactEvidence` only from `Exact`.
 - `execute_release` observes each operation once before its effect: exact is adopted, absent is performed then confirmed, anything else stops the run before the effect.
+
+Provider reads use native tools for Cargo and npm, and `curl` for PyPI's PEP 691 JSON simple index:
+
+- Cargo: `cargo info NAME@VERSION --registry REGISTRY` runs from the source root. Matching `version:` means exact; exit 101 with ``could not find `NAME@VERSION` `` means absent. Other results are indeterminate. Yanked versions are invisible to `cargo info`; a rejected publish ends without a receipt.
+- npm: `npm view NAME@VERSION version --json`.
+- PyPI: a matching file means exact; 404 or no match means absent; transport failure or non-JSON means indeterminate. Yanked matches currently count as absent, even when another matching file is not yanked.
+
+These are version-level checks, not proof of identical bytes, the npm dist-tag, or a full wheel/sdist set. Registry endpoints must be HTTPS. Read-only observations retry 429, 5xx, rate-limited 403, and transport failures with backoff and `Retry-After`. Effects are never blindly retried; outbound commands have deadlines.
 
 ## Transition table (`release_transition.rs`)
 
@@ -69,8 +99,28 @@ both:   intent -> ReleaseRunEnvelopeV1::new -> execute_release -> ReleaseReceipt
 - GitHub's release-by-tag endpoint omits drafts, so the forge lookup finds the release ID by tag through GraphQL, then reads the release by ID (`release/github.rs`).
 - GitHub's reads lag its writes by seconds. The check right after this run's own create, upload or publish retries an absent answer for about a minute before it reports a conflict (`observe_until_visible`).
 
+The intended tag/announcement barrier covers all required publications of a graph package. Derivation currently gates by distribution identity, so one dual Cargo/npm owner's shared tag and public release can precede its other registry publish. This is a contract failure, not a fixed ecosystem order. See [the scoped design](polyglot-v1.md) for proposed ownership and future Go tag-publication semantics.
+
+## Wire and observation boundaries
+
+Stdout JSON reports include `schemaVersion`, `command` and `dryRun`; durable decision, intent, artifact-manifest and receipt files retain their own wire shapes. The CLI's `release-pr verify` reader accepts both the strict bare decision and unchanged decide report, validating the report metadata before passing the payload to the shared domain constructor. Unknown and duplicate fields remain errors; durable wire readers are unchanged. The real-binary action contract exercises this producer/consumer boundary through inline, file and stdin inputs.
+
+Managed PR verification compares the original snapshot before staging and before moving the release ref. After a successful update, the action confirms the ref's exact new SHA and supplies it as `--applied-head` for the final check. The model validates the original update decision and allows only its selected PR's head to change to that SHA; the base, repository, PR roster and every other head remain unchanged. Create decisions keep strict equality until the PR is created. The action does not rewrite its decision or discard concurrency checks after its own effect.
+
+Registry evidence currently confirms a version, with optional checksum/yank fields; it does not establish byte identity. PyPI observation accepts a matching file rather than the intended wheel/sdist set, and any matching yanked file produces Absent. Artifact size/sha256 validation currently applies to declared GitHub assets, not a complete registry-output inventory. Required file-set recovery and separate private-index read/upload routes are planned, not shipped guarantees.
+
 ## Verification tiers
 
 - Fault-injection simulator (`commands/release_simulator.rs`): drives the real `execute_release` against an in-memory provider world, crashing at every provider call and injecting every provider outcome, with each rerun starting fresh. It asserts that a receipt is issued only when every effect really landed and only from state, that no landed effect is re-issued, that no effect lands before its prerequisites, and that each scenario converges within three clean reruns.
 - Provider contract tier: fake providers replay captured real responses from `testing/fixtures/providers/`; `TOOL_SHAPES` in `crates/callisto-cli/tests/common/release_harness.rs` rejects flags a fake does not know, and `provider_flag_contract_tests.rs` checks each emitted flag against the real tool. `just provider-fixtures` re-captures and `just provider-contract` checks shapes live; both need the network and are outside `just ci`.
 - Wire shapes: decision, intent, envelope and receipt each carry a `SCHEMA_VERSION`; the execution state has no wire shape. `callisto schema --type release-receipt` publishes the receipt schema, guarded by `crates/callisto-cli/tests/schema_guard_test.rs`.
+
+## Installer and product assets
+
+`setup-callisto` defaults to `source: auto`: install the requested release, even in a Callisto checkout. An explicit `version` wins; otherwise `latest` resolves the pinned action ref to its `callisto@` release when possible. A `callisto-cli` manifest alone does not select checkout source.
+
+`source: local` builds the checkout and ignores `version`. It requires tracked root and CLI manifests, the CLI entrypoint, a Cargo-confirmed workspace member and binary target, Git, Cargo, jq, and locked offline metadata resolution. It uses the checkout's `target/` cache, installs under `RUNNER_TEMP`, and never falls back from invalid local source. Callisto's release jobs use this mode.
+
+Downloaded binaries are checked with `gh attestation verify` against `orin-dx/callisto` and the `callisto-release.yml` signer before extraction. Only the `callisto` binary is extracted. `verification: require` aborts on failure; `fallback` (default) deletes the asset and installs from crates.io; `skip` warns and uses it. Fallback pins the requested version except for `latest`. Older unattested releases motivate the default. `require` and `fallback` never run an unverified asset.
+
+Product assets target `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, and `x86_64-unknown-linux-musl`. Apple signing and notarization are out of scope. GitHub provenance binds assets to the orchestration revision; the intent and artifact manifest bind their bytes to the release source. Callisto publishes its crates to crates.io and product assets to GitHub Releases, not to another registry for rehearsal.

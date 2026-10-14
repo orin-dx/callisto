@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use callisto_model::{
     ApplyPermit, DepKind, DepSpec, DependencyEntry, Ecosystem, ManifestDecl, ManifestError, ManifestFormat,
-    ManifestRole, Version, VersionGrammar, VersionReq, WorkspaceKind,
+    ManifestRole, Version, VersionGrammar, VersionReq, WorkspaceKind, WorkspaceSpec,
 };
 use indexmap::IndexMap;
 use serde_json::{Map, Value};
@@ -17,6 +17,7 @@ pub struct PackageJson {
     doc: Map<String, Value>,
     fingerprint: FormatFingerprint,
     npm_workspace_kind: Option<WorkspaceKind>,
+    workspace_root: PathBuf,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -60,7 +61,31 @@ impl PackageJson {
             doc,
             fingerprint,
             npm_workspace_kind: ctx.npm_workspace_kind,
+            workspace_root: ctx.workspace_root.to_path_buf(),
         })
+    }
+
+    fn dependency_target(&self, name: &str, spec: &DepSpec) -> String {
+        let DepSpec::WorkspaceProtocol(workspace) = spec else {
+            return name.to_string();
+        };
+        if let Some(alias) = workspace.alias() {
+            return alias.to_string();
+        }
+        let Some(relative) = workspace.relative_path() else {
+            return name.to_string();
+        };
+        let target_name = self.absolute.parent().and_then(|parent| {
+            let target = parent.join(relative).canonicalize().ok()?;
+            let root = self.workspace_root.canonicalize().ok()?;
+            if !target.starts_with(root) {
+                return None;
+            }
+            let manifest = target.join("package.json");
+            let source = fs::read_to_string(&manifest).ok()?;
+            identity_from_source(&source, &manifest).ok()?.name
+        });
+        target_name.unwrap_or_else(|| format!("workspace:{}", workspace.suffix))
     }
 }
 
@@ -406,6 +431,7 @@ impl Manifest for PackageJson {
                         let spec = parse_npm_spec_str(v_str, self.npm_workspace_kind);
                         entries.push(DependencyEntry {
                             name: name.clone(),
+                            package_name: self.dependency_target(name, &spec),
                             kind,
                             spec,
                             inherited: false,
@@ -463,6 +489,10 @@ impl Manifest for PackageJson {
             section.insert(name.to_string(), Value::String(new.render()));
         }
 
+        if matches!(new, DepSpec::WorkspaceProtocol(_)) {
+            return Ok(());
+        }
+
         for extra in ["overrides", "resolutions"] {
             if let Some(tbl) = self.doc.get_mut(extra).and_then(|v| v.as_object_mut()) {
                 if tbl.get(name).is_some_and(|v| v.is_string()) {
@@ -516,7 +546,10 @@ impl Manifest for PackageJson {
 fn parse_npm_spec_str(s: &str, ws_kind: Option<WorkspaceKind>) -> DepSpec {
     if let Some(rest) = s.strip_prefix("workspace:") {
         if let Some(kind) = ws_kind {
-            return DepSpec::Workspace(kind);
+            return DepSpec::WorkspaceProtocol(WorkspaceSpec {
+                kind,
+                suffix: rest.to_string(),
+            });
         }
         return DepSpec::Opaque(format!("workspace:{rest}"));
     }
@@ -540,6 +573,23 @@ fn parse_npm_spec_str(s: &str, ws_kind: Option<WorkspaceKind>) -> DepSpec {
 
 pub fn round_trip(spec: &DepSpec, target: &Version) -> Option<DepSpec> {
     match spec {
+        DepSpec::WorkspaceProtocol(workspace) => {
+            if workspace.coverage(target).ok()? != callisto_model::Coverage::DoesNotCover {
+                return None;
+            }
+            let range = workspace.range()?;
+            let rewritten = if Version::parse(range, VersionGrammar::SemVer).is_ok() {
+                target.render().to_string()
+            } else {
+                let req = VersionReq::parse(range, Ecosystem::Npm).ok()?;
+                round_trip(&DepSpec::Range(req, range.to_string()), target)?.render()
+            };
+            let updated = workspace.with_range(&rewritten);
+            if updated.coverage(target).ok()? != callisto_model::Coverage::Covers {
+                return None;
+            }
+            Some(DepSpec::WorkspaceProtocol(updated))
+        }
         DepSpec::Exact(_) => Some(DepSpec::Exact(target.clone())),
         DepSpec::Range(_, original) => {
             let (prefix, rest) = crate::common::split_single_operator_prefix(original)?;
@@ -571,7 +621,7 @@ fn render_at_precision(target: &Version, original_clause: &str) -> String {
 }
 
 pub fn detect_npm_workspace_kind(workspace_root: &Path) -> Result<Option<WorkspaceKind>, ManifestError> {
-    if workspace_root.join("pnpm-lock.yaml").exists() {
+    if workspace_root.join("pnpm-lock.yaml").exists() || workspace_root.join("pnpm-workspace.yaml").exists() {
         return Ok(Some(WorkspaceKind::Pnpm));
     }
     if workspace_root.join("yarn.lock").exists() {
@@ -648,6 +698,186 @@ mod tests {
     }
     use callisto_model::{ManifestDecl, ManifestFormat, ManifestRole};
     use tempfile::tempdir;
+
+    #[test]
+    fn workspace_parser_preserves_every_suffix_and_catalog() {
+        for suffix in [
+            "",
+            "*",
+            "^",
+            "~",
+            "0.2.3",
+            "^0.2.3",
+            "@scope/lib@~0.2.3",
+            "../lib",
+            "^1 || ^2",
+        ] {
+            let raw = format!("workspace:{suffix}");
+            let spec = parse_npm_spec_str(&raw, Some(WorkspaceKind::Pnpm));
+            assert!(matches!(spec, DepSpec::WorkspaceProtocol(_)));
+            assert_eq!(spec.render(), raw);
+        }
+        for raw in [
+            "catalog:",
+            "catalog:tools",
+            "https://example.com/lib.tgz",
+            "file:../lib",
+            "git+https://example.com/lib",
+        ] {
+            assert_eq!(parse_npm_spec_str(raw, Some(WorkspaceKind::Pnpm)).render(), raw);
+        }
+        assert!(matches!(
+            parse_npm_spec_str("catalog:", Some(WorkspaceKind::Pnpm)),
+            DepSpec::Catalog(None)
+        ));
+        assert!(matches!(parse_npm_spec_str("workspace:^", None), DepSpec::Opaque(_)));
+    }
+
+    #[test]
+    fn ordinary_npm_disjunctions_remain_ranges_and_match_any_valid_arm() {
+        let spec = parse_npm_spec_str("^1.0.0 || ^2.0.0", None);
+        let DepSpec::Range(requirement, original) = spec else {
+            panic!("valid npm disjunction should be understood as a range");
+        };
+        assert_eq!(original, "^1.0.0 || ^2.0.0");
+        assert!(requirement
+            .matches(&Version::parse("2.4.0", VersionGrammar::SemVer).unwrap())
+            .unwrap());
+        assert!(!requirement
+            .matches(&Version::parse("3.0.0", VersionGrammar::SemVer).unwrap())
+            .unwrap());
+    }
+
+    #[test]
+    fn workspace_round_trip_only_updates_safe_out_of_range_constraints() {
+        let target = Version::parse("0.3.0", VersionGrammar::SemVer).unwrap();
+        for (raw, expected) in [
+            ("workspace:0.2.3", "workspace:0.3.0"),
+            ("workspace:^0.2.3", "workspace:^0.3.0"),
+            ("workspace:~0.2.3", "workspace:~0.3.0"),
+            ("workspace:@scope/lib@^0.2.3", "workspace:@scope/lib@^0.3.0"),
+        ] {
+            let spec = parse_npm_spec_str(raw, Some(WorkspaceKind::Pnpm));
+            assert_eq!(round_trip(&spec, &target).unwrap().render(), expected);
+        }
+        for raw in [
+            "workspace:",
+            "workspace:*",
+            "workspace:^",
+            "workspace:~",
+            "workspace:../lib",
+            "workspace:@scope/lib@*",
+            "workspace:^0.3.0",
+            "workspace:>=0.2.0",
+            "workspace:>0.2.0",
+            "workspace:<0.2.0",
+            "workspace:^0.2.0 || ^0.4.0",
+            "catalog:tools",
+            "https://example.com/lib.tgz",
+        ] {
+            let spec = parse_npm_spec_str(raw, Some(WorkspaceKind::Pnpm));
+            assert!(round_trip(&spec, &target).is_none(), "{raw}");
+        }
+        let snapshot = Version::parse("0.0.0-canary.1", VersionGrammar::SemVer).unwrap();
+        let spec = parse_npm_spec_str("workspace:@scope/lib@^0.2.3", Some(WorkspaceKind::Pnpm));
+        assert_eq!(
+            round_trip(&spec, &snapshot).unwrap().render(),
+            "workspace:@scope/lib@^0.0.0-canary.1"
+        );
+    }
+
+    #[test]
+    fn workspace_alias_and_relative_targets_retain_declaration_keys() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("app")).unwrap();
+        fs::create_dir_all(dir.path().join("lib")).unwrap();
+        fs::write(
+            dir.path().join("lib/package.json"),
+            "\u{FEFF}{\"name\":\"@scope/lib\",\"version\":\"0.2.3\",\"private\":true}",
+        )
+        .unwrap();
+        fs::write(dir.path().join("app/package.json"), r#"{
+            "name":"app","version":"1.0.0","private":true,
+            "dependencies":{"alias":"workspace:@scope/lib@^0.2.3","relative":"workspace:../lib","missing":"workspace:../absent"},
+            "optionalDependencies":{"opt":"workspace:@scope/lib@~"},
+            "peerDependencies":{"@scope/lib":"workspace:^"},
+            "peerDependenciesMeta":{"@scope/lib":{"optional":true}}
+        }"#).unwrap();
+        let decl = ManifestDecl::new("app/package.json", ManifestRole::Canonical, ManifestFormat::PackageJson).unwrap();
+        let ctx = OpenContext {
+            workspace_root: dir.path(),
+            cargo_workspace: None,
+            npm_workspace_kind: Some(WorkspaceKind::Pnpm),
+        };
+        let manifest = PackageJson::open(&decl, &ctx).unwrap();
+        let entries: Vec<_> = manifest.iter_dependencies().collect();
+        for name in ["alias", "relative", "opt", "@scope/lib"] {
+            let entry = entries.iter().find(|entry| entry.name == name).unwrap();
+            assert_eq!(entry.package_name, "@scope/lib");
+            assert!(matches!(entry.spec, DepSpec::WorkspaceProtocol(_)));
+        }
+        let missing = entries.iter().find(|entry| entry.name == "missing").unwrap();
+        assert_eq!(missing.package_name, "workspace:../absent");
+        assert_eq!(
+            entries.iter().find(|entry| entry.name == "opt").unwrap().kind,
+            DepKind::Optional
+        );
+        assert_eq!(
+            entries.iter().find(|entry| entry.name == "@scope/lib").unwrap().kind,
+            DepKind::Peer
+        );
+    }
+
+    #[test]
+    fn workspace_rewrite_preserves_catalogs_and_manifest_format() {
+        let dir = tempdir().unwrap();
+        let content = "{\r\n\t\"name\": \"app\",\r\n\t\"version\": \"1.0.0\",\r\n\t\"dependencies\": {\r\n\t\t\"alias\": \"workspace:@scope/lib@^0.2.3\",\r\n\t\t\"catalogued\": \"catalog:tools\"\r\n\t}\r\n}\r\n";
+        let mut manifest = open_manifest(&dir, content);
+        let original = parse_npm_spec_str("workspace:@scope/lib@^0.2.3", Some(WorkspaceKind::Pnpm));
+        let rewritten = round_trip(&original, &Version::parse("0.3.0", VersionGrammar::SemVer).unwrap()).unwrap();
+        manifest
+            .update_dependency_spec("alias", DepKind::Runtime, rewritten, &permit())
+            .unwrap();
+        manifest.persist(&permit()).unwrap();
+        assert_eq!(
+            fs::read_to_string(dir.path().join("package.json")).unwrap(),
+            content.replace("^0.2.3", "^0.3.0")
+        );
+    }
+
+    #[test]
+    fn workspace_rewrite_leaves_override_and_resolution_sources_unchanged() {
+        let dir = tempdir().unwrap();
+        let mut manifest = open_manifest(
+            &dir,
+            r#"{
+            "name":"app","version":"1.0.0",
+            "dependencies":{"alias":"workspace:@scope/lib@^0.2.3"},
+            "overrides":{"alias":"https://example.com/lib.tgz"},
+            "resolutions":{"alias":"catalog:tools"}
+        }"#,
+        );
+        let original = parse_npm_spec_str("workspace:@scope/lib@^0.2.3", Some(WorkspaceKind::Pnpm));
+        let rewritten = round_trip(&original, &Version::parse("0.3.0", VersionGrammar::SemVer).unwrap()).unwrap();
+        manifest
+            .update_dependency_spec("alias", DepKind::Runtime, rewritten, &permit())
+            .unwrap();
+        manifest.persist(&permit()).unwrap();
+        let doc: Value = serde_json::from_slice(&fs::read(dir.path().join("package.json")).unwrap()).unwrap();
+        assert_eq!(doc["dependencies"]["alias"], "workspace:@scope/lib@^0.3.0");
+        assert_eq!(doc["overrides"]["alias"], "https://example.com/lib.tgz");
+        assert_eq!(doc["resolutions"]["alias"], "catalog:tools");
+    }
+
+    #[test]
+    fn pnpm_workspace_file_detects_protocol_before_a_lockfile_exists() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("pnpm-workspace.yaml"), "packages:\n  - packages/*\n").unwrap();
+        assert_eq!(
+            detect_npm_workspace_kind(dir.path()).unwrap(),
+            Some(WorkspaceKind::Pnpm)
+        );
+    }
 
     /// Helper: write `content` to `<dir>/package.json` and open it as a
     /// `PackageJson`. The caller must keep `dir` alive for the duration of the

@@ -97,6 +97,7 @@ pub fn coverage(spec: &DepSpec, new: &Version) -> Result<Coverage, GrammarMismat
             }
         }
         DepSpec::Workspace(_) => Ok(Coverage::Covers),
+        DepSpec::WorkspaceProtocol(workspace) => workspace.coverage(new),
         DepSpec::Catalog(_) | DepSpec::Opaque(_) => Ok(Coverage::Unknown),
     }
 }
@@ -156,13 +157,24 @@ pub fn run_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Result<
     solve_cascade(input)
 }
 
-/// Dependent's ecosystem, inferred from its manifest filename when the `PackageId` carries none.
-pub(crate) fn manifest_ecosystem(edge_from_ecosystem: Option<Ecosystem>, from_manifest: &std::path::Path) -> Ecosystem {
-    edge_from_ecosystem.unwrap_or_else(|| {
-        callisto_model::ManifestFormat::from_path(from_manifest)
-            .map(|fmt| fmt.ecosystem())
-            .unwrap_or(Ecosystem::Npm)
-    })
+pub(crate) fn manifest_ecosystem(from_manifest: &std::path::Path) -> Ecosystem {
+    callisto_model::ManifestFormat::from_path(from_manifest)
+        .map(|fmt| fmt.ecosystem())
+        .unwrap_or(Ecosystem::Npm)
+}
+
+pub(crate) fn dependency_rewrite_key(edge: &DepEdge) -> RewriteKey {
+    RewriteKey {
+        target: if edge.inherited {
+            DepWriteTarget::CargoWorkspaceDependency {
+                root_manifest: edge.from_manifest.clone(),
+            }
+        } else {
+            DepWriteTarget::Manifest(edge.from_manifest.clone())
+        },
+        name: edge.name.clone(),
+        kind: if edge.inherited { None } else { Some(edge.kind) },
+    }
 }
 
 /// Propagates `input.seed`'s severities outward to dependents until no
@@ -245,24 +257,10 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
                 }
 
                 if d.rewrite {
-                    let eco = manifest_ecosystem(edge.from.ecosystem(), &edge.from_manifest);
+                    let eco = manifest_ecosystem(&edge.from_manifest);
                     match rewrite_spec(&edge.spec, &new_version, eco, input.cfg) {
                         RewriteOutcome::Rewritten(to_spec) => {
-                            let key = RewriteKey {
-                                target: if edge.inherited {
-                                    DepWriteTarget::CargoWorkspaceDependency {
-                                        root_manifest: edge.from_manifest.clone(),
-                                    }
-                                } else {
-                                    DepWriteTarget::Manifest(edge.from_manifest.clone())
-                                },
-                                name: input
-                                    .identity
-                                    .native_name(&edge.to, eco)
-                                    .map(str::to_string)
-                                    .unwrap_or_else(|| edge.to.name().to_string()),
-                                kind: if edge.inherited { None } else { Some(edge.kind) },
-                            };
+                            let key = dependency_rewrite_key(&edge);
                             rewrite_attempted.insert(key.clone());
                             out.rewrites.insert(
                                 key.clone(),
@@ -275,21 +273,7 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
                             );
                         }
                         RewriteOutcome::LeftAlone(dg) => {
-                            rewrite_attempted.insert(RewriteKey {
-                                target: if edge.inherited {
-                                    DepWriteTarget::CargoWorkspaceDependency {
-                                        root_manifest: edge.from_manifest.clone(),
-                                    }
-                                } else {
-                                    DepWriteTarget::Manifest(edge.from_manifest.clone())
-                                },
-                                name: input
-                                    .identity
-                                    .native_name(&edge.to, eco)
-                                    .map(str::to_string)
-                                    .unwrap_or_else(|| edge.to.name().to_string()),
-                                kind: if edge.inherited { None } else { Some(edge.kind) },
-                            });
+                            rewrite_attempted.insert(dependency_rewrite_key(&edge));
                             out.diagnostics.push(dg);
                         }
                     }
@@ -463,24 +447,19 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
             let Some(new_version) = out.targets.get(&edge.to).cloned() else {
                 continue;
             };
+            if matches!(edge.spec, DepSpec::WorkspaceProtocol(_))
+                && coverage(&edge.spec, &new_version).map_err(|source| GraphError::GrammarMismatch {
+                    from: edge.from.clone(),
+                    to: edge.to.clone(),
+                    source,
+                })? != Coverage::DoesNotCover
+            {
+                continue;
+            }
 
-            let eco = manifest_ecosystem(edge.from.ecosystem(), &edge.from_manifest);
+            let eco = manifest_ecosystem(&edge.from_manifest);
 
-            let key = RewriteKey {
-                target: if edge.inherited {
-                    DepWriteTarget::CargoWorkspaceDependency {
-                        root_manifest: edge.from_manifest.clone(),
-                    }
-                } else {
-                    DepWriteTarget::Manifest(edge.from_manifest.clone())
-                },
-                name: input
-                    .identity
-                    .native_name(&edge.to, eco)
-                    .map(str::to_string)
-                    .unwrap_or_else(|| edge.to.name().to_string()),
-                kind: if edge.inherited { None } else { Some(edge.kind) },
-            };
+            let key = dependency_rewrite_key(&edge);
             if rewrite_attempted.contains(&key) {
                 continue;
             }
@@ -614,7 +593,7 @@ pub enum RewriteOutcome {
 }
 
 pub fn rewrite_spec(original: &DepSpec, new: &Version, eco: Ecosystem, cfg: &CascadeConfig) -> RewriteOutcome {
-    if !cfg.preserve_npm_ranges && eco == Ecosystem::Npm {
+    if !cfg.preserve_npm_ranges && eco == Ecosystem::Npm && !matches!(original, DepSpec::WorkspaceProtocol(_)) {
         return RewriteOutcome::Rewritten(DepSpec::Exact(new.clone()));
     }
 
@@ -643,6 +622,65 @@ mod tests {
     use callisto_model::{GroupKind, GroupName, Package, ReleaseTrigger, VersionGrammar};
 
     use crate::config::{CascadeBumpSeverity, GroupDef, GroupMember};
+
+    #[test]
+    fn workspace_coverage_distinguishes_rolling_suffixes_from_explicit_zero_major_ranges() {
+        for (suffix, expected) in [
+            ("", Coverage::Covers),
+            ("*", Coverage::Covers),
+            ("^", Coverage::Covers),
+            ("~", Coverage::Covers),
+            ("../lib", Coverage::Covers),
+            ("@scope/lib@^", Coverage::Covers),
+            ("^0.2.3", Coverage::DoesNotCover),
+            ("@scope/lib@~0.2.3", Coverage::DoesNotCover),
+            ("0.2.3", Coverage::DoesNotCover),
+            (">=0.2.3", Coverage::Covers),
+            ("https://example.com/lib.tgz", Coverage::Unknown),
+        ] {
+            let spec = DepSpec::WorkspaceProtocol(callisto_model::WorkspaceSpec {
+                kind: callisto_model::WorkspaceKind::Pnpm,
+                suffix: suffix.into(),
+            });
+            assert_eq!(
+                coverage(&spec, &Version::semver(0, 3, 0)).unwrap(),
+                expected,
+                "{suffix}"
+            );
+        }
+    }
+
+    #[test]
+    fn workspace_rewrites_keep_protocol_and_alias_even_when_npm_range_preservation_is_disabled() {
+        let cfg = CascadeConfig {
+            mode: CascadeMode::OutOfRange,
+            bump_severity: CascadeBumpSeverity::Patch,
+            peer_escalation: false,
+            preserve_npm_ranges: false,
+        };
+        let spec = DepSpec::WorkspaceProtocol(callisto_model::WorkspaceSpec {
+            kind: callisto_model::WorkspaceKind::Pnpm,
+            suffix: "@scope/lib@^0.2.3".into(),
+        });
+        let RewriteOutcome::Rewritten(rewritten) = rewrite_spec(&spec, &Version::semver(0, 3, 0), Ecosystem::Npm, &cfg)
+        else {
+            panic!("an explicit workspace range must be safely rewritten");
+        };
+        assert_eq!(rewritten.render(), "workspace:@scope/lib@^0.3.0");
+        for suffix in ["*", "^", "~", "../lib", ">=0.2.3", "<0.2.3"] {
+            let spec = DepSpec::WorkspaceProtocol(callisto_model::WorkspaceSpec {
+                kind: callisto_model::WorkspaceKind::Pnpm,
+                suffix: suffix.into(),
+            });
+            assert!(
+                matches!(
+                    rewrite_spec(&spec, &Version::semver(0, 3, 0), Ecosystem::Npm, &cfg),
+                    RewriteOutcome::LeftAlone(_)
+                ),
+                "{suffix}"
+            );
+        }
+    }
 
     /// Shared fixture: a `CommandRunner` that answers `git tag --list` with a
     /// fixed tag set, used by tests that need a real `TagIndex::build` (not
@@ -868,6 +906,7 @@ mod tests {
         DepEdge {
             from: from.clone(),
             to: to.clone(),
+            name: to.name().to_string(),
             kind: DepKind::Runtime,
             spec,
             from_manifest: std::path::PathBuf::from(format!("{}/Cargo.toml", from.name())),
@@ -886,14 +925,8 @@ mod tests {
         }
     }
 
-    /// A dual-identity rewrite target registered under two
-    /// different native names per ecosystem must produce a RewriteKey whose
-    /// `name` is the name registered for the DEPENDENT's own ecosystem, not
-    /// PackageId::name() (the target's own native-ecosystem registration).
-    /// Exercised through the real run_cascade -> solve_cascade call path, not a
-    /// direct, isolated call to IdentityIndex::native_name.
     #[test]
-    fn test_dual_identity_rewrite_key_uses_dependents_ecosystem_native_name() {
+    fn test_dual_identity_rewrite_key_preserves_declared_name() {
         let dep_target = PackageId::Bare("my-native-lib".to_string());
         let dependent = PackageId::Prefixed {
             ecosystem: Ecosystem::Npm,
@@ -903,6 +936,7 @@ mod tests {
         let edge = DepEdge {
             from: dependent.clone(),
             to: dep_target.clone(),
+            name: "@scope/my-native-lib".to_string(),
             kind: DepKind::Runtime,
             spec: DepSpec::Range(
                 callisto_model::VersionReq::parse("^1.0.0", Ecosystem::Npm).unwrap(),
@@ -965,17 +999,12 @@ mod tests {
 
         assert_eq!(
             rewrite.key.name, "@scope/my-native-lib",
-            "RewriteKey.name must use the Npm-native name registered for the \
-             dependent's own ecosystem, not PackageId::name() (\"my-native-lib\")"
+            "the rewrite must retain the dependency's declared npm name"
         );
     }
 
-    /// When IdentityIndex::native_name(&target, dependent_eco) returns
-    /// None (the common, non-dual-identity case), RewriteKey.name must equal
-    /// PackageId::name() exactly as it did before this fix, for a Prefixed
-    /// target with no registration.
     #[test]
-    fn test_none_registration_fallback_uses_package_id_name() {
+    fn test_rewrite_retains_declared_name_without_identity_registration() {
         let dep_target = PackageId::parse("pkg-core").unwrap();
         let dependent = PackageId::parse("pkg-app").unwrap();
         let edge = make_dep_edge(&dependent, &dep_target, "^1.0.0", Ecosystem::Cargo);
@@ -1617,6 +1646,7 @@ mod tests {
         let inherited_edge = DepEdge {
             from: pkg_root.clone(),
             to: pkg_dep.clone(),
+            name: pkg_dep.name().to_string(),
             kind: DepKind::Runtime,
             spec: DepSpec::Range(
                 callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo).unwrap(),
@@ -1628,6 +1658,7 @@ mod tests {
         let non_inherited_edge = DepEdge {
             from: pkg_member.clone(),
             to: pkg_dep.clone(),
+            name: pkg_dep.name().to_string(),
             kind: DepKind::Runtime,
             spec: DepSpec::Range(
                 callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo).unwrap(),
@@ -2068,6 +2099,7 @@ mod tests {
         DepEdge {
             from: from.clone(),
             to: to.clone(),
+            name: to.name().to_string(),
             kind,
             spec,
             from_manifest: std::path::PathBuf::from(format!("{}/Cargo.toml", from.name())),

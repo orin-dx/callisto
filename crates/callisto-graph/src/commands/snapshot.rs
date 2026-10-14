@@ -107,25 +107,11 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
                 continue;
             }
 
-            let eco = crate::cascade::manifest_ecosystem(edge.from.ecosystem(), &edge.from_manifest);
+            let eco = crate::cascade::manifest_ecosystem(&edge.from_manifest);
 
             match crate::cascade::rewrite_spec(&edge.spec, snap_to, eco, &ws.config.cascade) {
                 crate::cascade::RewriteOutcome::Rewritten(to_spec) => {
-                    let key = crate::cascade::RewriteKey {
-                        target: if edge.inherited {
-                            crate::cascade::DepWriteTarget::CargoWorkspaceDependency {
-                                root_manifest: edge.from_manifest.clone(),
-                            }
-                        } else {
-                            crate::cascade::DepWriteTarget::Manifest(edge.from_manifest.clone())
-                        },
-                        name: ws
-                            .identity
-                            .native_name(&edge.to, eco)
-                            .map(str::to_string)
-                            .unwrap_or_else(|| edge.to.name().to_string()),
-                        kind: if edge.inherited { None } else { Some(edge.kind) },
-                    };
+                    let key = crate::cascade::dependency_rewrite_key(edge);
                     rewrites
                         .entry(key.clone())
                         .or_insert_with(|| crate::cascade::SpecRewrite {

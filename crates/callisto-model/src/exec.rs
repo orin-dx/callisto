@@ -28,6 +28,44 @@ pub trait CommandRunner: Send + Sync {
         self.run(program, args, cwd)
     }
 
+    /// Run a child after removing selected inherited environment variables.
+    /// The default fails closed: runners that spawn real subprocesses must implement filtering explicitly.
+    fn run_with_timeout_env_filtered(
+        &self,
+        program: &str,
+        _args: &[&str],
+        _cwd: &Path,
+        _timeout: Duration,
+        removed: &[&str],
+    ) -> Result<CommandOutput, CommandError> {
+        if removed.is_empty() {
+            return self.run_with_timeout(program, _args, _cwd, _timeout);
+        }
+        Err(CommandError::Unsupported {
+            program: program.to_string(),
+            reason: "this command runner does not support filtering the child environment".to_string(),
+        })
+    }
+
+    /// Run a publisher with credentials supplied only to that child.
+    /// Runners without an explicit child-environment implementation fail closed.
+    fn run_with_timeout_publisher(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: &Path,
+        timeout: Duration,
+        env: &[(&str, &str)],
+    ) -> Result<CommandOutput, CommandError> {
+        if env.is_empty() {
+            return self.run_with_timeout(program, args, cwd, timeout);
+        }
+        Err(CommandError::Unsupported {
+            program: program.to_string(),
+            reason: "this command runner does not support a publisher child environment".to_string(),
+        })
+    }
+
     /// Like [`Self::run_with_timeout`], but for an internal existence/probe
     /// check whose stderr looks like a failure on the common path (e.g.
     /// `npm view` against an unpublished package prints a 404-shaped "not

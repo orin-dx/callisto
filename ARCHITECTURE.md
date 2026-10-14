@@ -47,8 +47,10 @@ plan_version -> VersionPlan (in memory)
   aggregate                                             changesets + opt-in commit inference -> severity per package
   run_cascade                                           dependents (runtime, build, optional, peer; never dev), groups, pre mode
                                                         -> target version per package, with its reasons
-version --emit-decision                                 writes the release decision, before apply
-apply_version_plan (needs ApplyPermit)                  CST edits -> atomic_write, changelogs, git staging
+version --emit-decision                                 derives and validates the decision in memory, before apply
+apply_version_plan (needs ApplyPermit)                  CST edits -> atomic_write, changelogs
+                                                       consume changesets -> native lock refresh -> git staging
+version --emit-decision                                 writes the decision file after successful apply
 release                                                 decision -> intent -> envelope -> execute_release -> receipt
   per operation                                         observe provider -> adopt, or perform and confirm
 ```
@@ -58,7 +60,7 @@ Cycles are detected with `petgraph::algo::tarjan_scc`. Git access goes through `
 Depth:
 
 - [`docs/architecture/identity.md`](docs/architecture/identity.md): package ids, bare-name matching, config rule specificity, workspace loading, platform packages.
-- [`docs/architecture/versioning.md`](docs/architecture/versioning.md): plan and apply, idempotent re-apply after a crash.
+- [`docs/architecture/versioning.md`](docs/architecture/versioning.md): plan and apply, file-level idempotence and interrupted-command limits.
 - [`docs/architecture/release.md`](docs/architecture/release.md): release terms, the two routes, run envelope, observation and proof tokens, the transition table, verification tiers.
 
 ## Extension seams
@@ -69,6 +71,12 @@ Four traits decouple the engine from platform I/O (`callisto-model::exec`, `call
 - `CommandRunner` — runs a subprocess. `run_with_timeout`'s default implementation ignores the timeout; the CLI's runner enforces it, so a hung publish command cannot block forever.
 - `Manifest` — per-ecosystem read/write. Mutations only touch the in-memory CST; nothing reaches disk until `persist(&ApplyPermit)`, so one open manifest can take several mutations before one write.
 - `DependencyResolver` — supplies graph nodes and edges; `ManifestWalkResolver` is the only current implementation.
+
+## Current boundaries and planned changes
+
+`PackageId` is a flexible selector/display form; `PackageKey` is a directory locator; `ReleasePackageId` is a canonical ecosystem-qualified distribution identity. A directory can own several canonical manifests, but the current package model requires one version grammar. Registry version observations do not establish a complete Python file set or identical package bytes.
+
+Known contract failures and verification gaps are tracked in [`docs/projects/V1-FINDINGS.md`](docs/projects/V1-FINDINGS.md). The proposed canonical-identity and polyglot model is in [`docs/architecture/polyglot-v1.md`](docs/architecture/polyglot-v1.md); it is not an implemented extension seam. The existing dependency graph and release-operation DAG remain the basis of the plan.
 
 ## Not covered here
 

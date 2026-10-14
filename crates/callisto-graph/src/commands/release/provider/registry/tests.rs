@@ -9,13 +9,14 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use callisto_model::{ArtifactDigest, RegistryBindingDigest, RegistryKey, Version, VersionGrammar};
+use callisto_model::{
+    ArtifactDigest, CommandOutput, CommandRunner, RegistryBindingDigest, RegistryKey, Version, VersionGrammar,
+};
 
 use super::super::loopback::fixtures;
 use super::super::policy::tests::RecordingSleeper;
 use super::*;
 use crate::commands::release::binding::PreparedRegistryBinding;
-use crate::commands::release::tests::RealGitRunner;
 
 // --------------------------------------------------------------- the fixture
 
@@ -182,12 +183,38 @@ fn operation(key: &str, package_name: &str, version: &str) -> RegistryPublishOpe
 /// policy -- from the fixture workspace root, and reports the waits the policy
 /// would have spent.
 fn observe_cargo(operation: &RegistryPublishOperation) -> (ProviderObservationV1, Vec<std::time::Duration>) {
-    let runner = RealGitRunner;
+    let fixture = fixture();
+    let cargo_home = fixture._root.path().join("cargo-home");
+    std::fs::create_dir_all(&cargo_home).unwrap();
+    let runner = CargoFixtureRunner { cargo_home };
     let sleeper = RecordingSleeper::new();
-    let workspace = fixture().workspace.clone();
+    let workspace = fixture.workspace.clone();
     let context = ProviderContext::new(&workspace, &runner, None).with_sleeper(&sleeper);
     let observation = registry_observation(adapter_for(Ecosystem::Cargo).unwrap(), &context, operation).unwrap();
     (observation, sleeper.waits())
+}
+
+struct CargoFixtureRunner {
+    cargo_home: PathBuf,
+}
+
+impl CommandRunner for CargoFixtureRunner {
+    fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, callisto_model::CommandError> {
+        let mut command = std::process::Command::new(program);
+        command.args(args).current_dir(cwd);
+        if program == "cargo" {
+            command.env("CARGO_HOME", &self.cargo_home);
+        }
+        let output = command.output().map_err(|error| callisto_model::CommandError::Io {
+            program: program.to_owned(),
+            message: error.to_string(),
+        })?;
+        Ok(CommandOutput {
+            exit_code: output.status.code(),
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        })
+    }
 }
 
 fn exact_without_checksum(version: &str) -> ProviderObservationV1 {
@@ -704,6 +731,88 @@ impl callisto_model::CommandRunner for RecordingRunner {
             stderr: String::new(),
         })
     }
+}
+
+struct EnvironmentFilterRunner(std::sync::Mutex<Vec<String>>);
+
+impl callisto_model::CommandRunner for EnvironmentFilterRunner {
+    fn run(
+        &self,
+        _program: &str,
+        _args: &[&str],
+        _cwd: &Path,
+    ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+        Ok(callisto_model::CommandOutput {
+            exit_code: Some(0),
+            stdout: String::new(),
+            stderr: String::new(),
+        })
+    }
+
+    fn run_with_timeout_env_filtered(
+        &self,
+        _program: &str,
+        _args: &[&str],
+        _cwd: &Path,
+        _timeout: std::time::Duration,
+        removed: &[&str],
+    ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+        *self.0.lock().unwrap() = removed.iter().map(|name| (*name).to_owned()).collect();
+        self.run("", &[], Path::new(""))
+    }
+}
+
+#[test]
+fn python_build_removes_every_release_credential_from_its_environment() {
+    let root = tempfile::tempdir().unwrap();
+    let runner = EnvironmentFilterRunner(std::sync::Mutex::new(Vec::new()));
+    let context = ProviderContext::new(root.path(), &runner, None);
+    let argv = registry_argv::Argv {
+        program: "python3".to_owned(),
+        args: vec!["-m".to_owned(), "build".to_owned()],
+        cwd: root.path().to_path_buf(),
+    };
+
+    assert!(run_build_argv(&context, &argv).unwrap().success());
+    assert_eq!(
+        runner.0.lock().unwrap().as_slice(),
+        [
+            "CARGO_REGISTRY_TOKEN",
+            "GH_TOKEN",
+            "GITHUB_TOKEN",
+            "NPM_CONFIG_TOKEN",
+            "NPM_CONFIG_USERCONFIG",
+            "NPM_TOKEN",
+            "NODE_AUTH_TOKEN",
+            "PYPI_TOKEN",
+            "TWINE_PASSWORD",
+            "TWINE_USERNAME",
+        ]
+    );
+}
+
+#[test]
+fn publisher_environment_maps_only_the_selected_native_tool() {
+    let npm = npm_publisher_environment("npm", Some("npm-secret"), Some("/tmp/npmrc"));
+    assert_eq!(
+        npm,
+        [("NPM_TOKEN", "npm-secret"), ("NPM_CONFIG_USERCONFIG", "/tmp/npmrc")]
+    );
+    let bun = npm_publisher_environment("bun", Some("npm-secret"), Some("/tmp/npmrc"));
+    assert_eq!(
+        bun,
+        [
+            ("NPM_TOKEN", "npm-secret"),
+            ("NPM_CONFIG_TOKEN", "npm-secret"),
+            ("NPM_CONFIG_USERCONFIG", "/tmp/npmrc")
+        ]
+    );
+    assert_eq!(
+        pypi_publisher_environment(Some("__token__"), Some("pypi-secret")),
+        [("TWINE_USERNAME", "__token__"), ("TWINE_PASSWORD", "pypi-secret")]
+    );
+    assert!(npm_publisher_environment("npm", None, None).is_empty());
+    assert!(pypi_publisher_environment(None, None).is_empty());
 }
 
 /// A platform package outside the workspace globs cannot be selected by name

@@ -47,7 +47,7 @@
     {
       "name": "snapshot",
       "signature": "callisto snapshot --tag <TAG> [--strict]",
-      "description": "Sets every package's manifest version to 0.0.0-<TAG>-<short HEAD sha> without consuming changesets.",
+      "description": "Sets every package's manifest version to a native-grammar snapshot without consuming changesets: 0.0.0-<TAG>-<short HEAD sha> for SemVer, 0.0.0.dev0+<TAG>.<short HEAD sha> for PEP 440.",
       "error_conditions": [
         "--tag missing (usage error, exit 2).",
         "With --strict, error-level workspace graph diagnostics."
@@ -59,7 +59,7 @@
       "description": "Detects the workspace, asks only for intent, previews the first release, then writes callisto.toml, .changeset/README.md and optionally .github/workflows/callisto-release.yml.",
       "error_conditions": [
         "callisto.toml already exists.",
-        "Not inside a Git repository, or no `origin` remote.",
+        "Not inside a Git repository; without `origin`, only an explicit workflow or artifact request fails.",
         "A package matches more than one tag convention, or more than one package matches `v{version}`.",
         "stdin is not a terminal and --yes is absent; --yes without a required flag.",
         "--workflow together with --no-workflow.",
@@ -215,11 +215,11 @@
     },
     {
       "id": "CLI-INIT-01",
-      "criterion": "Before any question, `callisto init` prints `Detected:` with the ecosystems, the origin remote URL, and each package's qualified id, version, last tag, and binary names for binary-producing packages."
+      "criterion": "Before any question, `callisto init` prints `Detected:` with the ecosystems, the origin remote URL, and each package's qualified id, version, last tag, and executable names for executable-producing packages. Artifact selection includes only supported Cargo binary targets."
     },
     {
       "id": "CLI-INIT-02",
-      "criterion": "Interactive init asks only: versioning (independent or fixed); whether to ship binaries as GitHub release assets, only when a package produces a binary; the product package, only when more than one does; the forge repository, pre-filled from origin; comma-separated target triples; whether to generate a workflow (default no); and whether to write callisto.toml (default yes)."
+      "criterion": "Interactive init asks only: versioning (independent or fixed); whether to ship Cargo binaries as GitHub release assets, only when a supported Cargo binary target exists; the product package, only when more than one Cargo package produces a binary; the forge repository, pre-filled from origin; comma-separated target triples; whether to generate a workflow (default no); and whether to write callisto.toml (default yes)."
     },
     {
       "id": "CLI-INIT-03",
@@ -227,11 +227,11 @@
     },
     {
       "id": "CLI-INIT-04",
-      "criterion": "The written callisto.toml starts with `# callisto configuration` and contains only answered intent: a `[[fixed-group]]` named `all` listing every non-platform package for fixed versioning, a `[[package]]` `tag-template` for each package whose existing tags follow a non-default convention, and, when shipping binaries, `publish-to` with `github-release` on the product plus a `[release]` table with `product-package`, `forge-repository` and one `[[release.artifact]]` per target and binary."
+      "criterion": "The written callisto.toml starts with `# callisto configuration` and contains only answered intent: a `[[fixed-group]]` named `all` listing every non-platform package for fixed versioning, a `[[package]]` `tag-template` for each package whose existing tags follow a non-default convention, and, when shipping binaries, `publish-to` with `github-release` on the selected Cargo product plus a `[release]` table with `product-package`, `forge-repository` and one `[[release.artifact]]` per target and Cargo binary."
     },
     {
       "id": "CLI-INIT-05",
-      "criterion": "Tag detection matches each package's tags against `{name}@{version}` (default, never written), `{name}-v{version}`, `{name}-{version}` and `v{version}`, and writes the single matching non-default convention as that package's tag-template."
+      "criterion": "Tag detection matches each package's tags against its `{display id}@{version}` default, `{name}-v{version}`, `{name}-{version}` and `v{version}`, and writes the single matching non-default convention as that package's tag-template."
     },
     {
       "id": "CLI-INIT-06",
@@ -253,7 +253,7 @@
     },
     {
       "id": "CLI-INIT-10",
-      "criterion": "With a non-terminal stdin and no --yes, init exits 1 with `E240` naming --yes and every other missing flag; with --yes it exits 1 with `E241` naming each missing flag: --versioning always, --forge-repository when --artifact-target is given, and --product-package when --artifact-target is given and more than one package produces a binary.",
+      "criterion": "With a non-terminal stdin and no --yes, init exits 1 with `E240` naming --yes and every other missing flag; with --yes it exits 1 with `E241` naming each missing flag: --versioning always, --forge-repository when --artifact-target is given, and --product-package when --artifact-target is given and more than one supported Cargo package produces a binary.",
       "is_error_case": true
     },
     {
@@ -263,7 +263,7 @@
     },
     {
       "id": "CLI-INIT-12",
-      "criterion": "init exits 1 without writing for an empty or repeated target triple, --artifact-target when no package produces a binary, a --product-package that is absent or not binary-producing, a --forge-repository that is not `owner/repo` or differs from origin's GitHub repository, or --forge-repository or --product-package given without --artifact-target.",
+      "criterion": "init exits 1 without writing for an empty or repeated target triple, --artifact-target when no supported Cargo package produces a binary, a --product-package that is absent or not a supported Cargo binary producer, a --forge-repository that is not `owner/repo` or differs from origin's GitHub repository, or --forge-repository or --product-package given without --artifact-target. An npm `bin` or Python `[project.scripts]` product selected for an artifact fails with a typed unsupported-builder diagnostic; registry-only npm and PyPI releases remain valid.",
       "is_error_case": true
     },
     {
@@ -280,6 +280,10 @@
       "is_error_case": true
     },
     {
+      "id": "CLI-INIT-16",
+      "criterion": "Cargo binary detection includes every explicit `[[bin]]` name (or path-derived name when omitted), `src/main.rs`, `src/bin/<name>.rs`, and `src/bin/<name>/main.rs`, de-duplicates names, and honors `package.autobins = false` for automatic targets. npm `bin` and Python `[project.scripts]` are detected as executables but are rejected as GitHub artifact builders before init writes files."
+    },
+    {
       "id": "CLI-WF-01",
       "criterion": "A workflow is written to .github/workflows/callisto-release.yml only when --workflow is given or the interactive workflow question is answered yes; after writing, init prints that merging to the default branch publishes and advises requiring pull requests and reviews on it."
     },
@@ -290,11 +294,11 @@
     },
     {
       "id": "CLI-WF-03",
-      "criterion": "Without artifact slots or platform packages, the generated workflow triggers on push to the detected default branch (local `origin/HEAD`, else a live query of `origin`, else the checked-out branch, else `main`) and has two jobs: `version-pr` running callisto-action with `mode: version-pr` and that same `branch`, and `release` running it with `mode: release` and a token secret per detected ecosystem (CARGO_REGISTRY_TOKEN, NPM_TOKEN with NPM_CONFIG_PROVENANCE, PYPI_TOKEN) plus GH_TOKEN. init's human-readable output names which of those sources resolved the branch."
+      "criterion": "Without artifact slots or platform packages, the generated workflow triggers on push to the detected default branch (local `origin/HEAD`, else a live query of `origin`, else the checked-out branch, else `main`) and has two jobs: `version-pr` running callisto-action with `mode: version-pr` and that same `branch`, and `release` running it with `mode: release` and a token secret per detected ecosystem (CARGO_REGISTRY_TOKEN, NPM_TOKEN with NPM_CONFIG_PROVENANCE, PYPI_TOKEN) plus GH_TOKEN. These secrets are scoped to the release action step; that action configures npm and Twine native auth only for publishing, supports Bun's token environment, and withholds registry credentials from the Python build backend. Native package-manager publish hooks retain their normal package-owner-defined behavior. init's human-readable output names which of those sources resolved the branch."
     },
     {
       "id": "CLI-WF-04",
-      "criterion": "When binaries ship as artifact slots or the workspace has napi platform packages, the generated workflow has `version-pr`, `plan` (runs `callisto release plan --from-release-commit` when the pushed commit adds or modifies .callisto/release-decision.json), `build` (a matrix from napi targets and artifact slots), and `execute` (runs `callisto release artifact-manifest` and `callisto release execute`) jobs."
+      "criterion": "When binaries ship as artifact slots or the workspace has napi platform packages, the generated workflow has `version-pr`, `plan` (runs `callisto release plan --from-release-commit` when the pushed commit adds or modifies .callisto/release-decision.json), `build` (a matrix from napi targets and artifact slots), and `execute` (runs `callisto release artifact-manifest` and `callisto release execute`) jobs. Registry secrets are scoped to the execute publishing step, never plan or build; npm and Twine receive native auth configuration only during execution, and registry credentials are withheld from Python build subprocesses. Native package-manager publish hooks retain their normal package-owner-defined behavior."
     },
     {
       "id": "CLI-WF-05",
@@ -322,7 +326,7 @@
     },
     {
       "id": "CLI-SNAP-01",
-      "criterion": "`callisto snapshot --tag <tag>` sets every package's manifest version to `0.0.0-<tag>-<short HEAD sha>`, prints each `from → to`, and leaves changesets in place."
+      "criterion": "`callisto snapshot --tag <tag>` sets each SemVer package's manifest version to `0.0.0-<tag>-<short HEAD sha>` and each PEP 440 package's to `0.0.0.dev0+<tag>.<short HEAD sha>`, prints each `from → to`, and leaves changesets in place."
     },
     {
       "id": "CLI-COMP-01",
@@ -330,7 +334,7 @@
     },
     {
       "id": "CLI-SCHEMA-01",
-      "criterion": "`callisto schema` prints the StatusReport JSON Schema; `--type` is a fixed value enum selecting another report type, and an unrecognized value is a clap usage error (exit 2) listing the supported values."
+      "criterion": "`callisto schema` prints the StatusReport JSON Schema; `--type` is a fixed value enum selecting another report type, and an unrecognized value is a clap usage error (exit 2) listing the supported values. Schemas describe the selected payload's serialized values, including string versions, package identities, commit SHAs, repository slugs and digests, not their internal Rust representation. Report payload schemas are distinct from command/dryRun stdout metadata; the release-receipt schema describes the durable receipt file. Native value validity remains enforced by domain readers."
     }
   ],
   "spec_file_path": "docs/specs/cli.json"

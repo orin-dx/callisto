@@ -354,7 +354,7 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
     // stale leftover an earlier release already committed and this one never
     // touched -- otherwise a commit that changes nothing real could still
     // carry forward a prior, unrelated decision's authority.
-    let decision_path_str = decision_path.to_string_lossy().replace('\\', "/");
+    let decision_path_str = normalized_git_path(decision_path)?;
     let decision_freshly_written = changed
         .iter()
         .any(|(status, path)| path == &decision_path_str && matches!(status.as_str(), "A" | "M"));
@@ -369,11 +369,10 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
     // application and not just a hand-crafted decision file: some real
     // changeset was actually consumed. The decision's own entries, not this
     // changeset's content, remain the sole authority verified below.
-    let changeset_dir = workspace.config.changesets_dir.to_string_lossy().replace('\\', "/");
-    let changeset_prefix = format!("{}/", changeset_dir.trim_end_matches('/'));
+    let changeset_dir = normalized_git_path(&workspace.config.changesets_dir)?;
     let consumed_a_changeset = changed
         .iter()
-        .any(|(status, path)| status == "D" && path.starts_with(&changeset_prefix) && path.ends_with(".md"));
+        .any(|(status, path)| status == "D" && is_changeset_path(path, &changeset_dir));
     if !consumed_a_changeset {
         return Err(GraphError::ReleaseCommitVerificationFailed {
             commit: release_commit.clone(),
@@ -415,9 +414,16 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
         .graph
         .packages()
         .flat_map(Package::canonical_manifests)
-        .map(|manifest| (manifest.path.to_string_lossy().into_owned(), manifest.ecosystem()))
-        .collect();
-    let query_paths: Vec<&str> = manifest_queries.iter().map(|(path, _)| path.as_str()).collect();
+        .map(|manifest| Ok((normalized_git_path(&manifest.path)?, manifest.ecosystem())))
+        .collect::<Result<_, GraphError>>()?;
+    let mut query_paths: Vec<&str> = manifest_queries.iter().map(|(path, _)| path.as_str()).collect();
+    if manifest_queries
+        .iter()
+        .any(|(_, ecosystem)| *ecosystem == Ecosystem::Cargo)
+        && !query_paths.contains(&"Cargo.toml")
+    {
+        query_paths.push("Cargo.toml");
+    }
 
     // Exactly two `git cat-file --batch` subprocess invocations total (one
     // per commit), regardless of how many canonical manifests the
@@ -427,8 +433,8 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
     let before_blobs = batch_manifest_blobs_at(workspace.runner, &workspace.root, &parent, &query_paths)?;
     let after_blobs =
         batch_manifest_blobs_at(workspace.runner, &workspace.root, release_commit.as_str(), &query_paths)?;
-    let before_versions = resolve_batch_versions(before_blobs, &manifest_queries)?;
-    let after_versions = resolve_batch_versions(after_blobs, &manifest_queries)?;
+    let before_versions = resolve_batch_versions(before_blobs, &query_paths, &manifest_queries)?;
+    let after_versions = resolve_batch_versions(after_blobs, &query_paths, &manifest_queries)?;
 
     let mut observed = std::collections::BTreeSet::new();
     let mut manifest_index = 0usize;
@@ -439,28 +445,28 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
             let changelog = package.changelog.as_ref().ok_or(GraphError::ReleasePreconditionUnmet {
                 requirement: ReleasePreconditionRequirement::ChangelogConfigured,
             })?;
-            if !changed_paths.contains(changelog.to_string_lossy().as_ref()) {
+            let changelog = normalized_git_path(changelog)?;
+            if !changed_paths.contains(changelog.as_str()) {
                 return Err(GraphError::ReleaseCommitVerificationFailed {
                     commit: release_commit.clone(),
                     reason: CommitVerificationFailure::ChangelogNotTouched,
                 });
             }
         }
-        for (manifest, id) in package.canonical_manifests().zip(package_ids) {
-            let path = manifest.path.to_string_lossy();
+        for id in package_ids {
             let before = &before_versions[manifest_index];
             let after = &after_versions[manifest_index];
             manifest_index += 1;
-            let changed_version = before != after;
+            let changed_version = before.version != after.version;
             match claimed.get(&id) {
                 Some(target_version) => {
-                    if !changed_paths.contains(path.as_ref()) {
+                    if !changed_paths.contains(after.authority.to_string_lossy().as_ref()) {
                         return Err(GraphError::ReleaseCommitVerificationFailed {
                             commit: release_commit.clone(),
                             reason: CommitVerificationFailure::ManifestNotInDiff,
                         });
                     }
-                    if !changed_version || after != target_version {
+                    if !changed_version || &after.version != target_version {
                         return Err(GraphError::ReleaseCommitVerificationFailed {
                             commit: release_commit.clone(),
                             reason: CommitVerificationFailure::ManifestVersionMismatch,
@@ -490,6 +496,20 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
     }
 
     Ok(decision)
+}
+
+fn is_changeset_path(path: &str, changeset_dir: &str) -> bool {
+    let Some(file_name) = path.strip_prefix(changeset_dir).and_then(|path| {
+        if changeset_dir.is_empty() {
+            Some(path)
+        } else {
+            path.strip_prefix('/')
+        }
+    }) else {
+        return false;
+    };
+
+    !file_name.contains('/') && file_name.ends_with(".md") && file_name != "README.md"
 }
 
 /// Builds a [`GraphError::ReleaseCommand`] (E164) for a git invocation that
@@ -557,11 +577,27 @@ fn git_file<R: CommandRunner>(
     git_stdout(runner, root, &["show", &object])
 }
 
-/// Extracts a manifest's declared version from its already-fetched raw
-/// source text. Shared by the batched `git cat-file --batch` path in
-/// [`derive_release_commit_decision`] (via [`resolve_batch_versions`]) and
-/// this module's own tests (via the single-object `manifest_version_at`
-/// helper they define), so both use identical parsing rules.
+pub(super) fn normalized_git_path(path: &std::path::Path) -> Result<String, GraphError> {
+    let path = callisto_model::workspace_relative(path)?;
+    let path = path.to_string_lossy().into_owned();
+    if path.contains(['\0', '\n', '\r']) {
+        return Err(command_malformed_output(
+            "git",
+            &["cat-file", "--batch"],
+            "workspace path contains a forbidden control character",
+        ));
+    }
+    Ok(path)
+}
+
+fn historical_manifest_error(error: callisto_model::ManifestError) -> GraphError {
+    match error {
+        callisto_model::ManifestError::InvalidVersion { source, .. } => GraphError::from(source),
+        other => command_malformed_output("git", &["cat-file", "--batch"], other.to_string()),
+    }
+}
+
+#[cfg(test)]
 fn parse_manifest_version(source: &str, path: &str, ecosystem: Ecosystem) -> Result<Version, GraphError> {
     // Every canonical manifest this module ever queries comes from
     // `Package::canonical_manifests()`, which (per `walk.rs`) only ever
@@ -577,26 +613,16 @@ fn parse_manifest_version(source: &str, path: &str, ecosystem: Ecosystem) -> Res
                 ecosystem.prefix()
             ),
         })?;
-    // A malformed blob, a version-less manifest (e.g. a Cargo workspace
-    // root with no [package] table, or a `dynamic = ["version"]` PEP 621
-    // package), or a Cargo `version.workspace = true` inheritance (which
-    // `read_identity` deliberately never resolves, having no workspace
-    // context for a historical git blob) all fail closed here rather than
-    // panicking or fabricating a version.
-    let version = callisto_manifests::read_identity(format, source, std::path::Path::new(path))
-        .ok()
-        .and_then(|identity| match identity.version {
-            Some(callisto_manifests::VersionSource::Literal(v)) => Some(v),
-            _ => None,
-        })
+    let version = callisto_manifests::read_effective_version(format, source, std::path::Path::new(path), None)
+        .map_err(historical_manifest_error)?
         .ok_or_else(|| {
             command_malformed_output(
                 "git",
                 &["cat-file", "--batch"],
-                format!("manifest `{path}` has no literal declared version"),
+                format!("manifest `{path}` has no effective declared version"),
             )
         })?;
-    Version::parse(&version, ecosystem.version_grammar()).map_err(GraphError::from)
+    Ok(version.version)
 }
 
 /// One object's content as reported by `git cat-file --batch`, for a single
@@ -807,22 +833,40 @@ fn batch_manifest_blobs_at<R: CommandRunner>(
     Ok(results)
 }
 
-/// Converts each batched blob-fetch result into the [`Version`] the
-/// equivalent single-object `git show` fetch would have produced, using
-/// [`parse_manifest_version`]'s parsing rules. A path missing from the
-/// queried commit fails closed exactly as a `git show` that couldn't
-/// resolve the path would have.
-fn resolve_batch_versions(blobs: Vec<BatchBlob>, queries: &[(String, Ecosystem)]) -> Result<Vec<Version>, GraphError> {
-    blobs
-        .into_iter()
-        .zip(queries.iter())
-        .map(|(blob, (path, ecosystem))| match blob {
-            BatchBlob::Blob(source) => parse_manifest_version(&source, path, *ecosystem),
-            BatchBlob::Missing => Err(command_malformed_output(
-                "git",
-                &["cat-file", "--batch"],
-                format!("canonical manifest `{path}` was reported missing at the queried commit"),
-            )),
+fn resolve_batch_versions(
+    blobs: Vec<BatchBlob>,
+    paths: &[&str],
+    queries: &[(String, Ecosystem)],
+) -> Result<Vec<callisto_manifests::EffectiveManifestVersion>, GraphError> {
+    let sources: std::collections::BTreeMap<_, _> = paths.iter().copied().zip(blobs).collect();
+    let cargo_workspace = match sources.get("Cargo.toml") {
+        Some(BatchBlob::Blob(source)) => Some((std::path::Path::new("Cargo.toml"), source.as_str())),
+        _ => None,
+    };
+    queries
+        .iter()
+        .map(|(path, ecosystem)| {
+            let Some(BatchBlob::Blob(source)) = sources.get(path.as_str()) else {
+                return Err(command_malformed_output(
+                    "git",
+                    &["cat-file", "--batch"],
+                    format!("canonical manifest `{path}` was reported missing at the queried commit"),
+                ));
+            };
+            let format = ecosystem
+                .canonical_manifest_format()
+                .ok_or_else(|| GraphError::ReleaseInvariant {
+                    detail: format!("canonical manifest `{path}` has no canonical manifest format"),
+                })?;
+            callisto_manifests::read_effective_version(format, source, std::path::Path::new(path), cargo_workspace)
+                .map_err(historical_manifest_error)?
+                .ok_or_else(|| {
+                    command_malformed_output(
+                        "git",
+                        &["cat-file", "--batch"],
+                        format!("manifest `{path}` has no effective declared version"),
+                    )
+                })
         })
         .collect()
 }
@@ -922,6 +966,22 @@ mod tests {
         );
         assert!(parse_name_status("R100\told\tnew\n", &args).is_err());
         assert!(parse_name_status("M Cargo.toml\n", &args).is_err());
+    }
+
+    #[test]
+    fn changeset_path_matches_only_direct_child_markdown_files() {
+        assert!(is_changeset_path(".changeset/release.md", ".changeset"));
+        assert!(!is_changeset_path(".changeset/README.md", ".changeset"));
+        assert!(!is_changeset_path(".changeset/nested/release.md", ".changeset"));
+        assert!(!is_changeset_path(".changesets/release.md", ".changeset"));
+    }
+
+    #[test]
+    fn root_changeset_dir_matches_only_root_level_markdown_files() {
+        assert!(is_changeset_path("release.md", ""));
+        assert!(!is_changeset_path("README.md", ""));
+        assert!(!is_changeset_path("docs/notes.md", ""));
+        assert!(!is_changeset_path("nested/release.md", ""));
     }
 
     /// Regression: both malformed name-status lines must

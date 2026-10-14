@@ -135,6 +135,7 @@ pub fn apply_version_plan<R: CommandRunner>(
 ) -> Result<ApplyOutcome, GraphError> {
     let mut outcome = ApplyOutcome::default();
     let mut modified_paths = Vec::new();
+    let mut deferred_deletions = Vec::new();
 
     let ctx = OpenContext::for_workspace_root(root);
 
@@ -326,14 +327,7 @@ pub fn apply_version_plan<R: CommandRunner>(
         }
 
         for cs_path in &plan.consumed_changesets {
-            let full = root.join(cs_path);
-            if full.exists() {
-                fs::remove_file(&full).map_err(|e| GraphError::ApplyIo {
-                    path: cs_path.clone(),
-                    message: e.to_string(),
-                })?;
-            }
-            modified_paths.push(cs_path.clone());
+            deferred_deletions.push(cs_path.clone());
         }
 
         if let Some(ref pre_state) = plan.pre_state_update {
@@ -350,14 +344,7 @@ pub fn apply_version_plan<R: CommandRunner>(
             })?;
             modified_paths.push(rel_pre_path);
         } else if let Some(rel_pre_path) = &plan.delete_pre_json {
-            let pre_path = root.join(rel_pre_path);
-            if pre_path.exists() {
-                fs::remove_file(&pre_path).map_err(|e| GraphError::ApplyIo {
-                    path: rel_pre_path.clone(),
-                    message: e.to_string(),
-                })?;
-                modified_paths.push(rel_pre_path.clone());
-            }
+            deferred_deletions.push(rel_pre_path.clone());
         }
     }
 
@@ -368,35 +355,37 @@ pub fn apply_version_plan<R: CommandRunner>(
     let active_ecosystems: std::collections::HashSet<Ecosystem> = plan
         .bumps
         .iter()
-        .filter_map(|b| {
-            // Prefer the ecosystem declared in the PackageId; fall back to
-            // inferring it from write targets for Bare (unprefixed) ids.
-            if let Some(eco) = b.package.ecosystem() {
-                return Some(eco);
-            }
-            // Bare id: derive ecosystem from the write targets.
-            for write in &b.writes {
-                let eco = match write {
-                    VersionWriteTarget::CargoWorkspacePackage { .. } => Ecosystem::Cargo,
-                    VersionWriteTarget::Manifest(p) => match callisto_model::ManifestFormat::from_path(p) {
-                        Ok(fmt) => fmt.ecosystem(),
-                        Err(_) => continue,
-                    },
-                };
-                return Some(eco);
-            }
-            None
+        .flat_map(|bump| {
+            bump.package
+                .ecosystem()
+                .into_iter()
+                .chain(bump.writes.iter().filter_map(|write| {
+                    match write {
+                        VersionWriteTarget::CargoWorkspacePackage { .. } => Some(Ecosystem::Cargo),
+                        VersionWriteTarget::Manifest(path) => callisto_model::ManifestFormat::from_path(path)
+                            .ok()
+                            .map(|fmt| fmt.ecosystem()),
+                    }
+                }))
         })
+        .chain(plan.rewrites.iter().filter_map(|rewrite| {
+            match &rewrite.key.target {
+                DepWriteTarget::CargoWorkspaceDependency { .. } => Some(Ecosystem::Cargo),
+                DepWriteTarget::Manifest(path) => callisto_model::ManifestFormat::from_path(path)
+                    .ok()
+                    .map(|fmt| fmt.ecosystem()),
+            }
+        }))
         .chain(
             plan.platform_writes
                 .iter()
-                .filter_map(|pw| callisto_model::ManifestFormat::from_path(&pw.manifest).ok())
+                .filter_map(|write| callisto_model::ManifestFormat::from_path(&write.manifest).ok())
                 .map(|fmt| fmt.ecosystem()),
         )
         .chain(
             plan.optional_dep_updates
                 .iter()
-                .filter_map(|opt| callisto_model::ManifestFormat::from_path(&opt.manifest).ok())
+                .filter_map(|update| callisto_model::ManifestFormat::from_path(&update.manifest).ok())
                 .map(|fmt| fmt.ecosystem()),
         )
         .collect();
@@ -513,7 +502,10 @@ pub fn apply_version_plan<R: CommandRunner>(
         }
     }
 
-    if !opts.transient && !modified_paths.is_empty() {
+    if !opts.transient && (!modified_paths.is_empty() || !deferred_deletions.is_empty()) {
+        // Stage all written release state before consuming its inputs. If a refresh or add fails,
+        // the changesets/pre-state remain available; if removal staging fails, the manifest diff
+        // still identifies the interrupted run.
         let (existing, deleted): (Vec<_>, Vec<_>) = modified_paths.iter().partition(|p| root.join(p).exists());
 
         if !existing.is_empty() {
@@ -546,6 +538,34 @@ pub fn apply_version_plan<R: CommandRunner>(
                     stderr: output.redacted_stderr(),
                 }));
             }
+        }
+
+        if !deferred_deletions.is_empty() {
+            let mut args = vec!["rm", "--cached", "--ignore-unmatch", "--"];
+            let strs: Vec<String> = deferred_deletions.iter().map(|p| p.display().to_string()).collect();
+            for s in &strs {
+                args.push(s);
+            }
+            let output = runner.run("git", &args, root)?;
+            if !output.success() {
+                return Err(GraphError::Command(CommandError::Failed {
+                    program: "git".to_string(),
+                    exit_code: output.exit_code,
+                    stderr: output.redacted_stderr(),
+                }));
+            }
+
+            // Keep the inputs on disk until their removal is staged so a failed index update can be retried.
+            for path in &deferred_deletions {
+                let full = root.join(path);
+                if full.exists() {
+                    fs::remove_file(&full).map_err(|e| GraphError::ApplyIo {
+                        path: path.clone(),
+                        message: e.to_string(),
+                    })?;
+                }
+            }
+            modified_paths.extend(deferred_deletions.iter().cloned());
         }
 
         outcome.staged = modified_paths;
@@ -910,6 +930,143 @@ mod tests {
         );
     }
 
+    #[test]
+    fn refresh_lockfiles_includes_every_bump_and_dependency_write_ecosystem() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let root = dir.path();
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[package]\nname='dual'\nversion='1.0.0'\nedition='2021'\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"name":"dual","version":"1.0.0","dependencies":{"dual-dep":"1.0.0"}}"#,
+        )
+        .unwrap();
+        for lockfile in [
+            "Cargo.lock",
+            "package-lock.json",
+            "pnpm-lock.yaml",
+            "yarn.lock",
+            "bun.lock",
+        ] {
+            std::fs::write(root.join(lockfile), "lock").unwrap();
+        }
+        let package_json = PathBuf::from("package.json");
+        let plan = VersionPlan {
+            bumps: vec![PlannedBump {
+                package: PackageId::parse("cargo:dual").unwrap(),
+                from: cargo_version("1.0.0"),
+                to: cargo_version("1.1.0"),
+                severity: Severity::Minor,
+                governed_by: None,
+                reason: None,
+                writes: vec![
+                    VersionWriteTarget::Manifest(PathBuf::from("Cargo.toml")),
+                    VersionWriteTarget::Manifest(package_json.clone()),
+                ],
+            }],
+            rewrites: vec![crate::cascade::SpecRewrite {
+                key: crate::cascade::RewriteKey {
+                    target: DepWriteTarget::Manifest(package_json),
+                    name: "dual-dep".to_string(),
+                    kind: Some(callisto_model::DepKind::Runtime),
+                },
+                dependency: PackageId::parse("npm:dual-dep").unwrap(),
+                from: callisto_model::DepSpec::Exact(cargo_version("1.0.0")),
+                to: callisto_model::DepSpec::Exact(cargo_version("1.1.0")),
+            }],
+            ..Default::default()
+        };
+        let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let runner = RecordingRunner {
+            calls: std::sync::Arc::clone(&calls),
+        };
+        let outcome = apply_version_plan(
+            root,
+            &plan,
+            &runner,
+            &ApplyOptions {
+                refresh_lockfiles: true,
+                transient: false,
+            },
+            &ApplyPermit::force_for_tests(),
+        )
+        .expect("both manifest ecosystems must refresh");
+        let refreshed = outcome.lockfile_refresh_results.unwrap();
+        for lockfile in [
+            "Cargo.lock",
+            "package-lock.json",
+            "pnpm-lock.yaml",
+            "yarn.lock",
+            "bun.lock",
+        ] {
+            assert!(
+                refreshed.iter().any(|item| item.filename.as_os_str() == lockfile),
+                "missing refresh for {lockfile}: {refreshed:?}"
+            );
+        }
+        let recorded = calls.lock().unwrap();
+        assert!(recorded
+            .iter()
+            .any(|(program, args)| program == "cargo" && args.first().is_some_and(|arg| arg == "update")));
+        assert!(recorded
+            .iter()
+            .any(|(program, args)| program == "pnpm" && args.first().is_some_and(|arg| arg == "install")));
+        assert!(!refreshed.iter().any(|item| item.filename.as_os_str() == "uv.lock"));
+    }
+
+    #[test]
+    fn dependency_rewrite_only_plan_refreshes_its_manifest_ecosystem() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"name":"consumer","version":"1.0.0","dependencies":{"dep":"1.0.0"}}"#,
+        )
+        .unwrap();
+        std::fs::write(root.join("pnpm-lock.yaml"), "lock").unwrap();
+        let plan = VersionPlan {
+            rewrites: vec![crate::cascade::SpecRewrite {
+                key: crate::cascade::RewriteKey {
+                    target: DepWriteTarget::Manifest(PathBuf::from("package.json")),
+                    name: "dep".to_string(),
+                    kind: Some(callisto_model::DepKind::Runtime),
+                },
+                dependency: PackageId::parse("npm:dep").unwrap(),
+                from: callisto_model::DepSpec::Exact(cargo_version("1.0.0")),
+                to: callisto_model::DepSpec::Exact(cargo_version("1.1.0")),
+            }],
+            ..Default::default()
+        };
+        let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let runner = RecordingRunner {
+            calls: std::sync::Arc::clone(&calls),
+        };
+        let outcome = apply_version_plan(
+            root,
+            &plan,
+            &runner,
+            &ApplyOptions {
+                refresh_lockfiles: true,
+                transient: false,
+            },
+            &ApplyPermit::force_for_tests(),
+        )
+        .expect("dependency target must activate its ecosystem");
+        assert!(outcome
+            .lockfile_refresh_results
+            .unwrap()
+            .iter()
+            .any(|item| item.filename.as_os_str() == "pnpm-lock.yaml"));
+        assert!(calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(program, args)| program == "pnpm" && args.first().is_some_and(|arg| arg == "install")));
+    }
+
     /// When `refresh_lockfiles: false` (the default), `cargo update` must NOT
     /// be called — callers that do not request a refresh should see no extra
     /// subprocess invocations.
@@ -1082,6 +1239,29 @@ mod tests {
         stderr: &'static str,
     }
 
+    struct FailingGitRmRunner {
+        calls: std::sync::Arc<std::sync::Mutex<Vec<Vec<String>>>>,
+    }
+
+    impl CommandRunner for FailingGitRmRunner {
+        fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(args.iter().map(|arg| (*arg).to_string()).collect());
+            let fails = program == "git" && args.first() == Some(&"rm");
+            Ok(CommandOutput {
+                exit_code: Some(if fails { 1 } else { 0 }),
+                stdout: String::new(),
+                stderr: if fails {
+                    "index removal failed".to_string()
+                } else {
+                    String::new()
+                },
+            })
+        }
+    }
+
     impl CommandRunner for FailingProgramRunner {
         fn run(&self, program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
             if program == self.failing_program {
@@ -1107,6 +1287,10 @@ mod tests {
         let dir = tempfile::tempdir().expect("create tempdir");
         let root = dir.path();
         std::fs::write(root.join("pnpm-lock.yaml"), "# lock").unwrap();
+        std::fs::write(root.join("package.json"), r#"{"name":"my-pkg","version":"1.0.0"}"#).unwrap();
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        let changeset = PathBuf::from(".changeset/pending.md");
+        std::fs::write(root.join(&changeset), "---\nnpm: patch\n---\n\nFix\n").unwrap();
 
         let runner = FailingProgramRunner {
             failing_program: "pnpm",
@@ -1115,7 +1299,11 @@ mod tests {
         };
 
         let plan = VersionPlan {
-            bumps: vec![npm_bump()],
+            bumps: vec![PlannedBump {
+                writes: vec![VersionWriteTarget::Manifest(PathBuf::from("package.json"))],
+                ..npm_bump()
+            }],
+            consumed_changesets: vec![changeset.clone()],
             ..Default::default()
         };
 
@@ -1139,6 +1327,186 @@ mod tests {
         assert!(
             rendered.contains("pnpm install --lockfile-only"),
             "error must name the command: {rendered}"
+        );
+        assert!(
+            root.join(changeset).exists(),
+            "refresh failure must retain the changeset input"
+        );
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(root.join("package.json")).unwrap()).unwrap();
+        assert_eq!(
+            manifest["version"], "1.1.0",
+            "the failure must occur after the manifest write"
+        );
+    }
+
+    #[test]
+    fn staging_failure_retains_consumed_changeset_input() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let root = dir.path();
+        std::fs::write(root.join("pnpm-lock.yaml"), "# lock").unwrap();
+        std::fs::write(root.join("package.json"), r#"{"name":"my-pkg","version":"1.0.0"}"#).unwrap();
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        let changeset = PathBuf::from(".changeset/pending.md");
+        std::fs::write(root.join(&changeset), "---\nnpm: patch\n---\n\nFix\n").unwrap();
+        let plan = VersionPlan {
+            bumps: vec![PlannedBump {
+                writes: vec![VersionWriteTarget::Manifest(PathBuf::from("package.json"))],
+                ..npm_bump()
+            }],
+            consumed_changesets: vec![changeset.clone()],
+            ..Default::default()
+        };
+        let runner = FailingProgramRunner {
+            failing_program: "git",
+            exit_code: 1,
+            stderr: "index write failed",
+        };
+        let result = apply_version_plan(
+            root,
+            &plan,
+            &runner,
+            &ApplyOptions {
+                refresh_lockfiles: false,
+                transient: false,
+            },
+            &ApplyPermit::force_for_tests(),
+        );
+        assert!(matches!(result, Err(GraphError::Command(_))), "got {result:?}");
+        assert!(
+            root.join(changeset).exists(),
+            "staging failure must retain the changeset input"
+        );
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(root.join("package.json")).unwrap()).unwrap();
+        assert_eq!(
+            manifest["version"], "1.1.0",
+            "the staging error follows the manifest write"
+        );
+    }
+
+    #[test]
+    fn changeset_removal_is_attempted_only_after_generated_state_is_staged() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let root = dir.path();
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[package]\nname = \"pkg\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        let changeset = PathBuf::from(".changeset/pending.md");
+        std::fs::write(root.join(&changeset), "---\npkg: patch\n---\n\nFix\n").unwrap();
+        let manifest = PathBuf::from("Cargo.toml");
+        let plan = VersionPlan {
+            bumps: vec![PlannedBump {
+                package: PackageId::parse("cargo:pkg").unwrap(),
+                from: cargo_version("1.0.0"),
+                to: cargo_version("1.0.1"),
+                severity: Severity::Patch,
+                governed_by: None,
+                reason: None,
+                writes: vec![VersionWriteTarget::Manifest(manifest.clone())],
+            }],
+            consumed_changesets: vec![changeset.clone()],
+            ..Default::default()
+        };
+        let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let runner = FailingGitRmRunner { calls: calls.clone() };
+        let result = apply_version_plan(
+            root,
+            &plan,
+            &runner,
+            &ApplyOptions {
+                refresh_lockfiles: false,
+                transient: false,
+            },
+            &ApplyPermit::force_for_tests(),
+        );
+        assert!(matches!(result, Err(GraphError::Command(_))), "got {result:?}");
+        assert!(
+            root.join(changeset).exists(),
+            "the changeset remains available when staging its deletion fails"
+        );
+        let calls = calls.lock().unwrap();
+        let add = calls
+            .iter()
+            .position(|args| args.first().is_some_and(|arg| arg == "add"))
+            .unwrap();
+        let rm = calls
+            .iter()
+            .position(|args| args.first().is_some_and(|arg| arg == "rm"))
+            .unwrap();
+        assert!(
+            add < rm,
+            "generated paths must be staged before consumed inputs: {calls:?}"
+        );
+    }
+
+    #[test]
+    fn failed_pre_state_deletion_staging_keeps_the_only_retry_input() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let root = dir.path();
+        let pre_json = PathBuf::from(".changeset/pre.json");
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(root.join(&pre_json), r#"{"mode":"exit"}"#).unwrap();
+
+        let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let runner = FailingGitRmRunner { calls: calls.clone() };
+        let result = apply_version_plan(
+            root,
+            &VersionPlan {
+                delete_pre_json: Some(pre_json.clone()),
+                ..Default::default()
+            },
+            &runner,
+            &ApplyOptions {
+                refresh_lockfiles: false,
+                transient: false,
+            },
+            &ApplyPermit::force_for_tests(),
+        );
+
+        assert!(matches!(result, Err(GraphError::Command(_))), "got {result:?}");
+        assert!(root.join(pre_json).exists(), "pre.json must remain available for retry");
+        assert_eq!(
+            calls.lock().unwrap().as_slice(),
+            &[vec!["rm", "--cached", "--ignore-unmatch", "--", ".changeset/pre.json"]]
+        );
+    }
+
+    #[test]
+    fn failed_no_bump_changeset_deletion_staging_keeps_untracked_input() {
+        let dir = tempfile::tempdir().expect("create tempdir");
+        let root = dir.path();
+        let changeset = PathBuf::from(".changeset/no-op.md");
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(root.join(&changeset), "---\npkg: none\n---\n\nNo release\n").unwrap();
+
+        let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let runner = FailingGitRmRunner { calls: calls.clone() };
+        let result = apply_version_plan(
+            root,
+            &VersionPlan {
+                consumed_changesets: vec![changeset.clone()],
+                ..Default::default()
+            },
+            &runner,
+            &ApplyOptions {
+                refresh_lockfiles: false,
+                transient: false,
+            },
+            &ApplyPermit::force_for_tests(),
+        );
+
+        assert!(matches!(result, Err(GraphError::Command(_))), "got {result:?}");
+        assert!(
+            root.join(changeset).exists(),
+            "untracked no-op input must remain retryable"
+        );
+        assert_eq!(
+            calls.lock().unwrap().as_slice(),
+            &[vec!["rm", "--cached", "--ignore-unmatch", "--", ".changeset/no-op.md"]]
         );
     }
 

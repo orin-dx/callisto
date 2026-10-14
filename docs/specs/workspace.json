@@ -96,7 +96,7 @@
     },
     {
       "id": "WS-ID-03",
-      "criterion": "When two or more directories declare the same name and no ecosystem declares it in more than one of them, each package is promoted to an ecosystem-qualified id, displayed as `cargo/foo`. Promotion is display-only: the package's key (its workspace-relative directory), its CHANGELOG path and its release history are the same before and after, and `cargo/foo` selects it in both states. Default tags are `{display id}@{version}`; a promoted package's last tag is also found among `foo@*` tags whose commit contains its manifest and no other same-named package's. A bare `pre.json` `initialVersions` key moves to the one same-named package that existed when `pre.json` was added, else `version` fails with E245."
+      "criterion": "When two or more directories declare the same name and no ecosystem declares it in more than one of them, each package is promoted to an ecosystem-qualified id, displayed as `cargo/foo`. Promotion preserves the package's key (its workspace-relative directory) and CHANGELOG path; `cargo/foo` selects it in both states. Newly created default tags use `{display id}@{version}`, so promotion changes their namespace. A promoted package's last tag is also found among `foo@*` tags whose commit contains its manifest and no other same-named package's. A bare `pre.json` `initialVersions` key moves to the one same-named package that existed when `pre.json` was added, else `version` fails with E245."
     },
     {
       "id": "WS-ID-04",
@@ -115,11 +115,20 @@
     },
     {
       "id": "WS-ID-07",
-      "criterion": "A dependency edge is created only to a workspace package that declares the dependency's name in the depending manifest's own ecosystem; a name declared only in other ecosystems creates no edge and one `unknown-package` warning listing the candidates (`cargo:foo`), and a name no workspace package declares creates no edge and no diagnostic."
+      "criterion": "A dependency edge is created only to a workspace package that declares the dependency's name in the depending manifest's own ecosystem; a name declared only in other ecosystems creates no edge and one `unknown-package` warning listing the candidates (`cargo:foo`), and an ordinary name no workspace package declares creates no edge and no diagnostic. An explicit pnpm `workspace:` reference that cannot resolve to an admitted npm member creates no edge and emits one `unknown-package` warning."
+    },
+    {
+      "id": "WS-ID-10",
+      "criterion": "For pnpm dependencies, Callisto preserves the declared key, target distribution name and exact `workspace:` suffix separately. `workspace:`, `workspace:*`, `workspace:^` and `workspace:~` are version-derived shorthands; aliases such as `workspace:foo@^1` resolve `foo` while retaining the declared key; relative references resolve only to the admitted npm member at the resolved directory. Valid npm `||` alternatives are evaluated as a union for dependency coverage, while any invalid alternative makes coverage unknown. Catalog and opaque references are not guessed or rewritten."
     },
     {
       "id": "WS-ID-08",
       "criterion": "A package whose explicit `tag-template` equals another package's default tag template makes `status` and `version` fail with E101 naming both packages and the template.",
+      "is_error_case": true
+    },
+    {
+      "id": "WS-ID-09",
+      "criterion": "A discovered package whose canonical manifests use different version grammars fails with E007 before version planning or init writes. This includes co-located Cargo.toml and pyproject.toml, whether the Python version is static or declared dynamic; matching numeric version strings do not bypass the grammar check.",
       "is_error_case": true
     },
     {

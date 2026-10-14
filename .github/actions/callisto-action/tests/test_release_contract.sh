@@ -84,6 +84,62 @@ else
   echo 'PASS: run-release fills published/publishedPackages from published registry/platform outcomes only'
 fi
 
+# The action passes publisher inputs to Callisto without mapping native tool auth process-wide.
+auth_dir="$(mktemp -d)"
+auth_home="$auth_dir/home"
+auth_runner_temp="$auth_dir/runner-temp"
+auth_bin="$auth_dir/bin"
+mkdir -p "$auth_home" "$auth_runner_temp" "$auth_bin"
+printf 'legacy=true\n//registry.example/:_authToken=${NPM_TOKEN}\n' > "$auth_home/.npmrc"
+cat > "$auth_bin/callisto" <<'STUB'
+#!/usr/bin/env bash
+[[ "${NPM_TOKEN:-}" == 'secret-npm-value' && -z "${PYPI_TOKEN:-}" ]] || exit 21
+[[ "${TWINE_USERNAME:-}" == '__token__' && "${TWINE_PASSWORD:-}" == 'secret-pypi-value' ]] || exit 25
+[[ -z "${NPM_CONFIG_USERCONFIG:-}" && -z "${NPM_CONFIG_TOKEN:-}" ]] || exit 26
+[[ "$(stat -c '%a' "$CALLISTO_PUBLISH_NPM_CONFIG" 2>/dev/null || stat -f '%Lp' "$CALLISTO_PUBLISH_NPM_CONFIG")" == 600 ]] || exit 22
+grep -Fxq 'legacy=true' "$CALLISTO_PUBLISH_NPM_CONFIG" || exit 23
+grep -Fxq '//registry.example/:_authToken=${NPM_TOKEN}' "$CALLISTO_PUBLISH_NPM_CONFIG" || exit 30
+grep -Fxq '//registry.npmjs.org/:_authToken=${NPM_TOKEN}' "$CALLISTO_PUBLISH_NPM_CONFIG" || exit 24
+printf '%s' "$CALLISTO_PUBLISH_NPM_CONFIG" > "$AUTH_CONFIG_CAPTURE"
+printf '%s' '{"outcomes":[]}'
+prev=''
+for a in "$@"; do
+  [[ "$prev" == '--receipt' ]] && printf '%s' '{"outcomes":[]}' > "$a"
+  prev="$a"
+done
+STUB
+chmod +x "$auth_bin/callisto"
+auth_output="$auth_dir/github-output"
+if ! PATH="$auth_bin:$PATH" HOME="$auth_home" RUNNER_TEMP="$auth_runner_temp" \
+  AUTH_CONFIG_CAPTURE="$auth_dir/auth-config-path" INPUT_CWD=. GITHUB_OUTPUT="$auth_output" \
+  NPM_TOKEN=secret-npm-value PYPI_TOKEN=secret-pypi-value bash "$release_script" > /dev/null 2>&1; then
+  echo 'FAIL: run-release must pass unmapped publisher inputs to Callisto'
+  fail=1
+else
+  auth_config="$(<"$auth_dir/auth-config-path")"
+  if [[ -e "$auth_config" ]] || [[ "$(<"$auth_home/.npmrc")" != $'legacy=true\n//registry.example/:_authToken=${NPM_TOKEN}' ]]; then
+    echo 'FAIL: run-release must remove its temporary npm config and preserve the user config'
+    fail=1
+  else
+    echo 'PASS: run-release prepares publisher inputs and removes temporary npm config'
+  fi
+fi
+
+# A Bun workspace must not cause NPM_CONFIG_TOKEN to be set on the whole release process.
+bun_workspace="$auth_dir/bun-workspace"
+mkdir -p "$bun_workspace"
+: > "$bun_workspace/bun.lock"
+if ! PATH="$auth_bin:$PATH" HOME="$auth_home" RUNNER_TEMP="$auth_runner_temp" \
+  AUTH_CONFIG_CAPTURE="$auth_dir/bun-auth-config-path" INPUT_CWD="$bun_workspace" GITHUB_OUTPUT="$auth_output" \
+  NPM_TOKEN=secret-npm-value PYPI_TOKEN=secret-pypi-value TEST_BUN_PUBLISH=true \
+  bash "$release_script" > /dev/null 2>&1; then
+  echo 'FAIL: run-release must leave Bun token mapping to publisher dispatch'
+  fail=1
+else
+  echo 'PASS: run-release leaves Bun token mapping to publisher dispatch'
+fi
+rm -rf "$auth_dir"
+
 # Callisto-action's own environment setup must not use `$/` or an
 # external owner/repo/path@ref for its sibling setup-callisto -- both resolve
 # against whatever ref invoked *this* action, which may not exist verbatim in

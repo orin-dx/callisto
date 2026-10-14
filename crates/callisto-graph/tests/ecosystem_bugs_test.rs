@@ -14,7 +14,7 @@ use std::path::Path;
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_graph::DependencyResolver;
 use callisto_graph::Workspace;
-use callisto_model::{CommandError, CommandOutput, CommandRunner, PackageId};
+use callisto_model::{ApplyPermit, CommandError, CommandOutput, CommandRunner, Ecosystem, PackageId};
 
 struct NoopRunner;
 
@@ -99,6 +99,84 @@ fn python_workspace_poetry_style_loads_without_crashing() {
     let pkgs: Vec<_> = ws.graph.packages().collect();
     assert_eq!(pkgs.len(), 1, "should discover exactly one package");
     assert_eq!(pkgs[0].id.name(), "my-poetry-pkg");
+}
+
+fn assert_python_normalized_dependency(native_name: &str, declared_name: &str, dependent_manifest: &str) {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    git_init(root);
+    let permit = ApplyPermit::granted_unless_dry_run(false).unwrap();
+    let target_manifest = format!("[project]\nname = \"{native_name}\"\nversion = \"1.0.0\"\n");
+
+    for (path, content) in [
+        ("pyproject.toml", "[tool.uv.workspace]\nmembers = [\"packages/*\"]\n"),
+        ("packages/library/pyproject.toml", target_manifest.as_str()),
+        ("packages/app/pyproject.toml", dependent_manifest),
+    ] {
+        callisto_model::atomic::atomic_write(&root.join(path), content, &permit).unwrap();
+    }
+
+    let locator = IgnoreWalkLocator::new(root);
+    let runner = NoopRunner;
+    let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("Python workspace should load");
+    let target = PackageId::Bare(native_name.to_string());
+    let app = PackageId::Bare("my-app".to_string());
+    let edges: Vec<_> = ws.graph.dependencies_of(&app).collect();
+
+    assert_eq!(ws.graph.packages().count(), 2);
+    assert_eq!(
+        edges.len(),
+        1,
+        "normalized Python name should discover the workspace dependency"
+    );
+    assert_eq!(edges[0].from, app);
+    assert_eq!(edges[0].to, target);
+    assert_eq!(edges[0].name, declared_name);
+    assert_eq!(edges[0].kind, callisto_model::DepKind::Runtime);
+    assert_eq!(edges[0].from_manifest, Path::new("packages/app/pyproject.toml"));
+    assert_eq!(ws.graph.dependents_of(&target).count(), 1);
+    assert_eq!(ws.identity.native_name(&target, Ecosystem::Pypi), Some(native_name));
+    assert!(ws
+        .identity
+        .native
+        .contains_key(&(Ecosystem::Pypi, native_name.to_string())));
+    assert!(ws.graph.diagnostics().is_empty());
+
+    let app_package = ws.graph.packages().find(|package| package.id == app).unwrap();
+    let decl = app_package.canonical_manifests().next().unwrap();
+    let context = callisto_manifests::OpenContext::for_workspace_root(root);
+    let manifest = callisto_manifests::open(decl, &context).unwrap();
+    let entries: Vec<_> = manifest.iter_dependencies().collect();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].name, declared_name);
+    assert_eq!(entries[0].package_name, declared_name);
+    assert_eq!(fs::read_to_string(root.join(&decl.path)).unwrap(), dependent_manifest);
+    assert_eq!(
+        fs::read_to_string(root.join("packages/library/pyproject.toml")).unwrap(),
+        target_manifest
+    );
+}
+
+#[test]
+fn python_pep621_normalized_names_discover_edges_and_preserve_declarations() {
+    for (native_name, declared_name) in [("my-lib", "my_lib"), ("My..Lib", "MY-._LIB")] {
+        let dependent_manifest = format!(
+            "[project]\nname = \"my-app\"\nversion = \"1.0.0\"\n\
+             dependencies = [\"{declared_name}[extra]==1.0.0; python_version >= '3.8'\"]\n"
+        );
+        assert_python_normalized_dependency(native_name, declared_name, &dependent_manifest);
+    }
+}
+
+#[test]
+fn python_poetry_normalized_names_discover_edges_and_preserve_declarations() {
+    for (native_name, declared_name) in [("my-lib", "my_lib"), ("My..Lib", "MY-._LIB")] {
+        let dependent_manifest = format!(
+            "[tool.poetry]\nname = \"my-app\"\nversion = \"1.0.0\"\n\n\
+             [tool.poetry.dependencies]\npython = \"^3.9\"\n\"{declared_name}\" = {{ version = \"==1.0.0\" }}\n"
+        );
+        assert_python_normalized_dependency(native_name, declared_name, &dependent_manifest);
+    }
 }
 
 /// Mixed workspace: cargo crate + python package must both load.

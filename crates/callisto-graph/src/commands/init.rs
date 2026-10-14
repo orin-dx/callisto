@@ -49,6 +49,10 @@ pub struct InitPackage {
     pub version: Version,
     /// Executables the package builds; empty for a library.
     pub bin_names: Vec<String>,
+    /// Executables provided by Cargo and eligible for Cargo artifact builds.
+    pub cargo_bin_names: Vec<String>,
+    /// Ecosystems that provide executables but do not yet have an artifact builder.
+    pub unsupported_bin_ecosystems: Vec<String>,
     /// Latest release tag under the package's detected convention.
     pub last_tag: Option<TagName>,
     /// Detected `publish-to` targets (`none` omitted).
@@ -60,6 +64,10 @@ pub struct InitPackage {
 impl InitPackage {
     pub fn is_binary(&self) -> bool {
         !self.platform && !self.bin_names.is_empty()
+    }
+
+    fn supports_artifact_builder(&self) -> bool {
+        self.id.starts_with("cargo/") && !self.cargo_bin_names.is_empty()
     }
 
     fn name(&self) -> &str {
@@ -95,7 +103,15 @@ pub struct InitFacts {
 
 impl InitFacts {
     pub fn binary_packages(&self) -> impl Iterator<Item = &InitPackage> {
-        self.packages.iter().filter(|package| package.is_binary())
+        self.packages
+            .iter()
+            .filter(|package| package.is_binary() && package.supports_artifact_builder())
+    }
+
+    pub fn unsupported_artifact_packages(&self) -> impl Iterator<Item = &InitPackage> {
+        self.packages
+            .iter()
+            .filter(|package| !package.supports_artifact_builder() && !package.unsupported_bin_ecosystems.is_empty())
     }
 
     /// Resolves `name` (qualified or bare) to a binary-producing package.
@@ -110,7 +126,17 @@ impl InitFacts {
             None => self.packages.iter().filter(|package| package.name() == name).collect(),
         };
         match found.as_slice() {
-            [package] if package.is_binary() => Ok(package),
+            [package] if package.is_binary() && package.supports_artifact_builder() => Ok(package),
+            [package] if package.is_binary() => Err(GraphError::InitUnsupportedArtifactBuilder {
+                package: package.id.clone(),
+                ecosystem: package.unsupported_bin_ecosystems.first().cloned().unwrap_or_else(|| {
+                    package
+                        .id
+                        .split_once('/')
+                        .map_or("unknown", |(ecosystem, _)| ecosystem)
+                        .to_owned()
+                }),
+            }),
             [_] => Err(invalid("it does not produce a binary artifact")),
             _ => Err(invalid("it is not a workspace package")),
         }
@@ -212,14 +238,24 @@ pub fn detect<L: ProjectLocator, R: CommandRunner>(
     let mut packages = Vec::new();
     for package in workspace.graph.packages() {
         let mut bin_names = Vec::new();
+        let mut cargo_bin_names = Vec::new();
+        let mut unsupported_bin_ecosystems = BTreeSet::new();
         for decl in package.canonical_manifests() {
             let manifest = crate::manifest_cache::open_cached(&workspace.manifest_cache, decl, &ctx)?;
-            bin_names.extend(manifest.bin_names());
+            let names = manifest.bin_names();
+            if manifest.ecosystem() == Ecosystem::Cargo {
+                cargo_bin_names.extend(names.iter().cloned());
+            } else if !names.is_empty() {
+                unsupported_bin_ecosystems.insert(manifest.ecosystem().prefix().to_owned());
+            }
+            bin_names.extend(names);
         }
         packages.push(InitPackage {
             id: qualified_id(package),
             version: versions[&package.id].clone(),
             bin_names,
+            cargo_bin_names,
+            unsupported_bin_ecosystems: unsupported_bin_ecosystems.into_iter().collect(),
             last_tag: tags.last_tag(&package.id).map(|tag| tag.name.clone()),
             publish_to: package
                 .publish_to
@@ -386,7 +422,9 @@ pub fn render_config(facts: &InitFacts, answers: &InitAnswers) -> String {
         doc["package"] = Item::ArrayOfTables(tables);
     }
     if let Some(release) = &answers.binaries {
-        let bin_names = product.map(|package| package.bin_names.as_slice()).unwrap_or_default();
+        let bin_names = product
+            .map(|package| package.cargo_bin_names.as_slice())
+            .unwrap_or_default();
         let mut table = Table::new();
         table["product-package"] = value(release.product.as_str());
         table["forge-repository"] = value(release.forge_repository.as_slug());
@@ -1226,13 +1264,14 @@ mod tests {
         );
         assert_eq!(package(&facts, "cargo/core").last_tag, None);
         assert_eq!(package(&facts, "cargo/app").bin_names, ["app"]);
+        assert_eq!(package(&facts, "cargo/app").cargo_bin_names, ["app"]);
         let binaries: Vec<&str> = facts.binary_packages().map(|package| package.id.as_str()).collect();
         assert_eq!(binaries, ["cargo/app"]);
     }
 
-    // Npm `bin` and PyPI `[project.scripts]` make a package binary-producing.
+    // Registry executables are detected but are not supported artifact builders.
     #[test]
-    fn npm_bin_and_pypi_scripts_are_binaries() {
+    fn npm_bin_and_pypi_scripts_are_not_artifact_builders() {
         let dir = repo(
             &[
                 ("cli/package.json", r#"{"name":"cli","version":"1.0.0","bin":{"cli":"cli.js"}}"#),
@@ -1246,7 +1285,42 @@ mod tests {
         );
         let facts = detect_in(dir.path()).unwrap();
         let binaries: Vec<&str> = facts.binary_packages().map(|package| package.id.as_str()).collect();
-        assert_eq!(binaries, ["npm/cli", "pypi/pytool"]);
+        let unsupported: Vec<&str> = facts
+            .unsupported_artifact_packages()
+            .map(|package| package.id.as_str())
+            .collect();
+        assert!(binaries.is_empty());
+        assert_eq!(unsupported, ["npm/cli", "pypi/pytool"]);
+    }
+
+    #[test]
+    fn npm_bin_does_not_make_a_cargo_library_an_artifact_builder() {
+        let dir = repo(
+            &[
+                (
+                    "my-pkg/Cargo.toml",
+                    "[package]\nname = \"my-pkg\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+                ),
+                ("my-pkg/src/lib.rs", "pub fn library() {}\n"),
+                (
+                    "my-pkg/package.json",
+                    r#"{"name":"my-pkg","version":"1.0.0","bin":{"my-pkg":"cli.js"}}"#,
+                ),
+            ],
+            Some(ORIGIN),
+        );
+        let facts = detect_in(dir.path()).unwrap();
+        let package = package(&facts, "cargo/my-pkg");
+
+        assert_eq!(package.bin_names, ["my-pkg"]);
+        assert!(package.cargo_bin_names.is_empty());
+        assert_eq!(package.unsupported_bin_ecosystems, ["npm"]);
+        assert!(facts.binary_packages().next().is_none());
+        assert_eq!(facts.unsupported_artifact_packages().next().unwrap().id, "cargo/my-pkg");
+        assert!(matches!(
+            facts.product_package("cargo/my-pkg"),
+            Err(GraphError::InitUnsupportedArtifactBuilder { ecosystem, .. }) if ecosystem == "npm"
+        ));
     }
 
     // An existing config is an error, and its [init] table is never read.
@@ -1409,6 +1483,16 @@ mod tests {
             id: id.to_owned(),
             version: Version::parse("1.0.0", callisto_model::VersionGrammar::SemVer).unwrap(),
             bin_names: bins.iter().map(|bin| (*bin).to_owned()).collect(),
+            cargo_bin_names: if id.starts_with("cargo/") {
+                bins.iter().map(|bin| (*bin).to_owned()).collect()
+            } else {
+                Vec::new()
+            },
+            unsupported_bin_ecosystems: if id.starts_with("cargo/") || bins.is_empty() {
+                Vec::new()
+            } else {
+                vec![id.split_once('/').unwrap().0.to_owned()]
+            },
             last_tag: None,
             publish_to: vec!["crates-io".to_owned()],
             platform,
@@ -1730,10 +1814,17 @@ mod tests {
         let mut facts = facts_for_render();
         facts.ecosystems = BTreeSet::from([Ecosystem::Cargo, Ecosystem::Npm, Ecosystem::Pypi]);
         let all = render_workflow_0_8_0(&facts, "main");
+        let release = job(&all, "release");
+        let version_pr = job(&all, "version-pr");
         for secret in ["CARGO_REGISTRY_TOKEN", "NPM_TOKEN", "PYPI_TOKEN"] {
-            assert!(all.contains(secret), "{all}");
+            assert!(release.contains(secret), "{release}");
+            assert!(!version_pr.contains(secret), "{version_pr}");
         }
-        assert!(all.contains("          NPM_CONFIG_PROVENANCE: \"true\"\n"), "{all}");
+        assert!(
+            release.contains("          NPM_CONFIG_PROVENANCE: \"true\"\n"),
+            "{release}"
+        );
+        assert!(!version_pr.contains("NPM_CONFIG_PROVENANCE"), "{version_pr}");
         assert!(all.lines().count() <= 40, "{}", all.lines().count());
 
         facts.ecosystems = BTreeSet::from([Ecosystem::Go]);
@@ -1796,6 +1887,8 @@ mod tests {
             id: id.to_owned(),
             version: Version::parse("0.1.0", callisto_model::VersionGrammar::SemVer).unwrap(),
             bin_names: bins.iter().map(|bin| (*bin).to_owned()).collect(),
+            cargo_bin_names: bins.iter().map(|bin| (*bin).to_owned()).collect(),
+            unsupported_bin_ecosystems: Vec::new(),
             last_tag: None,
             publish_to: Vec::new(),
             platform: false,
@@ -1955,6 +2048,12 @@ mod tests {
             "{execute}"
         );
         assert!(!workflow.contains("PYPI_TOKEN"), "{workflow}");
+        for job_name in ["plan", "build"] {
+            let non_publishing = job(&workflow, job_name);
+            for secret in ["CARGO_REGISTRY_TOKEN", "NPM_TOKEN", "PYPI_TOKEN"] {
+                assert!(!non_publishing.contains(secret), "{job_name}: {non_publishing}");
+            }
+        }
     }
 
     // npm provenance is requested only when the workspace has an npm package.
