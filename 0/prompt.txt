@@ -1,0 +1,41 @@
+Where the context lives
+- In the repo: docs/projects/NEXT-WORK.md. It holds the state after 0.10.2, the rules every workstream follows, and a brief per workstream. Each brief names the files, contracts and specs to read, the approach, the tests (black-box, with the real tool where a fake could hide the bug), and what "done" means.
+- In memory:
+  - A pointer to the plan, with the D01 blocker noted.
+  - A feedback entry: "prove with the real tool before calling it done". It records what went wrong this session: fake tools hid the gh bug, layered PRs only compiled, and a first fix used coarse keys.
+
+Parallel lanes (separate worktrees, disjoint files, just ci run one at a time)
+
+┌──────┬─────────────────────────────────────────────────────────────────────┬───────────────────────────────┐
+│ Lane │                              PR stack                               │             Notes             │
+├──────┼─────────────────────────────────────────────────────────────────────┼───────────────────────────────┤
+│ A    │ W0 cleanup and docs refresh, W1 test debt                           │ Independent small PRs on main │
+├──────┼─────────────────────────────────────────────────────────────────────┼───────────────────────────────┤
+│ B    │ W2 SYS-RETRY                                                        │ Touches tag selection         │
+├──────┼─────────────────────────────────────────────────────────────────────┼───────────────────────────────┤
+│ C    │ W3 SYS-PYFILES, then SYS-PYROUTES, then W4 redacted provider output │ All in the registry provider  │
+├──────┼─────────────────────────────────────────────────────────────────────┼───────────────────────────────┤
+│ D    │ R3 derive.rs (snapshots first, moves only), then SYS-BARRIER        │ Same file, so stacked         │
+├──────┼─────────────────────────────────────────────────────────────────────┼───────────────────────────────┤
+│ E    │ R5a init.rs tests move, R5b templates, then SYS-NAPI                │ Same file, so stacked         │
+├──────┼─────────────────────────────────────────────────────────────────────┼───────────────────────────────┤
+│ F    │ R1 walk.rs::build                                                   │                               │
+└──────┴─────────────────────────────────────────────────────────────────────┴───────────────────────────────┘
+
+Sequenced or blocked
+- W9 (SYS-OWNER, SYS-DEMOTION, resolver divergence) waits for W2 and R1.
+- SYS-MATURIN and W9 are blocked on D01, so I won't start them without your decision.
+- W10 needs two smaller decisions: whether distinct target declarations get their own graph edges (a RewriteKey change), and whether Python dev groups cascade.
+- W11 verification needs credentials and an approved run.
+
+What I'd start with: Lanes A and B together (cleanup plus the mixed-routing test, and SYS-RETRY), since they're independent and user-visible.
+
+One caveat: I verified the template constants and the inline test size in graph init.rs before writing R5. The finding line counts for R1 and R3 are from my own measurement (591 and 412 lines). The rest of the briefs are taken from the repo's findings register, which I read, but I haven't re-verified every row against the code.
+
+---
+
+We shouldn't have the next-work in a PR, it's for local tracking wtf
+
+---
+
+Can we start that work?
