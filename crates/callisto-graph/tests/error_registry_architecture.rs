@@ -7,36 +7,15 @@
 //! anywhere in a `code(...)` attribute; every code is a numeric `E####`.
 //!
 //! This is a coarse, source-text scan (no `syn` dependency in this crate),
-//! not a full parser -- see `strip_cfg_test_modules` and `find_enum_body` for
+//! not a full parser -- see `strip_test_modules` and `find_enum_body` for
 //! the brace-depth heuristics it relies on, which the workspace's own
 //! `#[error("...")]` format strings happen to keep balanced.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-fn workspace_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("callisto-graph must be nested two levels under the workspace root")
-        .to_path_buf()
-}
-
-fn collect_rust_src_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            collect_rust_src_files(&path, out);
-        } else if path.extension().and_then(|e| e.to_str()) == Some("rs")
-            && path.file_name().and_then(|n| n.to_str()) != Some("tests.rs")
-        {
-            out.push(path);
-        }
-    }
-}
+mod common;
+use common::{collect_rust_src_files, strip_test_modules, workspace_root};
 
 /// Every crate's `src/` directory, e.g. `crates/callisto-graph/src`.
 fn all_crate_src_dirs() -> Vec<PathBuf> {
@@ -49,46 +28,6 @@ fn all_crate_src_dirs() -> Vec<PathBuf> {
         let src = entry.path().join("src");
         if src.is_dir() {
             out.push(src);
-        }
-    }
-    out
-}
-
-/// Strips every `#[cfg(test)] mod ... { ... }` block via brace-depth
-/// tracking, so a test-double `#[diagnostic(code(callisto::foo))]` fixture
-/// (or a test enum with no diagnostic at all) is never mistaken for
-/// production code.
-fn strip_cfg_test_modules(content: &str) -> String {
-    let lines: Vec<&str> = content.lines().collect();
-    let mut out = String::with_capacity(content.len());
-    let mut i = 0;
-    while i < lines.len() {
-        if lines[i].trim() == "#[cfg(test)]" {
-            i += 1;
-            let mut depth: i32 = 0;
-            let mut started = false;
-            while i < lines.len() {
-                for ch in lines[i].chars() {
-                    match ch {
-                        '{' => {
-                            depth += 1;
-                            started = true;
-                        }
-                        '}' => depth -= 1,
-                        _ => {}
-                    }
-                }
-                // A brace-less item (`mod tests;`, a test-only `use`) ends at its semicolon.
-                let declaration_ended = !started && lines[i].trim_end().ends_with(';');
-                i += 1;
-                if declaration_ended || (started && depth <= 0) {
-                    break;
-                }
-            }
-        } else {
-            out.push_str(lines[i]);
-            out.push('\n');
-            i += 1;
         }
     }
     out
@@ -203,7 +142,7 @@ fn every_diagnostic_variant_has_a_code_or_is_transparent() {
             let Ok(raw) = fs::read_to_string(&file) else {
                 continue;
             };
-            let content = strip_cfg_test_modules(&raw);
+            let content = strip_test_modules(&raw);
             for diag_enum in find_diagnostic_enums(&content) {
                 for variant in split_variants(&diag_enum.body) {
                     if !variant_has_code_or_is_transparent(variant) {
