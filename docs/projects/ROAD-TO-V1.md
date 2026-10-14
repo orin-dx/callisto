@@ -78,7 +78,6 @@ Retain local real-registry tests and record missing prerequisites as skips. Run 
 - Audit literal-false ApplyPermit construction in release/init; enforce dry-run safety at entry boundaries.
 - npm writes normalize arbitrary JSON layout; decide whether more than key order/indentation/line endings is needed.
 - Preserve redacted stderr for indeterminate provider failures; never stream unredacted native-tool output.
-- GroupTable::from_groups skips resolve's conflict check; close before a production caller appears.
 - Correct receipt run_attempt rationale: artifact names are already attempt-scoped; update workflow comment and policy-check message.
 - Publish final migration notices for retired callisto-format, callisto-vcs, callisto-conventional and callisto-changelog, naming callisto-model or callisto-graph.
 - Evaluate rustc-provided target facts instead of the 18-triple table without making the core model Rust-target-specific.

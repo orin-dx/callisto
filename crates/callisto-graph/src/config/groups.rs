@@ -93,14 +93,26 @@ pub struct RawGroup {
 
 impl GroupTable {
     pub(crate) fn validate_syntactic(raw: &RawGroupTable) -> Result<(), ConfigError> {
+        let members = |groups: &'_ [RawGroup]| -> Vec<(GroupName, Vec<String>)> {
+            groups.iter().map(|g| (g.name.clone(), g.members.clone())).collect()
+        };
+        Self::validate_membership(&members(&raw.fixed), &members(&raw.linked))
+    }
+
+    /// The one membership check shared by the config path (raw member names) and
+    /// [`GroupTable::try_from_groups`] (resolved package ids rendered as text).
+    fn validate_membership(
+        fixed: &[(GroupName, Vec<String>)],
+        linked: &[(GroupName, Vec<String>)],
+    ) -> Result<(), ConfigError> {
         let mut seen_names = BTreeSet::new();
-        for group_list in [&raw.fixed, &raw.linked] {
-            for g in group_list {
-                if !seen_names.insert(&g.name) {
-                    return Err(ConfigError::DuplicateGroupName { group: g.name.clone() });
+        for group_list in [fixed, linked] {
+            for (name, members) in group_list {
+                if !seen_names.insert(name) {
+                    return Err(ConfigError::DuplicateGroupName { group: name.clone() });
                 }
-                if g.members.is_empty() {
-                    return Err(ConfigError::EmptyGroup { group: g.name.clone() });
+                if members.is_empty() {
+                    return Err(ConfigError::EmptyGroup { group: name.clone() });
                 }
             }
         }
@@ -114,18 +126,18 @@ impl GroupTable {
         // as a natural consequence of processing order instead of a second
         // explicit lookup.
         let mut claimed: BTreeMap<&str, &GroupName> = BTreeMap::new();
-        for group_list in [&raw.fixed, &raw.linked] {
-            for g in group_list {
-                for m in &g.members {
-                    if let Some(other) = claimed.insert(m.as_str(), &g.name) {
-                        if other == &g.name {
+        for group_list in [fixed, linked] {
+            for (name, members) in group_list {
+                for m in members {
+                    if let Some(other) = claimed.insert(m.as_str(), name) {
+                        if other == name {
                             return Err(ConfigError::DuplicateMemberInGroup {
-                                group: g.name.clone(),
+                                group: name.clone(),
                                 member: m.clone(),
                             });
                         }
                         return Err(ConfigError::ConflictingGroupNames {
-                            group: g.name.clone(),
+                            group: name.clone(),
                             other: other.clone(),
                             member: m.clone(),
                         });
@@ -241,7 +253,32 @@ impl GroupTable {
         sibs.into_iter()
     }
 
+    /// Builds a table from resolved groups, rejecting an empty group, a repeated
+    /// group name, and a package claimed twice, with the same errors config loading reports.
+    ///
+    /// # Errors
+    ///
+    /// [`ConfigError::DuplicateGroupName`], [`ConfigError::EmptyGroup`],
+    /// [`ConfigError::DuplicateMemberInGroup`] or [`ConfigError::ConflictingGroupNames`].
+    pub fn try_from_groups(fixed: Vec<GroupDef>, linked: Vec<GroupDef>) -> Result<Self, ConfigError> {
+        let members = |groups: &[GroupDef]| -> Vec<(GroupName, Vec<String>)> {
+            groups
+                .iter()
+                .map(|g| (g.name.clone(), g.package_members().map(ToString::to_string).collect()))
+                .collect()
+        };
+        Self::validate_membership(&members(&fixed), &members(&linked))?;
+        Ok(Self::assemble(fixed, linked))
+    }
+
+    /// Builds a table without validating it: a package claimed by two groups silently
+    /// keeps the last claim.
+    #[deprecated(note = "use `try_from_groups`, which rejects conflicting group membership")]
     pub fn from_groups(fixed: Vec<GroupDef>, linked: Vec<GroupDef>) -> Self {
+        Self::assemble(fixed, linked)
+    }
+
+    fn assemble(fixed: Vec<GroupDef>, linked: Vec<GroupDef>) -> Self {
         let mut f_map = BTreeMap::new();
         let mut l_map = BTreeMap::new();
         let mut f_of = BTreeMap::new();
@@ -417,6 +454,67 @@ mod tests {
         assert!(
             matches!(err, GraphError::AmbiguousName { .. }),
             "expected AmbiguousName (E103), got {err:?}"
+        );
+    }
+
+    fn group_def(name: &str, kind: GroupKind, members: &[&str]) -> GroupDef {
+        GroupDef {
+            name: GroupName(name.to_string()),
+            kind,
+            members: members
+                .iter()
+                .map(|m| GroupMember::Package(PackageId::Bare((*m).to_string())))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn try_from_groups_accepts_disjoint_groups() {
+        let table = GroupTable::try_from_groups(
+            vec![group_def("f", GroupKind::Fixed, &["a", "b"])],
+            vec![group_def("l", GroupKind::Linked, &["c"])],
+        )
+        .unwrap();
+        assert_eq!(table.fixed_of.len(), 2);
+        assert_eq!(table.linked_of.len(), 1);
+    }
+
+    #[test]
+    fn try_from_groups_rejects_a_package_claimed_by_a_fixed_and_a_linked_group() {
+        let err = GroupTable::try_from_groups(
+            vec![group_def("f", GroupKind::Fixed, &["a"])],
+            vec![group_def("l", GroupKind::Linked, &["a"])],
+        )
+        .unwrap_err();
+        assert!(matches!(err, ConfigError::ConflictingGroupNames { .. }), "{err:?}");
+    }
+
+    #[test]
+    fn try_from_groups_rejects_a_package_claimed_by_two_fixed_groups() {
+        let err = GroupTable::try_from_groups(
+            vec![
+                group_def("one", GroupKind::Fixed, &["a"]),
+                group_def("two", GroupKind::Fixed, &["a"]),
+            ],
+            vec![],
+        )
+        .unwrap_err();
+        assert!(matches!(err, ConfigError::ConflictingGroupNames { .. }), "{err:?}");
+    }
+
+    #[test]
+    fn try_from_groups_rejects_empty_and_repeated_groups() {
+        let empty = GroupTable::try_from_groups(vec![group_def("f", GroupKind::Fixed, &[])], vec![]).unwrap_err();
+        assert!(matches!(empty, ConfigError::EmptyGroup { .. }), "{empty:?}");
+
+        let repeated = GroupTable::try_from_groups(
+            vec![group_def("same", GroupKind::Fixed, &["a"])],
+            vec![group_def("same", GroupKind::Linked, &["b"])],
+        )
+        .unwrap_err();
+        assert!(
+            matches!(repeated, ConfigError::DuplicateGroupName { .. }),
+            "{repeated:?}"
         );
     }
 }

@@ -1683,7 +1683,7 @@ fn plan_version_skips_stale_fixed_group_member_instead_of_panicking() {
             GroupMember::Package(pkg_stale.clone()),
         ],
     };
-    ws.config.groups = GroupTable::from_groups(vec![group_def], vec![]);
+    ws.config.groups = GroupTable::try_from_groups(vec![group_def], vec![]).unwrap();
 
     let inference = NoInference;
     let opts = VersionOptions {

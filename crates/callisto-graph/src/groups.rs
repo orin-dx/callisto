@@ -228,7 +228,7 @@ mod tests {
             ],
         };
 
-        let groups = GroupTable::from_groups(vec![group], vec![]);
+        let groups = GroupTable::try_from_groups(vec![group], vec![]).unwrap();
 
         // Build the NapiTargetsIndex from a real package.json file —
         let pkg_dir = root.join("my-lib");
