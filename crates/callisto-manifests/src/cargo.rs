@@ -16,7 +16,6 @@ pub struct CargoToml {
     workspace_root: PathBuf,
     role: ManifestRole,
     document: toml_edit::DocumentMut,
-    inherited_deps: HashSet<(DepKind, String)>,
     inherited_version: bool,
     inheritance: Option<Arc<WorkspaceInheritance>>,
     fingerprint: crate::common::FormatFingerprint,
@@ -51,32 +50,12 @@ impl CargoToml {
             .and_then(|w| w.as_bool())
             == Some(true);
 
-        let mut inherited_deps = HashSet::new();
-        for (section_name, kind) in [
-            ("dependencies", DepKind::Runtime),
-            ("dev-dependencies", DepKind::Dev),
-            ("build-dependencies", DepKind::Build),
-        ] {
-            if let Some(table) = doc.get(section_name).and_then(|t| t.as_table_like()) {
-                for (name, item) in table.iter() {
-                    let is_inherited = item
-                        .as_inline_table()
-                        .and_then(|t| t.get("workspace"))
-                        .and_then(|w| w.as_bool())
-                        == Some(true)
-                        || item
-                            .as_table()
-                            .and_then(|t| t.get("workspace"))
-                            .and_then(|w| w.as_bool())
-                            == Some(true);
-                    if is_inherited {
-                        inherited_deps.insert((kind, name.to_string()));
-                    }
-                }
-            }
-        }
+        let inherits_dependencies = dependency_locations(&doc).into_iter().any(|(section, _, target)| {
+            dependency_table(&doc, section, target.as_deref())
+                .is_some_and(|table| table.iter().any(|(_, item)| is_inherited_item(item)))
+        });
 
-        let uses_inheritance = inherited_version || !inherited_deps.is_empty();
+        let uses_inheritance = inherited_version || inherits_dependencies;
         if uses_inheritance && ctx.cargo_workspace.is_none() {
             return Err(ManifestError::Read {
                 path: rel_path,
@@ -90,7 +69,6 @@ impl CargoToml {
             workspace_root: ctx.workspace_root.to_path_buf(),
             role: decl.role.clone(),
             document: doc,
-            inherited_deps,
             inherited_version,
             inheritance: ctx.cargo_workspace.clone(),
             fingerprint,
@@ -397,15 +375,17 @@ impl Manifest for CargoToml {
 
     fn iter_dependencies(&self) -> Box<dyn Iterator<Item = DependencyEntry> + '_> {
         let mut entries = Vec::new();
+        // A key declared again under `[target.<cfg>.*]` is one edge: the first declaration is
+        // reported, and a rewrite reaches only declarations identical to it.
+        let mut reported = HashSet::new();
 
-        for (section_name, section_kind) in [
-            ("dependencies", DepKind::Runtime),
-            ("dev-dependencies", DepKind::Dev),
-            ("build-dependencies", DepKind::Build),
-        ] {
-            if let Some(table) = self.document.get(section_name).and_then(|t| t.as_table_like()) {
+        for (section_name, section_kind, target) in dependency_locations(&self.document) {
+            if let Some(table) = dependency_table(&self.document, section_name, target.as_deref()) {
                 for (name, item) in table.iter() {
-                    let is_inherited = self.inherited_deps.contains(&(section_kind, name.to_string()));
+                    if !reported.insert((section_kind, name.to_string())) {
+                        continue;
+                    }
+                    let is_inherited = is_inherited_item(item);
                     let mut kind = section_kind;
                     let local_spec = parse_cargo_dep_item(item, &mut kind);
                     let inherited_dep = self.inheritance.as_ref().and_then(|inh| inh.inherited(name));
@@ -454,12 +434,47 @@ impl Manifest for CargoToml {
             });
         }
 
-        let section_kind = if kind == DepKind::Optional {
-            DepKind::Runtime
-        } else {
-            kind
+        let section_name = match kind {
+            DepKind::Runtime | DepKind::Optional => "dependencies",
+            DepKind::Dev => "dev-dependencies",
+            DepKind::Build => "build-dependencies",
+            DepKind::Peer => unreachable!(),
         };
-        if self.inherited_deps.contains(&(section_kind, name.to_string())) {
+
+        // The declaration the graph sees is the first one in table order. Only declarations
+        // identical to it (same inheritance, same crate, same constraint) are rewritten with it:
+        // a different declaration that reuses the key is left as written rather than given
+        // another package's pin.
+        let mut reference = None;
+        let mut matching: Vec<Option<String>> = Vec::new();
+        for (section, _, target) in dependency_locations(&self.document) {
+            if section != section_name {
+                continue;
+            }
+            let Some(item) =
+                dependency_table(&self.document, section, target.as_deref()).and_then(|table| table.get(name))
+            else {
+                continue;
+            };
+            let fingerprint = declaration_fingerprint(name, item);
+            match &reference {
+                None => {
+                    reference = Some(fingerprint);
+                    matching.push(target);
+                }
+                Some(first) if *first == fingerprint => matching.push(target),
+                Some(_) => {}
+            }
+        }
+        let Some((inherited, _, _)) = reference else {
+            return Err(ManifestError::DependencyNotFound {
+                path: self.path.clone(),
+                name: name.to_string(),
+                kind,
+            });
+        };
+
+        if inherited {
             let root_cargo = self.workspace_root.join("Cargo.toml");
             if self.absolute == root_cargo {
                 return Err(ManifestError::InvariantViolation {
@@ -475,35 +490,18 @@ impl Manifest for CargoToml {
             return ws_res.persist(permit);
         }
 
-        let section_name = match kind {
-            DepKind::Runtime | DepKind::Optional => "dependencies",
-            DepKind::Dev => "dev-dependencies",
-            DepKind::Build => "build-dependencies",
-            DepKind::Peer => unreachable!(),
-        };
-
-        let table = self
-            .document
-            .get_mut(section_name)
-            .and_then(|t| t.as_table_like_mut())
-            .ok_or_else(|| ManifestError::DependencyNotFound {
+        let new_str = new.render();
+        for target in matching {
+            let Some(item) =
+                dependency_table_mut(&mut self.document, section_name, target.as_deref()).and_then(|t| t.get_mut(name))
+            else {
+                continue;
+            };
+            set_dependency_version(item, new_str.clone()).map_err(|()| ManifestError::UnrecognizedDependencyValue {
                 path: self.path.clone(),
                 name: name.to_string(),
-                kind,
             })?;
-
-        let item = table.get_mut(name).ok_or_else(|| ManifestError::DependencyNotFound {
-            path: self.path.clone(),
-            name: name.to_string(),
-            kind,
-        })?;
-
-        let new_str = new.render();
-
-        set_dependency_version(item, new_str).map_err(|()| ManifestError::UnrecognizedDependencyValue {
-            path: self.path.clone(),
-            name: name.to_string(),
-        })?;
+        }
 
         Ok(())
     }
@@ -519,6 +517,77 @@ impl Manifest for CargoToml {
             operation: "update_optional_dependencies",
         })
     }
+}
+
+const DEPENDENCY_SECTIONS: [(&str, DepKind); 3] = [
+    ("dependencies", DepKind::Runtime),
+    ("dev-dependencies", DepKind::Dev),
+    ("build-dependencies", DepKind::Build),
+];
+
+/// Every dependency table a manifest can declare: the top-level ones, then the same three
+/// under each `[target.<cfg>]` key. Owned, so callers can mutate the document while iterating.
+fn dependency_locations(doc: &toml_edit::DocumentMut) -> Vec<(&'static str, DepKind, Option<String>)> {
+    let mut locations: Vec<_> = DEPENDENCY_SECTIONS
+        .iter()
+        .map(|(section, kind)| (*section, *kind, None))
+        .collect();
+    if let Some(targets) = doc.get("target").and_then(|item| item.as_table_like()) {
+        for (cfg, _) in targets.iter() {
+            for (section, kind) in DEPENDENCY_SECTIONS {
+                locations.push((section, kind, Some(cfg.to_string())));
+            }
+        }
+    }
+    locations
+}
+
+fn dependency_table<'a>(
+    doc: &'a toml_edit::DocumentMut,
+    section: &str,
+    target: Option<&str>,
+) -> Option<&'a dyn toml_edit::TableLike> {
+    let parent = match target {
+        Some(cfg) => doc.get("target")?.get(cfg)?,
+        None => doc.as_item(),
+    };
+    parent.get(section)?.as_table_like()
+}
+
+fn dependency_table_mut<'a>(
+    doc: &'a mut toml_edit::DocumentMut,
+    section: &str,
+    target: Option<&str>,
+) -> Option<&'a mut dyn toml_edit::TableLike> {
+    let parent = match target {
+        Some(cfg) => doc.get_mut("target")?.get_mut(cfg)?,
+        None => doc.as_item_mut(),
+    };
+    parent.get_mut(section)?.as_table_like_mut()
+}
+
+/// True when the declaration is `{ workspace = true }`.
+fn is_inherited_item(item: &toml_edit::Item) -> bool {
+    item.as_inline_table()
+        .and_then(|table| table.get("workspace"))
+        .and_then(|workspace| workspace.as_bool())
+        == Some(true)
+        || item
+            .as_table()
+            .and_then(|table| table.get("workspace"))
+            .and_then(|workspace| workspace.as_bool())
+            == Some(true)
+}
+
+/// What makes two declarations of the same key the same dependency: whether it inherits, the
+/// crate it names, and its constraint.
+fn declaration_fingerprint(name: &str, item: &toml_edit::Item) -> (bool, String, DepSpec) {
+    let mut kind = DepKind::Runtime;
+    (
+        is_inherited_item(item),
+        cargo_dependency_package_name(name, item).to_string(),
+        parse_cargo_dep_item(item, &mut kind),
+    )
 }
 
 fn cargo_dependency_package_name<'a>(name: &'a str, item: &'a toml_edit::Item) -> &'a str {
