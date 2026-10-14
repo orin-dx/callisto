@@ -1,0 +1,1 @@
+Still feels like we should have a bit more of what, why in the readme than we have right now. Not burried into the docs
