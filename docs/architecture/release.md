@@ -98,7 +98,7 @@ These are version-level checks, not proof of identical bytes, the npm dist-tag, 
 - GitHub's release-by-tag endpoint omits drafts, so the forge lookup finds the release ID by tag through GraphQL, then reads the release by ID (`release/github.rs`).
 - GitHub's reads lag its writes by seconds. The check right after this run's own create, upload or publish retries an absent answer for about a minute before it reports a conflict (`observe_until_visible`).
 
-The intended tag/announcement barrier covers all required publications of a graph package. Derivation currently gates by distribution identity, so one dual Cargo/npm owner's shared tag and public release can precede its other registry publish. This is a contract failure, not a fixed ecosystem order. See [the scoped design](polyglot-v1.md) for proposed ownership and future Go tag-publication semantics.
+The tag/announcement barrier covers all required publications of a graph package: a package's tag waits for the registry publishes of every release identity it has (`OpIndex::tag_prerequisites`), so a dual Cargo/npm owner's shared tag and public release follow both publishes, in no fixed ecosystem order. See [the scoped design](polyglot-v1.md) for proposed ownership and future Go tag-publication semantics.
 
 ## Wire and observation boundaries
 

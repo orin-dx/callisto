@@ -174,6 +174,18 @@ struct OpIndex {
     uploads_by_package: BTreeMap<ReleasePackageId, Vec<ReleaseOperationId>>,
 }
 
+impl OpIndex {
+    /// The registry publishes a package's tag waits for: those of every release identity of the package, since a
+    /// dual Cargo and npm owner has one physical tag but a publish per manifest.
+    fn tag_prerequisites(&self, owners: &[ReleasePackageId]) -> Vec<ReleaseOperationId> {
+        let publishes: BTreeSet<_> = owners
+            .iter()
+            .flat_map(|owner| self.publishes_by_package.get(owner).into_iter().flatten().cloned())
+            .collect();
+        publishes.into_iter().collect()
+    }
+}
+
 fn derive_release_inputs_with<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     decision: &ReleaseDecisionV1,
@@ -211,7 +223,7 @@ fn derive_release_inputs_with<R: CommandRunner, D: DependencyResolver>(
     let mut ops = Ops::default();
     build_publish_leaves(workspace, &selected, git_remote.as_ref(), &mut package_inputs, &mut ops)?;
     link_publish_prerequisites(workspace, &selected, &package_ids, &publish_edges, &mut ops)?;
-    add_tags(&selected, &source, &mut ops)?;
+    add_tags(&selected, &package_ids, &source, &mut ops)?;
     add_forge_releases(workspace, &selected, &mut ops)?;
     let artifact_slots = add_artifact_uploads(workspace, &selected, artifact_policy, &mut ops, diagnostics)?;
     add_forge_publishes(&selected, &mut ops)?;
@@ -465,18 +477,14 @@ fn link_publish_prerequisites<R: CommandRunner, D: DependencyResolver>(
 
 fn add_tags(
     selected: &BTreeMap<ReleasePackageId, (&callisto_model::Package, Version)>,
+    package_ids: &BTreeMap<callisto_model::PackageId, Vec<ReleasePackageId>>,
     source: &SourceIdentity,
     ops: &mut Ops,
 ) -> Result<(), GraphError> {
     let Ops {
         operations,
         prepared,
-        index: OpIndex {
-            publishes_by_package,
-            tag_by_package,
-            ..
-        },
-        ..
+        index,
     } = ops;
 
     for (id, (package, version)) in selected {
@@ -490,7 +498,11 @@ fn add_tags(
         let tag = ReleaseOperation::tag(
             id.clone(),
             version.clone(),
-            publishes_by_package.get(id).cloned().unwrap_or_default(),
+            index.tag_prerequisites(
+                package_ids
+                    .get(&package.id)
+                    .map_or(std::slice::from_ref(id), Vec::as_slice),
+            ),
         )?;
         let tag_name = package
             .tag_template
@@ -513,7 +525,7 @@ fn add_tags(
                 target,
             }),
         );
-        tag_by_package.insert(id.clone(), tag.id().clone());
+        index.tag_by_package.insert(id.clone(), tag.id().clone());
         operations.insert(tag.id().clone(), tag);
     }
     Ok(())
@@ -1833,11 +1845,9 @@ mod tests {
         ));
     }
 
-    /// One directory with both a Cargo and an npm manifest: the dual owner whose tag and forge
-    /// release are shared between its two registry publishes.
-    #[test]
-    fn derived_dual_cargo_and_npm_owner_is_pinned() {
-        let dir = repo(&[
+    /// One directory with both a Cargo and an npm manifest, released to both registries and the forge.
+    fn dual_owner_repo() -> tempfile::TempDir {
+        repo(&[
             ("Cargo.toml", "[workspace]\nmembers = [\"dual\"]\n"),
             (
                 "dual/Cargo.toml",
@@ -1848,8 +1858,66 @@ mod tests {
                 "callisto.toml",
                 "[[package]]\nmatch = \"dual\"\npublish-to = [\"crates-io\", \"npm\", \"github-release\"]\n",
             ),
-        ]);
-        let decision = release(&[(Ecosystem::Cargo, "dual", "1.0.0"), (Ecosystem::Npm, "dual", "1.0.0")]);
-        insta::assert_snapshot!(derived_text(&dir, &decision, false));
+        ])
+    }
+
+    fn dual_owner_decision() -> ReleaseDecisionV1 {
+        release(&[(Ecosystem::Cargo, "dual", "1.0.0"), (Ecosystem::Npm, "dual", "1.0.0")])
+    }
+
+    /// The dual owner's operations are shared between its two registry publishes.
+    #[test]
+    fn derived_dual_cargo_and_npm_owner_is_pinned() {
+        let dir = dual_owner_repo();
+        insta::assert_snapshot!(derived_text(&dir, &dual_owner_decision(), false));
+    }
+
+    /// The owner's one physical tag and GitHub release must wait for every registry publish of the package, not
+    /// just the publish of the manifest that happens to carry the operation's identity.
+    #[test]
+    fn a_dual_owners_shared_tag_and_release_wait_for_both_registry_publishes() {
+        use callisto_model::ReleaseOperationRole::{ForgePublish, ForgeRelease, RegistryPublish, Tag};
+
+        let dir = dual_owner_repo();
+        let decision = dual_owner_decision();
+        let (snapshot, operations, _, _, slots) = derive(&dir, &decision).unwrap();
+        let intent = ReleaseIntentV1::new(
+            decision,
+            snapshot,
+            ExecutionTrustProfileV1::GitCommit,
+            operations,
+            slots,
+        )
+        .unwrap();
+        let publish_of = |ecosystem| {
+            intent
+                .operations
+                .iter()
+                .map(|operation| operation.id().clone())
+                .find(|id| matches!(id.role, RegistryPublish { .. }) && id.package.ecosystem() == ecosystem)
+                .unwrap_or_else(|| panic!("no {ecosystem:?} registry publish"))
+        };
+        let (cargo, npm) = (publish_of(Ecosystem::Cargo), publish_of(Ecosystem::Npm));
+
+        for (landed, pending) in [(&cargo, &npm), (&npm, &cargo)] {
+            let mut state = super::super::super::release_test_support::pending_state(&intent);
+            super::super::super::release_test_support::publish_operation(&mut state, landed);
+            let eligible = crate::commands::release_execution::eligible_operations(&intent, &state);
+            assert!(
+                !eligible
+                    .iter()
+                    .any(|id| matches!(id.role, Tag | ForgeRelease | ForgePublish)),
+                "{landed:?} landed but {pending:?} has not, yet the shared tag or release is eligible: {eligible:?}"
+            );
+        }
+
+        let mut state = super::super::super::release_test_support::pending_state(&intent);
+        super::super::super::release_test_support::publish_operation(&mut state, &cargo);
+        super::super::super::release_test_support::publish_operation(&mut state, &npm);
+        let eligible = crate::commands::release_execution::eligible_operations(&intent, &state);
+        assert!(
+            eligible.iter().any(|id| matches!(id.role, Tag)),
+            "both publishes landed, so the tag is next: {eligible:?}"
+        );
     }
 }
