@@ -1,0 +1,116 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M4YBC26YVSHRTHB357PY7ZFT",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-14T23:18:55.378151Z",
+  "branch": "fix/redact-all-credential-names",
+  "checkpoints_count": 1,
+  "save_step_count": 4,
+  "files_touched": [
+    ".changeset/lively-ravens-fly.md",
+    "crates/callisto-cli/src/runner.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/tests.rs",
+    "crates/callisto-model/src/registry.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "99ca967f3f95",
+  "checkpoint_transcript_start": 5710,
+  "transcript_lines_at_start": 5710,
+  "compact_transcript_start": 468,
+  "token_usage": {
+    "input_tokens": 36,
+    "cache_creation_tokens": 21998,
+    "cache_read_tokens": 12658566,
+    "output_tokens": 11706,
+    "api_call_count": 17,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 17
+  },
+  "summary": {
+    "intent": "Implement PR B in a stacked PR series for the callisto repo: make the secret redactor know every secret-bearing credential name, with drift guards, using test-first development. Then begin mapping PR C (E176 cause field and PyPI status classification).",
+    "outcome": "PR B was completed: the redactor now knows PYPI_TOKEN and NPM_CONFIG_TOKEN, drift guards were added in the runner and provider crates, a changeset was added, and `just ci` exited 0. It was then committed and pushed. PR C was investigated but not yet started.",
+    "learnings": {
+      "repo": [
+        "Callisto is a multi-crate Rust workspace (callisto-model, callisto-cli, callisto-graph) worked in a stacked-PR worktree at .claude/worktrees/wave1-stack.",
+        "The secret redactor's credential name list lives in callisto-model's registry.rs, while the runner (callisto-cli) and release provider (callisto-graph) each keep their own strip lists, so these can drift apart.",
+        "Drift guard tests assert that every secret name in the runner and provider credential lists is known to the redactor, so adding a new secret to a strip list without updating the redactor fails tests.",
+        "Changesets are required in .changeset/ and `just ci` is the gate run before committing each PR.",
+        "PR C will need a `cause` field on E176 with a readable Display per cause, PyPI statuses reported as `ProviderStatus` rather than `MalformedResponse`, and updates to four registry test assertions that pin the old cause."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/registry.rs",
+          "finding": "Holds the redactor's credential name constant. It originally had six names and was missing PYPI_TOKEN and NPM_CONFIG_TOKEN; its doc comment was stale and was updated."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/registry/tests.rs",
+          "finding": "Provider drift guard test was added here, checking the provider credential list against the redactor's known names."
+        },
+        {
+          "path": "crates/callisto-cli/src/runner.rs",
+          "finding": "Runner's credential list test was extended into a drift guard against the redactor."
+        }
+      ],
+      "workflow": [
+        "Test-first discipline: a compile failure is not a meaningful red, so the constant was introduced with the existing six names first so the test failed behaviorally on the missing names.",
+        "Confirm the gate's own exit line (`exit=0`) and tree state before committing rather than trusting a completion notification alone.",
+        "Avoid editing the tree while a long `just ci` gate runs in the background; use that time for read-only investigation of the next PR.",
+        "Use helper scripts in a tmp jobs directory to run multi-step test and lint commands."
+      ]
+    },
+    "friction": [
+      "The sandbox rejects heredocs, so the provider test had to be appended with the Edit tool instead of a shell append.",
+      "The first test run was a compile failure, not a real red, which cost an extra iteration to restructure the constant."
+    ],
+    "open_items": [
+      "PR C is not started: add the `cause` field to E176 with Display, switch PyPI response statuses to `ProviderStatus`, and update the four pinned registry test assertions.",
+      "Docs and tests that pin E176 text or PyPI causes need review when PR C is built.",
+      "PR B still needs to be stacked as a PR and its base set up before C is built on top."
+    ]
+  }
+}
