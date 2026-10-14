@@ -43,6 +43,7 @@ fn execute_raw(
         .args(extra)
         .env("PATH", path)
         .env("CALLISTO_TEST_LOG", p.log)
+        .env("GH_TOKEN", "fake-forge-token")
         .env("CALLISTO_TEST_GIT_TRACE", p.git_trace)
         .env("CALLISTO_TEST_FORGE_MARKER", p.forge_marker)
         .env("CALLISTO_TEST_ARTIFACT_MARKER", p.log.with_extension("artifact-marker"))

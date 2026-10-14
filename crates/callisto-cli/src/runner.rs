@@ -43,9 +43,14 @@ struct ChildEnvironment<'a> {
 }
 
 fn unrelated_credentials(program: &str) -> Vec<&'static str> {
-    let keep: &[&str] = match program {
+    let tool = Path::new(program)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(program);
+    let keep: &[&str] = match tool {
         "npm" | "pnpm" | "yarn" | "bun" => &["NPM_CONFIG_TOKEN", "NPM_TOKEN", "NODE_AUTH_TOKEN"],
         "cargo" => &["CARGO_REGISTRY_TOKEN"],
+        "gh" => &["GH_TOKEN", "GITHUB_TOKEN"],
         _ => &[],
     };
     RELEASE_CREDENTIALS
@@ -600,6 +605,28 @@ mod tests {
         assert!(git.contains(&"NPM_TOKEN"));
         assert!(git.contains(&"CARGO_REGISTRY_TOKEN"));
         assert!(git.contains(&"GH_TOKEN"));
+    }
+
+    /// `gh attestation verify` and every forge call run as `gh`; without its own token it
+    /// refuses to run, and the release fails before any effect.
+    #[test]
+    fn the_github_cli_keeps_its_own_token_and_nothing_else() {
+        let gh = unrelated_credentials("gh");
+        assert!(!gh.contains(&"GH_TOKEN"));
+        assert!(!gh.contains(&"GITHUB_TOKEN"));
+        assert!(gh.contains(&"CARGO_REGISTRY_TOKEN"));
+        assert!(gh.contains(&"NPM_TOKEN"));
+        assert!(gh.contains(&"PYPI_TOKEN"));
+    }
+
+    #[test]
+    fn a_program_given_by_path_gets_the_same_credentials_as_its_name() {
+        assert_eq!(unrelated_credentials("/usr/bin/gh"), unrelated_credentials("gh"));
+        assert_eq!(
+            unrelated_credentials("/usr/local/bin/npm"),
+            unrelated_credentials("npm")
+        );
+        assert_eq!(unrelated_credentials("/usr/bin/env"), unrelated_credentials("env"));
     }
 
     /// Regression test for a hung-descendant deadlock: killing the direct
