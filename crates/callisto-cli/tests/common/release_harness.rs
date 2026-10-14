@@ -574,6 +574,7 @@ pub fn execute(root: &Path, intent: &Path, receipt: &Path, publishers: FakePubli
         .env("PATH", path)
         .env("CALLISTO_TEST_LOG", publishers.log)
         .env("GH_TOKEN", "fake-forge-token")
+        .env("CARGO_REGISTRY_TOKEN", "fake-registry-token")
         .env("CALLISTO_TEST_GIT_TRACE", publishers.git_trace)
         .env("CALLISTO_TEST_FORGE_MARKER", publishers.forge_marker)
         .env(
@@ -614,6 +615,7 @@ pub fn release_local(root: &Path, args: &[&str], home: &Path, publishers: FakePu
         .env("PATH", path)
         .env("CALLISTO_TEST_LOG", publishers.log)
         .env("GH_TOKEN", "fake-forge-token")
+        .env("CARGO_REGISTRY_TOKEN", "fake-registry-token")
         .env("CALLISTO_TEST_GIT_TRACE", publishers.git_trace)
         .env("CALLISTO_TEST_FORGE_MARKER", publishers.forge_marker)
         .env(
@@ -655,6 +657,7 @@ pub fn execute_from_coordinator(
         .env("PATH", path)
         .env("CALLISTO_TEST_LOG", publishers.log)
         .env("GH_TOKEN", "fake-forge-token")
+        .env("CARGO_REGISTRY_TOKEN", "fake-registry-token")
         .env("CALLISTO_TEST_GIT_TRACE", publishers.git_trace)
         .env("CALLISTO_TEST_FORGE_MARKER", publishers.forge_marker)
         .env(
@@ -699,6 +702,7 @@ pub fn execute_product(
         .env("PATH", path)
         .env("CALLISTO_TEST_LOG", publishers.log)
         .env("GH_TOKEN", "fake-forge-token")
+        .env("CARGO_REGISTRY_TOKEN", "fake-registry-token")
         .env("CALLISTO_TEST_GIT_TRACE", publishers.git_trace)
         .env("CALLISTO_TEST_FORGE_MARKER", publishers.forge_marker)
         .env(
@@ -904,6 +908,10 @@ case "$1" in
   publish|info) key=$1 ;;
   *) printf 'error: no such command: `%s`\n' "$1" >&2; exit 1 ;;
 esac
+if [ "$key" = publish ] && [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+  echo "error: no token found, please run \`cargo login\`" >&2
+  exit 101
+fi
 for a in "$@"; do
   case "$a" in
     -*)
@@ -1448,6 +1456,7 @@ pub fn execute_rig_in(
         .env("PATH", path)
         .env("CALLISTO_TEST_LOG", &rig.log)
         .env("GH_TOKEN", "fake-forge-token")
+        .env("CARGO_REGISTRY_TOKEN", "fake-registry-token")
         .env("CALLISTO_TEST_GIT_TRACE", &rig.git_trace)
         .env("CALLISTO_TEST_CARGO_CALLS", &rig.cargo_calls)
         .env("CALLISTO_TEST_GH_CALLS", &rig.gh_calls)

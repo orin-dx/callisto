@@ -668,6 +668,32 @@ mod tests {
         }
     }
 
+    /// The real `gh` through the real runner, the way the release executor calls it.
+    ///
+    /// Opt in with `cargo test -p callisto-cli --lib -- --ignored the_runner_gives_the_real_gh`
+    /// after exporting `GH_TOKEN`, a `GH_CONFIG_DIR` pointing at an empty directory (so no stored
+    /// login can stand in for the token), and `CALLISTO_TEST_ATTESTED_ASSET`, the path of a
+    /// release asset attested by this repository's release workflow.
+    #[test]
+    #[ignore = "needs the real gh, network access, GH_TOKEN and an attested release asset"]
+    fn the_runner_gives_the_real_gh_its_token() {
+        let asset = std::env::var("CALLISTO_TEST_ATTESTED_ASSET").expect("CALLISTO_TEST_ATTESTED_ASSET");
+        assert!(std::env::var_os("GH_TOKEN").is_some(), "export GH_TOKEN for this test");
+        let output = CliCommandRunner
+            .run(
+                "gh",
+                &["attestation", "verify", &asset, "--repo", "orin-dx/callisto"],
+                Path::new("."),
+            )
+            .expect("gh runs");
+        assert!(
+            output.success(),
+            "the verification must see the token (exit {:?}): {}",
+            output.exit_code,
+            output.stderr
+        );
+    }
+
     #[test]
     fn a_program_given_by_path_gets_the_same_credentials_as_its_name() {
         assert_eq!(unrelated_credentials("/usr/bin/gh"), unrelated_credentials("gh"));
