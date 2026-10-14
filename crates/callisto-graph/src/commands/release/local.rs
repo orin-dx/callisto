@@ -8,8 +8,10 @@ use callisto_model::{CommandRunner, ExecutionTrustProfileV1, ReleaseIntentV1, Re
 use crate::{DependencyResolver, GraphError, ProjectLocator, Workspace};
 
 use super::binding::optional_git_remote;
-use super::capability::{canonical_root, observe_source, ReleaseCheckout};
-use super::derive::{derive_release_intent, ArtifactBuildPolicy, GitRemoteRequirement};
+use super::capability::{canonical_root, observe_source, unsatisfied_packages, ReleaseCheckout};
+use super::derive::{
+    derive_release_intent, derive_release_intent_with_prepared, ArtifactBuildPolicy, GitRemoteRequirement,
+};
 use super::StaleReason;
 
 /// How a local release observes its source commit.
@@ -96,13 +98,43 @@ pub fn plan_local_release<L: ProjectLocator, R: CommandRunner>(
     plan_workspace_release(&workspace, selections, mode)
 }
 
+/// The tagged releases on HEAD whose operations are not all observed satisfied: a rerun finishes them.
+///
+/// A tag proves only that the tag was created. Releases tagged on an older commit are settled and
+/// never observed, so only a rerun at the release commit reaches the providers.
+fn incomplete_tagged_releases<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    mode: LocalReleaseSource,
+) -> Result<std::collections::BTreeSet<ReleasePackageId>, GraphError> {
+    let head = workspace.git_access().head_sha()?;
+    let tagged = crate::commands::release_decision::releases_tagged_at(workspace, &head)?;
+    if tagged.is_empty() {
+        return Ok(Default::default());
+    }
+    // Without an `origin` push URL a preview cannot observe the tags.
+    if mode == LocalReleaseSource::Preview && optional_git_remote(&workspace.root, workspace.runner)?.is_none() {
+        return Ok(Default::default());
+    }
+    let profile = ExecutionTrustProfileV1::GitCommit;
+    let source = match mode {
+        LocalReleaseSource::Preview => SourceIdentity::GitCommit { sha: head },
+        LocalReleaseSource::Trusted => observe_source(workspace, profile, ReleaseCheckout::AnyHead)?,
+    };
+    let decision = callisto_model::ReleaseDecisionV1::new(tagged)?;
+    let (_, prepared) =
+        derive_release_intent_with_prepared(workspace, &decision, source, profile, None, &mut Vec::new())?;
+    Ok(unsatisfied_packages(&workspace.root, workspace.runner, &prepared))
+}
+
 /// [`plan_local_release`] over an already-loaded workspace, e.g. one built from an in-memory config.
 pub fn plan_workspace_release<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     selections: &[ReleasePackageId],
     mode: LocalReleaseSource,
 ) -> Result<Option<LocalReleasePlan>, GraphError> {
-    let Some(decision) = crate::commands::derive_unreleased_decision(workspace, selections)? else {
+    let resumable = incomplete_tagged_releases(workspace, mode)?;
+    let Some(decision) = crate::commands::release_decision::derive_release_roster(workspace, selections, &resumable)?
+    else {
         return Ok(None);
     };
     let profile = ExecutionTrustProfileV1::GitCommit;
@@ -256,11 +288,33 @@ mod tests {
     }
 
     #[test]
-    fn tagged_current_version_means_nothing_to_release() {
+    fn a_tag_on_an_older_commit_means_nothing_to_release() {
         let (dir, _) = fixture();
         git(dir.path(), &["-c", "tag.gpgSign=false", "tag", "release-fixture@1.2.3"]);
+        git(
+            dir.path(),
+            &[
+                "-c",
+                "commit.gpgSign=false",
+                "commit",
+                "--allow-empty",
+                "-qm",
+                "later work",
+            ],
+        );
         assert!(plan(dir.path(), &[], LocalReleaseSource::Preview).unwrap().is_none());
         assert!(plan(dir.path(), &[], LocalReleaseSource::Trusted).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_tag_on_head_without_the_rest_of_the_release_is_still_a_release() {
+        let (dir, _) = fixture();
+        git(dir.path(), &["-c", "tag.gpgSign=false", "tag", "release-fixture@1.2.3"]);
+        let intent = plan(dir.path(), &[], LocalReleaseSource::Preview)
+            .unwrap()
+            .expect("the tag alone does not finish the release");
+        assert_eq!(intent.decision.entries[0].package, fixture_id());
+        assert!(plan(dir.path(), &[], LocalReleaseSource::Trusted).unwrap().is_some());
     }
 
     #[test]
@@ -352,6 +406,17 @@ mod tests {
         ));
 
         git(dir.path(), &["-c", "tag.gpgSign=false", "tag", "release-fixture@1.2.3"]);
+        git(
+            dir.path(),
+            &[
+                "-c",
+                "commit.gpgSign=false",
+                "commit",
+                "--allow-empty",
+                "-qm",
+                "later work",
+            ],
+        );
         assert!(matches!(
             plan(dir.path(), &[fixture_id()], LocalReleaseSource::Preview).unwrap_err(),
             GraphError::ReleaseSelectionInvalid {

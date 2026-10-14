@@ -182,6 +182,16 @@ pub fn derive_unreleased_decision<R: callisto_model::CommandRunner, D: Dependenc
     workspace: &Workspace<'_, R, D>,
     selections: &[ReleasePackageId],
 ) -> Result<Option<ReleaseDecisionV1>, GraphError> {
+    derive_release_roster(workspace, selections, &std::collections::BTreeSet::new())
+}
+
+/// [`derive_unreleased_decision`] that also keeps the tagged releases in `resumable`: a tag
+/// does not prove the rest of the release was observed.
+pub(crate) fn derive_release_roster<R: callisto_model::CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    selections: &[ReleasePackageId],
+    resumable: &std::collections::BTreeSet<ReleasePackageId>,
+) -> Result<Option<ReleaseDecisionV1>, GraphError> {
     let versions = workspace.base_versions()?;
     let tags = workspace.tags()?;
     let mut entries = Vec::new();
@@ -192,10 +202,11 @@ pub fn derive_unreleased_decision<R: callisto_model::CommandRunner, D: Dependenc
         let version = versions.get(&package.id).ok_or_else(|| GraphError::ReleaseInvariant {
             detail: format!("package `{}` has no base version", package.id.display_name()),
         })?;
-        if version_is_tagged(tags, &package.id, version) {
+        let ids = release_package_ids(&workspace.identity, package)?;
+        if version_is_tagged(tags, &package.id, version) && !ids.iter().any(|id| resumable.contains(id)) {
             continue;
         }
-        for id in release_package_ids(&workspace.identity, package)? {
+        for id in ids {
             entries.push(ReleaseDecisionEntry {
                 package: id,
                 target_version: version.clone(),
@@ -248,8 +259,52 @@ pub(crate) fn version_is_tagged(
     package: &callisto_model::PackageId,
     version: &Version,
 ) -> bool {
-    tags.contains_tag(&tags.template(package).render(version).to_string())
-        || tags.last_tag(package).is_some_and(|tag| &tag.version == version)
+    tag_of_version(tags, package, version).is_some()
+}
+
+fn tag_of_version(tags: &crate::TagIndex, package: &callisto_model::PackageId, version: &Version) -> Option<String> {
+    let rendered = tags.template(package).render(version).to_string();
+    if tags.contains_tag(&rendered) {
+        return Some(rendered);
+    }
+    tags.last_tag(package)
+        .filter(|tag| &tag.version == version)
+        .map(|tag| tag.name.to_string())
+}
+
+/// Entries for every publishable package whose current version is tagged on `source`.
+///
+/// A run that created such a tag may have stopped before pushing it or finishing the release.
+pub(crate) fn releases_tagged_at<R: callisto_model::CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    source: &CommitSha,
+) -> Result<Vec<ReleaseDecisionEntry>, GraphError> {
+    let versions = workspace.base_versions()?;
+    let tags = workspace.tags()?;
+    let git = workspace.git_access();
+    let mut entries = Vec::new();
+    for package in workspace.graph.packages() {
+        if !has_dispatchable_target(package) {
+            continue;
+        }
+        let Some(version) = versions.get(&package.id) else {
+            continue;
+        };
+        let Some(tag) = tag_of_version(tags, &package.id, version) else {
+            continue;
+        };
+        if git.resolve_commit(&tag)?.as_ref() != Some(source) {
+            continue;
+        }
+        for id in release_package_ids(&workspace.identity, package)? {
+            entries.push(ReleaseDecisionEntry {
+                package: id,
+                target_version: version.clone(),
+                reasons: vec![ReleaseInclusionReason::UnreleasedVersion],
+            });
+        }
+    }
+    Ok(entries)
 }
 
 pub(crate) fn has_dispatchable_target(package: &Package) -> bool {
