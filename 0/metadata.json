@@ -1,0 +1,104 @@
+{
+  "cli_version": "0.11.5-nightly.202610120640.a564a68c8",
+  "checkpoint_id": "01M4W1EMF7JEJNVWRFKYDJYCG9",
+  "session_id": "f98f161c-abe7-472b-92f1-8cfe1cfdf74a",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-14T01:47:16.20032Z",
+  "branch": "chore/tooling-settings",
+  "checkpoints_count": 6,
+  "save_step_count": 6,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "acd9d585bd31",
+  "checkpoint_transcript_start": 2577,
+  "transcript_lines_at_start": 2577,
+  "compact_transcript_start": 254,
+  "token_usage": {
+    "input_tokens": 40,
+    "cache_creation_tokens": 379639,
+    "cache_read_tokens": 6908657,
+    "output_tokens": 15236,
+    "api_call_count": 20
+  },
+  "session_metrics": {
+    "turn_count": 32
+  },
+  "summary": {
+    "intent": "Land the eight-PR Callisto stack, then triage and plan a large tech-debt handoff from Qwen (refactors R1-R5, semantic fixes S1-S5) using Rust best practices, and decide what to work on next.",
+    "outcome": "The stack was merged to main, leaving only release PR #188 open. The Qwen handoff was verified against the tree and a merged plan agreed with Qwen's pushback incorporated. The session ended investigating release PR #188's stuck CI and a failed Release run on main, and a settings PR was opened. No refactor work has started.",
+    "learnings": {
+      "repo": [
+        "Stack merges bottom-up; `gh stack merge` handles ordering and base retargeting. The first merge to main triggers the Release workflow, which opens or refreshes the release PR.",
+        "AGENTS.md rules: 90% coverage gate, no `unsafe`, format-preserving writes through `atomic_write(&ApplyPermit)`, specs updated in the same PR as behavior, one changeset per user-visible topic, 'N copies of one logic: unify'.",
+        "`crates/callisto-graph/tests/architecture.rs` is a source-scanning enforcement test (allowlist plus brace-depth test-stripping) and is the natural vehicle for banning literal `granted_unless_dry_run(false|true)` outside `permit.rs`.",
+        "`insta` is already a workspace dev-dependency and can be used for characterization snapshots.",
+        "callisto-graph/Cargo.toml has no include/exclude, so a crate-root `templates/` would ship only if git-tracked. Prefer `src/templates/` with `.tmpl` suffix; lint the rendered workflow, not the placeholder template (it contains `@__COMMIT__`).",
+        "Three literal-`false` ApplyPermit sites bypass dry-run: callisto-cli `commands/release.rs:77`, `commands/release.rs:330` (artifact-manifest --out), `commands/init.rs:223`.",
+        "`GroupTable::from_groups` has four callers, all test or test-adjacent (`groups.rs:231`, `napi.rs:292`, `cascade/tests.rs`, `commands/version/tests.rs`) and no production caller. `validate_syntactic` holds the conflict validation.",
+        "`PackageId::resolve_unique` is public API on the published crate (0.10.0). Removing it is a check-api/semver event, so the house style is deprecation plus a migration notice.",
+        "Release intent digests (`ReleaseIntentV1`) cover operations and slots, so extraction in `derive.rs` must not reorder operation construction. Durable-release e2e tests and the simulator suites are the guard.",
+        "R2 byte-identity depends on per-file operation order (bump, then all rewrites, then exactly one persist). Any op-list executor must encode that order as data.",
+        "R1's per-path identity loop is incremental and order-dependent (path-sorted order decides bare vs prefixed), so owned stages should reshape the data boundary and keep one loop. `promoted_siblings` is an output of the identity stage.",
+        "Graph `commands/init.rs` inline tests (about 1,300 lines) were never moved to `init/tests.rs`; only the CLI `init.rs` was moved in #186.",
+        "V1-FINDINGS.md lists product-safety defects SYS-RETRY, SYS-PYFILES and SYS-BARRIER (T06-T09 work units, gated partly by D01 owner contract). Whether #177 closed any needs checking against the register."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/cascade.rs",
+          "line": 76,
+          "finding": "`coverage(spec, new)` already exists and `DepSpec::coverage` exists in the model at dependency.rs:96, so R4 (coverage unification) is already done and was dropped."
+        },
+        {
+          "path": "crates/callisto-graph/src/walk.rs",
+          "line": 83,
+          "finding": "`ManifestWalkResolver::build` is about 591 lines. Plan is owned stages (Discovered, Identified, Resolved) with a single identity loop, and `walk/{discover,identity,rules,edges}.rs`."
+        },
+        {
+          "path": "crates/callisto-graph/src/apply.rs",
+          "line": 129,
+          "finding": "`apply_version_plan` is about 447 lines. Defects are 5 repeated open-canonical-manifest ceremonies, 3 `UnexpectedManifestVersion` from/to guards, and 4 `continue` re-filter sites. Plan is helpers plus a classified ordered op list and one executor."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/derive.rs",
+          "line": 152,
+          "finding": "`derive_release_inputs_with` is about 412 lines. Plan is `OpIndex` for the prerequisite maps (a home for T08's barrier), a borrowed `DeriveInput<'a>`, and insta snapshots of the intent plus ordered operation IDs before moving code."
+        },
+        {
+          "path": "crates/callisto-graph/src/config/groups.rs",
+          "line": 244,
+          "finding": "`from_groups` silently last-wins on duplicate member claims. Validation exists only in `validate_syntactic` (line 95), so extract `validate_members` and call it from both."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/registry.rs",
+          "line": 460,
+          "finding": "npm observation discards stdout/stderr after checking E404 markers, so auth failures surface as indeterminate with no details. Any S4 fix needs an allow-list redaction with a last-resort class, since details persist into committed receipts."
+        }
+      ],
+      "workflow": [
+        "Verify a handoff's claims against the tree before acting. Qwen's R4 was already built, and the assistant's own 'zero callers' claim came from a grep whose glob errored.",
+        "When challenged on external code suggestions, read the real functions and weigh them against Rust idioms (returned values over a shared &mut context, owned pipeline stages) instead of dismissing or accepting wholesale.",
+        "Prefer characterization snapshots (insta) before any moves-only refactor, then keep the existing byte-identity and golden tests unchanged as the anchor.",
+        "Merges to main and other outward-facing actions were left to the user, with the assistant asking before merging."
+      ]
+    },
+    "friction": [
+      "The release PR #188 shows UNSTABLE: its CI runs are stuck at `action_required` and the latest Release run on main failed.",
+      "The assistant's earlier grep for `from_groups` callers errored on a glob, which produced a wrong 'zero callers' claim that later had to be retracted.",
+      "The assistant miscounted idempotency guards (4 vs the actual 3) and recommended `.yml` for templates on a weak actionlint rationale.",
+      "The user's checkout carries uncommitted tooling-settings edits (Entire prefs, `.gemini/settings.json`, `.claude` hook) that had to be handled via a separate settings PR.",
+      "#177 spans 80 files and has only been reviewed by the assistant."
+    ],
+    "open_items": [
+      "Investigate and fix the failed Release run on main and the `action_required` CI on release PR #188; the first release-bot run after the E281 fix is still unverified.",
+      "Clean up leftover branches `stack/cli-recovery`, `stack/docs-v1` and local `fix/stack-*`; refresh stale `ROAD-TO-V1.md` baseline and Stage 1.",
+      "Merge the two duplicated scanner copies in `callisto-graph/tests` into one shared test-support module; coverage is at 91.2%, near the 90% gate.",
+      "R2: `apply.rs` helpers (`open_canonical`, `write_version_guarded`) plus ordered op list and single executor.",
+      "Graph `init.rs` test move to `init/tests.rs`, then R5 workflow templates in `src/templates/*.tmpl` with insta snapshots first.",
+      "R1 (`walk.rs`) and R3 (`derive.rs`) as moves-only PRs with snapshots first; R4 dropped.",
+      "S3 (`from_groups` validation), then S2 (dry-run permits via a constructor plus an `architecture.rs` rule), which needs the owner decision on whether `release artifact-manifest --dry-run --out` and `init --dry-run` stop writing files.",
+      "S1 (resolver divergence, run the paired fixture first, then a D01 owner decision on deprecation), S4 (allow-list redaction, schema and spec change) and S5 (napi 18-triple table evaluation) as separate decisions.",
+      "Product-safety defects SYS-RETRY, SYS-PYFILES and SYS-BARRIER (T06-T09, D01-gated) still need checking against the register to see whether #177 closed any."
+    ]
+  }
+}
