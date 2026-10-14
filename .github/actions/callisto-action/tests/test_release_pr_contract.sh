@@ -15,12 +15,14 @@ script="$action_dir/scripts/create-or-update-release-pr.sh"
 
 run_case() {
   local prs="$1" decision="$2" label_exists="${3:-true}"
-  local calls_file output_file harness verify_count_file
+  local calls_file output_file harness verify_count_file stale_file
   calls_file="$(mktemp)"
   output_file="$(mktemp)"
   verify_count_file="$(mktemp)"
   harness="$(mktemp)"
   rm -f "$verify_count_file"
+  stale_file="$(mktemp)"
+  : > "$stale_file"
 
   {
     cat <<'STUBS'
@@ -32,7 +34,8 @@ callisto() {
     n=$(( $(cat "$VERIFY_COUNT_FILE" 2>/dev/null || echo 0) + 1 ))
     echo "$n" > "$VERIFY_COUNT_FILE"
     if [[ "$VERIFY_FAIL_AT" != 0 && "$n" == "$VERIFY_FAIL_AT" ]]; then return 1; fi
-    if [[ "$REQUIRE_APPLIED_HEAD" == true && "$n" == 3 ]]; then
+    if [[ "$VERIFY_FAIL_AT" != 0 && "$VERIFY_FAIL_PERSIST" == true && "$n" -gt "$VERIFY_FAIL_AT" ]]; then return 1; fi
+    if [[ "$REQUIRE_APPLIED_HEAD" == true && "$n" -ge 3 ]]; then
       for arg in "$@"; do
         case "$previous" in
           --applied-head) applied_head="$arg" ;;
@@ -71,7 +74,13 @@ gh() {
   echo "gh $*" >> "$CALLS_FILE"
   local joined=" $* "
   case "$1 $2" in
-    'pr list') printf '%s\n' "$PR_LIST"; return 0 ;;
+    'pr list')
+      if [[ -s "$STALE_FILE" && "$(cat "$STALE_FILE")" -gt 0 ]]; then
+        echo $(( $(cat "$STALE_FILE") - 1 )) > "$STALE_FILE"
+        printf '%s\n' "$STALE_PR_LIST"
+        return 0
+      fi
+      printf '%s\n' "$PR_LIST"; return 0 ;;
     'pr view') echo 'existing body'; return 0 ;;
     'pr create') echo "$PR_CREATE_URL"; return 0 ;;
     'pr edit') return 0 ;;
@@ -107,6 +116,8 @@ gh() {
       if [[ "$joined" == *' -X PATCH '* ]]; then
         [[ "$MOVE_PATCH_CODE" == 0 ]] || return "$MOVE_PATCH_CODE"
         if [[ "$REQUIRE_APPLIED_HEAD" == true ]]; then
+          STALE_PR_LIST="$PR_LIST"
+          [[ "$STALE_READS" -gt 0 ]] && echo "$STALE_READS" > "$STALE_FILE"
           PR_LIST=$(jq --argjson number "$(jq -r '.action.pullRequestNumber' <<< "$DECISION")" --arg head "$NEW_SHA" \
             'map(if .number == $number then .headRefOid = $head else . end)' <<< "$PR_LIST")
         fi
@@ -118,6 +129,7 @@ gh() {
   fi
   return 0
 }
+sleep() { echo "sleep $*" >> "$CALLS_FILE"; }
 git() {
   echo "git $*" >> "$CALLS_FILE"
   case "$1" in
@@ -133,7 +145,8 @@ STUBS
 
   set +e
   CALLS_FILE="$calls_file" PR_LIST="$prs" DECISION="$decision" LABEL_EXISTS="$label_exists" \
-    VERIFY_FAIL_AT="${VERIFY_FAIL_AT:-0}" VERIFY_COUNT_FILE="$verify_count_file" \
+    VERIFY_FAIL_AT="${VERIFY_FAIL_AT:-0}" VERIFY_FAIL_PERSIST="${VERIFY_FAIL_PERSIST:-false}" VERIFY_COUNT_FILE="$verify_count_file" \
+    STALE_READS="${STALE_READS:-0}" STALE_FILE="$stale_file" \
     REQUIRE_APPLIED_HEAD="${REQUIRE_APPLIED_HEAD:-false}" \
     STAGING_PATCH_CODE="${STAGING_PATCH_CODE:-0}" GRAPHQL_CODE="${GRAPHQL_CODE:-0}" \
     MOVE_PATCH_CODE="${MOVE_PATCH_CODE:-0}" MOVE_POST_CODE="${MOVE_POST_CODE:-0}" \
@@ -159,7 +172,7 @@ STUBS
   cat "$calls_file"
   printf '%s\n' '---outputs---'
   cat "$output_file"
-  rm -f "$calls_file" "$output_file" "$harness" "$verify_count_file"
+  rm -f "$calls_file" "$output_file" "$harness" "$verify_count_file" "$stale_file"
 }
 
 default_new_sha='deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
@@ -257,6 +270,35 @@ fi
 assert_verify_flags 'update with another commit' "$output" "$NEW_SHA"
 unset NEW_SHA REQUIRE_APPLIED_HEAD
 
+# The PR list can lag the ref move; a stale read must be retried, not rejected.
+NEW_SHA='abcdefabcdefabcdefabcdefabcdefabcdefabcd'
+REQUIRE_APPLIED_HEAD=true
+STALE_READS=2
+output="$(run_case '[{"number":42,"headRefName":"callisto/version-packages","headRepository":{"nameWithOwner":"orin-dx/callisto"},"headRefOid":"0123456789abcdef0123456789abcdef01234567"}]' "$update")"
+unset STALE_READS
+if [[ "$output" != 0$'\n'* ]] \
+  || [[ "$output" != *'sleep '* ]] \
+  || [[ "$output" != *'verification accepted the applied head observed on the moved PR'* ]] \
+  || [[ "$output" != *'gh pr edit 42'* ]]; then
+  echo "FAIL: a stale PR list right after the ref move must be retried until it shows the applied head: $output"
+  fail=1
+else
+  echo 'PASS: update retries a stale PR list after the ref move'
+fi
+
+# A head that never shows the applied commit is a real change and still fails.
+STALE_READS=1000
+output="$(run_case '[{"number":42,"headRefName":"callisto/version-packages","headRepository":{"nameWithOwner":"orin-dx/callisto"},"headRefOid":"0123456789abcdef0123456789abcdef01234567"}]' "$update" false)"
+unset STALE_READS NEW_SHA REQUIRE_APPLIED_HEAD
+if [[ "$output" != 1$'\n'* ]] \
+  || [[ "$output" == *'gh pr edit'* ]] \
+  || [[ "$output" == *'gh label '* ]]; then
+  echo "FAIL: a PR head that never shows the applied commit must fail without label or PR writes: $output"
+  fail=1
+else
+  echo 'PASS: update still fails when the applied head never appears'
+fi
+
 output="$(run_case '[]' "$noop")"
 if [[ "$output" != 0$'\n'* ]] \
   || [[ "$output" == *'git push'* ]] \
@@ -302,14 +344,18 @@ fi
 
 for kind in create update; do
   VERIFY_FAIL_AT=3
+  VERIFY_FAIL_PERSIST=true
   if [[ "$kind" == update ]]; then
     output="$(run_case '[{"number":42,"headRefName":"callisto/version-packages","headRepository":{"nameWithOwner":"orin-dx/callisto"},"headRefOid":"0123456789abcdef0123456789abcdef01234567"}]' "$update" false)"
-    assert_verify_flags 'failed update' "$output" "$default_new_sha"
+    if [[ "$(grep -F -c 'callisto release-pr verify' <<< "$output")" -lt 3 ]]; then
+      echo "FAIL: failed update must still verify the applied head: $output"
+      fail=1
+    fi
   else
     output="$(run_case '[]' "$create" false)"
     assert_verify_flags 'failed create' "$output" ''
   fi
-  unset VERIFY_FAIL_AT
+  unset VERIFY_FAIL_AT VERIFY_FAIL_PERSIST
   if [[ "$output" != 1$'\n'* ]] \
     || [[ "$output" != *"refs/heads/callisto/version-packages -f sha=$default_new_sha"* ]] \
     || [[ "$output" != *'gh api -X DELETE repos/orin-dx/callisto/git/refs/heads/callisto/version-packages--staging'* ]] \
