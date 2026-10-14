@@ -289,3 +289,55 @@ fn release_modules_never_discard_error_sources() {
          allowlist ({MAP_ERR_IGNORE_ALLOWLIST:?}); report the real error cause instead: {violations:#?}"
     );
 }
+
+/// True if `content` grants an `ApplyPermit` from a literal `true`/`false` instead of the
+/// parsed `--dry-run` flag, ignoring whitespace so a reformatted call is still caught.
+fn grants_permit_from_literal(content: &str) -> bool {
+    let compact: String = content.split_whitespace().collect();
+    ["true", "false"].iter().any(|literal| {
+        compact.contains(&format!("granted_unless_dry_run({literal})"))
+            || compact.contains(&format!("granted_unless_dry_run({literal},)"))
+    })
+}
+
+/// `ApplyPermit::granted_unless_dry_run` must take the parsed flag read once near the top of a
+/// handler. A literal re-derives the decision and can silently disagree with `--dry-run`.
+#[test]
+fn apply_permits_are_never_granted_from_a_literal() {
+    let root = workspace_root();
+    let mut violations = Vec::new();
+    for entry in fs::read_dir(root.join("crates")).unwrap().flatten() {
+        let src_dir = entry.path().join("src");
+        if !src_dir.is_dir() {
+            continue;
+        }
+        let mut files = Vec::new();
+        collect_rust_src_files(&src_dir, &mut files);
+        for file in files {
+            if file.file_name().and_then(|n| n.to_str()) == Some("permit.rs") {
+                continue;
+            }
+            let Ok(content) = fs::read_to_string(&file) else {
+                continue;
+            };
+            if grants_permit_from_literal(&strip_test_modules(&content)) {
+                violations.push(file.strip_prefix(&root).unwrap_or(&file).to_string_lossy().into_owned());
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "pass the parsed dry-run flag to ApplyPermit::granted_unless_dry_run, never a literal: {violations:#?}"
+    );
+}
+
+#[test]
+fn literal_permit_detector_catches_a_reformatted_call_and_ignores_the_flag() {
+    assert!(grants_permit_from_literal("ApplyPermit::granted_unless_dry_run(false)"));
+    assert!(grants_permit_from_literal(
+        "ApplyPermit::granted_unless_dry_run(\n    true,\n)"
+    ));
+    assert!(!grants_permit_from_literal(
+        "ApplyPermit::granted_unless_dry_run(global.dry_run)"
+    ));
+}

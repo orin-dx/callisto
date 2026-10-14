@@ -220,7 +220,7 @@ pub fn run<R: CommandRunner>(
             writeln!(human, "Initialization cancelled; nothing was written.")?;
             return Ok(ExitCode::SUCCESS);
         }
-        let permit = ApplyPermit::granted_unless_dry_run(false).expect("non-dry-run permits writes");
+        let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).expect("non-dry-run permits writes");
         let mut report = scaffold::write(&facts.root, &config, &permit)?;
         if let Some((workflow, branch)) = &workflow {
             scaffold::write_workflow(&facts.root, workflow, &permit)?;
