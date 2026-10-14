@@ -116,6 +116,30 @@ pub enum ProviderIndeterminateCause {
     ArtifactManifestUnavailable,
 }
 
+impl std::fmt::Display for ProviderIndeterminateCause {
+    /// Fixed text only, so it is safe to show an operator.
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnsupportedProvider => formatter.write_str("no client can observe this provider"),
+            Self::ProviderStatus { status } => {
+                write!(
+                    formatter,
+                    "the provider answered HTTP {status}, which proves neither presence nor absence"
+                )
+            }
+            Self::CommandFailed => formatter.write_str("the observing command failed"),
+            Self::MalformedResponse => formatter.write_str("the provider's answer could not be understood"),
+            Self::Timeout => formatter.write_str("the observation timed out"),
+            Self::RegistryVersionUnverified => {
+                formatter.write_str("the version exists but its identity was not observed")
+            }
+            Self::ArtifactManifestUnavailable => {
+                formatter.write_str("the asset's identity needs the verified artifact manifest, which was absent")
+            }
+        }
+    }
+}
+
 /// The result of observing the exact remote identity of a release operation.
 ///
 /// No arbitrary provider response is persisted: every variant carries only
