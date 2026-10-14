@@ -2427,3 +2427,175 @@ fn pre_state_update_writes_to_plan_pre_json_path_not_hardcoded_default() {
         "pre.json must NOT fall back to the hardcoded .changeset default"
     );
 }
+
+fn range_rewrite(target: DepWriteTarget, name: &str, from: &str, to: &str) -> crate::cascade::SpecRewrite {
+    let spec = |text: &str| {
+        callisto_model::DepSpec::Range(
+            callisto_model::VersionReq::parse(text, callisto_model::Ecosystem::Cargo).unwrap(),
+            text.to_string(),
+        )
+    };
+    crate::cascade::SpecRewrite {
+        key: crate::cascade::RewriteKey {
+            target,
+            name: name.to_string(),
+            kind: Some(callisto_model::DepKind::Runtime),
+        },
+        dependency: PackageId::parse(&format!("cargo:{name}")).unwrap(),
+        from: spec(from),
+        to: spec(to),
+    }
+}
+
+fn planned_bump(package: &str, from: &str, to: &str, writes: Vec<VersionWriteTarget>) -> PlannedBump {
+    PlannedBump {
+        package: PackageId::parse(package).unwrap(),
+        from: cargo_version(from),
+        to: cargo_version(to),
+        severity: Severity::Minor,
+        governed_by: None,
+        reason: None,
+        writes,
+    }
+}
+
+fn step_name(step: &WriteStep<'_>) -> String {
+    match step {
+        WriteStep::Manifest { path, .. } => format!("manifest {}", path.display()),
+        WriteStep::WorkspaceRoot { root_manifest, .. } => format!("workspace-root {}", root_manifest.display()),
+        WriteStep::MixedManifestVersion { path, .. } => format!("mixed-manifest-version {}", path.display()),
+        WriteStep::MixedWorkspaceVersion { root_manifest, .. } => {
+            format!("mixed-workspace-version {}", root_manifest.display())
+        }
+        WriteStep::MixedManifestRewrite { path, rewrite } => {
+            format!("mixed-manifest-rewrite {} {}", path.display(), rewrite.key.name)
+        }
+        WriteStep::MixedWorkspaceRewrite { root_manifest, rewrite } => {
+            format!(
+                "mixed-workspace-rewrite {} {}",
+                root_manifest.display(),
+                rewrite.key.name
+            )
+        }
+        WriteStep::PlatformVersion(write) => format!("platform {}", write.manifest.display()),
+        WriteStep::OptionalDependencies(update) => format!("optional {}", update.manifest.display()),
+    }
+}
+
+/// A root manifest that is both a package and a Cargo workspace root receives writes through
+/// both routes; every step reloads from disk so neither route overwrites the other's edit.
+#[test]
+fn a_manifest_written_through_both_routes_keeps_every_edit_and_the_step_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let mixed = "[workspace]\nmembers = [\"lib\"]\n\n[workspace.package]\nversion = \"1.0.0\"\n\n[workspace.dependencies]\nhelper = \"1.0.0\"\n\n[package]\nname = \"app\"\nversion = \"1.0.0\"\nedition = \"2021\"\n\n[dependencies]\nother = \"1.0.0\"\n";
+    let workspace_only = "[workspace]\nmembers = []\n\n[workspace.package]\nversion = \"2.0.0\"\n\n[workspace.dependencies]\nshared = \"2.0.0\"\n";
+    let plain = "[package]\nname = \"plain\"\nversion = \"3.0.0\"\nedition = \"2021\"\n";
+    std::fs::create_dir_all(root.join("ws2")).unwrap();
+    std::fs::create_dir_all(root.join("plain")).unwrap();
+    std::fs::write(root.join("Cargo.toml"), mixed).unwrap();
+    std::fs::write(root.join("ws2/Cargo.toml"), workspace_only).unwrap();
+    std::fs::write(root.join("plain/Cargo.toml"), plain).unwrap();
+
+    let top = PathBuf::from("Cargo.toml");
+    let ws2 = PathBuf::from("ws2/Cargo.toml");
+    let plan = VersionPlan {
+        bumps: vec![
+            planned_bump(
+                "cargo:app",
+                "1.0.0",
+                "1.1.0",
+                vec![VersionWriteTarget::Manifest(top.clone())],
+            ),
+            planned_bump(
+                "cargo:lib",
+                "1.0.0",
+                "1.1.0",
+                vec![VersionWriteTarget::CargoWorkspacePackage {
+                    root_manifest: top.clone(),
+                }],
+            ),
+            planned_bump(
+                "cargo:ws2lib",
+                "2.0.0",
+                "2.1.0",
+                vec![VersionWriteTarget::CargoWorkspacePackage {
+                    root_manifest: ws2.clone(),
+                }],
+            ),
+            planned_bump(
+                "cargo:plain",
+                "3.0.0",
+                "3.1.0",
+                vec![VersionWriteTarget::Manifest(PathBuf::from("plain/Cargo.toml"))],
+            ),
+        ],
+        rewrites: vec![
+            range_rewrite(DepWriteTarget::Manifest(top.clone()), "other", "^1.0.0", "^1.1.0"),
+            range_rewrite(
+                DepWriteTarget::CargoWorkspaceDependency {
+                    root_manifest: top.clone(),
+                },
+                "helper",
+                "^1.0.0",
+                "^1.1.0",
+            ),
+            range_rewrite(
+                DepWriteTarget::CargoWorkspaceDependency {
+                    root_manifest: ws2.clone(),
+                },
+                "shared",
+                "^2.0.0",
+                "^2.1.0",
+            ),
+        ],
+        ..Default::default()
+    };
+
+    let classification = classify_manifest_writes(&plan);
+    let steps: Vec<String> = write_steps(&plan, &classification).iter().map(step_name).collect();
+    assert_eq!(
+        steps,
+        [
+            "manifest plain/Cargo.toml",
+            "workspace-root ws2/Cargo.toml",
+            "mixed-manifest-version Cargo.toml",
+            "mixed-workspace-version Cargo.toml",
+            "mixed-manifest-rewrite Cargo.toml other",
+            "mixed-workspace-rewrite Cargo.toml helper",
+        ]
+    );
+
+    let permit = ApplyPermit::force_for_tests();
+    let outcome = apply_version_plan(root, &plan, &NoopRunner, &ApplyOptions::default(), &permit).unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(root.join("Cargo.toml")).unwrap(),
+        mixed
+            .replace("version = \"1.0.0\"", "version = \"1.1.0\"")
+            .replace("helper = \"1.0.0\"", "helper = \"^1.1.0\"")
+            .replace("other = \"1.0.0\"", "other = \"^1.1.0\"")
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("ws2/Cargo.toml")).unwrap(),
+        workspace_only
+            .replace("version = \"2.0.0\"", "version = \"2.1.0\"")
+            .replace("shared = \"2.0.0\"", "shared = \"^2.1.0\"")
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("plain/Cargo.toml")).unwrap(),
+        plain.replace("3.0.0", "3.1.0")
+    );
+    let staged: Vec<String> = outcome.staged.iter().map(|path| path.display().to_string()).collect();
+    assert_eq!(
+        staged,
+        [
+            "plain/Cargo.toml",
+            "ws2/Cargo.toml",
+            "Cargo.toml",
+            "Cargo.toml",
+            "Cargo.toml",
+            "Cargo.toml"
+        ]
+    );
+}
