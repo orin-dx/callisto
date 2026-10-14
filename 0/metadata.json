@@ -1,0 +1,133 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M4YATS68810ZJGQ5M0E4567N",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-14T23:09:34.569833Z",
+  "branch": "worktree-wave1-stack",
+  "checkpoints_count": 3,
+  "save_step_count": 3,
+  "files_touched": [
+    "ARCHITECTURE.md",
+    "docs/architecture/wire-compat.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "a657d5985f19",
+  "checkpoint_transcript_start": 1883,
+  "transcript_lines_at_start": 1883,
+  "compact_transcript_start": 155,
+  "token_usage": {
+    "input_tokens": 546,
+    "cache_creation_tokens": 413671,
+    "cache_read_tokens": 135316252,
+    "output_tokens": 207727,
+    "api_call_count": 271,
+    "subagent_tokens": {
+      "input_tokens": 480,
+      "cache_creation_tokens": 900276,
+      "cache_read_tokens": 34216458,
+      "output_tokens": 52047,
+      "api_call_count": 240
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 16
+  },
+  "summary": {
+    "intent": "Continue the Callisto release-tooling hardening roadmap: ship the 0.10.3 release, then do post-0.10.3 work (refactors, fixes, W1/W3/W4/W10/D01 planning), parallelized and stacked as PRs with minimal conflicts.",
+    "outcome": "Shipped and stacked many PRs (#205-#209 stack, #211 review fixes, #213 SYS-BARRIER, #214 walk.rs split, #216 W1 attestation CI job), verified 0.10.3 published, ran a Wave 0 workflow yielding verified W4 audit and wire-compat matrix, and committed the wire-compat doc as PR A with B (redaction list) and C (E176 cause) designed but not yet built.",
+    "learnings": {
+      "repo": [
+        "`just ci` is the full gate (includes workflow contract and policy checks) and takes ~4-5 min; must run one at a time across worktrees, cold worktrees need a full rebuild.",
+        "Squash merges mean upper stack PRs need `main` merged in after the bottom lands; conflicts arose when #202 edited a test block that #205 moved out of init.rs.",
+        "Register docs (V1-FINDINGS.md, ROAD-TO-V1.md, V1-SYSTEM-HARDENING.json, V1-IMPLEMENTATION.md) conflict easily across PRs; lanes should avoid them and a docs PR should prune shipped rows.",
+        "Fake-tool test harness hid the 0.10.1 regression; validate releases with real cargo/gh/git ls-remote dry runs at the release commit.",
+        "The runner's credential removal list deliberately omits NPM_CONFIG_USERCONFIG because generated npm auth config is delivered through it; the lists should not be naively merged.",
+        "Only the model's `known_credential_env_values` redaction list is incomplete (missing NPM_CONFIG_TOKEN, PYPI_TOKEN, CALLISTO_PUBLISH_NPM_CONFIG, TWINE_USERNAME).",
+        "Wire versions: decision writes 2/reads 1,2; intent 5 only (E215); envelope 3 only; receipt 2 only; snapshot and artifact manifest have no decode gate.",
+        "E176 drops the indeterminate cause entirely; the ProviderIndeterminateCause enum is closed and Copy, so carrying it is redaction-safe.",
+        "macOS bash lacks `mapfile`, so generated workflow templates must use portable loops.",
+        "The intent omits `artifactSlots` when empty, so jq `.artifactSlots[]` iterates null; dry-run report flattens intent with envelope fields."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/registry.rs",
+          "line": 574,
+          "finding": "One matching non-yanked file yields Exact, which is the W3 partial-upload defect."
+        },
+        {
+          "path": "crates/callisto-model/src/registry.rs",
+          "line": 114,
+          "finding": "redact_known_secrets only replaces known secrets, so a missed name leaks."
+        },
+        {
+          "path": "crates/callisto-graph/src/cascade.rs",
+          "line": 576,
+          "finding": "RewriteKey distinguishes manifest, name and dependency kind but not target declarations (W10a)."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/registry_argv.rs",
+          "line": 334,
+          "finding": "Publisher rebuilds inside the effect and uploads a broad dist/ glob, not bound to the sealed intent."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "Review fixes for #202 weren't pushed before it merged, requiring a separate follow-up PR #211.",
+      "Stack base #205 conflicted with main after #202 merged.",
+      "I wrongly told the user #210 was awaiting checks when it had already been merged.",
+      "GitHub timed out on `gh release list` and `git fetch`, so tags couldn't be confirmed.",
+      "Negative-control real-tool run first tripped an unrelated repo-mismatch guard.",
+      "Cold build in a new worktree made the docs PR gate slow, blocking further edits.",
+      "Earlier claims needed correction: 'four credential lists drifted' overstated, and Codex review corrected the fork-PR token claim."
+    ],
+    "open_items": [
+      "Merge #213 and #214 (user action); then start W10a/W10b and W9a/W9b stacks.",
+      "Build PR B (shared secret-name list plus guard test) and PR C (E176 cause, PyPI ProviderStatus) on top of PR A and link with gh stack.",
+      "W1 #216 unproven against CI's contents: read token; may need attestations: read.",
+      "D01 decisions (historical owner join, wire matrix policy) block W8, W9c/d and W3/W4 code.",
+      "W3 trusted output inventory and retry retention design.",
+      "W0 branch deletion: ~40 safe local, 11 remote, 6 need user decision.",
+      "Wire Timeout variant and add Unauthorized/RateLimited/Unreachable causes later.",
+      "Python dev groups cascade decision remains separate.",
+      "Lightweight hand-made tag at HEAD fails with E167 until next commit.",
+      "Local plan file W4 brief still references nonexistent redact_native_output."
+    ]
+  }
+}
