@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.11.5-nightly.202610130630.4203b3d42",
+  "checkpoint_id": "01M4W1ZAQWWYFJ27BCHPHB4NRR",
+  "session_id": "f98f161c-abe7-472b-92f1-8cfe1cfdf74a",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-14T01:56:02.755392Z",
+  "branch": "fix/group-table-validation",
+  "checkpoints_count": 1,
+  "save_step_count": 6,
+  "files_touched": [
+    "crates/callisto-graph/src/cascade/tests.rs",
+    "crates/callisto-graph/src/commands/version/tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "3a20c790df3c",
+  "checkpoint_transcript_start": 3194,
+  "transcript_lines_at_start": 3194,
+  "compact_transcript_start": 316,
+  "token_usage": {
+    "input_tokens": 22,
+    "cache_creation_tokens": 16112,
+    "cache_read_tokens": 4915837,
+    "output_tokens": 9392,
+    "api_call_count": 11
+  },
+  "session_metrics": {
+    "turn_count": 33
+  }
+}
