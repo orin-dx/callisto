@@ -288,6 +288,35 @@ fn validate_intent<'a, L: ProjectLocator, R: CommandRunner>(
     })
 }
 
+/// The packages with any operation of `prepared` that is not observed exactly satisfied.
+///
+/// An observation that fails counts as unsatisfied, so the run itself reports it.
+pub(crate) fn unsatisfied_packages(
+    root: &Path,
+    runner: &dyn CommandRunner,
+    prepared: &super::derive::PreparedDerivation,
+) -> std::collections::BTreeSet<callisto_model::ReleasePackageId> {
+    let context = ProviderContext::new(root, runner, prepared.git_remote.as_ref());
+    prepared
+        .operations
+        .iter()
+        .filter(|(id, operation)| {
+            let observed = checked_provider_for(operation).and_then(|provider| {
+                provider.observe(
+                    &context,
+                    &ProviderRequest {
+                        id,
+                        operation,
+                        artifacts: None,
+                    },
+                )
+            });
+            !matches!(observed, Ok(ProviderObservationV1::Exact { .. }))
+        })
+        .map(|(id, _)| id.package.clone())
+        .collect()
+}
+
 pub(crate) fn canonical_root(root: &Path) -> Result<std::path::PathBuf, GraphError> {
     dunce::canonicalize(root).map_err(|error| GraphError::ReleaseInputRead {
         path: root.to_path_buf(),

@@ -58,6 +58,16 @@ impl Rig {
     fn effects(&self) -> String {
         fs::read_to_string(&self.log).unwrap_or_default()
     }
+
+    /// The calls that change something; the log also records read-only observations.
+    fn mutations(&self) -> Vec<String> {
+        const MUTATING: [&str; 4] = ["cargo publish", "git push", "gh release create", "gh release edit"];
+        self.effects()
+            .lines()
+            .filter(|line| MUTATING.iter().any(|prefix| line.starts_with(prefix)))
+            .map(str::to_owned)
+            .collect()
+    }
 }
 
 fn assert_no_effects(rig: &Rig, root: &Path) {
@@ -96,6 +106,7 @@ fn release_on_a_branch_publishes_tags_and_releases_then_has_nothing_left() {
     for effect in ["cargo publish", "git push", "gh release create"] {
         assert_eq!(effects.matches(effect).count(), 1, "`{effect}` once:\n{effects}");
     }
+    let mutations = rig.mutations();
     assert!(git(root, &["tag", "--list", "core-crate@0.2.0"]).contains("core-crate@0.2.0"));
     assert_eq!(git(root, &["symbolic-ref", "--short", "HEAD"]), "main");
 
@@ -119,7 +130,7 @@ fn release_on_a_branch_publishes_tags_and_releases_then_has_nothing_left() {
     let again = rig.run(root, &["--format", "text", "release"]);
     assert!(again.status.success(), "{}", stderr(&again));
     assert_eq!(String::from_utf8_lossy(&again.stdout), "Nothing to release.\n");
-    assert_eq!(rig.effects(), effects, "no-op performs no effect");
+    assert_eq!(rig.mutations(), mutations, "no-op performs no effect");
 }
 
 /// `--receipt` writes the receipt to that file.
@@ -367,6 +378,96 @@ fn a_failed_run_writes_no_receipt_and_a_rerun_completes() {
     assert!(receipt.is_file());
 }
 
+/// Makes every `git push` through the rig fail while `flag` exists.
+fn fail_pushes_while(rig: &Rig, flag: &Path) {
+    let git = rig.bin.join("git");
+    let script = fs::read_to_string(&git).unwrap();
+    let guard = format!(
+        "#!/bin/sh\nif [ \"$1\" = push ] && [ -e '{}' ]; then printf 'fatal: unable to access remote\\n' >&2; exit 1; fi\n",
+        flag.display()
+    );
+    fs::write(&git, script.replacen("#!/bin/sh\n", &guard, 1)).unwrap();
+}
+
+/// A local tag whose push failed must not read as a finished release: the rerun pushes it,
+/// creates the GitHub release and writes the receipt.
+#[test]
+fn a_rerun_after_a_failed_tag_push_completes_the_release() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    let flag = rig.external.path().join("fail-pushes");
+    fs::write(&flag, "").unwrap();
+    fail_pushes_while(&rig, &flag);
+    let receipt = rig.external.path().join("receipt.json");
+
+    let failed = rig.run(root, &["release", "--receipt", receipt.to_str().unwrap()]);
+    assert!(!failed.status.success(), "{}", stderr(&failed));
+    assert!(!receipt.exists(), "no receipt for a partial run");
+    assert!(git(root, &["tag", "--list", "core-crate@0.2.0"]).contains("core-crate@0.2.0"));
+
+    fs::remove_file(&flag).unwrap();
+    let rerun = rig.run(root, &["release", "--receipt", receipt.to_str().unwrap()]);
+    assert!(rerun.status.success(), "{}", stderr(&rerun));
+    assert_ne!(String::from_utf8_lossy(&rerun.stdout), "Nothing to release.\n");
+    assert!(receipt.is_file(), "the rerun writes the receipt");
+    let effects = rig.effects();
+    assert_eq!(
+        effects.matches("git push").count(),
+        1,
+        "the failed push is not logged:\n{effects}"
+    );
+    assert_eq!(effects.matches("gh release create").count(), 1, "{effects}");
+    assert_eq!(
+        effects.matches("cargo publish").count(),
+        1,
+        "the publish is adopted, not repeated:\n{effects}"
+    );
+
+    let again = rig.run(root, &["release"]);
+    assert_eq!(String::from_utf8_lossy(&again.stdout), "Nothing to release.\n");
+}
+
+/// The preview of an interrupted release shows the remaining work, and a selected package whose
+/// release is complete is still not a release.
+#[test]
+fn a_dry_run_after_a_failed_tag_push_plans_the_remaining_operations() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    let flag = rig.external.path().join("fail-pushes");
+    fs::write(&flag, "").unwrap();
+    fail_pushes_while(&rig, &flag);
+    assert!(!rig.run(root, &["release"]).status.success());
+    fs::remove_file(&flag).unwrap();
+
+    let preview = rig.run(root, &["--format", "json", "--dry-run", "release"]);
+    assert!(preview.status.success(), "{}", stderr(&preview));
+    let planned: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+    assert!(planned.get("nothingToRelease").is_none(), "{planned}");
+
+    let run = rig.run(root, &["release", "--package", "cargo:core-crate"]);
+    assert!(run.status.success(), "{}", stderr(&run));
+    let selected_again = rig.run(root, &["release", "--package", "cargo:core-crate"]);
+    assert!(!selected_again.status.success(), "a finished release is not selectable");
+}
+
+/// A release settled on an older commit is never observed: no provider is contacted.
+#[test]
+fn a_release_settled_on_an_older_commit_reaches_no_provider() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    assert!(rig.run(root, &["release"]).status.success());
+    fs::write(root.join("crates/core/src/lib.rs"), "pub fn later() {}\n").unwrap();
+    git(root, &["commit", "-qam", "later work"]);
+    let before = rig.effects();
+
+    let out = rig.run(root, &["release"]);
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "Nothing to release.\n");
+    assert_eq!(rig.effects(), before, "no provider was observed");
+}
+
 /// With nothing left to release, machine consumers get a typed envelope, not prose, from both
 /// the preview and the real run, and neither performs an effect.
 #[test]
@@ -376,7 +477,7 @@ fn nothing_to_release_is_a_typed_envelope_in_json_for_preview_and_run() {
     let rig = Rig::new(&release_commit);
     let first = rig.run(root, &["--format", "json", "release"]);
     assert!(first.status.success(), "{}", stderr(&first));
-    let effects = rig.effects();
+    let mutations = rig.mutations();
 
     for (args, dry_run) in [
         (&["--format", "json", "--dry-run", "release"][..], true),
@@ -388,5 +489,5 @@ fn nothing_to_release_is_a_typed_envelope_in_json_for_preview_and_run() {
         assert_eq!(report["nothingToRelease"], true, "{args:?}: {report}");
         assert_eq!(report["dryRun"], dry_run, "{args:?}: {report}");
     }
-    assert_eq!(rig.effects(), effects, "reporting nothing performs no effect");
+    assert_eq!(rig.mutations(), mutations, "reporting nothing performs no effect");
 }
