@@ -1,0 +1,66 @@
+{
+  "cli_version": "0.11.5-nightly.202610130630.4203b3d42",
+  "checkpoint_id": "01M4WKR2Z67R5DXW5VMVTSZMEM",
+  "session_id": "f98f161c-abe7-472b-92f1-8cfe1cfdf74a",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-14T07:06:51.599775Z",
+  "branch": "fix/gh-keeps-token",
+  "checkpoints_count": 8,
+  "save_step_count": 7,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "404eab401d1f",
+  "checkpoint_transcript_start": 4974,
+  "transcript_lines_at_start": 4974,
+  "compact_transcript_start": 478,
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 690148,
+    "cache_read_tokens": 11438418,
+    "output_tokens": 9121,
+    "api_call_count": 18
+  },
+  "session_metrics": {
+    "turn_count": 52
+  },
+  "summary": {
+    "intent": "Ship the Callisto 0.10.1 release by fixing dependency-cascade bugs (Cargo target tables, Python extras), merging the PRs and getting the release PR ready. Later, get help with design and layout problems on the Orin DX brand page, which is a different project.",
+    "outcome": "Python extras fix opened as #198 with CI passing. The user merged all PRs, release PR #188 was refreshed on final main with all 11 checks passing and is ready to merge, but it had not been merged yet. The brand-page questions (curve chart toggle, footer, metadata band) were not resolved because that site's source is not available in this session.",
+    "learnings": {
+      "repo": [
+        "Callisto release flow: changesets merge to main, a bot refreshes release PR #188, and the Release workflow publishes to crates.io, tags and GitHub release after #188 is merged.",
+        "Release PR workflow runs need manual approval (action_required) on the new head before checks run.",
+        "Burst merges to main cancel in-flight Release runs, which is expected; only the run on the final main commit matters.",
+        "The Release PR refresh job previously failed with E148 when the ref moved. The fix (#191) passed on final main, but its stale-PR-list root cause is inferred, not observed.",
+        "Python workspace dependency graph ignored [project.optional-dependencies]; extras are now treated as optional dependencies and rewritten like runtime pins. A pin with a different constraint is left as written, matching the Cargo rule.",
+        "Python [dependency-groups] and Poetry groups are still untracked, deliberately left alone as dev-only and unpublished, but not confirmed as intentional.",
+        "The only mermaid `curve` setting in the Callisto README is `'curve': 'basis'` on the flowchart edges. The hero already switches themes via a `<picture>` element.",
+        "Release PR #188 bumps all five crates 0.10.0 to 0.10.1 and includes 15 changesets."
+      ],
+      "code": [],
+      "workflow": [
+        "Verify checks on the exact PR head SHA and confirm main hasn't moved before declaring a release PR ready.",
+        "Separate what checks prove (code and artifact builds) from what they don't (the publish step).",
+        "Write black-box tests that fail on old code and pass on the fix; one asserts exact-text output.",
+        "Fixing one defect class (unread dependency tables) prompted auditing sibling ecosystems and found a second bug.",
+        "The session is isolated to the Callisto repo and cannot browse sibling projects, so requests about other repos need the user to supply the path."
+      ]
+    },
+    "friction": [
+      "The user's 'curve chart' question was misread as the README mermaid curve setting. The screenshot showed the Orin DX design-guide page, so the first answer was about the wrong thing.",
+      "The Orin DX brand site and the techworx page are not accessible from this isolated session, so the cover-artwork, footer and metadata-band issues could not be edited.",
+      "The footer breakage was reported as a shared-component problem, but the cause could only be hypothesized from screenshots.",
+      "One Release run failed with E148 because it started before #191 merged and used the old script; burst merges also cancelled several runs.",
+      "Release PR checks required manual workflow approval before they would run."
+    ],
+    "open_items": [
+      "Merge release PR #188 (head fb02e9a31) and then verify the Release run, callisto@0.10.1 and crate tags, the GitHub release and the crates.io versions.",
+      "Write a mixed-routing test for the apply.rs refactor (#196); no test currently executes those steps, though #196 was merged anyway.",
+      "Decide whether leaving Python [dependency-groups] and Poetry groups untracked is intentional.",
+      "Hosted publication is still unverified on the roadmap, and #191's stale-read explanation remains unproven.",
+      "Orin DX brand page: make the cover artwork theme-aware, remove the specimen's local sun/moon toggle, fix the footer's alignment with the sidebar content column (preferably by having the sidebar layout supply the offset), and move the revised/files metadata into a full-width band below the hero like the techworx site. All of this needs the repo path and the techworx reference path.",
+      "Optionally check how the Callisto README mermaid diagram renders in GitHub dark theme and consider a neutral palette if it looks jarring."
+    ]
+  }
+}
