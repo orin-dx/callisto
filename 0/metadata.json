@@ -1,0 +1,83 @@
+{
+  "cli_version": "0.11.5-nightly.202610130630.4203b3d42",
+  "checkpoint_id": "01M4XW26QCSH7K2M4DKHX48FGP",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-14T18:51:26.981504Z",
+  "branch": "fix/release-rerun-after-failed-push",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "docs/architecture/release.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "6138e48f154b",
+  "checkpoint_transcript_start": 120,
+  "transcript_lines_at_start": 120,
+  "compact_transcript_start": 10,
+  "token_usage": {
+    "input_tokens": 198,
+    "cache_creation_tokens": 192512,
+    "cache_read_tokens": 16976385,
+    "output_tokens": 60295,
+    "api_call_count": 98
+  },
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "summary": {
+    "intent": "Start the planned work lanes from NEXT-WORK.md: fix W2 (SYS-RETRY, rerun after a failed tag push), add the W1 mixed-routing apply test, and begin the W0 docs cleanup.",
+    "outcome": "PR #202 (W2 fix, just ci passing at 91.59% line coverage) and PR #203 (W1 test-only, just ci passing at 92.40% region coverage) were opened. W0 docs fixes to the W2 worktree were being committed when the session ended, with a final just ci check not yet confirmed.",
+    "learnings": {
+      "repo": [
+        "Release rerun selection previously treated a tag on HEAD as released. The fix observes all operations (registry, tag, GitHub release) for packages tagged at HEAD and keeps them selected until all are satisfied. A tag on an older commit still settles the version without contacting any provider.",
+        "The release e2e harness fakes gh, cargo and registry reads, so real provider reads are not proven by the tests. The harness log now records read-only calls, so no-op assertions must compare mutating calls only.",
+        "Three existing tests (init preview and two in release/local.rs) assumed a tag on HEAD means released, which was the defect. They now tag an older commit.",
+        "just ci gates on coverage (90% threshold) and includes a docs-check recipe. The true result is the log's own exit= line, not the background task notification.",
+        "Releases and changesets: a behavior fix to callisto-cli needs a patch changeset, while test-only PRs (W1) need none. AGENTS.md says not to include a session link in commits or PRs.",
+        "Docs that restate the retry gap must be updated together: docs/specs/release.json (REL-CMD-01, REL-CMD-08, REL-RERUN-02), docs/architecture/release.md, docs/adr/0003-reruns-adopt-landed-effects.md, and the SYS-RETRY row in docs/projects/V1-FINDINGS.md.",
+        "The W1 mixed-routing test passed on the first run, so it was validated by mutation: dropping the persist in the mixed workspace rewrite step and reordering mixed rewrites ahead of mixed versions were both caught."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "finding": "Roster derivation now takes a 'resumable' set so packages already tagged at HEAD stay selected until every operation is satisfied."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/capability.rs",
+          "finding": "Added an observation helper used by the local plan to observe releases already tagged at HEAD before deciding."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/local.rs",
+          "finding": "The local plan observes already-tagged releases before deciding. A preview with no origin push URL cannot observe and keeps the old behavior."
+        },
+        {
+          "path": "crates/callisto-graph/src/apply/tests.rs",
+          "finding": "Added a mixed-routing apply test with a plain manifest, a resolver-only workspace root and a root that is both package and workspace, asserting exact bytes."
+        }
+      ],
+      "workflow": [
+        "Write the failing reproduction first. The W2 black-box test failed on the old code with 'Nothing to release.' before the fix.",
+        "When a new test passes immediately, prove it can fail with targeted mutations of the source, then revert them and confirm only the test file changed.",
+        "Use a separate worktree per work item, and note that the sandbox only permits edits inside the current worktree, so you must exit and re-enter a worktree to edit another.",
+        "Check the CI log's exit= line rather than trusting the background-task completion notice.",
+        "Check rendered PR bodies after creation, since backslash-escaped backticks in a quoted heredoc stay literal."
+      ]
+    },
+    "friction": [
+      "The sandbox rejected inline env commands, heredocs, and inline scripts that mention git, forcing workarounds with script files and the Edit tool.",
+      "macOS sed rejected a one-liner for editing imports.",
+      "The first PR body for #202 had literal backslashes from escaped backticks and needed a follow-up fix.",
+      "The first just ci run failed with exit=100 on tests that assumed a tag on HEAD means released, and a second round of failures in local.rs needed more test edits.",
+      "A docs gap in #202 (architecture/release.md still listing the old behavior as a known gap) was found only after the PR was opened, requiring a switch back to the W2 worktree."
+    ],
+    "open_items": [
+      "W0 docs cleanup: verify each register row in the project docs against the code, prune shipped items, and fix references to pruned files. Deleting remote branches needs user confirmation.",
+      "Finish committing the doc fixes to #202 after the final just ci check.",
+      "W1 real-service credential check needs a user decision on where it runs in CI.",
+      "No independent review has been done on #202, which the plan recommends before merging risky changes.",
+      "Real gh, cargo and registry reads in the release rerun path are not covered by tests."
+    ]
+  }
+}
