@@ -1,0 +1,76 @@
+{
+  "cli_version": "0.11.5-nightly.202610130630.4203b3d42",
+  "checkpoint_id": "01M4Y2E98NVY44GHBXW94W9K13",
+  "session_id": "01a0aa80-3aab-7313-9603-edf7533a1570",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-14T20:43:01.381229Z",
+  "branch": "stack/docs-v1",
+  "checkpoints_count": 1,
+  "save_step_count": 98,
+  "files_touched": null,
+  "agent": "Codex",
+  "model": "",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 7182748,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 355469568,
+    "output_tokens": 782983,
+    "api_call_count": 2997,
+    "subagent_tokens_complete": false
+  },
+  "summary": {
+    "intent": "Diagnose why Callisto repeatedly failed to release itself (versions 0.6.0–0.7.2 never published), then plan and implement a recoverable, crash-safe self-release lifecycle with no manual Environment approval gate, and deliver it as a PR.",
+    "outcome": "Produced an incident report and memory entry, an adversarial architecture assessment, and a 60-commit branch implementing durable release recovery, four-target artifact builds, and CI preflights. Local CI and hosted CI on PR #101 all pass; it awaits required review, and 0.7.2 has still not been published to crates.io.",
+    "learnings": {
+      "repo": [
+        "GitHub workflow reruns retain the original commit/workflow definition (GITHUB_SHA/GITHUB_REF), so later workflow fixes cannot repair an old run; recovery needs a fresh workflow_dispatch with an explicit release commit.",
+        "Release artifacts expire (retention) and artifact downloads into the worktree dirty the checkout, tripping the E051 trust check; downloads must go under RUNNER_TEMP.",
+        "The mandatory `release` Environment approval gate was invented by a spec-writing subagent in PR #39 (SPEC-GITHUB-RELEASE-HARDENING-003) and propagated into specs, docs and tests; the owner does not want it. Specs SPEC-RELEASE-INTERFACES-013 and SPEC-RELEASE-PLAN-DURABILITY-001C also referenced it.",
+        "Release executor could return success with operations left in Attempting state because reconcile only selected Pending ops; release reconcile did no provider observation and ReleaseReceiptV1 had no production caller.",
+        "Workflow contract tests asserted exact YAML lines (overfit to past failures) rather than behavior; replaced with a behavioral harness (`just release-workflow-behavior`, 11 scenarios).",
+        "Zizmor flagged template injection from GitHub expressions interpolated into shell; fixed by passing values via env vars. Actionlint needs the repo's CI exception for the local-action `$/` syntax.",
+        "`just test` hid per-test output and exited nonzero via a wrapper artifact; running nextest directly with failure flags showed all tests passing.",
+        "cargo-deny cannot lock its advisory DB in the read-only sandbox cache and needed an elevated rerun; a yanked chacha20 0.10.1 transitive dep surfaced in the supply-chain audit.",
+        "Main ruleset updates use PUT with a full JSON body; the ruleset now requires four artifact-preflight checks while keeping owner bypass and no environment gate.",
+        "Product direction: release path is crates.io + GitHub Releases only; no AWS/JFrog staging registry, and the hermetic provider harness is the rehearsal boundary."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release_execution.rs",
+          "line": 42,
+          "end_line": 61,
+          "finding": "Executor loop breaks when no eligible (Pending) ops remain and returns Ok even if ops are Attempting/Failed/Blocked."
+        },
+        {
+          "path": ".github/workflows/callisto-release.yml",
+          "line": 199,
+          "finding": "Execute job declared `environment: release`, the unwanted approval gate dependency."
+        },
+        {
+          "path": ".github/tests/verify-release-workflow-contract.sh",
+          "finding": "Line-matching YAML assertions gave false confidence; superseded by behavioral tests."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "`entire search` initially unauthenticated, then still reporting no usable login after re-login before eventually working.",
+      "Local checkout was 14 commits behind origin/main and dirty, forcing audits in isolated clones.",
+      "User strongly frustrated by repeated Claude failures, the invented approval gate, and an AWS CodeArtifact recommendation they did not want.",
+      "Cargo build-directory locks and slow Moon/WASM compile segments delayed verification runs.",
+      "Initial ruleset API calls failed (PATCH instead of PUT, nested JSON serialized as strings).",
+      "User repeatedly had to push the agent to continue rather than pause for confirmation."
+    ],
+    "open_items": [
+      "PR #101 needs the required human review, then merge.",
+      "After merge, deliberately dispatch the first real crates.io/GitHub Release publishing 0.7.2 (not a 0.7.3 bump); all nine crates and tags must be verified.",
+      "Resolve the yanked chacha20 0.10.1 dependency chain (rand → retry-policies → reqwest-retry) and decide which commit represents 0.7.2.",
+      "Cancel/abandon the obsolete rerun of run 34702634375; PR #95 should not be merged as written.",
+      "Incident report remains an untracked/uncommitted repo file for review; ensure all specs and docs are free of Environment-approval requirements.",
+      "Real provider-backed rehearsal remains unperformed; only the hermetic harness exists.",
+      "Reconciliation/resume/receipt semantics and governance (required status checks, bypass use) should be re-verified after merge."
+    ]
+  },
+  "kind": "imported"
+}
