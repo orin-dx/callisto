@@ -1,45 +1,200 @@
-Where the context lives
-- In the repo: docs/projects/NEXT-WORK.md. It holds the state after 0.10.2, the rules every workstream follows, and a brief per workstream. Each brief names the files, contracts and specs to read, the approach, the tests (black-box, with the real tool where a fake could hide the bug), and what "done" means.
-- In memory:
-  - A pointer to the plan, with the D01 blocker noted.
-  - A feedback entry: "prove with the real tool before calling it done". It records what went wrong this session: fake tools hid the gh bug, layered PRs only compiled, and a first fix used coarse keys.
-
-Parallel lanes (separate worktrees, disjoint files, just ci run one at a time)
-
-┌──────┬─────────────────────────────────────────────────────────────────────┬───────────────────────────────┐
-│ Lane │                              PR stack                               │             Notes             │
-├──────┼─────────────────────────────────────────────────────────────────────┼───────────────────────────────┤
-│ A    │ W0 cleanup and docs refresh, W1 test debt                           │ Independent small PRs on main │
-├──────┼─────────────────────────────────────────────────────────────────────┼───────────────────────────────┤
-│ B    │ W2 SYS-RETRY                                                        │ Touches tag selection         │
-├──────┼─────────────────────────────────────────────────────────────────────┼───────────────────────────────┤
-│ C    │ W3 SYS-PYFILES, then SYS-PYROUTES, then W4 redacted provider output │ All in the registry provider  │
-├──────┼─────────────────────────────────────────────────────────────────────┼───────────────────────────────┤
-│ D    │ R3 derive.rs (snapshots first, moves only), then SYS-BARRIER        │ Same file, so stacked         │
-├──────┼─────────────────────────────────────────────────────────────────────┼───────────────────────────────┤
-│ E    │ R5a init.rs tests move, R5b templates, then SYS-NAPI                │ Same file, so stacked         │
-├──────┼─────────────────────────────────────────────────────────────────────┼───────────────────────────────┤
-│ F    │ R1 walk.rs::build                                                   │                               │
-└──────┴─────────────────────────────────────────────────────────────────────┴───────────────────────────────┘
-
-Sequenced or blocked
-- W9 (SYS-OWNER, SYS-DEMOTION, resolver divergence) waits for W2 and R1.
-- SYS-MATURIN and W9 are blocked on D01, so I won't start them without your decision.
-- W10 needs two smaller decisions: whether distinct target declarations get their own graph edges (a RewriteKey change), and whether Python dev groups cascade.
-- W11 verification needs credentials and an approved run.
-
-What I'd start with: Lanes A and B together (cleanup plus the mixed-routing test, and SYS-RETRY), since they're independent and user-visible.
-
-One caveat: I verified the template constants and the inline test size in graph init.rs before writing R5. The finding line counts for R1 and R3 are from my own measurement (591 and 412 lines). The rest of the briefs are taken from the repo's findings register, which I read, but I haven't re-verified every row against the code.
-
----
-
-We shouldn't have the next-work in a PR, it's for local tracking wtf
-
----
-
-Can we start that work?
-
----
-
 Keep going
+
+---
+
+Prepping 0.10.3. What's next?
+
+---
+
+Let's do that, keep going on the after
+
+---
+
+Keep going on the post 10.3 work
+
+---
+
+Can we validate
+
+---
+
+From codex:
+
+
+
+<pasted_content id="b815">
+## Assessment
+
+Claude identified real failure modes, but the recommendations are at different levels of readiness. W1 is a useful CI check with a narrower claim than stated. W3 and D01 need a defined authority and migration contract before implementation. W4 addresses a real leak risk but must cover output paths beyond receipts. W10 contains one concrete identity bug and one policy choice.
+
+### 1. W1 — release attestation check
+
+Verdict: do it, but specify the asset and what the check proves. A job with contents: read and GH_TOKEN: ${{ github.token }} fits the existing CI workflow and keeps registry credentials out. The installer already passes that token and verifies the downloaded asset against the release workflow’s signer identity in install-callisto.sh (.github/actions/setup-callisto/scripts/install-callisto.sh:101).
+
+Two claims need correction:
+
+- Fork PRs do receive a read-only GITHUB_TOKEN; they do not receive repository secrets. Restricting this job to same-repo PRs may still be sensible for cost or policy, but “fork PRs get no token” is false. GitHub’s event documentation (https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows) states the read-only behavior.
+- gh release download without a tag selects the latest release and requires an asset pattern. The job must name the expected platform asset and verify it with --repo and --signer-workflow. It will test the currently selected release and CI token access, not prove every historical release or the full installer fallback path. GitHub CLI download (https://cli.github.com/manual/gh_release_download) and attestation verification (https://cli.github.com/manual/gh_attestation_verify) document those boundaries.
+
+I would run the job on main pushes and same-repo PRs as proposed, then record an intentional behavior for a repository with no suitable release. The release-workflow policy script can stay untouched; the CI workflow contract checks should still be run.
+
+### 2. W3 — Python partial uploads
+
+Verdict: correct completion rule, incomplete execution design. The defect is supported: one matching non-yanked file currently yields Exact in registry.rs (crates/callisto-graph/src/commands/release/provider/registry.rs:574), while the publisher builds a wheel and sdist and uploads a broad glob in registry_argv.rs (crates/callisto-graph/src/commands/registry_argv.rs:334).
+
+“Every file the build produced” raises the decisive question: which build, and where is its trusted inventory retained for a retry? The current publisher rebuilds inside the effect, then uploads from dist/. It does not bind that output set and its hashes to the sealed release intent. Rebuilding after a partial upload could produce different bytes; observing the new build as the required set would silently change the release target. The current dist/ glob also does not itself prove that every selected file came from this invocation.
+
+The safe sequence is to declare selected outputs, build into an isolated location, record exact filenames and hashes in a trusted artifact inventory bound to the run, then observe each required file before selecting only missing files for upload. A yanked required file or mismatched hash should block. The plan must define local retry retention and index lag behavior. Its comparison to tags/assets is directionally useful, but REL-RERUN-03 (docs/specs/release.json:245) does not already specify Python file-set proof.
+
+### 3. W4 — redacted provider output
+
+Verdict: prefer closed structured details, but scope the leak paths first. Claude’s correction is sound: redact_native_output does not exist, and redact_known_secrets (crates/callisto-model/src/registry.rs:114) can only replace secrets it knows. A closed enum for persisted diagnostic details removes free-text credential exposure from that field.
+
+There is an important scope distinction: provider observations are already closed enums in release_observation.rs (crates/callisto-model/src/release_observation.rs:80). Free-text error fields and subprocess stderr remain elsewhere, and the CLI runner can print redacted native output. Changing a receipt detail type alone would not establish “nothing can leak by construction.” Inventory every path from provider stdout/stderr into errors, live logs, summaries and persisted files; use closed data wherever Callisto owns the diagnostic. Keep native stderr handling as a separate, explicitly limited boundary.
+
+The proposed enum also needs enough fixed cases to distinguish an authentication failure from a transport failure or malformed response without accidentally reporting either as an absent remote object.
+
+### 4. W10 — target declarations and Python dev groups
+
+Target declarations: accept the defect, challenge the size estimate. RewriteKey (crates/callisto-graph/src/cascade.rs:576) distinguishes manifest, name and dependency kind, but no target table. Cargo extraction and rewriting currently walk top-level dependency sections in cargo.rs (crates/callisto-manifests/src/cargo.rs:398). A discriminator on RewriteKey alone cannot recover target declarations that were never emitted as edges, nor can the existing writer address their table. The fix needs a declaration locator carried through extraction, graph edges, cascade, snapshot and the format-preserving writer. Review public constructors and check-api together. This is a justified correction, but it is not merely one added key field.
+
+Python dev groups: defer the “yes” pending an owner choice. python.rs (crates/callisto-manifests/src/python.rs:459) reads published runtime dependencies and Poetry dependencies, but no dev groups. Cargo’s existing rule rewrites dev constraints without bumping the dependent; that is a plausible policy for Python groups, not evidence that users expect every local tooling group to participate in release versioning. Define which group formats are supported, how includes and duplicate declarations work, and whether stale pins are release errors before making this a gate.
+
+### 5. D01 — owner contract
+
+Conflicting pre-state aliases: accept, and the merge site is confirmed. assign_promoted_pre_keys (crates/callisto-graph/src/lib.rs:275) resolves keys, removes a legacy key and calls entry(owner_key).or_insert(version) at line 338. If the canonical key already exists, its value wins silently. A typed conflict naming both keys and original versions is appropriate. The check should occur before removal or mutation. Equal values can safely coalesce if that is stated explicitly.
+
+Owner identity: reject this as a settled recommendation. The proposed architecture itself says a directory locator does not prove identity across moves in polyglot-v1.md (docs/architecture/polyglot-v1.md:17). Deterministic derivation from a retained snapshot can identify an owner within that snapshot, but it does not by itself join old tags, decisions and pre-state records to the owner after a rename, move, new canonical manifest or roster change. “Refuse renames until explicit mapping exists” is safe only if the code can reliably detect those changes rather than treating them as a new owner. Specify the historical join key, the evidence used to detect uncertain transfer, and the mapping format before choosing persisted versus derived identity. This is the main unresolved D01 decision.
+
+Wire compatibility: accept the principle, require a document-by-document matrix. A version bump should follow semantic change, and unsupported versions should fail explicitly. But ReleaseDecisionV1 (crates/callisto-model/src/release.rs:627) already writes schema 2 while reading 1 and 2; other release documents have separate version gates and digests. Decide accepted old versions, whether old intents may be rerun, and how nested decision/snapshot versions are validated for each wire. “Bump only when meaning changes” is too broad to implement safely without that table.
+
+## Recommended order
+
+Start W1 with a focused downloaded-asset check. In parallel, settle D01’s historical owner join and wire reader matrix; those decisions unblock W8/W9. Specify W3’s trusted build inventory and retry retention before changing its classifier. Treat W4 as a diagnostic-path audit followed by targeted closed types. Split W10 into the target-declaration correctness fix and a separate owner decision on Python dev groups.
+
+This is a source review, not execution evidence: I did not run CI, a live registry fault injection, or a hosted release.
+</pasted_content id="b815">
+
+
+And:
+
+
+
+<pasted_content id="b815">
+## Corrections and improvements to pass to Claude
+
+### W1 — CI credential check
+
+Keep the job, but state its acceptance criterion precisely: download one named asset from the latest published release and run the same verifier flags as the installer: --repo orin-dx/callisto, --signer-workflow orin-dx/callisto/.github/workflows/callisto-release.yml, and --deny-self-hosted-runners (installer (.github/actions/setup-callisto/scripts/install-callisto.sh:101)). gh release download without a tag requires an asset pattern and selects the latest release (GitHub CLI (https://cli.github.com/manual/gh_release_download)).
+
+Correct the rationale for excluding fork PRs: they receive a read-only GITHUB_TOKEN, though no secrets (GitHub Actions events (https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)). Same-repo-only is a policy choice; it means fork changes to this job are first exercised after merge. The standalone job proves token access and verification of the selected release asset. It does not exercise the installer’s download, fallback, or extraction branches. Establish that the current latest release has the expected asset and attestation before making this a required check; I could not verify that live release state here.
+
+### W3 — Python file completion
+
+Keep the proposed rule, but point to the existing T09 packet rather than presenting the inventory work as an omitted plan. It already requires a trusted output manifest bound to the envelope, local retry handling, production-provider fault injection, and publishing only retained missing files (T09 (docs/projects/V1-SYSTEM-HARDENING.json:690)). The concise recommendation still needs these decisions made explicit:
+
+- Define how selected outputs are declared before build, how exact filenames and hashes are recorded afterward, and how the original bytes survive a local retry. Never derive a new required set from a rebuild after an upload.
+- Treat a required file as exact only with an exact filename, non-yanked state, and matching SHA-256. The Simple API permits an empty hashes map; specify whether Callisto downloads that remote file to hash it or reports an indeterminate observation. Do not treat “no hash” as absence. Simple Repository API (https://packaging.python.org/en/latest/specifications/simple-repository-api/).
+- Define duplicate filename, mixed yanked/un-yanked, and post-upload index-lag behavior. Yanking applies per file, and an index may omit yanked files entirely; an apparently absent file is not always proof that it is safe to upload again. File Yanking (https://packaging.python.org/en/latest/specifications/file-yanking/).
+- Replace the current broad dist/<name>-<version>* upload selection with explicit retained paths. The current classifier accepts one matching file as Exact (registry.rs (crates/callisto-graph/src/commands/release/provider/registry.rs:574)); the upload argv uses the broad glob (registry_argv.rs (crates/callisto-graph/src/commands/registry_argv.rs:334)).
+
+This remains a model and proof change gated by D01, not a small classifier patch.
+
+### W4 — provider output
+
+Keep closed structured diagnostic data, but do not add a parallel “details” model without first locating its consumer. ProviderIndeterminateCause (crates/callisto-model/src/release_observation.rs:103) already has closed status and failure variants. A receipt (crates/callisto-model/src/release.rs:2484) is produced only after every operation succeeds and contains exact evidence; failed provider details do not persist there today. Thus “the persisted receipt schema stays small” is true but is not the reason to make this change.
+
+The actual exposure boundary is broader: CommandFailure::NonZeroExit retains raw stderr and redacts on display, while MalformedOutput contains free text (error.rs (crates/callisto-graph/src/error.rs:767)). The runner also streams a redacted copy while keeping raw output for classification (runner.rs (crates/callisto-cli/src/runner.rs:946)). redact_known_secrets only knows configured environment values and URL userinfo (registry.rs (crates/callisto-model/src/registry.rs:114)). Ask for an inventory of live stderr, diagnostic display, JSON output, workflow summaries, and durable files, then replace free text at the relevant provider-owned boundary. A closed new field cannot justify the claim “nothing can leak by construction” while other native-output paths remain.
+
+### W10 — target declarations and dev groups
+
+Cargo target declarations: The defect is plausible and structurally supported, but adding a RewriteKey field alone is insufficient. DependencyEntry and DepEdge (crates/callisto-model/src/dependency.rs:145) have no declaration locator; Cargo extraction (crates/callisto-manifests/src/cargo.rs:398) walks only top-level dependency tables; apply (crates/callisto-graph/src/apply.rs:168) calls a writer addressed only by name and kind. Carry a target-table discriminator through extraction, edge, key, snapshot, cascade and format-preserving writer. Test two same-name declarations with different constraints, including one already current and one stale. just check-api is a compatibility check, not a substitute for migrating public constructors and recording the API impact.
+
+Python dev groups: Make this a separate owner decision. Standard [dependency-groups] entries are explicitly excluded from built distribution metadata; they can contain includes, repeated requirements and normalized-name collisions (Python dependency-group specification (https://packaging.python.org/en/latest/specifications/dependency-groups/)). Cargo’s dev-dependency behavior is a reasonable analogy, but it does not establish release policy for local Python tooling. If approved, specify whether Callisto rewrites local pins without cascading a bump, which group syntaxes it supports, and how includes and duplicates are edited without altering unrelated entries.
+
+### D01 — owner and compatibility contract
+
+Pre-state aliases: The exact merge site is confirmed: assign_promoted_pre_keys (crates/callisto-graph/src/lib.rs:275) removes the legacy key and uses entry(owner_key).or_insert(version) at line 338. A canonical entry silently wins. Compare both values before mutation, emit both original keys and values on conflict, and specify whether semantically equal native versions with different spelling coalesce. Use the corrected historical owner resolver; otherwise an alias might be assigned to the wrong owner before the conflict check.
+
+Owner identity: Separate the directory locator from the output roster. The accepted ADR 11 (docs/adr/0011-directory-keyed-package-identity.md:12) makes the workspace-relative directory the current stable key and expressly leaves moves unresolved. If adding a canonical manifest changes a roster-derived identity, ordinary output additions can orphan history. Specify the stable join across snapshots, how a move or rename is detected, and what explicit mapping would permit it. “Deterministically derived” alone does not answer those questions.
+
+Also fix tag selection as part of the owner contract: TagIndex (crates/callisto-graph/src/tags.rs:154) consults current, then prior, then legacy templates only if the earlier choice is empty. That is why a newer qualified tag can lose to an older bare tag after demotion. The contract should gather all tags demonstrably owned under accepted templates, then select the latest version with a defined tie rule. A new owner key alone will not fix that ordering defect.
+
+Wire compatibility: Keep the principle, but require a matrix for decision, snapshot, intent, artifact manifest, envelope and receipt: writer version, readable versions, semantic changes, old-intent rerun policy, and exact rejection diagnostic. The decision (crates/callisto-model/src/release.rs:658) already writes schema 2 while reading 1 and 2; applying one universal bump rule would lose that established compatibility.
+
+## Suggested message to Claude
+
+> Please revise the recommendations to separate confirmed defects, owner policy choices, and implementation design. W1 should mirror the installer’s verifier flags and correct the fork-token claim. W3 should reference the existing T09 trusted-inventory plan and settle hash absence, index lag, and retained-byte retry semantics before coding. W4 should extend or use the existing closed observation types only after auditing every native-output display path; failed observations are not currently persisted in receipts. W10 target support needs a declaration locator throughout extraction and writing, while Python dev groups need an explicit owner policy. For D01, the alias merge site is confirmed; define stable historical owner joining, select the latest owned tag across all accepted templates, and publish a per-document wire compatibility matrix.
+
+This was a read-only review. I did not run CI, a registry fault injection, or a live release-asset verification.
+</pasted_content id="b815">
+
+---
+
+Anything we can parallelize with worktrees and agent teams + workflows?
+
+---
+
+Also think of dependencies and how to avoid conflicts. We should stack the PRs also
+
+---
+
+Yes, start Wave 0 as a workflow
+
+---
+
+Yes, commit and stack the work on top
+
+---
+
+Pickup the work
+
+---
+
+<task-notification>
+<task-id>bxoppgyfg</task-id>
+<tool-use-id>toolu_01KWgr3MsFS1fnGdcnuyVJcL</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/15c732d1-457b-4efc-91e5-664943f21b1c/tasks/bxoppgyfg.output</output-file>
+<status>completed</status>
+<summary>Background command "Run just ci on the docs PR" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bxky5x9t6</task-id>
+<tool-use-id>toolu_01XnmNH6oCg9Y3hsQKKWuSqq</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/15c732d1-457b-4efc-91e5-664943f21b1c/tasks/bxky5x9t6.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for the docs PR gate to finish" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bd5pv9scz</task-id>
+<tool-use-id>toolu_011Jj7AczT83hgoTyy6iV4Ci</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/15c732d1-457b-4efc-91e5-664943f21b1c/tasks/bd5pv9scz.output</output-file>
+<status>completed</status>
+<summary>Background command "Add the changeset and run just ci for PR B" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bm2hk2jl1</task-id>
+<tool-use-id>toolu_01Y5g8E2cTcvBDxGVCynqBAn</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/15c732d1-457b-4efc-91e5-664943f21b1c/tasks/bm2hk2jl1.output</output-file>
+<status>completed</status>
+<summary>Background command "Add the changeset and run just ci for PR C" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b8rosd0r9</task-id>
+<tool-use-id>toolu_014cfPf18qUPswUCAx3LacB2</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/15c732d1-457b-4efc-91e5-664943f21b1c/tasks/b8rosd0r9.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for PR C's gate to report" completed (exit code 0)</summary>
+</task-notification>
