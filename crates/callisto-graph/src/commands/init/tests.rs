@@ -696,6 +696,23 @@ fn render_workflow_passes_actionlint_and_zizmor_when_available() {
     lint_workflow(&render_matrix_workflow());
 }
 
+// The exact bytes of both generated workflows: every placeholder replaced, nothing else changed.
+#[test]
+fn rendered_simple_workflow_bytes_are_pinned() {
+    let mut facts = cargo_only_facts();
+    facts.ecosystems = BTreeSet::from([Ecosystem::Cargo, Ecosystem::Npm, Ecosystem::Pypi]);
+    let workflow = render_workflow_0_8_0(&facts, "trunk");
+    assert!(workflow.ends_with("\n") && !workflow.ends_with("\n\n"), "{workflow:?}");
+    insta::assert_snapshot!(workflow);
+}
+
+#[test]
+fn rendered_matrix_workflow_bytes_are_pinned() {
+    let workflow = render_matrix_workflow();
+    assert!(workflow.ends_with("\n") && !workflow.ends_with("\n\n"), "{workflow:?}");
+    insta::assert_snapshot!(workflow);
+}
+
 fn lint_workflow(workflow: &str) {
     let dir = tempfile::tempdir().unwrap();
     let workflows_dir = dir.path().join(".github/workflows");
