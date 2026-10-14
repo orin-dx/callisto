@@ -1,0 +1,62 @@
+{
+  "cli_version": "0.11.5-nightly.202610130630.4203b3d42",
+  "checkpoint_id": "01M4WNE34N829TXZ5ANVDHW4SB",
+  "session_id": "f98f161c-abe7-472b-92f1-8cfe1cfdf74a",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-14T07:36:19.701046Z",
+  "branch": "fix/gh-keeps-token",
+  "checkpoints_count": 1,
+  "save_step_count": 7,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "a8e056ff9021",
+  "checkpoint_transcript_start": 5811,
+  "transcript_lines_at_start": 5811,
+  "compact_transcript_start": 563,
+  "token_usage": {
+    "input_tokens": 36,
+    "cache_creation_tokens": 18296,
+    "cache_read_tokens": 13299467,
+    "output_tokens": 13841,
+    "api_call_count": 18
+  },
+  "session_metrics": {
+    "turn_count": 58
+  },
+  "summary": {
+    "intent": "Fix a failing Callisto release workflow (PR #199) where `gh` could not authenticate in CI, and give the user real evidence that the fix is correct after they said they had no confidence in it.",
+    "outcome": "The assistant reproduced the bug and verified the fix using the real `gh` against a real attested 0.10.0 release asset. It also added a credential guard for `cargo` in the e2e harness and showed the guard fails 8 release e2e tests when cargo's keep-list entry is removed. The CLI suite passes (427 tests); final lint, commit and full CI were started, but their results are not shown in the transcript.",
+    "learnings": {
+      "repo": [
+        "The release workflow `callisto-release.yml` already sets `GH_TOKEN: ${{ github.token }}` on the 'Execute verified release' step, with `contents: write` and `attestations: read` permissions, so the workflow was not the cause of the failure.",
+        "The root cause was Callisto's runner scrubbing the environment before launching child tools, so `GH_TOKEN` reached Callisto but not `gh`.",
+        "Per-tool credentials are defined in a single table, `credentials_needed_by`. `gh` reads `GH_TOKEN` (falling back to `GITHUB_TOKEN`), and `cargo` needs `CARGO_REGISTRY_TOKEN`. New tools start with no credentials.",
+        "The release e2e harness uses fake `gh` and fake `cargo` binaries, which now refuse to run without their tokens, so they reproduce the CI condition.",
+        "Real `gh attestation verify` works with only `GH_TOKEN` and no stored login, which makes it a faithful local reproduction of CI."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/runner.rs",
+          "finding": "The runner scrubs the environment of child processes and keeps only per-tool credentials from the `credentials_needed_by` keep-list. Missing entries, such as `gh` or `cargo`, silently drop the token, and that caused the CI failure."
+        }
+      ],
+      "workflow": [
+        "When the user doubts a fix, replace fake-tool proofs with real-tool proofs: use the real binary and a real artifact, and run controls with and without the variable.",
+        "Prove that a new test guard works by deliberately removing the fix (here, cargo's keep-list entry) and confirming the tests fail (8 of them).",
+        "Run the full lint and CI pipeline on the exact final state before pushing."
+      ]
+    },
+    "friction": [
+      "The user lost confidence after the assistant argued the workflow was fine without showing evidence, and said it was rushing.",
+      "Earlier verification relied on a fake `gh`, which did not prove the fix against real services.",
+      "The publish path (crates.io, tags, release) has not run against real services with the scrubbing in place."
+    ],
+    "open_items": [
+      "Hosted CI must re-run on the new push to #199, and the user then needs to merge it.",
+      "The real publish path (crates.io, tags, release) is untested; the recovery run is the first real test and should fail before any effect if something is still wrong.",
+      "Final lint, commit and full CI results were not shown in the transcript and need confirming.",
+      "`PYPI_TOKEN`, `TWINE_*` and the npm config path survive in no tool through the plain runner. Publishers must be given them explicitly."
+    ]
+  }
+}
