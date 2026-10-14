@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.11.5-nightly.202610130630.4203b3d42",
+  "checkpoint_id": "01M4XV7DH167Y247BY0M2Y4DXB",
+  "strategy": "manual-commit",
+  "branch": "worktree-w2-sys-retry",
+  "checkpoints_count": 3,
+  "files_touched": [
+    ".changeset/jolly-stags-roar.md",
+    "crates/callisto-cli/tests/release_command_e2e_tests.rs",
+    "crates/callisto-graph/src/commands/release/capability.rs",
+    "crates/callisto-graph/src/commands/release/local.rs",
+    "crates/callisto-graph/src/commands/release_decision.rs",
+    "docs/architecture/release.md",
+    "docs/specs/release.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 126,
+    "cache_creation_tokens": 155917,
+    "cache_read_tokens": 7881406,
+    "output_tokens": 38637,
+    "api_call_count": 62
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "cli_version": "0.11.5-nightly.202610130630.4203b3d42",
+  "checkpoint_id": "01M4XV7DH167Y247BY0M2Y4DXB",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-14T18:36:49.544763Z",
+  "branch": "worktree-w2-sys-retry",
+  "checkpoints_count": 3,
+  "save_step_count": 1,
+  "files_touched": [
+    ".changeset/jolly-stags-roar.md",
+    "crates/callisto-cli/tests/release_command_e2e_tests.rs",
+    "crates/callisto-graph/src/commands/release/capability.rs",
+    "crates/callisto-graph/src/commands/release/local.rs",
+    "crates/callisto-graph/src/commands/release_decision.rs",
+    "docs/architecture/release.md",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "7f3672b01bee",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 126,
+    "cache_creation_tokens": 155917,
+    "cache_read_tokens": 7881406,
+    "output_tokens": 38637,
+    "api_call_count": 62
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "summary": {
+    "intent": "Start the planned parallel work lanes (A and B) from the NEXT-WORK plan, beginning with W2 SYS-RETRY (rerun after a tag is created but the push fails must finish the release). Along the way, the user required that the plan be kept local-only rather than in a PR.",
+    "outcome": "Closed PR #201 and moved the plan to a git-excluded local file. Implemented W2 SYS-RETRY in its own worktree with e2e tests, spec and architecture doc updates and a changeset; `just ci` passes (exit=0, 91.59% coverage) and the change is committed. The PR was not yet opened, and Lane A (W0/W1) was not started.",
+    "learnings": {
+      "repo": [
+        "Local tracking and handoff plans live in `.claude/plans/` (excluded via `.git/info/exclude`, not `.gitignore`) and must never be committed or put in a PR.",
+        "`just ci` must be run one at a time across worktrees; success must be judged by the log's own `exit=` line, not the background task's wrapper exit code.",
+        "Release tag selection previously treated an already-tagged version as settled. SYS-RETRY now derives a 'resumable' set, and the local plan observes releases already tagged at HEAD before deciding, so a failed push can be completed on rerun.",
+        "Several existing tests in `init.rs` (`preview_matches_release_dry_run_without_writing`) and `release/local.rs` relied on the old premise that a tagged version is settled, and had to be updated after the selection change.",
+        "The e2e release harness uses a fake publisher and fake git remote (`FAKE_GIT_REMOTE_TAGS`, `record_pushed_tag`, `CALLISTO_TEST_PUSH`) in `crates/callisto-cli/tests/common/release_harness.rs`.",
+        "Changesets are added with the built binary into `.changeset/`; the W2 change used `.changeset/jolly-stags-roar.md`.",
+        "Release behavior is specified in `docs/specs/release.json` and `docs/architecture/release.md`, both updated for W2."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "finding": "Roster derivation now takes a 'resumable' set so releases tagged but not fully published are re-selected."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/capability.rs",
+          "finding": "Added a helper that observes releases already tagged at HEAD, used by the local plan."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/local.rs",
+          "finding": "The local plan calls the tagged-at-HEAD observation before deciding; two tests here assumed tagged means settled and were revised."
+        }
+      ],
+      "workflow": [
+        "Write the failing reproduction first (tag created, push fails, rerun), then confirm it fails before implementing.",
+        "Run `just ci` in a background script and read the log's `exit=` line. The task-completion notification only reports that the wrapper exited.",
+        "Run tests without fail-fast to see all failures from a behavior change at once.",
+        "Prove behavior with the real tool or harness, not only fakes, as the user's feedback memory says.",
+        "Use the Edit tool instead of inline shell when the sandbox blocks inline `env` or git-mentioning scripts; macOS `sed` rejects some GNU-style one-liners."
+      ]
+    },
+    "friction": [
+      "The plan file was not in the working branch; it existed only on PR #201's branch, which blocked starting work.",
+      "The assistant had put the local tracking plan into a PR (#201), which the user objected to; it had to be closed and moved.",
+      "The sandbox rejected inline `env` commands and inline scripts mentioning git, forcing script files and Edit-tool workarounds.",
+      "macOS `sed` rejected a one-liner for fixing imports.",
+      "The first `just ci` run failed (exit=100) on `init::tests::preview_matches_release_dry_run_without_writing`, and a rerun then exposed two more `local.rs` tests with the same stale premise.",
+      "The first lane summary gave a wrong plan file path."
+    ],
+    "open_items": [
+      "Open the W2 SYS-RETRY PR (committed, not yet pushed or opened).",
+      "Lane A (W0 cleanup and docs refresh, W1 test debt) has not been started.",
+      "The leftover `docs/next-work-plan` branch still exists on the remote and in the locked worktree `.claude/worktrees/fix-gh-credentials`; deletion awaits the user's say-so.",
+      "SYS-MATURIN and W9 are blocked on decision D01.",
+      "W9 (SYS-OWNER, SYS-DEMOTION, resolver divergence) waits for W2 and R1.",
+      "W10 needs two decisions: whether distinct target declarations get their own graph edges (a RewriteKey change), and whether Python dev groups cascade.",
+      "W11 verification needs credentials and an approved run.",
+      "Lanes C, D, E and F were not started; brief line counts for R1 and R3 were self-measured and other briefs were not re-verified against the code."
+    ]
+  }
+}
