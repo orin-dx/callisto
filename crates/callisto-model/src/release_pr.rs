@@ -285,6 +285,35 @@ impl ReleasePrDecisionV2 {
         }
         Ok(())
     }
+
+    /// Allows only the selected PR head change performed by this executor.
+    pub fn verify_snapshot_after_update(
+        &self,
+        observed: &ReleasePrSnapshotV2,
+        applied_head: &CommitSha,
+    ) -> Result<(), ReleasePrDecisionError> {
+        let ReleasePrActionV2::Update {
+            pull_request_number, ..
+        } = &self.action
+        else {
+            return Err(ReleasePrDecisionError::SnapshotChanged);
+        };
+        if Self::derive(true, &self.config, &self.snapshot)?.action != self.action {
+            return Err(ReleasePrDecisionError::SnapshotChanged);
+        }
+        let mut expected = self.clone();
+        let pr = expected
+            .snapshot
+            .open_pull_requests
+            .iter_mut()
+            .find(|pr| pr.number == *pull_request_number)
+            .ok_or(ReleasePrDecisionError::SnapshotChanged)?;
+        if &pr.head_commit == applied_head {
+            return Err(ReleasePrDecisionError::SnapshotChanged);
+        }
+        pr.head_commit = applied_head.clone();
+        expected.verify_snapshot(observed)
+    }
 }
 
 /// The on-the-wire shape of [`ReleasePrDecisionV2`], with its nested config and
@@ -983,6 +1012,63 @@ mod tests {
             decision.verify_snapshot(&changed),
             Err(ReleasePrDecisionError::SnapshotChanged)
         ));
+    }
+
+    #[test]
+    fn snapshot_after_update_accepts_only_the_applied_head_transition() {
+        let original = snapshot(vec![pr(42, "callisto/version-packages"), pr(99, "other-work")]);
+        let decision = ReleasePrDecisionV2::derive(true, &config(), &original).unwrap();
+        let mut applied = original.clone();
+        applied.open_pull_requests[0].head_commit = sha();
+        assert!(decision.verify_snapshot_after_update(&applied, &sha()).is_ok());
+        assert!(decision.verify_snapshot_after_update(&original, &sha()).is_err());
+        assert!(decision.verify_snapshot(&applied).is_err());
+        assert!(decision.verify_snapshot_after_update(&original, &other_sha()).is_err());
+        assert!(decision.verify_snapshot_after_update(&applied, &other_sha()).is_err());
+
+        let mut unrelated_head = applied.clone();
+        unrelated_head.open_pull_requests[1].head_commit = sha();
+        let mut changed_base = applied.clone();
+        changed_base.base_commit = other_sha();
+        let mut changed_branch = applied.clone();
+        changed_branch.open_pull_requests[0].head_branch = "other-branch".into();
+        let mut changed_repository = applied.clone();
+        changed_repository.repository = GitHubRepository::parse("other/callisto").unwrap();
+        let mut closed_pr = applied.clone();
+        closed_pr.open_pull_requests.remove(0);
+        let mut added_pr = applied.clone();
+        added_pr.open_pull_requests.push(pr(100, "other-work"));
+        for observed in [
+            unrelated_head,
+            changed_base,
+            changed_branch,
+            changed_repository,
+            closed_pr,
+            added_pr,
+        ] {
+            assert!(matches!(
+                decision.verify_snapshot_after_update(&observed, &sha()),
+                Err(ReleasePrDecisionError::SnapshotChanged)
+            ));
+        }
+    }
+
+    #[test]
+    fn snapshot_after_update_rejects_nonupdate_and_inconsistent_decisions() {
+        for has_changesets in [false, true] {
+            let original = snapshot(vec![]);
+            let decision = ReleasePrDecisionV2::derive(has_changesets, &config(), &original).unwrap();
+            assert!(decision.verify_snapshot_after_update(&original, &sha()).is_err());
+        }
+        let original = snapshot(vec![pr(42, "callisto/version-packages")]);
+        let mut decision = ReleasePrDecisionV2::derive(true, &config(), &original).unwrap();
+        if let ReleasePrActionV2::Update {
+            pull_request_number, ..
+        } = &mut decision.action
+        {
+            *pull_request_number = 43;
+        }
+        assert!(decision.verify_snapshot_after_update(&original, &sha()).is_err());
     }
 
     fn added(path: &str, contents: &[u8]) -> StagedChangeV1 {

@@ -34,6 +34,9 @@ run_case() {
   {
     echo "curl() { echo \"curl \$*\" >> '${calls_file}'; [[ '${curl_behavior}' == fail ]] && return 1 || return 0; }"
     echo "tar() { return 0; }"
+    echo "unzip() { return 99; }"
+    echo "git() { return 99; }"
+    echo "gh() { echo \"gh \$*\" >> '${calls_file}'; return 1; }"
     echo "cargo() {"
     echo "  echo \"cargo \$*\" >> '${calls_file}'"
     echo "  if [[ \"\$1\" == install && \"\$*\" == *'callisto-cli'* && \"\$*\" != *'--git'* ]]; then"
@@ -53,6 +56,7 @@ run_case() {
     echo "GITHUB_PATH='${workdir}/github_path'"
     echo "touch \"\$GITHUB_PATH\""
     echo "TAG_NAME='${version}'"
+    echo "SOURCE=auto"
     echo "CALLISTO_BIN_DIR='${workdir}/callisto-bin'"
     echo "mkdir -p '${workdir}/callisto-bin'"
     extract_snippet
@@ -95,5 +99,14 @@ if [[ "$out" != *"--git"* ]]; then
 else
   echo "PASS: git fallback still runs when crates.io install fails"
 fi
+
+for version in callisto@0.5.0 callisto-cli@0.5.0 0.5.0; do
+  out=$(run_case "$version" fail crates-io-fails); code=$?
+  if [[ $code -eq 0 || "$out" != *"--version 0.5.0"* || "$out" == *"--git"* ]]; then
+    echo "FAIL: unavailable pin $version must fail without git fallback: code=$code out=$out"; fail=1
+  else
+    echo "PASS: unavailable pin $version fails without git fallback"
+  fi
+done
 
 exit $fail

@@ -23,7 +23,7 @@ fi
 # whatever is newest, so `callisto-action@<sha> # callisto@X.Y.Z` always
 # installs X.Y.Z. Falls back to true "latest" when the ref is unset (local or
 # unpinned invocation) or matches no published callisto@ tag.
-if [[ "$TAG_NAME" == "latest" && -n "${GITHUB_ACTION_REF:-}" ]]; then
+if [[ "$SOURCE" == "auto" && "$TAG_NAME" == "latest" && -n "${GITHUB_ACTION_REF:-}" ]]; then
   resolved_tag=$(git ls-remote --tags https://github.com/orin-dx/callisto.git 'callisto@*' 2>/dev/null \
     | awk -v ref="$GITHUB_ACTION_REF" '$1 == ref { print $2 }' \
     | sed -e 's#^refs/tags/##' -e 's/\^{}$//' \
@@ -139,14 +139,36 @@ fetch_prebuilt() {
   esac
 }
 
-# Prioritize local repository build when inside the callisto monorepo
-if [[ -f "$GITHUB_WORKSPACE/Cargo.toml" ]] && grep -q "callisto-cli" "$GITHUB_WORKSPACE/Cargo.toml"; then
+# Dependencies named callisto-cli do not establish checkout source ownership.
+owns_local_source() {
+  local workspace git_root metadata
+  workspace=$(cd "$GITHUB_WORKSPACE" && pwd -P) || return 1
+  git_root=$(git -C "$workspace" rev-parse --show-toplevel) || return 1
+  [[ "$git_root" == "$workspace" ]] || return 1
+  git -C "$workspace" ls-files --error-unmatch -- \
+    Cargo.toml crates/callisto-cli/Cargo.toml crates/callisto-cli/src/main.rs >/dev/null || return 1
+  metadata=$(cargo metadata --locked --offline --no-deps --format-version 1 \
+    --manifest-path "$workspace/Cargo.toml") || return 1
+  jq -e --arg workspace "$workspace" '
+    .workspace_root == $workspace and
+    (.workspace_members as $members | [.packages[] |
+      select(.name == "callisto-cli" and .source == null and
+        .manifest_path == ($workspace + "/crates/callisto-cli/Cargo.toml") and
+        (.id as $id | $members | index($id) != null) and
+        any(.targets[]; .name == "callisto" and (.kind | index("bin") != null) and
+          .src_path == ($workspace + "/crates/callisto-cli/src/main.rs")))] | length == 1)
+  ' <<< "$metadata" >/dev/null
+}
+
+if [[ "$SOURCE" == "local" ]]; then
+  if ! owns_local_source; then
+    echo "::error::setup-callisto source=local requires a Callisto workspace checkout; check out Callisto source or use source=auto"
+    exit 1
+  fi
   echo "Building local callisto binary from current repository commit..."
-  cargo build --locked -p callisto-cli
+  cargo build --locked --manifest-path "$GITHUB_WORKSPACE/Cargo.toml" -p callisto-cli \
+    --bin callisto --target-dir "$GITHUB_WORKSPACE/target"
   cp "$GITHUB_WORKSPACE/target/debug/callisto" "$CALLISTO_BIN_DIR/callisto"
-elif [[ "$SOURCE" == "local" ]]; then
-  echo "::error::setup-callisto source=local requires a Callisto workspace checkout"
-  exit 1
 elif [[ -n "$ASSET_NAME" ]] && fetch_prebuilt; then
   echo "Callisto downloaded from GitHub Releases ($DOWNLOAD_URL)"
 elif [[ "$TAG_NAME" == "latest" ]] && cargo install callisto-cli --locked --root "${RUNNER_TEMP}/callisto-cargo-install" --quiet; then

@@ -152,7 +152,12 @@ if [[ "$moved_sha" != "$new_sha" ]]; then
   exit 1
 fi
 
-callisto release-pr verify --decision "$decision" --snapshot "$(release_pr_snapshot)" > /dev/null
+if [[ "$decision_kind" == update ]]; then
+  callisto release-pr verify --decision "$decision" --snapshot "$(release_pr_snapshot)" \
+    --applied-head "$new_sha" > /dev/null
+else
+  callisto release-pr verify --decision "$decision" --snapshot "$(release_pr_snapshot)" > /dev/null
+fi
 
 label_exists=$(gh label list --limit 1000 --json name --jq 'any(.[]; .name == env.INPUT_PR_LABEL)')
 if [[ "$label_exists" != true ]]; then
