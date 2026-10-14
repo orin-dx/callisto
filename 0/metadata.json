@@ -1,0 +1,88 @@
+{
+  "cli_version": "0.11.5-nightly.202610130630.4203b3d42",
+  "checkpoint_id": "01M4Y00Y7AFQW0X09A4ND4641A",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-14T20:00:40.704613Z",
+  "branch": "worktree-r5a-init-tests-move",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "37b215b0a6db",
+  "checkpoint_transcript_start": 120,
+  "transcript_lines_at_start": 120,
+  "compact_transcript_start": 10,
+  "token_usage": {
+    "input_tokens": 270,
+    "cache_creation_tokens": 226431,
+    "cache_read_tokens": 27051062,
+    "output_tokens": 75821,
+    "api_call_count": 134
+  },
+  "session_metrics": {
+    "turn_count": 5
+  },
+  "summary": {
+    "intent": "Work through the NEXT-WORK plan lanes: fix W2 (SYS-RETRY) so a release rerun after a failed tag push completes, add W1's apply mixed-routing test, and do W0's docs refresh and branch cleanup.",
+    "outcome": "Opened three PRs (#202 SYS-RETRY fix, #203 mixed-routing test, #204 docs refresh), each with `just ci` passing. W0 branch deletion and the W1 real-service credential check were deferred pending the user's decisions.",
+    "learnings": {
+      "repo": [
+        "Each work item is done in its own worktree off origin/main under .claude/worktrees/, and edits are only allowed inside the current worktree, so fixing another PR's docs requires ExitWorktree/EnterWorktree to switch.",
+        "`just ci` is the gate (90% line coverage threshold). Background runs must be judged by the log's own `exit=` line, not the task-notification exit code, which only reports the wrapper script.",
+        "Release rerun selection previously treated 'tag exists on HEAD' as released, which was the SYS-RETRY defect. Now a package with its version tagged on HEAD has registry, tag and GitHub release observed, and stays selected until all are satisfied. A tag on an older commit still settles without contacting providers.",
+        "Three existing tests (init preview, two in release/local.rs) assumed a tag on HEAD means released, so they were changed to tag an older commit.",
+        "The release e2e harness log now records read-only calls, so no-op assertions compare mutating calls only.",
+        "Spec changes live in docs/specs/release.json (REL-CMD-01, REL-CMD-08, REL-RERUN-02), alongside docs/architecture/release.md and the ADR docs/adr/0003. Changesets are added with the built binary, and the SYS-RETRY change is a callisto-cli patch changeset.",
+        "AGENTS.md says not to put session links in commits or PRs.",
+        "The plan JSON V1-SYSTEM-HARDENING.json round-trips byte-exact, so scripted pruning is safe.",
+        "Many local branches are squash-merged, so `git branch --merged` cannot identify which are safe to delete."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "finding": "Roster derivation gained a 'resumable' set of releases already tagged at HEAD that are still incomplete."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/local.rs",
+          "finding": "The local plan observes releases already tagged at HEAD via a new capability.rs helper before deciding selection."
+        },
+        {
+          "path": "docs/architecture/release.md",
+          "line": 35,
+          "finding": "Described the old rerun behavior as a known gap and had to be updated after the fix."
+        },
+        {
+          "path": "crates/callisto-graph/src/apply/tests.rs",
+          "finding": "The mixed-routing test was shown to fail when the persist in the mixed workspace rewrite is dropped and when the mixed bump order is reversed."
+        }
+      ],
+      "workflow": [
+        "Write the failing reproduction first and confirm it fails on the old code (it failed with 'Nothing to release.') before implementing.",
+        "When a new test passes first try, prove it can fail with mutations (drop a persist, reorder steps), then revert and confirm only the test file changed.",
+        "The sandbox rejects inline `env` commands, heredocs, and inline scripts mentioning `git`, and macOS sed rejects some one-liners. Workarounds were script/temp files, the Edit tool, and the Write tool.",
+        "A quoted heredoc with backslash-escaped backticks leaves literal backslashes in the PR body. Write the body to a file instead and check the rendered PR.",
+        "Don't delete branches without per-branch confirmation."
+      ]
+    },
+    "friction": [
+      "Sandbox restrictions on inline env, heredocs and git-mentioning scripts forced repeated workarounds via temp script files.",
+      "The first `just ci` failed with exit=100 on init::tests::preview_matches_release_dry_run_without_writing, and then on two more local.rs tests, all because they relied on the defective premise.",
+      "The PR body for #202 had literal backslashes from escaped backticks and needed a fix.",
+      "Background sessions can't edit the shared checkout, so .claude/plans/NEXT-WORK.md could not be updated with PR status.",
+      "The sandbox only allows edits inside the current worktree, forcing worktree switches to patch #202 docs.",
+      "The macOS sed one-liner for fixing imports failed."
+    ],
+    "open_items": [
+      "Delete stale remote and local branches, per branch with user approval. Remote branches that aren't the assistant's: docs/next-work-plan, docs/spec-rewrite, fix/native-resolution. About 35 local branches remain, and some, like pr/v1-current-contract, may carry unpushed commits.",
+      "W1 real-service credential check needs the user's decision on where it runs in CI.",
+      "Follow-up edit to #204 after #202 merges: SYS-RETRY and T08-RETRY entries in the roadmap, plan JSON and guide still reference the fixed item.",
+      "No independent review yet of #202, which the plan recommends before merging risky changes.",
+      "Real `gh`, `cargo` and registry reads are faked by the harness and unproven against real services.",
+      "A preview without an `origin` push URL cannot observe, so it keeps the old behavior.",
+      "Update .claude/plans/NEXT-WORK.md with PR status from a non-background session.",
+      "Next lanes not started: Lane D (R3 derive.rs snapshots/moves, then SYS-BARRIER) and Lane E (R5 init.rs moves, then SYS-NAPI)."
+    ]
+  }
+}
