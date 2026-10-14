@@ -1339,3 +1339,133 @@ fn prefixed_package_rules_still_apply_correctly_to_promoted_siblings() {
     assert_eq!(cargo_pkg.release_trigger, ReleaseTrigger::Changeset);
     assert_eq!(npm_pkg.release_trigger, ReleaseTrigger::Auto);
 }
+
+/// The mirror of `promoted_platform_index_value_points_to_prefixed_owner_id`: the platform manifest is
+/// co-located with the owner that sorts second, so it is the second path's platform keys that are re-keyed.
+#[test]
+fn promoted_platform_index_value_follows_the_later_path_too() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    write_pkg(root, "crates/native-core", Ecosystem::Npm, "native-core");
+    write_pkg(root, "packages/native-core", Ecosystem::Cargo, "native-core");
+    std::fs::write(
+        root.join("packages/native-core/package.json"),
+        r#"{"name":"@myorg/native-core-linux-x64-gnu","version":"0.1.0","os":["linux"],"cpu":["x64"]}"#,
+    )
+    .unwrap();
+
+    let locator = crate::locate::IgnoreWalkLocator::new(root);
+    let ws = crate::Workspace::load(root.to_path_buf(), &locator, &NoopRunner).expect("promotion must succeed");
+
+    let platform_entry = ws
+        .graph
+        .identity()
+        .platform
+        .get("@myorg/native-core-linux-x64-gnu")
+        .expect("platform entry must exist");
+    assert_eq!(
+        platform_entry.0,
+        PackageId::Prefixed {
+            ecosystem: Ecosystem::Cargo,
+            name: "native-core".to_string(),
+        }
+    );
+    assert_eq!(
+        platform_entry.1,
+        std::path::PathBuf::from("packages/native-core/package.json")
+    );
+}
+
+fn pnpm_workspace(members: &[(&str, &str)]) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    std::fs::write(root.join("pnpm-workspace.yaml"), "packages:\n  - \"packages/*\"\n").unwrap();
+    for (name, dependencies) in members {
+        std::fs::create_dir_all(root.join("packages").join(name)).unwrap();
+        std::fs::write(
+            root.join("packages").join(name).join("package.json"),
+            format!(r#"{{"name":"{name}","version":"0.1.0"{dependencies}}}"#),
+        )
+        .unwrap();
+    }
+    dir
+}
+
+/// A `workspace:<relative path>` dependency resolves by the path it names, so the dependency key is only
+/// an alias and may be spelled differently from the member's own name.
+#[test]
+fn a_relative_pnpm_workspace_dependency_resolves_by_path_not_by_key() {
+    let dir = pnpm_workspace(&[("a", r#","dependencies":{"bee":"workspace:../b"}"#), ("b", "")]);
+    let locator = crate::locate::IgnoreWalkLocator::new(dir.path());
+    let ws = crate::Workspace::load(dir.path().to_path_buf(), &locator, &NoopRunner).expect("load");
+    let edges: Vec<_> = ws
+        .graph
+        .edges()
+        .iter()
+        .map(|edge| {
+            (
+                edge.from.name().to_owned(),
+                edge.to.name().to_owned(),
+                edge.name.clone(),
+            )
+        })
+        .collect();
+    assert_eq!(edges, [("a".to_owned(), "b".to_owned(), "bee".to_owned())]);
+    assert!(
+        !ws.graph
+            .diagnostics()
+            .iter()
+            .any(|d| d.code == callisto_model::DiagnosticCode::UnknownPackage),
+        "{:?}",
+        ws.graph.diagnostics()
+    );
+}
+
+/// A relative path that names no admitted member makes no edge and says so.
+#[test]
+fn a_relative_pnpm_workspace_dependency_naming_no_member_is_diagnosed() {
+    let dir = pnpm_workspace(&[("a", r#","dependencies":{"ghost":"workspace:../ghost"}"#), ("b", "")]);
+    let locator = crate::locate::IgnoreWalkLocator::new(dir.path());
+    let ws = crate::Workspace::load(dir.path().to_path_buf(), &locator, &NoopRunner).expect("load");
+    assert!(ws.graph.edges().is_empty());
+    let diagnostic = ws
+        .graph
+        .diagnostics()
+        .iter()
+        .find(|d| d.code == callisto_model::DiagnosticCode::UnknownPackage)
+        .expect("an UnknownPackage warning");
+    assert!(
+        diagnostic
+            .message
+            .contains("does not identify an admitted npm workspace member"),
+        "{}",
+        diagnostic.message
+    );
+    assert_eq!(diagnostic.package.as_ref().map(PackageId::name), Some("a"));
+}
+
+/// `workspace = true` on a dependency the workspace root does not declare keeps the member's own spec and
+/// still links the packages.
+#[test]
+fn an_inherited_cargo_dependency_missing_from_the_workspace_table_still_makes_an_edge() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = [\"a\", \"b\"]\n").unwrap();
+    for (name, dependencies) in [("a", "[dependencies]\nb = { workspace = true }\n"), ("b", "")] {
+        std::fs::create_dir_all(root.join(name)).unwrap();
+        std::fs::write(
+            root.join(name).join("Cargo.toml"),
+            format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n{dependencies}"),
+        )
+        .unwrap();
+    }
+    let locator = crate::locate::IgnoreWalkLocator::new(root);
+    let ws = crate::Workspace::load(root.to_path_buf(), &locator, &NoopRunner).expect("load");
+    let edges: Vec<_> = ws
+        .graph
+        .edges()
+        .iter()
+        .map(|edge| (edge.from.name().to_owned(), edge.to.name().to_owned(), edge.inherited))
+        .collect();
+    assert_eq!(edges, [("a".to_owned(), "b".to_owned(), true)]);
+}
