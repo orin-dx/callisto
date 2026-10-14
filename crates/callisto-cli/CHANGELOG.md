@@ -1,5 +1,23 @@
 # callisto-cli
 
+## 0.10.1
+
+- Generated npm and PyPI releases configure native registry authentication for publishing without exposing credentials to Python build backends.
+- GitHub Actions honor requested Callisto versions; building checkout source requires source: local.
+- Versioning refreshes and stages lockfiles for every package manifest and dependency declaration it updates, including dual Cargo and npm packages.
+- Release decisions verify effective package versions from the selected commit, including versions inherited from Cargo workspace metadata, and only treat direct-child changeset Markdown files (excluding README.md) as consumed changesets.
+- Interrupted version runs retain release inputs until generated changes and their removal are safely staged, prevent unsafe retries, and explain how to inspect staged work and finish recovery.
+- Version and snapshot updates recognize Cargo aliases and equivalent Python distribution names while preserving dependency declaration spelling.
+- CLI JSON schemas accurately describe the string values emitted for versions, package identities, and digests.
+- Pre-release baselines are validated using each package's native version syntax, including when packages share a name or have been promoted to ecosystem-qualified ids.
+- npm version ranges with `||` alternatives are understood for dependency coverage; pnpm workspace aliases, relative references and explicit ranges are resolved and updated without changing their protocol or dependency names.
+- Python dependencies pinned in `[project.optional-dependencies]` extras are now followed: bumping a package releases the packages that pin it in an extra and rewrites the pin, instead of leaving stale published metadata.
+- Durable release plans read Python package versions using PEP 440 semantics.
+- The release PR refreshes reliably when the forge is slow to show the moved branch, instead of failing with E148 after the branch has already been updated.
+- Generated artifact workflows include every supported Cargo binary; npm and Python executables remain registry releases unless a custom workflow builds their artifacts. `callisto init` now reports E304 when an npm or Python executable is chosen as the product package, and suggests `--no-workflow` for a registry-only release.
+- Cargo dependencies declared under `[target.<cfg>.dependencies]` are now followed: bumping a package releases its target-specific dependents and rewrites their pins, instead of leaving a stale pin that broke the workspace.
+- Automated release PRs can refresh using generated decisions without rejecting their own branch updates.
+
 ## 0.10.0
 
 - Output that explains why a package is released reports `release-trigger`, fixed groups, linked groups, the tag template and pre-major inference as configured when you set them, instead of "(default)".
