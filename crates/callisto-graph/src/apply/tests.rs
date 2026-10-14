@@ -624,6 +624,64 @@ fn refresh_lockfiles_calls_pdm_lock_update_reuse_when_only_pdm_lock_exists() {
     assert!(results.iter().any(|r| r.filename.as_os_str() == "pdm.lock"));
 }
 
+/// Runs `apply_version_plan` over a bumped Python package in a directory holding only `lockfiles`
+/// and returns the programs and arguments the refresh invoked.
+fn python_refresh_calls(lockfiles: &[&str]) -> Vec<(String, Vec<String>)> {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let root = dir.path();
+    for lockfile in lockfiles {
+        std::fs::write(root.join(lockfile), "# lock").unwrap();
+    }
+    let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let runner = RecordingRunner {
+        calls: std::sync::Arc::clone(&calls),
+    };
+    let plan = VersionPlan {
+        bumps: vec![pypi_bump()],
+        ..Default::default()
+    };
+    let opts = ApplyOptions {
+        refresh_lockfiles: true,
+        transient: false,
+    };
+    apply_version_plan(root, &plan, &runner, &opts, &ApplyPermit::force_for_tests()).expect("apply should succeed");
+    let recorded = calls.lock().unwrap().clone();
+    recorded
+}
+
+fn refreshed_python_tools(calls: &[(String, Vec<String>)]) -> Vec<&str> {
+    calls
+        .iter()
+        .map(|(program, _)| program.as_str())
+        .filter(|program| ["uv", "poetry", "pdm"].contains(program))
+        .collect()
+}
+
+#[test]
+fn refresh_lockfiles_calls_poetry_lock_no_update_when_only_poetry_lock_exists() {
+    let calls = python_refresh_calls(&["poetry.lock"]);
+    assert!(
+        calls
+            .iter()
+            .any(|(p, a)| p == "poetry" && a == &["lock".to_string(), "--no-update".to_string()]),
+        "expected `poetry lock --no-update`; calls: {calls:?}"
+    );
+    assert_eq!(refreshed_python_tools(&calls), ["poetry"]);
+}
+
+/// A repository carrying several Python lockfiles refreshes exactly one: uv, then poetry, then pdm.
+#[test]
+fn refresh_lockfiles_refreshes_a_single_python_lockfile_in_uv_poetry_pdm_order() {
+    assert_eq!(
+        refreshed_python_tools(&python_refresh_calls(&["uv.lock", "poetry.lock", "pdm.lock"])),
+        ["uv"]
+    );
+    assert_eq!(
+        refreshed_python_tools(&python_refresh_calls(&["poetry.lock", "pdm.lock"])),
+        ["poetry"]
+    );
+}
+
 /// A `CommandRunner` whose configured program always fails with a fixed
 /// exit code and stderr; every other program succeeds.
 struct FailingProgramRunner {
