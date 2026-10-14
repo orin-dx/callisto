@@ -1,0 +1,78 @@
+{
+  "cli_version": "0.11.5-nightly.202610130630.4203b3d42",
+  "checkpoint_id": "01M4Y2G29M1PC33HB2CT9G1686",
+  "session_id": "01a0b5de-2f9c-7600-9938-64da771ee4a7",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-14T20:43:50.877542Z",
+  "branch": "stack/docs-v1",
+  "checkpoints_count": 1,
+  "save_step_count": 2,
+  "files_touched": null,
+  "agent": "Codex",
+  "model": "",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 167090,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 4022528,
+    "output_tokens": 12966,
+    "api_call_count": 43,
+    "subagent_tokens_complete": false
+  },
+  "summary": {
+    "intent": "Perform an adversarial review of orin-dx/callisto PR #101, covering architecture, semantic model versus Callisto's goals, performance, bugs, missed corner cases, and black-box test coverage.",
+    "outcome": "Concluded the PR is not ready to merge and reported two P1 findings (effects dispatched before validating the orchestration revision, and GitHub Release target_commitish identity check) plus two P2 findings (full-DAG reconciliation cost, split profile authority), along with a list of missing black-box tests. Only `just fmt-check` completed; the broader test runs were blocked by a Cargo build lock and interrupted.",
+    "learnings": {
+      "repo": [
+        "The local checkout was on a release-recovery branch; the sandbox could not update .git or reach GitHub's API directly, so PR metadata and diff were fetched via read-only network fetch and the PR was inspected locally.",
+        "Callisto is a Rust workspace with crates callisto-cli and callisto-graph; the CLI layer and graph layer both handle release/profile logic, and the repo uses `just` recipes such as `just fmt-check`.",
+        "Release execution is modeled as a DAG of operations (crates, tags, releases, artifact uploads) with receipts/provenance and a recovery mode; the black-box acceptance suite uses a provider fake.",
+        "The provider fake treats `gh attestation verify` as unconditional success, so failed attestation paths are never exercised.",
+        "The release workflow runs `gh release create ... --verify-tag` without an explicit target commit."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/commands/release.rs",
+          "line": 382,
+          "end_line": 389,
+          "finding": "`release execute` performs all remote effects before parsing `--orchestration-revision`, so a malformed revision, bad receipt path, or receipt failure can leave artifacts published while the command exits with failure and no receipt."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release.rs",
+          "line": 1135,
+          "finding": "Release observation requires GitHub's `target_commitish` to equal the release source SHA, but GitHub may return a branch name like `master` there. Real releases could be rejected; the check should use the immutable tag target. Pre-existing in main but artifact uploads now depend on it."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release_execution.rs",
+          "line": 74,
+          "end_line": 264,
+          "finding": "Every execution loop recomputes the full transitive DAG, with the DFS cloning BTreeSet identities per operation. Because it runs after each operation, long dependency chains approach cubic cost."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release.rs",
+          "line": 1312,
+          "finding": "The graph layer treats profile configuration as optional, while the CLI separately validates the profile and artifact repository (callisto-cli release.rs:205). This splits profile authority across two layers, so the public graph API can build intents the domain model does not reject."
+        }
+      ],
+      "workflow": [
+        "Treat passing acceptance tests as evidence of exercised behavior only, not proof of the broader semantic contract.",
+        "When reviewing, validate all immutable run metadata and output paths before dispatching any side-effecting operation, and write a black-box test asserting zero provider effects on invalid input.",
+        "A shared Cargo build lock can block concurrent test runs, which makes a full verification pass slow or impossible within one review session."
+      ]
+    },
+    "friction": [
+      "Sandbox could not write to .git or reach the GitHub API directly, requiring a workaround fetch.",
+      "Cargo test invocations were blocked behind a shared build lock and were interrupted, so the full test suite was never verified.",
+      "The local checkout was on an unrelated release-recovery branch rather than the PR branch."
+    ],
+    "open_items": [
+      "Add a black-box test for an invalid orchestration SHA that asserts the command fails with zero provider effects, and move parsing/validation ahead of dispatch.",
+      "Replace the target_commitish identity check with the immutable tag target, and add a GitHub-compatible fixture for real release behavior.",
+      "Add a large-DAG benchmark or property test and cache the prerequisite closure or make eligibility incremental.",
+      "Unify profile resolution into a typed destination binding enforced in the graph layer.",
+      "Add missing coverage: receipt directory/write failures, GitHub 401/403/429/500 and malformed JSON, duplicate assets, missing asset digests, failed attestation verify, profile/forge mismatch, registry-route changes between plan and execution, recovery with missing state, and non-recovery execution with pre-existing remote effects.",
+      "Rerun the full test suite once the Cargo build lock is clear."
+    ]
+  },
+  "kind": "imported"
+}
