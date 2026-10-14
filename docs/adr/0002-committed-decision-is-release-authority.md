@@ -39,5 +39,5 @@ Status: Accepted (implemented in #54)
 - Code comment on `derive_release_commit_decision`, `crates/callisto-graph/src/commands/release_decision.rs`
 - PR #101 (279e32361), squashed commits "fix(release): remove Environment approval gate" and "fix(release): emit the committed release decision"
 - Commit 7027bbfb0 (reader accepts schema 1 and 2)
-- `crates/callisto-model/src/release.rs` (`decision_digest`, `ReleaseDecisionV1` deserializer)
+- `crates/callisto-model/src/release/decision.rs` (`decision_digest`, `ReleaseDecisionV1` deserializer)
 - Incident report §2 (`git show 11038b11b^:.claude/plans/RELEASE-SELF-HOSTING-INCIDENT-2026-09-16.md`)
