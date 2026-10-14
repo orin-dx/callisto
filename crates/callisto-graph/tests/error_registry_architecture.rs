@@ -30,7 +30,9 @@ fn collect_rust_src_files(dir: &Path, out: &mut Vec<PathBuf>) {
         let path = entry.path();
         if path.is_dir() {
             collect_rust_src_files(&path, out);
-        } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+        } else if path.extension().and_then(|e| e.to_str()) == Some("rs")
+            && path.file_name().and_then(|n| n.to_str()) != Some("tests.rs")
+        {
             out.push(path);
         }
     }
@@ -76,8 +78,10 @@ fn strip_cfg_test_modules(content: &str) -> String {
                         _ => {}
                     }
                 }
+                // A brace-less item (`mod tests;`, a test-only `use`) ends at its semicolon.
+                let declaration_ended = !started && lines[i].trim_end().ends_with(';');
                 i += 1;
-                if started && depth <= 0 {
+                if declaration_ended || (started && depth <= 0) {
                     break;
                 }
             }

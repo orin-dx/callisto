@@ -1,0 +1,1855 @@
+use super::*;
+use callisto_model::{GroupKind, GroupName, Package, ReleaseTrigger, VersionGrammar};
+
+use crate::config::{CascadeBumpSeverity, GroupDef, GroupMember};
+
+#[test]
+fn workspace_coverage_distinguishes_rolling_suffixes_from_explicit_zero_major_ranges() {
+    for (suffix, expected) in [
+        ("", Coverage::Covers),
+        ("*", Coverage::Covers),
+        ("^", Coverage::Covers),
+        ("~", Coverage::Covers),
+        ("../lib", Coverage::Covers),
+        ("@scope/lib@^", Coverage::Covers),
+        ("^0.2.3", Coverage::DoesNotCover),
+        ("@scope/lib@~0.2.3", Coverage::DoesNotCover),
+        ("0.2.3", Coverage::DoesNotCover),
+        (">=0.2.3", Coverage::Covers),
+        ("https://example.com/lib.tgz", Coverage::Unknown),
+    ] {
+        let spec = DepSpec::WorkspaceProtocol(callisto_model::WorkspaceSpec {
+            kind: callisto_model::WorkspaceKind::Pnpm,
+            suffix: suffix.into(),
+        });
+        assert_eq!(
+            coverage(&spec, &Version::semver(0, 3, 0)).unwrap(),
+            expected,
+            "{suffix}"
+        );
+    }
+}
+
+#[test]
+fn workspace_rewrites_keep_protocol_and_alias_even_when_npm_range_preservation_is_disabled() {
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: false,
+        preserve_npm_ranges: false,
+    };
+    let spec = DepSpec::WorkspaceProtocol(callisto_model::WorkspaceSpec {
+        kind: callisto_model::WorkspaceKind::Pnpm,
+        suffix: "@scope/lib@^0.2.3".into(),
+    });
+    let RewriteOutcome::Rewritten(rewritten) = rewrite_spec(&spec, &Version::semver(0, 3, 0), Ecosystem::Npm, &cfg)
+    else {
+        panic!("an explicit workspace range must be safely rewritten");
+    };
+    assert_eq!(rewritten.render(), "workspace:@scope/lib@^0.3.0");
+    for suffix in ["*", "^", "~", "../lib", ">=0.2.3", "<0.2.3"] {
+        let spec = DepSpec::WorkspaceProtocol(callisto_model::WorkspaceSpec {
+            kind: callisto_model::WorkspaceKind::Pnpm,
+            suffix: suffix.into(),
+        });
+        assert!(
+            matches!(
+                rewrite_spec(&spec, &Version::semver(0, 3, 0), Ecosystem::Npm, &cfg),
+                RewriteOutcome::LeftAlone(_)
+            ),
+            "{suffix}"
+        );
+    }
+}
+
+/// Shared fixture: a `CommandRunner` that answers `git tag --list` with a
+/// fixed tag set, used by tests that need a real `TagIndex::build` (not
+/// `TagIndex::empty()`) to exercise tag-driven fixed-group alignment.
+struct FakeGitTagRunner {
+    calls: std::sync::atomic::AtomicUsize,
+    tags: Vec<String>,
+}
+impl callisto_model::CommandRunner for FakeGitTagRunner {
+    fn run(
+        &self,
+        program: &str,
+        args: &[&str],
+        _cwd: &std::path::Path,
+    ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+        assert_eq!(program, "git");
+        assert_eq!(args, ["tag", "--list"]);
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(callisto_model::CommandOutput {
+            exit_code: Some(0),
+            stdout: self.tags.join("\n"),
+            stderr: String::new(),
+        })
+    }
+}
+
+/// Shared fixture: `TagIndex::build` requires each package to resolve a
+/// version grammar via a canonical manifest (`Package::version_grammar`);
+/// `bare_package`'s empty `manifests` cannot satisfy that, so this
+/// fixture attaches a canonical Cargo.toml manifest to each package --
+/// otherwise identical to `bare_package`.
+fn package_with_canonical_manifest(id: &PackageId) -> Package {
+    let manifest = callisto_model::ManifestDecl::new(
+        "Cargo.toml",
+        callisto_model::ManifestRole::Canonical,
+        callisto_model::ManifestFormat::CargoToml,
+    )
+    .unwrap();
+    Package {
+        id: id.clone(),
+        manifests: vec![manifest],
+        changelog: None,
+        release_trigger: ReleaseTrigger::Changeset,
+        publish_to: Vec::new(),
+        tag_template: None,
+    }
+}
+
+/// Peer-dependency escalation to
+/// `Severity::Major` must only fire when the upstream (source) severity
+/// is non-patch (Minor or Major). A patch-severity source that leaves a
+/// peer spec out of range falls through to row 4 (`cfg.bump_severity`),
+/// not a manufactured Major bump -- `cascade_action`'s `source` parameter
+/// must actually gate the escalation, not just be accepted and ignored.
+#[test]
+fn cascade_action_peer_escalation_only_fires_for_non_patch_source() {
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+
+    // Patch-severity source: must NOT escalate to Major (row 4).
+    let patch_decision = cascade_action(DepKind::Peer, Coverage::DoesNotCover, Severity::Patch, &cfg);
+    assert_eq!(
+        patch_decision.severity,
+        Severity::Patch,
+        "a patch-severity upstream source must not escalate a peer dependent to Major"
+    );
+    assert!(
+        !patch_decision.escalated,
+        "a patch-severity source must not set `escalated`"
+    );
+    assert_eq!(
+        patch_decision.governed_by,
+        Some(ConfigKey::CASCADE_BUMP_SEVERITY),
+        "a patch-severity source falls through to the ordinary bump_severity row"
+    );
+
+    // Minor-severity source: MUST escalate to Major (row 5).
+    let minor_decision = cascade_action(DepKind::Peer, Coverage::DoesNotCover, Severity::Minor, &cfg);
+    assert_eq!(
+        minor_decision.severity,
+        Severity::Major,
+        "a non-patch (Minor) upstream source must escalate a peer dependent to Major"
+    );
+    assert!(minor_decision.escalated, "a non-patch source must set `escalated`");
+    assert_eq!(minor_decision.governed_by, Some(ConfigKey::CASCADE_PEER_ESCALATION));
+
+    // Major-severity source: MUST also escalate to Major (row 5).
+    let major_decision = cascade_action(DepKind::Peer, Coverage::DoesNotCover, Severity::Major, &cfg);
+    assert_eq!(major_decision.severity, Severity::Major);
+    assert!(major_decision.escalated);
+
+    // None-severity source: provably unreachable through run_cascade (every
+    // write site into the severities map gates on `sev > Severity::None`
+    // before inserting), but the match arm falls through to row 4 exactly
+    // like Patch if it ever were reached -- exhaustive over the enum
+    // rather than relying on that untested cross-function invariant.
+    let none_decision = cascade_action(DepKind::Peer, Coverage::DoesNotCover, Severity::None, &cfg);
+    assert_eq!(none_decision.severity, Severity::Patch);
+    assert!(!none_decision.escalated);
+}
+
+// -------------------------------------------------------------------------
+// Caret range must not cover pre-release versions
+// -------------------------------------------------------------------------
+
+/// Spec: caret_covers(cur, new) must return false when `new` is a pre-release
+/// version, regardless of whether the major/minor bounds would otherwise be
+/// satisfied. "^1.2.3" should not be satisfied by "1.9.0-alpha.1" even though
+/// 1.9.0-alpha.1 > 1.2.3 and they share the same major version.
+#[test]
+fn caret_covers_excludes_prerelease_versions() {
+    let v123 = Version::semver(1, 2, 3);
+
+    // Pre-release with same major: must be false even though major matches
+    let pre_same_major = Version::parse("1.9.0-alpha.1", VersionGrammar::SemVer).unwrap();
+    assert!(
+        !caret_covers(&v123, &pre_same_major).unwrap(),
+        "caret_covers(1.2.3, 1.9.0-alpha.1) must be false: caret ranges must \
+             not cover pre-releases"
+    );
+
+    // Pre-release with different major: also false (different major anyway)
+    let pre_diff_major = Version::parse("2.0.0-alpha.1", VersionGrammar::SemVer).unwrap();
+    assert!(
+        !caret_covers(&v123, &pre_diff_major).unwrap(),
+        "caret_covers(1.2.3, 2.0.0-alpha.1) must be false: different major"
+    );
+
+    // Stable version within same major: must still be true
+    let stable_same_major = Version::semver(1, 9, 0);
+    assert!(
+        caret_covers(&v123, &stable_same_major).unwrap(),
+        "caret_covers(1.2.3, 1.9.0) must be true: stable, same major"
+    );
+}
+
+#[test]
+fn cascade_input_accepts_identity_field() {
+    let graph = TwoPackageGraph { packages: vec![] };
+    let groups = GroupTable::default();
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+    let seed = BTreeMap::new();
+    let reasons = BTreeMap::new();
+    let named_by = BTreeMap::new();
+    let base = BTreeMap::new();
+    let identity = IdentityIndex::default();
+
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &reasons,
+        named_by: &named_by,
+        base: &base,
+        pre: None,
+        tags: &TagIndex::empty(),
+        identity: &identity,
+    };
+
+    assert!(input.identity.native.is_empty());
+}
+
+struct TwoPackageGraph {
+    packages: Vec<Package>,
+}
+
+impl DependencyResolver for TwoPackageGraph {
+    fn packages(&self) -> impl Iterator<Item = &Package> {
+        self.packages.iter()
+    }
+
+    fn dependencies_of(&self, _id: &PackageId) -> impl Iterator<Item = &DepEdge> {
+        std::iter::empty()
+    }
+
+    fn dependents_of(&self, _id: &PackageId) -> impl Iterator<Item = &DepEdge> {
+        std::iter::empty()
+    }
+}
+
+/// In-memory graph that supports arbitrary edges for cascade tests.
+struct TestGraph {
+    packages: Vec<Package>,
+    edges: Vec<DepEdge>,
+}
+
+impl DependencyResolver for TestGraph {
+    fn packages(&self) -> impl Iterator<Item = &Package> {
+        self.packages.iter()
+    }
+
+    fn dependencies_of(&self, id: &PackageId) -> impl Iterator<Item = &DepEdge> {
+        // Return edges where `from == id` (id depends on the target).
+        self.edges.iter().filter(move |e| &e.from == id)
+    }
+
+    fn dependents_of(&self, id: &PackageId) -> impl Iterator<Item = &DepEdge> {
+        // Return edges where `to == id` (i.e. the caller depends on id).
+        self.edges.iter().filter(move |e| &e.to == id)
+    }
+}
+
+fn make_dep_edge(from: &PackageId, to: &PackageId, spec_str: &str, ecosystem: callisto_model::Ecosystem) -> DepEdge {
+    let spec = DepSpec::Range(
+        callisto_model::VersionReq::parse(spec_str, ecosystem).unwrap(),
+        spec_str.to_string(),
+    );
+    DepEdge {
+        from: from.clone(),
+        to: to.clone(),
+        name: to.name().to_string(),
+        kind: DepKind::Runtime,
+        spec,
+        from_manifest: std::path::PathBuf::from(format!("{}/Cargo.toml", from.name())),
+        inherited: false,
+    }
+}
+
+fn bare_package(id: &PackageId) -> Package {
+    Package {
+        id: id.clone(),
+        manifests: Vec::new(),
+        changelog: None,
+        release_trigger: ReleaseTrigger::Changeset,
+        publish_to: Vec::new(),
+        tag_template: None,
+    }
+}
+
+#[test]
+fn test_dual_identity_rewrite_key_preserves_declared_name() {
+    let dep_target = PackageId::Bare("my-native-lib".to_string());
+    let dependent = PackageId::Prefixed {
+        ecosystem: Ecosystem::Npm,
+        name: "dep-app".to_string(),
+    };
+
+    let edge = DepEdge {
+        from: dependent.clone(),
+        to: dep_target.clone(),
+        name: "@scope/my-native-lib".to_string(),
+        kind: DepKind::Runtime,
+        spec: DepSpec::Range(
+            callisto_model::VersionReq::parse("^1.0.0", Ecosystem::Npm).unwrap(),
+            "^1.0.0".to_string(),
+        ),
+        from_manifest: std::path::PathBuf::from("dep-app/package.json"),
+        inherited: false,
+    };
+
+    let graph = TestGraph {
+        packages: vec![bare_package(&dep_target), bare_package(&dependent)],
+        edges: vec![edge],
+    };
+
+    let mut base = BTreeMap::new();
+    base.insert(dep_target.clone(), Version::semver(1, 0, 0));
+    base.insert(dependent.clone(), Version::semver(1, 0, 0));
+
+    let mut seed = BTreeMap::new();
+    seed.insert(dep_target.clone(), Severity::Major);
+
+    let groups = GroupTable::default();
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+    let reasons = BTreeMap::new();
+    let named_by = BTreeMap::new();
+
+    let mut identity = IdentityIndex::default();
+    identity
+        .native
+        .insert((Ecosystem::Cargo, "my-native-lib".to_string()), dep_target.clone());
+    identity
+        .native
+        .insert((Ecosystem::Npm, "@scope/my-native-lib".to_string()), dep_target.clone());
+
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &reasons,
+        named_by: &named_by,
+        base: &base,
+        pre: None,
+        tags: &TagIndex::empty(),
+        identity: &identity,
+    };
+
+    let outcome = run_cascade(input).unwrap();
+
+    let rewrite = outcome
+        .rewrites
+        .values()
+        .find(|r| r.dependency == dep_target)
+        .expect("a rewrite for dep_target must be produced");
+
+    assert_eq!(
+        rewrite.key.name, "@scope/my-native-lib",
+        "the rewrite must retain the dependency's declared npm name"
+    );
+}
+
+#[test]
+fn test_rewrite_retains_declared_name_without_identity_registration() {
+    let dep_target = PackageId::parse("pkg-core").unwrap();
+    let dependent = PackageId::parse("pkg-app").unwrap();
+    let edge = make_dep_edge(&dependent, &dep_target, "^1.0.0", Ecosystem::Cargo);
+
+    let graph = TestGraph {
+        packages: vec![bare_package(&dep_target), bare_package(&dependent)],
+        edges: vec![edge],
+    };
+
+    let mut base = BTreeMap::new();
+    base.insert(dep_target.clone(), Version::semver(1, 0, 0));
+    base.insert(dependent.clone(), Version::semver(1, 0, 0));
+
+    let mut seed = BTreeMap::new();
+    seed.insert(dep_target.clone(), Severity::Major);
+
+    let groups = GroupTable::default();
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+    let reasons = BTreeMap::new();
+    let named_by = BTreeMap::new();
+    let identity = IdentityIndex::default();
+
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &reasons,
+        named_by: &named_by,
+        base: &base,
+        pre: None,
+        tags: &TagIndex::empty(),
+        identity: &identity,
+    };
+
+    let outcome = run_cascade(input).unwrap();
+    let rewrite = outcome
+        .rewrites
+        .values()
+        .find(|r| r.dependency == dep_target)
+        .expect("rewrite for dep_target must be produced");
+
+    assert_eq!(
+        rewrite.key.name,
+        dep_target.name(),
+        "with no IdentityIndex.native registration, RewriteKey.name must fall back to PackageId::name()"
+    );
+}
+
+/// Same fallback, exercised for a PackageId::Bare target with no
+/// registration, confirming the Bare variant is handled identically to the
+/// Prefixed None-registration case.
+#[test]
+fn test_bare_target_with_no_registration_falls_back_to_name() {
+    let dep_target = PackageId::Bare("foo".to_string());
+    let dependent = PackageId::parse("pkg-app").unwrap();
+    let edge = make_dep_edge(&dependent, &dep_target, "^1.0.0", Ecosystem::Cargo);
+
+    let graph = TestGraph {
+        packages: vec![bare_package(&dep_target), bare_package(&dependent)],
+        edges: vec![edge],
+    };
+
+    let mut base = BTreeMap::new();
+    base.insert(dep_target.clone(), Version::semver(1, 0, 0));
+    base.insert(dependent.clone(), Version::semver(1, 0, 0));
+
+    let mut seed = BTreeMap::new();
+    seed.insert(dep_target.clone(), Severity::Major);
+
+    let groups = GroupTable::default();
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+    let reasons = BTreeMap::new();
+    let named_by = BTreeMap::new();
+    let identity = IdentityIndex::default();
+
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &reasons,
+        named_by: &named_by,
+        base: &base,
+        pre: None,
+        tags: &TagIndex::empty(),
+        identity: &identity,
+    };
+
+    let outcome = run_cascade(input).unwrap();
+    let rewrite = outcome
+        .rewrites
+        .values()
+        .find(|r| r.dependency == dep_target)
+        .expect("rewrite for dep_target must be produced");
+
+    assert_eq!(
+        rewrite.key.name, "foo",
+        "Bare target with no IdentityIndex.native registration must fall back to edge.to.name()"
+    );
+}
+
+/// A severity bump landing on a single member of a linked
+/// group (e.g. via a changeset naming only that package) must propagate
+/// to every other member of the group, and every member must converge
+/// on a stable target version.
+#[test]
+fn test_linked_group_propagates_severity_to_unseeded_member_and_converges() {
+    let pkg_a = PackageId::parse("pkg-a").unwrap();
+    let pkg_b = PackageId::parse("pkg-b").unwrap();
+
+    let graph = TwoPackageGraph {
+        packages: vec![bare_package(&pkg_a), bare_package(&pkg_b)],
+    };
+
+    let mut base = BTreeMap::new();
+    base.insert(pkg_a.clone(), Version::semver(1, 0, 0));
+    base.insert(pkg_b.clone(), Version::semver(1, 0, 0));
+
+    // Only pkg_b receives a severity via a changeset; pkg_a starts
+    // completely unseeded.
+    let mut seed = BTreeMap::new();
+    seed.insert(pkg_b.clone(), Severity::Major);
+
+    let mut groups = GroupTable::default();
+    let group_def = GroupDef {
+        name: GroupName("linked-pair".to_string()),
+        kind: GroupKind::Linked,
+        members: vec![GroupMember::Package(pkg_a.clone()), GroupMember::Package(pkg_b.clone())],
+    };
+    groups.linked.insert(group_def.name.clone(), group_def);
+
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+
+    let reasons = BTreeMap::new();
+    let named_by = BTreeMap::new();
+
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &reasons,
+        named_by: &named_by,
+        base: &base,
+        pre: None,
+        tags: &TagIndex::empty(),
+        identity: &IdentityIndex::default(),
+    };
+
+    let outcome = run_cascade(input).unwrap();
+
+    // pkg_a was never seeded directly; it must pick up pkg_b's severity
+    // purely through linked-group union.
+    assert_eq!(outcome.severities.get(&pkg_a), Some(&Severity::Major));
+    assert_eq!(outcome.severities.get(&pkg_b), Some(&Severity::Major));
+
+    let target_a = outcome.targets.get(&pkg_a).unwrap();
+    let target_b = outcome.targets.get(&pkg_b).unwrap();
+
+    // Both members share the same base version, so convergence must
+    // land them on the exact same target version.
+    assert_eq!(target_a, target_b);
+    assert_eq!(target_a.render(), "2.0.0");
+
+    assert_eq!(
+        outcome.reasons.get(&pkg_a),
+        Some(&BumpReason::LinkedGroupUnion {
+            group: GroupName("linked-pair".to_string()),
+        })
+    );
+}
+
+/// Linked group members with *different* base versions must
+/// converge on the SAME winning target version (the max of each member's
+/// individually-computed candidate at the converged severity), not just
+/// the same severity.
+#[test]
+fn test_linked_group_converges_target_version_across_divergent_bases() {
+    let pkg_a = PackageId::parse("pkg-a").unwrap();
+    let pkg_b = PackageId::parse("pkg-b").unwrap();
+
+    let graph = TwoPackageGraph {
+        packages: vec![bare_package(&pkg_a), bare_package(&pkg_b)],
+    };
+
+    let mut base = BTreeMap::new();
+    base.insert(
+        pkg_a.clone(),
+        Version::parse("1.4.0", callisto_model::VersionGrammar::SemVer).unwrap(),
+    );
+    base.insert(
+        pkg_b.clone(),
+        Version::parse("2.7.3", callisto_model::VersionGrammar::SemVer).unwrap(),
+    );
+
+    let mut seed = BTreeMap::new();
+    seed.insert(pkg_a.clone(), Severity::Minor);
+
+    let mut groups = GroupTable::default();
+    let group_def = GroupDef {
+        name: GroupName("linked-pair".to_string()),
+        kind: GroupKind::Linked,
+        members: vec![GroupMember::Package(pkg_a.clone()), GroupMember::Package(pkg_b.clone())],
+    };
+    groups.linked.insert(group_def.name.clone(), group_def);
+
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+
+    let reasons = BTreeMap::new();
+    let named_by = BTreeMap::new();
+
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &reasons,
+        named_by: &named_by,
+        base: &base,
+        pre: None,
+        tags: &TagIndex::empty(),
+        identity: &IdentityIndex::default(),
+    };
+
+    let outcome = run_cascade(input).unwrap();
+
+    let target_a = outcome.targets.get(&pkg_a).unwrap();
+    let target_b = outcome.targets.get(&pkg_b).unwrap();
+
+    // pkg_a at minor from 1.4.0 -> 1.5.0; pkg_b at minor from 2.7.3 -> 2.8.0.
+    // The winner (max by Version::compare) is 2.8.0 and both must converge on it.
+    assert_eq!(target_a, target_b);
+    assert_eq!(target_a.render(), "2.8.0");
+}
+
+/// When `pre.mode == PreMode::Exit`, `bump_target` must finalize the current
+/// pre-release to a stable version instead of producing another pre-release
+/// iteration. The test uses `base = "1.0.0-alpha.2"` (current on-disk prerelease)
+/// and asserts the result is the stable `"1.0.0"`, not another `-alpha.N`.
+///
+/// Calling `versioning.bump` on a pre-release version strips the pre-release
+/// tag and finalizes in-place when the underlying release segment already
+/// matches the requested bump (patch=0, minor=0 for a minor bump).
+#[test]
+fn test_bump_target_exit_mode_finalizes_to_stable() {
+    let pkg_a = PackageId::parse("pkg-a").unwrap();
+
+    let graph = TwoPackageGraph {
+        packages: vec![bare_package(&pkg_a)],
+    };
+
+    // On-disk version is at a major pre-release (1.0.0-alpha.2).
+    let mut base = BTreeMap::new();
+    base.insert(
+        pkg_a.clone(),
+        Version::parse("1.0.0-alpha.2", callisto_model::VersionGrammar::SemVer).unwrap(),
+    );
+
+    let mut initial_versions = indexmap::IndexMap::new();
+    initial_versions.insert(
+        "pkg-a".to_string(),
+        Version::parse("0.9.0", callisto_model::VersionGrammar::SemVer).unwrap(),
+    );
+
+    // PreMode::Exit: the release cycle is being finalized.
+    let pre = callisto_model::format::PreState {
+        mode: callisto_model::format::PreMode::Exit,
+        tag: "alpha".to_string(),
+        initial_versions,
+        changesets: Vec::new(),
+    };
+
+    let groups = GroupTable::default();
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+
+    let seed = BTreeMap::new();
+    let reasons = BTreeMap::new();
+    let named_by = BTreeMap::new();
+
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &reasons,
+        named_by: &named_by,
+        base: &base,
+        pre: Some(&pre),
+        tags: &TagIndex::empty(),
+        identity: &IdentityIndex::default(),
+    };
+
+    let target = bump_target(&pkg_a, Severity::Minor, &input).unwrap();
+
+    assert!(
+        !target.is_prerelease(),
+        "PreMode::Exit must produce a stable version, not a pre-release; got {}",
+        target.render()
+    );
+    assert_eq!(
+        target.render(),
+        "1.0.0",
+        "bump_target with Exit mode, base=1.0.0-alpha.2, sev=Minor must finalize to 1.0.0"
+    );
+}
+
+/// Diamond dependency: A -> B, A -> C, B -> D, C -> D.
+///
+/// Bumping D (seeded Major) cascades both B and C; A depends on both,
+/// so the solver visits A from two paths. The worklist must process A
+/// only ONCE -- not duplicated in the outcome's severity/target maps
+/// despite two edges arriving at A.
+///
+/// The idempotency check `sev <= cur_sev` in `raise` already prevents
+/// double-insertion without explicit dedup, but this test makes the
+/// constraint explicit and guards against regressions if dedup breaks.
+#[test]
+fn test_diamond_dependency_a_appears_exactly_once_in_cascade_result() {
+    let pkg_a = PackageId::parse("pkg-a").unwrap();
+    let pkg_b = PackageId::parse("pkg-b").unwrap();
+    let pkg_c = PackageId::parse("pkg-c").unwrap();
+    let pkg_d = PackageId::parse("pkg-d").unwrap();
+
+    // Edges: B→D, C→D, A→B, A→C
+    // B and C use "^1.0.0" for D; A uses exact "=1.0.0" for B and C.
+    // With CascadeBumpSeverity::Patch, when D is seeded Major (→ 2.0.0):
+    //   - B and C cascade with Patch (^1.0.0 doesn't cover 2.0.0) → both become 1.0.1
+    //   - A's "=1.0.0" on B (now 1.0.1) is out of range → A cascades from B
+    //   - A's "=1.0.0" on C (now 1.0.1) is out of range → A cascades from C
+    // Both paths reach A; the dedup invariant is that A appears exactly once.
+    let eco = callisto_model::Ecosystem::Cargo;
+    let edges = vec![
+        make_dep_edge(&pkg_b, &pkg_d, "^1.0.0", eco),
+        make_dep_edge(&pkg_c, &pkg_d, "^1.0.0", eco),
+        make_dep_edge(&pkg_a, &pkg_b, "=1.0.0", eco),
+        make_dep_edge(&pkg_a, &pkg_c, "=1.0.0", eco),
+    ];
+
+    let graph = TestGraph {
+        packages: vec![
+            bare_package(&pkg_a),
+            bare_package(&pkg_b),
+            bare_package(&pkg_c),
+            bare_package(&pkg_d),
+        ],
+        edges,
+    };
+
+    let mut base = BTreeMap::new();
+    base.insert(pkg_a.clone(), Version::semver(1, 0, 0));
+    base.insert(pkg_b.clone(), Version::semver(1, 0, 0));
+    base.insert(pkg_c.clone(), Version::semver(1, 0, 0));
+    base.insert(pkg_d.clone(), Version::semver(1, 0, 0));
+
+    // Only D is seeded — all others propagate via cascade.
+    let mut seed = BTreeMap::new();
+    seed.insert(pkg_d.clone(), Severity::Major);
+
+    // Patch cascade severity. When D is seeded Major (→ 2.0.0), B and C's
+    // "^1.0.0" specs don't cover 2.0.0, so they cascade at Patch (→ 1.0.1).
+    // A's exact "=1.0.0" specs on B and C don't cover 1.0.1, so A cascades
+    // from both paths. The dedup invariant ensures A appears exactly once.
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: false,
+        preserve_npm_ranges: false,
+    };
+    let groups = crate::config::GroupTable::default();
+    let reasons = BTreeMap::new();
+    let named_by = BTreeMap::new();
+
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &reasons,
+        named_by: &named_by,
+        base: &base,
+        pre: None,
+        tags: &TagIndex::empty(),
+        identity: &IdentityIndex::default(),
+    };
+
+    let outcome = run_cascade(input).unwrap();
+
+    // D is seeded, B and C cascade from D, A cascades from both B and C.
+    assert!(outcome.severities.contains_key(&pkg_d), "D must be in outcome");
+    assert!(outcome.severities.contains_key(&pkg_b), "B must cascade from D");
+    assert!(outcome.severities.contains_key(&pkg_c), "C must cascade from D");
+    assert!(
+        outcome.severities.contains_key(&pkg_a),
+        "A must cascade from B and C (both bumped to 2.0.0, out of ^1.0.0)"
+    );
+
+    // The critical deduplication check: A must appear exactly ONCE even
+    // though two separate cascade paths (via B and via C) both reach A.
+    // BTreeMap guarantees at most one entry per key; iterating and
+    // filtering by key yields exactly 1.
+    let a_severity_count = outcome.severities.keys().filter(|k| *k == &pkg_a).count();
+    assert_eq!(
+        a_severity_count, 1,
+        "pkg-a must appear exactly once in severities map, got {a_severity_count}"
+    );
+
+    let a_target_count = outcome.targets.keys().filter(|k| *k == &pkg_a).count();
+    assert_eq!(
+        a_target_count, 1,
+        "pkg-a must appear exactly once in targets map, got {a_target_count}"
+    );
+
+    assert_eq!(
+        outcome.severities[&pkg_d],
+        Severity::Major,
+        "D must have Major severity (seeded directly)"
+    );
+    assert_eq!(
+        outcome.severities[&pkg_a],
+        Severity::Patch,
+        "A's cascaded severity must be Patch (Patch cascade config)"
+    );
+}
+
+/// Pre-release cascade: when D bumps to a pre-release version (via
+/// `PreMode::Pre`) and a dependent B has a stable-only spec that does NOT
+/// cover the pre-release version, B is cascaded and its target is also a
+/// pre-release (because `bump_target` in `PreMode::Pre` calls
+/// `bump_prerelease`). This test documents and pins that behavior.
+///
+/// The concrete scenario:
+///   - D is at 1.0.0, seeded with Major severity in pre-release mode
+///   - D bumps to 2.0.0-alpha.0
+///   - B depends on D with "^1.0.0" (stable-only)
+///   - "^1.0.0" does NOT cover 2.0.0-alpha.0 (different major, and cargo
+///     semver excludes pre-releases from stable ranges)
+///   - B IS cascaded (DoesNotCover → cascade) and also bumps to a
+///     pre-release version
+#[test]
+fn test_prerelease_cascade_stable_spec_out_of_range_triggers_cascade() {
+    let pkg_b = PackageId::parse("pkg-b").unwrap();
+    let pkg_d = PackageId::parse("pkg-d").unwrap();
+
+    let eco = callisto_model::Ecosystem::Cargo;
+    let edges = vec![make_dep_edge(&pkg_b, &pkg_d, "^1.0.0", eco)];
+
+    let graph = TestGraph {
+        packages: vec![bare_package(&pkg_b), bare_package(&pkg_d)],
+        edges,
+    };
+
+    let mut base = BTreeMap::new();
+    base.insert(
+        pkg_b.clone(),
+        Version::parse("1.0.0", callisto_model::VersionGrammar::SemVer).unwrap(),
+    );
+    base.insert(
+        pkg_d.clone(),
+        Version::parse("1.0.0", callisto_model::VersionGrammar::SemVer).unwrap(),
+    );
+
+    let mut initial_versions = indexmap::IndexMap::new();
+    initial_versions.insert(
+        "pkg-d".to_string(),
+        Version::parse("1.0.0", callisto_model::VersionGrammar::SemVer).unwrap(),
+    );
+    initial_versions.insert(
+        "pkg-b".to_string(),
+        Version::parse("1.0.0", callisto_model::VersionGrammar::SemVer).unwrap(),
+    );
+
+    let pre = callisto_model::format::PreState {
+        mode: callisto_model::format::PreMode::Pre,
+        tag: "alpha".to_string(),
+        initial_versions,
+        changesets: Vec::new(),
+    };
+
+    // D is seeded with Major; in PreMode::Pre it bumps to 2.0.0-alpha.0.
+    let mut seed = BTreeMap::new();
+    seed.insert(pkg_d.clone(), Severity::Major);
+
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: false,
+        preserve_npm_ranges: false,
+    };
+    let groups = crate::config::GroupTable::default();
+    let reasons = BTreeMap::new();
+    let named_by = BTreeMap::new();
+
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &reasons,
+        named_by: &named_by,
+        base: &base,
+        pre: Some(&pre),
+        tags: &TagIndex::empty(),
+        identity: &IdentityIndex::default(),
+    };
+
+    let outcome = run_cascade(input).unwrap();
+
+    // D bumps to a pre-release version.
+    let d_target = outcome.targets.get(&pkg_d).expect("D must have a target");
+    assert!(
+        d_target.is_prerelease(),
+        "D must bump to a pre-release version in PreMode::Pre; got {}",
+        d_target.render()
+    );
+    assert!(
+        d_target.render().starts_with("2.0.0-"),
+        "D's pre-release bump from 1.0.0 with Major severity must start with 2.0.0-; got {}",
+        d_target.render()
+    );
+
+    // B is cascaded because ^1.0.0 does not cover 2.0.0-alpha.0.
+    assert!(
+        outcome.severities.contains_key(&pkg_b),
+        "B must be cascaded when D's pre-release version is out of range for ^1.0.0"
+    );
+    let b_target = outcome.targets.get(&pkg_b).expect("B must have a target");
+    assert!(
+        b_target.is_prerelease(),
+        "B's cascade target in PreMode::Pre must also be a pre-release; got {}",
+        b_target.render()
+    );
+}
+
+/// A pre-release cycle must bump from the pinned baseline in
+/// `PreState.initial_versions` (captured at `pre enter`), not from
+/// whatever the current on-disk prerelease happens to be -- otherwise
+/// the release segment re-derives from a moving target instead of the
+/// pinned one.
+#[test]
+fn test_bump_target_uses_pinned_pre_baseline_not_current_prerelease() {
+    let pkg_a = PackageId::parse("pkg-a").unwrap();
+
+    let graph = TwoPackageGraph {
+        packages: vec![bare_package(&pkg_a)],
+    };
+
+    // On-disk is already one prerelease bump into a MAJOR cycle
+    // (2.0.0-next.0), while the pinned baseline from `pre enter` is
+    // still 1.0.0. Requesting a Minor bump now must be computed from
+    // the pinned baseline (-> release 1.1.0), not by re-deriving from
+    // the already-major-bumped on-disk value (which would incorrectly
+    // treat 2.0.0-next.0 as still-in-progress and yield 2.0.0-next.1).
+    let mut base = BTreeMap::new();
+    base.insert(
+        pkg_a.clone(),
+        Version::parse("2.0.0-next.0", callisto_model::VersionGrammar::SemVer).unwrap(),
+    );
+
+    let mut initial_versions = indexmap::IndexMap::new();
+    initial_versions.insert(
+        "pkg-a".to_string(),
+        Version::parse("1.0.0", callisto_model::VersionGrammar::SemVer).unwrap(),
+    );
+    let pre = callisto_model::format::PreState {
+        mode: callisto_model::format::PreMode::Pre,
+        tag: "next".to_string(),
+        initial_versions,
+        changesets: Vec::new(),
+    };
+
+    let groups = GroupTable::default();
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+
+    let seed = BTreeMap::new();
+    let reasons = BTreeMap::new();
+    let named_by = BTreeMap::new();
+
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &reasons,
+        named_by: &named_by,
+        base: &base,
+        pre: Some(&pre),
+        tags: &TagIndex::empty(),
+        identity: &IdentityIndex::default(),
+    };
+
+    let target = bump_target(&pkg_a, Severity::Minor, &input).unwrap();
+
+    assert_eq!(target.render(), "1.1.0-next.0");
+}
+
+/// Solve_cascade's rewrite-construction logic must never route an
+/// inherited Cargo dependency edge through `DepWriteTarget::Manifest` --
+/// it must always route through `DepWriteTarget::CargoWorkspaceDependency`
+/// instead. This is the cross-module invariant that CargoToml's own
+/// self-delegation guard relies on being true of real planner
+/// output.
+#[test]
+fn inherited_cargo_dependency_edge_never_produces_manifest_rewrite_target() {
+    let pkg_root = PackageId::parse("cargo:root-crate").unwrap();
+    let pkg_member = PackageId::parse("cargo:member-crate").unwrap();
+    let pkg_dep = PackageId::parse("cargo:shared-dep").unwrap();
+
+    let inherited_edge = DepEdge {
+        from: pkg_root.clone(),
+        to: pkg_dep.clone(),
+        name: pkg_dep.name().to_string(),
+        kind: DepKind::Runtime,
+        spec: DepSpec::Range(
+            callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo).unwrap(),
+            "^1.0.0".to_string(),
+        ),
+        from_manifest: std::path::PathBuf::from("Cargo.toml"),
+        inherited: true,
+    };
+    let non_inherited_edge = DepEdge {
+        from: pkg_member.clone(),
+        to: pkg_dep.clone(),
+        name: pkg_dep.name().to_string(),
+        kind: DepKind::Runtime,
+        spec: DepSpec::Range(
+            callisto_model::VersionReq::parse("^1.0.0", callisto_model::Ecosystem::Cargo).unwrap(),
+            "^1.0.0".to_string(),
+        ),
+        from_manifest: std::path::PathBuf::from("member/Cargo.toml"),
+        inherited: false,
+    };
+
+    let graph = TestGraph {
+        packages: vec![
+            bare_package(&pkg_root),
+            bare_package(&pkg_member),
+            bare_package(&pkg_dep),
+        ],
+        edges: vec![inherited_edge, non_inherited_edge],
+    };
+
+    let mut base = BTreeMap::new();
+    base.insert(pkg_root.clone(), Version::semver(1, 0, 0));
+    base.insert(pkg_member.clone(), Version::semver(1, 0, 0));
+    base.insert(pkg_dep.clone(), Version::semver(1, 0, 0));
+
+    let mut seed = BTreeMap::new();
+    seed.insert(pkg_dep.clone(), Severity::Major);
+
+    let groups = GroupTable::default();
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+    let reasons = BTreeMap::new();
+    let named_by = BTreeMap::new();
+
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &reasons,
+        named_by: &named_by,
+        base: &base,
+        pre: None,
+        tags: &TagIndex::empty(),
+        identity: &IdentityIndex::default(),
+    };
+
+    let outcome = run_cascade(input).unwrap();
+
+    let has_manifest_target_for_inherited = outcome.rewrites.values().any(|r| {
+        r.key.name == pkg_dep.name()
+            && matches!(&r.key.target, DepWriteTarget::Manifest(p) if p == &PathBuf::from("Cargo.toml"))
+    });
+    assert!(
+        !has_manifest_target_for_inherited,
+        "inherited edge must never produce DepWriteTarget::Manifest; rewrites: {:?}",
+        outcome.rewrites
+    );
+
+    let has_workspace_dep_target_for_inherited = outcome.rewrites.values().any(|r| {
+        r.key.name == pkg_dep.name()
+            && r.key.target
+                == DepWriteTarget::CargoWorkspaceDependency {
+                    root_manifest: PathBuf::from("Cargo.toml"),
+                }
+    });
+    assert!(
+        has_workspace_dep_target_for_inherited,
+        "inherited edge must produce a CargoWorkspaceDependency rewrite target; rewrites: {:?}",
+        outcome.rewrites
+    );
+
+    let has_manifest_target_for_non_inherited = outcome
+        .rewrites
+        .values()
+        .any(|r| matches!(&r.key.target, DepWriteTarget::Manifest(p) if p == &PathBuf::from("member/Cargo.toml")));
+    assert!(
+        has_manifest_target_for_non_inherited,
+        "non-inherited edge must produce a DepWriteTarget::Manifest rewrite; rewrites: {:?}",
+        outcome.rewrites
+    );
+}
+
+/// Fixed-group members seeded
+/// directly (not via raise()) must converge on ONE shared,
+/// group-aligned target version computed by fixed_group_target, not on
+/// independently-bumped per-member targets. Exercised through the real
+/// call path run_cascade -> solve_cascade -> the new Fixed-group block
+/// -> fixed_group_target -- fixed_group_target is never called
+/// directly, and raise() is never invoked (both siblings arrive via
+/// input.seed).
+#[test]
+fn test_fixed_group_seeded_siblings_converge_on_shared_target() {
+    use std::sync::atomic::AtomicUsize;
+
+    let pkg_a = PackageId::parse("pkg-a").unwrap();
+    let pkg_b = PackageId::parse("pkg-b").unwrap();
+
+    let graph = TwoPackageGraph {
+        packages: vec![
+            package_with_canonical_manifest(&pkg_a),
+            package_with_canonical_manifest(&pkg_b),
+        ],
+    };
+
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    let runner = FakeGitTagRunner {
+        calls: AtomicUsize::new(0),
+        tags: vec!["pkg-a@2.0.0".to_string()],
+    };
+    let git = callisto_model::vcs::GitAccess::new(dir, &runner);
+    let cfg_resolved = crate::config::load(dir).unwrap();
+    let tags = crate::tags::TagIndex::build(&git, &graph, &cfg_resolved).unwrap();
+
+    assert!(tags.last_tag(&pkg_a).is_some(), "A must have a prior release tag");
+    assert!(tags.last_tag(&pkg_b).is_none(), "B must never have been released");
+
+    let mut base = BTreeMap::new();
+    base.insert(pkg_a.clone(), Version::semver(2, 0, 0));
+    base.insert(pkg_b.clone(), Version::semver(0, 1, 0));
+
+    let mut seed = BTreeMap::new();
+    seed.insert(pkg_a.clone(), Severity::Minor);
+    seed.insert(pkg_b.clone(), Severity::Minor);
+
+    let group_def = GroupDef {
+        name: GroupName("ab-fixed".to_string()),
+        kind: GroupKind::Fixed,
+        members: vec![GroupMember::Package(pkg_a.clone()), GroupMember::Package(pkg_b.clone())],
+    };
+    let groups = GroupTable::from_groups(vec![group_def], vec![]);
+
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+    let reasons = BTreeMap::new();
+    let named_by = BTreeMap::new();
+
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &reasons,
+        named_by: &named_by,
+        base: &base,
+        pre: None,
+        tags: &tags,
+        identity: &IdentityIndex::default(),
+    };
+
+    let outcome = run_cascade(input).unwrap();
+
+    let target_a = outcome.targets.get(&pkg_a).unwrap();
+    let target_b = outcome.targets.get(&pkg_b).unwrap();
+
+    assert_eq!(
+        target_a.render(),
+        "2.1.0",
+        "A (the released member) must land on the group-aligned target"
+    );
+    assert_eq!(
+        target_b.render(),
+        "2.1.0",
+        "B must converge on the SAME target as A, not its own independently-bumped 0.2.0"
+    );
+    assert_eq!(target_a, target_b);
+}
+
+/// Regression: Fixed-group convergence must apply the same
+/// stale-member guard the Linked-group block directly above it already
+/// has. A fixed group naming a package absent from `input.base`
+/// (removed from the workspace but still listed in callisto.toml),
+/// combined with a live sibling receiving nonzero severity, must NOT
+/// insert the stale id into `out.severities`/`out.targets` -- before
+/// this fix it did so unconditionally, and the stale id later reaching
+/// `plan_version`'s `pkg_map.get(id).copied().unwrap()` (built only
+/// from live graph packages) is what actually panicked `callisto
+/// version`. An `UnknownPackage` diagnostic governed by
+/// `ConfigKey::FIXED_GROUP` must be emitted instead, and the live
+/// sibling must still converge normally.
+#[test]
+fn test_fixed_group_skips_stale_member_and_emits_diagnostic() {
+    let pkg_live = PackageId::parse("pkg-live").unwrap();
+    let pkg_stale = PackageId::parse("pkg-stale").unwrap();
+
+    let graph = TwoPackageGraph {
+        packages: vec![bare_package(&pkg_live)],
+    };
+
+    let mut base = BTreeMap::new();
+    base.insert(pkg_live.clone(), Version::semver(1, 0, 0));
+    // pkg_stale intentionally absent from `base`: removed from the
+    // workspace, but still declared as a fixed-group member below.
+
+    let mut seed = BTreeMap::new();
+    seed.insert(pkg_live.clone(), Severity::Minor);
+
+    let mut groups = GroupTable::default();
+    let group_def = GroupDef {
+        name: GroupName("fixed-pair".to_string()),
+        kind: GroupKind::Fixed,
+        members: vec![
+            GroupMember::Package(pkg_live.clone()),
+            GroupMember::Package(pkg_stale.clone()),
+        ],
+    };
+    groups.fixed.insert(group_def.name.clone(), group_def);
+
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+
+    let reasons = BTreeMap::new();
+    let named_by = BTreeMap::new();
+
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &reasons,
+        named_by: &named_by,
+        base: &base,
+        pre: None,
+        tags: &TagIndex::empty(),
+        identity: &IdentityIndex::default(),
+    };
+
+    let outcome = run_cascade(input).unwrap();
+
+    assert!(
+        !outcome.severities.contains_key(&pkg_stale),
+        "stale fixed-group member must NOT be inserted into severities (would crash \
+             plan_version's pkg_map.get(id).unwrap()): {:?}",
+        outcome.severities
+    );
+    assert!(
+        !outcome.targets.contains_key(&pkg_stale),
+        "stale fixed-group member must NOT be inserted into targets: {:?}",
+        outcome.targets
+    );
+
+    assert_eq!(outcome.severities.get(&pkg_live), Some(&Severity::Minor));
+    assert!(
+        outcome.targets.contains_key(&pkg_live),
+        "live sibling must still receive a converged target"
+    );
+
+    let unknown_diags: Vec<_> = outcome
+        .diagnostics
+        .iter()
+        .filter(|d| d.code == DiagnosticCode::UnknownPackage)
+        .collect();
+    assert!(
+        !unknown_diags.is_empty(),
+        "must emit an UnknownPackage diagnostic for the stale fixed-group member; got: {:?}",
+        outcome.diagnostics
+    );
+    assert!(
+        unknown_diags
+            .iter()
+            .any(|d| d.governed_by == Some(ConfigKey::FIXED_GROUP)),
+        "the UnknownPackage diagnostic must be governed by ConfigKey::FIXED_GROUP; got: {:?}",
+        unknown_diags
+    );
+}
+
+/// Regression: `fixed_group_target` must ignore a stale group member (a
+/// package no longer present in `input.base`) even when that stale
+/// member carries a real release tag from before it was removed from
+/// the workspace. Fixed-group convergence once passed the raw `GroupDef`
+/// into `fixed_group_target`, which iterated ALL declared members --
+/// not just live ones -- when picking `released[0]` as the alignment
+/// base. With the stale, tagged member declared first, `released[0]`
+/// resolved to it, `base.get(&released[0])` missed (it's not in
+/// `base`), and the code silently fell back to the hardcoded `1.0.0`
+/// default, corrupting the group's alignment target for every live
+/// sibling. The fix makes `fixed_group_target` take an already-filtered
+/// `live_members` slice, so a stale member can never occupy
+/// `released[0]` regardless of declaration order or tag history.
+#[test]
+fn test_fixed_group_target_ignores_stale_tagged_member_alignment_base() {
+    use std::sync::atomic::AtomicUsize;
+
+    let pkg_live = PackageId::parse("pkg-live").unwrap();
+    let pkg_stale = PackageId::parse("pkg-stale").unwrap();
+
+    // pkg_stale is declared FIRST in the group's member list so that an
+    // unfiltered iteration over `g.package_members()` (the pre-fix
+    // behavior) would pick it as `released[0]`.
+    let graph = TwoPackageGraph {
+        packages: vec![
+            package_with_canonical_manifest(&pkg_stale),
+            package_with_canonical_manifest(&pkg_live),
+        ],
+    };
+
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    // pkg_stale carries a real release tag from before it was removed
+    // from the workspace -- its tag data still exists in git even
+    // though the package is gone from `base`/callisto.toml.
+    let runner = FakeGitTagRunner {
+        calls: AtomicUsize::new(0),
+        tags: vec!["pkg-stale@9.9.9".to_string(), "pkg-live@3.0.0".to_string()],
+    };
+    let git = callisto_model::vcs::GitAccess::new(dir, &runner);
+    let cfg_resolved = crate::config::load(dir).unwrap();
+    let tags = crate::tags::TagIndex::build(&git, &graph, &cfg_resolved).unwrap();
+
+    assert!(
+        tags.last_tag(&pkg_stale).is_some(),
+        "stale member must carry a real prior release tag"
+    );
+    assert!(
+        tags.last_tag(&pkg_live).is_some(),
+        "live member must carry a real prior release tag"
+    );
+
+    // pkg_stale is intentionally absent from `base`: removed from the
+    // workspace, but still declared as a fixed-group member below.
+    let mut base = BTreeMap::new();
+    base.insert(pkg_live.clone(), Version::semver(3, 0, 0));
+
+    let mut seed = BTreeMap::new();
+    seed.insert(pkg_live.clone(), Severity::Minor);
+
+    let mut groups = GroupTable::default();
+    let group_def = GroupDef {
+        name: GroupName("fixed-pair".to_string()),
+        kind: GroupKind::Fixed,
+        members: vec![
+            GroupMember::Package(pkg_stale.clone()),
+            GroupMember::Package(pkg_live.clone()),
+        ],
+    };
+    groups.fixed.insert(group_def.name.clone(), group_def);
+
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+    let reasons = BTreeMap::new();
+    let named_by = BTreeMap::new();
+
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &reasons,
+        named_by: &named_by,
+        base: &base,
+        pre: None,
+        tags: &tags,
+        identity: &IdentityIndex::default(),
+    };
+
+    let outcome = run_cascade(input).unwrap();
+
+    let target_live = outcome
+        .targets
+        .get(&pkg_live)
+        .expect("live member must receive a converged target");
+
+    assert_eq!(
+        target_live.render(),
+        "3.1.0",
+        "the group's alignment base must come from the LIVE member's own \
+             base version (3.0.0 -> Minor -> 3.1.0), not the corrupted \
+             `1.0.0` fallback produced by picking the stale, unfiltered \
+             member's (missing) slot in `base`"
+    );
+    assert!(
+        !outcome.targets.contains_key(&pkg_stale),
+        "stale fixed-group member must never receive a target: {:?}",
+        outcome.targets
+    );
+}
+
+/// `fixed_group_target` must reject a released member missing from `base` as an error, not default to `1.0.0`.
+#[test]
+fn test_fixed_group_target_errors_on_tagged_member_missing_base_directly() {
+    use std::sync::atomic::AtomicUsize;
+
+    let pkg_tagged = PackageId::parse("pkg-tagged").unwrap();
+
+    let graph = TwoPackageGraph {
+        packages: vec![package_with_canonical_manifest(&pkg_tagged)],
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    let runner = FakeGitTagRunner {
+        calls: AtomicUsize::new(0),
+        tags: vec!["pkg-tagged@2.0.0".to_string()],
+    };
+    let git = callisto_model::vcs::GitAccess::new(dir, &runner);
+    let cfg_resolved = crate::config::load(dir).unwrap();
+    let tags = TagIndex::build(&git, &graph, &cfg_resolved).unwrap();
+    assert!(tags.last_tag(&pkg_tagged).is_some(), "must carry a real release tag");
+
+    // `base` deliberately omits `pkg_tagged`, simulating an unfiltered `live_members` slice.
+    let base: BTreeMap<PackageId, Version> = BTreeMap::new();
+    let group = GroupName("g".to_string());
+
+    let err = crate::groups::fixed_group_target(&group, &[pkg_tagged], &base, Severity::Minor, &tags, None)
+        .expect_err("a tagged member missing from base must be an error, not a 1.0.0 default");
+
+    assert!(
+        matches!(err, GraphError::FixedGroupTaggedMemberMissingBase { .. }),
+        "expected FixedGroupTaggedMemberMissingBase, got {err:?}"
+    );
+}
+
+fn make_dep_edge_kind(
+    from: &PackageId,
+    to: &PackageId,
+    spec_str: &str,
+    ecosystem: callisto_model::Ecosystem,
+    kind: DepKind,
+) -> DepEdge {
+    let spec = DepSpec::Range(
+        callisto_model::VersionReq::parse(spec_str, ecosystem).unwrap(),
+        spec_str.to_string(),
+    );
+    DepEdge {
+        from: from.clone(),
+        to: to.clone(),
+        name: to.name().to_string(),
+        kind,
+        spec,
+        from_manifest: std::path::PathBuf::from(format!("{}/Cargo.toml", from.name())),
+        inherited: false,
+    }
+}
+
+/// `[cascade] mode = "always"` must bump a dependent even when its existing spec already covers the new version.
+#[test]
+fn run_cascade_always_mode_bumps_in_range_dependent() {
+    let upstream = PackageId::parse("pkg-core").unwrap();
+    let dependent = PackageId::parse("pkg-app").unwrap();
+    // pkg-core bumps Minor (1.0.0 -> 1.1.0); "^1.0.0" covers 1.1.0, so OutOfRange mode would leave pkg-app alone.
+    let edge = make_dep_edge_kind(&dependent, &upstream, "^1.0.0", Ecosystem::Cargo, DepKind::Runtime);
+
+    let graph = TestGraph {
+        packages: vec![bare_package(&upstream), bare_package(&dependent)],
+        edges: vec![edge],
+    };
+
+    let mut base = BTreeMap::new();
+    base.insert(upstream.clone(), Version::semver(1, 0, 0));
+    base.insert(dependent.clone(), Version::semver(1, 0, 0));
+
+    let mut seed = BTreeMap::new();
+    seed.insert(upstream.clone(), Severity::Minor);
+
+    let groups = GroupTable::default();
+    let cfg = CascadeConfig {
+        mode: CascadeMode::Always,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+    let reasons = BTreeMap::new();
+    let named_by = BTreeMap::new();
+    let identity = IdentityIndex::default();
+
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &reasons,
+        named_by: &named_by,
+        base: &base,
+        pre: None,
+        tags: &TagIndex::empty(),
+        identity: &identity,
+    };
+
+    let outcome = run_cascade(input).expect("cascade must converge");
+
+    assert_eq!(
+        outcome.severities.get(&dependent),
+        Some(&Severity::Patch),
+        "mode = always must bump pkg-app even though its \"^1.0.0\" spec covers 1.1.0; got {:?}",
+        outcome.severities
+    );
+    assert!(
+        outcome.rewrites.values().any(|r| r.dependency == upstream),
+        "pkg-app is releasing this run, so its floor on pkg-core must be raised \
+             even though \"^1.0.0\" already covers 1.1.0: {:?}",
+        outcome.rewrites
+    );
+}
+
+/// `[cascade] bump-severity = "minor"` must set a cascaded dependent's own severity to `Minor`, not `Patch`.
+#[test]
+fn run_cascade_bump_severity_minor_sets_dependent_severity_to_minor() {
+    let upstream = PackageId::parse("pkg-core").unwrap();
+    let dependent = PackageId::parse("pkg-app").unwrap();
+    // pkg-core bumps Major (1.0.0 -> 2.0.0); "^1.0.0" does not cover 2.0.0.
+    let edge = make_dep_edge_kind(&dependent, &upstream, "^1.0.0", Ecosystem::Cargo, DepKind::Runtime);
+
+    let graph = TestGraph {
+        packages: vec![bare_package(&upstream), bare_package(&dependent)],
+        edges: vec![edge],
+    };
+
+    let mut base = BTreeMap::new();
+    base.insert(upstream.clone(), Version::semver(1, 0, 0));
+    base.insert(dependent.clone(), Version::semver(1, 0, 0));
+
+    let mut seed = BTreeMap::new();
+    seed.insert(upstream.clone(), Severity::Major);
+
+    let groups = GroupTable::default();
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Minor,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+    let reasons = BTreeMap::new();
+    let named_by = BTreeMap::new();
+    let identity = IdentityIndex::default();
+
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &reasons,
+        named_by: &named_by,
+        base: &base,
+        pre: None,
+        tags: &TagIndex::empty(),
+        identity: &identity,
+    };
+
+    let outcome = run_cascade(input).expect("cascade must converge");
+
+    assert_eq!(
+        outcome.severities.get(&dependent),
+        Some(&Severity::Minor),
+        "bump-severity = minor must make pkg-app's cascaded severity Minor, got {:?}",
+        outcome.severities
+    );
+    assert_eq!(
+        outcome.targets.get(&dependent).map(|v| v.render()),
+        Some("1.1.0"),
+        "a Minor bump from base 1.0.0 must target 1.1.0, got {:?}",
+        outcome.targets
+    );
+}
+
+/// A `Dev` dependent must never be bumped, but its out-of-range spec must still be rewritten independent of `kind`.
+#[test]
+fn run_cascade_dev_dependent_never_bumped_but_spec_rewritten() {
+    let upstream = PackageId::parse("pkg-core").unwrap();
+    let dev_dependent = PackageId::parse("pkg-dev-tool").unwrap();
+    let edge = make_dep_edge_kind(&dev_dependent, &upstream, "^1.0.0", Ecosystem::Cargo, DepKind::Dev);
+
+    let graph = TestGraph {
+        packages: vec![bare_package(&upstream), bare_package(&dev_dependent)],
+        edges: vec![edge],
+    };
+
+    let mut base = BTreeMap::new();
+    base.insert(upstream.clone(), Version::semver(1, 0, 0));
+    base.insert(dev_dependent.clone(), Version::semver(1, 0, 0));
+
+    let mut seed = BTreeMap::new();
+    seed.insert(upstream.clone(), Severity::Major);
+
+    let groups = GroupTable::default();
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+    let reasons = BTreeMap::new();
+    let named_by = BTreeMap::new();
+    let identity = IdentityIndex::default();
+
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &reasons,
+        named_by: &named_by,
+        base: &base,
+        pre: None,
+        tags: &TagIndex::empty(),
+        identity: &identity,
+    };
+
+    let outcome = run_cascade(input).expect("cascade must converge");
+
+    assert!(
+        !outcome.severities.contains_key(&dev_dependent),
+        "a dev dependent must never be bumped, got {:?}",
+        outcome.severities
+    );
+    assert!(
+        !outcome.targets.contains_key(&dev_dependent),
+        "a dev dependent with no severity must get no target, got {:?}",
+        outcome.targets
+    );
+    assert!(
+        outcome.rewrites.values().any(|r| r.dependency == upstream),
+        "the dev dependency's out-of-range spec must still be rewritten: {:?}",
+        outcome.rewrites
+    );
+}
+
+/// `solve_cascade` must surface `CascadeNotConverged` (E105) once worklist pops exceed `convergence_bound`.
+#[test]
+fn run_cascade_exceeding_convergence_bound_returns_cascade_not_converged() {
+    let upstream = PackageId::parse("pkg-core").unwrap();
+    let dependent = PackageId::parse("pkg-app").unwrap();
+    let edge = make_dep_edge_kind(&dependent, &upstream, "^1.0.0", Ecosystem::Cargo, DepKind::Runtime);
+
+    let graph = TestGraph {
+        packages: Vec::new(),
+        edges: vec![edge],
+    };
+
+    let mut base = BTreeMap::new();
+    base.insert(upstream.clone(), Version::semver(1, 0, 0));
+    base.insert(dependent.clone(), Version::semver(1, 0, 0));
+
+    let mut seed = BTreeMap::new();
+    seed.insert(upstream.clone(), Severity::Major);
+
+    let groups = GroupTable::default();
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+    let reasons = BTreeMap::new();
+    let named_by = BTreeMap::new();
+    let identity = IdentityIndex::default();
+
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &reasons,
+        named_by: &named_by,
+        base: &base,
+        pre: None,
+        tags: &TagIndex::empty(),
+        identity: &identity,
+    };
+
+    let err = run_cascade(input).expect_err("an undersized convergence bound must be reported, not exceeded silently");
+
+    assert!(
+        matches!(err, GraphError::CascadeNotConverged { .. }),
+        "expected GraphError::CascadeNotConverged (E105), got {err:?}"
+    );
+}
+
+/// Regression for the callisto-cli 0.7.2 / callisto-graph 0.7.0 incident: a fixed group
+/// releasing together must raise every internal spec to the new shared version, even
+/// though the old caret spec already covers it (0.7.1 -> 0.7.2 is in-range for "^0.7.1").
+#[test]
+fn test_fixed_group_release_raises_in_range_internal_spec_to_new_version() {
+    let pkg_a = PackageId::parse("pkg-a").unwrap();
+    let pkg_b = PackageId::parse("pkg-b").unwrap();
+
+    // pkg-a depends on pkg-b; "^0.7.1" already covers 0.7.2, so out-of-range
+    // cascade rewriting alone would leave it unchanged.
+    let edge = make_dep_edge(&pkg_a, &pkg_b, "^0.7.1", Ecosystem::Cargo);
+
+    let graph = TestGraph {
+        packages: vec![bare_package(&pkg_a), bare_package(&pkg_b)],
+        edges: vec![edge],
+    };
+
+    let mut base = BTreeMap::new();
+    base.insert(pkg_a.clone(), Version::semver(0, 7, 1));
+    base.insert(pkg_b.clone(), Version::semver(0, 7, 1));
+
+    // Only pkg_b is seeded (e.g. by a changeset); the fixed group must carry
+    // pkg_a along at the same severity and shared target.
+    let mut seed = BTreeMap::new();
+    seed.insert(pkg_b.clone(), Severity::Patch);
+
+    let mut groups = GroupTable::default();
+    let group_def = GroupDef {
+        name: GroupName("ab-fixed".to_string()),
+        kind: GroupKind::Fixed,
+        members: vec![GroupMember::Package(pkg_a.clone()), GroupMember::Package(pkg_b.clone())],
+    };
+    groups.fixed.insert(group_def.name.clone(), group_def);
+
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+    let reasons = BTreeMap::new();
+    let named_by = BTreeMap::new();
+
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &reasons,
+        named_by: &named_by,
+        base: &base,
+        pre: None,
+        tags: &TagIndex::empty(),
+        identity: &IdentityIndex::default(),
+    };
+
+    let outcome = run_cascade(input).unwrap();
+
+    assert_eq!(outcome.targets.get(&pkg_a).unwrap().render(), "0.7.2");
+    assert_eq!(outcome.targets.get(&pkg_b).unwrap().render(), "0.7.2");
+
+    let rewrite = outcome
+        .rewrites
+        .values()
+        .find(|r| r.dependency == pkg_b)
+        .expect("pkg-a's spec on pkg-b must be rewritten even though \"^0.7.1\" already covers 0.7.2");
+
+    assert_eq!(
+        rewrite.to.render(),
+        "^0.7.2",
+        "the floor must be raised to the new shared version, keeping the caret operator and precision"
+    );
+}
+
+/// Both the main loop and the floor-raise pass see this edge, so an unrewritable spec must warn once, not twice.
+#[test]
+fn test_unrewritable_spec_on_edge_both_passes_visit_warns_once() {
+    let pkg_a = PackageId::parse("pkg-a").unwrap();
+    let pkg_b = PackageId::parse("pkg-b").unwrap();
+
+    // Upper-bounded range: out of range for the Major bump, and round_trip can't rewrite it either.
+    let edge = make_dep_edge(&pkg_a, &pkg_b, ">=1.0.0, <2.0.0", Ecosystem::Cargo);
+
+    let graph = TestGraph {
+        packages: vec![bare_package(&pkg_a), bare_package(&pkg_b)],
+        edges: vec![edge],
+    };
+
+    let mut base = BTreeMap::new();
+    base.insert(pkg_a.clone(), Version::semver(1, 0, 0));
+    base.insert(pkg_b.clone(), Version::semver(1, 0, 0));
+
+    let mut seed = BTreeMap::new();
+    seed.insert(pkg_b.clone(), Severity::Major);
+
+    let groups = GroupTable::default();
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+    let reasons = BTreeMap::new();
+    let named_by = BTreeMap::new();
+    let identity = IdentityIndex::default();
+
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &reasons,
+        named_by: &named_by,
+        base: &base,
+        pre: None,
+        tags: &TagIndex::empty(),
+        identity: &identity,
+    };
+
+    let outcome = run_cascade(input).expect("cascade must converge");
+
+    assert!(
+        outcome.severities.contains_key(&pkg_a),
+        "pkg-a must be carried along since its spec on pkg-b does not cover the Major bump"
+    );
+
+    let warnings: Vec<&Diagnostic> = outcome
+        .diagnostics
+        .iter()
+        .filter(|d| d.code == DiagnosticCode::RangeNotRoundTrippable)
+        .collect();
+    assert_eq!(
+        warnings.len(),
+        1,
+        "the same unrewritable edge must warn once even though both the convergence \
+             loop and the floor-raise pass visit it: {warnings:?}"
+    );
+}
