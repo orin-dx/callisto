@@ -128,3 +128,44 @@ impl crate::report::Report for ReleaseArtifactManifestReport {
         &[]
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::Ecosystem;
+
+    use super::super::test_support::test_intent;
+    use super::*;
+    use crate::release::*;
+
+    /// `ReleasePlanReport` must flatten `ReleaseIntentV1`'s own fields (not nest them
+    /// under an `intent` key) and add a `diagnostics` array only when non-empty --
+    /// the one JSON envelope `output::emit_report` gives every command alike.
+    #[test]
+    fn release_plan_report_flattens_intent_and_omits_empty_diagnostics() {
+        let package = ReleasePackageId::new(Ecosystem::Cargo, "demo").unwrap();
+        let version = Version::semver(1, 0, 0);
+        let tag = ReleaseOperation::tag(package, version, vec![]).unwrap();
+        let intent = test_intent(
+            Ok(ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]).unwrap()),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![tag],
+        )
+        .unwrap();
+        let report = ReleasePlanReport {
+            intent: intent.clone(),
+            diagnostics: Vec::new(),
+        };
+
+        let value = serde_json::to_value(&report).unwrap();
+        assert_eq!(value["digest"], serde_json::to_value(intent.digest()).unwrap());
+        assert!(value.get("intent").is_none(), "must flatten, not nest: {value}");
+        assert!(
+            value.get("diagnostics").is_none(),
+            "empty diagnostics must be omitted: {value}"
+        );
+        assert_eq!(
+            crate::report::Report::schema_version(&report),
+            u32::from(ReleaseIntentV1::SCHEMA_VERSION)
+        );
+    }
+}

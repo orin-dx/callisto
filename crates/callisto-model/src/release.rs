@@ -17,7 +17,7 @@ mod report;
 mod snapshot;
 
 #[cfg(test)]
-mod tests;
+mod test_support;
 
 pub use artifact::*;
 pub use decision::*;

@@ -201,3 +201,52 @@ fn is_safe_workflow_path(value: &str) -> bool {
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/'))
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::identity::assert_string_wire_schema;
+
+    use super::*;
+
+    #[test]
+    fn github_repository_schema_describes_the_normalized_slug() {
+        let repository = GitHubRepository::parse("Owner/Repository.git").unwrap();
+        assert_string_wire_schema(&repository, "GitHubRepository", "owner/repository");
+    }
+
+    #[test]
+    fn github_repository_parses_valid_owner_repo_and_renders_slug() {
+        let repo = GitHubRepository::parse("orin-dx/callisto").unwrap();
+        assert_eq!(repo.owner(), "orin-dx");
+        assert_eq!(repo.repo(), "callisto");
+        assert_eq!(repo.as_slug(), "orin-dx/callisto");
+        assert_eq!(repo.to_string(), "orin-dx/callisto");
+    }
+
+    #[test]
+    fn github_repository_rejects_embedded_whitespace_extra_parts_and_leading_trailing_hyphen() {
+        // The prior `is_safe_github_repository` accepted this (a bare
+        // `split_once('/')` with no character-class check at all) -- this is
+        // the exact behavior-change gap the audit found.
+        assert!(GitHubRepository::parse("owner name/repo").is_err());
+        assert!(GitHubRepository::parse("owner/repo name").is_err());
+        assert!(GitHubRepository::parse("owner").is_err());
+        assert!(GitHubRepository::parse("owner/repo/extra").is_err());
+        assert!(GitHubRepository::parse("-owner/repo").is_err());
+        assert!(GitHubRepository::parse("owner-/repo").is_err());
+        assert!(GitHubRepository::parse("owner/-repo").is_err());
+        assert!(GitHubRepository::parse("owner/repo-").is_err());
+        assert!(GitHubRepository::parse("/repo").is_err());
+        assert!(GitHubRepository::parse("owner/").is_err());
+    }
+
+    #[test]
+    fn github_repository_serializes_and_deserializes_as_its_slug_string() {
+        let repo = GitHubRepository::parse("orin-dx/callisto").unwrap();
+        let json = serde_json::to_string(&repo).unwrap();
+        assert_eq!(json, "\"orin-dx/callisto\"");
+        let round_tripped: GitHubRepository = serde_json::from_str(&json).unwrap();
+        assert_eq!(round_tripped, repo);
+        assert!(serde_json::from_str::<GitHubRepository>("\"owner name/repo\"").is_err());
+    }
+}

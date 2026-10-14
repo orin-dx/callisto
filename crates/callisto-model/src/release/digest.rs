@@ -216,3 +216,121 @@ impl CanonicalTranscript {
         out.extend_from_slice(value);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::identity::assert_string_wire_schema;
+    use crate::{CommitSha, PackageId};
+
+    use super::*;
+    use crate::release::*;
+
+    #[test]
+    fn release_digest_schemas_keep_distinct_names_for_string_values() {
+        let raw = "a".repeat(64);
+        assert_string_wire_schema(&ArtifactDigest::parse(&raw).unwrap(), "ArtifactDigest", &raw);
+        assert_string_wire_schema(&DecisionDigest::parse(&raw).unwrap(), "DecisionDigest", &raw);
+        assert_string_wire_schema(&SemanticInputDigest::parse(&raw).unwrap(), "SemanticInputDigest", &raw);
+        assert_string_wire_schema(&IntentDigest::parse(&raw).unwrap(), "IntentDigest", &raw);
+        assert_string_wire_schema(
+            &RegistryBindingDigest::parse(&raw).unwrap(),
+            "RegistryBindingDigest",
+            &raw,
+        );
+    }
+
+    #[test]
+    fn string_leaf_definitions_stay_distinct_in_a_shared_schema() {
+        let mut generator = schemars::gen::SchemaGenerator::default();
+        let references = [
+            ("PackageId", generator.subschema_for::<PackageId>()),
+            ("CommitSha", generator.subschema_for::<CommitSha>()),
+            ("Version", generator.subschema_for::<Version>()),
+            ("VersionReq", generator.subschema_for::<crate::VersionReq>()),
+            ("ReleasePackageId", generator.subschema_for::<ReleasePackageId>()),
+            ("GitHubRepository", generator.subschema_for::<GitHubRepository>()),
+            ("ArtifactDigest", generator.subschema_for::<ArtifactDigest>()),
+            ("DecisionDigest", generator.subschema_for::<DecisionDigest>()),
+            ("SemanticInputDigest", generator.subschema_for::<SemanticInputDigest>()),
+            ("IntentDigest", generator.subschema_for::<IntentDigest>()),
+            (
+                "RegistryBindingDigest",
+                generator.subschema_for::<RegistryBindingDigest>(),
+            ),
+        ];
+        assert_eq!(generator.definitions().len(), references.len());
+        for (name, reference) in references {
+            let reference = serde_json::to_value(reference).unwrap();
+            assert_eq!(reference["$ref"], format!("#/definitions/{name}"));
+            let definition = serde_json::to_value(&generator.definitions()[name]).unwrap();
+            assert_eq!(definition["type"], "string");
+        }
+    }
+
+    #[test]
+    fn digests_are_distinct_validated_lowercase_hex_newtypes() {
+        let hex = "a".repeat(64);
+        assert_eq!(IntentDigest::parse(&hex).unwrap().as_str(), hex);
+        assert!(IntentDigest::parse(&"A".repeat(64)).is_err());
+        assert!(ArtifactDigest::parse("abcd").is_err());
+        assert!(serde_json::from_str::<SemanticInputDigest>(r#""ABC""#).is_err());
+    }
+
+    #[test]
+    fn artifact_digest_hashes_exact_bytes() {
+        assert_eq!(
+            ArtifactDigest::from_bytes(b"callisto").to_string(),
+            "04d52bfb8ce8b5a37e6a15b8c002419d2555543855cb4a7972ca80b2d8eadbf0"
+        );
+        assert_ne!(
+            ArtifactDigest::from_bytes(b"callisto"),
+            ArtifactDigest::from_bytes(b"callisto\n")
+        );
+    }
+
+    #[test]
+    fn transcript_has_a_fixed_sha256_vector() {
+        let mut transcript = CanonicalTranscript::semantic_input_v1();
+        transcript.push_str("package", "cargo/callisto-model");
+        transcript.push_str("version", "0.5.0");
+
+        assert_eq!(
+            SemanticInputDigest::from_transcript(&transcript).to_string(),
+            "9dfd667345a133d98c1ae1ed8984b4161d8f27f310c09412b136007331201ec4"
+        );
+    }
+
+    #[test]
+    fn transcript_length_and_field_boundaries_affect_the_digest() {
+        let mut split = CanonicalTranscript::semantic_input_v1();
+        split.push_str("role", "publish");
+        split.push_str("edge", "a->b");
+
+        let mut joined = CanonicalTranscript::semantic_input_v1();
+        joined.push_str("role", "publisha->b");
+
+        assert_ne!(
+            SemanticInputDigest::from_transcript(&split),
+            SemanticInputDigest::from_transcript(&joined)
+        );
+    }
+
+    #[test]
+    fn transcript_domain_separation_prevents_decision_intent_and_snapshot_collisions() {
+        let mut snapshot = CanonicalTranscript::semantic_input_v1();
+        snapshot.push_str("role", "publish");
+        let mut decision = CanonicalTranscript::decision_v1();
+        decision.push_str("role", "publish");
+        let mut intent = CanonicalTranscript::intent_v1();
+        intent.push_str("role", "publish");
+
+        assert_ne!(
+            SemanticInputDigest::from_transcript(&snapshot).as_str(),
+            IntentDigest::from_transcript(&intent).as_str()
+        );
+        assert_ne!(
+            DecisionDigest::from_transcript(&decision).as_str(),
+            IntentDigest::from_transcript(&intent).as_str()
+        );
+    }
+}
