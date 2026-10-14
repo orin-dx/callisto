@@ -1,0 +1,9 @@
+Can you evaluate the open PRs for me? Consider rust best practices, adherence to our own best practices, performance, security, maintainability, and architecture (and any other criteria you deem relevant).
+
+---
+
+Can we make sure we include the codex and entire config in the repo in a PR? Entire is not seeing the .codex/hooks.json file
+
+---
+
+yes
