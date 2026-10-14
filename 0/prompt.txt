@@ -1,0 +1,1 @@
+Can we make sure our mermaid is as pretty and modern as the agent-plugin ones?
