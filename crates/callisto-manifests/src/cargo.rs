@@ -52,12 +52,8 @@ impl CargoToml {
             == Some(true);
 
         let mut inherited_deps = HashSet::new();
-        for (section_name, kind) in [
-            ("dependencies", DepKind::Runtime),
-            ("dev-dependencies", DepKind::Dev),
-            ("build-dependencies", DepKind::Build),
-        ] {
-            if let Some(table) = doc.get(section_name).and_then(|t| t.as_table_like()) {
+        for (section_name, kind, target) in dependency_locations(&doc) {
+            if let Some(table) = dependency_table(&doc, section_name, target.as_deref()) {
                 for (name, item) in table.iter() {
                     let is_inherited = item
                         .as_inline_table()
@@ -397,14 +393,16 @@ impl Manifest for CargoToml {
 
     fn iter_dependencies(&self) -> Box<dyn Iterator<Item = DependencyEntry> + '_> {
         let mut entries = Vec::new();
+        // A dependency named in a top-level table and again under `[target.<cfg>.*]` is one
+        // edge; the top-level declaration is reported and the rewrite reaches both.
+        let mut reported = HashSet::new();
 
-        for (section_name, section_kind) in [
-            ("dependencies", DepKind::Runtime),
-            ("dev-dependencies", DepKind::Dev),
-            ("build-dependencies", DepKind::Build),
-        ] {
-            if let Some(table) = self.document.get(section_name).and_then(|t| t.as_table_like()) {
+        for (section_name, section_kind, target) in dependency_locations(&self.document) {
+            if let Some(table) = dependency_table(&self.document, section_name, target.as_deref()) {
                 for (name, item) in table.iter() {
+                    if !reported.insert((section_kind, name.to_string())) {
+                        continue;
+                    }
                     let is_inherited = self.inherited_deps.contains(&(section_kind, name.to_string()));
                     let mut kind = section_kind;
                     let local_spec = parse_cargo_dep_item(item, &mut kind);
@@ -482,28 +480,31 @@ impl Manifest for CargoToml {
             DepKind::Peer => unreachable!(),
         };
 
-        let table = self
-            .document
-            .get_mut(section_name)
-            .and_then(|t| t.as_table_like_mut())
-            .ok_or_else(|| ManifestError::DependencyNotFound {
+        let new_str = new.render();
+        let mut found = false;
+        for (section, _, target) in dependency_locations(&self.document) {
+            if section != section_name {
+                continue;
+            }
+            let Some(table) = dependency_table_mut(&mut self.document, section, target.as_deref()) else {
+                continue;
+            };
+            let Some(item) = table.get_mut(name) else {
+                continue;
+            };
+            set_dependency_version(item, new_str.clone()).map_err(|()| ManifestError::UnrecognizedDependencyValue {
+                path: self.path.clone(),
+                name: name.to_string(),
+            })?;
+            found = true;
+        }
+        if !found {
+            return Err(ManifestError::DependencyNotFound {
                 path: self.path.clone(),
                 name: name.to_string(),
                 kind,
-            })?;
-
-        let item = table.get_mut(name).ok_or_else(|| ManifestError::DependencyNotFound {
-            path: self.path.clone(),
-            name: name.to_string(),
-            kind,
-        })?;
-
-        let new_str = new.render();
-
-        set_dependency_version(item, new_str).map_err(|()| ManifestError::UnrecognizedDependencyValue {
-            path: self.path.clone(),
-            name: name.to_string(),
-        })?;
+            });
+        }
 
         Ok(())
     }
@@ -519,6 +520,53 @@ impl Manifest for CargoToml {
             operation: "update_optional_dependencies",
         })
     }
+}
+
+const DEPENDENCY_SECTIONS: [(&str, DepKind); 3] = [
+    ("dependencies", DepKind::Runtime),
+    ("dev-dependencies", DepKind::Dev),
+    ("build-dependencies", DepKind::Build),
+];
+
+/// Every dependency table a manifest can declare: the top-level ones, then the same three
+/// under each `[target.<cfg>]` key. Owned, so callers can mutate the document while iterating.
+fn dependency_locations(doc: &toml_edit::DocumentMut) -> Vec<(&'static str, DepKind, Option<String>)> {
+    let mut locations: Vec<_> = DEPENDENCY_SECTIONS
+        .iter()
+        .map(|(section, kind)| (*section, *kind, None))
+        .collect();
+    if let Some(targets) = doc.get("target").and_then(|item| item.as_table_like()) {
+        for (cfg, _) in targets.iter() {
+            for (section, kind) in DEPENDENCY_SECTIONS {
+                locations.push((section, kind, Some(cfg.to_string())));
+            }
+        }
+    }
+    locations
+}
+
+fn dependency_table<'a>(
+    doc: &'a toml_edit::DocumentMut,
+    section: &str,
+    target: Option<&str>,
+) -> Option<&'a dyn toml_edit::TableLike> {
+    let parent = match target {
+        Some(cfg) => doc.get("target")?.get(cfg)?,
+        None => doc.as_item(),
+    };
+    parent.get(section)?.as_table_like()
+}
+
+fn dependency_table_mut<'a>(
+    doc: &'a mut toml_edit::DocumentMut,
+    section: &str,
+    target: Option<&str>,
+) -> Option<&'a mut dyn toml_edit::TableLike> {
+    let parent = match target {
+        Some(cfg) => doc.get_mut("target")?.get_mut(cfg)?,
+        None => doc.as_item_mut(),
+    };
+    parent.get_mut(section)?.as_table_like_mut()
 }
 
 fn cargo_dependency_package_name<'a>(name: &'a str, item: &'a toml_edit::Item) -> &'a str {
