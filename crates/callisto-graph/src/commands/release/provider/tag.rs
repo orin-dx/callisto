@@ -263,11 +263,7 @@ fn observed_local_tag(context: &ProviderContext<'_>, name: &TagName) -> Result<L
         },
     })?;
     let for_each_ref_target = format!("refs/tags/{name}");
-    let for_each_ref_args = [
-        "for-each-ref",
-        "--format=%(objecttype)%00%(contents:subject)%00%(contents:body)",
-        for_each_ref_target.as_str(),
-    ];
+    let for_each_ref_args = ["for-each-ref", "--format=%(objecttype)", for_each_ref_target.as_str()];
     let details =
         context
             .runner()
@@ -282,28 +278,11 @@ fn observed_local_tag(context: &ProviderContext<'_>, name: &TagName) -> Result<L
             },
         });
     }
-    let line = details.stdout.trim_end_matches(['\r', '\n']);
-    let mut fields = line.split('\0');
-    let object_type = fields.next();
-    let annotation = fields.next();
-    let body = fields.next();
-    // A lightweight tag is a conflicting ref, not malformed git output.
-    if object_type != Some("tag") {
+    // Only the object type is read: annotation text, however many paragraphs or a signature, is never part of tag
+    // identity, and a lightweight tag is a conflicting ref, not malformed git output.
+    if details.stdout.trim_end_matches(['\r', '\n']) != "tag" {
         return Ok(LocalTagObservation::Unannotated);
     }
-    if body.is_none_or(|body| !body.trim().is_empty()) || fields.next().is_some() {
-        return Err(GraphError::ReleaseCommand {
-            program: programs::GIT.to_string(),
-            args: for_each_ref_args.iter().map(ToString::to_string).collect(),
-            failure: CommandFailure::MalformedOutput {
-                detail: format!("unexpected for-each-ref output: {line:?}"),
-            },
-        });
-    }
-    // The annotation's presence confirms a well-formed tag object; its text is never part of tag identity.
-    annotation.ok_or_else(|| GraphError::ReleaseInvariant {
-        detail: "for-each-ref line validated as `tag`/empty-body but carried no annotation field".to_string(),
-    })?;
     Ok(LocalTagObservation::Annotated { target })
 }
 
@@ -377,6 +356,33 @@ mod tests {
         callisto_fixtures::git::run_git(dir.path(), &["commit", "--allow-empty", "-q", "-m", "root"]);
         let mut operation = local_annotated_tag_operation(dir.path(), "callisto@0.8.0", "operation's own message");
         operation.annotation = "a completely different message than the local tag carries".to_owned();
+
+        let remote =
+            crate::commands::release::binding::canonical_git_remote("https://github.com/orin-dx/callisto").unwrap();
+        let runner = LocalRepoRemoteScript {
+            url: "https://github.com/orin-dx/callisto",
+            ls_remote_stdout: fixtures::LS_REMOTE_ABSENT,
+        };
+        let context = ProviderContext::new(dir.path(), &runner, Some(&remote));
+
+        assert_eq!(
+            tag_observation(&context, &operation).unwrap(),
+            ProviderObservationV1::Absent
+        );
+    }
+
+    /// A local annotated tag whose message has a body (several paragraphs, or a signature block) is the same landed
+    /// effect: the annotation text is not read at all.
+    #[test]
+    fn local_tag_with_a_multi_paragraph_message_is_not_malformed() {
+        let dir = tempfile::tempdir().unwrap();
+        callisto_fixtures::git::init_repo(dir.path());
+        callisto_fixtures::git::run_git(dir.path(), &["commit", "--allow-empty", "-q", "-m", "root"]);
+        let operation = local_annotated_tag_operation(
+            dir.path(),
+            "callisto@0.8.0",
+            "Release callisto@0.8.0\n\nhand-written notes\n\n-----BEGIN PGP SIGNATURE-----\nAAAA\n-----END PGP SIGNATURE-----",
+        );
 
         let remote =
             crate::commands::release::binding::canonical_git_remote("https://github.com/orin-dx/callisto").unwrap();

@@ -107,23 +107,36 @@ fn incomplete_tagged_releases<R: CommandRunner, D: DependencyResolver>(
     mode: LocalReleaseSource,
 ) -> Result<std::collections::BTreeSet<ReleasePackageId>, GraphError> {
     let head = workspace.git_access().head_sha()?;
-    let tagged = crate::commands::release_decision::releases_tagged_at(workspace, &head)?;
+    let tagged: std::collections::BTreeSet<ReleasePackageId> =
+        crate::commands::release_decision::releases_tagged_at(workspace, &head)?
+            .into_iter()
+            .map(|entry| entry.package)
+            .collect();
     if tagged.is_empty() {
-        return Ok(Default::default());
+        return Ok(tagged);
     }
-    // Without an `origin` push URL a preview cannot observe the tags.
+    // Without an `origin` push URL a preview cannot observe anything, so it cannot call a tagged release finished.
     if mode == LocalReleaseSource::Preview && optional_git_remote(&workspace.root, workspace.runner)?.is_none() {
-        return Ok(Default::default());
+        return Ok(tagged);
     }
     let profile = ExecutionTrustProfileV1::GitCommit;
     let source = match mode {
         LocalReleaseSource::Preview => SourceIdentity::GitCommit { sha: head },
         LocalReleaseSource::Trusted => observe_source(workspace, profile, ReleaseCheckout::AnyHead)?,
     };
-    let decision = callisto_model::ReleaseDecisionV1::new(tagged)?;
+    // The roster a run would plan with every tagged release still open, so a dependency left untagged by the
+    // failed run is part of it and the dependency checks see the same packages as the real derivation.
+    let Some(decision) = crate::commands::release_decision::derive_release_roster(workspace, &[], &tagged)? else {
+        return Ok(Default::default());
+    };
     let (_, prepared) =
         derive_release_intent_with_prepared(workspace, &decision, source, profile, None, &mut Vec::new())?;
-    Ok(unsatisfied_packages(&workspace.root, workspace.runner, &prepared))
+    Ok(unsatisfied_packages(
+        &workspace.root,
+        workspace.runner,
+        &prepared,
+        &tagged,
+    ))
 }
 
 /// [`plan_local_release`] over an already-loaded workspace, e.g. one built from an in-memory config.
@@ -310,11 +323,119 @@ mod tests {
     fn a_tag_on_head_without_the_rest_of_the_release_is_still_a_release() {
         let (dir, _) = fixture();
         git(dir.path(), &["-c", "tag.gpgSign=false", "tag", "release-fixture@1.2.3"]);
-        let intent = plan(dir.path(), &[], LocalReleaseSource::Preview)
+        for mode in [LocalReleaseSource::Preview, LocalReleaseSource::Trusted] {
+            let plan = plan_offline(dir.path(), &[], mode)
+                .unwrap()
+                .expect("the tag alone does not finish the release");
+            assert_eq!(plan.intent.decision.entries[0].package, fixture_id(), "{mode:?}");
+        }
+    }
+
+    /// A preview with no `origin` cannot observe anything, so it never calls a tagged release finished;
+    /// the run itself then fails for lack of a remote, as it does for any release.
+    #[test]
+    fn a_preview_without_origin_keeps_a_tagged_release_in_the_plan() {
+        let dir = app_and_lib_repo();
+        git(dir.path(), &["tag", "-a", "-m", "Release app@1.0.0", "app@1.0.0"]);
+        git(dir.path(), &["remote", "remove", "origin"]);
+        let plan = plan_offline(dir.path(), &[], LocalReleaseSource::Preview)
             .unwrap()
-            .expect("the tag alone does not finish the release");
-        assert_eq!(intent.decision.entries[0].package, fixture_id());
-        assert!(plan(dir.path(), &[], LocalReleaseSource::Trusted).unwrap().is_some());
+            .expect("an unobservable tagged release stays planned");
+        assert_eq!(released_names(&plan), ["app", "lib"]);
+        assert!(plan.tags_unbound);
+    }
+
+    /// Real git, except `ls-remote` answers "no such ref" and every other program is unavailable: a
+    /// provider observation never reaches the network, and counts as not satisfied.
+    struct OfflineRunner;
+    impl callisto_model::CommandRunner for OfflineRunner {
+        fn run(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            if program != "git" {
+                return Err(callisto_model::CommandError::NotFound {
+                    program: program.to_owned(),
+                });
+            }
+            if args.first() == Some(&"ls-remote") {
+                return Ok(callisto_model::CommandOutput {
+                    exit_code: Some(0),
+                    stdout: String::new(),
+                    stderr: String::new(),
+                });
+            }
+            RealGitRunner.run(program, args, cwd)
+        }
+    }
+
+    /// Crates `app` (depends on `lib`) and `lib`, both unreleased, with a GitHub `origin`, at a detached HEAD.
+    fn app_and_lib_repo() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = [\"app\", \"lib\"]\n").unwrap();
+        std::fs::write(
+            root.join("callisto.toml"),
+            "[[package]]\nmatch = \"app\"\npublish-to = [\"crates-io\"]\n\n[[package]]\nmatch = \"lib\"\npublish-to = [\"crates-io\"]\n",
+        )
+        .unwrap();
+        for (name, dependencies) in [("app", "[dependencies]\nlib = { path = \"../lib\" }\n"), ("lib", "")] {
+            std::fs::create_dir_all(root.join(name).join("src")).unwrap();
+            std::fs::write(root.join(name).join("src/lib.rs"), "\n").unwrap();
+            std::fs::write(
+                root.join(name).join("Cargo.toml"),
+                format!("[package]\nname = \"{name}\"\nversion = \"1.0.0\"\nedition = \"2021\"\n{dependencies}"),
+            )
+            .unwrap();
+        }
+        callisto_fixtures::git::init_repo(root);
+        git(
+            root,
+            &["remote", "add", "origin", "https://github.com/example/app-and-lib.git"],
+        );
+        git(root, &["add", "."]);
+        git(root, &["commit", "-q", "-m", "fixture"]);
+        git(root, &["checkout", "--detach", "-q", "HEAD"]);
+        dir
+    }
+
+    fn plan_offline(
+        root: &Path,
+        selections: &[ReleasePackageId],
+        mode: LocalReleaseSource,
+    ) -> Result<Option<LocalReleasePlan>, GraphError> {
+        plan_local_release(
+            root,
+            &crate::IgnoreWalkLocator::new(root),
+            &OfflineRunner,
+            selections,
+            mode,
+        )
+    }
+
+    fn released_names(plan: &LocalReleasePlan) -> Vec<String> {
+        plan.intent
+            .decision
+            .entries
+            .iter()
+            .map(|entry| entry.package.name().to_owned())
+            .collect()
+    }
+
+    /// The tag operations run dependents first, so a failed push can leave only the dependent's tag behind.
+    /// The rerun finishes it together with the dependency that never got its tag.
+    #[test]
+    fn a_tagged_dependent_is_resumed_together_with_its_untagged_dependency() {
+        let dir = app_and_lib_repo();
+        git(dir.path(), &["tag", "-a", "-m", "Release app@1.0.0", "app@1.0.0"]);
+        for mode in [LocalReleaseSource::Preview, LocalReleaseSource::Trusted] {
+            let plan = plan_offline(dir.path(), &[], mode)
+                .unwrap()
+                .expect("unfinished release");
+            assert_eq!(released_names(&plan), ["app", "lib"], "{mode:?}");
+        }
     }
 
     #[test]
