@@ -1,0 +1,112 @@
+{
+  "cli_version": "0.11.5-nightly.202610130630.4203b3d42",
+  "checkpoint_id": "01M4Y2MDV6CQ4VA1JVKTNWF07W",
+  "session_id": "a08620cc-8b37-45b5-b4b2-89a977aad490",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-14T20:46:16.66393Z",
+  "branch": "stack/docs-v1",
+  "checkpoints_count": 1,
+  "save_step_count": 85,
+  "files_touched": null,
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 1018,
+    "cache_creation_tokens": 6466114,
+    "cache_read_tokens": 226539442,
+    "output_tokens": 629117,
+    "api_call_count": 466
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01YCCAbwm7sztdDtLuczSzDN",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 466,
+        "end": 467,
+        "entry_ids": [
+          "64369af6-5a29-4372-9bc8-6e58a915ca54"
+        ],
+        "tool_use_id": "toolu_01YCCAbwm7sztdDtLuczSzDN"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01YCCAbwm7sztdDtLuczSzDN"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "summary": {
+    "intent": "Run an adversarial review of Callisto PR #101 (self-release lifecycle rewrite) covering architecture, semantic model, performance, bugs, corner cases and black-box test coverage, then consolidate the results and the full release history into a handoff.",
+    "outcome": "Six parallel audits plus Codex findings turned up three live-verified P0 release blockers and about 60 other findings. PR #101 was hardened and merged, and two further workflow bugs were fixed (#103 merged, #104 open), but the 0.8.0 release was still not published at the end.",
+    "learnings": {
+      "repo": [
+        "Callisto test fakes in durable_release_e2e_tests.rs encode wrong provider semantics (cargo info says 'could not find' until publish, gh accepts any flag, target_commitish hard-coded to the SHA), so green CI could not catch real-provider bugs. The fix was captured real provider fixtures, strict fakes and real-tool flag contract tests.",
+        "GitHub Actions skips any job with a skipped transitive ancestor unless its own if: contains a status function such as always(). The release-candidate -> plan -> build-artifact -> execute chain was silently skipped because of this.",
+        "shasum run on one runner records absolute paths under that runner's RUNNER_TEMP, so a shasum -c on a different runner fails. Checksums must be generated from inside the handoff directory.",
+        "cargo info name@ver run inside a workspace reads the local manifest, not the registry, and needs an explicit --registry crates-io. gh api has no --repo flag. A GitHub Release created without --target reports target_commitish as the branch name, not the SHA.",
+        "Cargo builds took hours because target/debug/deps held 1.72M .o files from macOS split-debuginfo. A local git-excluded .cargo/config.toml with split-debuginfo=off fixed it, and a cold build is then about 31 s.",
+        "The release workflow's policy script (verify-release-workflow-policy.sh) has a --self-test mutant suite (30 mutants) and now includes a scheduler simulating GitHub's if:/needs semantics.",
+        "The CLI product tag moved to callisto@{version} (previously callisto-cli@*). Owner decision: migrate or add lookup compatibility via previous-tag-templates, do not revert.",
+        "Release flow design after hardening: GitHub Release created as draft, assets uploaded, then a final ForgePublish op. Provider observation goes through the package managers (cargo info, npm view). Registry endpoints are https only, and PyPI is refused at plan time."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/commands/release.rs",
+          "line": 382,
+          "end_line": 402,
+          "finding": "release execute ran all remote effects at line 382 before parsing --orchestration-revision (389) and the Hermetic-source check (395-402), so bad arguments could fail the command after publishing. Fixed by validating before effects."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release.rs",
+          "line": 1145,
+          "end_line": 1145,
+          "finding": "Forge release observation required target_commitish == source SHA, but GitHub returns the default branch name, so the first real publish would classify as Conflict."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release.rs",
+          "line": 781,
+          "end_line": 799,
+          "finding": "cargo_version_is_published runs cargo info from the workspace root without --registry for crates-io, so it reads the local manifest and reports unpublished versions as published. This leads to false AlreadySatisfied and a false terminal receipt in recovery."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release.rs",
+          "line": 1312,
+          "end_line": 1316,
+          "finding": "derive_release_inputs folds a missing [release] and an unknown profile into Option::None, so prepared_registry_binding silently falls back to the production registry key. Profile enforcement lived only in the CLI."
+        },
+        {
+          "path": "crates/callisto-cli/src/runner.rs",
+          "line": 19,
+          "end_line": 26,
+          "finding": "CliCommandRunner::run is an unbounded Command::output() with no timeout. Only run_with_timeout_impl enforces the 10 MiB cap and a deadline, and most publish, push and gh calls used plain run."
+        },
+        {
+          "path": "crates/callisto-config/src/resolve.rs",
+          "line": 615,
+          "end_line": 640,
+          "finding": "The shared-destination isolation check compares raw URL and repo strings, so it is bypassable by case, port or .git. None == None also gives a false positive, and the check is pairwise only."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": null,
+    "open_items": null
+  },
+  "kind": "imported"
+}
