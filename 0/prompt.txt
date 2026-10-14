@@ -1,0 +1,1 @@
+Please prioritize the highest-confidence reachable candidate and any uncovered critical boundary, then return your concise report promptly. No need for an exhaustive inventory; keep evidence and confidence precise.
