@@ -74,7 +74,7 @@ fn release(
         eprintln!("warning: {}", diagnostic.message);
     }
     let intent = plan.intent;
-    let permit = ApplyPermit::granted_unless_dry_run(false).expect("non-dry-run permits writes");
+    let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).expect("non-dry-run permits writes");
     // A receipt records only full success; a partial run is recovered by rerunning.
     if let Some(path) = &receipt {
         callisto_model::atomic::probe_atomic_write(path, &permit).map_err(|source| CliError::Io {
@@ -327,7 +327,7 @@ fn artifact_manifest(args: ReleaseArtifactManifestArgs, global: &GlobalArgs) -> 
     let manifest = ArtifactManifestV1::new(&intent, entries).map_err(|error| CliError::ReleaseManifestInvalid {
         detail: error.to_string(),
     })?;
-    let permit = ApplyPermit::granted_unless_dry_run(false).expect("non-dry-run permits writes");
+    let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).expect("non-dry-run permits writes");
     let content = serde_json::to_string_pretty(&manifest).expect("artifact manifest serializes") + "\n";
     callisto_model::atomic::atomic_write(&args.out, &content, &permit).map_err(|source| CliError::Io {
         source,
