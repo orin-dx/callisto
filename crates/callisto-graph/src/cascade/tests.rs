@@ -1167,7 +1167,7 @@ fn test_fixed_group_seeded_siblings_converge_on_shared_target() {
         kind: GroupKind::Fixed,
         members: vec![GroupMember::Package(pkg_a.clone()), GroupMember::Package(pkg_b.clone())],
     };
-    let groups = GroupTable::from_groups(vec![group_def], vec![]);
+    let groups = GroupTable::try_from_groups(vec![group_def], vec![]).unwrap();
 
     let cfg = CascadeConfig {
         mode: CascadeMode::OutOfRange,

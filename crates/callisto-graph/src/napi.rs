@@ -289,7 +289,7 @@ mod tests {
             kind: GroupKind::Fixed,
             members: vec![GroupMember::Package(PackageId::Bare("my-lib".to_string()))],
         };
-        let groups = GroupTable::from_groups(vec![group], vec![]);
+        let groups = GroupTable::try_from_groups(vec![group], vec![]).unwrap();
 
         let index = NapiTargetsIndex::load(&groups, root).expect("load should succeed");
         let declared = index
