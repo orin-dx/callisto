@@ -855,3 +855,16 @@ fn a_platform_package_is_published_by_directory_with_npm() {
     assert_eq!(runner.0.lock().unwrap()[0].0, "pnpm");
     assert!(runner.0.lock().unwrap()[0].1.contains(&"--filter=@s/cli".to_owned()));
 }
+
+/// A credential withheld from a build backend is either a secret the redactor knows or a name known to carry
+/// no secret value, so a new secret cannot be added here and escape redaction in an error.
+#[test]
+fn every_credential_withheld_from_a_build_is_redacted_or_known_not_to_be_secret() {
+    const NOT_SECRET: &[&str] = &["TWINE_USERNAME", "NPM_CONFIG_USERCONFIG"];
+    for name in super::RELEASE_CREDENTIALS {
+        assert!(
+            callisto_model::SECRET_CREDENTIAL_ENV.contains(name) || NOT_SECRET.contains(name),
+            "`{name}` is neither redacted from output nor listed as carrying no secret"
+        );
+    }
+}

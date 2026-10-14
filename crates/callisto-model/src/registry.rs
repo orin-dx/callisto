@@ -122,8 +122,7 @@ pub fn redact_known_secrets(text: &str, secrets: &[String]) -> String {
 }
 
 /// Filters an env-var snapshot down to registry-credential values this
-/// codebase's publish flow reads: fixed `NPM_TOKEN`/`NODE_AUTH_TOKEN`/`TWINE_PASSWORD`/
-/// `CARGO_REGISTRY_TOKEN`/`GITHUB_TOKEN`/`GH_TOKEN` names, plus any
+/// codebase's publish flow reads: the names in [`SECRET_CREDENTIAL_ENV`], plus any
 /// `CARGO_REGISTRIES_<NAME>_TOKEN` (operator-configured, unbounded name,
 /// so matched by pattern). `GITHUB_TOKEN`/`GH_TOKEN` cover GitHub Actions'
 /// ambient credential -- `redact_url_userinfo` already catches its most
@@ -137,19 +136,26 @@ pub fn redact_known_secrets(text: &str, secrets: &[String]) -> String {
 pub fn known_credential_env_values(vars: impl Iterator<Item = (String, String)>) -> Vec<String> {
     vars.filter(|(key, value)| {
         !value.is_empty()
-            && (matches!(
-                key.as_str(),
-                "NPM_TOKEN"
-                    | "NODE_AUTH_TOKEN"
-                    | "TWINE_PASSWORD"
-                    | "CARGO_REGISTRY_TOKEN"
-                    | "GITHUB_TOKEN"
-                    | "GH_TOKEN"
-            ) || (key.starts_with("CARGO_REGISTRIES_") && key.ends_with("_TOKEN")))
+            && (SECRET_CREDENTIAL_ENV.contains(&key.as_str())
+                || (key.starts_with("CARGO_REGISTRIES_") && key.ends_with("_TOKEN")))
     })
     .map(|(_, value)| value)
     .collect()
 }
+
+/// The environment variables whose values are secrets. A username and the paths of generated config files
+/// (`TWINE_USERNAME`, `NPM_CONFIG_USERCONFIG`, `CALLISTO_PUBLISH_NPM_CONFIG`) are credentials to keep out of
+/// unrelated children but are not secret values, so they are not listed.
+pub const SECRET_CREDENTIAL_ENV: &[&str] = &[
+    "NPM_TOKEN",
+    "NPM_CONFIG_TOKEN",
+    "NODE_AUTH_TOKEN",
+    "PYPI_TOKEN",
+    "TWINE_PASSWORD",
+    "CARGO_REGISTRY_TOKEN",
+    "GITHUB_TOKEN",
+    "GH_TOKEN",
+];
 
 /// The one definition of "how this workspace redacts a subprocess's stderr":
 /// [`redact_known_secrets`] over [`known_credential_env_values`] of the live
@@ -328,6 +334,34 @@ mod tests {
         let snapshot = vec![("NPM_TOKEN".to_string(), String::new())];
         let values = known_credential_env_values(snapshot.into_iter());
         assert!(values.is_empty());
+    }
+
+    /// Every credential the publishers and the generated workflows put in a child's environment is redacted:
+    /// the PyPI token and npm's own token variable are read by the publish flow like the others.
+    #[test]
+    fn known_credential_env_values_matches_every_secret_the_publish_flow_reads() {
+        for name in SECRET_CREDENTIAL_ENV {
+            let snapshot = vec![((*name).to_string(), format!("{name}-secret"))];
+            assert_eq!(
+                known_credential_env_values(snapshot.into_iter()),
+                [format!("{name}-secret")],
+                "{name}"
+            );
+        }
+        for name in ["PYPI_TOKEN", "NPM_CONFIG_TOKEN"] {
+            assert!(SECRET_CREDENTIAL_ENV.contains(&name), "{name}");
+        }
+    }
+
+    /// A username and the paths of generated config files are not secrets, and redacting them would garble messages.
+    #[test]
+    fn known_credential_env_values_ignores_non_secret_credential_variables() {
+        let snapshot = vec![
+            ("TWINE_USERNAME".to_string(), "__token__".to_string()),
+            ("NPM_CONFIG_USERCONFIG".to_string(), "/tmp/npmrc".to_string()),
+            ("CALLISTO_PUBLISH_NPM_CONFIG".to_string(), "/tmp/npmrc".to_string()),
+        ];
+        assert!(known_credential_env_values(snapshot.into_iter()).is_empty());
     }
 
     #[test]

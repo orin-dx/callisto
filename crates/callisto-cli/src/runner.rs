@@ -628,6 +628,19 @@ mod tests {
         assert!(gh.contains(&"PYPI_TOKEN"));
     }
 
+    /// A credential the runner strips from children is either a secret the redactor knows or a name known
+    /// to carry no secret value, so a new secret cannot be added to a list and escape redaction.
+    #[test]
+    fn every_credential_the_runner_handles_is_redacted_or_known_not_to_be_secret() {
+        const NOT_SECRET: &[&str] = &["TWINE_USERNAME", "CALLISTO_PUBLISH_NPM_CONFIG", "NPM_CONFIG_USERCONFIG"];
+        for name in RELEASE_CREDENTIALS.iter().chain(ACTION_SECRET_INPUTS) {
+            assert!(
+                callisto_model::SECRET_CREDENTIAL_ENV.contains(name) || NOT_SECRET.contains(name),
+                "`{name}` is neither redacted from output nor listed as carrying no secret"
+            );
+        }
+    }
+
     /// The whole least-privilege matrix: each release credential survives only in the tools that
     /// read it, and in no other child process.
     #[test]

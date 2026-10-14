@@ -249,19 +249,21 @@ fn pypi_publisher_environment<'a>(
     env
 }
 
+/// Withheld from a build backend, which runs project code and needs none of them.
+const RELEASE_CREDENTIALS: &[&str] = &[
+    "CARGO_REGISTRY_TOKEN",
+    "GH_TOKEN",
+    "GITHUB_TOKEN",
+    "NPM_CONFIG_TOKEN",
+    "NPM_CONFIG_USERCONFIG",
+    "NPM_TOKEN",
+    "NODE_AUTH_TOKEN",
+    "PYPI_TOKEN",
+    "TWINE_PASSWORD",
+    "TWINE_USERNAME",
+];
+
 fn run_build_argv(context: &ProviderContext<'_>, argv: &registry_argv::Argv) -> Result<CommandOutput, GraphError> {
-    const RELEASE_CREDENTIALS: &[&str] = &[
-        "CARGO_REGISTRY_TOKEN",
-        "GH_TOKEN",
-        "GITHUB_TOKEN",
-        "NPM_CONFIG_TOKEN",
-        "NPM_CONFIG_USERCONFIG",
-        "NPM_TOKEN",
-        "NODE_AUTH_TOKEN",
-        "PYPI_TOKEN",
-        "TWINE_PASSWORD",
-        "TWINE_USERNAME",
-    ];
     let args: Vec<&str> = argv.args.iter().map(String::as_str).collect();
     Ok(context.runner().run_with_timeout_env_filtered(
         &argv.program,
