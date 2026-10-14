@@ -1,4 +1,4 @@
-# 11. Packages are keyed by directory; promotion is display-only
+# 11. Directory-keyed packages and promotion-aware history
 
 Status: Accepted (implemented in #167)
 
@@ -11,7 +11,7 @@ Status: Accepted (implemented in #167)
 ## Decision
 
 - A package's stable identity is its workspace-relative directory: `Package::key() -> Option<PackageKey>` in `crates/callisto-model/src/package.rs`.
-- `PackageId` is the display and selector form. Promotion changes only how it prints (`foo` becomes `cargo/foo`) and which bare selectors are ambiguous (E103).
+- `PackageId` is the display and selector form. Promotion changes how it prints (`foo` becomes `cargo/foo`), which bare selectors are ambiguous (E103), and the namespace of newly created default tags. The directory key and CHANGELOG path do not change.
 - History recorded under a bare name follows the package that owned the name. Default tags are `{display id}@{version}` (`foo@1.0.0`, then `cargo/foo@1.1.0` once promoted), and a promoted package also finds `foo@*` tags whose commit contains its own manifest and no same-named package's. A bare `pre.json` key moves to the one same-named package that existed when `pre.json` was added. The CHANGELOG path comes from the directory.
 - No configuration is needed. E101 is raised only when an explicit `tag-template` equals another package's default; E245 only when a bare `pre.json` key has no single owner.
 
@@ -24,7 +24,7 @@ Status: Accepted (implemented in #167)
 
 ## Consequences
 
-- Adding a same-named package in another ecosystem no longer changes the existing package's tags, CHANGELOG or pre-release baseline.
+- Adding a same-named package changes new default tag names, but does not rename existing tags or move the CHANGELOG. Historical bare tags and pre-release baselines are assigned through the ownership fallback; rename, manifest-roster and demotion gaps are tracked in [the findings register](../projects/V1-FINDINGS.md).
 - Workspaces that are already promoted keep their `cargo/foo@*` tags unchanged.
 - Ownership costs one `git rev-parse` per candidate tag of a promoted package.
 - A pending changeset that names the bare `foo` is ambiguous after promotion (E103, WS-ID-06) and must be qualified.

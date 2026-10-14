@@ -18,11 +18,11 @@ Callisto decides what to publish and in what order, then runs the ecosystem tool
 
 ## Consequences
 
-- Any auth method a tool supports works without callisto modelling it.
+- Publishing uses each tool's native authentication. Observation must also reach the same destination: PyPI's curl read is not automatically authenticated by Twine's environment, and private-index route support needs an explicit boundary.
 - A missing credential surfaces mid-release as E163 (E164 for `gh`), carrying the tool's redacted stderr. Effects before it have landed; a rerun adopts them (ADR 3).
 - Callisto parses tool output to classify results (for example "already published"), so a tool's output change can break classification (`crates/callisto-graph/src/commands/registry_argv.rs`).
 - Every release machine needs the tools on `PATH`.
-- Today observation timeouts and spawn failures skip the retry loop, and PyPI ignores `Retry-After` (docs/projects/ROAD-TO-V1.md, v1 fix plan §1).
+- Read-only observation retries share a bounded policy, including transient command failures and Retry-After. Generated workflow auth setup and private Python observation routes remain tracked in [the findings register](../projects/V1-FINDINGS.md).
 
 ## Enforcement
 

@@ -37,12 +37,54 @@ pub struct ManifestIdentity {
 /// `Option<String>` so Cargo's `version.workspace = true` is a real,
 /// distinguishable case instead of being silently collapsed into "no
 /// version present". [`read_identity`] never resolves the inherited value
-/// (it has no workspace context) -- callers needing the resolved version
-/// go through `Manifest::current_version` instead.
+/// (it has no workspace context); [`read_effective_version`] resolves supplied blobs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VersionSource {
     Literal(String),
     InheritedFromWorkspace,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EffectiveManifestVersion {
+    pub version: Version,
+    pub authority: std::path::PathBuf,
+}
+
+/// Resolves supplied blobs without I/O; paths must already be normalized and workspace-relative.
+pub fn read_effective_version(
+    format: ManifestFormat,
+    source: &str,
+    path: &Path,
+    cargo_workspace: Option<(&Path, &str)>,
+) -> Result<Option<EffectiveManifestVersion>, ManifestError> {
+    let identity = read_identity(format, source, path)?;
+    let (version, authority) = match identity.version {
+        Some(VersionSource::Literal(raw)) => {
+            let version = Version::parse(&raw, format.ecosystem().version_grammar()).map_err(|source| {
+                ManifestError::InvalidVersion {
+                    path: path.to_path_buf(),
+                    raw,
+                    source,
+                }
+            })?;
+            (version, path.to_path_buf())
+        }
+        Some(VersionSource::InheritedFromWorkspace) => {
+            let (root_path, root_source) = cargo_workspace.ok_or_else(|| ManifestError::MissingField {
+                path: path.to_path_buf(),
+                field: "workspace.package.version",
+            })?;
+            let version = cargo::workspace_version_from_source(root_source, root_path)?.ok_or_else(|| {
+                ManifestError::MissingField {
+                    path: root_path.to_path_buf(),
+                    field: "workspace.package.version",
+                }
+            })?;
+            (version, root_path.to_path_buf())
+        }
+        None => return Ok(None),
+    };
+    Ok(Some(EffectiveManifestVersion { version, authority }))
 }
 
 /// Extracts a package's name and version source directly from `source`,

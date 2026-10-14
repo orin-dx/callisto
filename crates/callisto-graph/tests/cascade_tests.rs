@@ -10,6 +10,149 @@ use fixtures::GraphBuilder;
 use std::collections::{BTreeMap, HashSet};
 
 #[test]
+fn promoted_dual_dependent_preserves_aliases_across_cascade_and_release_floor() {
+    use callisto_graph::{DepWriteTarget, DependencyResolver, IgnoreWalkLocator, Workspace};
+    use callisto_model::Ecosystem;
+
+    for (severity, co_release) in [(Severity::Major, false), (Severity::Minor, true)] {
+        let dir = fixtures::native_dependency_workspace();
+        let root = dir.path();
+        let runner = callisto_fixtures::git::GitRunner;
+        let locator = IgnoreWalkLocator::new(root);
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).unwrap();
+        let core = PackageId::parse("cargo/core-lib").unwrap();
+        let app = PackageId::parse("cargo/app").unwrap();
+        let tools = PackageId::parse("tools").unwrap();
+        assert!(ws.graph.get(&app).unwrap().is_dual_published());
+        assert_eq!(ws.identity.native_name(&core, Ecosystem::Npm), Some("@scope/core"));
+
+        let edges: Vec<_> = ws.graph.dependencies_of(&app).collect();
+        for (name, kind, inherited) in [
+            ("local_alias", DepKind::Runtime, false),
+            ("optional_alias", DepKind::Optional, false),
+            ("workspace_alias", DepKind::Runtime, true),
+            ("workspace_optional", DepKind::Optional, true),
+            ("build_alias", DepKind::Build, false),
+            ("dev_alias", DepKind::Dev, false),
+            ("covered_dev", DepKind::Dev, false),
+        ] {
+            let edge = edges
+                .iter()
+                .find(|edge| edge.name == name && edge.kind == kind)
+                .unwrap();
+            assert_eq!(edge.to, core);
+            assert_eq!(edge.inherited, inherited);
+            assert_eq!(
+                edge.from_manifest,
+                std::path::PathBuf::from(if inherited {
+                    "Cargo.toml"
+                } else {
+                    "crates/app/Cargo.toml"
+                })
+            );
+        }
+
+        let base = ws.base_versions().unwrap();
+        let mut seed = BTreeMap::from([(core.clone(), severity)]);
+        if co_release {
+            seed.insert(app.clone(), Severity::Patch);
+        }
+        let reasons = BTreeMap::new();
+        let named_by = BTreeMap::new();
+        let outcome = run_cascade(CascadeInput {
+            graph: &ws.graph,
+            groups: &ws.config.groups,
+            cfg: &ws.config.cascade,
+            seed: &seed,
+            reasons: &reasons,
+            named_by: &named_by,
+            base: &base,
+            pre: None,
+            tags: ws.tags().unwrap(),
+            identity: &ws.identity,
+        })
+        .unwrap();
+
+        let target = if co_release { "1.1.0" } else { "2.0.0" };
+        assert_eq!(outcome.targets[&core].render(), target);
+        assert_eq!(
+            outcome.severities[&app],
+            if co_release { Severity::Patch } else { Severity::Major }
+        );
+        assert!(
+            !outcome.targets.contains_key(&tools),
+            "a dev-only consumer must not be bumped"
+        );
+        for (name, kind, inherited) in [
+            ("local_alias", DepKind::Runtime, false),
+            ("optional_alias", DepKind::Optional, false),
+            ("workspace_alias", DepKind::Runtime, true),
+            ("workspace_optional", DepKind::Optional, true),
+            ("build_alias", DepKind::Build, false),
+            ("dev_alias", DepKind::Dev, false),
+        ] {
+            let rewrite = outcome
+                .rewrites
+                .values()
+                .find(|rewrite| rewrite.key.name == name)
+                .unwrap();
+            assert_eq!(rewrite.dependency, core);
+            assert_eq!(rewrite.key.kind, if inherited { None } else { Some(kind) });
+            assert_eq!(
+                rewrite.to.render(),
+                format!("{}{target}", if kind == DepKind::Dev { "=" } else { "^" })
+            );
+            assert_eq!(
+                rewrite.key.target,
+                if inherited {
+                    DepWriteTarget::CargoWorkspaceDependency {
+                        root_manifest: "Cargo.toml".into(),
+                    }
+                } else {
+                    DepWriteTarget::Manifest("crates/app/Cargo.toml".into())
+                }
+            );
+        }
+        for kind in [DepKind::Runtime, DepKind::Optional, DepKind::Peer, DepKind::Dev] {
+            let rewrite = outcome
+                .rewrites
+                .values()
+                .find(|rewrite| rewrite.key.name == "@scope/core" && rewrite.key.kind == Some(kind))
+                .unwrap();
+            assert_eq!(rewrite.dependency, core);
+            assert_eq!(
+                rewrite.key.target,
+                DepWriteTarget::Manifest("crates/app/package.json".into())
+            );
+            assert_eq!(
+                rewrite.to.render(),
+                target,
+                "npm rewrites must follow npm's range policy"
+            );
+        }
+        assert_eq!(
+            outcome
+                .rewrites
+                .values()
+                .filter(|rewrite| rewrite.key.name == "covered_dev")
+                .count(),
+            usize::from(!co_release)
+        );
+        assert!(outcome.rewrites.values().all(|rewrite| rewrite.key.name != "core-lib"));
+        assert_eq!(
+            outcome
+                .rewrites
+                .values()
+                .find(|rewrite| rewrite.key.name == "tool_alias")
+                .unwrap()
+                .to
+                .render(),
+            format!("={target}")
+        );
+    }
+}
+
+#[test]
 fn test_blackbox_cascade_propagation() {
     let pkg_a = PackageId::parse("pkg-a").unwrap();
     let pkg_b = PackageId::parse("pkg-b").unwrap();

@@ -5,12 +5,7 @@
 # of the file -- so this test always exercises the file's current real
 # logic; it cannot silently drift from it.
 #
-# The step's very first three lines (CALLISTO_BIN_DIR assignment, mkdir, and
-# TAG_NAME="${{ inputs.version || 'latest' }}") are GitHub Actions template
-# expressions that only resolve when the workflow runner preprocesses them;
-# taken verbatim as bash they are a syntax error ("bad substitution"). This
-# test starts extraction just after that line and supplies CALLISTO_BIN_DIR /
-# TAG_NAME itself, matching what the runner would have already substituted.
+# Version resolution is covered separately; these fixtures supply the resolved tag.
 set -u
 ACTION_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ACTION_YML="$ACTION_DIR/action.yml"
@@ -47,7 +42,7 @@ run_case() {
     printf '  case "$1" in\n'
     printf '    -s) echo %q ;;\n' "$uname_s"
     printf '    -m) echo %q ;;\n' "$uname_m"
-    printf '    *) command uname "$@" ;;\n'
+    printf '    *) return 99 ;;\n'
     printf '  esac\n'
     printf '}\n'
     printf 'curl() { echo "curl $*" >> %q; [[ %q -eq 0 ]] && : > "${@: -1}"; return %q; }\n' "$calls_file" "$curl_exit" "$curl_exit"
@@ -55,6 +50,7 @@ run_case() {
     printf 'unzip() { echo "unzip $*" >> %q; return 0; }\n' "$calls_file"
     printf 'cargo() { echo "cargo $*" >> %q; return 0; }\n' "$calls_file"
     printf 'cp() { echo "cp $*" >> %q; return 0; }\n' "$calls_file"
+    printf 'git() { echo "unexpected git $*" >> %q; return 99; }\n' "$calls_file"
     case "$gh_mode" in
       ok) printf 'gh() { echo "gh $*" >> %q; return 0; }\n' "$calls_file" ;;
       fail) printf 'gh() { echo "gh $*" >> %q; return 1; }\n' "$calls_file" ;;
@@ -66,6 +62,7 @@ run_case() {
     printf 'CALLISTO_BIN_DIR=%q\n' "$bin_dir"
     printf 'GITHUB_PATH=%q\n' "$github_path"
     printf 'TAG_NAME=%q\n' "$tag"
+    printf 'SOURCE=auto\n'
     extract_snippet
   } > "$tmp_script"
   bash "$tmp_script"

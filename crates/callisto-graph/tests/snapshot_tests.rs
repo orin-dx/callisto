@@ -3,6 +3,114 @@ use callisto_model::PackageId;
 use fixtures::GraphBuilder;
 use std::cell::OnceCell;
 
+#[test]
+fn snapshot_uses_declaration_context_for_promoted_dependents_and_inherited_aliases() {
+    use callisto_graph::commands::plan_snapshot;
+    use callisto_graph::{apply_version_plan, ApplyOptions, DepWriteTarget, IgnoreWalkLocator, Workspace};
+    use callisto_model::{ApplyPermit, DepKind};
+
+    let dir = fixtures::native_dependency_workspace();
+    let root = dir.path();
+    let runner = callisto_fixtures::git::GitRunner;
+    let locator = IgnoreWalkLocator::new(root);
+    let ws = Workspace::load(root.to_path_buf(), &locator, &runner).unwrap();
+    let app = PackageId::parse("cargo/app").unwrap();
+    let core = PackageId::parse("cargo/core-lib").unwrap();
+    assert!(ws.graph.get(&app).unwrap().is_dual_published());
+    let root_source = std::fs::read_to_string(root.join("Cargo.toml")).unwrap();
+    let app_source = std::fs::read_to_string(root.join("crates/app/Cargo.toml")).unwrap();
+    let tools_source = std::fs::read_to_string(root.join("crates/tools/Cargo.toml")).unwrap();
+    let (plan, report) = plan_snapshot(&ws, "preview").unwrap();
+    let target = &report.snapshot_tag;
+
+    for (name, kind, inherited) in [
+        ("local_alias", DepKind::Runtime, false),
+        ("optional_alias", DepKind::Optional, false),
+        ("workspace_alias", DepKind::Runtime, true),
+        ("workspace_optional", DepKind::Optional, true),
+        ("build_alias", DepKind::Build, false),
+        ("dev_alias", DepKind::Dev, false),
+        ("covered_dev", DepKind::Dev, false),
+    ] {
+        let rewrite = plan.rewrites.iter().find(|rewrite| rewrite.key.name == name).unwrap();
+        assert_eq!(rewrite.dependency, core);
+        assert_eq!(rewrite.key.kind, if inherited { None } else { Some(kind) });
+        assert_eq!(
+            rewrite.key.target,
+            if inherited {
+                DepWriteTarget::CargoWorkspaceDependency {
+                    root_manifest: "Cargo.toml".into(),
+                }
+            } else {
+                DepWriteTarget::Manifest("crates/app/Cargo.toml".into())
+            }
+        );
+        assert_eq!(
+            rewrite.to.render(),
+            format!("{}{target}", if name == "dev_alias" { "=" } else { "^" })
+        );
+    }
+    for kind in [DepKind::Runtime, DepKind::Optional, DepKind::Peer, DepKind::Dev] {
+        let rewrite = plan
+            .rewrites
+            .iter()
+            .find(|rewrite| rewrite.key.name == "@scope/core" && rewrite.key.kind == Some(kind))
+            .unwrap();
+        assert_eq!(rewrite.to.render(), *target);
+        assert_eq!(
+            rewrite.key.target,
+            DepWriteTarget::Manifest("crates/app/package.json".into())
+        );
+    }
+
+    let permit = ApplyPermit::force_for_tests();
+    let outcome = apply_version_plan(
+        root,
+        &plan,
+        &runner,
+        &ApplyOptions {
+            refresh_lockfiles: false,
+            transient: true,
+        },
+        &permit,
+    )
+    .unwrap();
+    assert!(outcome.staged.is_empty());
+    assert_eq!(
+        std::fs::read_to_string(root.join("Cargo.toml")).unwrap(),
+        root_source.replace("\"^1.0.0\"", &format!("\"^{target}\""))
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("crates/app/Cargo.toml")).unwrap(),
+        app_source
+            .replace("\"1.0.0\"", &format!("\"{target}\""))
+            .replace("\"^1.0.0\"", &format!("\"^{target}\""))
+            .replace("\"=1.0.0\"", &format!("\"={target}\""))
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("crates/tools/Cargo.toml")).unwrap(),
+        tools_source
+            .replace("\"1.0.0\"", &format!("\"{target}\""))
+            .replace("\"=1.0.0\"", &format!("\"={target}\""))
+    );
+    let app_json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(root.join("crates/app/package.json")).unwrap()).unwrap();
+    assert_eq!(app_json["name"], "@scope/app");
+    assert_eq!(app_json["version"], target.as_str());
+    for section in [
+        "dependencies",
+        "optionalDependencies",
+        "peerDependencies",
+        "devDependencies",
+    ] {
+        assert_eq!(app_json[section]["@scope/core"], target.as_str());
+    }
+    assert_eq!(app_json["dependencies"]["external"], "^9.0.0");
+    let protocol: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(root.join("packages/protocol/package.json")).unwrap()).unwrap();
+    assert_eq!(protocol["dependencies"]["@scope/core"], "workspace:*");
+}
+
 /// Runs `git` for test-fixture setup.
 fn run_git(dir: &std::path::Path, args: &[&str]) {
     let status = std::process::Command::new("git")

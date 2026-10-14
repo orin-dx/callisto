@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <b>Changesets-style version and release manager for Rust workspaces.</b>
+  <b>Dependency-aware, changeset-driven versioning and releases for Cargo, npm, and PyPI monorepos.</b>
 </p>
 
 <p align="center">
@@ -16,9 +16,54 @@
 
 ---
 
-Callisto tracks pending changes per package with changeset files, computes version bumps across a dependency graph (with cascade rules for dependents), rewrites manifests in place preserving formatting, and releases each package once its version is unreleased: registry publish, git tag, GitHub release.
+Callisto turns per-package changesets into a version plan for Cargo, npm/pnpm, and Python/PyPI workspaces. It reads native manifests to decide which dependents need updates, then prepares the files and release operations for review.
 
-Manifest edits go through a concrete-syntax-tree editor (`toml_edit`, fingerprinted `serde_json`) rather than regex, so comments, key order, and whitespace survive. Disk writes are atomic (`NamedTempFile` + `fs::rename`). All Git access runs through the system `git` binary. `unsafe_code = "forbid"` workspace-wide.
+## A change through Callisto
+
+Suppose `service` depends on a Cargo crate `core` at `^0.2`. A contributor records a minor change to `core`:
+
+```sh
+callisto add --package cargo/core:minor --summary "Add streaming API"
+callisto version --dry-run
+```
+
+With the default cascade policy, the plan is:
+
+| Package | Before | Planned change |
+| --- | --- | --- |
+| `core` | `0.2.0` | `0.3.0` from the changeset |
+| `service` | `1.4.2`, requires `core ^0.2` | `1.4.3` from the default patch cascade; requirement updated to `^0.3` |
+| Unrelated npm or Python package | Its current version | No bump just because it shares the repo |
+
+The dependency requirement triggers the `service` bump; sharing a repo does not. Callisto does not infer arbitrary cross-language dependencies. Explicit version groups can couple packages that should move together.
+
+- `callisto version` updates affected manifests, lockfiles, and changelogs for review and commit.
+- The release workflow uses native publishers and coordinates configured tags, GitHub releases, and assets. Package owners retain their hooks and credentials.
+
+```mermaid
+%%{init: {'theme': 'base', 'flowchart': {'curve': 'basis', 'nodeSpacing': 40, 'rankSpacing': 56}, 'themeVariables': {'fontFamily': 'Inter, ui-sans-serif, system-ui, sans-serif', 'fontSize': '14px', 'lineColor': '#94a3b8', 'edgeLabelBackground': '#ffffff'}}}%%
+flowchart LR
+    classDef source fill:#eef2ff,stroke:#6366f1,stroke-width:1.5px,color:#1e1b4b,rx:10px,ry:10px,font-weight:600;
+    classDef store fill:#f8fafc,stroke:#64748b,stroke-width:1.5px,color:#0f172a,rx:10px,ry:10px;
+    classDef engine fill:#f5f3ff,stroke:#8b5cf6,stroke-width:1.5px,color:#4c1d95,rx:10px,ry:10px;
+    classDef router fill:#fffbeb,stroke:#f59e0b,stroke-width:1.5px,color:#78350f,rx:10px,ry:10px,font-weight:600;
+    classDef output fill:#ecfdf5,stroke:#10b981,stroke-width:1.5px,color:#064e3b,rx:10px,ry:10px,font-weight:600;
+
+    changesets["<b>Changesets</b><br/>release intent"] --> plan["<b>Version plan</b><br/>dependency-aware"]
+    manifests[("<b>Native manifests</b><br/>Cargo · npm/pnpm · Python")] --> plan
+    plan --> updates["<b>Version updates</b><br/>manifests · changelogs · lockfiles"]
+    updates --> review{{"<b>Review and commit</b><br/>versioned state"}}
+    review --> release["<b>Release</b><br/>configured operations"]
+    release --> outputs(["Packages · tags · GitHub releases"])
+
+    class changesets source
+    class manifests store
+    class plan,updates,release engine
+    class review router
+    class outputs output
+```
+
+Callisto is pre-v1. The [guide](docs/how-callisto-works.md) covers current support, known limits, and when another tool may be a better fit.
 
 ## Install
 
@@ -50,46 +95,43 @@ Available targets: `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, `x86_64-u
 
 ## Quick start
 
+Start in a Git repository with an `origin` push URL and crates.io credentials. This registry-only example publishes a crate and creates a tag; it does not build assets or create a GitHub Release. See [releasing](docs/releasing.md) for CI and product releases.
+
 ```bash
 # 1. Scaffold callisto.toml and .changeset/ in the workspace root
-callisto init --yes
+callisto init --yes --versioning independent --no-workflow
 
 # 2. Record a pending change against a package
-callisto add --package my-crate:minor --summary "Add authentication middleware"
+callisto add --package cargo/my-crate:minor --summary "Add authentication middleware"
 
 # 3. See pending changesets and the version bumps they imply
 callisto status
 
-# 4. Consume changesets, bump manifests, update changelogs
+# 4. Commit the configuration and pending change
+git add callisto.toml .changeset/
+git commit -m "chore: configure releases and record pending changes"
+
+# 5. Consume changesets, bump manifests, update changelogs and lockfiles
 callisto version
 
-# 5. Publish every package whose current version isn't released yet
+# 6. Commit the staged release changes; release requires a clean checkout
+git commit -m "chore(release): version packages"
+
+# 7. Preview, then publish
+callisto release --dry-run
 callisto release
 ```
 
-Every subcommand accepts `--dry-run` (preview, no writes) `--format json` (machine-readable output) and `--cwd <path>` (run outside the current directory).
+Run `callisto --help` for prerelease mode, snapshots, CI checks, JSON output, and shell completions.
 
-`callisto status --check` exits `1` if there are error-level diagnostics, `0` otherwise (pending changesets alone never fail it) — use it as a CI gate. `callisto pre enter <tag>` / `callisto pre exit` manage prerelease mode. `callisto snapshot --tag <tag>` applies a one-off, non-persistent version bump. `callisto completions <shell>` prints a shell completion script.
+## Documentation
 
-## Configuration
-
-Workspace behavior — fixed/linked groups, cascade rules, release targets, per-package overrides — is declared in `callisto.toml`. Full key reference: [`docs/config.md`](docs/config.md).
-
-## Releasing and publishing
-
-`callisto release` handles the common case directly. Workspaces with binary release artifacts (napi/maturin platform packages, or a CLI product like this one) release through a generated CI workflow instead: version PR merges, then CI plans, builds, and executes the release with attested artifacts. See [`docs/releasing.md`](docs/releasing.md) for the lifecycle and recovery, and [`docs/publishing.md`](docs/publishing.md) for registry authentication.
-
-## Errors
-
-Every user-facing error carries a stable diagnostic code and a fix. Full list: [`docs/errors.md`](docs/errors.md).
-
-## More
-
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — crate map, data flow, invariants; depth in [`docs/architecture/`](docs/architecture/).
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — setup, `just` recipes, PR checklist.
-- [`docs/specs/`](docs/specs/) — current behavior specs.
-- [`SECURITY.md`](SECURITY.md) — reporting a vulnerability.
+- [Guide](docs/how-callisto-works.md): release model, example, and supported layouts.
+- [Releasing](docs/releasing.md): local and CI workflows, limits, and recovery.
+- [Publishing](docs/publishing.md): registry credentials.
+- [Configuration](docs/config.md) and [errors](docs/errors.md): references.
+- [Contributing](CONTRIBUTING.md) and [security](SECURITY.md): project information.
 
 ## License
 
-Mixed: `callisto-model` is MIT; the rest of the workspace is [FSL-1.1-MIT](LICENSE) (becomes MIT two years after each version's release). See [`AGENTS.md`](AGENTS.md) for the full per-crate table.
+Mixed: `callisto-model` is MIT; the rest of the workspace is [FSL-1.1-MIT](LICENSE) (becomes MIT two years after each version's release).

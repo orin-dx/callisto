@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{PackageId, Version, VersionReq};
+use crate::{Ecosystem, GrammarMismatch, PackageId, Version, VersionReq};
 
 /// Dependency kind (section in manifest).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
@@ -23,6 +23,7 @@ pub enum DepSpec {
     Exact(Version),
     Range(VersionReq, String),
     Workspace(WorkspaceKind),
+    WorkspaceProtocol(WorkspaceSpec),
     Catalog(Option<String>),
     CargoBare(Version),
     Opaque(String),
@@ -36,6 +37,7 @@ impl DepSpec {
             DepSpec::Workspace(kind) => match kind {
                 WorkspaceKind::Pnpm | WorkspaceKind::Yarn | WorkspaceKind::Npm => "workspace:*".to_string(),
             },
+            DepSpec::WorkspaceProtocol(spec) => format!("workspace:{}", spec.suffix),
             DepSpec::Catalog(opt) => match opt {
                 Some(name) => format!("catalog:{name}"),
                 None => "catalog:".to_string(),
@@ -55,6 +57,80 @@ pub enum WorkspaceKind {
     Npm,
 }
 
+/// Retains the protocol spelling; aliases name a distribution and relative paths name a directory.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSpec {
+    pub kind: WorkspaceKind,
+    pub suffix: String,
+}
+
+impl WorkspaceSpec {
+    pub fn alias(&self) -> Option<&str> {
+        if self.relative_path().is_some() {
+            return None;
+        }
+        self.suffix
+            .rsplit_once('@')
+            .and_then(|(name, _)| (!name.is_empty() && !name.contains([':', ' ', '\\'])).then_some(name))
+    }
+
+    /// Bind this directory relative to the declaring manifest to an admitted npm member.
+    pub fn relative_path(&self) -> Option<&str> {
+        (self.suffix.starts_with("../") || self.suffix.starts_with("./")).then_some(self.suffix.as_str())
+    }
+
+    pub fn range(&self) -> Option<&str> {
+        if self.relative_path().is_some() {
+            return None;
+        }
+        let range = if self.alias().is_some() {
+            self.suffix.rsplit_once('@').map(|(_, range)| range)?
+        } else {
+            self.suffix.as_str()
+        };
+        (!matches!(range, "" | "*" | "^" | "~")).then_some(range)
+    }
+
+    /// Coverage assumes the workspace target has already been resolved locally.
+    pub fn coverage(&self, version: &Version) -> Result<Coverage, GrammarMismatch> {
+        let Some(range) = self.range() else {
+            return Ok(Coverage::Covers);
+        };
+        let Some(requirements) = range
+            .split("||")
+            .map(|arm| Self::parse_range_arm(arm.trim()))
+            .collect::<Option<Vec<_>>>()
+        else {
+            return Ok(Coverage::Unknown);
+        };
+        for requirement in requirements {
+            if requirement.matches(version)? {
+                return Ok(Coverage::Covers);
+            }
+        }
+        Ok(Coverage::DoesNotCover)
+    }
+
+    fn parse_range_arm(range: &str) -> Option<VersionReq> {
+        if range.is_empty() {
+            return None;
+        }
+        VersionReq::parse(range, Ecosystem::Npm).ok()
+    }
+
+    pub fn with_range(&self, range: &str) -> Self {
+        let suffix = match self.alias() {
+            Some(target) => format!("{target}@{range}"),
+            None => range.to_string(),
+        };
+        Self {
+            kind: self.kind,
+            suffix,
+        }
+    }
+}
+
 /// Evaluation of whether a version specification covers a candidate version.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -67,7 +143,10 @@ pub enum Coverage {
 /// Dependency entry read directly from a manifest.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DependencyEntry {
+    /// Declared key or spelling used when editing the manifest.
     pub name: String,
+    /// Native package name used to resolve the dependency's owner.
+    pub package_name: String,
     pub kind: DepKind,
     pub spec: DepSpec,
     pub inherited: bool,
@@ -78,6 +157,8 @@ pub struct DependencyEntry {
 pub struct DepEdge {
     pub from: PackageId,
     pub to: PackageId,
+    /// Declared key or spelling retained from the source manifest.
+    pub name: String,
     pub kind: DepKind,
     pub spec: DepSpec,
     pub from_manifest: PathBuf,
@@ -114,5 +195,95 @@ mod tests {
             DepSpec::Opaque("git+https://example.com/repo".to_string()).render(),
             "git+https://example.com/repo"
         );
+    }
+
+    #[test]
+    fn workspace_protocol_keeps_suffix_and_identity_source() {
+        for suffix in ["", "*", "^", "~", "^0.2.3", "@scope/lib@~0.2.3", "../lib"] {
+            let workspace = WorkspaceSpec {
+                kind: WorkspaceKind::Pnpm,
+                suffix: suffix.to_string(),
+            };
+            let spec = DepSpec::WorkspaceProtocol(workspace);
+            assert_eq!(spec.render(), format!("workspace:{suffix}"));
+            let wire = serde_json::to_string(&spec).unwrap();
+            assert_eq!(serde_json::from_str::<DepSpec>(&wire).unwrap(), spec);
+        }
+        let alias = WorkspaceSpec {
+            kind: WorkspaceKind::Pnpm,
+            suffix: "@scope/lib@^0.2.3".into(),
+        };
+        assert_eq!(alias.alias(), Some("@scope/lib"));
+        assert_eq!(alias.relative_path(), None);
+        assert_eq!(alias.range(), Some("^0.2.3"));
+        assert_eq!(alias.with_range("^0.3.0").suffix, "@scope/lib@^0.3.0");
+        let relative = WorkspaceSpec {
+            kind: WorkspaceKind::Pnpm,
+            suffix: "../lib@dev".into(),
+        };
+        assert_eq!(relative.alias(), None);
+        assert_eq!(relative.relative_path(), Some("../lib@dev"));
+        assert_eq!(relative.range(), None);
+    }
+
+    #[test]
+    fn workspace_shorthand_covers_current_versions_including_prereleases() {
+        for suffix in ["", "*", "^", "~", "lib@*", "@scope/lib@^", "../lib"] {
+            let workspace = WorkspaceSpec {
+                kind: WorkspaceKind::Pnpm,
+                suffix: suffix.into(),
+            };
+            for raw in ["0.0.1", "0.3.0", "2.0.0", "0.0.0-canary.1"] {
+                assert_eq!(
+                    workspace
+                        .coverage(&Version::parse(raw, VersionGrammar::SemVer).unwrap())
+                        .unwrap(),
+                    Coverage::Covers,
+                    "{suffix}: {raw}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn workspace_explicit_ranges_use_npm_bounds_and_exact_pins() {
+        for (suffix, candidate, expected) in [
+            ("0.2.3", "0.2.4", Coverage::DoesNotCover),
+            ("0.2.3", "0.2.3", Coverage::Covers),
+            ("^0.2.3", "0.2.9", Coverage::Covers),
+            ("^0.2.3", "0.3.0", Coverage::DoesNotCover),
+            ("^0.0.3", "0.0.4", Coverage::DoesNotCover),
+            ("~0.2.3", "0.3.0", Coverage::DoesNotCover),
+            ("1.2", "1.3.0", Coverage::DoesNotCover),
+            ("1.2", "1.2.9", Coverage::Covers),
+            ("@scope/lib@^0.2.3", "0.3.0", Coverage::DoesNotCover),
+            ("^0.2.3", "0.2.4-canary.1", Coverage::DoesNotCover),
+            ("https://example.com/lib.tgz", "1.0.0", Coverage::Unknown),
+            ("^1.0.0 || ^2.0.0", "1.9.9", Coverage::Covers),
+            ("^1.0.0 || ^2.0.0", "2.0.0", Coverage::Covers),
+            ("^1.0.0 || ^2.0.0", "3.0.0", Coverage::DoesNotCover),
+            ("^1.0.0 || ^2.0.0 || ^4.0.0", "4.1.0", Coverage::Covers),
+            ("@scope/lib@^1.0.0 || ^2.0.0", "3.0.0", Coverage::DoesNotCover),
+            ("1.2.3 || 2.0.0", "1.2.4", Coverage::DoesNotCover),
+            ("1.2.3 || 2.0.0", "2.0.0", Coverage::Covers),
+            ("^1.0.0 || ^2.0.0", "2.0.0-beta.1", Coverage::DoesNotCover),
+            ("^1.0.0 || nonsense", "1.2.3", Coverage::Unknown),
+            ("^1.0.0 ||", "1.2.3", Coverage::Unknown),
+            ("|| ^1.0.0", "1.2.3", Coverage::Unknown),
+            ("^1.0.0 | ^2.0.0", "1.2.3", Coverage::Unknown),
+        ] {
+            let version = Version::parse(candidate, VersionGrammar::SemVer).unwrap();
+            for kind in [WorkspaceKind::Pnpm, WorkspaceKind::Npm] {
+                let workspace = WorkspaceSpec {
+                    kind,
+                    suffix: suffix.into(),
+                };
+                assert_eq!(
+                    workspace.coverage(&version).unwrap(),
+                    expected,
+                    "{kind:?}: {suffix}: {candidate}"
+                );
+            }
+        }
     }
 }

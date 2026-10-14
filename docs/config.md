@@ -2,6 +2,8 @@
 
 Every key `callisto.toml` accepts, from `crates/callisto-graph/src/config/{raw,resolve,groups}.rs`. Unknown keys are rejected (`#[serde(deny_unknown_fields)]`).
 
+This reference describes current keys, not the [proposed canonical-identity/polyglot design](architecture/polyglot-v1.md). Exact references can currently be bare or qualified; prefer `cargo/name`, `npm/@scope/name` and `pypi/name` when writing new configuration. No release-owner, generic build-input or per-file PyPI configuration is implemented yet.
+
 ## Top-level tables
 
 | Table | Type | Required | Meaning |
@@ -89,6 +91,8 @@ Keyed by registry name. Two entries exist by default even with no `[registries]`
 | `registries.<name>.kind` | string (`"cargo"` \| `"npm"` \| `"pypi"`) | `"npm"` if omitted | Registry ecosystem |
 | `registries.<name>.url` | string | none | Registry endpoint override |
 
+An explicit registry entry still defaults `kind` to npm when omitted; requiring it is planned. Python's URL override currently serves both observation and upload, despite those being separate native APIs; see [Python support limits](publishing.md#current-python-support-limits). Accepting `nuget` as a target string does not provide a working NuGet publisher.
+
 Example:
 ```toml
 [registries.internal-npm]
@@ -128,7 +132,7 @@ Neither has a config-level default for its fields — both are required when the
 | `name` | string | yes | Group identifier, unique across both fixed and linked groups |
 | `members` | array of strings | yes, non-empty | Package names in the group |
 
-`[[fixed-group]]`: all members bump in lock-step to the maximum version required across the group. `[[linked-group]]`: members share severity but keep independent version numbers.
+`[[fixed-group]]`: all members bump in lock-step from the group's alignment base. `[[linked-group]]`: every member receives the highest severity and aligns to the highest target version produced by the members' bumps. Both currently require compatible version grammars; neither is an automatic cross-language version converter.
 
 Example (this repo's own `callisto.toml`):
 ```toml
@@ -141,7 +145,6 @@ members = ["callisto-model", "callisto-manifests", "callisto-graph", "callisto-c
 
 Deprecated. `ecosystems` (array of strings) is parsed so older config files still load, but nothing reads it.
 
-## Could not fully verify
+## Identity and defaults
 
-- `registries.<name>.kind` defaulting to `"npm"` when omitted (not just when the whole `[registries]` table is absent) is read directly from `resolve.rs`'s `match` arm (`Some("npm") | None => Ecosystem::Npm`) — confirmed, not a guess, but worth a second look since defaulting an *explicitly present but keyless* registry entry to npm is a slightly surprising choice.
-- `release-trigger`/`publish-to`/`tag-template`/`pre-major-inference` at `[[package]]`/`[[package-set]]` level are all `Option<T>` with no config-level default — the doc comment says "use the package's default" but where that fallback default is actually computed lives in the graph engine's package-construction path, not in `config/resolve.rs`. Not traced further; flagged for whoever owns that code path.
+Unspecified package fields are filled during graph construction: the release trigger defaults to changesets, the changelog to the package directory, and publish targets to those declared by its manifests. Default tags use the display id, so newly created tags become qualified after name promotion; historical bare tags use the ownership fallback described in [identity](architecture/identity.md). Canonical references alone do not repair the open rename/demotion failures.

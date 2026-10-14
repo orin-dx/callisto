@@ -1,0 +1,974 @@
+{
+  "goal": "Implement the verified v1 system corrections in reviewable PR units, with parallel independent lanes and explicit contract decisions before architectural changes.",
+  "architecture": "Reuse the native dependency graph, release-operation DAG, committed release roster and provider-observed in-memory recovery. Separate canonical distribution references, release ownership, version authority and required output/effect completion; native tools/CI retain build and authentication responsibility.",
+  "tech_stack": [
+    "Safe Rust; MIT callisto-model and FSL engine/surface crates",
+    "toml_edit and fingerprinted preserve-order JSON",
+    "Cargo, npm/pnpm, Python build/Maturin and Twine",
+    "System git, gh, curl and GitHub Actions"
+  ],
+  "tasks": [
+    {
+      "id": "T01",
+      "title": "Restore release-PR producer/consumer compatibility",
+      "files": {
+        "modify": [
+          "crates/callisto-cli/src/commands/release_pr.rs",
+          "crates/callisto-cli/src/cli.rs",
+          "crates/callisto-model/src/release_pr.rs",
+          ".github/actions/callisto-action/scripts/create-or-update-release-pr.sh",
+          "docs/specs/release.json"
+        ],
+        "test": [
+          ".github/actions/callisto-action/tests/test_release_pr_decide_binary_contract.sh",
+          ".github/actions/callisto-action/tests/test_release_pr_contract.sh"
+        ]
+      },
+      "steps": [
+        "Finding coverage: SYS-ENV. Baseline: verify reads ReleasePrDecisionWireV2 directly while decide emits flattened ReleasePrDecideReport through emit_report.",
+        "At the CLI input boundary, accept a strict unwrapped decision or the same payload with only the known command/dryRun report metadata. Check metadata types and command when supplied; continue passing the extracted strict wire through ReleasePrDecisionV2::from_wire and verify_snapshot. Do not remove deny_unknown_fields from domain types or strip JSON in the action script.",
+        "Extend the real-binary contract test for create, update and noop: feed decide output unchanged to verify as inline JSON, a file and stdin. Assert malformed JSON, unknown payload fields, malformed metadata, unsupported versions, wrong repositories and changed snapshots still fail with their typed diagnostics.",
+        "Cover the action's own update transition: after exact ref read-back, final verification supplies --applied-head and permits only the original selected PR's head to become that SHA. Validate original update consistency through the shared derivation; retain exact snapshot equality for every other field, pre-move checks and create/noop. Add model, real-binary and shell action negatives for wrong/missing heads and unrelated changes; no decision rewriting in jq.",
+        "Run rtk proxy bash .github/actions/callisto-action/tests/test_release_pr_decide_binary_contract.sh, then rtk cargo test -p callisto-cli --test release_pr_commit_plan_tests. The shell suite builds its own binary; do not run a second Cargo process concurrently.",
+        "Update affected current criteria/docs and add a callisto-cli patch changeset. The implementation ends at verified local evidence; bot refresh, remote PR operations and self-publication require separate authorization."
+      ],
+      "commit_message": "fix(release): verify generated release-pr decisions",
+      "covers_criteria": [
+        "REL-PR-02",
+        "REL-PR-04",
+        "REL-PR-07"
+      ]
+    },
+    {
+      "id": "T11",
+      "title": "Honor explicit installer versions and source ownership",
+      "files": {
+        "modify": [
+          ".github/actions/setup-callisto/scripts/install-callisto.sh",
+          "docs/specs/release.json",
+          "docs/publishing.md",
+          ".github/actions/setup-callisto/action.yml",
+          ".github/actions/callisto-action/action.yml"
+        ],
+        "test": [
+          ".github/actions/setup-callisto/tests/test_action_ref_version_resolution.sh",
+          ".github/actions/setup-callisto/tests/test_crates_io_fallback.sh",
+          ".github/actions/setup-callisto/tests/test_download_extraction_format.sh"
+        ]
+      },
+      "steps": [
+        "Finding coverage: SYS-INSTALL. Baseline: install-callisto.sh lines 142 onward use a Cargo.toml substring before the explicit source branch.",
+        "Make explicit source=local the authoritative request to build checkout source; auto honors requested release/action-ref pins. If auto-source detection is retained for an existing documented use, validate actual workspace ownership rather than text occurrence, and never let it override an explicit version. Inspect both setup-callisto and callisto-action input wiring.",
+        "Add isolated fake-tool tests for a consumer mentioning callisto-cli, an explicit pin in a genuine Callisto checkout, source=local with and without owned source, action-ref defaults and pinned crates.io fallback. Preserve require/fallback/skip attestation behavior.",
+        "Run rtk proxy bash .github/actions/setup-callisto/tests/test_action_ref_version_resolution.sh, rtk proxy bash .github/actions/setup-callisto/tests/test_crates_io_fallback.sh and rtk proxy bash .github/actions/setup-callisto/tests/test_download_extraction_format.sh. Expect requested versions to remain authoritative and invalid local source to fail before arbitrary compilation.",
+        "Update operator docs, current contract and a user-visible patch changeset; no download or installation into the user's machine outside isolated fixtures."
+      ],
+      "commit_message": "fix(setup): validate local source before bypassing version pins",
+      "covers_criteria": [
+        "REL-PR-06"
+      ]
+    },
+    {
+      "id": "T02",
+      "title": "Align schemas with actual report and durable wire shapes",
+      "files": {
+        "modify": [
+          "crates/callisto-model/src/version.rs",
+          "crates/callisto-model/src/identity.rs",
+          "crates/callisto-model/src/release.rs",
+          "crates/callisto-cli/src/commands/schema.rs",
+          "docs/specs/cli.json",
+          "docs/specs/release.json",
+          "crates/callisto-cli/Cargo.toml",
+          "Cargo.lock"
+        ],
+        "test": [
+          "crates/callisto-cli/tests/schema_guard_test.rs"
+        ]
+      },
+      "steps": [
+        "Finding coverage: SYS-SCHEMA. Baseline: Version/PackageId/ReleasePackageId custom serde representations diverge from derived JsonSchema; schema_guard_test checks mostly top-level sets.",
+        "Use explicit string-shaped JsonSchema implementations or schema proxy annotations for custom wire leaves, including VersionReq and digest/ID wrappers discovered by the serializer inventory. Preserve existing actual serialization, not the accidental storage-object schema.",
+        "Add a dev-only full JSON Schema validator compatible with the emitted schema dialect; validate nested real reports and durable documents, not only a hand-written expected-property list. Keep the validator out of shipped crates.",
+        "Cover every SchemaTarget currently exposed, distinguishing payload schemas from CLI envelopes; assert complete status/version/snapshot/pre and release receipt examples pass and invalid nested wire types fail. Native identity/version semantics remain domain-validation tests, not a new universal schema parser. Add decide-to-verify report validation without weakening T01 payload checks.",
+        "Run rtk cargo test -p callisto-model, then rtk cargo test -p callisto-cli --test schema_guard_test sequentially. Update the CLI schema contract and the per-topic patch changeset; schema repair does not authorize a wire-shape change."
+      ],
+      "commit_message": "fix(schema): describe serialized report values",
+      "depends_on": [
+        "T01"
+      ],
+      "covers_criteria": [
+        "CLI-SCHEMA-01",
+        "CLI-OUT-05",
+        "REL-CMD-12"
+      ]
+    },
+    {
+      "id": "T03",
+      "title": "Decode durable versions with distribution context",
+      "files": {
+        "modify": [
+          "crates/callisto-model/src/version.rs",
+          "crates/callisto-model/src/release.rs",
+          "crates/callisto-model/src/release_observation.rs",
+          "crates/callisto-graph/src/commands/release_decision.rs",
+          "docs/specs/release.json"
+        ],
+        "test": [
+          "crates/callisto-cli/tests/durable_release_e2e_tests.rs"
+        ]
+      },
+      "steps": [
+        "Finding coverage: SYS-PYDEC. Baseline: ReleaseDecisionV1Wire deserializes ReleaseDecisionEntry.target_version through generic Version's SemVer-first guess.",
+        "Decode a wire version using its enclosing canonical distribution ecosystem, then validate/canonicalize the domain entry and digest. Apply the same contextual rule to nested reasons, intents, evidence and receipts that carry a distribution; do not silently coerce unsupported grammars or change readable decision versions.",
+        "Audit every custom Version decoder and semantic digest path in the MIT model; migrate actual contextual consumers together or record why a context-free leaf is unaffected. Keep native stable strings unchanged on the wire.",
+        "Add genuine Python stable emit-decision -> commit -> release plan -> execute/rerun cases alongside Cargo/npm prereleases. Retain schema 1/2, unsupported-schema, digest-tamper and cross-ecosystem mismatch negatives.",
+        "Run rtk cargo test -p callisto-model followed by rtk cargo test -p callisto-cli --test durable_release_e2e_tests. Expect valid Python stable decisions accepted and forged roster/digest content refused."
+      ],
+      "commit_message": "fix(release): preserve native historical version authority",
+      "covers_criteria": [
+        "REL-AUTH-01",
+        "REL-AUTH-03"
+      ],
+      "depends_on": [
+        "T02"
+      ]
+    },
+    {
+      "id": "T03-PRE",
+      "title": "Resolve prerelease baselines using workspace ownership",
+      "files": {
+        "modify": [
+          "crates/callisto-model/src/format/pre.rs",
+          "crates/callisto-graph/src/lib.rs",
+          "crates/callisto-graph/src/aggregate.rs",
+          "crates/callisto-cli/src/commands/pre.rs",
+          "crates/callisto-graph/src/commands/version.rs",
+          "docs/specs/versioning.json"
+        ],
+        "test": [
+          "crates/callisto-cli/tests/pre_mode_tests.rs"
+        ]
+      },
+      "steps": [
+        "Finding coverage: SYS-PYPRE. Baseline: parse_pre_json tries SemVer before PEP 440 for every initialVersions string.",
+        "Keep the changesets-compatible file format; resolve each baseline key to its owner and parse its raw version in that owner's native grammar before using it. Reuse T03 contextual parsing; preserve #168's historical bare-key attribution and E245 on non-unique ownership.",
+        "Exercise stable Python pre enter -> repeated version -> exit, SemVer siblings, qualified/unqualified historical keys, malformed values, custom changesets directory and mixed native grammars. Check emitted native versions and unchanged unrelated baselines.",
+        "Run rtk cargo test -p callisto-model, then rtk cargo test -p callisto-cli --test pre_mode_tests. Add the regression before changing the decoder; do not require a new persisted pre-state schema without an explicit migration decision."
+      ],
+      "commit_message": "fix(pre): preserve native baseline grammar",
+      "depends_on": [
+        "T03"
+      ],
+      "covers_criteria": [
+        "VER-PRE-01",
+        "VER-PRE-03",
+        "VER-PRE-06"
+      ]
+    },
+    {
+      "id": "T04",
+      "title": "Unify manifest-local dependency names across version paths",
+      "files": {
+        "modify": [
+          "crates/callisto-model/src/dependency.rs",
+          "crates/callisto-graph/src/resolver.rs",
+          "crates/callisto-graph/src/cascade.rs",
+          "crates/callisto-graph/src/commands/snapshot.rs",
+          "docs/specs/versioning.json",
+          "crates/callisto-manifests/src/cargo.rs",
+          "crates/callisto-manifests/src/npm.rs",
+          "crates/callisto-manifests/src/python.rs",
+          "crates/callisto-graph/src/walk.rs"
+        ],
+        "test": [
+          "crates/callisto-cli/tests/identity_promotion_tests.rs",
+          "crates/callisto-graph/tests/cascade_tests.rs",
+          "crates/callisto-graph/tests/snapshot_tests.rs",
+          "crates/callisto-cli/tests/native_resolution_e2e_tests.rs",
+          "crates/callisto-graph/tests/fixtures/graph_builder.rs",
+          "crates/callisto-manifests/tests/cargo_tests.rs"
+        ]
+      },
+      "steps": [
+        "Finding coverage: SYS-CASCADE. Baseline: manifest_ecosystem prefers edge.from's display prefix over edge.from_manifest; the shared helper feeds cascade, co-release floor and snapshot.",
+        "Determine the native ecosystem from the declaration's actual manifest, not owner/display ID. Preserve declared dependency key/alias separately from resolved native distribution identity where current DepEdge loses it; use IdentityIndex.native_name only for the correct native ecosystem.",
+        "Preserve a dependency's declared key and resolved native target at extraction, including Cargo package aliases and inherited aliases; walk must resolve the native target while rewrites retain the declared key. Migrate all DependencyEntry/DepEdge producers and constructors, including Cargo/npm/Python editors and the shared graph fixture, in the same compiling change.",
+        "Migrate every helper call site in cascade, floor and snapshot in one change. Preserve inherited Cargo root routing and Python extras/markers/native spelling through their existing editors.",
+        "Add promoted Cargo/npm owners with different native names, a renamed Cargo dependency, dependency-only and inherited writes, peer/optional/dev behavior and a snapshot case. Run rtk cargo test -p callisto-graph, then rtk cargo test -p callisto-cli --test identity_promotion_tests and --test native_resolution_e2e_tests sequentially.",
+        "Expect correct native declaration keys in all three paths and no unrelated manifest edits. Update criteria and a user-visible changeset together."
+      ],
+      "commit_message": "fix(version): retain native dependency semantics across manifests",
+      "covers_criteria": [
+        "VER-CAS-07",
+        "VER-PRE-09"
+      ]
+    },
+    {
+      "id": "T03-HISTORY",
+      "title": "Verify inherited version sources and normalized Git paths",
+      "files": {
+        "modify": [
+          "crates/callisto-manifests/src/lib.rs",
+          "crates/callisto-manifests/src/cargo.rs",
+          "crates/callisto-graph/src/commands/release_decision.rs",
+          "crates/callisto-graph/src/commands/version.rs",
+          "docs/specs/release.json",
+          "docs/specs/versioning.json"
+        ],
+        "test": [
+          "crates/callisto-cli/tests/durable_release_e2e_tests.rs",
+          "crates/callisto-cli/tests/partial_run_tests.rs",
+          "crates/callisto-cli/tests/single_package_root_tests.rs"
+        ]
+      },
+      "steps": [
+        "Finding coverage: SYS-INHERITED, SYS-ROOT. Baseline: read_identity exposes Literal/InheritedFromWorkspace, but the two manifest_version_at readers accept only Literal and member-path diffs; ./CHANGELOG.md differs from Git's path.",
+        "Share a pure effective historical version-source resolution path over supplied Git blobs and Cargo workspace inheritance, reused by release-commit verification and partial-run detection. Use the authority's actual root path for diff checks and preserve the claimed committed roster instead of recomputing selection.",
+        "Normalize workspace-relative paths once before Git blob/diff lookup; cover root '.', member manifests, workspace roots and configured changelog locations without normalizing outside the repository.",
+        "Add inherited-version emit/commit/plan, root-package changelog, member version unchanged but authority changed, unclaimed owner changes and malicious path tests. Run rtk cargo test -p callisto-manifests --test cargo_tests, then the durable_release_e2e_tests, partial_run_tests and single_package_root_tests CLI suites sequentially.",
+        "Expect genuine authoritative changes accepted, tampered/unclaimed changes refused with existing typed diagnostics and partial-run protection preserved."
+      ],
+      "commit_message": "fix(release): verify effective historical version sources",
+      "depends_on": [
+        "T03",
+        "T04"
+      ],
+      "covers_criteria": [
+        "REL-AUTH-02",
+        "VER-APPLY-13"
+      ]
+    },
+    {
+      "id": "T04-PNPM",
+      "title": "Preserve pnpm workspace protocol semantics",
+      "files": {
+        "modify": [
+          "crates/callisto-model/src/dependency.rs",
+          "crates/callisto-manifests/src/npm.rs",
+          "crates/callisto-graph/src/resolver.rs",
+          "crates/callisto-graph/src/cascade.rs",
+          "docs/specs/versioning.json",
+          "docs/config.md"
+        ],
+        "test": [
+          "crates/callisto-cli/tests/native_resolution_e2e_tests.rs"
+        ]
+      },
+      "steps": [
+        "Finding coverage: SYS-PNPM. Baseline: parse_npm_spec_str discards workspace suffixes and DepSpec::Workspace renders workspace:*; coverage assumes all workspace references cover.",
+        "Extend the existing dependency-spec representation to retain raw workspace text plus the semantics needed for wildcard, caret/tilde shorthand, explicit range, alias and relative-path references. Resolve native targets without replacing an alias key with the target's name.",
+        "Define coverage and safe rewriting for each admitted form with pnpm's pack transformations. Keep catalogs and unsupported opaque/direct URL inputs explicitly diagnosed or documented; do not invent catalog editing as a requirement.",
+        "Add parser/render/coverage unit tests and native pnpm pack plus frozen install fixtures after version and snapshot. Test scoped aliases, an out-of-range explicit workspace constraint, peer/optional/private packages and unchanged catalogs.",
+        "Run rtk cargo test -p callisto-model, rtk cargo test -p callisto-manifests and rtk cargo test -p callisto-cli --test native_resolution_e2e_tests sequentially. Report missing pnpm as a coverage gap, not a passing native test."
+      ],
+      "commit_message": "fix(pnpm): retain workspace reference semantics",
+      "depends_on": [
+        "T04"
+      ],
+      "covers_criteria": [
+        "VER-CAS-05",
+        "VER-CAS-06"
+      ]
+    },
+    {
+      "id": "T04-LOCK",
+      "title": "Refresh locks from all actual native write targets",
+      "files": {
+        "modify": [
+          "crates/callisto-graph/src/apply.rs",
+          "crates/callisto-graph/src/plan.rs",
+          "docs/specs/versioning.json"
+        ],
+        "test": [
+          "crates/callisto-graph/tests/apply_tests.rs",
+          "crates/callisto-cli/tests/native_resolution_e2e_tests.rs"
+        ]
+      },
+      "steps": [
+        "Finding coverage: SYS-LOCK. Baseline: active_ecosystems chooses one ecosystem for each bump and ignores regular dependency-only rewrite targets.",
+        "Collect ecosystems from every actual VersionWriteTarget/DepWriteTarget, plus platform and optional-dependency writes. Use the same set for refresh and staging; retain lockfile-specific command selection, no-refresh behavior and transient snapshot staging rules.",
+        "Test a promoted/bare dual Cargo/npm owner, Python alongside Cargo, inherited root rewrites, dependency-only writes, multiple npm-family locks and unrelated lockfile preservation. Include a nonzero refresh command and assert E208 stops application.",
+        "Run rtk cargo test -p callisto-graph, then rtk cargo test -p callisto-cli --test native_resolution_e2e_tests. Inspect actual native locked installs for the dual-manifest fixture; a fake command invocation is not sufficient native evidence."
+      ],
+      "commit_message": "fix(version): refresh every affected native lockfile",
+      "depends_on": [
+        "T04-PNPM"
+      ],
+      "covers_criteria": [
+        "VER-APPLY-14",
+        "VER-APPLY-15",
+        "VER-PRE-08"
+      ]
+    },
+    {
+      "id": "T05",
+      "title": "Make interrupted versioning diagnosable without losing inputs",
+      "files": {
+        "modify": [
+          "crates/callisto-graph/src/apply.rs",
+          "crates/callisto-graph/src/commands/version.rs",
+          "crates/callisto-graph/src/error.rs",
+          "crates/callisto-cli/src/commands/version.rs",
+          "docs/errors.md",
+          "docs/specs/versioning.json",
+          "docs/architecture/versioning.md"
+        ],
+        "test": [
+          "crates/callisto-cli/tests/durable_release_e2e_tests.rs",
+          "crates/callisto-cli/tests/partial_run_tests.rs",
+          "crates/callisto-cli/tests/dry_run_invariant_tests.rs",
+          "crates/callisto-cli/tests/pre_mode_tests.rs"
+        ]
+      },
+      "steps": [
+        "Finding coverage: SYS-VERSION-RECOVERY. Baseline: apply deletes consumed changesets before fallible lock refresh/staging; check_partial_run misses an untracked consumed input.",
+        "Move irreversible input consumption after fallible native refresh and retain usable input evidence through staging/finalization. Strengthen check_partial_run using T03-HISTORY effective sources so tracked/untracked inputs, root/dependency-only writes and staged/unstaged partial changes cannot silently produce a second bump or false success. Permit active prerelease reruns and pending prerelease-to-stable finalization, but reject already-written stable versions on an exit retry; compare staged inherited Cargo versions against the effective workspace-root version.",
+        "Keep derive-before-write and decision emission after successful apply. Define late decision-write/staging failure as actionable refusal with retained release changes, not guaranteed automatic replay of an unavailable in-memory plan. Do not add a journal, new recovery command or rollback.",
+        "Inject failures after manifest/changelog writes, during refresh, deletion/staging and decision emission, including an untracked changeset. A fresh command must safely complete an authorized unchanged plan where possible or refuse with specific recovery guidance; it must not lose the remaining input, silently skip work or double-bump.",
+        "Inspect the init/release/version dry-run entry permits as shared capability siblings; snapshot transient semantics remain distinct from dry-run. Preserve ordinary user edits and test unchanged bytes/index plus zero external effect calls.",
+        "Run rtk cargo test -p callisto-graph, then rtk cargo test -p callisto-cli --test partial_run_tests, --test durable_release_e2e_tests and --test dry_run_invariant_tests sequentially. Update successful deletion ordering and diagnostics in the spec in the implementation PR."
+      ],
+      "commit_message": "fix(version): preserve recovery inputs across apply failures",
+      "depends_on": [
+        "T03-HISTORY",
+        "T04-LOCK"
+      ],
+      "covers_criteria": [
+        "VER-APPLY-08",
+        "VER-APPLY-10",
+        "VER-APPLY-13",
+        "VER-APPLY-15",
+        "VER-APPLY-16"
+      ]
+    },
+    {
+      "id": "T10-BINS",
+      "title": "Inventory Cargo binaries and reject unsupported artifact generation",
+      "files": {
+        "modify": [
+          "crates/callisto-manifests/src/cargo.rs",
+          "crates/callisto-graph/src/commands/init.rs",
+          "crates/callisto-cli/src/commands/init.rs",
+          "docs/specs/cli.json",
+          "docs/releasing.md"
+        ],
+        "test": [
+          "crates/callisto-manifests/tests/cargo_tests.rs",
+          "crates/callisto-cli/tests/cli_tests.rs"
+        ]
+      },
+      "steps": [
+        "Finding coverage: SYS-BINS, SYS-NONCARGO. Baseline: CargoToml::bin_names returns the first explicit bin or src/main; init accepts npm/Python product slots but generated builders only handle Cargo.",
+        "Implement the admitted Cargo binary inventory, including src/bin/name.rs, src/bin/name/main.rs, multiple explicit bins, autobins=false and duplicate explicit/automatic targets. Respect native declared names/paths; do not build a general Cargo target compiler.",
+        "Validate artifact-builder support before init writes config/workflow. Reject unsupported npm-bin/Python-script product artifacts with a typed diagnostic; keep registry-only npm/Python releases supported and no-workflow/manual paths accurately documented.",
+        "Exercise --dry-run and init no-write failure cases, library-only packages, multiple bins and supported Cargo product selection. Run rtk cargo test -p callisto-manifests --test cargo_tests, then rtk cargo test -p callisto-graph and rtk cargo test -p callisto-cli --test cli_tests sequentially.",
+        "Keep this PR independent of future owner/file-set formats; integrate after T03-HISTORY if both touch cargo.rs."
+      ],
+      "commit_message": "fix(init): validate supported binary artifact builders",
+      "covers_criteria": [
+        "CLI-INIT-01",
+        "CLI-INIT-02",
+        "CLI-INIT-12"
+      ],
+      "depends_on": [
+        "T03-HISTORY"
+      ]
+    },
+    {
+      "id": "T10-AUTH",
+      "title": "Configure native npm and Twine authentication in generated execution",
+      "files": {
+        "modify": [
+          "crates/callisto-graph/src/commands/init.rs",
+          "crates/callisto-graph/src/commands/release/provider/registry.rs",
+          "crates/callisto-model/src/exec.rs",
+          "crates/callisto-cli/src/runner.rs",
+          ".github/actions/callisto-action/scripts/run-release.sh",
+          "docs/specs/cli.json",
+          "docs/publishing.md",
+          ".github/tests/verify-release-workflow-policy.sh"
+        ],
+        "test": [
+          ".github/actions/callisto-action/tests/test_release_contract.sh",
+          "crates/callisto-graph/src/commands/release/provider/registry/tests.rs",
+          "crates/callisto-cli/src/runner.rs"
+        ]
+      },
+      "steps": [
+        "Finding coverage: SYS-AUTH. Baseline: generated NPM_TOKEN/PYPI_TOKEN names alone do not configure npm's registry auth or Twine username/password.",
+        "Inspect the shared action release entry and generated simple/matrix execution path; configure scoped native npm auth and TWINE_USERNAME/TWINE_PASSWORD only at the publishing boundary. Never put tokens into intents, config, plan/build jobs or logged command arguments.",
+        "Retain native-tool ownership of authentication, existing npm provenance behavior and this repo's no-Environment/no-reviewer policy. Missing/rejected credentials remain redacted native failures, not a new credential preflight.",
+        "Add fresh-home fake-tool assertions and generated workflow checks for Cargo-only, npm, Bun and Python shapes; scope registry auth to the native publisher invocation, keep package-manager lifecycle behavior under package-owner control, and remove registry credentials from the Python build subprocess, plan/build jobs, logs and persisted files.",
+        "Run rtk cargo test -p callisto-graph, rtk proxy bash .github/actions/callisto-action/tests/test_release_contract.sh and rtk proxy bash .github/tests/verify-release-workflow-policy.sh sequentially. Add a user-visible patch changeset."
+      ],
+      "commit_message": "fix(workflow): configure native publish authentication",
+      "depends_on": [
+        "T10-BINS"
+      ],
+      "covers_criteria": [
+        "CLI-WF-03",
+        "CLI-WF-04",
+        "REL-GH-07"
+      ]
+    },
+    {
+      "id": "D01",
+      "title": "Settle scoped model and compatibility contracts before architectural code",
+      "files": {
+        "modify": [
+          "docs/architecture/polyglot-v1.md",
+          "docs/adr/0012-canonical-distribution-release-ownership.md",
+          "docs/projects/V1-IMPLEMENTATION.md",
+          "docs/projects/V1-SYSTEM-HARDENING.json"
+        ],
+        "test": []
+      },
+      "steps": [
+        "Read the decision matrix in V1-IMPLEMENTATION.md and obtain owner confirmation only for material choices, not routine implementation details. Existing-contract fixes do not wait for this task.",
+        "Implement canonical slash-qualified IDs for all new exact references; reject new bare/colon aliases and resolve existing records only through explicit ownership migration. Settle new default tags and legacy history rules. Keep directory locator distinct from native output identity; do not rename remote tags or infer a genuine source move.",
+        "Fix admitted Maturin dynamic/static authority cases and native mapping errors; choose draft/public-announcement timing under the agreed registry-before-announcement policy.",
+        "Fix required registry file-set authority before model changes: plan declarations versus build-time filenames/digests, binding to the immutable intent/envelope and per-file versus aggregate partial-operation proof. Do not append operations or change the sealed intent after build.",
+        "Choose public Python support and explicit behavior for distinct read/upload routes; authenticated/HTML-only indexes and mutable npm channels remain optional owner decisions. Document that native lifecycle hooks and their effects remain package-owner-controlled and outside Callisto's operation graph.",
+        "Record testable cases and exact versioned wire migrations in the proposed architecture/ADR and per-PR packets. Author and approve matching area-spec amendments on implementation branches; current main specs must not assert unshipped behavior. Bind any formal execution handoff to raw approved spec hashes.",
+        "Inspect every shared-interface implementer named in V1-IMPLEMENTATION.md before passing the design boundary. Unresolved choices pause only dependent architectural tasks; do not mark this portfolio plan as a fully gated Smith handoff."
+      ],
+      "commit_message": "docs(architecture): settle scoped release ownership contracts"
+    },
+    {
+      "id": "T06",
+      "title": "Canonicalize new references through one owner-aware resolver",
+      "files": {
+        "modify": [
+          "crates/callisto-model/src/identity.rs",
+          "crates/callisto-graph/src/identity.rs",
+          "crates/callisto-graph/src/walk.rs",
+          "crates/callisto-graph/src/lib.rs",
+          "crates/callisto-graph/src/config/resolve.rs",
+          "crates/callisto-graph/src/config/groups.rs",
+          "crates/callisto-graph/src/aggregate.rs",
+          "crates/callisto-graph/src/commands/status.rs",
+          "crates/callisto-cli/src/commands/add.rs",
+          "crates/callisto-graph/src/commands/matrix.rs",
+          "crates/callisto-graph/src/commands/release/derive.rs",
+          "docs/specs/workspace.json",
+          "docs/specs/cli.json",
+          "docs/specs/versioning.json",
+          "docs/specs/release.json",
+          "docs/adr/0012-canonical-distribution-release-ownership.md",
+          "crates/callisto-graph/src/matrix.rs",
+          "docs/specs/matrix.json"
+        ],
+        "test": [
+          "crates/callisto-cli/tests/identity_promotion_tests.rs",
+          "crates/callisto-graph/tests/status_cascade_and_wellformedness_tests.rs",
+          "crates/callisto-graph/tests/matrix_tests.rs",
+          "crates/callisto-cli/tests/cli_tests.rs",
+          "crates/callisto-cli/tests/release_artifact_owner_tests.rs"
+        ]
+      },
+      "steps": [
+        "Baseline: IdentityIndex.resolve_id correctly resolves native names in aggregation, but status pending and diagnostics use PackageId::resolve_unique; new identifiers still depend on sibling collisions.",
+        "Implement D01's canonical-reference/migration contract at one shared owner-aware resolver, including native name normalization and actionable legacy ambiguity errors. Emit canonical exact references for add/init/reports/groups/config without conflating different outputs with release owners.",
+        "Migrate all selector consumers, both status helpers, package/group rules, changesets, pre-state and CLI selection together. Keep glob matching as an explicitly separate pattern language, not an exact-ID parser.",
+        "Align GroupTable::from_groups conflict validation with resolve so no alternate construction path silently bypasses the group invariant; add the sibling constructor regression in config/group tests.",
+        "Add paired status/version/matrix/release-selector tests for non-primary native names, unrelated ecosystem-qualified names, scoped npm names, normalized Python names, duplicate native distribution IDs, rejected new bare/colon aliases, migrated historical records and deterministic report ordering. Cover product-package and artifact package selectors alongside groups, package rules and changesets; retain glob patterns as a separate language.",
+        "Run rtk cargo test -p callisto-model, rtk cargo test -p callisto-graph and rtk cargo test -p callisto-cli --test identity_promotion_tests plus --test status_check_tests sequentially. Update current specs and migration docs with the behavior; retain historical tag readers for T06-HISTORY."
+      ],
+      "commit_message": "refactor(identity)!: use canonical distribution references",
+      "depends_on": [
+        "D01",
+        "T03-PRE",
+        "T04-PNPM"
+      ],
+      "covers_criteria": [
+        "WS-ID-01",
+        "WS-ID-02",
+        "WS-ID-03",
+        "WS-ID-05",
+        "WS-ID-06",
+        "WS-CFG-01",
+        "VER-AGG-02",
+        "CLI-ADD-01",
+        "MX-DISC-11",
+        "MX-OUT-01",
+        "MX-ERR-07"
+      ]
+    },
+    {
+      "id": "T06-HISTORY",
+      "title": "Resolve historic ownership from full native manifest evidence",
+      "files": {
+        "modify": [
+          "crates/callisto-graph/src/tags.rs",
+          "crates/callisto-graph/src/aggregate.rs",
+          "crates/callisto-graph/src/identity.rs",
+          "crates/callisto-model/src/tag.rs",
+          "docs/specs/workspace.json",
+          "docs/specs/versioning.json",
+          "docs/architecture/identity.md",
+          "crates/callisto-graph/src/lib.rs"
+        ],
+        "test": [
+          "crates/callisto-cli/tests/identity_promotion_tests.rs",
+          "crates/callisto-graph/tests/tag_glob_cache_count_test.rs",
+          "crates/callisto-cli/tests/pre_mode_tests.rs"
+        ]
+      },
+      "steps": [
+        "Finding coverage: SYS-OWNER, SYS-DEMOTION. Baseline: sole_owner_at tests a current first-manifest path; demotion drops newly qualified history.",
+        "Share historical ownership resolution between tag selection and pre-state attribution using historical native names and the full admitted manifest roster at the relevant commit. Preserve a source owner's correct bare and qualified history after sibling addition/removal or primary-manifest changes.",
+        "Apply D01's explicit rename/move support boundary; refuse uncertain transfer with an actionable error rather than assigning another owner's tag. Do not rename existing tags or require an opaque identity ledger.",
+        "Test promotion/demotion, sibling rename, Cargo manifest added to an npm-first directory, changed native names, ambiguous old records, conflicting legacy and canonical pre-state keys, old prerelease keys and custom templates; verify last-release monotonicity and no cross-owner adoption without silently discarding a baseline.",
+        "Run rtk cargo test -p callisto-graph and rtk cargo test -p callisto-cli --test identity_promotion_tests sequentially. Preserve lazy/cached Git discovery and update docs/specs/ADR status only with the implementation."
+      ],
+      "commit_message": "fix(identity): preserve owned historical release records",
+      "depends_on": [
+        "T06",
+        "T03-HISTORY"
+      ],
+      "covers_criteria": [
+        "WS-ID-03",
+        "VER-PRE-01"
+      ]
+    },
+    {
+      "id": "T07",
+      "title": "Represent supported native version authority and distribution outputs",
+      "files": {
+        "modify": [
+          "crates/callisto-model/src/package.rs",
+          "crates/callisto-model/src/version.rs",
+          "crates/callisto-manifests/src/lib.rs",
+          "crates/callisto-manifests/src/python.rs",
+          "crates/callisto-manifests/src/cargo.rs",
+          "crates/callisto-graph/src/walk.rs",
+          "crates/callisto-graph/src/commands/version.rs",
+          "crates/callisto-graph/src/commands/release_decision.rs",
+          "docs/specs/workspace.json",
+          "docs/specs/versioning.json",
+          "docs/architecture/polyglot-v1.md",
+          "crates/callisto-graph/src/lib.rs",
+          "crates/callisto-graph/src/apply.rs",
+          "crates/callisto-graph/src/aggregate.rs",
+          "crates/callisto-graph/src/commands/snapshot.rs"
+        ],
+        "test": [
+          "crates/callisto-manifests/tests/cargo_tests.rs",
+          "crates/callisto-cli/tests/native_resolution_e2e_tests.rs"
+        ],
+        "create": [
+          "crates/callisto-cli/tests/maturin_version_authority_tests.rs"
+        ]
+      },
+      "steps": [
+        "Finding coverage: SYS-MATURIN. Baseline: Package::version_grammar rejects admitted Cargo/Python grammar mixing; ManifestIdentity.VersionSource describes only literal/inherited Cargo.",
+        "Implement D01's bounded source-authority representation and per-distribution native versions using the existing package/manifest types where possible. Keep MIT model semantics independent of FSL parsing; migrate CargoToml, PackageJson and PyprojectToml together if their shared Manifest contract changes.",
+        "Support the agreed co-located Maturin Cargo-owned dynamic version, including inherited Cargo authority, without inserting project.version. Preserve metadata precedence and use only the admitted SemVer-to-PEP-440 mapping; unsupported cases fail before mutation.",
+        "Migrate live base versions, bump/apply/snapshot, pre-state, historical verification and native dependency comparisons to the selected authority/distribution representation; do not partially support discovery while release planning still assumes one grammar.",
+        "Add the new co-located CLI fixture for static/dynamic decisions, different native names, inherited authority, prerelease/snapshot mapping and unsupported backend/mapping diagnostics. Compare actual built wheel/sdist metadata and a clean consumer install against the planned Python version.",
+        "Run scoped model/manifests/graph suites sequentially, then rtk cargo test -p callisto-cli --test maturin_version_authority_tests and --test native_resolution_e2e_tests with Python/Maturin prerequisites; record unavailable native build evidence. Go/NuGet remain design examples, not adapters."
+      ],
+      "commit_message": "refactor(model): represent native distribution version authority",
+      "depends_on": [
+        "D01",
+        "T06",
+        "T03-HISTORY",
+        "T06-HISTORY"
+      ],
+      "covers_criteria": [
+        "WS-ID-02",
+        "WS-ID-09",
+        "VER-APPLY-01"
+      ]
+    },
+    {
+      "id": "T08",
+      "title": "Deduplicate shared physical effects and enforce publication barriers",
+      "files": {
+        "modify": [
+          "crates/callisto-model/src/release.rs",
+          "crates/callisto-model/src/release_observation.rs",
+          "crates/callisto-graph/src/commands/release_decision.rs",
+          "crates/callisto-graph/src/commands/release/derive.rs",
+          "crates/callisto-graph/src/commands/release/local.rs",
+          "crates/callisto-graph/src/commands/release_execution.rs",
+          "crates/callisto-graph/src/commands/release_simulator.rs",
+          "docs/specs/release.json",
+          "docs/architecture/release.md",
+          "crates/callisto-graph/src/commands/release/capability.rs",
+          "crates/callisto-graph/src/commands/release/provider/mod.rs"
+        ],
+        "test": [
+          "crates/callisto-cli/tests/release_command_e2e_tests.rs",
+          "crates/callisto-cli/tests/durable_release_e2e_tests.rs",
+          "crates/callisto-cli/tests/dry_run_invariant_tests.rs"
+        ]
+      },
+      "steps": [
+        "Finding coverage: SYS-BARRIER. Baseline: ReleaseOperationId roles are distribution-owned; derive_release_inputs independently emits shared tag/forge effects and package dependencies order all owner outputs.",
+        "Implement D01's single-owner physical effects and deterministic operation IDs; one tag/draft/upload/publication may be referenced by several distributions but executed once. Reject contradictory tag target/destination/owner declarations before any effect.",
+        "Project native dependency publication prerequisites from the relevant manifest/distribution, not every output of the source node. Gate current supported registry ecosystems' shared tag/publication on all required selected native publishes; retain platform-before-owner and artifact-before-publication prerequisites.",
+        "Migrate intent validation/digests, preparation, production ValidatedReleaseIntent, SimWorld, provider dispatch, receipt evidence and schema guard tests as one compilation boundary. Do not add a scheduler or persisted execution state.",
+        "Check literal-false ApplyPermit construction at release/init entry points against dry-run capability boundaries and retain redacted native stderr for indeterminate failures. Fix a reachable bypass or lost safe diagnostic in this batch; explicitly track a sibling outside the owned boundary.",
+        "Add dual Cargo/npm permutations, failure of either registry, shared product assets, selected/unselected native dependencies, dev/non-dev cycles and duplicate/conflicting effects. Run rtk cargo test -p callisto-model, rtk cargo test -p callisto-graph and rtk cargo test -p callisto-cli --test durable_release_e2e_tests sequentially.",
+        "Verify deterministic DAG order and no public announcement before required publications; check Go's hypothetical tag-as-publication scenario without a Go provider. Version the wire if D01 changes identity/proof shape and keep old-reader policy explicit."
+      ],
+      "commit_message": "fix(release): complete shared effects across retries",
+      "depends_on": [
+        "D01",
+        "T06-HISTORY",
+        "T07"
+      ],
+      "covers_criteria": [
+        "REL-ORD-01",
+        "REL-ORD-02",
+        "REL-RERUN-04"
+      ]
+    },
+    {
+      "id": "T08-RETRY",
+      "title": "Observe tagged candidates before declaring a local release complete",
+      "files": {
+        "modify": [
+          "crates/callisto-graph/src/commands/release_decision.rs",
+          "crates/callisto-graph/src/commands/release/local.rs",
+          "crates/callisto-graph/src/commands/release_execution.rs",
+          "crates/callisto-cli/src/commands/release.rs",
+          "docs/specs/release.json",
+          "docs/releasing.md"
+        ],
+        "test": [
+          "crates/callisto-cli/tests/release_command_e2e_tests.rs",
+          "crates/callisto-cli/tests/durable_release_e2e_tests.rs"
+        ]
+      },
+      "steps": [
+        "Finding coverage: SYS-RETRY. Baseline: derive_unreleased_decision skips locally tagged versions before provider observation; version_is_tagged is a selection shortcut, not completion evidence.",
+        "Replace tag-only exclusion with D01's bounded candidate/completion contract. Already-tagged current versions are checked for remaining required effects; fully complete releases perform no writes. Preserve expected-commit trust and exact committed CI rosters; do not broaden release authority to inferred/manual commits.",
+        "Keep original immutable artifacts/intent where available. Specify safe refusal for a changed source or unavailable original bytes; never rebuild and replace published version bytes as implicit recovery. Address explicit --package semantics and update REL-CMD-01/08 with implementation.",
+        "Fault after local tag, push, draft, upload and public publication; retry the real CLI and assert only missing operations run, remote conflicts block, unrelated old versions are not rereleased and a receipt appears only on complete success.",
+        "Run rtk cargo test -p callisto-graph, then rtk cargo test -p callisto-cli --test release_command_e2e_tests and --test durable_release_e2e_tests. The generated simple action path is part of the test scope, not only retained-intent CI."
+      ],
+      "commit_message": "fix(release): finish remaining effects for tagged versions",
+      "depends_on": [
+        "T08"
+      ],
+      "covers_criteria": [
+        "REL-CMD-01",
+        "REL-CMD-08",
+        "REL-RERUN-02",
+        "REL-RERUN-04"
+      ]
+    },
+    {
+      "id": "T09",
+      "title": "Verify and resume the required Python registry file set",
+      "files": {
+        "modify": [
+          "crates/callisto-model/src/release.rs",
+          "crates/callisto-model/src/release_observation.rs",
+          "crates/callisto-graph/src/commands/registry_argv.rs",
+          "crates/callisto-graph/src/commands/release/derive.rs",
+          "crates/callisto-graph/src/commands/release/provider/registry.rs",
+          "crates/callisto-graph/src/commands/release/provider/registry/tests.rs",
+          "docs/specs/release.json",
+          "docs/publishing.md",
+          "crates/callisto-graph/src/commands/release_artifacts.rs",
+          "crates/callisto-graph/src/commands/release/capability.rs",
+          "crates/callisto-graph/src/commands/release/provider/mod.rs",
+          "crates/callisto-model/src/release_transition.rs",
+          "crates/callisto-graph/src/commands/release_simulator.rs",
+          "crates/callisto-cli/src/commands/release.rs",
+          "crates/callisto-cli/src/cli.rs",
+          "crates/callisto-cli/src/error.rs",
+          "crates/callisto-graph/src/error.rs",
+          "crates/callisto-graph/src/commands/release/local.rs"
+        ],
+        "test": [
+          "crates/callisto-cli/tests/release_real_registry_e2e_tests.rs"
+        ],
+        "create": [
+          "crates/callisto-cli/tests/pypi_partial_upload_tests.rs"
+        ]
+      },
+      "steps": [
+        "Finding coverage: SYS-PYFILES. Baseline: one non-yanked matching file is Exact; python build creates wheel and sdist, and Twine publishes a broad dist glob.",
+        "Implement D01's required-file authority/proof contract across plan declarations, trusted build inventory, envelope binding and registry evidence. Exact requires every declared filename/digest; never mutate a sealed intent after build or guess all possible platform wheels.",
+        "Migrate CLI artifact-manifest production and release execute's registry-only artifact-input checks/envelope creation, plus local Python build preparation, to the approved required-output contract. Do not invent dummy GitHub slots merely to pass a registry build inventory; mint the envelope only after validating its actual trusted output manifest.",
+        "Publish only the intended retained files, resuming missing files after a partial upload without resubmitting completed/conflicting ones. Ensure a partial set cannot mint a false whole-operation Absent/Exact proof; migrate production providers and simulator with any new proof/observation shape.",
+        "Cover extra stale dist files, one of two uploads completed, conflicting same filename/digest, mixed yanked files, unobservable/index-lag responses and altered artifact manifests. Do not treat yanking as permission to overwrite.",
+        "Run rtk cargo test -p callisto-model, rtk cargo test -p callisto-graph and rtk cargo test -p callisto-cli --test pypi_partial_upload_tests, followed by --test release_real_registry_e2e_tests with prerequisites. Inject failure after the first actual file upload and validate recovery through production binding/observation, not argv alone.",
+        "Review Cargo/npm/platform evidence as siblings; preserve their existing whole-version behavior unless the approved contract genuinely reaches them. No universal checksum or mutable npm-channel gate is added."
+      ],
+      "commit_message": "fix(pypi): verify and resume required distribution files",
+      "depends_on": [
+        "D01",
+        "T07",
+        "T08",
+        "T08-RETRY"
+      ],
+      "covers_criteria": [
+        "REL-PUB-04",
+        "REL-PUB-08",
+        "REL-RERUN-01",
+        "REL-RERUN-04"
+      ]
+    },
+    {
+      "id": "T09-ROUTES",
+      "title": "Separate trusted Python index reads from uploads",
+      "files": {
+        "modify": [
+          "crates/callisto-graph/src/config/raw.rs",
+          "crates/callisto-graph/src/config/resolve.rs",
+          "crates/callisto-graph/src/commands/release/binding.rs",
+          "crates/callisto-graph/src/registry_endpoint.rs",
+          "crates/callisto-graph/src/commands/release/provider/registry.rs",
+          "crates/callisto-graph/src/commands/registry_argv.rs",
+          "docs/specs/release.json",
+          "docs/config.md",
+          "docs/publishing.md"
+        ],
+        "test": [
+          "crates/callisto-cli/tests/release_plan_pypi_default_registry_test.rs",
+          "crates/callisto-cli/tests/release_real_registry_e2e_tests.rs"
+        ]
+      },
+      "steps": [
+        "Finding coverage: SYS-PYROUTES. Baseline: PreparedRegistryBinding.endpoint serves both index reads and Twine uploads.",
+        "Implement D01's explicit credential-free read/upload routing and include both effective destinations in binding identity/staleness checks. Preserve default public PyPI/TestPyPI routing and reject credentialed/unsafe overrides before effects.",
+        "If private authenticated/HTML-only observation is not approved, fail unsupported configurations clearly before upload and document the boundary. Do not assume Twine auth is curl auth, embed credentials in URLs or add a generic HTTP credential client.",
+        "Test different loopback read/upload routes, normalization, approved overrides, changed read or upload endpoint, cross-ecosystem kind mismatch, HTML/private boundaries and credential redaction.",
+        "Run rtk cargo test -p callisto-graph, then rtk cargo test -p callisto-cli --test release_plan_pypi_default_registry_test and --test release_real_registry_e2e_tests sequentially. Integration follows T09 to avoid concurrent registry.rs writers."
+      ],
+      "commit_message": "fix(pypi): separate observation and upload destinations",
+      "depends_on": [
+        "D01",
+        "T09"
+      ],
+      "covers_criteria": [
+        "REL-PUB-04",
+        "REL-PUB-08"
+      ]
+    },
+    {
+      "id": "T10",
+      "title": "Build and place only intent-selected supported outputs",
+      "files": {
+        "modify": [
+          "crates/callisto-graph/src/commands/init.rs",
+          "crates/callisto-graph/src/matrix.rs",
+          ".github/tests/verify-release-workflow-contract.sh",
+          ".github/tests/verify-release-workflow-policy.sh",
+          "docs/specs/cli.json",
+          "docs/specs/matrix.json",
+          "docs/releasing.md",
+          "docs/publishing.md"
+        ],
+        "test": [
+          "crates/callisto-graph/tests/matrix_tests.rs",
+          ".github/actions/callisto-action/tests/test_release_contract.sh"
+        ]
+      },
+      "steps": [
+        "Finding coverage: SYS-NAPI. Baseline: generated matrix and placement select all workspace napi targets instead of the verified release intent.",
+        "Derive build and placement rosters from immutable intent-selected owners/distributions/artifact declarations, retaining canonical directory and target associations. An unrelated addon must not be built or placed for a Cargo-only release.",
+        "Use a shared selected-output projection rather than independent jq/name heuristics in build and placement. Keep public matrix inventory behavior separate from release filtering, and reuse T10-BINS early unsupported-shape validation.",
+        "Test Cargo-only beside unrelated napi, one of two addons selected, shared product artifacts, complete required platform selection, empty build roster and tampered/unknown build output. Secret access and no-Environment policy stay unchanged.",
+        "Run rtk cargo test -p callisto-graph --test matrix_tests, scoped graph unit tests, rtk proxy bash .github/tests/verify-release-workflow-contract.sh and rtk proxy bash .github/tests/verify-release-workflow-policy.sh sequentially; lint generated simple/matrix workflows with available project-native tools.",
+        "Update current CLI/matrix contracts and operator docs; generated Maturin CI remains explicitly unsupported unless separately approved and implemented."
+      ],
+      "commit_message": "fix(init): generate authoritative supported release workflows",
+      "depends_on": [
+        "T10-AUTH",
+        "T04-LOCK",
+        "T07",
+        "T08",
+        "T09-ROUTES"
+      ],
+      "covers_criteria": [
+        "CLI-WF-04",
+        "CLI-WF-06",
+        "REL-GH-07"
+      ]
+    },
+    {
+      "id": "T12",
+      "title": "Verify production native workflows and boundary recovery",
+      "files": {
+        "modify": [
+          "crates/callisto-cli/tests/release_real_registry_e2e_tests.rs",
+          "crates/callisto-cli/tests/durable_release_e2e_tests.rs",
+          "crates/callisto-graph/src/commands/release_simulator.rs",
+          "README.md",
+          "docs/releasing.md",
+          "docs/publishing.md",
+          "docs/projects/ROAD-TO-V1.md",
+          "docs/projects/V1-FINDINGS.md",
+          ".github/workflows/callisto-release.yml",
+          ".github/tests/verify-release-workflow-policy.sh"
+        ],
+        "test": [],
+        "create": [
+          "docs/projects/V1-VERIFICATION.md"
+        ]
+      },
+      "steps": [
+        "Run the fixture/evidence matrix in V1-IMPLEMENTATION.md with actual native packing/building and representative clean consumer installs. Retain existing local npm/Cargo/PyPI tests and distinguish argv-only, production-provider, simulator and hosted coverage.",
+        "Exercise production registry binding/readback for local Cargo/PyPI servers and the new partial Python upload fixture; record each prerequisite skip explicitly. Deterministic faults must cover every changed apply/effect boundary, with missing work converging using original inputs.",
+        "Run rtk proxy just ci, plus the relevant shell/workflow policy/contract suites not actually included by just ci. Consider live provider-contract/fixture refresh only with network authority; never recapture fixtures or upload a version as an incidental test.",
+        "Record source/branch revisions, exact commands, prerequisite versions, pass/fail/skip counts and remaining findings in V1-VERIFICATION.md. A named test or passing simulator does not establish production coverage.",
+        "Correct the receipt run_attempt comment and policy-test message to match attempt-scoped artifact names; do not add an approval gate or change the release workflow's authorization.",
+        "Reconcile shipped specs/docs and findings as each PR lands; delete completed implementation plans only after all work they cover ships, retaining owner decisions and measured evidence in the appropriate durable docs."
+      ],
+      "commit_message": "test(release): exercise native publication and recovery workflows",
+      "depends_on": [
+        "T01",
+        "T11",
+        "T02",
+        "T03",
+        "T03-PRE",
+        "T03-HISTORY",
+        "T04",
+        "T04-PNPM",
+        "T04-LOCK",
+        "T05",
+        "T10-BINS",
+        "T10-AUTH",
+        "T06",
+        "T06-HISTORY",
+        "T07",
+        "T08",
+        "T08-RETRY",
+        "T09",
+        "T09-ROUTES",
+        "T10"
+      ]
+    },
+    {
+      "id": "T12-DX",
+      "title": "Measure supported first-release onboarding",
+      "files": {
+        "modify": [
+          "README.md",
+          "docs/releasing.md",
+          "docs/publishing.md",
+          "docs/projects/ROAD-TO-V1.md",
+          "docs/projects/V1-FINDINGS.md",
+          "docs/projects/V1-VERIFICATION.md"
+        ],
+        "test": []
+      },
+      "steps": [
+        "Create isolated fresh Cargo, npm/pnpm and supported Python repos and follow documented init/add/commit/version/commit/release steps. Record prerequisites, credential/commit setup and failures, not only successful CLI command duration.",
+        "Measure against the owner's existing under-ten-minute goal using local registry targets for repeatability and a separately authorized hosted self-release/publication for real service evidence. Do not claim local tests prove hosted credential/index behavior.",
+        "Verify representative package installation, npm native addon load, Python wheel metadata/import and Cargo locked resolution. Maturin local/native support and unsupported generated CI must remain distinguishable.",
+        "Use measured failures to improve only in-scope onboarding/docs; report blocker requiring owner choice instead of hiding setup time or publishing without approval. Run documentation/link checks and relevant CLI regressions after doc/example changes.",
+        "Close the v1 evidence review only when applicable owner requirements are demonstrated, or report the exact unmet requirement. No arbitrary Go/NuGet gate, new hosted publication or support promise is authorized by this task."
+      ],
+      "commit_message": "docs(dx): record measured first-release onboarding",
+      "depends_on": [
+        "T12"
+      ]
+    }
+  ],
+  "batches": [
+    {
+      "batch_id": "B01",
+      "title": "Immediate release-PR and independent installer fixes",
+      "target_crate": "callisto-cli / GitHub action scripts",
+      "task_ids": [
+        "T01",
+        "T11"
+      ]
+    },
+    {
+      "batch_id": "B02",
+      "title": "Native dependency producers, protocol semantics and locks",
+      "target_crate": "callisto-model / callisto-manifests / callisto-graph",
+      "task_ids": [
+        "T04",
+        "T04-PNPM",
+        "T04-LOCK"
+      ]
+    },
+    {
+      "batch_id": "B03",
+      "title": "Wire context, pre-state and historical verification",
+      "target_crate": "callisto-model / callisto-manifests / callisto-graph",
+      "task_ids": [
+        "T02",
+        "T03",
+        "T03-PRE",
+        "T03-HISTORY"
+      ]
+    },
+    {
+      "batch_id": "B04",
+      "title": "Interrupted versioning join",
+      "target_crate": "callisto-graph / callisto-cli",
+      "task_ids": [
+        "T05"
+      ]
+    },
+    {
+      "batch_id": "B05",
+      "title": "Bounded early generated workflow fixes",
+      "target_crate": "callisto-manifests / callisto-graph / GitHub action scripts",
+      "task_ids": [
+        "T10-BINS",
+        "T10-AUTH"
+      ]
+    },
+    {
+      "batch_id": "B06",
+      "title": "Owner-confirmed contract checkpoint",
+      "target_crate": "docs / model and release interfaces",
+      "task_ids": [
+        "D01"
+      ]
+    },
+    {
+      "batch_id": "B07",
+      "title": "Canonical identity, history and native authority",
+      "target_crate": "callisto-model / callisto-manifests / callisto-graph",
+      "task_ids": [
+        "T06",
+        "T06-HISTORY",
+        "T07"
+      ]
+    },
+    {
+      "batch_id": "B08",
+      "title": "Shared effects, retry and registry completion",
+      "target_crate": "callisto-model / callisto-graph / callisto-cli",
+      "task_ids": [
+        "T08",
+        "T08-RETRY",
+        "T09",
+        "T09-ROUTES"
+      ]
+    },
+    {
+      "batch_id": "B09",
+      "title": "Intent-selected generated workflow integration",
+      "target_crate": "callisto-graph / generated workflow",
+      "task_ids": [
+        "T10"
+      ]
+    },
+    {
+      "batch_id": "B10",
+      "title": "Production and onboarding evidence",
+      "target_crate": "callisto-cli tests / native tools / docs",
+      "task_ids": [
+        "T12",
+        "T12-DX"
+      ]
+    }
+  ],
+  "linked_requirement": "REQ-DX-V1",
+  "plan_file_path": "docs/projects/V1-SYSTEM-HARDENING.json",
+  "reasoning": "Execution portfolio authorized for planning on 2026-09-26; baseline main 8ef9aa5a4 with the existing documentation reconciliation preserved. See docs/projects/V1-IMPLEMENTATION.md for governing-source hashes, PR lanes, concurrency/file-ownership constraints, plugin/model routing, decision checkpoints and explicit roadmap dispositions. Coverage gap: this spans five current-behavior specs and proposed future architecture; there is no single approved persisted delta spec. linked_spec/spec_file_path/spec_hash are intentionally absent rather than inventing a gated Smith handoff. covers_criteria identifies affected current contracts; testable per-PR behavior and any spec amendments must be approved and hash-bound before executing gated architectural packets. Current-contract repair packets may start independently after baseline verification and implementation authorization. D01 blocks only new identity/authority/effect/file-set policy, not existing bugs. No remote PR creation, commits, pushes, branch/worktree creation or publication is authorized by this plan alone. Existing roadmap decisions not implemented here remain explicitly open, not implicit v1 gates."
+}

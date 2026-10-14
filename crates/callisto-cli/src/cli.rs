@@ -324,6 +324,9 @@ pub struct ReleasePrVerifyArgs {
     /// Fresh versioned credential-free forge snapshot JSON, inline JSON, file path, or `-` for stdin.
     #[arg(long, value_name = "FILE|JSON|-")]
     pub snapshot: String,
+    /// Exact head SHA applied by this executor before checking an update decision.
+    #[arg(long)]
+    pub applied_head: Option<String>,
 }
 
 #[derive(Args, Clone, Debug)]

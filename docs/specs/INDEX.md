@@ -15,3 +15,5 @@ Each spec (`spec@1`) states current behavior as testable criteria, grouped by to
 How the code implements these specs: [`ARCHITECTURE.md`](../../ARCHITECTURE.md) and [`docs/architecture/`](../architecture/).
 
 When code and a spec disagree, reproduce the behavior first. Fix the spec if the intended contract changed; otherwise fix the code.
+
+Known failing contracts and unverified integrations are recorded in [V1-FINDINGS](../projects/V1-FINDINGS.md), not converted into successful exceptions. Proposed canonical-reference, version-authority and required-output behavior lives in [the scoped design](../architecture/polyglot-v1.md) and [sequencing plan](../projects/V1-SYSTEM-HARDENING.json). Amend the matching current-behavior spec in the same change that implements it; these documents do not make future behavior current.

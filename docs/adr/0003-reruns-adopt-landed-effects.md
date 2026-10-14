@@ -24,14 +24,14 @@ Every run observes each operation's provider state immediately before that opera
 - A rerun ("Re-run failed jobs" or a fresh run on the release commit) finishes a partial release whose remaining operations can now succeed; "Re-run failed jobs" does not pick up workflow fixes merged later.
 - Adoption depends on precise observation. An effect that landed differently (for example a conflicting existing tag) must fail closed, never be adopted.
 - No local record of a failed run survives it; the providers are the record.
-- Today local and remote tag checks disagree on the annotation, so tag adoption is not yet precise (docs/projects/ROAD-TO-V1.md, v1 fix plan §1).
+- Tag identity follows [ADR 9](0009-tag-identity-is-commit-and-annotation.md). Local tag-filtered selection can still discard unfinished push/forge work before execution, and Python version observation does not establish complete file-set publication; both are tracked in [the findings register](../projects/V1-FINDINGS.md).
 
 ## Enforcement
 
 - `crates/callisto-cli/tests/release_hardening_tests.rs`: `p01_rerun_after_a_failed_publish_publishes_and_issues_a_receipt`, `p02_rerun_after_a_crate_is_already_published_completes_and_issues_a_receipt`, `p14_rerun_with_a_conflicting_existing_tag_fails_closed`.
 - `crates/callisto-cli/tests/release_command_e2e_tests.rs`: `a_failed_run_writes_no_receipt_and_a_rerun_completes`.
 - `crates/callisto-cli/tests/durable_release_e2e_tests.rs`: `newer_coordinator_executes_and_reruns_an_older_release_source`; rerun scenarios in `crates/callisto-graph/src/commands/release_simulator.rs`.
-- `ReleaseExecutionStateV1` (`crates/callisto-model/src/release.rs`) has no wire shape.
+- `ReleaseExecutionStateV1` (`crates/callisto-model/src/release/execution.rs`) has no wire shape.
 
 ## Revisit when
 

@@ -137,6 +137,125 @@ else
   echo 'PASS (create, no existing PR): real binary output round-trips through the script'"'"'s jq expressions'
 fi
 
+assert_verify_transport() {
+  local label="$1" decision_json="$2" snapshot_json="$3" transport="$4"
+  local applied_head="${5:-}"
+  local -a verify_args=(--format json release-pr verify --snapshot "$snapshot_json" --cwd "$repo")
+  [[ -z "$applied_head" ]] || verify_args+=(--applied-head "$applied_head")
+  local decision_arg verify_output
+  case "$transport" in
+    inline) decision_arg="$decision_json" ;;
+    file)
+      decision_arg="$repo/decision.json"
+      jq . <<< "$decision_json" > "$decision_arg"
+      ;;
+    stdin) decision_arg=- ;;
+    *) echo "FAIL ($label): unknown transport '$transport'"; fail=1; return ;;
+  esac
+  if [[ "$transport" == stdin ]]; then
+    verify_output=$("$callisto_bin" "${verify_args[@]}" --decision - <<< "$decision_json") || {
+      echo "FAIL ($label): verify rejected unchanged decide output: $verify_output"
+      fail=1
+      return
+    }
+  else
+    verify_output=$("$callisto_bin" "${verify_args[@]}" --decision "$decision_arg") || {
+      echo "FAIL ($label): verify rejected unchanged decide output: $verify_output"
+      fail=1
+      return
+    }
+  fi
+  if [[ "$(jq -r '.ok' <<< "$verify_output")" != true ]]; then
+    echo "FAIL ($label): verify did not report success: $verify_output"
+    fail=1
+  else
+    echo "PASS ($label): decide output verifies unchanged"
+  fi
+}
+
+update_snapshot=$(jq -cn --arg repository 'orin-dx/callisto' --arg base_branch main --arg base_commit "$base_commit" \
+  --arg head_commit "$base_commit" \
+  '{schemaVersion: 2, repository: $repository, baseBranch: $base_branch, baseCommit: $base_commit,
+    openPullRequests: [{number: 42, headRepository: $repository, headBranch: "callisto/version-packages",
+    headCommit: $head_commit}]}')
+create_snapshot=$(jq -cn --arg repository 'orin-dx/callisto' --arg base_branch main --arg base_commit "$base_commit" \
+  '{schemaVersion: 2, repository: $repository, baseBranch: $base_branch, baseCommit: $base_commit, openPullRequests: []}')
+update_decision=$("$callisto_bin" --format json release-pr decide --snapshot "$update_snapshot" \
+  --repository orin-dx/callisto --base-branch main --release-branch callisto/version-packages --cwd "$repo")
+create_decision=$("$callisto_bin" --format json release-pr decide --snapshot "$create_snapshot" \
+  --repository orin-dx/callisto --base-branch main --release-branch callisto/version-packages --cwd "$repo")
+for transport in inline file stdin; do
+  assert_verify_transport "update via $transport" "$update_decision" "$update_snapshot" "$transport"
+  assert_verify_transport "create via $transport" "$create_decision" "$create_snapshot" "$transport"
+done
+
+# A workspace with no pending changesets produces the no-op decision.
+rm "$repo/.changeset/test-change.md"
+noop_decision=$("$callisto_bin" --format json release-pr decide --snapshot "$create_snapshot" \
+  --repository orin-dx/callisto --base-branch main --release-branch callisto/version-packages --cwd "$repo")
+if [[ "$(jq -r '.action.kind' <<< "$noop_decision")" != noop ]]; then
+  echo "FAIL (no-op decision): expected kind=noop, got: $noop_decision"
+  fail=1
+else
+  for transport in inline file stdin; do
+    assert_verify_transport "no-op via $transport" "$noop_decision" "$create_snapshot" "$transport"
+  done
+fi
+
+# Verify also accepts the durable decision shape without report metadata.
+unwrapped_decision=$(jq -c 'del(.command, .dryRun)' <<< "$update_decision")
+for transport in inline file stdin; do
+  assert_verify_transport "unwrapped decision via $transport" "$unwrapped_decision" "$update_snapshot" "$transport"
+done
+
+assert_verify_rejects() {
+  local label="$1" decision_json="$2" snapshot_json="$3" expected_code="$4" output status
+  local applied_head="${5:-}"
+  local -a verify_args=(--format json release-pr verify --snapshot "$snapshot_json" --cwd "$repo")
+  [[ -z "$applied_head" ]] || verify_args+=(--applied-head "$applied_head")
+  set +e
+  output=$("$callisto_bin" "${verify_args[@]}" --decision "$decision_json" 2>&1)
+  status=$?
+  set -e
+  if [[ "$status" -eq 0 ]]; then
+    echo "FAIL ($label): verify unexpectedly accepted input: $output"
+    fail=1
+  elif [[ -n "$expected_code" && "$(jq -r '.error.code // empty' <<< "$output")" != "$expected_code" ]]; then
+    echo "FAIL ($label): expected diagnostic $expected_code, got: $output"
+    fail=1
+  else
+    echo "PASS ($label): verify rejected invalid input"
+  fi
+}
+
+assert_verify_rejects 'malformed decision JSON' '{not json' "$update_snapshot" E281
+assert_verify_rejects 'unsupported decision schema' "$(jq -c '.schemaVersion = 1' <<< "$update_decision")" "$update_snapshot" E155
+assert_verify_rejects 'wrong report command' "$(jq -c '.command = "release-pr decide-old"' <<< "$update_decision")" "$update_snapshot" E281
+assert_verify_rejects 'null report command' "$(jq -c '.command = null' <<< "$update_decision")" "$update_snapshot" E281
+assert_verify_rejects 'null report metadata' "$(jq -c '.dryRun = null' <<< "$update_decision")" "$update_snapshot" E281
+assert_verify_rejects 'wrong report metadata type' "$(jq -c '.dryRun = "false"' <<< "$update_decision")" "$update_snapshot" E281
+assert_verify_rejects 'partial report metadata' "$(jq -c 'del(.dryRun)' <<< "$update_decision")" "$update_snapshot" E281
+assert_verify_rejects 'partial report command' "$(jq -c 'del(.command)' <<< "$update_decision")" "$update_snapshot" E281
+assert_verify_rejects 'unknown decision payload field' "$(jq -c '.unexpected = true' <<< "$unwrapped_decision")" "$update_snapshot" E281
+assert_verify_rejects 'invalid nested config branch' "$(jq -c '.config.releaseBranch = "bad..branch"' <<< "$unwrapped_decision")" "$update_snapshot" E142
+assert_verify_rejects 'invalid nested snapshot schema' "$(jq -c '.snapshot.schemaVersion = 1' <<< "$unwrapped_decision")" "$update_snapshot" E155
+stale_snapshot=$(jq -c '.baseCommit = "0000000000000000000000000000000000000000"' <<< "$update_snapshot")
+assert_verify_rejects 'stale snapshot' "$update_decision" "$stale_snapshot" E148
+wrong_repository_snapshot=$(jq -c '.repository = "other/callisto"' <<< "$update_snapshot")
+assert_verify_rejects 'wrong snapshot repository' "$update_decision" "$wrong_repository_snapshot" E148
+
+applied_head=cccccccccccccccccccccccccccccccccccccccc
+applied_snapshot=$(jq -c --arg head "$applied_head" '.openPullRequests[0].headCommit = $head' <<< "$update_snapshot")
+for transport in inline file stdin; do
+  assert_verify_transport "applied update via $transport" "$update_decision" "$applied_snapshot" "$transport" "$applied_head"
+done
+assert_verify_rejects 'moved head without applied transition' "$update_decision" "$applied_snapshot" E148
+assert_verify_rejects 'applied head not observed' "$update_decision" "$update_snapshot" E148 "$applied_head"
+assert_verify_rejects 'unrelated base change after update' "$update_decision" \
+  "$(jq -c '.baseCommit = "dddddddddddddddddddddddddddddddddddddddd"' <<< "$applied_snapshot")" E148 "$applied_head"
+assert_verify_rejects 'create cannot claim an applied update' "$create_decision" "$create_snapshot" E148 "$applied_head"
+assert_verify_rejects 'noop cannot claim an applied update' "$noop_decision" "$create_snapshot" E148 "$applied_head"
+
 # release-pr commit-plan: stage a known change and verify the exact jq
 # mapping create-or-update-release-pr.sh applies to build the GraphQL
 # createCommitOnBranch body, including base64 content, against real output.
