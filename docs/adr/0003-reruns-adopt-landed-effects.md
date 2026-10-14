@@ -24,7 +24,7 @@ Every run observes each operation's provider state immediately before that opera
 - A rerun ("Re-run failed jobs" or a fresh run on the release commit) finishes a partial release whose remaining operations can now succeed; "Re-run failed jobs" does not pick up workflow fixes merged later.
 - Adoption depends on precise observation. An effect that landed differently (for example a conflicting existing tag) must fail closed, never be adopted.
 - No local record of a failed run survives it; the providers are the record.
-- Tag identity follows [ADR 9](0009-tag-identity-is-commit-and-annotation.md). Local tag-filtered selection can still discard unfinished push/forge work before execution, and Python version observation does not establish complete file-set publication; both are tracked in [the findings register](../projects/V1-FINDINGS.md).
+- Tag identity follows [ADR 9](0009-tag-identity-is-commit-and-annotation.md). Python version observation does not establish complete file-set publication; this is tracked in [the findings register](../projects/V1-FINDINGS.md).
 
 ## Enforcement
 
