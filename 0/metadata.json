@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.5-nightly.202610130630.4203b3d42",
+  "checkpoint_id": "01M4W1W97QZ6FEQ29600KJQ930",
+  "session_id": "f98f161c-abe7-472b-92f1-8cfe1cfdf74a",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-14T01:54:23.6233Z",
+  "branch": "fix/release-pr-refresh",
+  "checkpoints_count": 1,
+  "save_step_count": 6,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "3a20c790df3c",
+  "checkpoint_transcript_start": 2871,
+  "transcript_lines_at_start": 2871,
+  "compact_transcript_start": 284,
+  "token_usage": {
+    "input_tokens": 60,
+    "cache_creation_tokens": 50297,
+    "cache_read_tokens": 12408416,
+    "output_tokens": 20999,
+    "api_call_count": 30
+  },
+  "session_metrics": {
+    "turn_count": 33
+  }
+}
