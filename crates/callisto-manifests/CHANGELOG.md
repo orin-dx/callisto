@@ -1,5 +1,9 @@
 # callisto-manifests
 
+## 0.10.3
+
+- Released together with the `workspace` fixed group.
+
 ## 0.10.2
 
 - Released together with the `workspace` fixed group.

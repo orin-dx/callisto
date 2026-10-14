@@ -1,5 +1,11 @@
 # callisto-cli
 
+## 0.10.3
+
+- A release rerun adopts a local tag whose message has several paragraphs or a signature, instead of failing while reading it.
+- A rerun after a failed tag push now completes the release. A tag that exists on the release commit no longer hides unfinished work: the push, GitHub release and any other missing steps are performed and the receipt is written.
+- The generated build-matrix release workflow builds and places napi addons only for packages in the release. An unrelated or misconfigured napi addon no longer adds builds or fails the plan job of a release that does not include it.
+
 ## 0.10.2
 
 - Releases that ship artifacts no longer fail with E140: the GitHub CLI that checks attestations and publishes the release keeps its own token instead of running unauthenticated.
