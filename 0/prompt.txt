@@ -1,0 +1,1 @@
+Can we make sure we include the codex and entire config in the repo in a PR? Entire is not seeing the .codex/hooks.json file
