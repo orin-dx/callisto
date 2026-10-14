@@ -1,0 +1,68 @@
+{
+  "cli_version": "0.11.5-nightly.202610130630.4203b3d42",
+  "checkpoint_id": "01M4WKWFGC6JPZAXX6TH4F9YGD",
+  "session_id": "f98f161c-abe7-472b-92f1-8cfe1cfdf74a",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-14T07:09:14.896809Z",
+  "branch": "fix/gh-keeps-token",
+  "checkpoints_count": 1,
+  "save_step_count": 7,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "a333d4268382",
+  "checkpoint_transcript_start": 5190,
+  "transcript_lines_at_start": 5190,
+  "compact_transcript_start": 506,
+  "token_usage": {
+    "input_tokens": 68,
+    "cache_creation_tokens": 35705,
+    "cache_read_tokens": 22797810,
+    "output_tokens": 20096,
+    "api_call_count": 33
+  },
+  "session_metrics": {
+    "turn_count": 53
+  },
+  "summary": {
+    "intent": "Find out whether the 0.10.1 release succeeded or failed, and if it failed, diagnose the cause and fix it.",
+    "outcome": "The Release run failed at attestation verification and nothing was published (no 0.10.1 tags, crates.io still at 0.10.0). A fix was committed in a worktree: gh keeps its token, and the harness now enforces a token. A second commit fixes a flaky broken-pipe test, and the full `just ci` was rerun. The PR, the merge, and the recovery dispatch are still pending.",
+    "learnings": {
+      "repo": [
+        "The CLI runner scrubs release credentials from every child process except those a given program needs. Programs not on the allowlist, such as gh, lose GH_TOKEN, so `gh attestation verify` fails and Callisto reports it as E140.",
+        "The per-program credential scrubbing came from commit 660bae688 (the CLI layer of #177). The 0.10.0 tag predates it.",
+        "The release e2e harness used a fake gh that never required a token, so tests could not catch a missing GH_TOKEN. The harness now supplies a token and the fake gh refuses to run without one. With the old runner, 8 of 36 release e2e tests fail.",
+        "`just ci` runs tests under nextest and then re-runs them with plain `cargo test` in the coverage step. A test can pass under nextest and fail under cargo test, for example a broken-pipe test in output.rs. A nonzero exit (101) can therefore come from a later step even when all 1,896 tests pass.",
+        "Recovery for a failed release whose version commit is already on main is a `workflow_dispatch` of the release workflow with the explicit source SHA (6116efbd4). Merging the fix PR alone will not publish.",
+        "Changes need a changeset file in .changeset/."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/runner.rs",
+          "finding": "Credential scrubbing lives here. The fix allows GH_TOKEN and GITHUB_TOKEN for gh, and a program given by path (such as /usr/bin/gh) is treated the same as its bare name. Exact line numbers were not given in the transcript."
+        },
+        {
+          "path": "crates/callisto-cli/src/output.rs",
+          "finding": "A broken-pipe test was flaky under plain `cargo test`, and a fix was committed. Exact lines were not given in the transcript."
+        }
+      ],
+      "workflow": [
+        "Verify a fix by reverting to the old code and confirming the new guard fails, then restore the fix. This showed the harness change catches the original bug.",
+        "Check `exit=` codes and the CI log rather than assuming a clean test count means a pass, because later steps can fail.",
+        "Rerun a suspect failing test alone several times to separate flakiness from regressions before blaming a change.",
+        "Do the fix in a worktree. Hold off on actions that publish, such as dispatching a release to crates.io, until the user gives an explicit go-ahead."
+      ]
+    },
+    "friction": [
+      "The first Bash calls had to be repeated from the worktree and the worktree state checked before the release state could be read. This needed an ExitWorktree and a retry.",
+      "The previous testing missed the regression because every test used a fake gh that never needed a token.",
+      "`just ci` failed on a flaky broken-pipe test in the coverage step, which was unrelated to the fix and forced an extra commit and a CI rerun.",
+      "The release failed after merge, so 0.10.1 is not yet published even though main already carries the 0.10.1 versions."
+    ],
+    "open_items": [
+      "Wait for the rerun of `just ci` to finish, then open the PR for the user to merge.",
+      "After the merge, dispatch the release workflow manually with source SHA 6116efbd4. This publishes to crates.io, so it needs the user's explicit approval first.",
+      "Confirm after the dispatch that the 0.10.1 tags and crates appear on all four crates."
+    ]
+  }
+}
