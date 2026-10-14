@@ -1,5 +1,9 @@
 # callisto-graph
 
+## 0.10.2
+
+- Released together with the `workspace` fixed group.
+
 ## 0.10.1
 
 - Released together with the `workspace` fixed group.
