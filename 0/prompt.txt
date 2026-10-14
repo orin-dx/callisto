@@ -1,0 +1,1 @@
+We want to focus on what we do better than the alternatives otherwise why should folks not just stay with changesets, knopw, nx release, or release please?
