@@ -290,9 +290,11 @@ pub(crate) fn releases_tagged_at<R: callisto_model::CommandRunner, D: Dependency
         let Some(version) = versions.get(&package.id) else {
             continue;
         };
-        let Some(tag) = tag_of_version(tags, &package.id, version) else {
+        // Only the tag this run's tag operation would create: one made under an older template is another release's.
+        let tag = tags.template(&package.id).render(version).to_string();
+        if !tags.contains_tag(&tag) {
             continue;
-        };
+        }
         if git.resolve_commit(&tag)?.as_ref() != Some(source) {
             continue;
         }

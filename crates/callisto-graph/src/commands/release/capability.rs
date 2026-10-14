@@ -288,18 +288,21 @@ fn validate_intent<'a, L: ProjectLocator, R: CommandRunner>(
     })
 }
 
-/// The packages with any operation of `prepared` that is not observed exactly satisfied.
+/// The packages in `among` with any operation of `prepared` that is not observed exactly satisfied.
 ///
-/// An observation that fails counts as unsatisfied, so the run itself reports it.
+/// Other packages' operations are not observed. An observation that fails counts as unsatisfied, so the run
+/// itself reports it.
 pub(crate) fn unsatisfied_packages(
     root: &Path,
     runner: &dyn CommandRunner,
     prepared: &super::derive::PreparedDerivation,
+    among: &std::collections::BTreeSet<callisto_model::ReleasePackageId>,
 ) -> std::collections::BTreeSet<callisto_model::ReleasePackageId> {
     let context = ProviderContext::new(root, runner, prepared.git_remote.as_ref());
     prepared
         .operations
         .iter()
+        .filter(|(id, _)| among.contains(&id.package))
         .filter(|(id, operation)| {
             let observed = checked_provider_for(operation).and_then(|provider| {
                 provider.observe(
