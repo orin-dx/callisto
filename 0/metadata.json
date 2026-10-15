@@ -1,0 +1,118 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M4YVEGF9WM8TRT2HT5V3MXEV",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-15T03:59:52.394771Z",
+  "branch": "fix/python-declaration-locators",
+  "checkpoints_count": 1,
+  "save_step_count": 17,
+  "files_touched": [
+    ".changeset/noble-foxes-climb.md",
+    "crates/callisto-cli/tests/python_dependency_tables_tests.rs",
+    "crates/callisto-graph/tests/cargo_declaration_edges_test.rs",
+    "crates/callisto-manifests/src/cargo.rs",
+    "crates/callisto-manifests/src/python.rs",
+    "crates/callisto-manifests/src/python/tests.rs",
+    "crates/callisto-model/src/dependency.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "675f12ca0684",
+  "checkpoint_transcript_start": 7978,
+  "transcript_lines_at_start": 7978,
+  "compact_transcript_start": 671,
+  "token_usage": {
+    "input_tokens": 48,
+    "cache_creation_tokens": 63142,
+    "cache_read_tokens": 7010742,
+    "output_tokens": 9292,
+    "api_call_count": 23,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 37
+  },
+  "summary": {
+    "intent": "Continue a multi-lane effort on the Callisto repo: finalize the Python per-declaration dependency locator lane, stacked on PR #223, then run the full CI gate, commit, and open a PR.",
+    "outcome": "Python-lane branch was set to #223's tip, pending edits were applied (non_exhaustive DepContainer, marker assertion, shorter docs, changeset rewrite), a compile error was fixed, and the full gate passed (exit=0, 92.67% coverage). The Python-lane files were committed and pushed. The PR open and gh stack link steps had not yet happened.",
+    "learnings": {
+      "repo": [
+        "Stacked PRs: branch from #223's branch (fix/cargo-declaration-edges) and open the new PR with that as base, then link with `gh stack link`.",
+        "`just ci` must pass as the full gate before every PR; the Python lane gate passed at 92.67% line coverage.",
+        "Breaking API changes (DepLocator/DepContainer, DepEdge, RewriteKey, update_dependency_spec) are recorded in a 'Breaking:' changeset with `minor` because `just check-api` (cargo semver-checks) is local-only and not run in CI.",
+        "DepLocator is #[non_exhaustive] with constructors DepLocator::cargo(...) and DepLocator::python(...); DepContainer is the Python container enum (ProjectDependencies, Extra, PoetryDependencies).",
+        "Known low-severity Python lane issues: Poetry dotted-table version lines lose a trailing comment, and diagnostics duplicate per declaration."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/dependency.rs",
+          "finding": "DepContainer needed #[non_exhaustive]; DepLocator docs were shortened to one line each."
+        },
+        {
+          "path": "crates/callisto-manifests/src/python.rs",
+          "finding": "A compile error in the first gate run (exit=101) was fixed here before the gate passed."
+        }
+      ],
+      "workflow": [
+        "The background-task completion notice only reflects the wrapper script's exit, not the gate's result; read the log's own `exit=` line.",
+        "The sandbox rejects heredocs and compound git commands, so write script files (Write tool) and run them by absolute path.",
+        "When switching branches is blocked by uncommitted changes, repoint the branch at the target tip while keeping the working tree.",
+        "Stage only the lane's files and leave stray untracked tests out of the commit."
+      ]
+    },
+    "friction": [
+      "`git switch -c` onto #223's branch aborted because uncommitted lane changes conflicted with it.",
+      "The first edit script attempt did not write its file and had to be redone via the Write tool.",
+      "The first full gate run failed with a compile error (exit=101) even though the completion notice said exit code 0.",
+      "Sandbox restrictions on heredocs and compound git commands require workarounds."
+    ],
+    "open_items": [
+      "Open the Python-lane PR with base fix/cargo-declaration-edges and run `gh stack link`.",
+      "Post the real-tool attestation note on #216 (attestation job passed on main).",
+      "Wire the Timeout cause and add Unauthorized, RateLimited and Unreachable provider indeterminate causes.",
+      "Clean up worktrees after merges.",
+      "Waiting on user: D01 historical owner join and wire policy, W3 Python hash-absence design, Python dev groups policy, W0 branch deletion confirmation, W11 hosted verification credentials, and merges of #221/#223/#225/#226/#227."
+    ]
+  }
+}
