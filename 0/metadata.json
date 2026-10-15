@@ -1,0 +1,68 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M4YZZA3KBZCSZNS9EFZVHYBG",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-15T05:18:58.835344Z",
+  "branch": "fix/python-declaration-locators",
+  "checkpoints_count": 2,
+  "save_step_count": 17,
+  "files_touched": [
+    ".changeset/noble-foxes-climb.md",
+    "crates/callisto-manifests/src/cargo.rs",
+    "crates/callisto-manifests/src/cargo/tests.rs",
+    "crates/callisto-manifests/src/python.rs",
+    "crates/callisto-manifests/src/python/tests.rs",
+    "crates/callisto-model/src/dependency.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "439b722aac95",
+  "checkpoint_transcript_start": 8281,
+  "transcript_lines_at_start": 8281,
+  "compact_transcript_start": 698,
+  "token_usage": {
+    "input_tokens": 50,
+    "cache_creation_tokens": 32568,
+    "cache_read_tokens": 2567386,
+    "output_tokens": 12549,
+    "api_call_count": 25
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 39
+  }
+}
