@@ -1,0 +1,110 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M4YSZ6JT94GB686FEM60C4N8",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-15T03:34:04.938902Z",
+  "branch": "worktree-docs-prune-2",
+  "checkpoints_count": 3,
+  "save_step_count": 12,
+  "files_touched": [
+    "docs/projects/ROAD-TO-V1.md",
+    "docs/projects/V1-IMPLEMENTATION.md",
+    "docs/projects/V1-SYSTEM-HARDENING.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "2e1c8b4ee707",
+  "checkpoint_transcript_start": 7109,
+  "transcript_lines_at_start": 7109,
+  "compact_transcript_start": 596,
+  "token_usage": {
+    "input_tokens": 44,
+    "cache_creation_tokens": 30438,
+    "cache_read_tokens": 18689035,
+    "output_tokens": 21784,
+    "api_call_count": 21,
+    "subagent_tokens": {
+      "input_tokens": 50,
+      "cache_creation_tokens": 196114,
+      "cache_read_tokens": 1202849,
+      "output_tokens": 406,
+      "api_call_count": 25
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 31
+  },
+  "summary": {
+    "intent": "Finish the remaining Wave 1 work for the callisto release tooling, then launch a second parallel workflow (Wave 2) covering the status resolver fix, the Python per-declaration locator, false-absent provider reads, and a docs prune, all of which need no decision from the user.",
+    "outcome": "Wave 1 PRs #222 and #224 merged and #223 is open. The Wave 2 workflow with three implementation lanes and independent reviews was launched on a base of main plus #223. The docs prune (dropping shipped T08-RETRY and T10, rewriting T08) was done in its own worktree and passed `just ci`, but it is not yet committed or opened as a PR.",
+    "learnings": {
+      "repo": [
+        "Wave 1 PRs (#222 E305 pre-baseline conflict, #223 per-declaration Cargo edges as a breaking `minor`, #224 status/version resolver divergence tests) are independent on main and each passes `just ci` alone.",
+        "The workspace spec says a non-primary manifest's own name must resolve and a qualified name with no such manifest must fail. `status` violates this and `version` is correct, so aligning `status` is a spec-backed bug fix rather than a D01 policy choice.",
+        "`PackageId::resolve_unique` is public API in a published crate, so it should be deprecated rather than removed.",
+        "The Python dependency handling follows only the first declaration of a requirement declared twice (extras or markers). It needs the same per-declaration `DepLocator` design as Cargo (#223).",
+        "False 'remote absent' reads: a local tag lookup treats any non-zero exit (such as 128) as Absent, and the npm provider matches the substring `e404` in free text. A lookup failure must never mint an absent proof, since that triggers an effect attempt.",
+        "W4 follow-ups: the `Timeout` cause is never produced in production, and `Unauthorized`, `RateLimited` and `Unreachable` causes are missing.",
+        "Planning docs (ROAD-TO-V1.md, V1-SYSTEM-HARDENING.json, V1-IMPLEMENTATION.md) still listed shipped SYS-RETRY/SYS-BARRIER/SYS-NAPI work (T08-RETRY, T10). T08 stays because its single-owner effect dedupe is not done."
+      ],
+      "code": [],
+      "workflow": [
+        "Stack lanes that depend on unmerged PRs by building the shared base tree as main plus the open PR branch (here #223 for the Python lane).",
+        "Keep the base tree untouched while reviewers diff against it, and do side work such as the docs prune in a separate worktree.",
+        "Agents in workflows can't commit and have had connection drops, so they leave work uncommitted, are told to stay in scope and stop around 35 minutes with a report, and the user finishes and verifies commits, changesets, gates and PRs.",
+        "Check a gate's own exit line (`exit=0`) rather than inferring success from the notification.",
+        "Edit markdown directly and use small scripts for structured JSON edits such as the plan file."
+      ]
+    },
+    "friction": [
+      "Earlier workflow failures and connection drops forced a conservative approach: agents can't commit and must be time-boxed.",
+      "The agent first wrongly held the status resolver fix for D01 and corrected itself later.",
+      "About ten stale agent and session worktrees (`wf_*`, `r1-walk-build`, `wave1-stack`) sit under `.claude/worktrees`. They can't be removed yet because some hold the only copy of finished work.",
+      "Several runs of PR-state checks were needed to establish which Wave 1 PRs had merged."
+    ],
+    "open_items": [
+      "Wave 2 lane results (status resolver, Python locator, false-absent reads) are awaiting implementation and review checks before anything is committed.",
+      "Commit and open a PR for the docs prune, which passed `just ci` in the docs-prune-2 worktree.",
+      "Merge #223 and the release PR #221, which will pick up #222 and #223 (#223 is a breaking `minor`).",
+      "Clean up stale worktrees and merged local branches after the PRs land.",
+      "Blocked on the user: D01 (historical owner join and per-document wire policy, then W8 SYS-MATURIN and the rest of W9), the W3 hash-absence and retained-bytes design (then W4 closed types), the Python dev groups policy, and per-branch deletion confirmation including the W0 branch and six unclear ones.",
+      "W11 hosted verification needs credentials and an approved run.",
+      "The W4 follow-ups (wire the `Timeout` cause, add `Unauthorized`/`RateLimited`/`Unreachable`) are not yet started."
+    ]
+  }
+}

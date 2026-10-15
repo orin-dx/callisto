@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M4YSZ6JT94GB686FEM60C4N8",
+  "strategy": "manual-commit",
+  "branch": "worktree-docs-prune-2",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "docs/projects/ROAD-TO-V1.md",
+    "docs/projects/V1-IMPLEMENTATION.md",
+    "docs/projects/V1-SYSTEM-HARDENING.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 44,
+    "cache_creation_tokens": 30438,
+    "cache_read_tokens": 18689035,
+    "output_tokens": 21784,
+    "api_call_count": 21,
+    "subagent_tokens": {
+      "input_tokens": 50,
+      "cache_creation_tokens": 196114,
+      "cache_read_tokens": 1202849,
+      "output_tokens": 406,
+      "api_call_count": 25
+    }
+  }
+}
