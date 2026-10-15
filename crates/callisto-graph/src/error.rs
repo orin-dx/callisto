@@ -623,7 +623,9 @@ pub enum GraphError {
         source: callisto_model::ProviderObservationError,
     },
 
-    #[error("cannot dispatch release operation `{operation:?}` because its provider observation is indeterminate")]
+    #[error(
+        "cannot dispatch release operation `{operation:?}` because its provider observation is indeterminate: {cause}"
+    )]
     #[diagnostic(
         code(E176),
         help(
@@ -632,6 +634,7 @@ pub enum GraphError {
     )]
     ReleaseProviderIndeterminate {
         operation: Box<callisto_model::ReleaseOperationId>,
+        cause: callisto_model::ProviderIndeterminateCause,
     },
 
     #[error("[release] declares no forge-repository")]

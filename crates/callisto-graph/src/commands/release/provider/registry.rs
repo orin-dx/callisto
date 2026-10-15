@@ -613,7 +613,7 @@ fn classify_pypi_simple_body(body: &str, version: &Version) -> Attempt<ProviderO
 /// as any other body PEP 691 JSON parsing cannot make sense of.
 ///
 /// Any other status shares [`HttpResponse::is_transient`] with GitHub's `gh api` reads, so it retries on
-/// `Retry-After` instead of settling immediately as `MalformedResponse`.
+/// `Retry-After` instead of settling immediately, and either way reports the status as `ProviderStatus`.
 fn classify_pypi_simple(output: &CommandOutput, version: &Version) -> Attempt<ProviderObservationV1> {
     let response = match parse_http_response(&output.stdout) {
         Ok(response) => response,
@@ -623,11 +623,12 @@ fn classify_pypi_simple(output: &CommandOutput, version: &Version) -> Attempt<Pr
     match response.status {
         200 => classify_pypi_simple_body(&response.body, version),
         404 => settled(ProviderObservationV1::Absent),
-        _ if response.is_transient() => {
-            transient(ProviderIndeterminateCause::MalformedResponse, response.retry_after())
-        }
-        _ => settled(ProviderObservationV1::Indeterminate {
-            cause: ProviderIndeterminateCause::MalformedResponse,
+        status if response.is_transient() => transient(
+            ProviderIndeterminateCause::ProviderStatus { status },
+            response.retry_after(),
+        ),
+        status => settled(ProviderObservationV1::Indeterminate {
+            cause: ProviderIndeterminateCause::ProviderStatus { status },
         }),
     }
 }

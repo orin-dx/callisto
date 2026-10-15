@@ -550,13 +550,13 @@ fn a_curl_transport_failure_with_no_parseable_response_is_transient_command_fail
 }
 
 #[test]
-fn an_unexpected_status_is_transient_malformed_response() {
+fn an_unexpected_status_is_transient_and_names_the_status() {
     let output = curl_output("HTTP/1.1 500 Internal Server Error\r\ncontent-type: text/plain\r\n\r\noops");
     assert_eq!(
         classify_pypi_simple(&output, &pep440("1.0.0")),
         Attempt::Transient {
             value: ProviderObservationV1::Indeterminate {
-                cause: ProviderIndeterminateCause::MalformedResponse
+                cause: ProviderIndeterminateCause::ProviderStatus { status: 500 }
             },
             retry_after: None
         }
@@ -571,7 +571,7 @@ fn a_rate_limited_pypi_response_retries_on_its_own_retry_after() {
         classify_pypi_simple(&output, &pep440("1.0.0")),
         Attempt::Transient {
             value: ProviderObservationV1::Indeterminate {
-                cause: ProviderIndeterminateCause::MalformedResponse
+                cause: ProviderIndeterminateCause::ProviderStatus { status: 429 }
             },
             retry_after: Some(std::time::Duration::from_secs(30))
         }
@@ -585,7 +585,7 @@ fn a_permanent_401_settles_instead_of_retrying() {
     assert_eq!(
         classify_pypi_simple(&output, &pep440("1.0.0")),
         Attempt::Settled(ProviderObservationV1::Indeterminate {
-            cause: ProviderIndeterminateCause::MalformedResponse
+            cause: ProviderIndeterminateCause::ProviderStatus { status: 401 }
         })
     );
 }

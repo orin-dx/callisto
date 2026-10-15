@@ -328,8 +328,9 @@ pub(crate) fn preflight_from_observation(
                 .expect("an exact observation mints its evidence"),
         }),
         ProviderObservationV1::Conflict { .. } => Err(GraphError::ReleaseRemoteConflict { conflict }),
-        ProviderObservationV1::Indeterminate { .. } => Err(GraphError::ReleaseProviderIndeterminate {
+        ProviderObservationV1::Indeterminate { cause } => Err(GraphError::ReleaseProviderIndeterminate {
             operation: Box::new(id.clone()),
+            cause: *cause,
         }),
     }
 }
@@ -345,8 +346,9 @@ pub(crate) fn confirmed_evidence(
         ProviderObservationV1::Exact { .. } => Ok(observation
             .exact_evidence()
             .expect("an exact observation mints its evidence")),
-        ProviderObservationV1::Indeterminate { .. } => Err(GraphError::ReleaseProviderIndeterminate {
+        ProviderObservationV1::Indeterminate { cause } => Err(GraphError::ReleaseProviderIndeterminate {
             operation: Box::new(id.clone()),
+            cause: *cause,
         }),
         ProviderObservationV1::Absent | ProviderObservationV1::Conflict { .. } => {
             Err(GraphError::ReleaseRemoteConflict { conflict })
@@ -383,6 +385,45 @@ mod tests {
                 "a publishing provider that cannot observe would act without proof of absence"
             );
             assert!(capabilities.can_publish);
+        }
+    }
+
+    /// The operator has to know why an observation was indeterminate: a refused credential, a rate limit and an
+    /// unreadable answer need different fixes. The cause is a closed, credential-free value, so it is safe to show.
+    #[test]
+    fn an_indeterminate_observation_says_why_in_both_the_preflight_and_the_confirmation() {
+        let id = callisto_model::ReleaseOperationId::tag(
+            callisto_model::ReleasePackageId::new(callisto_model::Ecosystem::Cargo, "a").unwrap(),
+            callisto_model::Version::semver(1, 0, 0),
+        );
+        for (cause, wanted) in [
+            (
+                callisto_model::ProviderIndeterminateCause::ProviderStatus { status: 403 },
+                "HTTP 403",
+            ),
+            (
+                callisto_model::ProviderIndeterminateCause::CommandFailed,
+                "command failed",
+            ),
+            (
+                callisto_model::ProviderIndeterminateCause::MalformedResponse,
+                "could not be understood",
+            ),
+            (callisto_model::ProviderIndeterminateCause::Timeout, "timed out"),
+        ] {
+            let observation = ProviderObservationV1::Indeterminate { cause };
+            let preflight = match preflight_from_observation(observation.clone(), &id, RemoteConflict::TagTargetDiffers)
+            {
+                Err(error) => error,
+                Ok(_) => panic!("an indeterminate observation must not dispatch"),
+            };
+            let confirmed = confirmed_evidence(observation, &id, RemoteConflict::TagTargetDiffers).unwrap_err();
+            for error in [preflight, confirmed] {
+                assert!(
+                    matches!(&error, GraphError::ReleaseProviderIndeterminate { cause: found, .. } if *found == cause)
+                );
+                assert!(error.to_string().contains(wanted), "{cause:?}: {error}");
+            }
         }
     }
 
