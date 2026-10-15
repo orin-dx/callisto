@@ -1,0 +1,132 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M4YKM4W6TES2BS08QWRNQP2B",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-15T01:43:14.166204Z",
+  "branch": "worktree-wf_2ced9da6-4b8-3",
+  "checkpoints_count": 5,
+  "save_step_count": 6,
+  "files_touched": [
+    ".changeset/tough-badgers-chase.md",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/src/lib.rs",
+    "crates/callisto-graph/tests/pre_baseline_conflict_tests.rs",
+    "docs/errors.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "eef8340ab69c",
+  "checkpoint_transcript_start": 6201,
+  "transcript_lines_at_start": 6201,
+  "compact_transcript_start": 505,
+  "token_usage": {
+    "input_tokens": 68,
+    "cache_creation_tokens": 832370,
+    "cache_read_tokens": 24732541,
+    "output_tokens": 25846,
+    "api_call_count": 32,
+    "subagent_tokens": {
+      "input_tokens": 264,
+      "cache_creation_tokens": 429140,
+      "cache_read_tokens": 14332387,
+      "output_tokens": 52667,
+      "api_call_count": 134
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 23
+  },
+  "summary": {
+    "intent": "Land the remaining Callisto work by opening and stacking the PR C stack (#217/#218/#220), then launch and complete Wave 1 (W10 declaration tracking, W9a resolver-divergence repro, W9b pre-state alias conflict error), with the orchestrator doing the commits, gating and PRs.",
+    "outcome": "Stack #217/#218/#220 was opened and linked, and #213/#214/#216 were confirmed merged. Wave 1 ran with only W9a succeeding. The W9b agent's partial work was taken over, verified, gated (`just ci` exit=0) and committed in two commits, while W10's partial work was read but not yet gated, reviewed or committed.",
+    "learnings": {
+      "repo": [
+        "`just ci` is the full gate and runs serially, one branch tip at a time. Each stacked PR must pass it on its own tip.",
+        "Agents can't run git or `just ci`, so they leave changes uncommitted and the orchestrator branches from `main`, commits, gates, opens PRs and links them with `gh stack`.",
+        "A failing-test-first commit would fail CI at that commit, so a lane's tests go in the same commit as the fix unless they pass without it (characterization tests).",
+        "Commit message rules: explain the why, no session links, no history words, one line per paragraph. Changesets are created per PR from the agents' suggested sentences.",
+        "Public API changes are checked with `just check-api`. W10 adds a `locator` field on `DependencyEntry` and `DepEdge`, and a new parameter on the `Manifest` trait's `update_dependency_spec`.",
+        "New error codes are allocated as the next free code in `docs/errors.md`. W9b's pre-state alias conflict became E305.",
+        "The attestation CI job ran green on `main` with `contents: read`, so `attestations: read` is not needed.",
+        "The redactor credential lists are separate on purpose. `CALLISTO_PUBLISH_NPM_CONFIG` is a file path, not a secret.",
+        "`status` and `version` resolve selectors differently, and this causes six real divergences. `status` uses `PackageId::resolve_unique` (status.rs:46 and :200) and `version` uses `IdentityIndex::resolve_id` via `resolve_target_package` (aggregate.rs:317).",
+        "`status --check` exits 1 for a name in no package, while `version` only warns. This is by design per `docs/specs/cli.json`, not a resolver bug."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/status.rs",
+          "line": 46,
+          "end_line": 200,
+          "finding": "`status` resolves changeset entries with `PackageId::resolve_unique` (lines 46 and 200). That wildcard-matches qualified selectors for ecosystems lacking the name and rejects secondary native names."
+        },
+        {
+          "path": "crates/callisto-cli/src/aggregate.rs",
+          "line": 317,
+          "finding": "`resolve_target_package` calls `IdentityIndex::resolve_id`, an exact lookup on (ecosystem, native name). It accepts secondary native names and ignores qualified selectors for ecosystems lacking the name."
+        },
+        {
+          "path": "crates/callisto-cli/src/aggregate.rs",
+          "line": 168,
+          "end_line": 172,
+          "finding": "Code comments flag the `matches()` wildcard as a known hazard behind the status/version divergence."
+        },
+        {
+          "path": "crates/callisto-graph/src/lib.rs",
+          "line": 86,
+          "finding": "`Workspace` exposes `ws.identity: IdentityIndex`, so `status` could use the version resolver with a small change (not made)."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "The W10 and W9b implement agents died on ECONNRESET after about 50 minutes, retried once, and failed again, so the review stage never ran.",
+      "The agents lack git and `just ci`, so the orchestrator has to do all branching, gating and committing by hand.",
+      "The workflow result was truncated, so the full detail lives in the output file and journal.",
+      "Comparing agent worktrees against the base needed a custom diff script because git couldn't be used inside them."
+    ],
+    "open_items": [
+      "W10: run the full gate, find downstream code that assumed one edge per key, run `just check-api`, get an independent review, fix findings, then commit (W10a, then W10b).",
+      "Open the PR for W9b (committed and pushed, PR not yet opened) and stack it with the W9a ignored-test PR.",
+      "Fix the six `status`/`version` selector divergences (W9a only documents them with `#[ignore]` tests). The smallest candidate is making `status` use `ws.identity` and `resolve_id`.",
+      "Decisions for the user: D01 historical owner join (unblocks W8 and W9c/d), D01 wire policy, W3 Python partial uploads (hash-absence rule and retry design), and Python dev-group cascade.",
+      "Housekeeping: branch deletion (safe branches and six unclear ones), Dependabot #215, and merging the #217/#218/#220 stack bottom to top (the upper two need `main` merged in after #217 lands).",
+      "Add a note on #216 that the attestation job passed with `contents: read`.",
+      "Draft decision options for D01's owner join."
+    ]
+  }
+}

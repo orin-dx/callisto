@@ -1,0 +1,17 @@
+{
+  "tool_use_id": "ae4b4b379e1391304",
+  "agent_id": "ae4b4b379e1391304",
+  "subagent_type": "workflow-subagent",
+  "files": [
+    "crates/callisto-cli/tests/status_version_selector_tests.rs"
+  ],
+  "token_usage": {
+    "input_tokens": 58,
+    "cache_creation_tokens": 125695,
+    "cache_read_tokens": 2608322,
+    "output_tokens": 17010,
+    "api_call_count": 29
+  },
+  "started_at": "2026-10-14T17:55:44.058692-07:00",
+  "completed_at": "2026-10-14T17:55:44.059351-07:00"
+}
