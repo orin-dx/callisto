@@ -415,6 +415,51 @@ fn reports_version(stdout: &str, version: &Version) -> bool {
     })
 }
 
+/// The code npm gives a registry 404 for a package or a version.
+const NPM_NOT_FOUND_CODE: &str = "E404";
+
+/// Only npm's own `E404` code proves absence, never text around it; any other failure is a retried `CommandFailed`.
+fn classify_npm_view(output: &CommandOutput, version: &Version) -> Attempt<ProviderObservationV1> {
+    if output.success() {
+        return if output.stdout_trimmed().is_empty() {
+            transient(ProviderIndeterminateCause::MalformedResponse, None)
+        } else {
+            settled(ProviderObservationV1::Exact {
+                evidence: ProviderEvidenceV1::RegistryVersion {
+                    version: version.clone(),
+                    checksum: None,
+                    yanked: None,
+                },
+            })
+        };
+    }
+    let code = if output.stdout_trimmed().is_empty() {
+        npm_stderr_code(&output.stderr)
+    } else {
+        npm_error_code(&output.stdout)
+    };
+    if code.as_deref() == Some(NPM_NOT_FOUND_CODE) {
+        return settled(ProviderObservationV1::Absent);
+    }
+    transient(ProviderIndeterminateCause::CommandFailed, None)
+}
+
+/// The `error.code` of the JSON error body `npm --json` prints to stdout on failure.
+fn npm_error_code(stdout: &str) -> Option<String> {
+    let body: serde_json::Value = serde_json::from_str(stdout.trim()).ok()?;
+    body.get("error")?.get("code")?.as_str().map(str::to_owned)
+}
+
+/// The code on npm's `npm ERR! code X` or `npm error code X` stderr line; npm 8 prints no JSON body.
+fn npm_stderr_code(stderr: &str) -> Option<String> {
+    stderr.lines().find_map(|line| {
+        let rest = line
+            .strip_prefix("npm ERR! ")
+            .or_else(|| line.strip_prefix("npm error "))?;
+        rest.strip_prefix("code ").map(|code| code.trim().to_owned())
+    })
+}
+
 struct NpmRegistry;
 
 impl RegistryEcosystem for NpmRegistry {
@@ -448,30 +493,7 @@ impl RegistryEcosystem for NpmRegistry {
             Ok(output) => output,
             Err(_unavailable) => return Ok(transient(ProviderIndeterminateCause::CommandFailed, None)),
         };
-        if output.success() {
-            return Ok(if output.stdout_trimmed().is_empty() {
-                settled(ProviderObservationV1::Absent)
-            } else {
-                // `npm view` reports no package checksum, so the evidence says
-                // so rather than inventing one.
-                settled(ProviderObservationV1::Exact {
-                    evidence: ProviderEvidenceV1::RegistryVersion {
-                        version: operation.version.clone(),
-                        checksum: None,
-                        yanked: None,
-                    },
-                })
-            });
-        }
-        let details = format!("{}\n{}", output.stdout, output.stderr).to_ascii_lowercase();
-        if details.contains("e404")
-            || details.contains("etarget")
-            || details.contains("no matching version")
-            || details.contains("is not in this registry")
-        {
-            return Ok(settled(ProviderObservationV1::Absent));
-        }
-        Ok(transient(ProviderIndeterminateCause::CommandFailed, None))
+        Ok(classify_npm_view(&output, &operation.version))
     }
 
     fn publish(
