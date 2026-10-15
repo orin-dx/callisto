@@ -61,6 +61,7 @@ fn apply_version_plan_opens_each_distinct_manifest_path_exactly_once() {
         }],
         rewrites: vec![SpecRewrite {
             key: RewriteKey {
+                locator: Default::default(),
                 target: DepWriteTarget::Manifest(rewrite_manifest.clone()),
                 name: "helper".to_string(),
                 kind: Some(DepKind::Runtime),
@@ -117,6 +118,7 @@ fn apply_version_plan_batches_open_persist_and_dedupes_staged_for_shared_path() 
         }],
         rewrites: vec![SpecRewrite {
             key: RewriteKey {
+                locator: Default::default(),
                 target: DepWriteTarget::Manifest(manifest_rel.clone()),
                 name: "helper".to_string(),
                 kind: Some(DepKind::Runtime),
@@ -176,6 +178,7 @@ fn mixed_routing_root_cargo_toml_excludes_plain_dependencies_from_batching() {
         rewrites: vec![
             SpecRewrite {
                 key: RewriteKey {
+                    locator: Default::default(),
                     target: DepWriteTarget::Manifest(manifest_rel.clone()),
                     name: "plain-a".to_string(),
                     kind: Some(DepKind::Runtime),
@@ -192,6 +195,7 @@ fn mixed_routing_root_cargo_toml_excludes_plain_dependencies_from_batching() {
             },
             SpecRewrite {
                 key: RewriteKey {
+                    locator: Default::default(),
                     target: DepWriteTarget::Manifest(manifest_rel.clone()),
                     name: "plain-b".to_string(),
                     kind: Some(DepKind::Runtime),
@@ -208,6 +212,7 @@ fn mixed_routing_root_cargo_toml_excludes_plain_dependencies_from_batching() {
             },
             SpecRewrite {
                 key: RewriteKey {
+                    locator: Default::default(),
                     target: DepWriteTarget::CargoWorkspaceDependency {
                         root_manifest: manifest_rel.clone(),
                     },
@@ -280,6 +285,7 @@ fn batched_group_skipped_bump_still_increments_persist_call_count_by_one() {
         }],
         rewrites: vec![SpecRewrite {
             key: RewriteKey {
+                locator: Default::default(),
                 target: DepWriteTarget::Manifest(manifest_rel.clone()),
                 name: "helper".to_string(),
                 kind: Some(DepKind::Runtime),
@@ -354,6 +360,7 @@ fn resolver_batched_root_manifest_opens_once_and_persists_once_for_bump_plus_mul
             .into_iter()
             .map(|name| SpecRewrite {
                 key: RewriteKey {
+                    locator: Default::default(),
                     target: DepWriteTarget::CargoWorkspaceDependency {
                         root_manifest: manifest_rel.clone(),
                     },
@@ -429,6 +436,7 @@ fn mixed_routing_root_manifest_still_persists_resolver_writes_individually() {
         .into_iter()
         .map(|name| SpecRewrite {
             key: RewriteKey {
+                locator: Default::default(),
                 target: DepWriteTarget::CargoWorkspaceDependency {
                     root_manifest: manifest_rel.clone(),
                 },
@@ -453,6 +461,7 @@ fn mixed_routing_root_manifest_still_persists_resolver_writes_individually() {
     // could theoretically support.
     rewrites.push(SpecRewrite {
         key: RewriteKey {
+            locator: Default::default(),
             target: DepWriteTarget::Manifest(manifest_rel.clone()),
             name: "plain-dep".to_string(),
             kind: Some(DepKind::Runtime),

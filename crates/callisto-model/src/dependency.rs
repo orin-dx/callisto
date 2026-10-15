@@ -140,6 +140,15 @@ pub enum Coverage {
     Unknown,
 }
 
+/// The table holding one dependency declaration; the default is a manifest with one site per name and kind.
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DepLocator {
+    /// The Cargo section as `Runtime`, `Dev` or `Build`; `None` derives it from the kind.
+    pub section: Option<DepKind>,
+    /// The `cfg` or triple of a `[target.<cfg>.*]` table; `None` for a top-level table.
+    pub target: Option<String>,
+}
+
 /// Dependency entry read directly from a manifest.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DependencyEntry {
@@ -150,6 +159,8 @@ pub struct DependencyEntry {
     pub kind: DepKind,
     pub spec: DepSpec,
     pub inherited: bool,
+    /// The table this declaration lives in.
+    pub locator: DepLocator,
 }
 
 /// Resolved dependency edge between two packages in the workspace graph.
@@ -163,6 +174,8 @@ pub struct DepEdge {
     pub spec: DepSpec,
     pub from_manifest: PathBuf,
     pub inherited: bool,
+    /// The table of the member manifest this declaration lives in, even when `from_manifest` is the workspace root.
+    pub locator: DepLocator,
 }
 
 #[cfg(test)]

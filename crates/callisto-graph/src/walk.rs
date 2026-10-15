@@ -780,6 +780,7 @@ fn build_edges(
                             spec,
                             from_manifest: declaring_path,
                             inherited: entry.inherited,
+                            locator: entry.locator,
                         };
                         edges.push(edge);
 

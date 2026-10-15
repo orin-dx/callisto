@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use callisto_model::{
-    normalize_pypi_package_name, ApplyPermit, DepKind, DepSpec, DependencyEntry, Ecosystem, ManifestDecl,
+    normalize_pypi_package_name, ApplyPermit, DepKind, DepLocator, DepSpec, DependencyEntry, Ecosystem, ManifestDecl,
     ManifestError, ManifestFormat, ManifestRole, PublishTarget, Version, VersionGrammar, VersionReq,
 };
 use toml_edit::value;
@@ -551,6 +551,7 @@ impl Manifest for PyprojectToml {
                     inherited: false,
                     kind: DepKind::Runtime,
                     spec,
+                    locator: DepLocator::default(),
                 });
             }
         }
@@ -562,6 +563,7 @@ impl Manifest for PyprojectToml {
         &mut self,
         name: &str,
         kind: DepKind,
+        _at: &DepLocator,
         new: DepSpec,
         _permit: &ApplyPermit,
     ) -> Result<(), ManifestError> {
@@ -596,8 +598,8 @@ impl Manifest for PyprojectToml {
             }
         }
 
-        // 1b. Extras: the first declaration in table order is the one the graph sees; only
-        // declarations carrying the same constraint are rewritten with it.
+        // 1b. Extras: only declarations carrying the first one's constraint are rewritten; a
+        // requirement declared twice with different constraints keeps the later one stale.
         if kind == DepKind::Optional {
             if let Some(extras) = self
                 .document
@@ -873,6 +875,7 @@ fn pep508_entry(full_req_str: &str, kind: DepKind) -> Option<DependencyEntry> {
         inherited: false,
         kind,
         spec,
+        locator: DepLocator::default(),
     })
 }
 

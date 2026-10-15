@@ -72,6 +72,7 @@ fn batched_group_bump_precondition_failure_skips_all_rewrites_in_group() {
         rewrites: vec![
             crate::cascade::SpecRewrite {
                 key: crate::cascade::RewriteKey {
+                    locator: Default::default(),
                     target: DepWriteTarget::Manifest(manifest_rel.clone()),
                     name: "helper".to_string(),
                     kind: Some(callisto_model::DepKind::Runtime),
@@ -88,6 +89,7 @@ fn batched_group_bump_precondition_failure_skips_all_rewrites_in_group() {
             },
             crate::cascade::SpecRewrite {
                 key: crate::cascade::RewriteKey {
+                    locator: Default::default(),
                     target: DepWriteTarget::Manifest(manifest_rel.clone()),
                     name: "other".to_string(),
                     kind: Some(callisto_model::DepKind::Runtime),
@@ -146,6 +148,7 @@ fn batched_group_skipped_bump_still_writes_a_successful_rewrite_to_disk() {
         }],
         rewrites: vec![crate::cascade::SpecRewrite {
             key: crate::cascade::RewriteKey {
+                locator: Default::default(),
                 target: DepWriteTarget::Manifest(manifest_rel.clone()),
                 name: "helper".to_string(),
                 kind: Some(callisto_model::DepKind::Runtime),
@@ -364,6 +367,7 @@ fn refresh_lockfiles_includes_every_bump_and_dependency_write_ecosystem() {
         }],
         rewrites: vec![crate::cascade::SpecRewrite {
             key: crate::cascade::RewriteKey {
+                locator: Default::default(),
                 target: DepWriteTarget::Manifest(package_json),
                 name: "dual-dep".to_string(),
                 kind: Some(callisto_model::DepKind::Runtime),
@@ -425,6 +429,7 @@ fn dependency_rewrite_only_plan_refreshes_its_manifest_ecosystem() {
     let plan = VersionPlan {
         rewrites: vec![crate::cascade::SpecRewrite {
             key: crate::cascade::RewriteKey {
+                locator: Default::default(),
                 target: DepWriteTarget::Manifest(PathBuf::from("package.json")),
                 name: "dep".to_string(),
                 kind: Some(callisto_model::DepKind::Runtime),
@@ -1186,6 +1191,7 @@ fn apply_persists_rewrites_loop_update_dependency_spec_to_disk() {
 
     let manifest_rel = PathBuf::from("Cargo.toml");
     let key = crate::cascade::RewriteKey {
+        locator: Default::default(),
         target: DepWriteTarget::Manifest(manifest_rel.clone()),
         name: "helper".to_string(),
         kind: Some(callisto_model::DepKind::Runtime),
@@ -1228,6 +1234,7 @@ fn rewrites_loop_update_dependency_spec_error_leaves_manifest_untouched_and_skip
 
     let manifest_rel = PathBuf::from("Cargo.toml");
     let key = crate::cascade::RewriteKey {
+        locator: Default::default(),
         target: DepWriteTarget::Manifest(manifest_rel.clone()),
         name: "nonexistent-dep".to_string(),
         kind: Some(callisto_model::DepKind::Runtime),
@@ -1545,6 +1552,7 @@ fn rewrites_loop_persist_failure_leaves_earlier_successful_write_intact_and_late
         rewrites: vec![
             crate::cascade::SpecRewrite {
                 key: crate::cascade::RewriteKey {
+                    locator: Default::default(),
                     target: DepWriteTarget::Manifest(crate_a_rel.clone()),
                     name: "helper".to_string(),
                     kind: Some(callisto_model::DepKind::Runtime),
@@ -1561,6 +1569,7 @@ fn rewrites_loop_persist_failure_leaves_earlier_successful_write_intact_and_late
             },
             crate::cascade::SpecRewrite {
                 key: crate::cascade::RewriteKey {
+                    locator: Default::default(),
                     target: DepWriteTarget::Manifest(crate_b_rel.clone()),
                     name: "helper".to_string(),
                     kind: Some(callisto_model::DepKind::Runtime),
@@ -1661,6 +1670,7 @@ fn classify_manifest_writes_partitions_by_path_with_correct_groups() {
         rewrites: vec![
             crate::cascade::SpecRewrite {
                 key: crate::cascade::RewriteKey {
+                    locator: Default::default(),
                     target: DepWriteTarget::Manifest(rewrites_only.clone()),
                     name: "helper".to_string(),
                     kind: Some(callisto_model::DepKind::Runtime),
@@ -1671,6 +1681,7 @@ fn classify_manifest_writes_partitions_by_path_with_correct_groups() {
             },
             crate::cascade::SpecRewrite {
                 key: crate::cascade::RewriteKey {
+                    locator: Default::default(),
                     target: DepWriteTarget::Manifest(both.clone()),
                     name: "other".to_string(),
                     kind: Some(callisto_model::DepKind::Runtime),
@@ -1718,6 +1729,7 @@ fn classify_manifest_writes_excludes_cargo_workspace_package_mixed_path() {
         }],
         rewrites: vec![crate::cascade::SpecRewrite {
             key: crate::cascade::RewriteKey {
+                locator: Default::default(),
                 target: DepWriteTarget::Manifest(p.clone()),
                 name: "helper".to_string(),
                 kind: Some(callisto_model::DepKind::Runtime),
@@ -1773,6 +1785,7 @@ fn batched_group_rewrite_failure_leaves_bump_and_first_rewrite_unpersisted() {
         rewrites: vec![
             crate::cascade::SpecRewrite {
                 key: crate::cascade::RewriteKey {
+                    locator: Default::default(),
                     target: DepWriteTarget::Manifest(manifest_rel.clone()),
                     name: "helper".to_string(),
                     kind: Some(callisto_model::DepKind::Runtime),
@@ -1789,6 +1802,7 @@ fn batched_group_rewrite_failure_leaves_bump_and_first_rewrite_unpersisted() {
             },
             crate::cascade::SpecRewrite {
                 key: crate::cascade::RewriteKey {
+                    locator: Default::default(),
                     target: DepWriteTarget::Manifest(manifest_rel.clone()),
                     name: "nonexistent-dep".to_string(),
                     kind: Some(callisto_model::DepKind::Runtime),
@@ -1949,6 +1963,7 @@ fn batched_group_applies_bump_and_multiple_rewrites_preserving_untouched_formatt
         rewrites: vec![
             crate::cascade::SpecRewrite {
                 key: crate::cascade::RewriteKey {
+                    locator: Default::default(),
                     target: DepWriteTarget::Manifest(manifest_rel.clone()),
                     name: "helper".to_string(),
                     kind: Some(callisto_model::DepKind::Runtime),
@@ -1965,6 +1980,7 @@ fn batched_group_applies_bump_and_multiple_rewrites_preserving_untouched_formatt
             },
             crate::cascade::SpecRewrite {
                 key: crate::cascade::RewriteKey {
+                    locator: Default::default(),
                     target: DepWriteTarget::Manifest(manifest_rel.clone()),
                     name: "other".to_string(),
                     kind: Some(callisto_model::DepKind::Runtime),
@@ -2005,6 +2021,7 @@ fn rewrite_indices_within_one_group_apply_in_plan_rewrites_order() {
 
     let manifest_rel = PathBuf::from("Cargo.toml");
     let key = crate::cascade::RewriteKey {
+        locator: Default::default(),
         target: DepWriteTarget::Manifest(manifest_rel.clone()),
         name: "helper".to_string(),
         kind: Some(callisto_model::DepKind::Runtime),
@@ -2437,6 +2454,7 @@ fn range_rewrite(target: DepWriteTarget, name: &str, from: &str, to: &str) -> cr
     };
     crate::cascade::SpecRewrite {
         key: crate::cascade::RewriteKey {
+            locator: Default::default(),
             target,
             name: name.to_string(),
             kind: Some(callisto_model::DepKind::Runtime),

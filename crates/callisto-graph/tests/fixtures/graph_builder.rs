@@ -33,6 +33,7 @@ impl GraphBuilder {
         let to_id = to.into();
         let from_manifest = PathBuf::from(format!("{}/Cargo.toml", from_id.name()));
         self.edges.push(DepEdge {
+            locator: Default::default(),
             from: from_id,
             name: to_id.name().to_string(),
             to: to_id,

@@ -145,6 +145,7 @@ pub trait Manifest: Send + Sync {
         &mut self,
         name: &str,
         kind: callisto_model::DepKind,
+        at: &callisto_model::DepLocator,
         new: DepSpec,
         permit: &ApplyPermit,
     ) -> Result<(), ManifestError>;

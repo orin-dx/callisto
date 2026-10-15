@@ -186,7 +186,7 @@ fn workspace_rewrite_preserves_catalogs_and_manifest_format() {
     let original = parse_npm_spec_str("workspace:@scope/lib@^0.2.3", Some(WorkspaceKind::Pnpm));
     let rewritten = round_trip(&original, &Version::parse("0.3.0", VersionGrammar::SemVer).unwrap()).unwrap();
     manifest
-        .update_dependency_spec("alias", DepKind::Runtime, rewritten, &permit())
+        .update_dependency_spec("alias", DepKind::Runtime, &Default::default(), rewritten, &permit())
         .unwrap();
     manifest.persist(&permit()).unwrap();
     assert_eq!(
@@ -210,7 +210,7 @@ fn workspace_rewrite_leaves_override_and_resolution_sources_unchanged() {
     let original = parse_npm_spec_str("workspace:@scope/lib@^0.2.3", Some(WorkspaceKind::Pnpm));
     let rewritten = round_trip(&original, &Version::parse("0.3.0", VersionGrammar::SemVer).unwrap()).unwrap();
     manifest
-        .update_dependency_spec("alias", DepKind::Runtime, rewritten, &permit())
+        .update_dependency_spec("alias", DepKind::Runtime, &Default::default(), rewritten, &permit())
         .unwrap();
     manifest.persist(&permit()).unwrap();
     let doc: Value = serde_json::from_slice(&fs::read(dir.path().join("package.json")).unwrap()).unwrap();
@@ -310,6 +310,7 @@ fn update_dependency_spec_does_not_touch_disk_until_persist_called() {
         .update_dependency_spec(
             "lodash",
             DepKind::Runtime,
+            &Default::default(),
             DepSpec::Opaque("^5.0.0".to_string()),
             &permit(),
         )
@@ -421,6 +422,7 @@ fn update_dependency_spec_does_not_mutate_overrides_when_primary_section_missing
     let result = manifest.update_dependency_spec(
         "lodash",
         DepKind::Runtime,
+        &Default::default(),
         DepSpec::Opaque("^5.0.0".to_string()),
         &permit(),
     );
@@ -460,6 +462,7 @@ fn update_dependency_spec_co_mutates_overrides() {
         .update_dependency_spec(
             "lodash",
             DepKind::Runtime,
+            &Default::default(),
             DepSpec::Opaque("^5.0.0".to_string()),
             &permit(),
         )
@@ -500,6 +503,7 @@ fn update_dependency_spec_co_mutates_resolutions() {
         .update_dependency_spec(
             "lodash",
             DepKind::Runtime,
+            &Default::default(),
             DepSpec::Opaque("^5.0.0".to_string()),
             &permit(),
         )
@@ -543,6 +547,7 @@ fn update_dependency_spec_co_mutates_overrides_and_resolutions() {
         .update_dependency_spec(
             "lodash",
             DepKind::Runtime,
+            &Default::default(),
             DepSpec::Opaque("^5.0.0".to_string()),
             &permit(),
         )
@@ -592,6 +597,7 @@ fn update_dependency_spec_co_mutation_is_name_scoped() {
         .update_dependency_spec(
             "express",
             DepKind::Runtime,
+            &Default::default(),
             DepSpec::Opaque("^5.0.0".to_string()),
             &permit(),
         )
@@ -635,6 +641,7 @@ fn update_dependency_spec_does_not_mutate_resolutions_when_primary_section_missi
     let result = manifest.update_dependency_spec(
         "lodash",
         DepKind::Runtime,
+        &Default::default(),
         DepSpec::Opaque("^5.0.0".to_string()),
         &permit(),
     );
@@ -678,6 +685,7 @@ fn update_dependency_spec_does_not_mutate_overrides_or_resolutions_when_primary_
     let result = manifest.update_dependency_spec(
         "lodash",
         DepKind::Runtime,
+        &Default::default(),
         DepSpec::Opaque("^5.0.0".to_string()),
         &permit(),
     );
@@ -728,6 +736,7 @@ fn update_dependency_spec_does_not_overwrite_nested_overrides_object() {
         .update_dependency_spec(
             "foo",
             DepKind::Runtime,
+            &Default::default(),
             DepSpec::Opaque("^2.0.0".to_string()),
             &permit(),
         )
@@ -766,8 +775,13 @@ fn update_dependency_spec_does_not_mutate_overrides_when_dev_dep_missing() {
 
     let before = manifest.doc.get("overrides").cloned();
 
-    let result =
-        manifest.update_dependency_spec("lodash", DepKind::Dev, DepSpec::Opaque("^5.0.0".to_string()), &permit());
+    let result = manifest.update_dependency_spec(
+        "lodash",
+        DepKind::Dev,
+        &Default::default(),
+        DepSpec::Opaque("^5.0.0".to_string()),
+        &permit(),
+    );
 
     assert!(
         result.is_err(),

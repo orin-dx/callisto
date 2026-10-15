@@ -626,7 +626,13 @@ helper = { version = "1.0.0", path = "../helper" }
         "^1.1.0".to_string(),
     );
     manifest
-        .update_dependency_spec("helper", callisto_model::DepKind::Runtime, new_spec, &permit())
+        .update_dependency_spec(
+            "helper",
+            callisto_model::DepKind::Runtime,
+            &Default::default(),
+            new_spec,
+            &permit(),
+        )
         .unwrap();
     manifest.persist(&permit()).unwrap();
 
@@ -659,7 +665,13 @@ fn update_dependency_spec_errors_on_unrecognized_value_shape_instead_of_silently
         VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
         "^1.1.0".to_string(),
     );
-    let result = manifest.update_dependency_spec("helper", callisto_model::DepKind::Runtime, new_spec, &permit());
+    let result = manifest.update_dependency_spec(
+        "helper",
+        callisto_model::DepKind::Runtime,
+        &Default::default(),
+        new_spec,
+        &permit(),
+    );
 
     assert!(
         matches!(result, Err(ManifestError::UnrecognizedDependencyValue { .. })),
@@ -693,7 +705,13 @@ fn update_dependency_spec_errors_on_array_of_tables_dependency_shape() {
         VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
         "^1.1.0".to_string(),
     );
-    let result = manifest.update_dependency_spec("helper", callisto_model::DepKind::Runtime, new_spec, &permit());
+    let result = manifest.update_dependency_spec(
+        "helper",
+        callisto_model::DepKind::Runtime,
+        &Default::default(),
+        new_spec,
+        &permit(),
+    );
 
     assert!(
         matches!(result, Err(ManifestError::UnrecognizedDependencyValue { .. })),
@@ -721,7 +739,13 @@ fn update_dependency_spec_does_not_touch_disk_until_persist_called() {
         "^1.1.0".to_string(),
     );
     manifest
-        .update_dependency_spec("helper", callisto_model::DepKind::Runtime, new_spec, &permit())
+        .update_dependency_spec(
+            "helper",
+            callisto_model::DepKind::Runtime,
+            &Default::default(),
+            new_spec,
+            &permit(),
+        )
         .unwrap();
 
     let unchanged = fs::read_to_string(&manifest_path).unwrap();
@@ -789,7 +813,13 @@ path = "../helper"
         "^1.1.0".to_string(),
     );
     manifest
-        .update_dependency_spec("helper", callisto_model::DepKind::Runtime, new_spec, &permit())
+        .update_dependency_spec(
+            "helper",
+            callisto_model::DepKind::Runtime,
+            &Default::default(),
+            new_spec,
+            &permit(),
+        )
         .unwrap();
     manifest.persist(&permit()).unwrap();
 
@@ -827,7 +857,13 @@ helper = { version = "1.0.0", path = "../helper" } # dep comment
         "^1.1.0".to_string(),
     );
     manifest
-        .update_dependency_spec("helper", callisto_model::DepKind::Runtime, new_spec, &permit())
+        .update_dependency_spec(
+            "helper",
+            callisto_model::DepKind::Runtime,
+            &Default::default(),
+            new_spec,
+            &permit(),
+        )
         .unwrap();
     manifest.persist(&permit()).unwrap();
 
@@ -1065,7 +1101,7 @@ fn update_dependency_spec_delegates_inherited_dependency_write_to_workspace_root
 
     let new_spec = DepSpec::Range(VersionReq::parse("2.0", Ecosystem::Cargo).unwrap(), "2.0".to_string());
     manifest
-        .update_dependency_spec("serde", DepKind::Runtime, new_spec, &permit())
+        .update_dependency_spec("serde", DepKind::Runtime, &Default::default(), new_spec, &permit())
         .unwrap();
 
     let root_updated = fs::read_to_string(&root_cargo_path).unwrap();
@@ -1105,7 +1141,7 @@ fn update_dependency_spec_rejects_peer_dep_kind() {
 
     let new_spec = DepSpec::Range(VersionReq::parse("2.0", Ecosystem::Cargo).unwrap(), "2.0".to_string());
     let err = manifest
-        .update_dependency_spec("serde", DepKind::Peer, new_spec, &permit())
+        .update_dependency_spec("serde", DepKind::Peer, &Default::default(), new_spec, &permit())
         .unwrap_err();
 
     assert!(
@@ -1424,7 +1460,13 @@ fn update_dependency_spec_self_referential_workspace_delegation_returns_invarian
         VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
         "^1.1.0".to_string(),
     );
-    let result = manifest.update_dependency_spec("serde", callisto_model::DepKind::Runtime, new_spec, &permit());
+    let result = manifest.update_dependency_spec(
+        "serde",
+        callisto_model::DepKind::Runtime,
+        &Default::default(),
+        new_spec,
+        &permit(),
+    );
 
     assert!(
         matches!(result, Err(ManifestError::InvariantViolation { .. })),
@@ -1440,4 +1482,15 @@ fn update_dependency_spec_self_referential_workspace_delegation_returns_invarian
         after_persist, content,
         "in-memory document must not have been mutated by the failed call"
     );
+}
+
+#[test]
+fn one_key_declared_in_two_tables_is_two_entries() {
+    let dir = tempdir().unwrap();
+    let manifest = open_cargo(
+        dir.path(),
+        "[package]\nname = \"a\"\nversion = \"0.1.0\"\n\n[dependencies]\nb = \"^1.0.0\"\n\n[target.'cfg(unix)'.dependencies]\nb = \"=1.0.0\"\n",
+    );
+    let entries: Vec<_> = manifest.iter_dependencies().collect();
+    assert_eq!(entries.len(), 2, "{entries:?}");
 }

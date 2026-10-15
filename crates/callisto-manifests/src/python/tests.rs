@@ -803,6 +803,7 @@ dependencies = [
         .update_dependency_spec(
             "my-lib",
             DepKind::Runtime,
+            &Default::default(),
             DepSpec::Range(req, ">=0.3.2".to_string()),
             &permit(),
         )
@@ -837,6 +838,7 @@ fn update_dependency_spec_does_not_touch_disk_until_persist_called() {
         .update_dependency_spec(
             "my-lib",
             DepKind::Runtime,
+            &Default::default(),
             DepSpec::Range(req, ">=0.3.2".to_string()),
             &permit(),
         )
@@ -875,6 +877,7 @@ fn update_dependency_spec_non_range_variant_is_ok_and_persist_is_a_no_op() {
     let result = manifest.update_dependency_spec(
         "my-lib",
         DepKind::Runtime,
+        &Default::default(),
         DepSpec::Opaque("path-dep".to_string()),
         &permit(),
     );
@@ -1027,6 +1030,7 @@ dependencies = [
     let result = manifest.update_dependency_spec(
         "nonexistent-dep",
         DepKind::Runtime,
+        &Default::default(),
         DepSpec::Range(req, ">=1.0.0".to_string()),
         &permit(),
     );
@@ -1067,6 +1071,7 @@ fn update_dependency_spec_matches_pep503_equivalent_separator_spelling() {
     let result = manifest.update_dependency_spec(
         "my-lib",
         DepKind::Runtime,
+        &Default::default(),
         DepSpec::Range(req, ">=0.3.2".to_string()),
         &permit(),
     );
