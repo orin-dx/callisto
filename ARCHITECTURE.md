@@ -62,6 +62,7 @@ Depth:
 - [`docs/architecture/identity.md`](docs/architecture/identity.md): package ids, bare-name matching, config rule specificity, workspace loading, platform packages.
 - [`docs/architecture/versioning.md`](docs/architecture/versioning.md): plan and apply, file-level idempotence and interrupted-command limits.
 - [`docs/architecture/release.md`](docs/architecture/release.md): release terms, the two routes, run envelope, observation and proof tokens, the transition table, verification tiers.
+- [`docs/architecture/wire-compat.md`](docs/architecture/wire-compat.md): the version each release document writes and reads, what a reader does with another, and the known gaps.
 
 ## Extension seams
 
