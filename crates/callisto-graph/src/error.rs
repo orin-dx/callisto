@@ -102,6 +102,18 @@ pub enum GraphError {
     )]
     AmbiguousPreJsonKey { key: String, candidates: Vec<PackageId> },
 
+    #[error("`pre.json` records `{key}` at {} and `{other_key}` at {}, but both name the same package", .version.render(), .other_version.render())]
+    #[diagnostic(
+        code(E305),
+        help("In `pre.json` `initialVersions`, keep one entry for this package: delete `{key}` or `{other_key}`, whichever holds the wrong baseline, or give both the same version.")
+    )]
+    ConflictingPreJsonBaselines {
+        key: String,
+        version: callisto_model::Version,
+        other_key: String,
+        other_version: callisto_model::Version,
+    },
+
     #[error("dependency cycle detected: {}", .cycle.iter().map(|i| i.display_name()).collect::<Vec<_>>().join(" -> "))]
     #[diagnostic(
         code(E104),
