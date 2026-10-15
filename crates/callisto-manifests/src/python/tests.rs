@@ -1525,7 +1525,13 @@ fn range(raw: &str) -> DepSpec {
 }
 
 fn rewrite_at(manifest: &mut PyprojectToml, name: &str, at: &DepLocator, raw: &str) -> Result<(), ManifestError> {
-    let kind = if matches!(at.container, Some(DepContainer::Extra(_))) {
+    let kind = if matches!(
+        at,
+        DepLocator::Python {
+            container: DepContainer::Extra(_),
+            ..
+        }
+    ) {
         DepKind::Optional
     } else {
         DepKind::Runtime
@@ -1581,11 +1587,9 @@ fn a_position_counts_entries_the_graph_does_not_read() {
         dir.path(),
         "[project]\nname = \"app\"\nversion = \"0.1.0\"\ndependencies = [\"\", \"a>=1\", \">=2\", \"b==1\"]\n",
     );
-    let positions: Vec<_> = manifest
-        .iter_dependencies()
-        .map(|e| (e.name, e.locator.position))
-        .collect();
-    assert_eq!(positions, [("a".to_string(), Some(1)), ("b".to_string(), Some(3))]);
+    let locators: Vec<_> = manifest.iter_dependencies().map(|e| (e.name, e.locator)).collect();
+    let at = |position| DepLocator::python(DepContainer::ProjectDependencies, Some(position));
+    assert_eq!(locators, [("a".to_string(), at(1)), ("b".to_string(), at(3))]);
 }
 
 #[test]
@@ -1710,4 +1714,18 @@ fn a_poetry_table_dependency_keeps_its_other_keys_when_rewritten() {
         after.contains("version = \"==1.1.0\"") && after.contains("extras = [\"x\"]"),
         "{after}"
     );
+}
+
+#[test]
+fn update_dependency_spec_refuses_a_cargo_or_unspecified_locator() {
+    let dir = tempdir().unwrap();
+    let mut manifest = open_pyproject(dir.path(), TWO_EXTRAS);
+    for at in [DepLocator::default(), DepLocator::cargo(DepKind::Runtime, None)] {
+        let result = rewrite_at(&mut manifest, "b", &at, ">=2.0");
+        assert!(
+            matches!(result, Err(ManifestError::DependencyNotFound { .. })),
+            "{at:?}: {result:?}"
+        );
+    }
+    assert_eq!(rendered(&manifest), TWO_EXTRAS);
 }

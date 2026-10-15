@@ -155,34 +155,30 @@ pub enum DepContainer {
 /// Where one dependency declaration lives; a position is valid for one plan-then-apply run only.
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
-pub struct DepLocator {
-    /// The Cargo section as `Runtime`, `Dev` or `Build`; `None` derives it from the kind.
-    pub section: Option<DepKind>,
-    /// The `cfg` or triple of a `[target.<cfg>.*]` table; `None` for a top-level table.
-    pub target: Option<String>,
-    /// The Python table of the declaration; `None` for Cargo and npm.
-    pub container: Option<DepContainer>,
-    /// The index within a Python requirement array; `None` for a keyed table.
-    pub position: Option<usize>,
+pub enum DepLocator {
+    /// One site per name and kind: npm, and a Cargo declaration inherited from the workspace.
+    #[default]
+    Unspecified,
+    /// A Cargo declaration in `section`, under `[target.<cfg>.*]` when `target` is set.
+    #[non_exhaustive]
+    Cargo { section: DepKind, target: Option<String> },
+    /// A Python declaration in `container`, at `position` when that is an array.
+    #[non_exhaustive]
+    Python {
+        container: DepContainer,
+        position: Option<usize>,
+    },
 }
 
 impl DepLocator {
     /// A Cargo declaration in `section`, under `[target.<cfg>.*]` when `target` is set.
     pub fn cargo(section: DepKind, target: Option<String>) -> Self {
-        Self {
-            section: Some(section),
-            target,
-            ..Self::default()
-        }
+        Self::Cargo { section, target }
     }
 
     /// A Python declaration in `container`, at `position` when that is an array.
     pub fn python(container: DepContainer, position: Option<usize>) -> Self {
-        Self {
-            container: Some(container),
-            position,
-            ..Self::default()
-        }
+        Self::Python { container, position }
     }
 }
 

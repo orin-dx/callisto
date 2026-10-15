@@ -577,7 +577,13 @@ impl Manifest for PyprojectToml {
             kind,
         };
 
-        match at.container.as_ref().ok_or_else(not_found)? {
+        let DepLocator::Python {
+            container, position, ..
+        } = at
+        else {
+            return Err(not_found());
+        };
+        match container {
             DepContainer::PoetryDependencies => {
                 let table = self
                     .document
@@ -597,7 +603,7 @@ impl Manifest for PyprojectToml {
                 }
             }
             container => {
-                let position = at.position.ok_or_else(not_found)?;
+                let position = position.ok_or_else(not_found)?;
                 let requirements = match container {
                     DepContainer::ProjectDependencies => {
                         self.document.get_mut("project").and_then(|p| p.get_mut("dependencies"))
