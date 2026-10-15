@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use callisto_model::{
-    ApplyPermit, DepKind, DepSpec, DependencyEntry, Ecosystem, ManifestDecl, ManifestError, ManifestFormat,
+    ApplyPermit, DepKind, DepLocator, DepSpec, DependencyEntry, Ecosystem, ManifestDecl, ManifestError, ManifestFormat,
     ManifestRole, Version, VersionGrammar, VersionReq, WorkspaceKind, WorkspaceSpec,
 };
 use indexmap::IndexMap;
@@ -435,6 +435,7 @@ impl Manifest for PackageJson {
                             kind,
                             spec,
                             inherited: false,
+                            locator: DepLocator::default(),
                         });
                     }
                 }
@@ -448,6 +449,7 @@ impl Manifest for PackageJson {
         &mut self,
         name: &str,
         kind: DepKind,
+        _at: &DepLocator,
         new: DepSpec,
         _permit: &ApplyPermit,
     ) -> Result<(), ManifestError> {

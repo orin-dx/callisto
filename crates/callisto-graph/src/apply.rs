@@ -458,6 +458,7 @@ fn rewrite_dependency(
     handle.update_dependency_spec(
         &rewrite.key.name,
         rewrite.key.kind.unwrap_or(DepKind::Runtime),
+        &rewrite.key.locator,
         rewrite.to.clone(),
         permit,
     )?;

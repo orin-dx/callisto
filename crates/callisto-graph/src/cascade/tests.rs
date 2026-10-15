@@ -279,6 +279,7 @@ fn make_dep_edge(from: &PackageId, to: &PackageId, spec_str: &str, ecosystem: ca
         spec_str.to_string(),
     );
     DepEdge {
+        locator: Default::default(),
         from: from.clone(),
         to: to.clone(),
         name: to.name().to_string(),
@@ -309,6 +310,7 @@ fn test_dual_identity_rewrite_key_preserves_declared_name() {
     };
 
     let edge = DepEdge {
+        locator: Default::default(),
         from: dependent.clone(),
         to: dep_target.clone(),
         name: "@scope/my-native-lib".to_string(),
@@ -1019,6 +1021,7 @@ fn inherited_cargo_dependency_edge_never_produces_manifest_rewrite_target() {
     let pkg_dep = PackageId::parse("cargo:shared-dep").unwrap();
 
     let inherited_edge = DepEdge {
+        locator: Default::default(),
         from: pkg_root.clone(),
         to: pkg_dep.clone(),
         name: pkg_dep.name().to_string(),
@@ -1031,6 +1034,7 @@ fn inherited_cargo_dependency_edge_never_produces_manifest_rewrite_target() {
         inherited: true,
     };
     let non_inherited_edge = DepEdge {
+        locator: Default::default(),
         from: pkg_member.clone(),
         to: pkg_dep.clone(),
         name: pkg_dep.name().to_string(),
@@ -1472,6 +1476,7 @@ fn make_dep_edge_kind(
         spec_str.to_string(),
     );
     DepEdge {
+        locator: Default::default(),
         from: from.clone(),
         to: to.clone(),
         name: to.name().to_string(),

@@ -66,6 +66,7 @@ version = "~1.0" # build
             .update_dependency_spec(
                 &entry.name,
                 entry.kind,
+                &Default::default(),
                 DepSpec::CargoBare(Version::semver(2, 0, 0)),
                 &permit,
             )
@@ -155,6 +156,7 @@ workspace = true
             .update_dependency_spec(
                 &entry.name,
                 entry.kind,
+                &Default::default(),
                 DepSpec::CargoBare(Version::semver(2, 0, 0)),
                 &permit,
             )

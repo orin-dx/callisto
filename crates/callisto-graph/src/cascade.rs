@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use callisto_model::{
-    BumpReason, ConfigKey, Coverage, DepEdge, DepKind, DepSpec, Diagnostic, DiagnosticCode, DiagnosticSeverity,
-    Ecosystem, GrammarMismatch, PackageId, Severity, Version,
+    BumpReason, ConfigKey, Coverage, DepEdge, DepKind, DepLocator, DepSpec, Diagnostic, DiagnosticCode,
+    DiagnosticSeverity, Ecosystem, GrammarMismatch, PackageId, Severity, Version,
 };
 
 use crate::config::GroupTable;
@@ -174,6 +174,12 @@ pub(crate) fn dependency_rewrite_key(edge: &DepEdge) -> RewriteKey {
         },
         name: edge.name.clone(),
         kind: if edge.inherited { None } else { Some(edge.kind) },
+        // An inherited declaration is rewritten once, in the workspace root, whichever member table names it.
+        locator: if edge.inherited {
+            DepLocator::default()
+        } else {
+            edge.locator.clone()
+        },
     }
 }
 
@@ -577,6 +583,7 @@ pub struct RewriteKey {
     pub target: DepWriteTarget,
     pub name: String,
     pub kind: Option<DepKind>,
+    pub locator: DepLocator,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

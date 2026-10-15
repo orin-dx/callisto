@@ -228,7 +228,7 @@ lib-crate = { version = \"=0.1.0\", path = \"../lib\" }
 }
 
 #[test]
-fn a_target_declaration_with_a_different_constraint_is_left_as_written() {
+fn a_target_declaration_that_still_covers_the_new_version_has_its_floor_raised() {
     let dir = cargo_workspace("{ version = \"=0.1.0\", path = \"../lib\" }");
     let root = dir.path();
     let app = "\
@@ -241,7 +241,7 @@ edition = \"2021\"
 lib-crate = { version = \"=0.1.0\", path = \"../lib\" }
 
 [target.'cfg(windows)'.dependencies]
-lib-crate = { version = \">=0.1, <0.3\", path = \"../lib\" }
+lib-crate = { version = \">=0.1.0, <0.3.0\", path = \"../lib\" }
 ";
     fs::write(root.join("crates/app/Cargo.toml"), app).unwrap();
     git(root, &["commit", "-q", "-am", "same crate, different constraint"]);
@@ -254,7 +254,45 @@ lib-crate = { version = \">=0.1, <0.3\", path = \"../lib\" }
         "{after}"
     );
     assert!(
-        after.contains("lib-crate = { version = \">=0.1, <0.3\", path = \"../lib\" }"),
-        "a range that still covers the new version stays as written:\n{after}"
+        after.contains("lib-crate = { version = \">=0.2.0, <0.3.0\", path = \"../lib\" }"),
+        "a released package raises the floor of every declaration, including one that still covers the new version:\n{after}"
     );
+}
+
+#[test]
+fn a_dependency_declared_twice_with_different_constraints_has_each_declaration_rewritten() {
+    let dir = cargo_workspace("{ version = \"=0.1.0\", path = \"../lib\" }");
+    let root = dir.path();
+    let app = "\
+[package]
+name = \"app-crate\"
+version = \"0.1.0\"
+edition = \"2021\"
+
+[dependencies]
+lib-crate = { version = \"^0.1.0\", path = \"../lib\" }
+
+# only on unix
+[target.'cfg(unix)'.dependencies]
+lib-crate = { version = \"=0.1.0\", path = \"../lib\" } # exact on unix
+";
+    fs::write(root.join("crates/app/Cargo.toml"), app).unwrap();
+    git(root, &["commit", "-q", "-am", "one crate, two constraints"]);
+    add_changeset(root, "lib-crate", "minor");
+    let out = callisto(root, &["version"]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let expected = "\
+[package]
+name = \"app-crate\"
+version = \"0.1.1\"
+edition = \"2021\"
+
+[dependencies]
+lib-crate = { version = \"^0.2.0\", path = \"../lib\" }
+
+# only on unix
+[target.'cfg(unix)'.dependencies]
+lib-crate = { version = \"=0.2.0\", path = \"../lib\" } # exact on unix
+";
+    assert_eq!(read(root, "crates/app/Cargo.toml"), expected);
 }
