@@ -10,6 +10,15 @@ use callisto_model::ManifestFormat;
 use proptest::prelude::*;
 use tempfile::tempdir;
 
+/// The locator `iter_dependencies` assigned to the first declaration naming `name`.
+fn locator_of(manifest: &PyprojectToml, name: &str) -> DepLocator {
+    manifest
+        .iter_dependencies()
+        .find(|entry| normalize_pypi_package_name(&entry.name) == normalize_pypi_package_name(name))
+        .map(|entry| entry.locator)
+        .unwrap()
+}
+
 #[test]
 fn bin_names_read_project_scripts_keys() {
     let dir = tempdir().unwrap();
@@ -799,11 +808,12 @@ dependencies = [
 
     let mut manifest = PyprojectToml::open(&decl, &ctx).unwrap();
     let req = VersionReq::parse(">=0.3.2", Ecosystem::Pypi).unwrap();
+    let at = locator_of(&manifest, "my-lib");
     manifest
         .update_dependency_spec(
             "my-lib",
             DepKind::Runtime,
-            &Default::default(),
+            &at,
             DepSpec::Range(req, ">=0.3.2".to_string()),
             &permit(),
         )
@@ -834,11 +844,12 @@ fn update_dependency_spec_does_not_touch_disk_until_persist_called() {
 
     let mut manifest = PyprojectToml::open(&decl, &ctx).unwrap();
     let req = VersionReq::parse(">=0.3.2", Ecosystem::Pypi).unwrap();
+    let at = locator_of(&manifest, "my-lib");
     manifest
         .update_dependency_spec(
             "my-lib",
             DepKind::Runtime,
-            &Default::default(),
+            &at,
             DepSpec::Range(req, ">=0.3.2".to_string()),
             &permit(),
         )
@@ -1066,12 +1077,13 @@ fn update_dependency_spec_matches_pep503_equivalent_separator_spelling() {
 
     let mut manifest = PyprojectToml::open(&decl, &ctx).unwrap();
     let req = VersionReq::parse(">=0.3.2", Ecosystem::Pypi).unwrap();
+    let at = locator_of(&manifest, "my-lib");
     // Caller passes the canonical hyphenated name; the manifest spells
     // the requirement with an underscore.
     let result = manifest.update_dependency_spec(
         "my-lib",
         DepKind::Runtime,
-        &Default::default(),
+        &at,
         DepSpec::Range(req, ">=0.3.2".to_string()),
         &permit(),
     );
@@ -1504,4 +1516,198 @@ proptest! {
             prop_assert_eq!(reparsed, Some(req));
         }
     }
+}
+
+// -- one edge per requirement declaration ------------------------------
+
+fn range(raw: &str) -> DepSpec {
+    DepSpec::Range(VersionReq::parse(raw, Ecosystem::Pypi).unwrap(), raw.to_string())
+}
+
+fn rewrite_at(manifest: &mut PyprojectToml, name: &str, at: &DepLocator, raw: &str) -> Result<(), ManifestError> {
+    let kind = if matches!(at.container, Some(DepContainer::Extra(_))) {
+        DepKind::Optional
+    } else {
+        DepKind::Runtime
+    };
+    manifest.update_dependency_spec(name, kind, at, range(raw), &permit())
+}
+
+fn rendered(manifest: &PyprojectToml) -> String {
+    manifest.document.to_string()
+}
+
+const TWO_EXTRAS: &str = "[project]\nname = \"app\"\nversion = \"0.1.0\"\ndependencies = [\"b>=1.0; python_version<'3.9'\", \"b==1.0.0; python_version>='3.9'\"]\n\n[project.optional-dependencies]\na = [\"b>=1.0\"]\nc = [\"b==1.0.0\"]\n";
+
+#[test]
+fn every_requirement_declaration_is_its_own_edge_with_its_own_locator() {
+    let dir = tempdir().unwrap();
+    let manifest = open_pyproject(dir.path(), TWO_EXTRAS);
+    let edges: Vec<_> = manifest
+        .iter_dependencies()
+        .map(|e| (e.kind, e.locator, e.spec.render()))
+        .collect();
+    assert_eq!(
+        edges,
+        [
+            (
+                DepKind::Runtime,
+                DepLocator::python(DepContainer::ProjectDependencies, Some(0)),
+                ">=1.0".to_string()
+            ),
+            (
+                DepKind::Runtime,
+                DepLocator::python(DepContainer::ProjectDependencies, Some(1)),
+                "==1.0.0".to_string()
+            ),
+            (
+                DepKind::Optional,
+                DepLocator::python(DepContainer::Extra("a".to_string()), Some(0)),
+                ">=1.0".to_string()
+            ),
+            (
+                DepKind::Optional,
+                DepLocator::python(DepContainer::Extra("c".to_string()), Some(0)),
+                "==1.0.0".to_string()
+            ),
+        ]
+    );
+}
+
+#[test]
+fn a_position_counts_entries_the_graph_does_not_read() {
+    let dir = tempdir().unwrap();
+    let manifest = open_pyproject(
+        dir.path(),
+        "[project]\nname = \"app\"\nversion = \"0.1.0\"\ndependencies = [\"\", \"a>=1\", \">=2\", \"b==1\"]\n",
+    );
+    let positions: Vec<_> = manifest
+        .iter_dependencies()
+        .map(|e| (e.name, e.locator.position))
+        .collect();
+    assert_eq!(positions, [("a".to_string(), Some(1)), ("b".to_string(), Some(3))]);
+}
+
+#[test]
+fn a_declaration_is_rewritten_by_its_locator_alone() {
+    let dir = tempdir().unwrap();
+    let mut manifest = open_pyproject(dir.path(), TWO_EXTRAS);
+    let c = DepLocator::python(DepContainer::Extra("c".to_string()), Some(0));
+    rewrite_at(&mut manifest, "b", &c, "==1.1.0").unwrap();
+    assert_eq!(
+        rendered(&manifest),
+        TWO_EXTRAS.replace("c = [\"b==1.0.0\"]", "c = [\"b==1.1.0\"]")
+    );
+}
+
+#[test]
+fn marker_variants_are_rewritten_one_at_a_time_and_keep_their_markers() {
+    let dir = tempdir().unwrap();
+    let mut manifest = open_pyproject(dir.path(), TWO_EXTRAS);
+    let first = DepLocator::python(DepContainer::ProjectDependencies, Some(0));
+    let second = DepLocator::python(DepContainer::ProjectDependencies, Some(1));
+    rewrite_at(&mut manifest, "b", &second, "==1.1.0").unwrap();
+    assert!(rendered(&manifest).contains("\"b>=1.0; python_version<'3.9'\", \"b==1.1.0;python_version>='3.9'\""));
+    rewrite_at(&mut manifest, "b", &first, ">=1.1.0").unwrap();
+    assert!(rendered(&manifest).contains("\"b>=1.1.0;python_version<'3.9'\", \"b==1.1.0;python_version>='3.9'\""));
+}
+
+#[test]
+fn the_same_requirement_in_each_container_is_rewritten_separately() {
+    let dir = tempdir().unwrap();
+    let mut manifest = open_pyproject(
+        dir.path(),
+        "[project]\nname = \"app\"\nversion = \"0.1.0\"\ndependencies = [\"b==1.0.0\"]\n\n[project.optional-dependencies]\nx = [\"b==1.0.0\"]\n\n[tool.poetry.dependencies]\nb = \"==1.0.0\"\n",
+    );
+    let at: Vec<_> = manifest.iter_dependencies().map(|e| e.locator).collect();
+    assert_eq!(at.len(), 3);
+    rewrite_at(&mut manifest, "b", &at[1], "==2.0.0").unwrap();
+    let after = rendered(&manifest);
+    assert_eq!(after.matches("==2.0.0").count(), 1, "{after}");
+    assert!(after.contains("x = [\"b==2.0.0\"]"), "{after}");
+    rewrite_at(&mut manifest, "b", &at[2], "==3.0.0").unwrap();
+    rewrite_at(&mut manifest, "b", &at[0], "==4.0.0").unwrap();
+    let after = rendered(&manifest);
+    assert!(after.contains("dependencies = [\"b==4.0.0\"]"), "{after}");
+    assert!(after.contains("x = [\"b==2.0.0\"]"), "{after}");
+    assert!(after.contains("b = \"==3.0.0\""), "{after}");
+}
+
+#[test]
+fn extras_syntax_and_name_spellings_are_matched_and_kept() {
+    let dir = tempdir().unwrap();
+    let mut manifest = open_pyproject(
+        dir.path(),
+        "[project]\nname = \"app\"\nversion = \"0.1.0\"\ndependencies = [\"Foo_Bar[x,y]>=1\", \"foo.bar==1\"]\n",
+    );
+    let at: Vec<_> = manifest.iter_dependencies().map(|e| e.locator).collect();
+    rewrite_at(&mut manifest, "foo-bar", &at[1], "==2.0.0").unwrap();
+    rewrite_at(&mut manifest, "foo-bar", &at[0], ">=2.0.0").unwrap();
+    assert!(rendered(&manifest).contains("[\"Foo_Bar[x,y]>=2.0.0\", \"foo.bar==2.0.0\"]"));
+}
+
+#[test]
+fn untouched_lines_and_comments_keep_their_formatting() {
+    let dir = tempdir().unwrap();
+    let content = "[project]\nname = \"app\"\nversion = \"0.1.0\"\ndependencies = [\n  # pinned for the api\n  \"b==1.0.0\",\n  \"other >= 1  \",   # keep me\n  \"b>=1.0\",\n]\n";
+    let mut manifest = open_pyproject(dir.path(), content);
+    let at = DepLocator::python(DepContainer::ProjectDependencies, Some(0));
+    rewrite_at(&mut manifest, "b", &at, "==1.1.0").unwrap();
+    assert_eq!(rendered(&manifest), content.replace("b==1.0.0", "b==1.1.0"));
+}
+
+#[test]
+fn a_locator_naming_another_dependency_is_refused_and_writes_nothing() {
+    let dir = tempdir().unwrap();
+    let planned = open_pyproject(
+        dir.path(),
+        "[project]\nname = \"app\"\nversion = \"0.1.0\"\ndependencies = [\"x==1\", \"b==1.0.0\"]\n",
+    );
+    let at = locator_of(&planned, "b");
+    let changed = "[project]\nname = \"app\"\nversion = \"0.1.0\"\ndependencies = [\"b==1.0.0\", \"x==1\"]\n";
+    let mut manifest = open_pyproject(dir.path(), changed);
+    let result = rewrite_at(&mut manifest, "b", &at, "==2.0.0");
+    assert!(
+        matches!(result, Err(ManifestError::DependencyNotFound { .. })),
+        "{result:?}"
+    );
+    assert_eq!(rendered(&manifest), changed);
+}
+
+#[test]
+fn a_locator_with_no_such_container_or_position_is_refused() {
+    let dir = tempdir().unwrap();
+    let content = "[project]\nname = \"app\"\nversion = \"0.1.0\"\ndependencies = [\"b==1.0.0\"]\n\n[project.optional-dependencies]\nx = [\"b==1.0.0\"]\n";
+    let mut manifest = open_pyproject(dir.path(), content);
+    for at in [
+        DepLocator::python(DepContainer::ProjectDependencies, Some(1)),
+        DepLocator::python(DepContainer::ProjectDependencies, None),
+        DepLocator::python(DepContainer::Extra("missing".to_string()), Some(0)),
+        DepLocator::python(DepContainer::Extra("x".to_string()), Some(7)),
+        DepLocator::python(DepContainer::PoetryDependencies, None),
+        DepLocator::default(),
+    ] {
+        let result = rewrite_at(&mut manifest, "b", &at, "==2.0.0");
+        assert!(
+            matches!(result, Err(ManifestError::DependencyNotFound { .. })),
+            "{at:?}: {result:?}"
+        );
+    }
+    assert_eq!(rendered(&manifest), content);
+}
+
+#[test]
+fn a_poetry_table_dependency_keeps_its_other_keys_when_rewritten() {
+    let dir = tempdir().unwrap();
+    let mut manifest = open_pyproject(
+        dir.path(),
+        "[tool.poetry]\nname = \"app\"\nversion = \"0.1.0\"\n\n[tool.poetry.dependencies]\npython = \"^3.9\"\n\n[tool.poetry.dependencies.b]\nversion = \"==1.0.0\"\nextras = [\"x\"]\n",
+    );
+    let at = locator_of(&manifest, "b");
+    rewrite_at(&mut manifest, "b", &at, "==1.1.0").unwrap();
+    let after = rendered(&manifest);
+    assert!(
+        after.contains("version = \"==1.1.0\"") && after.contains("extras = [\"x\"]"),
+        "{after}"
+    );
 }

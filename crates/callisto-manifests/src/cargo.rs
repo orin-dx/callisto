@@ -405,10 +405,7 @@ impl Manifest for CargoToml {
                         kind,
                         spec,
                         inherited: is_inherited,
-                        locator: DepLocator {
-                            section: Some(section_kind),
-                            target: target.clone(),
-                        },
+                        locator: DepLocator::cargo(section_kind, target.clone()),
                     });
                 }
             }

@@ -140,13 +140,50 @@ pub enum Coverage {
     Unknown,
 }
 
-/// The table holding one dependency declaration; the default is a manifest with one site per name and kind.
+/// The Python table holding a declaration.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
+pub enum DepContainer {
+    /// The `[project].dependencies` array.
+    ProjectDependencies,
+    /// The array of one extra in `[project.optional-dependencies]`, by key.
+    Extra(String),
+    /// The `[tool.poetry.dependencies]` table.
+    PoetryDependencies,
+}
+
+/// Where one dependency declaration lives; a position is valid for one plan-then-apply run only.
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
 pub struct DepLocator {
     /// The Cargo section as `Runtime`, `Dev` or `Build`; `None` derives it from the kind.
     pub section: Option<DepKind>,
     /// The `cfg` or triple of a `[target.<cfg>.*]` table; `None` for a top-level table.
     pub target: Option<String>,
+    /// The Python table of the declaration; `None` for Cargo and npm.
+    pub container: Option<DepContainer>,
+    /// The index within a Python requirement array; `None` for a keyed table.
+    pub position: Option<usize>,
+}
+
+impl DepLocator {
+    /// A Cargo declaration in `section`, under `[target.<cfg>.*]` when `target` is set.
+    pub fn cargo(section: DepKind, target: Option<String>) -> Self {
+        Self {
+            section: Some(section),
+            target,
+            ..Self::default()
+        }
+    }
+
+    /// A Python declaration in `container`, at `position` when that is an array.
+    pub fn python(container: DepContainer, position: Option<usize>) -> Self {
+        Self {
+            container: Some(container),
+            position,
+            ..Self::default()
+        }
+    }
 }
 
 /// Dependency entry read directly from a manifest.
