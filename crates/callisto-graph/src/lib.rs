@@ -330,13 +330,39 @@ pub(crate) fn assign_promoted_pre_keys<D: DependencyResolver>(
                 .and_then(|owner| owner.canonical_manifests().next().map(|manifest| manifest.ecosystem()))
         })
         .map_err(GraphError::PreJson)?;
+    let mut legacy_by_owner_key: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for key in keys {
         if let Some(owner) = owners.get(&key) {
             let owner_key = pre_json_key(&owner.id);
             if owner_key != key {
-                if let Some(version) = state.initial_versions.shift_remove(&key) {
-                    state.initial_versions.entry(owner_key).or_insert(version);
-                }
+                legacy_by_owner_key.entry(owner_key).or_default().push(key);
+            }
+        }
+    }
+    // Every key for one package must agree before anything moves.
+    for (owner_key, legacy_keys) in &legacy_by_owner_key {
+        let reference = if state.initial_versions.contains_key(owner_key) {
+            owner_key
+        } else {
+            &legacy_keys[0]
+        };
+        let reference_version = &state.initial_versions[reference];
+        for key in legacy_keys.iter().filter(|key| *key != reference) {
+            let version = &state.initial_versions[key];
+            if version.compare(reference_version) != Ok(std::cmp::Ordering::Equal) {
+                return Err(GraphError::ConflictingPreJsonBaselines {
+                    key: key.clone(),
+                    version: version.clone(),
+                    other_key: reference.clone(),
+                    other_version: reference_version.clone(),
+                });
+            }
+        }
+    }
+    for (owner_key, legacy_keys) in legacy_by_owner_key {
+        for key in legacy_keys {
+            if let Some(version) = state.initial_versions.shift_remove(&key) {
+                state.initial_versions.entry(owner_key.clone()).or_insert(version);
             }
         }
     }

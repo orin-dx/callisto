@@ -243,6 +243,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E246 | Version dependency edge involves incompatible version grammars | Use the same version grammar on both sides of the dependency edge, or drop the edge. |
 | E247 | On-disk versions changed since the version plan was generated | Regenerate the version plan against the current workspace state before applying it. |
 | E248 | Workspace root manifest has conflicting version updates | Reconcile the workspace root manifest's version updates before retrying. |
+| E305 | `pre.json` records two entries for the same package (a bare or alternate key and the qualified key) with different versions | In `pre.json` `initialVersions`, keep one entry for the package: delete the key holding the wrong baseline, or give both the same version. |
 
 ## callisto-cli
 

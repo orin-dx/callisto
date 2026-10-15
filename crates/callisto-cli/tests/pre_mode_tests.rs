@@ -886,6 +886,89 @@ mod python_baselines {
         assert!(!root.join("packages/python/CHANGELOG.md").exists());
     }
 
+    /// Promoted workspace: `py-lib` exists on PyPI and npm; `pre.json` holds the legacy bare key and a qualified key.
+    fn promoted_with_both_baselines(legacy: &str, canonical: &str) -> (tempfile::TempDir, String) {
+        let temp = workspace(false, ".changeset");
+        let root = temp.path();
+        run(root, &["pre", "enter", "beta"]);
+        commit(root);
+        write(
+            root,
+            "packages/sibling/package.json",
+            r#"{"name":"py-lib","version":"3.0.0"}"#,
+        );
+        let mut state = pre_json(root, ".changeset");
+        state["initialVersions"]["py-lib"] = json!(legacy);
+        state["initialVersions"]["pypi/py-lib"] = json!(canonical);
+        let text = state.to_string();
+        write(root, ".changeset/pre.json", &text);
+        run(
+            root,
+            &[
+                "add",
+                "--package",
+                "pypi/py-lib:minor",
+                "--summary",
+                "Conflicting baselines",
+            ],
+        );
+        (temp, text)
+    }
+
+    #[test]
+    fn differing_legacy_and_qualified_baselines_fail_naming_both_and_write_nothing() {
+        let (temp, text) = promoted_with_both_baselines("1.2.3", "1.1.0");
+        let root = temp.path();
+        for args in [
+            &["version", "--no-refresh-lockfiles"][..],
+            &["status"],
+            &["pre", "exit"],
+        ] {
+            let output = callisto(root, args);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(!output.status.success(), "callisto {args:?} succeeded");
+            assert!(stderr.contains("E305"), "callisto {args:?}: {stderr}");
+            for needle in ["`py-lib`", "`pypi/py-lib`", "1.2.3", "1.1.0"] {
+                assert!(stderr.contains(needle), "callisto {args:?} missing {needle}: {stderr}");
+            }
+            assert_eq!(fs::read_to_string(root.join(".changeset/pre.json")).unwrap(), text);
+            assert_versions(root, "1.2.3", "1.0.0", "2.0.0");
+            assert!(!root.join("packages/python/CHANGELOG.md").exists());
+        }
+    }
+
+    #[test]
+    fn equal_legacy_and_qualified_baselines_coalesce_under_the_qualified_key() {
+        let (temp, _) = promoted_with_both_baselines("1.2.3", "1.2.3");
+        let root = temp.path();
+        version(root);
+        assert_versions(root, "1.3.0b0", "1.0.0", "2.0.0");
+        let state = pre_json(root, ".changeset");
+        assert_eq!(state["initialVersions"]["pypi/py-lib"], "1.2.3");
+        assert!(state["initialVersions"].get("py-lib").is_none());
+    }
+
+    #[test]
+    fn an_unpromoted_qualified_baseline_that_differs_from_the_bare_one_fails() {
+        let temp = workspace(false, ".changeset");
+        let root = temp.path();
+        run(root, &["pre", "enter", "beta"]);
+        let mut state = pre_json(root, ".changeset");
+        state["initialVersions"]["pypi/py-lib"] = json!("1.1.0");
+        let text = state.to_string();
+        write(root, ".changeset/pre.json", &text);
+        run(
+            root,
+            &["add", "--package", "py-lib:minor", "--summary", "Conflicting baselines"],
+        );
+        let output = callisto(root, &["version", "--no-refresh-lockfiles"]);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(!output.status.success(), "unexpected success");
+        assert!(stderr.contains("E305"), "{stderr}");
+        assert_eq!(fs::read_to_string(root.join(".changeset/pre.json")).unwrap(), text);
+        assert_versions(root, "1.2.3", "1.0.0", "2.0.0");
+    }
+
     #[test]
     fn malformed_and_foreign_grammar_baselines_fail_before_any_version_writes() {
         for (key, value) in [
