@@ -1,0 +1,20 @@
+{
+  "tool_use_id": "a4231f91dc77fde49",
+  "agent_id": "a4231f91dc77fde49",
+  "subagent_type": "workflow-subagent",
+  "files": [
+    "crates/callisto-graph/src/commands/release/provider/registry.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/tests.rs",
+    "crates/callisto-graph/src/commands/release/provider/tag.rs",
+    "crates/callisto-graph/src/commands/release_execution.rs"
+  ],
+  "token_usage": {
+    "input_tokens": 80,
+    "cache_creation_tokens": 144193,
+    "cache_read_tokens": 3824473,
+    "output_tokens": 14587,
+    "api_call_count": 40
+  },
+  "started_at": "2026-10-14T20:35:17.370543-07:00",
+  "completed_at": "2026-10-14T20:35:17.370812-07:00"
+}

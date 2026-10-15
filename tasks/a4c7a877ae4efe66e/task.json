@@ -1,0 +1,20 @@
+{
+  "tool_use_id": "a4c7a877ae4efe66e",
+  "agent_id": "a4c7a877ae4efe66e",
+  "subagent_type": "workflow-subagent",
+  "files": [
+    "crates/callisto-cli/tests/python_dependency_tables_tests.rs",
+    "crates/callisto-graph/tests/cargo_declaration_edges_test.rs",
+    "crates/callisto-manifests/src/cargo.rs",
+    "crates/callisto-model/src/dependency.rs"
+  ],
+  "token_usage": {
+    "input_tokens": 80,
+    "cache_creation_tokens": 115536,
+    "cache_read_tokens": 3353202,
+    "output_tokens": 7594,
+    "api_call_count": 40
+  },
+  "started_at": "2026-10-14T20:38:50.057841-07:00",
+  "completed_at": "2026-10-14T20:38:50.058064-07:00"
+}

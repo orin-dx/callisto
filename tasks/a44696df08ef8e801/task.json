@@ -1,0 +1,17 @@
+{
+  "tool_use_id": "a44696df08ef8e801",
+  "agent_id": "a44696df08ef8e801",
+  "subagent_type": "workflow-subagent",
+  "files": [
+    "crates/callisto-graph/src/commands/status.rs"
+  ],
+  "token_usage": {
+    "input_tokens": 96,
+    "cache_creation_tokens": 104238,
+    "cache_read_tokens": 3887240,
+    "output_tokens": 5645,
+    "api_call_count": 48
+  },
+  "started_at": "2026-10-14T20:38:31.473441-07:00",
+  "completed_at": "2026-10-14T20:38:31.473665-07:00"
+}

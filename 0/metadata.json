@@ -1,0 +1,122 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M4YTS91JJ6CJQKRPFQFQQ60E",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-15T03:48:21.528857Z",
+  "branch": "fix/provider-errors-are-not-absence",
+  "checkpoints_count": 4,
+  "save_step_count": 15,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/release/provider/registry.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/tests.rs",
+    "crates/callisto-graph/src/commands/release/provider/tag.rs",
+    "crates/callisto-graph/src/commands/release_execution.rs",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "c40ff52f0fb8",
+  "checkpoint_transcript_start": 7425,
+  "transcript_lines_at_start": 7425,
+  "compact_transcript_start": 621,
+  "token_usage": {
+    "input_tokens": 56,
+    "cache_creation_tokens": 38527,
+    "cache_read_tokens": 23258008,
+    "output_tokens": 16486,
+    "api_call_count": 25,
+    "subagent_tokens": {
+      "input_tokens": 276,
+      "cache_creation_tokens": 356084,
+      "cache_read_tokens": 11988480,
+      "output_tokens": 33209,
+      "api_call_count": 138
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 35
+  },
+  "summary": {
+    "intent": "Land Wave 2 of the callisto hardening work: review three parallel agent lanes (status resolver fix, Python per-declaration locator, false-absent provider reads), verify each, then commit and open PRs, after first opening the docs-prune PR #225.",
+    "outcome": "Opened PR #225 (docs prune, `just ci` passed). Reviewed all three Wave 2 lanes, and fixed an npm 8 regression in the absent-reads lane (stderr `code` fallback gated on empty stdout). The corrected gate for that lane finished with exit code 0, but it is not yet committed or PR'd, and the status and Python lanes are still pending.",
+    "learnings": {
+      "repo": [
+        "`just ci` is the full gate; its own `exit=` line is the authoritative result, not the background-task completion notice (a notice said completed while the gate had exit=100).",
+        "`status` and `version` now share `resolve_target_package` -> `IdentityIndex::resolve_id`; `PackageId::resolve_unique` is deprecated with no production callers.",
+        "npm 8 prints no JSON body on a missing version and emits `npm ERR! code E404` only on stderr, whereas npm 9 through latest give a JSON body with the code.",
+        "Absent-read classification: a local tag lookup counts as missing only on exit 1 with empty output; npm counts as absent only on the structured `E404` code, never free text.",
+        "Two release_command_e2e tests (`dirty_worktree_blocks_release_before_any_effect`, `dry_run_without_origin_notes_unbound_tags`) fail in the agent's environment because of ANSI codes in plan table output, unrelated to status.",
+        "docs/projects/V1-FINDINGS.md line 19 and V1-SYSTEM-HARDENING.json line 67 still describe the status/version resolver divergence as open and need updating."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/status.rs",
+          "finding": "`resolve_pending_changesets` and `changeset_wellformedness_diagnostics` now take `&ws.identity` and return `Result`; ambiguous names map to `AmbiguousPackageName` and unknown to `UnknownPackage`. Changeset names are now listed once per package rather than once per entry."
+        },
+        {
+          "path": "docs/architecture/identity.md",
+          "line": 32,
+          "finding": "The sentence saying some status helpers still used `resolve_unique` was updated."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/registry.rs",
+          "finding": "The npm classifier gained a stderr `code` fallback, read only when stdout is empty so garbled JSON stays indeterminate."
+        }
+      ],
+      "workflow": [
+        "Run the whole test module rather than a name filter; a filter on `npm` selected 88 tests and missed a conflicting agent-written test among 91.",
+        "Write the regression test first and watch it fail before the fix; run real tool versions (npm 8, 9, 10, 11, latest) to check agent-produced classifiers against reality.",
+        "Agent-written tests written after the fix pass trivially and need a red proof against main.",
+        "Long agent runs can drop connections; finishing partial work in the worktree beats rerunning.",
+        "Keep the tree untouched while a gate runs."
+      ]
+    },
+    "friction": [
+      "The first absent-reads gate failed with exit=100 because an agent-written test encoded the opposite of the npm 8 fix; the earlier claim that the npm tests passed was based on an incomplete filter.",
+      "The background-task completion notice says 'completed' even when the gate failed, so it can't be trusted as a pass signal.",
+      "The agent could not confirm whether the two ANSI-related e2e failures also fail on the base tree, because git was refused in its environment.",
+      "The Wave 2 agent's npm rule would have blocked every release on npm 8."
+    ],
+    "open_items": [
+      "Commit the absent-reads lane and open its PR now that the corrected gate reports exit 0.",
+      "Status lane: red proof on main for the tests written after the fix, add a changeset, and update the stale register and plan lines (V1-FINDINGS.md line 19, V1-SYSTEM-HARDENING.json line 67).",
+      "Python lane (stacked on #223): add `#[non_exhaustive]` to `DepContainer`, assert the loose marker line in the marker test, shorten the two-line doc, rewrite #223's changeset sentence that says Python is not fixed, record the `DepLocator` `#[non_exhaustive]` break with new constructors, and note the behavior change that loose extra/marker lines now have their floor raised.",
+      "T08 shared-effect dedupe remains after its barrier shipped."
+    ]
+  }
+}
