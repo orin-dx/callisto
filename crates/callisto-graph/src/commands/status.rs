@@ -5,11 +5,12 @@ use callisto_model::{
     SCHEMA_VERSION,
 };
 
-use crate::aggregate::LoadedChangeset;
+use crate::aggregate::{resolve_target_package, LoadedChangeset};
 use crate::changed::changed_since_last_tag;
 use crate::commands::escalate;
 use crate::commands::version::{plan_version, VersionOptions};
 use crate::error::GraphError;
+use crate::identity::IdentityIndex;
 use crate::infer::SeverityInference;
 use crate::resolver::DependencyResolver;
 use crate::Workspace;
@@ -22,29 +23,27 @@ pub struct StatusOptions {
 /// Per-package accumulator: pending changeset names and their max severity.
 type PendingChangesets = BTreeMap<PackageId, (Vec<String>, Option<Severity>)>;
 
-/// Resolves each changeset entry to at most one package and accumulates the
-/// pending changeset names and max severity per package.
+/// Resolves each changeset entry to at most one package through the identity index -- the
+/// resolver `callisto version` uses -- and accumulates the pending changeset names and max
+/// severity per package.
 ///
-/// Uses [`PackageId::resolve_unique`] -- the same primitive
-/// `changeset_wellformedness_diagnostics` uses below, kept as the one
-/// resolution path -- rather than a bare `matches()` loop, so a changeset
-/// entry naming a bare package that exists in two or more ecosystems (e.g.
-/// `cargo/foo` and `npm/foo`) is never silently attached to every matching
-/// package. An unknown or ambiguous entry is skipped here rather than
-/// hard-erroring: `changeset_wellformedness_diagnostics` reports both cases
-/// as an Error-severity diagnostic instead.
+/// An unknown or ambiguous entry is skipped here rather than hard-erroring:
+/// `changeset_wellformedness_diagnostics` reports both cases as an Error-severity diagnostic.
 fn resolve_pending_changesets<'a>(
     packages: impl Iterator<Item = &'a Package> + Clone,
+    identity: &IdentityIndex,
     loaded_changesets: &[LoadedChangeset],
-) -> PendingChangesets {
+) -> Result<PendingChangesets, GraphError> {
     let mut pending: PendingChangesets = BTreeMap::new();
     for lc in loaded_changesets {
         for entry in &lc.changeset.entries {
             let Ok(entry_id) = PackageId::parse(&entry.name) else {
                 continue;
             };
-            let Ok(Some(resolved)) = entry_id.resolve_unique(packages.clone(), |p| &p.id) else {
-                continue;
+            let resolved = match resolve_target_package(packages.clone(), identity, &entry_id) {
+                Ok(Some(resolved)) => resolved,
+                Ok(None) | Err(GraphError::AmbiguousName { .. }) => continue,
+                Err(e) => return Err(e),
             };
             let name = lc
                 .path
@@ -53,14 +52,16 @@ fn resolve_pending_changesets<'a>(
                 .unwrap_or("unknown")
                 .to_string();
             let state = pending.entry(resolved.id.clone()).or_default();
-            state.0.push(name);
+            if state.0.last() != Some(&name) {
+                state.0.push(name);
+            }
             state.1 = match (state.1, entry.severity) {
                 (None, s) => Some(s),
                 (Some(cur), s) => Some(cur.max(s)),
             };
         }
     }
-    pending
+    Ok(pending)
 }
 
 pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
@@ -74,7 +75,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
     let tags = ws.tags()?;
 
     let all_packages: Vec<&Package> = ws.graph.packages().collect();
-    let pending = resolve_pending_changesets(all_packages.iter().copied(), &loaded_changesets);
+    let pending = resolve_pending_changesets(all_packages.iter().copied(), &ws.identity, &loaded_changesets)?;
 
     // Pending severity is `plan_version`'s own
     // `PlannedBump.severity` per package -- the same cascade/fixed/linked-group
@@ -135,8 +136,9 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
     // InvalidPackageName) now that `validate` is gone.
     diagnostics.extend(changeset_wellformedness_diagnostics(
         all_packages.iter().copied(),
+        &ws.identity,
         &loaded_changesets,
-    ));
+    )?);
     for failure in &changeset_load_failures {
         diagnostics.push(Diagnostic {
             code: DiagnosticCode::ChangesetParseFailed,
@@ -167,7 +169,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
 
 /// The per-changeset well-formedness diagnostics `validate` used to emit
 /// (crates/callisto-graph/src/commands/validate.rs, now removed): entries shape and
-/// package-name resolution. Uses the same `resolve_unique` primitive
+/// package-name resolution. Resolves through the same identity index
 /// `resolve_pending_changesets` does, but this scan must never abort early,
 /// so an unknown or ambiguous entry becomes a diagnostic instead of an
 /// early return.
@@ -179,8 +181,9 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
 /// diagnostic instead.
 fn changeset_wellformedness_diagnostics<'a>(
     packages: impl Iterator<Item = &'a Package> + Clone,
+    identity: &IdentityIndex,
     loaded: &[LoadedChangeset],
-) -> Vec<Diagnostic> {
+) -> Result<Vec<Diagnostic>, GraphError> {
     let mut diagnostics = Vec::new();
     for cs in loaded {
         if cs.changeset.entries.is_empty() {
@@ -197,7 +200,7 @@ fn changeset_wellformedness_diagnostics<'a>(
 
         for entry in &cs.changeset.entries {
             match PackageId::parse(&entry.name) {
-                Ok(id) => match id.resolve_unique(packages.clone(), |p| &p.id) {
+                Ok(id) => match resolve_target_package(packages.clone(), identity, &id) {
                     Ok(None) => {
                         diagnostics.push(Diagnostic {
                             code: DiagnosticCode::UnknownPackage,
@@ -214,8 +217,8 @@ fn changeset_wellformedness_diagnostics<'a>(
                         });
                     }
                     Ok(Some(_)) => {}
-                    Err(candidates) => {
-                        let names: Vec<String> = candidates.iter().map(|p| p.id.display_name().to_string()).collect();
+                    Err(GraphError::AmbiguousName { candidates, .. }) => {
+                        let names: Vec<String> = candidates.iter().map(|id| id.display_name().to_string()).collect();
                         diagnostics.push(Diagnostic {
                             code: DiagnosticCode::AmbiguousPackageName,
                             severity: DiagnosticSeverity::Error,
@@ -231,6 +234,7 @@ fn changeset_wellformedness_diagnostics<'a>(
                             escalated_by: None,
                         });
                     }
+                    Err(e) => return Err(e),
                 },
                 Err(_) => {
                     diagnostics.push(Diagnostic {
@@ -250,7 +254,7 @@ fn changeset_wellformedness_diagnostics<'a>(
             }
         }
     }
-    diagnostics
+    Ok(diagnostics)
 }
 
 #[cfg(test)]
@@ -306,39 +310,104 @@ mod tests {
         }
     }
 
-    /// A bare changeset entry name that
-    /// exists in two or more ecosystems (e.g. `cargo/foo` and `npm/foo`)
-    /// must not attach the changeset to either package, ambiguously or
-    /// otherwise, and must not hard-error `status` either --
-    /// `changeset_wellformedness_diagnostics` reports it as an
-    /// `AmbiguousPackageName` diagnostic instead.
+    /// Index as `ManifestWalkResolver::build` would register each package's own manifest names.
+    fn identity_for(entries: &[(Ecosystem, &str, &Package)]) -> IdentityIndex {
+        let mut index = IdentityIndex::default();
+        for (eco, name, pkg) in entries {
+            index.native.insert((*eco, (*name).to_string()), pkg.id.clone());
+        }
+        index
+    }
+
+    /// A bare entry naming a name shared by two promoted packages attaches to neither;
+    /// `changeset_wellformedness_diagnostics` reports it instead.
     #[test]
     fn test_resolve_pending_changesets_ambiguous_bare_name_is_skipped() {
         let cargo_foo = make_package(Ecosystem::Cargo, "foo");
         let npm_foo = make_package(Ecosystem::Npm, "foo");
-        let packages = vec![&cargo_foo, &npm_foo];
-
+        let identity = identity_for(&[(Ecosystem::Cargo, "foo", &cargo_foo), (Ecosystem::Npm, "foo", &npm_foo)]);
         let loaded = vec![make_loaded_changeset("foo", Severity::Minor)];
 
-        let pending = resolve_pending_changesets(packages.into_iter(), &loaded);
+        let pending = resolve_pending_changesets([&cargo_foo, &npm_foo].into_iter(), &identity, &loaded).unwrap();
 
-        assert!(!pending.contains_key(&cargo_foo.id));
-        assert!(!pending.contains_key(&npm_foo.id));
+        assert!(pending.is_empty());
     }
 
-    /// An unambiguous bare-name changeset entry still resolves to the single
-    /// matching package.
     #[test]
     fn test_resolve_pending_changesets_unambiguous_bare_name_resolves() {
         let cargo_foo = make_package(Ecosystem::Cargo, "foo");
-        let packages = vec![&cargo_foo];
-
+        let identity = identity_for(&[(Ecosystem::Cargo, "foo", &cargo_foo)]);
         let loaded = vec![make_loaded_changeset("foo", Severity::Major)];
 
-        let pending = resolve_pending_changesets(packages.into_iter(), &loaded);
+        let pending = resolve_pending_changesets([&cargo_foo].into_iter(), &identity, &loaded).unwrap();
 
         let (names, sev) = pending.get(&cargo_foo.id).expect("package should be present");
         assert_eq!(names, &vec!["foo-changeset".to_string()]);
         assert_eq!(sev, &Some(Severity::Major));
+    }
+
+    /// Two selectors for one package fold into one record carrying the higher severity.
+    #[test]
+    fn test_resolve_pending_changesets_resolves_a_secondary_native_name() {
+        let owner = make_package(Ecosystem::Cargo, "x-core");
+        let identity = identity_for(&[
+            (Ecosystem::Cargo, "x-core", &owner),
+            (Ecosystem::Npm, "@x/core", &owner),
+        ]);
+        let mut one = make_loaded_changeset("@x/core", Severity::Minor);
+        one.changeset.entries.push(Entry {
+            name: "npm/@x/core".to_string(),
+            severity: Severity::Patch,
+        });
+        let loaded = vec![one];
+
+        let pending = resolve_pending_changesets([&owner].into_iter(), &identity, &loaded).unwrap();
+
+        let (names, sev) = pending.get(&owner.id).expect("owner should be present");
+        assert_eq!(names, &vec!["core-changeset".to_string()]);
+        assert_eq!(sev, &Some(Severity::Minor));
+    }
+
+    #[test]
+    fn test_resolve_pending_changesets_qualified_selector_for_a_missing_ecosystem_is_skipped() {
+        let owner = make_package(Ecosystem::Cargo, "foo");
+        let identity = identity_for(&[(Ecosystem::Cargo, "foo", &owner)]);
+        let loaded = vec![make_loaded_changeset("npm/foo", Severity::Minor)];
+
+        let pending = resolve_pending_changesets([&owner].into_iter(), &identity, &loaded).unwrap();
+
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn test_wellformedness_reports_unknown_for_a_qualified_selector_the_package_lacks() {
+        let owner = make_package(Ecosystem::Cargo, "foo");
+        let identity = identity_for(&[(Ecosystem::Cargo, "foo", &owner)]);
+        let loaded = vec![make_loaded_changeset("npm/foo", Severity::Minor)];
+
+        let diagnostics = changeset_wellformedness_diagnostics([&owner].into_iter(), &identity, &loaded).unwrap();
+
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code, DiagnosticCode::UnknownPackage);
+    }
+
+    #[test]
+    fn test_wellformedness_accepts_a_secondary_native_name_and_flags_ambiguity() {
+        let owner = make_package(Ecosystem::Cargo, "x");
+        let other = make_package(Ecosystem::Cargo, "shared");
+        let identity = identity_for(&[
+            (Ecosystem::Cargo, "x", &owner),
+            (Ecosystem::Npm, "shared", &owner),
+            (Ecosystem::Cargo, "shared", &other),
+        ]);
+        let ok = vec![make_loaded_changeset("npm/shared", Severity::Minor)];
+        let diagnostics = changeset_wellformedness_diagnostics([&owner, &other].into_iter(), &identity, &ok).unwrap();
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+
+        let ambiguous = vec![make_loaded_changeset("shared", Severity::Minor)];
+        let diagnostics =
+            changeset_wellformedness_diagnostics([&owner, &other].into_iter(), &identity, &ambiguous).unwrap();
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code, DiagnosticCode::AmbiguousPackageName);
     }
 }
