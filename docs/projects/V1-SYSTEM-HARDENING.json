@@ -64,7 +64,7 @@
         ]
       },
       "steps": [
-        "Baseline: IdentityIndex.resolve_id correctly resolves native names in aggregation, but status pending and diagnostics use PackageId::resolve_unique; new identifiers still depend on sibling collisions.",
+        "Baseline: status and version both resolve changeset selectors through IdentityIndex.resolve_id; new identifiers still depend on sibling collisions.",
         "Implement D01's canonical-reference/migration contract at one shared owner-aware resolver, including native name normalization and actionable legacy ambiguity errors. Emit canonical exact references for add/init/reports/groups/config without conflating different outputs with release owners.",
         "Migrate all selector consumers, both status helpers, package/group rules, changesets, pre-state and CLI selection together. Keep glob matching as an explicitly separate pattern language, not an exact-ID parser.",
         "Align GroupTable::from_groups conflict validation with resolve so no alternate construction path silently bypasses the group invariant; add the sibling constructor regression in config/group tests.",
