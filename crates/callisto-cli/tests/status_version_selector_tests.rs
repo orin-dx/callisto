@@ -262,14 +262,12 @@ fn colliding_secondary_name_qualified_by_its_own_ecosystem_agrees() {
 }
 
 #[test]
-#[ignore = "status and version resolve this selector differently"]
 fn secondary_native_name_of_a_dual_manifest_package_resolves_the_same() {
     let dir = dual();
     assert_same_packages(dir.path(), "@org/native-core-js");
 }
 
 #[test]
-#[ignore = "status and version resolve this selector differently"]
 fn qualified_secondary_native_name_of_a_dual_manifest_package_resolves_the_same() {
     let dir = dual();
     for selector in ["npm/@org/native-core-js", "npm:@org/native-core-js"] {
@@ -278,7 +276,6 @@ fn qualified_secondary_native_name_of_a_dual_manifest_package_resolves_the_same(
 }
 
 #[test]
-#[ignore = "status and version resolve this selector differently"]
 fn qualified_selector_for_an_ecosystem_that_lacks_the_name_resolves_the_same() {
     let dir = unique();
     for selector in ["npm/foo", "npm:foo", "pypi/foo"] {
@@ -287,22 +284,163 @@ fn qualified_selector_for_an_ecosystem_that_lacks_the_name_resolves_the_same() {
 }
 
 #[test]
-#[ignore = "status and version resolve this selector differently"]
 fn qualified_primary_name_in_a_second_manifests_ecosystem_resolves_the_same() {
     let dir = dual();
     assert_same_packages(dir.path(), "npm/native-core");
 }
 
 #[test]
-#[ignore = "status and version resolve this selector differently"]
 fn bare_name_that_is_one_package_primary_and_anothers_secondary_resolves_the_same() {
     let dir = secondary_name_collides_with_a_primary_name();
     assert_same_packages(dir.path(), "shared");
 }
 
 #[test]
-#[ignore = "status and version resolve this selector differently"]
 fn qualified_secondary_name_that_equals_another_packages_primary_resolves_the_same() {
     let dir = secondary_name_collides_with_a_primary_name();
     assert_same_packages(dir.path(), "npm/shared");
+}
+
+fn status_report(root: &Path) -> (Option<i32>, serde_json::Value) {
+    let (exit, stdout, _) = run(root, &["status", "--check"]);
+    (
+        exit,
+        serde_json::from_str(&stdout).expect("status prints a JSON report"),
+    )
+}
+
+fn planned_packages(report: &serde_json::Value) -> BTreeSet<String> {
+    report["packages"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|p| !p["pendingSeverity"].is_null())
+        .map(|p| p["package"].as_str().unwrap_or_default().to_string())
+        .collect()
+}
+
+fn write_changeset(root: &Path, selectors: &[(&str, &str)]) {
+    let lines: Vec<String> = selectors.iter().map(|(s, b)| format!("\"{s}\": {b}\n")).collect();
+    fs::write(
+        root.join(".changeset/probe.md"),
+        format!("---\n{}---\n\nChange.\n", lines.concat()),
+    )
+    .unwrap();
+}
+
+#[test]
+fn status_check_passes_only_when_version_consumes_the_changeset() {
+    let selectors = [
+        "foo",
+        "cargo/foo",
+        "npm/foo",
+        "pypi/foo",
+        "@org/native-core-js",
+        "npm/@org/native-core-js",
+        "cargo/@org/native-core-js",
+        "native-core",
+        "npm/native-core",
+        "shared",
+        "npm/shared",
+        "cargo/shared",
+        "nonexistent",
+    ];
+    for dir in [
+        unique(),
+        dual(),
+        promoted(),
+        secondary_name_collides_with_a_primary_name(),
+    ] {
+        for selector in selectors {
+            write_changeset(dir.path(), &[(selector, "minor")]);
+            let (exit, report) = status_report(dir.path());
+            let version = version_outcome(dir.path());
+            let planned = planned_packages(&report);
+            if exit == Some(0) {
+                assert!(
+                    !version.packages.is_empty(),
+                    "`{selector}`: status passes but version consumes nothing"
+                );
+                assert_eq!(planned, version.packages, "`{selector}`");
+            } else {
+                assert!(
+                    planned.is_empty(),
+                    "`{selector}`: status reports {planned:?} planned while rejecting the entry"
+                );
+                assert!(
+                    version.packages.is_empty(),
+                    "`{selector}`: version bumps {:?}",
+                    version.packages
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn two_selectors_for_one_package_attach_it_once_with_the_higher_severity() {
+    let dir = dual();
+    write_changeset(
+        dir.path(),
+        &[
+            ("native-core", "patch"),
+            ("@org/native-core-js", "minor"),
+            ("npm/@org/native-core-js", "patch"),
+        ],
+    );
+    let (exit, report) = status_report(dir.path());
+    assert_eq!(exit, Some(0), "{report}");
+    let pkg = &report["packages"][0];
+    assert_eq!(pkg["package"], "native-core");
+    assert_eq!(pkg["pendingChangesets"], serde_json::json!(["probe"]));
+    assert_eq!(pkg["pendingSeverity"], "minor");
+    assert_eq!(
+        version_outcome(dir.path()).packages,
+        BTreeSet::from(["native-core".to_string()])
+    );
+}
+
+#[test]
+fn a_selector_naming_a_group_members_secondary_name_plans_the_whole_group() {
+    let dir = workspace(&["crates/native-core", "crates/other"]);
+    cargo_pkg(dir.path(), "crates/native-core", "native-core", "1.0.0");
+    npm_pkg(dir.path(), "crates/native-core", "@org/native-core-js", "1.0.0");
+    cargo_pkg(dir.path(), "crates/other", "other", "1.0.0");
+    fs::write(
+        dir.path().join("callisto.toml"),
+        "[[fixed-group]]\nname = \"pair\"\nmembers = [\"@org/native-core-js\", \"other\"]\n",
+    )
+    .unwrap();
+    commit(dir.path());
+    for selector in ["@org/native-core-js", "npm/@org/native-core-js", "native-core"] {
+        write_changeset(dir.path(), &[(selector, "minor")]);
+        let (exit, report) = status_report(dir.path());
+        let version = version_outcome(dir.path());
+        assert_eq!(exit, Some(0), "`{selector}`: {report}");
+        assert_eq!(
+            planned_packages(&report),
+            BTreeSet::from(["native-core".to_string(), "other".to_string()]),
+            "`{selector}`"
+        );
+        assert_eq!(planned_packages(&report), version.packages, "`{selector}`");
+    }
+}
+
+#[test]
+fn selectors_resolve_the_same_in_a_prerelease_workspace() {
+    let dir = dual();
+    let (exit, _, stderr) = run(dir.path(), &["pre", "enter", "beta"]);
+    assert_eq!(exit, Some(0), "{stderr}");
+    commit(dir.path());
+    for selector in [
+        "@org/native-core-js",
+        "npm/@org/native-core-js",
+        "native-core",
+        "npm/native-core",
+    ] {
+        assert_same_packages(dir.path(), selector);
+    }
+    let (status, version) = outcomes(dir.path(), "@org/native-core-js");
+    assert_eq!(status.packages, BTreeSet::from(["native-core".to_string()]));
+    assert_eq!(version.packages, status.packages);
 }
