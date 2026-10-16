@@ -44,9 +44,11 @@ A workspace can hold `cargo:foo` and `npm:foo` as separate packages; ambiguity i
 
 ## Historical ownership
 
-For a promoted package, `TagIndex::build` also considers bare-name tags. `sole_owner_at` checks which same-named candidate's first current canonical manifest path exists at the tag's commit; it does not read every historical manifest name. `assign_promoted_pre_keys` applies that ownership check at the commit that added `pre.json`, and E245 reports a baseline with no unique owner.
+For a promoted package, `TagIndex::build` also considers bare-name tags. `history::sole_owner_at` picks the same-named candidate whose first canonical manifest path exists at the tag's commit. When none does, because the directory moved or the package gained a higher-priority manifest, it reads the manifests of that commit and picks the one candidate with a manifest of one of its ecosystems declaring the shared name. Two or more matches, or none, mean no owner. `assign_promoted_pre_keys` applies the same check at the commit that added `pre.json`, and E245 reports a baseline with no unique owner.
 
-This is not complete rename, manifest-addition or demotion support. Removing a sibling can stop lookup of a newer qualified tag, and current paths can misidentify historic bare ownership. Those failures remain tracked in [the findings register](../projects/V1-FINDINGS.md); do not infer migration safety from the directory key alone.
+A demoted package, whose same-named sibling was removed, also considers the qualified tags of its first manifest's ecosystem and keeps the newest version across both families.
+
+A rename that changes the native name, or a move that changes it too, leaves no evidence in Git. Declare it with `previous-tag-templates`; do not infer it from the directory key.
 
 ## Platform packages in code
 
