@@ -198,7 +198,7 @@
         ]
       },
       "steps": [
-        "Finding coverage: SYS-BARRIER. Baseline: ReleaseOperationId roles are distribution-owned; derive_release_inputs independently emits shared tag/forge effects and package dependencies order all owner outputs.",
+        "Finding coverage: none open. The owner publication barrier shipped: a package tag waits for the registry publishes of every release identity it has. Remaining: derive_release_inputs still emits a shared tag or forge effect once per distribution, and package dependencies order all owner outputs.",
         "Implement D01's single-owner physical effects and deterministic operation IDs; one tag/draft/upload/publication may be referenced by several distributions but executed once. Reject contradictory tag target/destination/owner declarations before any effect.",
         "Project native dependency publication prerequisites from the relevant manifest/distribution, not every output of the source node. Gate current supported registry ecosystems' shared tag/publication on all required selected native publishes; retain platform-before-owner and artifact-before-publication prerequisites.",
         "Migrate intent validation/digests, preparation, production ValidatedReleaseIntent, SimWorld, provider dispatch, receipt evidence and schema guard tests as one compilation boundary. Do not add a scheduler or persisted execution state.",
@@ -215,41 +215,6 @@
       "covers_criteria": [
         "REL-ORD-01",
         "REL-ORD-02",
-        "REL-RERUN-04"
-      ]
-    },
-    {
-      "id": "T08-RETRY",
-      "title": "Observe tagged candidates before declaring a local release complete",
-      "files": {
-        "modify": [
-          "crates/callisto-graph/src/commands/release_decision.rs",
-          "crates/callisto-graph/src/commands/release/local.rs",
-          "crates/callisto-graph/src/commands/release_execution.rs",
-          "crates/callisto-cli/src/commands/release.rs",
-          "docs/specs/release.json",
-          "docs/releasing.md"
-        ],
-        "test": [
-          "crates/callisto-cli/tests/release_command_e2e_tests.rs",
-          "crates/callisto-cli/tests/durable_release_e2e_tests.rs"
-        ]
-      },
-      "steps": [
-        "Finding coverage: SYS-RETRY. Baseline: derive_unreleased_decision skips locally tagged versions before provider observation; version_is_tagged is a selection shortcut, not completion evidence.",
-        "Replace tag-only exclusion with D01's bounded candidate/completion contract. Already-tagged current versions are checked for remaining required effects; fully complete releases perform no writes. Preserve expected-commit trust and exact committed CI rosters; do not broaden release authority to inferred/manual commits.",
-        "Keep original immutable artifacts/intent where available. Specify safe refusal for a changed source or unavailable original bytes; never rebuild and replace published version bytes as implicit recovery. Address explicit --package semantics and update REL-CMD-01/08 with implementation.",
-        "Fault after local tag, push, draft, upload and public publication; retry the real CLI and assert only missing operations run, remote conflicts block, unrelated old versions are not rereleased and a receipt appears only on complete success.",
-        "Run rtk cargo test -p callisto-graph, then rtk cargo test -p callisto-cli --test release_command_e2e_tests and --test durable_release_e2e_tests. The generated simple action path is part of the test scope, not only retained-intent CI."
-      ],
-      "commit_message": "fix(release): finish remaining effects for tagged versions",
-      "depends_on": [
-        "T08"
-      ],
-      "covers_criteria": [
-        "REL-CMD-01",
-        "REL-CMD-08",
-        "REL-RERUN-02",
         "REL-RERUN-04"
       ]
     },
@@ -297,8 +262,7 @@
       "depends_on": [
         "D01",
         "T07",
-        "T08",
-        "T08-RETRY"
+        "T08"
       ],
       "covers_criteria": [
         "REL-PUB-04",
@@ -345,45 +309,6 @@
       ]
     },
     {
-      "id": "T10",
-      "title": "Build and place only intent-selected supported outputs",
-      "files": {
-        "modify": [
-          "crates/callisto-graph/src/commands/init.rs",
-          "crates/callisto-graph/src/matrix.rs",
-          ".github/tests/verify-release-workflow-contract.sh",
-          ".github/tests/verify-release-workflow-policy.sh",
-          "docs/specs/cli.json",
-          "docs/specs/matrix.json",
-          "docs/releasing.md",
-          "docs/publishing.md"
-        ],
-        "test": [
-          "crates/callisto-graph/tests/matrix_tests.rs",
-          ".github/actions/callisto-action/tests/test_release_contract.sh"
-        ]
-      },
-      "steps": [
-        "Finding coverage: SYS-NAPI. Baseline: generated matrix and placement select all workspace napi targets instead of the verified release intent.",
-        "Derive build and placement rosters from immutable intent-selected owners/distributions/artifact declarations, retaining canonical directory and target associations. An unrelated addon must not be built or placed for a Cargo-only release.",
-        "Use a shared selected-output projection rather than independent jq/name heuristics in build and placement. Keep public matrix inventory behavior separate from release filtering, and reuse the existing early unsupported-shape validation.",
-        "Test Cargo-only beside unrelated napi, one of two addons selected, shared product artifacts, complete required platform selection, empty build roster and tampered/unknown build output. Secret access and no-Environment policy stay unchanged.",
-        "Run rtk cargo test -p callisto-graph --test matrix_tests, scoped graph unit tests, rtk proxy bash .github/tests/verify-release-workflow-contract.sh and rtk proxy bash .github/tests/verify-release-workflow-policy.sh sequentially; lint generated simple/matrix workflows with available project-native tools.",
-        "Update current CLI/matrix contracts and operator docs; generated Maturin CI remains explicitly unsupported unless separately approved and implemented."
-      ],
-      "commit_message": "fix(init): generate authoritative supported release workflows",
-      "depends_on": [
-        "T07",
-        "T08",
-        "T09-ROUTES"
-      ],
-      "covers_criteria": [
-        "CLI-WF-04",
-        "CLI-WF-06",
-        "REL-GH-07"
-      ]
-    },
-    {
       "id": "T12",
       "title": "Verify production native workflows and boundary recovery",
       "files": {
@@ -418,10 +343,8 @@
         "T06-HISTORY",
         "T07",
         "T08",
-        "T08-RETRY",
         "T09",
-        "T09-ROUTES",
-        "T10"
+        "T09-ROUTES"
       ]
     },
     {
@@ -476,17 +399,8 @@
       "target_crate": "callisto-model / callisto-graph / callisto-cli",
       "task_ids": [
         "T08",
-        "T08-RETRY",
         "T09",
         "T09-ROUTES"
-      ]
-    },
-    {
-      "batch_id": "B09",
-      "title": "Intent-selected generated workflow integration",
-      "target_crate": "callisto-graph / generated workflow",
-      "task_ids": [
-        "T10"
       ]
     },
     {
