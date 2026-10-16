@@ -374,22 +374,22 @@ impl GitAccess<'_> {
         Ok(output.success())
     }
 
-    /// Every file in `rev`'s tree under this root, relative to it.
-    pub fn files_at(&self, rev: &str) -> Result<Vec<PathBuf>, VcsError> {
-        let output = self
-            .runner
-            .run("git", &["ls-tree", "-r", "-z", "--name-only", rev], &self.root)?;
+    /// Files in `rev`'s tree matching one of `pathspecs` whose text contains `needle`, ignoring case.
+    ///
+    /// A revision that cannot be searched (not a commit, or objects missing) has no matches, as in
+    /// [`Self::path_exists_at`].
+    pub fn files_containing_at(&self, rev: &str, needle: &str, pathspecs: &[&str]) -> Result<Vec<PathBuf>, VcsError> {
+        let mut args = vec!["grep", "-l", "-z", "-F", "-i", "-e", needle, rev, "--"];
+        args.extend_from_slice(pathspecs);
+        let output = self.runner.run("git", &args, &self.root)?;
         if !output.success() {
-            return Err(VcsError::Git(format!(
-                "`git ls-tree` failed for `{rev}` in `{}`: {}",
-                self.root.display(),
-                output.redacted_stderr()
-            )));
+            return Ok(Vec::new());
         }
+        let prefix = format!("{rev}:");
         Ok(output
             .stdout
             .split('\0')
-            .filter(|path| !path.is_empty())
+            .filter_map(|entry| entry.strip_prefix(&prefix))
             .map(PathBuf::from)
             .collect())
     }

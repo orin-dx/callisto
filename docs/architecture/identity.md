@@ -44,7 +44,7 @@ A workspace can hold `cargo:foo` and `npm:foo` as separate packages; ambiguity i
 
 ## Historical ownership
 
-For a promoted package, `TagIndex::build` also considers bare-name tags. `history::sole_owner_at` picks the same-named candidate whose first canonical manifest path exists at the tag's commit. When none does, because the directory moved or the package gained a higher-priority manifest, it reads the manifests of that commit and picks the one candidate with a manifest of one of its ecosystems declaring the shared name. Two or more matches, or none, mean no owner. `assign_promoted_pre_keys` applies the same check at the commit that added `pre.json`, and E245 reports a baseline with no unique owner.
+For a promoted package, `TagIndex::build` also considers bare-name tags. `history::sole_owner_at` picks the same-named candidate whose first canonical manifest path exists at the tag's commit. When none does, because the directory moved or the package gained a higher-priority manifest, it asks which ecosystems had a manifest declaring the shared name at that commit, found with `git grep` and confirmed by reading only the matching manifests. The owner is the one candidate whose own manifest in such an ecosystem has that native name today, taken from the identity index. Two or more matches, or none, mean no owner. `assign_promoted_pre_keys` applies the same check at the commit that added `pre.json`, and E245 reports a baseline with no unique owner.
 
 A demoted package, whose same-named sibling was removed, also considers the qualified tags of its first manifest's ecosystem and keeps the newest version across both families.
 

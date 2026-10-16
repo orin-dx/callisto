@@ -276,6 +276,140 @@ fn a_demoted_package_keeps_the_qualified_tag_it_made_while_promoted() {
     assert_eq!(foo["lastReleasedVersion"], "2.0.0", "status: {status}");
 }
 
+/// An empty workspace repository with Callisto scaffolded and no packages.
+fn empty_repo() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    callisto_fixtures::git::init_repo(dir.path());
+    callisto_fixtures::scaffold_callisto(dir.path());
+    dir
+}
+
+fn write_manifest(root: &Path, relative: &str, content: String) {
+    fs::create_dir_all(root.join(relative).parent().unwrap()).unwrap();
+    fs::write(root.join(relative), content).unwrap();
+}
+
+fn cargo_manifest(name: &str, version: &str) -> String {
+    format!("[package]\nname = \"{name}\"\nversion = \"{version}\"\nedition = \"2021\"\n")
+}
+
+fn npm_manifest(name: &str, version: &str) -> String {
+    format!("{{\n  \"name\": \"{name}\",\n  \"version\": \"{version}\"\n}}\n")
+}
+
+fn pypi_manifest(name: &str, version: &str) -> String {
+    format!("[project]\nname = \"{name}\"\nversion = \"{version}\"\n")
+}
+
+/// Cargo `foo` with a second npm manifest named `foo-js` in `crates/a`, and Python `foo` in `py/z`.
+fn add_lookalike_owners(root: &Path) {
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/a\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("crates/a/src")).unwrap();
+    fs::write(root.join("crates/a/src/lib.rs"), "\n").unwrap();
+    write_manifest(root, "crates/a/Cargo.toml", cargo_manifest("foo", "0.1.0"));
+    write_manifest(root, "crates/a/package.json", npm_manifest("foo-js", "0.1.0"));
+    write_manifest(root, "py/z/pyproject.toml", pypi_manifest("foo", "0.1.0"));
+}
+
+#[test]
+fn a_deleted_packages_bare_tag_is_not_adopted_by_a_package_whose_second_manifest_has_another_name() {
+    let dir = empty_repo();
+    let root = dir.path();
+    write_manifest(root, "packages/y/package.json", npm_manifest("foo", "5.0.0"));
+    commit(root, "release npm foo");
+    git(root, &["tag", "foo@5.0.0"]);
+    git(root, &["rm", "-r", "-q", "packages/y"]);
+    add_lookalike_owners(root);
+    commit(root, "replace npm foo with lookalikes");
+
+    let status = run_ok(root, &["status"]);
+    for id in ["cargo/foo", "pypi/foo"] {
+        let package = status_package(&status, id).unwrap_or_else(|| panic!("no {id} in status: {status}"));
+        assert!(
+            package["lastReleasedVersion"].is_null(),
+            "{id} adopted the tag: {status}"
+        );
+    }
+}
+
+#[test]
+fn a_package_keeps_its_history_beside_a_lookalike_with_a_second_manifest() {
+    let dir = empty_repo();
+    let root = dir.path();
+    write_manifest(root, "packages/b/package.json", npm_manifest("foo", "1.0.0"));
+    commit(root, "release npm foo");
+    git(root, &["tag", "foo@1.0.0"]);
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/a\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("crates/a/src")).unwrap();
+    fs::write(root.join("crates/a/src/lib.rs"), "\n").unwrap();
+    write_manifest(root, "crates/a/Cargo.toml", cargo_manifest("foo", "1.0.0"));
+    write_manifest(root, "crates/a/package.json", npm_manifest("foo-js", "1.0.0"));
+    git(root, &["mv", "packages/b", "packages/b2"]);
+    commit(root, "add the lookalike and move npm foo");
+
+    let status = run_ok(root, &["status"]);
+    let npm = status_package(&status, "npm/foo").unwrap_or_else(|| panic!("no npm/foo in status: {status}"));
+    assert_eq!(npm["lastReleasedVersion"], "1.0.0", "status: {status}");
+    let cargo = status_package(&status, "cargo/foo").unwrap_or_else(|| panic!("no cargo/foo in status: {status}"));
+    assert!(cargo["lastReleasedVersion"].is_null(), "status: {status}");
+}
+
+#[test]
+fn a_pre_release_baseline_of_a_deleted_package_is_not_adopted_by_a_lookalike() {
+    let dir = empty_repo();
+    let root = dir.path();
+    write_manifest(root, "packages/y/package.json", npm_manifest("foo", "5.0.0"));
+    fs::write(
+        root.join(".changeset/pre.json"),
+        "{\"mode\":\"pre\",\"tag\":\"beta\",\"initialVersions\":{\"foo\":\"5.0.0\"},\"changesets\":[]}\n",
+    )
+    .unwrap();
+    commit(root, "enter pre with npm foo");
+    git(root, &["rm", "-r", "-q", "packages/y"]);
+    add_lookalike_owners(root);
+    commit(root, "replace npm foo with lookalikes");
+
+    let out = callisto(root, &["status"]);
+    assert!(!out.status.success(), "the baseline must not be adopted");
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(text.contains("E245"), "{text}");
+}
+
+#[test]
+fn a_bare_tag_that_points_at_a_blob_does_not_break_history_lookup() {
+    let dir = released_cargo_foo();
+    let root = dir.path();
+    add_npm_foo(root);
+    git(root, &["mv", "crates/foo", "crates/foo-core"]);
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/foo-core\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    commit(root, "move cargo foo");
+    let blob = git(root, &["rev-parse", "HEAD:Cargo.toml"]);
+    git(root, &["tag", "foo@0.5.0", &blob]);
+
+    let out = callisto(root, &["status"]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(out.stderr.is_empty(), "{}", String::from_utf8_lossy(&out.stderr));
+    let status: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let foo = status_package(&status, "cargo/foo").unwrap_or_else(|| panic!("no cargo/foo in status: {status}"));
+    assert_eq!(foo["lastReleasedVersion"], "1.0.0", "status: {status}");
+}
+
 #[test]
 fn a_bare_changeset_name_after_promotion_says_how_to_qualify_it() {
     let dir = released_cargo_foo();

@@ -1153,7 +1153,7 @@ fn test_fixed_group_seeded_siblings_converge_on_shared_target() {
     };
     let git = callisto_model::vcs::GitAccess::new(dir, &runner);
     let cfg_resolved = crate::config::load(dir).unwrap();
-    let tags = crate::tags::TagIndex::build(&git, &graph, &cfg_resolved).unwrap();
+    let tags = crate::tags::TagIndex::build(&git, &graph, &Default::default(), &cfg_resolved).unwrap();
 
     assert!(tags.last_tag(&pkg_a).is_some(), "A must have a prior release tag");
     assert!(tags.last_tag(&pkg_b).is_none(), "B must never have been released");
@@ -1356,7 +1356,7 @@ fn test_fixed_group_target_ignores_stale_tagged_member_alignment_base() {
     };
     let git = callisto_model::vcs::GitAccess::new(dir, &runner);
     let cfg_resolved = crate::config::load(dir).unwrap();
-    let tags = crate::tags::TagIndex::build(&git, &graph, &cfg_resolved).unwrap();
+    let tags = crate::tags::TagIndex::build(&git, &graph, &Default::default(), &cfg_resolved).unwrap();
 
     assert!(
         tags.last_tag(&pkg_stale).is_some(),
@@ -1448,7 +1448,7 @@ fn test_fixed_group_target_errors_on_tagged_member_missing_base_directly() {
     };
     let git = callisto_model::vcs::GitAccess::new(dir, &runner);
     let cfg_resolved = crate::config::load(dir).unwrap();
-    let tags = TagIndex::build(&git, &graph, &cfg_resolved).unwrap();
+    let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg_resolved).unwrap();
     assert!(tags.last_tag(&pkg_tagged).is_some(), "must carry a real release tag");
 
     // `base` deliberately omits `pkg_tagged`, simulating an unfiltered `live_members` slice.

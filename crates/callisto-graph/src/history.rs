@@ -1,6 +1,6 @@
 //! Which package owned a shared name at an earlier commit, judged by the manifests that commit contained.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
 use callisto_manifests::read_identity;
@@ -8,70 +8,85 @@ use callisto_model::vcs::GitAccess;
 use callisto_model::{normalize_pypi_project_name, Ecosystem, ManifestFormat, Package};
 
 use crate::error::GraphError;
+use crate::IdentityIndex;
 
-/// The native name each manifest declared at a commit, for every commit already read.
+/// The ecosystems with a manifest declaring a name at a revision, for every (revision, name) already read.
 #[derive(Default)]
-pub(crate) struct Rosters(HashMap<String, Vec<(Ecosystem, String)>>);
+pub(crate) struct Rosters(HashMap<(String, String), BTreeSet<Ecosystem>>);
 
 impl Rosters {
-    fn at(&mut self, git: &GitAccess<'_>, rev: &str) -> Result<&[(Ecosystem, String)], GraphError> {
-        if !self.0.contains_key(rev) {
-            self.0.insert(rev.to_string(), read_roster(git, rev)?);
+    fn declaring_at(&mut self, git: &GitAccess<'_>, rev: &str, name: &str) -> Result<BTreeSet<Ecosystem>, GraphError> {
+        let key = (rev.to_string(), name.to_string());
+        if let Some(known) = self.0.get(&key) {
+            return Ok(known.clone());
         }
-        Ok(&self.0[rev])
+        let mut declaring = BTreeSet::new();
+        for (ecosystem, format, file_name) in MANIFESTS {
+            if declares(git, rev, name, ecosystem, format, file_name)? {
+                declaring.insert(ecosystem);
+            }
+        }
+        self.0.insert(key, declaring.clone());
+        Ok(declaring)
     }
 }
 
-fn read_roster(git: &GitAccess<'_>, rev: &str) -> Result<Vec<(Ecosystem, String)>, GraphError> {
-    let mut roster = Vec::new();
-    for path in git.files_at(rev)? {
-        let Some(format) = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .and_then(manifest_format)
-        else {
-            continue;
-        };
+const MANIFESTS: [(Ecosystem, ManifestFormat, &str); 3] = [
+    (Ecosystem::Cargo, ManifestFormat::CargoToml, "Cargo.toml"),
+    (Ecosystem::Npm, ManifestFormat::PackageJson, "package.json"),
+    (Ecosystem::Pypi, ManifestFormat::PyprojectToml, "pyproject.toml"),
+];
+
+/// Whether `rev` held a manifest of `ecosystem` declaring `name`; only manifests mentioning it are read.
+fn declares(
+    git: &GitAccess<'_>,
+    rev: &str,
+    name: &str,
+    ecosystem: Ecosystem,
+    format: ManifestFormat,
+    file_name: &str,
+) -> Result<bool, GraphError> {
+    // A normalized Python name may be spelled with other separators, so search its first word.
+    let needle = match ecosystem {
+        Ecosystem::Pypi => name
+            .split(['-', '_', '.'])
+            .find(|word| !word.is_empty())
+            .unwrap_or(name),
+        _ => name,
+    };
+    for path in git.files_containing_at(rev, needle, &[&format!(":(glob)**/{file_name}")])? {
         let Some(text) = git.read_at(rev, &path)? else {
             continue;
         };
         // A manifest that was broken at `rev` simply names nobody.
-        let Some(name) = read_identity(format, &text, &path)
+        let declared = read_identity(format, &text, &path)
             .ok()
-            .and_then(|identity| identity.name)
-        else {
-            continue;
-        };
-        let ecosystem = format.ecosystem();
-        roster.push((ecosystem, name));
+            .and_then(|identity| identity.name);
+        if declared.is_some_and(|declared| names_equal(ecosystem, &declared, name)) {
+            return Ok(true);
+        }
     }
-    Ok(roster)
+    Ok(false)
 }
 
-fn manifest_format(file_name: &str) -> Option<ManifestFormat> {
-    match file_name {
-        "Cargo.toml" => Some(ManifestFormat::CargoToml),
-        "package.json" => Some(ManifestFormat::PackageJson),
-        "pyproject.toml" => Some(ManifestFormat::PyprojectToml),
-        _ => None,
-    }
-}
-
-fn names(ecosystem: Ecosystem, candidate: &str, declared: &str) -> bool {
+fn names_equal(ecosystem: Ecosystem, left: &str, right: &str) -> bool {
     match ecosystem {
-        Ecosystem::Pypi => normalize_pypi_project_name(candidate) == normalize_pypi_project_name(declared),
-        _ => candidate == declared,
+        Ecosystem::Pypi => normalize_pypi_project_name(left) == normalize_pypi_project_name(right),
+        _ => left == right,
     }
 }
 
-/// The one package among `candidates` that owned their shared bare name at `rev`, if exactly one did.
+/// The one package among `candidates` that owned the bare name `name` at `rev`, if exactly one did.
 ///
 /// A candidate whose current first manifest path exists at `rev` owns it. When none does, the package moved or changed
-/// its primary manifest, so ownership is whichever package had a manifest of one of its ecosystems declaring that name.
+/// its primary manifest, so ownership is whichever package has a manifest named `name` today in an ecosystem where
+/// `rev` also held a manifest named `name`.
 pub(crate) fn sole_owner_at<'p>(
     git: &GitAccess<'_>,
     rev: &str,
+    name: &str,
     candidates: &[&'p Package],
+    identity: &IdentityIndex,
     rosters: &mut Rosters,
 ) -> Result<Option<&'p Package>, GraphError> {
     let mut owner = None;
@@ -89,19 +104,14 @@ pub(crate) fn sole_owner_at<'p>(
     if owner.is_some() {
         return Ok(owner);
     }
-    let roster = rosters.at(git, rev)?;
-    let mut declaring = candidates.iter().filter(|pkg| {
-        pkg.canonical_manifests().any(|manifest| {
-            let ecosystem = manifest.ecosystem();
-            roster
-                .iter()
-                .any(|(declared_in, declared)| *declared_in == ecosystem && names(ecosystem, pkg.id.name(), declared))
+    let declaring = rosters.declaring_at(git, rev, name)?;
+    let mut holders = candidates.iter().filter(|pkg| {
+        declaring.iter().any(|ecosystem| {
+            identity
+                .native_name(&pkg.id, *ecosystem)
+                .is_some_and(|native| names_equal(*ecosystem, native, name))
         })
     });
-    let first = declaring.next();
-    Ok(if declaring.next().is_some() {
-        None
-    } else {
-        first.copied()
-    })
+    let first = holders.next();
+    Ok(if holders.next().is_some() { None } else { first.copied() })
 }

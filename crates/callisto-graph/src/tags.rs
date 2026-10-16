@@ -9,6 +9,7 @@ use callisto_model::{
 use crate::config::ResolvedConfig;
 use crate::error::GraphError;
 use crate::resolver::DependencyResolver;
+use crate::IdentityIndex;
 
 /// Fetches the full, unfiltered list of every tag name in the repository.
 ///
@@ -143,6 +144,7 @@ impl TagIndex {
     pub fn build<D: DependencyResolver>(
         git: &GitAccess<'_>,
         graph: &D,
+        identity: &IdentityIndex,
         cfg: &ResolvedConfig,
     ) -> Result<Self, GraphError> {
         reject_shared_default_templates(graph)?;
@@ -198,7 +200,7 @@ impl TagIndex {
                     .collect();
                 let mut owned = Vec::new();
                 for tag in matching_tags(&all_tags, &unqualified)? {
-                    if crate::history::sole_owner_at(git, tag, &same, &mut rosters)?
+                    if crate::history::sole_owner_at(git, tag, pkg.id.name(), &same, identity, &mut rosters)?
                         .is_some_and(|owner| owner.id == pkg.id)
                     {
                         owned.push(tag);
@@ -358,7 +360,8 @@ mod tests {
         let cfg = crate::config::load(dir.path()).unwrap();
         let git = GitAccess::new(dir.path(), &runner);
 
-        let tags = TagIndex::build(&git, &graph, &cfg).expect("TagIndex::build must succeed from the git tag list");
+        let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg)
+            .expect("TagIndex::build must succeed from the git tag list");
 
         let pkg_id = PackageId::parse("pkg-a").unwrap();
         assert_eq!(
@@ -384,7 +387,7 @@ mod tests {
         let cfg = crate::config::load(dir.path()).unwrap();
         let git = GitAccess::new(dir.path(), &runner);
 
-        let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
+        let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
 
         for name in ["pkg-a", "pkg-b", "pkg-c"] {
             let id = PackageId::parse(name).unwrap();
@@ -462,7 +465,7 @@ mod tests {
         let cfg = crate::config::load(dir.path()).unwrap();
         let git = GitAccess::new(dir.path(), &runner);
 
-        match TagIndex::build(&git, &graph, &cfg) {
+        match TagIndex::build(&git, &graph, &Default::default(), &cfg) {
             Err(GraphError::Vcs(callisto_model::vcs::VcsError::InvalidGlob { .. })) => {}
             Err(other) => panic!("expected InvalidGlob, got a different GraphError: {other:?}"),
             Ok(_) => panic!("TagIndex::build must propagate the malformed-glob error, got Ok"),
@@ -479,7 +482,7 @@ mod tests {
         let cfg = crate::config::load(dir.path()).unwrap();
         let git = GitAccess::new(dir.path(), &runner);
 
-        let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
+        let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
 
         for name in ["pkg-a", "pkg-b"] {
             let id = PackageId::parse(name).unwrap();
@@ -511,7 +514,7 @@ mod tests {
         let cfg = crate::config::load(dir.path()).unwrap();
         let git = GitAccess::new(dir.path(), &runner);
 
-        let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
+        let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
 
         let pkg_a = PackageId::parse("pkg-a").unwrap();
         let pkg_ab = PackageId::parse("pkg-ab").unwrap();
@@ -572,7 +575,7 @@ mod tests {
         let cfg = crate::config::load(dir.path()).unwrap();
         let git = GitAccess::new(dir.path(), &runner);
 
-        let tags = TagIndex::build(&git, &graph, &cfg).expect("TagIndex::build must succeed");
+        let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).expect("TagIndex::build must succeed");
 
         let custom_id = PackageId::parse("custom-pkg").unwrap();
         let default_id = PackageId::parse("pkg-default").unwrap();
@@ -609,7 +612,7 @@ mod tests {
         let cfg = crate::config::load(dir.path()).unwrap();
         let git = GitAccess::new(dir.path(), &runner);
 
-        let tags = TagIndex::build(&git, &graph, &cfg).expect("TagIndex::build must succeed");
+        let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).expect("TagIndex::build must succeed");
 
         let pkg_id = PackageId::parse("pkg-a").unwrap();
         assert_eq!(
@@ -642,7 +645,7 @@ mod tests {
         let git = GitAccess::new(dir.path(), &runner);
 
         let is_command_err = matches!(
-            TagIndex::build(&git, &graph, &cfg),
+            TagIndex::build(&git, &graph, &Default::default(), &cfg),
             Err(GraphError::Vcs(callisto_model::vcs::VcsError::Command(_)))
         );
 

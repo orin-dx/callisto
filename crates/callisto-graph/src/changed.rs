@@ -191,7 +191,7 @@ mod tests {
             calls: Mutex::new(Vec::new()),
         };
         let git = GitAccess::new(root, &runner);
-        let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
+        let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
         let refs: Vec<&Package> = pkgs.iter().collect();
         let result = changed_since_last_tag(&refs, &tags, &git).unwrap();
         let calls = runner.calls.lock().unwrap().clone();
