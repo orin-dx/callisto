@@ -405,10 +405,7 @@ impl Manifest for CargoToml {
                         kind,
                         spec,
                         inherited: is_inherited,
-                        locator: DepLocator {
-                            section: Some(section_kind),
-                            target: target.clone(),
-                        },
+                        locator: DepLocator::cargo(section_kind, target.clone()),
                     });
                 }
             }
@@ -434,8 +431,12 @@ impl Manifest for CargoToml {
             return Err(not_found());
         }
 
-        let section = section_name(at.section.unwrap_or(kind));
-        let item = dependency_table(&self.document, section, at.target.as_deref())
+        let (section, target) = match at {
+            DepLocator::Cargo { section, target, .. } => (section_name(*section), target.as_deref()),
+            DepLocator::Unspecified => (section_name(kind), None),
+            _ => return Err(not_found()),
+        };
+        let item = dependency_table(&self.document, section, target)
             .and_then(|table| table.get(name))
             .ok_or_else(not_found)?;
 
@@ -455,7 +456,7 @@ impl Manifest for CargoToml {
             return ws_res.persist(permit);
         }
 
-        let item = dependency_table_mut(&mut self.document, section, at.target.as_deref())
+        let item = dependency_table_mut(&mut self.document, section, target)
             .and_then(|table| table.get_mut(name))
             .ok_or_else(not_found)?;
         set_dependency_version(item, new.render()).map_err(|()| ManifestError::UnrecognizedDependencyValue {

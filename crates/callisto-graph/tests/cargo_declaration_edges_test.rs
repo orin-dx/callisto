@@ -101,10 +101,7 @@ fn each_table_declaring_a_key_is_its_own_edge() {
         .map(|edge| (edge.kind, edge.locator.clone(), edge.spec.render()))
         .collect();
     edges.sort();
-    let locator = |section, target: Option<&str>| DepLocator {
-        section: Some(section),
-        target: target.map(str::to_string),
-    };
+    let locator = |section, target: Option<&str>| DepLocator::cargo(section, target.map(str::to_string));
     assert_eq!(
         edges,
         [
@@ -313,10 +310,7 @@ fn a_target_table_that_names_no_such_dependency_is_an_error_not_a_silent_skip() 
         npm_workspace_kind: None,
     };
     let mut cargo = CargoToml::open(&decl, &ctx).unwrap();
-    let at = DepLocator {
-        section: Some(DepKind::Runtime),
-        target: Some("cfg(unix)".to_string()),
-    };
+    let at = DepLocator::cargo(DepKind::Runtime, Some("cfg(unix)".to_string()));
     let result = cargo.update_dependency_spec(
         "b",
         DepKind::Runtime,

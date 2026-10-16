@@ -2,8 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use callisto_model::{
-    normalize_pypi_package_name, ApplyPermit, DepKind, DepLocator, DepSpec, DependencyEntry, Ecosystem, ManifestDecl,
-    ManifestError, ManifestFormat, ManifestRole, PublishTarget, Version, VersionGrammar, VersionReq,
+    normalize_pypi_package_name, ApplyPermit, DepContainer, DepKind, DepLocator, DepSpec, DependencyEntry, Ecosystem,
+    ManifestDecl, ManifestError, ManifestFormat, ManifestRole, PublishTarget, Version, VersionGrammar, VersionReq,
 };
 use toml_edit::value;
 
@@ -466,11 +466,11 @@ impl Manifest for PyprojectToml {
             .and_then(|p| p.get("dependencies"))
             .and_then(|d| d.as_array())
         {
-            entries.extend(
-                deps.iter()
-                    .filter_map(|item| item.as_str())
-                    .filter_map(|req| pep508_entry(req, DepKind::Runtime)),
-            );
+            entries.extend(requirement_entries(
+                deps,
+                DepKind::Runtime,
+                &DepContainer::ProjectDependencies,
+            ));
         }
 
         // 1b. PEP 621 [project.optional-dependencies]: extras ship in the published metadata, so a
@@ -481,14 +481,13 @@ impl Manifest for PyprojectToml {
             .and_then(|p| p.get("optional-dependencies"))
             .and_then(|d| d.as_table_like())
         {
-            for (_, group) in extras.iter() {
+            for (extra, group) in extras.iter() {
                 if let Some(requirements) = group.as_array() {
-                    entries.extend(
-                        requirements
-                            .iter()
-                            .filter_map(|item| item.as_str())
-                            .filter_map(|req| pep508_entry(req, DepKind::Optional)),
-                    );
+                    entries.extend(requirement_entries(
+                        requirements,
+                        DepKind::Optional,
+                        &DepContainer::Extra(extra.to_string()),
+                    ));
                 }
             }
         }
@@ -551,7 +550,7 @@ impl Manifest for PyprojectToml {
                     inherited: false,
                     kind: DepKind::Runtime,
                     spec,
-                    locator: DepLocator::default(),
+                    locator: DepLocator::python(DepContainer::PoetryDependencies, None),
                 });
             }
         }
@@ -563,7 +562,7 @@ impl Manifest for PyprojectToml {
         &mut self,
         name: &str,
         kind: DepKind,
-        _at: &DepLocator,
+        at: &DepLocator,
         new: DepSpec,
         _permit: &ApplyPermit,
     ) -> Result<(), ManifestError> {
@@ -572,98 +571,60 @@ impl Manifest for PyprojectToml {
             DepSpec::Exact(v) => format!("=={}", v.render()),
             _ => return Ok(()),
         };
+        let not_found = || ManifestError::DependencyNotFound {
+            path: self.path.clone(),
+            name: name.to_string(),
+            kind,
+        };
 
-        let mut updated = false;
-
-        // 1. Update PEP 621 [project].dependencies array entries if present
-        if kind != DepKind::Optional {
-            if let Some(deps) = self
-                .document
-                .get_mut("project")
-                .and_then(|p| p.get_mut("dependencies"))
-                .and_then(|d| d.as_array_mut())
-            {
-                for idx in 0..deps.len() {
-                    let Some(rewritten) = deps
-                        .get(idx)
-                        .and_then(|item| item.as_str())
-                        .and_then(|full_req| rewrite_requirement(full_req, name, &new_spec_str))
-                    else {
-                        continue;
-                    };
-                    deps.replace(idx, rewritten);
-                    updated = true;
-                    break;
-                }
-            }
-        }
-
-        // 1b. Extras: only declarations carrying the first one's constraint are rewritten; a
-        // requirement declared twice with different constraints keeps the later one stale.
-        if kind == DepKind::Optional {
-            if let Some(extras) = self
-                .document
-                .get_mut("project")
-                .and_then(|p| p.get_mut("optional-dependencies"))
-                .and_then(|d| d.as_table_like_mut())
-            {
-                let mut reference: Option<Option<String>> = None;
-                for (_, group) in extras.iter_mut() {
-                    let Some(requirements) = group.as_array_mut() else {
-                        continue;
-                    };
-                    for idx in 0..requirements.len() {
-                        let Some(full_req) = requirements.get(idx).and_then(|item| item.as_str()) else {
-                            continue;
-                        };
-                        let Some(req) = Requirement::parse(full_req) else {
-                            continue;
-                        };
-                        if normalize_pypi_package_name(&req.name) != normalize_pypi_package_name(name) {
-                            continue;
-                        }
-                        match &reference {
-                            None => reference = Some(req.spec.clone()),
-                            Some(first) if *first == req.spec => {}
-                            Some(_) => continue,
-                        }
-                        if let Some(rewritten) = rewrite_requirement(full_req, name, &new_spec_str) {
-                            requirements.replace(idx, rewritten);
-                            updated = true;
-                        }
+        let DepLocator::Python {
+            container, position, ..
+        } = at
+        else {
+            return Err(not_found());
+        };
+        match container {
+            DepContainer::PoetryDependencies => {
+                let table = self
+                    .document
+                    .get_mut("tool")
+                    .and_then(|t| t.get_mut("poetry"))
+                    .and_then(|p| p.get_mut("dependencies"))
+                    .and_then(|d| d.as_table_like_mut())
+                    .ok_or_else(not_found)?;
+                let existing = table.get_mut(name).ok_or_else(not_found)?;
+                match existing.as_table_like_mut() {
+                    Some(fields) => {
+                        fields.insert("version", value(new_spec_str));
                     }
-                }
-            }
-        }
-
-        // 2. Update Poetry dependencies if present (preserving inline tables if used)
-        if let Some(table) = self
-            .document
-            .get_mut("tool")
-            .and_then(|t| t.get_mut("poetry"))
-            .and_then(|p| p.get_mut("dependencies"))
-            .and_then(|d| d.as_table_like_mut())
-            .filter(|_| kind != DepKind::Optional)
-        {
-            if let Some(existing) = table.get_mut(name) {
-                match existing {
-                    toml_edit::Item::Value(toml_edit::Value::InlineTable(ref mut inline)) => {
-                        inline.insert("version", toml_edit::Value::from(new_spec_str.as_str()));
-                    }
-                    _ => {
+                    None => {
                         table.insert(name, value(new_spec_str));
                     }
                 }
-                updated = true;
             }
-        }
-
-        if !updated {
-            return Err(ManifestError::DependencyNotFound {
-                path: self.path.clone(),
-                name: name.to_string(),
-                kind,
-            });
+            container => {
+                let position = position.ok_or_else(not_found)?;
+                let requirements = match container {
+                    DepContainer::ProjectDependencies => {
+                        self.document.get_mut("project").and_then(|p| p.get_mut("dependencies"))
+                    }
+                    DepContainer::Extra(extra) => self
+                        .document
+                        .get_mut("project")
+                        .and_then(|p| p.get_mut("optional-dependencies"))
+                        .and_then(|d| d.get_mut(extra.as_str())),
+                    _ => None,
+                }
+                .and_then(|item| item.as_array_mut())
+                .ok_or_else(not_found)?;
+                // The array may differ from the one the locator was read from: refuse to rewrite another dependency.
+                let rewritten = requirements
+                    .get(position)
+                    .and_then(|item| item.as_str())
+                    .and_then(|full_req| rewrite_requirement(full_req, name, &new_spec_str))
+                    .ok_or_else(not_found)?;
+                requirements.replace(position, rewritten);
+            }
         }
 
         Ok(())
@@ -856,8 +817,20 @@ fn rewrite_range(original: &str, target: &Version) -> Option<DepSpec> {
     Some(DepSpec::Range(req, rendered))
 }
 
+/// Every requirement string of one array as a dependency edge addressed by its index in `container`.
+fn requirement_entries<'a>(
+    requirements: &'a toml_edit::Array,
+    kind: DepKind,
+    container: &'a DepContainer,
+) -> impl Iterator<Item = DependencyEntry> + 'a {
+    requirements.iter().enumerate().filter_map(move |(position, item)| {
+        let locator = DepLocator::python(container.clone(), Some(position));
+        pep508_entry(item.as_str()?, kind, locator)
+    })
+}
+
 /// One PEP 508 requirement string as a dependency edge, or `None` when it names no package.
-fn pep508_entry(full_req_str: &str, kind: DepKind) -> Option<DependencyEntry> {
+fn pep508_entry(full_req_str: &str, kind: DepKind, locator: DepLocator) -> Option<DependencyEntry> {
     // `Requirement::parse` couldn't extract even a package name (an empty string or a
     // marker-only fragment): there is no name to key an entry on.
     let req = Requirement::parse(full_req_str)?;
@@ -875,7 +848,7 @@ fn pep508_entry(full_req_str: &str, kind: DepKind) -> Option<DependencyEntry> {
         inherited: false,
         kind,
         spec,
-        locator: DepLocator::default(),
+        locator,
     })
 }
 

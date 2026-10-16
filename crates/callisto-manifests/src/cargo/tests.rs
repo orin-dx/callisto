@@ -1494,3 +1494,27 @@ fn one_key_declared_in_two_tables_is_two_entries() {
     let entries: Vec<_> = manifest.iter_dependencies().collect();
     assert_eq!(entries.len(), 2, "{entries:?}");
 }
+
+#[test]
+fn update_dependency_spec_refuses_a_python_locator() {
+    let dir = tempdir().unwrap();
+    let content = "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\n\n[dependencies]\nhelper = \"1.0.0\"\n";
+    fs::write(dir.path().join("Cargo.toml"), content).unwrap();
+    let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
+    let ctx = OpenContext {
+        workspace_root: dir.path(),
+        cargo_workspace: None,
+        npm_workspace_kind: None,
+    };
+    let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
+    let spec = DepSpec::Range(
+        VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
+        "^1.1.0".to_string(),
+    );
+    let at = callisto_model::DepLocator::python(callisto_model::DepContainer::ProjectDependencies, Some(0));
+    let result = manifest.update_dependency_spec("helper", callisto_model::DepKind::Runtime, &at, spec, &permit());
+    assert!(
+        matches!(result, Err(ManifestError::DependencyNotFound { .. })),
+        "{result:?}"
+    );
+}

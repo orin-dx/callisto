@@ -74,7 +74,7 @@ fn a_pin_repeated_in_runtime_dependencies_and_an_extra_is_rewritten_in_both() {
 }
 
 #[test]
-fn an_extra_with_a_different_constraint_is_left_as_written() {
+fn an_extra_range_that_still_covers_the_new_version_has_its_floor_raised_like_a_plain_requirement() {
     let dir = python_workspace(
         "[project]\nname = \"app-py\"\nversion = \"0.1.0\"\n\n[project.optional-dependencies]\nfast = [\"lib-py==0.1.0\"]\nwide = [\"lib-py>=0.1,<0.3\"]\n",
     );
@@ -82,7 +82,86 @@ fn an_extra_with_a_different_constraint_is_left_as_written() {
     let after = app_pyproject(dir.path());
     assert!(after.contains("fast = [\"lib-py==0.2.0\"]"), "{after}");
     assert!(
-        after.contains("wide = [\"lib-py>=0.1,<0.3\"]"),
-        "a range that still covers the new version stays as written:\n{after}"
+        after.contains("wide = [\"lib-py>=0.2.0, <1\"]"),
+        "the range is rewritten by its own constraint, never the pin's:\n{after}"
     );
+}
+
+#[test]
+fn a_loose_extra_does_not_hold_back_a_stale_pin_in_another_extra() {
+    let dir = python_workspace(
+        "[project]\nname = \"app-py\"\nversion = \"0.1.0\"\n\n[project.optional-dependencies]\na = [\"lib-py>=0.1\"]\nc = [\"lib-py==0.1.0\"]\n",
+    );
+    bump_lib_minor(dir.path());
+    let after = app_pyproject(dir.path());
+    assert!(
+        after.contains("c = [\"lib-py==0.2.0\"]"),
+        "the stale pin follows the bump:\n{after}"
+    );
+    assert!(!after.contains("lib-py==0.1.0"), "{after}");
+    assert!(
+        after.contains("a = [\"lib-py>=0.2.0\"]"),
+        "the loose extra gets its floor raised by its own constraint, not the pin's:\n{after}"
+    );
+}
+
+#[test]
+fn a_stale_pin_listed_before_a_loose_extra_is_still_rewritten_alone() {
+    let dir = python_workspace(
+        "[project]\nname = \"app-py\"\nversion = \"0.1.0\"\n\n[project.optional-dependencies]\nc = [\"lib-py==0.1.0\"]\na = [\"lib-py>=0.1\"]\n",
+    );
+    bump_lib_minor(dir.path());
+    let after = app_pyproject(dir.path());
+    assert!(after.contains("c = [\"lib-py==0.2.0\"]"), "{after}");
+    assert!(
+        after.contains("a = [\"lib-py>=0.2.0\"]"),
+        "the loose extra keeps its own shape:\n{after}"
+    );
+}
+
+#[test]
+fn every_marker_variant_of_a_requirement_is_rewritten_with_its_marker() {
+    let dir = python_workspace(
+        "[project]\nname = \"app-py\"\nversion = \"0.1.0\"\ndependencies = [\n  \"lib-py==0.1.0; python_version<'3.9'\",\n  \"lib-py==0.1.0; python_version>='3.9'\",\n]\n",
+    );
+    bump_lib_minor(dir.path());
+    let after = app_pyproject(dir.path());
+    assert!(after.contains("\"lib-py==0.2.0;python_version<'3.9'\""), "{after}");
+    assert!(after.contains("\"lib-py==0.2.0;python_version>='3.9'\""), "{after}");
+    assert!(!after.contains("lib-py==0.1.0"), "{after}");
+}
+
+#[test]
+fn runtime_dependencies_with_different_constraints_are_each_rewritten_by_their_own() {
+    let dir = python_workspace(
+        "[project]\nname = \"app-py\"\nversion = \"0.1.0\"\ndependencies = [\"lib-py>=0.1; python_version>='3.9'\", \"lib-py==0.1.0; python_version<'3.9'\"]\n",
+    );
+    bump_lib_minor(dir.path());
+    let after = app_pyproject(dir.path());
+    assert!(after.contains("lib-py==0.2.0;python_version<'3.9'"), "{after}");
+    assert!(after.contains("lib-py>=0.2.0;python_version>='3.9'"), "{after}");
+    assert!(!after.contains("lib-py==0.1.0"), "{after}");
+}
+
+#[test]
+fn a_poetry_dependency_repeated_in_project_dependencies_and_an_extra_is_rewritten_in_each() {
+    let dir = python_workspace(
+        "[project]\nname = \"app-py\"\nversion = \"0.1.0\"\ndependencies = [\"lib-py==0.1.0\"]\n\n[project.optional-dependencies]\nfast = [\"lib-py==0.1.0\"]\n\n[tool.poetry.dependencies]\nlib-py = \"==0.1.0\"\n",
+    );
+    bump_lib_minor(dir.path());
+    let after = app_pyproject(dir.path());
+    assert_eq!(after.matches("lib-py==0.2.0").count(), 2, "{after}");
+    assert!(after.contains("lib-py = \"==0.2.0\""), "{after}");
+    assert!(!after.contains("0.1.0\""), "{after}");
+}
+
+#[test]
+fn requirement_spellings_and_extras_syntax_are_matched_by_normalized_name() {
+    let dir = python_workspace(
+        "[project]\nname = \"app-py\"\nversion = \"0.1.0\"\ndependencies = [\"Lib_Py[x]==0.1.0\", \"lib.py==0.1.0\"]\n",
+    );
+    bump_lib_minor(dir.path());
+    let after = app_pyproject(dir.path());
+    assert!(after.contains("\"Lib_Py[x]==0.2.0\""), "{after}");
+    assert!(after.contains("\"lib.py==0.2.0\""), "{after}");
 }
