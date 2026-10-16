@@ -289,7 +289,7 @@ fn test_aggregate_scopes_inference_window_to_last_tag() {
     };
     let git = GitAccess::new(root, &runner);
     let cfg = crate::config::load(root).unwrap();
-    let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
+    let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
 
     // Sanity: the tag we just created was actually picked up.
     assert_eq!(
@@ -375,7 +375,7 @@ fn test_aggregate_scopes_inference_pathspecs_to_package_directory() {
     let runner = RealGitRunner;
     let git = GitAccess::new(root, &runner);
     let cfg = crate::config::load(root).unwrap();
-    let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
+    let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
 
     let inference = RecordingPathspecsInference::default();
     let mut base_versions = BTreeMap::new();
@@ -449,7 +449,7 @@ fn test_aggregate_retains_inference_commits_on_aggregation() {
     let runner = RealGitRunner;
     let git = GitAccess::new(root, &runner);
     let cfg = crate::config::load(root).unwrap();
-    let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
+    let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
 
     let mut base_versions = BTreeMap::new();
     base_versions.insert(pkg_id.clone(), callisto_model::Version::semver(1, 0, 0));
@@ -524,7 +524,7 @@ fn test_aggregate_skips_inference_for_changeset_trigger() {
     let runner = RealGitRunner;
     let git = GitAccess::new(root, &runner);
     let cfg = crate::config::load(root).unwrap();
-    let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
+    let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
 
     let mut base_versions = BTreeMap::new();
     base_versions.insert(pkg_id, callisto_model::Version::semver(1, 0, 0));
@@ -577,7 +577,7 @@ fn test_aggregate_runs_inference_for_auto_trigger_and_raises_severity() {
     let runner = RealGitRunner;
     let git = GitAccess::new(root, &runner);
     let cfg = crate::config::load(root).unwrap();
-    let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
+    let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
 
     let mut base_versions = BTreeMap::new();
     base_versions.insert(pkg_id.clone(), callisto_model::Version::semver(1, 0, 0));
@@ -650,7 +650,7 @@ fn test_aggregate_resolves_since_to_the_tag_commit() {
     };
     let git = GitAccess::new(root, &runner);
     let cfg = crate::config::load(root).unwrap();
-    let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
+    let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
 
     assert_eq!(
         tags.last_tag(&pkg_id).map(|t| t.version.render().to_string()),
@@ -851,7 +851,7 @@ fn test_orphaned_changeset_not_consumed_emits_unknown_package_diagnostic() {
     let cfg = crate::config::load(root).unwrap();
     let runner = RealGitRunner;
     let git = GitAccess::new(root, &runner);
-    let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
+    let tags = crate::tags::TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
 
     let mut base_versions = BTreeMap::new();
     base_versions.insert(pkg_bar_id.clone(), Version::semver(1, 0, 0));
@@ -923,7 +923,7 @@ fn test_changeset_with_one_unknown_entry_not_consumed() {
     let cfg = crate::config::load(root).unwrap();
     let runner = RealGitRunner;
     let git = GitAccess::new(root, &runner);
-    let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
+    let tags = crate::tags::TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
 
     let mut base_versions = BTreeMap::new();
     base_versions.insert(pkg_bar_id.clone(), Version::semver(1, 0, 0));
@@ -1139,7 +1139,7 @@ fn test_aggregate_inference_error_emits_diagnostic() {
     let cfg = crate::config::load(root).unwrap();
     let runner = RealGitRunner;
     let git = GitAccess::new(root, &runner);
-    let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
+    let tags = crate::tags::TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
     let mut base_versions = BTreeMap::new();
     base_versions.insert(pkg_id.clone(), Version::semver(1, 0, 0));
 
@@ -1207,7 +1207,7 @@ fn test_aggregate_bare_name_config_policy_matches_prefixed_package() {
     let cfg = crate::config::load(root).unwrap();
     let runner = RealGitRunner;
     let git = GitAccess::new(root, &runner);
-    let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
+    let tags = crate::tags::TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
     let mut base_versions = BTreeMap::new();
     base_versions.insert(pkg_id.clone(), Version::semver(0, 1, 0));
 
@@ -1280,7 +1280,7 @@ fn test_aggregate_does_not_consume_changesets_during_pre_mode() {
     let cfg = crate::config::load(root).unwrap();
     let runner = RealGitRunner;
     let git = GitAccess::new(root, &runner);
-    let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
+    let tags = crate::tags::TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
     let mut base_versions = BTreeMap::new();
     base_versions.insert(pkg_id.clone(), Version::semver(1, 0, 0));
 
@@ -1334,7 +1334,7 @@ fn test_aggregate_pre_mode_changelog_baseline_reads_the_qualified_key() {
     let cfg = crate::config::load(root).unwrap();
     let runner = RealGitRunner;
     let git = GitAccess::new(root, &runner);
-    let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
+    let tags = crate::tags::TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
     let mut base_versions = BTreeMap::new();
     // Far from the pinned pre-cycle baseline, so a key-lookup miss falling back to this is caught below.
     base_versions.insert(pkg_id.clone(), Version::semver(9, 9, 9));
@@ -1399,7 +1399,7 @@ fn test_aggregate_pre_major_inference_policy_applied() {
     let cfg = crate::config::load(root).unwrap();
     let runner = RealGitRunner;
     let git = GitAccess::new(root, &runner);
-    let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
+    let tags = crate::tags::TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
     let mut base_versions = BTreeMap::new();
     base_versions.insert(pkg_id.clone(), Version::semver(0, 1, 0));
 
@@ -1489,7 +1489,7 @@ fn test_pre_major_inference_prefixed_beats_bare_when_bare_declared_first() {
     let cfg = crate::config::load(root).unwrap();
     let runner = RealGitRunner;
     let git = GitAccess::new(root, &runner);
-    let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
+    let tags = crate::tags::TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
     let mut base_versions = BTreeMap::new();
     // Version 0.1.0 (pre-1.0) ensures pre-major-inference is consulted.
     base_versions.insert(pkg_id.clone(), Version::semver(0, 1, 0));
@@ -1570,7 +1570,7 @@ fn test_pre_mode_first_match_is_recorded_not_consumed() {
     let cfg = crate::config::load(root).unwrap();
     let runner = RealGitRunner;
     let git = GitAccess::new(root, &runner);
-    let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
+    let tags = crate::tags::TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
     let mut base_versions = BTreeMap::new();
     base_versions.insert(pkg_id.clone(), Version::semver(0, 1, 0));
 
@@ -1638,7 +1638,7 @@ fn test_pre_mode_already_recorded_changeset_counts_severity_but_not_changelog() 
     let cfg = crate::config::load(root).unwrap();
     let runner = RealGitRunner;
     let git = GitAccess::new(root, &runner);
-    let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
+    let tags = crate::tags::TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
     let mut base_versions = BTreeMap::new();
     base_versions.insert(pkg_id.clone(), Version::semver(0, 1, 0));
 
@@ -1710,7 +1710,7 @@ fn test_pre_mode_no_changesets_at_all_has_no_active_changeset() {
     let cfg = crate::config::load(root).unwrap();
     let runner = RealGitRunner;
     let git = GitAccess::new(root, &runner);
-    let tags = crate::tags::TagIndex::build(&git, &graph, &cfg).unwrap();
+    let tags = crate::tags::TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
     let mut base_versions = BTreeMap::new();
     base_versions.insert(pkg_id, Version::semver(0, 1, 0));
 

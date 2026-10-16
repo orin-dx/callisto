@@ -8,8 +8,6 @@ Confirmed means reproduced against the main binary or established by the cited c
 
 | Finding | Evidence and consequence | Plan | Contract/area |
 | --- | --- | --- | --- |
-| SYS-OWNER | `sole_owner_at`: current first-manifest path existence is not historic name/full-roster ownership. Reproduced loss of a bare tag after sibling rename or addition of a new primary canonical manifest. | T06-HISTORY | WS-ID-03; historical migration |
-| SYS-DEMOTION | `tags.rs`: removing a same-named sibling loses a newer qualified tag and chooses an older bare release. Reproduced; inference can replay already-released work. | T06-HISTORY | WS-ID-03; historical migration |
 | SYS-MATURIN | `Package::version_grammar`: two fresh co-located Cargo/Maturin repos, with matching static versions and Cargo-owned dynamic Python versions, both reproduce E007 from init/status. Separate-directory fixtures did not cover this layout. | T07 | WS-ID-09; proposed version authority |
 | SYS-PYFILES | `provider/registry.rs` returns Exact for any matching non-yanked Python file; `provider/mod.rs` adopts it as AlreadySatisfied. `registry_argv.rs` builds both wheel and sdist. Source-confirmed partial-upload retry gap; no live fault-injection run yet. | T09 | REL-PUB-04/08, REL-RERUN-01/04 |
 | SYS-PYROUTES | `PreparedRegistryBinding.endpoint` is reused for simple-index observation and Twine upload. Source-confirmed single-route assumption; servers with distinct read/upload routes cannot generally use one override. Public defaults use separate native routes. | T09-ROUTES | REL-PUB-04/08; private-index policy |

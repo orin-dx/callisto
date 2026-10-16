@@ -110,7 +110,7 @@
         ]
       },
       "steps": [
-        "Finding coverage: SYS-OWNER, SYS-DEMOTION. Baseline: sole_owner_at tests a current first-manifest path; demotion drops newly qualified history.",
+        "Baseline: bare-tag ownership falls back to the manifest roster at the tag's commit and a demoted package keeps its qualified tags; a changed native name or an explicit rename still has no boundary.",
         "Share historical ownership resolution between tag selection and pre-state attribution using historical native names and the full admitted manifest roster at the relevant commit. Preserve a source owner's correct bare and qualified history after sibling addition/removal or primary-manifest changes.",
         "Apply D01's explicit rename/move support boundary; refuse uncertain transfer with an actionable error rather than assigning another owner's tag. Do not rename existing tags or require an opaque identity ledger.",
         "Test promotion/demotion, sibling rename, Cargo manifest added to an npm-first directory, changed native names, ambiguous old records, conflicting legacy and canonical pre-state keys, old prerelease keys and custom templates; verify last-release monotonicity and no cross-owner adoption without silently discarding a baseline.",

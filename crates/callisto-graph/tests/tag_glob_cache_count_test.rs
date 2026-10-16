@@ -104,7 +104,7 @@ fn tag_index_build_compiles_shared_glob_template_once() {
     let git = GitAccess::new(dir.path(), &runner);
 
     callisto_graph::tags::reset_glob_compile_count();
-    TagIndex::build(&git, &graph, &cfg).expect("TagIndex::build must succeed");
+    TagIndex::build(&git, &graph, &Default::default(), &cfg).expect("TagIndex::build must succeed");
 
     assert_eq!(
         callisto_graph::tags::glob_compile_count(),
@@ -128,7 +128,7 @@ fn tag_index_build_compiles_distinct_glob_templates_separately() {
     let git = GitAccess::new(dir.path(), &runner);
 
     callisto_graph::tags::reset_glob_compile_count();
-    TagIndex::build(&git, &graph, &cfg).expect("TagIndex::build must succeed");
+    TagIndex::build(&git, &graph, &Default::default(), &cfg).expect("TagIndex::build must succeed");
 
     assert_eq!(
         callisto_graph::tags::glob_compile_count(),

@@ -9,6 +9,7 @@ use callisto_model::{
 use crate::config::ResolvedConfig;
 use crate::error::GraphError;
 use crate::resolver::DependencyResolver;
+use crate::IdentityIndex;
 
 /// Fetches the full, unfiltered list of every tag name in the repository.
 ///
@@ -91,6 +92,20 @@ fn select_from_tags_cached<'a>(
     select_last_tag(template, grammar, candidates).map_err(GraphError::from)
 }
 
+/// The higher-versioned of two tags found for one package; `first` wins a tie.
+fn newest(first: Option<LastTag>, second: Option<LastTag>) -> Option<LastTag> {
+    match (first, second) {
+        (Some(first), Some(second)) => {
+            let newer = second
+                .version
+                .compare(&first.version)
+                .is_ok_and(std::cmp::Ordering::is_gt);
+            Some(if newer { second } else { first })
+        }
+        (first, second) => first.or(second),
+    }
+}
+
 /// E101 when a package's default template (`{name}@{version}`) is also another package's template.
 fn reject_shared_default_templates<D: DependencyResolver>(graph: &D) -> Result<(), GraphError> {
     let mut by_template: BTreeMap<String, (bool, Vec<PackageId>)> = BTreeMap::new();
@@ -129,6 +144,7 @@ impl TagIndex {
     pub fn build<D: DependencyResolver>(
         git: &GitAccess<'_>,
         graph: &D,
+        identity: &IdentityIndex,
         cfg: &ResolvedConfig,
     ) -> Result<Self, GraphError> {
         reject_shared_default_templates(graph)?;
@@ -142,6 +158,8 @@ impl TagIndex {
         let all_tags = fetch_all_tags(git)?;
         let all_tags_set: std::collections::BTreeSet<String> = all_tags.iter().cloned().collect();
         let mut glob_cache: std::collections::HashMap<String, Vec<&str>> = std::collections::HashMap::new();
+
+        let mut rosters = crate::history::Rosters::default();
 
         for pkg in graph.packages() {
             // `TagTemplate::default_for` is the single source of truth for a
@@ -182,13 +200,28 @@ impl TagIndex {
                     .collect();
                 let mut owned = Vec::new();
                 for tag in matching_tags(&all_tags, &unqualified)? {
-                    if crate::sole_owner_at(git, tag, &same)?.is_some_and(|owner| owner.id == pkg.id) {
+                    if crate::history::sole_owner_at(git, tag, pkg.id.name(), &same, identity, &mut rosters)?
+                        .is_some_and(|owner| owner.id == pkg.id)
+                    {
                         owned.push(tag);
                     }
                 }
                 chosen = select_last_tag(&unqualified, grammar, owned)
                     .map_err(GraphError::from)?
                     .chosen;
+            }
+            if pkg.tag_template.is_none() && pkg.id.ecosystem().is_none() {
+                // A demoted package keeps the qualified tags it made while its name was shared.
+                if let Some(manifest) = pkg.canonical_manifests().next() {
+                    let qualified = TagTemplate::default_for(&PackageId::Prefixed {
+                        ecosystem: manifest.ecosystem(),
+                        name: pkg.id.name().to_string(),
+                    });
+                    let qualified_last = select_last_tag(&qualified, grammar, all_tags.iter().map(String::as_str))
+                        .map_err(GraphError::from)?
+                        .chosen;
+                    chosen = newest(chosen, qualified_last);
+                }
             }
             last.insert(pkg.id.clone(), chosen);
             templates.insert(pkg.id.clone(), tmpl);
@@ -327,7 +360,8 @@ mod tests {
         let cfg = crate::config::load(dir.path()).unwrap();
         let git = GitAccess::new(dir.path(), &runner);
 
-        let tags = TagIndex::build(&git, &graph, &cfg).expect("TagIndex::build must succeed from the git tag list");
+        let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg)
+            .expect("TagIndex::build must succeed from the git tag list");
 
         let pkg_id = PackageId::parse("pkg-a").unwrap();
         assert_eq!(
@@ -353,7 +387,7 @@ mod tests {
         let cfg = crate::config::load(dir.path()).unwrap();
         let git = GitAccess::new(dir.path(), &runner);
 
-        let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
+        let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
 
         for name in ["pkg-a", "pkg-b", "pkg-c"] {
             let id = PackageId::parse(name).unwrap();
@@ -431,7 +465,7 @@ mod tests {
         let cfg = crate::config::load(dir.path()).unwrap();
         let git = GitAccess::new(dir.path(), &runner);
 
-        match TagIndex::build(&git, &graph, &cfg) {
+        match TagIndex::build(&git, &graph, &Default::default(), &cfg) {
             Err(GraphError::Vcs(callisto_model::vcs::VcsError::InvalidGlob { .. })) => {}
             Err(other) => panic!("expected InvalidGlob, got a different GraphError: {other:?}"),
             Ok(_) => panic!("TagIndex::build must propagate the malformed-glob error, got Ok"),
@@ -448,7 +482,7 @@ mod tests {
         let cfg = crate::config::load(dir.path()).unwrap();
         let git = GitAccess::new(dir.path(), &runner);
 
-        let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
+        let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
 
         for name in ["pkg-a", "pkg-b"] {
             let id = PackageId::parse(name).unwrap();
@@ -480,7 +514,7 @@ mod tests {
         let cfg = crate::config::load(dir.path()).unwrap();
         let git = GitAccess::new(dir.path(), &runner);
 
-        let tags = TagIndex::build(&git, &graph, &cfg).unwrap();
+        let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
 
         let pkg_a = PackageId::parse("pkg-a").unwrap();
         let pkg_ab = PackageId::parse("pkg-ab").unwrap();
@@ -541,7 +575,7 @@ mod tests {
         let cfg = crate::config::load(dir.path()).unwrap();
         let git = GitAccess::new(dir.path(), &runner);
 
-        let tags = TagIndex::build(&git, &graph, &cfg).expect("TagIndex::build must succeed");
+        let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).expect("TagIndex::build must succeed");
 
         let custom_id = PackageId::parse("custom-pkg").unwrap();
         let default_id = PackageId::parse("pkg-default").unwrap();
@@ -578,7 +612,7 @@ mod tests {
         let cfg = crate::config::load(dir.path()).unwrap();
         let git = GitAccess::new(dir.path(), &runner);
 
-        let tags = TagIndex::build(&git, &graph, &cfg).expect("TagIndex::build must succeed");
+        let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).expect("TagIndex::build must succeed");
 
         let pkg_id = PackageId::parse("pkg-a").unwrap();
         assert_eq!(
@@ -611,7 +645,7 @@ mod tests {
         let git = GitAccess::new(dir.path(), &runner);
 
         let is_command_err = matches!(
-            TagIndex::build(&git, &graph, &cfg),
+            TagIndex::build(&git, &graph, &Default::default(), &cfg),
             Err(GraphError::Vcs(callisto_model::vcs::VcsError::Command(_)))
         );
 

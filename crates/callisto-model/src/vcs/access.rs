@@ -374,6 +374,33 @@ impl GitAccess<'_> {
         Ok(output.success())
     }
 
+    /// Files in `rev`'s tree matching one of `pathspecs` whose text contains `needle`, ignoring case.
+    ///
+    /// A revision that cannot be searched (not a commit, or objects missing) has no matches, as in
+    /// [`Self::path_exists_at`].
+    pub fn files_containing_at(&self, rev: &str, needle: &str, pathspecs: &[&str]) -> Result<Vec<PathBuf>, VcsError> {
+        let mut args = vec!["grep", "-l", "-z", "-F", "-i", "-e", needle, rev, "--"];
+        args.extend_from_slice(pathspecs);
+        let output = self.runner.run("git", &args, &self.root)?;
+        if !output.success() {
+            return Ok(Vec::new());
+        }
+        let prefix = format!("{rev}:");
+        Ok(output
+            .stdout
+            .split('\0')
+            .filter_map(|entry| entry.strip_prefix(&prefix))
+            .map(PathBuf::from)
+            .collect())
+    }
+
+    /// The text of `path` (relative to this root) in `rev`'s tree, decoded lossily; `None` when it is absent.
+    pub fn read_at(&self, rev: &str, path: &Path) -> Result<Option<String>, VcsError> {
+        let spec = format!("{rev}:./{}", path.display());
+        let output = self.runner.run("git", &["show", &spec], &self.root)?;
+        Ok(output.success().then_some(output.stdout))
+    }
+
     /// The most recent commit that added `path`, if it is committed.
     pub fn commit_adding(&self, path: &Path) -> Result<Option<String>, VcsError> {
         let path = path.to_string_lossy();
