@@ -195,6 +195,88 @@ fn same_named_packages_need_no_tag_configuration() {
 }
 
 #[test]
+fn a_moved_directory_keeps_the_bare_tag_history() {
+    let dir = released_cargo_foo();
+    let root = dir.path();
+    add_npm_foo(root);
+    git(root, &["mv", "crates/foo", "crates/foo-core"]);
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/foo-core\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    commit(root, "move cargo foo");
+
+    let status = run_ok(root, &["status"]);
+    let foo = status_package(&status, "cargo/foo").unwrap_or_else(|| panic!("no cargo/foo in status: {status}"));
+    assert_eq!(foo["lastReleasedVersion"], "1.0.0", "status: {status}");
+    let npm = status_package(&status, "npm/foo").unwrap_or_else(|| panic!("no npm/foo in status: {status}"));
+    assert!(npm["lastReleasedVersion"].is_null(), "status: {status}");
+}
+
+#[test]
+fn a_package_that_gains_a_primary_manifest_keeps_the_bare_tag_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    callisto_fixtures::git::init_repo(root);
+    fs::create_dir_all(root.join("packages/foo")).unwrap();
+    fs::write(
+        root.join("packages/foo/package.json"),
+        "{\n  \"name\": \"foo\",\n  \"version\": \"1.0.0\"\n}\n",
+    )
+    .unwrap();
+    callisto_fixtures::scaffold_callisto(root);
+    commit(root, "release npm foo 1.0.0");
+    git(root, &["tag", "foo@1.0.0"]);
+    fs::create_dir_all(root.join("py/foo")).unwrap();
+    fs::write(
+        root.join("py/foo/pyproject.toml"),
+        "[project]\nname = \"foo\"\nversion = \"3.0.0\"\n",
+    )
+    .unwrap();
+    commit(root, "add python foo");
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"packages/foo\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("packages/foo/src")).unwrap();
+    fs::write(root.join("packages/foo/src/lib.rs"), "\n").unwrap();
+    fs::write(
+        root.join("packages/foo/Cargo.toml"),
+        "[package]\nname = \"foo\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    commit(root, "add cargo foo beside npm foo");
+
+    let status = run_ok(root, &["status"]);
+    let foo = status_package(&status, "cargo/foo").unwrap_or_else(|| panic!("no cargo/foo in status: {status}"));
+    assert_eq!(foo["lastReleasedVersion"], "1.0.0", "status: {status}");
+    let py = status_package(&status, "pypi/foo").unwrap_or_else(|| panic!("no pypi/foo in status: {status}"));
+    assert!(py["lastReleasedVersion"].is_null(), "status: {status}");
+}
+
+#[test]
+fn a_demoted_package_keeps_the_qualified_tag_it_made_while_promoted() {
+    let dir = released_cargo_foo();
+    let root = dir.path();
+    add_npm_foo(root);
+    fs::write(
+        root.join("crates/foo/Cargo.toml"),
+        "[package]\nname = \"foo\"\nversion = \"2.0.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    commit(root, "release cargo foo 2.0.0");
+    git(root, &["tag", "cargo/foo@2.0.0"]);
+    git(root, &["rm", "-r", "-q", "packages/foo"]);
+    git(root, &["commit", "-m", "remove npm foo"]);
+
+    let status = run_ok(root, &["status"]);
+    let foo = status_package(&status, "foo").unwrap_or_else(|| panic!("no foo in status: {status}"));
+    assert_eq!(foo["lastReleasedVersion"], "2.0.0", "status: {status}");
+}
+
+#[test]
 fn a_bare_changeset_name_after_promotion_says_how_to_qualify_it() {
     let dir = released_cargo_foo();
     let root = dir.path();

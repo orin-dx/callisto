@@ -374,6 +374,33 @@ impl GitAccess<'_> {
         Ok(output.success())
     }
 
+    /// Every file in `rev`'s tree under this root, relative to it.
+    pub fn files_at(&self, rev: &str) -> Result<Vec<PathBuf>, VcsError> {
+        let output = self
+            .runner
+            .run("git", &["ls-tree", "-r", "-z", "--name-only", rev], &self.root)?;
+        if !output.success() {
+            return Err(VcsError::Git(format!(
+                "`git ls-tree` failed for `{rev}` in `{}`: {}",
+                self.root.display(),
+                output.redacted_stderr()
+            )));
+        }
+        Ok(output
+            .stdout
+            .split('\0')
+            .filter(|path| !path.is_empty())
+            .map(PathBuf::from)
+            .collect())
+    }
+
+    /// The text of `path` (relative to this root) in `rev`'s tree; `None` when it is absent or not UTF-8.
+    pub fn read_at(&self, rev: &str, path: &Path) -> Result<Option<String>, VcsError> {
+        let spec = format!("{rev}:./{}", path.display());
+        let output = self.runner.run("git", &["show", &spec], &self.root)?;
+        Ok(output.success().then_some(output.stdout))
+    }
+
     /// The most recent commit that added `path`, if it is committed.
     pub fn commit_adding(&self, path: &Path) -> Result<Option<String>, VcsError> {
         let path = path.to_string_lossy();

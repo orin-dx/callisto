@@ -21,6 +21,7 @@ pub mod config;
 pub mod conventional;
 pub mod error;
 pub mod groups;
+mod history;
 pub mod identity;
 pub mod infer;
 pub mod locate;
@@ -255,28 +256,6 @@ pub fn pre_initial_version<'a>(pre: &'a callisto_model::format::PreState, id: &P
     pre.initial_versions.get(&pre_json_key(id))
 }
 
-/// The one package among `candidates` whose canonical manifest existed at `rev`, if exactly one did: the owner
-/// of anything recorded under their shared bare name at that point.
-pub(crate) fn sole_owner_at<'p>(
-    git: &GitAccess<'_>,
-    rev: &str,
-    candidates: &[&'p callisto_model::Package],
-) -> Result<Option<&'p callisto_model::Package>, GraphError> {
-    let mut owner = None;
-    for pkg in candidates {
-        let Some(manifest) = pkg.canonical_manifests().next() else {
-            continue;
-        };
-        if git.path_exists_at(rev, &manifest.path).map_err(GraphError::Vcs)? {
-            if owner.is_some() {
-                return Ok(None);
-            }
-            owner = Some(*pkg);
-        }
-    }
-    Ok(owner)
-}
-
 /// Resolves native baselines, attributing historical bare keys at the commit that added `pre.json`.
 pub(crate) fn assign_promoted_pre_keys<D: DependencyResolver>(
     git: &GitAccess<'_>,
@@ -288,6 +267,7 @@ pub(crate) fn assign_promoted_pre_keys<D: DependencyResolver>(
 ) -> Result<callisto_model::format::PreState, GraphError> {
     let keys: Vec<String> = state.initial_versions.keys().cloned().collect();
     let mut owners = BTreeMap::new();
+    let mut rosters = history::Rosters::default();
     for key in &keys {
         if let Some(owner) = graph.packages().find(|p| pre_json_key(&p.id) == *key) {
             owners.insert(key.clone(), owner);
@@ -311,7 +291,7 @@ pub(crate) fn assign_promoted_pre_keys<D: DependencyResolver>(
             }
         } else {
             let owner = match git.commit_adding(pre_json).map_err(GraphError::Vcs)? {
-                Some(added) => sole_owner_at(git, &added, &same)?,
+                Some(added) => history::sole_owner_at(git, &added, &same, &mut rosters)?,
                 None => None,
             };
             Some(owner.ok_or_else(|| GraphError::AmbiguousPreJsonKey {

@@ -91,6 +91,20 @@ fn select_from_tags_cached<'a>(
     select_last_tag(template, grammar, candidates).map_err(GraphError::from)
 }
 
+/// The higher-versioned of two tags found for one package; `first` wins a tie.
+fn newest(first: Option<LastTag>, second: Option<LastTag>) -> Option<LastTag> {
+    match (first, second) {
+        (Some(first), Some(second)) => {
+            let newer = second
+                .version
+                .compare(&first.version)
+                .is_ok_and(std::cmp::Ordering::is_gt);
+            Some(if newer { second } else { first })
+        }
+        (first, second) => first.or(second),
+    }
+}
+
 /// E101 when a package's default template (`{name}@{version}`) is also another package's template.
 fn reject_shared_default_templates<D: DependencyResolver>(graph: &D) -> Result<(), GraphError> {
     let mut by_template: BTreeMap<String, (bool, Vec<PackageId>)> = BTreeMap::new();
@@ -143,6 +157,8 @@ impl TagIndex {
         let all_tags_set: std::collections::BTreeSet<String> = all_tags.iter().cloned().collect();
         let mut glob_cache: std::collections::HashMap<String, Vec<&str>> = std::collections::HashMap::new();
 
+        let mut rosters = crate::history::Rosters::default();
+
         for pkg in graph.packages() {
             // `TagTemplate::default_for` is the single source of truth for a
             // package's default tag template -- matches `release.rs`'s own
@@ -182,13 +198,28 @@ impl TagIndex {
                     .collect();
                 let mut owned = Vec::new();
                 for tag in matching_tags(&all_tags, &unqualified)? {
-                    if crate::sole_owner_at(git, tag, &same)?.is_some_and(|owner| owner.id == pkg.id) {
+                    if crate::history::sole_owner_at(git, tag, &same, &mut rosters)?
+                        .is_some_and(|owner| owner.id == pkg.id)
+                    {
                         owned.push(tag);
                     }
                 }
                 chosen = select_last_tag(&unqualified, grammar, owned)
                     .map_err(GraphError::from)?
                     .chosen;
+            }
+            if pkg.tag_template.is_none() && pkg.id.ecosystem().is_none() {
+                // A demoted package keeps the qualified tags it made while its name was shared.
+                if let Some(manifest) = pkg.canonical_manifests().next() {
+                    let qualified = TagTemplate::default_for(&PackageId::Prefixed {
+                        ecosystem: manifest.ecosystem(),
+                        name: pkg.id.name().to_string(),
+                    });
+                    let qualified_last = select_last_tag(&qualified, grammar, all_tags.iter().map(String::as_str))
+                        .map_err(GraphError::from)?
+                        .chosen;
+                    chosen = newest(chosen, qualified_last);
+                }
             }
             last.insert(pkg.id.clone(), chosen);
             templates.insert(pkg.id.clone(), tmpl);
