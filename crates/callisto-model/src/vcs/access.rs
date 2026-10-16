@@ -394,7 +394,7 @@ impl GitAccess<'_> {
             .collect())
     }
 
-    /// The text of `path` (relative to this root) in `rev`'s tree; `None` when it is absent or not UTF-8.
+    /// The text of `path` (relative to this root) in `rev`'s tree, decoded lossily; `None` when it is absent.
     pub fn read_at(&self, rev: &str, path: &Path) -> Result<Option<String>, VcsError> {
         let spec = format!("{rev}:./{}", path.display());
         let output = self.runner.run("git", &["show", &spec], &self.root)?;
