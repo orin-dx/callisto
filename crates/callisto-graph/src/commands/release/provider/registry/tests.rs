@@ -427,6 +427,211 @@ fn the_captured_npm_view_runs_are_exact_and_absent() {
     );
 }
 
+// ------------------------------------------------ npm view classification
+
+/// Answers every `npm view` with one scripted output.
+struct ScriptedNpm(CommandOutput);
+
+impl CommandRunner for ScriptedNpm {
+    fn run(&self, program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, callisto_model::CommandError> {
+        assert_eq!(program, "npm");
+        Ok(self.0.clone())
+    }
+}
+
+fn npm_output(exit_code: Option<i32>, stdout: &str, stderr: &str) -> CommandOutput {
+    CommandOutput {
+        exit_code,
+        stdout: stdout.to_owned(),
+        stderr: stderr.to_owned(),
+    }
+}
+
+fn captured_npm_output(raw: &str) -> CommandOutput {
+    let captured = fixtures::captured_command(raw);
+    npm_output(Some(captured.exit_code), &captured.stdout, &captured.stderr)
+}
+
+fn observe_npm(output: CommandOutput) -> ProviderObservationV1 {
+    let runner = ScriptedNpm(output);
+    let sleeper = RecordingSleeper::new();
+    let root = std::env::temp_dir();
+    let context = ProviderContext::new(&root, &runner, None).with_sleeper(&sleeper);
+    let operation = operation("npm", "callisto-no-such-package-zz", "1.0.0");
+    registry_observation(adapter_for(Ecosystem::Npm).unwrap(), &context, &operation).unwrap()
+}
+
+fn npm_json_error(code: &str, summary: &str) -> String {
+    serde_json::json!({ "error": { "code": code, "summary": summary, "detail": "" } }).to_string()
+}
+
+fn npm_command_failed() -> ProviderObservationV1 {
+    ProviderObservationV1::Indeterminate {
+        cause: ProviderIndeterminateCause::CommandFailed,
+    }
+}
+
+#[test]
+fn the_captured_npm_runs_classify_as_exact_and_absent() {
+    assert_eq!(
+        observe_npm(captured_npm_output(fixtures::NPM_VIEW_FOUND)),
+        ProviderObservationV1::Exact {
+            evidence: ProviderEvidenceV1::RegistryVersion {
+                version: Version::parse("1.0.0", VersionGrammar::SemVer).unwrap(),
+                checksum: None,
+                yanked: None,
+            },
+        }
+    );
+    assert_eq!(
+        observe_npm(captured_npm_output(fixtures::NPM_VIEW_MISSING)),
+        ProviderObservationV1::Absent
+    );
+}
+
+#[test]
+fn a_json_e404_error_is_absent() {
+    assert_eq!(
+        observe_npm(npm_output(
+            Some(1),
+            &npm_json_error("E404", "No match found for version 9.9.9"),
+            ""
+        )),
+        ProviderObservationV1::Absent
+    );
+}
+
+/// npm 8 prints no JSON body for `npm view --json` on failure; its error code is only the `code` line on stderr.
+#[test]
+fn an_npm_8_missing_version_is_absent_through_its_stderr_code_line() {
+    let stderr = "npm ERR! code E404\nnpm ERR! 404 No match found for version 9.9.9\nnpm ERR! 404 \nnpm ERR! 404  'left-pad@9.9.9' is not in this registry.\n";
+    assert_eq!(
+        observe_npm(npm_output(Some(1), "", stderr)),
+        ProviderObservationV1::Absent
+    );
+    let newer = "npm error code E404\nnpm error 404 No match found for version 9.9.9\n";
+    assert_eq!(
+        observe_npm(npm_output(Some(1), "", newer)),
+        ProviderObservationV1::Absent
+    );
+}
+
+/// The stderr fallback reads only the `code` line, never the free text around it.
+#[test]
+fn a_stderr_error_that_is_not_the_not_found_code_line_is_indeterminate() {
+    for stderr in [
+        "npm ERR! code E401\nnpm ERR! 404 This looks like a not found but is not the code\n",
+        "npm error code E503\nnpm error E404 mentioned in a proxy message\n",
+        "npm ERR! code E4040\n",
+        "npm ERR! 404 No match found for version 9.9.9\n",
+        "something failed with E404 somewhere\n",
+        "",
+    ] {
+        assert_eq!(
+            observe_npm(npm_output(Some(1), "", stderr)),
+            npm_command_failed(),
+            "stderr {stderr:?} must not read as absent"
+        );
+    }
+}
+
+/// A JSON error body on stdout is authoritative over stderr.
+#[test]
+fn a_json_error_code_wins_over_a_conflicting_stderr_code() {
+    assert_eq!(
+        observe_npm(npm_output(
+            Some(1),
+            &npm_json_error("E401", "unauthorized"),
+            "npm error code E404\n"
+        )),
+        npm_command_failed()
+    );
+}
+
+/// Only the registry's own "not found" proves absence: credentials, rate limits, outages and an unreachable host
+/// prove nothing, and an `ETARGET` is `npm install`'s code, not an answer `npm view` gives.
+#[test]
+fn any_other_json_error_code_is_indeterminate() {
+    for code in [
+        "E401",
+        "E403",
+        "E429",
+        "E500",
+        "E503",
+        "ETARGET",
+        "ECONNREFUSED",
+        "EAI_AGAIN",
+        "ETIMEDOUT",
+        "e404",
+        "E4040",
+        "",
+    ] {
+        assert_eq!(
+            observe_npm(npm_output(Some(1), &npm_json_error(code, "failed"), "")),
+            npm_command_failed(),
+            "npm error code {code:?} must not read as absent"
+        );
+    }
+}
+
+/// The code field decides, not words inside the summary: an outage that quotes a 404 or a version message is not
+/// an absence.
+#[test]
+fn free_text_that_mentions_a_not_found_answer_is_not_absent() {
+    for summary in [
+        "E404 returned by an upstream proxy",
+        "No matching version found for callisto-no-such-package-zz@1.0.0",
+        "'x@1.0.0' is not in this registry",
+        "etarget",
+    ] {
+        assert_eq!(
+            observe_npm(npm_output(Some(1), &npm_json_error("E503", summary), "")),
+            npm_command_failed(),
+            "summary {summary:?} must not read as absent"
+        );
+    }
+}
+
+#[test]
+fn a_non_json_failure_is_indeterminate_even_when_it_mentions_e404() {
+    for (stdout, stderr) in [
+        (
+            "",
+            "npm error code ETARGET\nnpm error notarget No matching version found\n",
+        ),
+        ("<html>404 Not Found</html>", ""),
+        ("", ""),
+        ("{", "npm error code E404\n"),
+        ("{\"error\":\"E404\"}", ""),
+        ("{\"error\":{}}", ""),
+        ("[]", ""),
+        ("null", ""),
+    ] {
+        assert_eq!(
+            observe_npm(npm_output(Some(1), stdout, stderr)),
+            npm_command_failed(),
+            "stdout {stdout:?} stderr {stderr:?} must not read as absent"
+        );
+    }
+}
+
+/// npm 11 answers a missing version with an E404 error and exit 1; an empty success proves nothing.
+#[test]
+fn a_successful_exit_with_no_output_is_indeterminate_not_absent() {
+    assert_eq!(
+        observe_npm(npm_output(Some(0), "", "")),
+        ProviderObservationV1::Indeterminate {
+            cause: ProviderIndeterminateCause::MalformedResponse
+        }
+    );
+    assert_eq!(
+        observe_npm(npm_output(Some(0), "  \n", "npm error code E404\n")),
+        ProviderObservationV1::Indeterminate {
+            cause: ProviderIndeterminateCause::MalformedResponse
+        }
+    );
+}
+
 // --------------------------------------- captured real pypi bytes: registry
 
 fn pep440(version: &str) -> Version {

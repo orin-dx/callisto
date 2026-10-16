@@ -212,7 +212,7 @@
     },
     {
       "id": "REL-PUB-07",
-      "criterion": "npm observation runs `npm view NAME@VERSION --json --fetch-retries=0`, with `--registry` when configured. Non-empty output means present, and empty output or an E404, ETARGET or `no matching version` response means absent."
+      "criterion": "npm observation runs `npm view NAME@VERSION --json --fetch-retries=0`, with `--registry` when configured. Exit 0 with output means present. A failure whose npm error code is E404, read from the JSON error body on stdout or else from the `code` line on stderr, means absent. Exit 0 with no output, and any other failure, leave the observation indeterminate and are never read as absence."
     },
     {
       "id": "REL-PUB-08",
@@ -239,7 +239,7 @@
     },
     {
       "id": "REL-RERUN-02",
-      "criterion": "After a run fails partway, rerunning the same command with no state file from the failed run performs only the missing operations and writes a receipt. A local annotated tag on the expected commit that is missing on the remote is pushed before the receipt is written, regardless of its annotation text. `Nothing to release.` is reported only when every operation of every package tagged on the current commit is observed already satisfied."
+      "criterion": "After a run fails partway, rerunning the same command with no state file from the failed run performs only the missing operations and writes a receipt. A local annotated tag on the expected commit that is missing on the remote is pushed before the receipt is written, regardless of its annotation text. `Nothing to release.` is reported only when every operation of every package tagged on the current commit is observed already satisfied. A failure to read the local tag state other than the tag being missing stops the run with an error before any effect."
     },
     {
       "id": "REL-RERUN-03",
