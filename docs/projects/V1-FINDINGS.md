@@ -14,7 +14,6 @@ Confirmed means reproduced against the main binary or established by the cited c
 
 ## Integration risks and evidence gaps
 
-- Status changeset attribution and well-formedness checks still scan display ids through `PackageId::resolve_unique`, while version aggregation uses `IdentityIndex::resolve_id`. Source-visible resolver divergence can reject a valid secondary native name or accept an unrelated qualified selector. Add a paired status/version fixture and migrate both status helpers with the other selector consumers (T06).
 - Native npm lifecycle hooks can initiate effects outside Callisto's release-operation graph. Their behavior is package-owner-defined and is not inspected, rewritten, suppressed or rejected by Callisto; this is an explicit ownership boundary, not an automatic-enforcement defect.
 - Registry version existence is not proof of identical package bytes, complete Python files or the desired npm dist-tag. Artifact-set completion is a correctness fix (T09); universal checksum enforcement and channel promotion remain owner decisions.
 - PyPI yanking is per file. The current classifier treats any matching yanked file as Absent even alongside non-yanked files. A yank is not deletion or permission to overwrite; confirm conflict/partial semantics with the required-output model (T09).

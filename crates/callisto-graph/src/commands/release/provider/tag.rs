@@ -252,8 +252,19 @@ fn observed_local_tag(context: &ProviderContext<'_>, name: &TagName) -> Result<L
         context
             .runner()
             .run_with_timeout(programs::GIT, &rev_parse_args, context.root(), timeouts::LOCAL_GIT)?;
-    if observed.exit_code != Some(0) {
+    // Exit 1 with no output is a missing ref; any other failure, such as 128, proves nothing.
+    if observed.exit_code == Some(1) && observed.stdout.trim().is_empty() {
         return Ok(LocalTagObservation::Absent);
+    }
+    if observed.exit_code != Some(0) {
+        return Err(GraphError::ReleaseCommand {
+            program: programs::GIT.to_string(),
+            args: rev_parse_args.iter().map(ToString::to_string).collect(),
+            failure: CommandFailure::NonZeroExit {
+                exit_code: observed.exit_code,
+                stderr: observed.stderr,
+            },
+        });
     }
     let target = CommitSha::parse(observed.stdout.trim()).map_err(|error| GraphError::ReleaseCommand {
         program: programs::GIT.to_string(),
@@ -555,6 +566,168 @@ mod tests {
         let result = policy::retry_observation(context.sleeper(), || observed_remote_tag(&context, &name));
         assert_eq!(result, Ok(RemoteTagObservation::Absent));
         assert_eq!(sleeper.waits(), vec![std::time::Duration::from_secs(2)]);
+    }
+
+    /// Scripts the local `rev-parse` answer; the remote reads as a clean absence and any other git call is a failure.
+    struct ScriptedRevParse {
+        exit_code: Option<i32>,
+        stdout: &'static str,
+        stderr: &'static str,
+    }
+
+    impl CommandRunner for ScriptedRevParse {
+        fn run(
+            &self,
+            program: &str,
+            args: &[&str],
+            _cwd: &Path,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            assert_eq!(program, "git");
+            let ok = |stdout: &str| callisto_model::CommandOutput {
+                exit_code: Some(0),
+                stdout: stdout.to_owned(),
+                stderr: String::new(),
+            };
+            match args.first() {
+                Some(&"remote") => Ok(ok("https://github.com/orin-dx/callisto")),
+                Some(&"ls-remote") => Ok(ok(fixtures::LS_REMOTE_ABSENT)),
+                Some(&"rev-parse") => Ok(callisto_model::CommandOutput {
+                    exit_code: self.exit_code,
+                    stdout: self.stdout.to_owned(),
+                    stderr: self.stderr.to_owned(),
+                }),
+                other => panic!("unscripted git call {other:?}"),
+            }
+        }
+    }
+
+    fn tag_operation_at_target() -> TagOperation {
+        TagOperation {
+            name: TagName::new_unchecked("callisto@0.8.0".to_owned()),
+            target: CommitSha::parse(TARGET).unwrap(),
+            annotation: "callisto@0.8.0".to_owned(),
+        }
+    }
+
+    fn observe_with_rev_parse(script: &ScriptedRevParse) -> Result<ProviderObservationV1, GraphError> {
+        let remote =
+            crate::commands::release::binding::canonical_git_remote("https://github.com/orin-dx/callisto").unwrap();
+        let root = std::env::temp_dir();
+        let context = ProviderContext::new(&root, script, Some(&remote));
+        tag_observation(&context, &tag_operation_at_target())
+    }
+
+    /// `rev-parse --verify --quiet` exits 1 and prints nothing for a ref that does not exist: the only absence.
+    #[test]
+    fn a_local_rev_parse_that_exits_one_with_no_output_is_an_absent_tag() {
+        let script = ScriptedRevParse {
+            exit_code: Some(1),
+            stdout: "",
+            stderr: "",
+        };
+        assert_eq!(observe_with_rev_parse(&script), Ok(ProviderObservationV1::Absent));
+    }
+
+    /// Exit 128 is a fatal git error (not a repository, a corrupt object database, a permission problem), not a
+    /// missing ref: reading it as absent would authorize the publish and tag effects.
+    #[test]
+    fn a_local_rev_parse_fatal_error_is_a_command_failure_not_an_absent_tag() {
+        let script = ScriptedRevParse {
+            exit_code: Some(128),
+            stdout: "",
+            stderr: "fatal: not a git repository (or any of the parent directories): .git\n",
+        };
+        assert!(
+            matches!(
+                observe_with_rev_parse(&script),
+                Err(GraphError::ReleaseCommand {
+                    failure: CommandFailure::NonZeroExit {
+                        exit_code: Some(128),
+                        ..
+                    },
+                    ..
+                })
+            ),
+            "{:?}",
+            observe_with_rev_parse(&script)
+        );
+    }
+
+    /// A signal-killed git has no exit code; a missing ref is exit 1 only, and exit 1 with output is not that answer.
+    #[test]
+    fn a_local_rev_parse_without_an_exit_code_or_with_output_on_failure_is_not_an_absent_tag() {
+        for script in [
+            ScriptedRevParse {
+                exit_code: None,
+                stdout: "",
+                stderr: "",
+            },
+            ScriptedRevParse {
+                exit_code: Some(1),
+                stdout: "unexpected\n",
+                stderr: "",
+            },
+            ScriptedRevParse {
+                exit_code: Some(2),
+                stdout: "",
+                stderr: "",
+            },
+        ] {
+            assert!(
+                matches!(
+                    observe_with_rev_parse(&script),
+                    Err(GraphError::ReleaseCommand {
+                        failure: CommandFailure::NonZeroExit { .. },
+                        ..
+                    })
+                ),
+                "exit {:?} stdout {:?} must not be absent",
+                script.exit_code,
+                script.stdout
+            );
+        }
+    }
+
+    /// The real git answer to a broken repository, not a scripted one.
+    #[test]
+    fn a_repository_git_cannot_read_is_a_command_failure_not_an_absent_tag() {
+        let dir = tempfile::tempdir().unwrap();
+        callisto_fixtures::git::init_repo(dir.path());
+        std::fs::write(dir.path().join(".git").join("HEAD"), "garbage\n").unwrap();
+        let operation = tag_operation_at_target();
+        let remote =
+            crate::commands::release::binding::canonical_git_remote("https://github.com/orin-dx/callisto").unwrap();
+        let context = ProviderContext::new(dir.path(), &callisto_fixtures::git::GitRunner, Some(&remote));
+        let observed = observed_local_tag(&context, &operation.name);
+        assert!(
+            matches!(
+                observed,
+                Err(GraphError::ReleaseCommand {
+                    failure: CommandFailure::NonZeroExit {
+                        exit_code: Some(128),
+                        ..
+                    },
+                    ..
+                })
+            ),
+            "{observed:?}"
+        );
+    }
+
+    /// A real repository with no such tag still reads as absent.
+    #[test]
+    fn a_real_repository_without_the_tag_is_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        callisto_fixtures::git::init_repo(dir.path());
+        callisto_fixtures::git::run_git(dir.path(), &["commit", "--allow-empty", "-q", "-m", "root"]);
+        let operation = tag_operation_at_target();
+        let remote =
+            crate::commands::release::binding::canonical_git_remote("https://github.com/orin-dx/callisto").unwrap();
+        let context = ProviderContext::new(dir.path(), &callisto_fixtures::git::GitRunner, Some(&remote));
+        assert_eq!(
+            observed_local_tag(&context, &operation.name).unwrap(),
+            LocalTagObservation::Absent
+        );
     }
 
     struct FailedPush(&'static str);

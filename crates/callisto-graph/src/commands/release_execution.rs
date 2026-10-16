@@ -358,6 +358,164 @@ mod tests {
         assert!(require_artifact_manifest_matches_intent(&intent, Some(&manifest)).is_ok());
     }
 
+    /// The production tag provider behind the real executor, with an effect counter in place of the real publish.
+    struct TagOnlyProviders<'a> {
+        intent: ReleaseIntentV1,
+        operation: crate::commands::release::provider::PreparedOperation,
+        root: &'a std::path::Path,
+        runner: &'a dyn callisto_model::CommandRunner,
+        effects: std::cell::Cell<usize>,
+    }
+
+    impl TagOnlyProviders<'_> {
+        fn request<'r>(
+            &'r self,
+            id: &'r ReleaseOperationId,
+        ) -> crate::commands::release::provider::ProviderRequest<'r> {
+            crate::commands::release::provider::ProviderRequest {
+                id,
+                operation: &self.operation,
+                artifacts: None,
+            }
+        }
+    }
+
+    impl ReleaseProviderSet for TagOnlyProviders<'_> {
+        fn intent(&self) -> &ReleaseIntentV1 {
+            &self.intent
+        }
+
+        fn recheck_trust(&self) -> Result<(), GraphError> {
+            Ok(())
+        }
+
+        fn preflight(
+            &self,
+            id: &ReleaseOperationId,
+            _artifacts: Option<&VerifiedArtifactManifest<'_>>,
+        ) -> Result<ReleasePreflight, GraphError> {
+            use crate::commands::release::provider::{tag::TagProvider, ProviderContext, ReleaseProvider};
+            let remote = crate::commands::release::optional_git_remote(self.root, self.runner)?;
+            TagProvider.preflight(
+                &ProviderContext::new(self.root, self.runner, remote.as_ref()),
+                &self.request(id),
+            )
+        }
+
+        fn observe(
+            &self,
+            _id: &ReleaseOperationId,
+            _artifacts: Option<&VerifiedArtifactManifest<'_>>,
+        ) -> Result<callisto_model::ProviderObservationV1, GraphError> {
+            unreachable!("the executor preflights before it observes")
+        }
+
+        fn publish(
+            &self,
+            _permit: &ApplyPermit,
+            _proof: &callisto_model::AbsentProof,
+            _id: &ReleaseOperationId,
+            _artifacts: Option<&VerifiedArtifactManifest<'_>>,
+        ) -> Result<callisto_model::ExactEvidence, GraphError> {
+            self.effects.set(self.effects.get() + 1);
+            Err(GraphError::ReleaseInvariant {
+                detail: "the effect must not run".to_owned(),
+            })
+        }
+    }
+
+    /// A git whose `rev-parse` fails fatally and whose remote reads as empty; it remembers each subcommand it ran.
+    struct BrokenLocalGit(std::sync::Mutex<Vec<String>>);
+
+    impl callisto_model::CommandRunner for BrokenLocalGit {
+        fn run(
+            &self,
+            _program: &str,
+            args: &[&str],
+            _cwd: &std::path::Path,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            let subcommand = args.first().copied().unwrap_or_default();
+            self.0.lock().unwrap().push(subcommand.to_owned());
+            let (exit_code, stdout, stderr) = match subcommand {
+                "remote" => (0, "https://github.com/orin-dx/callisto", ""),
+                "rev-parse" => (128, "", "fatal: not a git repository\n"),
+                _ => (0, "", ""),
+            };
+            Ok(callisto_model::CommandOutput {
+                exit_code: Some(exit_code),
+                stdout: stdout.to_owned(),
+                stderr: stderr.to_owned(),
+            })
+        }
+    }
+
+    /// A local tag lookup that fails fatally must stop the run at the observation: no tag is created, nothing is
+    /// pushed and the effect is never issued.
+    #[test]
+    fn an_observation_that_errors_never_reaches_the_effect() {
+        let package = ReleasePackageId::new(Ecosystem::Cargo, "demo").unwrap();
+        let version = Version::semver(1, 0, 0);
+        let tag = ReleaseOperation::tag(package.clone(), version.clone(), vec![]).unwrap();
+        let intent = ReleaseIntentV1::new(
+            callisto_model::ReleaseDecisionV1::new(vec![callisto_model::ReleaseDecisionEntry {
+                package,
+                target_version: version,
+                reasons: vec![callisto_model::ReleaseInclusionReason::ExplicitSelection],
+            }])
+            .unwrap(),
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]).unwrap(),
+            ExecutionTrustProfileV1::GitCommit,
+            vec![tag.clone()],
+            vec![],
+        )
+        .unwrap();
+        let envelope = crate::commands::release_test_support::envelope(&intent);
+
+        let dir = tempfile::tempdir().unwrap();
+        let runner = BrokenLocalGit(std::sync::Mutex::new(Vec::new()));
+        let providers = TagOnlyProviders {
+            operation: crate::commands::release::provider::PreparedOperation::Tag(
+                crate::commands::release::provider::TagOperation {
+                    name: callisto_model::TagName::new_unchecked("demo@1.0.0".to_owned()),
+                    target: callisto_model::CommitSha::parse(&"a".repeat(40)).unwrap(),
+                    annotation: "demo@1.0.0".to_owned(),
+                },
+            ),
+            intent,
+            root: dir.path(),
+            runner: &runner,
+            effects: std::cell::Cell::new(0),
+        };
+
+        let result = execute_release(
+            &providers,
+            &callisto_model::ApplyPermit::force_for_tests(),
+            &envelope,
+            None,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(GraphError::ReleaseCommand {
+                    failure: crate::error::CommandFailure::NonZeroExit { .. },
+                    ..
+                })
+            ),
+            "{result:?}"
+        );
+        assert_eq!(
+            providers.effects.get(),
+            0,
+            "an observation that failed must not reach the effect"
+        );
+        assert_eq!(
+            runner.0.lock().unwrap().as_slice(),
+            ["remote", "rev-parse"],
+            "no tag was created and nothing was pushed"
+        );
+    }
+
     #[test]
     fn reconciliation_requires_transitive_exact_successes() {
         let intent = intent();

@@ -9,12 +9,11 @@ The current-contract repairs (release-PR compatibility, installer fidelity, sche
 | Stack | Order | What each boundary proves |
 | --- | --- | --- |
 | Identity/authority | T06 canonical references → T06-HISTORY historic ownership; T07 native/Maturin authority follows T06 | One resolver across authored/generated consumers; no transferred or regressed release history; native metadata agrees with planned versions |
-| Effects/retry | T08 shared physical effects → T08-RETRY tagged-candidate completion | One owner per irreversible effect; required publications gate announcements; local retry does not lose push/forge work |
+| Effects | T08 shared physical effects | One owner per irreversible effect; the tag and announcement already wait for every registry publish and a local rerun completes a failed release, so what remains is executing a shared effect once |
 | Python completion | T09 required file-set recovery → T09-ROUTES read/upload destinations | Complete declared files, not first-file presence; no changed bytes or untrusted destination on retry |
-| Workflow integration | T10 intent-selected outputs | Builds follow the verified release intent; package-owner lifecycle hooks retain native behavior and remain outside Callisto's operation graph |
 | Evidence | T12 production matrix → T12-DX measured onboarding | Executed/skipped/simulated evidence distinguished; first-release setup and credentials included in timing |
 
-T06-HISTORY → T07 is a true stack: historical and native-authority changes share model/graph consumers. T08 follows both; T08-RETRY → T09 is also serialized because both change local/CLI release entry boundaries. Independent read-only review and native fixture drafting can run alongside those implementation units once their interfaces are fixed; competing edits cannot. T09-ROUTES follows T09 because both own the registry adapter. JSON task dependencies are authoritative; stack grouping is not permission to ignore a dependency.
+T06-HISTORY → T07 is a true stack: historical and native-authority changes share model/graph consumers. T08 follows both; T08 → T09 is also serialized because both change local/CLI release entry boundaries. Independent read-only review and native fixture drafting can run alongside those implementation units once their interfaces are fixed; competing edits cannot. T09-ROUTES follows T09 because both own the registry adapter. JSON task dependencies are authoritative; stack grouping is not permission to ignore a dependency.
 
 ## D01: approved directions and remaining model choices
 
@@ -92,7 +91,7 @@ No concurrent Cargo builds/tests locally, even across tasks. Reserve one build s
 | `ReleaseProviderSet` | Production `ValidatedReleaseIntent` and simulator `SimWorld` | T08/T09 migrate both; fake CLI provider harness still exercises real dispatch |
 | Registry adapter/evidence | `CargoRegistry`, `NpmRegistry`, `PypiRegistry`; platform npm path | T09/T09-ROUTES give every reached sibling a migrated or evidence-backed unaffected disposition |
 | Immutable release wires | Decision, input snapshot, intent, artifact manifest, envelope, receipt, schemas; CLI file/stdout producers and action scripts | T02 inventory; D01 fixes compatibility; T08/T09 migrate producers/consumers, including CLI registry-only inventory acceptance/envelope sealing and local build preparation |
-| Selected builds and auth | Generated simple/matrix workflows, shared action execution, build matrix/placement, policy/contract tests | T10-AUTH/T10 verify all routes, not just this repo's custom workflow; lifecycle scripts remain package-owner-controlled |
+| Selected builds and auth | Generated simple/matrix workflows, shared action execution, build matrix/placement, policy/contract tests | T12 verifies all routes, not just this repo's custom workflow; lifecycle scripts remain package-owner-controlled |
 
 This is an inspected candidate inventory, not a promise that no new call site exists. Each implementer re-runs syntactic and responsibility-based searches on its actual base. An external lifecycle hook or unavailable native environment remains an explicit coverage gap.
 

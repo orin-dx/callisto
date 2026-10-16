@@ -152,13 +152,9 @@ impl PackageId {
     /// `Prefixed(e1, x)` matches `Prefixed(e2, x)` only if `e1 == e2`; exact
     /// equality always matches.
     ///
-    /// **Caller contract**: in a polyglot workspace, a bare lookup can match
-    /// packages in two or more ecosystems (e.g. `foo` in both Cargo and npm).
-    /// Callers must collect *all* matches and error on 2+ — see
-    /// `aggregate::resolve_target_package`'s `AmbiguousName` pattern — never
-    /// take the first match silently. A plain existence check (`.any()`) is
-    /// safe only because the aggregation layer already rejects ambiguous
-    /// references upstream.
+    /// **Caller contract**: a bare lookup can match packages in two or more ecosystems, so a caller must
+    /// collect all matches and error on 2+, never take the first silently. Resolving a changeset or config
+    /// selector goes through the workspace identity index instead, which also knows each manifest's own name.
     pub fn matches(&self, other: &Self) -> bool {
         if self == other {
             return true;
@@ -173,11 +169,8 @@ impl PackageId {
         }
     }
 
-    /// The single implementation of the collect-and-error pattern
-    /// [`matches`](Self::matches)'s own doc comment requires every caller
-    /// to hand-roll: filters `items` down to those whose id (via `id_of`)
-    /// matches `self`, then resolves the result to exactly one, none, or
-    /// reports the ambiguity.
+    /// Filters `items` to those whose id (via `id_of`) matches `self` and resolves to exactly one, none, or the
+    /// ambiguity.
     ///
     /// - `Ok(None)`: no item matches.
     /// - `Ok(Some(item))`: exactly one item matches -- the unambiguous case.
@@ -186,6 +179,9 @@ impl PackageId {
     ///   naming `self` and `candidates`) -- this method stays generic over
     ///   any `T` (a `Package`, a bare `PackageId`, ...) rather than forcing
     ///   a particular error type on every layer that needs this check.
+    #[deprecated(
+        note = "ignores a manifest's own native name and treats a missing ecosystem as a wildcard; use IdentityIndex::resolve_id in callisto-graph"
+    )]
     pub fn resolve_unique<'a, T>(
         &self,
         items: impl Iterator<Item = &'a T>,
@@ -435,6 +431,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
 
