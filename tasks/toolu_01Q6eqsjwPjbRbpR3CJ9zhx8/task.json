@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01Q6eqsjwPjbRbpR3CJ9zhx8",
+  "agent_id": "afff4a551f55a0349",
+  "subagent_type": "bug-hunter",
+  "task_description": "Review discovery-total PR",
+  "token_usage": {
+    "input_tokens": 66,
+    "cache_creation_tokens": 130961,
+    "cache_read_tokens": 2605097,
+    "output_tokens": 3011,
+    "api_call_count": 33
+  },
+  "started_at": "2026-10-17T12:45:00.910161-07:00",
+  "completed_at": "2026-10-17T12:50:30.945214-07:00"
+}

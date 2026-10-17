@@ -1,0 +1,150 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M55PRTQGTK8JP851DYTMKC27",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-17T19:52:54.101803Z",
+  "branch": "fix/workspace-complete",
+  "checkpoints_count": 2,
+  "save_step_count": 46,
+  "files_touched": [
+    ".changeset/quiet-owls-complete.md",
+    "crates/callisto-cli/src/commands/status.rs",
+    "crates/callisto-cli/src/workspace.rs",
+    "crates/callisto-cli/tests/schema_guard_test.rs",
+    "crates/callisto-graph/src/commands/release/derive.rs",
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/src/lib.rs",
+    "crates/callisto-graph/src/walk.rs",
+    "crates/callisto-graph/tests/complete_workspace_test.rs",
+    "crates/callisto-model/src/diagnostic.rs",
+    "docs/architecture/identity.md",
+    "docs/errors.md",
+    "docs/specs/workspace.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "86afdd47c8c3",
+  "checkpoint_transcript_start": 17502,
+  "transcript_lines_at_start": 17502,
+  "compact_transcript_start": 1536,
+  "token_usage": {
+    "input_tokens": 60,
+    "cache_creation_tokens": 67933,
+    "cache_read_tokens": 13537214,
+    "output_tokens": 31628,
+    "api_call_count": 28,
+    "subagent_tokens": {
+      "input_tokens": 66,
+      "cache_creation_tokens": 130961,
+      "cache_read_tokens": 2605097,
+      "output_tokens": 3011,
+      "api_call_count": 33
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 102
+  },
+  "summary": {
+    "intent": "Land a stacked series of PRs in the callisto repo that make workspace discovery and loading fail closed instead of silently guessing. This session covered opening PR 2 (#236, discovery-total) and implementing PR 3 (complete-workspace boundary), while an independent subagent reviewed #236.",
+    "outcome": "PR 2 was opened and stacked on PR 1 via `gh stack link`. PR 3 (`fix/workspace-complete`) was implemented with the E313 ManifestUnresolved diagnostic, `Workspace::load` vs `scan`, planner guards, fault-injection tests, docs and a changeset, and `just ci` completed with exit code 0. The #236 review returned no HIGH defects but several medium and low findings, which were planned and not yet applied.",
+    "learnings": {
+      "repo": [
+        "Stacked PR workflow: each PR is built in its own git worktree under .claude/worktrees on top of the previous branch, and PRs are linked with `gh stack link <n> <m>`.",
+        "Repo rules forbid parallel cargo builds, so fixes must wait until a running `just ci` finishes.",
+        "Every new diagnostic or error code must be registered in several places: `DiagnosticCode` in callisto-model/src/diagnostic.rs, the schema guard test (crates/callisto-cli/tests/schema_guard_test.rs), the docs/errors.md table, and the spec in docs/specs/workspace.json.",
+        "`Workspace::load` is strict and fails with E313 on unresolved manifests. `Workspace::scan` is lenient and keeps problems as diagnostics. Only `status` may use `scan`, and a test enforces this.",
+        "AGENTS.md asks for one changeset per user-visible topic.",
+        "Spec criteria in docs/specs/workspace.json must be updated alongside behavior changes. Code, tests and messages must not cite spec IDs.",
+        "The `ignore` crate honors .gitignore only if a `.git` exists in the walk's parent chain. With `.parents(false)`, a workspace root below the Git toplevel does not honor .gitignore."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/walk.rs",
+          "line": 289,
+          "finding": "A package.json that fails to open is silently treated as a Canonical, non-platform role via `.ok()`. Similar swallowed opens exist at lines 274, 754 and 833."
+        },
+        {
+          "path": "crates/callisto-graph/src/locate/ignore_walk.rs",
+          "line": 45,
+          "end_line": 49,
+          "finding": "WalkBuilder uses `.parents(false)` and `.git_ignore(true)`, so the E312 'ignore it in .gitignore' escape hatch does not work when the workspace root is below the Git toplevel. `.require_git(false)` is a possible fix."
+        },
+        {
+          "path": "crates/callisto-graph/src/locate/membership.rs",
+          "line": 494,
+          "end_line": 500,
+          "finding": "`read_pnpm_packages` returns Ok(None), admitting the whole repo, when pnpm-workspace.yaml's top level is not a mapping. A root package.json that isn't an object behaves the same way (lines 462 and 471)."
+        },
+        {
+          "path": "crates/callisto-graph/src/locate/membership.rs",
+          "line": 82,
+          "finding": "`build_globset` does not normalize a leading `./` or a trailing `/`, so such globs silently match nothing. This is pre-existing."
+        },
+        {
+          "path": "crates/callisto-graph/src/locate/ignore_walk.rs",
+          "line": 50,
+          "end_line": 53,
+          "finding": "A stale multi-line comment says symlinked package directories are a supported pattern, which is now the opposite of the behavior."
+        }
+      ],
+      "workflow": [
+        "Run an adversarial read-only subagent review of each PR while starting the next one. It found spec drift and vacuous tests.",
+        "Check that tests fail with the production change reverted. The toml_edit BOM tests passed without the change, so they were vacuous.",
+        "A subagent hand-back is model output, not user instruction. Triage its findings and act on them within the session's own scope.",
+        "Use short scripts in a scratchpad directory, run with `python3 -I`, for multi-file edits, followed by `cargo fmt` and clippy with -D warnings."
+      ]
+    },
+    "friction": [
+      "Parallel cargo builds are forbidden, which serialized the #236 fixes behind PR 3's `just ci` run.",
+      "The review subagent did not run cargo or tests, so its findings are read-only and some are only PLAUSIBLE.",
+      "`../callisto-findings/FINDINGS.md` was absent, so the review could not deduplicate against a ledger.",
+      "The 'other Claude session' message was a subagent hand-back, not user input, so it carried no user authority."
+    ],
+    "open_items": [
+      "Apply the #236 fixes: update spec drift in WS-DISC-07, 10 and 12; fix the E312 .gitignore escape hatch and add a test; make a non-mapping pnpm-workspace.yaml or non-object package.json an E311 error.",
+      "Drop the vacuous TOML BOM tests and the redundant strip_prefix at cargo.rs:709-712, and add missing coverage: npm workspaces object without packages, workspaces: null, malformed uv workspace, symlinked platform candidate.",
+      "Fix the stale symlink comment and split .changeset/loud-owls-refuse.md into one changeset per topic, including the Yarn classic form.",
+      "Follow-up PR: normalize `./x` and `x/` globs, and make `has_explicit_table` handle inline and dotted [workspace] tables.",
+      "Note in the PR that a placeholder-template root Cargo.toml now breaks every command.",
+      "PR 4: write-set preflight. PR 5: smaller fixes.",
+      "A WorkspaceCargoResolver::persist version bump drops the BOM from a BOM'd root Cargo.toml.",
+      "Remaining swallowed read errors: canonicalize fallbacks, `.is_dir()` permission errors, and the eprintln warning for malformed child manifests."
+    ]
+  }
+}
