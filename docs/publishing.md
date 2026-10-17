@@ -95,6 +95,8 @@ Native publish hooks, including `prepare` and `prepublishOnly`, run unchanged wi
 Callisto supports static PEP 621 or Poetry versions with `python -m build` and Twine. Current limits:
 
 - Co-located Cargo/Maturin projects fail discovery with E007, including Cargo-owned dynamic Python versions.
-- Registry observation checks version presence, not the complete wheel/sdist set. A retry can skip files after a partial upload.
+- Files an earlier attempt uploaded are matched by name, not by content: a rebuild is not always byte-identical, and the file set is not sealed between jobs. A file this run uploads must carry the digest the index serves for it.
+- A release can only be completed for 14 days after its first file; after that, PyPI refuses new files and the release needs a new version.
 - One configured URL serves both simple-index reads and Twine uploads. Private indexes with separate routes, read authentication, or HTML-only responses need explicit support. Twine credentials do not authenticate `curl`.
+- Dependencies in `[dependency-groups]`, Poetry groups and the legacy dev-dependency tables are not followed or rewritten when a workspace package is released. Under uv a version pin on a workspace member is ignored, and Poetry normally references siblings by path, so a stale pin there is harmless; a group that pins a registry version of a sibling is not updated.
 - Snapshots use a PEP 440 local label (`0.0.0.dev0+<tag>.<sha>`), which public PyPI rejects. See [PEP 440](https://packaging.python.org/en/latest/specifications/version-specifiers/).

@@ -1236,19 +1236,111 @@ mod static_python_release {
         assert!(second.status.success(), "Python rerun failed: {}", stderr_of(&second));
         assert_python_receipt(&receipt, &intent, "alreadySatisfied", &revision);
         let recovered_calls = fs::read_to_string(&calls_path).unwrap();
-        for tool in ["python ", "twine "] {
-            assert_eq!(
-                recovered_calls.lines().filter(|line| line.starts_with(tool)).count(),
-                calls.lines().filter(|line| line.starts_with(tool)).count(),
-                "provider observation must recover without repeating {tool}"
-            );
-        }
+        let count = |log: &str, tool: &str| log.lines().filter(|line| line.starts_with(tool)).count();
+        assert_eq!(
+            count(&recovered_calls, "twine "),
+            count(&calls, "twine "),
+            "a complete release uploads nothing on a rerun"
+        );
+        assert_eq!(
+            count(&recovered_calls, "python "),
+            count(&calls, "python ") + 1,
+            "a rerun builds once to know which files the release declares"
+        );
         assert!(recovered_calls.matches("curl ").count() > calls.matches("curl ").count());
         for effect in ["git push", "gh release create", "gh release edit"] {
             assert_eq!(rig.log_count(effect), 1, "rerun repeated {effect}");
         }
         assert_argv_within_allowlists(&rig.log, &rig.git_trace);
         assert!(git(dir.path(), &["status", "--porcelain"]).is_empty());
+    }
+
+    /// One file per name in `$CALLISTO_TEST_PYPI_STATE`: the index serves exactly what was uploaded.
+    const PYPI_STATE_CURL: &str = r#"#!/bin/sh
+set -eu
+printf 'curl\n' >> "$CALLISTO_TEST_PYPI_CALLS"
+set -- "$CALLISTO_TEST_PYPI_STATE"/*
+if [ ! -e "$1" ]; then
+  printf 'HTTP/2 404 Not Found\r\n\r\n'
+  exit 0
+fi
+printf 'HTTP/2 200 OK\r\ncontent-type: application/vnd.pypi.simple.v1+json\r\n\r\n{"meta":{"api-version":"1.0"},"name":"stable-python","files":['
+sep=''
+for f in "$@"; do
+  printf '%s{"filename":"%s","url":"https://files.example.invalid/x","hashes":{},"yanked":false}' "$sep" "$(basename "$f")"
+  sep=','
+done
+printf ']}'
+"#;
+
+    /// Uploads each named file in order, and dies with a 503 before the second one when told to.
+    const PYPI_STATE_TWINE: &str = r#"#!/bin/sh
+set -eu
+[ "$1" = upload ] || exit 64
+shift
+printf 'twine %s\n' "$#" >> "$CALLISTO_TEST_PYPI_CALLS"
+sent=0
+for f in "$@"; do
+  name=$(basename "$f")
+  [ -f "$f" ] || exit 65
+  [ ! -e "$CALLISTO_TEST_PYPI_STATE/$name" ] || { echo 'HTTPError: 400 File already exists' >&2; exit 1; }
+  if [ "$sent" = 1 ] && [ -e "$CALLISTO_TEST_PYPI_FAIL" ]; then
+    echo 'HTTPError: 503 Service Unavailable' >&2
+    exit 1
+  fi
+  : > "$CALLISTO_TEST_PYPI_STATE/$name"
+  printf 'Uploading %s\n' "$name"
+  sent=$((sent + 1))
+done
+"#;
+
+    #[test]
+    fn python_release_resumes_after_a_partial_upload_and_uploads_only_the_missing_file() {
+        let (dir, revision) = release_fixture();
+        let external = tempfile::tempdir().unwrap();
+        let intent_path = external.path().join("intent.json");
+        let result = plan(dir.path(), &revision, &intent_path);
+        assert!(result.status.success(), "Python plan failed: {}", stderr_of(&result));
+        let intent = assert_python_intent(&intent_path);
+        let state = external.path().join("pypi-state");
+        fs::create_dir_all(&state).unwrap();
+        let fail = external.path().join("pypi-fail");
+        fs::write(&fail, "").unwrap();
+
+        let mut rig = python_publishers(external.path(), &revision);
+        rig.set("CALLISTO_TEST_PYPI_STATE", state.to_str().unwrap());
+        rig.set("CALLISTO_TEST_PYPI_FAIL", fail.to_str().unwrap());
+        for (program, body) in [("curl", PYPI_STATE_CURL), ("twine", PYPI_STATE_TWINE)] {
+            let path = rig.bin.join(program);
+            write_fixture(&path, body);
+            fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        let receipt = external.path().join("receipt.json");
+        let first = execute_rig(dir.path(), &intent_path, &receipt, &rig, TAG, &[], None);
+        assert!(!first.status.success(), "the dying upload must fail the run");
+        assert!(!receipt.exists(), "a failed run issues no receipt");
+        let uploaded: Vec<_> = fs::read_dir(&state).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(uploaded.len(), 1, "exactly one file reached the index: {uploaded:?}");
+        assert_eq!(
+            rig.log_count("git push"),
+            0,
+            "no tag is pushed before the release is complete"
+        );
+
+        fs::remove_file(&fail).unwrap();
+        let second = execute_rig(dir.path(), &intent_path, &receipt, &rig, TAG, &[], None);
+        assert!(second.status.success(), "the rerun failed: {}", stderr_of(&second));
+        assert_python_receipt(&receipt, &intent, "published", &revision);
+        let calls = fs::read_to_string(external.path().join("pypi-calls.log")).unwrap();
+        let twine: Vec<_> = calls.lines().filter(|line| line.starts_with("twine ")).collect();
+        assert_eq!(
+            twine,
+            ["twine 2", "twine 1"],
+            "the first run offered both files, the rerun only the missing one: {calls}"
+        );
+        assert_eq!(fs::read_dir(&state).unwrap().count(), 2);
+        assert_eq!(rig.log_count("git push"), 1);
     }
 
     const PYPI_CURL: &str = r#"#!/bin/sh
@@ -1268,22 +1360,22 @@ fi
     const PYTHON_BUILD: &str = r#"#!/bin/sh
 set -eu
 [ "$#" = 6 ] && [ "$1" = '-m' ] && [ "$2" = build ] && [ "$3" = '--sdist' ] \
-  && [ "$4" = '--wheel' ] && [ "$5" = '--outdir' ] && [ "$6" = 'dist/' ] || exit 64
+  && [ "$4" = '--wheel' ] && [ "$5" = '--outdir' ] && [ -d "$6" ] || exit 64
 grep -Fx 'name = "stable-python"' pyproject.toml >/dev/null
 grep -Fx 'version = "0.2.0"' pyproject.toml >/dev/null
-printf 'python %s\n' "$*" >> "$CALLISTO_TEST_PYPI_CALLS"
-mkdir -p dist
-printf 'fixture wheel\n' > dist/stable_python-0.2.0-py3-none-any.whl
-printf 'fixture sdist\n' > dist/stable_python-0.2.0.tar.gz
+printf 'python build\n' >> "$CALLISTO_TEST_PYPI_CALLS"
+printf 'fixture wheel\n' > "$6/stable_python-0.2.0-py3-none-any.whl"
+printf 'fixture sdist\n' > "$6/stable_python-0.2.0.tar.gz"
 "#;
 
     const TWINE_UPLOAD: &str = r#"#!/bin/sh
 set -eu
-[ "$#" = 3 ] && [ "$1" = upload ] && [ "$2" = '--skip-existing' ] \
-  && [ "$3" = 'dist/stable_python-0.2.0*' ] || exit 64
-[ -f dist/stable_python-0.2.0-py3-none-any.whl ] && [ -f dist/stable_python-0.2.0.tar.gz ] || exit 65
+[ "$#" = 3 ] && [ "$1" = upload ] || exit 64
+case "$2" in */stable_python-0.2.0-py3-none-any.whl) ;; *) exit 64 ;; esac
+case "$3" in */stable_python-0.2.0.tar.gz) ;; *) exit 64 ;; esac
+[ -f "$2" ] && [ -f "$3" ] || exit 65
 [ ! -e "$CALLISTO_TEST_PYPI_MARKER" ] || exit 66
-printf 'twine %s\n' "$*" >> "$CALLISTO_TEST_PYPI_CALLS"
+printf 'twine upload\n' >> "$CALLISTO_TEST_PYPI_CALLS"
 printf '%s\n' '{"meta":{"api-version":"1.0"},"name":"stable-python","files":[{"filename":"stable_python-0.2.0-py3-none-any.whl","url":"https://files.example.invalid/stable_python-0.2.0-py3-none-any.whl","hashes":{},"yanked":false},{"filename":"stable_python-0.2.0.tar.gz","url":"https://files.example.invalid/stable_python-0.2.0.tar.gz","hashes":{},"yanked":false}]}' > "$CALLISTO_TEST_PYPI_MARKER"
 printf 'Uploading stable_python-0.2.0-py3-none-any.whl\nUploading stable_python-0.2.0.tar.gz\n'
 "#;

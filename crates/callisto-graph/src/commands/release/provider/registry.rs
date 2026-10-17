@@ -1,8 +1,11 @@
 //! The registry-publish role: one adapter per ecosystem, selected once.
 
+use std::sync::Arc;
+
 use callisto_model::{
-    normalize_pypi_project_name, CommandOutput, Ecosystem, ExactEvidence, ProviderEvidenceV1,
-    ProviderIndeterminateCause, ProviderObservationV1, PublishOutcome, RegistryError, RegistryKey, Version,
+    normalize_pypi_project_name, CommandOutput, Ecosystem, ExactEvidence, ProviderConflictReason, ProviderEvidenceV1,
+    ProviderIndeterminateCause, ProviderObservationV1, PublishOutcome, RegistryError, RegistryKey, ReleaseOperationId,
+    Version,
 };
 
 use crate::commands::registry_argv;
@@ -11,6 +14,7 @@ use crate::GraphError;
 
 use super::http::parse_http_response;
 use super::policy::{self, programs, require_registry_confirmation, run_observation, timeouts, Attempt};
+use super::pypi_files::{self, BuiltFile, BuiltSet, PypiSimpleFile, PypiSimpleIndex};
 use super::{
     preflight_from_observation, wrong_role, EffectAuthorization, PreparedOperation, ProviderCapabilities,
     ProviderContext, ProviderRequest, RegistryPublishOperation, ReleasePreflight, ReleaseProvider,
@@ -46,14 +50,7 @@ impl ReleaseProvider for RegistryProvider {
         context: &ProviderContext<'_>,
         request: &ProviderRequest<'_>,
     ) -> Result<ReleasePreflight, GraphError> {
-        match self.observe(context, request)? {
-            // A registry with no query API at all has nothing to observe
-            // before the effect; the post-effect confirmation fails closed.
-            ProviderObservationV1::Indeterminate {
-                cause: ProviderIndeterminateCause::UnsupportedProvider,
-            } => Ok(proceed()),
-            observation => preflight_from_observation(observation, request.id, self.preflight_conflict()),
-        }
+        adapter_for(request.id.package.ecosystem())?.preflight(context, request.id, registry_operation(request)?)
     }
 
     fn publish(
@@ -64,7 +61,7 @@ impl ReleaseProvider for RegistryProvider {
     ) -> Result<ExactEvidence, GraphError> {
         let operation = registry_operation(request)?;
         let adapter = adapter_for(request.id.package.ecosystem())?;
-        let output = adapter.publish(context, operation)?;
+        let output = adapter.publish(context, request.id, operation)?;
         let outcome = adapter.classify(&output).map_err(|source| GraphError::Registry {
             package: operation.package_name.clone(),
             source,
@@ -72,11 +69,7 @@ impl ReleaseProvider for RegistryProvider {
         // Neither a zero exit nor the client's "already exists" text is a
         // receipt: a yanked version is not the version this intent authorized,
         // so only an exact observation may satisfy the operation.
-        let confirmed = if matches!(outcome, PublishOutcome::Published) && adapter.can_observe_versions() {
-            confirmed_registry_observation(adapter, context, operation)?
-        } else {
-            registry_observation(adapter, context, operation)?
-        };
+        let confirmed = adapter.confirm(context, operation, matches!(outcome, PublishOutcome::Published))?;
         require_registry_confirmation(
             confirmed.is_terminal_success(),
             &operation.package_name,
@@ -108,8 +101,8 @@ fn registry_operation<'a>(request: &ProviderRequest<'a>) -> Result<&'a RegistryP
 
 /// The one registry observation used by preflight and post-publish
 /// confirmation, so the two can never disagree.
-fn registry_observation(
-    adapter: &'static dyn RegistryEcosystem,
+fn registry_observation<A: RegistryEcosystem + ?Sized>(
+    adapter: &A,
     context: &ProviderContext<'_>,
     operation: &RegistryPublishOperation,
 ) -> Result<ProviderObservationV1, GraphError> {
@@ -124,8 +117,8 @@ fn registry_observation(
 /// The same observation, but an absence is treated as index-propagation lag
 /// rather than an answer: this only runs after a publish client reported the
 /// version as newly published.
-fn confirmed_registry_observation(
-    adapter: &'static dyn RegistryEcosystem,
+fn confirmed_registry_observation<A: RegistryEcosystem + ?Sized>(
+    adapter: &A,
     context: &ProviderContext<'_>,
     operation: &RegistryPublishOperation,
 ) -> Result<ProviderObservationV1, GraphError> {
@@ -161,10 +154,43 @@ pub(crate) trait RegistryEcosystem {
     fn publish(
         &self,
         context: &ProviderContext<'_>,
+        id: &ReleaseOperationId,
         operation: &RegistryPublishOperation,
     ) -> Result<CommandOutput, GraphError>;
 
     fn classify(&self, output: &CommandOutput) -> Result<PublishOutcome, RegistryError>;
+
+    /// What the one fresh pre-effect observation authorizes.
+    fn preflight(
+        &self,
+        context: &ProviderContext<'_>,
+        id: &ReleaseOperationId,
+        operation: &RegistryPublishOperation,
+    ) -> Result<ReleasePreflight, GraphError> {
+        match registry_observation(self, context, operation)? {
+            // A registry with no query API at all has nothing to observe
+            // before the effect; the post-effect confirmation fails closed.
+            ProviderObservationV1::Indeterminate {
+                cause: ProviderIndeterminateCause::UnsupportedProvider,
+            } => Ok(proceed()),
+            observation => preflight_from_observation(observation, id, RemoteConflict::RegistryVersionDiffers),
+        }
+    }
+
+    /// The observation that decides whether a finished publish may be recorded. `published` is whether the client
+    /// reported a new publish, so the registry may still be catching up.
+    fn confirm(
+        &self,
+        context: &ProviderContext<'_>,
+        operation: &RegistryPublishOperation,
+        published: bool,
+    ) -> Result<ProviderObservationV1, GraphError> {
+        if published && self.can_observe_versions() {
+            confirmed_registry_observation(self, context, operation)
+        } else {
+            registry_observation(self, context, operation)
+        }
+    }
 }
 
 /// The production adapter set, keyed by ecosystem.
@@ -349,6 +375,7 @@ impl RegistryEcosystem for CargoRegistry {
     fn publish(
         &self,
         context: &ProviderContext<'_>,
+        _id: &ReleaseOperationId,
         operation: &RegistryPublishOperation,
     ) -> Result<CommandOutput, GraphError> {
         let registry_key =
@@ -499,6 +526,7 @@ impl RegistryEcosystem for NpmRegistry {
     fn publish(
         &self,
         context: &ProviderContext<'_>,
+        _id: &ReleaseOperationId,
         operation: &RegistryPublishOperation,
     ) -> Result<CommandOutput, GraphError> {
         if operation.by_directory {
@@ -552,43 +580,10 @@ fn pypi_simple_index_url(endpoint: Option<&str>, package_name: &str) -> String {
     format!("{}/{project}/", base.trim_end_matches('/'))
 }
 
-/// One file entry of a PEP 691 JSON simple-index response -- only the fields
-/// the observation reads.
-#[derive(serde::Deserialize)]
-struct PypiSimpleFile {
-    filename: String,
-    /// `false` when not yanked, or a (possibly empty) reason string when it is.
-    #[serde(default)]
-    yanked: Option<serde_json::Value>,
-}
-
-#[derive(serde::Deserialize)]
-struct PypiSimpleIndex {
-    files: Vec<PypiSimpleFile>,
-}
-
-impl PypiSimpleFile {
-    fn is_yanked(&self) -> bool {
-        !matches!(self.yanked, None | Some(serde_json::Value::Bool(false)))
-    }
-}
-
 /// The version segment of a simple-index filename, or `None` for an extension
 /// this parser does not recognize (a legacy installer, say).
-///
-/// A wheel's distribution segment is PEP 427-escaped to underscores only, so
-/// splitting on `-` unambiguously yields `version` second. A PEP 440 version
-/// never itself contains a hyphen, so an sdist's *last* `-` is always the
-/// name/version boundary regardless of how the distribution name is spelled.
 fn pypi_simple_file_version(filename: &str) -> Option<&str> {
-    if let Some(stem) = filename.strip_suffix(".whl") {
-        return stem.split('-').nth(1);
-    }
-    [".tar.gz", ".tar.bz2", ".tar.xz", ".tar.Z", ".zip"]
-        .into_iter()
-        .find_map(|ext| filename.strip_suffix(ext))
-        .and_then(|stem| stem.rsplit_once('-'))
-        .map(|(_, version)| version)
+    pypi_files::dist_filename_parts(filename).map(|(_, version)| version)
 }
 
 /// Whether a simple-index file's filename names exactly the requested version.
@@ -620,38 +615,184 @@ fn classify_pypi_simple_body(body: &str, version: &Version) -> Attempt<ProviderO
     if !matched {
         return settled(ProviderObservationV1::Absent);
     }
-    settled(ProviderObservationV1::Exact {
+    settled(exact_version(version))
+}
+
+/// The observation that a version is on the registry, unyanked.
+fn exact_version(version: &Version) -> ProviderObservationV1 {
+    ProviderObservationV1::Exact {
         evidence: ProviderEvidenceV1::RegistryVersion {
             version: version.clone(),
             checksum: None,
             yanked: Some(false),
         },
+    }
+}
+
+/// What the index holds for one release.
+enum PypiRemote {
+    Absent,
+    Files(Vec<PypiSimpleFile>),
+    Indeterminate(ProviderIndeterminateCause),
+}
+
+/// The release's own files from a parsed 200 body.
+fn classify_pypi_files_body(body: &str, version: &Version) -> Attempt<PypiRemote> {
+    let Ok(index) = serde_json::from_str::<PypiSimpleIndex>(body) else {
+        return Attempt::Transient {
+            value: PypiRemote::Indeterminate(ProviderIndeterminateCause::MalformedResponse),
+            retry_after: None,
+        };
+    };
+    let files: Vec<_> = index
+        .files
+        .into_iter()
+        .filter(|file| pypi_simple_file_matches(file, version))
+        .collect();
+    Attempt::Settled(if files.is_empty() {
+        PypiRemote::Absent
+    } else {
+        PypiRemote::Files(files)
     })
 }
 
 /// Classifies one `curl -sS -i` run against the simple index. A private index
 /// that ignores `Accept` and serves its legacy HTML page fails the JSON parse
-/// inside [`classify_pypi_simple_body`] and reads as `MalformedResponse`, same
-/// as any other body PEP 691 JSON parsing cannot make sense of.
+/// inside `on_ok` and reads as `MalformedResponse`, same as any other body PEP
+/// 691 JSON parsing cannot make sense of.
 ///
 /// Any other status shares [`HttpResponse::is_transient`] with GitHub's `gh api` reads, so it retries on
 /// `Retry-After` instead of settling immediately, and either way reports the status as `ProviderStatus`.
-fn classify_pypi_simple(output: &CommandOutput, version: &Version) -> Attempt<ProviderObservationV1> {
+fn classify_pypi_status<T>(
+    output: &CommandOutput,
+    on_ok: impl FnOnce(&str) -> Attempt<T>,
+    absent: T,
+    indeterminate: impl Fn(ProviderIndeterminateCause) -> T,
+) -> Attempt<T> {
     let response = match parse_http_response(&output.stdout) {
         Ok(response) => response,
-        Err(_) if !output.success() => return transient(ProviderIndeterminateCause::CommandFailed, None),
-        Err(_) => return transient(ProviderIndeterminateCause::MalformedResponse, None),
+        Err(_) if !output.success() => {
+            return Attempt::Transient {
+                value: indeterminate(ProviderIndeterminateCause::CommandFailed),
+                retry_after: None,
+            }
+        }
+        Err(_) => {
+            return Attempt::Transient {
+                value: indeterminate(ProviderIndeterminateCause::MalformedResponse),
+                retry_after: None,
+            }
+        }
     };
     match response.status {
-        200 => classify_pypi_simple_body(&response.body, version),
-        404 => settled(ProviderObservationV1::Absent),
-        status if response.is_transient() => transient(
-            ProviderIndeterminateCause::ProviderStatus { status },
-            response.retry_after(),
-        ),
-        status => settled(ProviderObservationV1::Indeterminate {
-            cause: ProviderIndeterminateCause::ProviderStatus { status },
-        }),
+        200 => on_ok(&response.body),
+        404 => Attempt::Settled(absent),
+        status if response.is_transient() => Attempt::Transient {
+            value: indeterminate(ProviderIndeterminateCause::ProviderStatus { status }),
+            retry_after: response.retry_after(),
+        },
+        status => Attempt::Settled(indeterminate(ProviderIndeterminateCause::ProviderStatus { status })),
+    }
+}
+
+fn classify_pypi_simple(output: &CommandOutput, version: &Version) -> Attempt<ProviderObservationV1> {
+    classify_pypi_status(
+        output,
+        |body| classify_pypi_simple_body(body, version),
+        ProviderObservationV1::Absent,
+        |cause| ProviderObservationV1::Indeterminate { cause },
+    )
+}
+
+fn classify_pypi_files(output: &CommandOutput, version: &Version) -> Attempt<PypiRemote> {
+    classify_pypi_status(
+        output,
+        |body| classify_pypi_files_body(body, version),
+        PypiRemote::Absent,
+        PypiRemote::Indeterminate,
+    )
+}
+
+impl PypiRegistry {
+    /// One `curl` of the project's simple index; `Err` when the command could not run at all.
+    fn fetch_once(
+        context: &ProviderContext<'_>,
+        operation: &RegistryPublishOperation,
+    ) -> Result<Result<CommandOutput, policy::CommandUnavailable>, GraphError> {
+        let url = pypi_simple_index_url(operation.registry.endpoint.as_deref(), &operation.package_name);
+        let accept_header = format!("Accept: {PYPI_SIMPLE_ACCEPT}");
+        let args = ["-sS", "-i", "-H", accept_header.as_str(), url.as_str()];
+        run_observation(
+            context.runner(),
+            programs::CURL,
+            &args,
+            context.root(),
+            timeouts::REGISTRY_QUERY,
+            false,
+        )
+    }
+
+    /// The release's files on the index, retried on a transient failure.
+    fn remote(context: &ProviderContext<'_>, operation: &RegistryPublishOperation) -> Result<PypiRemote, GraphError> {
+        policy::retry_observation(context.sleeper(), || {
+            Ok(match Self::fetch_once(context, operation)? {
+                Ok(output) => classify_pypi_files(&output, &operation.version),
+                Err(_unavailable) => Attempt::Transient {
+                    value: PypiRemote::Indeterminate(ProviderIndeterminateCause::CommandFailed),
+                    retry_after: None,
+                },
+            })
+        })
+    }
+
+    /// The files one build of this release produces, built once per run.
+    fn built_set(
+        context: &ProviderContext<'_>,
+        operation: &RegistryPublishOperation,
+    ) -> Result<Arc<BuiltSet>, GraphError> {
+        let build = || Self::build_set(context, operation);
+        match context.file_sets() {
+            Some(sets) => sets.get_or_build(
+                (operation.package_dir.clone(), operation.version.render().to_string()),
+                build,
+            ),
+            None => build().map(Arc::new),
+        }
+    }
+
+    /// Builds the sdist and wheel into a fresh directory, so a stale `dist/` can never reach the upload.
+    fn build_set(context: &ProviderContext<'_>, operation: &RegistryPublishOperation) -> Result<BuiltSet, GraphError> {
+        let dir = tempfile::tempdir().map_err(|error| {
+            GraphError::Command(callisto_model::CommandError::Io {
+                program: "python -m build".to_string(),
+                message: error.to_string(),
+            })
+        })?;
+        let build = registry_argv::pypi_build_argv(context.root(), &operation.package_dir, dir.path())?;
+        let built = run_build_argv(context, &build)?;
+        if built.exit_code != Some(0) {
+            return Err(GraphError::ReleaseCommand {
+                program: build.program.clone(),
+                args: build.args.clone(),
+                failure: CommandFailure::NonZeroExit {
+                    exit_code: built.exit_code,
+                    stderr: built.stderr,
+                },
+            });
+        }
+        BuiltSet::from_dir(dir, &operation.package_name, &operation.version)
+    }
+}
+
+/// Files on the index that no build of this release declared are never checked, but they are worth a line.
+fn warn_about_extra_files(operation: &RegistryPublishOperation, extras: &[&str]) {
+    if !extras.is_empty() {
+        eprintln!(
+            "warning: the index lists {} for {} {}, which this release did not build; it is not checked",
+            extras.join(", "),
+            operation.package_name,
+            operation.version.render()
+        );
     }
 }
 
@@ -669,56 +810,143 @@ impl RegistryEcosystem for PypiRegistry {
         context: &ProviderContext<'_>,
         operation: &RegistryPublishOperation,
     ) -> Result<Attempt<ProviderObservationV1>, GraphError> {
-        let url = pypi_simple_index_url(operation.registry.endpoint.as_deref(), &operation.package_name);
-        let accept_header = format!("Accept: {PYPI_SIMPLE_ACCEPT}");
-        let args = ["-sS", "-i", "-H", accept_header.as_str(), url.as_str()];
-        let output = match run_observation(
-            context.runner(),
-            programs::CURL,
-            &args,
-            context.root(),
-            timeouts::REGISTRY_QUERY,
-            false,
-        )? {
+        let output = match Self::fetch_once(context, operation)? {
             Ok(output) => output,
             Err(_unavailable) => return Ok(transient(ProviderIndeterminateCause::CommandFailed, None)),
         };
         Ok(classify_pypi_simple(&output, &operation.version))
     }
 
+    /// An index with none of the release's files needs no build to know the effect may proceed. Any file at all
+    /// means the release may be partly published, so the build says which files are missing.
+    fn preflight(
+        &self,
+        context: &ProviderContext<'_>,
+        id: &ReleaseOperationId,
+        operation: &RegistryPublishOperation,
+    ) -> Result<ReleasePreflight, GraphError> {
+        let remote = match Self::remote(context, operation)? {
+            PypiRemote::Absent => return Ok(proceed()),
+            PypiRemote::Indeterminate(cause) => {
+                return Err(GraphError::ReleaseProviderIndeterminate {
+                    operation: Box::new(id.clone()),
+                    cause,
+                })
+            }
+            PypiRemote::Files(remote) => remote,
+        };
+        let set = Self::built_set(context, operation)?;
+        let comparison = pypi_files::compare(&set, &remote);
+        warn_about_extra_files(operation, &comparison.extras);
+        if !comparison.yanked.is_empty() {
+            return preflight_from_observation(
+                ProviderObservationV1::Conflict {
+                    reason: ProviderConflictReason::RegistryVersionYanked,
+                },
+                id,
+                RemoteConflict::RegistryVersionDiffers,
+            );
+        }
+        if comparison.is_complete() {
+            return preflight_from_observation(
+                exact_version(&operation.version),
+                id,
+                RemoteConflict::RegistryVersionDiffers,
+            );
+        }
+        Ok(proceed())
+    }
+
+    /// Uploads only the files the index lacks, named one by one: a file already there is never offered again.
     fn publish(
         &self,
         context: &ProviderContext<'_>,
+        id: &ReleaseOperationId,
         operation: &RegistryPublishOperation,
     ) -> Result<CommandOutput, GraphError> {
-        let steps = registry_argv::pypi_publish_argv(
-            context.root(),
-            &operation.package_dir,
-            &operation.package_name,
-            &operation.version,
-            operation.registry.endpoint.as_deref(),
-        )?;
-        let [build, upload] = steps.as_slice() else {
-            return Err(GraphError::ReleaseInvariant {
-                detail: "pypi_publish_argv did not return exactly a build and an upload step".to_string(),
-            });
+        let set = Self::built_set(context, operation)?;
+        let remote = match Self::remote(context, operation)? {
+            PypiRemote::Absent => Vec::new(),
+            PypiRemote::Files(remote) => remote,
+            PypiRemote::Indeterminate(cause) => {
+                return Err(GraphError::ReleaseProviderIndeterminate {
+                    operation: Box::new(id.clone()),
+                    cause,
+                })
+            }
         };
-        let built = run_build_argv(context, build)?;
-        if built.exit_code != Some(0) {
-            return Err(GraphError::ReleaseCommand {
-                program: build.program.clone(),
-                args: build.args.clone(),
-                failure: CommandFailure::NonZeroExit {
-                    exit_code: built.exit_code,
-                    stderr: built.stderr,
-                },
+        let comparison = pypi_files::compare(&set, &remote);
+        if !comparison.yanked.is_empty() {
+            return Err(GraphError::ReleaseRemoteConflict {
+                conflict: RemoteConflict::RegistryVersionDiffers,
             });
         }
-        run_pypi_upload_argv(context, upload)
+        let missing: Vec<&BuiltFile> = set
+            .files
+            .iter()
+            .filter(|file| comparison.missing.contains(&file.filename.as_str()))
+            .collect();
+        if missing.is_empty() {
+            return Ok(CommandOutput {
+                exit_code: Some(0),
+                stdout: String::new(),
+                stderr: String::new(),
+            });
+        }
+        let paths: Vec<_> = missing.iter().map(|file| file.path.clone()).collect();
+        let upload = registry_argv::pypi_upload_argv(
+            context.root(),
+            &operation.package_dir,
+            operation.registry.endpoint.as_deref(),
+            &paths,
+        );
+        let output = run_pypi_upload_argv(context, &upload)?;
+        if output.success() {
+            set.mark_uploaded(&missing);
+        }
+        Ok(output)
     }
 
     fn classify(&self, output: &CommandOutput) -> Result<PublishOutcome, RegistryError> {
         registry_argv::classify_twine_output(output)
+    }
+
+    /// Confirms every built file is on the index, waiting for the index to catch up after an upload. A file this
+    /// run uploaded must carry the bytes it sent.
+    fn confirm(
+        &self,
+        context: &ProviderContext<'_>,
+        operation: &RegistryPublishOperation,
+        published: bool,
+    ) -> Result<ProviderObservationV1, GraphError> {
+        let set = Self::built_set(context, operation)?;
+        let observe = || -> Result<ProviderObservationV1, GraphError> {
+            Ok(match Self::remote(context, operation)? {
+                PypiRemote::Indeterminate(cause) => ProviderObservationV1::Indeterminate { cause },
+                PypiRemote::Absent => ProviderObservationV1::Absent,
+                PypiRemote::Files(remote) => {
+                    let comparison = pypi_files::compare(&set, &remote);
+                    if !comparison.yanked.is_empty() {
+                        ProviderObservationV1::Conflict {
+                            reason: ProviderConflictReason::RegistryVersionYanked,
+                        }
+                    } else if let Some(filename) = comparison.differing.first() {
+                        return Err(GraphError::PypiUploadedFileDiffers {
+                            filename: (*filename).to_string(),
+                        });
+                    } else if comparison.missing.is_empty() {
+                        exact_version(&operation.version)
+                    } else {
+                        ProviderObservationV1::Absent
+                    }
+                }
+            })
+        };
+        if published {
+            policy::observe_until_visible(context.sleeper(), observe)
+        } else {
+            observe()
+        }
     }
 }
 
@@ -734,5 +962,7 @@ pub(crate) fn require_observable_registry(ecosystem: Ecosystem) -> Result<(), Gr
     Ok(())
 }
 
+#[cfg(test)]
+mod pypi_file_set_tests;
 #[cfg(test)]
 mod tests;
