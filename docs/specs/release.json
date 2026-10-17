@@ -235,7 +235,7 @@
     },
     {
       "id": "REL-RERUN-01",
-      "criterion": "An operation whose result is already present and identical is recorded as already satisfied, and its effect is not repeated. For a registry version, stderr shows `warning: <package> <version> is already published; skipping`. A Python release is satisfied only when every file its build produces is on the index, so a rerun after a partial upload uploads only the missing files."
+      "criterion": "An operation whose result is already present and identical is recorded as already satisfied, and its effect is not repeated. For a registry version, stderr shows `warning: <package> <version> is already published; skipping`. During `release execute`, a Python release is satisfied only when every file its build produces is on the index, so a rerun after a partial upload uploads only the missing files. The check that finds a tagged package still to finish reads the version-level answer and does not build."
     },
     {
       "id": "REL-RERUN-02",
