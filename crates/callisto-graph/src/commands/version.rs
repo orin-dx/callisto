@@ -76,9 +76,9 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     let tags = ws.tags()?;
 
     let pre_path = ws.root.join(ws.config.pre_json_path());
-    let (pre_state, pre_json_original_text) = if pre_path.exists() {
-        let text =
-            std::fs::read_to_string(&pre_path).map_err(|e| GraphError::PreJsonRead { message: e.to_string() })?;
+    let pre_text = callisto_model::strict_fs::read_optional(&pre_path)
+        .map_err(|e| GraphError::PreJsonRead { message: e.to_string() })?;
+    let (pre_state, pre_json_original_text) = if let Some(text) = pre_text {
         let state = callisto_model::format::parse_pre_json(&text).map_err(GraphError::PreJson)?;
         let state = ws.resolve_pre_state_from_json(state, &text)?;
         (Some(state), Some(text))
@@ -336,9 +336,9 @@ pub fn check_partial_run<R: CommandRunner, D: DependencyResolver>(ws: &Workspace
     // A pre-release cycle legitimately reruns `version` uncommitted; the staged-manifest check is scoped past it.
     let pre_mode = {
         let path = ws.root.join(ws.config.pre_json_path());
-        if path.exists() {
-            let text =
-                std::fs::read_to_string(&path).map_err(|e| GraphError::PreJsonRead { message: e.to_string() })?;
+        let text = callisto_model::strict_fs::read_optional(&path)
+            .map_err(|e| GraphError::PreJsonRead { message: e.to_string() })?;
+        if let Some(text) = text {
             let state = callisto_model::format::parse_pre_json(&text).map_err(GraphError::PreJson)?;
             Some(state.mode)
         } else {
@@ -434,32 +434,11 @@ fn working_tree_has_pending_changeset<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
 ) -> Result<bool, GraphError> {
     let dir = ws.root.join(&ws.config.changesets_dir);
-    let entries = match std::fs::read_dir(&dir) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => {
-            return Err(GraphError::ApplyIo {
-                path: ws.config.changesets_dir.clone(),
-                message: error.to_string(),
-            })
-        }
-    };
-    for entry in entries {
-        let entry = entry.map_err(|error| GraphError::ApplyIo {
-            path: ws.config.changesets_dir.clone(),
-            message: error.to_string(),
-        })?;
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        let is_file = entry.file_type().map_err(|error| GraphError::ApplyIo {
-            path: ws.config.changesets_dir.join(&*name),
-            message: error.to_string(),
-        })?;
-        if is_file.is_file() && name.ends_with(".md") && name != "README.md" {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+    let files = crate::aggregate::list_changeset_files(&dir).map_err(|error| GraphError::ApplyIo {
+        path: ws.config.changesets_dir.clone(),
+        message: error.to_string(),
+    })?;
+    Ok(!files.is_empty())
 }
 
 /// True when a canonical manifest differs between index and HEAD: `git add`ed by a prior `apply` but never committed.

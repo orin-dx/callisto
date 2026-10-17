@@ -1739,3 +1739,64 @@ fn test_pre_mode_no_changesets_at_all_has_no_active_changeset() {
     assert!(!agg.pre_mode_has_active_changeset);
     assert!(agg.new_pre_changesets.is_empty());
 }
+
+#[test]
+fn changeset_listing_skips_the_readme_and_other_files_and_treats_a_missing_directory_as_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    assert!(list_changeset_files(&dir.path().join(".changeset")).unwrap().is_empty());
+
+    let changesets = dir.path().join(".changeset");
+    std::fs::create_dir(&changesets).unwrap();
+    for name in ["b.md", "a.md", "README.md", "config.json", "pre.json"] {
+        std::fs::write(changesets.join(name), "x").unwrap();
+    }
+    std::fs::create_dir(changesets.join("nested.md")).unwrap();
+
+    let names: Vec<_> = list_changeset_files(&changesets)
+        .unwrap()
+        .iter()
+        .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, ["a.md", "b.md"]);
+}
+
+/// An editor lock file such as `.#x.md` is a dangling link, not a changeset: it must not stop the run.
+#[cfg(unix)]
+#[test]
+fn changeset_listing_skips_a_dangling_link() {
+    let dir = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(dir.path().join("missing.md"), dir.path().join(".#x.md")).unwrap();
+    std::fs::write(dir.path().join("real.md"), "x").unwrap();
+    let names: Vec<_> = list_changeset_files(dir.path())
+        .unwrap()
+        .iter()
+        .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, ["real.md"]);
+}
+
+/// An entry that cannot be inspected for any other reason must stop the run and name the entry.
+#[cfg(unix)]
+#[test]
+fn changeset_listing_errors_on_a_link_loop_and_names_the_entry() {
+    let dir = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(dir.path().join("loop.md"), dir.path().join("loop.md")).unwrap();
+    let error = list_changeset_files(dir.path()).unwrap_err();
+    assert!(error.to_string().contains("loop.md"), "{error}");
+}
+
+#[test]
+fn loading_changesets_surfaces_a_directory_that_cannot_be_listed() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join(".changeset"), "not a directory").unwrap();
+    let cfg = crate::config::load(dir.path()).unwrap();
+    assert!(load_changesets_permissive(dir.path(), &cfg).is_err());
+}
+
+#[test]
+fn changeset_listing_errors_when_the_path_is_not_a_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let not_a_directory = dir.path().join("file");
+    std::fs::write(&not_a_directory, "x").unwrap();
+    assert!(list_changeset_files(&not_a_directory).is_err());
+}

@@ -4,6 +4,8 @@
 
 pub mod atomic;
 
+pub mod strict_fs;
+
 pub mod format;
 
 pub mod vcs;

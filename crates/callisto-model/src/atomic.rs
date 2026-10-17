@@ -22,7 +22,7 @@ use tempfile::NamedTempFile;
 /// # Errors
 ///
 /// Returns the first I/O error encountered: creating parent directories, writing the temp file,
-/// flushing, fsyncing, or persisting (renaming) to `path`.
+/// flushing, fsyncing, persisting (renaming) to `path`, or syncing the directory that holds it.
 pub fn atomic_write(path: &Path, content: &str, permit: &ApplyPermit) -> io::Result<()> {
     let _permit = permit;
     let raw_parent = path.parent().unwrap_or_else(|| Path::new("."));
@@ -31,6 +31,7 @@ pub fn atomic_write(path: &Path, content: &str, permit: &ApplyPermit) -> io::Res
     } else {
         raw_parent
     };
+    let created_parent = !parent.try_exists()?;
     std::fs::create_dir_all(parent)?;
 
     let mut temp = NamedTempFile::new_in(parent)?;
@@ -39,17 +40,36 @@ pub fn atomic_write(path: &Path, content: &str, permit: &ApplyPermit) -> io::Res
     temp.as_file().sync_all()?;
     temp.persist(path).map_err(|e| e.error)?;
 
-    if let Ok(parent_file) = std::fs::File::open(parent) {
-        let _res = parent_file.sync_all();
-    }
-    if let Some(grandparent) = parent.parent() {
-        if !grandparent.as_os_str().is_empty() {
-            if let Ok(gp_file) = std::fs::File::open(grandparent) {
-                let _res = gp_file.sync_all();
-            }
+    sync_directory(parent)?;
+    // A directory this call created is itself a new entry in its parent.
+    if created_parent {
+        if let Some(grandparent) = parent.parent().filter(|dir| !dir.as_os_str().is_empty()) {
+            sync_directory(grandparent)?;
         }
     }
     Ok(())
+}
+
+/// Flushes `dir`'s entries so a rename survives power loss. A directory that cannot be opened (Windows, or a `-wx`
+/// mode) or a filesystem that cannot sync one (`Unsupported`, `InvalidInput`, macOS `ENOTSUP`) is skipped: the file is
+/// already in place and failing the command now would misreport a write that happened. Any other failure, an I/O error
+/// above all, means the rename may not be durable and is reported.
+fn sync_directory(dir: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        let Ok(handle) = std::fs::File::open(dir) else {
+            return Ok(());
+        };
+        match handle.sync_all() {
+            Err(error) if sync_unsupported(&error) => Ok(()),
+            result => result,
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = dir;
+        Ok(())
+    }
 }
 
 /// Fails now if [`atomic_write`] to `path` could not succeed, leaving no file behind.
@@ -74,7 +94,15 @@ pub fn probe_atomic_write(path: &Path, permit: &ApplyPermit) -> io::Result<()> {
         raw_parent
     };
     std::fs::create_dir_all(parent)?;
-    NamedTempFile::new_in(parent).map(drop)
+    NamedTempFile::new_in(parent)?;
+    sync_directory(parent)
+}
+
+/// `std` maps `EOPNOTSUPP` to `Unsupported` but leaves macOS's distinct `ENOTSUP` (45) uncategorized.
+#[cfg(unix)]
+fn sync_unsupported(error: &io::Error) -> bool {
+    matches!(error.kind(), io::ErrorKind::Unsupported | io::ErrorKind::InvalidInput)
+        || (cfg!(target_os = "macos") && error.raw_os_error() == Some(45))
 }
 
 #[cfg(test)]
@@ -93,6 +121,20 @@ mod tests {
         std::fs::write(&target, "x").unwrap();
         probe_atomic_write(&target, &permit).unwrap();
         assert!(probe_atomic_write(dir.path(), &permit).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_that_cannot_be_opened_or_synced_is_skipped_but_an_io_failure_is_reported() {
+        let dir = tempdir().unwrap();
+        assert!(sync_directory(dir.path()).is_ok());
+        assert!(sync_directory(&dir.path().join("gone")).is_ok());
+        assert!(sync_unsupported(&io::Error::from(io::ErrorKind::Unsupported)));
+        assert!(sync_unsupported(&io::Error::from(io::ErrorKind::InvalidInput)));
+        #[cfg(target_os = "macos")]
+        assert!(sync_unsupported(&io::Error::from_raw_os_error(45)));
+        // EIO: the rename may not be durable, so it is reported.
+        assert!(!sync_unsupported(&io::Error::from_raw_os_error(5)));
     }
 
     #[test]

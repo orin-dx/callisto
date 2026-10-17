@@ -2617,3 +2617,21 @@ fn a_manifest_written_through_both_routes_keeps_every_edit_and_the_step_order() 
         ]
     );
 }
+
+/// A path that cannot be looked up is neither staged as present nor reported as deleted.
+#[test]
+fn a_path_that_cannot_be_looked_up_is_an_error_not_a_deletion() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = tmp.path().join("ws");
+    std::fs::create_dir(&ws).unwrap();
+    std::fs::write(ws.join("Cargo.toml"), "").unwrap();
+    assert!(path_exists(&ws, Path::new("Cargo.toml")).unwrap());
+    assert!(!path_exists(&ws, Path::new("missing.toml")).unwrap());
+    let Some(_locked) = callisto_fixtures::locked_dir::LockedDir::lock(&ws) else {
+        return;
+    };
+    assert!(matches!(
+        path_exists(&ws, Path::new("Cargo.toml")),
+        Err(GraphError::ApplyIo { .. })
+    ));
+}

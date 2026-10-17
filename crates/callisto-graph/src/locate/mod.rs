@@ -55,6 +55,13 @@ pub enum LocateError {
     )]
     ManifestParseError { path: PathBuf, message: String },
 
+    #[error("failed to read manifest `{}`: {message}", .path.display())]
+    #[diagnostic(
+        code(E310),
+        help("Make the manifest readable UTF-8 text; a workspace member's manifest is never skipped.")
+    )]
+    ManifestReadError { path: PathBuf, message: String },
+
     /// A VCS operation failed during workspace location. This variant exists
     /// so that callers who need to distinguish filesystem-structure errors
     /// (WorkspaceRootNotFound, Walk) from VCS errors (e.g., a git repository

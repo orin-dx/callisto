@@ -205,7 +205,7 @@ pub fn run<R: CommandRunner>(
     }
 
     // Computed before any write, so the `.changeset/README.md` existence check sees disk state as-is.
-    let files = scaffold::init_files(&facts.root, workflow.is_some());
+    let files = scaffold::init_files(&facts.root, workflow.is_some())?;
     let mut report = if global.dry_run {
         InitReport {
             schema_version: SCHEMA_VERSION,

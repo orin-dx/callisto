@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use callisto_model::release::is_safe_artifact_component;
@@ -440,11 +439,11 @@ fn parse_package_config_fields(
 /// Reads and parses `root/callisto.toml` (absent means empty), then [`resolve`]s it.
 pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
     let callisto_toml = root.join("callisto.toml");
-    let raw = if callisto_toml.exists() {
-        let content = fs::read_to_string(&callisto_toml).map_err(|e| ConfigError::Read {
-            path: callisto_toml.clone(),
-            message: e.to_string(),
-        })?;
+    let content = callisto_model::strict_fs::read_optional(&callisto_toml).map_err(|e| ConfigError::Read {
+        path: callisto_toml.clone(),
+        message: e.to_string(),
+    })?;
+    let raw = if let Some(content) = content {
         toml::from_str::<RawConfig>(&content).map_err(|e| ConfigError::ParseToml {
             path: callisto_toml.clone(),
             message: e.to_string(),
@@ -662,6 +661,19 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
 mod tests {
     use super::*;
     use std::fs;
+
+    /// A `callisto.toml` that cannot be looked up is not an absent one: its groups and tag templates must not vanish.
+    #[test]
+    fn a_config_that_cannot_be_looked_up_is_an_error_not_the_default() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = tmp.path().join("ws");
+        fs::create_dir(&ws).unwrap();
+        fs::write(ws.join("callisto.toml"), "").unwrap();
+        let Some(_locked) = callisto_fixtures::locked_dir::LockedDir::lock(&ws) else {
+            return;
+        };
+        assert!(matches!(load(&ws), Err(ConfigError::Read { .. })));
+    }
 
     #[test]
     fn with_promoted_siblings_overlays_without_mutating_original() {

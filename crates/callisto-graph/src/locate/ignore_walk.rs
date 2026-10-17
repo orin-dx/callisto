@@ -1,5 +1,4 @@
 use std::collections::BTreeSet;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use callisto_model::{workspace_relative, Ecosystem, PackageId, ProjectRoot};
@@ -98,7 +97,7 @@ impl ProjectLocator for IgnoreWalkLocator {
             // directory, so a parse failure below can check whether a *sibling*
             // manifest here was admitted, not only its own ecosystem's membership.
             let mut parsed: Vec<(Ecosystem, String, callisto_manifests::ManifestIdentity)> = Vec::new();
-            let mut failures: Vec<(PathBuf, String)> = Vec::new();
+            let mut failures: Vec<(PathBuf, ManifestFailure)> = Vec::new();
             for ecosystem in Ecosystem::CANONICAL {
                 // Every `Ecosystem::CANONICAL` member has a canonical
                 // manifest format by construction -- see its doc comment.
@@ -106,12 +105,17 @@ impl ProjectLocator for IgnoreWalkLocator {
                     .canonical_manifest_format()
                     .expect("CANONICAL ecosystems always have a canonical manifest format");
                 let manifest_path = path.join(format.file_name());
-                let Ok(content) = fs::read_to_string(&manifest_path) else {
-                    continue;
+                let content = match callisto_model::strict_fs::read_optional(&manifest_path) {
+                    Ok(Some(content)) => content,
+                    Ok(None) => continue,
+                    Err(e) => {
+                        failures.push((manifest_path, ManifestFailure::Unreadable(e.to_string())));
+                        continue;
+                    }
                 };
                 match callisto_manifests::read_identity(format, &content, &manifest_path) {
                     Ok(identity) => parsed.push((ecosystem, content, identity)),
-                    Err(e) => failures.push((manifest_path, e.to_string())),
+                    Err(e) => failures.push((manifest_path, ManifestFailure::Unparseable(e.to_string()))),
                 }
             }
 
@@ -123,7 +127,7 @@ impl ProjectLocator for IgnoreWalkLocator {
                 .iter()
                 .any(|(ecosystem, _, identity)| identity.name.is_some() && admits_explicitly(*ecosystem));
 
-            for (manifest_path, message) in failures {
+            for (manifest_path, failure) in failures {
                 // Determine which ecosystem this failed manifest belongs to from its
                 // file name, to check its own membership independent of any sibling.
                 let ecosystem = Ecosystem::CANONICAL.into_iter().find(|eco| {
@@ -132,12 +136,18 @@ impl ProjectLocator for IgnoreWalkLocator {
                 });
                 let self_admitted = ecosystem.is_some_and(admits_explicitly);
                 if self_admitted || any_sibling_admitted {
-                    return Err(LocateError::ManifestParseError {
-                        path: manifest_path,
-                        message,
+                    return Err(match failure {
+                        ManifestFailure::Unreadable(message) => LocateError::ManifestReadError {
+                            path: manifest_path,
+                            message,
+                        },
+                        ManifestFailure::Unparseable(message) => LocateError::ManifestParseError {
+                            path: manifest_path,
+                            message,
+                        },
                     });
                 }
-                eprintln!("{}", unparseable_manifest_warning(&manifest_path, &message));
+                eprintln!("{}", unparseable_manifest_warning(&manifest_path, &failure));
             }
 
             for (ecosystem, content, identity) in parsed {
@@ -177,11 +187,24 @@ impl ProjectLocator for IgnoreWalkLocator {
     }
 }
 
-/// Warning text for a manifest that fails to parse but isn't a workspace member (its own
+/// Why a manifest present in a directory could not be turned into an identity.
+enum ManifestFailure {
+    Unreadable(String),
+    Unparseable(String),
+}
+
+/// Warning text for a manifest that fails to read or parse but isn't a workspace member (its own
 /// ecosystem doesn't admit it, and it shares no directory with an admitted manifest) --
 /// tested directly, since `eprintln!` output can't be captured from inside discovery.
-fn unparseable_manifest_warning(path: &Path, message: &str) -> String {
-    format!("warning: failed to parse manifest `{}`: {message}", path.display())
+fn unparseable_manifest_warning(path: &Path, failure: &ManifestFailure) -> String {
+    match failure {
+        ManifestFailure::Unreadable(message) => {
+            format!("warning: failed to read manifest `{}`: {message}", path.display())
+        }
+        ManifestFailure::Unparseable(message) => {
+            format!("warning: failed to parse manifest `{}`: {message}", path.display())
+        }
+    }
 }
 
 fn to_workspace_relative(path: &Path, root: &Path) -> Result<PathBuf, LocateError> {
@@ -2112,10 +2135,104 @@ mod tests {
 
     #[test]
     fn unparseable_manifest_warning_names_path_and_message() {
-        let msg = unparseable_manifest_warning(Path::new("tools/scratch/package.json"), "trailing comma");
+        let path = Path::new("tools/scratch/package.json");
+        let msg = unparseable_manifest_warning(path, &ManifestFailure::Unparseable("trailing comma".to_string()));
         assert_eq!(
             msg,
             "warning: failed to parse manifest `tools/scratch/package.json`: trailing comma"
+        );
+        let msg = unparseable_manifest_warning(path, &ManifestFailure::Unreadable("denied".to_string()));
+        assert_eq!(
+            msg,
+            "warning: failed to read manifest `tools/scratch/package.json`: denied"
+        );
+    }
+
+    /// Invalid UTF-8 is a read failure, not an absent manifest: a member that cannot be read must stop discovery.
+    #[test]
+    fn an_unreadable_manifest_explicitly_admitted_by_its_own_ecosystem_errors() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path();
+        fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = [\"a\", \"b\"]\n").unwrap();
+        fs::create_dir_all(root.join("a")).unwrap();
+        fs::write(
+            root.join("a/Cargo.toml"),
+            "[package]\nname = \"a\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("b")).unwrap();
+        fs::write(
+            root.join("b/Cargo.toml"),
+            b"[package]\nname = \"caf\xe9\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+
+        let err = IgnoreWalkLocator::new(root).projects().unwrap_err();
+        assert!(
+            matches!(&err, LocateError::ManifestReadError { path, .. } if path.ends_with("b/Cargo.toml")),
+            "expected ManifestReadError naming b/Cargo.toml, got: {err:?}"
+        );
+    }
+
+    /// An unreadable manifest in a directory no membership admits is a warning, not a failure: it was never a member.
+    #[test]
+    fn an_unreadable_manifest_outside_any_membership_is_skipped_not_fatal() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path();
+        fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = [\"kept\"]\n").unwrap();
+        fs::create_dir_all(root.join("kept")).unwrap();
+        fs::write(
+            root.join("kept/Cargo.toml"),
+            "[package]\nname = \"kept\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("scratch")).unwrap();
+        fs::write(root.join("scratch/Cargo.toml"), b"[package]\nname = \"caf\xe9\"\n").unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+        assert!(projects.iter().any(|p| p.path == Path::new("kept")), "{projects:?}");
+        assert!(!projects.iter().any(|p| p.path == Path::new("scratch")), "{projects:?}");
+    }
+
+    /// An unreadable manifest that shares a directory with an admitted one is a failure, like an unparseable one.
+    #[test]
+    fn an_unreadable_manifest_sharing_a_directory_with_an_admitted_sibling_errors() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path();
+        fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = [\"a\"]\n").unwrap();
+        fs::create_dir_all(root.join("a")).unwrap();
+        fs::write(
+            root.join("a/Cargo.toml"),
+            "[package]\nname = \"a\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        fs::write(root.join("a/package.json"), b"{\"name\":\"caf\xe9\"}").unwrap();
+
+        let err = IgnoreWalkLocator::new(root).projects().unwrap_err();
+        assert!(
+            matches!(&err, LocateError::ManifestReadError { path, .. } if path.ends_with("a/package.json")),
+            "{err:?}"
+        );
+    }
+
+    /// A directory standing where a manifest should be is not "no manifest" either.
+    #[test]
+    fn a_manifest_that_is_a_directory_in_an_admitted_member_errors() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path();
+        fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = [\"a\", \"b\"]\n").unwrap();
+        fs::create_dir_all(root.join("a")).unwrap();
+        fs::write(
+            root.join("a/Cargo.toml"),
+            "[package]\nname = \"a\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("b/Cargo.toml")).unwrap();
+
+        let err = IgnoreWalkLocator::new(root).projects().unwrap_err();
+        assert!(
+            matches!(&err, LocateError::ManifestReadError { path, .. } if path.ends_with("b/Cargo.toml")),
+            "expected ManifestReadError naming b/Cargo.toml, got: {err:?}"
         );
     }
 

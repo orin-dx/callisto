@@ -30,14 +30,12 @@ pub fn prepend(
         })?;
     }
 
-    let existing = if full_path.exists() {
-        fs::read_to_string(&full_path).map_err(|e| ChangelogError::ReadFailed {
+    let existing = callisto_model::strict_fs::read_optional(&full_path)
+        .map_err(|e| ChangelogError::ReadFailed {
             path: changelog_path.to_path_buf(),
             message: e.to_string(),
         })?
-    } else {
-        format!("# {display_name}\n\n")
-    };
+        .unwrap_or_else(|| format!("# {display_name}\n\n"));
 
     // Normalise CRLF → LF so the prefix patterns always match, then restore
     // the original line endings on the way out if the file used CRLF.

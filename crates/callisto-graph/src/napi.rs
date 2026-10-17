@@ -27,15 +27,16 @@ impl NapiTargetsIndex {
             // Derive the expected package.json path from the package name.
             // Convention: root/<package-name>/package.json
             let pkg_json_path = root.join(main_id.name()).join("package.json");
-            if !pkg_json_path.exists() {
-                // Group has no napi package.json — skip, not an error.
-                continue;
-            }
-
-            let content = std::fs::read_to_string(&pkg_json_path).map_err(|e| callisto_model::ManifestError::Read {
-                path: pkg_json_path.clone(),
-                message: e.to_string(),
+            let content = callisto_model::strict_fs::read_optional(&pkg_json_path).map_err(|e| {
+                callisto_model::ManifestError::Read {
+                    path: pkg_json_path.clone(),
+                    message: e.to_string(),
+                }
             })?;
+            // Group has no napi package.json — skip, not an error.
+            let Some(content) = content else {
+                continue;
+            };
 
             let val: serde_json::Value =
                 serde_json::from_str(&content).map_err(|e| callisto_model::ManifestError::Parse {

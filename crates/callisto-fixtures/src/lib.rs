@@ -4,6 +4,7 @@
 pub mod corpus;
 pub mod dry_run;
 pub mod git;
+pub mod locked_dir;
 
 /// Writes what an answer-free `callisto init` produces: a header-only
 /// `callisto.toml` and `.changeset/README.md`.
