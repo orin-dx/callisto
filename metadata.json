@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M55QMKN2TYQE3TC2V6W2Z4NW",
+  "strategy": "manual-commit",
+  "branch": "fix/write-preflight",
+  "checkpoints_count": 3,
+  "files_touched": [
+    ".changeset/swift-owls-check.md",
+    "crates/callisto-graph/src/apply.rs",
+    "crates/callisto-graph/src/apply/preflight.rs",
+    "crates/callisto-graph/src/apply/preflight/tests.rs",
+    "crates/callisto-graph/src/apply/tests.rs",
+    "crates/callisto-graph/src/error.rs",
+    "docs/errors.md",
+    "docs/specs/versioning.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 70,
+    "cache_creation_tokens": 52277,
+    "cache_read_tokens": 17668409,
+    "output_tokens": 24973,
+    "api_call_count": 32,
+    "subagent_tokens": {
+      "input_tokens": 84,
+      "cache_creation_tokens": 124598,
+      "cache_read_tokens": 3296741,
+      "output_tokens": 767,
+      "api_call_count": 42
+    }
+  }
+}

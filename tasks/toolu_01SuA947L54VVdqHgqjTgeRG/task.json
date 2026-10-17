@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01SuA947L54VVdqHgqjTgeRG",
+  "agent_id": "a93bbbb243ce676bc",
+  "subagent_type": "bug-hunter",
+  "task_description": "Review workspace-complete PR",
+  "token_usage": {
+    "input_tokens": 84,
+    "cache_creation_tokens": 124598,
+    "cache_read_tokens": 3296741,
+    "output_tokens": 767,
+    "api_call_count": 42
+  },
+  "started_at": "2026-10-17T13:01:24.395555-07:00",
+  "completed_at": "2026-10-17T13:06:01.131848-07:00"
+}
