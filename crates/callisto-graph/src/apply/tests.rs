@@ -1436,7 +1436,7 @@ fn bumps_loop_write_version_error_leaves_manifest_untouched_and_skips_persist() 
 
 #[test]
 #[cfg(unix)]
-fn bumps_loop_persist_failure_leaves_earlier_successful_write_intact_and_later_manifest_unchanged() {
+fn an_unwritable_later_bump_target_stops_the_run_before_any_manifest_is_written() {
     use std::os::unix::fs::PermissionsExt;
 
     let dir = tempfile::tempdir().expect("create tempdir");
@@ -1496,7 +1496,7 @@ fn bumps_loop_persist_failure_leaves_earlier_successful_write_intact_and_later_m
         std::fs::remove_file(&probe_path).ok();
         std::fs::set_permissions(&pkg_b_dir, std::fs::Permissions::from_mode(original_mode)).unwrap();
         eprintln!(
-                "skipping bumps_loop_persist_failure_leaves_earlier_successful_write_intact_and_later_manifest_unchanged: \
+                "skipping an_unwritable_later_bump_target_stops_the_run_before_any_manifest_is_written: \
                  process can write into a 0o555 directory (likely running as root); chmod-based failure injection is a no-op here"
             );
         return;
@@ -1507,29 +1507,26 @@ fn bumps_loop_persist_failure_leaves_earlier_successful_write_intact_and_later_m
     std::fs::set_permissions(&pkg_b_dir, std::fs::Permissions::from_mode(original_mode)).unwrap();
 
     assert!(
-            matches!(
-                result,
-                Err(GraphError::Manifest(callisto_model::ManifestError::Write { .. }))
-            ),
-            "persist failure on the second bump must propagate as GraphError::Manifest(ManifestError::Write); got: {result:?}"
-        );
+        matches!(result, Err(GraphError::ApplyPreflight { .. })),
+        "an unwritable second manifest must stop the run before any write; got: {result:?}"
+    );
 
     let crate_a_on_disk = std::fs::read_to_string(&crate_a_path).unwrap();
     assert!(
-            crate_a_on_disk.contains("version = \"1.1.0\""),
-            "the first bump's successful mutate-then-persist must remain on disk even though the second bump later failed; got:\n{crate_a_on_disk}"
-        );
+        !crate_a_on_disk.contains("version = \"1.1.0\""),
+        "the first manifest must not be bumped when a later target cannot be written; got:\n{crate_a_on_disk}"
+    );
 
     let crate_b_on_disk = std::fs::read_to_string(&crate_b_path).unwrap();
     assert_eq!(
         crate_b_on_disk, crate_b_original,
-        "the second bump's manifest must be byte-for-byte unchanged when its own persist() fails"
+        "the unwritable manifest must be byte-for-byte unchanged"
     );
 }
 
 #[test]
 #[cfg(unix)]
-fn rewrites_loop_persist_failure_leaves_earlier_successful_write_intact_and_later_manifest_unchanged() {
+fn an_unwritable_later_rewrite_target_stops_the_run_before_any_manifest_is_written() {
     use std::os::unix::fs::PermissionsExt;
 
     let dir = tempfile::tempdir().expect("create tempdir");
@@ -1602,7 +1599,7 @@ fn rewrites_loop_persist_failure_leaves_earlier_successful_write_intact_and_late
         std::fs::remove_file(&probe_path).ok();
         std::fs::set_permissions(&pkg_b_dir, std::fs::Permissions::from_mode(original_mode)).unwrap();
         eprintln!(
-                "skipping rewrites_loop_persist_failure_leaves_earlier_successful_write_intact_and_later_manifest_unchanged: \
+                "skipping an_unwritable_later_rewrite_target_stops_the_run_before_any_manifest_is_written: \
                  process can write into a 0o555 directory (likely running as root); chmod-based failure injection is a no-op here"
             );
         return;
@@ -1613,23 +1610,20 @@ fn rewrites_loop_persist_failure_leaves_earlier_successful_write_intact_and_late
     std::fs::set_permissions(&pkg_b_dir, std::fs::Permissions::from_mode(original_mode)).unwrap();
 
     assert!(
-            matches!(
-                result,
-                Err(GraphError::Manifest(callisto_model::ManifestError::Write { .. }))
-            ),
-            "persist failure on the second rewrite must propagate as GraphError::Manifest(ManifestError::Write); got: {result:?}"
-        );
+        matches!(result, Err(GraphError::ApplyPreflight { .. })),
+        "an unwritable second manifest must stop the run before any write; got: {result:?}"
+    );
 
     let crate_a_on_disk = std::fs::read_to_string(&crate_a_path).unwrap();
     assert!(
-            crate_a_on_disk.contains("helper = \"^1.1.0\""),
-            "the first rewrite's successful mutate-then-persist must remain on disk even though the second rewrite later failed; got:\n{crate_a_on_disk}"
-        );
+        !crate_a_on_disk.contains("helper = \"^1.1.0\""),
+        "the first manifest must not be rewritten when a later target cannot be written; got:\n{crate_a_on_disk}"
+    );
 
     let crate_b_on_disk = std::fs::read_to_string(&crate_b_path).unwrap();
     assert_eq!(
         crate_b_on_disk, crate_b_original,
-        "the second rewrite's manifest must be byte-for-byte unchanged when its own persist() fails"
+        "the unwritable manifest must be byte-for-byte unchanged"
     );
 }
 
@@ -1850,7 +1844,7 @@ fn batched_group_rewrite_failure_leaves_bump_and_first_rewrite_unpersisted() {
 /// even attempted.
 #[test]
 #[cfg(unix)]
-fn batched_groups_process_strictly_sequentially_in_btreemap_path_order() {
+fn an_unwritable_later_batched_group_stops_the_run_before_the_first_group_is_written() {
     use std::os::unix::fs::PermissionsExt;
 
     let dir = tempfile::tempdir().unwrap();
@@ -1910,7 +1904,7 @@ fn batched_groups_process_strictly_sequentially_in_btreemap_path_order() {
         std::fs::remove_file(&probe_path).ok();
         std::fs::set_permissions(&b_dir, std::fs::Permissions::from_mode(original_mode)).unwrap();
         eprintln!(
-                "skipping batched_groups_process_strictly_sequentially_in_btreemap_path_order: \
+                "skipping an_unwritable_later_batched_group_stops_the_run_before_the_first_group_is_written: \
                  process can write into a 0o555 directory (likely running as root); chmod-based failure injection is a no-op here"
             );
         return;
@@ -1921,24 +1915,18 @@ fn batched_groups_process_strictly_sequentially_in_btreemap_path_order() {
     std::fs::set_permissions(&b_dir, std::fs::Permissions::from_mode(original_mode)).unwrap();
 
     assert!(
-        matches!(
-            result,
-            Err(GraphError::Manifest(callisto_model::ManifestError::Write { .. }))
-        ),
-        "b-crate's persist failure must propagate; got: {result:?}"
+        matches!(result, Err(GraphError::ApplyPreflight { .. })),
+        "b-crate cannot be written, so the run must stop before a-crate is touched; got: {result:?}"
     );
 
     let a_on_disk = std::fs::read_to_string(&a_path).unwrap();
-    assert!(
-        a_on_disk.contains("version = \"1.1.0\""),
-        "a-crate sorts first, so it must be fully persisted before b-crate is attempted; got:\n{a_on_disk}"
+    assert_eq!(
+        a_on_disk, a_original,
+        "a-crate sorts first but must stay unchanged when a later target cannot be written"
     );
 
     let b_on_disk = std::fs::read_to_string(&b_path).unwrap();
-    assert_eq!(
-        b_on_disk, b_original,
-        "b-crate must be byte-for-byte unchanged since its persist never succeeded"
-    );
+    assert_eq!(b_on_disk, b_original, "b-crate must be byte-for-byte unchanged");
 }
 
 #[test]
