@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M55MZ35YQX1R2K495AXTAN2B",
+  "strategy": "manual-commit",
+  "branch": "fix/strict-reads",
+  "checkpoints_count": 7,
+  "files_touched": [
+    ".changeset/steady-owls-look.md",
+    "crates/callisto-cli/src/commands/pre.rs",
+    "crates/callisto-fixtures/src/lib.rs",
+    "crates/callisto-fixtures/src/locked_dir.rs",
+    "crates/callisto-graph/src/aggregate.rs",
+    "crates/callisto-graph/src/aggregate/tests.rs",
+    "crates/callisto-graph/src/apply.rs",
+    "crates/callisto-graph/src/apply/tests.rs",
+    "crates/callisto-graph/src/changelog/write.rs",
+    "crates/callisto-graph/src/commands/init.rs",
+    "crates/callisto-graph/src/commands/init/tests.rs",
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/locate/ignore_walk.rs",
+    "crates/callisto-graph/src/locate/mod.rs",
+    "crates/callisto-model/src/atomic.rs",
+    "crates/callisto-model/src/lib.rs",
+    "crates/callisto-model/src/strict_fs.rs",
+    "docs/errors.md",
+    "docs/specs/workspace.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 150,
+    "cache_creation_tokens": 109603,
+    "cache_read_tokens": 16808986,
+    "output_tokens": 54308,
+    "api_call_count": 72,
+    "subagent_tokens": {
+      "input_tokens": 154,
+      "cache_creation_tokens": 431208,
+      "cache_read_tokens": 18149685,
+      "output_tokens": 16349,
+      "api_call_count": 77
+    }
+  }
+}

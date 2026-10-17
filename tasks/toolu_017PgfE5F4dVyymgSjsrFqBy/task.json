@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_017PgfE5F4dVyymgSjsrFqBy",
+  "agent_id": "ac0e26a7f5acf2416",
+  "subagent_type": "bug-hunter",
+  "task_description": "Sweep swallowed-error pattern",
+  "token_usage": {
+    "input_tokens": 154,
+    "cache_creation_tokens": 431208,
+    "cache_read_tokens": 18149685,
+    "output_tokens": 16349,
+    "api_call_count": 77
+  },
+  "started_at": "2026-10-17T11:52:24.286209-07:00",
+  "completed_at": "2026-10-17T12:00:11.269426-07:00"
+}

@@ -1,0 +1,185 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M55MZ35YQX1R2K495AXTAN2B",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-17T19:21:25.801054Z",
+  "branch": "fix/strict-reads",
+  "checkpoints_count": 7,
+  "save_step_count": 39,
+  "files_touched": [
+    ".changeset/steady-owls-look.md",
+    "crates/callisto-cli/src/commands/pre.rs",
+    "crates/callisto-fixtures/src/lib.rs",
+    "crates/callisto-fixtures/src/locked_dir.rs",
+    "crates/callisto-graph/src/aggregate.rs",
+    "crates/callisto-graph/src/aggregate/tests.rs",
+    "crates/callisto-graph/src/apply.rs",
+    "crates/callisto-graph/src/apply/tests.rs",
+    "crates/callisto-graph/src/changelog/write.rs",
+    "crates/callisto-graph/src/commands/init.rs",
+    "crates/callisto-graph/src/commands/init/tests.rs",
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/locate/ignore_walk.rs",
+    "crates/callisto-graph/src/locate/mod.rs",
+    "crates/callisto-model/src/atomic.rs",
+    "crates/callisto-model/src/lib.rs",
+    "crates/callisto-model/src/strict_fs.rs",
+    "docs/errors.md",
+    "docs/specs/workspace.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "bd33700d6099",
+  "checkpoint_transcript_start": 15398,
+  "transcript_lines_at_start": 15398,
+  "compact_transcript_start": 1332,
+  "token_usage": {
+    "input_tokens": 150,
+    "cache_creation_tokens": 109603,
+    "cache_read_tokens": 16808986,
+    "output_tokens": 54308,
+    "api_call_count": 72,
+    "subagent_tokens": {
+      "input_tokens": 154,
+      "cache_creation_tokens": 431208,
+      "cache_read_tokens": 18149685,
+      "output_tokens": 16349,
+      "api_call_count": 77
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 93
+  },
+  "summary": {
+    "intent": "Address a pattern of swallowed errors (failed reads treated as missing data) in the Callisto release tool, flagged by Codex review and a subagent sweep, and fix the structural gaps so such bugs stop recurring.",
+    "outcome": "Opened PR 1 (fix/strict-reads) with a strict_fs helper, a new E310 unreadable-manifest error, a unified strict changeset listing, strict pre.json/config/changelog/apply/init sites, and atomic-write sync error propagation; local `just ci` passed (exit 0, 92.82% coverage). A stacked PR plan for the remaining structural gaps was written, and the user approved the two policy calls (error on a malformed root manifest, reject unstageable symlinked packages).",
+    "learnings": {
+      "repo": [
+        "AGENTS.md requires sibling instances of a bug to be fixed together, not one at a time.",
+        "Every new error code needs a row in docs/errors.md; a doc-check test in callisto-model fails otherwise (hit with E310).",
+        "Specs in docs/specs/workspace.json mandate the admit-all fallback for malformed membership and symlink following, so changing either is a spec/policy change made in the same PR as the code.",
+        "`just ci` includes a cargo fmt check; new files must be formatted or CI fails with exit 1.",
+        "Two separate implementations of 'list changesets' existed (aggregate.rs lenient, commands/version.rs strict); the strict one was the template for unification.",
+        "Shared test fixtures live in callisto-fixtures (added a LockedDir guard for unsearchable-directory permission tests).",
+        "A path beneath a regular file yields NotADirectory, which should count as absent rather than a failed read in strict existence checks.",
+        "Git rejects staging a path through a directory symlink (fatal: pathspec ... is beyond a symbolic link, exit 128)."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/walk.rs",
+          "line": 488,
+          "end_line": 488,
+          "finding": "`if let Ok(editor) = open_cached(..)` drops publish targets on a failed reopen, so the package falls back to PublishTarget::None and silently never publishes."
+        },
+        {
+          "path": "crates/callisto-graph/src/walk.rs",
+          "line": 727,
+          "end_line": 727,
+          "finding": "`if let Ok(m) = open_cached(..)` drops dependency edges on failure, corrupting cascade and publish ordering."
+        },
+        {
+          "path": "crates/callisto-graph/src/locate/ignore_walk.rs",
+          "line": 109,
+          "end_line": 111,
+          "finding": "`let Ok(content) = fs::read_to_string(..) else { continue }` conflates NotFound with EACCES/invalid UTF-8, so unreadable manifests vanish from discovery."
+        },
+        {
+          "path": "crates/callisto-model/src/atomic.rs",
+          "line": 42,
+          "end_line": 49,
+          "finding": "Directory open/sync_all errors after rename are discarded with `let _res`, while the function documents a durable replace."
+        },
+        {
+          "path": "crates/callisto-graph/src/aggregate.rs",
+          "line": 87,
+          "end_line": 89,
+          "finding": "`entries.flatten()` and `is_file()` drop per-entry errors, so a pending changeset can silently disappear from a release."
+        },
+        {
+          "path": "crates/callisto-graph/src/locate/membership.rs",
+          "line": 175,
+          "end_line": 182,
+          "finding": "An unreadable or unparseable root Cargo.toml or pyproject.toml returns Membership::absent(), which admits every directory."
+        },
+        {
+          "path": "crates/callisto-model/src/vcs/access.rs",
+          "line": 478,
+          "end_line": 485,
+          "finding": "resolve_commit returns Ok(None) for any non-zero git exit, so a corrupt or shallow state looks like an absent tag and widens inference."
+        },
+        {
+          "path": "crates/callisto-cli/src/runner.rs",
+          "line": 514,
+          "end_line": 526,
+          "finding": "After a 3s reader grace timeout on a child that exited 0, stdout_result.unwrap_or_default() returns success with empty stdout."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/add.rs",
+          "line": 153,
+          "end_line": 153,
+          "finding": "`add` writes a generated changeset slug without checking for an existing file, and atomic_write replaces it, so a slug collision can destroy a pending changeset."
+        }
+      ],
+      "workflow": [
+        "Subagent sweep results were from source tracing only and not reproduced, so they should be treated as leads and verified.",
+        "Codex's review separated confirmed release risks from conditional cases and spec-mandated behavior; this triage narrowed the proposal and led to rejecting a blanket lint on Path::exists/.ok().",
+        "The plans directory shared across worktrees was off-limits, so the plan was written inside the worktree under a git-excluded path.",
+        "Helper-insertion scripts can attach a new function to the wrong doc comment, so check doc attachment after scripted edits.",
+        "Fixes for a bug pattern are stacked as separate PRs (instances, then membership, then a total-workspace invariant) with fault-injection tests."
+      ]
+    },
+    "friction": [
+      "Codex's reported line numbers for walk.rs were off, so the sites had to be re-located.",
+      "The first `just ci` run failed only on formatting of the new fixtures file and had to be rerun, costing a long CI cycle.",
+      "A scripted helper insertion landed between apply_version_plan and its doc comment and had to be moved.",
+      "An existing test exposed that NotADirectory must be treated as absent, requiring a helper revision.",
+      "Writes to the shared plans directory were blocked from the worktree."
+    ],
+    "open_items": [
+      "PR 2 (discovery-total): typed Membership (absent/unrestricted/restricted/invalid), OpenContext::for_workspace_root returns Result, reject symlinked packages Git can't stage, and flip the spec and tests pinning the old fallback.",
+      "PR 3 (workspace-complete): graph build collects unresolved items; Workspace::load errors if any exist, with only `status` allowed a partial scan; fault-injection tests.",
+      "PR 4 (write-preflight): validate every target in the plan before the first write.",
+      "PR 5 (smaller fixes): no-clobber changeset slugs, TagIndex dropping LastTagSelection.skipped, three-state git probes in GitAccess, runner output truncation, file-mode loss on rewrite.",
+      "Independent review of PR 1 still to run after pushing, and remote CI result on PR 1 not yet seen.",
+      "Earlier open questions: whether Python-only workspaces move to the sealed multi-job route, plus separate PRs for the pnpm package-manager mismatch and the NAPI path guess.",
+      "Codex's missing PyPI digest check finding at the #232/#233 heads remains a separate unresolved release issue.",
+      "Shallow-clone guard outside observe_git_commit_trust, and walk diagnostics not shown by version/release, were noted by the sweep but not scheduled."
+    ]
+  }
+}
