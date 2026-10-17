@@ -28,6 +28,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: {fetch-depth: 0} # zizmor: ignore[artipacked] tag push needs persisted credentials
+      - name: Install the Python publishing tools
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/publish-venv"
+          "$RUNNER_TEMP/publish-venv/bin/python" -m pip install --quiet build==1.4.4 twine==7.0.0
+          echo "$RUNNER_TEMP/publish-venv/bin" >> "$GITHUB_PATH"
       - uses: orin-dx/callisto/.github/actions/callisto-action@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa # callisto@0.8.0
         with: {mode: release}
         env:

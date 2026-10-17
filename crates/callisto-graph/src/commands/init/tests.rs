@@ -941,6 +941,24 @@ fn matrix_workflow_builds_python_without_credentials_and_seals_the_files_in_exec
         .find(r#"callisto release execute "${args[@]}""#)
         .expect("release execute");
     assert!(download < manifest && manifest < run, "{execute}");
+    let twine = execute.find("pip install --quiet twine==").expect("twine install");
+    assert!(twine < run && !execute[..twine].contains("secrets."), "{execute}");
+}
+
+// A Python-only workspace publishes from one job, so that job needs the build and upload tools on its PATH.
+#[test]
+fn simple_workflow_installs_the_python_tools_only_when_publishing_to_pypi() {
+    let mut facts = cargo_only_facts();
+    let without = render_workflow_0_8_0(&facts, "main");
+    assert!(!without.contains("twine"), "{without}");
+
+    facts.ecosystems = BTreeSet::from([Ecosystem::Cargo, Ecosystem::Pypi]);
+    let with = render_workflow_0_8_0(&facts, "main");
+    let release = job(&with, "release");
+    let install = release.find("pip install --quiet build==").expect("tools install");
+    let action = release.find("callisto-action@").expect("release action");
+    assert!(release.contains("twine=="), "{release}");
+    assert!(install < action && !release[..action].contains("secrets."), "{release}");
 }
 
 // npm provenance is requested only when the workspace has an npm package.

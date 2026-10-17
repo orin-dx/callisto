@@ -796,6 +796,18 @@ const WORKFLOW_TEMPLATE: &str = include_str!("../templates/simple_workflow.tmpl"
 
 const MATRIX_WORKFLOW_TEMPLATE: &str = include_str!("../templates/matrix_workflow.tmpl");
 
+const BUILD_REQUIREMENT: &str = "build==1.4.4";
+const TWINE_REQUIREMENT: &str = "twine==7.0.0";
+
+/// Installs the Python build and upload tools into a venv put on the PATH of the later steps; carries no secrets.
+const SIMPLE_PYTHON_TOOLS_STEP: &str = "      - name: Install the Python publishing tools
+        run: |
+          set -euo pipefail
+          python3 -m venv \"$RUNNER_TEMP/publish-venv\"
+          \"$RUNNER_TEMP/publish-venv/bin/python\" -m pip install --quiet __BUILD__ __TWINE__
+          echo \"$RUNNER_TEMP/publish-venv/bin\" >> \"$GITHUB_PATH\"
+";
+
 /// Resolves `callisto@<version>`'s commit SHA on `orin-dx/callisto`'s remote.
 ///
 /// GitHub's runner splits a `uses:` reference at the LAST `@` in the whole
@@ -872,7 +884,15 @@ pub fn render_workflow(facts: &InitFacts, shape: WorkflowShape, branch: &str, co
         WorkflowShape::Simple => WORKFLOW_TEMPLATE,
         WorkflowShape::BuildMatrix => MATRIX_WORKFLOW_TEMPLATE,
     };
+    let python_tools = if facts.ecosystems.contains(&Ecosystem::Pypi) {
+        SIMPLE_PYTHON_TOOLS_STEP
+    } else {
+        ""
+    };
     template
+        .replace("      __PYTHON_TOOLS__\n", python_tools)
+        .replace("__BUILD__", BUILD_REQUIREMENT)
+        .replace("__TWINE__", TWINE_REQUIREMENT)
         .replace("__BRANCH__", branch)
         .replace("__COMMIT__", commit)
         .replace("__VERSION__", version)

@@ -196,7 +196,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m venv "$RUNNER_TEMP/build-venv"
-          "$RUNNER_TEMP/build-venv/bin/python" -m pip install --quiet build==1.4.4
+          "$RUNNER_TEMP/build-venv/bin/python" -m pip install --quiet __BUILD__
           export PATH="$RUNNER_TEMP/build-venv/bin:$PATH"
           mkdir -p "$RUNNER_TEMP/python-dist"
           callisto release build-python --intent "$RUNNER_TEMP/release-intent/release-intent.json" \
@@ -222,6 +222,13 @@ jobs:
         with: {fetch-depth: 0} # zizmor: ignore[artipacked] tag push needs persisted credentials
       - uses: orin-dx/callisto/.github/actions/setup-callisto@__COMMIT__ # callisto@__VERSION__
         with: {version: callisto@__VERSION__}
+      - name: Install twine
+        if: needs.plan.outputs.has_python == 'true'
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/publish-venv"
+          "$RUNNER_TEMP/publish-venv/bin/python" -m pip install --quiet __TWINE__
+          echo "$RUNNER_TEMP/publish-venv/bin" >> "$GITHUB_PATH"
       # Downloads land under $RUNNER_TEMP: `release execute` requires a clean worktree.
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
