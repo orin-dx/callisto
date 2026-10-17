@@ -253,6 +253,16 @@ pub enum GraphError {
     )]
     ApplyIo { path: PathBuf, message: String },
 
+    #[error("the workspace is incomplete: {} manifest(s) could not be resolved\n{}", .unresolved.len(), .unresolved.join("\n"))]
+    #[diagnostic(
+        code(E313),
+        help(
+            "Fix or remove the manifests named above and re-run; Callisto will not plan a release from a partial \
+             workspace."
+        )
+    )]
+    IncompleteWorkspace { unresolved: Vec<String> },
+
     #[error("failed to parse .changeset/pre.json: {0}")]
     #[diagnostic(
         code(E114),
