@@ -31,6 +31,7 @@ jobs:
       has_napi: ${{ steps.matrix.outputs.has_napi }}
       napi_dirs: ${{ steps.matrix.outputs.napi_dirs }}
       has_artifacts: ${{ steps.matrix.outputs.has_artifacts }}
+      has_python: ${{ steps.matrix.outputs.has_python }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: {fetch-depth: 0, persist-credentials: false}
@@ -80,6 +81,7 @@ jobs:
             echo "has_napi=$(jq 'length > 0' <<< "$napi")"
             echo "napi_dirs=$(jq -c '[.[].packageDir] | unique' <<< "$napi")"
             echo "has_artifacts=$(jq 'length > 0' <<< "$slots")"
+            echo "has_python=$(jq '[.operations[].id | select(.role.kind == "registryPublish" and (.package | startswith("pypi/")))] | length > 0' "$intent")"
           } >> "$GITHUB_OUTPUT"
       - if: steps.decision.outputs.release == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -175,12 +177,43 @@ jobs:
           path: ${{ runner.temp }}/release-assets/${{ matrix.artifactName }}
           if-no-files-found: error
 
+  # No registry credentials: the executing job uploads these exact files.
+  build-python:
+    needs: plan
+    if: needs.plan.outputs.release == 'true' && needs.plan.outputs.has_python == 'true'
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {fetch-depth: 0, persist-credentials: false}
+      - uses: orin-dx/callisto/.github/actions/setup-callisto@__COMMIT__ # callisto@__VERSION__
+        with: {version: callisto@__VERSION__}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-intent
+          path: ${{ runner.temp }}/release-intent
+      - name: Build the Python distributions
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/build-venv"
+          "$RUNNER_TEMP/build-venv/bin/python" -m pip install --quiet build==1.4.4
+          export PATH="$RUNNER_TEMP/build-venv/bin:$PATH"
+          mkdir -p "$RUNNER_TEMP/python-dist"
+          callisto release build-python --intent "$RUNNER_TEMP/release-intent/release-intent.json" \
+            --artifact-dir "$RUNNER_TEMP/python-dist"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: python-dist
+          path: ${{ runner.temp }}/python-dist/*
+          if-no-files-found: error
+
   execute:
-    needs: [plan, build]
-    # A skipped build blocks only when the matrix had entries to build.
+    needs: [plan, build, build-python]
+    # A skipped build blocks only when it had nothing to build.
     if: >-
       !cancelled() && needs.plan.outputs.release == 'true' &&
-      (needs.build.result == 'success' || (needs.build.result == 'skipped' && needs.plan.outputs.matrix == '[]'))
+      (needs.build.result == 'success' || (needs.build.result == 'skipped' && needs.plan.outputs.matrix == '[]')) &&
+      (needs.build-python.result == 'success' || (needs.build-python.result == 'skipped' && needs.plan.outputs.has_python != 'true'))
     runs-on: ubuntu-latest
     concurrency: {group: callisto-release-execute, cancel-in-progress: false}
     permissions: {contents: write, id-token: write, attestations: read}
@@ -215,12 +248,21 @@ jobs:
           pattern: asset-*
           merge-multiple: true
           path: ${{ runner.temp }}/release-assets
+      - if: needs.plan.outputs.has_python == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: python-dist
+          path: ${{ runner.temp }}/release-assets
       - name: Write the artifact manifest
-        if: needs.plan.outputs.has_artifacts == 'true'
+        if: needs.plan.outputs.has_artifacts == 'true' || needs.plan.outputs.has_python == 'true'
+        env:
+          HAS_PYTHON: ${{ needs.plan.outputs.has_python }}
         run: |
           set -euo pipefail
-          callisto release artifact-manifest --intent "$RUNNER_TEMP/release-intent/release-intent.json" \
-            --artifact-dir "$RUNNER_TEMP/release-assets" --out "$RUNNER_TEMP/release-manifest.json"
+          args=(--intent "$RUNNER_TEMP/release-intent/release-intent.json" --artifact-dir "$RUNNER_TEMP/release-assets"
+            --out "$RUNNER_TEMP/release-manifest.json")
+          if [[ "$HAS_PYTHON" == true ]]; then args+=(--seal-python); fi
+          callisto release artifact-manifest "${args[@]}"
       - name: Execute the release
         run: |
           set -euo pipefail

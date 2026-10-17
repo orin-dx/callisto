@@ -365,6 +365,24 @@ impl GitAccess<'_> {
         })
     }
 
+    /// The committer time of `rev` in whole seconds since the epoch.
+    pub fn commit_time(&self, rev: &str) -> Result<u64, VcsError> {
+        let output = self.runner.run(
+            "git",
+            &["show", "-s", "--no-show-signature", "--format=%ct", rev],
+            &self.root,
+        )?;
+        let stdout = output.stdout_trimmed();
+        match stdout.parse::<u64>() {
+            Ok(seconds) if output.success() => Ok(seconds),
+            _ => Err(VcsError::Git(format!(
+                "`git show -s --no-show-signature --format=%ct {rev}` failed in `{}`: {}",
+                self.root.display(),
+                output.redacted_stderr()
+            ))),
+        }
+    }
+
     /// Whether `path` (relative to this root) exists in `rev`'s tree.
     pub fn path_exists_at(&self, rev: &str, path: &Path) -> Result<bool, VcsError> {
         let spec = format!("{rev}:./{}", path.display());

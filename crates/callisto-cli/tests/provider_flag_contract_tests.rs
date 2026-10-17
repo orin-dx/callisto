@@ -90,6 +90,10 @@ fn check_tool(tool: &str) {
         if shape.tool == "git" && shape.subcommand == ["rev-parse"] {
             continue;
         }
+        // `git show -h` lists no flags; `git_show_prints_the_committer_time` probes them.
+        if shape.tool == "git" && shape.subcommand == ["show"] {
+            continue;
+        }
         let Some(help) = help_for(shape) else {
             eprintln!("SKIPPED `{tool} {}`: help unavailable", shape.subcommand.join(" "));
             continue;
@@ -179,6 +183,45 @@ fn git_rev_parse_flags_are_understood_by_real_git() {
     eprintln!(
         "RAN flag contract against real `git rev-parse`: {} flags probed",
         shape.flags.len()
+    );
+}
+
+/// The build pins `SOURCE_DATE_EPOCH` to this output, so it must be whole seconds.
+#[test]
+fn git_show_prints_the_committer_time() {
+    if !tool_available("git") {
+        return;
+    }
+    let repo = tempfile::tempdir().unwrap();
+    let git_in = |args: &[&str]| {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(repo.path())
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_COMMITTER_DATE", "1700000000 +0000")
+            .env("GIT_AUTHOR_DATE", "1700000000 +0000")
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&output.stdout).trim().to_owned()
+    };
+    git_in(&["init", "-q"]);
+    git_in(&[
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@example.com",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "--allow-empty",
+        "-qm",
+        "x",
+    ]);
+    let shape = tool_shape("git", &["show"]).expect("show shape");
+    assert_eq!(shape.flags, ["-s", "--no-show-signature", "--format"]);
+    assert_eq!(
+        git_in(&["show", "-s", "--no-show-signature", "--format=%ct", "HEAD"]),
+        "1700000000"
     );
 }
 

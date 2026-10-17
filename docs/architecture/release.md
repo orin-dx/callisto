@@ -18,7 +18,7 @@ The types that make a release run safe to crash and rerun, and how the two relea
 | --- | --- | --- |
 | Authorities | `callisto-model` (MIT) | Run envelope and execution state (`release/execution.rs`), observations and evidence (`release_observation.rs`), transition table (`release_transition.rs`) |
 | Derivation and execution | `callisto-graph` | Decisions (`commands/release_decision.rs`), intent derivation (`commands/release/derive.rs`), local route (`commands/release/local.rs`), executor (`commands/release_execution.rs`), provider adapters (`commands/release/provider/`) |
-| Entry points | `callisto-cli` | `commands/release.rs`: `release`, `release plan`, `release artifact-manifest`, `release execute` |
+| Entry points | `callisto-cli` | `commands/release.rs`: `release`, `release plan`, `release build-python`, `release artifact-manifest`, `release execute` |
 
 ## Two routes, one executor
 
@@ -106,7 +106,7 @@ Stdout JSON reports include `schemaVersion`, `command` and `dryRun`; durable dec
 
 Managed PR verification compares the original snapshot before staging and before moving the release ref. After a successful update, the action confirms the ref's exact new SHA and supplies it as `--applied-head` for the final check. The model validates the original update decision and allows only its selected PR's head to change to that SHA; the base, repository, PR roster and every other head remain unchanged. Create decisions keep strict equality until the PR is created. The action does not rewrite its decision or discard concurrency checks after its own effect.
 
-Registry evidence currently confirms a version, with optional checksum/yank fields; it does not establish byte identity. Python completion is judged against the files the executing run builds, matched by name, and digests are compared only for files that run uploaded: a rebuild need not be byte-identical to an earlier attempt, and nothing seals the file set between jobs. Artifact size/sha256 validation currently applies to declared GitHub assets, not a complete registry-output inventory. A file set sealed by a build job and separate private-index read/upload routes are planned, not shipped guarantees.
+Registry evidence currently confirms a version, with optional checksum/yank fields; it does not establish byte identity. Python completion has two modes. Without a sealed file set (the local route, and a CI route whose manifest seals none) it is judged against the files the executing run builds, matched by name, and digests are compared only for files that run uploaded: a rebuild need not be byte-identical to an earlier attempt. With a sealed set, a build job (`release build-python`, no credentials) builds the files and `release artifact-manifest --seal-python` records each file's name, size and sha256 in the manifest, so the envelope's manifest digest covers them. `release execute` verifies the bytes, builds nothing, uploads those files, and treats any index file under a sealed name with another sha256 as an error (E307). The sealed sets are all or none per plan and each belongs to a Python publish of the intent; the manifest stays at schema version 1 because a manifest without sets is unchanged and an older reader rejects the new field. Artifact size/sha256 validation otherwise applies to declared GitHub assets. Separate private-index read/upload routes are planned, not a shipped guarantee.
 
 ## Verification tiers
 

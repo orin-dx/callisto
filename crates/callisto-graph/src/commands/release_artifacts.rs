@@ -17,6 +17,23 @@ use crate::GraphError;
 use super::release::provider::policy::{self, retry_observation, run_observation, Attempt};
 use super::release::{programs, timeouts};
 
+/// The sealed file set of every Python publish in `intent`, from the build output in `dir`.
+pub fn seal_python_distributions(
+    intent: &ReleaseIntentV1,
+    dir: &Path,
+) -> Result<Vec<callisto_model::DistributionSetV1>, GraphError> {
+    let root = canonical_artifact_root(dir)?;
+    super::release::provider::seal_distributions(intent, &root)
+}
+
+/// One verified file of a sealed Python release.
+#[derive(Debug)]
+pub(crate) struct SealedFile {
+    pub(crate) filename: String,
+    pub(crate) path: PathBuf,
+    pub(crate) sha256: String,
+}
+
 /// A manifest whose exact local bytes and GitHub provenance have been checked.
 ///
 /// The constructor is private: callers can obtain this capability only with
@@ -42,6 +59,30 @@ impl<'a> VerifiedArtifactManifest<'a> {
 
     pub(crate) fn path_for(&self, slot: &callisto_model::ArtifactSlotId) -> Result<PathBuf, GraphError> {
         resolve_asset_path(&self.root, &slot.asset_name)
+    }
+
+    /// The sealed files of one Python release, or `None` when the manifest seals none.
+    pub(crate) fn sealed_files(
+        &self,
+        package: &callisto_model::ReleasePackageId,
+        version: &callisto_model::Version,
+    ) -> Option<Vec<SealedFile>> {
+        let rendered = version.render();
+        let set = self
+            .manifest
+            .distributions
+            .iter()
+            .find(|set| set.package == *package && set.version == rendered)?;
+        Some(
+            set.files
+                .iter()
+                .map(|file| SealedFile {
+                    filename: file.filename.clone(),
+                    path: self.root.join(&file.filename),
+                    sha256: file.digest.as_str().to_owned(),
+                })
+                .collect(),
+        )
     }
 
     /// Returns the already intent-bound manifest entry for `slot`.
@@ -94,6 +135,21 @@ pub fn verify_artifact_manifest<'a, R: CommandRunner>(
         }
 
         verify_github_attestation(&path, entry, runner)?;
+    }
+    for file in manifest.distributions.iter().flat_map(|set| &set.files) {
+        let path = resolve_asset_path(&root, &file.filename)?;
+        let opened = File::open(&path).map_err(|error| GraphError::ArtifactRead {
+            path: path.clone(),
+            message: error.to_string(),
+        })?;
+        let (digest, length) =
+            callisto_model::ArtifactDigest::from_reader(opened).map_err(|error| GraphError::ArtifactRead {
+                path: path.clone(),
+                message: error.to_string(),
+            })?;
+        if digest != file.digest || length != file.byte_length {
+            return Err(GraphError::ArtifactBytesMismatch { path });
+        }
     }
     Ok(VerifiedArtifactManifest { manifest, root })
 }

@@ -281,6 +281,9 @@ pub enum ReleaseArgs {
     /// Display a durable intent, manifest, or receipt without recomputing it.
     #[command(hide = true)]
     Inspect(ReleaseInspectArgs),
+    /// Build the intent's Python distributions without registry credentials, for `artifact-manifest --seal-python`.
+    #[command(hide = true)]
+    BuildPython(ReleaseBuildPythonArgs),
     /// Create the exact artifact manifest for a completed intent-bound build.
     #[command(hide = true)]
     ArtifactManifest(ReleaseArtifactManifestArgs),
@@ -393,13 +396,30 @@ pub struct ReleaseInspectArgs {
 }
 
 #[derive(Args, Clone, Debug)]
+pub struct ReleaseBuildPythonArgs {
+    /// Build from this release-source checkout instead of the current directory.
+    #[arg(long, value_name = "DIR")]
+    pub source_root: Option<PathBuf>,
+    /// Exact durable release intent whose Python publishes are built.
+    #[arg(long, value_name = "FILE")]
+    pub intent: PathBuf,
+    /// Existing directory that receives every sdist and wheel.
+    #[arg(long, value_name = "DIR")]
+    pub artifact_dir: PathBuf,
+}
+
+#[derive(Args, Clone, Debug)]
 pub struct ReleaseArtifactManifestArgs {
     /// Exact durable release intent that declares the expected artifact slots.
     #[arg(long, value_name = "FILE")]
     pub intent: PathBuf,
-    /// Directory containing one regular file for every declared artifact slot.
+    /// Directory containing one regular file for every declared artifact slot, and with --seal-python the built
+    /// distributions.
     #[arg(long, value_name = "DIR")]
     pub artifact_dir: PathBuf,
+    /// Also seal the sdist and wheel of every Python publish in the intent, found in the artifact directory.
+    #[arg(long)]
+    pub seal_python: bool,
     /// Explicit path where the artifact manifest will be atomically written.
     #[arg(long, value_name = "FILE")]
     pub out: PathBuf,
@@ -784,7 +804,7 @@ mod tests {
             .get_subcommands()
             .find(|s| s.get_name() == "release")
             .expect("release subcommand must exist");
-        for name in ["plan", "inspect", "artifact-manifest", "execute"] {
+        for name in ["plan", "inspect", "build-python", "artifact-manifest", "execute"] {
             let sub = release
                 .get_subcommands()
                 .find(|s| s.get_name() == name)

@@ -1,7 +1,7 @@
 //! The file set of one Python release: what a build produced, what the index holds, and what is missing.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use callisto_model::{normalize_pypi_project_name, CommandError, Version};
@@ -61,7 +61,7 @@ fn is_version(candidate: &str, version: &Version) -> bool {
         .is_ok_and(|candidate| candidate.compare(version) == Ok(std::cmp::Ordering::Equal))
 }
 
-/// One distribution file a build produced.
+/// One distribution file of a release: built by this run, or sealed by a build job.
 #[derive(Debug)]
 pub(super) struct BuiltFile {
     pub(super) filename: String,
@@ -69,58 +69,109 @@ pub(super) struct BuiltFile {
     pub(super) sha256: String,
 }
 
-/// The files one build produced for a release. The directory holding them is removed when the set is dropped.
+/// The files of one release. A built set owns the temporary directory holding them; a sealed set points into the
+/// verified artifact directory and compares every digest strictly.
 #[derive(Debug)]
 pub(super) struct BuiltSet {
-    _dir: tempfile::TempDir,
+    _dir: Option<tempfile::TempDir>,
     pub(super) files: Vec<BuiltFile>,
+    sealed: bool,
     /// Files this run uploaded, whose index entry must then carry the same bytes.
     uploaded: Mutex<Vec<String>>,
+}
+
+fn io_error(error: std::io::Error) -> GraphError {
+    GraphError::Command(CommandError::Io {
+        program: "python -m build".to_string(),
+        message: error.to_string(),
+    })
+}
+
+/// Every wheel and sdist of `package_name` at `version` directly in `dir`, with its digest, by filename.
+fn inventory(dir: &Path, package_name: &str, version: &Version) -> Result<Vec<BuiltFile>, GraphError> {
+    let wanted = normalize_pypi_project_name(package_name);
+    let mut files = Vec::new();
+    for entry in std::fs::read_dir(dir).map_err(io_error)? {
+        let path = entry.map_err(io_error)?.path();
+        let Some(filename) = path.file_name().and_then(|name| name.to_str()).map(str::to_owned) else {
+            continue;
+        };
+        let belongs = dist_filename_parts(&filename).is_some_and(|(name, candidate)| {
+            normalize_pypi_project_name(name) == wanted && is_version(candidate, version)
+        });
+        if !belongs {
+            continue;
+        }
+        let sha256 = format!("{:x}", Sha256::digest(std::fs::read(&path).map_err(io_error)?));
+        files.push(BuiltFile { filename, path, sha256 });
+    }
+    files.sort_by(|left, right| left.filename.cmp(&right.filename));
+    for (present, missing) in [
+        (files.iter().any(|file| is_wheel(&file.filename)), "wheel"),
+        (files.iter().any(|file| is_sdist(&file.filename)), "sdist"),
+    ] {
+        if !present {
+            return Err(GraphError::PypiBuildOutputIncomplete {
+                package: package_name.to_string(),
+                version: version.clone(),
+                missing,
+            });
+        }
+    }
+    Ok(files)
 }
 
 impl BuiltSet {
     /// Inventories `dir`: every wheel and sdist of `package_name` at `version`, with its digest.
     pub(super) fn from_dir(dir: tempfile::TempDir, package_name: &str, version: &Version) -> Result<Self, GraphError> {
-        let io = |error: std::io::Error| {
-            GraphError::Command(CommandError::Io {
-                program: "python -m build".to_string(),
-                message: error.to_string(),
-            })
-        };
+        let files = inventory(dir.path(), package_name, version)?;
+        Ok(Self {
+            _dir: Some(dir),
+            files,
+            sealed: false,
+            uploaded: Mutex::new(Vec::new()),
+        })
+    }
+
+    /// The files a build job sealed, already checked byte for byte against the manifest.
+    pub(super) fn sealed(files: Vec<BuiltFile>, package_name: &str, version: &Version) -> Result<Self, GraphError> {
         let wanted = normalize_pypi_project_name(package_name);
-        let mut files = Vec::new();
-        for entry in std::fs::read_dir(dir.path()).map_err(io)? {
-            let path = entry.map_err(io)?.path();
-            let Some(filename) = path.file_name().and_then(|name| name.to_str()).map(str::to_owned) else {
-                continue;
-            };
-            let belongs = dist_filename_parts(&filename).is_some_and(|(name, candidate)| {
+        if let Some(stray) = files.iter().find(|file| {
+            !dist_filename_parts(&file.filename).is_some_and(|(name, candidate)| {
                 normalize_pypi_project_name(name) == wanted && is_version(candidate, version)
+            })
+        }) {
+            return Err(GraphError::ReleaseInvariant {
+                detail: format!(
+                    "sealed file `{}` is not a distribution of {package_name} {}",
+                    stray.filename,
+                    version.render()
+                ),
             });
-            if !belongs {
-                continue;
-            }
-            let sha256 = format!("{:x}", Sha256::digest(std::fs::read(&path).map_err(io)?));
-            files.push(BuiltFile { filename, path, sha256 });
         }
-        files.sort_by(|left, right| left.filename.cmp(&right.filename));
-        for (present, missing) in [
-            (files.iter().any(|file| is_wheel(&file.filename)), "wheel"),
-            (files.iter().any(|file| is_sdist(&file.filename)), "sdist"),
-        ] {
-            if !present {
-                return Err(GraphError::PypiBuildOutputIncomplete {
-                    package: package_name.to_string(),
-                    version: version.clone(),
-                    missing,
+        Ok(Self {
+            _dir: None,
+            files,
+            sealed: true,
+            uploaded: Mutex::new(Vec::new()),
+        })
+    }
+
+    /// Re-hashes the files about to be uploaded: a sealed file changed after verification must not reach the index.
+    pub(super) fn recheck(&self, files: &[&BuiltFile]) -> Result<(), GraphError> {
+        if !self.sealed {
+            return Ok(());
+        }
+        for file in files {
+            let metadata = std::fs::symlink_metadata(&file.path).map_err(io_error)?;
+            let bytes = std::fs::read(&file.path).map_err(io_error)?;
+            if !metadata.is_file() || format!("{:x}", Sha256::digest(bytes)) != file.sha256 {
+                return Err(GraphError::ArtifactBytesMismatch {
+                    path: file.path.clone(),
                 });
             }
         }
-        Ok(Self {
-            _dir: dir,
-            files,
-            uploaded: Mutex::new(Vec::new()),
-        })
+        Ok(())
     }
 
     pub(super) fn mark_uploaded(&self, files: &[&BuiltFile]) {
@@ -133,6 +184,42 @@ impl BuiltSet {
     }
 }
 
+/// The sealed file set of every Python publish in `intent`, from the build output in `dir`.
+pub(crate) fn seal_distributions(
+    intent: &callisto_model::ReleaseIntentV1,
+    dir: &Path,
+) -> Result<Vec<callisto_model::DistributionSetV1>, GraphError> {
+    let mut sets = Vec::new();
+    for (package, rendered) in callisto_model::python_publishes(intent) {
+        let version = intent
+            .operations
+            .iter()
+            .map(|operation| operation.id())
+            .find(|id| id.package == *package && id.version.render() == rendered)
+            .map(|id| id.version.clone())
+            .expect("a Python publish listed from the intent is in the intent");
+        let files = inventory(dir, package.name(), &version)?
+            .into_iter()
+            .map(|file| {
+                let byte_length = std::fs::metadata(&file.path).map_err(io_error)?.len();
+                let digest = callisto_model::ArtifactDigest::parse(&file.sha256)
+                    .expect("a SHA-256 hex digest is a canonical artifact digest");
+                Ok(callisto_model::DistributionFileV1 {
+                    filename: file.filename,
+                    digest,
+                    byte_length,
+                })
+            })
+            .collect::<Result<Vec<_>, GraphError>>()?;
+        sets.push(callisto_model::DistributionSetV1 {
+            package: package.clone(),
+            version: rendered,
+            files,
+        });
+    }
+    Ok(sets)
+}
+
 /// How the index's files for a release differ from the files a build declared.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(super) struct Comparison<'a> {
@@ -140,7 +227,7 @@ pub(super) struct Comparison<'a> {
     pub(super) missing: Vec<&'a str>,
     /// Declared files the index holds yanked.
     pub(super) yanked: Vec<&'a str>,
-    /// Files this run uploaded whose index digest differs from the local file.
+    /// Files whose index digest differs from the local file.
     pub(super) differing: Vec<&'a str>,
     /// Files the index holds for this release that no build declared.
     pub(super) extras: Vec<&'a str>,
@@ -153,7 +240,8 @@ impl Comparison<'_> {
     }
 }
 
-/// Presence is by filename; a digest is compared only for files this run uploaded, as a rebuild need not match.
+/// Presence is by filename. A sealed set compares every digest; otherwise only files this run uploaded, as a
+/// rebuild need not match an earlier attempt.
 pub(super) fn compare<'a>(set: &'a BuiltSet, remote: &'a [PypiSimpleFile]) -> Comparison<'a> {
     let uploaded = set.uploaded();
     let mut comparison = Comparison::default();
@@ -162,7 +250,12 @@ pub(super) fn compare<'a>(set: &'a BuiltSet, remote: &'a [PypiSimpleFile]) -> Co
             None => comparison.missing.push(&file.filename),
             Some(held) if held.is_yanked() => comparison.yanked.push(&file.filename),
             Some(held) => {
-                if uploaded.contains(&file.filename) && held.sha256().is_some_and(|digest| digest != file.sha256) {
+                let unconfirmed = if set.sealed {
+                    held.sha256() != Some(file.sha256.as_str())
+                } else {
+                    uploaded.contains(&file.filename) && held.sha256().is_some_and(|digest| digest != file.sha256)
+                };
+                if unconfirmed {
                     comparison.differing.push(&file.filename);
                 }
             }

@@ -245,7 +245,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E248 | Workspace root manifest has conflicting version updates | Reconcile the workspace root manifest's version updates before retrying. |
 | E305 | `pre.json` records two entries for the same package (a bare or alternate key and the qualified key) with different versions | In `pre.json` `initialVersions`, keep one entry for the package: delete the key holding the wrong baseline, or give both the same version. |
 | E306 | The Python build for a package produced no sdist or no wheel for the release version | Make the build produce both for this version, then re-run the release. |
-| E307 | PyPI holds a file with different bytes than the file this run uploaded | PyPI never reuses a filename: yank the release if it is wrong and release a new version. |
+| E307 | PyPI holds a file with different bytes than the file this release is publishing: one this run uploaded, or one the build job sealed | PyPI never reuses a filename: yank the release if it is wrong and release a new version. |
 
 ## callisto-cli
 
@@ -272,7 +272,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E229 | `--artifact-repository` value is invalid | pass the forge repository as <owner>/<repo> |
 | E230 | `--artifact-repository` doesn't match `[release].forge-repository` in callisto.toml | plan with an --artifact-repository matching [release].forge-repository in callisto.toml |
 | E231 | Product release planning requires both `--orchestration-revision` and `--artifact-repository` | pass both --orchestration-revision and --artifact-repository |
-| E232 | `--artifact-manifest`/`--artifact-dir` given, but the intent declares no artifact slots | drop --artifact-manifest and --artifact-dir for an intent without artifact slots |
+| E232 | `--artifact-manifest`/`--artifact-dir` given, but the intent declares no artifact slots and the manifest seals no Python files | drop --artifact-manifest and --artifact-dir for an intent without artifact slots or sealed Python files |
 | E233 | Intent declares artifact slots, but `--artifact-manifest`/`--artifact-dir` are missing | pass both --artifact-manifest and --artifact-dir |
 | E234 | Release run envelope is not valid for this intent | re-check the orchestration revision and artifact manifest against the intent |
 | E235 | Cannot issue the terminal release receipt | re-run `callisto release execute`; it adopts effects that already landed |
@@ -301,6 +301,8 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E283 | `help` named a subcommand that doesn't exist | run `callisto --help` to list commands |
 | E298 | `init --forge-repository`/`--product-package` given without `--artifact-target` | Drop the flag, or pass --artifact-target to ship the product's binaries (flag named in the error). |
 | E299 | `init --workflow`/`--artifact-target` given with no `origin` remote configured | Add the repository's remote as origin (`git remote add origin <url>`), then re-run init. |
+| E308 | `release build-python` or `artifact-manifest --seal-python` on an intent that publishes no Python package | drop --seal-python and `release build-python` for an intent without a Python publish |
+| E309 | `release build-python` run with `--dry-run`, which cannot write build output | re-run `callisto release build-python` without --dry-run |
 
 
 240 numeric E#### codes total in one registry.

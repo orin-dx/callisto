@@ -9,8 +9,9 @@ use std::process::ExitCode;
 
 use callisto_graph::commands::{
     build_release_intent, build_release_intent_with_artifacts, ci_release_route, derive_release_commit_decision,
-    derive_selected_release_decision, execute_release, plan_local_release, validate_local_release_intent,
-    validate_release_intent, verify_artifact_manifest, LocalReleasePlan, LocalReleaseSource, VersionOptions,
+    derive_selected_release_decision, execute_release, plan_local_release, seal_python_distributions,
+    validate_local_release_intent, validate_release_intent, verify_artifact_manifest, LocalReleasePlan,
+    LocalReleaseSource, VersionOptions,
 };
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_model::{
@@ -21,8 +22,8 @@ use callisto_model::{
 };
 
 use crate::cli::{
-    GlobalArgs, OutputFormat, ReleaseArgs, ReleaseArtifactManifestArgs, ReleaseCommandArgs, ReleaseExecuteArgs,
-    ReleaseInspectArgs, ReleasePlanArgs,
+    GlobalArgs, OutputFormat, ReleaseArgs, ReleaseArtifactManifestArgs, ReleaseBuildPythonArgs, ReleaseCommandArgs,
+    ReleaseExecuteArgs, ReleaseInspectArgs, ReleasePlanArgs,
 };
 use crate::error::CliError;
 use crate::output::{emit_line, emit_report, log_line, write_json};
@@ -34,6 +35,7 @@ pub fn handle(args: ReleaseCommandArgs, global: &GlobalArgs) -> Result<ExitCode,
         None => release(&args.packages, args.receipt, global),
         Some(ReleaseArgs::Plan(args)) => plan(args, global),
         Some(ReleaseArgs::Inspect(args)) => inspect(args, global),
+        Some(ReleaseArgs::BuildPython(args)) => build_python(args, global),
         Some(ReleaseArgs::ArtifactManifest(args)) => artifact_manifest(args, global),
         Some(ReleaseArgs::Execute(args)) => execute(args, global),
     }
@@ -265,12 +267,44 @@ fn render_release_plan_table(intent: &ReleaseIntentV1) -> String {
     format!("{table}\n")
 }
 
+fn build_python(args: ReleaseBuildPythonArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
+    if global.dry_run {
+        return Err(CliError::ReleaseBuildPythonDryRun);
+    }
+    let intent = read_intent(&args.intent)?;
+    if callisto_model::python_publishes(&intent).is_empty() {
+        return Err(CliError::ReleaseNoPythonPublishes);
+    }
+    let outdir = args.artifact_dir.canonicalize().map_err(|source| CliError::Io {
+        source,
+        path: Some(args.artifact_dir.clone()),
+    })?;
+    let runner = CliCommandRunner;
+    let source_workspace = load_workspace(&source_global(global, args.source_root.as_deref()), &runner)?;
+    let root = source_workspace.root.clone();
+    let locator = IgnoreWalkLocator::new(&root);
+    let capability = validate_release_intent(&root, &locator, &runner, intent)?;
+    let built = capability.build_python_distributions(&outdir)?;
+    match global.format {
+        OutputFormat::Json => write_json(&mut std::io::stdout(), &serde_json::json!({ "built": built }))?,
+        OutputFormat::Text => emit_line(&format!(
+            "Built Python distributions for {} into {}",
+            built.join(", "),
+            outdir.display()
+        ))?,
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
 fn artifact_manifest(args: ReleaseArtifactManifestArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     if global.dry_run {
         return Err(CliError::ReleaseArtifactManifestDryRun);
     }
     let intent = read_intent(&args.intent)?;
-    if intent.artifact_slots.is_empty() {
+    if args.seal_python && callisto_model::python_publishes(&intent).is_empty() {
+        return Err(CliError::ReleaseNoPythonPublishes);
+    }
+    if intent.artifact_slots.is_empty() && !args.seal_python {
         return Err(CliError::ReleaseNoArtifactSlots);
     }
     let root = args.artifact_dir.canonicalize().map_err(|source| CliError::Io {
@@ -324,8 +358,15 @@ fn artifact_manifest(args: ReleaseArtifactManifestArgs, global: &GlobalArgs) -> 
             },
         });
     }
-    let manifest = ArtifactManifestV1::new(&intent, entries).map_err(|error| CliError::ReleaseManifestInvalid {
-        detail: error.to_string(),
+    let distributions = if args.seal_python {
+        seal_python_distributions(&intent, &root)?
+    } else {
+        Vec::new()
+    };
+    let manifest = ArtifactManifestV1::with_distributions(&intent, entries, distributions).map_err(|error| {
+        CliError::ReleaseManifestInvalid {
+            detail: error.to_string(),
+        }
     })?;
     let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).expect("non-dry-run permits writes");
     let content = serde_json::to_string_pretty(&manifest).expect("artifact manifest serializes") + "\n";
@@ -520,18 +561,23 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
         .as_deref()
         .map(read_artifact_manifest)
         .transpose()?;
+    let sealed_python = manifest
+        .as_ref()
+        .is_some_and(|manifest| !manifest.distributions.is_empty());
     let verified_artifacts = match (
         intent.artifact_slots.is_empty(),
         manifest.as_ref(),
         args.artifact_dir.as_deref(),
     ) {
         (true, None, None) => None,
-        (true, _, _) => {
-            return Err(CliError::ReleaseUnexpectedArtifactInputs);
-        }
-        (false, Some(manifest), Some(directory)) => {
+        (false, Some(manifest), Some(directory)) | (true, Some(manifest), Some(directory))
+            if sealed_python || !intent.artifact_slots.is_empty() =>
+        {
             let runner = CliCommandRunner;
             Some(verify_artifact_manifest(&intent, manifest, directory, &runner)?)
+        }
+        (true, _, _) => {
+            return Err(CliError::ReleaseUnexpectedArtifactInputs);
         }
         (false, _, _) => {
             return Err(CliError::ReleaseMissingArtifactInputs);

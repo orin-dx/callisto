@@ -366,12 +366,12 @@ pub enum GraphError {
         missing: &'static str,
     },
 
-    #[error("PyPI holds `{filename}` with different bytes than the file this run uploaded")]
+    #[error("PyPI holds `{filename}` with different bytes than the file this release is publishing")]
     #[diagnostic(
         code(E307),
-        help("Another upload reached this release first. PyPI never reuses a filename, so this release cannot be completed with a different file under that name: yank the release if it is wrong and release a new version.")
+        help("The file is either one this run just uploaded or one the build job sealed. PyPI never reuses a filename, so this release cannot be completed with a different file under that name: yank the release if it is wrong and release a new version.")
     )]
-    PypiUploadedFileDiffers { filename: String },
+    PypiFileDiffers { filename: String },
 
     #[error("artifact manifest is not authorized by this release intent: {source}")]
     #[diagnostic(
