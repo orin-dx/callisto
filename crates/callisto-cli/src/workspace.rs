@@ -26,17 +26,6 @@ pub fn load_workspace<'a>(
     Ok(Workspace::load(root, &locator, runner)?)
 }
 
-/// Like [`load_workspace`] but keeps manifests it could not resolve as error diagnostics instead of failing. Only
-/// `status` may use it, to show what a partial workspace looks like; nothing that plans or writes a release may.
-pub fn load_workspace_scan<'a>(
-    global: &GlobalArgs,
-    runner: &'a CliCommandRunner,
-) -> Result<Workspace<'a, CliCommandRunner, ManifestWalkResolver>, CliError> {
-    let root = workspace_root(global, runner)?;
-    let locator = IgnoreWalkLocator::new(&root);
-    Ok(Workspace::scan(root, &locator, runner)?)
-}
-
 /// The workspace root above `--cwd`, after checking `git` is supported.
 pub fn workspace_root(global: &GlobalArgs, runner: &dyn CommandRunner) -> Result<PathBuf, CliError> {
     let start = dunce::canonicalize(&global.cwd).map_err(|source| CliError::Io {
@@ -55,24 +44,6 @@ pub fn select_inference() -> impl SeverityInference {
 #[cfg(test)]
 mod tests {
     use std::path::Path;
-
-    /// The lenient scan can hold a smaller roster than the repository has, so only `status` may call it.
-    #[test]
-    fn only_status_loads_a_workspace_that_may_be_incomplete() {
-        let commands = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/commands");
-        for entry in std::fs::read_dir(commands).unwrap() {
-            let path = entry.unwrap().path();
-            if path.extension().is_none_or(|ext| ext != "rs") || path.file_name().is_some_and(|n| n == "status.rs") {
-                continue;
-            }
-            let source = std::fs::read_to_string(&path).unwrap();
-            assert!(
-                !source.contains("load_workspace_scan") && !source.contains("Workspace::scan"),
-                "{} must load a complete workspace",
-                path.display()
-            );
-        }
-    }
 
     use callisto_model::{CommandError, CommandOutput, CommandRunner};
 

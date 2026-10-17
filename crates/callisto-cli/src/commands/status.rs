@@ -8,6 +8,7 @@ use crate::error::CliError;
 use crate::output::emit_report;
 use crate::render;
 use crate::runner::CliCommandRunner;
+use crate::workspace::load_workspace;
 
 /// Whether a status report has any error-level diagnostic. Pending state
 /// (`report.pending`) never factors in: `--check` is a conventional
@@ -22,7 +23,7 @@ pub(crate) fn has_error_diagnostics(report: &StatusReport) -> bool {
 
 pub fn handle(args: StatusArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     let runner = CliCommandRunner;
-    let ws = crate::workspace::load_workspace_scan(global, &runner)?;
+    let ws = load_workspace(global, &runner)?;
 
     let opts = StatusOptions { strict: args.strict };
 

@@ -98,7 +98,7 @@
     },
     {
       "id": "WS-LOAD-01",
-      "criterion": "Loading a workspace for `version`, `release` or any command that writes fails with E313, naming each affected manifest once, when the graph build could not open a discovered manifest to read its platform role, publish targets or dependencies; it never continues with those packages omitted. `status` loads the same workspace without failing and reports each such manifest as an error-level diagnostic, so `status --check` exits 1.",
+      "criterion": "Loading a workspace for `version`, `release` or any command that writes fails with E313, naming each affected manifest once, when the graph build could not open a discovered manifest to read its platform role, publish targets or dependencies; it never continues with those packages omitted. This includes `status`, `add`, `pre`, `matrix`, `snapshot` and `compose-pr-body`.",
       "is_error_case": true
     },
     {

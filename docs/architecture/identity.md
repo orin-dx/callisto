@@ -42,7 +42,7 @@ A workspace can hold `cargo:foo` and `npm:foo` as separate packages; ambiguity i
 3. `GroupTable::resolve` binds group members to ids, then names promoted into several ecosystems are recorded as `promoted_siblings`.
 4. The tag index is built lazily, on the first `Workspace::tags` call.
 
-`Workspace::load` returns only a complete workspace. Every manifest the walk cannot open (for its platform role, publish targets or dependencies) is recorded as an error-level `ManifestUnresolved` diagnostic, and `load` turns any of them into E313 naming each manifest once. `Workspace::scan` keeps them as diagnostics instead; only `status` uses it, so version and release planning (which also call `require_complete`) never see a roster smaller than the repository.
+`Workspace::load` returns only a complete workspace, and it is the only way to get one. Every manifest the walk cannot open (for its platform role, publish targets or dependencies) is recorded as an error-level `ManifestUnresolved` diagnostic, and `load` turns any of them into E313 naming each manifest once, so no command sees a roster smaller than the repository.
 
 ## Historical ownership
 

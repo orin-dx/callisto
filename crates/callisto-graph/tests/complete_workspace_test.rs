@@ -1,12 +1,17 @@
 //! A loaded workspace is complete or it is an error: a manifest the graph build cannot resolve must never shrink the
 //! release roster quietly.
 
+use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use callisto_graph::locate::{IgnoreWalkLocator, LocateError, ProjectLocator};
+use callisto_graph::resolver::ManifestWalkResolver;
 use callisto_graph::{DependencyResolver, GraphError, Workspace};
-use callisto_model::{CommandError, CommandOutput, CommandRunner, DiagnosticCode, Ecosystem, PackageId, ProjectRoot};
+use callisto_model::{
+    CommandError, CommandOutput, CommandRunner, DiagnosticCode, DiagnosticSeverity, Ecosystem, PackageId, ProjectRoot,
+};
 
 struct NoopRunner;
 
@@ -26,6 +31,19 @@ struct Fixed(Vec<ProjectRoot>);
 impl ProjectLocator for Fixed {
     fn projects(&self) -> Result<Vec<ProjectRoot>, LocateError> {
         Ok(self.0.clone())
+    }
+}
+
+/// Like [`Fixed`], plus npm directories offered only as platform-package candidates.
+struct WithCandidates(Vec<ProjectRoot>, Vec<ProjectRoot>);
+
+impl ProjectLocator for WithCandidates {
+    fn projects(&self) -> Result<Vec<ProjectRoot>, LocateError> {
+        Ok(self.0.clone())
+    }
+
+    fn projects_and_platform_candidates(&self) -> Result<(Vec<ProjectRoot>, Vec<ProjectRoot>), LocateError> {
+        Ok((self.0.clone(), self.1.clone()))
     }
 }
 
@@ -96,14 +114,19 @@ fn a_member_whose_inheritance_cannot_be_resolved_makes_the_workspace_incomplete(
     assert_eq!(unresolved.len(), 1, "one entry per manifest: {unresolved:?}");
     assert!(unresolved[0].contains("native/crates/a/Cargo.toml"), "{unresolved:?}");
 
-    // `status` may still look at the partial workspace, with the manifest reported as an error.
-    let partial = Workspace::scan(root.to_path_buf(), &locator, &NoopRunner).unwrap();
-    assert!(partial
-        .graph
+    // The walk itself records the manifest as an error-level diagnostic, once per stage that could not open it.
+    let config = callisto_graph::load_config(root).unwrap();
+    let cache = RefCell::new(BTreeMap::new());
+    let graph = ManifestWalkResolver::build(root, &locator, &NoopRunner, &config, &cache).unwrap();
+    let recorded: Vec<_> = graph
         .diagnostics()
         .iter()
-        .any(|diagnostic| diagnostic.code == DiagnosticCode::ManifestUnresolved));
-    assert!(partial.require_complete().is_err());
+        .filter(|diagnostic| diagnostic.code == DiagnosticCode::ManifestUnresolved)
+        .collect();
+    assert!(!recorded.is_empty());
+    assert!(recorded
+        .iter()
+        .all(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error));
 }
 
 /// The same failure for each ecosystem, injected as a manifest that vanished after discovery reported it.
@@ -142,4 +165,53 @@ fn a_manifest_that_disappears_after_discovery_is_an_error_for_every_ecosystem() 
         );
         assert!(unresolved[0].contains(name), "{ecosystem:?}: {unresolved:?}");
     }
+}
+
+/// A package at the workspace root has the path `.`, so its manifest must still be named once, as `package.json`.
+#[test]
+fn a_root_level_manifest_that_disappears_is_named_once_without_a_dot_prefix() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let locator = Fixed(vec![ProjectRoot {
+        id: PackageId::Bare("root-pkg".to_string()),
+        path: PathBuf::from("."),
+        ecosystem: Ecosystem::Npm,
+    }]);
+
+    let unresolved = unresolved_of(
+        Workspace::load(root.to_path_buf(), &locator, &NoopRunner)
+            .err()
+            .unwrap(),
+    );
+    assert_eq!(unresolved.len(), 1, "{unresolved:?}");
+    assert!(unresolved[0].starts_with("`package.json`"), "{unresolved:?}");
+}
+
+/// A platform-package candidate outside the workspace whose manifest cannot be opened is reported too, not skipped.
+#[test]
+fn an_unreadable_platform_package_candidate_is_an_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(root, "kept/package.json", r#"{"name":"kept","version":"1.0.0"}"#);
+    fs::create_dir_all(root.join("platform-linux")).unwrap();
+    let locator = WithCandidates(
+        vec![ProjectRoot {
+            id: PackageId::Bare("kept".to_string()),
+            path: PathBuf::from("kept"),
+            ecosystem: Ecosystem::Npm,
+        }],
+        vec![ProjectRoot {
+            id: PackageId::Bare("platform-linux".to_string()),
+            path: PathBuf::from("platform-linux"),
+            ecosystem: Ecosystem::Npm,
+        }],
+    );
+
+    let unresolved = unresolved_of(
+        Workspace::load(root.to_path_buf(), &locator, &NoopRunner)
+            .err()
+            .unwrap(),
+    );
+    assert_eq!(unresolved.len(), 1, "{unresolved:?}");
+    assert!(unresolved[0].contains("platform-linux"), "{unresolved:?}");
 }

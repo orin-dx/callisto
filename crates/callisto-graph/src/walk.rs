@@ -82,6 +82,12 @@ fn is_promoted_bare_name(paths: &[PathBuf], claiming_ecosystems: &BTreeMap<PathB
 /// A manifest the graph build could not resolve. Dropping it silently would shrink the release without a trace, so it
 /// is reported as an error-level diagnostic that makes loading the workspace for planning fail.
 fn unresolved(manifest: &Path, what: &str, cause: impl std::fmt::Display) -> Diagnostic {
+    // `./package.json` and `package.json` are one manifest.
+    let manifest: PathBuf = manifest
+        .components()
+        .filter(|component| !matches!(component, std::path::Component::CurDir))
+        .collect();
+    let manifest = manifest.as_path();
     Diagnostic {
         code: DiagnosticCode::ManifestUnresolved,
         severity: DiagnosticSeverity::Error,
@@ -483,6 +489,11 @@ impl<'a> IdentityAssigner<'a> {
                 *path == owner_dir && decls.iter().any(|d| d.format == ManifestFormat::PackageJson)
             });
             let Some((owner_id, (_, decls))) = owner else {
+                self.unresolved.push(unresolved(
+                    &manifest_rel,
+                    "attach it to its owner",
+                    format!("`{}` has no npm manifest to own it", owner_dir.display()),
+                ));
                 continue;
             };
             match ManifestDecl::new(manifest_rel.clone(), role.clone(), ManifestFormat::PackageJson) {
@@ -941,10 +952,18 @@ fn platform_owners(
         // though it wasn't discovered as a workspace member here (e.g. filtered out by that
         // ecosystem's own membership) -- attaching it as a bare platform manifest would
         // misattach a directory that already hosts a real, distinct package.
-        if root.join(&candidate.path).join("Cargo.toml").is_file()
-            || root.join(&candidate.path).join("pyproject.toml").is_file()
-        {
-            continue;
+        let beside = |name: &str| callisto_model::strict_fs::exists(&root.join(&candidate.path).join(name));
+        match (beside("Cargo.toml"), beside("pyproject.toml")) {
+            (Ok(false), Ok(false)) => {}
+            (Err(error), _) | (_, Err(error)) => {
+                diagnostics.push(unresolved(
+                    &candidate.path,
+                    "check whether another package shares its directory",
+                    error,
+                ));
+                continue;
+            }
+            _ => continue,
         }
         let role = match open_npm(&candidate.path) {
             Ok(manifest) => platform_role(&manifest),

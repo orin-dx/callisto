@@ -258,7 +258,7 @@ pub enum GraphError {
         code(E313),
         help(
             "Fix or remove the manifests named above and re-run; Callisto will not plan a release from a partial \
-             workspace. `callisto status` still reports what it could read."
+             workspace."
         )
     )]
     IncompleteWorkspace { unresolved: Vec<String> },

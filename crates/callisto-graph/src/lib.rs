@@ -96,9 +96,8 @@ impl<'a, R: CommandRunner> Workspace<'a, R, ManifestWalkResolver> {
     /// Discovery or config loading fails, or a discovered manifest could not be resolved
     /// ([`GraphError::IncompleteWorkspace`]).
     pub fn load<L: ProjectLocator>(root: PathBuf, locator: &L, runner: &'a R) -> Result<Self, GraphError> {
-        let workspace = Self::scan(root, locator, runner)?;
-        workspace.require_complete()?;
-        Ok(workspace)
+        let config = config::load(&root)?;
+        Self::load_with_config(root, config, locator, runner)
     }
 
     /// Like [`Workspace::load`] against an already-resolved config instead of `callisto.toml`.
@@ -108,21 +107,12 @@ impl<'a, R: CommandRunner> Workspace<'a, R, ManifestWalkResolver> {
         locator: &L,
         runner: &'a R,
     ) -> Result<Self, GraphError> {
-        let workspace = Self::scan_with_config(root, config, locator, runner)?;
+        let workspace = Self::assemble(root, config, locator, runner)?;
         workspace.require_complete()?;
         Ok(workspace)
     }
 
-    /// Loads whatever the walk could resolve and keeps the manifests it could not as error diagnostics, so `status`
-    /// can show a partial workspace. Nothing that plans or writes a release may use this: it can hold a smaller
-    /// roster than the repository has.
-    pub fn scan<L: ProjectLocator>(root: PathBuf, locator: &L, runner: &'a R) -> Result<Self, GraphError> {
-        let config = config::load(&root)?;
-        Self::scan_with_config(root, config, locator, runner)
-    }
-
-    /// [`Workspace::scan`] against an already-resolved config.
-    pub fn scan_with_config<L: ProjectLocator>(
+    fn assemble<L: ProjectLocator>(
         root: PathBuf,
         mut config: ResolvedConfig,
         locator: &L,
