@@ -94,7 +94,7 @@ impl CommandRunner for FakeRevParseRunner {
                 "rev-parse",
                 "--verify",
                 "--quiet",
-                format!("{}^{{commit}}", self.tag).as_str()
+                format!("refs/tags/{}^{{commit}}", self.tag).as_str()
             ]
         );
         self.calls.fetch_add(1, Ordering::SeqCst);
@@ -135,8 +135,7 @@ fn test_load_changesets_error_includes_filename() {
 }
 
 /// Spec: `resolve_since` resolves the tag with one `git rev-parse
-/// --verify --quiet <tag>^{commit}` rather than degrading to `None` (an
-/// unbounded full-history walk).
+/// --verify --quiet <tag>^{commit}`.
 #[test]
 fn test_resolve_since_resolves_the_tag_through_git() {
     let dir = tempfile::tempdir().unwrap();
@@ -148,13 +147,9 @@ fn test_resolve_since_resolves_the_tag_through_git() {
     };
     let git = GitAccess::new(dir.path(), &runner);
 
-    let resolved = resolve_since(&git, "pkg-a@1.0.0");
+    let resolved = resolve_since(&git, "pkg-a@1.0.0").unwrap();
 
-    assert_eq!(
-        resolved,
-        Some(sha),
-        "resolve_since must resolve the tag, not silently return None"
-    );
+    assert_eq!(resolved, sha);
     assert_eq!(runner.calls.load(Ordering::SeqCst), 1);
 }
 

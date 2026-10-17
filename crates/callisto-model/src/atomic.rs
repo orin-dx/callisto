@@ -34,7 +34,8 @@ pub fn atomic_write(path: &Path, content: &str, permit: &ApplyPermit) -> io::Res
     let created_parent = !parent.try_exists()?;
     std::fs::create_dir_all(parent)?;
 
-    let mut temp = NamedTempFile::new_in(parent)?;
+    let mut temp = temp_file_in(parent)?;
+    match_existing_mode(temp.as_file(), path)?;
     temp.write_all(content.as_bytes())?;
     temp.flush()?;
     temp.as_file().sync_all()?;
@@ -48,6 +49,41 @@ pub fn atomic_write(path: &Path, content: &str, permit: &ApplyPermit) -> io::Res
         }
     }
     Ok(())
+}
+
+/// A temp file whose mode follows the process umask like any new file, instead of `tempfile`'s owner-only `0600`.
+fn temp_file_in(dir: &Path) -> io::Result<NamedTempFile> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        tempfile::Builder::new()
+            .permissions(std::fs::Permissions::from_mode(0o666))
+            .tempfile_in(dir)
+    }
+    #[cfg(not(unix))]
+    {
+        NamedTempFile::new_in(dir)
+    }
+}
+
+/// Gives the temp file the mode of the file it replaces; a new file keeps the umask-derived mode.
+fn match_existing_mode(temp: &std::fs::File, target: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        match std::fs::metadata(target) {
+            Ok(existing) => {
+                temp.set_permissions(std::fs::Permissions::from_mode(existing.permissions().mode() & 0o7777))
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error),
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (temp, target);
+        Ok(())
+    }
 }
 
 /// Flushes `dir`'s entries so a rename survives power loss. A directory that cannot be opened (Windows, or a `-wx`
@@ -110,6 +146,30 @@ mod tests {
     use super::*;
     use crate::ApplyPermit;
     use tempfile::tempdir;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_rewritten_file_keeps_its_mode_and_a_new_file_follows_the_umask() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempdir().unwrap();
+        let permit = ApplyPermit::force_for_tests();
+        let mode_of = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o7777;
+
+        for mode in [0o755, 0o640, 0o600] {
+            let existing = dir.path().join(format!("existing-{mode:o}"));
+            std::fs::write(&existing, "old").unwrap();
+            std::fs::set_permissions(&existing, std::fs::Permissions::from_mode(mode)).unwrap();
+            atomic_write(&existing, "new", &permit).unwrap();
+            assert_eq!(std::fs::read_to_string(&existing).unwrap(), "new");
+            assert_eq!(mode_of(&existing), mode);
+        }
+
+        let created = dir.path().join("nested/created");
+        atomic_write(&created, "x", &permit).unwrap();
+        let plain = dir.path().join("plain");
+        std::fs::write(&plain, "x").unwrap();
+        assert_eq!(mode_of(&created), mode_of(&plain));
+    }
 
     #[test]
     fn probe_leaves_no_file_and_accepts_existing_target() {

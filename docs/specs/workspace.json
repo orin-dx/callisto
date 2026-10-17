@@ -58,7 +58,7 @@
     },
     {
       "id": "WS-DISC-04",
-      "criterion": "A Cargo candidate is admitted when the root Cargo.toml [workspace] has no `members` key or its path matches `members`, and its path does not match `exclude`; Python candidates follow the same rules using pyproject.toml [tool.uv.workspace]."
+      "criterion": "A Cargo candidate is admitted when the root Cargo.toml [workspace] has no `members` key or its path matches `members`, and its path does not match `exclude`; Python candidates follow the same rules using pyproject.toml [tool.uv.workspace]. A glob entry written with a leading `./` or a trailing `/` (`./packages/*`, `packages/*/`) names the same directories as without."
     },
     {
       "id": "WS-DISC-05",

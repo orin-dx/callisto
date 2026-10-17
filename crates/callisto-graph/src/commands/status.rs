@@ -131,6 +131,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
     }
 
     let mut diagnostics = ws.graph.diagnostics().to_vec();
+    diagnostics.extend(tags.diagnostics.iter().cloned());
     // Fold in every well-formedness diagnostic `validate` used to
     // report (EmptyChangeset, UnknownPackage, AmbiguousPackageName,
     // InvalidPackageName) now that `validate` is gone.

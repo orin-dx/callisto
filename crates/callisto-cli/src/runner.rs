@@ -513,17 +513,20 @@ fn run_with_timeout_impl(
     // job spawned by a shell script), so bound the wait here too.
     let stdout_result = stdout_rx.recv_timeout(READER_GRACE);
     let stderr_result = stderr_rx.recv_timeout(READER_GRACE);
-    if stdout_result.is_err() || stderr_result.is_err() {
-        eprintln!(
-            "warning: `{program}` exited but a descendant process appears to still \
-                 hold its output pipes open; captured output may be incomplete"
-        );
-    }
+    // Incomplete output with a clean exit would read as an empty success to every classifier.
+    let (Ok(stdout), Ok(stderr)) = (stdout_result, stderr_result) else {
+        return Err(CommandError::Io {
+            program: program.to_string(),
+            message:
+                "it exited but a descendant process still holds its output pipes open, so its output is incomplete"
+                    .to_string(),
+        });
+    };
 
     Ok(CommandOutput {
         exit_code: status.code(),
-        stdout: stdout_result.unwrap_or_default(),
-        stderr: stderr_result.unwrap_or_default(),
+        stdout,
+        stderr,
     })
 }
 
@@ -722,9 +725,9 @@ mod tests {
     /// outlives it. The direct child (`sh`) exits almost immediately, but a
     /// backgrounded grandchild (`sleep 30`) keeps stderr open well past
     /// that. If the reader threads are joined unconditionally, this call
-    /// hangs for ~30s regardless of the requested timeout. The fix bounds
-    /// how long we wait on the reader threads so the call always returns
-    /// promptly.
+    /// hangs for ~30s regardless of the requested timeout. The wait on the
+    /// reader threads is bounded so the call always returns promptly, and
+    /// reports the incomplete output as an error rather than an empty success.
     #[test]
     fn run_with_timeout_bounds_reader_join_when_descendant_holds_pipe_open() {
         let runner = CliCommandRunner;
@@ -742,8 +745,8 @@ mod tests {
              stdio pipes open; took {elapsed:?}, result: {result:?}"
         );
         assert!(
-            result.is_ok(),
-            "expected Ok despite a lingering descendant holding the pipe open, got: {result:?}"
+            matches!(result, Err(CommandError::Io { .. })),
+            "a clean exit with output cut short by a lingering descendant must be an error, got: {result:?}"
         );
     }
 

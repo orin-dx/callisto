@@ -171,10 +171,14 @@ pub fn apply_pre_major(
 /// severity inference can be scoped to `since..HEAD` instead of walking the
 /// entire history on every `aggregate()`-driven command.
 ///
-/// Any failure to resolve the tag (missing, unborn repo, etc.) degrades to
-/// `None`, which callers treat as "infer over full history".
-fn resolve_since(git: &GitAccess<'_>, tag_name: &str) -> Option<CommitSha> {
-    git.resolve_commit(tag_name).ok().flatten()
+/// A tag that is listed but does not resolve to a commit is an error: guessing "infer over full history" would
+/// plan a bump from commits the last release already covered.
+fn resolve_since(git: &GitAccess<'_>, tag_name: &str) -> Result<CommitSha, GraphError> {
+    git.resolve_commit(&format!("refs/tags/{tag_name}"))?.ok_or_else(|| {
+        GraphError::Vcs(callisto_model::vcs::VcsError::RefNotFound {
+            ref_name: tag_name.to_string(),
+        })
+    })
 }
 
 /// Resolves a changeset entry's or `--package` argument's parsed `PackageId`
@@ -238,9 +242,10 @@ where
         // release_trigger: Changeset packages take severity from pending changesets only --
         // commit inference must not run for them, so neither does resolving its window.
         let inferred = if pkg.release_trigger == ReleaseTrigger::Auto {
+            let since = last_tag.map(|t| resolve_since(git, t.name.as_str())).transpose()?;
             let window = crate::infer::InferenceWindowSpec {
                 pathspecs: &pathspecs,
-                since: last_tag.and_then(|t| resolve_since(git, t.name.as_str())),
+                since,
                 current_version: &cur_ver,
                 has_prior_release: last_tag.is_some(),
                 policy,

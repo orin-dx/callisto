@@ -92,6 +92,16 @@ fn select_from_tags_cached<'a>(
     select_last_tag(template, grammar, candidates).map_err(GraphError::from)
 }
 
+/// Keeps the chosen tag and records each skipped-tag warning once, however many packages scan the same tags.
+fn take_chosen(selection: LastTagSelection, diagnostics: &mut Vec<Diagnostic>) -> Option<LastTag> {
+    for diagnostic in selection.skipped {
+        if !diagnostics.iter().any(|seen| seen.message == diagnostic.message) {
+            diagnostics.push(diagnostic);
+        }
+    }
+    selection.chosen
+}
+
 /// The higher-versioned of two tags found for one package; `first` wins a tie.
 fn newest(first: Option<LastTag>, second: Option<LastTag>) -> Option<LastTag> {
     match (first, second) {
@@ -151,7 +161,7 @@ impl TagIndex {
         let mut last = BTreeMap::new();
         let mut templates = BTreeMap::new();
         let mut pre_cursor = BTreeMap::new();
-        let diagnostics = Vec::new();
+        let mut diagnostics = Vec::new();
 
         // Fetch the raw tag list exactly once for the whole build, not once
         // per package -- see `fetch_all_tags` for why.
@@ -176,7 +186,10 @@ impl TagIndex {
                 .clone()
                 .unwrap_or_else(|| TagTemplate::default_for(&pkg.id));
             let grammar = pkg.version_grammar()?;
-            let mut chosen = select_from_tags_cached(&all_tags, &tmpl, grammar, &mut glob_cache)?.chosen;
+            let mut chosen = take_chosen(
+                select_from_tags_cached(&all_tags, &tmpl, grammar, &mut glob_cache)?,
+                &mut diagnostics,
+            );
             if chosen.is_none() {
                 let package_ecosystems: Vec<Ecosystem> = pkg.canonical_manifests().map(|m| m.ecosystem()).collect();
                 if let Some(previous) =
@@ -184,7 +197,10 @@ impl TagIndex {
                         .map(|package_config| package_config.previous_tag_templates.as_slice())
                 {
                     for template in previous {
-                        chosen = select_from_tags_cached(&all_tags, template, grammar, &mut glob_cache)?.chosen;
+                        chosen = take_chosen(
+                            select_from_tags_cached(&all_tags, template, grammar, &mut glob_cache)?,
+                            &mut diagnostics,
+                        );
                         if chosen.is_some() {
                             break;
                         }
@@ -206,9 +222,10 @@ impl TagIndex {
                         owned.push(tag);
                     }
                 }
-                chosen = select_last_tag(&unqualified, grammar, owned)
-                    .map_err(GraphError::from)?
-                    .chosen;
+                chosen = take_chosen(
+                    select_last_tag(&unqualified, grammar, owned).map_err(GraphError::from)?,
+                    &mut diagnostics,
+                );
             }
             if pkg.tag_template.is_none() && pkg.id.ecosystem().is_none() {
                 // A demoted package keeps the qualified tags it made while its name was shared.
@@ -217,9 +234,11 @@ impl TagIndex {
                         ecosystem: manifest.ecosystem(),
                         name: pkg.id.name().to_string(),
                     });
-                    let qualified_last = select_last_tag(&qualified, grammar, all_tags.iter().map(String::as_str))
-                        .map_err(GraphError::from)?
-                        .chosen;
+                    let qualified_last = take_chosen(
+                        select_last_tag(&qualified, grammar, all_tags.iter().map(String::as_str))
+                            .map_err(GraphError::from)?,
+                        &mut diagnostics,
+                    );
                     chosen = newest(chosen, qualified_last);
                 }
             }
@@ -368,6 +387,28 @@ mod tests {
             tags.last_tag(&pkg_id).map(|t| t.version.render().to_string()),
             Some("2.0.0".to_string())
         );
+    }
+
+    #[test]
+    fn a_tag_that_matches_the_template_but_is_not_a_version_is_reported_once() {
+        let dir = non_repo_dir();
+        let runner = FakeGitTagRunner::new(vec!["pkg-a@1.0.0".to_string(), "pkg-a@nightly".to_string()]);
+        let mut sharing = vec![make_pkg("pkg-a"), make_pkg("pkg-b")];
+        for pkg in &mut sharing {
+            pkg.tag_template = Some(TagTemplate::parse("pkg-a@{version}").unwrap());
+        }
+        let graph = FixedGraph { pkgs: sharing };
+        let cfg = crate::config::load(dir.path()).unwrap();
+        let git = GitAccess::new(dir.path(), &runner);
+
+        let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
+
+        assert_eq!(tags.diagnostics.len(), 1, "{:?}", tags.diagnostics);
+        assert_eq!(
+            tags.diagnostics[0].code,
+            callisto_model::DiagnosticCode::TagGlobNonVersionMatch
+        );
+        assert!(tags.diagnostics[0].message.contains("pkg-a@nightly"));
     }
 
     /// Spec: `TagIndex::build` must fetch the raw tag list exactly once per

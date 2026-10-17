@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::{ApplyPermit, CommandRunner, CommitSha, StagedChangeKindV1, StagedChangeV1, TagName};
+use crate::{ApplyPermit, CommandOutput, CommandRunner, CommitSha, StagedChangeKindV1, StagedChangeV1, TagName};
 
 use crate::vcs::{GitCommit, TagSignPolicy, VcsError};
 
@@ -347,6 +347,16 @@ fn check_release_worktree_status(status: &str) -> Result<(), VcsError> {
     }
 }
 
+/// A Git probe that failed for a reason other than "the thing asked about is absent".
+fn probe_failed(args: &[&str], root: &Path, output: &CommandOutput) -> VcsError {
+    VcsError::Git(format!(
+        "`git {}` failed in `{}`: {}",
+        args.join(" "),
+        root.display(),
+        output.redacted_stderr()
+    ))
+}
+
 impl GitAccess<'_> {
     /// Returns the commit SHA that `HEAD` currently resolves to.
     pub fn head_sha(&self) -> Result<CommitSha, VcsError> {
@@ -383,25 +393,32 @@ impl GitAccess<'_> {
         }
     }
 
-    /// Whether `path` (relative to this root) exists in `rev`'s tree.
+    /// Whether `path` (relative to this root) exists in `rev`'s tree; a revision that does not resolve has no paths.
     pub fn path_exists_at(&self, rev: &str, path: &Path) -> Result<bool, VcsError> {
         let spec = format!("{rev}:./{}", path.display());
-        let output = self
-            .runner
-            .run("git", &["rev-parse", "--verify", "--quiet", &spec], &self.root)?;
-        Ok(output.success())
+        let args = ["rev-parse", "--verify", "--quiet", &spec];
+        let output = self.runner.run("git", &args, &self.root)?;
+        if output.success() {
+            return Ok(true);
+        }
+        if output.exit_code == Some(1) {
+            return Ok(false);
+        }
+        Err(probe_failed(&args, &self.root, &output))
     }
 
     /// Files in `rev`'s tree matching one of `pathspecs` whose text contains `needle`, ignoring case.
     ///
-    /// A revision that cannot be searched (not a commit, or objects missing) has no matches, as in
-    /// [`Self::path_exists_at`].
+    /// No match is an empty list; a revision that cannot be searched is an error.
     pub fn files_containing_at(&self, rev: &str, needle: &str, pathspecs: &[&str]) -> Result<Vec<PathBuf>, VcsError> {
         let mut args = vec!["grep", "-l", "-z", "-F", "-i", "-e", needle, rev, "--"];
         args.extend_from_slice(pathspecs);
         let output = self.runner.run("git", &args, &self.root)?;
-        if !output.success() {
+        if output.exit_code == Some(1) {
             return Ok(Vec::new());
+        }
+        if !output.success() {
+            return Err(probe_failed(&args, &self.root, &output));
         }
         let prefix = format!("{rev}:");
         Ok(output
@@ -414,21 +431,32 @@ impl GitAccess<'_> {
 
     /// The text of `path` (relative to this root) in `rev`'s tree, decoded lossily; `None` when it is absent.
     pub fn read_at(&self, rev: &str, path: &Path) -> Result<Option<String>, VcsError> {
+        if !self.path_exists_at(rev, path)? {
+            return Ok(None);
+        }
         let spec = format!("{rev}:./{}", path.display());
-        let output = self.runner.run("git", &["show", &spec], &self.root)?;
-        Ok(output.success().then_some(output.stdout))
+        let args = ["show", &spec];
+        let output = self.runner.run("git", &args, &self.root)?;
+        if !output.success() {
+            return Err(probe_failed(&args, &self.root, &output));
+        }
+        Ok(Some(output.stdout))
     }
 
     /// The most recent commit that added `path`, if it is committed.
     pub fn commit_adding(&self, path: &Path) -> Result<Option<String>, VcsError> {
+        // A repository with no commits has no history to search; `git log` would fail there.
+        if self.resolve_commit("HEAD")?.is_none() {
+            return Ok(None);
+        }
         let path = path.to_string_lossy();
-        let output = self.runner.run(
-            "git",
-            &["log", "--diff-filter=A", "--format=%H", "-1", "--", &path],
-            &self.root,
-        )?;
+        let args = ["log", "--diff-filter=A", "--format=%H", "-1", "--", &path];
+        let output = self.runner.run("git", &args, &self.root)?;
+        if !output.success() {
+            return Err(probe_failed(&args, &self.root, &output));
+        }
         let sha = output.stdout_trimmed();
-        Ok((output.success() && !sha.is_empty()).then(|| sha.to_string()))
+        Ok((!sha.is_empty()).then(|| sha.to_string()))
     }
 
     /// Lists tag names, optionally filtered by `glob` (a [`globset::Glob`]
@@ -440,20 +468,7 @@ impl GitAccess<'_> {
     pub fn list_tags(&self, glob: Option<&str>) -> Result<Vec<TagName>, VcsError> {
         let output = self.runner.run("git", &["tag", "--list"], &self.root)?;
         if !output.success() {
-            // A directory with no `.git` anywhere in its ancestry is not a
-            // hard failure -- it's the normal shape of a brand-new/pre-git
-            // package, and callers (e.g. `status`) treat "no tags" as
-            // "unreleased" rather than aborting. Any OTHER failure (a
-            // corrupted or locked repository, a permissions error, ...)
-            // must still surface as a real error rather than silently
-            // becoming "zero tags".
-            if !output.stderr.contains("not a git repository") {
-                return Err(VcsError::Git(format!(
-                    "`git tag --list` failed in `{}`: {}",
-                    self.root.display(),
-                    output.redacted_stderr()
-                )));
-            }
+            return Err(probe_failed(&["tag", "--list"], &self.root, &output));
         }
         let all = output.stdout_lines().map(|s| s.to_string());
 
@@ -471,12 +486,14 @@ impl GitAccess<'_> {
     /// callers treat as "no bound" / "infer over full history".
     pub fn resolve_commit(&self, refname: &str) -> Result<Option<CommitSha>, VcsError> {
         let rev = format!("{refname}^{{commit}}");
-        let output = self
-            .runner
-            .run("git", &["rev-parse", "--verify", "--quiet", &rev], &self.root)?;
+        let args = ["rev-parse", "--verify", "--quiet", &rev];
+        let output = self.runner.run("git", &args, &self.root)?;
 
-        if !output.success() {
+        if output.exit_code == Some(1) {
             return Ok(None);
+        }
+        if !output.success() {
+            return Err(probe_failed(&args, &self.root, &output));
         }
         let sha_str = output.stdout_trimmed();
         if sha_str.is_empty() {
@@ -542,7 +559,13 @@ impl GitAccess<'_> {
         args.extend(revs.iter().map(String::as_str));
         let output = self.runner.run("git", &args, &self.root)?;
         if !output.success() {
-            return Ok(None);
+            // The batch exits 128 for a missing ref and for a broken repository alike; one probe each tells them apart.
+            for r in refs {
+                if self.resolve_commit(r)?.is_none() {
+                    return Ok(None);
+                }
+            }
+            return Err(probe_failed(&args, &self.root, &output));
         }
         let shas: Option<Vec<CommitSha>> = output.stdout_lines().map(|l| CommitSha::parse(l).ok()).collect();
         Ok(shas.filter(|shas| shas.len() == refs.len()))
@@ -921,14 +944,9 @@ mod tests {
         );
     }
 
-    /// A directory with no `.git` anywhere in its ancestry is not a hard
-    /// failure -- callers (e.g. `status` on a brand-new/pre-git package)
-    /// treat "no tags" as "unreleased" rather than aborting. This is the
-    /// one specific failure shape `list_tags` deliberately still tolerates
-    /// as `Ok(vec![])`, distinct from `test_list_tags_errors_on_failed_git_invocation`'s
-    /// genuine failure.
+    /// There is no repository to ask for tags, so "no tags" would be a made-up answer.
     #[test]
-    fn test_list_tags_tolerates_missing_git_repository_as_empty() {
+    fn test_list_tags_errors_when_there_is_no_git_repository() {
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
             response: Box::new(|_args| {
@@ -941,13 +959,107 @@ mod tests {
         };
         let git = GitAccess::new(PathBuf::from("."), &runner);
 
-        let result = git.list_tags(None);
+        assert!(matches!(git.list_tags(None), Err(VcsError::Git(_))));
+    }
 
+    /// Runs the real `git`, which is the only way to know which exit code means "absent" and which means "broken".
+    struct RealGit;
+
+    impl CommandRunner for RealGit {
+        fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
+            let output = std::process::Command::new(program)
+                .args(args)
+                .current_dir(cwd)
+                .env_remove("GIT_DIR")
+                .env_remove("GIT_WORK_TREE")
+                .env_remove("GIT_INDEX_FILE")
+                .env("GIT_CEILING_DIRECTORIES", cwd.parent().unwrap_or(cwd))
+                .output()
+                .map_err(|error| CommandError::Io {
+                    program: program.to_string(),
+                    message: error.to_string(),
+                })?;
+            Ok(CommandOutput {
+                exit_code: output.status.code(),
+                stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            })
+        }
+    }
+
+    fn real_git(dir: &Path, args: &[&str]) {
+        let status = std::process::Command::new("git")
+            .args([
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@example.com",
+            ])
+            .args(args)
+            .current_dir(dir)
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {args:?} failed");
+    }
+
+    #[test]
+    fn probes_tell_an_absent_answer_from_a_failure_against_real_git() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dunce::canonicalize(dir.path()).unwrap();
+        real_git(&root, &["init", "-q"]);
+        let git = GitAccess::new(root.clone(), &RealGit);
+
+        // No commits yet: nothing resolves, nothing was added, and none of that is an error.
+        assert_eq!(git.resolve_commit("HEAD").unwrap(), None);
+        assert_eq!(git.commit_adding(Path::new("a.txt")).unwrap(), None);
+
+        std::fs::write(root.join("a.txt"), "hello needle").unwrap();
+        real_git(&root, &["add", "a.txt"]);
+        real_git(&root, &["commit", "-q", "-m", "one"]);
+
+        assert!(git.resolve_commit("HEAD").unwrap().is_some());
+        assert_eq!(git.resolve_commit("no-such-ref").unwrap(), None);
+        assert!(git.path_exists_at("HEAD", Path::new("a.txt")).unwrap());
+        assert!(!git.path_exists_at("HEAD", Path::new("nope.txt")).unwrap());
+        assert!(!git.path_exists_at("no-such-ref", Path::new("a.txt")).unwrap());
         assert_eq!(
-            result.unwrap(),
-            Vec::<TagName>::new(),
-            "a missing .git directory must resolve to Ok(vec![]), not Err"
+            git.read_at("HEAD", Path::new("a.txt")).unwrap().as_deref(),
+            Some("hello needle")
         );
+        assert_eq!(git.read_at("HEAD", Path::new("nope.txt")).unwrap(), None);
+        assert_eq!(
+            git.files_containing_at("HEAD", "NEEDLE", &["*.txt"]).unwrap(),
+            [PathBuf::from("a.txt")]
+        );
+        assert!(git
+            .files_containing_at("HEAD", "absent", &["*.txt"])
+            .unwrap()
+            .is_empty());
+        assert!(git.commit_adding(Path::new("a.txt")).unwrap().is_some());
+        assert_eq!(git.commit_adding(Path::new("nope.txt")).unwrap(), None);
+        let heads = ["HEAD".to_string(), "no-such-ref".to_string()];
+        assert_eq!(git.resolve_commits(&heads).unwrap(), None);
+        assert!(git.resolve_commits(&heads[..1]).unwrap().is_some());
+
+        // A searched revision that does not exist is a failure, not "no matches".
+        assert!(git.files_containing_at("no-such-ref", "needle", &["*.txt"]).is_err());
+    }
+
+    #[test]
+    fn probes_fail_loudly_outside_a_git_repository_against_real_git() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dunce::canonicalize(dir.path()).unwrap();
+        let git = GitAccess::new(root, &RealGit);
+
+        assert!(git.resolve_commit("HEAD").is_err());
+        assert!(git.path_exists_at("HEAD", Path::new("a.txt")).is_err());
+        assert!(git.read_at("HEAD", Path::new("a.txt")).is_err());
+        assert!(git.files_containing_at("HEAD", "x", &["*"]).is_err());
+        assert!(git.commit_adding(Path::new("a.txt")).is_err());
+        assert!(git.list_tags(None).is_err());
+        assert!(git.resolve_commits(&["HEAD".to_string()]).is_err());
     }
 
     #[test]
@@ -1079,11 +1191,19 @@ mod tests {
     fn test_commits_since_propagates_git_log_failure_instead_of_unbounded_walk() {
         let runner = FakeRunner {
             calls: Mutex::new(Vec::new()),
-            response: Box::new(|_args| {
-                Ok(CommandOutput {
-                    exit_code: Some(128),
-                    stdout: String::new(),
-                    stderr: "fatal: bad revision 'missing-ref..HEAD'".to_string(),
+            response: Box::new(|args| {
+                Ok(if args[0] == "rev-parse" {
+                    CommandOutput {
+                        exit_code: Some(1),
+                        stdout: String::new(),
+                        stderr: String::new(),
+                    }
+                } else {
+                    CommandOutput {
+                        exit_code: Some(128),
+                        stdout: String::new(),
+                        stderr: "fatal: bad revision 'missing-ref..HEAD'".to_string(),
+                    }
                 })
             }),
         };
