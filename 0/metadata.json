@@ -1,0 +1,139 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M55GF7B5Z5ZE7B14D3T8NPXY",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-17T18:02:45.817497Z",
+  "branch": "feat/pypi-sealed-file-set",
+  "checkpoints_count": 2,
+  "save_step_count": 35,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/release/provider/pypi_files.rs",
+    "crates/callisto-graph/src/commands/release/provider/pypi_files/tests.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry.rs",
+    "crates/callisto-model/src/ecosystem.rs",
+    "crates/callisto-model/src/release/artifact.rs",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "24961d3e7f9f",
+  "checkpoint_transcript_start": 15104,
+  "transcript_lines_at_start": 15104,
+  "compact_transcript_start": 1303,
+  "token_usage": {
+    "input_tokens": 50,
+    "cache_creation_tokens": 34814,
+    "cache_read_tokens": 3740695,
+    "output_tokens": 17518,
+    "api_call_count": 24,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 86
+  },
+  "summary": {
+    "intent": "Triage a second round of Codex review findings on the PyPI sealed-file-set PR (#233) by verifying each against the code, and fix those that belong in the PR.",
+    "outcome": "All four claims were confirmed in code. The malformed sealed-filename issue (#3) was fixed by moving filename helpers into the model and validating ownership at manifest validation; `just ci` passed (92.77% coverage) and the change was committed and pushed. The Python-only credentialed build, pnpm mismatch, and NAPI path guess were left for user decisions or separate PRs.",
+    "learnings": {
+      "repo": [
+        "PyPI filename helpers (pypi_dist_filename_parts, is_pypi_wheel, is_pypi_sdist, pypi_dist_belongs_to) now live in callisto-model next to normalize_pypi_project_name, and the graph crate and registry parser reuse them instead of duplicating is_wheel/is_sdist.",
+        "Manifest validation in callisto-model now rejects sealed Python files not belonging to the set's package/version via the new ArtifactManifestError::ForeignDistributionFile, so it runs at manifest write and again at `release execute` verify before any effect.",
+        "The Python-only credential exposure is not new to the stack: `callisto release` builds and pushes the tag in one credentialed job, and the template's `zizmor: ignore[artipacked]` comment says the push needs persisted credentials. The only fix is moving Python-only workspaces onto the sealed multi-job route, which costs local `callisto release` for them.",
+        "pnpm detection is inconsistent: npm.rs treats pnpm-lock.yaml or pnpm-workspace.yaml as pnpm, but detect_npm_package_manager in registry_argv.rs only checks the lockfile, so a workspace-file-only pnpm project is published with `npm publish --workspace`.",
+        "Spec text for manifest validation lives in docs/specs/release.json (a very long single line, around line 293), so new rejection rules need a spec update there."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/registry_argv.rs",
+          "line": 161,
+          "end_line": 161,
+          "finding": "Publish package-manager selector recognizes only pnpm-lock.yaml, disagreeing with discovery in npm.rs."
+        },
+        {
+          "path": "crates/callisto-manifests/src/npm.rs",
+          "line": 625,
+          "end_line": 625,
+          "finding": "Workspace detection accepts either pnpm-lock.yaml or pnpm-workspace.yaml as pnpm."
+        },
+        {
+          "path": "crates/callisto-graph/src/napi.rs",
+          "line": 14,
+          "end_line": 14,
+          "finding": "NAPI target drift check guesses root/<package-name>/package.json, so packages under packages/ or with scoped names skip the cross-check (warning only)."
+        },
+        {
+          "path": "crates/callisto-model/src/release/artifact.rs",
+          "line": 276,
+          "end_line": 276,
+          "finding": "Manifest validation previously checked roster, safe names, and extensions but not filename ownership by package/version; ownership was only checked later in pypi_files.rs."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/pypi_files.rs",
+          "line": 137,
+          "end_line": 137,
+          "finding": "Ownership check happened at PyPI file-set construction, after other publishes in a mixed release could already have landed."
+        }
+      ],
+      "workflow": [
+        "Verify each externally reported review finding against the code before changing anything, and classify each as introduced by this PR or pre-existing.",
+        "Large multi-file edits were done via a Python script with count==1 assertions on each replacement; the heredoc form was refused as too complex, so the script was written with the Write tool and run separately with `python3 -I`.",
+        "Avoid tests that accept multiple different errors; use exact assertions.",
+        "Run `just ci` locally and check coverage before pushing; pre-existing out-of-scope bugs get separate PRs."
+      ]
+    },
+    "friction": [
+      "The heredoc command containing the edit script was refused as too complex, forcing a switch to the Write tool.",
+      "Codex noted the saved Entire history was unavailable, so it could not tell whether earlier findings had been noticed.",
+      "The single-line docs/specs/release.json made locating spec text awkward, requiring grep -o with context windows."
+    ],
+    "open_items": [
+      "Decide whether to move Python-only generated releases to the sealed multi-job route (credential-free build), which would cost local `callisto release` for those workspaces.",
+      "Fix the pnpm discovery vs publish package-manager mismatch in a separate PR (prioritized first).",
+      "Fix the NAPI drift check path guess in a separate PR.",
+      "Decide whether a hashless index should be an error for files this run uploads (currently accepted to avoid breaking private indexes).",
+      "Run one hosted release (build, partial upload, rerun) after #233 is merged, as Codex requested.",
+      "The newest push's CI run on #233 had not finished at the time of the summary."
+    ]
+  }
+}
