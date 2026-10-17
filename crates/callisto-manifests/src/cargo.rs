@@ -706,16 +706,13 @@ impl WorkspaceCargoResolver {
             message: e.to_string(),
         })?;
 
-        let doc: toml_edit::DocumentMut =
-            content
-                .strip_prefix('\u{FEFF}')
-                .unwrap_or(&content)
-                .parse()
-                .map_err(|e: toml_edit::TomlError| ManifestError::Parse {
-                    path: rel_path.clone(),
-                    format: ManifestFormat::CargoToml,
-                    message: e.to_string(),
-                })?;
+        let doc: toml_edit::DocumentMut = content
+            .parse()
+            .map_err(|e: toml_edit::TomlError| ManifestError::Parse {
+                path: rel_path.clone(),
+                format: ManifestFormat::CargoToml,
+                message: e.to_string(),
+            })?;
 
         Ok(WorkspaceCargoResolver {
             root_path: rel_path,

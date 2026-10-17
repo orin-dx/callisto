@@ -305,7 +305,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E309 | `release build-python` run with `--dry-run`, which cannot write build output | re-run `callisto release build-python` without --dry-run |
 | E310 | Failed to read manifest `<path>`: <message> | Make the manifest readable UTF-8 text; a workspace member's manifest is never skipped. |
 | E311 | Invalid workspace membership in `<path>`: <message> | Make `members`/`exclude` (Cargo, uv) or `workspaces`/`packages` (npm, pnpm) an array of valid glob strings; Callisto will not guess which packages a malformed workspace admits. |
-| E312 | Package `<path>` is reached through a symbolic link, which Git cannot stage | Replace the link with the real directory, or ignore it in .gitignore so discovery skips it; Callisto cannot commit a version bump to a file beneath a symbolic link. |
+| E312 | Package `<path>` is reached through a symbolic link, which Git cannot stage | Replace the link with the real directory, or list it in a .gitignore under the workspace root so discovery skips it; Callisto cannot commit a version bump to a file beneath a symbolic link. |
 
 
 240 numeric E#### codes total in one registry.

@@ -76,8 +76,8 @@ pub enum LocateError {
     #[diagnostic(
         code(E312),
         help(
-            "Replace the link with the real directory, or ignore it in .gitignore so discovery skips it; \
-             Callisto cannot commit a version bump to a file beneath a symbolic link."
+            "Replace the link with the real directory, or list it in a .gitignore under the workspace root so \
+             discovery skips it; Callisto cannot commit a version bump to a file beneath a symbolic link."
         )
     )]
     SymlinkedPackage { path: PathBuf },

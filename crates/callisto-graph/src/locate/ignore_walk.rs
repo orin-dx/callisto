@@ -45,11 +45,11 @@ impl ProjectLocator for IgnoreWalkLocator {
         let walker = WalkBuilder::new(&self.root)
             .hidden(true)
             .git_ignore(true)
+            // A workspace root below the Git toplevel has no `.git` of its own, but its `.gitignore` must still apply.
+            .require_git(false)
             .parents(false)
             .max_depth(Some(32))
-            // Symlinked package directories (e.g. vendor-link style monorepos) are a
-            // supported workspace pattern -- discovery follows them deliberately. The
-            // existing max_depth(32) cap already bounds a symlink cycle from hanging.
+            // Links are followed only so a package beneath one can be named and rejected; the depth cap bounds a cycle.
             .follow_links(true)
             .filter_entry({
                 let skip = self.skip.clone();
@@ -302,6 +302,54 @@ mod tests {
         assert!(
             matches!(&err, LocateError::SymlinkedPackage { path } if path.starts_with("vendor-link")),
             "expected the symlinked package to be named, got: {err:?}"
+        );
+    }
+
+    /// The escape hatch the error names: a `.gitignore` under the workspace root skips the link, also when the Git
+    /// toplevel is above that root and the root has no `.git` of its own.
+    #[test]
+    fn a_symlinked_package_ignored_by_a_gitignore_under_the_workspace_root_is_skipped() {
+        let toplevel = tempdir().unwrap();
+        let external = tempdir().unwrap();
+        fs::create_dir(toplevel.path().join(".git")).unwrap();
+        let root = toplevel.path().join("js");
+        fs::create_dir_all(root.join("app")).unwrap();
+        fs::write(root.join("app/package.json"), r#"{"name":"app","version":"1.0.0"}"#).unwrap();
+        fs::write(
+            external.path().join("package.json"),
+            r#"{"name":"vendored","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(external.path(), root.join("vendor-link")).unwrap();
+
+        let err = IgnoreWalkLocator::new(&root).projects().unwrap_err();
+        assert!(matches!(err, LocateError::SymlinkedPackage { .. }), "{err:?}");
+
+        fs::write(root.join(".gitignore"), "vendor-link\n").unwrap();
+        let projects = IgnoreWalkLocator::new(&root).projects().unwrap();
+        assert!(projects.iter().any(|p| p.path == Path::new("app")), "{projects:?}");
+        assert!(
+            !projects.iter().any(|p| p.path.starts_with("vendor-link")),
+            "{projects:?}"
+        );
+    }
+
+    /// A link to a directory inside the same repository is still a path Git cannot stage.
+    #[test]
+    fn a_package_reached_through_a_link_to_a_directory_in_the_same_repository_is_rejected() {
+        let root = tempdir().unwrap();
+        fs::create_dir_all(root.path().join("real/pkg")).unwrap();
+        fs::write(
+            root.path().join("real/pkg/Cargo.toml"),
+            "[package]\nname = \"pkg\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(root.path().join("real"), root.path().join("alias")).unwrap();
+
+        let err = IgnoreWalkLocator::new(root.path()).projects().unwrap_err();
+        assert!(
+            matches!(&err, LocateError::SymlinkedPackage { path } if path.starts_with("alias")),
+            "{err:?}"
         );
     }
 

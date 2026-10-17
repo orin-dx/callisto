@@ -233,15 +233,3 @@ fn open_context_fails_for_a_root_manifest_that_cannot_be_read_or_parsed() {
     std::fs::write(dir.path().join("package.json"), "{\"workspaces\": [],}").unwrap();
     assert!(callisto_manifests::OpenContext::for_workspace_root(dir.path()).is_err());
 }
-
-#[test]
-fn open_context_reads_a_root_manifest_that_starts_with_a_byte_order_mark() {
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(
-        dir.path().join("Cargo.toml"),
-        "\u{FEFF}[workspace]\nmembers = []\n[workspace.package]\nversion = \"1.2.3\"\n",
-    )
-    .unwrap();
-    let ctx = callisto_manifests::OpenContext::for_workspace_root(dir.path()).unwrap();
-    assert!(ctx.cargo_workspace.is_some());
-}

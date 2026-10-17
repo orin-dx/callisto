@@ -70,7 +70,7 @@
     },
     {
       "id": "WS-DISC-07",
-      "criterion": "An npm candidate is admitted when its path matches the `packages` list of the root pnpm-workspace.yaml, or, when that file is absent or unusable, the root package.json `workspaces` array; with neither, all npm candidates are admitted."
+      "criterion": "An npm candidate is admitted when its path matches the `packages` list of the root pnpm-workspace.yaml, or, when that file is absent, empty or has no `packages` key, the root package.json `workspaces` array; with neither, all npm candidates are admitted."
     },
     {
       "id": "WS-DISC-08",
@@ -78,22 +78,22 @@
     },
     {
       "id": "WS-DISC-09",
-      "criterion": "Malformed membership input fails discovery with a coded error naming the file and never falls back to admitting every directory: a root Cargo.toml, pyproject.toml, package.json or pnpm-workspace.yaml that cannot be read (E310) or parsed (E209), a `members`, `exclude`, `workspaces` or `packages` value that is not an array of strings (npm `workspaces` may also be an object with a `packages` array), a `[workspace]` that is not a table, or an entry that is not a valid glob (E311). A missing manifest, a manifest with no workspace table or no `members`, and an empty or `packages`-less pnpm-workspace.yaml restrict nothing. A leading byte-order mark is ignored.",
+      "criterion": "Malformed membership input fails discovery with a coded error naming the file and never falls back to admitting every directory: a root Cargo.toml, pyproject.toml, package.json or pnpm-workspace.yaml that cannot be read (E310) or parsed (E209), a `members`, `exclude`, `workspaces` or `packages` value that is not an array of strings (npm `workspaces` may also be an object with a `packages` array), a `[workspace]` that is not a table, a pnpm-workspace.yaml whose top level is not a mapping, a root package.json that is not an object, or an entry that is not a valid glob (E311). A missing manifest, a manifest with no workspace table or no `members`, and an empty or `packages`-less pnpm-workspace.yaml restrict nothing. A leading byte-order mark is ignored.",
       "is_error_case": true
     },
     {
       "id": "WS-DISC-10",
-      "criterion": "An invalid glob in `members`, `exclude`, `workspaces` or `packages` is ignored while the list's valid entries still apply.",
+      "criterion": "An invalid glob in `members`, `exclude`, `workspaces` or `packages` fails discovery with E311 naming the file; no entry of the list is applied or skipped on its own.",
       "is_error_case": true
     },
     {
       "id": "WS-DISC-11",
-      "criterion": "A package whose path passes through a symbolic link is a coded error naming the package (E312), because Git cannot stage a path beneath a link and a version bump there could never be committed; a symbolic link that holds no package is ignored, and a link can be ignored through .gitignore.",
+      "criterion": "A package whose path passes through a symbolic link is a coded error naming the package (E312), because Git cannot stage a path beneath a link and a version bump there could never be committed; a symbolic link that holds no package is ignored, and a link can be ignored through a .gitignore under the workspace root.",
       "is_error_case": true
     },
     {
       "id": "WS-DISC-12",
-      "criterion": "Locating the workspace root fails with a coded error naming the file when a Cargo.toml, package.json or pnpm-workspace.yaml between the start directory and the Git root cannot be read (E310) or parsed (E209), instead of settling on a different root.",
+      "criterion": "Locating the workspace root fails with a coded error naming the file when a Cargo.toml or package.json between the start directory and the Git root cannot be read (E310) or parsed (E209), instead of settling on a different root.",
       "is_error_case": true
     },
     {

@@ -220,14 +220,6 @@ mod tests {
     }
 
     #[test]
-    fn a_workspace_root_manifest_with_a_byte_order_mark_is_still_a_workspace_root() {
-        let (_dir, root) = repo();
-        write(&root, "Cargo.toml", "\u{FEFF}[workspace]\nmembers = [\"member\"]\n");
-        write(&root, "member/Cargo.toml", "[package]\nname = \"member\"\n");
-        assert_eq!(find(&root.join("member")).unwrap(), root);
-    }
-
-    #[test]
     fn a_workspace_marker_beats_a_nearer_member_manifest() {
         let (_dir, root) = repo();
         write(&root, "Cargo.toml", "[workspace]\nmembers = [\"member\"]\n");

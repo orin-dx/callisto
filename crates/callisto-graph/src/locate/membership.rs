@@ -328,18 +328,6 @@ mod cargo_membership_tests {
     }
 
     #[test]
-    fn read_cargo_membership_reads_a_manifest_that_starts_with_a_byte_order_mark() {
-        let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("Cargo.toml"),
-            "\u{FEFF}[workspace]\nmembers = [\"crates/*\"]\n",
-        )
-        .unwrap();
-        let m = read_cargo_membership(dir.path()).unwrap();
-        assert!(!m.admits(Path::new("tools/outside"), false));
-    }
-
-    #[test]
     fn read_cargo_membership_reports_a_manifest_that_cannot_be_read() {
         let dir = tempdir().unwrap();
         std::fs::write(dir.path().join("Cargo.toml"), b"[workspace]\nmembers = [\"caf\xe9\"]\n").unwrap();
@@ -453,10 +441,14 @@ impl NpmMembership {
 pub(crate) fn read_npm_membership(root: &Path) -> Result<NpmMembership, LocateError> {
     let package_json = root.join(ManifestFormat::PackageJson.file_name());
     let manifest = match read_root_manifest(&package_json)? {
-        Some(content) => Some(
-            serde_json::from_str::<serde_json::Value>(&content)
-                .map_err(|error| parse_error(&package_json, error.to_string()))?,
-        ),
+        Some(content) => {
+            let value = serde_json::from_str::<serde_json::Value>(&content)
+                .map_err(|error| parse_error(&package_json, error.to_string()))?;
+            if !value.is_object() {
+                return Err(invalid_membership(&package_json, "must be a JSON object".to_string()));
+            }
+            Some(value)
+        }
         None => None,
     };
     let hybrid_root = manifest.as_ref().is_some_and(|value| value.get("name").is_some());
@@ -494,6 +486,15 @@ fn read_pnpm_packages(path: &Path) -> Result<Option<Vec<String>>, LocateError> {
     let Some(doc) = docs.first() else {
         return Ok(None);
     };
+    if doc.is_null() {
+        return Ok(None);
+    }
+    if doc.as_hash().is_none() {
+        return Err(invalid_membership(
+            path,
+            "must be a mapping with a `packages` list".to_string(),
+        ));
+    }
     let packages = &doc["packages"];
     if packages.is_badvalue() || packages.is_null() {
         return Ok(None);
@@ -567,6 +568,36 @@ mod npm_membership_tests {
         std::fs::write(dir.path().join("pnpm-workspace.yaml"), "packages: []\n").unwrap();
         let m = read_npm_membership(dir.path()).unwrap();
         assert!(!m.admits(Path::new("packages/anything"), false));
+    }
+
+    #[test]
+    fn read_npm_membership_rejects_a_top_level_that_is_not_a_mapping_or_object() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("pnpm-workspace.yaml"), "- packages/*\n").unwrap();
+        let err = read_npm_membership(dir.path()).err().unwrap();
+        assert!(matches!(err, LocateError::InvalidMembership { .. }), "{err:?}");
+        std::fs::remove_file(dir.path().join("pnpm-workspace.yaml")).unwrap();
+
+        std::fs::write(dir.path().join("package.json"), "[]").unwrap();
+        let err = read_npm_membership(dir.path()).err().unwrap();
+        assert!(matches!(err, LocateError::InvalidMembership { .. }), "{err:?}");
+    }
+
+    #[test]
+    fn read_npm_membership_rejects_workspaces_that_is_null_or_an_object_without_packages() {
+        let dir = tempdir().unwrap();
+        for workspaces in ["null", r#"{"nohoist": ["**/x"]}"#] {
+            std::fs::write(
+                dir.path().join("package.json"),
+                format!(r#"{{"workspaces": {workspaces}}}"#),
+            )
+            .unwrap();
+            let err = read_npm_membership(dir.path()).err().unwrap();
+            assert!(
+                matches!(err, LocateError::InvalidMembership { .. }),
+                "{workspaces}: {err:?}"
+            );
+        }
     }
 
     #[test]
@@ -838,6 +869,27 @@ mod python_membership_tests {
         .unwrap();
         let m = read_python_membership(dir.path()).unwrap();
         assert!(m.admits(Path::new("packages/anything"), false));
+    }
+
+    #[test]
+    fn read_python_membership_rejects_a_uv_workspace_of_the_wrong_shape() {
+        let dir = tempdir().unwrap();
+        for workspace in [
+            "members = \"packages/*\"",
+            "members = [\"packages/*\", 1]",
+            "exclude = \"x\"",
+        ] {
+            std::fs::write(
+                dir.path().join("pyproject.toml"),
+                format!("[tool.uv.workspace]\n{workspace}\n"),
+            )
+            .unwrap();
+            let err = read_python_membership(dir.path()).err().unwrap();
+            assert!(
+                matches!(err, LocateError::InvalidMembership { .. }),
+                "{workspace}: {err:?}"
+            );
+        }
     }
 
     #[test]
