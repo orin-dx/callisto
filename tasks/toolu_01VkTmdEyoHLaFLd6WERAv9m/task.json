@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01VkTmdEyoHLaFLd6WERAv9m",
+  "agent_id": "aa9f9a706dee45a12",
+  "subagent_type": "general-purpose",
+  "task_description": "Check review status",
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 26094,
+    "cache_read_tokens": 25898,
+    "output_tokens": 150,
+    "api_call_count": 2
+  },
+  "started_at": "2026-10-17T05:45:26.404706-07:00",
+  "completed_at": "2026-10-17T05:45:28.608687-07:00"
+}

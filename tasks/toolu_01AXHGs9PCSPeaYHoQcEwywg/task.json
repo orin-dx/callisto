@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01AXHGs9PCSPeaYHoQcEwywg",
+  "agent_id": "a28f98da898259781",
+  "subagent_type": "bug-hunter",
+  "task_description": "Adversarial review of sealed Python file sets",
+  "token_usage": {
+    "input_tokens": 50,
+    "cache_creation_tokens": 108640,
+    "cache_read_tokens": 1725902,
+    "output_tokens": 298,
+    "api_call_count": 25
+  },
+  "started_at": "2026-10-17T05:41:56.637642-07:00",
+  "completed_at": "2026-10-17T05:46:58.888715-07:00"
+}

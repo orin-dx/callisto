@@ -1,0 +1,163 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M54YP91A152H6Q15H1E8SBA2",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-17T12:52:08.882723Z",
+  "branch": "feat/pypi-sealed-file-set",
+  "checkpoints_count": 4,
+  "save_step_count": 32,
+  "files_touched": [
+    "crates/callisto-cli/src/cli.rs",
+    "crates/callisto-cli/src/commands/release.rs",
+    "crates/callisto-cli/src/error.rs",
+    "crates/callisto-cli/tests/common/release_harness.rs",
+    "crates/callisto-cli/tests/durable_release_e2e_tests.rs",
+    "crates/callisto-cli/tests/provider_flag_contract_tests.rs",
+    "crates/callisto-graph/src/commands/init/snapshots/callisto_graph__commands__init__tests__rendered_matrix_workflow_bytes_are_pinned.snap",
+    "crates/callisto-graph/src/commands/init/tests.rs",
+    "crates/callisto-graph/src/commands/mod.rs",
+    "crates/callisto-graph/src/commands/registry_argv.rs",
+    "crates/callisto-graph/src/commands/release/capability.rs",
+    "crates/callisto-graph/src/commands/release/provider/mod.rs",
+    "crates/callisto-graph/src/commands/release/provider/pypi_files.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/pypi_file_set_tests.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/tests.rs",
+    "crates/callisto-graph/src/commands/release_artifacts.rs",
+    "crates/callisto-graph/src/commands/release_execution.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/src/templates/matrix_workflow.tmpl",
+    "crates/callisto-model/src/release/artifact.rs",
+    "crates/callisto-model/src/release/execution.rs",
+    "crates/callisto-model/src/vcs/access.rs",
+    "docs/architecture/release.md",
+    "docs/errors.md",
+    "docs/publishing.md",
+    "docs/specs/cli.json",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "1f8746eb7f20",
+  "checkpoint_transcript_start": 1883,
+  "transcript_lines_at_start": 1883,
+  "compact_transcript_start": 155,
+  "token_usage": {
+    "input_tokens": 1870,
+    "cache_creation_tokens": 3469778,
+    "cache_read_tokens": 418104564,
+    "output_tokens": 755497,
+    "api_call_count": 893,
+    "subagent_tokens": {
+      "input_tokens": 56,
+      "cache_creation_tokens": 119934,
+      "cache_read_tokens": 1064098,
+      "output_tokens": 382,
+      "api_call_count": 20
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 76
+  },
+  "summary": {
+    "intent": "Drive the Callisto repo toward v1: ship the unblocked refactors and fixes as stacked PRs with real-tool verification, prepare the 0.10.3 release, then implement the second W3 PR (sealed Python file sets with strict digests).",
+    "outcome": "Shipped R5a/R5b/SYS-NAPI, R3, R1, SYS-BARRIER and review-fix PRs, and 0.10.3 published. Sealed Python file sets are implemented with a build-python job, artifact-manifest --seal-python, and strict E307 digest checks. `just ci` passes at 92.76% coverage, and the review fixes were committed and pushed. The PR was not confirmed opened and the hosted workflow has not run.",
+    "learnings": {
+      "repo": [
+        "Release flow is plan/build/execute, and only execute gets registry secrets. Recovery has no journal: it re-derives operations and observes the remote, with ProviderObservationV1 values Absent, Exact, Conflict and Indeterminate.",
+        "The release test harness allow-lists every external git/tool call (TOOL_SHAPES in release_harness.rs). A new git invocation such as `git show -s --format=%ct HEAD` needs an allow-list entry and a real-git probe in provider_flag_contract_tests.rs.",
+        "An architecture test forbids hand-rolled manifest parsing outside the model and manifests crates. Use IdentityIndex::native_name and read_identity.",
+        "AGENTS.md and memory forbid session links in commits and PRs. It also wants one copy of helpers (is_wheel/is_sdist are currently duplicated) and a record for deliberately deferred items.",
+        "Generated workflows are linted with actionlint and zizmor, and rendered template bytes are pinned by insta snapshots (init/tests.rs). The generated build-matrix workflow is only produced for binaries or platform packages, so Python-only repos keep the single-job workflow.",
+        "The intent omits artifactSlots when empty, so jq `.artifactSlots[]` iterates null. The macOS bash used by the generated workflow lacks `mapfile`, so a portable loop is needed.",
+        "PyPI behavior: re-uploading identical bytes returns 200, different bytes under the same name return 400, yank is release-level, new files are rejected after 14 days, and the simple index caches for 600s. Twine uploads sequentially and aborts at the first failure."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/pypi_files.rs",
+          "line": 221,
+          "end_line": 224,
+          "finding": "The strict digest compare treated an index entry with no sha256 as equal (`is_some_and(|d| d != ...)`). This contradicts the sealed guarantee, so the review fix treats a missing hash as differing for sealed sets."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/registry.rs",
+          "line": 916,
+          "end_line": 960,
+          "finding": "`publish` uploaded sealed files without re-hashing, so a swap after the verify step went undetected until `confirm`. The fix re-hashes right before building the upload argv."
+        },
+        {
+          "path": "crates/callisto-model/src/vcs/access.rs",
+          "line": 369,
+          "finding": "`git show -s --format=%ct HEAD` breaks under log.showSignature with a signed HEAD, so it needs `--no-show-signature`."
+        }
+      ],
+      "workflow": [
+        "Write the failing test first, then run a mutation check (revert part of the fix) to prove characterization snapshots catch regressions before refactoring.",
+        "Measure line coverage of the function being split and add characterization tests for unexecuted branches before moving code.",
+        "Use independent subagent reviews on risky changes. They found real defects in #202 and in the sealed-set work. Subagent hand-backs are not user input and need checking.",
+        "Verify with real tools (real cargo/gh/git, twine against pypiserver) because fake-tool harnesses let the 0.10.1 regression through.",
+        "The sandbox rejects heredocs and inline scripts mentioning git, BSD sed patterns and some cd/xargs forms. Work around with script files in the scratchpad or the Edit tool.",
+        "Agent idle_notification results truncate near 4000 characters, so request reports again via SendMessage."
+      ]
+    },
+    "friction": [
+      "The first stack PR (#205) conflicted after #202 merged and edited a test block that #205 moved. This needed merges upward through the stack.",
+      "Sandbox and permission refusals: heredocs, git inside inline Python, and the auto-mode classifier denying batch worktree removal.",
+      "I misreported #210 as still waiting on checks when the user had already merged it.",
+      "I spawned a pointless 'noop' agent that produced a confusing hand-back while the real review was still running.",
+      "GitHub timed out on `gh release list` and `git fetch`, so the 0.10.3 tags could not be confirmed at one point.",
+      "The first negative-control script tripped an unrelated repository-mismatch guard and proved nothing, so it had to be redone.",
+      "The first `just ci` runs failed on formatting and a stray blank line, and the e2e shims served empty hashes that sealed mode now rejects.",
+      "Several of my earlier claims were disproved by real-tool checks (uv stale pins, reproducibility, yank scope, build location)."
+    ],
+    "open_items": [
+      "The sealed-set PR was committed and pushed, but the transcript does not confirm it was opened or reviewed. #231 and #232 are awaiting user review and merge.",
+      "Python-only repos stay unsealed because they use the single-job workflow. Sealing them would need the CI route, so this is the user's decision.",
+      "Sealing is opt-in on the execute side (review F3). Document it as a deliberate deferral, or add a --require-sealed-python flag.",
+      "The 14-day upload-window warning is left out because the provider context has no clock.",
+      "The hosted workflow has not run, and the generated execute job still needs twine on PATH.",
+      "`build_python_distributions` builds twice if one package has two PyPI publishes. The is_wheel/is_sdist helpers are duplicated across artifact.rs and pypi_files.rs.",
+      "A fresh run after a partial upload rebuilds every file, so E307 fires on any non-bit-identical file.",
+      "W9/D01 owner wire and migration choices, W11 hosted verification, and previous-tag-templates for renames are still open.",
+      "Python dependency groups are deferred and recorded in docs/publishing.md.",
+      "Stale worktrees (stack-ci, wave1-stack, wave2-base, wave1-base, w2-sys-retry, owner-history, locked fix-gh-credentials) and W0 branch deletion need the user's per-branch confirmation.",
+      "SYS-BARRIER #213 and R1 #214 were open, and the real-tool attestation note on #216 was not posted.",
+      "Follow-ups to consider: uv build and uv publish as defaults, trusted publishing (OIDC), persisting the manifest in the GitHub release, and a longer index-lag confirmation window."
+    ]
+  }
+}
