@@ -18,6 +18,7 @@ use super::pypi_files::{self, BuiltFile, BuiltSet, PypiSimpleFile, PypiSimpleInd
 use super::{
     preflight_from_observation, wrong_role, EffectAuthorization, PreparedOperation, ProviderCapabilities,
     ProviderContext, ProviderRequest, RegistryPublishOperation, ReleasePreflight, ReleaseProvider,
+    VerifiedArtifactManifest,
 };
 
 pub(crate) struct RegistryProvider;
@@ -50,7 +51,12 @@ impl ReleaseProvider for RegistryProvider {
         context: &ProviderContext<'_>,
         request: &ProviderRequest<'_>,
     ) -> Result<ReleasePreflight, GraphError> {
-        adapter_for(request.id.package.ecosystem())?.preflight(context, request.id, registry_operation(request)?)
+        adapter_for(request.id.package.ecosystem())?.preflight(
+            context,
+            request.id,
+            registry_operation(request)?,
+            request.artifacts,
+        )
     }
 
     fn publish(
@@ -61,7 +67,7 @@ impl ReleaseProvider for RegistryProvider {
     ) -> Result<ExactEvidence, GraphError> {
         let operation = registry_operation(request)?;
         let adapter = adapter_for(request.id.package.ecosystem())?;
-        let output = adapter.publish(context, request.id, operation)?;
+        let output = adapter.publish(context, request.id, operation, request.artifacts)?;
         let outcome = adapter.classify(&output).map_err(|source| GraphError::Registry {
             package: operation.package_name.clone(),
             source,
@@ -69,7 +75,13 @@ impl ReleaseProvider for RegistryProvider {
         // Neither a zero exit nor the client's "already exists" text is a
         // receipt: a yanked version is not the version this intent authorized,
         // so only an exact observation may satisfy the operation.
-        let confirmed = adapter.confirm(context, operation, matches!(outcome, PublishOutcome::Published))?;
+        let confirmed = adapter.confirm(
+            context,
+            request.id,
+            operation,
+            matches!(outcome, PublishOutcome::Published),
+            request.artifacts,
+        )?;
         require_registry_confirmation(
             confirmed.is_terminal_success(),
             &operation.package_name,
@@ -156,6 +168,7 @@ pub(crate) trait RegistryEcosystem {
         context: &ProviderContext<'_>,
         id: &ReleaseOperationId,
         operation: &RegistryPublishOperation,
+        artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<CommandOutput, GraphError>;
 
     fn classify(&self, output: &CommandOutput) -> Result<PublishOutcome, RegistryError>;
@@ -166,6 +179,7 @@ pub(crate) trait RegistryEcosystem {
         context: &ProviderContext<'_>,
         id: &ReleaseOperationId,
         operation: &RegistryPublishOperation,
+        _artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<ReleasePreflight, GraphError> {
         match registry_observation(self, context, operation)? {
             // A registry with no query API at all has nothing to observe
@@ -181,8 +195,10 @@ pub(crate) trait RegistryEcosystem {
     fn confirm(
         &self,
         context: &ProviderContext<'_>,
+        _id: &ReleaseOperationId,
         operation: &RegistryPublishOperation,
         published: bool,
+        _artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<ProviderObservationV1, GraphError> {
         if published && self.can_observe_versions() {
             confirmed_registry_observation(self, context, operation)
@@ -376,6 +392,7 @@ impl RegistryEcosystem for CargoRegistry {
         context: &ProviderContext<'_>,
         _id: &ReleaseOperationId,
         operation: &RegistryPublishOperation,
+        _artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<CommandOutput, GraphError> {
         let registry_key =
             (operation.registry.key.as_str() != RegistryKey::CRATES_IO).then(|| operation.registry.key.as_str());
@@ -527,6 +544,7 @@ impl RegistryEcosystem for NpmRegistry {
         context: &ProviderContext<'_>,
         _id: &ReleaseOperationId,
         operation: &RegistryPublishOperation,
+        _artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<CommandOutput, GraphError> {
         if operation.by_directory {
             let argv = registry_argv::npm_publish_directory_argv(
@@ -582,7 +600,7 @@ fn pypi_simple_index_url(endpoint: Option<&str>, package_name: &str) -> String {
 /// The version segment of a simple-index filename, or `None` for an extension
 /// this parser does not recognize (a legacy installer, say).
 fn pypi_simple_file_version(filename: &str) -> Option<&str> {
-    pypi_files::dist_filename_parts(filename).map(|(_, version)| version)
+    callisto_model::pypi_dist_filename_parts(filename).map(|(_, version)| version)
 }
 
 /// Whether a simple-index file's filename names exactly the requested version.
@@ -744,17 +762,42 @@ impl PypiRegistry {
         })
     }
 
-    /// The files one build of this release produces, built once per run.
+    /// The files of this release, once per run: the build job's sealed set when the manifest has one, else a build.
     fn built_set(
         context: &ProviderContext<'_>,
+        id: &ReleaseOperationId,
         operation: &RegistryPublishOperation,
+        artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<Arc<BuiltSet>, GraphError> {
         let sets = context.file_sets().ok_or_else(|| GraphError::ReleaseInvariant {
             detail: "a Python release needs the per-run file set cache".to_string(),
         })?;
         sets.get_or_build(
             (operation.package_dir.clone(), operation.version.render().to_string()),
-            || Self::build_set(context, operation),
+            || match artifacts.and_then(|artifacts| artifacts.sealed_files(&id.package, &operation.version)) {
+                Some(files) => BuiltSet::sealed(
+                    files
+                        .into_iter()
+                        .map(|file| BuiltFile {
+                            filename: file.filename,
+                            path: file.path,
+                            sha256: file.sha256,
+                        })
+                        .collect(),
+                    &operation.package_name,
+                    &operation.version,
+                ),
+                None => {
+                    if artifacts.is_some() {
+                        eprintln!(
+                            "warning: the artifact manifest does not seal {} {}; building it in this job",
+                            operation.package_name,
+                            operation.version.render()
+                        );
+                    }
+                    Self::build_set(context, operation)
+                }
+            },
         )
     }
 
@@ -766,7 +809,18 @@ impl PypiRegistry {
                 message: error.to_string(),
             })
         })?;
-        let build = registry_argv::pypi_build_argv(context.root(), &operation.package_dir, dir.path())?;
+        Self::build_into(context, operation, dir.path())?;
+        BuiltSet::from_dir(dir, &operation.package_name, &operation.version)
+    }
+
+    /// Runs the build into `outdir`, with file timestamps pinned to the release commit.
+    pub(crate) fn build_into(
+        context: &ProviderContext<'_>,
+        operation: &RegistryPublishOperation,
+        outdir: &std::path::Path,
+    ) -> Result<(), GraphError> {
+        let epoch = callisto_model::vcs::GitAccess::new(context.root(), context.runner()).commit_time("HEAD")?;
+        let build = registry_argv::pypi_build_argv(context.root(), &operation.package_dir, outdir, epoch)?;
         let built = run_build_argv(context, &build)?;
         if built.exit_code != Some(0) {
             return Err(GraphError::ReleaseCommand {
@@ -778,7 +832,7 @@ impl PypiRegistry {
                 },
             });
         }
-        BuiltSet::from_dir(dir, &operation.package_name, &operation.version)
+        Ok(())
     }
 }
 
@@ -821,6 +875,7 @@ impl RegistryEcosystem for PypiRegistry {
         context: &ProviderContext<'_>,
         id: &ReleaseOperationId,
         operation: &RegistryPublishOperation,
+        artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<ReleasePreflight, GraphError> {
         let remote = match Self::remote(context, operation)? {
             PypiRemote::Absent => return Ok(proceed()),
@@ -832,9 +887,14 @@ impl RegistryEcosystem for PypiRegistry {
             }
             PypiRemote::Files(remote) => remote,
         };
-        let set = Self::built_set(context, operation)?;
+        let set = Self::built_set(context, id, operation, artifacts)?;
         let comparison = pypi_files::compare(&set, &remote);
         warn_about_extra_files(operation, &comparison.extras);
+        if let Some(filename) = comparison.differing.first() {
+            return Err(GraphError::PypiFileDiffers {
+                filename: (*filename).to_string(),
+            });
+        }
         if !comparison.yanked.is_empty() {
             return preflight_from_observation(
                 ProviderObservationV1::Conflict {
@@ -860,8 +920,9 @@ impl RegistryEcosystem for PypiRegistry {
         context: &ProviderContext<'_>,
         id: &ReleaseOperationId,
         operation: &RegistryPublishOperation,
+        artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<CommandOutput, GraphError> {
-        let set = Self::built_set(context, operation)?;
+        let set = Self::built_set(context, id, operation, artifacts)?;
         let remote = match Self::remote(context, operation)? {
             PypiRemote::Absent => Vec::new(),
             PypiRemote::Files(remote) => remote,
@@ -873,6 +934,11 @@ impl RegistryEcosystem for PypiRegistry {
             }
         };
         let comparison = pypi_files::compare(&set, &remote);
+        if let Some(filename) = comparison.differing.first() {
+            return Err(GraphError::PypiFileDiffers {
+                filename: (*filename).to_string(),
+            });
+        }
         if !comparison.yanked.is_empty() {
             return Err(GraphError::ReleaseRemoteConflict {
                 conflict: RemoteConflict::RegistryVersionDiffers,
@@ -890,6 +956,7 @@ impl RegistryEcosystem for PypiRegistry {
                 stderr: String::new(),
             });
         }
+        set.recheck(&missing)?;
         let paths: Vec<_> = missing.iter().map(|file| file.path.clone()).collect();
         let upload = registry_argv::pypi_upload_argv(
             context.root(),
@@ -908,14 +975,16 @@ impl RegistryEcosystem for PypiRegistry {
         registry_argv::classify_twine_output(output)
     }
 
-    /// Waits for every built file to be on the index; a file this run uploaded must carry the bytes it sent.
+    /// Waits for every file to be on the index; a sealed or uploaded file must carry the bytes it was sealed or sent with.
     fn confirm(
         &self,
         context: &ProviderContext<'_>,
+        id: &ReleaseOperationId,
         operation: &RegistryPublishOperation,
         published: bool,
+        artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<ProviderObservationV1, GraphError> {
-        let set = Self::built_set(context, operation)?;
+        let set = Self::built_set(context, id, operation, artifacts)?;
         let observe = || -> Result<ProviderObservationV1, GraphError> {
             Ok(match Self::remote(context, operation)? {
                 PypiRemote::Indeterminate(cause) => ProviderObservationV1::Indeterminate { cause },
@@ -927,7 +996,7 @@ impl RegistryEcosystem for PypiRegistry {
                             reason: ProviderConflictReason::RegistryVersionYanked,
                         }
                     } else if let Some(filename) = comparison.differing.first() {
-                        return Err(GraphError::PypiUploadedFileDiffers {
+                        return Err(GraphError::PypiFileDiffers {
                             filename: (*filename).to_string(),
                         });
                     } else if comparison.missing.is_empty() {
@@ -944,6 +1013,15 @@ impl RegistryEcosystem for PypiRegistry {
             observe()
         }
     }
+}
+
+/// Builds the sdist and wheel of a Python publish into `outdir`, for a build job that seals them.
+pub(crate) fn build_python_into(
+    context: &ProviderContext<'_>,
+    operation: &RegistryPublishOperation,
+    outdir: &std::path::Path,
+) -> Result<(), GraphError> {
+    PypiRegistry::build_into(context, operation, outdir)
 }
 
 /// The plan-time gate: an ecosystem whose client cannot prove a version absent

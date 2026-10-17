@@ -142,9 +142,10 @@ impl ReleaseRunEnvelopeV1 {
         if self.intent_digest != intent.digest {
             return Err(ReleaseRunEnvelopeError::MismatchedIntent);
         }
+        let sealable = !intent.artifact_slots.is_empty() || !super::python_publishes(intent).is_empty();
         match (intent.artifact_slots.is_empty(), &self.artifact_manifest_digest) {
             (false, None) => return Err(ReleaseRunEnvelopeError::MissingArtifactManifest),
-            (true, Some(_)) => return Err(ReleaseRunEnvelopeError::UnexpectedArtifactManifest),
+            (true, Some(_)) if !sealable => return Err(ReleaseRunEnvelopeError::UnexpectedArtifactManifest),
             _ => {}
         }
         // The coordinator that built and attested the binaries is the same
@@ -176,7 +177,7 @@ pub enum ReleaseRunEnvelopeError {
     NonGitReleaseSource,
     #[error("artifact release envelope requires an artifact manifest digest")]
     MissingArtifactManifest,
-    #[error("release run envelope carries an artifact manifest digest for a slot-less intent")]
+    #[error("release run envelope carries an artifact manifest digest for an intent with nothing to seal")]
     UnexpectedArtifactManifest,
     #[error("release run envelope orchestration revision is not the revision that attested the artifact slots")]
     MismatchedOrchestrationRevision,

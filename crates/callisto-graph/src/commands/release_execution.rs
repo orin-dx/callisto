@@ -118,8 +118,11 @@ fn require_verified_artifact_manifest(
 ) -> Result<(), GraphError> {
     match (intent.artifact_slots.is_empty(), artifacts) {
         (true, None) => Ok(()),
+        (true, Some(artifacts)) if !callisto_model::python_publishes(intent).is_empty() => {
+            require_artifact_manifest_matches_intent(intent, Some(artifacts.manifest()))
+        }
         (true, Some(_)) => Err(GraphError::ReleaseInvariant {
-            detail: "verified artifact manifest supplied for slot-less release intent".to_owned(),
+            detail: "verified artifact manifest supplied for a release intent with nothing to seal".to_owned(),
         }),
         (false, Some(artifacts)) => require_artifact_manifest_matches_intent(intent, Some(artifacts.manifest())),
         (false, None) => Err(GraphError::ReleasePreconditionUnmet {

@@ -1267,7 +1267,7 @@ fi
 printf 'HTTP/2 200 OK\r\ncontent-type: application/vnd.pypi.simple.v1+json\r\n\r\n{"meta":{"api-version":"1.0"},"name":"stable-python","files":['
 sep=''
 for f in "$@"; do
-  printf '%s{"filename":"%s","url":"https://files.example.invalid/x","hashes":{},"yanked":false}' "$sep" "$(basename "$f")"
+  printf '%s{"filename":"%s","url":"https://files.example.invalid/x","hashes":{"sha256":"%s"},"yanked":false}' "$sep" "$(basename "$f")" "$(cat "$f")"
   sep=','
 done
 printf ']}'
@@ -1288,7 +1288,7 @@ for f in "$@"; do
     echo 'HTTPError: 503 Service Unavailable' >&2
     exit 1
   fi
-  : > "$CALLISTO_TEST_PYPI_STATE/$name"
+  shasum -a 256 "$f" | cut -d' ' -f1 > "$CALLISTO_TEST_PYPI_STATE/$name"
   printf 'Uploading %s\n' "$name"
   sent=$((sent + 1))
 done
@@ -1343,6 +1343,173 @@ done
         assert_eq!(rig.log_count("git push"), 1);
     }
 
+    /// The build job's two steps: build every Python publish into `artifacts`, then seal the files in a manifest.
+    fn build_and_seal(dir: &Path, rig: &Rig, intent: &Path, artifacts: &Path, manifest: &Path) {
+        let built = rig_command(dir, dir, rig, TAG)
+            .args(["release", "build-python", "--intent", intent.to_str().unwrap()])
+            .args(["--artifact-dir", artifacts.to_str().unwrap()])
+            .output()
+            .unwrap();
+        assert!(built.status.success(), "build-python failed: {}", stderr_of(&built));
+        let sealed = rig_command(dir, dir, rig, TAG)
+            .args(["release", "artifact-manifest", "--intent", intent.to_str().unwrap()])
+            .args(["--artifact-dir", artifacts.to_str().unwrap(), "--seal-python"])
+            .args(["--out", manifest.to_str().unwrap()])
+            .output()
+            .unwrap();
+        assert!(
+            sealed.status.success(),
+            "artifact-manifest failed: {}",
+            stderr_of(&sealed)
+        );
+    }
+
+    #[test]
+    fn python_release_uploads_the_files_a_credential_free_build_sealed() {
+        let (dir, revision) = release_fixture();
+        let external = tempfile::tempdir().unwrap();
+        let intent_path = external.path().join("intent.json");
+        let result = plan(dir.path(), &revision, &intent_path);
+        assert!(result.status.success(), "Python plan failed: {}", stderr_of(&result));
+        let intent = assert_python_intent(&intent_path);
+        let rig = python_publishers(external.path(), &revision);
+        let artifacts = external.path().join("artifacts");
+        fs::create_dir(&artifacts).unwrap();
+        let manifest = external.path().join("manifest.json");
+        build_and_seal(dir.path(), &rig, &intent_path, &artifacts, &manifest);
+
+        // The generated workflow's `has_python` probe reads exactly these fields of the intent.
+        let wire: serde_json::Value = serde_json::from_slice(&fs::read(&intent_path).unwrap()).unwrap();
+        assert!(wire["operations"].as_array().unwrap().iter().any(|operation| {
+            operation["id"]["role"]["kind"] == "registryPublish"
+                && operation["id"]["package"].as_str().unwrap().starts_with("pypi/")
+        }));
+        let sealed: serde_json::Value = serde_json::from_slice(&fs::read(&manifest).unwrap()).unwrap();
+        let files = sealed["distributions"][0]["files"].as_array().unwrap();
+        assert_eq!(files.len(), 2, "{sealed}");
+        assert_eq!(sealed["distributions"][0]["package"], PACKAGE);
+
+        let receipt = external.path().join("receipt.json");
+        let args = [
+            "--artifact-manifest",
+            manifest.to_str().unwrap(),
+            "--artifact-dir",
+            artifacts.to_str().unwrap(),
+        ];
+        let first = execute_rig(dir.path(), &intent_path, &receipt, &rig, TAG, &args, None);
+        assert!(first.status.success(), "sealed execute failed: {}", stderr_of(&first));
+        assert_python_receipt(&receipt, &intent, "published", &revision);
+        let wire: serde_json::Value = serde_json::from_slice(&fs::read(&receipt).unwrap()).unwrap();
+        assert!(wire["envelope"]["artifactManifestDigest"].is_string(), "{wire}");
+
+        let calls = fs::read_to_string(external.path().join("pypi-calls.log")).unwrap();
+        let count = |prefix: &str| calls.lines().filter(|line| line.starts_with(prefix)).count();
+        assert_eq!(count("python "), 1, "only the build job built: {calls}");
+        assert_eq!(count("twine "), 1);
+
+        fs::remove_file(&receipt).unwrap();
+        let second = execute_rig(dir.path(), &intent_path, &receipt, &rig, TAG, &args, None);
+        assert!(second.status.success(), "sealed rerun failed: {}", stderr_of(&second));
+        assert_python_receipt(&receipt, &intent, "alreadySatisfied", &revision);
+        let calls = fs::read_to_string(external.path().join("pypi-calls.log")).unwrap();
+        assert_eq!(
+            calls.lines().filter(|l| l.starts_with("python ")).count(),
+            1,
+            "a rerun builds nothing"
+        );
+        assert_eq!(
+            calls.lines().filter(|l| l.starts_with("twine ")).count(),
+            1,
+            "a rerun uploads nothing"
+        );
+        assert_argv_within_allowlists(&rig.log, &rig.git_trace);
+    }
+
+    #[test]
+    fn a_sealed_file_changed_after_sealing_stops_the_release_before_any_upload() {
+        let (dir, revision) = release_fixture();
+        let external = tempfile::tempdir().unwrap();
+        let intent_path = external.path().join("intent.json");
+        let result = plan(dir.path(), &revision, &intent_path);
+        assert!(result.status.success(), "Python plan failed: {}", stderr_of(&result));
+        let rig = python_publishers(external.path(), &revision);
+        let artifacts = external.path().join("artifacts");
+        fs::create_dir(&artifacts).unwrap();
+        let manifest = external.path().join("manifest.json");
+        build_and_seal(dir.path(), &rig, &intent_path, &artifacts, &manifest);
+        fs::write(artifacts.join("stable_python-0.2.0.tar.gz"), "tampered\n").unwrap();
+
+        let receipt = external.path().join("receipt.json");
+        let args = [
+            "--artifact-manifest",
+            manifest.to_str().unwrap(),
+            "--artifact-dir",
+            artifacts.to_str().unwrap(),
+        ];
+        let run = execute_rig(dir.path(), &intent_path, &receipt, &rig, TAG, &args, None);
+        assert!(!run.status.success(), "a changed sealed file must stop the release");
+        assert!(
+            diagnostic_codes(&run).iter().any(|code| code == "E139"),
+            "{}",
+            stderr_of(&run)
+        );
+        assert!(!receipt.exists());
+        let calls = fs::read_to_string(external.path().join("pypi-calls.log")).unwrap();
+        assert_eq!(
+            calls.lines().filter(|line| line.starts_with("twine ")).count(),
+            0,
+            "{calls}"
+        );
+    }
+
+    #[test]
+    fn a_sealed_release_resumes_with_the_same_files_after_a_partial_upload() {
+        let (dir, revision) = release_fixture();
+        let external = tempfile::tempdir().unwrap();
+        let intent_path = external.path().join("intent.json");
+        let result = plan(dir.path(), &revision, &intent_path);
+        assert!(result.status.success(), "Python plan failed: {}", stderr_of(&result));
+        let intent = assert_python_intent(&intent_path);
+        let state = external.path().join("pypi-state");
+        fs::create_dir_all(&state).unwrap();
+        let fail = external.path().join("pypi-fail");
+        fs::write(&fail, "").unwrap();
+        let mut rig = python_publishers(external.path(), &revision);
+        rig.set("CALLISTO_TEST_PYPI_STATE", state.to_str().unwrap());
+        rig.set("CALLISTO_TEST_PYPI_FAIL", fail.to_str().unwrap());
+        for (program, body) in [("curl", PYPI_STATE_CURL), ("twine", PYPI_STATE_TWINE)] {
+            let path = rig.bin.join(program);
+            write_fixture(&path, body);
+            fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let artifacts = external.path().join("artifacts");
+        fs::create_dir(&artifacts).unwrap();
+        let manifest = external.path().join("manifest.json");
+        build_and_seal(dir.path(), &rig, &intent_path, &artifacts, &manifest);
+
+        let receipt = external.path().join("receipt.json");
+        let args = [
+            "--artifact-manifest",
+            manifest.to_str().unwrap(),
+            "--artifact-dir",
+            artifacts.to_str().unwrap(),
+        ];
+        let first = execute_rig(dir.path(), &intent_path, &receipt, &rig, TAG, &args, None);
+        assert!(!first.status.success(), "the dying upload must fail the run");
+        fs::remove_file(&fail).unwrap();
+        let second = execute_rig(dir.path(), &intent_path, &receipt, &rig, TAG, &args, None);
+        assert!(second.status.success(), "the rerun failed: {}", stderr_of(&second));
+        assert_python_receipt(&receipt, &intent, "published", &revision);
+        let calls = fs::read_to_string(external.path().join("pypi-calls.log")).unwrap();
+        let twine: Vec<_> = calls.lines().filter(|line| line.starts_with("twine ")).collect();
+        assert_eq!(twine, ["twine 2", "twine 1"], "{calls}");
+        assert_eq!(
+            calls.lines().filter(|line| line.starts_with("python ")).count(),
+            1,
+            "only the build job built, not either execute run: {calls}"
+        );
+    }
+
     const PYPI_CURL: &str = r#"#!/bin/sh
 set -eu
 [ "$#" = 5 ] && [ "$1" = '-sS' ] && [ "$2" = '-i' ] && [ "$3" = '-H' ] \
@@ -1376,7 +1543,9 @@ case "$3" in */stable_python-0.2.0.tar.gz) ;; *) exit 64 ;; esac
 [ -f "$2" ] && [ -f "$3" ] || exit 65
 [ ! -e "$CALLISTO_TEST_PYPI_MARKER" ] || exit 66
 printf 'twine upload\n' >> "$CALLISTO_TEST_PYPI_CALLS"
-printf '%s\n' '{"meta":{"api-version":"1.0"},"name":"stable-python","files":[{"filename":"stable_python-0.2.0-py3-none-any.whl","url":"https://files.example.invalid/stable_python-0.2.0-py3-none-any.whl","hashes":{},"yanked":false},{"filename":"stable_python-0.2.0.tar.gz","url":"https://files.example.invalid/stable_python-0.2.0.tar.gz","hashes":{},"yanked":false}]}' > "$CALLISTO_TEST_PYPI_MARKER"
+wheel_sha=$(shasum -a 256 "$2" | cut -d' ' -f1)
+sdist_sha=$(shasum -a 256 "$3" | cut -d' ' -f1)
+printf '{"meta":{"api-version":"1.0"},"name":"stable-python","files":[{"filename":"stable_python-0.2.0-py3-none-any.whl","url":"https://files.example.invalid/w","hashes":{"sha256":"%s"},"yanked":false},{"filename":"stable_python-0.2.0.tar.gz","url":"https://files.example.invalid/s","hashes":{"sha256":"%s"},"yanked":false}]}\n' "$wheel_sha" "$sdist_sha" > "$CALLISTO_TEST_PYPI_MARKER"
 printf 'Uploading stable_python-0.2.0-py3-none-any.whl\nUploading stable_python-0.2.0.tar.gz\n'
 "#;
 }

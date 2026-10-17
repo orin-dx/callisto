@@ -834,6 +834,11 @@ pub const TOOL_SHAPES: &[ToolShape] = &[
         flags: &["--quiet"],
     },
     ToolShape {
+        tool: "git",
+        subcommand: &["show"],
+        flags: &["-s", "--no-show-signature", "--format"],
+    },
+    ToolShape {
         tool: "cargo",
         subcommand: &["publish"],
         flags: &["--manifest-path", "--locked", "--registry"],
@@ -1437,11 +1442,8 @@ pub fn execute_rig_in(
     extra: &[&str],
     orchestration: Option<&str>,
 ) -> Output {
-    let path = format!("{}:{}", rig.bin.display(), std::env::var("PATH").unwrap());
     let head = git(root, &["rev-parse", "HEAD"]);
-    let mut command = Command::new(env!("CARGO_BIN_EXE_callisto"));
-    command
-        .args(["--format", "json", "--cwd", cwd.to_str().unwrap()])
+    rig_command(root, cwd, rig, forge_tag)
         .args([
             "release",
             "execute",
@@ -1453,6 +1455,16 @@ pub fn execute_rig_in(
             orchestration.unwrap_or(&head),
         ])
         .args(extra)
+        .output()
+        .expect("release execute should run")
+}
+
+/// A `callisto` command wired to the rig's fake providers, for any release subcommand.
+pub fn rig_command(root: &Path, cwd: &Path, rig: &Rig, forge_tag: &str) -> Command {
+    let path = format!("{}:{}", rig.bin.display(), std::env::var("PATH").unwrap());
+    let mut command = Command::new(env!("CARGO_BIN_EXE_callisto"));
+    command
+        .args(["--format", "json", "--cwd", cwd.to_str().unwrap()])
         .env("PATH", path)
         .env("CALLISTO_TEST_LOG", &rig.log)
         .env("GH_TOKEN", "fake-forge-token")
@@ -1472,7 +1484,7 @@ pub fn execute_rig_in(
     for (key, value) in &rig.env {
         command.env(key, value);
     }
-    command.output().expect("release execute should run")
+    command
 }
 
 pub fn stderr_of(output: &Output) -> String {

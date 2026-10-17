@@ -32,11 +32,22 @@
       ]
     },
     {
-      "name": "callisto release artifact-manifest (hidden)",
-      "signature": "callisto release artifact-manifest --intent FILE --artifact-dir DIR --out FILE",
-      "description": "Hashes one regular file per declared artifact slot and writes the artifact manifest.",
+      "name": "callisto release build-python (hidden)",
+      "signature": "callisto release build-python [--source-root DIR] --intent FILE --artifact-dir DIR",
+      "description": "Builds the sdist and wheel of every Python publish in the plan into the directory, without registry credentials.",
       "error_conditions": [
-        "Plan declares no slots: E219.",
+        "--dry-run: E309.",
+        "Plan publishes no Python package: E308.",
+        "A build with no wheel or no sdist: E306."
+      ]
+    },
+    {
+      "name": "callisto release artifact-manifest (hidden)",
+      "signature": "callisto release artifact-manifest --intent FILE --artifact-dir DIR [--seal-python] --out FILE",
+      "description": "Hashes one regular file per declared artifact slot and writes the artifact manifest. With --seal-python it also records the name, size and sha256 of every built Python file of the plan.",
+      "error_conditions": [
+        "Plan declares no slots and --seal-python is absent: E219.",
+        "--seal-python on a plan that publishes no Python package: E308.",
         "Asset missing, a symlink or not a regular file: E221."
       ]
     },
@@ -199,7 +210,7 @@
     },
     {
       "id": "REL-PUB-04",
-      "criterion": "PyPI publish builds with `python3 -m build --sdist --wheel --outdir <temporary directory>` in the package directory, falling back to `python` and failing with E170 when neither is on PATH, and fails with E306 when the build produced no wheel or no sdist for the version. It then runs `twine upload` naming only the built files the index lacks, with `--repository-url` for a configured index and never `--skip-existing`. One build serves the preflight and the publish of a run."
+      "criterion": "PyPI publish builds with `python3 -m build --sdist --wheel --outdir <temporary directory>` in the package directory, falling back to `python` and failing with E170 when neither is on PATH, and fails with E306 when the build produced no wheel or no sdist for the version. It then runs `twine upload` naming only the built files the index lacks, with `--repository-url` for a configured index and never `--skip-existing`. One build serves the preflight and the publish of a run. Every build runs with `SOURCE_DATE_EPOCH` set to the release commit's committer time. `release build-python` runs the same build for each Python publish of a plan into `--artifact-dir`."
     },
     {
       "id": "REL-PUB-05",
@@ -216,7 +227,7 @@
     },
     {
       "id": "REL-PUB-08",
-      "criterion": "PyPI observation fetches `<index>/<normalized-name>/` (default `https://pypi.org/simple`) with `curl` and `Accept: application/vnd.pypi.simple.v1+json`. In a 200 JSON body, any matching yanked file means absent; otherwise at least one matching non-yanked file means present. That version-level read serves every use outside an effect. Before a PyPI effect, `release execute` proceeds without a build when the index has no file of the version. Otherwise it builds, and treats the release as already satisfied only when every built file is on the index by filename and not yanked. A built file the index holds yanked is a remote conflict, and a file the index holds that the build did not produce is reported with a warning and not checked. After an upload, confirmation waits for every built file to be visible, and a file this run uploaded must carry the sha256 the index serves for it, or the run fails with E307. A file from an earlier attempt is matched by name, not by digest. A 404 or no matching file means absent, and a non-JSON body or other non-retryable status is indeterminate. Transient HTTP statuses use the observation retry policy."
+      "criterion": "PyPI observation fetches `<index>/<normalized-name>/` (default `https://pypi.org/simple`) with `curl` and `Accept: application/vnd.pypi.simple.v1+json`. In a 200 JSON body, any matching yanked file means absent; otherwise at least one matching non-yanked file means present. That version-level read serves every use outside an effect. Before a PyPI effect, `release execute` proceeds without a build when the index has no file of the version. Otherwise it builds, and treats the release as already satisfied only when every built file is on the index by filename and not yanked. A built file the index holds yanked is a remote conflict, and a file the index holds that the build did not produce is reported with a warning and not checked. After an upload, confirmation waits for every built file to be visible, and a file this run uploaded must carry the sha256 the index serves for it, or the run fails with E307. A file from an earlier attempt is matched by name, not by digest, unless the artifact manifest seals the release's files: then the run builds nothing, uploads those exact files, compares the sha256 of every file the index holds under a sealed name, and fails with E307 before any upload when one differs. A 404 or no matching file means absent, and a non-JSON body or other non-retryable status is indeterminate. Transient HTTP statuses use the observation retry policy."
     },
     {
       "id": "REL-PUB-09",
@@ -279,7 +290,7 @@
     },
     {
       "id": "REL-GH-05",
-      "criterion": "`release artifact-manifest` requires, for each slot, a regular non-symlink file named `asset-name` directly in `--artifact-dir` (`E221` for a symlink or non-file, an I/O error when missing) and records its sha256 and byte length. With slots, `release execute` requires both `--artifact-manifest` and `--artifact-dir` (`E233`); without slots it rejects either flag (`E232`).",
+      "criterion": "`release artifact-manifest` requires, for each slot, a regular non-symlink file named `asset-name` directly in `--artifact-dir` (`E221` for a symlink or non-file, an I/O error when missing) and records its sha256 and byte length. With slots, `release execute` requires both `--artifact-manifest` and `--artifact-dir` (`E233`); without slots it rejects either flag (`E232`) unless the manifest seals Python files. `--seal-python` records the wheel and sdist of every Python publish of the plan, sealed all or none, each named for its package and version, and `release execute` verifies each file's sha256 and byte length (`E139`) before any effect.",
       "is_error_case": true
     },
     {

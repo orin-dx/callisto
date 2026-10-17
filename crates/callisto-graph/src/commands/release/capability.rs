@@ -69,6 +69,25 @@ impl ValidatedReleaseIntent<'_> {
             .with_file_sets(&self.file_sets)
     }
 
+    /// Builds every Python publish of the intent into `outdir` and returns the packages built.
+    ///
+    /// This is the credential-free build job's work: the executing job later uploads these exact files.
+    pub fn build_python_distributions(&self, outdir: &Path) -> Result<Vec<String>, GraphError> {
+        let context = self.context();
+        let mut built = Vec::new();
+        for (id, prepared) in &self.prepared.operations {
+            let PreparedOperation::RegistryPublish(operation) = prepared else {
+                continue;
+            };
+            if id.package.ecosystem() != callisto_model::Ecosystem::Pypi {
+                continue;
+            }
+            super::provider::build_python_into(&context, operation, outdir)?;
+            built.push(operation.package_name.clone());
+        }
+        Ok(built)
+    }
+
     fn prepared_operation(&self, id: &ReleaseOperationId) -> Result<&PreparedOperation, GraphError> {
         self.prepared
             .operations

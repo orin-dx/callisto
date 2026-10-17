@@ -479,7 +479,7 @@ fn pypi_publish_against_a_real_pypiserver_registry_is_retrievable_afterward() {
     let index = format!("http://127.0.0.1:{port}");
 
     let outdir = tempfile::tempdir().unwrap();
-    let build = pypi_build_argv(root, Path::new(""), outdir.path()).unwrap();
+    let build = pypi_build_argv(root, Path::new(""), outdir.path(), 1_700_000_000).unwrap();
 
     // `--no-isolation`: production `pypi_build_argv` deliberately omits it (a real release
     // wants a clean, isolated build), but a plain `python -m build` here would pip-install

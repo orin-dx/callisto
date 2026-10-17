@@ -890,7 +890,7 @@ fn matrix_workflow_artifact_slots_build_and_archive_to_the_asset_name() {
 fn matrix_workflow_execute_places_napi_artifacts_then_manifests_then_executes() {
     let workflow = render_matrix_workflow();
     let execute = job(&workflow, "execute");
-    assert!(execute.contains("needs: [plan, build]"), "{execute}");
+    assert!(execute.contains("needs: [plan, build, build-python]"), "{execute}");
     let place = execute
         .find("npx --yes --package @napi-rs/cli@3.10.4 napi artifacts")
         .expect("napi artifacts step");
@@ -912,12 +912,53 @@ fn matrix_workflow_execute_places_napi_artifacts_then_manifests_then_executes() 
         "{execute}"
     );
     assert!(!workflow.contains("PYPI_TOKEN"), "{workflow}");
-    for job_name in ["plan", "build"] {
+    for job_name in ["plan", "build", "build-python"] {
         let non_publishing = job(&workflow, job_name);
         for secret in ["CARGO_REGISTRY_TOKEN", "NPM_TOKEN", "PYPI_TOKEN"] {
             assert!(!non_publishing.contains(secret), "{job_name}: {non_publishing}");
         }
     }
+}
+
+// Python distributions are built in a job with no credentials; the executing job seals and uploads exactly those files.
+#[test]
+fn matrix_workflow_builds_python_without_credentials_and_seals_the_files_in_execute() {
+    let workflow = render_matrix_workflow();
+    let build = job(&workflow, "build-python");
+    assert!(build.contains("permissions: {contents: read}"), "{build}");
+    assert!(build.contains("callisto release build-python"), "{build}");
+    assert!(build.contains("name: python-dist"), "{build}");
+    assert!(!build.contains("secrets."), "{build}");
+    let plan = job(&workflow, "plan");
+    assert!(
+        plan.contains("has_python: ${{ steps.matrix.outputs.has_python }}"),
+        "{plan}"
+    );
+    let execute = job(&workflow, "execute");
+    let download = execute.find("name: python-dist").expect("python download");
+    let manifest = execute.find("--seal-python").expect("sealed manifest");
+    let run = execute
+        .find(r#"callisto release execute "${args[@]}""#)
+        .expect("release execute");
+    assert!(download < manifest && manifest < run, "{execute}");
+    let twine = execute.find("pip install --quiet twine==").expect("twine install");
+    assert!(twine < run && !execute[..twine].contains("secrets."), "{execute}");
+}
+
+// A Python-only workspace publishes from one job, so that job needs the build and upload tools on its PATH.
+#[test]
+fn simple_workflow_installs_the_python_tools_only_when_publishing_to_pypi() {
+    let mut facts = cargo_only_facts();
+    let without = render_workflow_0_8_0(&facts, "main");
+    assert!(!without.contains("twine"), "{without}");
+
+    facts.ecosystems = BTreeSet::from([Ecosystem::Cargo, Ecosystem::Pypi]);
+    let with = render_workflow_0_8_0(&facts, "main");
+    let release = job(&with, "release");
+    let install = release.find("pip install --quiet build==").expect("tools install");
+    let action = release.find("callisto-action@").expect("release action");
+    assert!(release.contains("twine=="), "{release}");
+    assert!(install < action && !release[..action].contains("secrets."), "{release}");
 }
 
 // npm provenance is requested only when the workspace has an npm package.

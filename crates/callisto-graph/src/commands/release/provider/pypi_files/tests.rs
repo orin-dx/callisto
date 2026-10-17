@@ -1,5 +1,6 @@
 use super::*;
 use callisto_model::VersionGrammar;
+use sha2::{Digest, Sha256};
 
 fn version(raw: &str) -> Version {
     Version::parse(raw, VersionGrammar::Pep440).unwrap()
@@ -33,17 +34,6 @@ fn remote(filename: &str, sha256: Option<&str>, yanked: bool) -> PypiSimpleFile 
             .map(|digest| HashMap::from([("sha256".to_string(), digest.to_string())]))
             .unwrap_or_default(),
     }
-}
-
-#[test]
-fn a_filename_splits_into_its_name_and_version() {
-    assert_eq!(
-        dist_filename_parts("my_pkg-1.0.0-py3-none-any.whl"),
-        Some(("my_pkg", "1.0.0"))
-    );
-    assert_eq!(dist_filename_parts("my-pkg-1.0.0.tar.gz"), Some(("my-pkg", "1.0.0")));
-    assert_eq!(dist_filename_parts("my_pkg-1.0.0.egg"), None);
-    assert_eq!(dist_filename_parts("README.md"), None);
 }
 
 #[test]

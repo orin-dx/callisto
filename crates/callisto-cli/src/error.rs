@@ -159,6 +159,17 @@ pub enum CliError {
     #[diagnostic(code(E219), help("plan the release with --orchestration-revision and --artifact-repository so the intent declares artifact slots"))]
     ReleaseNoArtifactSlots,
 
+    #[error("release intent publishes no Python package; there is nothing to build or seal")]
+    #[diagnostic(
+        code(E308),
+        help("drop --seal-python and `release build-python` for an intent without a Python publish")
+    )]
+    ReleaseNoPythonPublishes,
+
+    #[error("release build-python writes build output; remove --dry-run")]
+    #[diagnostic(code(E309), help("re-run `callisto release build-python` without --dry-run"))]
+    ReleaseBuildPythonDryRun,
+
     #[error("artifact manifests require a Git commit release source")]
     #[diagnostic(code(E220), help("plan the release from a Git commit source"))]
     ReleaseManifestSourceNotGit,
@@ -225,10 +236,12 @@ pub enum CliError {
     #[diagnostic(code(E231), help("pass both --orchestration-revision and --artifact-repository"))]
     ReleaseOrchestrationFlagsRequired,
 
-    #[error("release intent declares no binary artifact slots; omit --artifact-manifest and --artifact-dir")]
+    #[error("release intent declares no binary artifact slots and the manifest seals no Python files; omit --artifact-manifest and --artifact-dir")]
     #[diagnostic(
         code(E232),
-        help("drop --artifact-manifest and --artifact-dir for an intent without artifact slots")
+        help(
+            "drop --artifact-manifest and --artifact-dir for an intent without artifact slots or sealed Python files"
+        )
     )]
     ReleaseUnexpectedArtifactInputs,
 
@@ -538,6 +551,8 @@ mod tests {
             CliError::ReleasePlanDryRun,
             CliError::ReleaseExecuteDryRun,
             CliError::ReleaseNoArtifactSlots,
+            CliError::ReleaseNoPythonPublishes,
+            CliError::ReleaseBuildPythonDryRun,
             CliError::ReleaseManifestSourceNotGit,
             CliError::ReleaseArtifactNotRegularFile {
                 asset: "x".to_owned(),

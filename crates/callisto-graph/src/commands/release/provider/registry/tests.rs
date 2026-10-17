@@ -1046,7 +1046,7 @@ fn a_platform_package_is_published_by_directory_with_npm() {
 
     adapter_for(Ecosystem::Npm)
         .unwrap()
-        .publish(&context, &operation_id(Ecosystem::Npm, &platform), &platform)
+        .publish(&context, &operation_id(Ecosystem::Npm, &platform), &platform, None)
         .unwrap();
     let dir = root.path().join("packages/cli/npm/linux-x64-gnu");
     assert_eq!(
@@ -1068,7 +1068,7 @@ fn a_platform_package_is_published_by_directory_with_npm() {
     let owner = operation("npm", "@s/cli", "1.0.0");
     adapter_for(Ecosystem::Npm)
         .unwrap()
-        .publish(&context, &operation_id(Ecosystem::Npm, &owner), &owner)
+        .publish(&context, &operation_id(Ecosystem::Npm, &owner), &owner, None)
         .unwrap();
     assert_eq!(runner.0.lock().unwrap()[0].0, "pnpm");
     assert!(runner.0.lock().unwrap()[0].1.contains(&"--filter=@s/cli".to_owned()));

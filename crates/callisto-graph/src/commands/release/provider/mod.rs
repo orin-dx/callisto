@@ -18,7 +18,8 @@ use crate::GraphError;
 use super::binding::{recheck_git_remote, PreparedGitRemote, PreparedRegistryBinding};
 use super::release_artifacts::VerifiedArtifactManifest;
 
-pub(crate) use pypi_files::PypiFileSets;
+pub(crate) use pypi_files::{seal_distributions, PypiFileSets};
+pub(crate) use registry::build_python_into;
 
 pub(crate) mod artifact;
 pub(crate) mod forge;

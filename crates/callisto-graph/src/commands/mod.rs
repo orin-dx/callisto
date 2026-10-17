@@ -24,7 +24,7 @@ pub use release::{
     plan_workspace_release, validate_local_release_intent, validate_release_intent, ArtifactBuildPolicy,
     CiReleaseRoute, LocalReleasePlan, LocalReleaseSource, ReleasePreflight, ReleaseProviderSet, ValidatedReleaseIntent,
 };
-pub use release_artifacts::{verify_artifact_manifest, VerifiedArtifactManifest};
+pub use release_artifacts::{seal_python_distributions, verify_artifact_manifest, VerifiedArtifactManifest};
 pub use release_decision::{
     derive_release_commit_decision, derive_release_decision, derive_selected_release_decision,
     derive_unreleased_decision,

@@ -312,12 +312,20 @@ pub fn npm_publish_directory_argv(
 
 // ----------------------------------------------------------------- pypi
 
-/// `python -m build --sdist --wheel --outdir <outdir>` in the package directory, with the first interpreter on PATH.
-pub fn pypi_build_argv(workspace_root: &Path, package_dir: &Path, outdir: &Path) -> Result<Argv, GraphError> {
+/// `python -m build --sdist --wheel --outdir <outdir>` in the package directory, with the first interpreter on PATH
+/// and `SOURCE_DATE_EPOCH` set so backends that honor it stamp the same time into every rebuild.
+pub fn pypi_build_argv(
+    workspace_root: &Path,
+    package_dir: &Path,
+    outdir: &Path,
+    source_date_epoch: u64,
+) -> Result<Argv, GraphError> {
     let interpreter = resolve_python_interpreter(std::env::var_os("PATH").as_deref())?;
     Ok(Argv {
-        program: interpreter.to_string(),
+        program: "env".to_string(),
         args: vec![
+            format!("SOURCE_DATE_EPOCH={source_date_epoch}"),
+            interpreter.to_string(),
             "-m".to_string(),
             "build".to_string(),
             "--sdist".to_string(),
@@ -774,16 +782,19 @@ mod tests {
             Path::new("/workspace"),
             Path::new("packages/my-pkg"),
             Path::new("/tmp/out"),
+            1_700_000_000,
         )
         .unwrap();
+        assert_eq!(build.program, "env");
+        assert_eq!(build.args[0], "SOURCE_DATE_EPOCH=1700000000");
         assert!(
-            build.program == "python3" || build.program == "python",
+            build.args[1] == "python3" || build.args[1] == "python",
             "{}",
-            build.program
+            build.args[1]
         );
         assert_eq!(
-            build.args,
-            vec!["-m", "build", "--sdist", "--wheel", "--outdir", "/tmp/out"]
+            build.args[2..],
+            ["-m", "build", "--sdist", "--wheel", "--outdir", "/tmp/out"]
         );
         assert_eq!(build.cwd, Path::new("/workspace/packages/my-pkg"));
     }
