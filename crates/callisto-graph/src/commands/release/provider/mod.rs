@@ -192,7 +192,7 @@ pub(crate) struct ProviderContext<'a> {
     runner: &'a dyn CommandRunner,
     git_remote: Option<&'a PreparedGitRemote>,
     sleeper: &'a dyn policy::Sleeper,
-    /// The Python file sets built so far in this run; without it every use builds its own.
+    /// The Python file sets built so far in this run.
     file_sets: Option<&'a PypiFileSets>,
 }
 

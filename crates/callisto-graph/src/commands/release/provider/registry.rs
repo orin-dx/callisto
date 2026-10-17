@@ -177,8 +177,7 @@ pub(crate) trait RegistryEcosystem {
         }
     }
 
-    /// The observation that decides whether a finished publish may be recorded. `published` is whether the client
-    /// reported a new publish, so the registry may still be catching up.
+    /// The observation that lets a finished publish be recorded; `published` means the index may still lag.
     fn confirm(
         &self,
         context: &ProviderContext<'_>,
@@ -750,14 +749,13 @@ impl PypiRegistry {
         context: &ProviderContext<'_>,
         operation: &RegistryPublishOperation,
     ) -> Result<Arc<BuiltSet>, GraphError> {
-        let build = || Self::build_set(context, operation);
-        match context.file_sets() {
-            Some(sets) => sets.get_or_build(
-                (operation.package_dir.clone(), operation.version.render().to_string()),
-                build,
-            ),
-            None => build().map(Arc::new),
-        }
+        let sets = context.file_sets().ok_or_else(|| GraphError::ReleaseInvariant {
+            detail: "a Python release needs the per-run file set cache".to_string(),
+        })?;
+        sets.get_or_build(
+            (operation.package_dir.clone(), operation.version.render().to_string()),
+            || Self::build_set(context, operation),
+        )
     }
 
     /// Builds the sdist and wheel into a fresh directory, so a stale `dist/` can never reach the upload.
@@ -817,8 +815,7 @@ impl RegistryEcosystem for PypiRegistry {
         Ok(classify_pypi_simple(&output, &operation.version))
     }
 
-    /// An index with none of the release's files needs no build to know the effect may proceed. Any file at all
-    /// means the release may be partly published, so the build says which files are missing.
+    /// No file on the index needs no build; any file means a partial release, so a build says which are missing.
     fn preflight(
         &self,
         context: &ProviderContext<'_>,
@@ -911,8 +908,7 @@ impl RegistryEcosystem for PypiRegistry {
         registry_argv::classify_twine_output(output)
     }
 
-    /// Confirms every built file is on the index, waiting for the index to catch up after an upload. A file this
-    /// run uploaded must carry the bytes it sent.
+    /// Waits for every built file to be on the index; a file this run uploaded must carry the bytes it sent.
     fn confirm(
         &self,
         context: &ProviderContext<'_>,

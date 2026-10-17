@@ -312,10 +312,7 @@ pub fn npm_publish_directory_argv(
 
 // ----------------------------------------------------------------- pypi
 
-/// `python -m build --sdist --wheel --outdir <outdir>`, run from the package directory.
-///
-/// The interpreter comes from `resolve_python_interpreter` -- `python3` first, `python` as a fallback -- since many
-/// systems (macOS, Debian) ship no bare `python`.
+/// `python -m build --sdist --wheel --outdir <outdir>` in the package directory, with the first interpreter on PATH.
 pub fn pypi_build_argv(workspace_root: &Path, package_dir: &Path, outdir: &Path) -> Result<Argv, GraphError> {
     let interpreter = resolve_python_interpreter(std::env::var_os("PATH").as_deref())?;
     Ok(Argv {
@@ -332,11 +329,7 @@ pub fn pypi_build_argv(workspace_root: &Path, package_dir: &Path, outdir: &Path)
     })
 }
 
-/// `twine upload [--repository-url <index>] <files>...`: exactly the files named, never a glob.
-///
-/// No `--skip-existing`: it skips by filename or error text without comparing content, so it would adopt a file with
-/// other bytes as published. The caller names only files the index lacks, so a file that already exists is a real
-/// conflict and fails the upload.
+/// `twine upload` of exactly `files`, never a glob or `--skip-existing`, which skips by name without comparing bytes.
 pub fn pypi_upload_argv(workspace_root: &Path, package_dir: &Path, index: Option<&str>, files: &[PathBuf]) -> Argv {
     let mut args = vec!["upload".to_string()];
     if let Some(index) = index {
@@ -524,10 +517,13 @@ pub(crate) fn classify_twine_output(output: &CommandOutput) -> Result<PublishOut
     if let Some(err) = detect_auth_failure(&combined, output) {
         return Err(err);
     }
+    let progress = callisto_model::redact_command_stderr(&output.stdout);
+    let progress: Vec<_> = progress.lines().rev().take(8).collect();
     Err(RegistryError::Other(format!(
-        "twine upload failed (exit {:?}): {}",
+        "twine upload failed (exit {:?}): {}{}",
         output.exit_code,
-        output.redacted_stderr().trim()
+        progress.into_iter().rev().collect::<Vec<_>>().join("\n"),
+        output.redacted_stderr().trim_end()
     )))
 }
 
@@ -967,6 +963,28 @@ mod tests {
     #[test]
     fn classify_twine_output_failure_is_other() {
         let out = output(1, "", "some unrecognized failure");
+        assert!(matches!(classify_twine_output(&out), Err(RegistryError::Other(_))));
+    }
+
+    /// Twine prints its progress and errors to stdout, so a failure names the files that went up first.
+    #[test]
+    fn classify_twine_output_failure_reports_the_progress_on_stdout() {
+        let out = output(
+            1,
+            "Uploading my_pkg-1.0.0-py3-none-any.whl\nUploading my_pkg-1.0.0.tar.gz\nHTTPError: 503 Service Unavailable\n",
+            "",
+        );
+        let Err(RegistryError::Other(message)) = classify_twine_output(&out) else {
+            panic!("a failed upload is an error");
+        };
+        assert!(message.contains("Uploading my_pkg-1.0.0-py3-none-any.whl"), "{message}");
+        assert!(message.contains("503"), "{message}");
+    }
+
+    /// A failing run that mentions "already exists" is never reported as published.
+    #[test]
+    fn classify_twine_output_a_failing_run_is_never_already_published() {
+        let out = output(1, "", "HTTPError: 400 File already exists");
         assert!(matches!(classify_twine_output(&out), Err(RegistryError::Other(_))));
     }
 

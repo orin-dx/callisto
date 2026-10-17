@@ -282,6 +282,20 @@ fn publish_and_confirm(run: &Run, runner: &PypiRunner) -> Result<ProviderObserva
     PypiRegistry.confirm(&context, &operation, matches!(outcome, PublishOutcome::Published))
 }
 
+/// A confirm that rebuilt would compare an upload with fresh bytes, so a run without the cache fails loudly.
+#[test]
+fn a_python_release_without_the_per_run_cache_is_an_error() {
+    let root = tempfile::tempdir().unwrap();
+    let runner = PypiRunner::new(&BUILD).with(|world| world.visible = vec![held(WHEEL, "wheel bytes")]);
+    let context = ProviderContext::new(root.path(), &runner, None);
+    let operation = operation();
+    let error = PypiRegistry
+        .preflight(&context, &id(&operation), &operation)
+        .unwrap_err();
+    assert!(matches!(error, GraphError::ReleaseInvariant { .. }), "{error:?}");
+    assert_eq!(runner.count("python3") + runner.count("python"), 0);
+}
+
 #[test]
 fn an_index_with_none_of_the_files_proceeds_without_a_build() {
     let run = Run::new();

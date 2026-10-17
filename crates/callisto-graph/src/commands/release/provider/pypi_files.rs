@@ -36,10 +36,7 @@ impl PypiSimpleFile {
     }
 }
 
-/// The name and version segments of a wheel or sdist filename, or `None` for another kind of file.
-///
-/// A wheel's distribution segment is PEP 427-escaped to underscores only, so splitting on `-` yields name and version
-/// first. A PEP 440 version never contains a hyphen, so an sdist's last `-` is always the name/version boundary.
+/// The name and version of a wheel or sdist filename; an sdist's last `-` splits them, as a version has no hyphen.
 pub(super) fn dist_filename_parts(filename: &str) -> Option<(&str, &str)> {
     if let Some(stem) = filename.strip_suffix(".whl") {
         let mut segments = stem.split('-');
@@ -156,8 +153,7 @@ impl Comparison<'_> {
     }
 }
 
-/// Compares `set` with the release's files on the index. Presence is by filename; a digest is compared only for
-/// files this run uploaded, since a rebuild need not be byte-identical to an earlier attempt's upload.
+/// Presence is by filename; a digest is compared only for files this run uploaded, as a rebuild need not match.
 pub(super) fn compare<'a>(set: &'a BuiltSet, remote: &'a [PypiSimpleFile]) -> Comparison<'a> {
     let uploaded = set.uploaded();
     let mut comparison = Comparison::default();
@@ -180,8 +176,7 @@ pub(super) fn compare<'a>(set: &'a BuiltSet, remote: &'a [PypiSimpleFile]) -> Co
     comparison
 }
 
-/// The built sets of one run, by package directory and version, so a preflight and the publish that follows share one
-/// build instead of making two.
+/// The built sets of one run, so a preflight and the publish after it share one build.
 #[derive(Debug, Default)]
 pub(crate) struct PypiFileSets(Mutex<HashMap<(PathBuf, String), Arc<BuiltSet>>>);
 

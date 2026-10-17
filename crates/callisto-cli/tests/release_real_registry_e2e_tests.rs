@@ -345,7 +345,7 @@ fn npm_publish_against_a_real_verdaccio_registry_is_retrievable_afterward() {
 // --------------------------------------------------------------------- pypi
 
 /// Whether `interpreter` can `import module` -- the actual precondition for
-/// `pypi_publish_argv`'s `python -m build` step, not just the interpreter
+/// `pypi_build_argv`'s `python -m build` step, not just the interpreter
 /// binary existing.
 fn python_module_importable(interpreter: &str, module: &str) -> bool {
     Command::new(interpreter)
@@ -357,7 +357,7 @@ fn python_module_importable(interpreter: &str, module: &str) -> bool {
         .is_ok_and(|status| status.success())
 }
 
-/// Mirrors `pypi_publish_argv`'s own interpreter resolution (`python3` first,
+/// Mirrors `pypi_build_argv`'s own interpreter resolution (`python3` first,
 /// `python` as a fallback), so this test skips exactly when the production
 /// code would fail to resolve one.
 fn resolved_python() -> Option<&'static str> {

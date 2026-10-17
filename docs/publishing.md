@@ -95,7 +95,7 @@ Native publish hooks, including `prepare` and `prepublishOnly`, run unchanged wi
 Callisto supports static PEP 621 or Poetry versions with `python -m build` and Twine. Current limits:
 
 - Co-located Cargo/Maturin projects fail discovery with E007, including Cargo-owned dynamic Python versions.
-- Files an earlier attempt uploaded are matched by name, not by content: a rebuild is not always byte-identical, and the file set is not sealed between jobs. A file this run uploads must carry the digest the index serves for it.
+- Files an earlier attempt uploaded are matched by name, not by content: a rebuild is not always byte-identical, and the file set is not sealed between jobs. A package whose wheel name depends on the platform uploads another wheel when rerun on a different machine. A file this run uploads must carry the digest the index serves for it.
 - A release can only be completed for 14 days after its first file; after that, PyPI [refuses new files](https://blog.pypi.org/posts/2026-07-22-releases-now-reject-new-files-after-14-days/) and the release needs a new version.
 - A package tagged by an earlier version of callisto with only some of its files uploaded is reported as released when rerun at the same commit. Finish it by uploading the missing files with `twine`.
 - One configured URL serves both simple-index reads and Twine uploads. Private indexes with separate routes, read authentication, or HTML-only responses need explicit support. Twine credentials do not authenticate `curl`.
