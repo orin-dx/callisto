@@ -135,6 +135,8 @@ fn path_exists(root: &Path, path: &Path) -> Result<bool, GraphError> {
 ///
 /// # Errors
 ///
+/// - A target the plan would write that cannot be written (missing, a directory, behind a symbolic link, unreadable
+///   or in a directory that takes no new file); this is checked for every target before the first write.
 /// - Manifest parse/write failures (malformed TOML/JSON, unsupported format).
 /// - Git subprocess failures (`git add`/`git rm --cached` non-zero exit).
 /// - I/O errors writing changelog sections or `pre.json`.
@@ -150,6 +152,7 @@ pub fn apply_version_plan<R: CommandRunner>(
     let mut deferred_deletions = Vec::new();
 
     let ctx = OpenContext::for_workspace_root(root)?;
+    preflight::check(root, plan, opts, permit)?;
     let classification = classify_manifest_writes(plan);
 
     for step in write_steps(plan, &classification) {
@@ -654,6 +657,8 @@ fn run_lockfile_refresh<R: CommandRunner>(
         exit_code: out.exit_code,
     })
 }
+
+mod preflight;
 
 #[cfg(test)]
 mod tests;

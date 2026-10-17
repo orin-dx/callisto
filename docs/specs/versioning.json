@@ -212,6 +212,11 @@
       "criterion": "Files are written one at a time, each by atomic replacement, so an interrupted run never leaves a partially written file; a failing write stops the run and leaves earlier files in place. A write also fails when the directory holding the new file cannot be synced, unless the filesystem cannot sync a directory."
     },
     {
+      "id": "VER-APPLY-06",
+      "criterion": "Before the first write, every file the plan edits, creates or deletes is checked: a manifest must exist as a readable regular file, no path may be a symbolic link or sit beneath one (Git cannot stage it), no path may leave the workspace, and the directory of each written file must take a new file. Any failure stops the run with E314 naming every such path, and nothing has been written, staged or deleted.",
+      "is_error_case": true
+    },
+    {
       "id": "VER-READ-01",
       "criterion": "Only a missing file is treated as absent when reading `callisto.toml`, `.changeset/pre.json`, a changelog, or the changeset directory. A file that cannot be read or inspected (a permission error, a directory, invalid UTF-8) fails the command naming the path; a dangling link or an entry removed during listing holds no changeset.",
       "is_error_case": true

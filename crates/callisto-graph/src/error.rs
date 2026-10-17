@@ -263,6 +263,16 @@ pub enum GraphError {
     )]
     IncompleteWorkspace { unresolved: Vec<String> },
 
+    #[error("cannot apply the version plan: {} file(s) cannot be written, so nothing was changed\n{}", .problems.len(), .problems.join("\n"))]
+    #[diagnostic(
+        code(E314),
+        help(
+            "Fix the files named above (a missing file, permissions, or a symbolic link Git cannot stage) and re-run; \
+             no manifest, changelog or changeset was touched."
+        )
+    )]
+    ApplyPreflight { problems: Vec<String> },
+
     #[error("failed to parse .changeset/pre.json: {0}")]
     #[diagnostic(
         code(E114),
