@@ -1760,13 +1760,37 @@ fn changeset_listing_skips_the_readme_and_other_files_and_treats_a_missing_direc
     assert_eq!(names, ["a.md", "b.md"]);
 }
 
-/// A changeset entry that cannot be inspected must stop the run, not drop out of the release.
+/// An editor lock file such as `.#x.md` is a dangling link, not a changeset: it must not stop the run.
 #[cfg(unix)]
 #[test]
-fn changeset_listing_errors_on_an_entry_it_cannot_inspect() {
+fn changeset_listing_skips_a_dangling_link() {
     let dir = tempfile::tempdir().unwrap();
-    std::os::unix::fs::symlink(dir.path().join("missing.md"), dir.path().join("dangling.md")).unwrap();
-    assert!(list_changeset_files(dir.path()).is_err());
+    std::os::unix::fs::symlink(dir.path().join("missing.md"), dir.path().join(".#x.md")).unwrap();
+    std::fs::write(dir.path().join("real.md"), "x").unwrap();
+    let names: Vec<_> = list_changeset_files(dir.path())
+        .unwrap()
+        .iter()
+        .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, ["real.md"]);
+}
+
+/// An entry that cannot be inspected for any other reason must stop the run and name the entry.
+#[cfg(unix)]
+#[test]
+fn changeset_listing_errors_on_a_link_loop_and_names_the_entry() {
+    let dir = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(dir.path().join("loop.md"), dir.path().join("loop.md")).unwrap();
+    let error = list_changeset_files(dir.path()).unwrap_err();
+    assert!(error.to_string().contains("loop.md"), "{error}");
+}
+
+#[test]
+fn loading_changesets_surfaces_a_directory_that_cannot_be_listed() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join(".changeset"), "not a directory").unwrap();
+    let cfg = crate::config::load(dir.path()).unwrap();
+    assert!(load_changesets_permissive(dir.path(), &cfg).is_err());
 }
 
 #[test]

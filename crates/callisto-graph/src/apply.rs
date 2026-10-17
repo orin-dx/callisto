@@ -253,12 +253,15 @@ pub fn apply_version_plan<R: CommandRunner>(
 
             // Keep the inputs on disk until their removal is staged so a failed index update can be retried.
             for path in &deferred_deletions {
-                let full = root.join(path);
-                if path_exists(root, path)? {
-                    fs::remove_file(&full).map_err(|e| GraphError::ApplyIo {
-                        path: path.clone(),
-                        message: e.to_string(),
-                    })?;
+                match fs::remove_file(root.join(path)) {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => {
+                        return Err(GraphError::ApplyIo {
+                            path: path.clone(),
+                            message: e.to_string(),
+                        })
+                    }
                 }
             }
             modified_paths.extend(deferred_deletions.iter().cloned());
@@ -555,9 +558,9 @@ fn refresh_lockfiles<R: CommandRunner>(
     }
 
     if active_ecosystems.contains(&Ecosystem::Pypi) {
-        if root.join("uv.lock").exists() {
+        if path_exists(root, Path::new("uv.lock"))? {
             refresh_results.push(run_lockfile_refresh(runner, root, "uv.lock", "uv", &["lock"])?);
-        } else if root.join("poetry.lock").exists() {
+        } else if path_exists(root, Path::new("poetry.lock"))? {
             refresh_results.push(run_lockfile_refresh(
                 runner,
                 root,
@@ -565,7 +568,7 @@ fn refresh_lockfiles<R: CommandRunner>(
                 "poetry",
                 &["lock", "--no-update"],
             )?);
-        } else if root.join("pdm.lock").exists() {
+        } else if path_exists(root, Path::new("pdm.lock"))? {
             refresh_results.push(run_lockfile_refresh(
                 runner,
                 root,
@@ -577,7 +580,7 @@ fn refresh_lockfiles<R: CommandRunner>(
     }
 
     if active_ecosystems.contains(&Ecosystem::Npm) {
-        if root.join("package-lock.json").exists() {
+        if path_exists(root, Path::new("package-lock.json"))? {
             refresh_results.push(run_lockfile_refresh(
                 runner,
                 root,
@@ -586,7 +589,7 @@ fn refresh_lockfiles<R: CommandRunner>(
                 &["install", "--package-lock-only", "--ignore-scripts"],
             )?);
         }
-        if root.join("pnpm-lock.yaml").exists() {
+        if path_exists(root, Path::new("pnpm-lock.yaml"))? {
             refresh_results.push(run_lockfile_refresh(
                 runner,
                 root,
@@ -595,7 +598,7 @@ fn refresh_lockfiles<R: CommandRunner>(
                 &["install", "--lockfile-only"],
             )?);
         }
-        if root.join("yarn.lock").exists() {
+        if path_exists(root, Path::new("yarn.lock"))? {
             refresh_results.push(run_lockfile_refresh(
                 runner,
                 root,
@@ -604,7 +607,7 @@ fn refresh_lockfiles<R: CommandRunner>(
                 &["install", "--mode", "update-lockfile"],
             )?);
         }
-        if root.join("bun.lock").exists() {
+        if path_exists(root, Path::new("bun.lock"))? {
             refresh_results.push(run_lockfile_refresh(
                 runner,
                 root,
@@ -612,7 +615,7 @@ fn refresh_lockfiles<R: CommandRunner>(
                 "bun",
                 &["install", "--lockfile-only"],
             )?);
-        } else if root.join("bun.lockb").exists() {
+        } else if path_exists(root, Path::new("bun.lockb"))? {
             refresh_results.push(run_lockfile_refresh(
                 runner,
                 root,

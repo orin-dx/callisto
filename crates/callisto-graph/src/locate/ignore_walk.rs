@@ -2174,6 +2174,47 @@ mod tests {
         );
     }
 
+    /// An unreadable manifest in a directory no membership admits is a warning, not a failure: it was never a member.
+    #[test]
+    fn an_unreadable_manifest_outside_any_membership_is_skipped_not_fatal() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path();
+        fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = [\"kept\"]\n").unwrap();
+        fs::create_dir_all(root.join("kept")).unwrap();
+        fs::write(
+            root.join("kept/Cargo.toml"),
+            "[package]\nname = \"kept\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("scratch")).unwrap();
+        fs::write(root.join("scratch/Cargo.toml"), b"[package]\nname = \"caf\xe9\"\n").unwrap();
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+        assert!(projects.iter().any(|p| p.path == Path::new("kept")), "{projects:?}");
+        assert!(!projects.iter().any(|p| p.path == Path::new("scratch")), "{projects:?}");
+    }
+
+    /// An unreadable manifest that shares a directory with an admitted one is a failure, like an unparseable one.
+    #[test]
+    fn an_unreadable_manifest_sharing_a_directory_with_an_admitted_sibling_errors() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path();
+        fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = [\"a\"]\n").unwrap();
+        fs::create_dir_all(root.join("a")).unwrap();
+        fs::write(
+            root.join("a/Cargo.toml"),
+            "[package]\nname = \"a\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        fs::write(root.join("a/package.json"), b"{\"name\":\"caf\xe9\"}").unwrap();
+
+        let err = IgnoreWalkLocator::new(root).projects().unwrap_err();
+        assert!(
+            matches!(&err, LocateError::ManifestReadError { path, .. } if path.ends_with("a/package.json")),
+            "{err:?}"
+        );
+    }
+
     /// A directory standing where a manifest should be is not "no manifest" either.
     #[test]
     fn a_manifest_that_is_a_directory_in_an_admitted_member_errors() {

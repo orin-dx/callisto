@@ -50,13 +50,18 @@ pub fn atomic_write(path: &Path, content: &str, permit: &ApplyPermit) -> io::Res
     Ok(())
 }
 
-/// Flushes `dir`'s entries so a rename survives power loss. Windows cannot open a directory, and a filesystem that
-/// cannot sync one reports `Unsupported` or `InvalidInput`; any other failure means the rename may not be durable.
+/// Flushes `dir`'s entries so a rename survives power loss. A directory that cannot be opened (Windows, or a `-wx`
+/// mode) or a filesystem that cannot sync one (`Unsupported`, `InvalidInput`, macOS `ENOTSUP`) is skipped: the file is
+/// already in place and failing the command now would misreport a write that happened. Any other failure, an I/O error
+/// above all, means the rename may not be durable and is reported.
 fn sync_directory(dir: &Path) -> io::Result<()> {
     #[cfg(unix)]
     {
-        match std::fs::File::open(dir)?.sync_all() {
-            Err(error) if matches!(error.kind(), io::ErrorKind::Unsupported | io::ErrorKind::InvalidInput) => Ok(()),
+        let Ok(handle) = std::fs::File::open(dir) else {
+            return Ok(());
+        };
+        match handle.sync_all() {
+            Err(error) if sync_unsupported(&error) => Ok(()),
             result => result,
         }
     }
@@ -89,7 +94,15 @@ pub fn probe_atomic_write(path: &Path, permit: &ApplyPermit) -> io::Result<()> {
         raw_parent
     };
     std::fs::create_dir_all(parent)?;
-    NamedTempFile::new_in(parent).map(drop)
+    NamedTempFile::new_in(parent)?;
+    sync_directory(parent)
+}
+
+/// `std` maps `EOPNOTSUPP` to `Unsupported` but leaves macOS's distinct `ENOTSUP` (45) uncategorized.
+#[cfg(unix)]
+fn sync_unsupported(error: &io::Error) -> bool {
+    matches!(error.kind(), io::ErrorKind::Unsupported | io::ErrorKind::InvalidInput)
+        || (cfg!(target_os = "macos") && error.raw_os_error() == Some(45))
 }
 
 #[cfg(test)]
@@ -112,11 +125,16 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn a_directory_sync_failure_is_reported() {
+    fn a_directory_that_cannot_be_opened_or_synced_is_skipped_but_an_io_failure_is_reported() {
         let dir = tempdir().unwrap();
         assert!(sync_directory(dir.path()).is_ok());
-        let error = sync_directory(&dir.path().join("gone")).unwrap_err();
-        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        assert!(sync_directory(&dir.path().join("gone")).is_ok());
+        assert!(sync_unsupported(&io::Error::from(io::ErrorKind::Unsupported)));
+        assert!(sync_unsupported(&io::Error::from(io::ErrorKind::InvalidInput)));
+        #[cfg(target_os = "macos")]
+        assert!(sync_unsupported(&io::Error::from_raw_os_error(45)));
+        // EIO: the rename may not be durable, so it is reported.
+        assert!(!sync_unsupported(&io::Error::from_raw_os_error(5)));
     }
 
     #[test]

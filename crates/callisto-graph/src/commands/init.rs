@@ -518,15 +518,20 @@ pub fn validate_targets(targets: &[String]) -> Result<Vec<String>, GraphError> {
 /// Files `init` writes, or would write under `--dry-run`: `callisto.toml`, `.changeset/README.md`
 /// unless it already exists, and the release workflow when `workflow` is `true`. Reads current
 /// disk state, so callers compute this before writing anything.
-pub fn init_files(root: &Path, workflow: bool) -> Vec<PathBuf> {
+///
+/// # Errors
+///
+/// The README's existence cannot be determined.
+pub fn init_files(root: &Path, workflow: bool) -> Result<Vec<PathBuf>, GraphError> {
+    let readme = root.join(".changeset/README.md");
     let mut files = vec![root.join("callisto.toml")];
-    if !root.join(".changeset/README.md").exists() {
-        files.push(root.join(".changeset/README.md"));
+    if !callisto_model::strict_fs::exists(&readme).map_err(io_err(&readme))? {
+        files.push(readme);
     }
     if workflow {
         files.push(workflow_path(root));
     }
-    files
+    Ok(files)
 }
 
 /// Writes `callisto.toml` and, when absent, `.changeset/README.md`.
@@ -537,7 +542,7 @@ pub fn init_files(root: &Path, workflow: bool) -> Vec<PathBuf> {
 pub fn write(root: &Path, config: &str, permit: &ApplyPermit) -> Result<InitReport, GraphError> {
     ensure_uninitialized(root)?;
     let config_path = root.join("callisto.toml");
-    let files = init_files(root, false);
+    let files = init_files(root, false)?;
     callisto_model::atomic::atomic_write(&config_path, config, permit).map_err(io_err(&config_path))?;
     write_changeset_readme(root, permit)?;
     Ok(InitReport {

@@ -84,15 +84,15 @@ pub(crate) enum NapiTargetsField {
 /// function (`read_napi_targets`, `read_engines_node`) rather than letting
 /// each one independently re-read and re-parse the file from disk.
 pub(crate) fn parse_package_json(pkg_json_path: &Path) -> Result<Option<serde_json::Value>, GraphError> {
-    if !pkg_json_path.exists() {
-        return Ok(None);
-    }
-    let content = std::fs::read_to_string(pkg_json_path).map_err(|e| {
+    let Some(content) = callisto_model::strict_fs::read_optional(pkg_json_path).map_err(|e| {
         GraphError::Manifest(ManifestError::Read {
             path: pkg_json_path.to_path_buf(),
             message: e.to_string(),
         })
-    })?;
+    })?
+    else {
+        return Ok(None);
+    };
     let val: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
         GraphError::Manifest(ManifestError::Parse {
             path: pkg_json_path.to_path_buf(),
@@ -152,15 +152,15 @@ pub(crate) fn build_platform_target(triple: &str, package_dir: &str, package_nam
 /// `read_requires_python`) rather than letting each one independently
 /// re-read and re-parse the file from disk.
 pub(crate) fn parse_pyproject_toml(pyproject_path: &Path) -> Result<Option<toml::Value>, GraphError> {
-    if !pyproject_path.exists() {
-        return Ok(None);
-    }
-    let content = std::fs::read_to_string(pyproject_path).map_err(|e| {
+    let Some(content) = callisto_model::strict_fs::read_optional(pyproject_path).map_err(|e| {
         GraphError::Manifest(ManifestError::Read {
             path: pyproject_path.to_path_buf(),
             message: e.to_string(),
         })
-    })?;
+    })?
+    else {
+        return Ok(None);
+    };
     let val: toml::Value = content.parse().map_err(|e: toml::de::Error| {
         GraphError::Manifest(ManifestError::Parse {
             path: pyproject_path.to_path_buf(),

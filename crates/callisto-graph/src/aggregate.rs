@@ -68,18 +68,27 @@ pub struct ChangesetLoadFailure {
 /// Every changeset `*.md` file in `dir` (not the README), sorted. A missing directory holds none; any other failure,
 /// including an entry that cannot be read, is an error rather than a changeset left out of the release.
 pub(crate) fn list_changeset_files(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
+    let named =
+        |path: &Path, error: std::io::Error| std::io::Error::new(error.kind(), format!("{}: {error}", path.display()));
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(error) => return Err(error),
+        Err(error) => return Err(named(dir, error)),
     };
     let mut files = Vec::new();
     for entry in entries {
-        let path = entry?.path();
+        let path = entry.map_err(|error| named(dir, error))?.path();
         let is_changeset = path.extension().and_then(|ext| ext.to_str()) == Some("md")
             && path.file_name().and_then(|name| name.to_str()) != Some("README.md");
-        if is_changeset && fs::metadata(&path)?.is_file() {
-            files.push(path);
+        if !is_changeset {
+            continue;
+        }
+        // A dangling link (an editor lock file such as `.#x.md`) or an entry removed mid-listing holds no changeset.
+        match fs::metadata(&path) {
+            Ok(metadata) if metadata.is_file() => files.push(path),
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(named(&path, error)),
         }
     }
     files.sort();
