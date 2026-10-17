@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M53T43Z0C6RZ2Y2KY1E028AR",
+  "strategy": "manual-commit",
+  "branch": "fix/pypi-per-file-completeness",
+  "checkpoints_count": 6,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/release/capability.rs",
+    "crates/callisto-graph/src/commands/release/provider/mod.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/tests.rs",
+    "crates/callisto-graph/src/error.rs",
+    "docs/architecture/release.md",
+    "docs/errors.md",
+    "docs/projects/V1-FINDINGS.md",
+    "docs/projects/V1-SYSTEM-HARDENING.json",
+    "docs/specs/release.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  }
+}
