@@ -233,7 +233,7 @@ pub fn detect<L: ProjectLocator, R: CommandRunner>(
     let workspace = Workspace::load_with_config(root.clone(), config, locator, runner)?;
     let tags = workspace.tags()?;
     let versions = workspace.base_versions()?;
-    let ctx = callisto_manifests::OpenContext::for_workspace_root(&workspace.root);
+    let ctx = callisto_manifests::OpenContext::for_workspace_root(&workspace.root)?;
 
     let mut packages = Vec::new();
     for package in workspace.graph.packages() {

@@ -722,9 +722,7 @@ impl WorkspaceCargoResolver {
     }
 
     pub fn inheritance(&self) -> Result<WorkspaceInheritance, ManifestError> {
-        let version = workspace_package_version(&self.document, &self.root_path)
-            .ok()
-            .flatten();
+        let version = workspace_package_version(&self.document, &self.root_path)?;
 
         let mut dependencies = BTreeMap::new();
         if let Some(table) = self

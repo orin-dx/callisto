@@ -126,7 +126,7 @@ fn workspace_napi_crates<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     packages: &[&callisto_model::Package],
 ) -> Result<Vec<NapiCrate>, GraphError> {
-    let ctx = callisto_manifests::OpenContext::for_workspace_root(&ws.root);
+    let ctx = callisto_manifests::OpenContext::for_workspace_root(&ws.root)?;
     let mut crates = Vec::new();
     for decl in packages
         .iter()

@@ -144,7 +144,7 @@ fn assert_python_normalized_dependency(native_name: &str, declared_name: &str, d
 
     let app_package = ws.graph.packages().find(|package| package.id == app).unwrap();
     let decl = app_package.canonical_manifests().next().unwrap();
-    let context = callisto_manifests::OpenContext::for_workspace_root(root);
+    let context = callisto_manifests::OpenContext::for_workspace_root(root).unwrap();
     let manifest = callisto_manifests::open(decl, &context).unwrap();
     let entries: Vec<_> = manifest.iter_dependencies().collect();
     assert_eq!(entries.len(), 1);

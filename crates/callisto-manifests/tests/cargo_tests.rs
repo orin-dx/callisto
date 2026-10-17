@@ -44,7 +44,7 @@ version = "~1.0" # build
 "#;
     std::fs::write(&path, source).unwrap();
     let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
-    let ctx = OpenContext::for_workspace_root(dir.path());
+    let ctx = OpenContext::for_workspace_root(dir.path()).unwrap();
     let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
     let entries: Vec<_> = manifest.iter_dependencies().collect();
 
@@ -187,7 +187,7 @@ fn cargo_binary_inventory_includes_explicit_and_auto_targets() {
     std::fs::write(dir.path().join("src/bin/serve.rs"), "fn main() {}\n").unwrap();
     std::fs::write(dir.path().join("src/bin/tool/main.rs"), "fn main() {}\n").unwrap();
     let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
-    let manifest = CargoToml::open(&decl, &OpenContext::for_workspace_root(dir.path())).unwrap();
+    let manifest = CargoToml::open(&decl, &OpenContext::for_workspace_root(dir.path()).unwrap()).unwrap();
     assert_eq!(manifest.bin_names(), ["app", "custom", "serve", "tool"]);
 }
 
@@ -206,6 +206,30 @@ fn cargo_autobins_false_disables_only_automatic_target_discovery() {
     std::fs::write(dir.path().join("src/main.rs"), "fn main() {}\n").unwrap();
     std::fs::write(dir.path().join("src/bin/automatic.rs"), "fn main() {}\n").unwrap();
     let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
-    let manifest = CargoToml::open(&decl, &OpenContext::for_workspace_root(dir.path())).unwrap();
+    let manifest = CargoToml::open(&decl, &OpenContext::for_workspace_root(dir.path()).unwrap()).unwrap();
     assert_eq!(manifest.bin_names(), ["custom"]);
+}
+
+#[test]
+fn open_context_for_a_root_with_no_manifests_is_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let ctx = callisto_manifests::OpenContext::for_workspace_root(dir.path()).unwrap();
+    assert!(ctx.cargo_workspace.is_none());
+    assert!(ctx.npm_workspace_kind.is_none());
+}
+
+/// A root manifest that cannot be understood must not become "no inheritance": every inheriting member would then
+/// fail to open and silently drop out of the release.
+#[test]
+fn open_context_fails_for_a_root_manifest_that_cannot_be_read_or_parsed() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("Cargo.toml"), "[workspace\nmembers = [\n").unwrap();
+    assert!(callisto_manifests::OpenContext::for_workspace_root(dir.path()).is_err());
+
+    std::fs::write(dir.path().join("Cargo.toml"), b"[workspace]\nname = \"caf\xe9\"\n").unwrap();
+    assert!(callisto_manifests::OpenContext::for_workspace_root(dir.path()).is_err());
+
+    std::fs::remove_file(dir.path().join("Cargo.toml")).unwrap();
+    std::fs::write(dir.path().join("package.json"), "{\"workspaces\": [],}").unwrap();
+    assert!(callisto_manifests::OpenContext::for_workspace_root(dir.path()).is_err());
 }

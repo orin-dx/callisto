@@ -1,9 +1,9 @@
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use callisto_model::vcs::{GitAccess, VcsError};
 use callisto_model::CommandRunner;
 
+use crate::locate::membership::{parse_error, read_root_manifest};
 use crate::locate::LocateError;
 
 /// Finds the root between `start` and its Git toplevel (never above it): the nearest
@@ -23,9 +23,18 @@ pub fn find_workspace_root(start: &Path, runner: &dyn CommandRunner) -> Result<P
         _ => LocateError::from(e),
     })?;
     let range = || canonical.ancestors().take_while(|dir| dir.starts_with(&toplevel));
-    range()
-        .find(|dir| is_workspace_root(dir))
-        .or_else(|| range().filter(|dir| is_package_root(dir)).last())
+    for dir in range() {
+        if is_workspace_root(dir)? {
+            return Ok(dir.to_path_buf());
+        }
+    }
+    let mut outermost = None;
+    for dir in range() {
+        if is_package_root(dir)? {
+            outermost = Some(dir);
+        }
+    }
+    outermost
         .map(Path::to_path_buf)
         .ok_or_else(|| LocateError::WorkspaceRootNotFound {
             start: start.to_path_buf(),
@@ -33,11 +42,24 @@ pub fn find_workspace_root(start: &Path, runner: &dyn CommandRunner) -> Result<P
         })
 }
 
-/// Loads `dir/Cargo.toml` as a TOML document, or `None` if absent/unparseable.
-fn cargo_document(dir: &Path) -> Option<toml_edit::DocumentMut> {
-    fs::read_to_string(dir.join("Cargo.toml"))
-        .ok()
-        .and_then(|content| content.parse::<toml_edit::DocumentMut>().ok())
+/// Loads `dir/Cargo.toml` as a TOML document, or `None` if it does not exist. A manifest that cannot be read or
+/// parsed is an error: skipping it would let the search settle on a different root.
+fn cargo_document(dir: &Path) -> Result<Option<toml_edit::DocumentMut>, LocateError> {
+    let path = dir.join("Cargo.toml");
+    read_root_manifest(&path)?
+        .map(|content| {
+            content
+                .parse::<toml_edit::DocumentMut>()
+                .map_err(|error| parse_error(&path, error.to_string()))
+        })
+        .transpose()
+}
+
+fn path_exists(path: &Path) -> Result<bool, LocateError> {
+    callisto_model::strict_fs::exists(path).map_err(|error| LocateError::ManifestReadError {
+        path: path.to_path_buf(),
+        message: error.to_string(),
+    })
 }
 
 /// True when `key` names a table declared with its own header (`[key]`), not a table that
@@ -50,42 +72,34 @@ fn has_explicit_table(doc: &toml_edit::DocumentMut, key: &str) -> bool {
 }
 
 /// A single-package repository root: `Cargo.toml` with `[package]`, `package.json`, or `pyproject.toml`.
-fn is_package_root(dir: &Path) -> bool {
-    let cargo = cargo_document(dir).is_some_and(|doc| has_explicit_table(&doc, "package"));
-    cargo || dir.join("package.json").is_file() || dir.join("pyproject.toml").is_file()
+fn is_package_root(dir: &Path) -> Result<bool, LocateError> {
+    if cargo_document(dir)?.is_some_and(|doc| has_explicit_table(&doc, "package")) {
+        return Ok(true);
+    }
+    Ok(path_exists(&dir.join("package.json"))? || path_exists(&dir.join("pyproject.toml"))?)
 }
 
-fn is_workspace_root(dir: &Path) -> bool {
-    if let Some(doc) = cargo_document(dir) {
-        if has_explicit_table(&doc, "workspace") {
-            return true;
-        }
+fn is_workspace_root(dir: &Path) -> Result<bool, LocateError> {
+    if cargo_document(dir)?.is_some_and(|doc| has_explicit_table(&doc, "workspace")) {
+        return Ok(true);
     }
 
     let pkg_json = dir.join("package.json");
-    if pkg_json.exists() {
-        if let Ok(content) = fs::read_to_string(&pkg_json) {
-            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                if val.get("workspaces").is_some() {
-                    return true;
-                }
-            }
+    if let Some(content) = read_root_manifest(&pkg_json)? {
+        let value = serde_json::from_str::<serde_json::Value>(&content)
+            .map_err(|error| parse_error(&pkg_json, error.to_string()))?;
+        if value.get("workspaces").is_some() {
+            return Ok(true);
         }
     }
 
-    if dir.join("pnpm-workspace.yaml").exists() {
-        return true;
-    }
-
-    if dir.join(".moon").is_dir() {
-        return true;
-    }
-
-    false
+    Ok(path_exists(&dir.join("pnpm-workspace.yaml"))? || dir.join(".moon").is_dir())
 }
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use callisto_model::{CommandError, CommandOutput, CommandRunner};
 
     use super::*;
@@ -180,6 +194,31 @@ mod tests {
         assert!(error.to_string().contains(&toplevel.display().to_string()));
     }
 
+    // A manifest that cannot be understood must stop the search, not let it settle on a different root.
+    #[test]
+    fn a_malformed_manifest_on_the_way_up_is_an_error_not_a_reason_to_pick_another_root() {
+        let (_dir, root) = repo();
+        write(&root, "Cargo.toml", "[workspace]\nmembers = [\"member\"]\n");
+        write(&root, "member/Cargo.toml", "[package\nname = \"member\"\n");
+        let error = find(&root.join("member")).unwrap_err();
+        assert!(
+            matches!(&error, LocateError::ManifestParseError { path, .. } if path.ends_with("member/Cargo.toml")),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn a_root_package_json_that_is_not_json_or_not_utf8_is_an_error() {
+        let (_dir, root) = repo();
+        write(&root, "package.json", "{\"workspaces\": [\"packages/*\"],}");
+        let error = find(&root).unwrap_err();
+        assert!(matches!(error, LocateError::ManifestParseError { .. }), "{error:?}");
+
+        fs::write(root.join("package.json"), b"{\"name\":\"caf\xe9\"}").unwrap();
+        let error = find(&root).unwrap_err();
+        assert!(matches!(error, LocateError::ManifestReadError { .. }), "{error:?}");
+    }
+
     #[test]
     fn a_workspace_marker_beats_a_nearer_member_manifest() {
         let (_dir, root) = repo();
@@ -271,7 +310,7 @@ mod tests {
     fn workspace_package_table_alone_does_not_count_as_a_workspace_root() {
         let dir = tempfile::tempdir().unwrap();
         write(dir.path(), "Cargo.toml", "[workspace.package]\nedition = \"2021\"\n");
-        assert!(!is_workspace_root(dir.path()));
+        assert!(!is_workspace_root(dir.path()).unwrap());
     }
 
     #[test]
