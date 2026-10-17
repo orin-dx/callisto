@@ -71,6 +71,22 @@ impl NegatableGlobSet {
     }
 }
 
+/// `./packages/*` and `packages/*/` name the same directories as `packages/*`, but compiled as written they would
+/// match no relative path and silently admit nothing.
+fn normalize_pattern(pattern: &str) -> &str {
+    let mut rest = pattern;
+    while let Some(stripped) = rest.strip_prefix("./") {
+        rest = stripped;
+    }
+    if rest.is_empty() && !pattern.is_empty() {
+        return ".";
+    }
+    match rest.trim_end_matches('/') {
+        "" => rest,
+        trimmed => trimmed,
+    }
+}
+
 /// Builds a [`NegatableGlobSet`] from a list of glob strings, matched with
 /// `literal_separator(true)` semantics (`*` does not cross `/`; `**` does)
 /// against forward-slash-normalized, workspace-relative paths. An entry
@@ -87,7 +103,11 @@ pub(crate) fn build_globset(entries: &[String]) -> Result<NegatableGlobSet, glob
             Some(rest) => (&mut negative, rest),
             None => (&mut positive, entry.as_str()),
         };
-        builder.add(GlobBuilder::new(pattern).literal_separator(true).build()?);
+        builder.add(
+            GlobBuilder::new(normalize_pattern(pattern))
+                .literal_separator(true)
+                .build()?,
+        );
     }
     Ok(NegatableGlobSet {
         positive: positive.build()?,
@@ -97,6 +117,21 @@ pub(crate) fn build_globset(entries: &[String]) -> Result<NegatableGlobSet, glob
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn a_leading_dot_slash_or_trailing_slash_names_the_same_directories() {
+        for entry in ["packages/*", "./packages/*", "packages/*/", "././packages/*/"] {
+            let set = build_globset(&[entry.to_string()]).unwrap();
+            assert!(set.is_match(Path::new("packages/a")), "{entry}");
+            assert!(!set.is_match(Path::new("other/a")), "{entry}");
+        }
+        let excluded = build_globset(&["packages/*".to_string(), "!./packages/skip/".to_string()]).unwrap();
+        assert!(excluded.is_match(Path::new("packages/a")));
+        assert!(!excluded.is_match(Path::new("packages/skip")));
+        assert!(build_globset(&["./".to_string()]).unwrap().is_match(Path::new(".")));
+    }
+
     #[test]
     fn yaml_rust2_smoke_test_parses_a_trivial_mapping() {
         let docs = yaml_rust2::YamlLoader::load_from_str("packages:\n  - \"a\"\n").unwrap();

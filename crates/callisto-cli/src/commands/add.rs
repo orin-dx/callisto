@@ -150,8 +150,7 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     let text = callisto_model::format::write_changeset(&changeset)?;
 
     let changeset_dir = ws.root.join(&ws.config.changesets_dir);
-    let slug = generate_human_slug();
-    let filename = format!("{slug}.md");
+    let filename = unused_changeset_filename(&changeset_dir)?;
     let rel_path = ws.config.changesets_dir.join(&filename).to_string_lossy().into_owned();
 
     let Some(permit) = ApplyPermit::granted_unless_dry_run(global.dry_run) else {
@@ -224,6 +223,29 @@ fn validate_summary(summary: &str) -> Result<String, CliError> {
 /// entries in the list rather than two identical `"foo"` rows.
 fn collect_package_names<'a>(packages: impl Iterator<Item = &'a callisto_model::Package>) -> Vec<String> {
     packages.map(|p| p.id.display_name()).collect()
+}
+
+/// Picks a changeset filename that does not exist yet, so a slug collision never overwrites a pending changeset.
+fn unused_changeset_filename(dir: &std::path::Path) -> Result<String, CliError> {
+    // 8,000 possible slugs: more than a few attempts only happens when nearly all of them are taken.
+    for _ in 0..64 {
+        let filename = format!("{}.md", generate_human_slug());
+        let path = dir.join(&filename);
+        let taken = callisto_model::strict_fs::exists(&path).map_err(|source| CliError::Io {
+            source,
+            path: Some(path.clone()),
+        })?;
+        if !taken {
+            return Ok(filename);
+        }
+    }
+    Err(CliError::Io {
+        source: std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            "no unused changeset filename found after 64 attempts",
+        ),
+        path: Some(dir.to_path_buf()),
+    })
 }
 
 fn generate_human_slug() -> String {
@@ -373,6 +395,48 @@ mod tests {
             "expected 50 distinct slugs from 50 consecutive calls; got {} unique values",
             slugs.len()
         );
+    }
+
+    fn every_slug() -> HashSet<String> {
+        let mut slugs = HashSet::new();
+        for _ in 0..200_000 {
+            slugs.insert(generate_human_slug());
+            if slugs.len() == 8000 {
+                break;
+            }
+        }
+        assert_eq!(slugs.len(), 8000);
+        slugs
+    }
+
+    #[test]
+    fn an_existing_changeset_is_never_chosen_as_the_new_filename() {
+        let dir = tempfile::tempdir().unwrap();
+        let taken: Vec<String> = every_slug().into_iter().take(4000).collect();
+        for slug in &taken {
+            fs::write(dir.path().join(format!("{slug}.md")), "x").unwrap();
+        }
+        let chosen = unused_changeset_filename(dir.path()).unwrap();
+        assert!(!dir.path().join(&chosen).exists(), "{chosen} already exists");
+    }
+
+    #[test]
+    fn a_directory_with_every_slug_taken_is_an_error_not_an_overwrite() {
+        let dir = tempfile::tempdir().unwrap();
+        for slug in every_slug() {
+            fs::write(dir.path().join(format!("{slug}.md")), "x").unwrap();
+        }
+        assert!(matches!(
+            unused_changeset_filename(dir.path()),
+            Err(CliError::Io { .. })
+        ));
+    }
+
+    #[test]
+    fn a_changesets_directory_that_does_not_exist_yet_gives_a_filename() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("not-created");
+        assert!(unused_changeset_filename(&missing).unwrap().ends_with(".md"));
     }
 
     /// When a polyglot workspace contains `cargo/foo` and `npm/foo`, the
