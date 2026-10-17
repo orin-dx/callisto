@@ -1,0 +1,123 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M55NK6BZKZV0N92PWH2YN2CF",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-17T19:32:17.171878Z",
+  "branch": "fix/strict-reads",
+  "checkpoints_count": 3,
+  "save_step_count": 42,
+  "files_touched": [
+    "ARCHITECTURE.md",
+    "crates/callisto-cli/src/commands/init.rs",
+    "crates/callisto-graph/src/aggregate.rs",
+    "crates/callisto-graph/src/aggregate/tests.rs",
+    "crates/callisto-graph/src/apply.rs",
+    "crates/callisto-graph/src/commands/init.rs",
+    "crates/callisto-graph/src/locate/ignore_walk.rs",
+    "crates/callisto-graph/src/matrix.rs",
+    "crates/callisto-graph/src/napi.rs",
+    "crates/callisto-model/src/atomic.rs",
+    "docs/specs/versioning.json",
+    "docs/specs/workspace.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "4f17e9d9fc13",
+  "checkpoint_transcript_start": 16740,
+  "transcript_lines_at_start": 16740,
+  "compact_transcript_start": 1452,
+  "token_usage": {
+    "input_tokens": 36,
+    "cache_creation_tokens": 26149,
+    "cache_read_tokens": 5960675,
+    "output_tokens": 14414,
+    "api_call_count": 16,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 96
+  },
+  "summary": {
+    "intent": "Address an independent review's findings on PR #235 (strict reads / error handling in callisto) before stacking PR 2 on top, then resolve merge conflicts with main and push.",
+    "outcome": "Review fixes were implemented across graph, model, CLI, and docs; a tautological test was removed and a stale test rewritten; `just ci` passed (exit 0, 92.82% coverage). Fixes were committed and a rebase onto origin/main was started to resolve the docs/errors.md conflict; push and PR 2 rebase not yet done.",
+    "learnings": {
+      "repo": [
+        "`just ci` is the full gate (fmt, clippy -D warnings, tests, coverage); it exits non-zero (e.g. 100) on any failing test and writes a TOTAL coverage line that can be grepped from the log.",
+        "Docs are tied to behavior: changes touch ARCHITECTURE.md (atomic_write description), docs/specs/versioning.json (new VER-READ-01 criterion), docs/specs/workspace.json (discovery spec sentence), and docs/errors.md (error code rows like E306–E310).",
+        "Dangling .md symlinks (e.g. Emacs lock files `.#x.md`) must be skipped when listing changesets, while other inspection errors (symlink loops, unlistable directories) must still fail and name the entry.",
+        "atomic writer policy: skip directory-sync when the directory can't be opened or sync is unsupported (macOS ENOTSUP), but report real errors like EIO; probe_atomic_write runs the same sync check before any effect.",
+        "Same-shape strict-read sites exist in matrix.rs (package.json/pyproject.toml reads), napi.rs (manifest read), and init dry-run file listing, which should match what the real run writes."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/atomic.rs",
+          "finding": "Directory-sync failure handling changed to skip unopenable/unsupported dirs; the test a_directory_sync_failure_is_reported had to be rewritten to the new policy."
+        },
+        {
+          "path": "crates/callisto-graph/src/locate/ignore_walk.rs",
+          "finding": "Changeset listing now skips dangling symlinks and names the failing entry in errors."
+        }
+      ],
+      "workflow": [
+        "Use `git merge-tree --write-tree --name-only` to preview conflicts without touching a working tree that has CI running.",
+        "Avoid modifying files in a worktree while a background `just ci` is running; wait for completion before rebasing.",
+        "Remove tautological tests (testing a closure rather than the code under test) instead of keeping false coverage.",
+        "Run long CI as a background command with output redirected to a log, then grep for failures and coverage totals.",
+        "Fix review findings in the base PR before building stacked PRs on top, then rebase the stack."
+      ]
+    },
+    "friction": [
+      "`just ci` failed once (exit 100) because a previously valid test pinned old behavior that the review fix intentionally changed.",
+      "PR #235 developed merge conflicts in docs/errors.md after #232 and #233 merged to main (E310 row next to E306–E309).",
+      "Could not touch the working tree for conflict investigation while CI was running, forcing a wait."
+    ],
+    "open_items": [
+      "Push #235 after the rebase onto origin/main completes and checks are re-run (resolve docs/errors.md keeping both sets of rows).",
+      "Rebase PR 2 (stacked worktree) onto updated #235; flip old tests pinning the admit-all fallback.",
+      "PR 2 must address the review's top finding: membership and root detection still treat an unreadable root manifest as absent.",
+      "Deferred: cargo.rs `bin_names` strict read (init scaffolding only), napi.rs 'still on disk' diagnostic.",
+      "Deferred to the write-preflight PR: lookups that happen after earlier writes in apply."
+    ]
+  }
+}
