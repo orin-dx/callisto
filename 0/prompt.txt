@@ -1,45 +1,88 @@
-Where the context lives
-- In the repo: docs/projects/NEXT-WORK.md. It holds the state after 0.10.2, the rules every workstream follows, and a brief per workstream. Each brief names the files, contracts and specs to read, the approach, the tests (black-box, with the real tool where a fake could hide the bug), and what "done" means.
-- In memory:
-  - A pointer to the plan, with the D01 blocker noted.
-  - A feedback entry: "prove with the real tool before calling it done". It records what went wrong this session: fake tools hid the gh bug, layered PRs only compiled, and a first fix used coarse keys.
+<pasted_content id="b815">
+Claude found several real problems, but its severity table mixes confirmed release risks with conditional cases and behavior the current spec explicitly requires. I reviewed the current main source. The isolated symlink reproduction from my earlier review also confirmed Git exits 128 when asked to stage a file through a directory symlink.
 
-Parallel lanes (separate worktrees, disjoint files, just ci run one at a time)
+| Finding | Assessment | Severity |
+|---|---|---|
+| A. Graph build | Confirmed. Failed manifest opens are ignored when collecting publish targets (crates/callisto-graph/src/walk.rs:344) and dependency edges (crates/callisto-graph/src/walk.rs:569). That can produce an incomplete graph. Claude’s claim that inherited Cargo members then silently leave the roster is too broad: base version loading (crates/callisto-graph/src/lib.rs:166) reopens canonical manifests with ? and will fail for an unresolved inherited version. | High for the silent graph omissions |
+| B. Discovery | Confirmed for read failures: the read error is discarded (crates/callisto-graph/src/locate/ignore_walk.rs:109). Claude’s “broken member gets only a warning and exit 0” needs qualification. A manifest that is read but fails to parse is an error when explicit membership admits it; one that cannot be read never reaches that check. | High |
+| C. Membership | Confirmed fallback, including malformed pnpm input. It can admit packages outside intended globs. This is also explicitly required by the current workspace spec (docs/specs/workspace.json:77), so changing it is a product policy change, not just an error-handling fix. | High potential impact, conditional on malformed input |
+| D. Version inputs | Directory-entry errors are discarded (crates/callisto-graph/src/aggregate.rs:87), so a changeset can be omitted: high. An unresolvable tag can cause full-history inference: medium to high, depending on whether auto inference is enabled. Malformed matching tags are skipped, but the promised warning is itself lost when the tag index takes only .chosen (crates/callisto-graph/src/tags.rs:158): medium. |  |
+| E. Git probes | resolve_commit does collapse any nonzero Git result into absence. The English stderr check in list_tags is brittle. A shallow clone having no fetched tags, however, is not evidence that this function swallowed an error; git tag --list can succeed with an empty list. | Medium for the error handling; shallow-clone claim unproven |
+| F. exists() checks | This needs site-by-site triage. For example, a failed existence check on pre.json can select the wrong mode, while an unreadable changelog that does pass exists() produces a read error. “Changelog history is overwritten” is not established by the cited shape alone. A blanket ban on Path::exists would be broader than the evidence supports. | Medium at state/config guards; other sites vary |
+| G. Writer and runner | Directory-sync errors are discarded, as confirmed. More consequential than Claude’s summary suggests: after a child exits successfully, reader timeout becomes empty stdout or stderr in a successful CommandOutput (crates/callisto-cli/src/runner.rs:500). A caller that interprets empty output as absence can make a wrong decision. | Medium each; runner impact depends on caller |
+| H. Fallbacks | Generated release notes are an explicit, announced behavior, not by itself a defect. The changeset collision is real: add writes a generated name without checking whether it exists (crates/callisto-cli/src/commands/add.rs:153), and the shared writer replaces the destination (crates/callisto-model/src/atomic.rs:26). The finite slug space and process restarts make loss of an existing pending changeset possible. | High impact, low frequency for collision; other claims need separate proof |
 
-┌──────┬─────────────────────────────────────────────────────────────────────┬───────────────────────────────┐
-│ Lane │                              PR stack                               │             Notes             │
-├──────┼─────────────────────────────────────────────────────────────────────┼───────────────────────────────┤
-│ A    │ W0 cleanup and docs refresh, W1 test debt                           │ Independent small PRs on main │
-├──────┼─────────────────────────────────────────────────────────────────────┼───────────────────────────────┤
-│ B    │ W2 SYS-RETRY                                                        │ Touches tag selection         │
-├──────┼─────────────────────────────────────────────────────────────────────┼───────────────────────────────┤
-│ C    │ W3 SYS-PYFILES, then SYS-PYROUTES, then W4 redacted provider output │ All in the registry provider  │
-├──────┼─────────────────────────────────────────────────────────────────────┼───────────────────────────────┤
-│ D    │ R3 derive.rs (snapshots first, moves only), then SYS-BARRIER        │ Same file, so stacked         │
-├──────┼─────────────────────────────────────────────────────────────────────┼───────────────────────────────┤
-│ E    │ R5a init.rs tests move, R5b templates, then SYS-NAPI                │ Same file, so stacked         │
-├──────┼─────────────────────────────────────────────────────────────────────┼───────────────────────────────┤
-│ F    │ R1 walk.rs::build                                                   │                               │
-└──────┴─────────────────────────────────────────────────────────────────────┴───────────────────────────────┘
+What the sweep missed: the slug collision deserves its own fix and regression test because it can destroy a pending input. The tag index also discards LastTagSelection.skipped, defeating an existing diagnostic and its unit test at the selection layer (crates/callisto-model/src/tag.rs:561). And “the release effect path came back clean” does not clear the missing PyPI digest check I identified at the reviewed #232/#233 heads; that is a separate, previously evidenced release finding.
 
-Sequenced or blocked
-- W9 (SYS-OWNER, SYS-DEMOTION, resolver divergence) waits for W2 and R1.
-- SYS-MATURIN and W9 are blocked on D01, so I won't start them without your decision.
-- W10 needs two smaller decisions: whether distinct target declarations get their own graph edges (a RewriteKey change), and whether Python dev groups cascade.
-- W11 verification needs credentials and an approved run.
-
-What I'd start with: Lanes A and B together (cleanup plus the mixed-routing test, and SYS-RETRY), since they're independent and user-visible.
-
-One caveat: I verified the template constants and the inline test size in graph init.rs before writing R5. The finding line counts for R1 and R3 are from my own measurement (591 and 412 lines). The rest of the briefs are taken from the repo's findings register, which I read, but I haven't re-verified every row against the code.
+I agree with fixing read failures and graph construction before further release work. I would use strict, typed reads at decisions that determine package membership or release state, while keeping ordinary exists() uses where absence is genuinely harmless. The two policy decisions Claude identified are real: the spec currently mandates malformed-membership fallback and symlink following. My recommendation is to error on malformed root membership and reject packages whose manifests Git cannot stage during discovery, with the matching spec changed in the same PR.
+</pasted_content id="b815">
 
 ---
 
-We shouldn't have the next-work in a PR, it's for local tracking wtf
+<pasted_content id="b815">
+Yes. The recurring problem is that Callisto builds a release decision from a workspace that has never been proven complete.
+
+Release execution (docs/architecture/release.md) has explicit Absent, Exact, Conflict, and Indeterminate states. Earlier in the pipeline, discovery returns a list of projects (crates/callisto-graph/src/locate/mod.rs:13), while failed reads, invalid membership, and failed manifest opens can all reduce that list or its graph. A smaller graph still looks valid to the planner.
+
+I see five architectural gaps behind the defects:
+
+1. No release-ready workspace boundary. Workspace loading (crates/callisto-graph/src/lib.rs:93) returns a Workspace after graph construction, but does not establish that every admitted manifest was read and every package’s publish targets and edges were resolved. Add a validation step that produces a distinct release-ready workspace; version and release planning should require it. status could still display an incomplete scan with diagnostics.
+2. Absence and failure share the same representations. Option, .ok(), exists(), and admit-all defaults are used for both legitimate absence and failed observation. OpenContext (crates/callisto-manifests/src/lib.rs:206) is a clear example. Use Result<Option<T>, E> for optional files and explicit states for membership: absent, valid, invalid. A helper can standardize filesystem reads, but it cannot decide the policy for malformed TOML or YAML.
+3. Filesystem paths are assumed to be Git paths. Discovery permits directory symlinks, while apply stages workspace-relative paths (crates/callisto-graph/src/apply.rs:509). A package path needs validation against the Git checkout and staging rules before it enters a writable plan. This is a distinct property from being readable or inside the apparent workspace path.
+4. Write authorization does not establish a valid write set. ApplyPermit effectively enforces dry-run behavior. VersionPlan (crates/callisto-graph/src/plan.rs:14) is a mutable collection of paths and edits, and apply performs sequential writes before Git staging. That design intentionally permits partial runs, but it makes late path and I/O failures expensive. A preflight should validate every target, path relationship, and required input before the first write; the existing recovery rules remain necessary.
+5. Tests and specs sometimes preserve the unsafe fallback. The workspace spec (docs/specs/workspace.json:77) explicitly says malformed membership input admits broadly, and tests assert it. More tests of that behavior will reinforce it. The owner first needs to choose the desired failure policy, then the spec and tests can enforce that policy. Fault injection should cover read errors and incomplete graph construction, alongside the existing release-executor simulator.
+
+I would address these in that order. The key design change is a validated boundary before planning, backed by typed “missing versus failed” results. That makes an incomplete package roster an error the planner cannot accidentally treat as an empty or smaller release. It is more effective than a blanket lint against .ok() or Path::exists(), which would flag harmless uses without proving release completeness.
+</pasted_content id="b815">
 
 ---
 
-Can we start that work?
+<task-notification>
+<task-id>bkdj4arnt</task-id>
+<tool-use-id>toolu_01XGDNNhwuBGY8WHkdJLPxD7</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto--claude-worktrees-owner-history/15c732d1-457b-4efc-91e5-664943f21b1c/tasks/bkdj4arnt.output</output-file>
+<status>completed</status>
+<summary>Background command "python3 -I /private/tmp/claude-501/-Users-gabe-Projects-callisto/15c732d1-457b-4efc-91e5-664943f21b1c/scratchpad/spec_fix.py &amp;&amp; just ci &gt; /private/tmp/claude-501/-Users-gabe-Projects-callisto/15c732d1-457b-4efc-91e5-664943f21b1c/scratchpad/ci_strict.log 2&gt;&amp;1; echo exit=$?" completed (exit code 0)</summary>
+</task-notification>
 
 ---
 
-Keep going
+Go with your recommendations on both policy calls
+
+---
+
+Let's make sure we're address the structural gaps that codex identified to avoid these issues from continuing to happen
+
+---
+
+<task-notification>
+<task-id>b0bqp8ngh</task-id>
+<tool-use-id>toolu_01TDBVFM41srBG2h8pyqwDBR</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto--claude-worktrees-owner-history/15c732d1-457b-4efc-91e5-664943f21b1c/tasks/b0bqp8ngh.output</output-file>
+<status>completed</status>
+<summary>Background command "just ci &gt; /private/tmp/claude-501/-Users-gabe-Projects-callisto/15c732d1-457b-4efc-91e5-664943f21b1c/scratchpad/ci_strict2.log 2&gt;&amp;1; echo exit=$?; grep -E "^TOTAL" /private/tmp/claude-501/-Users-gabe-Projects-callisto/15c732d1-457b-4efc-91e5-664943f21b1c/scratchpad/ci_strict2.log | awk '{print $4}'" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b8lgdp1t5</task-id>
+<tool-use-id>toolu_017MvoJAuRA2AUwHZQkdbS8Q</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto--claude-worktrees-owner-history/15c732d1-457b-4efc-91e5-664943f21b1c/tasks/b8lgdp1t5.output</output-file>
+<status>completed</status>
+<summary>Background command "python3 -I /private/tmp/claude-501/-Users-gabe-Projects-callisto/15c732d1-457b-4efc-91e5-664943f21b1c/scratchpad/rm_tautology.py &amp;&amp; just ci &gt; /private/tmp/claude-501/-Users-gabe-Projects-callisto/15c732d1-457b-4efc-91e5-664943f21b1c/scratchpad/ci_pr1b.log 2&gt;&amp;1; echo exit=$?; grep -E "^TOTAL" /private/tmp/claude-501/-Users-gabe-Projects-callisto/15c732d1-457b-4efc-91e5-664943f21b1c/scratchpad/ci_pr1b.log | awk '{print $4}'" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+We have conflicts: https://github.com/orin-dx/callisto/pull/235
+
+---
+
+<task-notification>
+<task-id>b0kscbi7j</task-id>
+<tool-use-id>toolu_019pce2fm6RNgmX8GBpULX59</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto--claude-worktrees-owner-history/15c732d1-457b-4efc-91e5-664943f21b1c/tasks/b0kscbi7j.output</output-file>
+<status>completed</status>
+<summary>Background command "just ci &gt; /private/tmp/claude-501/-Users-gabe-Projects-callisto/15c732d1-457b-4efc-91e5-664943f21b1c/scratchpad/ci_pr1c.log 2&gt;&amp;1; echo exit=$?; grep -E "^TOTAL" /private/tmp/claude-501/-Users-gabe-Projects-callisto/15c732d1-457b-4efc-91e5-664943f21b1c/scratchpad/ci_pr1c.log | awk '{print $4}'" completed (exit code 0)</summary>
+</task-notification>
