@@ -175,7 +175,7 @@
     },
     {
       "id": "REL-ORD-01",
-      "criterion": "A graph package's tag is created only after all selected registry publishes belonging to its canonical manifests succeed, in every ecosystem a dual Cargo and npm package publishes to, and its GitHub release draft only after its tag. A `[[release.artifact]]` slot's upload follows the product's draft and gates the product's publish even when a different selected package owns the asset, and the release is published only after the draft and every upload."
+      "criterion": "A graph package has one tag, GitHub release draft and publish, however many ecosystems it publishes to. Its tag is created only after all selected registry publishes belonging to its canonical manifests succeed, in every ecosystem a dual Cargo and npm package publishes to, and its GitHub release draft only after its tag. A `[[release.artifact]]` slot's upload follows the product's draft and gates the product's publish even when a different selected package owns the asset, and the release is published only after the draft and every upload."
     },
     {
       "id": "REL-ORD-02",

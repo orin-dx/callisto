@@ -153,6 +153,20 @@ pub(crate) fn derive_release_inputs<R: CommandRunner, D: DependencyResolver>(
 struct Selection<'w> {
     selected: BTreeMap<ReleasePackageId, (&'w callisto_model::Package, Version)>,
     package_ids: BTreeMap<callisto_model::PackageId, Vec<ReleasePackageId>>,
+    /// The first selected identity of each package in manifest order: it carries the package's shared effects.
+    owners: BTreeMap<callisto_model::PackageId, ReleasePackageId>,
+}
+
+type Owners = BTreeMap<callisto_model::PackageId, ReleasePackageId>;
+
+/// The selected identities that own their package's shared effects: one tag, forge release and upload set per package.
+fn owned<'a, 'w>(
+    selected: &'a BTreeMap<ReleasePackageId, (&'w callisto_model::Package, Version)>,
+    owners: &'a Owners,
+) -> impl Iterator<Item = (&'a ReleasePackageId, &'a (&'w callisto_model::Package, Version))> {
+    selected
+        .iter()
+        .filter(move |(id, (package, _))| owners.get(&package.id) == Some(*id))
 }
 
 /// The operations built so far, with the per-package indexes later stages read their prerequisites from.
@@ -203,7 +217,11 @@ fn derive_release_inputs_with<R: CommandRunner, D: DependencyResolver>(
         return Err(GraphError::ReleaseForgeRepositoryMissing);
     }
     let mut package_inputs = Vec::new();
-    let Selection { selected, package_ids } = select_packages(workspace, decision)?;
+    let Selection {
+        selected,
+        package_ids,
+        owners,
+    } = select_packages(workspace, decision)?;
     require_dependencies_selected(workspace, &selected, &package_ids)?;
     let all_packages: Vec<_> = workspace.graph.packages().map(|package| package.id.clone()).collect();
     let publish_edges = PublishEdgeFilter::new(
@@ -223,10 +241,10 @@ fn derive_release_inputs_with<R: CommandRunner, D: DependencyResolver>(
     let mut ops = Ops::default();
     build_publish_leaves(workspace, &selected, git_remote.as_ref(), &mut package_inputs, &mut ops)?;
     link_publish_prerequisites(workspace, &selected, &package_ids, &publish_edges, &mut ops)?;
-    add_tags(&selected, &package_ids, &source, &mut ops)?;
-    add_forge_releases(workspace, &selected, &mut ops)?;
-    let artifact_slots = add_artifact_uploads(workspace, &selected, artifact_policy, &mut ops, diagnostics)?;
-    add_forge_publishes(&selected, &mut ops)?;
+    add_tags(&selected, &package_ids, &owners, &source, &mut ops)?;
+    add_forge_releases(workspace, &selected, &owners, &mut ops)?;
+    let artifact_slots = add_artifact_uploads(workspace, &selected, &owners, artifact_policy, &mut ops, diagnostics)?;
+    add_forge_publishes(&selected, &owners, &mut ops)?;
 
     Ok((
         ReleaseInputSnapshotV1::new(source, package_inputs)?,
@@ -243,15 +261,20 @@ fn select_packages<'w, R: CommandRunner, D: DependencyResolver>(
 ) -> Result<Selection<'w>, GraphError> {
     let mut selected = BTreeMap::new();
     let mut package_ids = BTreeMap::<callisto_model::PackageId, Vec<ReleasePackageId>>::new();
+    let mut owners = Owners::new();
     for package in workspace.graph.packages() {
+        let ids = crate::commands::release_decision::release_package_ids(&workspace.identity, package)?;
+        if let Some(owner) = ids
+            .iter()
+            .find(|id| decision.entries.iter().any(|entry| &entry.package == *id))
+        {
+            owners.insert(package.id.clone(), owner.clone());
+        }
         // One canonical manifest per ecosystem is the expected shape, but
         // dedup defensively -- `release_package_ids` maps every canonical
         // manifest, and two manifests sharing an ecosystem would otherwise
         // select/push the same identity twice.
-        for id in crate::commands::release_decision::release_package_ids(&workspace.identity, package)?
-            .into_iter()
-            .collect::<BTreeSet<_>>()
-        {
+        for id in ids.into_iter().collect::<BTreeSet<_>>() {
             if let Some(entry) = decision.entries.iter().find(|entry| entry.package == id) {
                 selected.insert(id.clone(), (package, entry.target_version.clone()));
                 package_ids.entry(package.id.clone()).or_default().push(id);
@@ -264,7 +287,11 @@ fn select_packages<'w, R: CommandRunner, D: DependencyResolver>(
             return Err(GraphError::ReleasePackageNotSelected { package: id.clone() });
         }
     }
-    Ok(Selection { selected, package_ids })
+    Ok(Selection {
+        selected,
+        package_ids,
+        owners,
+    })
 }
 
 fn prepare_remote<R: CommandRunner, D: DependencyResolver>(
@@ -478,6 +505,7 @@ fn link_publish_prerequisites<R: CommandRunner, D: DependencyResolver>(
 fn add_tags(
     selected: &BTreeMap<ReleasePackageId, (&callisto_model::Package, Version)>,
     package_ids: &BTreeMap<callisto_model::PackageId, Vec<ReleasePackageId>>,
+    owners: &Owners,
     source: &SourceIdentity,
     ops: &mut Ops,
 ) -> Result<(), GraphError> {
@@ -487,7 +515,7 @@ fn add_tags(
         index,
     } = ops;
 
-    for (id, (package, version)) in selected {
+    for (id, (package, version)) in owned(selected, owners) {
         if !package
             .publish_to
             .iter()
@@ -534,6 +562,7 @@ fn add_tags(
 fn add_forge_releases<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     selected: &BTreeMap<ReleasePackageId, (&callisto_model::Package, Version)>,
+    owners: &Owners,
     ops: &mut Ops,
 ) -> Result<(), GraphError> {
     let Ops {
@@ -547,7 +576,7 @@ fn add_forge_releases<R: CommandRunner, D: DependencyResolver>(
         ..
     } = ops;
 
-    for (id, (package, version)) in selected {
+    for (id, (package, version)) in owned(selected, owners) {
         if package
             .publish_to
             .iter()
@@ -585,6 +614,7 @@ fn add_forge_releases<R: CommandRunner, D: DependencyResolver>(
 fn add_artifact_uploads<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     selected: &BTreeMap<ReleasePackageId, (&callisto_model::Package, Version)>,
+    owners: &Owners,
     artifact_policy: Option<&ArtifactBuildPolicy>,
     ops: &mut Ops,
     diagnostics: &mut Vec<Diagnostic>,
@@ -610,8 +640,7 @@ fn add_artifact_uploads<R: CommandRunner, D: DependencyResolver>(
         if !selected.values().any(|(package, _)| matches_product(package)) {
             // The product isn't in this release, so warn instead of leaving the artifact owner's asset unregistered.
             for artifact in &product.artifacts {
-                if let Some((owner_id, _)) = selected
-                    .iter()
+                if let Some((owner_id, _)) = owned(selected, owners)
                     .find(|(_, (pkg, _))| workspace.identity.identifies(&artifact.package, &pkg.id))
                 {
                     diagnostics.push(unreleased_product_artifact_diagnostic(
@@ -622,7 +651,7 @@ fn add_artifact_uploads<R: CommandRunner, D: DependencyResolver>(
                 }
             }
         }
-        for (id, (package, _)) in selected {
+        for (id, (package, _)) in owned(selected, owners) {
             if !matches_product(package) {
                 continue;
             }
@@ -643,8 +672,7 @@ fn add_artifact_uploads<R: CommandRunner, D: DependencyResolver>(
                 // The slot names the package whose build produced the bytes, which
                 // need not be the product -- a plugin can ship on the product's
                 // release. Every slot still attaches to the product's one release.
-                let (owner_id, owner_version) = selected
-                    .iter()
+                let (owner_id, owner_version) = owned(selected, owners)
                     .find(|(_, (pkg, _))| workspace.identity.identifies(&artifact.package, &pkg.id))
                     .map(|(candidate, (_, owner_version))| (candidate.clone(), owner_version.clone()))
                     .ok_or_else(|| GraphError::ReleaseArtifactOwnerNotReleased {
@@ -687,6 +715,7 @@ fn add_artifact_uploads<R: CommandRunner, D: DependencyResolver>(
 
 fn add_forge_publishes(
     selected: &BTreeMap<ReleasePackageId, (&callisto_model::Package, Version)>,
+    owners: &Owners,
     ops: &mut Ops,
 ) -> Result<(), GraphError> {
     let Ops {
@@ -701,7 +730,7 @@ fn add_forge_publishes(
 
     // Publishing is the last forge step: a GitHub Release is only complete
     // once every asset it carries has been uploaded to it as a draft.
-    for (id, (_, version)) in selected {
+    for (id, (_, version)) in owned(selected, owners) {
         let Some(forge) = forge_by_package.get(id) else {
             continue;
         };
@@ -1918,6 +1947,79 @@ mod tests {
         assert!(
             eligible.iter().any(|id| matches!(id.role, Tag)),
             "both publishes landed, so the tag is next: {eligible:?}"
+        );
+    }
+
+    fn operations_of(
+        operations: &[ReleaseOperation],
+        role: callisto_model::ReleaseOperationRole,
+    ) -> Vec<&ReleaseOperation> {
+        operations
+            .iter()
+            .filter(|operation| operation.id().role == role)
+            .collect()
+    }
+
+    /// A dual package has one physical tag and one GitHub release, so one operation of each, on the owner.
+    #[test]
+    fn a_dual_owner_has_one_tag_and_one_forge_release_and_publish() {
+        use callisto_model::ReleaseOperationRole::{ForgePublish, ForgeRelease, Tag};
+
+        let (_, operations, _, _, _) = derive(&dual_owner_repo(), &dual_owner_decision()).unwrap();
+        for role in [Tag, ForgeRelease, ForgePublish] {
+            let found = operations_of(&operations, role.clone());
+            assert_eq!(found.len(), 1, "{role:?}: {found:?}");
+            assert_eq!(found[0].id().package.ecosystem(), Ecosystem::Cargo, "{role:?}");
+        }
+    }
+
+    /// Selecting only the npm identity makes npm the owner, so the tag is not keyed by a package the run omits.
+    #[test]
+    fn a_partial_dual_selection_is_owned_by_the_selected_identity() {
+        use callisto_model::ReleaseOperationRole::{ForgePublish, ForgeRelease, Tag};
+
+        let decision = release(&[(Ecosystem::Npm, "dual", "1.0.0")]);
+        let (_, operations, _, _, _) = derive(&dual_owner_repo(), &decision).unwrap();
+        for role in [Tag, ForgeRelease, ForgePublish] {
+            let found = operations_of(&operations, role.clone());
+            assert_eq!(found.len(), 1, "{role:?}: {found:?}");
+            assert_eq!(found[0].id().package.ecosystem(), Ecosystem::Npm, "{role:?}");
+        }
+    }
+
+    /// A dual product's one release carries each configured asset once.
+    #[test]
+    fn a_dual_product_with_an_artifact_derives_one_upload() {
+        let dir = repo(&[
+            ("Cargo.toml", "[workspace]\nmembers = [\"dual\"]\n"),
+            (
+                "dual/Cargo.toml",
+                "[package]\nname = \"dual\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+            ),
+            ("dual/package.json", r#"{"name":"dual","version":"1.0.0"}"#),
+            (
+                "callisto.toml",
+                "[release]\nproduct-package = \"cargo/dual\"\nforge-repository = \"example/parity\"\n\n\
+                 [[release.artifact]]\npackage = \"cargo/dual\"\ntarget = \"t\"\nasset-name = \"a.tar.gz\"\n\n\
+                 [[package]]\nmatch = \"dual\"\npublish-to = [\"crates-io\", \"npm\", \"github-release\"]\n",
+            ),
+        ]);
+        let ((_, operations, _, _, slots), _) = derive_with_artifact_policy(&dir, &dual_owner_decision()).unwrap();
+        assert_eq!(slots.len(), 1, "{slots:?}");
+        let uploads: Vec<_> = operations
+            .iter()
+            .filter(|operation| {
+                matches!(
+                    operation.id().role,
+                    callisto_model::ReleaseOperationRole::ArtifactUpload { .. }
+                )
+            })
+            .collect();
+        assert_eq!(uploads.len(), 1, "{uploads:?}");
+        let publish = forge_publish_operation(&operations, "dual");
+        assert!(
+            publish.prerequisites().contains(uploads[0].id()),
+            "the forge publish waits for the upload: {publish:?}"
         );
     }
 }
