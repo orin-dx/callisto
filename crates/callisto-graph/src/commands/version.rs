@@ -618,7 +618,7 @@ pub(crate) fn platform_version_writes<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     targets: &std::collections::BTreeMap<callisto_model::PackageId, callisto_model::Version>,
 ) -> Result<(Vec<PlatformWrite>, Vec<crate::plan::OptionalDepUpdate>), GraphError> {
-    let open_ctx = OpenContext::for_workspace_root(&ws.root);
+    let open_ctx = OpenContext::for_workspace_root(&ws.root)?;
     let pkg_map: HashMap<_, _> = ws.graph.packages().map(|p| (&p.id, p)).collect();
 
     let mut members: Vec<(&callisto_model::PackageId, &std::path::Path, &str)> = Vec::new();

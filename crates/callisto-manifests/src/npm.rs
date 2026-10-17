@@ -623,24 +623,38 @@ fn render_at_precision(target: &Version, original_clause: &str) -> String {
 }
 
 pub fn detect_npm_workspace_kind(workspace_root: &Path) -> Result<Option<WorkspaceKind>, ManifestError> {
-    if workspace_root.join("pnpm-lock.yaml").exists() || workspace_root.join("pnpm-workspace.yaml").exists() {
+    let present = |name: &str| -> Result<bool, ManifestError> {
+        let path = workspace_root.join(name);
+        callisto_model::strict_fs::exists(&path).map_err(|e| ManifestError::Read {
+            path,
+            message: e.to_string(),
+        })
+    };
+    if present("pnpm-lock.yaml")? || present("pnpm-workspace.yaml")? {
         return Ok(Some(WorkspaceKind::Pnpm));
     }
-    if workspace_root.join("yarn.lock").exists() {
+    if present("yarn.lock")? {
         return Ok(Some(WorkspaceKind::Yarn));
     }
-    if workspace_root.join("package-lock.json").exists() {
+    if present("package-lock.json")? {
         return Ok(Some(WorkspaceKind::Npm));
     }
 
     let root_pkg_json = workspace_root.join("package.json");
-    if root_pkg_json.exists() {
-        if let Ok(content) = fs::read_to_string(&root_pkg_json) {
-            if let Ok(val) = serde_json::from_str::<Value>(&content) {
-                if val.get("workspaces").is_some() {
-                    return Ok(Some(WorkspaceKind::Npm));
-                }
+    let content = callisto_model::strict_fs::read_optional(&root_pkg_json).map_err(|e| ManifestError::Read {
+        path: root_pkg_json.clone(),
+        message: e.to_string(),
+    })?;
+    if let Some(content) = content {
+        let val = serde_json::from_str::<Value>(content.strip_prefix('\u{FEFF}').unwrap_or(&content)).map_err(|e| {
+            ManifestError::Parse {
+                path: root_pkg_json.clone(),
+                format: ManifestFormat::PackageJson,
+                message: e.to_string(),
             }
+        })?;
+        if val.get("workspaces").is_some() {
+            return Ok(Some(WorkspaceKind::Npm));
         }
     }
 

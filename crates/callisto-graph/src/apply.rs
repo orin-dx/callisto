@@ -149,7 +149,7 @@ pub fn apply_version_plan<R: CommandRunner>(
     let mut modified_paths = Vec::new();
     let mut deferred_deletions = Vec::new();
 
-    let ctx = OpenContext::for_workspace_root(root);
+    let ctx = OpenContext::for_workspace_root(root)?;
     let classification = classify_manifest_writes(plan);
 
     for step in write_steps(plan, &classification) {

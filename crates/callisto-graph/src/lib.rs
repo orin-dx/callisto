@@ -165,7 +165,7 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
     }
 
     pub fn base_versions(&self) -> Result<BTreeMap<PackageId, Version>, GraphError> {
-        let ctx = callisto_manifests::OpenContext::for_workspace_root(&self.root);
+        let ctx = callisto_manifests::OpenContext::for_workspace_root(&self.root)?;
 
         let mut versions = BTreeMap::new();
         for pkg in self.graph.packages() {

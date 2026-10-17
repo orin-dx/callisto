@@ -62,6 +62,26 @@ pub enum LocateError {
     )]
     ManifestReadError { path: PathBuf, message: String },
 
+    #[error("invalid workspace membership in `{}`: {message}", .path.display())]
+    #[diagnostic(
+        code(E311),
+        help(
+            "Make `members`/`exclude` (Cargo, uv) or `workspaces`/`packages` (npm, pnpm) an array of valid glob strings; \
+             Callisto will not guess which packages a malformed workspace admits."
+        )
+    )]
+    InvalidMembership { path: PathBuf, message: String },
+
+    #[error("package `{}` is reached through a symbolic link, which Git cannot stage", .path.display())]
+    #[diagnostic(
+        code(E312),
+        help(
+            "Replace the link with the real directory, or ignore it in .gitignore so discovery skips it; \
+             Callisto cannot commit a version bump to a file beneath a symbolic link."
+        )
+    )]
+    SymlinkedPackage { path: PathBuf },
+
     /// A VCS operation failed during workspace location. This variant exists
     /// so that callers who need to distinguish filesystem-structure errors
     /// (WorkspaceRootNotFound, Walk) from VCS errors (e.g., a git repository

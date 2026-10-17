@@ -204,24 +204,30 @@ impl<'a> OpenContext<'a> {
     /// independently (audit pattern: duplication) -- see
     /// `callisto-graph`'s `walk`, `lib` (`Workspace::base_versions`),
     /// `apply`, and `commands::version` modules.
-    pub fn for_workspace_root(root: &'a Path) -> OpenContext<'a> {
-        let cargo_workspace = if root.join("Cargo.toml").exists() {
-            if let Ok(resolver) = WorkspaceCargoResolver::load(&root.join("Cargo.toml")) {
-                resolver.inheritance().ok().map(Arc::new)
+    ///
+    /// # Errors
+    ///
+    /// A root `Cargo.toml` or `package.json` that exists but cannot be read or parsed. An inheriting member
+    /// could not be opened without it, so a missing context is an error, never an empty one.
+    pub fn for_workspace_root(root: &'a Path) -> Result<OpenContext<'a>, callisto_model::ManifestError> {
+        let cargo_manifest = root.join("Cargo.toml");
+        let cargo_workspace =
+            if callisto_model::strict_fs::exists(&cargo_manifest).map_err(|e| callisto_model::ManifestError::Read {
+                path: cargo_manifest.clone(),
+                message: e.to_string(),
+            })? {
+                Some(Arc::new(WorkspaceCargoResolver::load(&cargo_manifest)?.inheritance()?))
             } else {
                 None
-            }
-        } else {
-            None
-        };
+            };
 
-        let npm_workspace_kind = detect_npm_workspace_kind(root).ok().flatten();
+        let npm_workspace_kind = detect_npm_workspace_kind(root)?;
 
-        OpenContext {
+        Ok(OpenContext {
             workspace_root: root,
             cargo_workspace,
             npm_workspace_kind,
-        }
+        })
     }
 }
 

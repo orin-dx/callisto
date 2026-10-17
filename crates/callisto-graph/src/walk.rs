@@ -87,7 +87,7 @@ impl ManifestWalkResolver {
         cfg: &ResolvedConfig,
         manifest_cache: &RefCell<BTreeMap<PathBuf, Arc<dyn Manifest>>>,
     ) -> Result<Self, GraphError> {
-        let ctx = OpenContext::for_workspace_root(root);
+        let ctx = OpenContext::for_workspace_root(root)?;
         let mut diagnostics = Vec::new();
 
         let discovered = discover(root, locator, manifest_cache, &ctx, &mut diagnostics)?;

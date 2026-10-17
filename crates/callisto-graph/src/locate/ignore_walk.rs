@@ -39,9 +39,9 @@ impl ProjectLocator for IgnoreWalkLocator {
     fn projects_and_platform_candidates(&self) -> Result<(Vec<ProjectRoot>, Vec<ProjectRoot>), LocateError> {
         let mut results = Vec::new();
         let mut platform_candidates = Vec::new();
-        let cargo_membership = membership::read_cargo_membership(&self.root);
-        let npm_membership = membership::read_npm_membership(&self.root);
-        let python_membership = membership::read_python_membership(&self.root);
+        let cargo_membership = membership::read_cargo_membership(&self.root)?;
+        let npm_membership = membership::read_npm_membership(&self.root)?;
+        let python_membership = membership::read_python_membership(&self.root)?;
         let walker = WalkBuilder::new(&self.root)
             .hidden(true)
             .git_ignore(true)
@@ -174,8 +174,10 @@ impl ProjectLocator for IgnoreWalkLocator {
                     ecosystem,
                 };
                 if admitted {
+                    reject_symlinked_package(&self.root, &rel)?;
                     results.push(project);
                 } else if ecosystem == Ecosystem::Npm && callisto_manifests::npm_role_from_source(&content).is_some() {
+                    reject_symlinked_package(&self.root, &rel)?;
                     platform_candidates.push(project);
                 }
             }
@@ -185,6 +187,25 @@ impl ProjectLocator for IgnoreWalkLocator {
         platform_candidates.sort_by(|a, b| a.path.cmp(&b.path));
         Ok((results, platform_candidates))
     }
+}
+
+/// Git cannot stage a path beneath a symbolic link, so a package there could be edited on disk but never committed.
+/// Discovery follows links only so that it can name such a package here instead of silently skipping it.
+fn reject_symlinked_package(root: &Path, rel: &Path) -> Result<(), LocateError> {
+    let mut current = root.to_path_buf();
+    for component in rel.components() {
+        current.push(component);
+        let metadata = std::fs::symlink_metadata(&current).map_err(|error| LocateError::Walk {
+            path: current.clone(),
+            message: error.to_string(),
+        })?;
+        if metadata.file_type().is_symlink() {
+            return Err(LocateError::SymlinkedPackage {
+                path: rel.to_path_buf(),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Why a manifest present in a directory could not be turned into an identity.
@@ -261,14 +282,8 @@ mod tests {
         );
     }
 
-    /// Spec: symlinked directories are a deliberately supported workspace
-    /// pattern (vendor-link style monorepos). `IgnoreWalkLocator` must
-    /// traverse *into* a symlinked directory and discover a package nested
-    /// below its top level, not just a manifest sitting directly at the
-    /// symlink's root -- proving `follow_links(true)` is really wired in,
-    /// not just tolerated by an incidental `is_dir()` resolution.
     #[test]
-    fn ignore_walk_locator_discovers_package_nested_inside_a_symlinked_directory() {
+    fn a_package_reached_through_a_symlinked_directory_is_an_error() {
         let root = tempdir().unwrap();
         let external = tempdir().unwrap();
 
@@ -283,15 +298,28 @@ mod tests {
         std::os::unix::fs::symlink(external.path(), root.path().join("vendor-link"))
             .expect("failed to create symlink for test fixture");
 
-        let locator = IgnoreWalkLocator::new(root.path());
-        let projects = locator.projects().unwrap();
-
+        let err = IgnoreWalkLocator::new(root.path()).projects().unwrap_err();
         assert!(
-            projects
-                .iter()
-                .any(|p| p.id == PackageId::Bare("linked-nested-pkg".to_string())),
-            "expected linked-nested-pkg discovered through the symlinked directory, got: {projects:?}"
+            matches!(&err, LocateError::SymlinkedPackage { path } if path.starts_with("vendor-link")),
+            "expected the symlinked package to be named, got: {err:?}"
         );
+    }
+
+    /// A symlink that holds no package is not a problem: only a package Git cannot stage is rejected.
+    #[test]
+    fn a_symlink_that_holds_no_package_is_ignored() {
+        let root = tempdir().unwrap();
+        let external = tempdir().unwrap();
+        fs::write(external.path().join("notes.txt"), "x").unwrap();
+        fs::write(
+            root.path().join("Cargo.toml"),
+            "[package]\nname = \"real\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(external.path(), root.path().join("docs-link")).unwrap();
+
+        let projects = IgnoreWalkLocator::new(root.path()).projects().unwrap();
+        assert!(projects.iter().any(|p| p.path == Path::new(".")), "{projects:?}");
     }
 
     /// Spec: a `pyproject.toml` workspace's `[tool.uv.workspace] exclude`
@@ -1123,52 +1151,6 @@ mod tests {
         );
     }
 
-    /// A sibling pnpm-workspace.yaml that fails to parse as YAML
-    /// does not count as "present" for precedence purposes -- the
-    /// root package.json's "workspaces" field is still consulted and
-    /// governs npm-ecosystem membership normally.
-    #[test]
-    fn malformed_pnpm_yaml_does_not_count_as_present_for_precedence() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        std::fs::write(root.join("package.json"), r#"{"workspaces": ["packages/*"]}"#).unwrap();
-        std::fs::write(root.join("pnpm-workspace.yaml"), "packages: [\"packages/*\"\n").unwrap();
-        std::fs::create_dir_all(root.join("packages/y")).unwrap();
-        std::fs::write(root.join("packages/y/package.json"), r#"{"name":"y"}"#).unwrap();
-
-        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-
-        assert!(
-            projects.iter().any(|p| p.path == Path::new("packages/y")),
-            "package.json workspaces field must still govern membership when \
-             pnpm-workspace.yaml is malformed YAML, got: {projects:?}"
-        );
-    }
-
-    /// A root package.json with no "workspaces" field, alongside a
-    /// pnpm-workspace.yaml whose YAML is malformed (unterminated flow
-    /// sequence -> yaml_rust2::YamlLoader::load_from_str returns Err), must
-    /// not panic or error the whole walk. The npm membership filter is
-    /// treated as absent for that workspace (falls back to
-    /// admit-all), matching the malformed-TOML treatment.
-    #[test]
-    fn malformed_pnpm_yaml_with_no_package_json_workspaces_falls_back_to_absent_filter() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        std::fs::write(root.join("package.json"), r#"{"name":"root"}"#).unwrap();
-        std::fs::write(root.join("pnpm-workspace.yaml"), "packages: [\"packages/*\"\n").unwrap();
-        std::fs::create_dir_all(root.join("packages/kept")).unwrap();
-        std::fs::write(root.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
-
-        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-
-        assert!(
-            projects.iter().any(|p| p.path == Path::new("packages/kept")),
-            "malformed pnpm-workspace.yaml with no package.json workspaces field \
-             must fall back to admit-all npm membership, got: {projects:?}"
-        );
-    }
-
     /// Consolidated npm/pnpm workspace-membership regression group.
     /// Reassembles the individual npm and pnpm membership fixtures into a
     /// single regression test.
@@ -1236,16 +1218,6 @@ mod tests {
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
             assert!(!projects.iter().any(|p| p.ecosystem == Ecosystem::Npm));
         }
-        {
-            let tmp = tempfile::tempdir().unwrap();
-            let root = tmp.path();
-            std::fs::write(root.join("package.json"), r#"{"workspaces": ["packages/*"]}"#).unwrap();
-            std::fs::write(root.join("pnpm-workspace.yaml"), "packages: [\"packages/*\"\n").unwrap();
-            std::fs::create_dir_all(root.join("packages/y")).unwrap();
-            std::fs::write(root.join("packages/y/package.json"), r#"{"name":"y"}"#).unwrap();
-            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-            assert!(projects.iter().any(|p| p.path == Path::new("packages/y")));
-        }
 
         {
             let tmp = tempfile::tempdir().unwrap();
@@ -1264,25 +1236,6 @@ mod tests {
                 r#"{"name": "root-package", "workspaces": ["packages/*"]}"#,
             )
             .unwrap();
-            std::fs::create_dir_all(root.join("packages/child")).unwrap();
-            std::fs::write(root.join("packages/child/package.json"), r#"{"name":"child"}"#).unwrap();
-            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-            assert!(projects
-                .iter()
-                .any(|p| p.path == Path::new(".") && p.ecosystem == Ecosystem::Npm));
-            assert!(projects
-                .iter()
-                .any(|p| p.path == Path::new("packages/child") && p.ecosystem == Ecosystem::Npm));
-        }
-        {
-            let tmp = tempfile::tempdir().unwrap();
-            let root = tmp.path();
-            std::fs::write(
-                root.join("package.json"),
-                r#"{"name": "root-package", "workspaces": ["packages/*"]}"#,
-            )
-            .unwrap();
-            std::fs::write(root.join("pnpm-workspace.yaml"), "packages: [\"packages/*\"\n").unwrap();
             std::fs::create_dir_all(root.join("packages/child")).unwrap();
             std::fs::write(root.join("packages/child/package.json"), r#"{"name":"child"}"#).unwrap();
             let projects = IgnoreWalkLocator::new(root).projects().unwrap();
@@ -1361,16 +1314,10 @@ mod tests {
         );
     }
 
-    /// Given a root package.json declaring both "name" and
-    /// "workspaces": ["packages/*"], and a sibling pnpm-workspace.yaml whose
-    /// content is malformed YAML, calling projects() still returns an entry
-    /// with path == "." and ecosystem == Npm for the root's own package.
-    /// A malformed pnpm-workspace.yaml does not count as "present" for
-    /// precedence purposes, so package.json's "workspaces"
-    /// field governs and the hybrid-root exemption applies exactly as it
-    /// would if no pnpm-workspace.yaml existed at all.
+    /// A pnpm-workspace.yaml that is not valid UTF-8 cannot be read, so membership is unknown: that is an error,
+    /// not a reason to fall back to the package.json `workspaces` field.
     #[test]
-    fn npm_hybrid_root_admitted_when_sibling_pnpm_workspace_yaml_is_malformed() {
+    fn a_pnpm_workspace_yaml_that_is_not_utf8_is_an_unreadable_manifest_error() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(
@@ -1378,25 +1325,12 @@ mod tests {
             r#"{"name": "root-package", "workspaces": ["packages/*"]}"#,
         )
         .unwrap();
-        // Deliberately malformed YAML — yaml_rust2::YamlLoader::load_from_str
-        // must return Err(..) for this content.
         std::fs::write(root.join("pnpm-workspace.yaml"), b": {\x00 invalid yaml \xff\xfe").unwrap();
-        std::fs::create_dir_all(root.join("packages/child")).unwrap();
-        std::fs::write(root.join("packages/child/package.json"), r#"{"name":"child"}"#).unwrap();
 
-        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-
+        let err = IgnoreWalkLocator::new(root).projects().unwrap_err();
         assert!(
-            projects
-                .iter()
-                .any(|p| p.path == Path::new(".") && p.ecosystem == Ecosystem::Npm),
-            "root package must be admitted as Npm despite malformed pnpm-workspace.yaml, got: {projects:?}"
-        );
-        assert!(
-            projects
-                .iter()
-                .any(|p| p.path == Path::new("packages/child") && p.ecosystem == Ecosystem::Npm),
-            "packages/child must be admitted as Npm, got: {projects:?}"
+            matches!(&err, LocateError::ManifestReadError { path, .. } if path.ends_with("pnpm-workspace.yaml")),
+            "{err:?}"
         );
     }
 
@@ -1467,313 +1401,18 @@ mod tests {
         );
     }
 
+    /// A pnpm-workspace.yaml without a `packages:` key restricts nothing, as in pnpm itself.
     #[test]
-    fn malformed_cargo_members_bare_string_falls_back_to_absent_filter() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = \"crates/*\"\n").unwrap();
-        std::fs::create_dir_all(root.join("tools/outside")).unwrap();
-        std::fs::write(
-            root.join("tools/outside/Cargo.toml"),
-            "[package]\nname = \"outside\"\nversion = \"0.1.0\"\n",
-        )
-        .unwrap();
-
-        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-
-        assert!(projects.iter().any(|p| p.path == Path::new("tools/outside")));
-    }
-
-    #[test]
-    fn malformed_cargo_members_non_string_entry_falls_back_to_absent_filter() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = [\"crates/*\", 42]\n").unwrap();
-        std::fs::create_dir_all(root.join("tools/outside")).unwrap();
-        std::fs::write(
-            root.join("tools/outside/Cargo.toml"),
-            "[package]\nname = \"outside\"\nversion = \"0.1.0\"\n",
-        )
-        .unwrap();
-
-        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-
-        assert!(projects.iter().any(|p| p.path == Path::new("tools/outside")));
-    }
-
-    #[test]
-    fn malformed_root_cargo_toml_syntax_falls_back_to_absent_cargo_filter() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        std::fs::write(root.join("Cargo.toml"), "[workspace\nmembers = [\n").unwrap();
-        std::fs::create_dir_all(root.join("crates/kept")).unwrap();
-        std::fs::write(
-            root.join("crates/kept/Cargo.toml"),
-            "[package]\nname = \"kept\"\nversion = \"0.1.0\"\n",
-        )
-        .unwrap();
-
-        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-
-        assert!(projects.iter().any(|p| p.path == Path::new("crates/kept")));
-    }
-
-    #[test]
-    fn malformed_cargo_exclude_bare_string_falls_back_to_excluding_nothing() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        std::fs::write(
-            root.join("Cargo.toml"),
-            "[workspace]\nmembers = [\"crates/*\"]\nexclude = \"crates/scratch-example\"\n",
-        )
-        .unwrap();
-        std::fs::create_dir_all(root.join("crates/scratch-example")).unwrap();
-        std::fs::write(
-            root.join("crates/scratch-example/Cargo.toml"),
-            "[package]\nname = \"scratch-example\"\nversion = \"0.1.0\"\n",
-        )
-        .unwrap();
-        std::fs::create_dir_all(root.join("crates/kept-example")).unwrap();
-        std::fs::write(
-            root.join("crates/kept-example/Cargo.toml"),
-            "[package]\nname = \"kept-example\"\nversion = \"0.1.0\"\n",
-        )
-        .unwrap();
-        std::fs::create_dir_all(root.join("tools/outside")).unwrap();
-        std::fs::write(
-            root.join("tools/outside/Cargo.toml"),
-            "[package]\nname = \"outside\"\nversion = \"0.1.0\"\n",
-        )
-        .unwrap();
-
-        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-
-        assert!(projects.iter().any(|p| p.path == Path::new("crates/scratch-example")));
-        assert!(projects.iter().any(|p| p.path == Path::new("crates/kept-example")));
-        assert!(!projects.iter().any(|p| p.path == Path::new("tools/outside")));
-    }
-
-    #[test]
-    fn malformed_cargo_exclude_non_string_entry_falls_back_to_excluding_nothing() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        std::fs::write(
-            root.join("Cargo.toml"),
-            "[workspace]\nmembers = [\"crates/*\"]\nexclude = [\"crates/scratch-example\", 42]\n",
-        )
-        .unwrap();
-        std::fs::create_dir_all(root.join("crates/scratch-example")).unwrap();
-        std::fs::write(
-            root.join("crates/scratch-example/Cargo.toml"),
-            "[package]\nname = \"scratch-example\"\nversion = \"0.1.0\"\n",
-        )
-        .unwrap();
-        std::fs::create_dir_all(root.join("crates/kept-example")).unwrap();
-        std::fs::write(
-            root.join("crates/kept-example/Cargo.toml"),
-            "[package]\nname = \"kept-example\"\nversion = \"0.1.0\"\n",
-        )
-        .unwrap();
-        std::fs::create_dir_all(root.join("tools/outside")).unwrap();
-        std::fs::write(
-            root.join("tools/outside/Cargo.toml"),
-            "[package]\nname = \"outside\"\nversion = \"0.1.0\"\n",
-        )
-        .unwrap();
-
-        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-
-        assert!(projects.iter().any(|p| p.path == Path::new("crates/scratch-example")));
-        assert!(projects.iter().any(|p| p.path == Path::new("crates/kept-example")));
-        assert!(!projects.iter().any(|p| p.path == Path::new("tools/outside")));
-    }
-
-    #[test]
-    fn invalid_glob_in_cargo_members_is_skipped_without_disabling_sibling_entries() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        std::fs::write(
-            root.join("Cargo.toml"),
-            "[workspace]\nmembers = [\"crates/kept-example\", \"crates/[unterminated\"]\n",
-        )
-        .unwrap();
-        std::fs::create_dir_all(root.join("crates/kept-example")).unwrap();
-        std::fs::write(
-            root.join("crates/kept-example/Cargo.toml"),
-            "[package]\nname = \"kept-example\"\nversion = \"0.1.0\"\n",
-        )
-        .unwrap();
-
-        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-
-        assert!(projects.iter().any(|p| p.path == Path::new("crates/kept-example")));
-    }
-
-    #[test]
-    fn invalid_glob_in_npm_workspaces_is_skipped_without_disabling_sibling_entries() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        std::fs::write(
-            root.join("package.json"),
-            r#"{"workspaces": ["packages/kept-example", "packages/[unterminated"]}"#,
-        )
-        .unwrap();
-        std::fs::create_dir_all(root.join("packages/kept-example")).unwrap();
-        std::fs::write(
-            root.join("packages/kept-example/package.json"),
-            r#"{"name":"kept-example"}"#,
-        )
-        .unwrap();
-
-        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-
-        assert!(projects.iter().any(|p| p.path == Path::new("packages/kept-example")));
-    }
-
-    #[test]
-    fn invalid_glob_in_cargo_exclude_is_skipped_without_disabling_sibling_entries() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        std::fs::write(
-            root.join("Cargo.toml"),
-            "[workspace]\nmembers = [\"crates/*\"]\nexclude = [\"crates/scratch-example\", \"crates/[unterminated\"]\n",
-        )
-        .unwrap();
-        std::fs::create_dir_all(root.join("crates/scratch-example")).unwrap();
-        std::fs::write(
-            root.join("crates/scratch-example/Cargo.toml"),
-            "[package]\nname = \"scratch-example\"\nversion = \"0.1.0\"\n",
-        )
-        .unwrap();
-        std::fs::create_dir_all(root.join("crates/kept-example")).unwrap();
-        std::fs::write(
-            root.join("crates/kept-example/Cargo.toml"),
-            "[package]\nname = \"kept-example\"\nversion = \"0.1.0\"\n",
-        )
-        .unwrap();
-
-        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-
-        assert!(!projects.iter().any(|p| p.path == Path::new("crates/scratch-example")));
-        assert!(projects.iter().any(|p| p.path == Path::new("crates/kept-example")));
-    }
-
-    #[test]
-    fn invalid_glob_in_pnpm_packages_is_skipped_without_disabling_sibling_entries() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        std::fs::write(
-            root.join("pnpm-workspace.yaml"),
-            "packages:\n  - \"packages/kept-example\"\n  - \"packages/[unterminated\"\n",
-        )
-        .unwrap();
-        std::fs::create_dir_all(root.join("packages/kept-example")).unwrap();
-        std::fs::write(
-            root.join("packages/kept-example/package.json"),
-            r#"{"name":"kept-example"}"#,
-        )
-        .unwrap();
-
-        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-
-        assert!(projects.iter().any(|p| p.path == Path::new("packages/kept-example")));
-    }
-
-    #[test]
-    fn malformed_npm_workspaces_bare_string_falls_back_to_absent_filter() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        std::fs::write(root.join("package.json"), r#"{"workspaces": "packages/*"}"#).unwrap();
-        std::fs::create_dir_all(root.join("tools/outside")).unwrap();
-        std::fs::write(root.join("tools/outside/package.json"), r#"{"name":"outside"}"#).unwrap();
-
-        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-
-        assert!(projects.iter().any(|p| p.path == Path::new("tools/outside")));
-    }
-
-    #[test]
-    fn malformed_npm_workspaces_non_string_entry_falls_back_to_absent_filter() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        std::fs::write(root.join("package.json"), r#"{"workspaces": ["packages/*", 42]}"#).unwrap();
-        std::fs::create_dir_all(root.join("tools/outside")).unwrap();
-        std::fs::write(root.join("tools/outside/package.json"), r#"{"name":"outside"}"#).unwrap();
-
-        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-
-        assert!(projects.iter().any(|p| p.path == Path::new("tools/outside")));
-    }
-
-    #[test]
-    fn malformed_root_package_json_syntax_falls_back_to_absent_npm_filter() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        std::fs::write(root.join("package.json"), "{\"workspaces\": [\"packages/*\"],}").unwrap();
+    fn a_pnpm_workspace_yaml_without_a_packages_key_admits_everything() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("pnpm-workspace.yaml"), "other_key: true\n").unwrap();
         std::fs::create_dir_all(root.join("packages/kept")).unwrap();
         std::fs::write(root.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
-
         let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-
-        assert!(projects.iter().any(|p| p.path == Path::new("packages/kept")));
-    }
-
-    /// A pnpm-workspace.yaml that parses successfully but
-    /// whose top-level document either has no `packages:` key, or has a
-    /// `packages:` key whose value is not a YAML sequence of strings --
-    /// e.g. `packages: "packages/*"` (bare scalar), `packages: {foo: bar}`
-    /// (mapping), or a sequence containing a non-string element -- does not
-    /// panic; `IgnoreWalkLocator::projects()` treats the npm membership
-    /// filter as absent for that workspace, the same fallback as the
-    /// YAML-syntax-error case.
-    #[test]
-    fn pnpm_packages_wrong_shape_falls_back_to_absent_filter() {
-        let dir_missing = tempfile::tempdir().unwrap();
-        let root_missing = dir_missing.path();
-        std::fs::write(root_missing.join("pnpm-workspace.yaml"), "other_key: true\n").unwrap();
-        std::fs::create_dir_all(root_missing.join("packages/kept")).unwrap();
-        std::fs::write(root_missing.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
-        let projects_missing = IgnoreWalkLocator::new(root_missing).projects().unwrap();
         assert!(
-            projects_missing.iter().any(|p| p.path == Path::new("packages/kept")),
-            "missing key: packages/kept must be admitted, got: {projects_missing:?}"
-        );
-
-        let dir_scalar = tempfile::tempdir().unwrap();
-        let root_scalar = dir_scalar.path();
-        std::fs::write(root_scalar.join("pnpm-workspace.yaml"), "packages: \"packages/*\"\n").unwrap();
-        std::fs::create_dir_all(root_scalar.join("packages/kept")).unwrap();
-        std::fs::write(root_scalar.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
-        let projects_scalar = IgnoreWalkLocator::new(root_scalar).projects().unwrap();
-        assert!(
-            projects_scalar.iter().any(|p| p.path == Path::new("packages/kept")),
-            "wrong scalar type: packages/kept must be admitted, got: {projects_scalar:?}"
-        );
-
-        let dir_mapping = tempfile::tempdir().unwrap();
-        let root_mapping = dir_mapping.path();
-        std::fs::write(root_mapping.join("pnpm-workspace.yaml"), "packages:\n  foo: bar\n").unwrap();
-        std::fs::create_dir_all(root_mapping.join("packages/kept")).unwrap();
-        std::fs::write(root_mapping.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
-        let projects_mapping = IgnoreWalkLocator::new(root_mapping).projects().unwrap();
-        assert!(
-            projects_mapping.iter().any(|p| p.path == Path::new("packages/kept")),
-            "mapping value: packages/kept must be admitted, got: {projects_mapping:?}"
-        );
-
-        let dir_nonstring = tempfile::tempdir().unwrap();
-        let root_nonstring = dir_nonstring.path();
-        std::fs::write(
-            root_nonstring.join("pnpm-workspace.yaml"),
-            "packages:\n  - \"a\"\n  - 42\n",
-        )
-        .unwrap();
-        std::fs::create_dir_all(root_nonstring.join("packages/kept")).unwrap();
-        std::fs::write(root_nonstring.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
-        let projects_nonstring = IgnoreWalkLocator::new(root_nonstring).projects().unwrap();
-        assert!(
-            projects_nonstring.iter().any(|p| p.path == Path::new("packages/kept")),
-            "non-string sequence element: packages/kept must be admitted, got: {projects_nonstring:?}"
+            projects.iter().any(|p| p.path == Path::new("packages/kept")),
+            "got: {projects:?}"
         );
     }
 
@@ -1825,311 +1464,155 @@ mod tests {
         );
     }
 
-    /// Regression-proof consolidation of the Cargo
-    /// malformed-input criteria already proven individually (bare-string members/exclude
-    /// fallback, malformed root `Cargo.toml` fallback, invalid glob
-    /// skip-without-disabling for both members and exclude). Reassembles
-    /// those fixtures into one regression group so future changes
-    /// to Cargo membership handling that break any of these
-    /// no-panic/fallback behaviors are caught here.
+    /// Malformed workspace membership never falls back to "admit everything": each case fails discovery and names the
+    /// file at fault (a syntax error as a parse failure, a wrong shape or an uncompilable glob as invalid membership).
     #[test]
-    fn cargo_malformed_edge_case_regression_slice() {
-        // Bare-string `members` falls back to absent filter (admits everything).
-        {
+    fn malformed_workspace_membership_is_an_error() {
+        const PARSE: bool = true;
+        const SHAPE: bool = false;
+        /// Label, files to write, the file the error must name, and whether it is a syntax error.
+        type Case<'a> = (&'a str, &'a [(&'a str, &'a str)], &'a str, bool);
+        let cases: &[Case<'_>] = &[
+            (
+                "cargo members bare string",
+                &[("Cargo.toml", "[workspace]\nmembers = \"crates/*\"\n")],
+                "Cargo.toml",
+                SHAPE,
+            ),
+            (
+                "cargo members non-string entry",
+                &[("Cargo.toml", "[workspace]\nmembers = [\"crates/*\", 42]\n")],
+                "Cargo.toml",
+                SHAPE,
+            ),
+            (
+                "cargo members invalid glob",
+                &[(
+                    "Cargo.toml",
+                    "[workspace]\nmembers = [\"crates/kept\", \"crates/[unterminated\"]\n",
+                )],
+                "Cargo.toml",
+                SHAPE,
+            ),
+            (
+                "cargo exclude bare string",
+                &[(
+                    "Cargo.toml",
+                    "[workspace]\nmembers = [\"crates/*\"]\nexclude = \"crates/scratch\"\n",
+                )],
+                "Cargo.toml",
+                SHAPE,
+            ),
+            (
+                "cargo exclude non-string entry",
+                &[(
+                    "Cargo.toml",
+                    "[workspace]\nmembers = [\"crates/*\"]\nexclude = [\"crates/scratch\", 42]\n",
+                )],
+                "Cargo.toml",
+                SHAPE,
+            ),
+            (
+                "cargo exclude invalid glob",
+                &[(
+                    "Cargo.toml",
+                    "[workspace]\nmembers = [\"crates/*\"]\nexclude = [\"crates/scratch\", \"crates/[unterminated\"]\n",
+                )],
+                "Cargo.toml",
+                SHAPE,
+            ),
+            (
+                "cargo root syntax",
+                &[("Cargo.toml", "[workspace\nmembers = [\n")],
+                "Cargo.toml",
+                PARSE,
+            ),
+            (
+                "npm workspaces bare string",
+                &[("package.json", r#"{"workspaces": "packages/*"}"#)],
+                "package.json",
+                SHAPE,
+            ),
+            (
+                "npm workspaces non-string entry",
+                &[("package.json", r#"{"workspaces": ["packages/*", 42]}"#)],
+                "package.json",
+                SHAPE,
+            ),
+            (
+                "npm workspaces invalid glob",
+                &[(
+                    "package.json",
+                    r#"{"workspaces": ["packages/kept", "packages/[unterminated"]}"#,
+                )],
+                "package.json",
+                SHAPE,
+            ),
+            (
+                "npm root syntax",
+                &[("package.json", "{\"workspaces\": [\"packages/*\"],}")],
+                "package.json",
+                PARSE,
+            ),
+            (
+                "pnpm packages invalid glob",
+                &[(
+                    "pnpm-workspace.yaml",
+                    "packages:\n  - \"packages/kept\"\n  - \"packages/[unterminated\"\n",
+                )],
+                "pnpm-workspace.yaml",
+                SHAPE,
+            ),
+            (
+                "pnpm packages scalar",
+                &[("pnpm-workspace.yaml", "packages: \"packages/*\"\n")],
+                "pnpm-workspace.yaml",
+                SHAPE,
+            ),
+            (
+                "pnpm packages mapping",
+                &[("pnpm-workspace.yaml", "packages:\n  foo: bar\n")],
+                "pnpm-workspace.yaml",
+                SHAPE,
+            ),
+            (
+                "pnpm packages non-string element",
+                &[("pnpm-workspace.yaml", "packages:\n  - \"a\"\n  - 42\n")],
+                "pnpm-workspace.yaml",
+                SHAPE,
+            ),
+            (
+                "pnpm yaml syntax",
+                &[
+                    ("package.json", r#"{"name":"root"}"#),
+                    ("pnpm-workspace.yaml", "packages: [\"packages/*\"\n"),
+                ],
+                "pnpm-workspace.yaml",
+                PARSE,
+            ),
+            (
+                "pnpm yaml syntax beside package.json workspaces",
+                &[
+                    ("package.json", r#"{"workspaces": ["packages/*"]}"#),
+                    ("pnpm-workspace.yaml", "packages: [\"packages/*\"\n"),
+                ],
+                "pnpm-workspace.yaml",
+                PARSE,
+            ),
+        ];
+        for (label, files, at_fault, is_parse) in cases {
             let tmp = tempdir().unwrap();
-            let root = tmp.path();
-            fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = \"crates/*\"\n").unwrap();
-            fs::create_dir_all(root.join("tools/outside")).unwrap();
-            fs::write(
-                root.join("tools/outside/Cargo.toml"),
-                "[package]\nname = \"outside\"\nversion = \"0.1.0\"\n",
-            )
-            .unwrap();
-            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-            assert!(
-                projects.iter().any(|p| p.path == Path::new("tools/outside")),
-                "tools/outside must be admitted, got: {projects:?}"
-            );
-        }
-
-        // Bare-string `exclude` falls back to excluding nothing, while
-        // the well-formed `members` filter still applies.
-        {
-            let tmp = tempdir().unwrap();
-            let root = tmp.path();
-            fs::write(
-                root.join("Cargo.toml"),
-                "[workspace]\nmembers = [\"crates/*\"]\nexclude = \"crates/scratch-example\"\n",
-            )
-            .unwrap();
-            fs::create_dir_all(root.join("crates/scratch-example")).unwrap();
-            fs::write(
-                root.join("crates/scratch-example/Cargo.toml"),
-                "[package]\nname = \"scratch-example\"\nversion = \"0.1.0\"\n",
-            )
-            .unwrap();
-            fs::create_dir_all(root.join("crates/kept-example")).unwrap();
-            fs::write(
-                root.join("crates/kept-example/Cargo.toml"),
-                "[package]\nname = \"kept-example\"\nversion = \"0.1.0\"\n",
-            )
-            .unwrap();
-            fs::create_dir_all(root.join("tools/outside")).unwrap();
-            fs::write(
-                root.join("tools/outside/Cargo.toml"),
-                "[package]\nname = \"outside\"\nversion = \"0.1.0\"\n",
-            )
-            .unwrap();
-            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-            assert!(
-                projects.iter().any(|p| p.path == Path::new("crates/scratch-example")),
-                "crates/scratch-example must be admitted, got: {projects:?}"
-            );
-            assert!(
-                projects.iter().any(|p| p.path == Path::new("crates/kept-example")),
-                "crates/kept-example must be admitted, got: {projects:?}"
-            );
-            assert!(
-                !projects.iter().any(|p| p.path == Path::new("tools/outside")),
-                "tools/outside must remain excluded by members, got: {projects:?}"
-            );
-        }
-
-        // Syntactically invalid root TOML falls back to absent Cargo filter.
-        {
-            let tmp = tempdir().unwrap();
-            let root = tmp.path();
-            fs::write(root.join("Cargo.toml"), "[workspace\nmembers = [\n").unwrap();
-            fs::create_dir_all(root.join("crates/kept")).unwrap();
-            fs::write(
-                root.join("crates/kept/Cargo.toml"),
-                "[package]\nname = \"kept\"\nversion = \"0.1.0\"\n",
-            )
-            .unwrap();
-            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-            assert!(
-                projects.iter().any(|p| p.path == Path::new("crates/kept")),
-                "crates/kept must be admitted, got: {projects:?}"
-            );
-        }
-
-        // An invalid glob entry in `members` is skipped without
-        // disabling sibling well-formed entries.
-        {
-            let tmp = tempdir().unwrap();
-            let root = tmp.path();
-            fs::write(
-                root.join("Cargo.toml"),
-                "[workspace]\nmembers = [\"crates/kept-example\", \"crates/[unterminated\"]\n",
-            )
-            .unwrap();
-            fs::create_dir_all(root.join("crates/kept-example")).unwrap();
-            fs::write(
-                root.join("crates/kept-example/Cargo.toml"),
-                "[package]\nname = \"kept-example\"\nversion = \"0.1.0\"\n",
-            )
-            .unwrap();
-            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-            assert!(
-                projects.iter().any(|p| p.path == Path::new("crates/kept-example")),
-                "crates/kept-example must be admitted, got: {projects:?}"
-            );
-        }
-
-        // An invalid glob entry in `exclude` is skipped without
-        // disabling sibling well-formed exclude entries.
-        {
-            let tmp = tempdir().unwrap();
-            let root = tmp.path();
-            fs::write(
-                root.join("Cargo.toml"),
-                "[workspace]\nmembers = [\"crates/*\"]\nexclude = [\"crates/scratch-example\", \"crates/[unterminated\"]\n",
-            )
-            .unwrap();
-            fs::create_dir_all(root.join("crates/scratch-example")).unwrap();
-            fs::write(
-                root.join("crates/scratch-example/Cargo.toml"),
-                "[package]\nname = \"scratch-example\"\nversion = \"0.1.0\"\n",
-            )
-            .unwrap();
-            fs::create_dir_all(root.join("crates/kept-example")).unwrap();
-            fs::write(
-                root.join("crates/kept-example/Cargo.toml"),
-                "[package]\nname = \"kept-example\"\nversion = \"0.1.0\"\n",
-            )
-            .unwrap();
-            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-            assert!(
-                !projects.iter().any(|p| p.path == Path::new("crates/scratch-example")),
-                "crates/scratch-example must remain excluded, got: {projects:?}"
-            );
-            assert!(
-                projects.iter().any(|p| p.path == Path::new("crates/kept-example")),
-                "crates/kept-example must be admitted, got: {projects:?}"
-            );
-        }
-    }
-
-    /// Consolidated regression group reassembling the
-    /// fixtures already proven individually (malformed-workspaces
-    /// fallback, malformed-root-json fallback, invalid-glob
-    /// skip, empty-workspaces-array excludes everything).
-    /// Reassembles those fixtures into one regression group so
-    /// future changes to npm membership handling that break any of these
-    /// no-panic/fallback behaviors are caught here.
-    #[test]
-    fn npm_malformed_edge_case_regression_slice() {
-        // Bare-string `workspaces` falls back to absent npm filter
-        // (admits everything, including paths outside any glob).
-        {
-            let tmp = tempdir().unwrap();
-            let root = tmp.path();
-            fs::write(root.join("package.json"), r#"{"workspaces": "packages/*"}"#).unwrap();
-            fs::create_dir_all(root.join("tools/outside")).unwrap();
-            fs::write(root.join("tools/outside/package.json"), r#"{"name":"outside"}"#).unwrap();
-            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-            assert!(
-                projects.iter().any(|p| p.path == Path::new("tools/outside")),
-                "tools/outside must be admitted, got: {projects:?}"
-            );
-        }
-
-        // Syntactically invalid JSON falls back to absent npm
-        // filter without panicking or erroring the whole walk.
-        {
-            let tmp = tempdir().unwrap();
-            let root = tmp.path();
-            fs::write(root.join("package.json"), "{\"workspaces\": [\"packages/*\"],}").unwrap();
-            fs::create_dir_all(root.join("packages/kept")).unwrap();
-            fs::write(root.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
-            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-            assert!(
-                projects.iter().any(|p| p.path == Path::new("packages/kept")),
-                "packages/kept must be admitted, got: {projects:?}"
-            );
-        }
-
-        // An invalid glob entry in npm `workspaces` is skipped
-        // without disabling sibling well-formed entries.
-        {
-            let tmp = tempdir().unwrap();
-            let root = tmp.path();
-            fs::write(
-                root.join("package.json"),
-                r#"{"workspaces": ["packages/kept-example", "packages/[unterminated"]}"#,
-            )
-            .unwrap();
-            fs::create_dir_all(root.join("packages/kept-example")).unwrap();
-            fs::write(
-                root.join("packages/kept-example/package.json"),
-                r#"{"name":"kept-example"}"#,
-            )
-            .unwrap();
-            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-            assert!(
-                projects.iter().any(|p| p.path == Path::new("packages/kept-example")),
-                "packages/kept-example must be admitted, got: {projects:?}"
-            );
-        }
-
-        // An explicitly empty `workspaces` array is a real
-        // membership filter that matches nothing (distinguished from an
-        // absent `workspaces` field).
-        {
-            let tmp = tempdir().unwrap();
-            let root = tmp.path();
-            fs::write(root.join("package.json"), r#"{"workspaces": []}"#).unwrap();
-            fs::create_dir_all(root.join("packages/other")).unwrap();
-            fs::write(root.join("packages/other/package.json"), r#"{"name":"other"}"#).unwrap();
-            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-            assert!(
-                !projects.iter().any(|p| p.ecosystem == Ecosystem::Npm),
-                "no Npm entries expected, got: {projects:?}"
-            );
-        }
-    }
-
-    /// Consolidated regression group reassembling the
-    /// fixtures already proven individually (invalid-glob skip,
-    /// malformed-yaml-no-workspaces fallback, wrong-shape fallback,
-    /// zero-yaml-documents fallback). Reassembles those fixtures into one
-    /// regression group so future changes to pnpm membership handling
-    /// that break any of these no-panic/fallback behaviors are caught
-    /// here.
-    #[test]
-    fn pnpm_malformed_edge_case_regression_slice() {
-        // An invalid glob entry in pnpm `packages` is skipped
-        // without disabling sibling well-formed entries.
-        {
-            let tmp = tempdir().unwrap();
-            let root = tmp.path();
-            fs::write(
-                root.join("pnpm-workspace.yaml"),
-                "packages:\n  - \"packages/kept-example\"\n  - \"packages/[unterminated\"\n",
-            )
-            .unwrap();
-            fs::create_dir_all(root.join("packages/kept-example")).unwrap();
-            fs::write(
-                root.join("packages/kept-example/package.json"),
-                r#"{"name":"kept-example"}"#,
-            )
-            .unwrap();
-            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-            assert!(
-                projects.iter().any(|p| p.path == Path::new("packages/kept-example")),
-                "packages/kept-example must be admitted, got: {projects:?}"
-            );
-        }
-
-        // Malformed pnpm-workspace.yaml (unterminated flow sequence)
-        // with a root package.json present but lacking a "workspaces"
-        // field falls back to admit-all npm membership without panicking
-        // or erroring the whole walk.
-        {
-            let tmp = tempdir().unwrap();
-            let root = tmp.path();
-            fs::write(root.join("package.json"), r#"{"name":"root"}"#).unwrap();
-            fs::write(root.join("pnpm-workspace.yaml"), "packages: [\"packages/*\"\n").unwrap();
-            fs::create_dir_all(root.join("packages/kept")).unwrap();
-            fs::write(root.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
-            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-            assert!(
-                projects.iter().any(|p| p.path == Path::new("packages/kept")),
-                "packages/kept must be admitted, got: {projects:?}"
-            );
-        }
-
-        // Pnpm-workspace.yaml parses successfully but `packages:`
-        // is a bare scalar string, not a sequence -- falls back to absent
-        // npm membership filter without panicking.
-        {
-            let tmp = tempdir().unwrap();
-            let root = tmp.path();
-            fs::write(root.join("pnpm-workspace.yaml"), "packages: \"packages/*\"\n").unwrap();
-            fs::create_dir_all(root.join("packages/kept")).unwrap();
-            fs::write(root.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
-            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-            assert!(
-                projects.iter().any(|p| p.path == Path::new("packages/kept")),
-                "packages/kept must be admitted, got: {projects:?}"
-            );
-        }
-
-        // Pnpm-workspace.yaml containing only YAML comments parses
-        // successfully to zero documents (Ok(vec![])) -- falls back to
-        // absent npm membership filter without unconditionally indexing
-        // docs[0].
-        {
-            let tmp = tempdir().unwrap();
-            let root = tmp.path();
-            fs::write(root.join("pnpm-workspace.yaml"), "# no packages here\n").unwrap();
-            fs::create_dir_all(root.join("packages/kept")).unwrap();
-            fs::write(root.join("packages/kept/package.json"), r#"{"name":"kept"}"#).unwrap();
-            let projects = IgnoreWalkLocator::new(root).projects().unwrap();
-            assert!(
-                projects.iter().any(|p| p.path == Path::new("packages/kept")),
-                "packages/kept must be admitted, got: {projects:?}"
-            );
+            for (name, content) in *files {
+                fs::write(tmp.path().join(name), content).unwrap();
+            }
+            let err = IgnoreWalkLocator::new(tmp.path()).projects().unwrap_err();
+            let named = |path: &Path| path.ends_with(at_fault);
+            let ok = match &err {
+                LocateError::ManifestParseError { path, .. } => *is_parse && named(path),
+                LocateError::InvalidMembership { path, .. } => !*is_parse && named(path),
+                _ => false,
+            };
+            assert!(ok, "{label}: {err:?}");
         }
     }
 

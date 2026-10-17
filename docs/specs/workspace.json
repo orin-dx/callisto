@@ -54,7 +54,7 @@
     },
     {
       "id": "WS-DISC-03",
-      "criterion": "Discovery treats every directory under the root whose Cargo.toml, package.json or pyproject.toml parses and declares a package name as a candidate, following symlinks up to 32 levels deep and skipping hidden and gitignored paths and directories named target, node_modules, .git, .moon and dist; a manifest without a name is not a package. A manifest that fails to parse, or that cannot be read (a permission error, a directory, invalid UTF-8), is a coded error naming its path and the cause when the path is admitted by explicit workspace membership or shares a directory with an admitted manifest, otherwise it is a warning naming the path and the cause, and discovery continues without it. Only a package manifest that does not exist is treated as absent."
+      "criterion": "Discovery treats every directory under the root whose Cargo.toml, package.json or pyproject.toml parses and declares a package name as a candidate, following symlinks up to 32 levels deep (only so a package found beneath one can be named, see WS-DISC-11) and skipping hidden and gitignored paths and directories named target, node_modules, .git, .moon and dist; a manifest without a name is not a package. A manifest that fails to parse, or that cannot be read (a permission error, a directory, invalid UTF-8), is a coded error naming its path and the cause when the path is admitted by explicit workspace membership or shares a directory with an admitted manifest, otherwise it is a warning naming the path and the cause, and discovery continues without it. Only a package manifest that does not exist is treated as absent."
     },
     {
       "id": "WS-DISC-04",
@@ -78,12 +78,22 @@
     },
     {
       "id": "WS-DISC-09",
-      "criterion": "Malformed membership input never fails discovery: an unparseable root manifest or a `members`, `workspaces` or `packages` value that is not an array of strings is treated as absent, an unparseable, empty or `packages`-less pnpm-workspace.yaml falls back to package.json `workspaces`, and a malformed `exclude` excludes nothing.",
+      "criterion": "Malformed membership input fails discovery with a coded error naming the file and never falls back to admitting every directory: a root Cargo.toml, pyproject.toml, package.json or pnpm-workspace.yaml that cannot be read (E310) or parsed (E209), a `members`, `exclude`, `workspaces` or `packages` value that is not an array of strings (npm `workspaces` may also be an object with a `packages` array), a `[workspace]` that is not a table, or an entry that is not a valid glob (E311). A missing manifest, a manifest with no workspace table or no `members`, and an empty or `packages`-less pnpm-workspace.yaml restrict nothing. A leading byte-order mark is ignored.",
       "is_error_case": true
     },
     {
       "id": "WS-DISC-10",
       "criterion": "An invalid glob in `members`, `exclude`, `workspaces` or `packages` is ignored while the list's valid entries still apply.",
+      "is_error_case": true
+    },
+    {
+      "id": "WS-DISC-11",
+      "criterion": "A package whose path passes through a symbolic link is a coded error naming the package (E312), because Git cannot stage a path beneath a link and a version bump there could never be committed; a symbolic link that holds no package is ignored, and a link can be ignored through .gitignore.",
+      "is_error_case": true
+    },
+    {
+      "id": "WS-DISC-12",
+      "criterion": "Locating the workspace root fails with a coded error naming the file when a Cargo.toml, package.json or pnpm-workspace.yaml between the start directory and the Git root cannot be read (E310) or parsed (E209), instead of settling on a different root.",
       "is_error_case": true
     },
     {

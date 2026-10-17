@@ -706,13 +706,16 @@ impl WorkspaceCargoResolver {
             message: e.to_string(),
         })?;
 
-        let doc: toml_edit::DocumentMut = content
-            .parse()
-            .map_err(|e: toml_edit::TomlError| ManifestError::Parse {
-                path: rel_path.clone(),
-                format: ManifestFormat::CargoToml,
-                message: e.to_string(),
-            })?;
+        let doc: toml_edit::DocumentMut =
+            content
+                .strip_prefix('\u{FEFF}')
+                .unwrap_or(&content)
+                .parse()
+                .map_err(|e: toml_edit::TomlError| ManifestError::Parse {
+                    path: rel_path.clone(),
+                    format: ManifestFormat::CargoToml,
+                    message: e.to_string(),
+                })?;
 
         Ok(WorkspaceCargoResolver {
             root_path: rel_path,
@@ -722,9 +725,7 @@ impl WorkspaceCargoResolver {
     }
 
     pub fn inheritance(&self) -> Result<WorkspaceInheritance, ManifestError> {
-        let version = workspace_package_version(&self.document, &self.root_path)
-            .ok()
-            .flatten();
+        let version = workspace_package_version(&self.document, &self.root_path)?;
 
         let mut dependencies = BTreeMap::new();
         if let Some(table) = self
