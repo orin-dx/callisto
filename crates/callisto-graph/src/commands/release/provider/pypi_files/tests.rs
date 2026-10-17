@@ -1,5 +1,6 @@
 use super::*;
 use callisto_model::VersionGrammar;
+use sha2::{Digest, Sha256};
 
 fn version(raw: &str) -> Version {
     Version::parse(raw, VersionGrammar::Pep440).unwrap()

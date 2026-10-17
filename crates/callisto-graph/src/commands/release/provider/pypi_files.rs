@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use callisto_model::{normalize_pypi_project_name, CommandError, Version};
-use sha2::{Digest, Sha256};
 
 use crate::error::GraphError;
 
@@ -87,6 +86,13 @@ fn io_error(error: std::io::Error) -> GraphError {
     })
 }
 
+/// Hex SHA-256 of `path`, streamed so a large wheel is never held in memory.
+fn file_sha256(path: &Path) -> Result<String, GraphError> {
+    let file = std::fs::File::open(path).map_err(io_error)?;
+    let (digest, _) = callisto_model::ArtifactDigest::from_reader(file).map_err(io_error)?;
+    Ok(digest.as_str().to_owned())
+}
+
 /// Every wheel and sdist of `package_name` at `version` directly in `dir`, with its digest, by filename.
 fn inventory(dir: &Path, package_name: &str, version: &Version) -> Result<Vec<BuiltFile>, GraphError> {
     let wanted = normalize_pypi_project_name(package_name);
@@ -102,7 +108,7 @@ fn inventory(dir: &Path, package_name: &str, version: &Version) -> Result<Vec<Bu
         if !belongs {
             continue;
         }
-        let sha256 = format!("{:x}", Sha256::digest(std::fs::read(&path).map_err(io_error)?));
+        let sha256 = file_sha256(&path)?;
         files.push(BuiltFile { filename, path, sha256 });
     }
     files.sort_by(|left, right| left.filename.cmp(&right.filename));
@@ -164,8 +170,7 @@ impl BuiltSet {
         }
         for file in files {
             let metadata = std::fs::symlink_metadata(&file.path).map_err(io_error)?;
-            let bytes = std::fs::read(&file.path).map_err(io_error)?;
-            if !metadata.is_file() || format!("{:x}", Sha256::digest(bytes)) != file.sha256 {
+            if !metadata.is_file() || file_sha256(&file.path)? != file.sha256 {
                 return Err(GraphError::ArtifactBytesMismatch {
                     path: file.path.clone(),
                 });

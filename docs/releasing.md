@@ -115,7 +115,7 @@ gh workflow run callisto-release.yml --ref main -f release_source_sha="$SHA"
 
 Callisto checks the registry, remote tag, and GitHub release before each effect. An exact match is adopted; a conflict or uncertain result stops the run. Check the receipt and providers before treating a release as complete.
 
-Registry checks confirm version presence, not identical bytes, the npm dist-tag, or a complete Python wheel/sdist set. A partial PyPI upload can therefore be mistaken for a complete version. See [publishing limits](publishing.md#current-python-support-limits).
+Registry checks confirm version presence, not identical bytes or the npm dist-tag. A Python release is complete only when every built wheel and sdist is on the index; a partly uploaded one is finished by uploading the missing files, and a sealed build also compares each file's digest. See [publishing limits](publishing.md#current-python-support-limits).
 
 GitHub Releases start as drafts. Assets upload before the release is made public.
 
