@@ -1,0 +1,110 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M55BTHPCT21BX0VH7YNK2138",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-17T16:41:34.342705Z",
+  "branch": "feat/pypi-sealed-file-set",
+  "checkpoints_count": 3,
+  "save_step_count": 33,
+  "files_touched": [
+    ".changeset/calm-owls-install.md",
+    "crates/callisto-graph/src/commands/init.rs",
+    "crates/callisto-graph/src/commands/init/snapshots/callisto_graph__commands__init__tests__rendered_matrix_workflow_bytes_are_pinned.snap",
+    "crates/callisto-graph/src/commands/init/snapshots/callisto_graph__commands__init__tests__rendered_simple_workflow_bytes_are_pinned.snap",
+    "crates/callisto-graph/src/commands/init/tests.rs",
+    "crates/callisto-graph/src/templates/matrix_workflow.tmpl",
+    "crates/callisto-graph/src/templates/simple_workflow.tmpl",
+    "docs/publishing.md",
+    "docs/specs/cli.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "771e4e8d59b4",
+  "checkpoint_transcript_start": 14261,
+  "transcript_lines_at_start": 14261,
+  "compact_transcript_start": 1229,
+  "token_usage": {
+    "input_tokens": 68,
+    "cache_creation_tokens": 188211,
+    "cache_read_tokens": 3270748,
+    "output_tokens": 14784,
+    "api_call_count": 33,
+    "subagent_tokens": {
+      "input_tokens": 14,
+      "cache_creation_tokens": 14800,
+      "cache_read_tokens": 687702,
+      "output_tokens": 66,
+      "api_call_count": 7
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 79
+  },
+  "summary": {
+    "intent": "Close the gap where the generated execute job (and the single-job workflow) lacked `twine` on PATH, so sealed Python uploads work in both generated workflow shapes. This followed the just-opened PR #233 for sealed Python file sets.",
+    "outcome": "Added a pinned `build`/`twine` venv install to the Simple workflow (only when Pypi is an ecosystem) and a pinned `twine` install to the matrix execute job (only when the plan has Python publishes), with no secrets on the install steps. Snapshots, tests, specs, docs and a changeset were updated, `just ci` passed (exit 0, 92.76% coverage), and the work was committed and pushed to the #233 branch.",
+    "learnings": {
+      "repo": [
+        "Generated workflows come from two templates, `simple_workflow.tmpl` and `matrix_workflow.tmpl`, rendered in `crates/callisto-graph/src/commands/init.rs`. `init` picks the matrix shape only when there are binaries or platform packages.",
+        "Workflow output is pinned by insta snapshots under `crates/callisto-graph/src/commands/init/snapshots`. Regenerate with `INSTA_UPDATE=always` and delete stray `.snap.new` files. A `sed` fixup was needed on the simple snapshot's `expression:` header line.",
+        "Workflow assertions in `init/tests.rs` check step ordering (e.g. install before run) and that no `secrets.` appears before the release step; actionlint and zizmor are run on rendered output.",
+        "Docs and specs that mention workflow behavior must be kept in sync: `docs/specs/cli.json` (CLI-WF-03/04), `docs/publishing.md`, plus a changeset targeting `callisto-cli`.",
+        "The Simple workflow previously installed neither `build` nor `twine`, relying on the runner image, so that gap predated #233."
+      ],
+      "code": [],
+      "workflow": [
+        "The pinned `twine==7.0.0` requires Python 3.10+, but the local machine has 3.9. Verify pins in a venv created with `uv venv --python 3.12 --seed`, which matches the hosted runner.",
+        "In this sandbox, long-line JSON/doc edits are most reliable via scripts written to the scratchpad and run with `python3 -I`, with `assert s.count(old) == 1` guards before replacing.",
+        "Run `just ci` in the background with output redirected to a log, then check the task notification and tail the log before committing."
+      ]
+    },
+    "friction": [
+      "The first local venv install of the pinned versions failed because the machine's Python 3.9 is too old for twine 7.0.0. This was initially ambiguous between a bad pin and an old interpreter.",
+      "The first test-edit script produced a wrong assertion shape, so a second script was needed to rewrite the new Simple-workflow test to use the `job()` helper.",
+      "The simple-workflow snapshot header needed a manual `sed` fix after `INSTA_UPDATE=always` because the `expression:` line came out wrong.",
+      "Heredoc and inline-script restrictions in the sandbox force every non-trivial edit through scratchpad script files."
+    ],
+    "open_items": [
+      "The hosted workflow has still not run, so the new install steps are verified only by actionlint, zizmor, tests and a local venv.",
+      "The user still has to review and merge #231, #232 and #233, with #232 first.",
+      "Decision pending: whether Python-only workspaces should move to the sealed CI route. The earlier claim that this route replaces local `callisto release` was not re-verified this session.",
+      "Deferred follow-ups: the 14-day near-expiry warning, `uv build`/`uv publish` as the default pair, trusted publishing (OIDC), persisting the manifest in the GitHub release, a longer index-lag confirmation window, and deduplicating `is_wheel`/`is_sdist`.",
+      "Known review notes left unfixed: a package with two PyPI publishes would build twice, and a fresh workflow rerun after a partial upload can raise E307 for non-reproducible files."
+    ]
+  }
+}
