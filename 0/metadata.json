@@ -1,0 +1,144 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M56025JTXX0E9EPACT33H4WD",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-17T22:35:19.209946Z",
+  "branch": "fix/leftovers",
+  "checkpoints_count": 4,
+  "save_step_count": 52,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/add.rs",
+    "crates/callisto-cli/src/runner.rs",
+    "crates/callisto-graph/src/aggregate.rs",
+    "crates/callisto-graph/src/aggregate/tests.rs",
+    "crates/callisto-graph/src/commands/status.rs",
+    "crates/callisto-graph/src/locate/membership.rs",
+    "crates/callisto-graph/src/tags.rs",
+    "crates/callisto-graph/tests/snapshot_tests.rs",
+    "crates/callisto-model/src/atomic.rs",
+    "crates/callisto-model/src/vcs/access.rs",
+    "docs/specs/cli.json",
+    "docs/specs/versioning.json",
+    "docs/specs/workspace.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "2281df87d528",
+  "checkpoint_transcript_start": 18634,
+  "transcript_lines_at_start": 18634,
+  "compact_transcript_start": 1650,
+  "token_usage": {
+    "input_tokens": 228,
+    "cache_creation_tokens": 214911,
+    "cache_read_tokens": 19873714,
+    "output_tokens": 58385,
+    "api_call_count": 111,
+    "subagent_tokens": {
+      "input_tokens": 78,
+      "cache_creation_tokens": 95230,
+      "cache_read_tokens": 1757872,
+      "output_tokens": 3824,
+      "api_call_count": 39
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 111
+  },
+  "summary": {
+    "intent": "Finish the structural-gaps work on the Callisto repo: land the four stacked PRs (#235, #236, #238, #239), then build PR 5 covering the smaller leftover fixes from the audit, with independent review and a full `just ci` pass.",
+    "outcome": "The user merged the four stacked PRs. PR 5 was built in a new `leftovers` worktree and `just ci` passed (about 92.7%). An adversarial review found no Critical or High issues, its Low findings were fixed, and the work was committed locally. It has not been pushed or opened as a PR.",
+    "learnings": {
+      "repo": [
+        "Callisto PRs are stacked with `gh stack link`. `docs/errors.md` is a recurring rebase conflict spot; the fix is to keep both sets of rows.",
+        "`just ci` enforces 90% coverage (currently about 92.7%) plus insta snapshots, actionlint and zizmor. `just ci` can stop at the format check, so run `cargo fmt` first.",
+        "Spec criteria in `docs/specs/*.json` need unique IDs. `versioning.json` had a duplicate `VER-APPLY-06` from #239, and the write-preflight one was renamed to `VER-APPLY-17`.",
+        "AGENTS.md says to confirm owner-unstated requirements with the owner before writing them into specs. The reviewer flagged the new 'new files are mode 0644' spec line for this reason, and it was dropped in favour of honoring the umask.",
+        "Git probes in `GitAccess` now treat only Git's own 'not found' as absent. A listed tag that does not resolve to a commit now stops `status` and `version`, where before it widened commit inference to the whole history.",
+        "The command runner now returns an error when a child exits but a descendant keeps the output pipes open. `run_observation` treats `Io` like `TimedOut` and retries, so read-only probes end as Indeterminate rather than succeeding with empty output.",
+        "`atomic_write` preserves the existing file mode. A new file used to get 0600 from the tempfile."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/aggregate.rs",
+          "line": 177,
+          "finding": "`resolve_since` used `.ok().flatten()` and passed the bare tag name. It is now strict and should use `refs/tags/<name>`, as `changed.rs:40` does."
+        },
+        {
+          "path": "crates/callisto-model/src/vcs/access.rs",
+          "line": 397,
+          "end_line": 405,
+          "finding": "`path_exists_at` now errors instead of returning false for a path that escapes the repo, such as `rev:./../x`. No caller was found that does this."
+        },
+        {
+          "path": "crates/callisto-graph/src/locate/membership.rs",
+          "line": 81,
+          "end_line": 85,
+          "finding": "`normalize_pattern` turned the degenerate entries `!`, `/` and `''` into `.`, which changed their meaning. This was fixed after review."
+        },
+        {
+          "path": "crates/callisto-cli/src/runner.rs",
+          "line": 85,
+          "finding": "`CliCommandRunner::run` (`.output()`) and `run_with_stdin` still block indefinitely on a pipe-holding descendant."
+        }
+      ],
+      "workflow": [
+        "Sandbox quirks: heredocs and compound commands may be refused, so write scripts with the Write tool and run them as files. Use `/usr/bin/git`.",
+        "Probe real tool behavior before changing semantics. Running real `git` for exit codes showed that nearly every 'absent' case returns 1 and a broken repo returns 128.",
+        "Run an independent adversarial subagent review on risky changes while CI runs in the background. Treat the subagent's report as input, not as authority.",
+        "Regex-based bulk edit scripts can hit production code. Use `(?<!fn )`-style guards and review the diff.",
+        "Delete tautological tests rather than keeping them as false coverage."
+      ]
+    },
+    "friction": [
+      "`just ci` appeared to exit 0 because of a trailing `tail`, but it had actually stopped at the format check.",
+      "Rebasing the stack hit `docs/errors.md` conflicts three times.",
+      "Scripted edits sometimes aborted midway or over-matched, which needed manual reverts and a second script.",
+      "Real-Git tests could be flaky if `GIT_DIR` is set or `TMPDIR` is inside a git repo. They needed environment isolation."
+    ],
+    "open_items": [
+      "Push the PR 5 commit, open it on `main`, and watch remote CI. It is only committed locally.",
+      "Owner decision: should `add`, `pre`, `matrix`, `snapshot` and `compose-pr-body` tolerate a nested Rust workspace? Currently strict.",
+      "`add` is still check-then-write, so two concurrent runs could pick the same changeset name. Use `persist_noclobber` or create-new to close it.",
+      "A shallow-clone guard is still needed. An annotated tag whose commit is missing now aborts `status` and `version`.",
+      "Not yet done: the release-notes fallback, GitHub release body defaults, `has_explicit_table` with inline or dotted `[workspace]`, the pnpm detection mismatch, and the NAPI drift path guess.",
+      "`status` may now emit noisy warnings for moving tags like `v1` or `latest`, or for sibling-prefix templates.",
+      "A leading `/` and Windows `\\` in membership globs are still not normalized.",
+      "Open policy questions: whether a PyPI index serving no sha256 should be an error, whether Python-only workspaces should move to the sealed CI route, trusted publishing (OIDC), a hosted verification run of the generated build-matrix, worktree and branch cleanup, and D01 ownership."
+    ]
+  }
+}
