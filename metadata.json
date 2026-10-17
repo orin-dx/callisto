@@ -1,0 +1,44 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M55QXAPHRC7ZRRFA55A49S7F",
+  "strategy": "manual-commit",
+  "branch": "fix/workspace-complete",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/quiet-owls-complete.md",
+    "crates/callisto-cli/src/commands/status.rs",
+    "crates/callisto-cli/src/workspace.rs",
+    "crates/callisto-graph/src/commands/release/derive.rs",
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/src/lib.rs",
+    "crates/callisto-graph/src/walk.rs",
+    "crates/callisto-graph/tests/complete_workspace_test.rs",
+    "docs/architecture/identity.md",
+    "docs/errors.md",
+    "docs/specs/workspace.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 28,
+    "cache_creation_tokens": 19955,
+    "cache_read_tokens": 7733226,
+    "output_tokens": 12165,
+    "api_call_count": 13,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  }
+}
