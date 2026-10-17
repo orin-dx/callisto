@@ -244,6 +244,8 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E247 | On-disk versions changed since the version plan was generated | Regenerate the version plan against the current workspace state before applying it. |
 | E248 | Workspace root manifest has conflicting version updates | Reconcile the workspace root manifest's version updates before retrying. |
 | E305 | `pre.json` records two entries for the same package (a bare or alternate key and the qualified key) with different versions | In `pre.json` `initialVersions`, keep one entry for the package: delete the key holding the wrong baseline, or give both the same version. |
+| E306 | The Python build for a package produced no sdist or no wheel for the release version | Make the build produce both for this version, then re-run the release. |
+| E307 | PyPI holds a file with different bytes than the file this run uploaded | PyPI never reuses a filename: yank the release if it is wrong and release a new version. |
 
 ## callisto-cli
 

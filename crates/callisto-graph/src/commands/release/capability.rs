@@ -18,8 +18,8 @@ use super::derive::{
     GitRemoteRequirement,
 };
 use super::provider::{
-    checked_provider_for, EffectAuthorization, PreparedOperation, ProviderContext, ProviderRequest, ReleasePreflight,
-    ReleaseProviderSet,
+    checked_provider_for, EffectAuthorization, PreparedOperation, ProviderContext, ProviderRequest, PypiFileSets,
+    ReleasePreflight, ReleaseProviderSet,
 };
 use super::release_artifacts::VerifiedArtifactManifest;
 use super::StaleReason;
@@ -42,6 +42,7 @@ pub struct ValidatedReleaseIntent<'a> {
     intent: ReleaseIntentV1,
     prepared: PreparedReleaseInputs,
     runner: &'a dyn CommandRunner,
+    file_sets: PypiFileSets,
 }
 
 impl std::fmt::Debug for ValidatedReleaseIntent<'_> {
@@ -65,6 +66,7 @@ impl ValidatedReleaseIntent<'_> {
 
     fn context(&self) -> ProviderContext<'_> {
         ProviderContext::new(&self.prepared.root, self.runner, self.prepared.git_remote.as_ref())
+            .with_file_sets(&self.file_sets)
     }
 
     fn prepared_operation(&self, id: &ReleaseOperationId) -> Result<&PreparedOperation, GraphError> {
@@ -285,6 +287,7 @@ fn validate_intent<'a, L: ProjectLocator, R: CommandRunner>(
         },
         intent: received,
         runner,
+        file_sets: PypiFileSets::default(),
     })
 }
 

@@ -250,12 +250,12 @@
         ]
       },
       "steps": [
-        "Finding coverage: SYS-PYFILES. Baseline: one non-yanked matching file is Exact; python build creates wheel and sdist, and Twine publishes a broad dist glob.",
+        "Baseline: a Python release is complete when every file the executing run builds is on the index by name, uploaded by explicit list; the file set is not sealed between jobs and digests of earlier uploads are not compared.",
         "Implement D01's required-file authority/proof contract across plan declarations, trusted build inventory, envelope binding and registry evidence. Exact requires every declared filename/digest; never mutate a sealed intent after build or guess all possible platform wheels.",
         "Migrate CLI artifact-manifest production and release execute's registry-only artifact-input checks/envelope creation, plus local Python build preparation, to the approved required-output contract. Do not invent dummy GitHub slots merely to pass a registry build inventory; mint the envelope only after validating its actual trusted output manifest.",
         "Publish only the intended retained files, resuming missing files after a partial upload without resubmitting completed/conflicting ones. Ensure a partial set cannot mint a false whole-operation Absent/Exact proof; migrate production providers and simulator with any new proof/observation shape.",
         "Cover extra stale dist files, one of two uploads completed, conflicting same filename/digest, mixed yanked files, unobservable/index-lag responses and altered artifact manifests. Do not treat yanking as permission to overwrite.",
-        "Run rtk cargo test -p callisto-model, rtk cargo test -p callisto-graph and rtk cargo test -p callisto-cli --test pypi_partial_upload_tests, followed by --test release_real_registry_e2e_tests with prerequisites. Inject failure after the first actual file upload and validate recovery through production binding/observation, not argv alone.",
+        "Run rtk cargo test -p callisto-model, rtk cargo test -p callisto-graph and rtk cargo test -p callisto-cli --test durable_release_e2e_tests python, followed by --test release_real_registry_e2e_tests with prerequisites. Inject failure after the first actual file upload and validate recovery through production binding/observation, not argv alone.",
         "Review Cargo/npm/platform evidence as siblings; preserve their existing whole-version behavior unless the approved contract genuinely reaches them. No universal checksum or mutable npm-channel gate is added."
       ],
       "commit_message": "fix(pypi): verify and resume required distribution files",

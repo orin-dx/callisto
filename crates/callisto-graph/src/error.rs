@@ -355,6 +355,24 @@ pub enum GraphError {
         version: callisto_model::Version,
     },
 
+    #[error("the Python build for `{package}` {} produced no {missing}", .version.render())]
+    #[diagnostic(
+        code(E306),
+        help("Callisto builds an sdist and a wheel with `python -m build --sdist --wheel` and publishes both. Make the build produce both for this version, then re-run the release.")
+    )]
+    PypiBuildOutputIncomplete {
+        package: String,
+        version: callisto_model::Version,
+        missing: &'static str,
+    },
+
+    #[error("PyPI holds `{filename}` with different bytes than the file this run uploaded")]
+    #[diagnostic(
+        code(E307),
+        help("Another upload reached this release first. PyPI never reuses a filename, so this release cannot be completed with a different file under that name: yank the release if it is wrong and release a new version.")
+    )]
+    PypiUploadedFileDiffers { filename: String },
+
     #[error("artifact manifest is not authorized by this release intent: {source}")]
     #[diagnostic(
         code(E136),

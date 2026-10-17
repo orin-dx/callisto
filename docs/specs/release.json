@@ -199,7 +199,7 @@
     },
     {
       "id": "REL-PUB-04",
-      "criterion": "PyPI publish runs `python3 -m build --sdist --wheel --outdir dist/` in the package directory, falling back to `python` and failing with E170 when neither is on PATH. It then runs `twine upload dist/<normalized-name>-<version>*` with `--repository-url` for a configured index, adding `--skip-existing` only for the default index, `upload.pypi.org` or `test.pypi.org`."
+      "criterion": "PyPI publish builds with `python3 -m build --sdist --wheel --outdir <temporary directory>` in the package directory, falling back to `python` and failing with E170 when neither is on PATH, and fails with E306 when the build produced no wheel or no sdist for the version. It then runs `twine upload` naming only the built files the index lacks, with `--repository-url` for a configured index and never `--skip-existing`. One build serves the preflight and the publish of a run."
     },
     {
       "id": "REL-PUB-05",
@@ -216,7 +216,7 @@
     },
     {
       "id": "REL-PUB-08",
-      "criterion": "PyPI observation fetches `<index>/<normalized-name>/` (default `https://pypi.org/simple`) with `curl` and `Accept: application/vnd.pypi.simple.v1+json`. In a 200 JSON body, any matching yanked file means absent; otherwise at least one matching non-yanked file means present, without checking an expected wheel/sdist set. A 404 or no matching file means absent, and a non-JSON body or other non-retryable status is indeterminate. Transient HTTP statuses use the observation retry policy."
+      "criterion": "PyPI observation fetches `<index>/<normalized-name>/` (default `https://pypi.org/simple`) with `curl` and `Accept: application/vnd.pypi.simple.v1+json`. In a 200 JSON body, any matching yanked file means absent; otherwise at least one matching non-yanked file means present. That version-level read serves every use outside an effect. Before a PyPI effect, `release execute` proceeds without a build when the index has no file of the version. Otherwise it builds, and treats the release as already satisfied only when every built file is on the index by filename and not yanked. A built file the index holds yanked is a remote conflict, and a file the index holds that the build did not produce is reported with a warning and not checked. After an upload, confirmation waits for every built file to be visible, and a file this run uploaded must carry the sha256 the index serves for it, or the run fails with E307. A file from an earlier attempt is matched by name, not by digest. A 404 or no matching file means absent, and a non-JSON body or other non-retryable status is indeterminate. Transient HTTP statuses use the observation retry policy."
     },
     {
       "id": "REL-PUB-09",
@@ -235,7 +235,7 @@
     },
     {
       "id": "REL-RERUN-01",
-      "criterion": "An operation whose result is already present and identical is recorded as already satisfied, and its effect is not repeated. For a registry version, stderr shows `warning: <package> <version> is already published; skipping`."
+      "criterion": "An operation whose result is already present and identical is recorded as already satisfied, and its effect is not repeated. For a registry version, stderr shows `warning: <package> <version> is already published; skipping`. During `release execute`, a Python release is satisfied only when every file its build produces is on the index, so a rerun after a partial upload uploads only the missing files. The check that finds a tagged package still to finish reads the version-level answer and does not build."
     },
     {
       "id": "REL-RERUN-02",

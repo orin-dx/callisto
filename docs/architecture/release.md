@@ -72,9 +72,9 @@ Provider reads use native tools for Cargo and npm, and `curl` for PyPI's PEP 691
 
 - Cargo: `cargo info NAME@VERSION --registry REGISTRY` runs from the source root. Matching `version:` means exact; exit 101 with ``could not find `NAME@VERSION` `` means absent. Other results are indeterminate. Yanked versions are invisible to `cargo info`; a rejected publish ends without a receipt.
 - npm: `npm view NAME@VERSION version --json`.
-- PyPI: a matching file means exact; 404 or no match means absent; transport failure or non-JSON means indeterminate. Yanked matches currently count as absent, even when another matching file is not yanked.
+- PyPI: a matching file means exact; 404 or no match means absent; transport failure or non-JSON means indeterminate. Yanked matches count as absent. Before an effect, `release execute` also builds the release's files once into a temporary directory and compares their names with the index, so a partly uploaded release uploads only what is missing and is satisfied only when the whole set is there.
 
-These are version-level checks, not proof of identical bytes, the npm dist-tag, or a full wheel/sdist set. Registry endpoints must be HTTPS. Read-only observations retry 429, 5xx, rate-limited 403, and transport failures with backoff and `Retry-After`. Effects are never blindly retried; outbound commands have deadlines.
+These reads are version-level checks, not proof of identical bytes or the npm dist-tag. Registry endpoints must be HTTPS. Read-only observations retry 429, 5xx, rate-limited 403, and transport failures with backoff and `Retry-After`. Effects are never blindly retried; outbound commands have deadlines.
 
 ## Transition table (`release_transition.rs`)
 
@@ -106,7 +106,7 @@ Stdout JSON reports include `schemaVersion`, `command` and `dryRun`; durable dec
 
 Managed PR verification compares the original snapshot before staging and before moving the release ref. After a successful update, the action confirms the ref's exact new SHA and supplies it as `--applied-head` for the final check. The model validates the original update decision and allows only its selected PR's head to change to that SHA; the base, repository, PR roster and every other head remain unchanged. Create decisions keep strict equality until the PR is created. The action does not rewrite its decision or discard concurrency checks after its own effect.
 
-Registry evidence currently confirms a version, with optional checksum/yank fields; it does not establish byte identity. PyPI observation accepts a matching file rather than the intended wheel/sdist set, and any matching yanked file produces Absent. Artifact size/sha256 validation currently applies to declared GitHub assets, not a complete registry-output inventory. Required file-set recovery and separate private-index read/upload routes are planned, not shipped guarantees.
+Registry evidence currently confirms a version, with optional checksum/yank fields; it does not establish byte identity. Python completion is judged against the files the executing run builds, matched by name, and digests are compared only for files that run uploaded: a rebuild need not be byte-identical to an earlier attempt, and nothing seals the file set between jobs. Artifact size/sha256 validation currently applies to declared GitHub assets, not a complete registry-output inventory. A file set sealed by a build job and separate private-index read/upload routes are planned, not shipped guarantees.
 
 ## Verification tiers
 

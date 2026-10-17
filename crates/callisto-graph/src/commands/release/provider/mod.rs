@@ -18,10 +18,13 @@ use crate::GraphError;
 use super::binding::{recheck_git_remote, PreparedGitRemote, PreparedRegistryBinding};
 use super::release_artifacts::VerifiedArtifactManifest;
 
+pub(crate) use pypi_files::PypiFileSets;
+
 pub(crate) mod artifact;
 pub(crate) mod forge;
 pub(crate) mod http;
 pub(crate) mod policy;
+mod pypi_files;
 pub(crate) mod registry;
 pub(crate) mod tag;
 
@@ -189,6 +192,8 @@ pub(crate) struct ProviderContext<'a> {
     runner: &'a dyn CommandRunner,
     git_remote: Option<&'a PreparedGitRemote>,
     sleeper: &'a dyn policy::Sleeper,
+    /// The Python file sets built so far in this run.
+    file_sets: Option<&'a PypiFileSets>,
 }
 
 impl<'a> ProviderContext<'a> {
@@ -202,7 +207,17 @@ impl<'a> ProviderContext<'a> {
             runner,
             git_remote,
             sleeper: &policy::ThreadSleeper,
+            file_sets: None,
         }
+    }
+
+    pub(crate) fn with_file_sets(mut self, file_sets: &'a PypiFileSets) -> Self {
+        self.file_sets = Some(file_sets);
+        self
+    }
+
+    pub(crate) fn file_sets(&self) -> Option<&'a PypiFileSets> {
+        self.file_sets
     }
 
     /// Replaces the wall-clock wait, so a test can exercise the retry schedule

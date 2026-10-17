@@ -21,21 +21,18 @@
 //! hardcodes the public simple index when `endpoint` is `None` (see the PyPI
 //! note below).
 //!
-//! PyPI drives `registry_argv::pypi_publish_argv` directly (the exact
-//! production build-then-upload argv, including `--repository-url` for a
+//! PyPI drives `registry_argv::pypi_build_argv` and `pypi_upload_argv` directly (the exact
+//! production build and upload argv, including `--repository-url` for a
 //! private index) rather than through `callisto release execute`: that CLI
 //! path routes a registry through `PreparedRegistryBinding`, whose
 //! `canonical_registry_url` rejects non-https with no loopback exception --
 //! by design -- so a callisto
 //! registry binding can never target a local `http://127.0.0.1` test index.
-//! Calling `pypi_publish_argv` directly stays on the same side of that line
+//! Calling those directly stays on the same side of that line
 //! as the npm test above: real registry, real package-manager config
 //! (`--repository-url`, not `.pypirc`), zero callisto-side registry binding.
-//! `pypi_publish_argv` used to unconditionally append `--skip-existing`,
-//! which twine 5 and newer refuses to run at all against a non-warehouse
-//! repository URL (`UnsupportedConfiguration`) -- fixed to be conditional;
-//! see the `fix(publish)` commit on this branch and the `pypi_publish_argv_*`
-//! `--skip-existing` tests in `registry_argv.rs`.
+//! The upload argv never carries `--skip-existing`, which twine 5 and newer refuses to run
+//! at all against a non-warehouse repository URL (`UnsupportedConfiguration`).
 //!
 //! Cargo drives `registry_argv::cargo_publish_argv` directly against a real
 //! local `cargo-http-registry`, for a third, different reason than PyPI's:
@@ -62,7 +59,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use callisto_graph::commands::registry_argv::{cargo_publish_argv, pypi_publish_argv, Argv};
+use callisto_graph::commands::registry_argv::{cargo_publish_argv, pypi_build_argv, pypi_upload_argv, Argv};
 use callisto_model::{Version, VersionGrammar};
 use release_harness::*;
 
@@ -348,7 +345,7 @@ fn npm_publish_against_a_real_verdaccio_registry_is_retrievable_afterward() {
 // --------------------------------------------------------------------- pypi
 
 /// Whether `interpreter` can `import module` -- the actual precondition for
-/// `pypi_publish_argv`'s `python -m build` step, not just the interpreter
+/// `pypi_build_argv`'s `python -m build` step, not just the interpreter
 /// binary existing.
 fn python_module_importable(interpreter: &str, module: &str) -> bool {
     Command::new(interpreter)
@@ -360,7 +357,7 @@ fn python_module_importable(interpreter: &str, module: &str) -> bool {
         .is_ok_and(|status| status.success())
 }
 
-/// Mirrors `pypi_publish_argv`'s own interpreter resolution (`python3` first,
+/// Mirrors `pypi_build_argv`'s own interpreter resolution (`python3` first,
 /// `python` as a fallback), so this test skips exactly when the production
 /// code would fail to resolve one.
 fn resolved_python() -> Option<&'static str> {
@@ -453,8 +450,8 @@ fn run_argv(argv: &Argv, extra_env: &[(&str, &str)]) -> std::process::Output {
     })
 }
 
-/// A real pypiserver registry, `registry_argv::pypi_publish_argv`'s
-/// exact production build-then-upload argv (including `--repository-url`,
+/// A real pypiserver registry, `registry_argv`'s exact production build and
+/// upload argv (including `--repository-url`,
 /// callisto's own package-manager-config routing, not a registry binding),
 /// and an assertion against the registry's own simple index afterward -- not
 /// just the upload's exit code.
@@ -481,18 +478,10 @@ fn pypi_publish_against_a_real_pypiserver_registry_is_retrievable_afterward() {
     let (_pypiserver_guard, port) = start_pypiserver(external.path());
     let index = format!("http://127.0.0.1:{port}");
 
-    let version = Version::parse(PYPI_VERSION, VersionGrammar::SemVer).unwrap();
-    let steps = pypi_publish_argv(root, Path::new(""), PYPI_PACKAGE, &version, Some(index.as_str())).unwrap();
-    let [build, upload] = steps.as_slice() else {
-        panic!("pypi_publish_argv must return exactly a build and an upload step");
-    };
-    assert!(
-        upload.args.contains(&"--repository-url".to_string()) && upload.args.contains(&index),
-        "twine must be routed via --repository-url, not a callisto registry binding: {:?}",
-        upload.args
-    );
+    let outdir = tempfile::tempdir().unwrap();
+    let build = pypi_build_argv(root, Path::new(""), outdir.path()).unwrap();
 
-    // `--no-isolation`: production `pypi_publish_argv` deliberately omits it (a real release
+    // `--no-isolation`: production `pypi_build_argv` deliberately omits it (a real release
     // wants a clean, isolated build), but a plain `python -m build` here would pip-install
     // `setuptools` from PyPI into a fresh isolated env -- network access CI must not depend on.
     // The CI venv (see callisto-ci.yml) pre-installs pinned `setuptools`/`wheel`, so building
@@ -515,12 +504,25 @@ fn pypi_publish_against_a_real_pypiserver_registry_is_retrievable_afterward() {
         String::from_utf8_lossy(&built.stderr)
     );
 
+    let mut files: Vec<PathBuf> = fs::read_dir(outdir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    files.sort();
+    assert_eq!(files.len(), 2, "the build must produce a wheel and an sdist: {files:?}");
+    let upload = pypi_upload_argv(root, Path::new(""), Some(index.as_str()), &files);
+    assert!(
+        upload.args.contains(&"--repository-url".to_string()) && upload.args.contains(&index),
+        "twine must be routed via --repository-url, not a callisto registry binding: {:?}",
+        upload.args
+    );
+
     // pypiserver's `-a . -P .` disables authentication entirely, but twine's
     // own client still refuses to run with no credentials configured at
     // all -- the package manager's own config, same as npm's dummy
     // `_authToken` above, not a callisto concern.
     let uploaded = run_argv(
-        upload,
+        &upload,
         &[("TWINE_USERNAME", "callisto-e2e"), ("TWINE_PASSWORD", "callisto-e2e")],
     );
     assert!(

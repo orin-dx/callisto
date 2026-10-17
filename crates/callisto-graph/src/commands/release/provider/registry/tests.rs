@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use callisto_model::{
-    ArtifactDigest, CommandOutput, CommandRunner, RegistryBindingDigest, RegistryKey, Version, VersionGrammar,
+    ArtifactDigest, CommandOutput, CommandRunner, RegistryBindingDigest, RegistryBindingId, RegistryKey,
+    ReleaseOperationId, ReleasePackageId, Version, VersionGrammar,
 };
 
 use super::super::loopback::fixtures;
@@ -161,6 +162,15 @@ fn build_fixture() -> CargoFixture {
     .unwrap();
 
     CargoFixture { _root: root, workspace }
+}
+
+/// The id of the registry publish for `operation`.
+fn operation_id(ecosystem: Ecosystem, operation: &RegistryPublishOperation) -> ReleaseOperationId {
+    ReleaseOperationId::registry_publish(
+        ReleasePackageId::new(ecosystem, &operation.package_name).unwrap(),
+        operation.version.clone(),
+        RegistryBindingId::new(operation.registry.key.as_str(), operation.registry.identity.clone()).unwrap(),
+    )
 }
 
 fn operation(key: &str, package_name: &str, version: &str) -> RegistryPublishOperation {
@@ -1036,7 +1046,7 @@ fn a_platform_package_is_published_by_directory_with_npm() {
 
     adapter_for(Ecosystem::Npm)
         .unwrap()
-        .publish(&context, &platform)
+        .publish(&context, &operation_id(Ecosystem::Npm, &platform), &platform)
         .unwrap();
     let dir = root.path().join("packages/cli/npm/linux-x64-gnu");
     assert_eq!(
@@ -1056,7 +1066,10 @@ fn a_platform_package_is_published_by_directory_with_npm() {
     // The owner is a workspace member and keeps its package manager's by-name form.
     runner.0.lock().unwrap().clear();
     let owner = operation("npm", "@s/cli", "1.0.0");
-    adapter_for(Ecosystem::Npm).unwrap().publish(&context, &owner).unwrap();
+    adapter_for(Ecosystem::Npm)
+        .unwrap()
+        .publish(&context, &operation_id(Ecosystem::Npm, &owner), &owner)
+        .unwrap();
     assert_eq!(runner.0.lock().unwrap()[0].0, "pnpm");
     assert!(runner.0.lock().unwrap()[0].1.contains(&"--filter=@s/cli".to_owned()));
 }
