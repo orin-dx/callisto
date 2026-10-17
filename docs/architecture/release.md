@@ -5,7 +5,7 @@ The types that make a release run safe to crash and rerun, and how the two relea
 ## Terms
 
 - Package: a dependency-graph node owned by a directory; it can expose several canonical manifest/distribution identities.
-- Distribution identity: `ReleasePackageId`, an ecosystem-qualified native package name. Several identities can currently derive operations addressing the same physical tag or forge release; shared ownership is not yet a separate authority.
+- Distribution identity: `ReleasePackageId`, an ecosystem-qualified native package name. A graph package with several identities has one tag, one forge release and one forge publish, each carried by the package's owner: its first selected identity in manifest order (Cargo, then npm, then PyPI).
 - Artifact: the bytes of one *(package, version, target)*, declared by `[[release.artifact]]`. It has no version, tag or changelog of its own. Callisto does not parse `target`; CI supplies product-slot bytes and Callisto records where they go. Registry publishing can invoke native build/pack tools, including Python's build backend.
 - Product package: `[release].product-package`. Every artifact slot uploads to the product's one GitHub Release, even when another package built the bytes (`ArtifactSlotId.package`).
 - Decision: the package and version roster (`ReleaseDecisionV1`).
@@ -98,7 +98,7 @@ These are version-level checks, not proof of identical bytes, the npm dist-tag, 
 - GitHub's release-by-tag endpoint omits drafts, so the forge lookup finds the release ID by tag through GraphQL, then reads the release by ID (`release/github.rs`).
 - GitHub's reads lag its writes by seconds. The check right after this run's own create, upload or publish retries an absent answer for about a minute before it reports a conflict (`observe_until_visible`).
 
-The tag/announcement barrier covers all required publications of a graph package: a package's tag waits for the registry publishes of every release identity it has (`OpIndex::tag_prerequisites`), so a dual Cargo/npm owner's shared tag and public release follow both publishes, in no fixed ecosystem order. See [the scoped design](polyglot-v1.md) for proposed ownership and future Go tag-publication semantics.
+The tag/announcement barrier covers all required publications of a graph package: a package's tag waits for the registry publishes of every release identity it has (`OpIndex::tag_prerequisites`), so a dual Cargo/npm owner's one tag and public release follow both publishes, in no fixed ecosystem order. Selecting one identity of a dual package makes that identity the owner, so the tag waits only for the selected publishes. An intent derived before this rule fails closed as stale and is rebuilt with `release plan`. See [the scoped design](polyglot-v1.md) for proposed ownership and future Go tag-publication semantics.
 
 ## Wire and observation boundaries
 
