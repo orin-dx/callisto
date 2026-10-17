@@ -22,7 +22,7 @@ use tempfile::NamedTempFile;
 /// # Errors
 ///
 /// Returns the first I/O error encountered: creating parent directories, writing the temp file,
-/// flushing, fsyncing, or persisting (renaming) to `path`.
+/// flushing, fsyncing, persisting (renaming) to `path`, or syncing the directory that holds it.
 pub fn atomic_write(path: &Path, content: &str, permit: &ApplyPermit) -> io::Result<()> {
     let _permit = permit;
     let raw_parent = path.parent().unwrap_or_else(|| Path::new("."));
@@ -31,6 +31,7 @@ pub fn atomic_write(path: &Path, content: &str, permit: &ApplyPermit) -> io::Res
     } else {
         raw_parent
     };
+    let created_parent = !parent.try_exists()?;
     std::fs::create_dir_all(parent)?;
 
     let mut temp = NamedTempFile::new_in(parent)?;
@@ -39,17 +40,31 @@ pub fn atomic_write(path: &Path, content: &str, permit: &ApplyPermit) -> io::Res
     temp.as_file().sync_all()?;
     temp.persist(path).map_err(|e| e.error)?;
 
-    if let Ok(parent_file) = std::fs::File::open(parent) {
-        let _res = parent_file.sync_all();
-    }
-    if let Some(grandparent) = parent.parent() {
-        if !grandparent.as_os_str().is_empty() {
-            if let Ok(gp_file) = std::fs::File::open(grandparent) {
-                let _res = gp_file.sync_all();
-            }
+    sync_directory(parent)?;
+    // A directory this call created is itself a new entry in its parent.
+    if created_parent {
+        if let Some(grandparent) = parent.parent().filter(|dir| !dir.as_os_str().is_empty()) {
+            sync_directory(grandparent)?;
         }
     }
     Ok(())
+}
+
+/// Flushes `dir`'s entries so a rename survives power loss. Windows cannot open a directory, and a filesystem that
+/// cannot sync one reports `Unsupported` or `InvalidInput`; any other failure means the rename may not be durable.
+fn sync_directory(dir: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        match std::fs::File::open(dir)?.sync_all() {
+            Err(error) if matches!(error.kind(), io::ErrorKind::Unsupported | io::ErrorKind::InvalidInput) => Ok(()),
+            result => result,
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = dir;
+        Ok(())
+    }
 }
 
 /// Fails now if [`atomic_write`] to `path` could not succeed, leaving no file behind.
@@ -93,6 +108,15 @@ mod tests {
         std::fs::write(&target, "x").unwrap();
         probe_atomic_write(&target, &permit).unwrap();
         assert!(probe_atomic_write(dir.path(), &permit).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_sync_failure_is_reported() {
+        let dir = tempdir().unwrap();
+        assert!(sync_directory(dir.path()).is_ok());
+        let error = sync_directory(&dir.path().join("gone")).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
     }
 
     #[test]

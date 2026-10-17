@@ -117,6 +117,14 @@ pub(crate) fn classify_manifest_writes(plan: &VersionPlan) -> ManifestWriteClass
     }
 }
 
+/// Whether `root/path` exists; a failure to look is an error, never "deleted".
+fn path_exists(root: &Path, path: &Path) -> Result<bool, GraphError> {
+    callisto_model::strict_fs::exists(&root.join(path)).map_err(|e| GraphError::ApplyIo {
+        path: path.to_path_buf(),
+        message: e.to_string(),
+    })
+}
+
 /// Writes `plan` to disk and stages the touched paths in git.
 ///
 /// Every side effect here is unconditional -- whether to apply at all is
@@ -212,7 +220,7 @@ pub fn apply_version_plan<R: CommandRunner>(
             continue;
         }
         let p = PathBuf::from(lockfile);
-        if root.join(&p).exists() && !modified_paths.contains(&p) {
+        if path_exists(root, &p)? && !modified_paths.contains(&p) {
             modified_paths.push(p);
         }
     }
@@ -221,7 +229,15 @@ pub fn apply_version_plan<R: CommandRunner>(
         // Stage all written release state before consuming its inputs. If a refresh or add fails,
         // the changesets/pre-state remain available; if removal staging fails, the manifest diff
         // still identifies the interrupted run.
-        let (existing, deleted): (Vec<_>, Vec<_>) = modified_paths.iter().partition(|p| root.join(p).exists());
+        let mut existing = Vec::new();
+        let mut deleted = Vec::new();
+        for path in &modified_paths {
+            if path_exists(root, path)? {
+                existing.push(path);
+            } else {
+                deleted.push(path);
+            }
+        }
 
         if !existing.is_empty() {
             run_git_on_paths(runner, root, &["add", "--"], &existing)?;
@@ -238,7 +254,7 @@ pub fn apply_version_plan<R: CommandRunner>(
             // Keep the inputs on disk until their removal is staged so a failed index update can be retried.
             for path in &deferred_deletions {
                 let full = root.join(path);
-                if full.exists() {
+                if path_exists(root, path)? {
                     fs::remove_file(&full).map_err(|e| GraphError::ApplyIo {
                         path: path.clone(),
                         message: e.to_string(),

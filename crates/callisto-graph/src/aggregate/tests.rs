@@ -1739,3 +1739,40 @@ fn test_pre_mode_no_changesets_at_all_has_no_active_changeset() {
     assert!(!agg.pre_mode_has_active_changeset);
     assert!(agg.new_pre_changesets.is_empty());
 }
+
+#[test]
+fn changeset_listing_skips_the_readme_and_other_files_and_treats_a_missing_directory_as_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    assert!(list_changeset_files(&dir.path().join(".changeset")).unwrap().is_empty());
+
+    let changesets = dir.path().join(".changeset");
+    std::fs::create_dir(&changesets).unwrap();
+    for name in ["b.md", "a.md", "README.md", "config.json", "pre.json"] {
+        std::fs::write(changesets.join(name), "x").unwrap();
+    }
+    std::fs::create_dir(changesets.join("nested.md")).unwrap();
+
+    let names: Vec<_> = list_changeset_files(&changesets)
+        .unwrap()
+        .iter()
+        .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, ["a.md", "b.md"]);
+}
+
+/// A changeset entry that cannot be inspected must stop the run, not drop out of the release.
+#[cfg(unix)]
+#[test]
+fn changeset_listing_errors_on_an_entry_it_cannot_inspect() {
+    let dir = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink(dir.path().join("missing.md"), dir.path().join("dangling.md")).unwrap();
+    assert!(list_changeset_files(dir.path()).is_err());
+}
+
+#[test]
+fn changeset_listing_errors_when_the_path_is_not_a_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let not_a_directory = dir.path().join("file");
+    std::fs::write(&not_a_directory, "x").unwrap();
+    assert!(list_changeset_files(&not_a_directory).is_err());
+}

@@ -65,6 +65,27 @@ pub struct ChangesetLoadFailure {
     pub source: callisto_model::format::ParseError,
 }
 
+/// Every changeset `*.md` file in `dir` (not the README), sorted. A missing directory holds none; any other failure,
+/// including an entry that cannot be read, is an error rather than a changeset left out of the release.
+pub(crate) fn list_changeset_files(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error),
+    };
+    let mut files = Vec::new();
+    for entry in entries {
+        let path = entry?.path();
+        let is_changeset = path.extension().and_then(|ext| ext.to_str()) == Some("md")
+            && path.file_name().and_then(|name| name.to_str()) != Some("README.md");
+        if is_changeset && fs::metadata(&path)?.is_file() {
+            files.push(path);
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
 /// Loads and parses every `.changeset/*.md` file, splitting successes from parse failures
 /// rather than aborting on the first one -- `status` must report every unparseable changeset,
 /// not just the first. [`load_changesets`] collapses this to the first failure for callers
@@ -74,28 +95,10 @@ pub fn load_changesets_permissive(
     cfg: &ResolvedConfig,
 ) -> Result<(Vec<LoadedChangeset>, Vec<ChangesetLoadFailure>), GraphError> {
     let dir = root.join(&cfg.changesets_dir);
-    if !dir.exists() {
-        return Ok((Vec::new(), Vec::new()));
-    }
-
-    let entries = fs::read_dir(&dir).map_err(|e| callisto_model::ManifestError::Read {
+    let files = list_changeset_files(&dir).map_err(|e| callisto_model::ManifestError::Read {
         path: dir.clone(),
         message: e.to_string(),
     })?;
-
-    let mut files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
-            if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
-                if file_name != "README.md" && file_name != "config.json" && file_name != "pre.json" {
-                    files.push(path);
-                }
-            }
-        }
-    }
-
-    files.sort();
 
     let mut loaded = Vec::new();
     let mut failures = Vec::new();

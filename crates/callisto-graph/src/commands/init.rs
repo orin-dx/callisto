@@ -168,7 +168,7 @@ fn io_err(path: &Path) -> impl Fn(std::io::Error) -> GraphError + '_ {
 
 fn ensure_uninitialized(root: &Path) -> Result<(), GraphError> {
     let path = root.join("callisto.toml");
-    if path.exists() {
+    if callisto_model::strict_fs::exists(&path).map_err(io_err(&path))? {
         return Err(GraphError::InitAlreadyInitialized { path });
     }
     Ok(())
@@ -557,7 +557,7 @@ pub fn write(root: &Path, config: &str, permit: &ApplyPermit) -> Result<InitRepo
 /// A directory or file write fails.
 pub fn write_changeset_readme(root: &Path, permit: &ApplyPermit) -> Result<(), GraphError> {
     let readme = root.join(".changeset/README.md");
-    if readme.exists() {
+    if callisto_model::strict_fs::exists(&readme).map_err(io_err(&readme))? {
         return Ok(());
     }
     let changeset_dir = root.join(".changeset");
@@ -906,7 +906,7 @@ pub fn render_workflow(facts: &InitFacts, shape: WorkflowShape, branch: &str, co
 /// A file already exists at that path.
 pub fn ensure_workflow_absent(root: &Path) -> Result<(), GraphError> {
     let path = workflow_path(root);
-    if path.exists() {
+    if callisto_model::strict_fs::exists(&path).map_err(io_err(&path))? {
         return Err(GraphError::InitWorkflowExists { path });
     }
     Ok(())

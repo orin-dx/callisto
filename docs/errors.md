@@ -303,6 +303,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E299 | `init --workflow`/`--artifact-target` given with no `origin` remote configured | Add the repository's remote as origin (`git remote add origin <url>`), then re-run init. |
 | E308 | `release build-python` or `artifact-manifest --seal-python` on an intent that publishes no Python package | drop --seal-python and `release build-python` for an intent without a Python publish |
 | E309 | `release build-python` run with `--dry-run`, which cannot write build output | re-run `callisto release build-python` without --dry-run |
+| E310 | Failed to read manifest `<path>`: <message> | Make the manifest readable UTF-8 text; a workspace member's manifest is never skipped. |
 
 
 240 numeric E#### codes total in one registry.

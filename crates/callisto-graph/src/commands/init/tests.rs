@@ -1359,3 +1359,17 @@ fn changesets_config_diagnostics_is_empty_without_a_config_object() {
         "no unhonoured key present"
     );
 }
+
+/// An existing `callisto.toml` that cannot be looked up must not read as "not initialized", or init overwrites it.
+#[test]
+fn init_guards_report_a_file_they_cannot_look_up_instead_of_assuming_it_is_absent() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = tmp.path().join("ws");
+    std::fs::create_dir(&ws).unwrap();
+    std::fs::write(ws.join("callisto.toml"), "").unwrap();
+    let Some(_locked) = callisto_fixtures::locked_dir::LockedDir::lock(&ws) else {
+        return;
+    };
+    assert!(matches!(ensure_uninitialized(&ws), Err(GraphError::InitIo { .. })));
+    assert!(matches!(ensure_workflow_absent(&ws), Err(GraphError::InitIo { .. })));
+}

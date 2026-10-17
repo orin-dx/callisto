@@ -82,11 +82,11 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             let rel_pre_path = ws.config.pre_json_path();
             let pre_path = ws.root.join(&rel_pre_path);
             let pre_dir = pre_path.parent().unwrap_or(&ws.root).to_path_buf();
-            let pre_state = if pre_path.exists() {
-                let existing_text = fs::read_to_string(&pre_path).map_err(|source| CliError::Io {
-                    source,
-                    path: Some(pre_path.clone()),
-                })?;
+            let existing_text = callisto_model::strict_fs::read_optional(&pre_path).map_err(|source| CliError::Io {
+                source,
+                path: Some(pre_path.clone()),
+            })?;
+            let pre_state = if let Some(existing_text) = existing_text {
                 let existing = parse_pre_json(&existing_text)?;
                 if existing.mode == PreMode::Pre {
                     return Err(CliError::PreAlreadyActive);
@@ -147,13 +147,12 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             let rel_pre_path = config.pre_json_path();
             let pre_path = root.join(&rel_pre_path);
 
-            if !pre_path.exists() {
-                return Err(CliError::PreNotActive);
-            }
-            let text = fs::read_to_string(&pre_path).map_err(|source| CliError::Io {
-                source,
-                path: Some(pre_path.clone()),
-            })?;
+            let text = callisto_model::strict_fs::read_optional(&pre_path)
+                .map_err(|source| CliError::Io {
+                    source,
+                    path: Some(pre_path.clone()),
+                })?
+                .ok_or(CliError::PreNotActive)?;
             let mut pre_state = parse_pre_json(&text)?;
 
             // Reject double-exit.
