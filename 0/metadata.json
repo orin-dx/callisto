@@ -1,0 +1,125 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M55FTVM28HCEF5APYJRB5HFY",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-17T17:51:37.387047Z",
+  "branch": "feat/pypi-sealed-file-set",
+  "checkpoints_count": 2,
+  "save_step_count": 34,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/release/provider/pypi_files.rs",
+    "crates/callisto-graph/src/commands/release/provider/pypi_files/tests.rs",
+    "docs/projects/V1-FINDINGS.md",
+    "docs/publishing.md",
+    "docs/releasing.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "f11bd6045554",
+  "checkpoint_transcript_start": 14909,
+  "transcript_lines_at_start": 14909,
+  "compact_transcript_start": 1285,
+  "token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 15729,
+    "cache_read_tokens": 2024460,
+    "output_tokens": 7141,
+    "api_call_count": 16,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 84
+  },
+  "summary": {
+    "intent": "Get the PyPI sealed-file-set PR stack (#232/#233) through CI and review: fix a failing CI compile error in a Linux-only test, then address Codex's review findings on hashless confirmation, stale docs, and memory-heavy hashing.",
+    "outcome": "Fixed the Linux-gated test compile error and pushed via a non-force rebase onto the rebased remote branch. Then fixed all three Codex findings (streaming hashing via ArtifactDigest::from_reader, narrowed publishing.md contract, updated releasing.md and V1-FINDINGS.md); local `just ci` passed at 92.77% coverage and the commit was pushed, with the new CI run not yet confirmed.",
+    "learnings": {
+      "repo": [
+        "`release_real_registry_e2e_tests.rs` is `#![cfg(target_os = \"linux\")]`, so it never compiles on macOS and local `just ci` can pass while Linux CI (Clippy, Coverage, Test Suite) fails on it.",
+        "To check a Linux-gated file locally, temporarily remove the `cfg` line and run clippy on it, then restore it.",
+        "`ArtifactDigest::from_reader` in callisto-model (`crates/callisto-model/src/release/digest.rs`) is the existing streaming digest helper used by artifact verification and should be reused for hashing files.",
+        "The workspace enforces a 90% coverage gate via `just ci`.",
+        "Sealed mode requires an index-served sha256; files uploaded in the current run are accepted when the index serves no digest, which keeps private indexes without hashes working.",
+        "Python-only generated release workflows remain unsealed and build inside the write-capable release job (tracked as T09)."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/pypi_files.rs",
+          "line": 90,
+          "end_line": 125,
+          "finding": "Inventory and sealed-file recheck read whole wheels/sdists with std::fs::read and Sha256::digest; replaced by a streaming file_sha256 helper built on ArtifactDigest::from_reader."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/pypi_files.rs",
+          "line": 243,
+          "finding": "Digest comparison only flags a mismatch when the index supplies a SHA-256, so hashless responses are accepted for files uploaded this run."
+        },
+        {
+          "path": "docs/releasing.md",
+          "line": 118,
+          "finding": "Stale text claimed a partial PyPI upload can be mistaken for a complete release; Codex cited line 114 but the actual line was 118."
+        }
+      ],
+      "workflow": [
+        "Verify external review findings against the code before acting; line numbers in reviews can be off.",
+        "When a push is rejected, fetch and inspect the remote commits first; replay only new commits with a rebase and push without force.",
+        "Run long `just ci` in the background with output redirected to a log, then inspect the tail and exit code.",
+        "Write multi-line commit messages to a file and use `git commit -F` to avoid shell quoting problems."
+      ]
+    },
+    "friction": [
+      "Local CI on macOS missed a Linux-only compile error, causing a failed CI run on the PR.",
+      "The first push was rejected because #231 merged and the remote branch had been rebased with new SHAs.",
+      "Codex's cited line number for releasing.md was off (114 vs 118)."
+    ],
+    "open_items": [
+      "Decision pending for the user: whether a PyPI index serving no sha256 should be an error for files uploaded this run (assistant recommends leaving it accepted).",
+      "The new CI run on #233 after the final push was still pending/unverified.",
+      "Hosted generated-workflow run (representative build, partial upload, rerun) has not been exercised.",
+      "The Linux e2e test has not been run against a real pypiserver/Verdaccio.",
+      "Trusted publishing (OIDC) for npm and PyPI is a deferred follow-up.",
+      "Python-only workspaces remain unsealed; whether to change that is the user's call."
+    ]
+  }
+}
