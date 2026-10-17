@@ -88,13 +88,41 @@ pub struct Workspace<'a, R: CommandRunner, D: DependencyResolver = ManifestWalkR
 }
 
 impl<'a, R: CommandRunner> Workspace<'a, R, ManifestWalkResolver> {
+    /// Loads a workspace that is proven complete: every discovered manifest was opened and its publish targets and
+    /// dependency edges resolved. Every command that plans or applies a release loads through here.
+    ///
+    /// # Errors
+    ///
+    /// Discovery or config loading fails, or a discovered manifest could not be resolved
+    /// ([`GraphError::IncompleteWorkspace`]).
     pub fn load<L: ProjectLocator>(root: PathBuf, locator: &L, runner: &'a R) -> Result<Self, GraphError> {
-        let config = config::load(&root)?;
-        Self::load_with_config(root, config, locator, runner)
+        let workspace = Self::scan(root, locator, runner)?;
+        workspace.require_complete()?;
+        Ok(workspace)
     }
 
-    /// Builds the workspace against an already-resolved config instead of `callisto.toml`.
+    /// Like [`Workspace::load`] against an already-resolved config instead of `callisto.toml`.
     pub fn load_with_config<L: ProjectLocator>(
+        root: PathBuf,
+        config: ResolvedConfig,
+        locator: &L,
+        runner: &'a R,
+    ) -> Result<Self, GraphError> {
+        let workspace = Self::scan_with_config(root, config, locator, runner)?;
+        workspace.require_complete()?;
+        Ok(workspace)
+    }
+
+    /// Loads whatever the walk could resolve and keeps the manifests it could not as error diagnostics, so `status`
+    /// can show a partial workspace. Nothing that plans or writes a release may use this: it can hold a smaller
+    /// roster than the repository has.
+    pub fn scan<L: ProjectLocator>(root: PathBuf, locator: &L, runner: &'a R) -> Result<Self, GraphError> {
+        let config = config::load(&root)?;
+        Self::scan_with_config(root, config, locator, runner)
+    }
+
+    /// [`Workspace::scan`] against an already-resolved config.
+    pub fn scan_with_config<L: ProjectLocator>(
         root: PathBuf,
         mut config: ResolvedConfig,
         locator: &L,
@@ -136,6 +164,30 @@ impl<'a, R: CommandRunner> Workspace<'a, R, ManifestWalkResolver> {
 }
 
 impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
+    /// Fails if the walk dropped a manifest it could not resolve, because a release planned from the rest would be
+    /// smaller than the repository.
+    ///
+    /// # Errors
+    ///
+    /// [`GraphError::IncompleteWorkspace`] naming every unresolved manifest.
+    pub fn require_complete(&self) -> Result<(), GraphError> {
+        // One manifest can fail in several stages of the walk; name it once.
+        let mut seen = BTreeSet::new();
+        let unresolved: Vec<String> = self
+            .graph
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| diagnostic.code == callisto_model::DiagnosticCode::ManifestUnresolved)
+            .filter(|diagnostic| diagnostic.path.as_ref().is_none_or(|path| seen.insert(path.clone())))
+            .map(|diagnostic| diagnostic.message.clone())
+            .collect();
+        if unresolved.is_empty() {
+            Ok(())
+        } else {
+            Err(GraphError::IncompleteWorkspace { unresolved })
+        }
+    }
+
     /// Returns the workspace's [`TagIndex`], building it on first access and
     /// reusing the cached result afterwards. See the doc comment on the
     /// `tags` field for why this is deferred rather than built eagerly by

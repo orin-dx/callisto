@@ -72,6 +72,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     inference: &I,
     opts: &VersionOptions,
 ) -> Result<VersionPlan, GraphError> {
+    ws.require_complete()?;
     let base_versions = ws.base_versions()?;
     let tags = ws.tags()?;
 

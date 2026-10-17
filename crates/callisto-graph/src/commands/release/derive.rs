@@ -208,6 +208,7 @@ fn derive_release_inputs_with<R: CommandRunner, D: DependencyResolver>(
     remote: GitRemoteRequirement,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<DerivedReleaseInputs, GraphError> {
+    workspace.require_complete()?;
     if workspace
         .config
         .product_release

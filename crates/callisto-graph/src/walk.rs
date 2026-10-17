@@ -79,6 +79,20 @@ fn is_promoted_bare_name(paths: &[PathBuf], claiming_ecosystems: &BTreeMap<PathB
     true
 }
 
+/// A manifest the graph build could not resolve. Dropping it silently would shrink the release without a trace, so it
+/// is reported as an error-level diagnostic that makes loading the workspace for planning fail.
+fn unresolved(manifest: &Path, what: &str, cause: impl std::fmt::Display) -> Diagnostic {
+    Diagnostic {
+        code: DiagnosticCode::ManifestUnresolved,
+        severity: DiagnosticSeverity::Error,
+        message: format!("`{}`: could not {what}: {cause}", manifest.display()),
+        package: None,
+        path: Some(manifest.to_path_buf()),
+        escalated_by: None,
+        governed_by: None,
+    }
+}
+
 impl ManifestWalkResolver {
     pub fn build<L: ProjectLocator, R: CommandRunner>(
         root: &Path,
@@ -95,7 +109,9 @@ impl ManifestWalkResolver {
             package_manifest_decls,
             index,
             promoted_siblings,
+            unresolved,
         } = assign_identities(discovered, manifest_cache, &ctx)?;
+        diagnostics.extend(unresolved);
 
         let cfg = cfg.with_promoted_siblings(promoted_siblings);
 
@@ -127,6 +143,8 @@ struct Identified {
     index: IdentityIndex,
     /// An output of identity assignment: the sibling ids a bare name was promoted into.
     promoted_siblings: BTreeMap<String, Vec<(PackageId, BTreeSet<Ecosystem>)>>,
+    /// Manifests that could not be opened while assigning identities.
+    unresolved: Vec<Diagnostic>,
 }
 
 fn discover<L: ProjectLocator>(
@@ -189,6 +207,7 @@ struct IdentityAssigner<'a> {
     path_platform_keys: BTreeMap<PathBuf, Vec<String>>,
     primary_ecosystems: BTreeMap<PathBuf, Ecosystem>,
     promoted_siblings: BTreeMap<String, Vec<(PackageId, BTreeSet<Ecosystem>)>>,
+    unresolved: Vec<Diagnostic>,
 }
 
 impl<'a> IdentityAssigner<'a> {
@@ -204,6 +223,7 @@ impl<'a> IdentityAssigner<'a> {
             path_platform_keys: BTreeMap::new(),
             primary_ecosystems: BTreeMap::new(),
             promoted_siblings: BTreeMap::new(),
+            unresolved: Vec::new(),
         }
     }
 
@@ -271,10 +291,17 @@ impl<'a> IdentityAssigner<'a> {
                 _ => (ManifestFormat::PackageJson, "package.json"),
             };
             let manifest_rel = rel_path.join(filename);
-            let canonical_decl = ManifestDecl::new(manifest_rel.clone(), ManifestRole::Canonical, fmt).ok();
-            if let Some(decl) = &canonical_decl {
-                decls.push(decl.clone());
-            }
+            let canonical_decl = match ManifestDecl::new(manifest_rel.clone(), ManifestRole::Canonical, fmt) {
+                Ok(decl) => {
+                    decls.push(decl.clone());
+                    Some(decl)
+                }
+                Err(error) => {
+                    self.unresolved
+                        .push(unresolved(&manifest_rel, "declare its manifest", error));
+                    None
+                }
+            };
             // For napi platform packages (os + cpu constraints in package.json),
             // also push a Platform-role decl so release derivation can route them
             // as platform publishes instead of main packages. Reuses
@@ -284,9 +311,22 @@ impl<'a> IdentityAssigner<'a> {
             // is the same one `publish_targets`/`iter_dependencies` reuse
             // further down.
             if *eco == Ecosystem::Npm {
-                let role = canonical_decl
+                let opened = canonical_decl
                     .as_ref()
-                    .and_then(|decl| open_cached(self.manifest_cache, decl, self.ctx).ok())
+                    .map(|decl| open_cached(self.manifest_cache, decl, self.ctx));
+                let manifest = match opened {
+                    Some(Ok(manifest)) => Some(manifest),
+                    Some(Err(error)) => {
+                        self.unresolved.push(unresolved(
+                            &manifest_rel,
+                            "open its manifest to read its platform role",
+                            error,
+                        ));
+                        None
+                    }
+                    None => None,
+                };
+                let role = manifest
                     .and_then(|m| m.npm_role())
                     .map(|npm_role| match npm_role {
                         callisto_manifests::NpmRole::Platform { platform, arch, abi } => {
@@ -295,8 +335,12 @@ impl<'a> IdentityAssigner<'a> {
                     })
                     .unwrap_or(ManifestRole::Canonical);
                 if let ManifestRole::Platform { .. } = role {
-                    if let Ok(platform_decl) = ManifestDecl::new(manifest_rel.clone(), role.clone(), fmt) {
-                        decls.push(platform_decl);
+                    match ManifestDecl::new(manifest_rel.clone(), role.clone(), fmt) {
+                        Ok(platform_decl) => decls.push(platform_decl),
+                        Err(error) => {
+                            self.unresolved
+                                .push(unresolved(&manifest_rel, "declare its platform manifest", error))
+                        }
                     }
                     // `id` is this manifest's own npm identity, resolved from its
                     // own `name` field -- distinct from `primary_id` whenever a
@@ -438,14 +482,18 @@ impl<'a> IdentityAssigner<'a> {
             let owner = self.package_manifest_decls.iter_mut().find(|(_, (path, decls))| {
                 *path == owner_dir && decls.iter().any(|d| d.format == ManifestFormat::PackageJson)
             });
-            let (Some((owner_id, (_, decls))), Ok(decl)) = (
-                owner,
-                ManifestDecl::new(manifest_rel.clone(), role.clone(), ManifestFormat::PackageJson),
-            ) else {
+            let Some((owner_id, (_, decls))) = owner else {
                 continue;
             };
-            decls.push(decl);
-            self.index.platform.insert(name, (owner_id.clone(), manifest_rel, role));
+            match ManifestDecl::new(manifest_rel.clone(), role.clone(), ManifestFormat::PackageJson) {
+                Ok(decl) => {
+                    decls.push(decl);
+                    self.index.platform.insert(name, (owner_id.clone(), manifest_rel, role));
+                }
+                Err(error) => self
+                    .unresolved
+                    .push(unresolved(&manifest_rel, "declare its platform manifest", error)),
+            }
         }
     }
 
@@ -454,6 +502,7 @@ impl<'a> IdentityAssigner<'a> {
             package_manifest_decls: self.package_manifest_decls,
             index: self.index,
             promoted_siblings: self.promoted_siblings,
+            unresolved: self.unresolved,
         }
     }
 }
@@ -485,12 +534,19 @@ fn resolve_packages(
         let mut publish_to = Vec::new();
         // Attached platform manifests publish as their owner's platform operations, not as targets.
         for decl in decls.iter().filter(|d| d.role == ManifestRole::Canonical) {
-            if let Ok(editor) = open_cached(manifest_cache, decl, ctx) {
-                for target in editor.publish_targets() {
-                    if target != PublishTarget::None && !publish_to.contains(&target) {
-                        publish_to.push(target);
+            match open_cached(manifest_cache, decl, ctx) {
+                Ok(editor) => {
+                    for target in editor.publish_targets() {
+                        if target != PublishTarget::None && !publish_to.contains(&target) {
+                            publish_to.push(target);
+                        }
                     }
                 }
+                Err(error) => diagnostics.push(unresolved(
+                    &decl.path,
+                    "open its manifest to read its publish targets",
+                    error,
+                )),
             }
         }
         if publish_to.is_empty() {
@@ -724,7 +780,18 @@ fn build_edges(
             if decl.role != ManifestRole::Canonical {
                 continue;
             }
-            if let Ok(m) = open_cached(manifest_cache, decl, ctx) {
+            let m = match open_cached(manifest_cache, decl, ctx) {
+                Ok(m) => m,
+                Err(error) => {
+                    diagnostics.push(unresolved(
+                        &decl.path,
+                        "open its manifest to read its dependencies",
+                        error,
+                    ));
+                    continue;
+                }
+            };
+            {
                 for entry in m.iter_dependencies() {
                     let (spec, declaring_path) = if entry.inherited {
                         if let Some(ref inh) = ctx.cargo_workspace {
@@ -824,14 +891,16 @@ fn platform_owners(
     ctx: &OpenContext<'_>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> BTreeMap<PathBuf, (PathBuf, String, ManifestRole)> {
-    let open_npm = |rel_path: &Path| {
+    let open_npm = |rel_path: &Path| -> Result<Arc<dyn Manifest>, Diagnostic> {
+        let manifest_rel = rel_path.join("package.json");
         let decl = ManifestDecl::new(
-            rel_path.join("package.json"),
+            manifest_rel.clone(),
             ManifestRole::Canonical,
             ManifestFormat::PackageJson,
         )
-        .ok()?;
-        open_cached(manifest_cache, &decl, ctx).ok()
+        .map_err(|error| unresolved(&manifest_rel, "declare its manifest", error))?;
+        open_cached(manifest_cache, &decl, ctx)
+            .map_err(|error| unresolved(&manifest_rel, "open its manifest to read its platform role", error))
     };
     let platform_role = |manifest: &Arc<dyn Manifest>| match manifest.npm_role()? {
         callisto_manifests::NpmRole::Platform { platform, arch, abi } => {
@@ -845,8 +914,12 @@ fn platform_owners(
         let Some((_, id)) = list.iter().find(|(eco, _)| *eco == Ecosystem::Npm) else {
             continue;
         };
-        let Some(manifest) = open_npm(rel_path) else {
-            continue;
+        let manifest = match open_npm(rel_path) {
+            Ok(manifest) => manifest,
+            Err(problem) => {
+                diagnostics.push(problem);
+                continue;
+            }
         };
         // A co-located platform manifest already belongs to its directory's package.
         match platform_role(&manifest) {
@@ -873,7 +946,14 @@ fn platform_owners(
         {
             continue;
         }
-        if let Some(role) = open_npm(&candidate.path).as_ref().and_then(platform_role) {
+        let role = match open_npm(&candidate.path) {
+            Ok(manifest) => platform_role(&manifest),
+            Err(problem) => {
+                diagnostics.push(problem);
+                None
+            }
+        };
+        if let Some(role) = role {
             platforms.push((candidate.path.clone(), candidate.id.name().to_string(), role, false));
         }
     }

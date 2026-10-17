@@ -97,6 +97,11 @@
       "is_error_case": true
     },
     {
+      "id": "WS-LOAD-01",
+      "criterion": "Loading a workspace for `version`, `release` or any command that writes fails with E313, naming each affected manifest once, when the graph build could not open a discovered manifest to read its platform role, publish targets or dependencies; it never continues with those packages omitted. `status` loads the same workspace without failing and reports each such manifest as an error-level diagnostic, so `status --check` exits 1.",
+      "is_error_case": true
+    },
+    {
       "id": "WS-ID-01",
       "criterion": "A package whose name is claimed by no other directory gets a bare id equal to its manifest name (for example `foo` or `@scope/foo`)."
     },
