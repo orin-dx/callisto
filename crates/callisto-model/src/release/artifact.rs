@@ -7,7 +7,7 @@ use super::{
     version_ord_key, ArtifactDigest, GitHubAttestationPolicyV1, GitHubRepository, IntentDigest, ReleaseIntentV1,
     ReleaseOperationRole, ReleasePackageId, SourceIdentity,
 };
-use crate::{CommitSha, Ecosystem, Version};
+use crate::{is_pypi_sdist, is_pypi_wheel, pypi_dist_belongs_to, CommitSha, Ecosystem, Version, VersionGrammar};
 
 /// Exact binary asset declaration authorized by a durable release intent.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, JsonSchema)]
@@ -172,14 +172,6 @@ impl DistributionSetV1 {
     }
 }
 
-fn is_wheel(filename: &str) -> bool {
-    filename.ends_with(".whl")
-}
-
-fn is_sdist(filename: &str) -> bool {
-    filename.ends_with(".tar.gz")
-}
-
 /// Typed build output bound to one durable intent and source commit.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -301,8 +293,13 @@ fn validate_distributions(
         if files().any(|name| !is_safe_artifact_component(name)) {
             return Err(ArtifactManifestError::UnsafeDistributionFile);
         }
-        if !files().any(is_wheel) || !files().any(is_sdist) {
+        if !files().any(is_pypi_wheel) || !files().any(is_pypi_sdist) {
             return Err(ArtifactManifestError::IncompleteDistributionSet);
+        }
+        let owned = Version::parse(&set.version, VersionGrammar::Pep440)
+            .is_ok_and(|version| files().all(|name| pypi_dist_belongs_to(name, set.package.name(), &version)));
+        if !owned {
+            return Err(ArtifactManifestError::ForeignDistributionFile);
         }
         names.extend(files());
     }
@@ -343,6 +340,8 @@ pub enum ArtifactManifestError {
     IncompleteDistributionSet,
     #[error("a sealed Python file name must be a safe relative identifier")]
     UnsafeDistributionFile,
+    #[error("a sealed Python file is not a distribution of its file set's package and version")]
+    ForeignDistributionFile,
     #[error("artifact manifest names one file twice across its assets and Python file sets")]
     DuplicateDistributionFile,
 }
@@ -857,6 +856,14 @@ mod tests {
                 &["demo-1.0.0-py3-none-any.whl", "demo-1.0.0.tar.gz", "demo-1.0.0.tar.gz"]
             )),
             Err(ArtifactManifestError::DuplicateDistributionFile)
+        ));
+        assert!(matches!(
+            build(set("demo", &["other-1.0.0-py3-none-any.whl", "demo-1.0.0.tar.gz"])),
+            Err(ArtifactManifestError::ForeignDistributionFile)
+        ));
+        assert!(matches!(
+            build(set("demo", &["demo-1.0.1-py3-none-any.whl", "demo-1.0.0.tar.gz"])),
+            Err(ArtifactManifestError::ForeignDistributionFile)
         ));
         let intent = python_intent(&["demo"]);
         let twice = ArtifactManifestV1::with_distributions(&intent, vec![], vec![full_set("demo"), full_set("demo")]);

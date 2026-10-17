@@ -600,7 +600,7 @@ fn pypi_simple_index_url(endpoint: Option<&str>, package_name: &str) -> String {
 /// The version segment of a simple-index filename, or `None` for an extension
 /// this parser does not recognize (a legacy installer, say).
 fn pypi_simple_file_version(filename: &str) -> Option<&str> {
-    pypi_files::dist_filename_parts(filename).map(|(_, version)| version)
+    callisto_model::pypi_dist_filename_parts(filename).map(|(_, version)| version)
 }
 
 /// Whether a simple-index file's filename names exactly the requested version.

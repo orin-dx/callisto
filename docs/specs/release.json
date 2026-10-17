@@ -290,7 +290,7 @@
     },
     {
       "id": "REL-GH-05",
-      "criterion": "`release artifact-manifest` requires, for each slot, a regular non-symlink file named `asset-name` directly in `--artifact-dir` (`E221` for a symlink or non-file, an I/O error when missing) and records its sha256 and byte length. With slots, `release execute` requires both `--artifact-manifest` and `--artifact-dir` (`E233`); without slots it rejects either flag (`E232`) unless the manifest seals Python files. `--seal-python` records the wheel and sdist of every Python publish of the plan, sealed all or none, and `release execute` verifies each file's sha256 and byte length (`E139`) before any effect.",
+      "criterion": "`release artifact-manifest` requires, for each slot, a regular non-symlink file named `asset-name` directly in `--artifact-dir` (`E221` for a symlink or non-file, an I/O error when missing) and records its sha256 and byte length. With slots, `release execute` requires both `--artifact-manifest` and `--artifact-dir` (`E233`); without slots it rejects either flag (`E232`) unless the manifest seals Python files. `--seal-python` records the wheel and sdist of every Python publish of the plan, sealed all or none, each named for its package and version, and `release execute` verifies each file's sha256 and byte length (`E139`) before any effect.",
       "is_error_case": true
     },
     {

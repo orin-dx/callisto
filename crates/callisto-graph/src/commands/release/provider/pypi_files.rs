@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use callisto_model::{normalize_pypi_project_name, CommandError, Version};
+use callisto_model::{is_pypi_sdist, is_pypi_wheel, pypi_dist_belongs_to, CommandError, Version};
 
 use crate::error::GraphError;
 
@@ -33,31 +33,6 @@ impl PypiSimpleFile {
     fn sha256(&self) -> Option<&str> {
         self.hashes.get("sha256").map(String::as_str)
     }
-}
-
-/// The name and version of a wheel or sdist filename; an sdist's last `-` splits them, as a version has no hyphen.
-pub(super) fn dist_filename_parts(filename: &str) -> Option<(&str, &str)> {
-    if let Some(stem) = filename.strip_suffix(".whl") {
-        let mut segments = stem.split('-');
-        return Some((segments.next()?, segments.next()?));
-    }
-    [".tar.gz", ".tar.bz2", ".tar.xz", ".tar.Z", ".zip"]
-        .into_iter()
-        .find_map(|ext| filename.strip_suffix(ext))
-        .and_then(|stem| stem.rsplit_once('-'))
-}
-
-fn is_wheel(filename: &str) -> bool {
-    filename.ends_with(".whl")
-}
-
-fn is_sdist(filename: &str) -> bool {
-    filename.ends_with(".tar.gz")
-}
-
-fn is_version(candidate: &str, version: &Version) -> bool {
-    Version::parse(candidate, version.grammar())
-        .is_ok_and(|candidate| candidate.compare(version) == Ok(std::cmp::Ordering::Equal))
 }
 
 /// One distribution file of a release: built by this run, or sealed by a build job.
@@ -95,17 +70,13 @@ fn file_sha256(path: &Path) -> Result<String, GraphError> {
 
 /// Every wheel and sdist of `package_name` at `version` directly in `dir`, with its digest, by filename.
 fn inventory(dir: &Path, package_name: &str, version: &Version) -> Result<Vec<BuiltFile>, GraphError> {
-    let wanted = normalize_pypi_project_name(package_name);
     let mut files = Vec::new();
     for entry in std::fs::read_dir(dir).map_err(io_error)? {
         let path = entry.map_err(io_error)?.path();
         let Some(filename) = path.file_name().and_then(|name| name.to_str()).map(str::to_owned) else {
             continue;
         };
-        let belongs = dist_filename_parts(&filename).is_some_and(|(name, candidate)| {
-            normalize_pypi_project_name(name) == wanted && is_version(candidate, version)
-        });
-        if !belongs {
+        if !pypi_dist_belongs_to(&filename, package_name, version) {
             continue;
         }
         let sha256 = file_sha256(&path)?;
@@ -113,8 +84,8 @@ fn inventory(dir: &Path, package_name: &str, version: &Version) -> Result<Vec<Bu
     }
     files.sort_by(|left, right| left.filename.cmp(&right.filename));
     for (present, missing) in [
-        (files.iter().any(|file| is_wheel(&file.filename)), "wheel"),
-        (files.iter().any(|file| is_sdist(&file.filename)), "sdist"),
+        (files.iter().any(|file| is_pypi_wheel(&file.filename)), "wheel"),
+        (files.iter().any(|file| is_pypi_sdist(&file.filename)), "sdist"),
     ] {
         if !present {
             return Err(GraphError::PypiBuildOutputIncomplete {
@@ -141,12 +112,10 @@ impl BuiltSet {
 
     /// The files a build job sealed, already checked byte for byte against the manifest.
     pub(super) fn sealed(files: Vec<BuiltFile>, package_name: &str, version: &Version) -> Result<Self, GraphError> {
-        let wanted = normalize_pypi_project_name(package_name);
-        if let Some(stray) = files.iter().find(|file| {
-            !dist_filename_parts(&file.filename).is_some_and(|(name, candidate)| {
-                normalize_pypi_project_name(name) == wanted && is_version(candidate, version)
-            })
-        }) {
+        if let Some(stray) = files
+            .iter()
+            .find(|file| !pypi_dist_belongs_to(&file.filename, package_name, version))
+        {
             return Err(GraphError::ReleaseInvariant {
                 detail: format!(
                     "sealed file `{}` is not a distribution of {package_name} {}",

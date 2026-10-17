@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{ManifestFormat, NpmAccess, RegistryKey, VersionGrammar};
+use crate::{ManifestFormat, NpmAccess, RegistryKey, Version, VersionGrammar};
 
 /// Ecosystem supported by callisto.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
@@ -224,6 +224,35 @@ pub fn normalize_pypi_project_name(name: &str) -> String {
     pypi_name_parts(name).join("-")
 }
 
+/// The name and version of a wheel or sdist filename; an sdist's last `-` splits them, as a version has no hyphen.
+pub fn pypi_dist_filename_parts(filename: &str) -> Option<(&str, &str)> {
+    if let Some(stem) = filename.strip_suffix(".whl") {
+        let mut segments = stem.split('-');
+        return Some((segments.next()?, segments.next()?));
+    }
+    [".tar.gz", ".tar.bz2", ".tar.xz", ".tar.Z", ".zip"]
+        .into_iter()
+        .find_map(|ext| filename.strip_suffix(ext))
+        .and_then(|stem| stem.rsplit_once('-'))
+}
+
+pub fn is_pypi_wheel(filename: &str) -> bool {
+    filename.ends_with(".whl")
+}
+
+pub fn is_pypi_sdist(filename: &str) -> bool {
+    filename.ends_with(".tar.gz")
+}
+
+/// Whether `filename` is a wheel or sdist of `package_name` at exactly `version`.
+pub fn pypi_dist_belongs_to(filename: &str, package_name: &str, version: &Version) -> bool {
+    pypi_dist_filename_parts(filename).is_some_and(|(name, candidate)| {
+        normalize_pypi_project_name(name) == normalize_pypi_project_name(package_name)
+            && Version::parse(candidate, version.grammar())
+                .is_ok_and(|candidate| candidate.compare(version) == Ok(std::cmp::Ordering::Equal))
+    })
+}
+
 fn pypi_name_parts(name: &str) -> Vec<String> {
     name.to_lowercase()
         .split(['-', '.', '_'])
@@ -244,6 +273,34 @@ pub enum ReleaseTrigger {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_distribution_filename_splits_into_its_name_and_version() {
+        assert_eq!(
+            pypi_dist_filename_parts("my_pkg-1.0.0-py3-none-any.whl"),
+            Some(("my_pkg", "1.0.0"))
+        );
+        assert_eq!(
+            pypi_dist_filename_parts("my-pkg-1.0.0.tar.gz"),
+            Some(("my-pkg", "1.0.0"))
+        );
+        assert_eq!(pypi_dist_filename_parts("my_pkg-1.0.0.egg"), None);
+        assert_eq!(pypi_dist_filename_parts("README.md"), None);
+    }
+
+    #[test]
+    fn a_distribution_belongs_to_its_package_name_in_any_spelling_and_its_exact_version() {
+        let version = Version::parse("1.0.0", VersionGrammar::Pep440).unwrap();
+        assert!(pypi_dist_belongs_to(
+            "My.Pkg-1.0.0-py3-none-any.whl",
+            "my-pkg",
+            &version
+        ));
+        assert!(pypi_dist_belongs_to("my_pkg-1.0.tar.gz", "my-pkg", &version));
+        assert!(!pypi_dist_belongs_to("my_pkg-1.0.1.tar.gz", "my-pkg", &version));
+        assert!(!pypi_dist_belongs_to("other-1.0.0.tar.gz", "my-pkg", &version));
+        assert!(!pypi_dist_belongs_to("README.md", "my-pkg", &version));
+    }
 
     #[test]
     fn maps_ecosystem_prefixes() {

@@ -37,17 +37,6 @@ fn remote(filename: &str, sha256: Option<&str>, yanked: bool) -> PypiSimpleFile 
 }
 
 #[test]
-fn a_filename_splits_into_its_name_and_version() {
-    assert_eq!(
-        dist_filename_parts("my_pkg-1.0.0-py3-none-any.whl"),
-        Some(("my_pkg", "1.0.0"))
-    );
-    assert_eq!(dist_filename_parts("my-pkg-1.0.0.tar.gz"), Some(("my-pkg", "1.0.0")));
-    assert_eq!(dist_filename_parts("my_pkg-1.0.0.egg"), None);
-    assert_eq!(dist_filename_parts("README.md"), None);
-}
-
-#[test]
 fn the_inventory_holds_only_this_packages_files_at_this_version() {
     let set = set_of(&[
         ("my_pkg-1.0.0-py3-none-any.whl", "wheel"),
