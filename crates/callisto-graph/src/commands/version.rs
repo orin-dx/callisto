@@ -348,10 +348,11 @@ pub fn check_partial_run<R: CommandRunner, D: DependencyResolver>(ws: &Workspace
     };
     let in_pre_release_cycle = pre_mode == Some(callisto_model::format::PreMode::Pre);
 
+    let changed = SourceChanges::since(ws, head)?;
     let staged_manifests = if in_pre_release_cycle {
         BTreeSet::new()
     } else {
-        canonical_manifest_staged_paths(ws)?
+        canonical_manifest_staged_paths(ws, head, &changed)?
     };
     let pending = !in_pre_release_cycle
         && (head_has_pending_changeset(ws, head)?
@@ -375,7 +376,7 @@ pub fn check_partial_run<R: CommandRunner, D: DependencyResolver>(ws: &Workspace
             let Some(head_version) = manifest_version_at(ws, head, &path, &head_texts, &mut head_reads)? else {
                 continue;
             };
-            let index_path_changed = version_source_paths(&ws.root, decl)?
+            let index_path_changed = version_source_paths(ws, head, &changed, decl)?
                 .iter()
                 .any(|source| staged_manifests.contains(source));
             let index_version = if index_path_changed {
@@ -430,10 +431,12 @@ fn working_tree_has_pending_changeset<R: CommandRunner, D: DependencyResolver>(
 /// True when a canonical manifest differs between index and HEAD: `git add`ed by a prior `apply` but never committed.
 fn canonical_manifest_staged_paths<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
+    head: &str,
+    changed: &SourceChanges,
 ) -> Result<BTreeSet<String>, GraphError> {
     let mut paths = BTreeSet::new();
     for decl in ws.graph.packages().flat_map(|pkg| pkg.canonical_manifests()) {
-        paths.extend(version_source_paths(&ws.root, decl)?);
+        paths.extend(version_source_paths(ws, head, changed, decl)?);
     }
     let mut staged = BTreeSet::new();
     for path in paths {
@@ -551,16 +554,62 @@ fn manifest_blob_in_index<R: CommandRunner, D: DependencyResolver>(
     Ok(Some(output.stdout))
 }
 
+/// The paths that differ from `HEAD` in the working tree or the index.
+struct SourceChanges(BTreeSet<String>);
+
+impl SourceChanges {
+    fn since<R: CommandRunner, D: DependencyResolver>(
+        ws: &Workspace<'_, R, D>,
+        head: &str,
+    ) -> Result<Self, GraphError> {
+        let mut changed = BTreeSet::new();
+        let working_tree = vec!["diff", "--name-only", "-z", head];
+        let index = vec!["diff", "--cached", "--name-only", "-z", head];
+        for args in [working_tree, index] {
+            let output = ws.runner.run("git", &args, &ws.root).map_err(GraphError::Command)?;
+            if !output.success() {
+                return Err(GraphError::Command(callisto_model::CommandError::Failed {
+                    program: "git".to_string(),
+                    exit_code: output.exit_code,
+                    stderr: output.stderr,
+                }));
+            }
+            changed.extend(
+                output
+                    .stdout
+                    .split('\0')
+                    .filter(|path| !path.is_empty())
+                    .map(str::to_owned),
+            );
+        }
+        Ok(SourceChanges(changed))
+    }
+}
+
 /// Every path whose staged change could alter the effective version of `decl`: its own manifest and, for Cargo, each
-/// manifest that could be the workspace root it inherits from.
-fn version_source_paths(
-    root: &std::path::Path,
+/// manifest that could be the workspace root it inherits from. That includes the workspace the package names in the
+/// working tree, and, when its own manifest has changed since `HEAD`, the one it named at `HEAD` and in the index.
+fn version_source_paths<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+    head: &str,
+    changed: &SourceChanges,
     decl: &callisto_model::ManifestDecl,
 ) -> Result<Vec<String>, GraphError> {
-    let mut sources = vec![super::release_decision::normalized_git_path(&decl.path)?];
+    let own = super::release_decision::normalized_git_path(&decl.path)?;
+    let mut sources = vec![own.clone()];
     if decl.ecosystem() == callisto_model::Ecosystem::Cargo {
-        for candidate in callisto_manifests::workspace_manifest_candidates(root, &decl.path)? {
+        for candidate in callisto_manifests::workspace_manifest_candidates(&ws.root, &decl.path)? {
             sources.push(super::release_decision::normalized_git_path(&candidate)?);
+        }
+        if changed.0.contains(&own) {
+            for text in [manifest_blob_at(ws, head, &own)?, manifest_blob_in_index(ws, &own)?]
+                .into_iter()
+                .flatten()
+            {
+                if let Some(named) = callisto_manifests::named_workspace_manifest(&decl.path, &text)? {
+                    sources.push(super::release_decision::normalized_git_path(&named)?);
+                }
+            }
         }
     }
     Ok(sources)
