@@ -307,6 +307,7 @@ fn a_target_table_that_names_no_such_dependency_is_an_error_not_a_silent_skip() 
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
     let mut cargo = CargoToml::open(&decl, &ctx).unwrap();

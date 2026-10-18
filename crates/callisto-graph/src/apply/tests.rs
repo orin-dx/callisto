@@ -1311,6 +1311,7 @@ fn apply_version_plan_cargo_bump_produces_byte_identical_output_to_direct_mutate
     let ctx = OpenContext {
         workspace_root: dir_b.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
     let mut handle = open(&decl, &ctx).unwrap();
@@ -1362,6 +1363,7 @@ fn apply_version_plan_npm_bump_produces_byte_identical_output_to_direct_mutate_t
     let ctx = OpenContext {
         workspace_root: dir_b.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
     let mut handle = open(&decl, &ctx).unwrap();
@@ -1392,6 +1394,7 @@ fn bumps_loop_write_version_error_leaves_manifest_untouched_and_skips_persist() 
     let ctx = OpenContext {
         workspace_root: root,
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
     let precondition_handle = open(&decl, &ctx).unwrap();

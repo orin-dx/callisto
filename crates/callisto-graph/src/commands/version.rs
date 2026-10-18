@@ -363,6 +363,8 @@ pub fn check_partial_run<R: CommandRunner, D: DependencyResolver>(ws: &Workspace
 
     let head_texts = RefCell::new(HashMap::new());
     let index_texts = RefCell::new(HashMap::new());
+    let mut head_reads = callisto_manifests::WorkspaceReads::default();
+    let mut index_reads = callisto_manifests::WorkspaceReads::default();
     let base_versions = ws.base_versions()?;
     for pkg in ws.graph.packages() {
         let Some(disk) = base_versions.get(&pkg.id) else {
@@ -370,14 +372,14 @@ pub fn check_partial_run<R: CommandRunner, D: DependencyResolver>(ws: &Workspace
         };
         for decl in pkg.canonical_manifests() {
             let path = super::release_decision::normalized_git_path(&decl.path)?;
-            let Some(head_version) = manifest_version_at(ws, head, &path, &head_texts)? else {
+            let Some(head_version) = manifest_version_at(ws, head, &path, &head_texts, &mut head_reads)? else {
                 continue;
             };
             let index_path_changed = version_source_paths(&ws.root, decl)?
                 .iter()
                 .any(|source| staged_manifests.contains(source));
             let index_version = if index_path_changed {
-                manifest_version_in_index(ws, head, &path, &index_texts)?
+                manifest_version_in_index(ws, head, &path, &index_texts, &mut index_reads)?
             } else {
                 None
             };
@@ -586,6 +588,7 @@ fn manifest_version_at<R: CommandRunner, D: DependencyResolver>(
     head: &str,
     path: &str,
     texts: &ManifestTexts,
+    reads: &mut callisto_manifests::WorkspaceReads,
 ) -> Result<Option<callisto_manifests::EffectiveManifestVersion>, GraphError> {
     let path = std::path::Path::new(path);
     let Ok(format) = callisto_model::ManifestFormat::from_path(path) else {
@@ -595,7 +598,7 @@ fn manifest_version_at<R: CommandRunner, D: DependencyResolver>(
     let Some(source) = at_head(path)? else {
         return Ok(None);
     };
-    callisto_manifests::read_effective_version(format, &source, path, at_head)
+    callisto_manifests::read_effective_version(format, &source, path, reads, at_head)
 }
 
 /// The version `path` has in the index; manifests it inherits from that the index lacks are read from `head`.
@@ -604,6 +607,7 @@ fn manifest_version_in_index<R: CommandRunner, D: DependencyResolver>(
     head: &str,
     path: &str,
     texts: &ManifestTexts,
+    reads: &mut callisto_manifests::WorkspaceReads,
 ) -> Result<Option<callisto_manifests::EffectiveManifestVersion>, GraphError> {
     let manifest_path = std::path::Path::new(path);
     let Ok(format) = callisto_model::ManifestFormat::from_path(manifest_path) else {
@@ -618,7 +622,7 @@ fn manifest_version_in_index<R: CommandRunner, D: DependencyResolver>(
             None => manifest_blob_at(ws, head, key),
         })
     };
-    callisto_manifests::read_effective_version(format, &source, manifest_path, in_index_or_head)
+    callisto_manifests::read_effective_version(format, &source, manifest_path, reads, in_index_or_head)
 }
 
 /// Platform manifest version writes and owner `optionalDependencies` pin updates

@@ -135,6 +135,7 @@ jobs:
           set -euo pipefail
           cargo_bin=cargo
           if [[ "$USE_CROSS" == true ]]; then cargo_bin=cross; fi
+          cd "${PACKAGE_DIR:-.}"
           "$cargo_bin" build --release --locked --target "$TRIPLE" --package "$PACKAGE"
           metadata=$(cargo metadata --no-deps --format-version 1)
           target_dir=$(jq -r .target_directory <<< "$metadata")

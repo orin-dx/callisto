@@ -27,6 +27,7 @@ fn cargo_persist_increments_persist_call_count_on_success() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
     let mut manifest = open(&decl, &ctx).unwrap();
@@ -58,6 +59,7 @@ fn npm_persist_increments_persist_call_count_on_success() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
     let mut manifest = open(&decl, &ctx).unwrap();
@@ -84,6 +86,7 @@ fn python_persist_increments_persist_call_count_on_success() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
     let mut manifest = open(&decl, &ctx).unwrap();

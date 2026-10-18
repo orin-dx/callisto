@@ -42,7 +42,7 @@ impl ProjectLocator for IgnoreWalkLocator {
         let cargo_membership = membership::read_cargo_membership(&self.root)?;
         let npm_membership = membership::read_npm_membership(&self.root)?;
         let python_membership = membership::read_python_membership(&self.root)?;
-        let mut nested_cargo = membership::NestedCargoMemberships::new();
+        let mut nested_cargo = membership::NestedCargoMemberships::default();
         let walker = WalkBuilder::new(&self.root)
             .hidden(true)
             .git_ignore(true)

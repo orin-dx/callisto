@@ -285,8 +285,13 @@ pub(crate) fn read_python_membership(root: &Path) -> Result<Membership, LocateEr
     read_membership(root, &PYTHON_MEMBERSHIP_SPEC)
 }
 
-/// The `members` and `exclude` of each Cargo workspace nested below the workspace root, keyed by its directory.
-pub(crate) type NestedCargoMemberships = HashMap<PathBuf, Membership>;
+/// The `members` and `exclude` of each Cargo workspace nested below the workspace root, keyed by its directory, and what
+/// has been learned about workspace manifests on the way.
+#[derive(Default)]
+pub(crate) struct NestedCargoMemberships {
+    memberships: HashMap<PathBuf, Membership>,
+    reads: callisto_manifests::WorkspaceReads,
+}
 
 /// Whether a Cargo workspace nested below `root` admits the package at `rel`. The workspace at `root` is judged by
 /// [`read_cargo_membership`]; this adds the verdict of a nearer workspace that governs the package, which judges it by its
@@ -310,8 +315,10 @@ pub(crate) fn nested_cargo_workspace_admits(
         },
     };
     let document = callisto_manifests::parse_manifest(&manifest, manifest_text).map_err(located)?;
-    let Some(governing) =
-        callisto_manifests::enclosing_workspace_manifest(root, &manifest, &document).map_err(located)?
+    let Some(governing) = nested
+        .reads
+        .enclosing(&manifest, &document, callisto_manifests::read_manifest_text(root))
+        .map_err(located)?
     else {
         return Ok(true);
     };
@@ -323,11 +330,11 @@ pub(crate) fn nested_cargo_workspace_admits(
     if governing_dir.as_os_str().is_empty() || within.as_os_str().is_empty() {
         return Ok(true);
     }
-    if !nested.contains_key(governing_dir) {
+    if !nested.memberships.contains_key(governing_dir) {
         let membership = read_cargo_membership(&root.join(governing_dir))?;
-        nested.insert(governing_dir.to_path_buf(), membership);
+        nested.memberships.insert(governing_dir.to_path_buf(), membership);
     }
-    Ok(nested[governing_dir].admits(within, false))
+    Ok(nested.memberships[governing_dir].admits(within, false))
 }
 
 #[cfg(test)]

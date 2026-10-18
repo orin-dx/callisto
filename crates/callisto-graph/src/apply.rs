@@ -518,9 +518,10 @@ fn touched_cargo_workspaces(root: &Path, plan: &VersionPlan) -> Result<BTreeSet<
     }
     members.extend(plan.platform_writes.iter().map(|write| write.manifest.as_path()));
     members.extend(plan.optional_dep_updates.iter().map(|update| update.manifest.as_path()));
+    let mut reads = callisto_manifests::WorkspaceReads::default();
     for member in members {
         if ManifestFormat::from_path(member) == Ok(ManifestFormat::CargoToml) {
-            workspaces.insert(callisto_manifests::cargo_workspace_of(root, member)?);
+            workspaces.insert(callisto_manifests::cargo_workspace_of(&mut reads, root, member)?);
         }
     }
     if workspaces.is_empty() {

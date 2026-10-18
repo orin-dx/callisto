@@ -15,9 +15,9 @@ pub mod npm;
 pub mod python;
 
 pub use cargo::{
-    cargo_package_name, cargo_workspace_of, enclosing_workspace_manifest, enclosing_workspace_manifest_with,
-    parse_manifest, workspace_manifest_candidates, CargoToml, InheritedDep, WorkspaceCargoResolver,
-    WorkspaceInheritance,
+    cargo_package_name, cargo_workspace_of, enclosing_workspace_manifest, parse_manifest, read_manifest_text,
+    workspace_manifest_candidates, CargoToml, InheritedDep, WorkspaceCargoResolver, WorkspaceInheritance,
+    WorkspaceReads,
 };
 pub use npm::{
     detect_npm_workspace_kind, napi_binary_name, npm_declares_private, npm_package_name, npm_role_from_source,
@@ -56,7 +56,8 @@ pub struct EffectiveManifestVersion {
 
 /// Reads a manifest's effective version from text the caller already holds. `manifest_at` supplies any other
 /// workspace-relative manifest by path, or `None` when there is none, so a Cargo `version.workspace = true` resolves
-/// against the workspace that governs the package at the same revision.
+/// against the workspace that governs the package at the same revision. `reads` remembers the workspace manifests
+/// already seen, so reading many packages of one revision parses each once.
 ///
 /// # Errors
 ///
@@ -66,6 +67,7 @@ pub fn read_effective_version<E: From<ManifestError>>(
     format: ManifestFormat,
     source: &str,
     path: &Path,
+    reads: &mut WorkspaceReads,
     mut manifest_at: impl FnMut(&Path) -> Result<Option<String>, E>,
 ) -> Result<Option<EffectiveManifestVersion>, E> {
     let identity = read_identity(format, source, path)?;
@@ -86,14 +88,11 @@ pub fn read_effective_version<E: From<ManifestError>>(
                 field: "workspace.package.version",
             };
             let member = cargo::parse_manifest(path, source)?;
-            let root_manifest = cargo::enclosing_workspace_manifest_with(path, &member, |candidate| {
-                manifest_at(candidate)?
-                    .map(|text| cargo::parse_manifest(candidate, &text).map_err(E::from))
-                    .transpose()
-            })?
-            .ok_or_else(|| missing(path))?;
-            let root_source = manifest_at(&root_manifest)?.ok_or_else(|| missing(&root_manifest))?;
-            let version = cargo::workspace_version_from_source(&root_source, &root_manifest)?
+            let root_manifest = reads
+                .enclosing(path, &member, &mut manifest_at)?
+                .ok_or_else(|| missing(path))?;
+            let version = reads
+                .version(&root_manifest, &mut manifest_at)?
                 .ok_or_else(|| missing(&root_manifest))?;
             (version, root_manifest)
         }
@@ -214,7 +213,20 @@ pub struct OpenContext<'a> {
     /// The inheritance of the Cargo workspace rooted at `workspace_root`, loaded once and shared by its members.
     /// A manifest governed by another Cargo workspace loads that workspace's own.
     pub cargo_workspace: Option<Arc<WorkspaceInheritance>>,
+    /// The other Cargo workspaces met while opening manifests.
+    pub cargo_roots: CargoRoots,
     pub npm_workspace_kind: Option<WorkspaceKind>,
+}
+
+/// Cargo workspaces met while opening manifests, remembered so each is read once however many members inherit from it.
+#[derive(Default)]
+pub struct CargoRoots {
+    reads: std::sync::Mutex<WorkspaceReads>,
+    inheritance: std::sync::Mutex<std::collections::BTreeMap<std::path::PathBuf, Arc<WorkspaceInheritance>>>,
+}
+
+fn locked<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 impl<'a> OpenContext<'a> {
@@ -251,6 +263,7 @@ impl<'a> OpenContext<'a> {
         Ok(OpenContext {
             workspace_root: root,
             cargo_workspace,
+            cargo_roots: CargoRoots::default(),
             npm_workspace_kind,
         })
     }
@@ -266,7 +279,9 @@ impl<'a> OpenContext<'a> {
         manifest: &Path,
         doc: &toml_edit::DocumentMut,
     ) -> Result<Arc<WorkspaceInheritance>, ManifestError> {
-        let Some(root_manifest) = cargo::enclosing_workspace_manifest(self.workspace_root, manifest, doc)? else {
+        let found =
+            locked(&self.cargo_roots.reads).enclosing(manifest, doc, cargo::read_manifest_text(self.workspace_root))?;
+        let Some(root_manifest) = found else {
             return Err(ManifestError::Read {
                 path: manifest.to_path_buf(),
                 message: "declares .workspace = true but no Cargo workspace governs it: no Cargo.toml at or above its \
@@ -281,9 +296,14 @@ impl<'a> OpenContext<'a> {
         {
             return Ok(Arc::clone(shared));
         }
-        Ok(Arc::new(
-            WorkspaceCargoResolver::load_at(self.workspace_root, &root_manifest)?.inheritance()?,
-        ))
+        let mut loaded = locked(&self.cargo_roots.inheritance);
+        if let Some(known) = loaded.get(&root_manifest) {
+            return Ok(Arc::clone(known));
+        }
+        let inheritance =
+            Arc::new(WorkspaceCargoResolver::load_at(self.workspace_root, &root_manifest)?.inheritance()?);
+        loaded.insert(root_manifest, Arc::clone(&inheritance));
+        Ok(inheritance)
     }
 }
 
@@ -443,6 +463,7 @@ mod tests {
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
+            cargo_roots: Default::default(),
             npm_workspace_kind: None,
         };
 

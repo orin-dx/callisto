@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use callisto_manifests::{
-    cargo_workspace_of, enclosing_workspace_manifest, parse_manifest, workspace_manifest_candidates,
+    cargo_workspace_of, enclosing_workspace_manifest, parse_manifest, workspace_manifest_candidates, WorkspaceReads,
 };
 
 fn write(root: &Path, path: &str, text: &str) {
@@ -178,7 +178,7 @@ fn no_workspace_above_the_package_means_none() {
     write(dir.path(), "a/Cargo.toml", &package("a", ""));
     assert_eq!(callisto_says(dir.path(), "a/Cargo.toml"), None);
     assert_eq!(
-        cargo_workspace_of(dir.path(), Path::new("a/Cargo.toml")).unwrap(),
+        cargo_workspace_of(&mut WorkspaceReads::default(), dir.path(), Path::new("a/Cargo.toml")).unwrap(),
         Path::new("a/Cargo.toml")
     );
 }

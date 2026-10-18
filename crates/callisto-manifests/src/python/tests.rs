@@ -28,6 +28,7 @@ fn bin_names_read_project_scripts_keys() {
         let ctx = OpenContext {
             workspace_root: dir.path(),
             cargo_workspace: None,
+            cargo_roots: Default::default(),
             npm_workspace_kind: None,
         };
         PyprojectToml::open(&decl, &ctx).unwrap()
@@ -102,6 +103,7 @@ dependencies = [
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -136,6 +138,7 @@ fn write_version_does_not_touch_disk_until_persist_called() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -168,6 +171,7 @@ fn handles_utf8_bom_pyproject_toml() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -196,6 +200,7 @@ fn preserves_bom_and_crlf_line_endings_on_write() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -244,6 +249,7 @@ fn preserves_crlf_line_endings_without_bom_on_write() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -292,6 +298,7 @@ fn preserves_bom_without_crlf_on_write() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -331,6 +338,7 @@ fn empty_pyproject_toml_returns_parse_error_not_panic() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -355,6 +363,7 @@ fn bom_only_pyproject_toml_returns_parse_error_not_panic() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -379,6 +388,7 @@ fn garbage_pyproject_toml_returns_parse_error_not_panic() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -406,6 +416,7 @@ fn preserves_tab_indentation_pyproject_toml() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -445,6 +456,7 @@ dependencies = [
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -580,6 +592,7 @@ fn open_poetry_manifest(dir: &tempfile::TempDir) -> PyprojectToml {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
     PyprojectToml::open(&decl, &ctx).unwrap()
@@ -764,6 +777,7 @@ fn pep621_unparseable_version_spec_appears_as_opaque_not_dropped() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
     let manifest = PyprojectToml::open(&decl, &ctx).unwrap();
@@ -803,6 +817,7 @@ dependencies = [
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -839,6 +854,7 @@ fn update_dependency_spec_does_not_touch_disk_until_persist_called() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -881,6 +897,7 @@ fn update_dependency_spec_non_range_variant_is_ok_and_persist_is_a_no_op() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -1033,6 +1050,7 @@ dependencies = [
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -1072,6 +1090,7 @@ fn update_dependency_spec_matches_pep503_equivalent_separator_spelling() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -1123,6 +1142,7 @@ docs = ["sphinx>=4.0.0"]
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -1158,6 +1178,7 @@ fn update_optional_dependencies_matches_pep503_equivalent_separator_spelling() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -1192,6 +1213,7 @@ fn update_optional_dependencies_does_not_touch_disk_until_persist_called() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -1245,6 +1267,7 @@ requests = "^2.28.0"
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -1289,6 +1312,7 @@ exclude = ["tests/"]
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -1338,6 +1362,7 @@ fn open_pyproject(dir: &std::path::Path, content: &str) -> PyprojectToml {
     let ctx = OpenContext {
         workspace_root: dir,
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
     PyprojectToml::open(&decl, &ctx).unwrap()
@@ -1446,6 +1471,7 @@ fn persist_is_exposed_as_a_manifest_trait_method() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 

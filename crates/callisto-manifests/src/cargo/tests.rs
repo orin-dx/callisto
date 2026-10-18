@@ -21,6 +21,7 @@ fn open_cargo(dir: &std::path::Path, content: &str) -> CargoToml {
     let ctx = OpenContext {
         workspace_root: dir,
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
     CargoToml::open(&decl, &ctx).unwrap()
@@ -155,6 +156,7 @@ fn persist_is_exposed_as_a_manifest_trait_method() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -186,6 +188,7 @@ serde = "1.0"
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -212,6 +215,7 @@ fn write_version_does_not_touch_disk_until_persist_called() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -237,6 +241,7 @@ fn handles_utf8_bom_cargo_toml() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -255,6 +260,7 @@ fn preserves_bom_on_write_round_trip() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -294,6 +300,7 @@ fn preserves_crlf_line_endings_on_write() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -332,6 +339,7 @@ fn empty_cargo_toml_returns_parse_error_not_panic() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -350,6 +358,7 @@ fn bom_only_cargo_toml_returns_parse_error_not_panic() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -369,6 +378,7 @@ fn garbage_cargo_toml_returns_parse_error_not_panic() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -503,6 +513,7 @@ fn preserves_tab_indentation_cargo_toml() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -532,6 +543,7 @@ fn test_cargo_is_publishable() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -560,6 +572,7 @@ fn publish_targets_uses_trait_default_dispatch_for_cargo() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
     let manifest = CargoToml::open(&decl, &ctx).unwrap();
@@ -617,6 +630,7 @@ helper = { version = "1.0.0", path = "../helper" }
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -657,6 +671,7 @@ fn update_dependency_spec_errors_on_unrecognized_value_shape_instead_of_silently
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -697,6 +712,7 @@ fn update_dependency_spec_errors_on_array_of_tables_dependency_shape() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -730,6 +746,7 @@ fn update_dependency_spec_does_not_touch_disk_until_persist_called() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -774,6 +791,7 @@ edition = "2021"
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -804,6 +822,7 @@ path = "../helper"
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -848,6 +867,7 @@ helper = { version = "1.0.0", path = "../helper" } # dep comment
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -915,6 +935,7 @@ edition = "2021"
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: Some(inheritance),
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -989,6 +1010,7 @@ fn current_version_errors_when_inherited_but_workspace_has_no_version() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: Some(inheritance),
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
     let manifest = CargoToml::open(&decl, &ctx).unwrap();
@@ -1034,6 +1056,7 @@ fn iter_dependencies_resolves_inherited_deps_and_flags_unresolved_ones() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: Some(inheritance),
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
     let manifest = CargoToml::open(&decl, &ctx).unwrap();
@@ -1095,6 +1118,7 @@ fn update_dependency_spec_delegates_inherited_dependency_write_to_workspace_root
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: Some(inheritance),
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
     let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
@@ -1135,6 +1159,7 @@ fn update_dependency_spec_rejects_peer_dep_kind() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
     let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
@@ -1304,6 +1329,7 @@ serde = { version = "1.0", features = ["derive"] }
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -1338,6 +1364,7 @@ fn cargo_toml_with_workspace_version_requires_a_governing_workspace() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -1352,6 +1379,12 @@ fn cargo_toml_with_workspace_version_requires_a_governing_workspace() {
         "[workspace]\nmembers = [\"member\"]\n\n[workspace.package]\nversion = \"4.5.6\"\n",
     )
     .unwrap();
+    let ctx = OpenContext {
+        workspace_root: dir.path(),
+        cargo_workspace: None,
+        cargo_roots: Default::default(),
+        npm_workspace_kind: None,
+    };
     let manifest = CargoToml::open(&decl, &ctx).unwrap();
     assert_eq!(manifest.package_name().unwrap(), "my-inherited-crate");
     assert_eq!(manifest.current_version().unwrap().render(), "4.5.6");
@@ -1416,6 +1449,7 @@ fn update_dependency_spec_self_referential_workspace_delegation_returns_invarian
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: Some(Arc::new(inheritance)),
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -1469,6 +1503,7 @@ fn update_dependency_spec_refuses_a_python_locator() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
     let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
