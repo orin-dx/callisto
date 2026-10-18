@@ -34,6 +34,7 @@ pub mod resolver;
 pub mod tags;
 pub mod toposort;
 pub mod walk;
+mod workspace_owner;
 
 pub use aggregate::{
     aggregate, load_changesets, load_changesets_permissive, Aggregation, ChangesetLoadFailure, LoadedChangeset, NamedBy,

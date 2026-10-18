@@ -1074,6 +1074,55 @@ fn a_platform_package_is_published_by_directory_with_npm() {
     assert!(runner.0.lock().unwrap()[0].1.contains(&"--filter=@s/cli".to_owned()));
 }
 
+/// Observing and publishing must read one `.npmrc`, or the version looked for and the version published could be on
+/// different registries. Both resolve the workspace that owns the package, by its declaration and not by a lockfile.
+#[test]
+fn observing_and_publishing_a_nested_npm_package_all_run_in_the_workspace_that_owns_it() {
+    let root = tempfile::tempdir().unwrap();
+    let write = |path: &str, text: &str| {
+        let path = root.path().join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    };
+    write("package.json", r#"{"name":"marker","private":true}"#);
+    write(
+        "web/package.json",
+        r#"{"name":"web","private":true,"workspaces":["packages/*"]}"#,
+    );
+    write("web/.npmrc", "registry=https://nested.example.test/\n");
+    write("web/packages/a/package.json", r#"{"name":"a","version":"1.0.0"}"#);
+    let runner = RecordingRunner(std::sync::Mutex::new(Vec::new()));
+    let context = ProviderContext::new(root.path(), &runner, None);
+    let adapter = adapter_for(Ecosystem::Npm).unwrap();
+
+    let mut by_name = operation("npm", "a", "1.0.0");
+    by_name.package_dir = PathBuf::from("web/packages/a");
+    adapter.observe_once(&context, &by_name).unwrap();
+    adapter
+        .publish(&context, &operation_id(Ecosystem::Npm, &by_name), &by_name, None)
+        .unwrap();
+    let mut by_directory = operation("npm", "a", "1.0.0");
+    by_directory.package_dir = PathBuf::from("web/packages/a");
+    by_directory.by_directory = true;
+    adapter
+        .publish(
+            &context,
+            &operation_id(Ecosystem::Npm, &by_directory),
+            &by_directory,
+            None,
+        )
+        .unwrap();
+
+    let calls = runner.0.lock().unwrap().clone();
+    let programs: Vec<&str> = calls.iter().map(|(program, ..)| program.as_str()).collect();
+    assert_eq!(programs, ["npm", "npm", "npm"], "{calls:?}");
+    assert!(calls[0].1.contains(&"view".to_owned()), "{calls:?}");
+    assert!(calls[1].1.contains(&"--workspace=a".to_owned()), "{calls:?}");
+    for (_, _, cwd) in &calls {
+        assert_eq!(cwd, &root.path().join("web"), "{calls:?}");
+    }
+}
+
 /// A credential withheld from a build backend is either a secret the redactor knows or a name known to carry
 /// no secret value, so a new secret cannot be added here and escape redaction in an error.
 #[test]

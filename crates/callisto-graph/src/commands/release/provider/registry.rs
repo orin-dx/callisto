@@ -511,9 +511,9 @@ impl RegistryEcosystem for NpmRegistry {
         true
     }
 
-    /// `npm view` keeps the workspace cwd: unlike a manifest-resolving client
-    /// it never reads the local package, and the cwd is only where the project
-    /// `.npmrc` supplying the registry is read from.
+    /// `npm view` never reads the local package; its cwd is only where the project `.npmrc` supplying the registry is
+    /// read from. That must be where publishing runs, or the two could address different registries, so it is the
+    /// workspace that owns the package.
     fn observe_once(
         &self,
         context: &ProviderContext<'_>,
@@ -526,11 +526,12 @@ impl RegistryEcosystem for NpmRegistry {
         if let Some(registry) = operation.registry.endpoint.as_deref() {
             args.extend(["--registry", registry]);
         }
+        let workspace_dir = crate::workspace_owner::npm_workspace_dir(context.root(), &operation.package_dir)?;
         let output = match run_observation(
             context.runner(),
             programs::NPM,
             &args,
-            context.root(),
+            &context.root().join(workspace_dir),
             timeouts::REGISTRY_QUERY,
             true,
         )? {
@@ -547,9 +548,11 @@ impl RegistryEcosystem for NpmRegistry {
         operation: &RegistryPublishOperation,
         _artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<CommandOutput, GraphError> {
+        let workspace_dir = crate::workspace_owner::npm_workspace_dir(context.root(), &operation.package_dir)?;
         if operation.by_directory {
             let argv = registry_argv::npm_publish_directory_argv(
                 context.root(),
+                &workspace_dir,
                 &operation.package_dir,
                 &operation.package_name,
                 operation.npm_tag.as_deref(),
@@ -559,7 +562,6 @@ impl RegistryEcosystem for NpmRegistry {
             return run_npm_publish_argv(context, &argv);
         }
         // The package manager and the directory it runs in belong to the workspace that holds the package.
-        let workspace_dir = registry_argv::npm_workspace_dir(context.root(), &operation.package_dir)?;
         let workspace_root = context.root().join(&workspace_dir);
         let package_manager = registry_argv::detect_npm_package_manager(&workspace_root)?;
         let within_workspace = operation

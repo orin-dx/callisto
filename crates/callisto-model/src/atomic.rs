@@ -106,15 +106,19 @@ fn match_existing_mode(temp: &std::fs::File, target: &Path) -> io::Result<()> {
     }
 }
 
-/// Flushes `dir`'s entries so a rename survives power loss. A directory that cannot be opened (Windows, or a `-wx`
-/// mode) or a filesystem that cannot sync one (`Unsupported`, `InvalidInput`, macOS `ENOTSUP`) is skipped: the file is
-/// already in place and failing the command now would misreport a write that happened. Any other failure, an I/O error
-/// above all, means the rename may not be durable and is reported.
+/// Flushes `dir`'s entries so a rename survives power loss. A directory that may not be opened for reading (a `-wx`
+/// mode, `PermissionDenied`) or a filesystem that cannot sync one (`Unsupported`, `InvalidInput`, macOS `ENOTSUP`) is
+/// skipped: the file is already in place and failing the command now would misreport a write that happened. Any other
+/// failure, whether opening or syncing, an I/O error above all, means the rename may not be durable and is reported.
 fn sync_directory(dir: &Path) -> io::Result<()> {
     #[cfg(unix)]
     {
-        let Ok(handle) = std::fs::File::open(dir) else {
-            return Ok(());
+        let handle = match std::fs::File::open(dir) {
+            Ok(handle) => handle,
+            Err(error) if error.kind() == io::ErrorKind::PermissionDenied || sync_unsupported(&error) => {
+                return Ok(());
+            }
+            Err(error) => return Err(error),
         };
         match handle.sync_all() {
             Err(error) if sync_unsupported(&error) => Ok(()),
@@ -265,13 +269,28 @@ mod tests {
     fn a_directory_that_cannot_be_opened_or_synced_is_skipped_but_an_io_failure_is_reported() {
         let dir = tempdir().unwrap();
         assert!(sync_directory(dir.path()).is_ok());
-        assert!(sync_directory(&dir.path().join("gone")).is_ok());
+        // A directory that should hold the file and cannot be found is not a skippable limitation.
+        assert!(sync_directory(&dir.path().join("gone")).is_err());
         assert!(sync_unsupported(&io::Error::from(io::ErrorKind::Unsupported)));
         assert!(sync_unsupported(&io::Error::from(io::ErrorKind::InvalidInput)));
         #[cfg(target_os = "macos")]
         assert!(sync_unsupported(&io::Error::from_raw_os_error(45)));
         // EIO: the rename may not be durable, so it is reported.
         assert!(!sync_unsupported(&io::Error::from_raw_os_error(5)));
+    }
+
+    /// A directory the process may write to but not read (`-wx`) is skipped, as the file is in place regardless.
+    #[cfg(unix)]
+    #[test]
+    fn a_write_only_directory_is_skipped_not_reported() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempdir().unwrap();
+        let write_only = dir.path().join("wx");
+        std::fs::create_dir(&write_only).unwrap();
+        std::fs::set_permissions(&write_only, std::fs::Permissions::from_mode(0o300)).unwrap();
+        let result = sync_directory(&write_only);
+        std::fs::set_permissions(&write_only, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(result.is_ok(), "{result:?}");
     }
 
     #[test]

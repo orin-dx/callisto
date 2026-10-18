@@ -638,6 +638,11 @@ pub(crate) fn declares_npm_workspace(dir: &Path) -> Result<bool, LocateError> {
     read_npm_membership(dir).map(|membership| membership.globs.is_some())
 }
 
+/// Whether the uv workspace in `dir` is declared (`[tool.uv.workspace]` in its `pyproject.toml`).
+pub(crate) fn declares_python_workspace(dir: &Path) -> Result<bool, LocateError> {
+    read_python_membership(dir).map(|membership| membership.declared)
+}
+
 /// The `packages` list of `pnpm-workspace.yaml`, or `None` when the file is absent, empty, or has no `packages` key
 /// (pnpm then restricts nothing).
 fn read_pnpm_packages(path: &Path) -> Result<Option<Vec<String>>, LocateError> {
