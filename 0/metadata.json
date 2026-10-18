@@ -1,0 +1,121 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M56CH3HC527P40ER2786DFG0",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-18T02:13:06.471659Z",
+  "branch": "fix/stageable-targets-and-exclusive-add",
+  "checkpoints_count": 1,
+  "save_step_count": 56,
+  "files_touched": [
+    ".changeset/radiant-bears-roar.md",
+    "crates/callisto-cli/src/commands/add.rs",
+    "crates/callisto-cli/tests/stageable_targets_e2e_tests.rs",
+    "crates/callisto-graph/src/apply.rs",
+    "crates/callisto-graph/src/apply/preflight.rs",
+    "crates/callisto-graph/src/apply/preflight/tests.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-model/src/atomic.rs",
+    "docs/errors.md",
+    "docs/specs/cli.json",
+    "docs/specs/versioning.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "0dbee886ca94",
+  "checkpoint_transcript_start": 23264,
+  "transcript_lines_at_start": 23264,
+  "compact_transcript_start": 2053,
+  "token_usage": {
+    "input_tokens": 56,
+    "cache_creation_tokens": 44945,
+    "cache_read_tokens": 14679385,
+    "output_tokens": 27920,
+    "api_call_count": 27,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 123
+  },
+  "summary": {
+    "intent": "Land a stacked PR (on top of #242) fixing staging and `add` race conditions in the callisto repo, addressing Codex review findings plus a failure when the lockfile or changelog is git-ignored.",
+    "outcome": "Linked #241 and #242 as a native GitHub stack (#243), implemented the staging, exclusive-create and ignored-file probe fixes with unit and e2e tests, updated specs, docs and a changeset, ran CI green (92.73% coverage), then committed, pushed and opened the stacked PR.",
+    "learnings": {
+      "repo": [
+        "Work is done in git worktrees under .claude/worktrees/ (e.g. stage-and-race), and CI is run as a full pipeline command that can be backgrounded and reports completion via task notification.",
+        "Changes to user-facing behavior require a changeset in .changeset/, updates to docs/errors.md, and matching criteria in docs/specs/cli.json and docs/specs/versioning.json.",
+        "Many apply tests in callisto-graph use fake CommandRunners that return exit 0 for every command, so any new git invocation must be designed so a blanket 'exit 0' does not read as a meaningful result.",
+        "Ignored-file detection uses `git check-ignore`; the final approach is non-quiet mode, treating only printed output as 'ignored', rather than relying on exit status alone or parsing output.",
+        "The `add` command's filename selection was racy; the fix uses exclusive-create in callisto-model's atomic.rs so concurrent adds do not overwrite each other."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/atomic.rs",
+          "finding": "Atomic write helpers were extended with exclusive-create semantics to close the `add` filename-selection race."
+        },
+        {
+          "path": "crates/callisto-graph/src/apply/preflight.rs",
+          "finding": "Preflight now probes whether targets are stageable (not git-ignored) before applying, using non-quiet `git check-ignore` where printed output indicates ignored."
+        },
+        {
+          "path": "crates/callisto-cli/tests/stageable_targets_e2e_tests.rs",
+          "finding": "New e2e tests cover the ignored-lockfile and ignored-changelog scenarios."
+        }
+      ],
+      "workflow": [
+        "Use `gh stack link` to join dependent PRs into a native GitHub stack and base each new PR on the previous one.",
+        "Python scratchpad scripts were used for multi-file edits; commit messages and PR bodies were written to scratchpad files and passed to git/gh.",
+        "Run lint then the full CI pipeline locally before pushing, and run it in the background while waiting."
+      ]
+    },
+    "friction": [
+      "The first quiet `git check-ignore` approach broke several apply tests because fake runners return exit 0 for everything, requiring a redesign to the non-quiet, output-based check.",
+      "Needed to check whether CommandRunner supports stdin before choosing the check-ignore invocation, which cost an extra iteration.",
+      "The first test run produced failures that needed a separate step to read the failure messages."
+    ],
+    "open_items": [
+      "The new PR still needs to be added to the native GitHub stack after opening (stacked on #242).",
+      "The preflight guarantee was scoped in the spec because it cannot cover every race, so remaining TOCTOU windows between preflight and apply may deserve follow-up."
+    ]
+  }
+}

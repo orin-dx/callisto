@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M56CH3HC527P40ER2786DFG0",
+  "strategy": "manual-commit",
+  "branch": "fix/stageable-targets-and-exclusive-add",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/radiant-bears-roar.md",
+    "crates/callisto-cli/src/commands/add.rs",
+    "crates/callisto-cli/tests/stageable_targets_e2e_tests.rs",
+    "crates/callisto-graph/src/apply.rs",
+    "crates/callisto-graph/src/apply/preflight.rs",
+    "crates/callisto-graph/src/apply/preflight/tests.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-model/src/atomic.rs",
+    "docs/errors.md",
+    "docs/specs/cli.json",
+    "docs/specs/versioning.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 56,
+    "cache_creation_tokens": 44945,
+    "cache_read_tokens": 14679385,
+    "output_tokens": 27920,
+    "api_call_count": 27,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  }
+}
