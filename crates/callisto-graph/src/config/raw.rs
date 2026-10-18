@@ -103,6 +103,9 @@ pub struct RawValidationConfig {
 pub struct RawRegistryConfig {
     pub kind: Option<String>,
     pub url: Option<String>,
+    /// Where a `pypi` registry takes uploads when that differs from the index at `url`.
+    #[serde(rename = "publish-url")]
+    pub publish_url: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

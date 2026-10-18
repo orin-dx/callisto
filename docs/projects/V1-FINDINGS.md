@@ -9,7 +9,6 @@ Confirmed means reproduced against the main binary or established by the cited c
 | Finding | Evidence and consequence | Plan | Contract/area |
 | --- | --- | --- | --- |
 | SYS-MATURIN | `Package::version_grammar`: two fresh co-located Cargo/Maturin repos, with matching static versions and Cargo-owned dynamic Python versions, both reproduce E007 from init/status. Separate-directory fixtures did not cover this layout. | T07 | WS-ID-09; proposed version authority |
-| SYS-PYROUTES | `PreparedRegistryBinding.endpoint` is reused for simple-index observation and Twine upload. Source-confirmed single-route assumption; servers with distinct read/upload routes cannot generally use one override. Public defaults use separate native routes. | T09-ROUTES | REL-PUB-04/08; private-index policy |
 
 ## Integration risks and evidence gaps
 

@@ -73,6 +73,16 @@ impl PypiRunner {
             .count()
     }
 
+    fn calls(&self, program: &str) -> Vec<String> {
+        let world = self.0.lock().unwrap();
+        world
+            .calls
+            .iter()
+            .filter(|call| call.split(' ').next() == Some(program))
+            .cloned()
+            .collect()
+    }
+
     fn epochs(&self) -> Vec<String> {
         self.0.lock().unwrap().epochs.clone()
     }
@@ -234,6 +244,7 @@ fn operation() -> RegistryPublishOperation {
         registry: PreparedRegistryBinding {
             key: RegistryKey("pypi".to_owned()),
             endpoint: None,
+            publish_endpoint: None,
             identity: RegistryBindingDigest::from_normalized_binding(b"pypi"),
         },
         npm_access: None,
@@ -320,6 +331,68 @@ fn publish_and_confirm_with(
         matches!(outcome, PublishOutcome::Published),
         artifacts,
     )
+}
+
+/// Publishes and confirms `operation`, which may bind its own endpoints.
+fn release_on(run: &Run, runner: &PypiRunner, operation: &RegistryPublishOperation) -> ProviderObservationV1 {
+    let context = run.context(runner);
+    PypiRegistry
+        .preflight(&context, &id(operation), operation, None)
+        .unwrap();
+    PypiRegistry.publish(&context, &id(operation), operation, None).unwrap();
+    PypiRegistry
+        .confirm(&context, &id(operation), operation, true, None)
+        .unwrap()
+}
+
+fn on_routes(endpoint: Option<&str>, publish_endpoint: Option<&str>) -> RegistryPublishOperation {
+    let mut operation = operation();
+    operation.registry.endpoint = endpoint.map(str::to_owned);
+    operation.registry.publish_endpoint = publish_endpoint.map(str::to_owned);
+    operation
+}
+
+#[test]
+fn a_split_route_reads_the_index_and_uploads_to_the_upload_endpoint() {
+    let run = Run::new();
+    let runner = PypiRunner::new(&BUILD);
+    let operation = on_routes(
+        Some("https://index.example.test/simple"),
+        Some("https://upload.example.test/legacy/"),
+    );
+    assert!(release_on(&run, &runner, &operation).is_terminal_success());
+    let reads = runner.calls("curl");
+    assert!(!reads.is_empty());
+    for read in &reads {
+        assert!(read.ends_with("https://index.example.test/simple/my-pkg/"), "{read}");
+    }
+    let uploads = runner.calls("twine");
+    assert_eq!(uploads.len(), 1, "{uploads:?}");
+    assert!(
+        uploads[0].starts_with("twine upload --repository-url https://upload.example.test/legacy/ "),
+        "{}",
+        uploads[0]
+    );
+}
+
+#[test]
+fn a_single_configured_endpoint_serves_both_reads_and_uploads() {
+    let run = Run::new();
+    let runner = PypiRunner::new(&BUILD);
+    let operation = on_routes(Some("https://index.example.test/simple"), None);
+    assert!(release_on(&run, &runner, &operation).is_terminal_success());
+    assert!(runner.calls("curl")[0].ends_with("https://index.example.test/simple/my-pkg/"));
+    assert!(runner.calls("twine")[0].starts_with("twine upload --repository-url https://index.example.test/simple "));
+}
+
+#[test]
+fn an_upload_route_alone_leaves_reads_on_the_public_index() {
+    let run = Run::new();
+    let runner = PypiRunner::new(&BUILD);
+    let operation = on_routes(None, Some("https://upload.example.test/legacy/"));
+    assert!(release_on(&run, &runner, &operation).is_terminal_success());
+    assert!(runner.calls("curl")[0].ends_with("https://pypi.org/simple/my-pkg/"));
+    assert!(runner.calls("twine")[0].starts_with("twine upload --repository-url https://upload.example.test/legacy/ "));
 }
 
 /// A confirm that rebuilt would compare an upload with fresh bytes, so a run without the cache fails loudly.
