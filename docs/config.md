@@ -89,9 +89,10 @@ Keyed by registry name. Two entries exist by default even with no `[registries]`
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `registries.<name>.kind` | string (`"cargo"` \| `"npm"` \| `"pypi"`) | `"npm"` if omitted | Registry ecosystem |
-| `registries.<name>.url` | string | none | Registry endpoint override |
+| `registries.<name>.url` | string | none | Registry endpoint override. For `pypi` it is the simple index Callisto reads, and the upload endpoint unless `publish-url` is set |
+| `registries.<name>.publish-url` | string | `url` | `pypi` only: the endpoint Twine uploads to when it differs from the index. Same HTTPS rules as `url` |
 
-An explicit registry entry still defaults `kind` to npm when omitted; requiring it is planned. Python's URL override currently serves both observation and upload, despite those being separate native APIs; see [Python support limits](publishing.md#current-python-support-limits). Accepting `nuget` as a target string does not provide a working NuGet publisher.
+An explicit registry entry still defaults `kind` to npm when omitted; requiring it is planned. For `pypi`, set `publish-url` when the index and the upload endpoint differ, for example `url = "https://test.pypi.org/simple"` with `publish-url = "https://test.pypi.org/legacy/"`; see [Python support limits](publishing.md#current-python-support-limits). Accepting `nuget` as a target string does not provide a working NuGet publisher.
 
 Example:
 ```toml

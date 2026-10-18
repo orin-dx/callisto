@@ -210,7 +210,7 @@
     },
     {
       "id": "REL-PUB-04",
-      "criterion": "PyPI publish builds with `python3 -m build --sdist --wheel --outdir <temporary directory>` in the package directory, falling back to `python` and failing with E170 when neither is on PATH, and fails with E306 when the build produced no wheel or no sdist for the version. It then runs `twine upload` naming only the built files the index lacks, with `--repository-url` for a configured index and never `--skip-existing`. One build serves the preflight and the publish of a run. Every build runs with `SOURCE_DATE_EPOCH` set to the release commit's committer time. `release build-python` runs the same build for each Python publish of a plan into `--artifact-dir`."
+      "criterion": "PyPI publish builds with `python3 -m build --sdist --wheel --outdir <temporary directory>` in the package directory, falling back to `python` and failing with E170 when neither is on PATH, and fails with E306 when the build produced no wheel or no sdist for the version. It then runs `twine upload` naming only the built files the index lacks, with `--repository-url` for a configured upload endpoint (a registry's `publish-url`, else its `url`) and never `--skip-existing`. One build serves the preflight and the publish of a run. Every build runs with `SOURCE_DATE_EPOCH` set to the release commit's committer time. `release build-python` runs the same build for each Python publish of a plan into `--artifact-dir`."
     },
     {
       "id": "REL-PUB-05",
@@ -227,7 +227,7 @@
     },
     {
       "id": "REL-PUB-08",
-      "criterion": "PyPI observation fetches `<index>/<normalized-name>/` (default `https://pypi.org/simple`) with `curl` and `Accept: application/vnd.pypi.simple.v1+json`. In a 200 JSON body, any matching yanked file means absent; otherwise at least one matching non-yanked file means present. That version-level read serves every use outside an effect. Before a PyPI effect, `release execute` proceeds without a build when the index has no file of the version. Otherwise it builds, and treats the release as already satisfied only when every built file is on the index by filename and not yanked. A built file the index holds yanked is a remote conflict, and a file the index holds that the build did not produce is reported with a warning and not checked. After an upload, confirmation waits for every built file to be visible, and a file this run uploaded must carry the sha256 the index serves for it, or the run fails with E307. A file from an earlier attempt is matched by name, not by digest, unless the artifact manifest seals the release's files: then the run builds nothing, uploads those exact files, compares the sha256 of every file the index holds under a sealed name, and fails with E307 before any upload when one differs. A 404 or no matching file means absent, and a non-JSON body or other non-retryable status is indeterminate. Transient HTTP statuses use the observation retry policy."
+      "criterion": "PyPI observation fetches `<index>/<normalized-name>/` (the registry's `url`, default `https://pypi.org/simple`; never its `publish-url`) with `curl` and `Accept: application/vnd.pypi.simple.v1+json`. In a 200 JSON body, any matching yanked file means absent; otherwise at least one matching non-yanked file means present. That version-level read serves every use outside an effect. Before a PyPI effect, `release execute` proceeds without a build when the index has no file of the version. Otherwise it builds, and treats the release as already satisfied only when every built file is on the index by filename and not yanked. A built file the index holds yanked is a remote conflict, and a file the index holds that the build did not produce is reported with a warning and not checked. After an upload, confirmation waits for every built file to be visible, and a file this run uploaded must carry the sha256 the index serves for it, or the run fails with E307. A file from an earlier attempt is matched by name, not by digest, unless the artifact manifest seals the release's files: then the run builds nothing, uploads those exact files, compares the sha256 of every file the index holds under a sealed name, and fails with E307 before any upload when one differs. A 404 or no matching file means absent, and a non-JSON body or other non-retryable status is indeterminate. Transient HTTP statuses use the observation retry policy."
     },
     {
       "id": "REL-PUB-09",
@@ -243,6 +243,10 @@
       "id": "REL-PUB-11",
       "criterion": "A publish command that fails with auth, rate-limit or other registry output fails the run with E163. A failing git or gh effect command fails with E164. No effect command is re-issued automatically.",
       "is_error_case": true
+    },
+    {
+      "id": "REL-PUB-12",
+      "criterion": "A `pypi` `[registries]` entry may set `publish-url`, the endpoint Twine uploads to when the index at `url` is not also the upload route. Both endpoints follow the registry URL rules of REL-PUB-05 and both enter the registry binding, so changing either makes an earlier intent stale. A package-level `publish-to` index names both routes and overrides the entry's `publish-url`. A `publish-url` on a registry that is not `pypi` is rejected when the configuration loads."
     },
     {
       "id": "REL-RERUN-01",

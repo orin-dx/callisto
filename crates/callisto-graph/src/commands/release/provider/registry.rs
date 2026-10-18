@@ -971,7 +971,7 @@ impl RegistryEcosystem for PypiRegistry {
         let upload = registry_argv::pypi_upload_argv(
             context.root(),
             &operation.package_dir,
-            operation.registry.endpoint.as_deref(),
+            operation.registry.upload_endpoint(),
             &paths,
         );
         let output = run_pypi_upload_argv(context, &upload)?;

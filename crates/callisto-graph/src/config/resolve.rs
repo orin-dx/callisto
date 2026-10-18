@@ -141,6 +141,8 @@ pub struct ValidationConfig {
 pub struct RegistryConfig {
     pub kind: Ecosystem,
     pub url: Option<String>,
+    /// Upload endpoint of a `pypi` registry whose index (`url`) is not also where files are uploaded.
+    pub publish_url: Option<String>,
 }
 
 /// One declared release artifact. `target` is opaque -- Callisto passes it to
@@ -526,6 +528,7 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
         RegistryConfig {
             kind: Ecosystem::Cargo,
             url: None,
+            publish_url: None,
         },
     );
     registries.insert(
@@ -533,6 +536,7 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
         RegistryConfig {
             kind: Ecosystem::Npm,
             url: None,
+            publish_url: None,
         },
     );
 
@@ -550,7 +554,23 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
                     })
                 }
             };
-            registries.insert(key, RegistryConfig { kind, url: reg.url });
+            if reg.publish_url.is_some() && kind != Ecosystem::Pypi {
+                return Err(ConfigError::UnknownKey {
+                    path: callisto_toml.clone(),
+                    key: format!(
+                        "[registries.{}] publish-url (only a `pypi` registry has a separate upload route)",
+                        key.as_str()
+                    ),
+                });
+            }
+            registries.insert(
+                key,
+                RegistryConfig {
+                    kind,
+                    url: reg.url,
+                    publish_url: reg.publish_url,
+                },
+            );
         }
     }
 
@@ -888,6 +908,34 @@ mod tests {
             "registry with kind = \"pypi\" must resolve to Ecosystem::Pypi, not {:?}",
             reg.kind
         );
+    }
+
+    #[test]
+    fn a_pypi_registry_may_name_a_separate_upload_route() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        fs::write(
+            tmp.path().join("callisto.toml"),
+            "[registries.my-pypi]\nkind = \"pypi\"\nurl = \"https://pypi.example.com/simple\"\npublish-url = \"https://pypi.example.com/legacy/\"\n",
+        )
+        .expect("write callisto.toml");
+        let config = load(tmp.path()).expect("load should succeed");
+        let reg = &config.registries[&RegistryKey("my-pypi".to_string())];
+        assert_eq!(reg.url.as_deref(), Some("https://pypi.example.com/simple"));
+        assert_eq!(reg.publish_url.as_deref(), Some("https://pypi.example.com/legacy/"));
+    }
+
+    #[test]
+    fn an_upload_route_on_a_registry_that_is_not_pypi_is_rejected() {
+        for kind in ["cargo", "npm"] {
+            let tmp = tempfile::tempdir().expect("tempdir");
+            fs::write(
+                tmp.path().join("callisto.toml"),
+                format!("[registries.corp]\nkind = \"{kind}\"\npublish-url = \"https://corp.example.com/up\"\n"),
+            )
+            .expect("write callisto.toml");
+            let error = load(tmp.path()).expect_err("publish-url is Python-only");
+            assert!(matches!(error, ConfigError::UnknownKey { .. }), "{kind}: {error:?}");
+        }
     }
 
     #[test]

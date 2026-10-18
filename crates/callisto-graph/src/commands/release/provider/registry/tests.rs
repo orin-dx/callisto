@@ -181,6 +181,7 @@ fn operation(key: &str, package_name: &str, version: &str) -> RegistryPublishOpe
         registry: PreparedRegistryBinding {
             key: RegistryKey(key.to_owned()),
             endpoint: None,
+            publish_endpoint: None,
             identity: RegistryBindingDigest::from_normalized_binding(key.as_bytes()),
         },
         npm_access: None,
@@ -840,6 +841,7 @@ fn a_timed_out_curl_call_retries_and_settles() {
         registry: PreparedRegistryBinding {
             key: RegistryKey("pypi".to_owned()),
             endpoint: None,
+            publish_endpoint: None,
             identity: RegistryBindingDigest::from_normalized_binding(b"pypi"),
         },
         npm_access: None,

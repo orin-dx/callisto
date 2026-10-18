@@ -11,7 +11,7 @@ use callisto_model::{
 };
 
 use crate::registry_endpoint::{
-    builtin_registry_url, canonical_registry_url, url_parse_error_reason, RegistryBindingV1,
+    builtin_registry_url, canonical_registry_url, split_routes_digest, url_parse_error_reason, RegistryBindingV1,
 };
 use crate::{DependencyResolver, GraphError, Workspace};
 
@@ -25,7 +25,16 @@ use super::StaleReason;
 pub(crate) struct PreparedRegistryBinding {
     pub(crate) key: RegistryKey,
     pub(crate) endpoint: Option<String>,
+    /// Where uploads go when that differs from `endpoint` (a PyPI index that is not also its upload route).
+    pub(crate) publish_endpoint: Option<String>,
     pub(crate) identity: RegistryBindingDigest,
+}
+
+impl PreparedRegistryBinding {
+    /// The endpoint an upload is sent to: the separate upload route if one is bound, else the index.
+    pub(crate) fn upload_endpoint(&self) -> Option<&str> {
+        self.publish_endpoint.as_deref().or(self.endpoint.as_deref())
+    }
 }
 
 /// Immutable, credential-free destination for Git effects. Its canonical
@@ -72,28 +81,36 @@ pub(crate) fn prepared_registry_binding<R: CommandRunner, D: DependencyResolver>
     }
     let explicit = target.registry_override();
     let configured = configured_registry.and_then(|registry| registry.url.as_deref());
-    let raw = explicit.or(configured);
-    let Some(raw) = raw else {
-        return Ok(PreparedRegistryBinding {
-            key: key.clone(),
-            endpoint: None,
-            identity: RegistryBindingDigest::from_normalized_binding(key.as_str().as_bytes()),
-        });
+    // An explicit per-package index names both routes, so the registry entry's upload route does not apply.
+    let publish_raw = match explicit {
+        Some(_) => None,
+        None => configured_registry.and_then(|registry| registry.publish_url.as_deref()),
     };
-    let binding = canonical_registry_binding(key.as_str(), raw)?;
-    if explicit.is_some()
-        && matches!(target, PublishTarget::Npm { .. })
-        && !is_approved_npm_registry(workspace, &binding)
-    {
-        return Err(GraphError::UntrustedNpmRegistry {
-            package: package.clone(),
-            url: raw.to_owned(),
-        });
+    let raw = explicit.or(configured);
+    let index = raw
+        .map(|raw| canonical_registry_binding(key.as_str(), raw))
+        .transpose()?;
+    let publish = publish_raw
+        .map(|raw| canonical_registry_binding(key.as_str(), raw))
+        .transpose()?;
+    if let (Some(raw), Some(binding)) = (explicit, &index) {
+        if matches!(target, PublishTarget::Npm { .. }) && !is_approved_npm_registry(workspace, binding) {
+            return Err(GraphError::UntrustedNpmRegistry {
+                package: package.clone(),
+                url: raw.to_owned(),
+            });
+        }
     }
+    let identity = match (&index, &publish) {
+        (_, Some(publish)) => split_routes_digest(index.as_ref(), publish),
+        (Some(index), None) => index.digest(),
+        (None, None) => RegistryBindingDigest::from_normalized_binding(key.as_str().as_bytes()),
+    };
     Ok(PreparedRegistryBinding {
         key,
-        endpoint: Some(binding.endpoint()),
-        identity: binding.digest(),
+        endpoint: index.as_ref().map(RegistryBindingV1::endpoint),
+        publish_endpoint: publish.as_ref().map(RegistryBindingV1::endpoint),
+        identity,
     })
 }
 
@@ -471,6 +488,80 @@ mod tests {
         let binding = prepared_registry_binding(&workspace, &PublishTarget::Pypi { index: None }, &package).unwrap();
         assert_eq!(binding.key.as_str(), RegistryKey::PYPI);
         assert_eq!(binding.endpoint, None);
+    }
+
+    fn bind_pypi(config: &str, target: &PublishTarget) -> Result<PreparedRegistryBinding, GraphError> {
+        let (dir, runner) = super::super::tests::fixture();
+        std::fs::write(dir.path().join("callisto.toml"), config).unwrap();
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let workspace = Workspace::load(dir.path().to_path_buf(), &locator, &runner).unwrap();
+        let package = PackageId::parse("release-fixture").unwrap();
+        prepared_registry_binding(&workspace, target, &package)
+    }
+
+    const PYPI_INDEX: &str = "[registries.pypi]\nkind = \"pypi\"\nurl = \"https://index.example.test/simple\"\n";
+    const PYPI_SPLIT: &str = "[registries.pypi]\nkind = \"pypi\"\nurl = \"https://index.example.test/simple\"\npublish-url = \"https://upload.example.test/legacy/\"\n";
+
+    #[test]
+    fn a_pypi_registry_without_an_upload_route_uploads_to_its_index() {
+        let binding = bind_pypi(PYPI_INDEX, &PublishTarget::Pypi { index: None }).unwrap();
+        assert_eq!(binding.endpoint.as_deref(), Some("https://index.example.test/simple"));
+        assert_eq!(binding.publish_endpoint, None);
+        assert_eq!(binding.upload_endpoint(), binding.endpoint.as_deref());
+        let digest = canonical_registry_binding("pypi", "https://index.example.test/simple")
+            .unwrap()
+            .digest();
+        assert_eq!(binding.identity, digest, "an index-only binding keeps its digest");
+    }
+
+    #[test]
+    fn a_pypi_registry_binds_its_index_and_its_upload_route_separately() {
+        let binding = bind_pypi(PYPI_SPLIT, &PublishTarget::Pypi { index: None }).unwrap();
+        assert_eq!(binding.endpoint.as_deref(), Some("https://index.example.test/simple"));
+        assert_eq!(binding.upload_endpoint(), Some("https://upload.example.test/legacy/"));
+        let index_only = bind_pypi(PYPI_INDEX, &PublishTarget::Pypi { index: None }).unwrap();
+        assert_ne!(
+            binding.identity, index_only.identity,
+            "the upload route is part of the binding"
+        );
+        let moved = PYPI_SPLIT.replace("upload.example.test", "other.example.test");
+        let moved = bind_pypi(&moved, &PublishTarget::Pypi { index: None }).unwrap();
+        assert_ne!(binding.identity, moved.identity);
+    }
+
+    #[test]
+    fn an_upload_route_without_an_index_leaves_reads_on_the_default() {
+        let config = "[registries.pypi]\nkind = \"pypi\"\npublish-url = \"https://upload.example.test/legacy/\"\n";
+        let binding = bind_pypi(config, &PublishTarget::Pypi { index: None }).unwrap();
+        assert_eq!(binding.endpoint, None);
+        assert_eq!(binding.upload_endpoint(), Some("https://upload.example.test/legacy/"));
+    }
+
+    #[test]
+    fn an_explicit_index_on_a_package_names_both_routes() {
+        let target = PublishTarget::Pypi {
+            index: Some("https://own.example.test/simple".to_owned()),
+        };
+        let binding = bind_pypi(PYPI_SPLIT, &target).unwrap();
+        assert_eq!(binding.endpoint.as_deref(), Some("https://own.example.test/simple"));
+        assert_eq!(binding.publish_endpoint, None);
+        assert_eq!(binding.upload_endpoint(), Some("https://own.example.test/simple"));
+    }
+
+    #[test]
+    fn an_unsafe_upload_route_is_refused_like_an_unsafe_index() {
+        for unsafe_url in [
+            "http://upload.example.test/legacy/",
+            "https://user:pass@upload.example.test/legacy/",
+            "https://upload.example.test/legacy/?token=1",
+        ] {
+            let config = format!("[registries.pypi]\nkind = \"pypi\"\npublish-url = \"{unsafe_url}\"\n");
+            let error = bind_pypi(&config, &PublishTarget::Pypi { index: None }).unwrap_err();
+            assert!(
+                matches!(error, GraphError::UnsafeRegistryBinding { .. }),
+                "{unsafe_url}: {error:?}"
+            );
+        }
     }
 
     #[test]

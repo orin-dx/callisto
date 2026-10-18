@@ -38,6 +38,20 @@ impl RegistryBindingV1 {
     }
 }
 
+/// Digest of a registry whose index is read at one endpoint and takes uploads at another.
+pub(crate) fn split_routes_digest(
+    index: Option<&RegistryBindingV1>,
+    upload: &RegistryBindingV1,
+) -> RegistryBindingDigest {
+    let mut transcript = CanonicalTranscript::semantic_input_v1();
+    transcript.push_str(
+        "registry.index",
+        &index.map_or_else(String::new, RegistryBindingV1::endpoint),
+    );
+    transcript.push_str("registry.upload", &upload.endpoint());
+    RegistryBindingDigest::from_normalized_binding(transcript.as_bytes())
+}
+
 /// Maps a `url::ParseError` to a specific, static diagnostic reason for
 /// [`GraphError::UnsafeRegistryBinding`]/[`GraphError::UnsafeGitRemote`],
 /// rather than discarding it behind one generic "invalid URL" message.
