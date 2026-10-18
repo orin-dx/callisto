@@ -804,18 +804,10 @@ fn build_edges(
             };
             {
                 for entry in m.iter_dependencies() {
-                    let (spec, declaring_path) = if entry.inherited {
-                        if let Some(ref inh) = ctx.cargo_workspace {
-                            if let Some(inherited_dep) = inh.inherited(&entry.name) {
-                                (inherited_dep.spec.clone(), inherited_dep.declared_in.to_path_buf())
-                            } else {
-                                (entry.spec.clone(), decl.path.clone())
-                            }
-                        } else {
-                            (entry.spec.clone(), decl.path.clone())
-                        }
-                    } else {
-                        (entry.spec.clone(), decl.path.clone())
+                    let inherited = entry.inherited.then(|| m.inherited_dependency(&entry.name)).flatten();
+                    let (spec, declaring_path) = match inherited {
+                        Some(dep) => (dep.spec.clone(), dep.declared_in.to_path_buf()),
+                        None => (entry.spec.clone(), decl.path.clone()),
                     };
 
                     let workspace_target = match &spec {

@@ -157,6 +157,7 @@ fn workspace_alias_and_relative_targets_retain_declaration_keys() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: Some(WorkspaceKind::Pnpm),
     };
     let manifest = PackageJson::open(&decl, &ctx).unwrap();
@@ -239,6 +240,7 @@ fn open_manifest(dir: &tempfile::TempDir, content: &str) -> PackageJson {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
     PackageJson::open(&decl, &ctx).unwrap()
@@ -345,6 +347,7 @@ fn parses_package_json_and_updates_version() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -381,6 +384,7 @@ fn parses_package_json_with_utf8_bom() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -410,6 +414,7 @@ fn update_dependency_spec_does_not_mutate_overrides_when_primary_section_missing
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 
@@ -884,6 +889,7 @@ fn tab_indentation_is_preserved_after_version_write() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: Some(WorkspaceKind::Pnpm),
     };
 
@@ -920,6 +926,7 @@ fn preserves_crlf_line_endings_on_write() {
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
 

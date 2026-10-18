@@ -128,6 +128,7 @@ workspace = true
     let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: Some(std::sync::Arc::new(inheritance)),
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
     let mut manifest = CargoToml::open(&decl, &ctx).unwrap();

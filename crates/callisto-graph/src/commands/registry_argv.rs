@@ -77,8 +77,19 @@ pub fn cargo_publish_argv(
     Ok(Argv {
         program: "cargo".to_string(),
         args,
-        cwd: workspace_root.to_path_buf(),
+        cwd: cargo_workspace_dir(workspace_root, package_dir)?,
     })
+}
+
+/// The directory of the Cargo workspace the package at `package_dir` belongs to. Cargo reads `.cargo/config.toml`
+/// (registries, credentials) from where it runs, so a command about the package runs here, not at the workspace root.
+pub(crate) fn cargo_workspace_dir(workspace_root: &Path, package_dir: &Path) -> Result<PathBuf, GraphError> {
+    let root_manifest = callisto_manifests::cargo_workspace_of(
+        &mut callisto_manifests::WorkspaceReads::default(),
+        workspace_root,
+        &package_dir.join("Cargo.toml"),
+    )?;
+    Ok(workspace_root.join(root_manifest.parent().unwrap_or(Path::new(""))))
 }
 
 fn verify_cargo_ondisk_version(
@@ -113,8 +124,15 @@ fn verify_cargo_ondisk_version(
     let on_disk = if let Some(s) = version_value.as_str() {
         s.to_string()
     } else if version_value.get("workspace").and_then(toml::Value::as_bool) == Some(true) {
-        let root_manifest_path = workspace_root.join("Cargo.toml");
-        let resolver = WorkspaceCargoResolver::load(&root_manifest_path)?;
+        let member = package_dir.join("Cargo.toml");
+        let document = callisto_manifests::parse_manifest(&member, &contents)?;
+        let root_manifest = callisto_manifests::enclosing_workspace_manifest(workspace_root, &member, &document)?
+            .ok_or_else(|| GraphError::ReleaseInputRead {
+                path: manifest_path.clone(),
+                message: "`version.workspace = true` but no Cargo workspace governs it".to_string(),
+            })?;
+        let root_manifest_path = workspace_root.join(&root_manifest);
+        let resolver = WorkspaceCargoResolver::load_at(workspace_root, &root_manifest)?;
         let ws_version = resolver
             .workspace_version()?
             .ok_or_else(|| GraphError::ReleaseInputRead {
@@ -565,6 +583,30 @@ mod tests {
         assert!(argv.args.contains(&"--manifest-path".to_string()));
         assert!(!argv.args.iter().any(|a| a == "--registry"));
         assert_eq!(argv.cwd, dir.path());
+    }
+
+    #[test]
+    fn cargo_publish_runs_in_the_directory_of_the_workspace_that_governs_the_package() {
+        let dir = tempfile::tempdir().unwrap();
+        let write = |path: &str, text: &str| {
+            let path = dir.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        write("native/Cargo.toml", "[workspace]\nmembers = [\"crates/*\"]\n");
+        write(
+            "native/crates/a/Cargo.toml",
+            "[package]\nname = \"a\"\nversion = \"0.3.0\"\n",
+        );
+
+        let argv = cargo_publish_argv(dir.path(), Path::new("native/crates/a"), "a", &v("0.3.0"), None).unwrap();
+        assert_eq!(argv.cwd, dir.path().join("native"));
+        assert!(argv.args.contains(
+            &dir.path()
+                .join("native/crates/a/Cargo.toml")
+                .to_string_lossy()
+                .into_owned()
+        ));
     }
 
     #[test]

@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::changelog::{ChangeSource, ChangelogEntry, ChangelogInput};
@@ -360,26 +361,10 @@ pub fn check_partial_run<R: CommandRunner, D: DependencyResolver>(ws: &Workspace
         return Ok(());
     }
 
-    let cargo_root = if ws
-        .graph
-        .packages()
-        .flat_map(|pkg| pkg.canonical_manifests())
-        .any(|decl| decl.ecosystem() == callisto_model::Ecosystem::Cargo)
-    {
-        manifest_blob_at(ws, head, "Cargo.toml")?
-    } else {
-        None
-    };
-    let cargo_index_needed = !staged_manifests.is_empty()
-        && ws.graph.packages().any(|pkg| {
-            pkg.canonical_manifests()
-                .any(|decl| decl.ecosystem() == callisto_model::Ecosystem::Cargo)
-        });
-    let cargo_root_index = if cargo_index_needed {
-        manifest_blob_in_index(ws, "Cargo.toml")?.or_else(|| cargo_root.clone())
-    } else {
-        None
-    };
+    let head_texts = RefCell::new(HashMap::new());
+    let index_texts = RefCell::new(HashMap::new());
+    let mut head_reads = callisto_manifests::WorkspaceReads::default();
+    let mut index_reads = callisto_manifests::WorkspaceReads::default();
     let base_versions = ws.base_versions()?;
     for pkg in ws.graph.packages() {
         let Some(disk) = base_versions.get(&pkg.id) else {
@@ -387,13 +372,14 @@ pub fn check_partial_run<R: CommandRunner, D: DependencyResolver>(ws: &Workspace
         };
         for decl in pkg.canonical_manifests() {
             let path = super::release_decision::normalized_git_path(&decl.path)?;
-            let Some(head_version) = manifest_version_at(ws, head, &path, cargo_root.as_deref())? else {
+            let Some(head_version) = manifest_version_at(ws, head, &path, &head_texts, &mut head_reads)? else {
                 continue;
             };
-            let index_path_changed = staged_manifests.contains(&path)
-                || (decl.ecosystem() == callisto_model::Ecosystem::Cargo && staged_manifests.contains("Cargo.toml"));
+            let index_path_changed = version_source_paths(&ws.root, decl)?
+                .iter()
+                .any(|source| staged_manifests.contains(source));
             let index_version = if index_path_changed {
-                manifest_version_in_index(ws, &path, cargo_root_index.as_deref())?
+                manifest_version_in_index(ws, head, &path, &index_texts, &mut index_reads)?
             } else {
                 None
             };
@@ -447,10 +433,7 @@ fn canonical_manifest_staged_paths<R: CommandRunner, D: DependencyResolver>(
 ) -> Result<BTreeSet<String>, GraphError> {
     let mut paths = BTreeSet::new();
     for decl in ws.graph.packages().flat_map(|pkg| pkg.canonical_manifests()) {
-        paths.insert(super::release_decision::normalized_git_path(&decl.path)?);
-        if decl.ecosystem() == callisto_model::Ecosystem::Cargo {
-            paths.insert("Cargo.toml".to_string());
-        }
+        paths.extend(version_source_paths(&ws.root, decl)?);
     }
     let mut staged = BTreeSet::new();
     for path in paths {
@@ -568,31 +551,63 @@ fn manifest_blob_in_index<R: CommandRunner, D: DependencyResolver>(
     Ok(Some(output.stdout))
 }
 
+/// Every path whose staged change could alter the effective version of `decl`: its own manifest and, for Cargo, each
+/// manifest that could be the workspace root it inherits from.
+fn version_source_paths(
+    root: &std::path::Path,
+    decl: &callisto_model::ManifestDecl,
+) -> Result<Vec<String>, GraphError> {
+    let mut sources = vec![super::release_decision::normalized_git_path(&decl.path)?];
+    if decl.ecosystem() == callisto_model::Ecosystem::Cargo {
+        for candidate in callisto_manifests::workspace_manifest_candidates(root, &decl.path)? {
+            sources.push(super::release_decision::normalized_git_path(&candidate)?);
+        }
+    }
+    Ok(sources)
+}
+
+/// Manifest text by normalized path, fetched at most once per path.
+type ManifestTexts = RefCell<HashMap<String, Option<String>>>;
+
+fn cached_text(
+    texts: &ManifestTexts,
+    path: &std::path::Path,
+    fetch: impl FnOnce(&str) -> Result<Option<String>, GraphError>,
+) -> Result<Option<String>, GraphError> {
+    let key = super::release_decision::normalized_git_path(path)?;
+    if let Some(text) = texts.borrow().get(&key) {
+        return Ok(text.clone());
+    }
+    let text = fetch(&key)?;
+    texts.borrow_mut().insert(key, text.clone());
+    Ok(text)
+}
+
 fn manifest_version_at<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     head: &str,
     path: &str,
-    cargo_root: Option<&str>,
+    texts: &ManifestTexts,
+    reads: &mut callisto_manifests::WorkspaceReads,
 ) -> Result<Option<callisto_manifests::EffectiveManifestVersion>, GraphError> {
     let path = std::path::Path::new(path);
     let Ok(format) = callisto_model::ManifestFormat::from_path(path) else {
         return Ok(None);
     };
-    let Some(source) = manifest_blob_at(ws, head, &path.to_string_lossy())? else {
+    let at_head = |other: &std::path::Path| cached_text(texts, other, |key| manifest_blob_at(ws, head, key));
+    let Some(source) = at_head(path)? else {
         return Ok(None);
     };
-    Ok(callisto_manifests::read_effective_version(
-        format,
-        &source,
-        path,
-        cargo_root.map(|source| (std::path::Path::new("Cargo.toml"), source)),
-    )?)
+    callisto_manifests::read_effective_version(format, &source, path, reads, at_head)
 }
 
+/// The version `path` has in the index; manifests it inherits from that the index lacks are read from `head`.
 fn manifest_version_in_index<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
+    head: &str,
     path: &str,
-    cargo_root: Option<&str>,
+    texts: &ManifestTexts,
+    reads: &mut callisto_manifests::WorkspaceReads,
 ) -> Result<Option<callisto_manifests::EffectiveManifestVersion>, GraphError> {
     let manifest_path = std::path::Path::new(path);
     let Ok(format) = callisto_model::ManifestFormat::from_path(manifest_path) else {
@@ -601,13 +616,13 @@ fn manifest_version_in_index<R: CommandRunner, D: DependencyResolver>(
     let Some(source) = manifest_blob_in_index(ws, path)? else {
         return Ok(None);
     };
-    callisto_manifests::read_effective_version(
-        format,
-        &source,
-        manifest_path,
-        cargo_root.map(|source| (std::path::Path::new("Cargo.toml"), source)),
-    )
-    .map_err(GraphError::from)
+    let in_index_or_head = |other: &std::path::Path| {
+        cached_text(texts, other, |key| match manifest_blob_in_index(ws, key)? {
+            Some(text) => Ok(Some(text)),
+            None => manifest_blob_at(ws, head, key),
+        })
+    };
+    callisto_manifests::read_effective_version(format, &source, manifest_path, reads, in_index_or_head)
 }
 
 /// Platform manifest version writes and owner `optionalDependencies` pin updates

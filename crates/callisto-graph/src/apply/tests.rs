@@ -1311,6 +1311,7 @@ fn apply_version_plan_cargo_bump_produces_byte_identical_output_to_direct_mutate
     let ctx = OpenContext {
         workspace_root: dir_b.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
     let mut handle = open(&decl, &ctx).unwrap();
@@ -1362,6 +1363,7 @@ fn apply_version_plan_npm_bump_produces_byte_identical_output_to_direct_mutate_t
     let ctx = OpenContext {
         workspace_root: dir_b.path(),
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
     let mut handle = open(&decl, &ctx).unwrap();
@@ -1392,6 +1394,7 @@ fn bumps_loop_write_version_error_leaves_manifest_untouched_and_skips_persist() 
     let ctx = OpenContext {
         workspace_root: root,
         cargo_workspace: None,
+        cargo_roots: Default::default(),
         npm_workspace_kind: None,
     };
     let precondition_handle = open(&decl, &ctx).unwrap();
@@ -2622,4 +2625,135 @@ fn a_path_that_cannot_be_looked_up_is_an_error_not_a_deletion() {
         path_exists(&ws, Path::new("Cargo.toml")),
         Err(GraphError::ApplyIo { .. })
     ));
+}
+
+/// Records each command with the directory it ran in.
+struct CwdRunner(std::sync::Mutex<Vec<(String, Vec<String>, PathBuf)>>);
+
+impl CommandRunner for CwdRunner {
+    fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
+        self.0.lock().unwrap().push((
+            program.to_string(),
+            args.iter().map(|arg| arg.to_string()).collect(),
+            cwd.to_path_buf(),
+        ));
+        Ok(CommandOutput {
+            exit_code: Some(0),
+            stdout: String::new(),
+            stderr: String::new(),
+        })
+    }
+}
+
+fn write_file(root: &Path, path: &str, text: &str) {
+    let path = root.join(path);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, text).unwrap();
+}
+
+fn cargo_bump(name: &str, from: &str, to: &str, writes: Vec<VersionWriteTarget>) -> PlannedBump {
+    PlannedBump {
+        package: PackageId::parse(&format!("cargo:{name}")).expect("valid package id"),
+        from: cargo_version(from),
+        to: cargo_version(to),
+        severity: Severity::Minor,
+        governed_by: None,
+        reason: None,
+        writes,
+    }
+}
+
+/// Each Cargo workspace a plan writes into has its own lockfile, refreshed in its own directory and staged beside it.
+#[test]
+fn a_cargo_workspace_below_the_root_refreshes_and_stages_its_own_lockfile() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let root = dir.path();
+    write_file(root, "native/Cargo.toml", "[workspace]\nmembers = [\"crates/*\"]\n");
+    write_file(
+        root,
+        "native/crates/a/Cargo.toml",
+        "[package]\nname = \"a\"\nversion = \"0.3.0\"\n",
+    );
+    write_file(root, "native/Cargo.lock", "# lock");
+    write_file(root, "Cargo.lock", "# unrelated lock at the repository root");
+
+    let plan = VersionPlan {
+        bumps: vec![cargo_bump(
+            "a",
+            "0.3.0",
+            "0.4.0",
+            vec![VersionWriteTarget::Manifest(PathBuf::from(
+                "native/crates/a/Cargo.toml",
+            ))],
+        )],
+        ..Default::default()
+    };
+    let runner = CwdRunner(Default::default());
+    let opts = ApplyOptions {
+        refresh_lockfiles: true,
+        transient: false,
+    };
+    let outcome = apply_version_plan(root, &plan, &runner, &opts, &ApplyPermit::force_for_tests()).unwrap();
+
+    let calls = runner.0.lock().unwrap().clone();
+    let updates: Vec<_> = calls.iter().filter(|(program, ..)| program == "cargo").collect();
+    assert_eq!(updates.len(), 1, "{calls:?}");
+    assert_eq!(updates[0].1, ["update", "--workspace"]);
+    assert_eq!(updates[0].2, root.join("native"));
+
+    let refreshed = outcome.lockfile_refresh_results.expect("a refresh ran");
+    assert_eq!(refreshed.len(), 1);
+    assert_eq!(refreshed[0].filename, Path::new("native/Cargo.lock"));
+    assert!(
+        outcome.staged.contains(&PathBuf::from("native/Cargo.lock")),
+        "{:?}",
+        outcome.staged
+    );
+    assert!(
+        !outcome.staged.contains(&PathBuf::from("Cargo.lock")),
+        "{:?}",
+        outcome.staged
+    );
+}
+
+/// Two workspaces in one plan are refreshed once each, however many of their manifests are written; a package outside
+/// any workspace is a workspace of its own.
+#[test]
+fn touched_cargo_workspaces_names_each_workspace_once() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let root = dir.path();
+    write_file(root, "native/Cargo.toml", "[workspace]\nmembers = [\"crates/*\"]\n");
+    write_file(
+        root,
+        "native/crates/a/Cargo.toml",
+        "[package]\nname = \"a\"\nversion = \"0.3.0\"\n",
+    );
+    write_file(
+        root,
+        "native/crates/b/Cargo.toml",
+        "[package]\nname = \"b\"\nversion = \"0.1.0\"\n",
+    );
+    write_file(
+        root,
+        "tools/loose/Cargo.toml",
+        "[package]\nname = \"loose\"\nversion = \"1.0.0\"\n",
+    );
+
+    let manifest = |path: &str| vec![VersionWriteTarget::Manifest(PathBuf::from(path))];
+    let plan = VersionPlan {
+        bumps: vec![
+            cargo_bump("a", "0.3.0", "0.4.0", manifest("native/crates/a/Cargo.toml")),
+            cargo_bump("b", "0.1.0", "0.1.1", manifest("native/crates/b/Cargo.toml")),
+            cargo_bump("loose", "1.0.0", "1.1.0", manifest("tools/loose/Cargo.toml")),
+        ],
+        ..Default::default()
+    };
+    let workspaces = touched_cargo_workspaces(root, &plan).unwrap();
+    assert_eq!(
+        workspaces.into_iter().collect::<Vec<_>>(),
+        [
+            PathBuf::from("native/Cargo.toml"),
+            PathBuf::from("tools/loose/Cargo.toml")
+        ]
+    );
 }

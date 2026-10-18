@@ -362,7 +362,7 @@ impl RegistryEcosystem for CargoRegistry {
         true
     }
 
-    /// Runs from the source workspace root, so the same `.cargo/config.toml`
+    /// Runs from the package's Cargo workspace directory, so the same `.cargo/config.toml`
     /// registry definitions and credentials the publish effect uses apply --
     /// private registries and their auth are cargo's business, not ours.
     fn observe_once(
@@ -373,11 +373,12 @@ impl RegistryEcosystem for CargoRegistry {
         let spec = format!("{}@{}", operation.package_name, operation.version.render());
         let registry = cargo_registry_name(&operation.registry.key);
         let args = cargo_info_args(&spec, registry);
+        let cwd = registry_argv::cargo_workspace_dir(context.root(), &operation.package_dir)?;
         let output = match run_observation(
             context.runner(),
             programs::CARGO,
             &args,
-            context.root(),
+            &cwd,
             timeouts::REGISTRY_QUERY,
             true,
         )? {

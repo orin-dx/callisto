@@ -1,6 +1,7 @@
-use callisto_model::ManifestFormat;
+use callisto_model::{ManifestError, ManifestFormat};
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use crate::locate::LocateError;
 
@@ -282,6 +283,58 @@ pub(crate) fn read_cargo_membership(root: &Path) -> Result<Membership, LocateErr
 
 pub(crate) fn read_python_membership(root: &Path) -> Result<Membership, LocateError> {
     read_membership(root, &PYTHON_MEMBERSHIP_SPEC)
+}
+
+/// The `members` and `exclude` of each Cargo workspace nested below the workspace root, keyed by its directory, and what
+/// has been learned about workspace manifests on the way.
+#[derive(Default)]
+pub(crate) struct NestedCargoMemberships {
+    memberships: HashMap<PathBuf, Membership>,
+    reads: callisto_manifests::WorkspaceReads,
+}
+
+/// Whether a Cargo workspace nested below `root` admits the package at `rel`. The workspace at `root` is judged by
+/// [`read_cargo_membership`]; this adds the verdict of a nearer workspace that governs the package, which judges it by its
+/// own `members` and `exclude`. A package that is itself a workspace root, or that no nested workspace governs, passes.
+pub(crate) fn nested_cargo_workspace_admits(
+    root: &Path,
+    rel: &Path,
+    manifest_text: &str,
+    nested: &mut NestedCargoMemberships,
+) -> Result<bool, LocateError> {
+    let manifest = rel.join("Cargo.toml");
+    let located = |error: ManifestError| match error {
+        ManifestError::Parse { path, message, .. } => parse_error(&root.join(path), message),
+        ManifestError::Read { path, message } => LocateError::ManifestReadError {
+            path: root.join(path),
+            message,
+        },
+        other => LocateError::ManifestReadError {
+            path: root.join(&manifest),
+            message: other.to_string(),
+        },
+    };
+    let document = callisto_manifests::parse_manifest(&manifest, manifest_text).map_err(located)?;
+    let Some(governing) = nested
+        .reads
+        .enclosing(&manifest, &document, callisto_manifests::read_manifest_text(root))
+        .map_err(located)?
+    else {
+        return Ok(true);
+    };
+    let governing_dir = governing.parent().unwrap_or(Path::new(""));
+    // A workspace named by `package.workspace` from outside the package's own ancestry has no path to judge by.
+    let Ok(within) = rel.strip_prefix(governing_dir) else {
+        return Ok(true);
+    };
+    if governing_dir.as_os_str().is_empty() || within.as_os_str().is_empty() {
+        return Ok(true);
+    }
+    if !nested.memberships.contains_key(governing_dir) {
+        let membership = read_cargo_membership(&root.join(governing_dir))?;
+        nested.memberships.insert(governing_dir.to_path_buf(), membership);
+    }
+    Ok(nested.memberships[governing_dir].admits(within, false))
 }
 
 #[cfg(test)]

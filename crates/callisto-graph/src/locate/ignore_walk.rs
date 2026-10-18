@@ -42,6 +42,7 @@ impl ProjectLocator for IgnoreWalkLocator {
         let cargo_membership = membership::read_cargo_membership(&self.root)?;
         let npm_membership = membership::read_npm_membership(&self.root)?;
         let python_membership = membership::read_python_membership(&self.root)?;
+        let mut nested_cargo = membership::NestedCargoMemberships::default();
         let walker = WalkBuilder::new(&self.root)
             .hidden(true)
             .git_ignore(true)
@@ -166,7 +167,10 @@ impl ProjectLocator for IgnoreWalkLocator {
                     continue;
                 }
 
-                let admitted = admits(ecosystem);
+                let admitted = admits(ecosystem)
+                    && (ecosystem != Ecosystem::Cargo
+                        || is_root
+                        || membership::nested_cargo_workspace_admits(&self.root, &rel, &content, &mut nested_cargo)?);
                 let id = PackageId::parse(&name).unwrap_or_else(|_| PackageId::Bare(name.clone()));
                 let project = ProjectRoot {
                     id,
@@ -521,6 +525,76 @@ mod tests {
                 .map(|p| format!("{:?}:{}", p.ecosystem, p.id.name()))
                 .collect::<Vec<_>>()
         );
+    }
+
+    fn write_crate(root: &Path, dir: &str, name: &str) {
+        std::fs::create_dir_all(root.join(dir)).unwrap();
+        std::fs::write(
+            root.join(dir).join("Cargo.toml"),
+            format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\n"),
+        )
+        .unwrap();
+    }
+
+    fn cargo_paths(root: &Path) -> Vec<String> {
+        IgnoreWalkLocator::new(root)
+            .projects()
+            .unwrap()
+            .into_iter()
+            .filter(|project| project.ecosystem == Ecosystem::Cargo)
+            .map(|project| project.path.display().to_string())
+            .collect()
+    }
+
+    /// A Cargo workspace below the root, with no Cargo workspace at the root, admits only what its own `members` and
+    /// `exclude` say: a vendored or excluded crate under it is not a package.
+    #[test]
+    fn a_nested_cargo_workspace_admits_by_its_own_members_and_exclude() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("native")).unwrap();
+        std::fs::write(
+            root.join("native/Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/*\"]\nexclude = [\"crates/scratch\"]\n",
+        )
+        .unwrap();
+        write_crate(root, "native/crates/kept", "kept");
+        write_crate(root, "native/crates/scratch", "scratch");
+        write_crate(root, "native/vendor/dep", "dep");
+
+        assert_eq!(cargo_paths(root), ["native/crates/kept"]);
+    }
+
+    /// A package that is itself the root of a nested workspace is admitted, and a crate outside any Cargo workspace is
+    /// unrestricted as before.
+    #[test]
+    fn a_hybrid_nested_root_and_a_crate_outside_any_workspace_are_admitted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("tools")).unwrap();
+        std::fs::write(
+            root.join("tools/Cargo.toml"),
+            "[package]\nname = \"tools\"\nversion = \"0.1.0\"\n[workspace]\nmembers = [\"inner\"]\n",
+        )
+        .unwrap();
+        write_crate(root, "tools/inner", "inner");
+        write_crate(root, "loose", "loose");
+
+        assert_eq!(cargo_paths(root), ["loose", "tools", "tools/inner"]);
+    }
+
+    /// The workspace at the root keeps deciding for everything under it, including a workspace nested in it.
+    #[test]
+    fn the_root_cargo_workspace_still_decides_for_a_workspace_nested_in_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = [\"crates/*\"]\n").unwrap();
+        write_crate(root, "crates/a", "a");
+        std::fs::create_dir_all(root.join("native")).unwrap();
+        std::fs::write(root.join("native/Cargo.toml"), "[workspace]\nmembers = [\"n\"]\n").unwrap();
+        write_crate(root, "native/n", "n");
+
+        assert_eq!(cargo_paths(root), ["crates/a"]);
     }
 
     /// A Cargo.toml `[workspace]` `exclude` entry must
