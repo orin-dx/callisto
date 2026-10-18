@@ -1,0 +1,82 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M56FMMYG4VBNDJAQF9Y5QK22",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-18T03:07:30.473952Z",
+  "branch": "fix/one-workspace-owner-per-package",
+  "checkpoints_count": 2,
+  "save_step_count": 58,
+  "files_touched": [
+    ".changeset/mighty-cobras-leap.md",
+    "crates/callisto-graph/src/apply.rs",
+    "crates/callisto-graph/src/commands/registry_argv.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/tests.rs",
+    "crates/callisto-graph/src/commands/release_decision.rs",
+    "crates/callisto-graph/src/lib.rs",
+    "crates/callisto-graph/src/locate/membership.rs",
+    "crates/callisto-graph/src/locate/mod.rs",
+    "crates/callisto-graph/src/workspace_owner.rs",
+    "crates/callisto-model/src/atomic.rs",
+    "docs/specs/release.json",
+    "docs/specs/versioning.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "dc5ad122c74a",
+  "checkpoint_transcript_start": 24580,
+  "transcript_lines_at_start": 24580,
+  "compact_transcript_start": 2168,
+  "token_usage": {
+    "input_tokens": 86,
+    "cache_creation_tokens": 65477,
+    "cache_read_tokens": 29329170,
+    "output_tokens": 36388,
+    "api_call_count": 42,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 126
+  }
+}
