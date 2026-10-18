@@ -198,11 +198,11 @@
         ]
       },
       "steps": [
-        "Finding coverage: none open. The owner publication barrier shipped: a package tag waits for the registry publishes of every release identity it has. Remaining: derive_release_inputs still emits a shared tag or forge effect once per distribution, and package dependencies order all owner outputs.",
+        "Finding coverage: none open. Shipped: the owner publication barrier (a package tag waits for the registry publishes of every release identity it has) and one tag, forge release and forge publish per owner. Remaining: package dependencies order all owner outputs, and any wire versioning D01 requires.",
         "Implement D01's single-owner physical effects and deterministic operation IDs; one tag/draft/upload/publication may be referenced by several distributions but executed once. Reject contradictory tag target/destination/owner declarations before any effect.",
         "Project native dependency publication prerequisites from the relevant manifest/distribution, not every output of the source node. Gate current supported registry ecosystems' shared tag/publication on all required selected native publishes; retain platform-before-owner and artifact-before-publication prerequisites.",
         "Migrate intent validation/digests, preparation, production ValidatedReleaseIntent, SimWorld, provider dispatch, receipt evidence and schema guard tests as one compilation boundary. Do not add a scheduler or persisted execution state.",
-        "Check literal-false ApplyPermit construction at release/init entry points against dry-run capability boundaries and retain redacted native stderr for indeterminate failures. Fix a reachable bypass or lost safe diagnostic in this batch; explicitly track a sibling outside the owned boundary.",
+        "Retain redacted native stderr for indeterminate failures. Fix a lost safe diagnostic in this batch; explicitly track a sibling outside the owned boundary.",
         "Add dual Cargo/npm permutations, failure of either registry, shared product assets, selected/unselected native dependencies, dev/non-dev cycles and duplicate/conflicting effects. Run rtk cargo test -p callisto-model, rtk cargo test -p callisto-graph and rtk cargo test -p callisto-cli --test durable_release_e2e_tests sequentially.",
         "Verify deterministic DAG order and no public announcement before required publications; check Go's hypothetical tag-as-publication scenario without a Go provider. Version the wire if D01 changes identity/proof shape and keep old-reader policy explicit."
       ],
@@ -216,96 +216,6 @@
         "REL-ORD-01",
         "REL-ORD-02",
         "REL-RERUN-04"
-      ]
-    },
-    {
-      "id": "T09",
-      "title": "Verify and resume the required Python registry file set",
-      "files": {
-        "modify": [
-          "crates/callisto-model/src/release.rs",
-          "crates/callisto-model/src/release_observation.rs",
-          "crates/callisto-graph/src/commands/registry_argv.rs",
-          "crates/callisto-graph/src/commands/release/derive.rs",
-          "crates/callisto-graph/src/commands/release/provider/registry.rs",
-          "crates/callisto-graph/src/commands/release/provider/registry/tests.rs",
-          "docs/specs/release.json",
-          "docs/publishing.md",
-          "crates/callisto-graph/src/commands/release_artifacts.rs",
-          "crates/callisto-graph/src/commands/release/capability.rs",
-          "crates/callisto-graph/src/commands/release/provider/mod.rs",
-          "crates/callisto-model/src/release_transition.rs",
-          "crates/callisto-graph/src/commands/release_simulator.rs",
-          "crates/callisto-cli/src/commands/release.rs",
-          "crates/callisto-cli/src/cli.rs",
-          "crates/callisto-cli/src/error.rs",
-          "crates/callisto-graph/src/error.rs",
-          "crates/callisto-graph/src/commands/release/local.rs"
-        ],
-        "test": [
-          "crates/callisto-cli/tests/release_real_registry_e2e_tests.rs"
-        ],
-        "create": [
-          "crates/callisto-cli/tests/pypi_partial_upload_tests.rs"
-        ]
-      },
-      "steps": [
-        "Baseline: a Python release is complete when every file the executing run builds is on the index by name, uploaded by explicit list; the file set is not sealed between jobs and digests of earlier uploads are not compared.",
-        "Implement D01's required-file authority/proof contract across plan declarations, trusted build inventory, envelope binding and registry evidence. Exact requires every declared filename/digest; never mutate a sealed intent after build or guess all possible platform wheels.",
-        "Migrate CLI artifact-manifest production and release execute's registry-only artifact-input checks/envelope creation, plus local Python build preparation, to the approved required-output contract. Do not invent dummy GitHub slots merely to pass a registry build inventory; mint the envelope only after validating its actual trusted output manifest.",
-        "Publish only the intended retained files, resuming missing files after a partial upload without resubmitting completed/conflicting ones. Ensure a partial set cannot mint a false whole-operation Absent/Exact proof; migrate production providers and simulator with any new proof/observation shape.",
-        "Cover extra stale dist files, one of two uploads completed, conflicting same filename/digest, mixed yanked files, unobservable/index-lag responses and altered artifact manifests. Do not treat yanking as permission to overwrite.",
-        "Run rtk cargo test -p callisto-model, rtk cargo test -p callisto-graph and rtk cargo test -p callisto-cli --test durable_release_e2e_tests python, followed by --test release_real_registry_e2e_tests with prerequisites. Inject failure after the first actual file upload and validate recovery through production binding/observation, not argv alone.",
-        "Review Cargo/npm/platform evidence as siblings; preserve their existing whole-version behavior unless the approved contract genuinely reaches them. No universal checksum or mutable npm-channel gate is added."
-      ],
-      "commit_message": "fix(pypi): verify and resume required distribution files",
-      "depends_on": [
-        "D01",
-        "T07",
-        "T08"
-      ],
-      "covers_criteria": [
-        "REL-PUB-04",
-        "REL-PUB-08",
-        "REL-RERUN-01",
-        "REL-RERUN-04"
-      ]
-    },
-    {
-      "id": "T09-ROUTES",
-      "title": "Separate trusted Python index reads from uploads",
-      "files": {
-        "modify": [
-          "crates/callisto-graph/src/config/raw.rs",
-          "crates/callisto-graph/src/config/resolve.rs",
-          "crates/callisto-graph/src/commands/release/binding.rs",
-          "crates/callisto-graph/src/registry_endpoint.rs",
-          "crates/callisto-graph/src/commands/release/provider/registry.rs",
-          "crates/callisto-graph/src/commands/registry_argv.rs",
-          "docs/specs/release.json",
-          "docs/config.md",
-          "docs/publishing.md"
-        ],
-        "test": [
-          "crates/callisto-cli/tests/release_plan_pypi_default_registry_test.rs",
-          "crates/callisto-cli/tests/release_real_registry_e2e_tests.rs"
-        ]
-      },
-      "steps": [
-        "Finding coverage: SYS-PYROUTES. Baseline: PreparedRegistryBinding.endpoint serves both index reads and Twine uploads.",
-        "Implement D01's explicit credential-free read/upload routing and include both effective destinations in binding identity/staleness checks. Preserve default public PyPI/TestPyPI routing and reject credentialed/unsafe overrides before effects.",
-        "If private authenticated/HTML-only observation is not approved, fail unsupported configurations clearly before upload and document the boundary. Do not assume Twine auth is curl auth, embed credentials in URLs or add a generic HTTP credential client.",
-        "Test different loopback read/upload routes, normalization, approved overrides, changed read or upload endpoint, cross-ecosystem kind mismatch, HTML/private boundaries and credential redaction.",
-        "Run rtk cargo test -p callisto-graph, then rtk cargo test -p callisto-cli --test release_plan_pypi_default_registry_test and --test release_real_registry_e2e_tests sequentially. Integration follows T09 to avoid concurrent registry.rs writers."
-      ],
-      "commit_message": "fix(pypi): separate observation and upload destinations",
-      "depends_on": [
-        "D01",
-        "T09"
-      ],
-      "covers_criteria": [
-        "REL-PUB-04",
-        "REL-PUB-08"
       ]
     },
     {
@@ -331,7 +241,7 @@
       },
       "steps": [
         "Run the fixture/evidence matrix in V1-IMPLEMENTATION.md with actual native packing/building and representative clean consumer installs. Retain existing local npm/Cargo/PyPI tests and distinguish argv-only, production-provider, simulator and hosted coverage.",
-        "Exercise production registry binding/readback for local Cargo/PyPI servers and the new partial Python upload fixture; record each prerequisite skip explicitly. Deterministic faults must cover every changed apply/effect boundary, with missing work converging using original inputs.",
+        "Exercise production registry binding/readback for local Cargo/PyPI servers and the Python file-set fixtures (pypi_file_set_tests); record each prerequisite skip explicitly. Deterministic faults must cover every changed apply/effect boundary, with missing work converging using original inputs.",
         "Run rtk proxy just ci, plus the relevant shell/workflow policy/contract suites not actually included by just ci. Consider live provider-contract/fixture refresh only with network authority; never recapture fixtures or upload a version as an incidental test.",
         "Record source/branch revisions, exact commands, prerequisite versions, pass/fail/skip counts and remaining findings in V1-VERIFICATION.md. A named test or passing simulator does not establish production coverage.",
         "Correct the receipt run_attempt comment and policy-test message to match attempt-scoped artifact names; do not add an approval gate or change the release workflow's authorization.",
@@ -342,9 +252,7 @@
         "T06",
         "T06-HISTORY",
         "T07",
-        "T08",
-        "T09",
-        "T09-ROUTES"
+        "T08"
       ]
     },
     {
@@ -395,12 +303,10 @@
     },
     {
       "batch_id": "B08",
-      "title": "Shared effects, retry and registry completion",
+      "title": "Shared physical effects",
       "target_crate": "callisto-model / callisto-graph / callisto-cli",
       "task_ids": [
-        "T08",
-        "T09",
-        "T09-ROUTES"
+        "T08"
       ]
     },
     {
