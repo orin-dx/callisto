@@ -12,6 +12,7 @@ use crate::cascade::DepWriteTarget;
 use crate::cascade::SpecRewrite;
 use crate::error::GraphError;
 use crate::plan::{OptionalDepUpdate, PlannedBump, PlatformWrite, VersionPlan, VersionWriteTarget};
+use crate::workspace_owner::{npm_workspace_dir, python_workspace_dir, NPM_LOCKFILES, PYPI_LOCKFILES};
 
 /// Options governing how a version plan is applied to the workspace.
 #[derive(Clone, Debug, Default)]
@@ -677,15 +678,6 @@ const NPM_REFRESH: [Refresh; 3] = [
     ("yarn.lock", "yarn", &["install", "--mode", "update-lockfile"]),
 ];
 
-const NPM_LOCKFILES: [&str; 5] = [
-    "package-lock.json",
-    "pnpm-lock.yaml",
-    "yarn.lock",
-    "bun.lock",
-    "bun.lockb",
-];
-const PYPI_LOCKFILES: [&str; 4] = ["uv.lock", "poetry.lock", "pdm.lock", "Pipfile.lock"];
-
 /// Runs the refresh of `dir/file` in `dir`, reporting the lockfile by its path from the workspace root.
 fn refresh_in<R: CommandRunner>(
     runner: &R,
@@ -704,8 +696,8 @@ fn refresh_in<R: CommandRunner>(
     )
 }
 
-/// The directories, relative to the workspace root, holding the npm-family and Python lockfiles the plan's writes
-/// affect. A package's lockfile is the nearest one at or above its directory, so a workspace below the root keeps its own.
+/// The workspace directories, relative to the workspace root, whose npm-family and Python lockfiles the plan's writes
+/// affect: each package's owning workspace, so one below the root keeps its own.
 #[derive(Default)]
 struct LockfileDirs {
     npm: BTreeSet<PathBuf>,
@@ -724,10 +716,10 @@ fn lockfile_dirs(
             .map(|format| format.ecosystem())
         {
             Some(Ecosystem::Npm) => {
-                dirs.npm.insert(nearest_lockfile_dir(root, manifest, &NPM_LOCKFILES)?);
+                dirs.npm.insert(npm_workspace_dir(root, package_dir_of(manifest))?);
             }
             Some(Ecosystem::Pypi) => {
-                dirs.pypi.insert(nearest_lockfile_dir(root, manifest, &PYPI_LOCKFILES)?);
+                dirs.pypi.insert(python_workspace_dir(root, package_dir_of(manifest))?);
             }
             _ => {}
         }
@@ -742,20 +734,9 @@ fn lockfile_dirs(
     Ok(dirs)
 }
 
-/// The nearest directory at or above `manifest`'s that holds one of `names`, or the workspace root when none does.
-fn nearest_lockfile_dir(root: &Path, manifest: &Path, names: &[&str]) -> Result<PathBuf, GraphError> {
-    let mut dir = manifest.parent().unwrap_or(Path::new(""));
-    loop {
-        for name in names {
-            if path_exists(root, &dir.join(name))? {
-                return Ok(dir.to_path_buf());
-            }
-        }
-        match dir.parent() {
-            Some(parent) => dir = parent,
-            None => return Ok(PathBuf::new()),
-        }
-    }
+/// The directory of a package whose manifest is `manifest`.
+fn package_dir_of(manifest: &Path) -> &Path {
+    manifest.parent().unwrap_or(Path::new(""))
 }
 
 /// Maps a non-zero exit to `GraphError::LockfileRefreshFailed`, an exec failure to `GraphError::Command`.

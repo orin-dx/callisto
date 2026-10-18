@@ -176,45 +176,6 @@ pub enum NpmPackageManager {
     Npm,
 }
 
-/// The files that mark a directory as an npm-family workspace root.
-const NPM_WORKSPACE_MARKERS: [&str; 6] = [
-    "pnpm-workspace.yaml",
-    "pnpm-lock.yaml",
-    "yarn.lock",
-    "bun.lock",
-    "bun.lockb",
-    "package-lock.json",
-];
-
-/// The directory, relative to `workspace_root`, of the npm workspace that holds the package at `package_dir`: the nearest
-/// one at or above it carrying a lockfile or a `pnpm-workspace.yaml`, else the workspace root.
-///
-/// # Errors
-///
-/// A directory on the way up cannot be inspected.
-pub(crate) fn npm_workspace_dir(workspace_root: &Path, package_dir: &Path) -> Result<PathBuf, GraphError> {
-    let mut dir = package_dir;
-    loop {
-        for marker in NPM_WORKSPACE_MARKERS {
-            let marker = workspace_root.join(dir).join(marker);
-            if callisto_model::strict_fs::exists(&marker).map_err(|error| GraphError::ReleaseInputRead {
-                path: marker.clone(),
-                message: error.to_string(),
-            })? {
-                return Ok(if dir == Path::new(".") {
-                    PathBuf::new()
-                } else {
-                    dir.to_path_buf()
-                });
-            }
-        }
-        match dir.parent() {
-            Some(parent) => dir = parent,
-            None => return Ok(PathBuf::new()),
-        }
-    }
-}
-
 /// Detects the npm-compatible package manager of the workspace in `workspace_dir` from the files that mark it.
 /// Detection priority: pnpm > yarn > bun > npm (default). A `pnpm-workspace.yaml` is pnpm even where the lockfile is not
 /// committed, and a file that cannot be inspected is an error, not a reason to fall back to `npm`.
@@ -354,13 +315,14 @@ fn npm_publish_flags(
     extra
 }
 
-/// Publishes the package in `package_dir` by path: `npm publish <dir>` from the
-/// workspace root, whatever the package manager. pnpm `--filter`, yarn
+/// Publishes the package in `package_dir` by path: `npm publish <dir>` from `workspace_dir` (the workspace that owns
+/// it, where its `.npmrc` is read), whatever the package manager. pnpm `--filter`, yarn
 /// `workspace`, and npm `--workspace` select only workspace members, and an npm
 /// platform package directory usually is not one. The path is absolute, so it
 /// cannot be read as an option.
 pub fn npm_publish_directory_argv(
     workspace_root: &Path,
+    workspace_dir: &Path,
     package_dir: &Path,
     package_name: &str,
     tag: Option<&str>,
@@ -375,7 +337,7 @@ pub fn npm_publish_directory_argv(
     Argv {
         program: "npm".to_string(),
         args,
-        cwd: workspace_root.to_path_buf(),
+        cwd: workspace_root.join(workspace_dir),
     }
 }
 
@@ -774,25 +736,6 @@ mod tests {
         assert!(result.is_err(), "{result:?}");
     }
 
-    #[test]
-    fn the_npm_workspace_of_a_package_is_the_nearest_directory_with_a_marker() {
-        let dir = tempfile::tempdir().unwrap();
-        let write = |path: &str| {
-            let path = dir.path().join(path);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(path, "").unwrap();
-        };
-        write("web/yarn.lock");
-        write("web/packages/a/package.json");
-        write("pnpm-workspace.yaml");
-        write("apps/b/package.json");
-        let workspace_of = |package: &str| npm_workspace_dir(dir.path(), Path::new(package)).unwrap();
-        assert_eq!(workspace_of("web/packages/a"), Path::new("web"));
-        assert_eq!(workspace_of("web"), Path::new("web"));
-        assert_eq!(workspace_of("apps/b"), Path::new(""));
-        assert_eq!(workspace_of("."), Path::new(""));
-    }
-
     /// A package in a nested workspace publishes with that workspace's tool, from that workspace's directory.
     #[test]
     fn a_nested_workspace_publishes_from_its_own_directory() {
@@ -803,7 +746,7 @@ mod tests {
             "packages:\n  - 'packages/*'\n",
         )
         .unwrap();
-        let workspace = npm_workspace_dir(dir.path(), Path::new("web/packages/a")).unwrap();
+        let workspace = crate::workspace_owner::npm_workspace_dir(dir.path(), Path::new("web/packages/a")).unwrap();
         let workspace_root = dir.path().join(&workspace);
         let manager = detect_npm_package_manager(&workspace_root).unwrap();
         let argv = npm_publish_argv(&workspace_root, Path::new("packages/a"), "a", manager, None, None, None);
@@ -919,6 +862,7 @@ mod tests {
         );
         let by_directory = npm_publish_directory_argv(
             Path::new("/workspace"),
+            Path::new(""),
             Path::new("npm/x"),
             "@s/cli-x",
             None,

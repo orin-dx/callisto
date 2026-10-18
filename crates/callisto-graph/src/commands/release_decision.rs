@@ -497,8 +497,16 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
     let before_blobs = batch_manifest_blobs_at(workspace.runner, &workspace.root, &parent, &query_paths)?;
     let after_blobs =
         batch_manifest_blobs_at(workspace.runner, &workspace.root, release_commit.as_str(), &query_paths)?;
-    let before_versions = resolve_batch_versions(before_blobs, &query_paths, &manifest_queries)?;
-    let after_versions = resolve_batch_versions(after_blobs, &query_paths, &manifest_queries)?;
+    let before = CommitBlobs::new(workspace.runner, &workspace.root, &parent, &query_paths, before_blobs);
+    let after = CommitBlobs::new(
+        workspace.runner,
+        &workspace.root,
+        release_commit.as_str(),
+        &query_paths,
+        after_blobs,
+    );
+    let before_versions = resolve_batch_versions(&before, &manifest_queries)?;
+    let after_versions = resolve_batch_versions(&after, &manifest_queries)?;
 
     let mut observed = std::collections::BTreeSet::new();
     let mut manifest_index = 0usize;
@@ -903,12 +911,44 @@ fn batch_manifest_blobs_at<R: CommandRunner>(
     Ok(results)
 }
 
-fn resolve_batch_versions(
-    blobs: Vec<BatchBlob>,
-    paths: &[&str],
+/// The manifests of one commit: those fetched up front in one batch, and any other fetched on first ask. A package that
+/// names its workspace with `package.workspace` can name a different one at each of two commits, so the second commit's
+/// workspace manifest is not among those fetched for the first.
+struct CommitBlobs<'a, R: CommandRunner> {
+    runner: &'a R,
+    root: &'a std::path::Path,
+    commit: &'a str,
+    blobs: std::cell::RefCell<std::collections::BTreeMap<String, BatchBlob>>,
+}
+
+impl<'a, R: CommandRunner> CommitBlobs<'a, R> {
+    fn new(runner: &'a R, root: &'a std::path::Path, commit: &'a str, paths: &[&str], blobs: Vec<BatchBlob>) -> Self {
+        CommitBlobs {
+            runner,
+            root,
+            commit,
+            blobs: std::cell::RefCell::new(paths.iter().map(|path| (*path).to_owned()).zip(blobs).collect()),
+        }
+    }
+
+    /// The text of `path` at the commit, `None` when it has none there.
+    fn text(&self, path: &str) -> Result<Option<String>, GraphError> {
+        if !self.blobs.borrow().contains_key(path) {
+            let fetched = batch_manifest_blobs_at(self.runner, self.root, self.commit, &[path])?;
+            let blob = fetched.into_iter().next().unwrap_or(BatchBlob::Missing);
+            self.blobs.borrow_mut().insert(path.to_owned(), blob);
+        }
+        Ok(match &self.blobs.borrow()[path] {
+            BatchBlob::Blob(text) => Some(text.clone()),
+            BatchBlob::Missing => None,
+        })
+    }
+}
+
+fn resolve_batch_versions<R: CommandRunner>(
+    commit: &CommitBlobs<'_, R>,
     queries: &[(String, Ecosystem)],
 ) -> Result<Vec<callisto_manifests::EffectiveManifestVersion>, GraphError> {
-    let sources: std::collections::BTreeMap<_, _> = paths.iter().copied().zip(blobs).collect();
     let mut reads = callisto_manifests::WorkspaceReads::default();
     let at_commit = |other: &std::path::Path| -> Result<Option<String>, callisto_model::ManifestError> {
         let unavailable = |message: String| callisto_model::ManifestError::Read {
@@ -916,18 +956,12 @@ fn resolve_batch_versions(
             message,
         };
         let key = normalized_git_path(other).map_err(|error| unavailable(error.to_string()))?;
-        match sources.get(key.as_str()) {
-            Some(BatchBlob::Blob(text)) => Ok(Some(text.clone())),
-            Some(BatchBlob::Missing) => Ok(None),
-            None => Err(unavailable(
-                "needed to resolve an inherited version but was not fetched from the commit".to_string(),
-            )),
-        }
+        commit.text(&key).map_err(|error| unavailable(error.to_string()))
     };
     queries
         .iter()
         .map(|(path, ecosystem)| {
-            let Some(BatchBlob::Blob(source)) = sources.get(path.as_str()) else {
+            let Some(source) = commit.text(path)? else {
                 return Err(command_malformed_output(
                     "git",
                     &["cat-file", "--batch"],
@@ -941,7 +975,7 @@ fn resolve_batch_versions(
                 })?;
             callisto_manifests::read_effective_version(
                 format,
-                source,
+                &source,
                 std::path::Path::new(path),
                 &mut reads,
                 at_commit,
@@ -1734,5 +1768,50 @@ mod tests {
             derive_selected_release_decision(&workspace, &plan_bumping("pkg-a"), std::slice::from_ref(&exact)).unwrap();
         assert_eq!(decision.entries.len(), 1);
         assert_eq!(decision.entries[0].package, exact);
+    }
+
+    /// A package that names its workspace with `package.workspace` can move from one workspace to another in a release
+    /// commit. Each commit's own workspace manifest is read from that commit, though only the package's manifest was
+    /// fetched up front.
+    #[test]
+    fn a_package_that_moved_between_explicit_workspaces_reads_each_commit_s_own_workspace() {
+        let release = "a".repeat(40);
+        let parent = "b".repeat(40);
+        let member = |workspace: &str| {
+            format!("[package]\nname = \"p\"\nversion.workspace = true\nworkspace = \"{workspace}\"\n")
+        };
+        let workspace = |version: &str| {
+            format!("[workspace]\nmembers = [\"../p\"]\n[workspace.package]\nversion = \"{version}\"\n")
+        };
+        let blobs = std::collections::BTreeMap::from([
+            ((parent.clone(), "p/Cargo.toml".to_string()), member("../old")),
+            ((parent.clone(), "old/Cargo.toml".to_string()), workspace("0.3.0")),
+            ((release.clone(), "p/Cargo.toml".to_string()), member("../new")),
+            ((release.clone(), "new/Cargo.toml".to_string()), workspace("0.3.1")),
+        ]);
+        let runner = CountingBatchRunner {
+            release_commit: release.clone(),
+            parent: parent.clone(),
+            decision_json: String::new(),
+            name_status: String::new(),
+            blobs,
+            run_calls: Default::default(),
+            batch_calls: Default::default(),
+        };
+        let root = std::path::Path::new("/nonexistent-test-root");
+        let queries = vec![("p/Cargo.toml".to_string(), Ecosystem::Cargo)];
+        let paths = ["p/Cargo.toml"];
+        let versions = |commit: &str| {
+            let blobs = batch_manifest_blobs_at(&runner, root, commit, &paths).unwrap();
+            let commit_blobs = CommitBlobs::new(&runner, root, commit, &paths, blobs);
+            resolve_batch_versions(&commit_blobs, &queries).unwrap().remove(0)
+        };
+
+        let before = versions(&parent);
+        let after = versions(&release);
+        assert_eq!(before.version.render().to_string(), "0.3.0");
+        assert_eq!(before.authority, std::path::Path::new("old/Cargo.toml"));
+        assert_eq!(after.version.render().to_string(), "0.3.1");
+        assert_eq!(after.authority, std::path::Path::new("new/Cargo.toml"));
     }
 }
