@@ -1,0 +1,115 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M56HED8TW9D9EBVPBBZDFM6C",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-18T03:38:59.248127Z",
+  "branch": "fix/unreadable-changelog-fails-release",
+  "checkpoints_count": 2,
+  "save_step_count": 60,
+  "files_touched": [
+    "crates/callisto-cli/tests/partial_run_tests.rs",
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-manifests/src/cargo.rs",
+    "crates/callisto-manifests/src/lib.rs",
+    "docs/specs/versioning.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "c5974b4a1a4a",
+  "checkpoint_transcript_start": 25477,
+  "transcript_lines_at_start": 25477,
+  "compact_transcript_start": 2250,
+  "token_usage": {
+    "input_tokens": 32,
+    "cache_creation_tokens": 19793,
+    "cache_read_tokens": 11489276,
+    "output_tokens": 14039,
+    "api_call_count": 15,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 132
+  },
+  "summary": {
+    "intent": "Address the minor gap noted in PR #246: the interrupted-run guard only checked a package's current working-tree `package.workspace` candidates, so a staged version bump in the old (HEAD) workspace went unnoticed.",
+    "outcome": "Fixed the guard so staged version sources from the package's prior workspace are also detected, added a partial-run test verified by mutation check to fail without the fix, updated the versioning spec and changeset, passed full CI (92.72%), and committed and pushed onto #247 with a description note.",
+    "learnings": {
+      "repo": [
+        "The six PRs (#241, #242, #244-#247) form one native stack (#243) to be merged in order; follow-up fixes to earlier PRs are committed onto the top of the stack (#247).",
+        "Interrupted-run guard in the version command builds the list of staged files that could affect a package's version from the working-tree `package.workspace` via `version_source_paths` and a candidates function.",
+        "Behavior changes are documented in docs/specs/versioning.json (the E121 interrupted-run criterion was extended) and need a changeset.",
+        "`just ci` runs the full pipeline including lint and coverage (currently 92.72%).",
+        "Work is done in a git worktree (.claude/worktrees/notes-unreadable)."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/version.rs",
+          "finding": "Interrupted-run guard computes staged version-source paths from the working-tree package.workspace only; fix adds a branch that also considers the HEAD workspace so a staged bump in the old workspace is detected."
+        },
+        {
+          "path": "crates/callisto-cli/tests/partial_run_tests.rs",
+          "finding": "Added a partial-run test for a package whose workspace changed in the working tree but not in HEAD; confirmed to fail when the new branch is disabled."
+        },
+        {
+          "path": "crates/callisto-manifests/src/cargo.rs",
+          "finding": "Modified alongside lib.rs to expose the staged-source/workspace candidate logic needed by the guard."
+        }
+      ],
+      "workflow": [
+        "Mutation-check new tests by temporarily disabling the fix, confirming the test fails, then restoring the file.",
+        "Run long full-CI jobs in the background and read the result on task notification before committing.",
+        "Keep scratch files (commit messages, helper scripts) in the scratchpad directory rather than the repo."
+      ]
+    },
+    "friction": [
+      "First attempt at applying the staged-source fix had malformed argument arrays and needed a rerun of the partial-run tests.",
+      "Fix required a recompile and a second round of edits before the test passed.",
+      "#247's own GitHub checks and the latest status of #241/#242 had not been re-verified."
+    ],
+    "open_items": [
+      "Verify GitHub checks on #247 after the push, and re-check #241 and #242 status.",
+      "Merge the stack in order (#241, #242, #244, #245, #246, #247) once checks are green."
+    ]
+  }
+}
