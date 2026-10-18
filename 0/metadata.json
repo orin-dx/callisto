@@ -1,0 +1,102 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M56C181PM1QD13SC9K3YA420",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-18T02:04:27.424161Z",
+  "branch": "feat/nested-npm-uv-membership",
+  "checkpoints_count": 2,
+  "save_step_count": 55,
+  "files_touched": [
+    ".changeset/proud-otters-race.md",
+    "crates/callisto-graph/src/apply.rs",
+    "crates/callisto-graph/src/apply/tests.rs",
+    "crates/callisto-graph/src/locate/ignore_walk.rs",
+    "crates/callisto-graph/src/locate/membership.rs",
+    "docs/specs/versioning.json",
+    "docs/specs/workspace.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "c151016897bf",
+  "checkpoint_transcript_start": 22751,
+  "transcript_lines_at_start": 22751,
+  "compact_transcript_start": 2009,
+  "token_usage": {
+    "input_tokens": 80,
+    "cache_creation_tokens": 63666,
+    "cache_read_tokens": 19093072,
+    "output_tokens": 40391,
+    "api_call_count": 39,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 122
+  },
+  "summary": {
+    "intent": "Extend Callisto's release tooling so nested (non-root) npm and uv workspaces are handled for membership and lockfiles, following the already-open nested Cargo workspace PR #241, and then address the earlier leftover items.",
+    "outcome": "Implemented nested npm/uv membership and per-directory lockfile refresh in a stacked worktree branch, with locate/apply tests, a real-npm scenario check, docs and changeset updates. Full CI passed at 92.71% coverage, and the stacked PR was committed, pushed and opened. The earlier leftovers were not started.",
+    "learnings": {
+      "repo": [
+        "Callisto is a Rust workspace; the graph logic lives in crates/callisto-graph, with workspace location in src/locate/ (membership.rs, ignore_walk.rs) and version application in src/apply.rs and src/apply/preflight.rs.",
+        "`just ci` runs the full pipeline (lint, tests, coverage) and reports a coverage percentage; the nested Cargo PR #241 landed at 92.66% and the stacked npm/uv branch at 92.71%.",
+        "Specs are kept in docs/specs/*.json (versioning.json, workspace.json), and user-facing changes need a .changeset/*.md entry.",
+        "Root detection requires a marker (package.json, pnpm-workspace.yaml or .moon); a repo whose only manifest is native/Cargo.toml fails with E030.",
+        "In a root Cargo workspace, the root's `members` and `exclude` still decide membership, so `exclude = [\"native\"]` keeps native/ unreleased. This was left intentionally so example and fixture workspaces stay excluded.",
+        "Private, versionless nested workspace roots need an exemption from the version requirement; the real-npm scenario exposed this.",
+        "uv/Python test fixtures must use PEP 440 versions for the bump to succeed.",
+        "Lockfile refresh and staging were restructured to work per directory, so each nested workspace refreshes and stages its own lockfile."
+      ],
+      "code": [],
+      "workflow": [
+        "Stack dependent PRs using a separate worktree (EnterWorktree) branched from the previous PR when they touch the same code.",
+        "Mutation-check new tests by confirming they fail without the behavior before trusting them.",
+        "Validate against real tooling (real cargo, npm, git) in scratch scripts in addition to unit tests; this surfaced edge cases such as versionless private roots.",
+        "Run the long CI pipeline in the background and investigate review findings (Codex's ignored-file/git-add concerns) in parallel.",
+        "Probe real git behavior (ignored files, mixed ignored paths in one `git add`) with small shell scripts before changing staging logic."
+      ]
+    },
+    "friction": null,
+    "open_items": null
+  }
+}
