@@ -31,14 +31,20 @@ fn open_cargo(dir: &std::path::Path, content: &str) -> CargoToml {
 fn bin_names_include_explicit_and_automatic_targets() {
     let package = "[package]\nname = \"app\"\nversion = \"1.0.0\"\n";
     let dir = tempdir().unwrap();
-    assert!(open_cargo(dir.path(), package).bin_names().is_empty(), "library-only");
+    assert!(
+        open_cargo(dir.path(), package).bin_names().unwrap().is_empty(),
+        "library-only"
+    );
 
     fs::create_dir_all(dir.path().join("src")).unwrap();
     fs::write(dir.path().join("src/main.rs"), "fn main() {}\n").unwrap();
-    assert_eq!(open_cargo(dir.path(), package).bin_names(), ["app"]);
+    assert_eq!(open_cargo(dir.path(), package).bin_names().unwrap(), ["app"]);
 
     let bins = format!("{package}\n[[bin]]\nname = \"first\"\n\n[[bin]]\nname = \"second\"\n");
-    assert_eq!(open_cargo(dir.path(), &bins).bin_names(), ["app", "first", "second"]);
+    assert_eq!(
+        open_cargo(dir.path(), &bins).bin_names().unwrap(),
+        ["app", "first", "second"]
+    );
 }
 
 #[test]
@@ -48,7 +54,7 @@ fn bin_names_discover_src_bin_files_and_nested_main_files() {
     fs::create_dir_all(dir.path().join("src/bin/tool")).unwrap();
     fs::write(dir.path().join("src/bin/serve.rs"), "fn main() {}\n").unwrap();
     fs::write(dir.path().join("src/bin/tool/main.rs"), "fn main() {}\n").unwrap();
-    assert_eq!(open_cargo(dir.path(), package).bin_names(), ["serve", "tool"]);
+    assert_eq!(open_cargo(dir.path(), package).bin_names().unwrap(), ["serve", "tool"]);
 }
 
 #[test]
@@ -58,9 +64,9 @@ fn autobins_false_keeps_only_declared_binary_targets() {
     fs::create_dir_all(dir.path().join("src/bin")).unwrap();
     fs::write(dir.path().join("src/main.rs"), "fn main() {}\n").unwrap();
     fs::write(dir.path().join("src/bin/auto.rs"), "fn main() {}\n").unwrap();
-    assert!(open_cargo(dir.path(), package).bin_names().is_empty());
+    assert!(open_cargo(dir.path(), package).bin_names().unwrap().is_empty());
     let declared = format!("{package}\n[[bin]]\nname = \"declared\"\npath = \"tools/entry.rs\"\n");
-    assert_eq!(open_cargo(dir.path(), &declared).bin_names(), ["declared"]);
+    assert_eq!(open_cargo(dir.path(), &declared).bin_names().unwrap(), ["declared"]);
 }
 
 #[test]
@@ -70,7 +76,7 @@ fn duplicate_explicit_and_automatic_binary_names_are_deduplicated() {
     fs::create_dir_all(dir.path().join("src/bin")).unwrap();
     fs::write(dir.path().join("src/bin/app.rs"), "fn main() {}\n").unwrap();
     let declared = format!("{package}\n[[bin]]\nname = \"app\"\npath = \"src/bin/app.rs\"\n");
-    assert_eq!(open_cargo(dir.path(), &declared).bin_names(), ["app"]);
+    assert_eq!(open_cargo(dir.path(), &declared).bin_names().unwrap(), ["app"]);
 }
 
 #[test]

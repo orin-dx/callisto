@@ -12,7 +12,12 @@ pub struct NapiTargetsIndex {
 }
 
 impl NapiTargetsIndex {
-    pub fn load(groups: &GroupTable, root: &Path) -> Result<Self, callisto_model::ManifestError> {
+    /// Reads each fixed group's `napi.targets` from its main package's own `package.json`, found through the graph.
+    pub fn load(
+        groups: &GroupTable,
+        root: &Path,
+        graph: &impl crate::resolver::DependencyResolver,
+    ) -> Result<Self, callisto_model::ManifestError> {
         let mut declared = BTreeMap::new();
         for g in groups.fixed.values() {
             // Find the first Package member — it is the napi main package.
@@ -24,9 +29,23 @@ impl NapiTargetsIndex {
                 continue;
             };
 
-            // Derive the expected package.json path from the package name.
-            // Convention: root/<package-name>/package.json
-            let pkg_json_path = root.join(main_id.name()).join("package.json");
+            // The package's own npm manifest, wherever its directory is: a name says nothing about the path. A
+            // package with no npm manifest in the graph (one that would not parse) is read from its own directory.
+            let Some(package) = graph.packages().find(|package| &package.id == main_id) else {
+                continue;
+            };
+            let manifest = package
+                .canonical_manifests()
+                .find(|decl| decl.ecosystem() == callisto_model::Ecosystem::Npm)
+                .map(|decl| decl.path.clone())
+                .or_else(|| {
+                    let dir = package.canonical_manifests().next()?.path.parent()?.to_path_buf();
+                    Some(dir.join("package.json"))
+                });
+            let Some(manifest) = manifest else {
+                continue;
+            };
+            let pkg_json_path = root.join(&manifest);
             let content = callisto_model::strict_fs::read_optional(&pkg_json_path).map_err(|e| {
                 callisto_model::ManifestError::Read {
                     path: pkg_json_path.clone(),
@@ -270,33 +289,82 @@ mod tests {
         }
     }
 
+    /// A graph of fixed packages, so `load` can find each package's own manifest.
+    struct Packages(Vec<callisto_model::Package>);
+
+    impl crate::resolver::DependencyResolver for Packages {
+        fn packages(&self) -> impl Iterator<Item = &callisto_model::Package> {
+            self.0.iter()
+        }
+        fn dependencies_of(&self, _id: &PackageId) -> impl Iterator<Item = &callisto_model::DepEdge> {
+            std::iter::empty()
+        }
+        fn dependents_of(&self, _id: &PackageId) -> impl Iterator<Item = &callisto_model::DepEdge> {
+            std::iter::empty()
+        }
+        fn diagnostics(&self) -> &[callisto_model::Diagnostic] {
+            &[]
+        }
+    }
+
+    fn npm_package(id: &str, manifest: &str) -> callisto_model::Package {
+        callisto_model::Package {
+            id: PackageId::parse(id).unwrap(),
+            manifests: vec![callisto_model::ManifestDecl::new(
+                manifest,
+                ManifestRole::Canonical,
+                callisto_model::ManifestFormat::PackageJson,
+            )
+            .unwrap()],
+            changelog: None,
+            release_trigger: callisto_model::ReleaseTrigger::Changeset,
+            publish_to: Vec::new(),
+            tag_template: None,
+        }
+    }
+
+    /// The main package's manifest is found through the graph, not guessed as `<root>/<name>/package.json`: a scoped
+    /// name, or a package that does not sit at the root, still has its `napi.targets` read.
     #[test]
-    fn napi_targets_index_loads_targets_from_package_json() {
+    fn napi_targets_index_loads_targets_from_the_packages_own_manifest() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let root = tmp.path();
-
-        // Create a package directory named "my-lib" with package.json
-        let pkg_dir = root.join("my-lib");
+        let pkg_dir = root.join("packages/native");
         std::fs::create_dir_all(&pkg_dir).unwrap();
         std::fs::write(
             pkg_dir.join("package.json"),
-            r#"{"name":"my-lib","napi":{"targets":["aarch64-apple-darwin"]}}"#,
+            r#"{"name":"@acme/native","napi":{"targets":["aarch64-apple-darwin"]}}"#,
         )
         .unwrap();
 
-        let group_name = GroupName("my-lib-group".to_string());
+        let group_name = GroupName("native-group".to_string());
         let group = GroupDef {
             name: group_name.clone(),
             kind: GroupKind::Fixed,
-            members: vec![GroupMember::Package(PackageId::Bare("my-lib".to_string()))],
+            members: vec![GroupMember::Package(PackageId::parse("@acme/native").unwrap())],
         };
         let groups = GroupTable::try_from_groups(vec![group], vec![]).unwrap();
+        let graph = Packages(vec![npm_package("@acme/native", "packages/native/package.json")]);
 
-        let index = NapiTargetsIndex::load(&groups, root).expect("load should succeed");
+        let index = NapiTargetsIndex::load(&groups, root, &graph).expect("load should succeed");
         let declared = index
             .declared_for(&group_name)
             .expect("declared_for should return Some");
         assert_eq!(declared, &["aarch64-apple-darwin"]);
+    }
+
+    /// A group whose main package is not in the graph declares nothing, as before.
+    #[test]
+    fn napi_targets_index_skips_a_main_package_the_graph_does_not_have() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let group = GroupDef {
+            name: GroupName("g".to_string()),
+            kind: GroupKind::Fixed,
+            members: vec![GroupMember::Package(PackageId::Bare("absent".to_string()))],
+        };
+        let groups = GroupTable::try_from_groups(vec![group], vec![]).unwrap();
+        let index = NapiTargetsIndex::load(&groups, tmp.path(), &Packages(Vec::new())).unwrap();
+        assert!(index.declared_for(&GroupName("g".to_string())).is_none());
     }
 
     #[test]

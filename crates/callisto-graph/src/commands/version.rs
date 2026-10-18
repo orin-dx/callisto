@@ -130,7 +130,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         identity: &ws.identity,
     };
 
-    let napi = crate::napi::NapiTargetsIndex::load(&ws.config.groups, &ws.root)?;
+    let napi = crate::napi::NapiTargetsIndex::load(&ws.config.groups, &ws.root, &ws.graph)?;
     let group_check =
         crate::groups::pre_mutation_checks(&ws.graph, &ws.config.groups, &base_versions, tags, &napi, &ws.root)?;
 

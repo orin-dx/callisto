@@ -219,6 +219,10 @@ where
 {
     let loaded = load_changesets(&config.root, config)?;
     let mut agg = Aggregation::default();
+    // Inference reads `since..HEAD`; in a shallow clone that range is silently shorter than the real one.
+    if graph.packages().any(|pkg| pkg.release_trigger == ReleaseTrigger::Auto) {
+        git.require_full_history()?;
+    }
 
     for pkg in graph.packages() {
         let cur_sev = agg.severities.get(&pkg.id).copied().unwrap_or(Severity::None);

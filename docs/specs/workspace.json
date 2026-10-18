@@ -45,7 +45,7 @@
   "acceptance_criteria": [
     {
       "id": "WS-DISC-01",
-      "criterion": "Root detection walks up from the start directory, never past the Git toplevel, and picks the nearest directory with a workspace marker (Cargo.toml with [workspace], package.json with `workspaces`, pnpm-workspace.yaml, or a .moon directory); with no marker it picks the outermost directory with a package manifest (Cargo.toml with [package], package.json, or pyproject.toml)."
+      "criterion": "Root detection walks up from the start directory, never past the Git toplevel, and picks the nearest directory with a workspace marker (Cargo.toml with a `workspace` table, package.json with `workspaces`, pnpm-workspace.yaml, or a .moon directory); with no marker it picks the outermost directory with a package manifest (Cargo.toml with a `package` table, package.json, or pyproject.toml). A Cargo `workspace` or `package` table counts however it is written: a header, an inline table, dotted keys, or, for `workspace`, a sub-table such as `[workspace.package]` alone."
     },
     {
       "id": "WS-DISC-02",

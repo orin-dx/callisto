@@ -308,6 +308,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E312 | Package `<path>` is reached through a symbolic link, which Git cannot stage | Replace the link with the real directory, or list it in a .gitignore under the workspace root so discovery skips it; Callisto cannot commit a version bump to a file beneath a symbolic link. |
 | E313 | The workspace is incomplete: N manifest(s) could not be resolved | Fix or remove the manifests named above and re-run; Callisto will not plan a release from a partial workspace. |
 | E314 | Cannot apply the version plan: N file(s) cannot be written, so nothing was changed | Fix the files named above (a missing file, permissions, a symbolic link Git cannot stage, or a path a .gitignore ignores) and re-run; no manifest, changelog or changeset was touched. |
+| E315 | Commit-based version inference needs the full Git history, but this repository is a shallow clone | Fetch the full history (`git fetch --unshallow`, or `fetch-depth: 0` for actions/checkout), or give the packages that need no commit inference `release-trigger = "changeset"`. |
 
 
 240 numeric E#### codes total in one registry.

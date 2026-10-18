@@ -202,7 +202,7 @@
     },
     {
       "id": "REL-PUB-02",
-      "criterion": "npm publish picks its tool from the root lockfile: `pnpm publish --filter=<name> --no-git-checks`, `yarn workspace <name> npm publish`, `bun publish` in the package directory, and otherwise `npm publish --workspace=<name>`. It appends `--tag next` for prerelease versions and `--access` and `--registry` when set."
+      "criterion": "npm publish picks its tool from the workspace that holds the package, the nearest directory at or above it with a lockfile or `pnpm-workspace.yaml` (else the root), and runs there; a marker that cannot be inspected is an error, not `npm`. `pnpm-workspace.yaml` alone means pnpm. The tools: `pnpm publish --filter=<name> --no-git-checks`, `yarn workspace <name> npm publish`, `bun publish` in the package directory, and otherwise `npm publish --workspace=<name>`. It appends `--tag next` for prerelease versions and `--access` and `--registry` when set."
     },
     {
       "id": "REL-PUB-03",

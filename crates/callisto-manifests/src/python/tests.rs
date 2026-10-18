@@ -34,9 +34,9 @@ fn bin_names_read_project_scripts_keys() {
         PyprojectToml::open(&decl, &ctx).unwrap()
     };
     let project = "[project]\nname = \"tool\"\nversion = \"1.0.0\"\n";
-    assert!(open(project).bin_names().is_empty());
+    assert!(open(project).bin_names().unwrap().is_empty());
     let scripts = format!("{project}\n[project.scripts]\nalpha = \"tool:a\"\nbeta = \"tool:b\"\n");
-    assert_eq!(open(&scripts).bin_names(), ["alpha", "beta"]);
+    assert_eq!(open(&scripts).bin_names().unwrap(), ["alpha", "beta"]);
 }
 
 #[test]

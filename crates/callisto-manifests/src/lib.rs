@@ -15,9 +15,9 @@ pub mod npm;
 pub mod python;
 
 pub use cargo::{
-    cargo_package_name, cargo_workspace_of, enclosing_workspace_manifest, parse_manifest, read_manifest_text,
-    workspace_manifest_candidates, CargoToml, InheritedDep, WorkspaceCargoResolver, WorkspaceInheritance,
-    WorkspaceReads,
+    cargo_package_name, cargo_workspace_of, declares_workspace, enclosing_workspace_manifest, parse_manifest,
+    read_manifest_text, workspace_manifest_candidates, CargoToml, InheritedDep, WorkspaceCargoResolver,
+    WorkspaceInheritance, WorkspaceReads,
 };
 pub use npm::{
     detect_npm_workspace_kind, napi_binary_name, npm_declares_private, npm_package_name, npm_role_from_source,
@@ -193,8 +193,8 @@ pub trait Manifest: Send + Sync {
         None
     }
     /// Executable names this package builds; empty for a library-only package.
-    fn bin_names(&self) -> Vec<String> {
-        Vec::new()
+    fn bin_names(&self) -> Result<Vec<String>, ManifestError> {
+        Ok(Vec::new())
     }
     /// The lib name of a napi-rs addon crate: a `cdylib` depending on `napi`.
     fn napi_lib_name(&self) -> Option<String> {

@@ -370,13 +370,14 @@ impl Manifest for PyprojectToml {
         self.role.clone()
     }
 
-    fn bin_names(&self) -> Vec<String> {
-        self.document
+    fn bin_names(&self) -> Result<Vec<String>, ManifestError> {
+        Ok(self
+            .document
             .get("project")
             .and_then(|project| project.get("scripts"))
             .and_then(|scripts| scripts.as_table_like())
             .map(|scripts| scripts.iter().map(|(name, _)| name.to_string()).collect())
-            .unwrap_or_default()
+            .unwrap_or_default())
     }
 
     fn package_name(&self) -> Result<String, ManifestError> {
