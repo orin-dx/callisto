@@ -1,0 +1,158 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M56DG8DMFWE01M0CV078BF1F",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-18T02:30:16.664022Z",
+  "branch": "fix/release-leftovers",
+  "checkpoints_count": 1,
+  "save_step_count": 57,
+  "files_touched": [
+    ".changeset/noble-hawks-drift.md",
+    "crates/callisto-graph/src/commands/init.rs",
+    "crates/callisto-graph/src/commands/registry_argv.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry.rs",
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-graph/src/groups.rs",
+    "crates/callisto-graph/src/locate/root.rs",
+    "crates/callisto-graph/src/napi.rs",
+    "crates/callisto-graph/src/walk.rs",
+    "crates/callisto-graph/src/walk/tests.rs",
+    "crates/callisto-manifests/src/cargo.rs",
+    "crates/callisto-manifests/src/cargo/tests.rs",
+    "crates/callisto-manifests/src/lib.rs",
+    "crates/callisto-manifests/src/npm.rs",
+    "crates/callisto-manifests/src/npm/tests.rs",
+    "crates/callisto-manifests/src/python.rs",
+    "crates/callisto-manifests/src/python/tests.rs",
+    "crates/callisto-manifests/tests/cargo_tests.rs",
+    "docs/specs/release.json",
+    "docs/specs/versioning.json",
+    "docs/specs/workspace.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "40fcddb01dd5",
+  "checkpoint_transcript_start": 1883,
+  "transcript_lines_at_start": 1883,
+  "compact_transcript_start": 155,
+  "token_usage": {
+    "input_tokens": 3454,
+    "cache_creation_tokens": 4996821,
+    "cache_read_tokens": 668572468,
+    "output_tokens": 1381061,
+    "api_call_count": 1658,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 124
+  },
+  "summary": {
+    "intent": "Drive the Callisto release-tooling roadmap forward: finish refactors and fixes (R5a/R5b, SYS-NAPI, R3, R1, SYS-BARRIER), prepare and verify the 0.10.3 release, then implement nested Cargo/npm/uv workspace support and the remaining leftovers after the user approved the recommendations.",
+    "outcome": "Shipped a series of PRs (#205-#209, #211, #213, #214 and the later stack #241 -> #242 -> #244, plus a leftovers PR), with `just ci` green on each. 0.10.3 was verified published. Nested Cargo workspace support was implemented and hardened after an independent review. Items still gated on the user's decisions (W1, W3, W4, W10, D01, W0 branch deletion) remain open.",
+    "learnings": {
+      "repo": [
+        "Work is done in git worktrees under .claude/worktrees; PRs are stacked with `gh stack link` (native stack), and when a lower PR merges, main is merged upward through the stack rather than force-pushed.",
+        "`just ci` is the full gate. Every PR also needs a changeset, created with the built callisto binary, and spec/doc updates in docs/specs/*.json and docs/projects/V1-FINDINGS.md.",
+        "The refactor pattern is characterization/snapshot tests first (insta), committed on the unchanged code, then a mechanical split. Mutation checks confirm that the snapshots and new tests catch regressions.",
+        "The generated build-matrix workflow template (matrix_workflow.tmpl) runs on macOS bash without `mapfile`, so a portable loop is needed. Its jq logic is tested with real jq via the real binary.",
+        "The fake-tool test harness hid the 0.10.1 regression, so real-tool checks (real cargo, gh, git ls-remote, npm) are used as validation.",
+        "The dry-run report flattens the intent with envelope fields. A release intent omits `artifactSlots` when empty, so a bare `.artifactSlots[]` in jq iterates null.",
+        "Operations run dependents first, so a failed push can leave only a dependent's tag. Rerun logic must resume the dependent together with its dependency.",
+        "The real redaction helpers are `redact_known_secrets` and `redact_command_stderr` in callisto-model. The `redact_native_output` named in the W4 brief does not exist.",
+        "Callisto's root detection accepted only the `[workspace]` header form, while Cargo also treats inline, dotted and sub-table-only spellings as workspace roots.",
+        "Nested Cargo workspace discovery was validated against real `cargo locate-project`. Lockfile refresh, publish, the registry `cargo info` check and the artifact build must run in the governing workspace directory.",
+        "A Rust-only repo whose only manifest is native/Cargo.toml still needs a root marker (package.json, pnpm-workspace.yaml or .moon), or root detection fails with E030."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/locate/ignore_walk.rs",
+          "line": 173,
+          "end_line": 173,
+          "finding": "The first nested-workspace cut called nested_cargo_workspace_admits per member, re-parsing every ancestor Cargo.toml and making loading quadratic. The fix was a shared cache of workspace reads."
+        },
+        {
+          "path": "crates/callisto-graph/src/templates/matrix_workflow.tmpl",
+          "line": 138,
+          "end_line": 139,
+          "finding": "The cargo artifact build step ran from the checkout root with no --manifest-path or cd to PACKAGE_DIR, so it failed for nested workspaces. The napi step already did this correctly."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/registry_argv.rs",
+          "line": 80,
+          "end_line": 80,
+          "finding": "`cargo publish` used the repo root as cwd with --manifest-path, so a nested .cargo/config.toml (custom registries) was ignored. It now uses the governing workspace directory."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/registry.rs",
+          "line": 574,
+          "end_line": 574,
+          "finding": "One matching non-yanked Python file yields Exact, which is the W3 partial-upload defect (wheel and sdist are both produced)."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "GitHub timed out on `gh release list` and `git fetch`, so the 0.10.3 tags couldn't be confirmed at first.",
+      "The assistant wrongly told the user #210 was still waiting on checks when it had already been merged.",
+      "The negative-control real-tool check tripped an unrelated repository-mismatch guard and had to be redone.",
+      "The rebase onto the stack top replayed an unrelated release commit from main, so the branch had to be rebuilt.",
+      "macOS bash lacked `mapfile`, and several fake runners answering exit 0 for everything broke the ignored-file check.",
+      "Background sessions can't edit the local plan file, so its W4 brief can't be corrected.",
+      "The assistant opened an unrelated diagram file in another repo (pages) at one point. It made no changes there and returned to the task."
+    ],
+    "open_items": [
+      "W1 credential check (CI job to download and verify the release attestation): needs the user's decision and a corrected spec (name the asset, use --signer-workflow, and note fork PRs do get a read-only token).",
+      "W3 Python partial uploads (SYS-PYFILES): needs a trusted, isolated build inventory with hashes bound to the run before observing and uploading missing files.",
+      "W4 redacted provider output: use closed structured details, after inventorying all stdout/stderr leak paths.",
+      "W10 decisions on target-declaration RewriteKey and Python dev-group cascading.",
+      "D01 owner contract, which blocks W8 (SYS-MATURIN) and W9 (SYS-OWNER, SYS-DEMOTION, resolver divergence).",
+      "W0 branch deletion needs per-branch user confirmation.",
+      "#213 (SYS-BARRIER) and #214 (R1) are open, and #241/#242/#244 and the leftovers PR need review and merge.",
+      "A nested Cargo workspace excluded by a root workspace's `exclude` stays unreleased. The user was asked whether to change this.",
+      "A hand-made lightweight tag at HEAD for a finished release fails with E167 until the next commit.",
+      "The partial-run E121 error names the HEAD-side authority file rather than the file that actually changed (low severity, pre-existing).",
+      "Not exercised: Windows separators, a gitignored nested Cargo.lock, a base commit whose package.workspace differs from HEAD, and a real tag-push failure and rerun."
+    ]
+  }
+}
