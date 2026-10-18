@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01CVzeFWDQpyMZe8cwrk3uNB",
+  "agent_id": "a00c9545540d6775a",
+  "subagent_type": "bug-hunter",
+  "task_description": "Adversarial review of nested Cargo workspace support",
+  "token_usage": {
+    "input_tokens": 236,
+    "cache_creation_tokens": 178408,
+    "cache_read_tokens": 11891990,
+    "output_tokens": 1092,
+    "api_call_count": 118
+  },
+  "started_at": "2026-10-17T18:30:02.106836-07:00",
+  "completed_at": "2026-10-17T18:43:52.07248-07:00"
+}

@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M56BC1JCRS6BM94C4A3SHZ4F",
+  "strategy": "manual-commit",
+  "branch": "feat/cargo-workspace-roots",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "crates/callisto-graph/src/apply.rs",
+    "crates/callisto-graph/src/apply/tests.rs",
+    "crates/callisto-graph/src/commands/init/snapshots/callisto_graph__commands__init__tests__rendered_matrix_workflow_bytes_are_pinned.snap",
+    "crates/callisto-graph/src/commands/registry_argv.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry.rs",
+    "crates/callisto-graph/src/commands/release_decision.rs",
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-graph/src/locate/ignore_walk.rs",
+    "crates/callisto-graph/src/locate/membership.rs",
+    "crates/callisto-graph/src/templates/matrix_workflow.tmpl",
+    "crates/callisto-graph/tests/cargo_declaration_edges_test.rs",
+    "crates/callisto-manifests/src/cargo.rs",
+    "crates/callisto-manifests/src/cargo/tests.rs",
+    "crates/callisto-manifests/src/lib.rs",
+    "crates/callisto-manifests/src/npm/tests.rs",
+    "crates/callisto-manifests/src/python/tests.rs",
+    "crates/callisto-manifests/tests/cargo_tests.rs",
+    "crates/callisto-manifests/tests/cargo_workspace_discovery_tests.rs",
+    "crates/callisto-manifests/tests/nested_workspace_read_count_test.rs",
+    "crates/callisto-manifests/tests/persist_call_count_test.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 74,
+    "cache_creation_tokens": 63673,
+    "cache_read_tokens": 14990182,
+    "output_tokens": 37830,
+    "api_call_count": 35,
+    "subagent_tokens": {
+      "input_tokens": 236,
+      "cache_creation_tokens": 178408,
+      "cache_read_tokens": 11891990,
+      "output_tokens": 1092,
+      "api_call_count": 118
+    }
+  }
+}
