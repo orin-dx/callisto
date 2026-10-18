@@ -150,11 +150,11 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     let text = callisto_model::format::write_changeset(&changeset)?;
 
     let changeset_dir = ws.root.join(&ws.config.changesets_dir);
-    let filename = unused_changeset_filename(&changeset_dir)?;
-    let rel_path = ws.config.changesets_dir.join(&filename).to_string_lossy().into_owned();
 
     let Some(permit) = ApplyPermit::granted_unless_dry_run(global.dry_run) else {
         // Compute what WOULD be written, but never touch disk.
+        let filename = unused_changeset_filename(&changeset_dir)?;
+        let rel_path = ws.config.changesets_dir.join(&filename).to_string_lossy().into_owned();
         match global.format {
             OutputFormat::Json => {
                 let report = AddReport {
@@ -174,9 +174,9 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
         return Ok(ExitCode::SUCCESS);
     };
 
-    let target_file = changeset_dir.join(&filename);
     fs::create_dir_all(&changeset_dir)?;
-    callisto_manifests::atomic::atomic_write(&target_file, &text, &permit)?;
+    let filename = create_changeset(&changeset_dir, &text, &permit, generate_human_slug)?;
+    let rel_path = ws.config.changesets_dir.join(&filename).to_string_lossy().into_owned();
 
     match global.format {
         OutputFormat::Json => {
@@ -223,6 +223,38 @@ fn validate_summary(summary: &str) -> Result<String, CliError> {
 /// entries in the list rather than two identical `"foo"` rows.
 fn collect_package_names<'a>(packages: impl Iterator<Item = &'a callisto_model::Package>) -> Vec<String> {
     packages.map(|p| p.id.display_name()).collect()
+}
+
+/// Writes `text` to a new file in `dir` named by `next_slug`, trying another slug whenever the name is taken, including
+/// by a changeset another process created after this one looked. Nothing already in `dir` is ever replaced.
+fn create_changeset(
+    dir: &std::path::Path,
+    text: &str,
+    permit: &ApplyPermit,
+    mut next_slug: impl FnMut() -> String,
+) -> Result<String, CliError> {
+    // 8,000 possible slugs: more than a few attempts only happens when nearly all of them are taken.
+    for _ in 0..64 {
+        let filename = format!("{}.md", next_slug());
+        let path = dir.join(&filename);
+        match callisto_model::atomic::atomic_write_new(&path, text, permit) {
+            Ok(()) => return Ok(filename),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(source) => {
+                return Err(CliError::Io {
+                    source,
+                    path: Some(path),
+                })
+            }
+        }
+    }
+    Err(CliError::Io {
+        source: std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            "no unused changeset filename found after 64 attempts",
+        ),
+        path: Some(dir.to_path_buf()),
+    })
 }
 
 /// Picks a changeset filename that does not exist yet, so a slug collision never overwrites a pending changeset.
@@ -418,6 +450,23 @@ mod tests {
         }
         let chosen = unused_changeset_filename(dir.path()).unwrap();
         assert!(!dir.path().join(&chosen).exists(), "{chosen} already exists");
+    }
+
+    #[test]
+    fn a_name_taken_after_it_was_chosen_is_skipped_and_the_other_changeset_survives() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("taken.md"), "someone else's").unwrap();
+        let mut slugs = ["taken", "taken", "free"].into_iter().map(String::from);
+        let chosen = create_changeset(dir.path(), "mine", &ApplyPermit::force_for_tests(), || {
+            slugs.next().unwrap()
+        })
+        .unwrap();
+        assert_eq!(chosen, "free.md");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("taken.md")).unwrap(),
+            "someone else's"
+        );
+        assert_eq!(fs::read_to_string(dir.path().join("free.md")).unwrap(), "mine");
     }
 
     #[test]
