@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_017NrdSbCBuRYMr5oaRQWeYT",
+  "agent_id": "a471ebbb1b9e9e262",
+  "subagent_type": "Explore",
+  "task_description": "Audit plan docs against shipped code",
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 70208,
+    "cache_read_tokens": 703287,
+    "output_tokens": 127,
+    "api_call_count": 15
+  },
+  "started_at": "2026-10-18T11:18:49.794788-07:00",
+  "completed_at": "2026-10-18T11:20:53.668309-07:00"
+}

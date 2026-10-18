@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_014LNTAbSfuxVNjpJRwLgWKH",
+  "agent_id": "a6d6de0540eaeabff",
+  "subagent_type": "Explore",
+  "task_description": "Verify unblocked workstreams on main",
+  "token_usage": {
+    "input_tokens": 70,
+    "cache_creation_tokens": 100503,
+    "cache_read_tokens": 2026221,
+    "output_tokens": 349,
+    "api_call_count": 35
+  },
+  "started_at": "2026-10-18T11:10:14.45223-07:00",
+  "completed_at": "2026-10-18T11:13:48.865901-07:00"
+}
