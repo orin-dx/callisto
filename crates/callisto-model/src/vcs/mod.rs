@@ -32,6 +32,16 @@ pub enum VcsError {
     #[diagnostic(code(E266), help("Fetch full history with `git fetch --unshallow` before retrying."))]
     ShallowRepository,
 
+    #[error("commit-based version inference needs the full Git history, but this repository is a shallow clone")]
+    #[diagnostic(
+        code(E315),
+        help(
+            "Fetch the full history (`git fetch --unshallow`, or `fetch-depth: 0` for actions/checkout), or give the \
+             packages that need no commit inference `release-trigger = \"changeset\"`."
+        )
+    )]
+    ShallowHistory,
+
     #[error("release trust requires a clean worktree; found `{path}`")]
     #[diagnostic(
         code(E267),

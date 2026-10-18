@@ -202,10 +202,7 @@ impl<'r> GitAccess<'r> {
                 found: object_format.stdout_trimmed().to_string(),
             });
         }
-        let shallow = self
-            .runner
-            .run("git", &["rev-parse", "--is-shallow-repository"], &self.root)?;
-        if !shallow.success() || shallow.stdout_trimmed() != "false" {
+        if !self.has_full_history()? {
             return Err(VcsError::ShallowRepository);
         }
 
@@ -465,6 +462,24 @@ impl GitAccess<'_> {
     /// Always fetches the full tag list and filters locally with the same
     /// `globset` matcher `callisto-graph`'s `tags::matching_tags` uses, never
     /// `git tag --list <pattern>`'s different glob dialect.
+    /// Whether the repository holds its whole history. A shallow clone does not, and a failing answer is not "yes".
+    pub fn has_full_history(&self) -> Result<bool, VcsError> {
+        let shallow = self
+            .runner
+            .run("git", &["rev-parse", "--is-shallow-repository"], &self.root)?;
+        Ok(shallow.success() && shallow.stdout_trimmed() == "false")
+    }
+
+    /// Fails with [`VcsError::ShallowHistory`] unless the repository holds its whole history, which commit-based
+    /// inference needs: a shallow clone makes a window look shorter than it is and the bump smaller.
+    pub fn require_full_history(&self) -> Result<(), VcsError> {
+        if self.has_full_history()? {
+            Ok(())
+        } else {
+            Err(VcsError::ShallowHistory)
+        }
+    }
+
     pub fn list_tags(&self, glob: Option<&str>) -> Result<Vec<TagName>, VcsError> {
         let output = self.runner.run("git", &["tag", "--list"], &self.root)?;
         if !output.success() {
