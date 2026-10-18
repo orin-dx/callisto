@@ -21,7 +21,6 @@ The execution portfolio holds the remaining work as bounded units, including the
 - T06 and T06-HISTORY: canonical new references and legacy/history migration across selectors, config, groups, changesets, reports, pre-state and tags. Rename, manifest additions, promotion and demotion retain the right owner's history. [ADR 12](../adr/0012-canonical-distribution-release-ownership.md) remains proposed until implementation.
 - T07: supported version authority and native distribution representations. Cover co-located Cargo/Maturin with Cargo-owned dynamic Python version and inspect built metadata; do not insert a second static version or build a universal converter.
 - T08: shared physical effect ownership, so one tag, draft, upload or publication referenced by several distributions is executed once. The tag already waits for every registry publish of its package, and a rerun after a failed push completes the release. Retain the committed roster and no-journal executor. A future Go source tag is publication, not a universal completion marker.
-- T09 and T09-ROUTES: declared registry-output inventory, Python partial-file recovery, yank/conflict semantics and private-index routing. Complete only required selected files/platforms, without guessed platform matrices or unapproved checksum/channel policy.
 
 The plan is an implementation portfolio, not an approved future-behavior spec. Resolve wire/compatibility choices and update the matching area spec with implementation; do not treat architectural packets as fully gated implementer handoffs before D01.
 
