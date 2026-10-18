@@ -242,7 +242,7 @@ pub fn detect<L: ProjectLocator, R: CommandRunner>(
         let mut unsupported_bin_ecosystems = BTreeSet::new();
         for decl in package.canonical_manifests() {
             let manifest = crate::manifest_cache::open_cached(&workspace.manifest_cache, decl, &ctx)?;
-            let names = manifest.bin_names();
+            let names = manifest.bin_names()?;
             if manifest.ecosystem() == Ecosystem::Cargo {
                 cargo_bin_names.extend(names.iter().cloned());
             } else if !names.is_empty() {

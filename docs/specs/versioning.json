@@ -227,6 +227,11 @@
       "is_error_case": true
     },
     {
+      "id": "VER-READ-04",
+      "criterion": "Planning fails with E315 in a shallow clone when any package infers its bump from commits (`release-trigger = \"auto\"`), because the commit window would be shorter than the real one. Packages that take their bump from changesets alone are unaffected.",
+      "is_error_case": true
+    },
+    {
       "id": "VER-READ-03",
       "criterion": "`status` reports a tag that matches a package's tag template but is not a valid version as one warning naming the tag, however many packages share the template.",
       "is_error_case": true

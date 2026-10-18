@@ -558,10 +558,17 @@ impl RegistryEcosystem for NpmRegistry {
             );
             return run_npm_publish_argv(context, &argv);
         }
-        let package_manager = registry_argv::detect_npm_package_manager(context.root());
+        // The package manager and the directory it runs in belong to the workspace that holds the package.
+        let workspace_dir = registry_argv::npm_workspace_dir(context.root(), &operation.package_dir)?;
+        let workspace_root = context.root().join(&workspace_dir);
+        let package_manager = registry_argv::detect_npm_package_manager(&workspace_root)?;
+        let within_workspace = operation
+            .package_dir
+            .strip_prefix(&workspace_dir)
+            .unwrap_or(&operation.package_dir);
         let argv = registry_argv::npm_publish_argv(
-            context.root(),
-            &operation.package_dir,
+            &workspace_root,
+            within_workspace,
             &operation.package_name,
             package_manager,
             operation.npm_tag.as_deref(),

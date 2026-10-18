@@ -250,14 +250,14 @@ fn open_manifest(dir: &tempfile::TempDir, content: &str) -> PackageJson {
 fn bin_names_read_string_and_object_bin_fields() {
     let dir = tempdir().unwrap();
     let library = open_manifest(&dir, r#"{"name":"lib","version":"1.0.0"}"#);
-    assert!(library.bin_names().is_empty());
+    assert!(library.bin_names().unwrap().is_empty());
     let string = open_manifest(&dir, r#"{"name":"@scope/tool","version":"1.0.0","bin":"cli.js"}"#);
-    assert_eq!(string.bin_names(), ["tool"]);
+    assert_eq!(string.bin_names().unwrap(), ["tool"]);
     let object = open_manifest(
         &dir,
         r#"{"name":"tools","version":"1.0.0","bin":{"alpha":"a.js","beta":"b.js"}}"#,
     );
-    assert_eq!(object.bin_names(), ["alpha", "beta"]);
+    assert_eq!(object.bin_names().unwrap(), ["alpha", "beta"]);
 }
 
 #[test]

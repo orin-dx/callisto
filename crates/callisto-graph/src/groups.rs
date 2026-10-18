@@ -197,6 +197,23 @@ mod tests {
         }
     }
 
+    /// A graph of fixed packages, for loading what a package's own manifest declares.
+    struct Packages(Vec<callisto_model::Package>);
+    impl crate::resolver::DependencyResolver for Packages {
+        fn packages(&self) -> impl Iterator<Item = &callisto_model::Package> {
+            self.0.iter()
+        }
+        fn dependencies_of(&self, _id: &PackageId) -> impl Iterator<Item = &callisto_model::DepEdge> {
+            std::iter::empty()
+        }
+        fn dependents_of(&self, _id: &PackageId) -> impl Iterator<Item = &callisto_model::DepEdge> {
+            std::iter::empty()
+        }
+        fn diagnostics(&self) -> &[callisto_model::Diagnostic] {
+            &[]
+        }
+    }
+
     #[test]
     fn pre_mutation_checks_calls_napi_drift_for_napi_groups() {
         let tmp = tempfile::tempdir().expect("tempdir");
@@ -239,7 +256,20 @@ mod tests {
         )
         .unwrap();
 
-        let napi = NapiTargetsIndex::load(&groups, root).expect("load");
+        let graph = Packages(vec![callisto_model::Package {
+            id: pkg_id.clone(),
+            manifests: vec![callisto_model::ManifestDecl::new(
+                "my-lib/package.json",
+                callisto_model::ManifestRole::Canonical,
+                callisto_model::ManifestFormat::PackageJson,
+            )
+            .unwrap()],
+            changelog: None,
+            release_trigger: callisto_model::ReleaseTrigger::Changeset,
+            publish_to: Vec::new(),
+            tag_template: None,
+        }]);
+        let napi = NapiTargetsIndex::load(&groups, root, &graph).expect("load");
 
         let base: BTreeMap<PackageId, Version> = BTreeMap::new();
         let tags = TagIndex::empty();

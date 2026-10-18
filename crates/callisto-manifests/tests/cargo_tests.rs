@@ -189,7 +189,7 @@ fn cargo_binary_inventory_includes_explicit_and_auto_targets() {
     std::fs::write(dir.path().join("src/bin/tool/main.rs"), "fn main() {}\n").unwrap();
     let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
     let manifest = CargoToml::open(&decl, &OpenContext::for_workspace_root(dir.path()).unwrap()).unwrap();
-    assert_eq!(manifest.bin_names(), ["app", "custom", "serve", "tool"]);
+    assert_eq!(manifest.bin_names().unwrap(), ["app", "custom", "serve", "tool"]);
 }
 
 #[test]
@@ -208,7 +208,7 @@ fn cargo_autobins_false_disables_only_automatic_target_discovery() {
     std::fs::write(dir.path().join("src/bin/automatic.rs"), "fn main() {}\n").unwrap();
     let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
     let manifest = CargoToml::open(&decl, &OpenContext::for_workspace_root(dir.path()).unwrap()).unwrap();
-    assert_eq!(manifest.bin_names(), ["custom"]);
+    assert_eq!(manifest.bin_names().unwrap(), ["custom"]);
 }
 
 #[test]

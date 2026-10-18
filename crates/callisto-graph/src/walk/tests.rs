@@ -1469,3 +1469,60 @@ fn an_inherited_cargo_dependency_missing_from_the_workspace_table_still_makes_an
         .collect();
     assert_eq!(edges, [("a".to_owned(), "b".to_owned(), true)]);
 }
+
+fn npm_package_at(dir: &str) -> callisto_model::Package {
+    callisto_model::Package {
+        id: PackageId::Bare(dir.rsplit('/').next().unwrap().to_string()),
+        manifests: vec![ManifestDecl::new(
+            format!("{dir}/package.json"),
+            ManifestRole::Canonical,
+            callisto_model::ManifestFormat::PackageJson,
+        )
+        .unwrap()],
+        changelog: None,
+        release_trigger: callisto_model::ReleaseTrigger::Changeset,
+        publish_to: Vec::new(),
+        tag_template: None,
+    }
+}
+
+/// A relative `workspace:` path finds the package at that directory, and a path to nothing finds none.
+#[test]
+fn a_relative_workspace_path_names_the_package_there_or_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::create_dir_all(root.join("packages/a")).unwrap();
+    std::fs::create_dir_all(root.join("packages/b")).unwrap();
+    let packages = [npm_package_at("packages/a"), npm_package_at("packages/b")];
+    let find = |relative: &str| {
+        relative_workspace_package(root, Path::new("packages/a/package.json"), relative, packages.iter()).unwrap()
+    };
+    assert_eq!(find("../b"), Some(PackageId::Bare("b".to_string())));
+    assert_eq!(find("../missing"), None, "absent is not an error");
+    assert_eq!(find("../../.."), None, "a path that leaves the workspace names nothing");
+}
+
+/// A directory that cannot be searched is an error, never read as "no such package".
+#[cfg(unix)]
+#[test]
+fn a_relative_workspace_path_that_cannot_be_inspected_is_an_error() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::create_dir_all(root.join("packages/a")).unwrap();
+    std::fs::create_dir_all(root.join("locked/inner")).unwrap();
+    std::fs::set_permissions(root.join("locked"), std::fs::Permissions::from_mode(0o000)).unwrap();
+    let packages = [npm_package_at("packages/a")];
+    let result = relative_workspace_package(
+        root,
+        Path::new("packages/a/package.json"),
+        "../../locked/inner",
+        packages.iter(),
+    );
+    std::fs::set_permissions(root.join("locked"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    if std::fs::read_dir(root.join("locked")).is_ok() && result.is_ok() {
+        // Privileges that ignore directory modes (root): nothing to observe.
+        return;
+    }
+    assert!(result.is_err(), "{result:?}");
+}

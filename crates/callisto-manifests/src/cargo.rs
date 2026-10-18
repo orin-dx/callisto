@@ -135,7 +135,7 @@ impl WorkspaceReads {
         for candidate in dir.ancestors() {
             let candidate_manifest = candidate.join("Cargo.toml");
             let declares_workspace = if candidate == dir {
-                has_workspace_table(doc)
+                declares_workspace(doc)
             } else {
                 self.declares(&candidate_manifest, &mut manifest_at)?
             };
@@ -177,7 +177,7 @@ impl WorkspaceReads {
             return Ok(*known);
         }
         let declared = match manifest_at(manifest)? {
-            Some(text) => has_workspace_table(&parse_manifest(manifest, &text)?),
+            Some(text) => declares_workspace(&parse_manifest(manifest, &text)?),
             None => false,
         };
         self.declares.insert(manifest.to_path_buf(), declared);
@@ -259,8 +259,9 @@ pub fn workspace_manifest_candidates(workspace_root: &Path, manifest: &Path) -> 
     Ok(candidates)
 }
 
-/// Cargo treats any `workspace` table as a workspace root, including one that exists only as `[workspace.package]`.
-fn has_workspace_table(doc: &toml_edit::DocumentMut) -> bool {
+/// Whether the manifest declares a workspace. Cargo treats any `workspace` table as one, however it is spelled: a
+/// `[workspace]` header, an inline table, dotted keys, or one that exists only as `[workspace.package]`.
+pub fn declares_workspace(doc: &toml_edit::DocumentMut) -> bool {
     doc.get("workspace").is_some_and(toml_edit::Item::is_table_like)
 }
 
@@ -424,9 +425,13 @@ impl Manifest for CargoToml {
         self.role.clone()
     }
 
-    fn bin_names(&self) -> Vec<String> {
+    fn bin_names(&self) -> Result<Vec<String>, ManifestError> {
         let Some(package) = cargo_package_name(&self.document) else {
-            return Vec::new();
+            return Ok(Vec::new());
+        };
+        let unreadable = |path: &Path, error: std::io::Error| ManifestError::Read {
+            path: self.path.parent().unwrap_or(Path::new("")).join(path),
+            message: error.to_string(),
         };
         let mut names = BTreeSet::new();
         if let Some(bins) = self.document.get("bin").and_then(|bin| bin.as_array_of_tables()) {
@@ -455,31 +460,34 @@ impl Manifest for CargoToml {
             .and_then(|item| item.as_bool())
             .unwrap_or(true);
         if autobins {
-            if self
-                .absolute
-                .parent()
-                .is_some_and(|dir| dir.join("src/main.rs").is_file())
-            {
+            let dir = self.absolute.parent().unwrap_or(Path::new("."));
+            let is_file =
+                |path: &Path| callisto_model::strict_fs::exists(path).map(|present| present && path.is_file());
+            if is_file(&dir.join("src/main.rs")).map_err(|error| unreadable(Path::new("src/main.rs"), error))? {
                 names.insert(package.to_owned());
             }
-            if let Some(bin_dir) = self.absolute.parent().map(|dir| dir.join("src/bin")) {
-                if let Ok(entries) = fs::read_dir(&bin_dir) {
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        if path.is_file() && path.extension().is_some_and(|ext| ext == "rs") {
-                            if let Some(name) = path.file_stem().and_then(|stem| stem.to_str()) {
-                                names.insert(name.to_owned());
-                            }
-                        } else if path.is_dir() && path.join("main.rs").is_file() {
-                            if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
-                                names.insert(name.to_owned());
-                            }
-                        }
+            // No `src/bin` is no extra binaries; one that cannot be read is an error.
+            let entries = match fs::read_dir(dir.join("src/bin")) {
+                Ok(entries) => entries,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(names.into_iter().collect()),
+                Err(error) => return Err(unreadable(Path::new("src/bin"), error)),
+            };
+            for entry in entries {
+                let path = entry.map_err(|error| unreadable(Path::new("src/bin"), error))?.path();
+                if path.is_file() && path.extension().is_some_and(|ext| ext == "rs") {
+                    if let Some(name) = path.file_stem().and_then(|stem| stem.to_str()) {
+                        names.insert(name.to_owned());
+                    }
+                } else if path.is_dir()
+                    && is_file(&path.join("main.rs")).map_err(|error| unreadable(Path::new("src/bin"), error))?
+                {
+                    if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+                        names.insert(name.to_owned());
                     }
                 }
             }
         }
-        names.into_iter().collect()
+        Ok(names.into_iter().collect())
     }
 
     fn napi_lib_name(&self) -> Option<String> {

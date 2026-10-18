@@ -18,14 +18,52 @@ use crate::identity::IdentityIndex;
 use crate::locate::ProjectLocator;
 use crate::manifest_cache::open_cached;
 
-fn relative_workspace_target(root: &Path, declaring_manifest: &Path, relative: &str) -> Option<PathBuf> {
-    let root = root.canonicalize().ok()?;
-    let source = root.join(declaring_manifest).parent()?.canonicalize().ok()?;
-    let target = source.join(relative).canonicalize().ok()?;
-    if !target.starts_with(&root) {
-        return None;
+/// `Path::canonicalize`, with a path that does not exist as `None`. Any other failure (a permission error, a loop) is an
+/// error: reading it as "no such directory" would drop a dependency edge unseen.
+fn canonical_if_present(path: &Path) -> std::io::Result<Option<PathBuf>> {
+    match path.canonicalize() {
+        Ok(canonical) => Ok(Some(canonical)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
     }
-    Some(target)
+}
+
+/// The npm package a relative `workspace:../path` dependency of `declaring_manifest` names, or `None` when the path
+/// leaves the workspace, does not exist, or holds no admitted npm package.
+fn relative_workspace_package<'a>(
+    root: &Path,
+    declaring_manifest: &Path,
+    relative: &str,
+    mut packages: impl Iterator<Item = &'a Package>,
+) -> std::io::Result<Option<PackageId>> {
+    let root = root.canonicalize()?;
+    let Some(source) = root
+        .join(declaring_manifest)
+        .parent()
+        .map(canonical_if_present)
+        .transpose()?
+        .flatten()
+    else {
+        return Ok(None);
+    };
+    let Some(target) = canonical_if_present(&source.join(relative))? else {
+        return Ok(None);
+    };
+    if !target.starts_with(&root) {
+        return Ok(None);
+    }
+    for package in packages.by_ref() {
+        for manifest in package.canonical_manifests() {
+            if manifest.ecosystem() != Ecosystem::Npm {
+                continue;
+            }
+            let dir = root.join(manifest.path.parent().unwrap_or(Path::new("")));
+            if canonical_if_present(&dir)?.as_ref() == Some(&target) {
+                return Ok(Some(package.id.clone()));
+            }
+        }
+    }
+    Ok(None)
 }
 #[allow(unused_imports)]
 use crate::resolver::{DependencyResolver, ManifestWalkResolver};
@@ -811,23 +849,18 @@ fn build_edges(
                     };
 
                     let workspace_target = match &spec {
-                        DepSpec::WorkspaceProtocol(workspace) => workspace
-                            .relative_path()
-                            .and_then(|relative| relative_workspace_target(root, &decl.path, relative))
-                            .and_then(|target| {
-                                packages.values().find(|package| {
-                                    package.canonical_manifests().any(|manifest| {
-                                        manifest.ecosystem() == Ecosystem::Npm
-                                            && root
-                                                .join(manifest.path.parent().unwrap_or(Path::new("")))
-                                                .canonicalize()
-                                                .ok()
-                                                .as_ref()
-                                                == Some(&target)
-                                    })
-                                })
-                            })
-                            .map(|package| package.id.clone()),
+                        DepSpec::WorkspaceProtocol(workspace) => workspace.relative_path().and_then(|relative| {
+                            relative_workspace_package(root, &decl.path, relative, packages.values()).unwrap_or_else(
+                                |error| {
+                                    diagnostics.push(unresolved(
+                                        &decl.path,
+                                        "resolve a relative `workspace:` dependency",
+                                        error,
+                                    ));
+                                    None
+                                },
+                            )
+                        }),
                         _ => None,
                     };
                     let to = match &spec {

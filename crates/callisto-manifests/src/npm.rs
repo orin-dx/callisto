@@ -532,8 +532,8 @@ impl Manifest for PackageJson {
         npm_role_from_doc(&self.doc)
     }
 
-    fn bin_names(&self) -> Vec<String> {
-        match self.doc.get("bin") {
+    fn bin_names(&self) -> Result<Vec<String>, ManifestError> {
+        Ok(match self.doc.get("bin") {
             // npm installs a string `bin` under the unscoped package name.
             Some(Value::String(_)) => npm_package_name(&self.doc)
                 .map(|name| name.rsplit('/').next().unwrap_or(name).to_string())
@@ -541,7 +541,7 @@ impl Manifest for PackageJson {
                 .collect(),
             Some(Value::Object(bins)) => bins.keys().cloned().collect(),
             _ => Vec::new(),
-        }
+        })
     }
 }
 

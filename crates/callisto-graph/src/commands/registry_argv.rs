@@ -176,25 +176,76 @@ pub enum NpmPackageManager {
     Npm,
 }
 
-/// Detects the npm-compatible package manager for `workspace_root` from
-/// lockfile presence. Detection priority: pnpm > yarn > bun > npm (default).
+/// The files that mark a directory as an npm-family workspace root.
+const NPM_WORKSPACE_MARKERS: [&str; 6] = [
+    "pnpm-workspace.yaml",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "bun.lock",
+    "bun.lockb",
+    "package-lock.json",
+];
+
+/// The directory, relative to `workspace_root`, of the npm workspace that holds the package at `package_dir`: the nearest
+/// one at or above it carrying a lockfile or a `pnpm-workspace.yaml`, else the workspace root.
+///
+/// # Errors
+///
+/// A directory on the way up cannot be inspected.
+pub(crate) fn npm_workspace_dir(workspace_root: &Path, package_dir: &Path) -> Result<PathBuf, GraphError> {
+    let mut dir = package_dir;
+    loop {
+        for marker in NPM_WORKSPACE_MARKERS {
+            let marker = workspace_root.join(dir).join(marker);
+            if callisto_model::strict_fs::exists(&marker).map_err(|error| GraphError::ReleaseInputRead {
+                path: marker.clone(),
+                message: error.to_string(),
+            })? {
+                return Ok(if dir == Path::new(".") {
+                    PathBuf::new()
+                } else {
+                    dir.to_path_buf()
+                });
+            }
+        }
+        match dir.parent() {
+            Some(parent) => dir = parent,
+            None => return Ok(PathBuf::new()),
+        }
+    }
+}
+
+/// Detects the npm-compatible package manager of the workspace in `workspace_dir` from the files that mark it.
+/// Detection priority: pnpm > yarn > bun > npm (default). A `pnpm-workspace.yaml` is pnpm even where the lockfile is not
+/// committed, and a file that cannot be inspected is an error, not a reason to fall back to `npm`.
 ///
 /// This is real, live-today correctness content: the durable release
 /// executor's `dispatch_registry` used to hardcode plain `npm publish`
 /// regardless of which package manager a workspace actually uses, so a pnpm
 /// or yarn workspace published with the wrong tool.
-pub fn detect_npm_package_manager(workspace_root: &Path) -> NpmPackageManager {
-    if workspace_root.join("pnpm-lock.yaml").exists() {
+///
+/// # Errors
+///
+/// A marker file cannot be inspected.
+pub fn detect_npm_package_manager(workspace_dir: &Path) -> Result<NpmPackageManager, GraphError> {
+    let present = |name: &str| -> Result<bool, GraphError> {
+        let path = workspace_dir.join(name);
+        callisto_model::strict_fs::exists(&path).map_err(|error| GraphError::ReleaseInputRead {
+            path,
+            message: error.to_string(),
+        })
+    };
+    Ok(if present("pnpm-lock.yaml")? || present("pnpm-workspace.yaml")? {
         NpmPackageManager::Pnpm
-    } else if workspace_root.join("yarn.lock").exists() {
+    } else if present("yarn.lock")? {
         NpmPackageManager::Yarn
-    } else if workspace_root.join("bun.lockb").exists() || workspace_root.join("bun.lock").exists() {
+    } else if present("bun.lockb")? || present("bun.lock")? {
         // bun.lockb is the legacy binary lockfile format; bun.lock (text) is
         // written by Bun >= 1.1.1. Both signal a bun-managed workspace.
         NpmPackageManager::Bun
     } else {
         NpmPackageManager::Npm
-    }
+    })
 }
 
 /// Builds the npm-ecosystem publish argv for one package, given the
@@ -667,34 +718,97 @@ mod tests {
     fn detects_pnpm_from_lockfile() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("pnpm-lock.yaml"), "").unwrap();
-        assert_eq!(detect_npm_package_manager(dir.path()), NpmPackageManager::Pnpm);
+        assert_eq!(detect_npm_package_manager(dir.path()).unwrap(), NpmPackageManager::Pnpm);
     }
 
     #[test]
     fn detects_yarn_from_lockfile() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("yarn.lock"), "").unwrap();
-        assert_eq!(detect_npm_package_manager(dir.path()), NpmPackageManager::Yarn);
+        assert_eq!(detect_npm_package_manager(dir.path()).unwrap(), NpmPackageManager::Yarn);
     }
 
     #[test]
     fn detects_bun_from_binary_lockfile() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("bun.lockb"), "").unwrap();
-        assert_eq!(detect_npm_package_manager(dir.path()), NpmPackageManager::Bun);
+        assert_eq!(detect_npm_package_manager(dir.path()).unwrap(), NpmPackageManager::Bun);
     }
 
     #[test]
     fn detects_bun_from_text_lockfile() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("bun.lock"), "").unwrap();
-        assert_eq!(detect_npm_package_manager(dir.path()), NpmPackageManager::Bun);
+        assert_eq!(detect_npm_package_manager(dir.path()).unwrap(), NpmPackageManager::Bun);
     }
 
     #[test]
     fn defaults_to_npm_with_no_recognized_lockfile() {
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(detect_npm_package_manager(dir.path()), NpmPackageManager::Npm);
+        assert_eq!(detect_npm_package_manager(dir.path()).unwrap(), NpmPackageManager::Npm);
+    }
+
+    /// Discovery reads a pnpm workspace from `pnpm-workspace.yaml`; so does publishing, lockfile or not.
+    #[test]
+    fn a_pnpm_workspace_file_without_a_lockfile_is_still_pnpm() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("pnpm-workspace.yaml"), "packages:\n  - 'packages/*'\n").unwrap();
+        assert_eq!(detect_npm_package_manager(dir.path()).unwrap(), NpmPackageManager::Pnpm);
+    }
+
+    /// A directory that cannot be searched is an error, not a quiet fall back to `npm`.
+    #[cfg(unix)]
+    #[test]
+    fn an_uninspectable_workspace_is_an_error_not_npm() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let locked = dir.path().join("locked");
+        std::fs::create_dir(&locked).unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let result = detect_npm_package_manager(&locked);
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        if std::fs::read_dir(&locked).is_ok() && result.is_ok() {
+            // Running with privileges that ignore directory modes (root): nothing to observe.
+            return;
+        }
+        assert!(result.is_err(), "{result:?}");
+    }
+
+    #[test]
+    fn the_npm_workspace_of_a_package_is_the_nearest_directory_with_a_marker() {
+        let dir = tempfile::tempdir().unwrap();
+        let write = |path: &str| {
+            let path = dir.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "").unwrap();
+        };
+        write("web/yarn.lock");
+        write("web/packages/a/package.json");
+        write("pnpm-workspace.yaml");
+        write("apps/b/package.json");
+        let workspace_of = |package: &str| npm_workspace_dir(dir.path(), Path::new(package)).unwrap();
+        assert_eq!(workspace_of("web/packages/a"), Path::new("web"));
+        assert_eq!(workspace_of("web"), Path::new("web"));
+        assert_eq!(workspace_of("apps/b"), Path::new(""));
+        assert_eq!(workspace_of("."), Path::new(""));
+    }
+
+    /// A package in a nested workspace publishes with that workspace's tool, from that workspace's directory.
+    #[test]
+    fn a_nested_workspace_publishes_from_its_own_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("web/packages/a")).unwrap();
+        std::fs::write(
+            dir.path().join("web/pnpm-workspace.yaml"),
+            "packages:\n  - 'packages/*'\n",
+        )
+        .unwrap();
+        let workspace = npm_workspace_dir(dir.path(), Path::new("web/packages/a")).unwrap();
+        let workspace_root = dir.path().join(&workspace);
+        let manager = detect_npm_package_manager(&workspace_root).unwrap();
+        let argv = npm_publish_argv(&workspace_root, Path::new("packages/a"), "a", manager, None, None, None);
+        assert_eq!(argv.program, "pnpm");
+        assert_eq!(argv.cwd, dir.path().join("web"));
     }
 
     #[test]

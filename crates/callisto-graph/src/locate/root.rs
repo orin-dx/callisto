@@ -62,25 +62,17 @@ fn path_exists(path: &Path) -> Result<bool, LocateError> {
     })
 }
 
-/// True when `key` names a table declared with its own header (`[key]`), not a table that
-/// exists only implicitly as a dotted-key parent (e.g. `[key.sub]` alone does not count) or
-/// text that merely mentions the name inside a comment.
-fn has_explicit_table(doc: &toml_edit::DocumentMut, key: &str) -> bool {
-    doc.get(key)
-        .and_then(|item| item.as_table())
-        .is_some_and(|t| !t.is_implicit())
-}
-
 /// A single-package repository root: `Cargo.toml` with `[package]`, `package.json`, or `pyproject.toml`.
 fn is_package_root(dir: &Path) -> Result<bool, LocateError> {
-    if cargo_document(dir)?.is_some_and(|doc| has_explicit_table(&doc, "package")) {
+    // Parsed, so a comment that mentions the name does not count; any spelling of the table does.
+    if cargo_document(dir)?.is_some_and(|doc| doc.get("package").is_some_and(toml_edit::Item::is_table_like)) {
         return Ok(true);
     }
     Ok(path_exists(&dir.join("package.json"))? || path_exists(&dir.join("pyproject.toml"))?)
 }
 
 fn is_workspace_root(dir: &Path) -> Result<bool, LocateError> {
-    if cargo_document(dir)?.is_some_and(|doc| has_explicit_table(&doc, "workspace")) {
+    if cargo_document(dir)?.is_some_and(|doc| callisto_manifests::declares_workspace(&doc)) {
         return Ok(true);
     }
 
@@ -305,12 +297,32 @@ mod tests {
         assert_eq!(find(&root.join("crates/a")).unwrap(), root);
     }
 
-    // `[workspace.package]` alone declares no `[workspace]` table of its own.
+    // Cargo reads a workspace table however it is written, so root detection does too.
     #[test]
-    fn workspace_package_table_alone_does_not_count_as_a_workspace_root() {
-        let dir = tempfile::tempdir().unwrap();
-        write(dir.path(), "Cargo.toml", "[workspace.package]\nedition = \"2021\"\n");
-        assert!(!is_workspace_root(dir.path()).unwrap());
+    fn a_workspace_table_in_any_spelling_is_a_workspace_root() {
+        for (spelling, manifest) in [
+            ("header", "[workspace]\nmembers = [\"a\"]\n"),
+            ("inline", "workspace = { members = [\"a\"] }\n"),
+            ("dotted", "workspace.members = [\"a\"]\n"),
+            ("sub-table only", "[workspace.package]\nedition = \"2021\"\n"),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            write(dir.path(), "Cargo.toml", manifest);
+            assert!(is_workspace_root(dir.path()).unwrap(), "{spelling}");
+        }
+    }
+
+    #[test]
+    fn a_package_table_in_any_spelling_is_a_package_root() {
+        for (spelling, manifest) in [
+            ("header", "[package]\nname = \"a\"\n"),
+            ("inline", "package = { name = \"a\", version = \"1.0.0\" }\n"),
+            ("dotted", "package.name = \"a\"\n"),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            write(dir.path(), "Cargo.toml", manifest);
+            assert!(is_package_root(dir.path()).unwrap(), "{spelling}");
+        }
     }
 
     #[test]
