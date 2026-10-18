@@ -1,0 +1,96 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M586JED8BXDF7CTJQEKJXG4H",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-18T19:07:29.128664Z",
+  "branch": "docs/prune-shipped-plans",
+  "checkpoints_count": 1,
+  "save_step_count": 61,
+  "files_touched": [
+    "docs/projects/ROAD-TO-V1.md",
+    "docs/projects/V1-IMPLEMENTATION.md",
+    "docs/projects/V1-SYSTEM-HARDENING.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "dfddfebd8438",
+  "checkpoint_transcript_start": 26832,
+  "transcript_lines_at_start": 26832,
+  "compact_transcript_start": 2364,
+  "token_usage": {
+    "input_tokens": 48,
+    "cache_creation_tokens": 30963,
+    "cache_read_tokens": 4703564,
+    "output_tokens": 16249,
+    "api_call_count": 24
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 140
+  },
+  "summary": {
+    "intent": "Continue working through the remaining unblocked items from the Callisto v1 handoff plan: clean up merged local branches and worktrees, and fix leftover stale text in the plan docs.",
+    "outcome": "Deleted 56 verified-merged branches and 9 worktrees, plus a few contained leftovers, after checking each against its merged PR. Fixed the stale plan text and pushed it to PR #250 after a full local `just ci` pass; PRs #249 and #250 were both at 12/12 green checks before that push.",
+    "learnings": {
+      "repo": [
+        "Most branches were squash-merged, so `git branch --merged` cannot identify them; each branch has to be matched to its merged PR instead.",
+        "Plan docs live in docs/projects/ (ROAD-TO-V1.md, V1-IMPLEMENTATION.md, V1-SYSTEM-HARDENING.json). The local-only handoff plan is .claude/plans/NEXT-WORK.md and can drift from the code, so verify its claims against the code.",
+        "`just ci` is the local gate (coverage was 92.7%) and includes a doc check. It does not include `semver-checks`, so public API changes such as the new field on `RegistryConfig` are not caught by it.",
+        "The HTTPS-only rule for PyPI-style registries rules out the loopback registry used by existing real-tool tests, so `publish-url` could not be tested against a real tool."
+      ],
+      "code": [],
+      "workflow": [
+        "To safely delete squash-merged branches, check in order: (1) the tip is contained in the PR's final head, (2) the commits' patches are already on main (patch-equal), (3) the tip's content matches the PR head. Only delete once one of these holds.",
+        "Branches with zero commits ahead of main by ancestry can be deleted without loss.",
+        "Deletion was limited to what was verifiably merged, and the assistant asked before going beyond the previously approved set. The user then approved by saying to keep going.",
+        "Helper audit scripts were kept in a scratchpad directory outside the repo."
+      ]
+    },
+    "friction": [
+      "The plan file was stale in most places, so the assistant had to re-verify each item against the code instead of trusting it.",
+      "Squash merges meant 13 branches initially looked unsafe to delete because they had local commits beyond the PR head. This took extra patch-equality and content checks to resolve."
+    ],
+    "open_items": [
+      "T08 leftover: dependent publishes wait on every publish of the dependency package, not only the distribution the edge touches. This over-serializes but is never unsafe.",
+      "V1-FINDINGS.md still lists SYS-PYROUTES until #249 merges.",
+      "The `RegistryConfig` field addition in #249 is a source-breaking change and has not been run through `semver-checks`.",
+      "`publish-url` has not been verified against a real private index.",
+      "Some local branches and worktrees remain after cleanup. Their state was listed but not described in the summary.",
+      "Blocked on user decisions: D01 (gates MATURIN, OWNER and DEMOTION), where the real-service credential check runs, the redaction allow-list shape, the `RewriteKey` change, Python dev-group tracking, and the credentials run for verification."
+    ]
+  }
+}

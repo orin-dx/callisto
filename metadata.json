@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.11.6-nightly.202610141814.4b8cdfaf0",
+  "checkpoint_id": "01M586JED8BXDF7CTJQEKJXG4H",
+  "strategy": "manual-commit",
+  "branch": "docs/prune-shipped-plans",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/projects/ROAD-TO-V1.md",
+    "docs/projects/V1-IMPLEMENTATION.md",
+    "docs/projects/V1-SYSTEM-HARDENING.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 48,
+    "cache_creation_tokens": 30963,
+    "cache_read_tokens": 4703564,
+    "output_tokens": 16249,
+    "api_call_count": 24
+  }
+}
