@@ -307,7 +307,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E311 | Invalid workspace membership in `<path>`: <message> | Make `members`/`exclude` (Cargo, uv) or `workspaces`/`packages` (npm, pnpm) an array of valid glob strings; Callisto will not guess which packages a malformed workspace admits. |
 | E312 | Package `<path>` is reached through a symbolic link, which Git cannot stage | Replace the link with the real directory, or list it in a .gitignore under the workspace root so discovery skips it; Callisto cannot commit a version bump to a file beneath a symbolic link. |
 | E313 | The workspace is incomplete: N manifest(s) could not be resolved | Fix or remove the manifests named above and re-run; Callisto will not plan a release from a partial workspace. |
-| E314 | Cannot apply the version plan: N file(s) cannot be written, so nothing was changed | Fix the files named above (a missing file, permissions, or a symbolic link Git cannot stage) and re-run; no manifest, changelog or changeset was touched. |
+| E314 | Cannot apply the version plan: N file(s) cannot be written, so nothing was changed | Fix the files named above (a missing file, permissions, a symbolic link Git cannot stage, or a path a .gitignore ignores) and re-run; no manifest, changelog or changeset was touched. |
 
 
 240 numeric E#### codes total in one registry.

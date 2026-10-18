@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
 
-use callisto_model::ApplyPermit;
+use callisto_model::{ApplyPermit, CommandError, CommandRunner};
 
 use super::ApplyOptions;
 use crate::cascade::DepWriteTarget;
@@ -76,22 +76,81 @@ fn targets(plan: &VersionPlan, opts: &ApplyOptions) -> BTreeSet<(PathBuf, Target
 /// # Errors
 ///
 /// [`GraphError::ApplyPreflight`] naming each unwritable path and why.
-pub(super) fn check(
+pub(super) fn check<R: CommandRunner>(
     root: &Path,
     plan: &VersionPlan,
     opts: &ApplyOptions,
     permit: &ApplyPermit,
+    runner: &R,
 ) -> Result<(), GraphError> {
-    let problems: Vec<String> = targets(plan, opts)
-        .into_iter()
+    let targets = targets(plan, opts);
+    let mut problems: Vec<String> = targets
+        .iter()
         .filter_map(|(path, target)| {
-            problem(root, &path, target, permit).map(|reason| format!("`{}`: {reason}", path.display()))
+            problem(root, path, *target, permit).map(|reason| format!("`{}`: {reason}", path.display()))
         })
         .collect();
+    if !opts.transient {
+        let staged: Vec<PathBuf> = targets
+            .iter()
+            .filter(|(_, target)| *target != Target::Removed)
+            .map(|(path, _)| path.clone())
+            .collect();
+        problems.extend(ignored_paths(runner, root, &staged)?.into_iter().map(|path| {
+            format!(
+                "`{}`: is ignored by a .gitignore, so Git would not stage it",
+                path.display()
+            )
+        }));
+    }
     if problems.is_empty() {
         Ok(())
     } else {
         Err(GraphError::ApplyPreflight { problems })
+    }
+}
+
+/// The paths of `paths` that a `.gitignore` ignores and Git does not already track, which `git add` refuses.
+///
+/// # Errors
+///
+/// `git check-ignore` could not run or failed (anything but "some ignored" and "none ignored").
+pub(super) fn ignored_paths<R: CommandRunner>(
+    runner: &R,
+    root: &Path,
+    paths: &[PathBuf],
+) -> Result<BTreeSet<PathBuf>, GraphError> {
+    if paths.is_empty() {
+        return Ok(BTreeSet::new());
+    }
+    // One quiet run answers the usual "none ignored"; only when something is does each path get asked, so no output
+    // needs parsing (git quotes unusual names).
+    if !any_ignored(runner, root, paths)? {
+        return Ok(BTreeSet::new());
+    }
+    let mut ignored = BTreeSet::new();
+    for path in paths {
+        if any_ignored(runner, root, std::slice::from_ref(path))? {
+            ignored.insert(path.clone());
+        }
+    }
+    Ok(ignored)
+}
+
+/// Whether `git check-ignore` names at least one of `paths` as ignored (it prints what it matched, `-q` taking one path only).
+fn any_ignored<R: CommandRunner>(runner: &R, root: &Path, paths: &[PathBuf]) -> Result<bool, GraphError> {
+    let rendered: Vec<String> = paths.iter().map(|path| path.to_string_lossy().into_owned()).collect();
+    let mut args = vec!["check-ignore", "--"];
+    args.extend(rendered.iter().map(String::as_str));
+    let output = runner.run("git", &args, root)?;
+    match output.exit_code {
+        Some(0) => Ok(!output.stdout.trim().is_empty()),
+        Some(1) => Ok(false),
+        exit_code => Err(GraphError::Command(CommandError::Failed {
+            program: "git".to_string(),
+            exit_code,
+            stderr: output.redacted_stderr(),
+        })),
     }
 }
 

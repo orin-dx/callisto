@@ -213,7 +213,7 @@
     },
     {
       "id": "VER-APPLY-17",
-      "criterion": "Before the first write, every file the plan edits, creates or deletes is checked: a manifest must exist as a readable regular file, no path may be a symbolic link or sit beneath one (Git cannot stage it), no path may leave the workspace, and the directory of each written file must take a new file. Any failure stops the run with E314 naming every such path, and nothing has been written, staged or deleted.",
+      "criterion": "Before the first write, every file the plan edits, creates or deletes is checked: a manifest must exist as a readable regular file, no path may be a symbolic link or sit beneath one (Git cannot stage it), no path may leave the workspace, the directory of each written file (or its nearest existing parent) must take a new file, and a file the plan stages must not be ignored by a .gitignore unless Git already tracks it. Checking creates no file or directory. Any failure stops the run with E314 naming every such path, and nothing has been written, staged or deleted. A lockfile that a .gitignore ignores is still refreshed on disk but is not staged. The checks cover only what can be known beforehand: a lockfile refresh that fails (E208) or a Git command that fails while staging can still stop the run after the writes.",
       "is_error_case": true
     },
     {

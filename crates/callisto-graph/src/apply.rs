@@ -152,7 +152,7 @@ pub fn apply_version_plan<R: CommandRunner>(
     let mut deferred_deletions = Vec::new();
 
     let ctx = OpenContext::for_workspace_root(root)?;
-    preflight::check(root, plan, opts, permit)?;
+    preflight::check(root, plan, opts, permit, runner)?;
     let active_ecosystems = active_ecosystems(plan);
     // Resolved before the first write, so a workspace that cannot be found stops the run with nothing changed.
     let cargo_workspaces = if active_ecosystems.contains(&Ecosystem::Cargo) {
@@ -219,15 +219,25 @@ pub fn apply_version_plan<R: CommandRunner>(
     let candidates = beside(&lockfile_dirs.npm, &NPM_LOCKFILES)
         .into_iter()
         .chain(beside(&lockfile_dirs.pypi, &PYPI_LOCKFILES));
+    let mut lockfile_paths: Vec<PathBuf> = Vec::new();
     for p in candidates {
         if path_exists(root, &p)? && !modified_paths.contains(&p) {
+            lockfile_paths.push(p.clone());
             modified_paths.push(p);
         }
     }
     for lockfile in cargo_workspaces.iter().map(|workspace| cargo_lockfile(workspace)) {
         if path_exists(root, &lockfile)? && !modified_paths.contains(&lockfile) {
+            lockfile_paths.push(lockfile.clone());
             modified_paths.push(lockfile);
         }
+    }
+
+    // A lockfile that a .gitignore ignores (a library's `Cargo.lock`, say) is not meant to be committed: refreshed on disk,
+    // never staged. Anything else the plan stages was checked before the first write.
+    if !opts.transient {
+        let ignored = preflight::ignored_paths(runner, root, &lockfile_paths)?;
+        modified_paths.retain(|path| !ignored.contains(path));
     }
 
     if !opts.transient && (!modified_paths.is_empty() || !deferred_deletions.is_empty()) {

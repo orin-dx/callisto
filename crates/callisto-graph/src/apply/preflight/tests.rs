@@ -29,8 +29,40 @@ fn plan_writing(paths: &[&str]) -> VersionPlan {
     }
 }
 
+/// Reports that no path is ignored, as `git check-ignore` does.
+struct NothingIgnored;
+
+impl callisto_model::CommandRunner for NothingIgnored {
+    fn run(
+        &self,
+        _program: &str,
+        _args: &[&str],
+        _cwd: &Path,
+    ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+        Ok(callisto_model::CommandOutput {
+            exit_code: Some(1),
+            stdout: String::new(),
+            stderr: String::new(),
+        })
+    }
+}
+
 fn check_plan(root: &Path, plan: &VersionPlan) -> Result<(), Vec<String>> {
-    match check(root, plan, &ApplyOptions::default(), &ApplyPermit::force_for_tests()) {
+    check_plan_with(root, plan, &NothingIgnored)
+}
+
+fn check_plan_with<R: callisto_model::CommandRunner>(
+    root: &Path,
+    plan: &VersionPlan,
+    runner: &R,
+) -> Result<(), Vec<String>> {
+    match check(
+        root,
+        plan,
+        &ApplyOptions::default(),
+        &ApplyPermit::force_for_tests(),
+        runner,
+    ) {
         Ok(()) => Ok(()),
         Err(GraphError::ApplyPreflight { problems }) => Err(problems),
         Err(other) => panic!("unexpected error: {other:?}"),
@@ -132,4 +164,77 @@ fn optional_dependency_and_platform_writes_are_checked_too() {
     };
     let problems = check_plan(dir.path(), &plan).unwrap_err();
     assert!(problems[0].contains("missing/package.json"), "{problems:?}");
+}
+
+fn repo_ignoring(root: &Path, ignore: &str) {
+    callisto_fixtures::git::init_repo(root);
+    std::fs::write(root.join(".gitignore"), ignore).unwrap();
+    callisto_fixtures::git::run_git(root, &["add", ".gitignore"]);
+}
+
+/// A manifest a `.gitignore` ignores can be edited but never staged, so the run stops before it writes anything.
+#[test]
+fn a_target_that_a_gitignore_ignores_is_refused_before_any_write() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    repo_ignoring(root, "hidden/\n");
+    std::fs::create_dir_all(root.join("hidden")).unwrap();
+    std::fs::write(
+        root.join("hidden/Cargo.toml"),
+        "[package]\nname = \"h\"\nversion = \"1.0.0\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"r\"\nversion = \"1.0.0\"\n",
+    )
+    .unwrap();
+
+    let problems = check_plan_with(
+        root,
+        &plan_writing(&["Cargo.toml", "hidden/Cargo.toml"]),
+        &callisto_fixtures::git::GitRunner,
+    )
+    .unwrap_err();
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(
+        problems[0].contains("hidden/Cargo.toml") && problems[0].contains("ignored by a .gitignore"),
+        "{problems:?}"
+    );
+}
+
+/// A file Git already tracks is staged however a `.gitignore` reads, so it is not a problem.
+#[test]
+fn a_tracked_file_that_a_gitignore_also_matches_is_not_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    repo_ignoring(root, "Cargo.toml\n");
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"r\"\nversion = \"1.0.0\"\n",
+    )
+    .unwrap();
+    callisto_fixtures::git::run_git(root, &["add", "-f", "Cargo.toml"]);
+
+    check_plan_with(root, &plan_writing(&["Cargo.toml"]), &callisto_fixtures::git::GitRunner).unwrap();
+}
+
+/// A failing `git check-ignore` (not a repository, say) stops the run rather than being read as "nothing ignored".
+#[test]
+fn a_check_ignore_failure_is_an_error_not_an_empty_answer() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"r\"\nversion = \"1.0.0\"\n",
+    )
+    .unwrap();
+    let error = check(
+        dir.path(),
+        &plan_writing(&["Cargo.toml"]),
+        &ApplyOptions::default(),
+        &ApplyPermit::force_for_tests(),
+        &callisto_fixtures::git::GitRunner,
+    )
+    .unwrap_err();
+    assert!(matches!(error, GraphError::Command(_)), "{error:?}");
 }

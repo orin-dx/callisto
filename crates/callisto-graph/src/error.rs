@@ -267,8 +267,8 @@ pub enum GraphError {
     #[diagnostic(
         code(E314),
         help(
-            "Fix the files named above (a missing file, permissions, or a symbolic link Git cannot stage) and re-run; \
-             no manifest, changelog or changeset was touched."
+            "Fix the files named above (a missing file, permissions, a symbolic link Git cannot stage, or a path a \
+             .gitignore ignores) and re-run; no manifest, changelog or changeset was touched."
         )
     )]
     ApplyPreflight { problems: Vec<String> },

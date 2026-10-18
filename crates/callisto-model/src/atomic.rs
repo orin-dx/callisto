@@ -24,6 +24,20 @@ use tempfile::NamedTempFile;
 /// Returns the first I/O error encountered: creating parent directories, writing the temp file,
 /// flushing, fsyncing, persisting (renaming) to `path`, or syncing the directory that holds it.
 pub fn atomic_write(path: &Path, content: &str, permit: &ApplyPermit) -> io::Result<()> {
+    write_durably(path, content, true, permit)
+}
+
+/// [`atomic_write`] that never replaces: it fails with `AlreadyExists` if anything is at `path` when the file is put in
+/// place, including a file created by another process after this call began. The content is durable before it appears.
+///
+/// # Errors
+///
+/// `AlreadyExists` when `path` is taken, otherwise the same errors as [`atomic_write`].
+pub fn atomic_write_new(path: &Path, content: &str, permit: &ApplyPermit) -> io::Result<()> {
+    write_durably(path, content, false, permit)
+}
+
+fn write_durably(path: &Path, content: &str, replace: bool, permit: &ApplyPermit) -> io::Result<()> {
     let _permit = permit;
     let raw_parent = path.parent().unwrap_or_else(|| Path::new("."));
     let parent = if raw_parent.as_os_str().is_empty() {
@@ -35,11 +49,17 @@ pub fn atomic_write(path: &Path, content: &str, permit: &ApplyPermit) -> io::Res
     std::fs::create_dir_all(parent)?;
 
     let mut temp = temp_file_in(parent)?;
-    match_existing_mode(temp.as_file(), path)?;
+    if replace {
+        match_existing_mode(temp.as_file(), path)?;
+    }
     temp.write_all(content.as_bytes())?;
     temp.flush()?;
     temp.as_file().sync_all()?;
-    temp.persist(path).map_err(|e| e.error)?;
+    if replace {
+        temp.persist(path).map_err(|e| e.error)?;
+    } else {
+        temp.persist_noclobber(path).map_err(|e| e.error)?;
+    }
 
     sync_directory(parent)?;
     // A directory this call created is itself a new entry in its parent.
@@ -108,13 +128,14 @@ fn sync_directory(dir: &Path) -> io::Result<()> {
     }
 }
 
-/// Fails now if [`atomic_write`] to `path` could not succeed, leaving no file behind.
-/// A pre-existing regular file at `path` is accepted because the write replaces it.
+/// Fails now if [`atomic_write`] to `path` could not succeed, leaving nothing behind: no file and no directory.
+/// A pre-existing regular file at `path` is accepted because the write replaces it. When the parent directory does not
+/// exist yet, the nearest one that does must take a new file, which is what creating the missing ones needs.
 ///
 /// # Errors
 ///
-/// Returns the I/O error creating the parent directories or a temp file beside `path`, or
-/// `IsADirectory`-style `InvalidInput` when `path` is a directory.
+/// Returns the I/O error creating a temp file beside `path` (or in its nearest existing parent), or
+/// `IsADirectory`-style `InvalidInput` when `path` is a directory or a parent is not.
 pub fn probe_atomic_write(path: &Path, permit: &ApplyPermit) -> io::Result<()> {
     let _permit = permit;
     if path.is_dir() {
@@ -129,9 +150,18 @@ pub fn probe_atomic_write(path: &Path, permit: &ApplyPermit) -> io::Result<()> {
     } else {
         raw_parent
     };
-    std::fs::create_dir_all(parent)?;
-    NamedTempFile::new_in(parent)?;
-    sync_directory(parent)
+    let existing = parent
+        .ancestors()
+        .find(|ancestor| ancestor.try_exists().unwrap_or(false))
+        .unwrap_or_else(|| Path::new("."));
+    if !existing.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "a parent of the destination is not a directory",
+        ));
+    }
+    NamedTempFile::new_in(existing)?;
+    sync_directory(existing)
 }
 
 /// `std` maps `EOPNOTSUPP` to `Unsupported` but leaves macOS's distinct `ENOTSUP` (45) uncategorized.
@@ -172,12 +202,59 @@ mod tests {
     }
 
     #[test]
-    fn probe_leaves_no_file_and_accepts_existing_target() {
+    fn atomic_write_new_never_replaces_what_is_there() {
+        let dir = tempdir().unwrap();
+        let permit = ApplyPermit::force_for_tests();
+        let target = dir.path().join("changeset.md");
+        atomic_write_new(&target, "first", &permit).unwrap();
+        let error = atomic_write_new(&target, "second", &permit).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "first");
+        assert_eq!(
+            std::fs::read_dir(dir.path()).unwrap().count(),
+            1,
+            "a refused write leaves no temp file behind"
+        );
+    }
+
+    /// Many writers choosing the same name at once: exactly one wins, the rest are told, and nobody is overwritten.
+    #[test]
+    fn concurrent_exclusive_writes_to_one_name_have_one_winner() {
+        let dir = tempdir().unwrap();
+        let target = dir.path().join("changeset.md");
+        let outcomes: Vec<_> = std::thread::scope(|scope| {
+            (0..16)
+                .map(|writer| {
+                    let target = &target;
+                    scope.spawn(move || {
+                        atomic_write_new(target, &format!("writer {writer}"), &ApplyPermit::force_for_tests())
+                    })
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .map(|handle| handle.join().unwrap())
+                .collect()
+        });
+        assert_eq!(outcomes.iter().filter(|outcome| outcome.is_ok()).count(), 1);
+        assert!(outcomes
+            .iter()
+            .filter_map(|outcome| outcome.as_ref().err())
+            .all(|error| error.kind() == io::ErrorKind::AlreadyExists));
+        assert!(std::fs::read_to_string(&target).unwrap().starts_with("writer "));
+    }
+
+    #[test]
+    fn probe_leaves_no_file_or_directory_and_accepts_existing_target() {
         let dir = tempdir().unwrap();
         let target = dir.path().join("new/receipt.json");
         let permit = ApplyPermit::force_for_tests();
         probe_atomic_write(&target, &permit).unwrap();
-        assert_eq!(std::fs::read_dir(target.parent().unwrap()).unwrap().count(), 0);
+        assert!(
+            !target.parent().unwrap().exists(),
+            "the probe must not create directories"
+        );
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
         std::fs::write(&target, "x").unwrap();
         probe_atomic_write(&target, &permit).unwrap();
         assert!(probe_atomic_write(dir.path(), &permit).is_err());
