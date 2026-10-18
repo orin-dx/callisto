@@ -84,12 +84,11 @@ No concurrent Cargo builds/tests locally, even across tasks. Reserve one build s
 
 | Shared contract | Confirmed participants | Required disposition |
 | --- | --- | --- |
-| `Manifest` / `ManifestIdentity` / `VersionSource` | `CargoToml`, `PackageJson`, `PyprojectToml`; `read_identity`; live base-version and historical blob readers | T03-HISTORY and T07 migrate all reached readers/editors, including writers and snapshots; preserve native parsing and format rules |
-| Native edges/specs | `DependencyEntry`, `DepEdge`; Cargo/npm/Python extraction; `ManifestWalkResolver::build` in `walk.rs`; cascade/floor/snapshot; fixture `InMemoryGraph` and graph test doubles | T04/T04-PNPM migrate producers, alias-aware resolution, constructors and rewrites together; correcting cascade alone cannot recover an omitted alias edge |
+| `Manifest` / `ManifestIdentity` / `VersionSource` | `CargoToml`, `PackageJson`, `PyprojectToml`; `read_identity`; live base-version and historical blob readers | T06-HISTORY and T07 migrate all reached readers/editors, including writers and snapshots; preserve native parsing and format rules |
 | Selector ownership | `IdentityIndex`; add/status/aggregate/matrix; config rules/groups; `history.rs::sole_owner_at` and pre-state/history readers | T06/T06-HISTORY unify exact selectors, distinguish glob syntax and migrate both tag/pre-state ownership consumers |
 | `ReleaseProviderSet` | Production `ValidatedReleaseIntent` and simulator `SimWorld` | T08 migrates both; fake CLI provider harness still exercises real dispatch |
 | Registry adapter/evidence | `CargoRegistry`, `NpmRegistry`, `PypiRegistry`; platform npm path | T08 gives every reached sibling a migrated or evidence-backed unaffected disposition |
-| Immutable release wires | Decision, input snapshot, intent, artifact manifest, envelope, receipt, schemas; CLI file/stdout producers and action scripts | T02 inventory; D01 fixes compatibility; T08 migrates producers/consumers, including CLI registry-only inventory acceptance/envelope sealing and local build preparation |
+| Immutable release wires | Decision, input snapshot, intent, artifact manifest, envelope, receipt, schemas; CLI file/stdout producers and action scripts | D01 fixes compatibility; T08 migrates producers/consumers, including CLI registry-only inventory acceptance/envelope sealing and local build preparation |
 | Selected builds and auth | Generated simple/matrix workflows, shared action execution, build matrix/placement, policy/contract tests | T12 verifies all routes, not just this repo's custom workflow; lifecycle scripts remain package-owner-controlled |
 
 This is an inspected candidate inventory, not a promise that no new call site exists. Each implementer re-runs syntactic and responsibility-based searches on its actual base. An external lifecycle hook or unavailable native environment remains an explicit coverage gap.
@@ -116,7 +115,7 @@ This is an inspected candidate inventory, not a promise that no new call site ex
 
 ## Retained roadmap work: explicit disposition
 
-- Included sibling checks: dry-run permit entry boundaries (T05/T08), alternate group-constructor conflict enforcement (T06) and redacted indeterminate provider diagnostics (T08). If a reachable fix is outside its task's file boundary, record a follow-up rather than silently omit it.
+- Included sibling checks: alternate group-constructor conflict enforcement (T06) and redacted indeterminate provider diagnostics (T08). If a reachable fix is outside its task's file boundary, record a follow-up rather than silently omit it.
 - Owner decisions, not invented merge gates: workspace-wide discarded-source-error enforcement, extra npm JSON-layout preservation, stronger release-commit producer provenance, mandatory explicit registry kind and napi output attestation, private Python/HTML support, npm channels, universal registry checksums and wrapper bump severity.
 - Owner/external operations: token rotation, bot-PR check policy, Rust-cache pin in `orin-dx/actions`, final migration-notice publications for retired crates. Do not perform these as side effects of implementation agents.
 - Separate small follow-up, pending compatibility check: pin the floating Moon version in `.prototools`. Evaluate target facts versus the 18-triple table without adding a Rust-specific core model requirement.

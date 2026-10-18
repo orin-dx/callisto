@@ -198,11 +198,11 @@
         ]
       },
       "steps": [
-        "Finding coverage: none open. The owner publication barrier shipped: a package tag waits for the registry publishes of every release identity it has. Remaining: derive_release_inputs still emits a shared tag or forge effect once per distribution, and package dependencies order all owner outputs.",
+        "Finding coverage: none open. Shipped: the owner publication barrier (a package tag waits for the registry publishes of every release identity it has) and one tag, forge release and forge publish per owner. Remaining: package dependencies order all owner outputs, and any wire versioning D01 requires.",
         "Implement D01's single-owner physical effects and deterministic operation IDs; one tag/draft/upload/publication may be referenced by several distributions but executed once. Reject contradictory tag target/destination/owner declarations before any effect.",
         "Project native dependency publication prerequisites from the relevant manifest/distribution, not every output of the source node. Gate current supported registry ecosystems' shared tag/publication on all required selected native publishes; retain platform-before-owner and artifact-before-publication prerequisites.",
         "Migrate intent validation/digests, preparation, production ValidatedReleaseIntent, SimWorld, provider dispatch, receipt evidence and schema guard tests as one compilation boundary. Do not add a scheduler or persisted execution state.",
-        "Check literal-false ApplyPermit construction at release/init entry points against dry-run capability boundaries and retain redacted native stderr for indeterminate failures. Fix a reachable bypass or lost safe diagnostic in this batch; explicitly track a sibling outside the owned boundary.",
+        "Retain redacted native stderr for indeterminate failures. Fix a lost safe diagnostic in this batch; explicitly track a sibling outside the owned boundary.",
         "Add dual Cargo/npm permutations, failure of either registry, shared product assets, selected/unselected native dependencies, dev/non-dev cycles and duplicate/conflicting effects. Run rtk cargo test -p callisto-model, rtk cargo test -p callisto-graph and rtk cargo test -p callisto-cli --test durable_release_e2e_tests sequentially.",
         "Verify deterministic DAG order and no public announcement before required publications; check Go's hypothetical tag-as-publication scenario without a Go provider. Version the wire if D01 changes identity/proof shape and keep old-reader policy explicit."
       ],
@@ -241,7 +241,7 @@
       },
       "steps": [
         "Run the fixture/evidence matrix in V1-IMPLEMENTATION.md with actual native packing/building and representative clean consumer installs. Retain existing local npm/Cargo/PyPI tests and distinguish argv-only, production-provider, simulator and hosted coverage.",
-        "Exercise production registry binding/readback for local Cargo/PyPI servers and the new partial Python upload fixture; record each prerequisite skip explicitly. Deterministic faults must cover every changed apply/effect boundary, with missing work converging using original inputs.",
+        "Exercise production registry binding/readback for local Cargo/PyPI servers and the Python file-set fixtures (pypi_file_set_tests); record each prerequisite skip explicitly. Deterministic faults must cover every changed apply/effect boundary, with missing work converging using original inputs.",
         "Run rtk proxy just ci, plus the relevant shell/workflow policy/contract suites not actually included by just ci. Consider live provider-contract/fixture refresh only with network authority; never recapture fixtures or upload a version as an incidental test.",
         "Record source/branch revisions, exact commands, prerequisite versions, pass/fail/skip counts and remaining findings in V1-VERIFICATION.md. A named test or passing simulator does not establish production coverage.",
         "Correct the receipt run_attempt comment and policy-test message to match attempt-scoped artifact names; do not add an approval gate or change the release workflow's authorization.",

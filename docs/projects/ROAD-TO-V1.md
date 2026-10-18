@@ -28,7 +28,7 @@ The plan is an implementation portfolio, not an approved future-behavior spec. R
 
 The generated build-matrix workflow builds and places napi addons only for packages in the release intent. Native lifecycle hooks remain package-owner-defined and outside Callisto's release-operation graph; Callisto does not inspect or alter them.
 
-A native Python argv test does not imply a generated Maturin workflow, authenticated private-index observation or complete wheel-set recovery.
+A native Python argv test does not imply a generated Maturin workflow or authenticated private-index observation.
 
 ### 3. Verify supported workflows and onboarding
 
@@ -58,7 +58,6 @@ Retain local real-registry tests and record missing prerequisites as skips. Run 
 
 ## Other open work retained
 
-- Audit literal-false ApplyPermit construction in release/init; enforce dry-run safety at entry boundaries.
 - npm writes normalize arbitrary JSON layout; decide whether more than key order/indentation/line endings is needed.
 - Preserve redacted stderr for indeterminate provider failures; never stream unredacted native-tool output.
 - Publish final migration notices for retired callisto-format, callisto-vcs, callisto-conventional and callisto-changelog, naming callisto-model or callisto-graph.
