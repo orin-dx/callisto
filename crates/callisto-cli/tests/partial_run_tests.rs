@@ -83,6 +83,54 @@ mod inherited_versions {
     }
 
     #[test]
+    fn a_version_change_in_a_workspace_below_the_root_is_refused_like_one_at_the_root() {
+        for pending in [true, false] {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            init_repo(root);
+            write(root, "native/Cargo.toml", &root_manifest("0.1.0"));
+            write(
+                root,
+                "native/crates/member/Cargo.toml",
+                "[package]\nname = \"member\"\nversion.workspace = true\nedition = \"2021\"\n",
+            );
+            write(root, "native/crates/member/src/lib.rs", "\n");
+            callisto_fixtures::scaffold_callisto(root);
+            if pending {
+                write(
+                    root,
+                    ".changeset/pending.md",
+                    "---\nmember: patch\n---\n\nFix the member\n",
+                );
+            }
+            run_git(root, &["add", "."]);
+            run_git(root, &["commit", "-q", "-m", "initial workspace"]);
+
+            write(root, "native/Cargo.toml", &root_manifest("0.1.1"));
+            if !pending {
+                run_git(root, &["add", "native/Cargo.toml"]);
+            }
+            let runner = GitRunner;
+            let locator = IgnoreWalkLocator::new(root);
+            let ws = Workspace::load(root.to_path_buf(), &locator, &runner).unwrap();
+            match check_partial_run(&ws).unwrap_err() {
+                GraphError::PartialVersionRun {
+                    path,
+                    disk,
+                    index,
+                    head,
+                } => {
+                    assert_eq!(path, Path::new("native/Cargo.toml"));
+                    assert_eq!(disk.render(), "0.1.1");
+                    assert_eq!(index, if pending { "0.1.0" } else { "0.1.1" });
+                    assert_eq!(head.render(), "0.1.0");
+                }
+                other => panic!("expected the partial-version diagnostic, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
     fn staged_workspace_metadata_without_an_effective_version_change_is_allowed() {
         let dir = fixture(false);
         let root = dir.path();

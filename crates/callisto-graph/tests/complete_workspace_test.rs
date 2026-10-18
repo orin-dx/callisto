@@ -89,8 +89,64 @@ fn a_clean_multi_ecosystem_workspace_loads_with_every_package() {
     assert!(workspace.require_complete().is_ok());
 }
 
-/// A Rust workspace living in a subdirectory leaves `version.workspace = true` members with no inheritance to resolve
-/// against. Their publish targets and dependency edges are unknown, so the workspace is not complete.
+/// Rust workspaces living in subdirectories each govern their own members: a member inherits from its own, not from a sibling's.
+#[test]
+fn a_cargo_workspace_below_the_root_resolves_the_inheritance_of_its_members() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write(
+        root,
+        "rust/Cargo.toml",
+        "[workspace]\nmembers = [\"top\"]\n[workspace.package]\nversion = \"9.9.9\"\n",
+    );
+    write(
+        root,
+        "rust/top/Cargo.toml",
+        "[package]\nname = \"top\"\nversion.workspace = true\n",
+    );
+    write(
+        root,
+        "native/Cargo.toml",
+        "[workspace]\nmembers = [\"crates/*\"]\n[workspace.package]\nversion = \"1.0.0\"\n[workspace.dependencies]\n\
+         a = { path = \"crates/a\", version = \"1.0.0\" }\n",
+    );
+    write(
+        root,
+        "native/crates/a/Cargo.toml",
+        "[package]\nname = \"a\"\nversion.workspace = true\n",
+    );
+    write(
+        root,
+        "native/crates/b/Cargo.toml",
+        "[package]\nname = \"b\"\nversion = \"0.2.0\"\n[dependencies]\na = { workspace = true }\n",
+    );
+
+    let locator = IgnoreWalkLocator::new(root);
+    let workspace = Workspace::load(root.to_path_buf(), &locator, &NoopRunner).unwrap();
+
+    let versions: BTreeMap<String, String> = workspace
+        .base_versions()
+        .unwrap()
+        .into_iter()
+        .map(|(id, version)| (id.name().to_string(), version.render().to_string()))
+        .collect();
+    assert_eq!(
+        versions,
+        BTreeMap::from([
+            ("a".to_string(), "1.0.0".to_string()),
+            ("b".to_string(), "0.2.0".to_string()),
+            ("top".to_string(), "9.9.9".to_string()),
+        ]),
+    );
+    let b = PackageId::parse("b").unwrap();
+    let edges: Vec<_> = workspace.graph.dependencies_of(&b).collect();
+    assert_eq!(edges.len(), 1, "{edges:?}");
+    assert!(edges[0].inherited);
+    assert_eq!(edges[0].from_manifest, Path::new("native/Cargo.toml"));
+}
+
+/// A member that inherits from a workspace no manifest above it declares has no inheritance to resolve against. Its
+/// publish targets and dependency edges are unknown, so the workspace is not complete.
 #[test]
 fn a_member_whose_inheritance_cannot_be_resolved_makes_the_workspace_incomplete() {
     let dir = tempfile::tempdir().unwrap();
@@ -98,7 +154,7 @@ fn a_member_whose_inheritance_cannot_be_resolved_makes_the_workspace_incomplete(
     write(
         root,
         "native/Cargo.toml",
-        "[workspace]\nmembers = [\"crates/*\"]\n[workspace.package]\nversion = \"1.0.0\"\n",
+        "[package]\nname = \"native\"\nversion = \"1.0.0\"\n",
     );
     write(
         root,
@@ -113,6 +169,10 @@ fn a_member_whose_inheritance_cannot_be_resolved_makes_the_workspace_incomplete(
     let unresolved = unresolved_of(error);
     assert_eq!(unresolved.len(), 1, "one entry per manifest: {unresolved:?}");
     assert!(unresolved[0].contains("native/crates/a/Cargo.toml"), "{unresolved:?}");
+    assert!(
+        unresolved[0].contains("no Cargo workspace governs it"),
+        "{unresolved:?}"
+    );
 
     // The walk itself records the manifest as an error-level diagnostic, once per stage that could not open it.
     let config = callisto_graph::load_config(root).unwrap();

@@ -42,6 +42,8 @@ A workspace can hold `cargo:foo` and `npm:foo` as separate packages; ambiguity i
 3. `GroupTable::resolve` binds group members to ids, then names promoted into several ecosystems are recorded as `promoted_siblings`.
 4. The tag index is built lazily, on the first `Workspace::tags` call.
 
+A Cargo package inherits from the Cargo workspace that governs it, found the way Cargo finds it (`cargo::enclosing_workspace_manifest`): `package.workspace`, else the nearest manifest at or above the package with a `workspace` table, never above the workspace root. That workspace can be below the root, so the walk, the version guard, release-commit verification, lockfile refresh and `registry_argv` all resolve it per package. Cargo does not judge membership for inheritance, and neither does this lookup: a root that excludes or omits the package is a repository Cargo itself rejects.
+
 `Workspace::load` returns only a complete workspace, and it is the only way to get one. Every manifest the walk cannot open (for its platform role, publish targets or dependencies) is recorded as an error-level `ManifestUnresolved` diagnostic, and `load` turns any of them into E313 naming each manifest once, so no command sees a roster smaller than the repository.
 
 ## Historical ownership

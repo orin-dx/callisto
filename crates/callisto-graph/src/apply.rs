@@ -153,6 +153,13 @@ pub fn apply_version_plan<R: CommandRunner>(
 
     let ctx = OpenContext::for_workspace_root(root)?;
     preflight::check(root, plan, opts, permit)?;
+    let active_ecosystems = active_ecosystems(plan);
+    // Resolved before the first write, so a workspace that cannot be found stops the run with nothing changed.
+    let cargo_workspaces = if active_ecosystems.contains(&Ecosystem::Cargo) {
+        touched_cargo_workspaces(root, plan)?
+    } else {
+        BTreeSet::new()
+    };
     let classification = classify_manifest_writes(plan);
 
     for step in write_steps(plan, &classification) {
@@ -194,11 +201,9 @@ pub fn apply_version_plan<R: CommandRunner>(
         }
     }
 
-    let active_ecosystems = active_ecosystems(plan);
-
-    // Must run before the git-staging loop below, so refreshed lockfiles are on disk to be staged.
+    // Must run before the staging loop below, so refreshed lockfiles are on disk to be staged.
     if opts.refresh_lockfiles {
-        let refresh_results = refresh_lockfiles(runner, root, &active_ecosystems)?;
+        let refresh_results = refresh_lockfiles(runner, root, &active_ecosystems, &cargo_workspaces)?;
         if !refresh_results.is_empty() {
             outcome.lockfile_refresh_results = Some(refresh_results);
         }
@@ -207,7 +212,6 @@ pub fn apply_version_plan<R: CommandRunner>(
     // Map each well-known lockfile to its ecosystem, then include the file
     // only when that ecosystem is active and the file exists on disk.
     let lockfile_ecosystems: &[(&str, Ecosystem)] = &[
-        ("Cargo.lock", Ecosystem::Cargo),
         ("package-lock.json", Ecosystem::Npm),
         ("pnpm-lock.yaml", Ecosystem::Npm),
         ("yarn.lock", Ecosystem::Npm),
@@ -225,6 +229,11 @@ pub fn apply_version_plan<R: CommandRunner>(
         let p = PathBuf::from(lockfile);
         if path_exists(root, &p)? && !modified_paths.contains(&p) {
             modified_paths.push(p);
+        }
+    }
+    for lockfile in cargo_workspaces.iter().map(|workspace| cargo_lockfile(workspace)) {
+        if path_exists(root, &lockfile)? && !modified_paths.contains(&lockfile) {
+            modified_paths.push(lockfile);
         }
     }
 
@@ -384,7 +393,7 @@ fn apply_write_step(
             Ok((*path).clone())
         }
         WriteStep::WorkspaceRoot { root_manifest, group } => {
-            let mut ws_res = WorkspaceCargoResolver::load(&root.join(root_manifest))?;
+            let mut ws_res = WorkspaceCargoResolver::load_at(root, root_manifest)?;
             let mut mutated = false;
             if let Some((_, target_version)) = &group.bump {
                 ws_res.write_version(target_version, permit)?;
@@ -408,7 +417,7 @@ fn apply_write_step(
             Ok((*path).clone())
         }
         WriteStep::MixedWorkspaceVersion { root_manifest, to } => {
-            let mut ws_res = WorkspaceCargoResolver::load(&root.join(root_manifest))?;
+            let mut ws_res = WorkspaceCargoResolver::load_at(root, root_manifest)?;
             ws_res.write_version(to, permit)?;
             ws_res.persist(permit)?;
             Ok((*root_manifest).clone())
@@ -420,7 +429,7 @@ fn apply_write_step(
             Ok((*path).clone())
         }
         WriteStep::MixedWorkspaceRewrite { root_manifest, rewrite } => {
-            let mut ws_res = WorkspaceCargoResolver::load(&root.join(root_manifest))?;
+            let mut ws_res = WorkspaceCargoResolver::load_at(root, root_manifest)?;
             ws_res.write_dependency(&rewrite.key.name, rewrite.to.clone(), permit)?;
             ws_res.persist(permit)?;
             Ok((*root_manifest).clone())
@@ -487,6 +496,45 @@ fn rewrite_dependency(
     Ok(())
 }
 
+/// The root manifest of each Cargo workspace the plan writes into. Each has its own `Cargo.lock` beside it.
+fn touched_cargo_workspaces(root: &Path, plan: &VersionPlan) -> Result<BTreeSet<PathBuf>, GraphError> {
+    let mut workspaces = BTreeSet::new();
+    let mut members: Vec<&Path> = Vec::new();
+    for write in plan.bumps.iter().flat_map(|bump| &bump.writes) {
+        match write {
+            VersionWriteTarget::CargoWorkspacePackage { root_manifest } => {
+                workspaces.insert(root_manifest.clone());
+            }
+            VersionWriteTarget::Manifest(path) => members.push(path),
+        }
+    }
+    for rewrite in &plan.rewrites {
+        match &rewrite.key.target {
+            DepWriteTarget::CargoWorkspaceDependency { root_manifest } => {
+                workspaces.insert(root_manifest.clone());
+            }
+            DepWriteTarget::Manifest(path) => members.push(path),
+        }
+    }
+    members.extend(plan.platform_writes.iter().map(|write| write.manifest.as_path()));
+    members.extend(plan.optional_dep_updates.iter().map(|update| update.manifest.as_path()));
+    for member in members {
+        if ManifestFormat::from_path(member) == Ok(ManifestFormat::CargoToml) {
+            workspaces.insert(callisto_manifests::cargo_workspace_of(root, member)?);
+        }
+    }
+    if workspaces.is_empty() {
+        // Nothing names a workspace: a Cargo package was bumped without a manifest write of its own.
+        workspaces.insert(PathBuf::from("Cargo.toml"));
+    }
+    Ok(workspaces)
+}
+
+/// The lockfile beside a Cargo workspace root manifest.
+fn cargo_lockfile(root_manifest: &Path) -> PathBuf {
+    root_manifest.with_file_name("Cargo.lock")
+}
+
 /// The ecosystems a plan touches, so only their lockfiles are refreshed and staged. Staging
 /// the lockfile of an untouched ecosystem could sweep up unrelated user changes.
 fn active_ecosystems(plan: &VersionPlan) -> HashSet<Ecosystem> {
@@ -547,14 +595,16 @@ fn refresh_lockfiles<R: CommandRunner>(
     runner: &R,
     root: &Path,
     active_ecosystems: &HashSet<Ecosystem>,
+    cargo_workspaces: &BTreeSet<PathBuf>,
 ) -> Result<Vec<LockfileRefreshResult>, GraphError> {
     let mut refresh_results: Vec<LockfileRefreshResult> = Vec::new();
 
-    if active_ecosystems.contains(&Ecosystem::Cargo) {
+    for workspace in cargo_workspaces {
+        let lockfile = cargo_lockfile(workspace);
         refresh_results.push(run_lockfile_refresh(
             runner,
-            root,
-            "Cargo.lock",
+            &root.join(workspace.parent().unwrap_or(Path::new(""))),
+            &lockfile.to_string_lossy(),
             "cargo",
             &["update", "--workspace"],
         )?);

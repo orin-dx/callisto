@@ -473,14 +473,21 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
         .flat_map(Package::canonical_manifests)
         .map(|manifest| Ok((normalized_git_path(&manifest.path)?, manifest.ecosystem())))
         .collect::<Result<_, GraphError>>()?;
-    let mut query_paths: Vec<&str> = manifest_queries.iter().map(|(path, _)| path.as_str()).collect();
-    if manifest_queries
+    // Each Cargo manifest may inherit its version from a workspace manifest above it, so those are fetched too.
+    let mut query_path_list: Vec<String> = manifest_queries.iter().map(|(path, _)| path.clone()).collect();
+    for (path, _) in manifest_queries
         .iter()
-        .any(|(_, ecosystem)| *ecosystem == Ecosystem::Cargo)
-        && !query_paths.contains(&"Cargo.toml")
+        .filter(|(_, ecosystem)| *ecosystem == Ecosystem::Cargo)
     {
-        query_paths.push("Cargo.toml");
+        for candidate in callisto_manifests::workspace_manifest_candidates(&workspace.root, std::path::Path::new(path))?
+        {
+            let candidate = normalized_git_path(&candidate)?;
+            if !query_path_list.contains(&candidate) {
+                query_path_list.push(candidate);
+            }
+        }
     }
+    let query_paths: Vec<&str> = query_path_list.iter().map(String::as_str).collect();
 
     // Exactly two `git cat-file --batch` subprocess invocations total (one
     // per commit), regardless of how many canonical manifests the
@@ -670,15 +677,17 @@ fn parse_manifest_version(source: &str, path: &str, ecosystem: Ecosystem) -> Res
                 ecosystem.prefix()
             ),
         })?;
-    let version = callisto_manifests::read_effective_version(format, source, std::path::Path::new(path), None)
-        .map_err(historical_manifest_error)?
-        .ok_or_else(|| {
-            command_malformed_output(
-                "git",
-                &["cat-file", "--batch"],
-                format!("manifest `{path}` has no effective declared version"),
-            )
-        })?;
+    let version = callisto_manifests::read_effective_version(format, source, std::path::Path::new(path), |_| {
+        Ok::<_, callisto_model::ManifestError>(None)
+    })
+    .map_err(historical_manifest_error)?
+    .ok_or_else(|| {
+        command_malformed_output(
+            "git",
+            &["cat-file", "--batch"],
+            format!("manifest `{path}` has no effective declared version"),
+        )
+    })?;
     Ok(version.version)
 }
 
@@ -896,9 +905,19 @@ fn resolve_batch_versions(
     queries: &[(String, Ecosystem)],
 ) -> Result<Vec<callisto_manifests::EffectiveManifestVersion>, GraphError> {
     let sources: std::collections::BTreeMap<_, _> = paths.iter().copied().zip(blobs).collect();
-    let cargo_workspace = match sources.get("Cargo.toml") {
-        Some(BatchBlob::Blob(source)) => Some((std::path::Path::new("Cargo.toml"), source.as_str())),
-        _ => None,
+    let at_commit = |other: &std::path::Path| -> Result<Option<String>, callisto_model::ManifestError> {
+        let unavailable = |message: String| callisto_model::ManifestError::Read {
+            path: other.to_path_buf(),
+            message,
+        };
+        let key = normalized_git_path(other).map_err(|error| unavailable(error.to_string()))?;
+        match sources.get(key.as_str()) {
+            Some(BatchBlob::Blob(text)) => Ok(Some(text.clone())),
+            Some(BatchBlob::Missing) => Ok(None),
+            None => Err(unavailable(
+                "needed to resolve an inherited version but was not fetched from the commit".to_string(),
+            )),
+        }
     };
     queries
         .iter()
@@ -915,7 +934,7 @@ fn resolve_batch_versions(
                 .ok_or_else(|| GraphError::ReleaseInvariant {
                     detail: format!("canonical manifest `{path}` has no canonical manifest format"),
                 })?;
-            callisto_manifests::read_effective_version(format, source, std::path::Path::new(path), cargo_workspace)
+            callisto_manifests::read_effective_version(format, source, std::path::Path::new(path), at_commit)
                 .map_err(historical_manifest_error)?
                 .ok_or_else(|| {
                     command_malformed_output(

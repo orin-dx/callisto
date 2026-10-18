@@ -113,8 +113,15 @@ fn verify_cargo_ondisk_version(
     let on_disk = if let Some(s) = version_value.as_str() {
         s.to_string()
     } else if version_value.get("workspace").and_then(toml::Value::as_bool) == Some(true) {
-        let root_manifest_path = workspace_root.join("Cargo.toml");
-        let resolver = WorkspaceCargoResolver::load(&root_manifest_path)?;
+        let member = package_dir.join("Cargo.toml");
+        let document = callisto_manifests::parse_manifest(&member, &contents)?;
+        let root_manifest = callisto_manifests::enclosing_workspace_manifest(workspace_root, &member, &document)?
+            .ok_or_else(|| GraphError::ReleaseInputRead {
+                path: manifest_path.clone(),
+                message: "`version.workspace = true` but no Cargo workspace governs it".to_string(),
+            })?;
+        let root_manifest_path = workspace_root.join(&root_manifest);
+        let resolver = WorkspaceCargoResolver::load_at(workspace_root, &root_manifest)?;
         let ws_version = resolver
             .workspace_version()?
             .ok_or_else(|| GraphError::ReleaseInputRead {

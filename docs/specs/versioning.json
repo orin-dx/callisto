@@ -114,7 +114,7 @@
     },
     {
       "id": "VER-CAS-07",
-      "criterion": "A rewrite uses the source declaration's manifest ecosystem and preserves its declared dependency key or spelling, independent of either package's display prefix. A Cargo dependency's `package` name resolves its native target while edits retain its alias; inherited aliases resolve the workspace root's declaration. Python distribution names match using PEP 503 normalization while edits retain the spelling in the dependency declaration. A Cargo dependency inherited with `workspace = true` is rewritten in the workspace root's `[workspace.dependencies]`, not in the member manifest."
+      "criterion": "A rewrite uses the source declaration's manifest ecosystem and preserves its declared dependency key or spelling, independent of either package's display prefix. A Cargo dependency's `package` name resolves its native target while edits retain its alias; inherited aliases resolve the declaration in the Cargo workspace that governs the member. Python distribution names match using PEP 503 normalization while edits retain the spelling in the dependency declaration. A Cargo dependency inherited with `workspace = true` is rewritten in the workspace root's `[workspace.dependencies]`, not in the member manifest."
     },
     {
       "id": "VER-CAS-08",
@@ -184,7 +184,7 @@
     },
     {
       "id": "VER-PRE-09",
-      "criterion": "For every workspace dependency whose current spec does not cover the snapshot version, `snapshot` rewrites that spec using the source declaration's manifest ecosystem and declared key or spelling, including Cargo aliases. Inherited Cargo declarations are rewritten in the workspace root rather than the member manifest. A spec that already covers the snapshot version is left unchanged."
+      "criterion": "For every workspace dependency whose current spec does not cover the snapshot version, `snapshot` rewrites that spec using the source declaration's manifest ecosystem and declared key or spelling, including Cargo aliases. Inherited Cargo declarations are rewritten in the root manifest of the Cargo workspace that governs the member rather than the member manifest. A spec that already covers the snapshot version is left unchanged."
     },
     {
       "id": "VER-PRE-10",
@@ -272,7 +272,7 @@
     },
     {
       "id": "VER-APPLY-14",
-      "criterion": "By default, applying a plan refreshes and stages lockfiles for every ecosystem represented by an actual version, dependency, platform or optional-dependency write target, including all manifests of a dual-manifest package and workspace-root Cargo writes. It refreshes each existing lockfile: `cargo update --workspace` for Cargo; for Pypi, `uv lock` if `uv.lock` exists, else `poetry lock --no-update` if `poetry.lock` exists, else `pdm lock --update-reuse` if `pdm.lock` exists; for Npm, `npm install --package-lock-only --ignore-scripts` for `package-lock.json`, `pnpm install --lockfile-only` for `pnpm-lock.yaml`, `yarn install --mode update-lockfile` for `yarn.lock`, and `bun install --lockfile-only` for `bun.lock` or `bun.lockb`, each independently when its lockfile is present. `--no-refresh-lockfiles` skips refresh; applicable existing lockfiles are still staged."
+      "criterion": "By default, applying a plan refreshes and stages lockfiles for every ecosystem represented by an actual version, dependency, platform or optional-dependency write target, including all manifests of a dual-manifest package and workspace-root Cargo writes. It refreshes each existing lockfile: `cargo update --workspace`, run in the directory of each Cargo workspace written to and refreshing the `Cargo.lock` beside its root manifest, for Cargo; for Pypi, `uv lock` if `uv.lock` exists, else `poetry lock --no-update` if `poetry.lock` exists, else `pdm lock --update-reuse` if `pdm.lock` exists; for Npm, `npm install --package-lock-only --ignore-scripts` for `package-lock.json`, `pnpm install --lockfile-only` for `pnpm-lock.yaml`, `yarn install --mode update-lockfile` for `yarn.lock`, and `bun install --lockfile-only` for `bun.lock` or `bun.lockb`, each independently when its lockfile is present. `--no-refresh-lockfiles` skips refresh; applicable existing lockfiles are still staged."
     },
     {
       "id": "VER-APPLY-15",

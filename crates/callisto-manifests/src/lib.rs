@@ -14,7 +14,11 @@ mod common;
 pub mod npm;
 pub mod python;
 
-pub use cargo::{cargo_package_name, CargoToml, InheritedDep, WorkspaceCargoResolver, WorkspaceInheritance};
+pub use cargo::{
+    cargo_package_name, cargo_workspace_of, enclosing_workspace_manifest, enclosing_workspace_manifest_with,
+    parse_manifest, workspace_manifest_candidates, CargoToml, InheritedDep, WorkspaceCargoResolver,
+    WorkspaceInheritance,
+};
 pub use npm::{
     detect_npm_workspace_kind, napi_binary_name, npm_declares_private, npm_package_name, npm_role_from_source,
     read_napi_targets, PackageJson,
@@ -50,13 +54,20 @@ pub struct EffectiveManifestVersion {
     pub authority: std::path::PathBuf,
 }
 
-/// Resolves supplied blobs without I/O; paths must already be normalized and workspace-relative.
-pub fn read_effective_version(
+/// Reads a manifest's effective version from text the caller already holds. `manifest_at` supplies any other
+/// workspace-relative manifest by path, or `None` when there is none, so a Cargo `version.workspace = true` resolves
+/// against the workspace that governs the package at the same revision.
+///
+/// # Errors
+///
+/// The manifest does not parse, declares an invalid version, or inherits one that no governing workspace declares; or
+/// `manifest_at` fails.
+pub fn read_effective_version<E: From<ManifestError>>(
     format: ManifestFormat,
     source: &str,
     path: &Path,
-    cargo_workspace: Option<(&Path, &str)>,
-) -> Result<Option<EffectiveManifestVersion>, ManifestError> {
+    mut manifest_at: impl FnMut(&Path) -> Result<Option<String>, E>,
+) -> Result<Option<EffectiveManifestVersion>, E> {
     let identity = read_identity(format, source, path)?;
     let (version, authority) = match identity.version {
         Some(VersionSource::Literal(raw)) => {
@@ -70,17 +81,21 @@ pub fn read_effective_version(
             (version, path.to_path_buf())
         }
         Some(VersionSource::InheritedFromWorkspace) => {
-            let (root_path, root_source) = cargo_workspace.ok_or_else(|| ManifestError::MissingField {
+            let missing = |path: &Path| ManifestError::MissingField {
                 path: path.to_path_buf(),
                 field: "workspace.package.version",
-            })?;
-            let version = cargo::workspace_version_from_source(root_source, root_path)?.ok_or_else(|| {
-                ManifestError::MissingField {
-                    path: root_path.to_path_buf(),
-                    field: "workspace.package.version",
-                }
-            })?;
-            (version, root_path.to_path_buf())
+            };
+            let member = cargo::parse_manifest(path, source)?;
+            let root_manifest = cargo::enclosing_workspace_manifest_with(path, &member, |candidate| {
+                manifest_at(candidate)?
+                    .map(|text| cargo::parse_manifest(candidate, &text).map_err(E::from))
+                    .transpose()
+            })?
+            .ok_or_else(|| missing(path))?;
+            let root_source = manifest_at(&root_manifest)?.ok_or_else(|| missing(&root_manifest))?;
+            let version = cargo::workspace_version_from_source(&root_source, &root_manifest)?
+                .ok_or_else(|| missing(&root_manifest))?;
+            (version, root_manifest)
         }
         None => return Ok(None),
     };
@@ -186,11 +201,18 @@ pub trait Manifest: Send + Sync {
     fn napi_lib_name(&self) -> Option<String> {
         None
     }
+    /// The workspace-level declaration that a `{ workspace = true }` dependency named `name` inherits. `None` for every
+    /// ecosystem other than Cargo, and for a manifest that does not inherit it.
+    fn inherited_dependency(&self, _name: &str) -> Option<InheritedDep<'_>> {
+        None
+    }
 }
 
 /// Context passed to open() to supply workspace-wide inheritance facts.
 pub struct OpenContext<'a> {
     pub workspace_root: &'a Path,
+    /// The inheritance of the Cargo workspace rooted at `workspace_root`, loaded once and shared by its members.
+    /// A manifest governed by another Cargo workspace loads that workspace's own.
     pub cargo_workspace: Option<Arc<WorkspaceInheritance>>,
     pub npm_workspace_kind: Option<WorkspaceKind>,
 }
@@ -210,16 +232,19 @@ impl<'a> OpenContext<'a> {
     /// A root `Cargo.toml` or `package.json` that exists but cannot be read or parsed. An inheriting member
     /// could not be opened without it, so a missing context is an error, never an empty one.
     pub fn for_workspace_root(root: &'a Path) -> Result<OpenContext<'a>, callisto_model::ManifestError> {
-        let cargo_manifest = root.join("Cargo.toml");
-        let cargo_workspace =
-            if callisto_model::strict_fs::exists(&cargo_manifest).map_err(|e| callisto_model::ManifestError::Read {
-                path: cargo_manifest.clone(),
+        let cargo_manifest = Path::new("Cargo.toml");
+        let cargo_workspace = if callisto_model::strict_fs::exists(&root.join(cargo_manifest)).map_err(|e| {
+            callisto_model::ManifestError::Read {
+                path: cargo_manifest.to_path_buf(),
                 message: e.to_string(),
-            })? {
-                Some(Arc::new(WorkspaceCargoResolver::load(&cargo_manifest)?.inheritance()?))
-            } else {
-                None
-            };
+            }
+        })? {
+            Some(Arc::new(
+                WorkspaceCargoResolver::load_at(root, cargo_manifest)?.inheritance()?,
+            ))
+        } else {
+            None
+        };
 
         let npm_workspace_kind = detect_npm_workspace_kind(root)?;
 
@@ -228,6 +253,37 @@ impl<'a> OpenContext<'a> {
             cargo_workspace,
             npm_workspace_kind,
         })
+    }
+
+    /// The inheritance a Cargo manifest at `manifest` (workspace-relative, already parsed as `doc`) draws on: that of the
+    /// Cargo workspace that governs it, which need not be the one at `workspace_root`.
+    ///
+    /// # Errors
+    ///
+    /// No Cargo workspace governs it, or the one that does cannot be read.
+    pub(crate) fn cargo_inheritance(
+        &self,
+        manifest: &Path,
+        doc: &toml_edit::DocumentMut,
+    ) -> Result<Arc<WorkspaceInheritance>, ManifestError> {
+        let Some(root_manifest) = cargo::enclosing_workspace_manifest(self.workspace_root, manifest, doc)? else {
+            return Err(ManifestError::Read {
+                path: manifest.to_path_buf(),
+                message: "declares .workspace = true but no Cargo workspace governs it: no Cargo.toml at or above its \
+                          directory has a [workspace] table"
+                    .to_string(),
+            });
+        };
+        if let Some(shared) = self
+            .cargo_workspace
+            .as_ref()
+            .filter(|shared| shared.root_manifest == root_manifest)
+        {
+            return Ok(Arc::clone(shared));
+        }
+        Ok(Arc::new(
+            WorkspaceCargoResolver::load_at(self.workspace_root, &root_manifest)?.inheritance()?,
+        ))
     }
 }
 

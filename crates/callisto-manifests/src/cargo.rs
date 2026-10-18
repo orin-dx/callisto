@@ -55,13 +55,11 @@ impl CargoToml {
                 .is_some_and(|table| table.iter().any(|(_, item)| is_inherited_item(item)))
         });
 
-        let uses_inheritance = inherited_version || inherits_dependencies;
-        if uses_inheritance && ctx.cargo_workspace.is_none() {
-            return Err(ManifestError::Read {
-                path: rel_path,
-                message: "declares .workspace = true but no WorkspaceCargoResolver context was supplied".to_string(),
-            });
-        }
+        let inheritance = if inherited_version || inherits_dependencies {
+            Some(ctx.cargo_inheritance(&rel_path, &doc)?)
+        } else {
+            None
+        };
 
         Ok(CargoToml {
             path: rel_path,
@@ -70,10 +68,149 @@ impl CargoToml {
             role: decl.role.clone(),
             document: doc,
             inherited_version,
-            inheritance: ctx.cargo_workspace.clone(),
+            inheritance,
             fingerprint,
         })
     }
+}
+
+/// The workspace-relative `Cargo.toml` of the Cargo workspace that governs the package at `manifest`, found the way
+/// Cargo finds it: the directory named by `package.workspace`, else the nearest manifest at or above the package's
+/// directory that has a `workspace` table. The search stops at `workspace_root`. `doc` is the package's own manifest.
+///
+/// # Errors
+///
+/// A manifest on the way up that cannot be read or parsed (skipping it could settle on a different root), or a
+/// `package.workspace` that leaves the workspace root or names a manifest with no `workspace` table.
+pub fn enclosing_workspace_manifest(
+    workspace_root: &Path,
+    manifest: &Path,
+    doc: &toml_edit::DocumentMut,
+) -> Result<Option<PathBuf>, ManifestError> {
+    enclosing_workspace_manifest_with(manifest, doc, |candidate| load_document(workspace_root, candidate))
+}
+
+/// The workspace-relative `Cargo.toml` of the Cargo workspace the package at `manifest` belongs to, read from the working
+/// tree. A package that no workspace governs is a workspace of its own, which is where its `Cargo.lock` is written.
+///
+/// # Errors
+///
+/// A manifest on the way up that cannot be read or parsed, or an unusable `package.workspace`.
+pub fn cargo_workspace_of(workspace_root: &Path, manifest: &Path) -> Result<PathBuf, ManifestError> {
+    let doc = load_document(workspace_root, manifest)?.ok_or_else(|| ManifestError::Read {
+        path: manifest.to_path_buf(),
+        message: "No such file or directory".to_string(),
+    })?;
+    Ok(enclosing_workspace_manifest(workspace_root, manifest, &doc)?.unwrap_or_else(|| manifest.to_path_buf()))
+}
+
+/// [`enclosing_workspace_manifest`] over any source of manifests: `load` returns the parsed workspace-relative manifest,
+/// or `None` when there is none, so a past commit can answer as well as the working tree.
+pub fn enclosing_workspace_manifest_with<E: From<ManifestError>>(
+    manifest: &Path,
+    doc: &toml_edit::DocumentMut,
+    mut load: impl FnMut(&Path) -> Result<Option<toml_edit::DocumentMut>, E>,
+) -> Result<Option<PathBuf>, E> {
+    let dir = manifest.parent().unwrap_or(Path::new(""));
+    let read_error = |path: &Path, message: String| ManifestError::Read {
+        path: path.to_path_buf(),
+        message,
+    };
+
+    if let Some(named) = doc
+        .get("package")
+        .and_then(|package| package.get("workspace"))
+        .and_then(toml_edit::Item::as_str)
+    {
+        let root_manifest = workspace_relative(dir.join(named))
+            .map_err(|error| {
+                read_error(
+                    manifest,
+                    format!("`package.workspace = \"{named}\"` is unusable: {error}"),
+                )
+            })?
+            .join("Cargo.toml");
+        let declares_workspace = load(&root_manifest)?.is_some_and(|root| has_workspace_table(&root));
+        return if declares_workspace {
+            Ok(Some(root_manifest))
+        } else {
+            Err(read_error(
+                manifest,
+                format!(
+                    "`package.workspace = \"{named}\"` names `{}`, which declares no `[workspace]`",
+                    root_manifest.display()
+                ),
+            )
+            .into())
+        };
+    }
+
+    for candidate in dir.ancestors() {
+        let candidate_manifest = candidate.join("Cargo.toml");
+        let declares_workspace = if candidate == dir {
+            has_workspace_table(doc)
+        } else {
+            load(&candidate_manifest)?.is_some_and(|ancestor| has_workspace_table(&ancestor))
+        };
+        if declares_workspace {
+            return Ok(Some(candidate_manifest));
+        }
+    }
+    Ok(None)
+}
+
+/// Every manifest that could be the workspace root of the package at `manifest`: each `Cargo.toml` above its directory,
+/// and the one its working-tree `package.workspace` names. Fetch these from a commit before asking
+/// [`enclosing_workspace_manifest_with`] about it there.
+///
+/// # Errors
+///
+/// The package's own manifest cannot be read or parsed.
+pub fn workspace_manifest_candidates(workspace_root: &Path, manifest: &Path) -> Result<Vec<PathBuf>, ManifestError> {
+    let dir = manifest.parent().unwrap_or(Path::new(""));
+    let mut candidates: Vec<PathBuf> = dir
+        .ancestors()
+        .skip(1)
+        .map(|ancestor| ancestor.join("Cargo.toml"))
+        .collect();
+    let named = load_document(workspace_root, manifest)?.and_then(|doc| {
+        doc.get("package")
+            .and_then(|package| package.get("workspace"))
+            .and_then(toml_edit::Item::as_str)
+            .and_then(|named| workspace_relative(dir.join(named)).ok())
+    });
+    candidates.extend(named.map(|root| root.join("Cargo.toml")));
+    candidates.sort();
+    candidates.dedup();
+    Ok(candidates)
+}
+
+/// Cargo treats any `workspace` table as a workspace root, including one that exists only as `[workspace.package]`.
+fn has_workspace_table(doc: &toml_edit::DocumentMut) -> bool {
+    doc.get("workspace").is_some_and(toml_edit::Item::is_table_like)
+}
+
+/// `workspace_root/manifest` parsed, or `None` when it does not exist. Anything else that stops it being read is an error.
+fn load_document(workspace_root: &Path, manifest: &Path) -> Result<Option<toml_edit::DocumentMut>, ManifestError> {
+    callisto_model::strict_fs::read_optional(&workspace_root.join(manifest))
+        .map_err(|error| ManifestError::Read {
+            path: manifest.to_path_buf(),
+            message: error.to_string(),
+        })?
+        .map(|text| parse_manifest(manifest, &text))
+        .transpose()
+}
+
+/// Parses the text of the `Cargo.toml` at `manifest`, which is used only to name it in the error.
+pub fn parse_manifest(manifest: &Path, text: &str) -> Result<toml_edit::DocumentMut, ManifestError> {
+    text.strip_prefix('\u{FEFF}')
+        .unwrap_or(text)
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|error| ManifestError::Parse {
+            path: manifest.to_path_buf(),
+            format: ManifestFormat::CargoToml,
+            message: error.to_string(),
+        })
 }
 
 /// Extracts `[package].name` from an already-parsed `Cargo.toml` document.
@@ -373,6 +510,10 @@ impl Manifest for CargoToml {
         Ok(())
     }
 
+    fn inherited_dependency(&self, name: &str) -> Option<InheritedDep<'_>> {
+        self.inheritance.as_ref()?.inherited(name)
+    }
+
     fn iter_dependencies(&self) -> Box<dyn Iterator<Item = DependencyEntry> + '_> {
         let mut entries = Vec::new();
 
@@ -441,7 +582,8 @@ impl Manifest for CargoToml {
             .ok_or_else(not_found)?;
 
         if is_inherited_item(item) {
-            let root_cargo = self.workspace_root.join("Cargo.toml");
+            let root_manifest = self.inheritance.as_ref().ok_or_else(not_found)?.root_manifest.clone();
+            let root_cargo = self.workspace_root.join(&root_manifest);
             if self.absolute == root_cargo {
                 return Err(ManifestError::InvariantViolation {
                     path: self.path.clone(),
@@ -451,7 +593,7 @@ impl Manifest for CargoToml {
                     ),
                 });
             }
-            let mut ws_res = WorkspaceCargoResolver::load(&root_cargo)?;
+            let mut ws_res = WorkspaceCargoResolver::load_at(&self.workspace_root, &root_manifest)?;
             ws_res.write_dependency(name, new, permit)?;
             return ws_res.persist(permit);
         }
@@ -688,8 +830,18 @@ pub struct WorkspaceCargoResolver {
 }
 
 impl WorkspaceCargoResolver {
+    /// Loads the Cargo workspace root manifest at `workspace_root/root_manifest`, keeping `root_manifest` (relative to
+    /// `workspace_root`) as the path every report, diff and staged file names it by.
+    pub fn load_at(workspace_root: &Path, root_manifest: &Path) -> Result<Self, ManifestError> {
+        let rel_path = workspace_relative(root_manifest).map_err(|e| ManifestError::Read {
+            path: root_manifest.to_path_buf(),
+            message: e.to_string(),
+        })?;
+        let absolute_path = workspace_root.join(&rel_path);
+        Self::read_from(rel_path, absolute_path)
+    }
+
     pub fn load(root_manifest_path: &Path) -> Result<Self, ManifestError> {
-        crate::record_resolver_load_call();
         let rel_path = if root_manifest_path.is_absolute() {
             root_manifest_path
                 .file_name()
@@ -701,7 +853,12 @@ impl WorkspaceCargoResolver {
                 message: e.to_string(),
             })?
         };
-        let content = fs::read_to_string(root_manifest_path).map_err(|e| ManifestError::Read {
+        Self::read_from(rel_path, root_manifest_path.to_path_buf())
+    }
+
+    fn read_from(rel_path: PathBuf, absolute_path: PathBuf) -> Result<Self, ManifestError> {
+        crate::record_resolver_load_call();
+        let content = fs::read_to_string(&absolute_path).map_err(|e| ManifestError::Read {
             path: rel_path.clone(),
             message: e.to_string(),
         })?;
@@ -716,7 +873,7 @@ impl WorkspaceCargoResolver {
 
         Ok(WorkspaceCargoResolver {
             root_path: rel_path,
-            absolute_path: root_manifest_path.to_path_buf(),
+            absolute_path,
             document: doc,
         })
     }

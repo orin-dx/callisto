@@ -1323,73 +1323,38 @@ serde = { version = "1.0", features = ["derive"] }
     );
 }
 
-/// Spec: a crate manifest that uses `version.workspace = true` must be
-/// openable when a `WorkspaceCargoResolver` context is supplied.  Without
-/// that context the open must fail with a descriptive `Read` error (not a
-/// panic), because `workspace = true` without the resolver cannot be
-/// resolved and silently falling through would produce wrong results.
+/// A manifest that uses `version.workspace = true` is opened against the Cargo workspace that governs it. With none,
+/// the open fails with a descriptive `Read` error: falling through would produce a wrong version.
 #[test]
-fn cargo_toml_with_workspace_version_requires_resolver_context() {
+fn cargo_toml_with_workspace_version_requires_a_governing_workspace() {
     let dir = tempdir().unwrap();
-    let manifest_path = dir.path().join("Cargo.toml");
-    let content = r#"[package]
-name = "my-inherited-crate"
-version.workspace = true
-edition = "2021"
-"#;
-    fs::write(&manifest_path, content).unwrap();
-
-    let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
-
-    // Without a workspace resolver, open must return Err — not panic.
-    let ctx_no_ws = OpenContext {
+    fs::create_dir(dir.path().join("member")).unwrap();
+    fs::write(
+        dir.path().join("member/Cargo.toml"),
+        "[package]\nname = \"my-inherited-crate\"\nversion.workspace = true\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    let decl = ManifestDecl::new("member/Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
+    let ctx = OpenContext {
         workspace_root: dir.path(),
         cargo_workspace: None,
         npm_workspace_kind: None,
     };
-    let result = CargoToml::open(&decl, &ctx_no_ws);
-    assert!(
-        result.is_err(),
-        "opening version.workspace = true without resolver must return Err"
-    );
-    let err_msg = result.err().unwrap().to_string();
-    assert!(
-        err_msg.contains("workspace"),
-        "error message must mention 'workspace', got: {err_msg}"
-    );
 
-    // With a resolver that provides the workspace version, open must succeed
-    // and current_version must return the workspace-inherited version.
-    let root_cargo_path = dir.path().join("root_Cargo.toml");
-    let root_content = r#"[workspace]
-members = ["."]
+    let err = CargoToml::open(&decl, &ctx)
+        .err()
+        .expect("no workspace governs the member")
+        .to_string();
+    assert!(err.contains("no Cargo workspace governs it"), "{err}");
 
-[workspace.package]
-version = "4.5.6"
-"#;
-    fs::write(&root_cargo_path, root_content).unwrap();
-
-    let inheritance = WorkspaceCargoResolver::load(&root_cargo_path)
-        .unwrap()
-        .inheritance()
-        .unwrap();
-
-    let ctx_with_ws = OpenContext {
-        workspace_root: dir.path(),
-        cargo_workspace: Some(std::sync::Arc::new(inheritance)),
-        npm_workspace_kind: None,
-    };
-    let manifest = CargoToml::open(&decl, &ctx_with_ws).unwrap();
-    assert_eq!(
-        manifest.package_name().unwrap(),
-        "my-inherited-crate",
-        "package name must be read from [package].name even with workspace version"
-    );
-    assert_eq!(
-        manifest.current_version().unwrap().render(),
-        "4.5.6",
-        "current_version must be inherited from the workspace resolver"
-    );
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[workspace]\nmembers = [\"member\"]\n\n[workspace.package]\nversion = \"4.5.6\"\n",
+    )
+    .unwrap();
+    let manifest = CargoToml::open(&decl, &ctx).unwrap();
+    assert_eq!(manifest.package_name().unwrap(), "my-inherited-crate");
+    assert_eq!(manifest.current_version().unwrap().render(), "4.5.6");
 }
 
 /// A compound Cargo range `>=1.0.0, <2.0.0` whose lower bound is updated
