@@ -1,5 +1,40 @@
 # callisto-cli
 
+## 0.11.0
+
+- A Python release that stopped partway is completed on rerun. Only the files PyPI lacks are uploaded, and the release counts as published only when both the wheel and the sdist it builds are on the index, so no tag is created for a half-published release. Uploads name their files instead of a dist glob, so a stale dist directory is no longer published.
+  
+  Breaking: `callisto_graph`'s `registry_argv::pypi_publish_argv` is replaced by `pypi_build_argv` and `pypi_upload_argv`.
+- A package that sits behind a symbolic link is now rejected with an error naming it, because Git cannot stage a change to a file beneath a link and the version bump could never be committed. A link that holds no package is ignored, and a link can be skipped by listing it in a `.gitignore` under the workspace root.
+- A failed Git lookup is now an error instead of "nothing there". A broken or missing repository used to read as no tags, no such ref, no file at that revision or no matches, so `status` and `version` could plan from the wrong history without saying so. Only Git's own "not found" answer counts as absent now, a tag that is listed but does not resolve to a commit stops the run, and `status` warns once about each tag that matches a package's tag template but is not a version.
+- Generated release workflows now install the Python build and upload tools they need. A workspace that publishes to PyPI no longer depends on `twine` being preinstalled on the runner.
+- A package published to both Cargo and npm now gets its tag and GitHub release only after both publishes succeed, instead of after the first.
+- `callisto add` no longer overwrites an existing changeset when it draws a name that is already taken, and a file Callisto rewrites keeps its permissions (it was left owner-only). A command whose output was cut short because a background process kept its pipes open is now an error instead of a success with empty output. Workspace globs written as `./packages/*` or `packages/*/` now match the same directories as `packages/*`.
+- A package published to both Cargo and npm now gets one git tag and one GitHub release. A release that also uploads assets, which failed to plan with a repeated artifact slot, now plans and runs.
+- A PyPI token or npm config token that a publish tool echoes in an error is now redacted from the output, like the other registry tokens.
+- Callisto now stops, naming the file, when a workspace manifest is malformed instead of guessing which packages it contains. An unreadable or unparseable root `Cargo.toml`, `pyproject.toml`, `package.json` or `pnpm-workspace.yaml`, and a `members`, `exclude`, `workspaces` or `packages` entry that is not a valid list of globs, fail the command; before, they silently admitted every directory, so vendored copies and excluded crates became releasable packages. Locating the workspace root also no longer skips a malformed manifest and settles on a different root.
+- **A Cargo dependency declared in several tables is followed and rewritten in each**
+  
+  A dependency declared more than once, for example in `[dependencies]` and in a `[target.<cfg>.dependencies]` table with different constraints, now cascades to its dependent and is rewritten in every table when the package it names is released. Before, only the first declaration was updated and another one kept a stale constraint. A target declaration whose range still covers the new version now has its lower bound raised, as a plain declaration does. A Python requirement declared more than once, in the project dependencies, in several extras, in Poetry's table or under different markers, is followed and rewritten in each place by its own constraint, so a loose line such as `lib-py>=0.1` has its floor raised to `>=0.2.0` rather than being skipped.
+  
+  Breaking:
+  - `callisto_model`: `DependencyEntry` and `DepEdge` gain a `locator: DepLocator` field naming the table a declaration lives in. `DepLocator` is a `#[non_exhaustive]` enum, `Unspecified` (the default, for npm), `Cargo` or `Python`: build it with `DepLocator::cargo` or `DepLocator::python`. The new `DepContainer` names the Python table. A writer given a locator for another ecosystem returns `DependencyNotFound`.
+  - `callisto_manifests`: `Manifest::update_dependency_spec` takes the declaration's `&DepLocator` after the dependency kind.
+  - `callisto_graph`: `RewriteKey` gains a `locator` field.
+- Yarn classic's `"workspaces": { "packages": [...] }` form is now read for workspace membership, and a root Cargo workspace that cannot be loaded for version inheritance is reported instead of silently dropping the packages that inherit from it.
+- Callisto no longer plans a release from a workspace it could only partly read. A package whose manifest cannot be opened (for example a member that inherits its version from a Rust workspace Callisto cannot find) used to keep no publish target and no dependency edges, so it never published and its dependents never cascaded, without a message. Every command now stops with a coded error naming each such manifest.
+- A release workflow that builds Python distributions in a job without registry credentials now publishes exactly those files. The generated build-matrix workflow gains a `build-python` job, the manifest records each file's name, size and sha256, and a file PyPI already holds under a sealed name with different bytes stops the release before any upload. Python builds also set `SOURCE_DATE_EPOCH` to the release commit time.
+- callisto status now reads a changeset's package names the same way callisto version does. A package named by a non-primary manifest's own name resolves, a qualified name for an ecosystem the package lacks is reported as unknown, and a name that two packages claim is ambiguous, so status --check no longer passes a changeset that version will not consume.
+- A release now stops with a clear error when git cannot read the local tag state, for example a corrupt or unreadable repository, or when npm cannot be reached or rejects the version lookup, instead of treating the version as unpublished and attempting to publish or tag. npm 8 and later still report a missing version as unpublished.
+- A file Callisto cannot read or look up is now reported instead of treated as missing. An unreadable package manifest, `callisto.toml`, `pre.json` or changelog, a changeset it cannot inspect, and a failed directory sync after a write now stop the command with the file named, where before the package, config, changeset or durability guarantee was silently dropped.
+- A release that stops because a provider could not be observed now says why: the HTTP status the registry or forge answered, a failed command, an answer it could not understand, or a timeout.
+- `version` now checks every file it is about to write before it writes the first one. A manifest that is missing, unreadable, a directory, in an unwritable folder, or reached through a symbolic link Git cannot stage stops the command with every such file named and nothing changed, instead of failing partway through and leaving some manifests already bumped.
+- A pre-release state that records two different starting versions for one package, for example an old bare key and its qualified key, now stops with an error naming both keys and versions instead of silently keeping one.
+- A package keeps its release history when its directory moves, when it gains a higher-priority manifest beside a same-named package, or when a same-named sibling is removed. Before, the last release was reported as none, or an older release was chosen over a newer one, so already-released work could be released again.
+  
+  Breaking:
+  - `callisto_graph`: `TagIndex::build` takes the workspace's `&IdentityIndex` after the graph.
+
 ## 0.10.3
 
 - A release rerun adopts a local tag whose message has several paragraphs or a signature, instead of failing while reading it.
