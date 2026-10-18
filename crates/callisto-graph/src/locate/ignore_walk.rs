@@ -42,7 +42,7 @@ impl ProjectLocator for IgnoreWalkLocator {
         let cargo_membership = membership::read_cargo_membership(&self.root)?;
         let npm_membership = membership::read_npm_membership(&self.root)?;
         let python_membership = membership::read_python_membership(&self.root)?;
-        let mut nested_cargo = membership::NestedCargoMemberships::default();
+        let mut nested = membership::NestedMemberships::default();
         let walker = WalkBuilder::new(&self.root)
             .hidden(true)
             .git_ignore(true)
@@ -156,21 +156,20 @@ impl ProjectLocator for IgnoreWalkLocator {
                     continue;
                 };
 
-                // A private, versionless root package.json (standard npm/pnpm workspace-root
-                // layout, e.g. `@changesets/cli`) declares a name only to hold `workspaces`; it
+                // A private, versionless package.json that holds an npm workspace (the standard root layout,
+                // e.g. `@changesets/cli`, or one below the root) declares a name only to hold `workspaces`; it
                 // is never itself a released package, so it never becomes a project.
-                if is_root
-                    && ecosystem == Ecosystem::Npm
+                if ecosystem == Ecosystem::Npm
                     && identity.version.is_none()
                     && callisto_manifests::npm_declares_private(&content)
+                    && (is_root || membership::declares_npm_workspace(path)?)
                 {
                     continue;
                 }
 
                 let admitted = admits(ecosystem)
-                    && (ecosystem != Ecosystem::Cargo
-                        || is_root
-                        || membership::nested_cargo_workspace_admits(&self.root, &rel, &content, &mut nested_cargo)?);
+                    && (is_root
+                        || membership::nested_workspace_admits(&self.root, &rel, ecosystem, &content, &mut nested)?);
                 let id = PackageId::parse(&name).unwrap_or_else(|_| PackageId::Bare(name.clone()));
                 let project = ProjectRoot {
                     id,
@@ -595,6 +594,121 @@ mod tests {
         write_crate(root, "native/n", "n");
 
         assert_eq!(cargo_paths(root), ["crates/a"]);
+    }
+
+    fn write_file(root: &Path, path: &str, text: &str) {
+        std::fs::create_dir_all(root.join(path).parent().unwrap()).unwrap();
+        std::fs::write(root.join(path), text).unwrap();
+    }
+
+    fn paths_of(root: &Path, ecosystem: Ecosystem) -> Vec<String> {
+        IgnoreWalkLocator::new(root)
+            .projects()
+            .unwrap()
+            .into_iter()
+            .filter(|project| project.ecosystem == ecosystem)
+            .map(|project| project.path.display().to_string())
+            .collect()
+    }
+
+    fn npm(name: &str) -> String {
+        format!("{{\"name\":\"{name}\",\"version\":\"1.0.0\"}}")
+    }
+
+    /// An npm workspace below the root, with none at the root, admits only what its own `workspaces` lists.
+    #[test]
+    fn a_nested_npm_workspace_admits_by_its_own_workspaces_list() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write_file(
+            root,
+            "web/package.json",
+            r#"{"name":"web-root","private":true,"workspaces":["packages/*"]}"#,
+        );
+        write_file(root, "web/packages/kept/package.json", &npm("kept"));
+        write_file(root, "web/vendor/dep/package.json", &npm("dep"));
+        write_file(root, "loose/package.json", &npm("loose"));
+
+        let found = paths_of(root, Ecosystem::Npm);
+        assert!(found.contains(&"web/packages/kept".to_string()), "{found:?}");
+        assert!(found.contains(&"loose".to_string()), "{found:?}");
+        assert!(
+            !found.contains(&"web".to_string()),
+            "a private versionless workspace holder: {found:?}"
+        );
+        assert!(!found.contains(&"web/vendor/dep".to_string()), "{found:?}");
+    }
+
+    /// A nested `pnpm-workspace.yaml` takes precedence over the nested `package.json`, as it does at the root.
+    #[test]
+    fn a_nested_pnpm_workspace_admits_by_its_own_packages_list() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write_file(root, "web/pnpm-workspace.yaml", "packages:\n  - 'apps/*'\n");
+        write_file(root, "web/apps/kept/package.json", &npm("kept"));
+        write_file(root, "web/tools/skipped/package.json", &npm("skipped"));
+
+        let found = paths_of(root, Ecosystem::Npm);
+        assert!(found.contains(&"web/apps/kept".to_string()), "{found:?}");
+        assert!(!found.contains(&"web/tools/skipped".to_string()), "{found:?}");
+    }
+
+    /// A uv workspace below the root judges its members by its own `members` and `exclude`.
+    #[test]
+    fn a_nested_uv_workspace_admits_by_its_own_members_and_exclude() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write_file(
+            root,
+            "py/pyproject.toml",
+            "[tool.uv.workspace]\nmembers = [\"libs/*\"]\nexclude = [\"libs/scratch\"]\n",
+        );
+        for dir in ["py/libs/kept", "py/libs/scratch", "py/other/stray"] {
+            let name = dir.rsplit('/').next().unwrap();
+            write_file(
+                root,
+                &format!("{dir}/pyproject.toml"),
+                &format!("[project]\nname = \"{name}\"\nversion = \"0.1.0\"\n"),
+            );
+        }
+
+        let found = paths_of(root, Ecosystem::Pypi);
+        assert_eq!(found, ["py/libs/kept"]);
+    }
+
+    /// The workspace at the root keeps deciding for everything beneath it, including a workspace nested in it.
+    #[test]
+    fn the_root_npm_workspace_still_decides_for_a_workspace_nested_in_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write_file(
+            root,
+            "package.json",
+            r#"{"name":"root","private":true,"workspaces":["packages/*"]}"#,
+        );
+        write_file(root, "packages/a/package.json", &npm("a"));
+        write_file(
+            root,
+            "web/package.json",
+            r#"{"name":"web-root","private":true,"workspaces":["apps/*"]}"#,
+        );
+        write_file(root, "web/apps/n/package.json", &npm("n"));
+
+        let found = paths_of(root, Ecosystem::Npm);
+        assert!(found.contains(&"packages/a".to_string()), "{found:?}");
+        assert!(!found.contains(&"web/apps/n".to_string()), "{found:?}");
+    }
+
+    /// An ancestor manifest that cannot be understood stops discovery rather than letting the package through.
+    #[test]
+    fn a_malformed_nested_workspace_manifest_is_an_error_not_a_reason_to_admit() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write_file(root, "web/package.json", "{\"workspaces\": [\"packages/*\"],}");
+        write_file(root, "web/packages/a/package.json", &npm("a"));
+
+        let error = IgnoreWalkLocator::new(root).projects().unwrap_err();
+        assert!(matches!(error, LocateError::ManifestParseError { .. }), "{error:?}");
     }
 
     /// A Cargo.toml `[workspace]` `exclude` entry must

@@ -151,6 +151,8 @@ pub(crate) struct Membership {
     members: Option<NegatableGlobSet>,
     exclude: NegatableGlobSet,
     hybrid_root: bool,
+    /// The manifest has the workspace table, even if it lists no `members`.
+    declared: bool,
 }
 
 impl Membership {
@@ -187,6 +189,7 @@ impl Membership {
             members: None,
             exclude: NegatableGlobSet::empty(),
             hybrid_root: false,
+            declared: false,
         }
     }
 }
@@ -255,6 +258,7 @@ pub(crate) fn read_membership(root: &Path, spec: &MembershipSpec) -> Result<Memb
             members: None,
             exclude: NegatableGlobSet::empty(),
             hybrid_root,
+            declared: false,
         });
     };
     let table = spec.table_path.join(".");
@@ -274,6 +278,7 @@ pub(crate) fn read_membership(root: &Path, spec: &MembershipSpec) -> Result<Memb
         members: globs("members")?,
         exclude: globs("exclude")?.unwrap_or_else(NegatableGlobSet::empty),
         hybrid_root,
+        declared: true,
     })
 }
 
@@ -285,12 +290,76 @@ pub(crate) fn read_python_membership(root: &Path) -> Result<Membership, LocateEr
     read_membership(root, &PYTHON_MEMBERSHIP_SPEC)
 }
 
-/// The `members` and `exclude` of each Cargo workspace nested below the workspace root, keyed by its directory, and what
-/// has been learned about workspace manifests on the way.
+/// The membership of each workspace nested below the workspace root, keyed by its directory (`None` where the directory
+/// declares no workspace), and what has been learned about Cargo workspace manifests on the way.
 #[derive(Default)]
-pub(crate) struct NestedCargoMemberships {
-    memberships: HashMap<PathBuf, Membership>,
+pub(crate) struct NestedMemberships {
+    cargo: HashMap<PathBuf, Membership>,
     reads: callisto_manifests::WorkspaceReads,
+    npm: HashMap<PathBuf, Option<NpmMembership>>,
+    python: HashMap<PathBuf, Option<Membership>>,
+}
+
+/// Whether the workspaces nested below `root` admit the package of `ecosystem` at `rel`. The workspace at `root` is
+/// judged by the `read_*_membership` of each ecosystem; this adds the verdict of a nearer one, which judges the package
+/// by its own list. `manifest_text` is the package's own manifest.
+pub(crate) fn nested_workspace_admits(
+    root: &Path,
+    rel: &Path,
+    ecosystem: callisto_model::Ecosystem,
+    manifest_text: &str,
+    nested: &mut NestedMemberships,
+) -> Result<bool, LocateError> {
+    use callisto_model::Ecosystem;
+    match ecosystem {
+        Ecosystem::Cargo => nested_cargo_workspace_admits(root, rel, manifest_text, nested),
+        Ecosystem::Npm => {
+            let cache = &mut nested.npm;
+            judged_by_nearest_declared_workspace(
+                root,
+                rel,
+                cache,
+                |dir| read_npm_membership(dir).map(|membership| membership.globs.is_some().then_some(membership)),
+                |membership, within| membership.admits(within, false),
+            )
+        }
+        Ecosystem::Pypi => {
+            let cache = &mut nested.python;
+            judged_by_nearest_declared_workspace(
+                root,
+                rel,
+                cache,
+                |dir| read_python_membership(dir).map(|membership| membership.declared.then_some(membership)),
+                |membership, within| membership.admits(within, false),
+            )
+        }
+        _ => Ok(true),
+    }
+}
+
+/// The nearest directory above `rel`, below `root`, whose own manifest declares a workspace judges `rel` by its list,
+/// with `rel` taken relative to it. With no such directory nothing nested has an opinion.
+fn judged_by_nearest_declared_workspace<M>(
+    root: &Path,
+    rel: &Path,
+    cache: &mut HashMap<PathBuf, Option<M>>,
+    read: impl Fn(&Path) -> Result<Option<M>, LocateError>,
+    admits: impl Fn(&M, &Path) -> bool,
+) -> Result<bool, LocateError> {
+    for ancestor in rel.ancestors().skip(1) {
+        if ancestor.as_os_str().is_empty() || ancestor == Path::new(".") {
+            break;
+        }
+        if !cache.contains_key(ancestor) {
+            let membership = read(&root.join(ancestor))?;
+            cache.insert(ancestor.to_path_buf(), membership);
+        }
+        if let Some(membership) = &cache[ancestor] {
+            let within = rel.strip_prefix(ancestor).unwrap_or(rel);
+            return Ok(admits(membership, within));
+        }
+    }
+    Ok(true)
 }
 
 /// Whether a Cargo workspace nested below `root` admits the package at `rel`. The workspace at `root` is judged by
@@ -300,7 +369,7 @@ pub(crate) fn nested_cargo_workspace_admits(
     root: &Path,
     rel: &Path,
     manifest_text: &str,
-    nested: &mut NestedCargoMemberships,
+    nested: &mut NestedMemberships,
 ) -> Result<bool, LocateError> {
     let manifest = rel.join("Cargo.toml");
     let located = |error: ManifestError| match error {
@@ -330,11 +399,11 @@ pub(crate) fn nested_cargo_workspace_admits(
     if governing_dir.as_os_str().is_empty() || within.as_os_str().is_empty() {
         return Ok(true);
     }
-    if !nested.memberships.contains_key(governing_dir) {
+    if !nested.cargo.contains_key(governing_dir) {
         let membership = read_cargo_membership(&root.join(governing_dir))?;
-        nested.memberships.insert(governing_dir.to_path_buf(), membership);
+        nested.cargo.insert(governing_dir.to_path_buf(), membership);
     }
-    Ok(nested.memberships[governing_dir].admits(within, false))
+    Ok(nested.cargo[governing_dir].admits(within, false))
 }
 
 #[cfg(test)]
@@ -562,6 +631,11 @@ pub(crate) fn read_npm_membership(root: &Path) -> Result<NpmMembership, LocateEr
         }
     };
     Ok(NpmMembership { globs, hybrid_root })
+}
+
+/// Whether the npm workspace in `dir` lists packages (`pnpm-workspace.yaml` `packages` or `package.json` `workspaces`).
+pub(crate) fn declares_npm_workspace(dir: &Path) -> Result<bool, LocateError> {
+    read_npm_membership(dir).map(|membership| membership.globs.is_some())
 }
 
 /// The `packages` list of `pnpm-workspace.yaml`, or `None` when the file is absent, empty, or has no `packages` key
