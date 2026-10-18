@@ -1,45 +1,30 @@
-Where the context lives
-- In the repo: docs/projects/NEXT-WORK.md. It holds the state after 0.10.2, the rules every workstream follows, and a brief per workstream. Each brief names the files, contracts and specs to read, the approach, the tests (black-box, with the real tool where a fake could hide the bug), and what "done" means.
-- In memory:
-  - A pointer to the plan, with the D01 blocker noted.
-  - A feedback entry: "prove with the real tool before calling it done". It records what went wrong this session: fake tools hid the gh bug, layered PRs only compiled, and a first fix used coarse keys.
+From codex: 
 
-Parallel lanes (separate worktrees, disjoint files, just ci run one at a time)
+<pasted_content id="b815">
+I reviewed the four PRs as a stack through the current #245 head. All four now have 12 successful GitHub checks, and the reported fixes in #244 and #245 are supported by the code and targeted tests I inspected. I would hold the stack before merging because nested npm release still has two high severity gaps that the green checks do not cover.
 
-┌──────┬─────────────────────────────────────────────────────────────────────┬───────────────────────────────┐
-│ Lane │                              PR stack                               │             Notes             │
-├──────┼─────────────────────────────────────────────────────────────────────┼───────────────────────────────┤
-│ A    │ W0 cleanup and docs refresh, W1 test debt                           │ Independent small PRs on main │
-├──────┼─────────────────────────────────────────────────────────────────────┼───────────────────────────────┤
-│ B    │ W2 SYS-RETRY                                                        │ Touches tag selection         │
-├──────┼─────────────────────────────────────────────────────────────────────┼───────────────────────────────┤
-│ C    │ W3 SYS-PYFILES, then SYS-PYROUTES, then W4 redacted provider output │ All in the registry provider  │
-├──────┼─────────────────────────────────────────────────────────────────────┼───────────────────────────────┤
-│ D    │ R3 derive.rs (snapshots first, moves only), then SYS-BARRIER        │ Same file, so stacked         │
-├──────┼─────────────────────────────────────────────────────────────────────┼───────────────────────────────┤
-│ E    │ R5a init.rs tests move, R5b templates, then SYS-NAPI                │ Same file, so stacked         │
-├──────┼─────────────────────────────────────────────────────────────────────┼───────────────────────────────┤
-│ F    │ R1 walk.rs::build                                                   │                               │
-└──────┴─────────────────────────────────────────────────────────────────────┴───────────────────────────────┘
+### Findings
 
-Sequenced or blocked
-- W9 (SYS-OWNER, SYS-DEMOTION, resolver divergence) waits for W2 and R1.
-- SYS-MATURIN and W9 are blocked on D01, so I won't start them without your decision.
-- W10 needs two smaller decisions: whether distinct target declarations get their own graph edges (a RewriteKey change), and whether Python dev groups cascade.
-- W11 verification needs credentials and an approved run.
+| Severity | Finding | Evidence and impact |
+|---|---|---|
+| High — confirmed | A nested npm workspace declared only in package.json can publish from the wrong directory. | Discovery recognizes that declaration, but npm_workspace_dir (.claude/worktrees/leftovers2/crates/callisto-graph/src/commands/registry_argv.rs:195) recognizes only lockfiles and pnpm-workspace.yaml. With web/package.json declaring packages/* and no lockfile, it selects the repository root. The release provider then runs npm publish --workspace=a there. I reproduced npm rejecting that workspace at the root and accepting it from web. A package-local lockfile can produce the same mismatch in the other direction. |
+| High — confirmed | npm observation and publication can address different registries. | Observation (.claude/worktrees/leftovers2/crates/callisto-graph/src/commands/release/provider/registry.rs:516) runs npm view from the repository root; publication (.claude/worktrees/leftovers2/crates/callisto-graph/src/commands/release/provider/registry.rs:562) runs from the selected nested workspace. With no explicit registry URL, a nested .npmrc changes the publish destination but not the observed one. I reproduced npm reading the default registry at the root and a different registry from web. A same-version package on the observed registry could therefore be adopted while the intended registry remains unpublished. Directory-based platform publication also runs from the root and needs checking in the same fix. |
+| Medium — source-traced, needs a fixture | Moving a Cargo package between explicit workspaces can break release-commit verification. | workspace_manifest_candidates (.claude/worktrees/leftovers2/crates/callisto-manifests/src/cargo.rs:240) fetches the explicit package.workspace path from the current manifest. Release-commit verification (.claude/worktrees/leftovers2/crates/callisto-graph/src/commands/release_decision.rs:478) uses that set for both commits. If the parent names a sibling old/ workspace and the release commit names new/, the parent’s root is absent from the fetched set, and historical resolution (.claude/worktrees/leftovers2/crates/callisto-graph/src/commands/release_decision.rs:906) errors. Test that migration before treating it as supported. |
+| Medium — existing issue remains | The durable-write guarantee still has an exception. | sync_directory (.claude/worktrees/leftovers2/crates/callisto-model/src/atomic.rs:111) returns success for any directory-open error, including I/O errors, after the rename. #244 improves exclusive creation and the non-mutating probe, but does not close this earlier durability finding. |
 
-What I'd start with: Lanes A and B together (cleanup plus the mixed-routing test, and SYS-RETRY), since they're independent and user-visible.
+The underlying architectural issue is that workspace ownership is inferred independently by membership, lockfile refresh, npm publishing, and registry observation. Lockfile presence is useful for choosing a tool, but it is not a reliable definition of workspace membership. Resolve an npm package’s owning workspace once from its workspace declaration, then use that result for command directory, tool selection, observation, and publication. Pin or explicitly validate the registry endpoint so both effects use the same destination. Add cross-layer tests with a lockfile-free nested npm workspace and a nested .npmrc; the current tests cover the pieces separately.
 
-One caveat: I verified the template constants and the inline test size in graph init.rs before writing R5. The finding line counts for R1 and R3 are from my own measurement (591 and 412 lines). The rest of the briefs are taken from the repo's findings register, which I read, but I haven't re-verified every row against the code.
+My release-notes choice: generate notes when no changelog is configured; fail release planning when a configured changelog is missing, unreadable, or has no nonempty section for the version. A configured changelog is an authored release input, so silently replacing it changes the announcement. That policy would require updating the current release specification (.claude/worktrees/leftovers2/docs/specs/release.json:284), which explicitly requires the fallback today.
+
+The root Cargo workspace continuing to govern native/ through its members and exclude rules is coherent with the stated contract. I found no reason to change that policy in this stack.
+</pasted_content id="b815">
 
 ---
 
-We shouldn't have the next-work in a PR, it's for local tracking wtf
-
----
-
-Can we start that work?
-
----
-
-Keep going
+<task-notification>
+<task-id>bu8yhrgjz</task-id>
+<tool-use-id>toolu_01YDmcZheuKp4pSi7ySnDmDN</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto--claude-worktrees-owner-history/15c732d1-457b-4efc-91e5-664943f21b1c/tasks/bu8yhrgjz.output</output-file>
+<status>completed</status>
+<summary>Background command "Lint and run full CI for the ownership fixes" completed (exit code 0)</summary>
+</task-notification>
