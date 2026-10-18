@@ -160,6 +160,7 @@ pub fn apply_version_plan<R: CommandRunner>(
     } else {
         BTreeSet::new()
     };
+    let lockfile_dirs = lockfile_dirs(root, plan, &active_ecosystems)?;
     let classification = classify_manifest_writes(plan);
 
     for step in write_steps(plan, &classification) {
@@ -203,30 +204,22 @@ pub fn apply_version_plan<R: CommandRunner>(
 
     // Must run before the staging loop below, so refreshed lockfiles are on disk to be staged.
     if opts.refresh_lockfiles {
-        let refresh_results = refresh_lockfiles(runner, root, &active_ecosystems, &cargo_workspaces)?;
+        let refresh_results = refresh_lockfiles(runner, root, &cargo_workspaces, &lockfile_dirs)?;
         if !refresh_results.is_empty() {
             outcome.lockfile_refresh_results = Some(refresh_results);
         }
     }
 
-    // Map each well-known lockfile to its ecosystem, then include the file
-    // only when that ecosystem is active and the file exists on disk.
-    let lockfile_ecosystems: &[(&str, Ecosystem)] = &[
-        ("package-lock.json", Ecosystem::Npm),
-        ("pnpm-lock.yaml", Ecosystem::Npm),
-        ("yarn.lock", Ecosystem::Npm),
-        ("bun.lock", Ecosystem::Npm),
-        ("bun.lockb", Ecosystem::Npm),
-        ("uv.lock", Ecosystem::Pypi),
-        ("poetry.lock", Ecosystem::Pypi),
-        ("pdm.lock", Ecosystem::Pypi),
-        ("Pipfile.lock", Ecosystem::Pypi),
-    ];
-    for (lockfile, ecosystem) in lockfile_ecosystems {
-        if !active_ecosystems.contains(ecosystem) {
-            continue;
-        }
-        let p = PathBuf::from(lockfile);
+    // Stage each lockfile of an active ecosystem that exists beside the workspace the plan wrote into.
+    let beside = |dirs: &BTreeSet<PathBuf>, names: &[&str]| -> Vec<PathBuf> {
+        dirs.iter()
+            .flat_map(|dir| names.iter().map(move |name| dir.join(name)))
+            .collect()
+    };
+    let candidates = beside(&lockfile_dirs.npm, &NPM_LOCKFILES)
+        .into_iter()
+        .chain(beside(&lockfile_dirs.pypi, &PYPI_LOCKFILES));
+    for p in candidates {
         if path_exists(root, &p)? && !modified_paths.contains(&p) {
             modified_paths.push(p);
         }
@@ -499,25 +492,17 @@ fn rewrite_dependency(
 /// The root manifest of each Cargo workspace the plan writes into. Each has its own `Cargo.lock` beside it.
 fn touched_cargo_workspaces(root: &Path, plan: &VersionPlan) -> Result<BTreeSet<PathBuf>, GraphError> {
     let mut workspaces = BTreeSet::new();
-    let mut members: Vec<&Path> = Vec::new();
     for write in plan.bumps.iter().flat_map(|bump| &bump.writes) {
-        match write {
-            VersionWriteTarget::CargoWorkspacePackage { root_manifest } => {
-                workspaces.insert(root_manifest.clone());
-            }
-            VersionWriteTarget::Manifest(path) => members.push(path),
+        if let VersionWriteTarget::CargoWorkspacePackage { root_manifest } = write {
+            workspaces.insert(root_manifest.clone());
         }
     }
     for rewrite in &plan.rewrites {
-        match &rewrite.key.target {
-            DepWriteTarget::CargoWorkspaceDependency { root_manifest } => {
-                workspaces.insert(root_manifest.clone());
-            }
-            DepWriteTarget::Manifest(path) => members.push(path),
+        if let DepWriteTarget::CargoWorkspaceDependency { root_manifest } = &rewrite.key.target {
+            workspaces.insert(root_manifest.clone());
         }
     }
-    members.extend(plan.platform_writes.iter().map(|write| write.manifest.as_path()));
-    members.extend(plan.optional_dep_updates.iter().map(|update| update.manifest.as_path()));
+    let members = written_manifests(plan);
     let mut reads = callisto_manifests::WorkspaceReads::default();
     for member in members {
         if ManifestFormat::from_path(member) == Ok(ManifestFormat::CargoToml) {
@@ -529,6 +514,24 @@ fn touched_cargo_workspaces(root: &Path, plan: &VersionPlan) -> Result<BTreeSet<
         workspaces.insert(PathBuf::from("Cargo.toml"));
     }
     Ok(workspaces)
+}
+
+/// Every manifest, other than a Cargo workspace root, the plan writes to.
+fn written_manifests(plan: &VersionPlan) -> Vec<&Path> {
+    let mut manifests: Vec<&Path> = Vec::new();
+    for write in plan.bumps.iter().flat_map(|bump| &bump.writes) {
+        if let VersionWriteTarget::Manifest(path) = write {
+            manifests.push(path);
+        }
+    }
+    for rewrite in &plan.rewrites {
+        if let DepWriteTarget::Manifest(path) = &rewrite.key.target {
+            manifests.push(path);
+        }
+    }
+    manifests.extend(plan.platform_writes.iter().map(|write| write.manifest.as_path()));
+    manifests.extend(plan.optional_dep_updates.iter().map(|update| update.manifest.as_path()));
+    manifests
 }
 
 /// The lockfile beside a Cargo workspace root manifest.
@@ -595,8 +598,8 @@ fn run_git_on_paths<R: CommandRunner>(
 fn refresh_lockfiles<R: CommandRunner>(
     runner: &R,
     root: &Path,
-    active_ecosystems: &HashSet<Ecosystem>,
     cargo_workspaces: &BTreeSet<PathBuf>,
+    lockfile_dirs: &LockfileDirs,
 ) -> Result<Vec<LockfileRefreshResult>, GraphError> {
     let mut refresh_results: Vec<LockfileRefreshResult> = Vec::new();
 
@@ -611,76 +614,138 @@ fn refresh_lockfiles<R: CommandRunner>(
         )?);
     }
 
-    if active_ecosystems.contains(&Ecosystem::Pypi) {
-        if path_exists(root, Path::new("uv.lock"))? {
-            refresh_results.push(run_lockfile_refresh(runner, root, "uv.lock", "uv", &["lock"])?);
-        } else if path_exists(root, Path::new("poetry.lock"))? {
-            refresh_results.push(run_lockfile_refresh(
-                runner,
-                root,
-                "poetry.lock",
-                "poetry",
-                &["lock", "--no-update"],
-            )?);
-        } else if path_exists(root, Path::new("pdm.lock"))? {
-            refresh_results.push(run_lockfile_refresh(
-                runner,
-                root,
-                "pdm.lock",
-                "pdm",
-                &["lock", "--update-reuse"],
-            )?);
+    for dir in &lockfile_dirs.pypi {
+        for (file, program, args) in PYPI_REFRESH {
+            if path_exists(root, &dir.join(file))? {
+                refresh_results.push(refresh_in(runner, root, dir, file, program, args)?);
+                break;
+            }
         }
     }
 
-    if active_ecosystems.contains(&Ecosystem::Npm) {
-        if path_exists(root, Path::new("package-lock.json"))? {
-            refresh_results.push(run_lockfile_refresh(
-                runner,
-                root,
-                "package-lock.json",
-                "npm",
-                &["install", "--package-lock-only", "--ignore-scripts"],
-            )?);
+    for dir in &lockfile_dirs.npm {
+        for (file, program, args) in NPM_REFRESH {
+            if path_exists(root, &dir.join(file))? {
+                refresh_results.push(refresh_in(runner, root, dir, file, program, args)?);
+            }
         }
-        if path_exists(root, Path::new("pnpm-lock.yaml"))? {
-            refresh_results.push(run_lockfile_refresh(
-                runner,
-                root,
-                "pnpm-lock.yaml",
-                "pnpm",
-                &["install", "--lockfile-only"],
-            )?);
-        }
-        if path_exists(root, Path::new("yarn.lock"))? {
-            refresh_results.push(run_lockfile_refresh(
-                runner,
-                root,
-                "yarn.lock",
-                "yarn",
-                &["install", "--mode", "update-lockfile"],
-            )?);
-        }
-        if path_exists(root, Path::new("bun.lock"))? {
-            refresh_results.push(run_lockfile_refresh(
-                runner,
-                root,
-                "bun.lock",
-                "bun",
-                &["install", "--lockfile-only"],
-            )?);
-        } else if path_exists(root, Path::new("bun.lockb"))? {
-            refresh_results.push(run_lockfile_refresh(
-                runner,
-                root,
-                "bun.lockb",
-                "bun",
-                &["install", "--lockfile-only"],
-            )?);
+        for file in ["bun.lock", "bun.lockb"] {
+            if path_exists(root, &dir.join(file))? {
+                refresh_results.push(refresh_in(
+                    runner,
+                    root,
+                    dir,
+                    file,
+                    "bun",
+                    &["install", "--lockfile-only"],
+                )?);
+                break;
+            }
         }
     }
 
     Ok(refresh_results)
+}
+
+type Refresh = (&'static str, &'static str, &'static [&'static str]);
+
+/// For Python exactly one lockfile is refreshed per directory, in this order.
+const PYPI_REFRESH: [Refresh; 3] = [
+    ("uv.lock", "uv", &["lock"]),
+    ("poetry.lock", "poetry", &["lock", "--no-update"]),
+    ("pdm.lock", "pdm", &["lock", "--update-reuse"]),
+];
+
+/// Each npm-family lockfile present is refreshed independently (bun's two spellings are handled apart).
+const NPM_REFRESH: [Refresh; 3] = [
+    (
+        "package-lock.json",
+        "npm",
+        &["install", "--package-lock-only", "--ignore-scripts"],
+    ),
+    ("pnpm-lock.yaml", "pnpm", &["install", "--lockfile-only"]),
+    ("yarn.lock", "yarn", &["install", "--mode", "update-lockfile"]),
+];
+
+const NPM_LOCKFILES: [&str; 5] = [
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "bun.lock",
+    "bun.lockb",
+];
+const PYPI_LOCKFILES: [&str; 4] = ["uv.lock", "poetry.lock", "pdm.lock", "Pipfile.lock"];
+
+/// Runs the refresh of `dir/file` in `dir`, reporting the lockfile by its path from the workspace root.
+fn refresh_in<R: CommandRunner>(
+    runner: &R,
+    root: &Path,
+    dir: &Path,
+    file: &str,
+    program: &str,
+    args: &[&str],
+) -> Result<LockfileRefreshResult, GraphError> {
+    run_lockfile_refresh(
+        runner,
+        &root.join(dir),
+        &dir.join(file).to_string_lossy(),
+        program,
+        args,
+    )
+}
+
+/// The directories, relative to the workspace root, holding the npm-family and Python lockfiles the plan's writes
+/// affect. A package's lockfile is the nearest one at or above its directory, so a workspace below the root keeps its own.
+#[derive(Default)]
+struct LockfileDirs {
+    npm: BTreeSet<PathBuf>,
+    pypi: BTreeSet<PathBuf>,
+}
+
+fn lockfile_dirs(
+    root: &Path,
+    plan: &VersionPlan,
+    active_ecosystems: &HashSet<Ecosystem>,
+) -> Result<LockfileDirs, GraphError> {
+    let mut dirs = LockfileDirs::default();
+    for manifest in written_manifests(plan) {
+        match ManifestFormat::from_path(manifest)
+            .ok()
+            .map(|format| format.ecosystem())
+        {
+            Some(Ecosystem::Npm) => {
+                dirs.npm.insert(nearest_lockfile_dir(root, manifest, &NPM_LOCKFILES)?);
+            }
+            Some(Ecosystem::Pypi) => {
+                dirs.pypi.insert(nearest_lockfile_dir(root, manifest, &PYPI_LOCKFILES)?);
+            }
+            _ => {}
+        }
+    }
+    // A plan that names an ecosystem but writes none of its manifests refreshes the workspace root's lockfile.
+    if active_ecosystems.contains(&Ecosystem::Npm) && dirs.npm.is_empty() {
+        dirs.npm.insert(PathBuf::new());
+    }
+    if active_ecosystems.contains(&Ecosystem::Pypi) && dirs.pypi.is_empty() {
+        dirs.pypi.insert(PathBuf::new());
+    }
+    Ok(dirs)
+}
+
+/// The nearest directory at or above `manifest`'s that holds one of `names`, or the workspace root when none does.
+fn nearest_lockfile_dir(root: &Path, manifest: &Path, names: &[&str]) -> Result<PathBuf, GraphError> {
+    let mut dir = manifest.parent().unwrap_or(Path::new(""));
+    loop {
+        for name in names {
+            if path_exists(root, &dir.join(name))? {
+                return Ok(dir.to_path_buf());
+            }
+        }
+        match dir.parent() {
+            Some(parent) => dir = parent,
+            None => return Ok(PathBuf::new()),
+        }
+    }
 }
 
 /// Maps a non-zero exit to `GraphError::LockfileRefreshFailed`, an exec failure to `GraphError::Command`.

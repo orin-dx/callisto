@@ -2757,3 +2757,124 @@ fn touched_cargo_workspaces_names_each_workspace_once() {
         ]
     );
 }
+
+fn bump_of(id: &str, from: &str, to: &str, manifest: &str) -> PlannedBump {
+    let grammar = if id.starts_with("pypi:") {
+        VersionGrammar::Pep440
+    } else {
+        VersionGrammar::SemVer
+    };
+    let version = |raw: &str| Version::parse(raw, grammar).expect("valid version");
+    PlannedBump {
+        package: PackageId::parse(id).expect("valid package id"),
+        from: version(from),
+        to: version(to),
+        severity: Severity::Minor,
+        governed_by: None,
+        reason: None,
+        writes: vec![VersionWriteTarget::Manifest(PathBuf::from(manifest))],
+    }
+}
+
+/// An npm workspace below the root has its own lockfile, which is the one refreshed and staged; the root's is left alone.
+#[test]
+fn a_nested_npm_workspace_refreshes_and_stages_the_lockfile_nearest_to_its_package() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let root = dir.path();
+    write_file(
+        root,
+        "web/package.json",
+        r#"{"name":"web-root","private":true,"workspaces":["packages/*"]}"#,
+    );
+    write_file(root, "web/packages/a/package.json", r#"{"name":"a","version":"1.0.0"}"#);
+    write_file(root, "web/package-lock.json", "{}");
+    write_file(root, "package-lock.json", "{}");
+
+    let plan = VersionPlan {
+        bumps: vec![bump_of("npm:a", "1.0.0", "1.1.0", "web/packages/a/package.json")],
+        ..Default::default()
+    };
+    let runner = CwdRunner(Default::default());
+    let opts = ApplyOptions {
+        refresh_lockfiles: true,
+        transient: false,
+    };
+    let outcome = apply_version_plan(root, &plan, &runner, &opts, &ApplyPermit::force_for_tests()).unwrap();
+
+    let calls = runner.0.lock().unwrap().clone();
+    let installs: Vec<_> = calls.iter().filter(|(program, ..)| program == "npm").collect();
+    assert_eq!(installs.len(), 1, "{calls:?}");
+    assert_eq!(installs[0].2, root.join("web"));
+    let refreshed = outcome.lockfile_refresh_results.expect("a refresh ran");
+    assert_eq!(refreshed[0].filename, Path::new("web/package-lock.json"));
+    assert!(
+        outcome.staged.contains(&PathBuf::from("web/package-lock.json")),
+        "{:?}",
+        outcome.staged
+    );
+    assert!(
+        !outcome.staged.contains(&PathBuf::from("package-lock.json")),
+        "{:?}",
+        outcome.staged
+    );
+}
+
+/// A uv workspace below the root refreshes its own `uv.lock` in its own directory.
+#[test]
+fn a_nested_uv_workspace_refreshes_and_stages_its_own_lockfile() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let root = dir.path();
+    write_file(
+        root,
+        "py/pyproject.toml",
+        "[tool.uv.workspace]\nmembers = [\"libs/*\"]\n",
+    );
+    write_file(
+        root,
+        "py/libs/a/pyproject.toml",
+        "[project]\nname = \"a\"\nversion = \"1.0.0\"\n",
+    );
+    write_file(root, "py/uv.lock", "# lock");
+
+    let plan = VersionPlan {
+        bumps: vec![bump_of("pypi:a", "1.0.0", "1.1.0", "py/libs/a/pyproject.toml")],
+        ..Default::default()
+    };
+    let runner = CwdRunner(Default::default());
+    let opts = ApplyOptions {
+        refresh_lockfiles: true,
+        transient: false,
+    };
+    let outcome = apply_version_plan(root, &plan, &runner, &opts, &ApplyPermit::force_for_tests()).unwrap();
+
+    let calls = runner.0.lock().unwrap().clone();
+    let locks: Vec<_> = calls.iter().filter(|(program, ..)| program == "uv").collect();
+    assert_eq!(locks.len(), 1, "{calls:?}");
+    assert_eq!(locks[0].2, root.join("py"));
+    assert!(
+        outcome.staged.contains(&PathBuf::from("py/uv.lock")),
+        "{:?}",
+        outcome.staged
+    );
+}
+
+/// With no lockfile above the package at all, nothing is refreshed, as for a workspace without one.
+#[test]
+fn a_package_with_no_lockfile_above_it_refreshes_nothing() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let root = dir.path();
+    write_file(root, "web/packages/a/package.json", r#"{"name":"a","version":"1.0.0"}"#);
+
+    let plan = VersionPlan {
+        bumps: vec![bump_of("npm:a", "1.0.0", "1.1.0", "web/packages/a/package.json")],
+        ..Default::default()
+    };
+    let runner = CwdRunner(Default::default());
+    let opts = ApplyOptions {
+        refresh_lockfiles: true,
+        transient: false,
+    };
+    let outcome = apply_version_plan(root, &plan, &runner, &opts, &ApplyPermit::force_for_tests()).unwrap();
+    assert!(outcome.lockfile_refresh_results.is_none());
+    assert!(runner.0.lock().unwrap().iter().all(|(program, ..)| program != "npm"));
+}

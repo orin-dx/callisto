@@ -58,7 +58,7 @@
     },
     {
       "id": "WS-DISC-04",
-      "criterion": "A Cargo candidate is admitted when the root Cargo.toml [workspace] has no `members` key or its path matches `members`, and its path does not match `exclude`; Python candidates follow the same rules using pyproject.toml [tool.uv.workspace]. A glob entry written with a leading `./` or a trailing `/` (`./packages/*`, `packages/*/`) names the same directories as without. A Cargo workspace nested below the root also judges the packages it governs by its own `members` and `exclude`; the workspace at the root keeps deciding for everything beneath it."
+      "criterion": "A Cargo candidate is admitted when the root Cargo.toml [workspace] has no `members` key or its path matches `members`, and its path does not match `exclude`; Python candidates follow the same rules using pyproject.toml [tool.uv.workspace]. A glob entry written with a leading `./` or a trailing `/` (`./packages/*`, `packages/*/`) names the same directories as without. A workspace nested below the root (Cargo `[workspace]`, npm `workspaces` or `pnpm-workspace.yaml`, uv `[tool.uv.workspace]`) also judges the packages beneath it, through the nearest such workspace, by its own list; the workspace at the root keeps deciding for everything beneath it, and a nested manifest that cannot be read or parsed fails discovery. A private, versionless `package.json` that holds an npm workspace is never a package, at the root or below it."
     },
     {
       "id": "WS-DISC-05",
