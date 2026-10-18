@@ -600,7 +600,7 @@ fn add_forge_releases<R: CommandRunner, D: DependencyResolver>(
                 PreparedOperation::ForgeRelease(ForgeReleaseOperation {
                     tag,
                     prerelease: version.is_prerelease(),
-                    notes: release_notes(&workspace.root, package.changelog.as_deref(), version),
+                    notes: release_notes(&workspace.root, package.changelog.as_deref(), version)?,
                 }),
             );
             forge_by_package.insert(id.clone(), operation.id().clone());

@@ -501,7 +501,7 @@ mod tests {
             NotesFallback::FileMissing,
             NotesFallback::SectionMissing,
             NotesFallback::SectionEmpty,
-            NotesFallback::Unreadable,
+            NotesFallback::NotConfigured,
         ] {
             let notice = generated_notes_notice(&package, reason);
             assert!(notice.starts_with("notes: using generated notes ("), "{notice}");

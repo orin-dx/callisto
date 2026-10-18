@@ -4,33 +4,54 @@ use std::path::Path;
 
 use callisto_model::Version;
 
+use crate::error::GraphError;
+
 use super::provider::{NotesFallback, ReleaseNotes};
 
-/// The non-empty `## {version}` section of the changelog at `root.join(changelog)`.
-fn changelog_section(root: &Path, changelog: &Path, version: &Version) -> Result<String, NotesFallback> {
-    let content = match std::fs::read_to_string(root.join(changelog)) {
-        Ok(content) => content,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Err(NotesFallback::FileMissing),
-        Err(_) => return Err(NotesFallback::Unreadable),
+/// The non-empty `## {version}` section of the changelog at `root.join(changelog)`, or why there is none. A changelog
+/// that is there but cannot be read is an error, not a reason: the notes would silently differ from what was reviewed.
+fn changelog_section(
+    root: &Path,
+    changelog: &Path,
+    version: &Version,
+) -> Result<Result<String, NotesFallback>, GraphError> {
+    let path = root.join(changelog);
+    let content = match callisto_model::strict_fs::read_optional(&path) {
+        Ok(Some(content)) => content,
+        Ok(None) => return Ok(Err(NotesFallback::FileMissing)),
+        Err(error) => {
+            return Err(GraphError::ReleaseInputRead {
+                path,
+                message: error.to_string(),
+            })
+        }
     };
-    match crate::changelog::find_section(&content, version) {
+    Ok(match crate::changelog::find_section(&content, version) {
         None => Err(NotesFallback::SectionMissing),
         Some("") => Err(NotesFallback::SectionEmpty),
         Some(section) => Ok(section.to_owned()),
-    }
+    })
 }
 
 /// Release notes for a package: its changelog section, else generated notes and why.
-pub(crate) fn release_notes(root: &Path, changelog: Option<&Path>, version: &Version) -> ReleaseNotes {
+///
+/// # Errors
+///
+/// The changelog exists but cannot be read.
+pub(crate) fn release_notes(
+    root: &Path,
+    changelog: Option<&Path>,
+    version: &Version,
+) -> Result<ReleaseNotes, GraphError> {
     let Some(changelog) = changelog else {
-        return ReleaseNotes::Generated {
+        return Ok(ReleaseNotes::Generated {
             reason: NotesFallback::NotConfigured,
-        };
+        });
     };
-    match changelog_section(root, changelog, version) {
+    Ok(match changelog_section(root, changelog, version)? {
         Ok(section) => ReleaseNotes::Section(section),
         Err(reason) => ReleaseNotes::Generated { reason },
-    }
+    })
 }
 
 #[cfg(test)]
@@ -45,7 +66,7 @@ mod tests {
             std::fs::write(dir.path().join("CHANGELOG.md"), body).unwrap();
         }
         let version = Version::parse("1.0.0", VersionGrammar::SemVer).unwrap();
-        release_notes(dir.path(), changelog.map(Path::new), &version)
+        release_notes(dir.path(), changelog.map(Path::new), &version).unwrap()
     }
 
     fn generated(reason: NotesFallback) -> ReleaseNotes {
@@ -75,15 +96,24 @@ mod tests {
         assert_eq!(notes(None, None), generated(NotesFallback::NotConfigured));
     }
 
-    /// A changelog that exists but cannot be read falls back as `Unreadable`.
+    /// A changelog that exists but cannot be read (a directory, bytes that are not UTF-8) fails planning, not falls
+    /// back: generated notes would replace what the release PR reviewed without anyone choosing that.
     #[test]
-    fn unreadable_changelog_falls_back_to_generated_notes() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir(dir.path().join("CHANGELOG.md")).unwrap();
+    fn an_unreadable_changelog_is_an_error_not_generated_notes() {
         let version = Version::parse("1.0.0", VersionGrammar::SemVer).unwrap();
-        assert_eq!(
-            release_notes(dir.path(), Some(Path::new("CHANGELOG.md")), &version),
-            generated(NotesFallback::Unreadable)
-        );
+        for unreadable in ["directory", "not utf-8"] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("CHANGELOG.md");
+            if unreadable == "directory" {
+                std::fs::create_dir(&path).unwrap();
+            } else {
+                std::fs::write(&path, b"## 1.0.0\n\n- caf\xe9\n").unwrap();
+            }
+            let error = release_notes(dir.path(), Some(Path::new("CHANGELOG.md")), &version).unwrap_err();
+            assert!(
+                matches!(&error, GraphError::ReleaseInputRead { path, .. } if path.ends_with("CHANGELOG.md")),
+                "{unreadable}: {error:?}"
+            );
+        }
     }
 }

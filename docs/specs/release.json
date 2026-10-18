@@ -281,7 +281,7 @@
     },
     {
       "id": "REL-GH-03",
-      "criterion": "Release notes are the body of the package CHANGELOG section for the version, passed with `--notes-file`. With no changelog configured, a missing or unreadable file, or a missing or empty section, Callisto passes `--generate-notes` and prints `notes: using generated notes (<reason>) for <package>` to stderr."
+      "criterion": "Release notes are the body of the package CHANGELOG section for the version, passed with `--notes-file`. With no changelog configured, a missing file, or a missing or empty section, Callisto passes `--generate-notes` and prints `notes: using generated notes (<reason>) for <package>` to stderr. A changelog that exists but cannot be read (a permission error, a directory, bytes that are not UTF-8) fails release planning with E125 naming the file, because generated notes would silently replace what the release PR reviewed."
     },
     {
       "id": "REL-GH-04",

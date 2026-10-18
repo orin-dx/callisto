@@ -244,19 +244,29 @@ pub fn workspace_manifest_candidates(workspace_root: &Path, manifest: &Path) -> 
         .skip(1)
         .map(|ancestor| ancestor.join("Cargo.toml"))
         .collect();
-    let named = read_manifest_text(workspace_root)(manifest)?
-        .map(|text| parse_manifest(manifest, &text))
-        .transpose()?
-        .and_then(|doc| {
-            doc.get("package")
-                .and_then(|package| package.get("workspace"))
-                .and_then(toml_edit::Item::as_str)
-                .and_then(|named| workspace_relative(dir.join(named)).ok())
-        });
-    candidates.extend(named.map(|root| root.join("Cargo.toml")));
+    if let Some(text) = read_manifest_text(workspace_root)(manifest)? {
+        candidates.extend(named_workspace_manifest(manifest, &text)?);
+    }
     candidates.sort();
     candidates.dedup();
     Ok(candidates)
+}
+
+/// The workspace manifest that `text`, the content of the package manifest at `manifest`, names with
+/// `package.workspace`, relative to the workspace root; `None` when it names none or the path leaves the root.
+///
+/// # Errors
+///
+/// `text` does not parse.
+pub fn named_workspace_manifest(manifest: &Path, text: &str) -> Result<Option<PathBuf>, ManifestError> {
+    let dir = manifest.parent().unwrap_or(Path::new(""));
+    let doc = parse_manifest(manifest, text)?;
+    Ok(doc
+        .get("package")
+        .and_then(|package| package.get("workspace"))
+        .and_then(toml_edit::Item::as_str)
+        .and_then(|named| workspace_relative(dir.join(named)).ok())
+        .map(|root| root.join("Cargo.toml")))
 }
 
 /// Whether the manifest declares a workspace. Cargo treats any `workspace` table as one, however it is spelled: a

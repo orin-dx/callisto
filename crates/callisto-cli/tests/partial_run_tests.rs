@@ -130,6 +130,46 @@ mod inherited_versions {
         }
     }
 
+    /// A package that names its workspace with `package.workspace` and is moved to another one in the working tree is
+    /// still partly applied if the workspace it named at `HEAD` has a staged version bump.
+    #[test]
+    fn a_staged_bump_in_the_workspace_a_package_named_at_head_is_found_after_it_names_another() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        init_repo(root);
+        let workspace = |version: &str| {
+            format!("[workspace]\nmembers = [\"../pkgs/p\"]\n\n[workspace.package]\nversion = \"{version}\"\n")
+        };
+        let member = |workspace: &str| {
+            format!(
+                "[package]\nname = \"p\"\nversion.workspace = true\nworkspace = \"{workspace}\"\nedition = \"2021\"\n"
+            )
+        };
+        write(root, "old/Cargo.toml", &workspace("0.1.0"));
+        write(root, "new/Cargo.toml", &workspace("0.1.0"));
+        write(root, "pkgs/p/Cargo.toml", &member("../../old"));
+        write(root, "pkgs/p/src/lib.rs", "\n");
+        callisto_fixtures::scaffold_callisto(root);
+        write(root, ".changeset/pending.md", "---\np: patch\n---\n\nFix p\n");
+        run_git(root, &["add", "."]);
+        run_git(root, &["commit", "-q", "-m", "initial workspace"]);
+
+        write(root, "pkgs/p/Cargo.toml", &member("../../new"));
+        write(root, "old/Cargo.toml", &workspace("0.1.1"));
+        run_git(root, &["add", "old/Cargo.toml"]);
+
+        let runner = GitRunner;
+        let locator = IgnoreWalkLocator::new(root);
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).unwrap();
+        match check_partial_run(&ws).unwrap_err() {
+            GraphError::PartialVersionRun { index, head, .. } => {
+                assert_eq!(index, "0.1.1");
+                assert_eq!(head.render(), "0.1.0");
+            }
+            other => panic!("expected the partial-version diagnostic, got {other:?}"),
+        }
+    }
+
     #[test]
     fn staged_workspace_metadata_without_an_effective_version_change_is_allowed() {
         let dir = fixture(false);

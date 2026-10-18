@@ -95,8 +95,6 @@ pub(crate) enum NotesFallback {
     SectionMissing,
     #[error("changelog section is empty")]
     SectionEmpty,
-    #[error("changelog unreadable")]
-    Unreadable,
 }
 
 #[derive(Debug)]
