@@ -178,7 +178,10 @@ jobs:
       - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2
         with:
           tool: cargo-llvm-cov
+      # Measures lines only: the Test Suite job installs the real-registry tools and runs those tests for real.
       - run: just coverage 90
+        env:
+          CALLISTO_ALLOW_MISSING_TOOLS: "1"
       # Non-blocking for now: the workspace-total gate above can pass while
       # a small crate is far below threshold (a few large crates dominate
       # the total line count). Visible in logs so regressions get noticed;
