@@ -21,9 +21,9 @@ For registry credential setup (npm, crates.io, PyPI), see [`publishing.md`](publ
 
 ### Current retry limit
 
-If a local release tags a version but fails before pushing the tag or completing GitHub work, a fresh `callisto release` can print `Nothing to release.` without a receipt.
+If a local release tags a version but fails before pushing the tag or completing GitHub work, a fresh `callisto release` at the same commit lists the package again, observes each remaining effect and finishes it.
 
-- That message is not proof of completion.
+- `Nothing to release.` is not proof of completion for a tag on an older commit: the retry looks only at tags on the commit being released.
 - Generated simple workflows share this limit.
 - CI releases based on the merged release PR retain the original package list.
 
@@ -55,7 +55,7 @@ Build-matrix limits:
 - An addon crate outside the napi package directory needs a unique crate whose lib name matches `napi.binaryName` (E204).
 - Generated `.node` files must be gitignored; release execution requires a clean checkout.
 - Cargo `bin` targets build with `cargo build --release --locked`. Other products, such as `cdylib`s, need a manual workflow.
-- The napi build/placement roster is currently workspace-wide, not narrowed to the release intent. Unrelated addons can block a release; this is tracked for correction, not a support requirement.
+- The napi build and placement roster comes from the release intent, so an unrelated addon does not block a release of another package.
 - Native npm lifecycle hooks run unchanged, including any owner-defined publishing or forge effects. Those effects are outside Callisto's release graph.
 
 ---

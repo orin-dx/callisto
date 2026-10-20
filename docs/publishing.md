@@ -82,7 +82,7 @@ env:
 
 Do not use `TWINE_API_TOKEN` — twine does not recognize that variable name.
 
-Map the generated workflow's `PYPI_TOKEN` secret to `TWINE_PASSWORD` in the publishing job. The secret name alone does not configure Twine.
+The release action maps the `PYPI_TOKEN` secret to `TWINE_USERNAME` and `TWINE_PASSWORD` itself. A workflow that runs `twine` directly must set both, because the secret name alone does not configure Twine.
 
 ### Generated Callisto workflows
 
