@@ -11,15 +11,15 @@ Status: proposed v1 design, not current behavior. Owner scope: Rust/Cargo, npm/p
 | Version authority | Literal or supported inherited/derived source, plus each distribution's native representation | A grammar guessed from a JSON string |
 | Release effect | One required external effect, its destination, evidence and prerequisites | A package tag proving all publications finished |
 
-Keep existing types where they already express these responsibilities. A `PackageKey` locates a directory; it does not prove identity survives a directory move. Do not add opaque IDs or a public plugin protocol without a demonstrated need. The release-owner representation and wire migration must be specified before implementation.
+Keep existing types where they already express these responsibilities. A `PackageKey` locates a directory; it does not prove identity survives a directory move. Do not add opaque IDs or a public plugin protocol without a demonstrated need. The release owner is derived from existing types and sealed by the intent digest; no owner field or wire change is needed for the current scope.
 
 ## Canonical references and migration
 
-- New exact inputs, generated config, changesets and machine reports use only canonical `cargo/name`, `npm/@scope/name` or `pypi/name` references; new bare and colon-form aliases are rejected. Native normalization belongs to the ecosystem; Python distribution names are not import names.
+- Configuration, generated config, machine reports and command-line arguments use only canonical `cargo/name`, `npm/@scope/name` or `pypi/name` references; bare and colon-form aliases are rejected. Changesets and `pre.json` keep native package names, resolved when read, because an entry names an owner package and the files stay readable by `@changesets/cli`. Native normalization belongs to the ecosystem; Python distribution names are not import names, and a `pypi/` reference uses the declared name.
 - Short labels may remain in human output, but never become an alternate identity authority. Ecosystem-specific native names stay available for manifest rewrites and publisher arguments.
-- Existing bare/colon references are migration inputs only, not alternate spellings for new identities. Resolve them only through established ownership; ambiguous input fails with an actionable diagnostic. Specify historical-reader and schema-version support before changing persisted formats.
+- A bare name in a changeset or `pre.json` resolves through established ownership; ambiguous input fails with an actionable diagnostic. Persisted release documents are already canonical-only.
 - Adding or removing a same-named sibling, adding a canonical manifest or changing the primary manifest must not transfer another owner's history or regress the last release. A genuine rename/move needs a declared migration boundary, not guessing from current path existence.
-- Keep [ADR 11](../adr/0011-directory-keyed-package-identity.md) in force until [the proposed replacement](../adr/0012-canonical-distribution-release-ownership.md) is implemented and accepted. Do not rename existing tags merely to canonicalize selectors.
+- Keep [ADR 11](../adr/0011-directory-keyed-package-identity.md) in force, including its default tag `{display id}@{version}`, until [the proposed replacement](../adr/0012-canonical-distribution-release-ownership.md) is implemented and accepted. Do not rename existing tags to canonicalize selectors; a native rename is declared with `previous-tag-templates`.
 
 ## Native versions and dependencies
 
