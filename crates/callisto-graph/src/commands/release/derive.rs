@@ -484,7 +484,21 @@ fn link_publish_prerequisites<R: CommandRunner, D: DependencyResolver>(
             if !publish_edges.allows(&package.id, &edge.to, edge.kind) {
                 continue;
             }
-            for dependency_release_id in package_ids.get(&edge.to).into_iter().flatten() {
+            // The edge names the dependency's distribution in the declaring manifest's ecosystem, so a Cargo
+            // dependent waits for the dependency's crate, not for its npm package. No such distribution means the
+            // edge was resolved some other way, so it waits for all of them.
+            let ecosystem = crate::cascade::manifest_ecosystem(&edge.from_manifest);
+            let dependency_ids = package_ids.get(&edge.to).map(Vec::as_slice).unwrap_or_default();
+            let touched: Vec<&ReleasePackageId> = dependency_ids
+                .iter()
+                .filter(|dependency_release_id| dependency_release_id.ecosystem() == ecosystem)
+                .collect();
+            let dependency_ids: Vec<&ReleasePackageId> = if touched.is_empty() {
+                dependency_ids.iter().collect()
+            } else {
+                touched
+            };
+            for dependency_release_id in dependency_ids {
                 prerequisites.extend(
                     publishes_by_package
                         .get(dependency_release_id)
@@ -1939,6 +1953,65 @@ mod tests {
     fn derived_dual_cargo_and_npm_owner_is_pinned() {
         let dir = dual_owner_repo();
         insta::assert_snapshot!(derived_text(&dir, &dual_owner_decision(), false));
+    }
+
+    /// A dependent waits only for the dependency's distribution it declares: a Cargo dependent for the crate and an
+    /// npm dependent for the npm package, so one ecosystem's failed publish does not hold the other's dependents.
+    #[test]
+    fn a_dependent_waits_only_for_the_distribution_it_depends_on() {
+        use callisto_model::ReleaseOperationRole::RegistryPublish;
+
+        let dir = repo(&[
+            ("Cargo.toml", "[workspace]\nmembers = [\"dual\", \"rs\"]\nresolver = \"2\"\n"),
+            (
+                "dual/Cargo.toml",
+                "[package]\nname = \"dual\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+            ),
+            ("dual/package.json", r#"{"name":"dual","version":"1.0.0"}"#),
+            (
+                "rs/Cargo.toml",
+                "[package]\nname = \"rs\"\nversion = \"1.0.0\"\nedition = \"2021\"\n[dependencies]\ndual = { path = \"../dual\", version = \"1.0.0\" }\n",
+            ),
+            (
+                "package.json",
+                r#"{"name":"root","private":true,"workspaces":["dual","web"]}"#,
+            ),
+            (
+                "web/package.json",
+                r#"{"name":"web","version":"1.0.0","dependencies":{"dual":"^1.0.0"}}"#,
+            ),
+            (
+                "callisto.toml",
+                "[[package]]\nmatch = \"dual\"\npublish-to = [\"crates-io\", \"npm\"]\n\n[[package]]\nmatch = \"rs\"\npublish-to = [\"crates-io\"]\n\n[[package]]\nmatch = \"web\"\npublish-to = [\"npm\"]\n",
+            ),
+        ]);
+        let decision = release(&[
+            (Ecosystem::Cargo, "dual", "1.0.0"),
+            (Ecosystem::Npm, "dual", "1.0.0"),
+            (Ecosystem::Cargo, "rs", "1.0.0"),
+            (Ecosystem::Npm, "web", "1.0.0"),
+        ]);
+        let (_, operations, _, _, _) = derive(&dir, &decision).unwrap();
+        let waits_for = |ecosystem, name: &str| -> Vec<(Ecosystem, String)> {
+            operations
+                .iter()
+                .find(|operation| {
+                    matches!(operation.id().role, RegistryPublish { .. })
+                        && operation.id().package.ecosystem() == ecosystem
+                        && operation.id().package.name() == name
+                })
+                .unwrap_or_else(|| panic!("no {ecosystem:?} publish of {name}"))
+                .prerequisites()
+                .iter()
+                .map(|id| (id.package.ecosystem(), id.package.name().to_string()))
+                .collect()
+        };
+
+        assert_eq!(
+            waits_for(Ecosystem::Cargo, "rs"),
+            [(Ecosystem::Cargo, "dual".to_string())]
+        );
+        assert_eq!(waits_for(Ecosystem::Npm, "web"), [(Ecosystem::Npm, "dual".to_string())]);
     }
 
     /// The owner's one physical tag and GitHub release must wait for every registry publish of the package, not

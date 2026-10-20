@@ -190,7 +190,7 @@
     },
     {
       "id": "REL-ORD-02",
-      "criterion": "A selected package publishes after the selected packages it depends on through runtime, build, optional or dev edges. A dev edge between two packages in the same dependency cycle does not order them, and a runtime, build or optional cycle fails with E104."
+      "criterion": "A selected package publishes after the selected packages it depends on through runtime, build, optional or dev edges, and waits for the dependency's distribution in the ecosystem of the declaring manifest, so a Cargo dependent follows a dual package's crate and an npm dependent follows its npm package. A dev edge between two packages in the same dependency cycle does not order them, and a runtime, build or optional cycle fails with E104."
     },
     {
       "id": "REL-ORD-03",
