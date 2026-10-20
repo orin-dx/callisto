@@ -443,6 +443,28 @@ fn a_group_naming_one_package_by_two_of_its_names_is_rejected() {
 }
 
 #[test]
+fn version_warns_about_a_changeset_entry_that_names_no_package_and_keeps_the_file() {
+    let dir = workspace(&["crates/native-core"]);
+    cargo_pkg(dir.path(), "crates/native-core", "native-core", "1.0.0");
+    commit(dir.path());
+    fs::create_dir_all(dir.path().join(".changeset")).unwrap();
+    fs::write(
+        dir.path().join(".changeset/mixed.md"),
+        "---\n\"native-core\": patch\n\"ghost\": patch\n---\n\nfix\n",
+    )
+    .unwrap();
+    let (exit, stdout, stderr) = run(dir.path(), &["version", "--dry-run"]);
+    assert_eq!(exit, Some(0), "{stdout}{stderr}");
+    let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let diagnostics = report["diagnostics"].to_string();
+    assert!(
+        diagnostics.contains("unknown-package") && diagnostics.contains("ghost"),
+        "{diagnostics}"
+    );
+    assert!(dir.path().join(".changeset/mixed.md").exists());
+}
+
+#[test]
 fn selectors_resolve_the_same_in_a_prerelease_workspace() {
     let dir = dual();
     let (exit, _, stderr) = run(dir.path(), &["pre", "enter", "beta"]);
