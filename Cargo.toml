@@ -7,7 +7,6 @@ edition = "2021"
 rust-version = "1.96"
 repository = "https://github.com/orin-dx/callisto"
 homepage = "https://github.com/orin-dx/callisto"
-documentation = "https://docs.rs/callisto-cli"
 keywords = ["monorepo", "changesets", "release-management", "versioning", "moon"]
 categories = ["development-tools", "command-line-utilities"]
 
@@ -40,7 +39,6 @@ serial_test = "3"
 yaml-rust2 = { version = "0.11", default-features = false }
 sha2 = "0.10"
 base64 = "0.22"
-fs2 = "0.4"
 url = "2.5.8"
 
 [profile.release]

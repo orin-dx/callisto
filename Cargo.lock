@@ -250,7 +250,6 @@ dependencies = [
  "insta",
  "jsonschema",
  "miette",
- "path-slash",
  "rstest",
  "schemars",
  "serde",
