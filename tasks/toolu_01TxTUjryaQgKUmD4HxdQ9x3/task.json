@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01TxTUjryaQgKUmD4HxdQ9x3",
+  "agent_id": "a1b688ad86cf7b648",
+  "subagent_type": "general-purpose",
+  "task_description": "Research T06 canonical resolver plan",
+  "token_usage": {
+    "input_tokens": 164,
+    "cache_creation_tokens": 276295,
+    "cache_read_tokens": 14355924,
+    "output_tokens": 758,
+    "api_call_count": 82
+  },
+  "started_at": "2026-10-20T11:38:38.790343-07:00",
+  "completed_at": "2026-10-20T11:49:29.001557-07:00"
+}

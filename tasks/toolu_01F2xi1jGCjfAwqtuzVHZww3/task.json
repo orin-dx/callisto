@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01F2xi1jGCjfAwqtuzVHZww3",
+  "agent_id": "a64e4cf498ce45dd1",
+  "subagent_type": "general-purpose",
+  "task_description": "Research RewriteKey and small leftovers",
+  "token_usage": {
+    "input_tokens": 120,
+    "cache_creation_tokens": 164107,
+    "cache_read_tokens": 6590156,
+    "output_tokens": 668,
+    "api_call_count": 60
+  },
+  "started_at": "2026-10-20T11:38:38.788242-07:00",
+  "completed_at": "2026-10-20T11:44:19.952545-07:00"
+}

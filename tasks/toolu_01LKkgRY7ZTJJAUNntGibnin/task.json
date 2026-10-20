@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01LKkgRY7ZTJJAUNntGibnin",
+  "agent_id": "ab6d4ecfaaba0e020",
+  "subagent_type": "bug-hunter",
+  "task_description": "Adversarial architecture and semantic model review",
+  "token_usage": {
+    "input_tokens": 170,
+    "cache_creation_tokens": 363150,
+    "cache_read_tokens": 21220292,
+    "output_tokens": 7356,
+    "api_call_count": 85
+  },
+  "started_at": "2026-10-20T11:39:55.660918-07:00",
+  "completed_at": "2026-10-20T11:56:30.658917-07:00"
+}

@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01QnyhuDuQzJ5ZL2mXxEbwfS",
+  "agent_id": "aa3b9ecf5b10a5c7f",
+  "subagent_type": "bug-hunter",
+  "task_description": "Adversarial spec drift and quality review",
+  "token_usage": {
+    "input_tokens": 242,
+    "cache_creation_tokens": 280986,
+    "cache_read_tokens": 22401185,
+    "output_tokens": 2433,
+    "api_call_count": 121
+  },
+  "started_at": "2026-10-20T11:39:55.660561-07:00",
+  "completed_at": "2026-10-20T11:57:11.125621-07:00"
+}

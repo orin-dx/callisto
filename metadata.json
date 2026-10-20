@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.11.6-nightly.202610200625.37c909353",
+  "checkpoint_id": "01M5DDTA6ESRYS8GCY8PRYVV66",
+  "strategy": "manual-commit",
+  "branch": "fix/tag-ownership-by-name",
+  "checkpoints_count": 19,
+  "files_touched": [
+    "crates/callisto-graph/src/lib.rs",
+    "docs/architecture/identity.md",
+    "docs/specs/workspace.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 196,
+    "cache_creation_tokens": 271978,
+    "cache_read_tokens": 29739434,
+    "output_tokens": 116042,
+    "api_call_count": 86,
+    "subagent_tokens": {
+      "input_tokens": 1510,
+      "cache_creation_tokens": 2461161,
+      "cache_read_tokens": 117430244,
+      "output_tokens": 17159,
+      "api_call_count": 755
+    }
+  }
+}

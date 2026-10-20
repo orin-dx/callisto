@@ -1,0 +1,151 @@
+{
+  "cli_version": "0.11.6-nightly.202610200625.37c909353",
+  "checkpoint_id": "01M5DDTA6ESRYS8GCY8PRYVV66",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-20T19:50:31.177402Z",
+  "branch": "fix/tag-ownership-by-name",
+  "checkpoints_count": 19,
+  "save_step_count": 61,
+  "files_touched": [
+    "crates/callisto-graph/src/lib.rs",
+    "docs/architecture/identity.md",
+    "docs/specs/workspace.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "4fc1c9bc1f4f",
+  "checkpoint_transcript_start": 27868,
+  "transcript_lines_at_start": 27868,
+  "compact_transcript_start": 2450,
+  "token_usage": {
+    "input_tokens": 196,
+    "cache_creation_tokens": 271978,
+    "cache_read_tokens": 29739434,
+    "output_tokens": 116042,
+    "api_call_count": 86,
+    "subagent_tokens": {
+      "input_tokens": 1510,
+      "cache_creation_tokens": 2461161,
+      "cache_read_tokens": 117430244,
+      "output_tokens": 17159,
+      "api_call_count": 755
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 171
+  },
+  "summary": {
+    "intent": "Plan and execute Callisto's v1: record the Maturin deferral, decide D01, verify the remaining v1 work through research and adversarial review, then validate the findings and begin stacked PRs for the repairs that need no owner decision.",
+    "outcome": "Maturin was deferred (PR #251), D01 was decided (B/C/E1/E2), twelve research agents produced a review file (.claude/plans/V1-REVIEW-2026-10-20.md), and the high-impact findings were independently reproduced. PR 1 of the stack (ownership repair in history.rs plus WS-ID-03 spec and identity doc updates) passed full `just ci` and was pushed.",
+    "learnings": {
+      "repo": [
+        "crates.io has no deprecation flag. Retiring a crate means publishing a final patch release with a deprecation description, a README notice and a maintenance badge. Yanking is the wrong tool.",
+        "The v1 plan is one serial chain, D01 -> T06 -> T06-HISTORY -> T08 -> T12 -> T12-DX. T07 (Maturin) is deferred, but V1-SYSTEM-HARDENING.json still lists it as a dependency of T08.",
+        "`just check-api` (cargo semver-checks) is not part of `just ci` and CI never calls it, so public-API changes need a manual run.",
+        "Crates inherit only `edition` and `repository` from the workspace. `rust-version`, keywords, categories and homepage are never inherited, and MSRV 1.96 is never tested in CI.",
+        "The release token is a long-lived `CARGO_REGISTRY_TOKEN`, and `.github/tests/verify-release-workflow-policy.sh` forbids `id-token` outside the build job, which blocks OIDC trusted publishing.",
+        "The local release route tags HEAD rather than the commit that introduced the version. Combined with bare-tag adoption by name, this causes wrong-commit tags and lost publishes after a rename.",
+        "Managed-route pre-release mode fails with E165 because verification demands a consumed changeset, but pre mode retains changesets. `version` keeps bumping beta.N with empty changelog entries.",
+        "Error codes drift from specs. A dirty worktree is E267 and a shallow clone is E266, but the specs say E051. E049 exists only in a spec.",
+        "`callisto version` creates and stages a new Cargo.lock when none is tracked, contradicting the VER-APPLY-14 and VER-PRE-08 wording.",
+        "Real-registry tests skip silently and report as passes. A fake `cargo` plus a local bare remote is enough to reproduce the publish and tag behaviors.",
+        "`TagTemplate::default_for`'s comment says \"native name\" but the code uses `display_name()`, which contradicts ADR 11.",
+        "`RewriteKey.locator` already shipped in #223 (0.11.0), so the W10 RewriteKey line in NEXT-WORK is stale.",
+        "Python dev-dependency groups are not read or rewritten. This is harmless for uv workspace members but documented in docs/publishing.md:103. Poetry caret and tilde ranges on co-released dependencies are not rewritten, and `>=0.1.0,<0.2` widens to `>=0.2.0, <1`."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/history.rs",
+          "line": 93,
+          "end_line": 103,
+          "finding": "Silent adoption of a tag by bare name (D01 S3, S5, S7). The ownership repair adds a name check on the path branch and a shared ownership helper."
+        },
+        {
+          "path": "crates/callisto-graph/src/release/derive.rs",
+          "line": 459,
+          "end_line": 499,
+          "finding": "`link_publish_prerequisites` makes a dependent wait on every publish of its dependency. This over-serializes but is never unsafe, and T08 should fix it before 1.0 because it changes intent digests."
+        },
+        {
+          "path": "crates/callisto-graph/src/release/derive.rs",
+          "line": 737,
+          "end_line": 738,
+          "finding": "The product's forge publish waits only on the draft and uploads, not on a plugin's publish. This is the E2 barrier gap."
+        },
+        {
+          "path": "crates/callisto-graph/src/tag.rs",
+          "line": 71,
+          "end_line": 76,
+          "finding": "The `default_for` doc comment contradicts the code, which uses `display_name()`."
+        },
+        {
+          "path": "crates/callisto-graph/src/cascade.rs",
+          "line": 444,
+          "finding": "The cascade never rewrites or cascades `DepKind::Dev` edges for any ecosystem, by design."
+        }
+      ],
+      "workflow": [
+        "Subagents told to be read-only still ran `cargo publish` against crates.io. Every attempt failed on a missing token, but fixtures with an origin remote need to be sandboxed explicitly.",
+        "Agent reports mix reproduced and source-only claims, and about 14% of sampled spec criteria were wrong. Independently re-running the high-impact repros on a fresh worktree binary was worth the cost.",
+        "Two agent claims came out softer on validation (snapshot publish is blocked by E267, and leaving an unknown-entry changeset on disk is spec-required), so validate before turning findings into work.",
+        "Run a mutation check (the new S7 test must fail without the name check) and the full `just ci` before opening each PR in a stack.",
+        "Use a dedicated worktree for the stack (stack-release) and delete research worktrees afterward."
+      ]
+    },
+    "friction": [
+      "Twelve parallel research agents produced very large, partly overlapping reports that needed manual synthesis and validation.",
+      "The agents ran `cargo publish` in scratch fixtures despite the read-only instruction.",
+      "The agents' reproductions used fake tools, so real registry and GitHub behavior remains unproven.",
+      "The research summary wrongly claimed an E101 spec/code mismatch and had to be retracted.",
+      "Serial cargo and a roughly 394-call `PackageId::parse` fixture churn make the T06 mechanical change a rebase hazard for parallel lanes.",
+      "V1-IMPLEMENTATION asks for a failing regression test first, which conflicts with the user's earlier \"No Red-Green\" preference."
+    ],
+    "open_items": [
+      "Retired-crate deprecation (callisto-format, -vcs, -conventional, -changelog) is parked by the user as an owner operation.",
+      "Owner decisions still open: OIDC `id-token` on execute, which crates reach 1.0, managed pre-release support, snapshot publish path, and the T06 bundle (schemaVersion 2, globs, canonical ids in tables). Also redaction scope (W4), managed-CI inferred releases and requiring registry kind.",
+      "Remaining stack PRs: redactor hardening, E1 dual-package expansion, the fail-instead-of-skip test fix, stale-range and prerelease range handling, spec and doc drift fixes, and the small items (.prototools moon pin, receipt wording, removing deprecated `GroupTable::from_groups`).",
+      "T06 should be split into four PRs: mechanical fixture normalization, reject colon and fix E227, canonical-required surfaces, and the changeset and pre.json readers. ADR 12 should be accepted and ADRs 9 and 10 moved from Proposed.",
+      "T12 and T12-DX need credentials and a hosted rehearsal repo. T12-DX (init to first publish in under 10 minutes) has never been measured.",
+      "Rust hygiene before 1.0: edition 2024, per-crate metadata inheritance, an MSRV CI job, cargo-semver-checks in CI, `#[non_exhaustive]` coverage, package include/exclude, a scheduled advisory scan, and removing the unused `path-slash` and `fs2`.",
+      "Agent-only claims not independently validated: the concurrent-run E167 scenario, public item and unwrap counts, competitor and web claims, the install script's platform gaps, and any hosted GitHub behavior.",
+      "The simple generated workflow lacks a `concurrency:` group, unlike the matrix template.",
+      "Add a Breaking note to `.changeset/brave-badgers-run.md` for the `publish_url` field added to `RegistryConfig`, or mark the struct `#[non_exhaustive]`.",
+      "Refresh stale docs that still cite baseline 0.10.2: ROAD-TO-V1, V1-FINDINGS and V1-IMPLEMENTATION. Also fix the releasing.md retry-limit and napi-roster claims."
+    ]
+  }
+}

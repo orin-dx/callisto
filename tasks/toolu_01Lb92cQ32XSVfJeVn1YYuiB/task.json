@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01Lb92cQ32XSVfJeVn1YYuiB",
+  "agent_id": "aadd105cc49f1402c",
+  "subagent_type": "general-purpose",
+  "task_description": "Research historical ownership repair plan",
+  "token_usage": {
+    "input_tokens": 98,
+    "cache_creation_tokens": 171954,
+    "cache_read_tokens": 5404104,
+    "output_tokens": 500,
+    "api_call_count": 49
+  },
+  "started_at": "2026-10-20T11:38:38.789903-07:00",
+  "completed_at": "2026-10-20T11:48:08.216818-07:00"
+}

@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01GGV6QedpurnTg9wkRjE2jt",
+  "agent_id": "a73727e0aed2ae4fc",
+  "subagent_type": "general-purpose",
+  "task_description": "Competitor and publishing practices comparison",
+  "token_usage": {
+    "input_tokens": 98,
+    "cache_creation_tokens": 160180,
+    "cache_read_tokens": 6321071,
+    "output_tokens": 414,
+    "api_call_count": 49
+  },
+  "started_at": "2026-10-20T11:39:55.662413-07:00",
+  "completed_at": "2026-10-20T11:48:45.608859-07:00"
+}

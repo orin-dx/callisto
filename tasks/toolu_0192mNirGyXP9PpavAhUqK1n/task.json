@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_0192mNirGyXP9PpavAhUqK1n",
+  "agent_id": "a978839a6a76f2c88",
+  "subagent_type": "general-purpose",
+  "task_description": "Research 1.0 mechanics and policy items",
+  "token_usage": {
+    "input_tokens": 72,
+    "cache_creation_tokens": 153288,
+    "cache_read_tokens": 4107010,
+    "output_tokens": 510,
+    "api_call_count": 36
+  },
+  "started_at": "2026-10-20T11:38:38.788346-07:00",
+  "completed_at": "2026-10-20T11:46:11.318156-07:00"
+}

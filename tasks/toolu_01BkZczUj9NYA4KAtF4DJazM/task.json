@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01BkZczUj9NYA4KAtF4DJazM",
+  "agent_id": "aca4ee89c82a9b792",
+  "subagent_type": "general-purpose",
+  "task_description": "Research redacted provider output design",
+  "token_usage": {
+    "input_tokens": 88,
+    "cache_creation_tokens": 197142,
+    "cache_read_tokens": 6218264,
+    "output_tokens": 1885,
+    "api_call_count": 44
+  },
+  "started_at": "2026-10-20T11:38:38.789038-07:00",
+  "completed_at": "2026-10-20T11:44:22.510644-07:00"
+}

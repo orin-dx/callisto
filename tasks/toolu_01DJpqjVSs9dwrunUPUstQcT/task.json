@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01DJpqjVSs9dwrunUPUstQcT",
+  "agent_id": "a030b06cee11a681b",
+  "subagent_type": "general-purpose",
+  "task_description": "Research real-service verification plan",
+  "token_usage": {
+    "input_tokens": 120,
+    "cache_creation_tokens": 208559,
+    "cache_read_tokens": 8916659,
+    "output_tokens": 672,
+    "api_call_count": 60
+  },
+  "started_at": "2026-10-20T11:38:38.789332-07:00",
+  "completed_at": "2026-10-20T11:52:33.352364-07:00"
+}
