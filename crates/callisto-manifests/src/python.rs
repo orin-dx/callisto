@@ -755,6 +755,13 @@ pub fn round_trip(spec: &DepSpec, target: &Version) -> Option<DepSpec> {
     if trimmed.starts_with(">=") {
         return rewrite_single(trimmed, ">=", target);
     }
+    // Poetry's own operators: bare caret and tilde (PEP 440's `~=` was handled above).
+    if let Some(core) = trimmed.strip_prefix('^') {
+        return rewrite_poetry_operator("^", core, target);
+    }
+    if let Some(core) = trimmed.strip_prefix('~').filter(|rest| !rest.starts_with('=')) {
+        return rewrite_poetry_operator("~", core, target);
+    }
 
     // Unknown or unsupported form (e.g. "<", "<=", "!=", bare "*").
     None
@@ -767,6 +774,18 @@ fn rewrite_single(original: &str, op: &str, target: &Version) -> Option<DepSpec>
     let _rest = original.strip_prefix(op)?;
     let rendered = format!("{op}{}", render_target(op, target)?);
     let req = VersionReq::parse(&rendered, Ecosystem::Pypi).ok()?;
+    Some(DepSpec::Range(req, rendered))
+}
+
+/// Rewrites a Poetry caret or tilde clause to the same window around the stable `target`; the caller writes it as the
+/// equivalent PEP 440 range, which Poetry reads too. A pre-release target has no caret or tilde form, so it is left alone.
+fn rewrite_poetry_operator(op: &str, core: &str, target: &Version) -> Option<DepSpec> {
+    parse_version_core(core)?;
+    if target.is_prerelease() {
+        return None;
+    }
+    let rendered = format!("{op}{}", render_target(op, target)?);
+    let req = VersionReq::parse(&normalize_poetry_version_spec(&rendered), Ecosystem::Pypi).ok()?;
     Some(DepSpec::Range(req, rendered))
 }
 
@@ -812,8 +831,24 @@ fn rewrite_range(original: &str, target: &Version) -> Option<DepSpec> {
         return None;
     }
 
-    let next_major = target.major()? + 1;
-    let rendered = format!(">={},<{next_major}", render_target(">=", target)?);
+    // A window of one minor (`>=0.1.0,<0.2`) stays one minor wide; any other upper bound becomes the next major.
+    let lower_core = lower
+        .strip_prefix(">=")
+        .and_then(|version| parse_version_core(version.trim()));
+    let upper_core = upper
+        .strip_prefix('<')
+        .and_then(|version| parse_version_core(version.trim()));
+    let one_minor_window = matches!(
+        (lower_core, upper_core),
+        (Some((lower_major, Some(lower_minor), _)), Some((upper_major, Some(upper_minor), upper_patch)))
+            if upper_major == lower_major && upper_minor == lower_minor + 1 && upper_patch.unwrap_or(0) == 0
+    );
+    let upper_bound = if one_minor_window {
+        format!("{}.{}", target.major()?, target.minor()? + 1)
+    } else {
+        (target.major()? + 1).to_string()
+    };
+    let rendered = format!(">={},<{upper_bound}", render_target(">=", target)?);
     let req = VersionReq::parse(&rendered, Ecosystem::Pypi).ok()?;
     Some(DepSpec::Range(req, rendered))
 }
