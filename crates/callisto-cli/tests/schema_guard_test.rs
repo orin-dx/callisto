@@ -541,6 +541,7 @@ fn diagnostic_code_enum_variants_match_expected_set() {
         "workflow-merge-publishes",
         "package-rule-matched-nothing",
         "product-artifact-owner-without-product",
+        "tag-owned-by-another-package",
     ]);
 
     assert_eq!(

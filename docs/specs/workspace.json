@@ -142,6 +142,11 @@
       "criterion": "For pnpm dependencies, Callisto preserves the declared key, target distribution name and exact `workspace:` suffix separately. `workspace:`, `workspace:*`, `workspace:^` and `workspace:~` are version-derived shorthands; aliases such as `workspace:foo@^1` resolve `foo` while retaining the declared key; relative references resolve only to the admitted npm member at the resolved directory. Valid npm `||` alternatives are evaluated as a union for dependency coverage, while any invalid alternative makes coverage unknown. Catalog and opaque references are not guessed or rewritten."
     },
     {
+      "id": "WS-ID-11",
+      "criterion": "A package that uses the default tag template takes a `{name}@{version}` tag as its release only if the tag's commit did not hold a manifest of another ecosystem under that name; a package renamed into a name, or added beside a package that owned it, takes none of that package's tags or `pre.json` baseline. A commit with no manifest under the name is no evidence, so the tag is taken. `status` reports each rejected tag as an info diagnostic naming `previous-tag-templates`, and a version whose only tag was rejected is still planned for release.",
+      "is_error_case": false
+    },
+    {
       "id": "WS-ID-08",
       "criterion": "A package whose explicit `tag-template` equals another package's default tag template makes `status` and `version` fail with E101 naming both packages and the template.",
       "is_error_case": true

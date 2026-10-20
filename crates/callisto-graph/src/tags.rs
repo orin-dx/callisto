@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use callisto_model::vcs::GitAccess;
 use callisto_model::{
-    select_last_tag, CommitSha, Diagnostic, Ecosystem, LastTag, LastTagSelection, PackageId, TagTemplate,
-    VersionGrammar,
+    select_last_tag, CommitSha, Diagnostic, DiagnosticCode, DiagnosticSeverity, Ecosystem, LastTag, LastTagSelection,
+    PackageId, TagTemplate, VersionGrammar,
 };
 
 use crate::config::ResolvedConfig;
@@ -80,16 +80,23 @@ fn select_from_tags_cached<'a>(
     grammar: VersionGrammar,
     cache: &mut std::collections::HashMap<String, Vec<&'a str>>,
 ) -> Result<LastTagSelection, GraphError> {
-    let glob = template.glob();
-    let candidates = match cache.get(&glob) {
-        Some(cached) => cached.clone(),
-        None => {
-            let matched = matching_tags(all_tags, template)?;
-            cache.insert(glob, matched.clone());
-            matched
-        }
-    };
+    let candidates = candidates_cached(all_tags, template, cache)?;
     select_last_tag(template, grammar, candidates).map_err(GraphError::from)
+}
+
+/// The tags matching `template`, scanned once per distinct glob.
+fn candidates_cached<'a>(
+    all_tags: &'a [String],
+    template: &TagTemplate,
+    cache: &mut std::collections::HashMap<String, Vec<&'a str>>,
+) -> Result<Vec<&'a str>, GraphError> {
+    let glob = template.glob();
+    if let Some(cached) = cache.get(&glob) {
+        return Ok(cached.clone());
+    }
+    let matched = matching_tags(all_tags, template)?;
+    cache.insert(glob, matched.clone());
+    Ok(matched)
 }
 
 /// Keeps the chosen tag and records each skipped-tag warning once, however many packages scan the same tags.
@@ -137,10 +144,30 @@ fn reject_shared_default_templates<D: DependencyResolver>(graph: &D) -> Result<(
     }
 }
 
+/// The advisory for a tag a package matched by name but did not make.
+fn foreign_tag_diagnostic(id: &PackageId, tag: &str) -> Diagnostic {
+    Diagnostic {
+        code: DiagnosticCode::TagOwnedByAnotherPackage,
+        severity: DiagnosticSeverity::Info,
+        message: format!(
+            "tag `{tag}` was made when `{name}` named a manifest of another ecosystem, so `{id}` does not take it; if \
+             this package was renamed, set `previous-tag-templates` on its `[[package]]` rule",
+            name = id.name(),
+            id = id.display_name(),
+        ),
+        package: Some(id.clone()),
+        path: None,
+        escalated_by: None,
+        governed_by: None,
+    }
+}
+
 pub struct TagIndex {
     last: BTreeMap<PackageId, Option<LastTag>>,
     templates: BTreeMap<PackageId, TagTemplate>,
     pre_cursor: BTreeMap<PackageId, Option<CommitSha>>,
+    /// Tags that match a package's default template by name but were made by another package.
+    foreign: BTreeMap<PackageId, std::collections::BTreeSet<String>>,
     /// The full, unfiltered raw tag list fetched once during `build` (see
     /// `fetch_all_tags`), kept around so callers checking whether a specific
     /// tag name already exists (e.g. the unreleased-version check, once per
@@ -161,6 +188,7 @@ impl TagIndex {
         let mut last = BTreeMap::new();
         let mut templates = BTreeMap::new();
         let mut pre_cursor = BTreeMap::new();
+        let mut foreign: BTreeMap<PackageId, std::collections::BTreeSet<String>> = BTreeMap::new();
         let mut diagnostics = Vec::new();
 
         // Fetch the raw tag list exactly once for the whole build, not once
@@ -186,10 +214,41 @@ impl TagIndex {
                 .clone()
                 .unwrap_or_else(|| TagTemplate::default_for(&pkg.id));
             let grammar = pkg.version_grammar()?;
-            let mut chosen = take_chosen(
-                select_from_tags_cached(&all_tags, &tmpl, grammar, &mut glob_cache)?,
-                &mut diagnostics,
-            );
+            let mut chosen = if pkg.tag_template.is_none() && pkg.id.ecosystem().is_none() {
+                // A bare name is the only evidence the default template has, so a tag is the package's only if its
+                // commit did not hold the name in another ecosystem.
+                let mut candidates = candidates_cached(&all_tags, &tmpl, &mut glob_cache)?;
+                loop {
+                    let selection = select_last_tag(&tmpl, grammar, candidates.iter().copied())?;
+                    let Some(tag) = take_chosen(selection, &mut diagnostics) else {
+                        break None;
+                    };
+                    // History that cannot be read is no evidence of another owner.
+                    let held = crate::history::may_have_held_name_at(
+                        git,
+                        tag.name.as_str(),
+                        pkg.id.name(),
+                        pkg,
+                        identity,
+                        &mut rosters,
+                    )
+                    .unwrap_or(true);
+                    if held {
+                        break Some(tag);
+                    }
+                    diagnostics.push(foreign_tag_diagnostic(&pkg.id, tag.name.as_str()));
+                    foreign
+                        .entry(pkg.id.clone())
+                        .or_default()
+                        .insert(tag.name.as_str().to_string());
+                    candidates.retain(|candidate| *candidate != tag.name.as_str());
+                }
+            } else {
+                take_chosen(
+                    select_from_tags_cached(&all_tags, &tmpl, grammar, &mut glob_cache)?,
+                    &mut diagnostics,
+                )
+            };
             if chosen.is_none() {
                 let package_ecosystems: Vec<Ecosystem> = pkg.canonical_manifests().map(|m| m.ecosystem()).collect();
                 if let Some(previous) =
@@ -251,6 +310,7 @@ impl TagIndex {
             last,
             templates,
             pre_cursor,
+            foreign,
             all_tags: all_tags_set,
             diagnostics,
         })
@@ -277,6 +337,11 @@ impl TagIndex {
         self.all_tags.contains(tag_name)
     }
 
+    /// Whether `tag_name` exists and was made by `id`, not by another package that held the same name.
+    pub fn is_tag_of(&self, id: &PackageId, tag_name: &str) -> bool {
+        self.contains_tag(tag_name) && !self.foreign.get(id).is_some_and(|tags| tags.contains(tag_name))
+    }
+
     /// Constructs an empty `TagIndex` with no packages or tags — useful in
     /// unit tests that do not exercise tag-based logic.
     pub fn empty() -> Self {
@@ -284,6 +349,7 @@ impl TagIndex {
             last: BTreeMap::new(),
             templates: BTreeMap::new(),
             pre_cursor: BTreeMap::new(),
+            foreign: BTreeMap::new(),
             all_tags: std::collections::BTreeSet::new(),
             diagnostics: Vec::new(),
         }
@@ -351,6 +417,14 @@ mod tests {
     impl CommandRunner for FakeGitTagRunner {
         fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
             assert_eq!(program, "git");
+            // A probe of a tag's commit finds nothing, so no other owner is evident.
+            if matches!(args.first(), Some(&"rev-parse" | &"grep")) {
+                return Ok(CommandOutput {
+                    exit_code: Some(1),
+                    stdout: String::new(),
+                    stderr: String::new(),
+                });
+            }
             assert_eq!(args, ["tag", "--list"]);
             self.calls.fetch_add(1, Ordering::SeqCst);
             Ok(CommandOutput {
