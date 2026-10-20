@@ -299,6 +299,37 @@ pub fn pre_initial_version<'a>(pre: &'a callisto_model::format::PreState, id: &P
     pre.initial_versions.get(&pre_json_key(id))
 }
 
+/// The commit that added `pre_json`, asked of Git once however many keys need it.
+fn commit_added<'c>(
+    cache: &'c mut Option<Option<String>>,
+    git: &GitAccess<'_>,
+    pre_json: &std::path::Path,
+) -> Result<Option<&'c str>, GraphError> {
+    if cache.is_none() {
+        *cache = Some(git.commit_adding(pre_json).map_err(GraphError::Vcs)?);
+    }
+    Ok(cache.as_ref().and_then(Option::as_deref))
+}
+
+/// Whether `package`, which carries the bare `key` today, may be the package that held it when `pre.json` was added.
+///
+/// History that cannot be read is no evidence of another owner, so it keeps the key.
+fn bare_key_may_belong(
+    git: &GitAccess<'_>,
+    added: &mut Option<Option<String>>,
+    pre_json: &std::path::Path,
+    key: &str,
+    package: &callisto_model::Package,
+    identity: &IdentityIndex,
+    rosters: &mut history::Rosters,
+) -> bool {
+    let held = commit_added(added, git, pre_json).and_then(|rev| match rev {
+        Some(rev) => history::may_have_held_name_at(git, rev, key, package, identity, rosters),
+        None => Ok(true),
+    });
+    held.unwrap_or(true)
+}
+
 /// Resolves native baselines, attributing historical bare keys at the commit that added `pre.json`.
 pub(crate) fn assign_promoted_pre_keys<D: DependencyResolver>(
     git: &GitAccess<'_>,
@@ -311,9 +342,17 @@ pub(crate) fn assign_promoted_pre_keys<D: DependencyResolver>(
     let keys: Vec<String> = state.initial_versions.keys().cloned().collect();
     let mut owners = BTreeMap::new();
     let mut rosters = history::Rosters::default();
+    let mut added = None;
     for key in &keys {
         if let Some(owner) = graph.packages().find(|p| pre_json_key(&p.id) == *key) {
-            owners.insert(key.clone(), owner);
+            if owner.id.ecosystem().is_some()
+                || bare_key_may_belong(git, &mut added, pre_json, key, owner, identity, &mut rosters)
+            {
+                owners.insert(key.clone(), owner);
+            } else {
+                // Another package's baseline: it must not pin this package's version either.
+                state.initial_versions.shift_remove(key);
+            }
             continue;
         }
         let same: Vec<&callisto_model::Package> = graph
@@ -322,7 +361,13 @@ pub(crate) fn assign_promoted_pre_keys<D: DependencyResolver>(
             .collect();
         let owner = if same.is_empty() {
             match identity.resolve(key) {
-                Ok(id) => graph.packages().find(|p| p.id == id),
+                Ok(id) => {
+                    let package = graph.packages().find(|p| p.id == id);
+                    package.filter(|package| {
+                        PackageId::parse(key).is_ok_and(|parsed| parsed.ecosystem().is_some())
+                            || bare_key_may_belong(git, &mut added, pre_json, key, package, identity, &mut rosters)
+                    })
+                }
                 Err(GraphError::UnknownPackage { .. }) => None,
                 Err(GraphError::AmbiguousName { candidates, .. }) => {
                     return Err(GraphError::AmbiguousPreJsonKey {
@@ -333,8 +378,8 @@ pub(crate) fn assign_promoted_pre_keys<D: DependencyResolver>(
                 Err(error) => return Err(error),
             }
         } else {
-            let owner = match git.commit_adding(pre_json).map_err(GraphError::Vcs)? {
-                Some(added) => history::sole_owner_at(git, &added, key, &same, identity, &mut rosters)?,
+            let owner = match commit_added(&mut added, git, pre_json)? {
+                Some(rev) => history::sole_owner_at(git, rev, key, &same, identity, &mut rosters)?,
                 None => None,
             };
             Some(owner.ok_or_else(|| GraphError::AmbiguousPreJsonKey {

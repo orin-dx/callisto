@@ -597,3 +597,64 @@ fn version_rewrites_an_inherited_cargo_alias_in_the_workspace_root() {
     let member = fs::read_to_string(root.join("crates/app/Cargo.toml")).unwrap();
     assert!(member.contains("source-alias = { workspace = true }"), "{member}");
 }
+
+#[test]
+fn a_package_renamed_into_a_shared_name_does_not_take_the_tag_of_the_package_that_owned_it() {
+    let dir = empty_repo();
+    let root = dir.path();
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/old\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("crates/old/src")).unwrap();
+    fs::write(root.join("crates/old/src/lib.rs"), "\n").unwrap();
+    write_manifest(root, "crates/old/Cargo.toml", cargo_manifest("foo", "1.0.0"));
+    write_manifest(root, "packages/b/package.json", npm_manifest("bar", "1.0.0"));
+    commit(root, "release cargo foo");
+    git(root, &["tag", "foo@1.0.0"]);
+
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/a\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    git(root, &["mv", "crates/old", "crates/a"]);
+    write_manifest(root, "packages/b/package.json", npm_manifest("foo", "1.0.0"));
+    commit(root, "move cargo foo and rename npm bar to foo");
+
+    let status = run_ok(root, &["status"]);
+    let cargo = status_package(&status, "cargo/foo").unwrap_or_else(|| panic!("no cargo/foo in status: {status}"));
+    assert_eq!(cargo["lastReleasedVersion"], "1.0.0", "status: {status}");
+    let npm = status_package(&status, "npm/foo").unwrap_or_else(|| panic!("no npm/foo in status: {status}"));
+    assert!(npm["lastReleasedVersion"].is_null(), "status: {status}");
+}
+
+#[test]
+fn a_bare_pre_release_baseline_is_not_adopted_by_a_package_that_only_carries_the_name_now() {
+    let dir = empty_repo();
+    let root = dir.path();
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/foo\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("crates/foo/src")).unwrap();
+    fs::write(root.join("crates/foo/src/lib.rs"), "\n").unwrap();
+    write_manifest(root, "crates/foo/Cargo.toml", cargo_manifest("foo", "1.0.0"));
+    fs::write(
+        root.join(".changeset/pre.json"),
+        "{\"mode\":\"pre\",\"tag\":\"beta\",\"initialVersions\":{\"foo\":\"1.0.0\"},\"changesets\":[]}\n",
+    )
+    .unwrap();
+    commit(root, "enter pre with cargo foo");
+
+    write_manifest(root, "crates/foo/Cargo.toml", cargo_manifest("foo-core", "1.0.0"));
+    write_manifest(root, "packages/foo/package.json", npm_manifest("foo", "3.0.0"));
+    commit(root, "rename cargo foo and add an npm foo");
+    add_changeset(root, "feature", "foo", "minor");
+
+    run_ok(root, &["version", "--no-refresh-lockfiles"]);
+    let manifest = fs::read_to_string(root.join("packages/foo/package.json")).unwrap();
+    assert!(manifest.contains("\"version\": \"3.1.0-beta.0\""), "{manifest}");
+}

@@ -76,11 +76,27 @@ fn names_equal(ecosystem: Ecosystem, left: &str, right: &str) -> bool {
     }
 }
 
+/// Whether `pkg`'s current first manifest held a manifest declaring `name` at `rev`.
+fn first_manifest_declares_at(git: &GitAccess<'_>, rev: &str, pkg: &Package, name: &str) -> Result<bool, GraphError> {
+    let Some(manifest) = pkg.canonical_manifests().next() else {
+        return Ok(false);
+    };
+    let path = Path::new(&manifest.path);
+    let Some(text) = git.read_at(rev, path)? else {
+        return Ok(false);
+    };
+    // A manifest that was broken at `rev` simply names nobody.
+    let declared = read_identity(manifest.format, &text, path)
+        .ok()
+        .and_then(|identity| identity.name);
+    Ok(declared.is_some_and(|declared| names_equal(manifest.ecosystem(), &declared, name)))
+}
+
 /// The one package among `candidates` that owned the bare name `name` at `rev`, if exactly one did.
 ///
-/// A candidate whose current first manifest path exists at `rev` owns it. When none does, the package moved or changed
-/// its primary manifest, so ownership is whichever package has a manifest named `name` today in an ecosystem where
-/// `rev` also held a manifest named `name`.
+/// A candidate whose current first manifest path held a manifest declaring `name` at `rev` owns it. When none does,
+/// the package moved or changed its primary manifest, so ownership is whichever package has a manifest named `name`
+/// today in an ecosystem where `rev` also held a manifest named `name`.
 pub(crate) fn sole_owner_at<'p>(
     git: &GitAccess<'_>,
     rev: &str,
@@ -91,10 +107,7 @@ pub(crate) fn sole_owner_at<'p>(
 ) -> Result<Option<&'p Package>, GraphError> {
     let mut owner = None;
     for pkg in candidates {
-        let Some(manifest) = pkg.canonical_manifests().next() else {
-            continue;
-        };
-        if git.path_exists_at(rev, Path::new(&manifest.path))? {
+        if first_manifest_declares_at(git, rev, pkg, name)? {
             if owner.is_some() {
                 return Ok(None);
             }
@@ -114,4 +127,30 @@ pub(crate) fn sole_owner_at<'p>(
     });
     let first = holders.next();
     Ok(if holders.next().is_some() { None } else { first.copied() })
+}
+
+/// Whether `pkg` can be the package that held the bare name `name` at `rev`.
+///
+/// False only on evidence of another owner: `rev` held a manifest named `name`, but not in any ecosystem where `pkg`
+/// is named `name` today. A revision with no manifest named `name` is no evidence either way.
+pub(crate) fn may_have_held_name_at(
+    git: &GitAccess<'_>,
+    rev: &str,
+    name: &str,
+    pkg: &Package,
+    identity: &IdentityIndex,
+    rosters: &mut Rosters,
+) -> Result<bool, GraphError> {
+    if first_manifest_declares_at(git, rev, pkg, name)? {
+        return Ok(true);
+    }
+    let declaring = rosters.declaring_at(git, rev, name)?;
+    if declaring.is_empty() {
+        return Ok(true);
+    }
+    Ok(declaring.iter().any(|ecosystem| {
+        identity
+            .native_name(&pkg.id, *ecosystem)
+            .is_some_and(|native| names_equal(*ecosystem, native, name))
+    }))
 }

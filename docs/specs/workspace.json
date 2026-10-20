@@ -116,7 +116,7 @@
     },
     {
       "id": "WS-ID-03",
-      "criterion": "When two or more directories declare the same name and no ecosystem declares it in more than one of them, each package is promoted to an ecosystem-qualified id, displayed as `cargo/foo`. Promotion preserves the package's key (its workspace-relative directory) and CHANGELOG path; `cargo/foo` selects it in both states. Newly created default tags use `{display id}@{version}`, so promotion changes their namespace. A promoted package's last tag is also found among `foo@*` tags whose commit contains its manifest and no other same-named package's. A bare `pre.json` `initialVersions` key moves to the one same-named package that existed when `pre.json` was added, else `version` fails with E245."
+      "criterion": "When two or more directories declare the same name and no ecosystem declares it in more than one of them, each package is promoted to an ecosystem-qualified id, displayed as `cargo/foo`. Promotion preserves the package's key (its workspace-relative directory) and CHANGELOG path; `cargo/foo` selects it in both states. Newly created default tags use `{display id}@{version}`, so promotion changes their namespace. A promoted package's last tag is also found among `foo@*` tags whose commit contained a manifest of its own declaring the name `foo`, and none of another same-named package's. A bare `pre.json` `initialVersions` key moves to the one same-named package that existed when `pre.json` was added, else `version` fails with E245. A bare key whose only current package did not hold the name when `pre.json` was added pins nothing."
     },
     {
       "id": "WS-ID-04",
