@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01BJQiPjveDUBSuLoGAU1yiu",
+  "agent_id": "a35d7fb0d9fe1a62e",
+  "subagent_type": "general-purpose",
+  "task_description": "Canonical references blast-radius research",
+  "token_usage": {
+    "input_tokens": 122,
+    "cache_creation_tokens": 194896,
+    "cache_read_tokens": 7884646,
+    "output_tokens": 1072,
+    "api_call_count": 61
+  },
+  "started_at": "2026-10-20T05:46:50.28233-07:00",
+  "completed_at": "2026-10-20T05:53:31.642192-07:00"
+}

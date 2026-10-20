@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01336BQZe7FzrgVUYWGjnez6",
+  "agent_id": "abd96870ccfe31343",
+  "subagent_type": "general-purpose",
+  "task_description": "Maturin version authority research",
+  "token_usage": {
+    "input_tokens": 110,
+    "cache_creation_tokens": 153954,
+    "cache_read_tokens": 5739078,
+    "output_tokens": 1291,
+    "api_call_count": 55
+  },
+  "started_at": "2026-10-20T05:46:50.286577-07:00",
+  "completed_at": "2026-10-20T05:53:05.666265-07:00"
+}

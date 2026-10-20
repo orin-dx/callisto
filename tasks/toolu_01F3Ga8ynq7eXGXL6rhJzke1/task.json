@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01F3Ga8ynq7eXGXL6rhJzke1",
+  "agent_id": "a188061df2299f636",
+  "subagent_type": "general-purpose",
+  "task_description": "Prior art on tag and identity policy",
+  "token_usage": {
+    "input_tokens": 46,
+    "cache_creation_tokens": 120374,
+    "cache_read_tokens": 1985312,
+    "output_tokens": 265,
+    "api_call_count": 23
+  },
+  "started_at": "2026-10-20T05:46:50.284661-07:00",
+  "completed_at": "2026-10-20T05:50:28.382063-07:00"
+}

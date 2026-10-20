@@ -1,0 +1,158 @@
+{
+  "cli_version": "0.11.6-nightly.202610200625.37c909353",
+  "checkpoint_id": "01M5D6TYVGF17SNP34TRH7K5BH",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-20T17:48:27.041232Z",
+  "branch": "docs/maturin-post-v1",
+  "checkpoints_count": 12,
+  "save_step_count": 61,
+  "files_touched": [
+    "docs/errors.md",
+    "docs/projects/ROAD-TO-V1.md",
+    "docs/projects/V1-FINDINGS.md",
+    "docs/projects/V1-IMPLEMENTATION.md",
+    "docs/projects/V1-SYSTEM-HARDENING.json",
+    "docs/specs/workspace.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "25a650b37efa",
+  "checkpoint_transcript_start": 27129,
+  "transcript_lines_at_start": 27129,
+  "compact_transcript_start": 2389,
+  "token_usage": {
+    "input_tokens": 94,
+    "cache_creation_tokens": 634487,
+    "cache_read_tokens": 6005459,
+    "output_tokens": 51874,
+    "api_call_count": 42,
+    "subagent_tokens": {
+      "input_tokens": 938,
+      "cache_creation_tokens": 1367007,
+      "cache_read_tokens": 55796896,
+      "output_tokens": 12683,
+      "api_call_count": 468
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 152
+  },
+  "summary": {
+    "intent": "Get Callisto (Rust release manager) toward v1: finish all unblocked work, then research and draft options for the D01 owner-contract decision, and resolve the Maturin question.",
+    "outcome": "Shipped PYROUTES (#249) and plan-doc prune (#250), cleaned up 61 merged branches and 11 worktrees, wrote a D01 decision brief locally, and, on the user's call to defer Maturin to post-v1, updated E007 text, plan docs and spec WS-ID-09 and opened a PR after a passing `just ci`.",
+    "learnings": {
+      "repo": [
+        "Every durable wire type under callisto-model/src/release/ uses deny_unknown_fields, so adding even an optional field makes older readers fail with E166; the decision reader accepts N-1 (versions 1 and 2) and intents are hard-cut (v5, E215 plus re-derivation E124).",
+        "The release owner is derived at plan time (Cargo, then npm, then PyPI), sealed in the intent via operation ids and digest, so no persisted owner field or wire bump is needed.",
+        "Release wire ids (ReleasePackageId) are already canonical eco/native-name only; bare and colon forms survive only in config selectors, changesets, pre.json keys and tags.",
+        "insta snapshots pin the Debug output of PreparedRegistryBinding, so adding a struct field requires updating five derived_*_is_pinned snapshots; digests stay unchanged.",
+        "RegistryConfig is a public struct, so adding a field is source-breaking; cargo semver-checks (just check-api) is not part of just ci.",
+        "E101 code (has_default && ids.len() > 1) disagrees with its spec wording WS-ID-08 (explicit template equals another's default).",
+        "The doc comment on TagTemplate::default_for is stale: it claims promotion never changes tags, but the code uses display_name() and a test asserts the opposite.",
+        "Bare-id packages adopt a bare tag by name alone, with no ownership check (tags.rs ~184-210); the roster fallback in history.rs runs only for promoted/demoted packages, and the path-exists short-circuit is unsound. This can steal tags after a sibling rename.",
+        "SYS-OWNER, SYS-DEMOTION and the silent pre.json alias drop were already fixed (#230, #222), so the plan text was stale.",
+        "Selecting one identity of a dual Cargo/npm package (--package npm/dual) tags and announces after only that publish and can strand the sibling; expand_selection filters by exact id.",
+        "Maturin parses the Cargo version string directly as PEP 440 (pep440_rs 0.7.3, already a Callisto dependency); several SemVer prerelease forms collapse, reorder or fail, and +build is rejected by PyPI.",
+        "Cargo+Maturin co-location fails with E007 (disagreeing version grammars); Maturin support was deferred to post-v1."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/tag.rs",
+          "line": 72,
+          "finding": "TagTemplate::default_for renders {display_name}@{version}; its doc comment is stale."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/derive.rs",
+          "line": 258,
+          "end_line": 295,
+          "finding": "select_packages derives the owner as the first release id of a graph package in the decision, following manifest priority Cargo, npm, PyPI."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/derive.rs",
+          "line": 194,
+          "finding": "OpIndex::tag_prerequisites makes the owner's single tag wait for every selected registry publish of every release id."
+        },
+        {
+          "path": "crates/callisto-graph/src/history.rs",
+          "line": 84,
+          "end_line": 117,
+          "finding": "sole_owner_at falls back to the manifest roster at the tag commit; the path-existence short-circuit at ~93-103 can pick the wrong owner."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "line": 140,
+          "finding": "expand_selection filters by exact release id, causing partial selection of dual packages."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/capability.rs",
+          "line": 287,
+          "finding": "release execute re-derives the intent and fails closed with E124 on any mismatch."
+        }
+      ],
+      "workflow": [
+        "Verify subagent claims against code before using them; the Explore agent wrongly claimed the redacted-stderr item had shipped.",
+        "Branch deletion was made safe by checking merged PR head containment, git cherry patch equivalence, and zero commits ahead of origin/main, which flagged 13 candidates down to 6 genuinely unsafe.",
+        "Subagent hand-backs arrive as messages that carry no user authority; one subagent ran rm -rf on a stray scratch directory, so scratch dirs were re-checked.",
+        "macOS sed -i with \\n replacement fails and unquoted globs fail in zsh; use Python regex edits and quote globs.",
+        "Pushed commits cannot be amended because force pushes are forbidden, so a typo ('rejed') in a commit message stayed."
+      ]
+    },
+    "friction": [
+      "The earlier session ran out of context and needed a summary continuation.",
+      "Five insta snapshot tests failed on the first CI run after adding a struct field.",
+      "The stale local plan and the Explore agent's claims required re-verifying each workstream against code.",
+      "A subagent wrote to a mistyped path and then deleted a directory with rm -rf, risking other sessions' scratch data.",
+      "A pointless placeholder haiku agent was spawned.",
+      "Commit message typo could not be fixed after push.",
+      "Fetching prior-art docs (Nx, Knope, Lerna, cargo-dist) was partly inconclusive."
+    ],
+    "open_items": [
+      "D01 decisions remain with the user: B (canonical references), C (default tag template), E (dual-package selection expansion and plugin announcement edge).",
+      "Fix the bare-tag adoption wrong-owner bug as its own PR (no decision needed, awaiting go-ahead).",
+      "T08 over-serialization of link_publish_prerequisites, tied to D01.",
+      "Real-service credential verification (T12) and where it runs in CI.",
+      "Redacted provider output (W4): allow-list shape and persisted wire change.",
+      "W10: RewriteKey discriminator and Python dev-group tracking.",
+      "Policy for inferred-only or manual releases in managed CI.",
+      "Delete or decide on the 6 local branches with commits not in merged PR heads.",
+      "Fix the stale default_for comment and the E101 spec/code mismatch.",
+      "Maturin support deferred to post-v1; the deferral PR is open, awaiting CI and merge.",
+      "Unverified: real Maturin wheel build, partial dual rerun recovery against live registries, hosted shallow-clone tag fetch behavior."
+    ]
+  }
+}

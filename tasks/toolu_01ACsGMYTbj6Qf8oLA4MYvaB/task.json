@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01ACsGMYTbj6Qf8oLA4MYvaB",
+  "agent_id": "adf6286d294a9e96a",
+  "subagent_type": "general-purpose",
+  "task_description": "Historical ownership and tag research",
+  "token_usage": {
+    "input_tokens": 80,
+    "cache_creation_tokens": 148252,
+    "cache_read_tokens": 4340216,
+    "output_tokens": 2620,
+    "api_call_count": 40
+  },
+  "started_at": "2026-10-20T05:46:50.281517-07:00",
+  "completed_at": "2026-10-20T05:51:47.206272-07:00"
+}

@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.11.6-nightly.202610200625.37c909353",
+  "checkpoint_id": "01M5D6TYVGF17SNP34TRH7K5BH",
+  "strategy": "manual-commit",
+  "branch": "docs/maturin-post-v1",
+  "checkpoints_count": 12,
+  "files_touched": [
+    "docs/errors.md",
+    "docs/projects/ROAD-TO-V1.md",
+    "docs/projects/V1-FINDINGS.md",
+    "docs/projects/V1-IMPLEMENTATION.md",
+    "docs/projects/V1-SYSTEM-HARDENING.json",
+    "docs/specs/workspace.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 94,
+    "cache_creation_tokens": 634487,
+    "cache_read_tokens": 6005459,
+    "output_tokens": 51874,
+    "api_call_count": 42,
+    "subagent_tokens": {
+      "input_tokens": 938,
+      "cache_creation_tokens": 1367007,
+      "cache_read_tokens": 55796896,
+      "output_tokens": 12683,
+      "api_call_count": 468
+    }
+  }
+}
