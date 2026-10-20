@@ -279,6 +279,24 @@ operations:
                     ecosystem: Cargo,
                     name: "plugin",
                 },
+                role: Tag,
+                version: Version {
+                    grammar: SemVer,
+                    raw: "1.0.0",
+                    parsed: SemVer(
+                        Version {
+                            major: 1,
+                            minor: 0,
+                            patch: 0,
+                        },
+                    ),
+                },
+            },
+            ReleaseOperationId {
+                package: ReleasePackageId {
+                    ecosystem: Cargo,
+                    name: "plugin",
+                },
                 role: ArtifactUpload {
                     slot: ArtifactSlotId {
                         package: ReleasePackageId {

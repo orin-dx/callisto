@@ -186,6 +186,9 @@ struct OpIndex {
     forge_by_package: BTreeMap<ReleasePackageId, ReleaseOperationId>,
     /// Keyed by the product's id: a plugin-built asset must still gate the product's own forge-publish.
     uploads_by_package: BTreeMap<ReleasePackageId, Vec<ReleaseOperationId>>,
+    /// Keyed by the product's id: the tag of each other package whose asset the product's release carries, which
+    /// follows that package's registry publishes, so the announcement waits for them too.
+    asset_owner_tags_by_package: BTreeMap<ReleasePackageId, BTreeSet<ReleaseOperationId>>,
 }
 
 impl OpIndex {
@@ -622,11 +625,14 @@ fn add_artifact_uploads<R: CommandRunner, D: DependencyResolver>(
     let Ops {
         operations,
         prepared,
-        index: OpIndex {
-            forge_by_package,
-            uploads_by_package,
-            ..
-        },
+        index:
+            OpIndex {
+                tag_by_package,
+                forge_by_package,
+                uploads_by_package,
+                asset_owner_tags_by_package,
+                ..
+            },
     } = ops;
 
     let mut artifact_slots = Vec::new();
@@ -705,6 +711,14 @@ fn add_artifact_uploads<R: CommandRunner, D: DependencyResolver>(
                     .entry(id.clone())
                     .or_default()
                     .push(operation.id().clone());
+                if owner_id != *id {
+                    if let Some(owner_tag) = tag_by_package.get(&owner_id) {
+                        asset_owner_tags_by_package
+                            .entry(id.clone())
+                            .or_default()
+                            .insert(owner_tag.clone());
+                    }
+                }
                 operations.insert(operation.id().clone(), operation);
                 artifact_slots.push(slot);
             }
@@ -721,11 +735,13 @@ fn add_forge_publishes(
     let Ops {
         operations,
         prepared,
-        index: OpIndex {
-            forge_by_package,
-            uploads_by_package,
-            ..
-        },
+        index:
+            OpIndex {
+                forge_by_package,
+                uploads_by_package,
+                asset_owner_tags_by_package,
+                ..
+            },
     } = ops;
 
     // Publishing is the last forge step: a GitHub Release is only complete
@@ -736,6 +752,7 @@ fn add_forge_publishes(
         };
         let mut prerequisites = vec![forge.clone()];
         prerequisites.extend(uploads_by_package.get(id).into_iter().flatten().cloned());
+        prerequisites.extend(asset_owner_tags_by_package.get(id).into_iter().flatten().cloned());
         let operation = ReleaseOperation::forge_publish(id.clone(), version.clone(), prerequisites)?;
         let tag = match prepared.get(forge) {
             Some(PreparedOperation::ForgeRelease(prepared_forge)) => prepared_forge.tag.clone(),
@@ -1669,6 +1686,29 @@ mod tests {
         assert!(
             core_publish.prerequisites().contains(&upload_id),
             "core's forge-publish must depend on plugin's artifact upload, not just its own forge-release; \
+             prerequisites were {:?}",
+            core_publish.prerequisites()
+        );
+    }
+
+    /// The announcement must not precede the registry publish of the package whose asset the release carries.
+    #[test]
+    fn a_product_announcement_waits_for_the_tag_of_the_package_whose_asset_it_carries() {
+        let dir = product_and_plugin_repo("1.0.0", "2.0.0");
+        let decision = cargo_release(&["core", "plugin"]);
+        let ((_, operations, _, _, _), _) = derive_with_artifact_policy(&dir, &decision).unwrap();
+
+        let plugin_tag = operations
+            .iter()
+            .find(|operation| {
+                matches!(operation.id().role, callisto_model::ReleaseOperationRole::Tag)
+                    && operation.id().package.name() == "plugin"
+            })
+            .expect("the plugin has a tag operation");
+        let core_publish = forge_publish_operation(&operations, "core");
+        assert!(
+            core_publish.prerequisites().contains(plugin_tag.id()),
+            "core's announcement must wait for plugin's tag, which follows plugin's registry publish; \
              prerequisites were {:?}",
             core_publish.prerequisites()
         );
