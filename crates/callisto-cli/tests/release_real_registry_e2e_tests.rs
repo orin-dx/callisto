@@ -262,6 +262,16 @@ fn npm_registry_release_fixture(package_name: &str) -> (tempfile::TempDir, Strin
     (dir, release_commit)
 }
 
+/// A missing test tool skips on a developer machine but fails under CI, where the workflow installs every one of them:
+/// a skip there would report as a pass and hide that nothing ran.
+fn skip_missing(what: &str) {
+    assert!(
+        std::env::var_os("CI").is_none() || std::env::var_os("CALLISTO_ALLOW_MISSING_TOOLS").is_some(),
+        "{what}; the CI workflow must install it"
+    );
+    eprintln!("SKIPPED real-registry e2e: {what}");
+}
+
 /// A real Verdaccio registry, npm routed to it purely via
 /// `.npmrc`, `callisto release execute`'s real npm provider adapter, and an
 /// assertion against the registry's own package metadata afterward -- not
@@ -269,7 +279,7 @@ fn npm_registry_release_fixture(package_name: &str) -> (tempfile::TempDir, Strin
 #[test]
 fn npm_publish_against_a_real_verdaccio_registry_is_retrievable_afterward() {
     let Some(_verdaccio) = find_on_path("verdaccio") else {
-        eprintln!("SKIPPED npm real-registry e2e: `verdaccio` is not installed");
+        skip_missing("npm: `verdaccio` is not installed");
         return;
     };
 
@@ -458,15 +468,15 @@ fn run_argv(argv: &Argv, extra_env: &[(&str, &str)]) -> std::process::Output {
 #[test]
 fn pypi_publish_against_a_real_pypiserver_registry_is_retrievable_afterward() {
     if find_on_path("pypi-server").is_none() {
-        eprintln!("SKIPPED pypi real-registry e2e: `pypi-server` is not installed");
+        skip_missing("pypi: `pypi-server` is not installed");
         return;
     }
     let Some(interpreter) = resolved_python() else {
-        eprintln!("SKIPPED pypi real-registry e2e: neither `python3` nor `python` is on PATH");
+        skip_missing("pypi: neither `python3` nor `python` is on PATH");
         return;
     };
     if !python_module_importable(interpreter, "build") || find_on_path("twine").is_none() {
-        eprintln!("SKIPPED pypi real-registry e2e: the `build` module or `twine` is not installed");
+        skip_missing("pypi: the `build` module or `twine` is not installed");
         return;
     }
 
@@ -584,7 +594,7 @@ fn start_cargo_http_registry(external: &Path, registry_root: &Path) -> (ServerGu
 #[test]
 fn cargo_publish_against_a_real_cargo_http_registry_is_retrievable_afterward() {
     if find_on_path("cargo-http-registry").is_none() {
-        eprintln!("SKIPPED cargo real-registry e2e: `cargo-http-registry` is not installed");
+        skip_missing("cargo: `cargo-http-registry` is not installed");
         return;
     }
 
