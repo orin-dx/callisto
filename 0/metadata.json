@@ -1,0 +1,111 @@
+{
+  "cli_version": "0.11.6-nightly.202610200625.37c909353",
+  "checkpoint_id": "01M5DE8YRZXNV8611FEAG6AN5C",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-20T19:58:16.596462Z",
+  "branch": "fix/bare-tag-ownership",
+  "checkpoints_count": 19,
+  "save_step_count": 61,
+  "files_touched": [
+    "crates/callisto-cli/tests/schema_guard_test.rs",
+    "crates/callisto-graph/src/cascade/tests.rs",
+    "crates/callisto-graph/src/commands/release_decision.rs",
+    "crates/callisto-graph/src/tags.rs",
+    "crates/callisto-model/src/diagnostic.rs",
+    "docs/architecture/identity.md",
+    "docs/config.md",
+    "docs/specs/workspace.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "4fc1c9bc1f4f",
+  "checkpoint_transcript_start": 29201,
+  "transcript_lines_at_start": 29201,
+  "compact_transcript_start": 2560,
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 34281,
+    "cache_read_tokens": 9535772,
+    "output_tokens": 18403,
+    "api_call_count": 19
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 171
+  },
+  "summary": {
+    "intent": "Implement PR 2 of a stacked series in the callisto repo: a bare-package tag ownership gate in the release flow, with a new diagnostic code, tests, docs/spec updates and a changeset, then link it into a native stack with PR 1.",
+    "outcome": "Added the ownership gate in tags.rs with a new DiagnosticCode and exact-tag check, plus tests, a mutation check, spec/docs/changeset updates. Fixed fake runners broken by the new git probes, got full CI passing after formatting and a cache-count test fix, then committed, pushed and linked PR 2 to PR 1 via gh stack.",
+    "learnings": {
+      "repo": [
+        "Release --dry-run behavior is tested through existing test helpers; new ownership tests followed that pattern.",
+        "New DiagnosticCode variants require registration alongside enum tests in callisto-model/src/diagnostic.rs and must be reflected in the schema guard test and docs/specs/workspace.json.",
+        "Fake/recording git runners in callisto-graph tests reject unknown git commands, so adding new git probes in production code breaks those fixtures until the fakes are taught the probes.",
+        "Config changes such as previous-tag-templates need updates to docs/config.md, docs/architecture/identity.md, and the spec with WS-ID identifiers.",
+        "Full CI runs format, then tests; formatting must be applied and CI rerun before the test recipe result is meaningful.",
+        "A changeset is expected for each PR."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/tags.rs",
+          "finding": "Home of the bare-package tag ownership gate and exact-tag check added in PR 2."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "finding": "Release decision code was touched to integrate the ownership gate; fake runners in tests had to be updated for the new probes."
+        },
+        {
+          "path": "crates/callisto-graph/src/cascade/tests.rs",
+          "finding": "Glob cache count test used a fake runner whose expected git call count broke after the new probes; needed fixing."
+        }
+      ],
+      "workflow": [
+        "Mutation-checking a new gate (breaking it to confirm tests fail) was used to validate test strength.",
+        "Run the crate-level tests early to catch fixture breakage before running full CI.",
+        "Stacked PRs are linked using the gh stack extension after pushing the branch."
+      ]
+    },
+    "friction": [
+      "New git probes broke multiple fake runners in graph tests (changed.rs helper, recording runner, glob cache count test), requiring several rounds of fixes.",
+      "Full CI failed first on formatting, then on a cache-count test, causing multiple reruns."
+    ],
+    "open_items": [
+      "PR 2 is linked into a stack with PR 1; later PRs in the stack remain.",
+      "Line numbers for the code learnings were not available in the transcript."
+    ]
+  }
+}

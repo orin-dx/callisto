@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.11.6-nightly.202610200625.37c909353",
+  "checkpoint_id": "01M5DE8YRZXNV8611FEAG6AN5C",
+  "strategy": "manual-commit",
+  "branch": "fix/bare-tag-ownership",
+  "checkpoints_count": 19,
+  "files_touched": [
+    "crates/callisto-cli/tests/schema_guard_test.rs",
+    "crates/callisto-graph/src/cascade/tests.rs",
+    "crates/callisto-graph/src/commands/release_decision.rs",
+    "crates/callisto-graph/src/tags.rs",
+    "crates/callisto-model/src/diagnostic.rs",
+    "docs/architecture/identity.md",
+    "docs/config.md",
+    "docs/specs/workspace.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 34281,
+    "cache_read_tokens": 9535772,
+    "output_tokens": 18403,
+    "api_call_count": 19
+  }
+}
