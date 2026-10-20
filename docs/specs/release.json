@@ -241,7 +241,7 @@
     },
     {
       "id": "REL-PUB-11",
-      "criterion": "A publish command that fails with auth, rate-limit or other registry output fails the run with E163. A failing git or gh effect command fails with E164. No effect command is re-issued automatically.",
+      "criterion": "A publish command that fails with auth, rate-limit or other registry output fails the run with E163. A failing git or gh effect command fails with E164. No effect command is re-issued automatically. Tool output shown in these errors, in the live stderr echo and in JSON errors has credentials masked as `[REDACTED]`: the values of the known credential variables and of any variable named `*_TOKEN`, `*_SECRET` or `*_PASSWORD`, URL userinfo, `npm_`, `ghp_`-family, `github_pat_` and `pypi-` tokens, `Bearer` values, and `.npmrc` `_authToken`, `_auth` and `_password` values.",
       "is_error_case": true
     },
     {
