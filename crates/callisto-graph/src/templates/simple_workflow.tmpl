@@ -1,8 +1,6 @@
 name: Release
 
-on:
-  push:
-    branches: [__BRANCH__]
+on: {push: {branches: [__BRANCH__]}}
 
 permissions: {}
 
@@ -20,6 +18,7 @@ jobs:
 
   release:
     runs-on: ubuntu-latest
+    concurrency: {group: callisto-release, cancel-in-progress: false}
     permissions: {contents: write, id-token: write}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
