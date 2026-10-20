@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.6-nightly.202610200625.37c909353",
+  "checkpoint_id": "01M5DJ8HZDVFNAJNQCQXHH9EAW",
+  "strategy": "manual-commit",
+  "branch": "fix/version-warns-about-unknown-changeset-entries",
+  "checkpoints_count": 19,
+  "files_touched": [
+    "crates/callisto-cli/tests/status_version_selector_tests.rs",
+    "crates/callisto-graph/src/commands/version.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 12440,
+    "cache_read_tokens": 6825571,
+    "output_tokens": 6493,
+    "api_call_count": 10
+  }
+}
