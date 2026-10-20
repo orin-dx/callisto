@@ -125,7 +125,7 @@
     },
     {
       "id": "WS-ID-05",
-      "criterion": "A `[[fixed-group]]` or `[[linked-group]]` member written `cargo:foo` or `cargo/foo` resolves to package `foo` when a Cargo manifest declares `foo`, promoted or not, through the same selector resolver used for `--package` and changesets; a member naming an ecosystem with no such manifest fails loading with E108, and a bare member name ambiguous across ecosystems fails loading with E103 (not E108).",
+      "criterion": "A `[[fixed-group]]` or `[[linked-group]]` member written `cargo:foo` or `cargo/foo` resolves to package `foo` when a Cargo manifest declares `foo`, promoted or not, through the same selector resolver used for `--package` and changesets; a member naming an ecosystem with no such manifest fails loading with E108, and a bare member name ambiguous across ecosystems fails loading with E103 (not E108). A group that names one package twice, under the same spelling or under two of its native names, fails loading with E250.",
       "is_error_case": true
     },
     {

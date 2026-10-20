@@ -427,6 +427,22 @@ fn a_selector_naming_a_group_members_secondary_name_plans_the_whole_group() {
 }
 
 #[test]
+fn a_group_naming_one_package_by_two_of_its_names_is_rejected() {
+    let dir = workspace(&["crates/native-core"]);
+    cargo_pkg(dir.path(), "crates/native-core", "native-core", "1.0.0");
+    npm_pkg(dir.path(), "crates/native-core", "@org/native-core-js", "1.0.0");
+    fs::write(
+        dir.path().join("callisto.toml"),
+        "[[fixed-group]]\nname = \"pair\"\nmembers = [\"native-core\", \"@org/native-core-js\"]\n",
+    )
+    .unwrap();
+    commit(dir.path());
+    let (exit, stdout, stderr) = run(dir.path(), &["status"]);
+    assert_ne!(exit, Some(0), "{stdout}{stderr}");
+    assert!(format!("{stdout}{stderr}").contains("E250"), "{stdout}{stderr}");
+}
+
+#[test]
 fn selectors_resolve_the_same_in_a_prerelease_workspace() {
     let dir = dual();
     let (exit, _, stderr) = run(dir.path(), &["pre", "enter", "beta"]);
