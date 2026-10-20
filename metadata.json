@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.11.6-nightly.202610200625.37c909353",
+  "checkpoint_id": "01M5DHJNR75AAVCFD6E3ND12N2",
+  "strategy": "manual-commit",
+  "branch": "fix/poetry-caret-rewrite",
+  "checkpoints_count": 19,
+  "files_touched": [
+    "crates/callisto-manifests/src/python.rs",
+    "crates/callisto-manifests/src/python/tests.rs",
+    "docs/specs/versioning.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 46,
+    "cache_creation_tokens": 35922,
+    "cache_read_tokens": 14912107,
+    "output_tokens": 18205,
+    "api_call_count": 23
+  }
+}
