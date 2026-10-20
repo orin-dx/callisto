@@ -157,10 +157,17 @@ fn expand_selection<R: callisto_model::CommandRunner, D: DependencyResolver>(
         .iter()
         .flat_map(|selection| release_groups_of(workspace, selection))
         .collect::<std::collections::BTreeSet<_>>();
+    // Selecting one distribution of a package releases all of them, so the shared tag waits for every publish.
+    let selected_packages = selected
+        .iter()
+        .filter_map(|selection| workspace_package(workspace, selection))
+        .map(|package| package.id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
     entries
         .into_iter()
         .filter(|entry| {
             selected.contains(&entry.package)
+                || workspace_package(workspace, &entry.package).is_some_and(|package| selected_packages.contains(&package.id))
                 || entry.reasons.iter().any(|reason| {
                     matches!(reason, ReleaseInclusionReason::LinkedGroup { group_id } if reason_groups.contains(group_id))
                 })

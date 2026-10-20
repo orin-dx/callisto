@@ -115,7 +115,7 @@
     },
     {
       "id": "REL-CMD-07",
-      "criterion": "Repeated `--package <ecosystem/name>` limits the run to the named packages plus every package that shares a `fixed` or `linked` group with one of them."
+      "criterion": "Repeated `--package <ecosystem/name>` limits the run to the named packages, every distribution of each, and every package that shares a `fixed` or `linked` group with one of them."
     },
     {
       "id": "REL-CMD-08",

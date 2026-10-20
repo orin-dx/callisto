@@ -98,7 +98,7 @@ These reads are version-level checks, not proof of identical bytes or the npm di
 - GitHub's release-by-tag endpoint omits drafts, so the forge lookup finds the release ID by tag through GraphQL, then reads the release by ID (`release/github.rs`).
 - GitHub's reads lag its writes by seconds. The check right after this run's own create, upload or publish retries an absent answer for about a minute before it reports a conflict (`observe_until_visible`).
 
-The tag/announcement barrier covers all required publications of a graph package: a package's tag waits for the registry publishes of every release identity it has (`OpIndex::tag_prerequisites`), so a dual Cargo/npm owner's one tag and public release follow both publishes, in no fixed ecosystem order. Selecting one identity of a dual package makes that identity the owner, so the tag waits only for the selected publishes. An intent derived before this rule fails closed as stale and is rebuilt with `release plan`. See [the scoped design](polyglot-v1.md) for proposed ownership and future Go tag-publication semantics.
+The tag/announcement barrier covers all required publications of a graph package: a package's tag waits for the registry publishes of every release identity it has (`OpIndex::tag_prerequisites`), so a dual Cargo/npm owner's one tag and public release follow both publishes, in no fixed ecosystem order. Selecting one identity of a dual package releases every identity of that package, so the tag never waits on a subset of its publishes. An intent derived before this rule fails closed as stale and is rebuilt with `release plan`. See [the scoped design](polyglot-v1.md) for proposed ownership and future Go tag-publication semantics.
 
 ## Wire and observation boundaries
 

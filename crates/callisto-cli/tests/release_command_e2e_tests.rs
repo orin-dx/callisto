@@ -491,3 +491,66 @@ fn nothing_to_release_is_a_typed_envelope_in_json_for_preview_and_run() {
     }
     assert_eq!(rig.mutations(), mutations, "reporting nothing performs no effect");
 }
+
+/// A Cargo and npm package in one directory, released as `dual@1.0.0` and now at 1.1.0.
+fn unreleased_dual_package() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    callisto_fixtures::git::init_repo(root);
+    git(
+        root,
+        &["remote", "add", "origin", "https://github.com/example/dual.git"],
+    );
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"dual\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("dual/src")).unwrap();
+    fs::write(root.join("dual/src/lib.rs"), "\n").unwrap();
+    let write_versions = |version: &str| {
+        fs::write(
+            root.join("dual/Cargo.toml"),
+            format!("[package]\nname = \"dual\"\nversion = \"{version}\"\nedition = \"2021\"\n"),
+        )
+        .unwrap();
+        fs::write(
+            root.join("dual/package.json"),
+            format!("{{\n  \"name\": \"dual\",\n  \"version\": \"{version}\"\n}}\n"),
+        )
+        .unwrap();
+    };
+    callisto_fixtures::scaffold_callisto(root);
+    write_versions("1.0.0");
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-m", "release dual 1.0.0"]);
+    git(root, &["tag", "dual@1.0.0"]);
+    write_versions("1.1.0");
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-m", "bump dual to 1.1.0"]);
+    dir
+}
+
+#[test]
+fn selecting_one_distribution_of_a_dual_package_releases_both() {
+    let dir = unreleased_dual_package();
+    let root = dir.path();
+    for selection in ["npm/dual", "cargo/dual"] {
+        let out = callisto(root, &["--dry-run", "release", "--package", selection]);
+        assert!(
+            out.status.success(),
+            "{selection}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let plan: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        let mut publishes: Vec<&str> = plan["operations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|operation| operation["id"]["role"]["kind"] == "registryPublish")
+            .filter_map(|operation| operation["id"]["package"].as_str())
+            .collect();
+        publishes.sort_unstable();
+        assert_eq!(publishes, ["cargo/dual", "npm/dual"], "{selection}: {plan}");
+    }
+}
