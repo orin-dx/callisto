@@ -148,7 +148,7 @@
     },
     {
       "id": "WS-ID-09",
-      "criterion": "A discovered package whose canonical manifests use different version grammars fails with E007 before version planning or init writes. This includes co-located Cargo.toml and pyproject.toml, whether the Python version is static or declared dynamic; matching numeric version strings do not bypass the grammar check.",
+      "criterion": "A discovered package whose canonical manifests use different version grammars fails with E007 before version planning or init writes. This includes co-located Cargo.toml and pyproject.toml, whether the Python version is static or declared dynamic; matching numeric version strings do not bypass the grammar check. The error lists the grammars in a fixed order and its help says to put the Python package in its own directory.",
       "is_error_case": true
     },
     {

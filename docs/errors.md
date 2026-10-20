@@ -16,7 +16,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E004 | Value is not a valid 40-character hexadecimal commit SHA | Provide a valid full 40-character commit SHA. |
 | E005 | Manifest role is not valid for the manifest's format | — |
 | E006 | Package has no canonical manifest; at least one is required | Add a canonical manifest file for the package. |
-| E007 | Package's canonical manifests disagree on version grammar; it has no single version of record | Ensure all manifests for a package use consistent version grammars. |
+| E007 | Package's canonical manifests disagree on version grammar; it has no single version of record | Put the Python package in its own directory; a Cargo or npm package cannot share one with it. |
 | E008 | Package identity has an ecosystem prefix but no name after it | Include package name after ecosystem prefix. |
 | E009 | Manifest path has an unsupported format | — |
 | E010 | Failed to read a manifest file | Check file permissions and path validity. |

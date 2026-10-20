@@ -53,11 +53,10 @@ impl Package {
 
         let first = grammars[0];
         if grammars.iter().any(|&g| g != first) {
-            let unique: HashSet<_> = grammars.into_iter().collect();
-            return Err(ModelError::mixed_version_grammars(
-                &self.id,
-                unique.into_iter().collect(),
-            ));
+            let mut unique = grammars;
+            unique.sort();
+            unique.dedup();
+            return Err(ModelError::mixed_version_grammars(&self.id, unique));
         }
 
         Ok(first)
@@ -296,6 +295,20 @@ mod tests {
 
         let err = pkg.version_grammar().unwrap_err();
         assert!(matches!(err, ModelError::MixedVersionGrammars { .. }), "got {err:?}");
+    }
+
+    #[test]
+    fn mixed_grammars_are_listed_in_a_stable_order() {
+        let cargo = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
+        let pypi = ManifestDecl::new("pyproject.toml", ManifestRole::Canonical, ManifestFormat::PyprojectToml).unwrap();
+        let pkg = test_package(vec![pypi, cargo], vec![]);
+
+        for _ in 0..16 {
+            let Err(ModelError::MixedVersionGrammars { grammars, .. }) = pkg.version_grammar() else {
+                panic!("expected E007");
+            };
+            assert_eq!(grammars, vec![VersionGrammar::SemVer, VersionGrammar::Pep440]);
+        }
     }
 
     #[test]

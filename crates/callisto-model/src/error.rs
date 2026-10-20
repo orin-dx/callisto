@@ -35,7 +35,7 @@ pub enum ModelError {
     #[error("package `{package}` has canonical manifests in disagreeing version grammars ({grammars:?}); its version of record has no single grammar")]
     #[diagnostic(
         code(E007),
-        help("Ensure all manifests for a package use consistent version grammars.")
+        help("Put the Python package in its own directory; a Cargo or npm package cannot share one with it.")
     )]
     MixedVersionGrammars {
         package: String,

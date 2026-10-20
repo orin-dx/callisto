@@ -8,11 +8,11 @@ The current-contract repairs (release-PR compatibility, installer fidelity, sche
 
 | Stack | Order | What each boundary proves |
 | --- | --- | --- |
-| Identity/authority | T06 canonical references → T06-HISTORY historic ownership; T07 native/Maturin authority follows T06 | One resolver across authored/generated consumers; no transferred or regressed release history; native metadata agrees with planned versions |
+| Identity/authority | T06 canonical references → T06-HISTORY historic ownership | One resolver across authored/generated consumers; no transferred or regressed release history; native metadata agrees with planned versions |
 | Effects | T08 shared physical effects | One owner per irreversible effect; the tag and announcement already wait for every registry publish and a local rerun completes a failed release, so what remains is executing a shared effect once |
 | Evidence | T12 production matrix → T12-DX measured onboarding | Executed/skipped/simulated evidence distinguished; first-release setup and credentials included in timing |
 
-T06-HISTORY → T07 is a true stack: historical and native-authority changes share model/graph consumers. T08 follows both. Independent read-only review and native fixture drafting can run alongside those implementation units once their interfaces are fixed; competing edits cannot. JSON task dependencies are authoritative; stack grouping is not permission to ignore a dependency.
+T08 follows T06-HISTORY. Independent read-only review and native fixture drafting can run alongside those implementation units once their interfaces are fixed; competing edits cannot. JSON task dependencies are authoritative; stack grouping is not permission to ignore a dependency.
 
 ## D01: approved directions and remaining model choices
 
@@ -25,7 +25,6 @@ The owner approved Cargo, npm/pnpm and Python/PyPI as current scope, architectur
 | Tag migration | Do not rename existing tags; retain observed legacy templates/history and select one deterministic template for new releases | Settle independent/fixed defaults with owner identity; do not add a second inference-based tag authority |
 | Wire compatibility | Preserve existing string versions where context suffices; version documents whose owner/effect/output semantics change | Enumerate decision/intent/manifest/envelope/receipt readers, accepted old versions, stale decisions and old-intent rerun support; reject unsupported migration explicitly |
 | Conflicting pre-state aliases | A legacy bare key may resolve to an owner that already has a canonical key in the same file | Choose behavior when both keys carry different versions; current `or_insert` keeps the canonical value and silently drops the migrated legacy value |
-| Maturin | First support Cargo-owned `dynamic = ["version"]` and inherited Cargo authority with native Python mapping | Specify static co-located metadata behavior, precedence, unsupported mappings/backends and built wheel/sdist checks; do not force equal numeric strings into one grammar |
 | Announcement | The owner chose required Cargo/npm/PyPI publications before a shared tag and public GitHub release; a future Go source tag can itself be a publication | Specify draft creation and upload ordering and prove all required owner outputs complete before public announcement |
 | Registry file set | Declare selected outputs before build; bind exact trusted filenames/digests after build without mutating sealed intent | Choose per-file effects or an aggregate operation with explicit partial-state proof; define how build inventory is covered by the existing envelope and how local retries retain original bytes |
 | Python destinations | Separate credential-free index/read and upload routing; public PyPI/TestPyPI first | Choose support versus explicit refusal for custom, authenticated and HTML-only indexes; Twine credentials do not authenticate observation automatically |
@@ -84,7 +83,7 @@ No concurrent Cargo builds/tests locally, even across tasks. Reserve one build s
 
 | Shared contract | Confirmed participants | Required disposition |
 | --- | --- | --- |
-| `Manifest` / `ManifestIdentity` / `VersionSource` | `CargoToml`, `PackageJson`, `PyprojectToml`; `read_identity`; live base-version and historical blob readers | T06-HISTORY and T07 migrate all reached readers/editors, including writers and snapshots; preserve native parsing and format rules |
+| `Manifest` / `ManifestIdentity` / `VersionSource` | `CargoToml`, `PackageJson`, `PyprojectToml`; `read_identity`; live base-version and historical blob readers | T06-HISTORY migrates all reached readers/editors, including writers and snapshots; preserve native parsing and format rules |
 | Selector ownership | `IdentityIndex`; add/status/aggregate/matrix; config rules/groups; `history.rs::sole_owner_at` and pre-state/history readers | T06/T06-HISTORY unify exact selectors, distinguish glob syntax and migrate both tag/pre-state ownership consumers |
 | `ReleaseProviderSet` | Production `ValidatedReleaseIntent` and simulator `SimWorld` | T08 migrates both; fake CLI provider harness still exercises real dispatch |
 | Registry adapter/evidence | `CargoRegistry`, `NpmRegistry`, `PypiRegistry`; platform npm path | T08 gives every reached sibling a migrated or evidence-backed unaffected disposition |
@@ -107,7 +106,6 @@ This is an inspected candidate inventory, not a promise that no new call site ex
 | Native versions/history | Stable Python decisions and pre-state; root/inherited Cargo authority; old schemas and tamper negatives |
 | Native dependencies | Promoted dual outputs; Cargo aliases/inheritance; pnpm ranges/aliases/paths/pack transforms; Python markers/extras preserved |
 | Version interruption | Tracked/untracked input; late refresh/staging/decision failures; no double bump, false success or unrelated edits |
-| Maturin | Co-located dynamic/static boundary; native mapping; built wheel/sdist metadata and clean installation |
 | Release recovery | Tag/push/draft/upload/publication failures; full owner barrier; original trusted bytes retained |
 | Registry completion | Partial Python file upload, conflicting bytes, yanked files, index lag and changed read/upload routes through production providers |
 | Generated workflow | Intent-selected builds/placement, fresh native auth, unsupported builder rejection and one NAPI effect owner |
@@ -119,7 +117,7 @@ This is an inspected candidate inventory, not a promise that no new call site ex
 - Owner decisions, not invented merge gates: workspace-wide discarded-source-error enforcement, extra npm JSON-layout preservation, stronger release-commit producer provenance, mandatory explicit registry kind and napi output attestation, private Python/HTML support, npm channels, universal registry checksums and wrapper bump severity.
 - Owner/external operations: token rotation, bot-PR check policy, Rust-cache pin in `orin-dx/actions`, final migration-notice publications for retired crates. Do not perform these as side effects of implementation agents.
 - Separate small follow-up, pending compatibility check: pin the floating Moon version in `.prototools`. Evaluate target facts versus the 18-triple table without adding a Rust-specific core model requirement.
-- After v1 remains additive: effective-config explain, checksum sidecars/proto verification, fixed-group globs, standard archive docs and concrete Go/NuGet adapters.
+- After v1 remains additive: co-located Cargo/Maturin (see [the model](../architecture/polyglot-v1.md)), effective-config explain, checksum sidecars/proto verification, fixed-group globs, standard archive docs and concrete Go/NuGet adapters.
 
 ## Governing source snapshots
 

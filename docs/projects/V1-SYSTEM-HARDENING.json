@@ -126,55 +126,6 @@
       ]
     },
     {
-      "id": "T07",
-      "title": "Represent supported native version authority and distribution outputs",
-      "files": {
-        "modify": [
-          "crates/callisto-model/src/package.rs",
-          "crates/callisto-model/src/version.rs",
-          "crates/callisto-manifests/src/lib.rs",
-          "crates/callisto-manifests/src/python.rs",
-          "crates/callisto-manifests/src/cargo.rs",
-          "crates/callisto-graph/src/walk.rs",
-          "crates/callisto-graph/src/commands/version.rs",
-          "crates/callisto-graph/src/commands/release_decision.rs",
-          "docs/specs/workspace.json",
-          "docs/specs/versioning.json",
-          "docs/architecture/polyglot-v1.md",
-          "crates/callisto-graph/src/lib.rs",
-          "crates/callisto-graph/src/apply.rs",
-          "crates/callisto-graph/src/aggregate.rs",
-          "crates/callisto-graph/src/commands/snapshot.rs"
-        ],
-        "test": [
-          "crates/callisto-manifests/tests/cargo_tests.rs",
-          "crates/callisto-cli/tests/native_resolution_e2e_tests.rs"
-        ],
-        "create": [
-          "crates/callisto-cli/tests/maturin_version_authority_tests.rs"
-        ]
-      },
-      "steps": [
-        "Finding coverage: SYS-MATURIN. Baseline: Package::version_grammar rejects admitted Cargo/Python grammar mixing; ManifestIdentity.VersionSource describes only literal/inherited Cargo.",
-        "Implement D01's bounded source-authority representation and per-distribution native versions using the existing package/manifest types where possible. Keep MIT model semantics independent of FSL parsing; migrate CargoToml, PackageJson and PyprojectToml together if their shared Manifest contract changes.",
-        "Support the agreed co-located Maturin Cargo-owned dynamic version, including inherited Cargo authority, without inserting project.version. Preserve metadata precedence and use only the admitted SemVer-to-PEP-440 mapping; unsupported cases fail before mutation.",
-        "Migrate live base versions, bump/apply/snapshot, pre-state, historical verification and native dependency comparisons to the selected authority/distribution representation; do not partially support discovery while release planning still assumes one grammar.",
-        "Add the new co-located CLI fixture for static/dynamic decisions, different native names, inherited authority, prerelease/snapshot mapping and unsupported backend/mapping diagnostics. Compare actual built wheel/sdist metadata and a clean consumer install against the planned Python version.",
-        "Run scoped model/manifests/graph suites sequentially, then rtk cargo test -p callisto-cli --test maturin_version_authority_tests and --test native_resolution_e2e_tests with Python/Maturin prerequisites; record unavailable native build evidence. Go/NuGet remain design examples, not adapters."
-      ],
-      "commit_message": "refactor(model): represent native distribution version authority",
-      "depends_on": [
-        "D01",
-        "T06",
-        "T06-HISTORY"
-      ],
-      "covers_criteria": [
-        "WS-ID-02",
-        "WS-ID-09",
-        "VER-APPLY-01"
-      ]
-    },
-    {
       "id": "T08",
       "title": "Deduplicate shared physical effects and enforce publication barriers",
       "files": {
@@ -209,8 +160,7 @@
       "commit_message": "fix(release): complete shared effects across retries",
       "depends_on": [
         "D01",
-        "T06-HISTORY",
-        "T07"
+        "T06-HISTORY"
       ],
       "covers_criteria": [
         "REL-ORD-01",
@@ -251,7 +201,6 @@
       "depends_on": [
         "T06",
         "T06-HISTORY",
-        "T07",
         "T08"
       ]
     },
@@ -293,12 +242,11 @@
     },
     {
       "batch_id": "B07",
-      "title": "Canonical identity, history and native authority",
-      "target_crate": "callisto-model / callisto-manifests / callisto-graph",
+      "title": "Canonical identity and history",
+      "target_crate": "callisto-model / callisto-graph",
       "task_ids": [
         "T06",
-        "T06-HISTORY",
-        "T07"
+        "T06-HISTORY"
       ]
     },
     {

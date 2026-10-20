@@ -4,7 +4,7 @@ Unshipped work only. Baseline: main `07154021c` (0.10.2). [Owner requirement](..
 
 ## Scope and guardrails
 
-- Rust/Cargo, npm/pnpm and Python/PyPI now, including concrete napi-rs and Cargo/Maturin layouts. Go and C#/.NET/NuGet are architecture examples only.
+- Rust/Cargo, npm/pnpm and Python/PyPI now, including concrete napi-rs layouts. Co-located Cargo/Maturin is after v1; separate-directory Cargo and Python packages are supported. Go and C#/.NET/NuGet are architecture examples only.
 - Canonical native distribution references; deliberate legacy migration; separate release ownership and version authority.
 - Reuse the dependency graph and operation DAG. Native dependency, build input and version coupling do not mean the same thing.
 - Native tools/CI own building, packing and authentication. No universal package manager, build scheduler, public plugin platform, service graph or cross-registry transaction.
@@ -19,7 +19,6 @@ The execution portfolio holds the remaining work as bounded units, including the
 
 - D01: confirm exact ownership, compatibility, native authority and registry-output proof contracts before architectural code; existing-contract repairs do not wait for it.
 - T06 and T06-HISTORY: canonical new references and legacy/history migration across selectors, config, groups, changesets, reports, pre-state and tags. Rename, manifest additions, promotion and demotion retain the right owner's history. [ADR 12](../adr/0012-canonical-distribution-release-ownership.md) remains proposed until implementation.
-- T07: supported version authority and native distribution representations. Cover co-located Cargo/Maturin with Cargo-owned dynamic Python version and inspect built metadata; do not insert a second static version or build a universal converter.
 - T08: shared physical effect ownership, so one tag, draft, upload or publication referenced by several distributions is executed once. The tag already waits for every registry publish of its package, and a rerun after a failed push completes the release. Retain the committed roster and no-journal executor. A future Go source tag is publication, not a universal completion marker.
 
 The plan is an implementation portfolio, not an approved future-behavior spec. Resolve wire/compatibility choices and update the matching area spec with implementation; do not treat architectural packets as fully gated implementer handoffs before D01.
@@ -40,7 +39,6 @@ Each implementation unit adds its own regression/fault tests. T12 integrates the
 | npm/pnpm | Workspace ranges, aliases, paths, catalogs, peer/optional/private policy and packed metadata |
 | Python | Native versions, extras/markers, prereleases, required wheel/sdist set and partial upload |
 | Cargo+napi | Selected target builds, owner-defined lifecycle hooks preserved, Callisto-owned publication ordering and clean install/load |
-| Cargo+Maturin | Co-located static/dynamic metadata, native version mapping and wheel metadata |
 | Mixed workspace | No unrelated addon builds, foreign-name rewrites or missed affected lockfiles |
 | History/retry | Correct ownership through transitions; missing push/forge/assets/files completed with original artifacts |
 
