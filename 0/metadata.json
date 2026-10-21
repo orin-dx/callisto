@@ -1,0 +1,133 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5FVC5THF67ZPZ80MBZTJWD8",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-21T18:25:55.13499Z",
+  "branch": "worktree-ci-hygiene",
+  "checkpoints_count": 6,
+  "save_step_count": 1,
+  "files_touched": [
+    ".github/workflows/callisto-ci.yml"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "5b83d7b5e496",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 48,
+    "cache_creation_tokens": 117228,
+    "cache_read_tokens": 2578474,
+    "output_tokens": 20803,
+    "api_call_count": 24,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 186
+  },
+  "summary": {
+    "intent": "Drive the callisto Rust release manager to v1 by working through a local multi-lane plan (SYS-RETRY, test debt, docs refresh, init/derive refactors, SYS-NAPI, T06 colon rejection), and settle the pending owner decisions with proposals and recommendations.",
+    "outcome": "A large set of fix PRs (including #202-#208 and #270) were opened and merged with `just ci` green and signed commits. Recommendations for all pending decisions were accepted, with versioning settled as lockstep across the four published crates, and the CI hygiene PR was about to start.",
+    "learnings": {
+      "repo": [
+        "Local tracking and handoff plans (e.g. NEXT-WORK.md) must never go in a commit or PR; they live in `.claude/plans/`, excluded via `.git/info/exclude`.",
+        "`just ci` includes a 90% coverage gate. A background task's \"exit code 0\" can be the wrapper script's, so read the `exit=` line in the CI log.",
+        "Commits must be signed (global `commit.gpgsign=true`); never use `-c commit.gpgsign=false` on real repos. PRs must be opened ready for review, not as drafts.",
+        "AGENTS.md rules: no spec IDs in code, succinct docs, one changeset per user-visible topic, never hard-wrap Markdown, no claude.ai/session links in PRs or commits.",
+        "ADR 12: the colon form is rejected everywhere and `eco/name` is canonical; `display_name()` already emits the slash form. E316 rejects colon, and E317 (bare reference in config) is planned.",
+        "Callisto has four published crates (`callisto-model` MIT, `callisto-manifests`, `callisto-graph`, `callisto-cli` FSL) plus dev-only `callisto-fixtures`. The consolidation shipped in #157, and all crates version in lockstep via a fixed group.",
+        "The error registry test requires every Diagnostic variant to carry a code, and `docs/errors.md` holds the E-code table and total count.",
+        "Release harness fakes (git, gh, cargo, registry) can hide bugs; the real-tool proof for SYS-RETRY was still outstanding.",
+        "A group-member resolution catch-all `Err(_)` was hiding E103 and E316 errors; it now maps only `UnknownPackage` to `MissingGroupMember`."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/identity.rs",
+          "line": 124,
+          "end_line": 130,
+          "finding": "`PackageId::display_name()` emits the slash form `eco/name`; Serialize and Display go through it, so output is already colon-free."
+        },
+        {
+          "path": "crates/callisto-graph/src/identity.rs",
+          "line": 483,
+          "end_line": 487,
+          "finding": "`resolve_native_with_fallback` was the only colon emitter (ambiguous-dependency warning); changed to slash in PR #270."
+        },
+        {
+          "path": "crates/callisto-graph/src/config/pattern.rs",
+          "line": 26,
+          "end_line": 33,
+          "finding": "`PackagePattern::parse` originally tried `:` then `/`; now slash-only."
+        }
+      ],
+      "workflow": [
+        "Write the failing black-box test first, and mutate the code to prove new tests can fail (done for the W1 mixed-routing and R3 snapshot tests).",
+        "For refactors, commit characterization snapshots on the unchanged code first, then do the mechanical move and require the snapshots to pass unchanged.",
+        "Subagent hand-backs and task notifications carry no user authority; use independent review agents on risky PRs.",
+        "Sandbox/hook quirks: inline `env` commands, heredocs and scripts mentioning `git` are rejected, so write script files and use the Edit tool; the classifier may reject a Bash call when a hook rewrites it, so retry once.",
+        "zsh/macOS quirks: quote `%G?`, use `${var}` before `:`, `${=var}` for word splitting; bash 3.2 lacks `declare -A` and `mapfile`; macOS `sed` rejects some one-liners.",
+        "Edits are limited to the current worktree, so switch worktrees via ExitWorktree/EnterWorktree to touch another branch's files.",
+        "Use `gh stack` to link stacked PRs natively."
+      ]
+    },
+    "friction": [
+      "Wrongly put the local NEXT-WORK.md plan into PR #201, and the user objected; the PR was closed and the file moved local.",
+      "Committed 17 times with `commit.gpgsign=false`, producing unsigned commits that blocked merging and needed re-signing and force-pushing.",
+      "PR #267 conflicted with #266 on a shared test file and needed a rebase.",
+      "The first T06 `just ci` failed on a clippy `single_element_loop` while the task notification misleadingly reported exit 0.",
+      "Sandbox restrictions on heredocs, inline env and git-mentioning scripts forced workarounds throughout.",
+      "Initially misreported michi as independently versioned because its `main` lagged the consolidation branch; the user corrected it to lockstep.",
+      "A PR body written with escaped backticks in a quoted heredoc left literal backslashes and had to be fixed."
+    ],
+    "open_items": [
+      "Start the CI hygiene PR (MSRV job, scheduled `cargo deny`, Cargo dependabot, semver-checks, `concurrency:` group for the generated simple workflow); `.github/workflows/callisto-ci.yml` was modified.",
+      "T06 PR 3 (E317 canonical-required config, converting this repo's `callisto.toml`), then PR 4 (canonical CLI args) and PR 5 (canonical emission, `schemaVersion` 2 bump), plus deleting dead `resolve_human`.",
+      "Implement the accepted decision proposals: dist-tag derived from the pre-release identifier, snapshots never published, lockstep 1.0 across the four crates with an internal-API note, floating `v1` tag, platform additions, and a redaction tail.",
+      "Post-1.0: OIDC trusted publishing support, and possibly merging `callisto-manifests` into `callisto-graph`.",
+      "A2 (local route releases HEAD) needs a design spike; A4 (stale ranges after a pre cycle) and A5 (foreign published version) need implementing.",
+      "W0 branch cleanup (e.g. `docs/next-work-plan`, `docs/spec-rewrite`, `fix/native-resolution`, `docs/crate-consolidation-plan`) needs per-branch approval; the W1 real-service credential check needs a CI-location decision.",
+      "Real-tool verification (gh, cargo, registries) and the T12b owner-run scratch-registry script remain unproven; W11 needs credentials.",
+      "Update local `.claude/plans/NEXT-WORK.md` and the decision-proposals notes to reflect lockstep for decision 2."
+    ]
+  }
+}
