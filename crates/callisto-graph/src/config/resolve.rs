@@ -10,7 +10,7 @@ use callisto_model::{
 use crate::config::groups::{GroupTable, RawGroupTable};
 use crate::config::pattern::PackagePattern;
 use crate::config::raw::{RawConfig, RawProductReleaseConfig};
-use crate::error::{ConfigError, GraphError};
+use crate::error::ConfigError;
 
 #[derive(Clone, Debug)]
 pub struct ResolvedConfig {
@@ -20,14 +20,8 @@ pub struct ResolvedConfig {
     pub validation: ValidationConfig,
     pub product_release: Option<ProductReleaseConfig>,
     pub registries: BTreeMap<RegistryKey, RegistryConfig>,
-    /// Per-package override rules from `[[package]]` blocks, in TOML declaration order.
-    ///
-    /// Lookup uses two-pass specificity (see `resolve_package_config`, `rule_applies`):
-    /// - Pass 1 (Prefixed tier): the first entry whose rule is ecosystem-qualified AND
-    ///   applies (name matches, and the package actually has a manifest in that ecosystem)
-    ///   wins, regardless of its position relative to Bare rules.
-    /// - Pass 2 (Bare tier): only if Pass 1 finds nothing, the first entry whose rule
-    ///   applies wins. Within each tier, first-match-wins in TOML declaration order.
+    /// Per-package override rules from `[[package]]` blocks, in TOML declaration order. Every rule is
+    /// ecosystem-qualified; the first one that applies to a package wins (see `resolve_package_config`).
     pub packages: Vec<(PackageId, PackageConfig)>,
     /// Bulk config-override rules from `[[package-set]]` blocks, in TOML declaration order.
     /// Applied as a fallback when no `[[package]]` rule matches a package.
@@ -39,7 +33,6 @@ pub struct ResolvedConfig {
     /// `Workspace::load` can call `GroupTable::resolve` once the
     /// `IdentityIndex` is available after `ManifestWalkResolver::build`.
     pub(crate) raw_groups: RawGroupTable,
-    pub promoted_siblings: BTreeMap<String, Vec<(PackageId, BTreeSet<Ecosystem>)>>,
     provenance: BTreeMap<ConfigKey, ConfigProvenance>,
 }
 
@@ -60,15 +53,6 @@ pub enum ConfigProvenance {
 }
 
 impl ResolvedConfig {
-    pub(crate) fn with_promoted_siblings(
-        &self,
-        promoted_siblings: BTreeMap<String, Vec<(PackageId, BTreeSet<Ecosystem>)>>,
-    ) -> ResolvedConfig {
-        let mut overlay = self.clone();
-        overlay.promoted_siblings = promoted_siblings;
-        overlay
-    }
-
     pub fn provenance(&self, key: &ConfigKey) -> ConfigProvenance {
         self.provenance.get(key).copied().unwrap_or(ConfigProvenance::Default)
     }
@@ -294,66 +278,26 @@ pub fn parse_release_trigger(s: &str) -> Result<ReleaseTrigger, ConfigError> {
     }
 }
 
-/// A `[[package]]` rule applies to `id` when the names match and, for a
-/// Prefixed rule, `id`'s package actually has a manifest in that ecosystem.
+/// A `[[package]]` rule applies to `id` when the names match and the package has a manifest in the rule's ecosystem.
 ///
-/// `PackageId::matches` alone is not enough here: it treats a Bare id as an
-/// ecosystem wildcard, so a Prefixed rule for one ecosystem (`pypi/foo`)
-/// would otherwise match a same-named package that only exists in another
-/// (a Cargo-only `foo`) -- `package_ecosystems` is the package's real,
-/// manifest-derived ecosystem set, independent of whether its `PackageId`
-/// happens to be Bare (unpromoted) or Prefixed.
+/// `package_ecosystems` is the package's real, manifest-derived ecosystem set, so a `pypi/foo` rule never applies to a
+/// Cargo-only `foo`, whether or not the package's `PackageId` carries an ecosystem.
 pub(crate) fn rule_applies(rule_id: &PackageId, id: &PackageId, package_ecosystems: &[Ecosystem]) -> bool {
-    if rule_id.name() != id.name() {
-        return false;
-    }
-    match rule_id.ecosystem() {
-        None => true,
-        Some(eco) => package_ecosystems.contains(&eco),
-    }
+    rule_id.name() == id.name() && rule_id.ecosystem().is_some_and(|eco| package_ecosystems.contains(&eco))
 }
 
-/// Two-pass `[[package]]` rule lookup with Prefixed-over-Bare specificity.
+/// The first `[[package]]` rule, in TOML declaration order, that applies to `id`; `None` if none does.
 ///
-/// Pass 1: iterate `cfg.packages` in TOML-declaration order, return the
-/// first entry where `rule_id.ecosystem().is_some()` AND
-/// [`rule_applies`] -- prefixed rules (`cargo/`, `npm/`, `pypi/`) always beat
-/// bare ones regardless of declaration order, but only among rules whose
-/// ecosystem the package actually has.
-///
-/// Pass 2 (only if Pass 1 found nothing): same order, first entry where
-/// [`rule_applies`].
-///
-/// `None` if neither pass matches.
-///
-/// MUST NOT sort or partition `cfg.packages` -- specificity comes solely
-/// from two separate linear scans over the unmodified slice.
+/// MUST NOT sort or partition `cfg.packages`: declaration order is the specificity.
 pub(crate) fn resolve_package_config<'a>(
     id: &PackageId,
     package_ecosystems: &[Ecosystem],
     cfg: &'a ResolvedConfig,
-) -> Result<Option<&'a PackageConfig>, GraphError> {
-    if let Some((_, pcfg)) = cfg
-        .packages
-        .iter()
-        .find(|(rule_id, _)| rule_id.ecosystem().is_some() && rule_applies(rule_id, id, package_ecosystems))
-    {
-        return Ok(Some(pcfg));
-    }
-    if let Some((_, pcfg)) = cfg
-        .packages
+) -> Option<&'a PackageConfig> {
+    cfg.packages
         .iter()
         .find(|(rule_id, _)| rule_applies(rule_id, id, package_ecosystems))
-    {
-        if let Some(siblings) = cfg.promoted_siblings.get(id.name()) {
-            return Err(GraphError::AmbiguousName {
-                name: id.name().to_string(),
-                candidates: siblings.iter().map(|(pid, _)| pid.clone()).collect(),
-            });
-        }
-        return Ok(Some(pcfg));
-    }
-    Ok(None)
+        .map(|(_, pcfg)| pcfg)
 }
 
 pub fn parse_pre_major_policy(s: &str) -> Result<PreMajorInferencePolicy, ConfigError> {
@@ -669,7 +613,6 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
         package_sets,
         groups: GroupTable::default(),
         raw_groups,
-        promoted_siblings: BTreeMap::new(),
         provenance,
     })
 }
@@ -690,47 +633,6 @@ mod tests {
             return;
         };
         assert!(matches!(load(&ws), Err(ConfigError::Read { .. })));
-    }
-
-    #[test]
-    fn with_promoted_siblings_overlays_without_mutating_original() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let root = tmp.path();
-        fs::write(root.join("callisto.toml"), "").expect("write callisto.toml");
-        let cfg = load(root).expect("load should succeed");
-        assert!(
-            cfg.promoted_siblings.is_empty(),
-            "promoted_siblings must default to empty at config-load time"
-        );
-
-        let mut local: BTreeMap<String, Vec<(PackageId, std::collections::BTreeSet<Ecosystem>)>> = BTreeMap::new();
-        let mut ecos = std::collections::BTreeSet::new();
-        ecos.insert(Ecosystem::Cargo);
-        local.insert(
-            "native-core".to_string(),
-            vec![(
-                PackageId::Prefixed {
-                    ecosystem: Ecosystem::Cargo,
-                    name: "native-core".to_string(),
-                },
-                ecos,
-            )],
-        );
-        let overlay = cfg.with_promoted_siblings(local);
-        assert_eq!(overlay.promoted_siblings.len(), 1);
-        assert!(
-            cfg.promoted_siblings.is_empty(),
-            "original cfg must remain untouched by with_promoted_siblings"
-        );
-    }
-
-    #[test]
-    fn promoted_siblings_field_is_pub_not_pub_crate() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let root = tmp.path();
-        fs::write(root.join("callisto.toml"), "").expect("write callisto.toml");
-        let cfg = load(root).expect("load should succeed");
-        let _: &BTreeMap<String, Vec<(PackageId, std::collections::BTreeSet<Ecosystem>)>> = &cfg.promoted_siblings;
     }
 
     #[test]
@@ -1007,7 +909,6 @@ mod tests {
         let cfg = load(root).expect("load should succeed");
         let id = PackageId::parse("foo").unwrap();
         let pcfg = resolve_package_config(&id, &[Ecosystem::Npm], &cfg)
-            .unwrap()
             .expect("resolve_package_config must return Some for npm/foo (Prefixed)");
         assert_eq!(
             pcfg.release_trigger,
@@ -1036,7 +937,6 @@ mod tests {
         let cfg = load(root).expect("load should succeed");
         let id = PackageId::parse("pkg").unwrap();
         let pcfg = resolve_package_config(&id, &[Ecosystem::Npm], &cfg)
-            .unwrap()
             .expect("resolve_package_config must return Some for npm/pkg matching pkg");
         assert!(
             pcfg.changelog
@@ -1064,7 +964,7 @@ mod tests {
         .expect("write callisto.toml");
         let cfg = load(root).expect("load should succeed");
         let id = PackageId::parse("pkg").unwrap();
-        let result = resolve_package_config(&id, &[], &cfg).unwrap();
+        let result = resolve_package_config(&id, &[], &cfg);
         assert!(
             result.is_none(),
             "resolve_package_config must return None when no rule matches; got Some(...)"
@@ -1087,7 +987,7 @@ mod tests {
         );
         for id_str in &["pkg", "npm/pkg", "cargo/pkg"] {
             let id = PackageId::parse(id_str).unwrap();
-            let result = resolve_package_config(&id, &[], &cfg).unwrap();
+            let result = resolve_package_config(&id, &[], &cfg);
             assert!(
                 result.is_none(),
                 "resolve_package_config must return None for empty packages, \
@@ -1119,7 +1019,6 @@ mod tests {
         let cfg = load(root).expect("load should succeed");
         let id = PackageId::parse("foo").unwrap();
         let pcfg = resolve_package_config(&id, &[Ecosystem::Npm, Ecosystem::Cargo], &cfg)
-            .unwrap()
             .expect("resolve_package_config must return Some for Bare(\"foo\")");
         assert_eq!(
             pcfg.release_trigger,
@@ -1147,7 +1046,7 @@ mod tests {
         .expect("write callisto.toml");
         let cfg = load(root).expect("load should succeed");
         let id = PackageId::parse("foo").unwrap();
-        let result = resolve_package_config(&id, &[Ecosystem::Cargo], &cfg).unwrap();
+        let result = resolve_package_config(&id, &[Ecosystem::Cargo], &cfg);
         assert!(
             result.is_none(),
             "a `pypi/foo` rule must not apply to a package whose only real ecosystem is Cargo; got {result:?}"

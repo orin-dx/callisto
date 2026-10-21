@@ -10,33 +10,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn resolve_human_finds_prefixed_entry_for_unpromoted_package() {
-        let mut index = IdentityIndex::default();
-        let id = PackageId::Bare("foo".to_string());
-        index.bare.insert("foo".to_string(), id.clone());
-        index.native.insert((Ecosystem::Cargo, "foo".to_string()), id.clone());
-        index.prefixed.insert((Ecosystem::Cargo, "foo".to_string()), id.clone());
-        let resolved = index
-            .resolve_human("cargo:foo", &[])
-            .expect("cargo:foo must resolve via prefixed map");
-        assert_eq!(resolved, id);
-    }
-
-    #[test]
-    fn resolve_human_unknown_ecosystem_prefix_falls_through_to_unknown() {
-        let mut index = IdentityIndex::default();
-        let id = PackageId::Bare("foo".to_string());
-        index.bare.insert("foo".to_string(), id.clone());
-        index.native.insert((Ecosystem::Cargo, "foo".to_string()), id.clone());
-        index.prefixed.insert((Ecosystem::Cargo, "foo".to_string()), id);
-        let err = index.resolve_human("npm:foo", &[]).unwrap_err();
-        assert!(
-            matches!(err, GraphError::UnknownPackage { .. }),
-            "expected UnknownPackage, got {err:?}"
-        );
-    }
-
-    #[test]
     fn resolve_native_with_fallback_returns_none_on_single_cross_ecosystem_candidate() {
         let mut index = IdentityIndex::default();
         let cargo_serde = PackageId::Bare("serde".to_string());
@@ -354,50 +327,6 @@ impl IdentityIndex {
     /// same-named package in another.
     pub fn identifies(&self, selector: &PackageId, candidate: &PackageId) -> bool {
         self.resolve_id(selector).is_ok_and(|resolved| &resolved == candidate)
-    }
-
-    pub fn resolve_human(&self, name: &str, siblings: &[PackageId]) -> Result<PackageId, GraphError> {
-        if let Ok(PackageId::Prefixed { ecosystem, name: n }) = PackageId::parse(name) {
-            if let Some(id) = self.prefixed.get(&(ecosystem, n)) {
-                return Ok(id.clone());
-            }
-        }
-
-        if let Some(id) = self.bare.get(name) {
-            return Ok(id.clone());
-        }
-
-        let mut candidates = Vec::new();
-        for ((_eco, n), id) in &self.prefixed {
-            if n == name {
-                candidates.push(id.clone());
-            }
-        }
-
-        if candidates.len() == 1 {
-            return Ok(candidates[0].clone());
-        }
-
-        if candidates.len() > 1 && !siblings.is_empty() {
-            for sib in siblings {
-                for cand in &candidates {
-                    if cand.ecosystem() == sib.ecosystem() {
-                        return Ok(cand.clone());
-                    }
-                }
-            }
-        }
-
-        if candidates.is_empty() {
-            Err(GraphError::UnknownPackage {
-                id: PackageId::parse(name).unwrap_or_else(|_| PackageId::Bare(name.to_string())),
-            })
-        } else {
-            Err(GraphError::AmbiguousName {
-                name: name.to_string(),
-                candidates,
-            })
-        }
     }
 
     /// Look up a package by its native (manifest-declared) name.

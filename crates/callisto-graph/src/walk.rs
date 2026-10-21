@@ -152,14 +152,11 @@ impl ManifestWalkResolver {
         let Identified {
             package_manifest_decls,
             index,
-            promoted_siblings,
             unresolved,
         } = assign_identities(discovered, manifest_cache, &ctx)?;
         diagnostics.extend(unresolved);
 
-        let cfg = cfg.with_promoted_siblings(promoted_siblings);
-
-        let packages = resolve_packages(package_manifest_decls, &cfg, manifest_cache, &ctx, &mut diagnostics)?;
+        let packages = resolve_packages(package_manifest_decls, cfg, manifest_cache, &ctx, &mut diagnostics)?;
 
         let (edges, out_index, in_index) = build_edges(root, &packages, &index, manifest_cache, &ctx, &mut diagnostics);
 
@@ -185,8 +182,6 @@ struct Discovered {
 struct Identified {
     package_manifest_decls: BTreeMap<PackageId, (PathBuf, Vec<ManifestDecl>)>,
     index: IdentityIndex,
-    /// An output of identity assignment: the sibling ids a bare name was promoted into.
-    promoted_siblings: BTreeMap<String, Vec<(PackageId, BTreeSet<Ecosystem>)>>,
     /// Manifests that could not be opened while assigning identities.
     unresolved: Vec<Diagnostic>,
 }
@@ -550,7 +545,6 @@ impl<'a> IdentityAssigner<'a> {
         Identified {
             package_manifest_decls: self.package_manifest_decls,
             index: self.index,
-            promoted_siblings: self.promoted_siblings,
             unresolved: self.unresolved,
         }
     }
@@ -609,15 +603,8 @@ fn resolve_packages(
         // anything to match against.
         let package_ecosystems: Vec<Ecosystem> = decls.iter().map(|d| d.ecosystem()).collect();
 
-        // Two-pass specificity search for [[package]] rules.
-        // Pass 1: find the first Prefixed rule (pattern.ecosystem().is_some())
-        //         that matches this package's ID. Prefixed rules always win
-        //         over Bare rules regardless of declaration order in callisto.toml.
-        // Pass 2: only if pass 1 found nothing, find the first Bare rule
-        //         (any rule, since no Prefixed rule matched, the first match
-        //          is necessarily Bare) that matches this package's ID.
-        // Within each pass, first-match-wins (TOML declaration order) applies.
-        let pkg_override = resolve_package_config(&id, &package_ecosystems, cfg)?;
+        // The first [[package]] rule, in declaration order, whose ecosystem this package has and whose name matches.
+        let pkg_override = resolve_package_config(&id, &package_ecosystems, cfg);
 
         // Record which [[package-set]] patterns match this package,
         // independent of whether a [[package]] rule ends up shadowing the
@@ -746,58 +733,6 @@ fn resolve_packages(
                 code: DiagnosticCode::PackageRuleMatchedNothing,
                 severity: DiagnosticSeverity::Warning,
                 message: format!("[[package]] `{rule_id}` matched no packages"),
-                package: None,
-                path: None,
-                escalated_by: None,
-                governed_by: None,
-            });
-        }
-    }
-
-    // Cross-ecosystem diagnostic pass.
-    //
-    // For each bare [[package]] rule in cfg.packages (pattern.ecosystem() == None),
-    // compute the distinct-ecosystem set: the Ecosystem values found in the canonical
-    // ManifestDecls of every packages-map entry matched by this rule.
-    //
-    // Packages-map keys may be PackageId::Bare or PackageId::Prefixed (a
-    // promoted package). This loop
-    // remains correct regardless: ecosystem information is always sourced from
-    // pkg.canonical_manifests(), never from key.ecosystem(), and `pattern`
-    // here is always unprefixed (prefixed rules `continue` above), so
-    // pattern.matches(key) matches by name alone independent of whether `key`
-    // itself is Bare or Prefixed. Do NOT use key.ecosystem().
-    //
-    // The primary trigger is a single directory containing both Cargo.toml and
-    // package.json (the napi case): one packages-map entry with two canonical
-    // ManifestDecls whose ecosystems are {Cargo, Npm}.
-    //
-    // Prefixed [[package]] rules are skipped unconditionally.
-    // [[package-set]] rules are never iterated here.
-    for (pattern, _) in &cfg.packages {
-        if pattern.ecosystem().is_some() {
-            continue; // Prefixed rules never trigger this diagnostic.
-        }
-        let ecosystems: BTreeSet<Ecosystem> = packages
-            .iter()
-            .filter(|(key, _)| pattern.matches(key))
-            // Use the existing Package::canonical_manifests() helper
-            // (package.rs) which filters to ManifestRole::Canonical.
-            .flat_map(|(_, pkg)| pkg.canonical_manifests().map(|d| d.ecosystem()))
-            .collect();
-        if ecosystems.len() >= 2 {
-            let eco_list: Vec<&str> = ecosystems.iter().map(|e| e.prefix()).collect();
-            diagnostics.push(Diagnostic {
-                code: DiagnosticCode::BareRuleMatchesMultipleEcosystems,
-                severity: DiagnosticSeverity::Warning,
-                message: format!(
-                    "[[package]] rule `{}` matches packages in multiple ecosystems ({}); \
-                         use an ecosystem-prefixed pattern like `{}/{}` to target only one",
-                    pattern.name(),
-                    eco_list.join(", "),
-                    ecosystems.iter().next().map(|e| e.prefix()).unwrap_or("cargo"),
-                    pattern.name(),
-                ),
                 package: None,
                 path: None,
                 escalated_by: None,

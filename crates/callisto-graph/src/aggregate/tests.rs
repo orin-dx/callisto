@@ -1438,17 +1438,15 @@ fn test_aggregate_pre_major_inference_policy_applied() {
     );
 }
 
-/// Prefixed rule (npm:pkg, OFF policy) must win over Bare rule (pkg, conservative)
-/// even when the Bare rule is declared first in callisto.toml.
-/// With single-pass lookup: the Bare rule (declared first) wins -> conservative applied.
-/// With resolve_package_config (two-pass): the Prefixed rule wins -> OFF applied.
+/// A rule for another ecosystem (`cargo/pkg`, conservative) declared first must not shadow the rule for the
+/// package's own ecosystem (`npm/pkg`, OFF): the package has no Cargo manifest, so only the npm rule applies.
 ///
 /// Two AtomicBool flags:
 /// - invoked: true if infer() was called at all (proves the package is pre-1.0 and
 ///   pre-major-inference was consulted; distinguishes OFF-applied from never-called).
-/// - saw_non_off: true if infer() received a non-OFF policy (single-pass failure mode).
+/// - saw_non_off: true if infer() received a non-OFF policy (the other ecosystem's rule leaked).
 #[test]
-fn test_pre_major_inference_prefixed_beats_bare_when_bare_declared_first() {
+fn test_pre_major_inference_rule_for_another_ecosystem_does_not_shadow_the_packages_own() {
     use crate::config::resolve::PreMajorInferencePolicy;
     use std::sync::atomic::AtomicBool;
 
@@ -1460,14 +1458,8 @@ fn test_pre_major_inference_prefixed_beats_bare_when_bare_declared_first() {
     run_git(root, &["add", "."]);
     run_git(root, &["commit", "-q", "-m", "initial commit"]);
 
-    // Bare rule declared FIRST in TOML: match = "cargo/pkg", pre-major-inference = "conservative"
-    // Prefixed rule declared SECOND: match = "npm/pkg", pre-major-inference = "off"
-    // Single-pass find() returns pkg (Bare, declared first) -> conservative applied.
-    // Two-pass resolve_package_config: pass 1 finds npm:pkg (Prefixed) -> OFF applied.
-    // The package's own manifest is npm (`make_pkg`'s ecosystem-derived-from-id, via a
-    // Prefixed id here) so the `npm:pkg` rule is actually ecosystem-eligible, not just
-    // name-eligible -- this test is about two-pass declaration-order precedence, not
-    // about a rule applying to a package that was never really in that ecosystem.
+    // `cargo/pkg` (conservative) is declared first, `npm/pkg` (off) second. The package's own manifest is npm, so
+    // only the `npm/pkg` rule is ecosystem-eligible and OFF applies.
     std::fs::write(
             root.join("callisto.toml"),
             "[[package]]\nmatch = \"cargo/pkg\"\npre-major-inference = \"conservative\"\n\n[[package]]\nmatch = \"npm/pkg\"\npre-major-inference = \"off\"\n",

@@ -287,13 +287,6 @@ impl GroupTable {
         Ok(Self::assemble(fixed, linked))
     }
 
-    /// Builds a table without validating it: a package claimed by two groups silently
-    /// keeps the last claim.
-    #[deprecated(note = "use `try_from_groups`, which rejects conflicting group membership")]
-    pub fn from_groups(fixed: Vec<GroupDef>, linked: Vec<GroupDef>) -> Self {
-        Self::assemble(fixed, linked)
-    }
-
     fn assemble(fixed: Vec<GroupDef>, linked: Vec<GroupDef>) -> Self {
         let mut f_map = BTreeMap::new();
         let mut l_map = BTreeMap::new();
