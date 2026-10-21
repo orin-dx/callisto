@@ -27,7 +27,7 @@ fn crate_repo(ignore: &str) -> tempfile::TempDir {
 }
 
 fn add_changeset(root: &Path) {
-    let add = callisto(root, &["add", "--package", "lib:minor", "--summary", "A feature"]);
+    let add = callisto(root, &["add", "--package", "cargo/lib:minor", "--summary", "A feature"]);
     assert!(add.status.success(), "{}", String::from_utf8_lossy(&add.stderr));
     git(root, &["add", "-A"]);
     git(root, &["commit", "-m", "changeset"]);
@@ -95,7 +95,7 @@ fn concurrent_add_runs_never_replace_each_other() {
                     root.to_str().unwrap(),
                     "add",
                     "--package",
-                    "lib:patch",
+                    "cargo/lib:patch",
                     "--summary",
                 ])
                 .arg(format!("change number {index}"))

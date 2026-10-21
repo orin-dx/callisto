@@ -81,7 +81,7 @@ fn test_status_check_clean_workspace_exits_ok() {
 
     commands::add::handle(
         AddArgs {
-            packages: vec!["core-crate:patch".to_string()],
+            packages: vec!["cargo/core-crate:patch".to_string()],
             summary: Some("A valid changeset".to_string()),
         },
         &global,
@@ -169,7 +169,7 @@ fn test_add_unknown_package_name_returns_error() {
     // "completely-unknown-pkg" is not in the workspace (workspace has "core-crate" and "@myorg/web-app")
     let result = commands::add::handle(
         AddArgs {
-            packages: vec!["completely-unknown-pkg:patch".to_string()],
+            packages: vec!["cargo/completely-unknown-pkg:patch".to_string()],
             summary: Some("This package does not exist".to_string()),
         },
         &global,

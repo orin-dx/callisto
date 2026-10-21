@@ -85,7 +85,7 @@ fn add_rejects_invalid_severity_with_the_full_accepted_value_list() {
 #[test]
 fn add_accepts_none_severity() {
     let dir = setup_minimal_workspace();
-    let output = run_add(dir.path(), "demo:none");
+    let output = run_add(dir.path(), "cargo/demo:none");
 
     assert!(
         output.status.success(),
@@ -105,7 +105,7 @@ fn add_accepts_none_severity() {
 fn add_accepts_patch_minor_major() {
     let dir = setup_minimal_workspace();
     for severity in ["patch", "minor", "major"] {
-        let output = run_add(dir.path(), &format!("demo:{severity}"));
+        let output = run_add(dir.path(), &format!("cargo/demo:{severity}"));
         assert!(
             output.status.success(),
             "`{severity}` must still be accepted: {}",

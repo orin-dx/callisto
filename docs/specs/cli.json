@@ -193,7 +193,7 @@
     },
     {
       "id": "CLI-ADD-01",
-      "criterion": "`callisto add --package <name>:<severity> --summary <text>` (--package repeatable, bare or qualified names such as `cargo/app`, severity none, patch, minor or major) writes `.changeset/<adjective>-<noun>-<verb>.md`, choosing a name no file in `.changeset` already has and never replacing one, even if another `callisto add` created it a moment earlier, with front matter mapping each package to its severity and the trimmed summary as body, prints `Added changeset: <path>`, and never prompts."
+      "criterion": "`callisto add --package <name>:<severity> --summary <text>` (--package repeatable, each name ecosystem-qualified such as `cargo/app`; a name without its ecosystem is E317; severity none, patch, minor or major) writes `.changeset/<adjective>-<noun>-<verb>.md`, choosing a name no file in `.changeset` already has and never replacing one, even if another `callisto add` created it a moment earlier, with front matter mapping each package to its severity and the trimmed summary as body, prints `Added changeset: <path>`, and never prompts."
     },
     {
       "id": "CLI-ADD-02",

@@ -215,7 +215,7 @@ pub fn release_commit_fixture_with_product_release(product_release: bool) -> (Te
         &[
             "add",
             "--package",
-            "core-crate:minor",
+            "cargo/core-crate:minor",
             "--summary",
             "Ship durable release execution",
         ],
@@ -313,7 +313,13 @@ pub fn fixed_group_release_commit_fixture() -> (TempDir, String) {
 
     let add = callisto(
         root,
-        &["add", "--package", "crate-a:patch", "--summary", "Fix crate-a only"],
+        &[
+            "add",
+            "--package",
+            "cargo/crate-a:patch",
+            "--summary",
+            "Fix crate-a only",
+        ],
     );
     assert!(
         add.status.success(),

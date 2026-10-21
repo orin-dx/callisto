@@ -37,7 +37,7 @@ fn python_workspace(app_pyproject: &str) -> tempfile::TempDir {
 }
 
 fn bump_lib_minor(root: &Path) {
-    let out = callisto(root, &["add", "--package", "lib-py:minor", "--summary", "change"]);
+    let out = callisto(root, &["add", "--package", "pypi/lib-py:minor", "--summary", "change"]);
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     git(root, &["add", "."]);
     git(root, &["commit", "-q", "-m", "changeset"]);

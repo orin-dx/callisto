@@ -89,7 +89,7 @@ mod historical_version_authority {
         git(root, &["commit", "-m", "configure callisto"]);
         let add = callisto(
             root,
-            &["add", "--package", "a:patch", "--summary", "Fix shared version"],
+            &["add", "--package", "cargo/a:patch", "--summary", "Fix shared version"],
         );
         assert!(add.status.success(), "{}", String::from_utf8_lossy(&add.stderr));
         git(root, &["add", "."]);
@@ -931,7 +931,7 @@ mod static_python_release {
             &[
                 "add",
                 "--package",
-                "stable-python:minor",
+                "pypi/stable-python:minor",
                 "--summary",
                 "Ship stable Python release",
             ],

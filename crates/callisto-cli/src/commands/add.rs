@@ -32,6 +32,8 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             // Resolves by any registered native name (not just a package's
             // primary/display name), reporting E102/E103 on a miss or
             // ecosystem-ambiguous bare name.
+            callisto_graph::ConfigError::require_qualified(name, "--package")
+                .map_err(callisto_graph::GraphError::Config)?;
             let resolved = ws.identity.resolve(name)?;
 
             entries.push(Entry {

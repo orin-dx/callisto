@@ -32,7 +32,7 @@ fn test_pre_mode_blackbox_lifecycle() {
     // 2. Add changeset for minor bump
     let add_res = commands::add::handle(
         AddArgs {
-            packages: vec!["core-crate:minor".to_string()],
+            packages: vec!["cargo/core-crate:minor".to_string()],
             summary: Some("Beta feature".to_string()),
         },
         &global,
@@ -110,7 +110,7 @@ fn failed_pre_state_deletion_fails_closed_on_a_fresh_version_retry() {
         &[
             "add",
             "--package",
-            "core-crate:minor",
+            "cargo/core-crate:minor",
             "--summary",
             "Exercise failed exit finalization",
         ],
@@ -262,7 +262,7 @@ fn test_malformed_pre_json_returns_error_not_silent_normal_release() {
 
     commands::add::handle(
         AddArgs {
-            packages: vec!["core-crate:patch".to_string()],
+            packages: vec!["cargo/core-crate:patch".to_string()],
             summary: Some("Test patch".to_string()),
         },
         &global,
@@ -561,7 +561,7 @@ fn test_pre_mode_rerun_does_not_duplicate_changelog_entry() {
 
     commands::add::handle(
         AddArgs {
-            packages: vec!["core-crate:minor".to_string()],
+            packages: vec!["cargo/core-crate:minor".to_string()],
             summary: Some("Beta feature".to_string()),
         },
         &global,
@@ -837,12 +837,18 @@ mod python_baselines {
         write(root, ".changeset/pre.json", &state.to_string());
         run(
             root,
-            &["add", "--package", "py-lib:minor", "--summary", "Qualified baseline"],
+            &[
+                "add",
+                "--package",
+                "pypi/py-lib:minor",
+                "--summary",
+                "Qualified baseline",
+            ],
         );
         version(root);
         run(
             root,
-            &["add", "--package", "py-lib:patch", "--summary", "Second change"],
+            &["add", "--package", "pypi/py-lib:patch", "--summary", "Second change"],
         );
         version(root);
         assert_versions(root, "1.3.0b1", "1.0.0", "2.0.0");
@@ -1039,7 +1045,13 @@ mod python_baselines {
         write(root, ".changeset/pre.json", &text);
         run(
             root,
-            &["add", "--package", "py-lib:minor", "--summary", "Conflicting baselines"],
+            &[
+                "add",
+                "--package",
+                "pypi/py-lib:minor",
+                "--summary",
+                "Conflicting baselines",
+            ],
         );
         let output = callisto(root, &["version", "--no-refresh-lockfiles"]);
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -1066,7 +1078,7 @@ mod python_baselines {
             run(root, &["pre", "enter", "beta"]);
             run(
                 root,
-                &["add", "--package", "py-lib:minor", "--summary", "Invalid baseline"],
+                &["add", "--package", "pypi/py-lib:minor", "--summary", "Invalid baseline"],
             );
             let mut state = pre_json(root, ".changeset");
             state["initialVersions"][key] = value;
@@ -1127,7 +1139,13 @@ mod python_baselines {
         run(root, &["pre", "enter", "alpha"]);
         run(
             root,
-            &["add", "--package", "py-lib:minor", "--summary", "Resumed Python cycle"],
+            &[
+                "add",
+                "--package",
+                "pypi/py-lib:minor",
+                "--summary",
+                "Resumed Python cycle",
+            ],
         );
         version(root);
         assert_versions(root, "1.3.0a0", "1.0.0", "2.0.0");
@@ -1143,7 +1161,13 @@ mod python_baselines {
         assert_versions(root, "1.3.0a0", "1.0.0", "2.0.0");
         run(
             root,
-            &["add", "--package", "py-lib:patch", "--summary", "Resumed second change"],
+            &[
+                "add",
+                "--package",
+                "pypi/py-lib:patch",
+                "--summary",
+                "Resumed second change",
+            ],
         );
         version(root);
         assert_versions(root, "1.3.0b0", "1.0.0", "2.0.0");

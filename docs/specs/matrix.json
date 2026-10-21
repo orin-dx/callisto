@@ -15,7 +15,7 @@
       "description": "Prints a MatrixReport with schemaVersion, platformTargets and runtimeVersions keyed by package id, plus diagnostics when any exist; package ids are `ecosystem/name`. Hidden from --help.",
       "error_conditions": [
         "E102: --package names no registered package.",
-        "E103: bare --package name matches packages in more than one ecosystem.",
+        "E317: --package names a package without its ecosystem.",
         "E118: one package declares both napi.targets and [tool.maturin].targets.",
         "E203: a package with napi or maturin targets is also a cargo [[release.artifact]] package.",
         "E204: a napi package's addon crate does not resolve to exactly one workspace crate.",

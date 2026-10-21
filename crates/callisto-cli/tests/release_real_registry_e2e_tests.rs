@@ -235,7 +235,7 @@ fn npm_registry_release_fixture(package_name: &str) -> (tempfile::TempDir, Strin
         &[
             "add",
             "--package",
-            &format!("{package_name}:minor"),
+            &format!("npm/{package_name}:minor"),
             "--summary",
             "Ship real-registry e2e coverage",
         ],

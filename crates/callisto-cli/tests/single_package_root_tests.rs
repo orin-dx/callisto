@@ -102,7 +102,7 @@ fn single_crate_repository() {
         ),
         ("src/lib.rs", "\n"),
     ]);
-    lifecycle(&dir, "solo", "Cargo.toml", "version = \"0.2.0\"");
+    lifecycle(&dir, "cargo/solo", "Cargo.toml", "version = \"0.2.0\"");
 }
 
 #[test]
@@ -114,7 +114,7 @@ fn single_npm_package_repository() {
         ),
         ("src/index.js", "\n"),
     ]);
-    lifecycle(&dir, "solo", "package.json", "\"version\": \"0.2.0\"");
+    lifecycle(&dir, "npm/solo", "package.json", "\"version\": \"0.2.0\"");
 }
 
 #[test]
@@ -174,7 +174,7 @@ fn root_package_release_commit_accepts_default_and_configured_changelog_paths() 
             .unwrap();
             commands::add::handle(
                 AddArgs {
-                    packages: vec!["solo:patch".to_owned()],
+                    packages: vec![format!("{identity}:patch")],
                     summary: Some("Fix the root package".to_owned()),
                 },
                 &global(root, false),

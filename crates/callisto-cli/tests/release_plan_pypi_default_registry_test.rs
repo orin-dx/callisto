@@ -51,7 +51,7 @@ fn fixture(manifest_path: &str, manifest: &str, package_match: &str, registry: &
     .unwrap();
     git(root, &["add", "."]);
     git(root, &["commit", "-m", "configure callisto"]);
-    let add = callisto(root, &["add", "--package", "demo:minor", "--summary", "Ship demo"]);
+    let add = callisto(root, &["add", "--package", "pypi/demo:minor", "--summary", "Ship demo"]);
     assert!(
         add.status.success(),
         "add failed: {}",

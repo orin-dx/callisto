@@ -59,7 +59,7 @@ fn read(root: &Path, path: &str) -> String {
 fn an_exact_pin_is_rewritten_in_place_and_its_dependent_released() {
     let dir = cargo_workspace("{ version = \"=0.1.0\", path = \"../lib\" }");
     let root = dir.path();
-    add_changeset(root, "lib-crate", "minor");
+    add_changeset(root, "cargo/lib-crate", "minor");
     let out = callisto(root, &["version"]);
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let app = read(root, "crates/app/Cargo.toml");
@@ -78,7 +78,7 @@ fn an_exact_pin_is_rewritten_in_place_and_its_dependent_released() {
 fn a_range_the_bump_leaves_behind_and_cannot_be_rewritten_stops_the_run_before_any_write() {
     let dir = cargo_workspace("{ version = \">=0.1.0, <0.2.0\", path = \"../lib\" }");
     let root = dir.path();
-    add_changeset(root, "lib-crate", "minor");
+    add_changeset(root, "cargo/lib-crate", "minor");
     let out = callisto(root, &["version"]);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(!out.status.success(), "{stderr}");
@@ -152,7 +152,7 @@ fn pnpm_catalog_workspace() -> tempfile::TempDir {
 fn a_catalog_dependency_is_reported_not_rewritten_and_does_not_cascade() {
     let dir = pnpm_catalog_workspace();
     let root = dir.path();
-    add_changeset(root, "lib", "minor");
+    add_changeset(root, "npm/lib", "minor");
     let out = callisto(root, &["version", "--dry-run"]);
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let plan: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -199,7 +199,7 @@ lib-crate = { version = \"=0.1.0\", path = \"../lib\" }
 ";
     fs::write(root.join("crates/app/Cargo.toml"), app).unwrap();
     git(root, &["commit", "-q", "-am", "dependency tables"]);
-    add_changeset(root, "lib-crate", "minor");
+    add_changeset(root, "cargo/lib-crate", "minor");
     let out = callisto(root, &["version"]);
     assert!(
         out.status.success(),
@@ -233,7 +233,7 @@ lib-crate = { version = \"=0.1.0\", path = \"../lib\" }
 ";
     fs::write(root.join("crates/app/Cargo.toml"), app).unwrap();
     git(root, &["commit", "-q", "-am", "target-only dependency"]);
-    add_changeset(root, "lib-crate", "minor");
+    add_changeset(root, "cargo/lib-crate", "minor");
     let plan = callisto(root, &["version", "--dry-run"]);
     assert!(plan.status.success(), "{}", String::from_utf8_lossy(&plan.stderr));
     let plan: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
@@ -265,7 +265,7 @@ lib-crate = { version = \">=0.1.0, <0.3.0\", path = \"../lib\" }
 ";
     fs::write(root.join("crates/app/Cargo.toml"), app).unwrap();
     git(root, &["commit", "-q", "-am", "same crate, different constraint"]);
-    add_changeset(root, "lib-crate", "minor");
+    add_changeset(root, "cargo/lib-crate", "minor");
     let out = callisto(root, &["version"]);
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let after = read(root, "crates/app/Cargo.toml");
@@ -298,7 +298,7 @@ lib-crate = { version = \"=0.1.0\", path = \"../lib\" } # exact on unix
 ";
     fs::write(root.join("crates/app/Cargo.toml"), app).unwrap();
     git(root, &["commit", "-q", "-am", "one crate, two constraints"]);
-    add_changeset(root, "lib-crate", "minor");
+    add_changeset(root, "cargo/lib-crate", "minor");
     let out = callisto(root, &["version"]);
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let expected = "\

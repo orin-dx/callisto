@@ -71,7 +71,7 @@ fn seed_initialized_workspace(root: &std::path::Path) {
     callisto_fixtures::scaffold_callisto(root);
     commands::add::handle(
         AddArgs {
-            packages: vec!["core-crate:minor".to_string()],
+            packages: vec!["cargo/core-crate:minor".to_string()],
             summary: Some("Seeded changeset".to_string()),
         },
         &real,
@@ -90,7 +90,7 @@ fn add_dry_run_writes_nothing() {
     assert_no_disk_mutation(root, || {
         commands::add::handle(
             AddArgs {
-                packages: vec!["core-crate:patch".to_string()],
+                packages: vec!["cargo/core-crate:patch".to_string()],
                 summary: Some("Should not be written".to_string()),
             },
             &global(root, true),

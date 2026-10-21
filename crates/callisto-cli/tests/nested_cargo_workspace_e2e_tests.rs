@@ -85,7 +85,10 @@ fn status_add_and_version_work_without_a_cargo_manifest_at_the_root() {
     let status = ok(root, &["status"]).to_string();
     assert!(status.contains("0.3.0") && status.contains("0.1.0"), "{status}");
 
-    ok(root, &["add", "--package", "a:minor", "--summary", "A new feature"]);
+    ok(
+        root,
+        &["add", "--package", "cargo/a:minor", "--summary", "A new feature"],
+    );
     commit(root, "changeset");
     ok(root, &["version"]);
 
@@ -139,7 +142,10 @@ fn a_release_commit_in_a_nested_workspace_verifies_the_version_it_inherited() {
     assert!(init.status.success(), "{}", String::from_utf8_lossy(&init.stderr));
     commit(root, "configure callisto");
 
-    ok(root, &["add", "--package", "a:minor", "--summary", "A new feature"]);
+    ok(
+        root,
+        &["add", "--package", "cargo/a:minor", "--summary", "A new feature"],
+    );
     commit(root, "changeset");
     ok(root, &["version", "--emit-decision", DECISION_PATH]);
     for entry in fs::read_dir(root.join(".changeset")).unwrap() {

@@ -27,7 +27,7 @@ fn test_changelog_content_uses_real_changeset_summary() {
 
     commands::add::handle(
         AddArgs {
-            packages: vec!["core-crate:patch".to_string()],
+            packages: vec!["cargo/core-crate:patch".to_string()],
             summary: Some("Fix the frobnication bug".to_string()),
         },
         &global,
@@ -82,7 +82,7 @@ fn test_changelog_content_includes_all_changeset_summaries() {
 
     commands::add::handle(
         AddArgs {
-            packages: vec!["core-crate:patch".to_string()],
+            packages: vec!["cargo/core-crate:patch".to_string()],
             summary: Some("Fix the widget alignment".to_string()),
         },
         &global,
@@ -91,7 +91,7 @@ fn test_changelog_content_includes_all_changeset_summaries() {
 
     commands::add::handle(
         AddArgs {
-            packages: vec!["core-crate:patch".to_string()],
+            packages: vec!["cargo/core-crate:patch".to_string()],
             summary: Some("Improve error messages".to_string()),
         },
         &global,

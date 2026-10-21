@@ -121,7 +121,7 @@ fn test_add_flags_path_skips_tty_check_entirely() {
             &root.to_string_lossy(),
             "add",
             "--package",
-            "my-app:patch",
+            "cargo/my-app:patch",
             "--summary",
             "a fix",
         ])
@@ -421,7 +421,7 @@ fn matrix_package_filter_and_unknown_package_via_binary() {
             "json",
             "matrix",
             "--package",
-            "pkg-a",
+            "cargo/pkg-a",
         ])
         .output()
         .unwrap();
@@ -446,7 +446,7 @@ fn matrix_package_filter_and_unknown_package_via_binary() {
             "json",
             "matrix",
             "--package",
-            "does-not-exist",
+            "cargo/does-not-exist",
         ])
         .output()
         .unwrap();
