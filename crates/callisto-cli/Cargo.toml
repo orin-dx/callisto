@@ -5,6 +5,11 @@ edition.workspace = true
 license = "FSL-1.1-MIT"
 description = "Callisto Release Engine — Polyglot monorepo versioning and release management CLI."
 repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+exclude = ["tests/", "proptest-regressions/"]
 readme = "README.md"
 
 [lints]
@@ -31,7 +36,6 @@ similar = { version = "2", features = ["inline"] }
 schemars = { workspace = true }
 dialoguer = "0.11"
 dunce = { workspace = true }
-path-slash = { workspace = true }
 tempfile = { workspace = true }
 
 [dev-dependencies]
