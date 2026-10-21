@@ -125,6 +125,19 @@ pub enum GraphError {
     #[diagnostic(code(E105), help("Check for oscillating peer or linked group dependencies."))]
     CascadeNotConverged { iterations: usize },
 
+    #[error("`{dependent}` depends on `{dependency}` with `{spec}`, which cannot be rewritten to cover {version}")]
+    #[diagnostic(
+        code(E319),
+        help("Edit the range in {manifest} so it covers {version} (Callisto rewrites only single-operator ranges), then re-run.")
+    )]
+    UnrewritableRange {
+        dependent: String,
+        dependency: String,
+        spec: String,
+        version: String,
+        manifest: String,
+    },
+
     #[error("fixed group `{group}` members have divergent on-disk versions: {}", .members.iter().map(|(id, v)| format!("{}={}", id.display_name(), v.render())).collect::<Vec<_>>().join(", "))]
     #[diagnostic(code(E106), help("Align on-disk versions for all members of the fixed group."))]
     FixedGroupDivergent {

@@ -1802,14 +1802,65 @@ fn test_fixed_group_release_raises_in_range_internal_spec_to_new_version() {
     );
 }
 
-/// Both the main loop and the floor-raise pass see this edge, so an unrewritable spec must warn once, not twice.
+/// A runtime range that would keep excluding the new version stops the run instead of warning.
 #[test]
-fn test_unrewritable_spec_on_edge_both_passes_visit_warns_once() {
+fn an_unrewritable_runtime_range_stops_the_cascade() {
     let pkg_a = PackageId::parse("pkg-a").unwrap();
     let pkg_b = PackageId::parse("pkg-b").unwrap();
 
     // Upper-bounded range: out of range for the Major bump, and round_trip can't rewrite it either.
-    let edge = make_dep_edge(&pkg_a, &pkg_b, ">=1.0.0, <2.0.0", Ecosystem::Cargo);
+    let edge = make_dep_edge_kind(&pkg_a, &pkg_b, ">=1.0.0, <2.0.0", Ecosystem::Cargo, DepKind::Runtime);
+
+    let graph = TestGraph {
+        packages: vec![bare_package(&pkg_a), bare_package(&pkg_b)],
+        edges: vec![edge],
+    };
+
+    let mut base = BTreeMap::new();
+    base.insert(pkg_a.clone(), Version::semver(1, 0, 0));
+    base.insert(pkg_b.clone(), Version::semver(1, 0, 0));
+
+    let mut seed = BTreeMap::new();
+    seed.insert(pkg_b.clone(), Severity::Major);
+
+    let groups = GroupTable::default();
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+    let reasons = BTreeMap::new();
+    let named_by = BTreeMap::new();
+    let identity = IdentityIndex::default();
+
+    let input = CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &reasons,
+        named_by: &named_by,
+        base: &base,
+        pre: None,
+        tags: &TagIndex::empty(),
+        identity: &identity,
+    };
+
+    let Err(error) = run_cascade(input) else {
+        panic!("an unrewritable runtime range must stop the cascade");
+    };
+    assert!(matches!(error, GraphError::UnrewritableRange { .. }), "{error:?}");
+}
+
+/// A dev dependency is never installed by consumers, so an unrewritable range only warns, once, though both passes visit it.
+#[test]
+fn an_unrewritable_dev_range_warns_once() {
+    let pkg_a = PackageId::parse("pkg-a").unwrap();
+    let pkg_b = PackageId::parse("pkg-b").unwrap();
+
+    // Upper-bounded range: out of range for the Major bump, and round_trip can't rewrite it either.
+    let edge = make_dep_edge_kind(&pkg_a, &pkg_b, ">=1.0.0, <2.0.0", Ecosystem::Cargo, DepKind::Dev);
 
     let graph = TestGraph {
         packages: vec![bare_package(&pkg_a), bare_package(&pkg_b)],
@@ -1848,12 +1899,6 @@ fn test_unrewritable_spec_on_edge_both_passes_visit_warns_once() {
     };
 
     let outcome = run_cascade(input).expect("cascade must converge");
-
-    assert!(
-        outcome.severities.contains_key(&pkg_a),
-        "pkg-a must be carried along since its spec on pkg-b does not cover the Major bump"
-    );
-
     let warnings: Vec<&Diagnostic> = outcome
         .diagnostics
         .iter()

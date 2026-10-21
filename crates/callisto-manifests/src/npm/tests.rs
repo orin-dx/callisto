@@ -1047,15 +1047,35 @@ fn round_trip_non_range_variants_return_none() {
     assert!(round_trip(&DepSpec::CargoBare(npm_version("1.0.0")), &target).is_none());
 }
 
-/// A clause with a prerelease suffix (e.g. `^1.0.0-beta.1`) is declined
-/// rather than rewritten -- `render_at_precision` only knows how to
-/// truncate a plain `major.minor.patch` clause, so a prerelease-qualified
-/// original clause safely falls back to `RewriteOutcome::LeftAlone`.
+/// A clause with a prerelease suffix (`^1.0.0-beta.1`) is one version: it rewrites toward the target like any other.
 #[test]
-fn round_trip_prerelease_clause_returns_none() {
-    let spec = make_npm_spec("^1.0.0-beta.1");
+fn round_trip_prerelease_clause_rewrites_toward_the_target() {
     let target = npm_version("2.0.0");
-    assert!(round_trip(&spec, &target).is_none());
+    assert_eq!(
+        round_trip(&make_npm_spec("^1.0.0-beta.1"), &target).unwrap().render(),
+        "^2.0.0"
+    );
+    assert_eq!(
+        round_trip(&make_npm_spec("^2.0.0-next.0"), &npm_version("3.1.0"))
+            .unwrap()
+            .render(),
+        "^3.1.0"
+    );
+    assert_eq!(
+        round_trip(&make_npm_spec("~1.0.0+build.5"), &target).unwrap().render(),
+        "~2.0.0"
+    );
+}
+
+/// A prerelease identifier containing `x` is not a wildcard, and a hyphen range still declines.
+#[test]
+fn round_trip_prerelease_identifiers_are_not_wildcards_and_hyphen_ranges_decline() {
+    let target = npm_version("3.0.0");
+    assert!(round_trip(&make_npm_spec("^2.0.0-next.1"), &target).is_some());
+    for raw in ["1.0.0 - 2.0.0", "^1.0.0 || ^2.0.0"] {
+        let spec = DepSpec::Range(VersionReq::parse(">=1.0.0", Ecosystem::Npm).unwrap(), raw.to_string());
+        assert!(round_trip(&spec, &target).is_none(), "{raw}");
+    }
 }
 
 /// A wildcard clause (`1.x`, `1.X`, `^1.x`) is declined rather than
