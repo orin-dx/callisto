@@ -258,7 +258,9 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         agg.consumed.is_empty()
     };
 
-    let mut diagnostics = outcome.diagnostics;
+    // Reading the changesets comes first: an entry that names no package leaves its changeset on disk.
+    let mut diagnostics = agg.diagnostics.clone();
+    diagnostics.extend(outcome.diagnostics);
     diagnostics.extend(group_check.diagnostics);
     if nothing_pending && !opts.allow_empty_changesets && !ws.config.validation.allow_empty_changesets {
         diagnostics.push(callisto_model::Diagnostic {
