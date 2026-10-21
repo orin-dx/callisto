@@ -197,6 +197,9 @@ pub enum DiagnosticCode {
     /// line, or entries present with an empty summary. The file stays on disk unconsumed;
     /// `status` reports one of these per unparseable file instead of aborting.
     ChangesetParseFailed,
+    /// An `auto` package has a pending release inferred from commits and no changeset. The release pull
+    /// request reads changesets only, so it will not release this package until one names it.
+    InferredReleaseWithoutChangeset,
     /// Release derivation selected a `[release].product` artifact's owner package without
     /// selecting the product package itself, so the owner's declared asset has no release to
     /// upload into.

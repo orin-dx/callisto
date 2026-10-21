@@ -3,7 +3,43 @@ use std::path::Path;
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
-use callisto_model::{known_credential_env_values, redact_known_secrets, CommandError, CommandOutput, CommandRunner};
+use callisto_model::{
+    known_credential_env_values, redact_command_stderr, redact_known_secrets, CommandError, CommandOutput,
+    CommandRunner,
+};
+
+/// The most recent subprocess that exited non-zero, as a redacted summary a failing release can print after its error.
+static LAST_FAILED_COMMAND: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+const FAILED_COMMAND_TAIL_LINES: usize = 20;
+const FAILED_COMMAND_TAIL_BYTES: usize = 2048;
+
+/// `program`'s exit status and the redacted end of its stderr: at most 20 lines and 2 KiB.
+fn failed_command_summary(program: &str, exit_code: Option<i32>, stderr: &str) -> String {
+    let redacted = redact_command_stderr(stderr);
+    let lines: Vec<&str> = redacted.lines().collect();
+    let tail = lines[lines.len().saturating_sub(FAILED_COMMAND_TAIL_LINES)..].join("\n");
+    let mut start = tail.len().saturating_sub(FAILED_COMMAND_TAIL_BYTES);
+    while !tail.is_char_boundary(start) {
+        start += 1;
+    }
+    let status = exit_code.map_or("was terminated".to_string(), |code| format!("exited with {code}"));
+    format!("`{program}` {status}\n{}", &tail[start..])
+}
+
+fn note_failed_command(program: &str, exit_code: Option<i32>, stderr: &str) {
+    if exit_code == Some(0) {
+        return;
+    }
+    if let Ok(mut last) = LAST_FAILED_COMMAND.lock() {
+        *last = Some(failed_command_summary(program, exit_code, stderr));
+    }
+}
+
+/// The summary of the most recent failed subprocess, if any; printed after an indeterminate release error.
+pub fn last_failed_command() -> Option<String> {
+    LAST_FAILED_COMMAND.lock().ok().and_then(|last| last.clone())
+}
 
 /// Caps how much of a subprocess's stdout/stderr this process will retain
 /// in memory. The pipe is still drained in full past this point (bytes
@@ -97,6 +133,7 @@ impl CommandRunner for CliCommandRunner {
                     let secrets = known_credential_env_values(std::env::vars());
                     eprint!("{}", redact_known_secrets(&stderr, &secrets));
                 }
+                note_failed_command(program, o.status.code(), &stderr);
                 Ok(CommandOutput {
                     exit_code: o.status.code(),
                     stdout: String::from_utf8_lossy(&o.stdout).into_owned(),
@@ -280,6 +317,7 @@ impl CommandRunner for CliCommandRunner {
                     let secrets = known_credential_env_values(std::env::vars());
                     eprint!("{}", redact_known_secrets(&stderr, &secrets));
                 }
+                note_failed_command(program, o.status.code(), &stderr);
                 Ok(CommandOutput {
                     exit_code: o.status.code(),
                     stdout: String::from_utf8_lossy(&o.stdout).into_owned(),
@@ -523,6 +561,7 @@ fn run_with_timeout_impl(
         });
     };
 
+    note_failed_command(program, status.code(), &stderr);
     Ok(CommandOutput {
         exit_code: status.code(),
         stdout,
@@ -533,6 +572,37 @@ fn run_with_timeout_impl(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_command_summary_keeps_the_end_of_stderr_within_the_line_and_byte_caps() {
+        let stderr = (1..=50).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n");
+        let summary = failed_command_summary("npm", Some(1), &stderr);
+        assert!(summary.starts_with("`npm` exited with 1\n"), "{summary}");
+        assert!(summary.contains("line 50") && summary.contains("line 31"), "{summary}");
+        assert!(
+            !summary.contains("line 30\n") && !summary.ends_with("line 30"),
+            "{summary}"
+        );
+
+        let wide = "é".repeat(5000);
+        let capped = failed_command_summary("cargo", None, &wide);
+        assert!(capped.starts_with("`cargo` was terminated\n"), "{capped}");
+        assert!(
+            capped.len() <= "`cargo` was terminated\n".len() + FAILED_COMMAND_TAIL_BYTES,
+            "{}",
+            capped.len()
+        );
+    }
+
+    #[test]
+    fn a_failed_command_summary_redacts_a_token_shape_in_stderr() {
+        let summary = failed_command_summary(
+            "npm",
+            Some(1),
+            "request failed: Bearer npm_abcdefghijklmnopqrstuvwxyz0123456789",
+        );
+        assert!(!summary.contains("npm_abcdefghij"), "{summary}");
+    }
 
     #[test]
     fn run_with_timeout_kills_slow_process_and_returns_timed_out() {
