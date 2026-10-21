@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use callisto_manifests::Manifest;
 use callisto_model::vcs::GitAccess;
-use callisto_model::{CommandRunner, Ecosystem, PackageId, Version};
+use callisto_model::{CommandRunner, PackageId, Version};
 
 pub mod aggregate;
 pub mod apply;
@@ -123,21 +123,6 @@ impl<'a, R: CommandRunner> Workspace<'a, R, ManifestWalkResolver> {
         let graph = ManifestWalkResolver::build(&root, locator, runner, &config, &manifest_cache)?;
 
         config.groups = GroupTable::resolve(&config.raw_groups, graph.identity())?;
-
-        {
-            let mut by_name: BTreeMap<String, Vec<(PackageId, BTreeSet<Ecosystem>)>> = BTreeMap::new();
-            let mut ecosystems_by_id: BTreeMap<(String, PackageId), BTreeSet<Ecosystem>> = BTreeMap::new();
-            for ((eco, name), id) in &graph.identity().prefixed {
-                ecosystems_by_id
-                    .entry((name.clone(), id.clone()))
-                    .or_default()
-                    .insert(*eco);
-            }
-            for ((name, id), ecos) in ecosystems_by_id {
-                by_name.entry(name).or_default().push((id, ecos));
-            }
-            config.promoted_siblings = by_name.into_iter().filter(|(_, ids)| ids.len() >= 2).collect();
-        }
 
         let identity = graph.identity().clone();
 

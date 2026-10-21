@@ -234,7 +234,7 @@ where
             })?;
 
         let package_ecosystems: Vec<Ecosystem> = pkg.canonical_manifests().map(|m| m.ecosystem()).collect();
-        let policy = resolve_package_config(&pkg.id, &package_ecosystems, config)?
+        let policy = resolve_package_config(&pkg.id, &package_ecosystems, config)
             .and_then(|pcfg| pcfg.pre_major_inference)
             .unwrap_or(PreMajorInferencePolicy::Off);
 

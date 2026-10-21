@@ -641,7 +641,7 @@ fn promoted_name_removed_from_index_bare() {
         !ws.graph.identity().bare.contains_key("native-core"),
         "index.bare must not retain the stale pre-promotion key once both occurrences promote"
     );
-    let unprefixed_lookup = ws.graph.identity().resolve_human("native-core", &[]);
+    let unprefixed_lookup = ws.graph.identity().resolve("native-core");
     assert!(matches!(unprefixed_lookup, Err(GraphError::AmbiguousName { .. })));
 }
 
@@ -797,12 +797,9 @@ fn unpromoted_standalone_cargo_package_retains_bare_id() {
     let resolved = ws
         .graph
         .identity()
-        .resolve_human("cargo:single", &[])
-        .expect("cargo:single must resolve");
-    assert_eq!(
-        resolved, bare_id,
-        "cargo:single human lookup must resolve to the Bare ID"
-    );
+        .resolve("cargo/single")
+        .expect("cargo/single must resolve");
+    assert_eq!(resolved, bare_id, "cargo/single lookup must resolve to the Bare ID");
 }
 
 /// A platform package that IS a workspace member, named by no owner's
@@ -1035,7 +1032,7 @@ fn promoted_index_prefixed_holds_two_distinct_ids_not_stale_bare() {
     );
     assert_ne!(
         cargo_id, npm_id,
-        "a distinct-id count of 2 is required for ResolvedConfig.promoted_siblings' derivation to retain this name"
+        "a distinct-id count of 2 is required to retain this name"
     );
 }
 
