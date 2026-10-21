@@ -30,11 +30,11 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 indexmap = { workspace = true }
 miette = { workspace = true }
-anstream = "0.6"
-comfy-table = "7"
-similar = { version = "2", features = ["inline"] }
+anstream = "1.0"
+comfy-table = "8"
+similar = { version = "3", features = ["inline"] }
 schemars = { workspace = true }
-dialoguer = "0.11"
+dialoguer = "0.12"
 dunce = { workspace = true }
 tempfile = { workspace = true }
 
@@ -44,8 +44,8 @@ tempfile = { workspace = true }
 callisto-fixtures = { path = "../callisto-fixtures" }
 callisto-manifests = { path = "../callisto-manifests" }
 callisto-graph = { path = "../callisto-graph" }
-trycmd = "0.15"
+trycmd = "1.2"
 rstest.workspace = true
 insta.workspace = true
 base64.workspace = true
-jsonschema = { version = "0.53", default-features = false }
+jsonschema = { version = "0.58", default-features = false }
