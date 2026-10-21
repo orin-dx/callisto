@@ -1,0 +1,102 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5G2PCGX9P74YX32R7HNW3TD",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-21T20:33:45.893628Z",
+  "branch": "worktree-docs-v1-claims",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "ARCHITECTURE.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "586907e2f5ab",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 196
+  },
+  "summary": {
+    "intent": "Work through the callisto repo's NEXT-WORK plan in parallel lanes (release retry fix, test debt, docs refresh, refactors, SYS-NAPI, then v1 hardening items such as E317, pre-mode, range hard-stop, dist-tag, canonical ids), opening a PR for each slice and running just ci before each.",
+    "outcome": "Opened a large set of PRs (#202-#208 and later #271, #272 plus pre-mode, range, dist-tag, dead-code, W4 and canonical-emission PRs), each gated by a passing local just ci. Closed PR #201 after the user said the plan is local-only. The CLI-argument qualification change was still waiting on local CI at the end.",
+    "learnings": {
+      "repo": [
+        "The plan file NEXT-WORK.md is local tracking only; it lives at .claude/plans/NEXT-WORK.md and is excluded via .git/info/exclude, never committed or put in a PR.",
+        "Callisto has four published crates (callisto-model MIT, manifests, graph, cli under FSL) plus dev-only callisto-fixtures. All are in one fixed group in callisto.toml, so they version in lockstep; the decision is that all four go to 1.0 together, with the libraries documented as internal.",
+        "Tests only reach the real code through the release e2e harness, which fakes gh, cargo and registry reads. Fakes can hide bugs, so black-box tests with the real binary or jq are preferred where possible.",
+        "Spec JSON in docs/specs, docs/errors.md (E317, E318, E319 added), architecture docs, the V1-FINDINGS register and a changeset in .changeset/ must be updated alongside behavior changes.",
+        "Commits are signed and PRs carry no session link, per AGENTS.md. Stacked PRs are linked with a native gh stack (e.g. #207 holds #205, #206 and #208).",
+        "Bare package names in config are now error E317 and must use eco/name. The leftover dead code (second bare pass in resolve_package_config, promoted_siblings, bare-rule diagnostic emission, from_groups, resolve_unique, resolve_human) was removed in a follow-up PR."
+      ],
+      "code": [],
+      "workflow": [
+        "The task-notification 'exit code 0' only reports the wrapper script. The real result is the log's own exit= line, which was exit=1 for fmt-check once and exit=100 for a test failure once.",
+        "The sandbox rejects inline env assignments, heredocs, and compound commands, so scripts were written to files under the job tmp dir and run from there. It also only allows edits inside the current worktree, so switching worktrees was needed to edit another PR's files.",
+        "Scripted bulk conversions (qualify.py) silently altered unrelated comments and double-prefixed some names, so the staged diff must be reviewed before committing.",
+        "Proving a test can fail (mutation checks, red-first runs on old code) caught real gaps, e.g. the platform snapshot initially did not cover PlatformPublish.",
+        "macOS ships bash without mapfile and a BSD sed that rejects some GNU one-liners, so templates and scripts need portable constructs."
+      ]
+    },
+    "friction": [
+      "PR #201 was opened with the local-only plan file in it, and the user objected; the PR was closed and a feedback memory saved.",
+      "Several commands were rejected by the sandbox (inline env, heredocs, scripts mentioning git, compound commands), forcing workarounds through temp script files.",
+      "Multiple CI reruns were needed: a stray blank line, rustfmt failure, and three init/local tests that assumed a tag on HEAD means released.",
+      "Rebases onto main hit repeated errors.md conflicts, which were resolved by hand.",
+      "Background sessions could not edit the shared checkout, so the plan status could not be recorded in .claude/plans/NEXT-WORK.md.",
+      "The PR body for #202 initially contained literal backslashes from a quoted heredoc and had to be fixed."
+    ],
+    "open_items": [
+      "Branch cleanup (docs/next-work-plan, docs/spec-rewrite, fix/native-resolution and about 35 local branches) is not done and needs the user's per-branch decision.",
+      "W1 real-service credential check needs a decision on where it runs in CI; W11 verification needs credentials and an approved run.",
+      "D01-blocked work (SYS-MATURIN, W9) and the W10 decisions (target-declaration graph edges, Python dev-group cascade) await the user.",
+      "PR #204 still lists SYS-RETRY/T08-RETRY; a follow-up edit is needed once #202 merges.",
+      "PR #202 had an independent review whose findings (tag message parsing, dependent-tagged-at-HEAD case) were being fixed; real gh, cargo and registry reads remain unproven there.",
+      "OIDC trusted publishing is deferred to post-1.0; cargo-semver-checks is held back until the promised surfaces are chosen (start with the CLI schema output and config/report formats).",
+      "Removal of the never-emitted BareRuleMatchesMultipleEcosystems DiagnosticCode variant was folded into the canonical-emission slice.",
+      "Possible later merge of callisto-manifests into callisto-graph is left for after 1.0.",
+      "The CLI --package qualification PR (t06-cli-args) still needs its CI result, commit and PR opened, and a follow-up task makes IdentityIndex::resolve require the qualified form."
+    ]
+  }
+}
