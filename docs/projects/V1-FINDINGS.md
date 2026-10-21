@@ -8,7 +8,7 @@ Confirmed means reproduced against the main binary or established by the cited c
 
 | Finding | Evidence and consequence | Plan | Contract/area |
 | --- | --- | --- | --- |
-| SYS-MATURIN | `Package::version_grammar`: two fresh co-located Cargo/Maturin repos, with matching static versions and Cargo-owned dynamic Python versions, both reproduce E007 from init/status. Separate-directory fixtures did not cover this layout. | T07 | WS-ID-09; proposed version authority |
+| SYS-MATURIN | `Package::version_grammar`: two fresh co-located Cargo/Maturin repos, with matching static versions and Cargo-owned dynamic Python versions, both reproduce E007 from init/status. Separate-directory fixtures did not cover this layout. | After v1 | WS-ID-09; see [the model](../architecture/polyglot-v1.md) |
 
 ## Integration risks and evidence gaps
 
@@ -16,7 +16,7 @@ Confirmed means reproduced against the main binary or established by the cited c
 - Registry version existence is not proof of identical package bytes or the desired npm dist-tag. A Python release is complete when every built file is on the index; the generated build-matrix workflow seals the file set in a credential-free build job and compares digests, while Python-only workspaces stay unsealed. Universal checksum enforcement and channel promotion remain owner decisions.
 - Cargo and PyPI real local registry tests exist in `release_real_registry_e2e_tests.rs`; they drive publisher argv directly, bypass production binding/observation in those paths, and can skip when tools are missing. npm has broader end-to-end coverage. Record exercised versus skipped paths; do not mark the missing Cargo test as the remaining v1 blocker (T12).
 - Fresh local Cargo/npm/PyPI repositories completed documented setup through release dry-run; npm packing and Cargo package inventory passed. Python artifact build was blocked on sandbox network access to `setuptools`, and no timings, credentials, registry publication or hosted release were exercised. The under-ten-minute first-published-release goal therefore remains unverified (T12-DX).
-- Go v2/tag publication and NuGet normalized versions/RID/TFM assets are architecture examples only, not production support or new v1 gates (T07/T08/T12).
+- Go v2/tag publication and NuGet normalized versions/RID/TFM assets are architecture examples only, not production support or new v1 gates (T08/T12).
 
 ## Owner policy, not a defect verdict
 
