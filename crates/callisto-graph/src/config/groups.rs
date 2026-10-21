@@ -186,12 +186,17 @@ impl GroupTable {
                     match index.resolve(name) {
                         Ok(id) => {
                             if let Some(other) = claimed_by.get(&id) {
-                                if other != &rg.name {
-                                    return Err(GraphError::ConflictingGroupMembership {
-                                        package: id.clone(),
-                                        groups: vec![other.clone(), rg.name.clone()],
-                                    });
+                                // The same package under another spelling, such as its primary and secondary native names.
+                                if other == &rg.name {
+                                    return Err(GraphError::Config(ConfigError::DuplicateMemberInGroup {
+                                        group: rg.name.clone(),
+                                        member: name.clone(),
+                                    }));
                                 }
+                                return Err(GraphError::ConflictingGroupMembership {
+                                    package: id.clone(),
+                                    groups: vec![other.clone(), rg.name.clone()],
+                                });
                             } else {
                                 claimed_by.insert(id.clone(), rg.name.clone());
                             }
