@@ -118,7 +118,114 @@ pub fn redact_known_secrets(text: &str, secrets: &[String]) -> String {
             redacted = redacted.replace(secret.as_str(), "[REDACTED]");
         }
     }
-    redact_url_userinfo(&redacted)
+    redact_url_userinfo(&redact_token_shapes(&redacted))
+}
+
+/// Token prefixes, the shortest run after each that counts as a token, so ordinary words are left alone.
+const TOKEN_PREFIXES: &[(&str, usize)] = &[
+    ("npm_", 20),
+    ("ghp_", 20),
+    ("gho_", 20),
+    ("ghu_", 20),
+    ("ghs_", 20),
+    ("ghr_", 20),
+    ("github_pat_", 20),
+    ("pypi-", 20),
+];
+
+fn is_token_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, '_' | '-')
+}
+
+/// Masks credentials that a registry tool echoes although none of them is in a known environment variable: tokens
+/// with a well-known prefix, `Bearer` values and the value of an `.npmrc` `_authToken`, `_auth` or `_password` line.
+fn redact_token_shapes(text: &str) -> String {
+    let mut redacted = text.to_string();
+    for (prefix, min_len) in TOKEN_PREFIXES {
+        redacted = mask_after(
+            &redacted,
+            prefix,
+            true,
+            |value| value.chars().take_while(|c| is_token_char(*c)).count(),
+            *min_len,
+        );
+    }
+    redacted = mask_bearer(&redacted);
+    for key in ["_authToken=", "_auth=", "_password="] {
+        redacted = mask_after(
+            &redacted,
+            key,
+            false,
+            |value| {
+                value
+                    .find(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '<' | '>'))
+                    .unwrap_or(value.len())
+            },
+            1,
+        );
+    }
+    redacted
+}
+
+/// Replaces `prefix` plus the value that follows with `[REDACTED]` (a `key=` keeps the key). `value_len` measures the
+/// value, in bytes of its leading run, and a value shorter than `min_len` characters is not a credential. A `prefix`
+/// glued to a preceding word is not a token start when `word_boundary` is set, and `${NAME}` placeholders are kept.
+fn mask_after(
+    text: &str,
+    prefix: &str,
+    word_boundary: bool,
+    value_len: impl Fn(&str) -> usize,
+    min_len: usize,
+) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(position) = rest.find(prefix) {
+        let (before, from_prefix) = rest.split_at(position);
+        let after_prefix = &from_prefix[prefix.len()..];
+        let boundary_ok = !word_boundary || before.chars().next_back().is_none_or(|c| !is_token_char(c));
+        let measured = value_len(after_prefix);
+        let value = &after_prefix[..measured];
+        let long_enough = value.chars().count() >= min_len && !value.starts_with("${");
+        result.push_str(before);
+        if boundary_ok && long_enough {
+            if word_boundary {
+                result.push_str("[REDACTED]");
+            } else {
+                result.push_str(prefix);
+                result.push_str("[REDACTED]");
+            }
+            rest = &after_prefix[measured..];
+        } else {
+            result.push_str(prefix);
+            rest = after_prefix;
+        }
+    }
+    result.push_str(rest);
+    result
+}
+
+/// Masks the credential after `Bearer ` (any case) when it is long enough to be one, so prose such as
+/// `Bearer authentication failed` is kept.
+fn mask_bearer(text: &str) -> String {
+    let lower = text.to_ascii_lowercase();
+    let mut result = String::with_capacity(text.len());
+    let mut cursor = 0;
+    while let Some(found) = lower[cursor..].find("bearer ") {
+        let start = cursor + found;
+        let value_start = start + "bearer ".len();
+        let value_len = text[value_start..]
+            .find(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '<' | '>'))
+            .unwrap_or(text.len() - value_start);
+        result.push_str(&text[cursor..value_start]);
+        if value_len >= 16 {
+            result.push_str("[REDACTED]");
+            cursor = value_start + value_len;
+        } else {
+            cursor = value_start;
+        }
+    }
+    result.push_str(&text[cursor..]);
+    result
 }
 
 /// Filters an env-var snapshot down to registry-credential values this
@@ -137,11 +244,17 @@ pub fn known_credential_env_values(vars: impl Iterator<Item = (String, String)>)
     vars.filter(|(key, value)| {
         !value.is_empty()
             && (SECRET_CREDENTIAL_ENV.contains(&key.as_str())
-                || (key.starts_with("CARGO_REGISTRIES_") && key.ends_with("_TOKEN")))
+                || (key.starts_with("CARGO_REGISTRIES_") && key.ends_with("_TOKEN"))
+                || (value.len() >= MIN_SECRET_VALUE_LEN && SECRET_NAME_SUFFIXES.iter().any(|s| key.ends_with(s))))
     })
     .map(|(_, value)| value)
     .collect()
 }
+
+/// Any variable named like a secret has its value redacted too, unless the value is so short that masking it would
+/// mangle ordinary text.
+const SECRET_NAME_SUFFIXES: &[&str] = &["_TOKEN", "_SECRET", "_PASSWORD"];
+const MIN_SECRET_VALUE_LEN: usize = 8;
 
 /// The environment variables whose values are secrets. A username and the paths of generated config files
 /// (`TWINE_USERNAME`, `NPM_CONFIG_USERCONFIG`, `CALLISTO_PUBLISH_NPM_CONFIG`) are credentials to keep out of
@@ -255,6 +368,64 @@ mod tests {
         assert_eq!(
             redacted,
             "error: failed to fetch https://[REDACTED]@registry.example.com/pkg.tgz: 401"
+        );
+    }
+
+    #[test]
+    fn redacts_a_prefixed_token_that_is_in_no_known_variable() {
+        for token in [
+            "npm_NOTINENV_tok_9f8e7d6c5b4a",
+            "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+            "github_pat_11ABCDEFG0abcdefghijkl_mnopqrstuvwxyz0123456789",
+            "pypi-AgEIcHlwaS5vcmcCJGFiY2RlZmdoaWprbG1ub3A",
+        ] {
+            let text = format!("error: 401, token {token} rejected");
+            let redacted = redact_known_secrets(&text, &[]);
+            assert_eq!(redacted, "error: 401, token [REDACTED] rejected", "{token}");
+        }
+    }
+
+    #[test]
+    fn redacts_a_bearer_credential_but_not_prose_after_the_word() {
+        let redacted = redact_known_secrets("extra: auth header Bearer abcdefghij0123456789xyz here", &[]);
+        assert_eq!(redacted, "extra: auth header Bearer [REDACTED] here");
+        let prose = "Bearer authentication failed";
+        assert_eq!(redact_known_secrets(prose, &[]), prose);
+    }
+
+    #[test]
+    fn redacts_an_npmrc_credential_value_but_keeps_an_interpolation_placeholder() {
+        let redacted = redact_known_secrets("//registry.npmjs.org/:_authToken=abc123def456 was used", &[]);
+        assert_eq!(redacted, "//registry.npmjs.org/:_authToken=[REDACTED] was used");
+        let placeholder = "//registry.npmjs.org/:_authToken=${NPM_TOKEN}";
+        assert_eq!(redact_known_secrets(placeholder, &[]), placeholder);
+    }
+
+    #[test]
+    fn leaves_words_that_only_resemble_a_token_prefix() {
+        for text in [
+            "npm_config_cache is unset",
+            "see ghp_short",
+            "my_npm_abcdefghijklmnopqrstuvwxyz",
+        ] {
+            assert_eq!(redact_known_secrets(text, &[]), text);
+        }
+    }
+
+    #[test]
+    fn a_variable_named_like_a_secret_has_its_value_redacted() {
+        let vars = [
+            ("DEPLOY_TOKEN", "deploy-secret-value"),
+            ("DB_PASSWORD", "hunter2hunter2"),
+            ("SHORT_TOKEN", "abc"),
+            ("TOKEN_ENDPOINT", "https://example.com"),
+            ("PATH", "/usr/bin"),
+        ]
+        .into_iter()
+        .map(|(key, value)| (key.to_string(), value.to_string()));
+        assert_eq!(
+            known_credential_env_values(vars),
+            ["deploy-secret-value".to_string(), "hunter2hunter2".to_string()]
         );
     }
 
