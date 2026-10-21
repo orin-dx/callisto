@@ -168,7 +168,7 @@
     },
     {
       "id": "VER-PRE-04",
-      "criterion": "In pre mode, `version` never deletes a changeset from disk. A changeset whose id is not yet in `pre.json`'s `changesets` list counts toward severity, produces a changelog entry, and has its id added to `changesets`; a changeset whose id is already there still counts toward severity and the prerelease counter (VER-PRE-03) but produces no additional changelog entry. The `allow-empty-changesets`/`--strict` handling from VER-AGG-06 triggers only when no changeset -- new or already recorded -- resolves to a package this run, not merely when nothing new was added."
+      "criterion": "In pre mode, `version` never deletes a changeset from disk. A changeset whose id is not yet in `pre.json`'s `changesets` list counts toward severity, produces a changelog entry, and has its id added to `changesets`; a changeset whose id is already there is not pending again: a package named only by recorded changesets is not bumped, so a rerun with nothing new changes nothing, and a package named by a new changeset still counts the recorded ones toward its severity. The `allow-empty-changesets`/`--strict` handling from VER-AGG-06 triggers when no changeset in pre mode is new."
     },
     {
       "id": "VER-PRE-05",

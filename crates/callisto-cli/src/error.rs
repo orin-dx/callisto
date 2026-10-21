@@ -322,6 +322,13 @@ pub enum CliError {
     #[diagnostic(code(E244), help("callisto pre enter <tag>"))]
     PreNotActive,
 
+    #[error("release pull requests do not support pre-release mode (tag `{tag}`)")]
+    #[diagnostic(
+        code(E318),
+        help("release prereleases locally with `callisto version` and `callisto release`, or run `callisto pre exit` first")
+    )]
+    ReleasePrInPreMode { tag: String },
+
     #[error("invalid package spec `{spec}`; expected `package-name:severity`")]
     #[diagnostic(code(E270), help("pass a colon-separated pair, for example `cargo/foo:patch`"))]
     AddInvalidPackageSpec { spec: String },

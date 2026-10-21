@@ -37,14 +37,6 @@ pub struct Aggregation {
     /// caller records these into `pre.json` so a rerun recognizes them as already-applied and skips re-adding
     /// their changelog entry, without deleting the file.
     pub new_pre_changesets: Vec<String>,
-    /// True when at least one changeset (new or already recorded) matched a real package in pre mode this run.
-    /// Distinct from `new_pre_changesets` being empty: a rerun with nothing new still has an active pre-release
-    /// changeset driving severity, so the "no pending changesets" warning must key off this, not off "nothing new".
-    pub pre_mode_has_active_changeset: bool,
-    /// Packages whose severity this run came solely from a pre-mode changeset already recorded in `pre.json` --
-    /// re-affirmed, not newly applied. The caller must not synthesize a changelog entry for these: it was already
-    /// logged on the run that first recorded the changeset.
-    pub pre_mode_recorded_only: std::collections::HashSet<PackageId>,
     pub changelog_inputs: BTreeMap<PackageId, ChangelogInput>,
     pub inference_commits: BTreeMap<PackageId, Vec<(CommitSha, String)>>,
     pub diagnostics: Vec<Diagnostic>,
@@ -301,6 +293,7 @@ where
     let already_recorded: std::collections::HashSet<&str> = pre
         .map(|s| s.changesets.iter().map(String::as_str).collect())
         .unwrap_or_default();
+    let mut recorded_only: std::collections::HashSet<PackageId> = std::collections::HashSet::new();
 
     for cs in loaded {
         let is_already_recorded = is_pre_mode && already_recorded.contains(cs.id.as_str());
@@ -355,7 +348,7 @@ where
                     }
 
                     if entry.severity != Severity::None && is_already_recorded {
-                        agg.pre_mode_recorded_only.insert(canonical_id.clone());
+                        recorded_only.insert(canonical_id.clone());
                     }
                     if entry.severity != Severity::None && !is_already_recorded {
                         // In pre-release mode use the pre-cycle entry version as the
@@ -419,7 +412,6 @@ where
         // unrecorded regardless of mode, so a later rerun can still pick up its bump.
         if matched_any && !has_unresolved {
             if is_pre_mode {
-                agg.pre_mode_has_active_changeset = true;
                 // Records newly-seen ids so a rerun treats them as already-applied and skips the changelog entry.
                 if !is_already_recorded {
                     agg.new_pre_changesets.push(cs.id.clone());
@@ -427,6 +419,16 @@ where
             } else {
                 agg.consumed.push(cs.path.clone());
             }
+        }
+    }
+
+    // A package whose only changesets are already recorded in `pre.json` has nothing new to release, so a rerun
+    // plans no further prerelease for it; recorded changesets still count when a new one names the package.
+    for id in recorded_only {
+        if !agg.changelog_inputs.contains_key(&id) && agg.named_by.get(&id) == Some(&NamedBy::Changeset) {
+            agg.severities.remove(&id);
+            agg.reasons.remove(&id);
+            agg.named_by.remove(&id);
         }
     }
 

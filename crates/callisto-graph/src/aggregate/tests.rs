@@ -1608,9 +1608,9 @@ fn test_pre_mode_first_match_is_recorded_not_consumed() {
     );
 }
 
-/// A changeset id already in `pre.json` counts toward severity on rerun but must not add a second changelog entry.
+/// A changeset id already in `pre.json` plans nothing on rerun: no severity, no changelog entry, no new id.
 #[test]
-fn test_pre_mode_already_recorded_changeset_counts_severity_but_not_changelog() {
+fn test_pre_mode_already_recorded_changeset_plans_nothing_on_rerun() {
     let ws_dir = tempfile::tempdir().unwrap();
     let root = ws_dir.path();
     init_repo(root);
@@ -1670,10 +1670,10 @@ fn test_pre_mode_already_recorded_changeset_counts_severity_but_not_changelog() 
         "pre mode must never delete a changeset from disk, recorded or not; got: {:?}",
         agg.consumed
     );
-    assert_eq!(
-        agg.severities.get(&pkg_id),
-        Some(&Severity::Minor),
-        "an already-recorded changeset must still count toward severity against initialVersions"
+    assert!(
+        !agg.severities.contains_key(&pkg_id),
+        "an already-recorded changeset must not bump the package again; got: {:?}",
+        agg.severities.get(&pkg_id)
     );
     assert!(
         !agg.changelog_inputs.contains_key(&pkg_id),
@@ -1681,14 +1681,78 @@ fn test_pre_mode_already_recorded_changeset_counts_severity_but_not_changelog() 
              got: {:?}",
         agg.changelog_inputs.get(&pkg_id)
     );
-    assert!(
-        agg.pre_mode_has_active_changeset,
-        "an already-recorded changeset still actively drives this run (severity + prerelease \
-             counter), so pre_mode_has_active_changeset must be true, not just new_pre_changesets"
+}
+
+/// A new changeset naming a package whose earlier changeset is already recorded still bumps it, at the higher severity.
+#[test]
+fn test_pre_mode_new_changeset_counts_the_recorded_ones_toward_severity() {
+    let ws_dir = tempfile::tempdir().unwrap();
+    let root = ws_dir.path();
+    init_repo(root);
+
+    let cs_dir = root.join(".changeset");
+    std::fs::create_dir_all(&cs_dir).unwrap();
+    std::fs::write(
+        cs_dir.join("cool-thing.md"),
+        "---\npkg-a: minor\n---\n\nAdds a thing.\n",
+    )
+    .unwrap();
+    std::fs::write(
+        cs_dir.join("small-fix.md"),
+        "---\npkg-a: patch\n---\n\nFixes a thing.\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("README.md"), "hello\n").unwrap();
+    run_git(root, &["add", "."]);
+    run_git(root, &["commit", "-q", "-m", "initial commit"]);
+
+    let pkg_id = PackageId::parse("pkg-a").unwrap();
+    let graph = SinglePackageGraph {
+        pkg: make_pkg(pkg_id.clone()),
+    };
+    let cfg = crate::config::load(root).unwrap();
+    let runner = RealGitRunner;
+    let git = GitAccess::new(root, &runner);
+    let tags = crate::tags::TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
+    let mut base_versions = BTreeMap::new();
+    base_versions.insert(pkg_id.clone(), Version::semver(0, 1, 0));
+
+    let mut initial_versions = indexmap::IndexMap::new();
+    initial_versions.insert("pkg-a".to_string(), Version::semver(0, 1, 0));
+    let pre_state = callisto_model::format::PreState {
+        mode: callisto_model::format::PreMode::Pre,
+        tag: "beta".to_string(),
+        initial_versions,
+        changesets: vec!["cool-thing".to_string()],
+    };
+
+    let inference = crate::infer::NoInference;
+    let agg = aggregate(
+        &graph,
+        &identity_for(&graph.pkg),
+        &cfg,
+        &git,
+        &tags,
+        &base_versions,
+        Some(&pre_state),
+        &inference,
+    )
+    .unwrap();
+
+    assert_eq!(agg.new_pre_changesets, vec!["small-fix".to_string()]);
+    assert_eq!(
+        agg.severities.get(&pkg_id),
+        Some(&Severity::Minor),
+        "the recorded minor changeset must still set the severity the new patch changeset is added to"
+    );
+    assert_eq!(
+        agg.changelog_inputs.get(&pkg_id).map(|input| input.entries.len()),
+        Some(1),
+        "only the new changeset is logged"
     );
 }
 
-/// With no changeset on disk in pre mode, the run has no active changeset, not just an empty `new_pre_changesets`.
+/// With no changeset on disk in pre mode, nothing is new.
 #[test]
 fn test_pre_mode_no_changesets_at_all_has_no_active_changeset() {
     let ws_dir = tempfile::tempdir().unwrap();
@@ -1731,7 +1795,6 @@ fn test_pre_mode_no_changesets_at_all_has_no_active_changeset() {
     )
     .unwrap();
 
-    assert!(!agg.pre_mode_has_active_changeset);
     assert!(agg.new_pre_changesets.is_empty());
 }
 
