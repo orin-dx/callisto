@@ -15,3 +15,17 @@ updates:
       security-actions:
         applies-to: security-updates
         patterns: ["*"]
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 3
+    groups:
+      routine-crates:
+        applies-to: version-updates
+        patterns: ["*"]
+      security-crates:
+        applies-to: security-updates
+        patterns: ["*"]
