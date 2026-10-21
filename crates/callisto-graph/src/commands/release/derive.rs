@@ -750,13 +750,13 @@ fn add_artifact_uploads<R: CommandRunner, D: DependencyResolver>(
                     .entry(id.clone())
                     .or_default()
                     .push(operation.id().clone());
-                if owner_id != *id {
-                    if let Some(owner_tag) = tag_by_package.get(&owner_id) {
-                        asset_owner_tags_by_package
-                            .entry(id.clone())
-                            .or_default()
-                            .insert(owner_tag.clone());
-                    }
+                if owner_id != *id
+                    && let Some(owner_tag) = tag_by_package.get(&owner_id)
+                {
+                    asset_owner_tags_by_package
+                        .entry(id.clone())
+                        .or_default()
+                        .insert(owner_tag.clone());
                 }
                 operations.insert(operation.id().clone(), operation);
                 artifact_slots.push(slot);

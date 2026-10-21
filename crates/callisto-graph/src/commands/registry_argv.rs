@@ -1024,14 +1024,14 @@ mod tests {
 
     #[test]
     fn classify_cargo_output_redacts_secrets_in_error_message() {
-        std::env::set_var("CARGO_REGISTRY_TOKEN", "super-secret-token-value");
-        let out = output(1, "", "authentication failed: token super-secret-token-value invalid");
-        let err = classify_cargo_output(&out).unwrap_err();
-        assert!(
-            !err.to_string().contains("super-secret-token-value"),
-            "secret must be redacted from error message, got: {err}"
-        );
-        std::env::remove_var("CARGO_REGISTRY_TOKEN");
+        temp_env::with_var("CARGO_REGISTRY_TOKEN", Some("super-secret-token-value"), || {
+            let out = output(1, "", "authentication failed: token super-secret-token-value invalid");
+            let err = classify_cargo_output(&out).unwrap_err();
+            assert!(
+                !err.to_string().contains("super-secret-token-value"),
+                "secret must be redacted from error message, got: {err}"
+            );
+        });
     }
 
     #[test]

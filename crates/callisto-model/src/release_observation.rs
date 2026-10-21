@@ -308,12 +308,12 @@ impl ReleaseOperationObservationV1 {
                     })
                 }
             }
-            if let ProviderEvidenceV1::RegistryVersion { version, .. } = evidence {
-                if version != &operation.version {
-                    return Err(ProviderObservationError::EvidenceVersionMismatch {
-                        id: Box::new(operation),
-                    });
-                }
+            if let ProviderEvidenceV1::RegistryVersion { version, .. } = evidence
+                && version != &operation.version
+            {
+                return Err(ProviderObservationError::EvidenceVersionMismatch {
+                    id: Box::new(operation),
+                });
             }
         }
         Ok(Self { operation, observation })

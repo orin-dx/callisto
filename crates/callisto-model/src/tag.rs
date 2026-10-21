@@ -15,14 +15,14 @@ impl TagTemplate {
         let version_marker = "{version}";
         let count = raw.matches(version_marker).count();
         if count == 0 {
-            if let Some(start) = raw.find('{') {
-                if let Some(end) = raw[start..].find('}') {
-                    let placeholder = &raw[start + 1..start + end];
-                    return Err(TagTemplateError::UnknownPlaceholder {
-                        template: raw.to_string(),
-                        placeholder: placeholder.to_string(),
-                    });
-                }
+            if let Some(start) = raw.find('{')
+                && let Some(end) = raw[start..].find('}')
+            {
+                let placeholder = &raw[start + 1..start + end];
+                return Err(TagTemplateError::UnknownPlaceholder {
+                    template: raw.to_string(),
+                    placeholder: placeholder.to_string(),
+                });
             }
             return Err(TagTemplateError::MissingVersionPlaceholder {
                 template: raw.to_string(),

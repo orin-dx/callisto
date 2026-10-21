@@ -617,10 +617,9 @@ pub fn rewrite_spec(original: &DepSpec, new: &Version, eco: Ecosystem, cfg: &Cas
         return RewriteOutcome::Rewritten(DepSpec::Exact(new.clone()));
     }
 
-    if let Some(rewritten) = callisto_manifests::round_trip(eco, original, new) {
-        RewriteOutcome::Rewritten(rewritten)
-    } else {
-        RewriteOutcome::LeftAlone(Diagnostic {
+    match callisto_manifests::round_trip(eco, original, new) {
+        Some(rewritten) => RewriteOutcome::Rewritten(rewritten),
+        _ => RewriteOutcome::LeftAlone(Diagnostic {
             code: DiagnosticCode::RangeNotRoundTrippable,
             severity: DiagnosticSeverity::Warning,
             message: format!(
@@ -632,7 +631,7 @@ pub fn rewrite_spec(original: &DepSpec, new: &Version, eco: Ecosystem, cfg: &Cas
             path: None,
             governed_by: Some(ConfigKey::CASCADE_PRESERVE_NPM_RANGES),
             escalated_by: None,
-        })
+        }),
     }
 }
 

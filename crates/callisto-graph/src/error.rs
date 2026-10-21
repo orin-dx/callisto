@@ -1180,17 +1180,17 @@ mod redaction_tests {
             ("GH_TOKEN", "ghp-secret-token-value"),
             ("NPM_TOKEN", "npm-secret-token-value"),
         ] {
-            std::env::set_var(name, secret);
-            let error = GraphError::ReleaseCommand {
-                program: "cargo".to_owned(),
-                args: vec!["publish".to_owned()],
-                failure: CommandFailure::NonZeroExit {
-                    exit_code: Some(1),
-                    stderr: format!("error: failed to authenticate with token {secret}\n"),
-                },
-            };
-            let rendered = error.to_string();
-            std::env::remove_var(name);
+            let rendered = temp_env::with_var(name, Some(secret), || {
+                GraphError::ReleaseCommand {
+                    program: "cargo".to_owned(),
+                    args: vec!["publish".to_owned()],
+                    failure: CommandFailure::NonZeroExit {
+                        exit_code: Some(1),
+                        stderr: format!("error: failed to authenticate with token {secret}\n"),
+                    },
+                }
+                .to_string()
+            });
             assert!(
                 !rendered.contains(secret),
                 "{name} value survived into the diagnostic: {rendered}"

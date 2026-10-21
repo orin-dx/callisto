@@ -93,13 +93,14 @@ pub(crate) fn prepared_registry_binding<R: CommandRunner, D: DependencyResolver>
     let publish = publish_raw
         .map(|raw| canonical_registry_binding(key.as_str(), raw))
         .transpose()?;
-    if let (Some(raw), Some(binding)) = (explicit, &index) {
-        if matches!(target, PublishTarget::Npm { .. }) && !is_approved_npm_registry(workspace, binding) {
-            return Err(GraphError::UntrustedNpmRegistry {
-                package: package.clone(),
-                url: raw.to_owned(),
-            });
-        }
+    if let (Some(raw), Some(binding)) = (explicit, &index)
+        && matches!(target, PublishTarget::Npm { .. })
+        && !is_approved_npm_registry(workspace, binding)
+    {
+        return Err(GraphError::UntrustedNpmRegistry {
+            package: package.clone(),
+            url: raw.to_owned(),
+        });
     }
     let identity = match (&index, &publish) {
         (_, Some(publish)) => split_routes_digest(index.as_ref(), publish),

@@ -549,12 +549,12 @@ impl GitAccess<'_> {
         let output = self.runner.run("git", &arg_refs, &self.root)?;
 
         if !output.success() {
-            if let Some(r) = since_ref {
-                if self.resolve_commit(r)?.is_none() {
-                    return Err(VcsError::RefNotFound {
-                        ref_name: r.to_string(),
-                    });
-                }
+            if let Some(r) = since_ref
+                && self.resolve_commit(r)?.is_none()
+            {
+                return Err(VcsError::RefNotFound {
+                    ref_name: r.to_string(),
+                });
             }
             return Err(VcsError::Git(format!(
                 "`git log` failed in `{}`: {}",

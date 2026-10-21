@@ -187,15 +187,15 @@ fn is_footer_line(line: &str) -> bool {
 }
 
 fn parse_footer_line(line: &str) -> Option<(&str, &str)> {
-    if let Some((token, val)) = line.split_once(": ") {
-        if token == "BREAKING CHANGE" || token == "BREAKING-CHANGE" || is_valid_footer_token(token) {
-            return Some((token, val.trim()));
-        }
+    if let Some((token, val)) = line.split_once(": ")
+        && (token == "BREAKING CHANGE" || token == "BREAKING-CHANGE" || is_valid_footer_token(token))
+    {
+        return Some((token, val.trim()));
     }
-    if let Some((token, val)) = line.split_once(" #") {
-        if is_valid_footer_token(token) {
-            return Some((token, val.trim()));
-        }
+    if let Some((token, val)) = line.split_once(" #")
+        && is_valid_footer_token(token)
+    {
+        return Some((token, val.trim()));
     }
     None
 }

@@ -1520,10 +1520,10 @@ fn collect_codes(text: &str, codes: &mut Vec<String>) {
         match value {
             serde_json::Value::Object(map) => {
                 for (key, inner) in map {
-                    if key == "code" {
-                        if let Some(code) = inner.as_str() {
-                            codes.push(code.to_owned());
-                        }
+                    if key == "code"
+                        && let Some(code) = inner.as_str()
+                    {
+                        codes.push(code.to_owned());
                     }
                     walk(inner, codes);
                 }

@@ -601,17 +601,15 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
         .product_release
         .as_ref()
         .and_then(|release| release.forge_repository.as_ref())
-    {
-        if let Some(slot) = intent
+        && let Some(slot) = intent
             .artifact_slots
             .iter()
             .find(|slot| slot.attestation_policy.repository != *configured)
-        {
-            return Err(CliError::ReleaseForgeRepositoryMismatch {
-                configured: configured.as_slug(),
-                requested: slot.attestation_policy.repository.as_slug(),
-            });
-        }
+    {
+        return Err(CliError::ReleaseForgeRepositoryMismatch {
+            configured: configured.as_slug(),
+            requested: slot.attestation_policy.repository.as_slug(),
+        });
     }
     // The workspace root, resolved exactly as `plan` resolves it. Executing
     // from a subdirectory must reach the same root, not the process cwd.

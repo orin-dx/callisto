@@ -428,25 +428,25 @@ pub(crate) fn assemble_runtime_versions(
     let mut entries = Vec::new();
 
     let pkg_json = package_dir_abs.join("package.json");
-    if let Some(val) = pkg_json_val {
-        if let Some(range) = read_engines_node(&pkg_json, val)? {
-            entries.push(RuntimeVersionEntry {
-                ecosystem: RuntimeEcosystem::Npm,
-                field: "engines.node".to_string(),
-                range,
-            });
-        }
+    if let Some(val) = pkg_json_val
+        && let Some(range) = read_engines_node(&pkg_json, val)?
+    {
+        entries.push(RuntimeVersionEntry {
+            ecosystem: RuntimeEcosystem::Npm,
+            field: "engines.node".to_string(),
+            range,
+        });
     }
 
     let pyproject = package_dir_abs.join("pyproject.toml");
-    if let Some(val) = pyproject_val {
-        if let Some(range) = read_requires_python(&pyproject, val)? {
-            entries.push(RuntimeVersionEntry {
-                ecosystem: RuntimeEcosystem::Python,
-                field: "requires-python".to_string(),
-                range,
-            });
-        }
+    if let Some(val) = pyproject_val
+        && let Some(range) = read_requires_python(&pyproject, val)?
+    {
+        entries.push(RuntimeVersionEntry {
+            ecosystem: RuntimeEcosystem::Python,
+            field: "requires-python".to_string(),
+            range,
+        });
     }
 
     Ok(entries)

@@ -42,3 +42,4 @@ tempfile = { workspace = true }
 rstest.workspace = true
 insta.workspace = true
 serial_test.workspace = true
+temp-env = "0.3"

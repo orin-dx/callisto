@@ -104,15 +104,15 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     // the tag and finalizing to stable) even when no pending changeset files
     // exist on disk — they were consumed and deleted during the pre-release phase
     // and their stems recorded in pre.json.
-    if let Some(ref pre) = pre_state {
-        if pre.mode == callisto_model::format::PreMode::Exit {
-            for (id, ver) in &base_versions {
-                if ver.is_prerelease() {
-                    agg.severities.entry(id.clone()).or_insert(Severity::Patch);
-                    agg.reasons
-                        .entry(id.clone())
-                        .or_insert(BumpReason::PreRelease { tag: pre.tag.clone() });
-                }
+    if let Some(ref pre) = pre_state
+        && pre.mode == callisto_model::format::PreMode::Exit
+    {
+        for (id, ver) in &base_versions {
+            if ver.is_prerelease() {
+                agg.severities.entry(id.clone()).or_insert(Severity::Patch);
+                agg.reasons
+                    .entry(id.clone())
+                    .or_insert(BumpReason::PreRelease { tag: pre.tag.clone() });
             }
         }
     }
@@ -179,41 +179,44 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         });
 
         if let Some(ch_path) = &pkg.changelog {
-            let mut input = if let Some(mut agg_input) = agg.changelog_inputs.get(id).cloned() {
-                // Real changeset data: use it, but set the resolved target version.
-                agg_input.from = from.clone();
-                agg_input.to = Some(to.clone());
-                if let Some(reason) = outcome.reasons.get(id) {
-                    if let Some(source) = map_reason_to_change_source(reason, id, &to, &outcome, &agg) {
+            let mut input = match agg.changelog_inputs.get(id).cloned() {
+                Some(mut agg_input) => {
+                    // Real changeset data: use it, but set the resolved target version.
+                    agg_input.from = from.clone();
+                    agg_input.to = Some(to.clone());
+                    if let Some(reason) = outcome.reasons.get(id)
+                        && let Some(source) = map_reason_to_change_source(reason, id, &to, &outcome, &agg)
+                    {
                         agg_input.entries.push(ChangelogEntry { severity: sev, source });
                     }
+                    agg_input
                 }
-                agg_input
-            } else {
-                // No changeset drove this bump (cascade, group, inference, pre-release).
-                // Synthesize a single entry describing the reason so that render_section()
-                // never receives an empty entries list (which returns EmptyInput).
-                let source = outcome
-                    .reasons
-                    .get(id)
-                    .and_then(|r| map_reason_to_change_source(r, id, &to, &outcome, &agg))
-                    .unwrap_or_else(|| ChangeSource::Changeset {
-                        filename: String::new(),
-                        summary: format!(
-                            "Version bump ({})",
-                            match sev {
-                                Severity::Major => "major",
-                                Severity::Minor => "minor",
-                                Severity::Patch => "patch",
-                                Severity::None => "none",
-                            }
-                        ),
-                    });
-                ChangelogInput {
-                    package: id.clone(),
-                    from: from.clone(),
-                    to: Some(to.clone()),
-                    entries: vec![ChangelogEntry { severity: sev, source }],
+                _ => {
+                    // No changeset drove this bump (cascade, group, inference, pre-release).
+                    // Synthesize a single entry describing the reason so that render_section()
+                    // never receives an empty entries list (which returns EmptyInput).
+                    let source = outcome
+                        .reasons
+                        .get(id)
+                        .and_then(|r| map_reason_to_change_source(r, id, &to, &outcome, &agg))
+                        .unwrap_or_else(|| ChangeSource::Changeset {
+                            filename: String::new(),
+                            summary: format!(
+                                "Version bump ({})",
+                                match sev {
+                                    Severity::Major => "major",
+                                    Severity::Minor => "minor",
+                                    Severity::Patch => "patch",
+                                    Severity::None => "none",
+                                }
+                            ),
+                        });
+                    ChangelogInput {
+                        package: id.clone(),
+                        from: from.clone(),
+                        to: Some(to.clone()),
+                        entries: vec![ChangelogEntry { severity: sev, source }],
+                    }
                 }
             };
 

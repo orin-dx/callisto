@@ -63,10 +63,8 @@ fn write_durably(path: &Path, content: &str, replace: bool, permit: &ApplyPermit
 
     sync_directory(parent)?;
     // A directory this call created is itself a new entry in its parent.
-    if created_parent {
-        if let Some(grandparent) = parent.parent().filter(|dir| !dir.as_os_str().is_empty()) {
-            sync_directory(grandparent)?;
-        }
+    if created_parent && let Some(grandparent) = parent.parent().filter(|dir| !dir.as_os_str().is_empty()) {
+        sync_directory(grandparent)?;
     }
     Ok(())
 }

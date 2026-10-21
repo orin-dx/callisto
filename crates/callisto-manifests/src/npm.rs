@@ -342,10 +342,10 @@ impl Manifest for PackageJson {
         if self.doc.get("name").is_none() {
             return false;
         }
-        if let Some(b) = self.doc.get("private").and_then(|p| p.as_bool()) {
-            if b {
-                return false;
-            }
+        if let Some(b) = self.doc.get("private").and_then(|p| p.as_bool())
+            && b
+        {
+            return false;
         }
         true
     }
@@ -496,10 +496,10 @@ impl Manifest for PackageJson {
         }
 
         for extra in ["overrides", "resolutions"] {
-            if let Some(tbl) = self.doc.get_mut(extra).and_then(|v| v.as_object_mut()) {
-                if tbl.get(name).is_some_and(|v| v.is_string()) {
-                    tbl.insert(name.to_string(), Value::String(new.render()));
-                }
+            if let Some(tbl) = self.doc.get_mut(extra).and_then(|v| v.as_object_mut())
+                && tbl.get(name).is_some_and(|v| v.is_string())
+            {
+                tbl.insert(name.to_string(), Value::String(new.render()));
             }
         }
 
@@ -560,10 +560,10 @@ fn parse_npm_spec_str(s: &str, ws_kind: Option<WorkspaceKind>) -> DepSpec {
         return DepSpec::Catalog(name);
     }
 
-    if crate::common::is_bare_semver(s) {
-        if let Ok(v) = Version::parse(s, VersionGrammar::SemVer) {
-            return DepSpec::Exact(v);
-        }
+    if crate::common::is_bare_semver(s)
+        && let Ok(v) = Version::parse(s, VersionGrammar::SemVer)
+    {
+        return DepSpec::Exact(v);
     }
 
     if let Ok(req) = VersionReq::parse(s, Ecosystem::Npm) {

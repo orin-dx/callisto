@@ -215,14 +215,13 @@ pub fn render_pr_body_from_plan(
     let mut body = String::new();
 
     // Preserve custom user notes above ## Release Preview if an existing body was passed
-    if let Some(ref existing) = opts.existing_body {
-        if let Some((prefix, _)) = existing.split_once("## Release Preview") {
-            if !prefix.trim().is_empty() {
-                body.push_str(prefix);
-                if !prefix.ends_with('\n') {
-                    body.push('\n');
-                }
-            }
+    if let Some(ref existing) = opts.existing_body
+        && let Some((prefix, _)) = existing.split_once("## Release Preview")
+        && !prefix.trim().is_empty()
+    {
+        body.push_str(prefix);
+        if !prefix.ends_with('\n') {
+            body.push('\n');
         }
     }
 

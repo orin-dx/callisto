@@ -55,10 +55,10 @@ impl ProjectLocator for IgnoreWalkLocator {
             .filter_entry({
                 let skip = self.skip.clone();
                 move |entry| {
-                    if let Some(name) = entry.file_name().to_str() {
-                        if skip.contains(name) {
-                            return false;
-                        }
+                    if let Some(name) = entry.file_name().to_str()
+                        && skip.contains(name)
+                    {
+                        return false;
                     }
                     true
                 }
