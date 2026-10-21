@@ -1,0 +1,54 @@
+{
+  "cli_version": "0.11.6-nightly.202610200625.37c909353",
+  "checkpoint_id": "01M5EC4K9ZT00RE397A45975CG",
+  "strategy": "manual-commit",
+  "branch": "fix/reject-colon-references",
+  "checkpoints_count": 9,
+  "files_touched": [
+    ".changeset/reject-colon-references.md",
+    "crates/callisto-cli/src/commands/release.rs",
+    "crates/callisto-cli/tests/pre_mode_tests.rs",
+    "crates/callisto-cli/tests/release_command_e2e_tests.rs",
+    "crates/callisto-cli/tests/status_version_selector_tests.rs",
+    "crates/callisto-graph/src/aggregate.rs",
+    "crates/callisto-graph/src/aggregate/tests.rs",
+    "crates/callisto-graph/src/config/groups.rs",
+    "crates/callisto-graph/src/config/pattern.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/src/identity.rs",
+    "crates/callisto-graph/src/walk/tests.rs",
+    "crates/callisto-graph/tests/config_resolve_tests.rs",
+    "crates/callisto-graph/tests/ecosystem_bugs_test.rs",
+    "crates/callisto-graph/tests/package_set_ecosystem_test.rs",
+    "crates/callisto-graph/tests/pre_baseline_conflict_tests.rs",
+    "crates/callisto-model/src/identity.rs",
+    "docs/architecture/identity.md",
+    "docs/errors.md",
+    "docs/specs/cli.json",
+    "docs/specs/workspace.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 194,
+    "cache_creation_tokens": 438773,
+    "cache_read_tokens": 14669807,
+    "output_tokens": 63131,
+    "api_call_count": 94,
+    "subagent_tokens": {
+      "input_tokens": 62,
+      "cache_creation_tokens": 126246,
+      "cache_read_tokens": 2309491,
+      "output_tokens": 238,
+      "api_call_count": 31
+    }
+  }
+}

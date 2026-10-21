@@ -1,0 +1,164 @@
+{
+  "cli_version": "0.11.6-nightly.202610200625.37c909353",
+  "checkpoint_id": "01M5EC4K9ZT00RE397A45975CG",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-21T04:40:17.892251Z",
+  "branch": "fix/reject-colon-references",
+  "checkpoints_count": 9,
+  "save_step_count": 63,
+  "files_touched": [
+    ".changeset/reject-colon-references.md",
+    "crates/callisto-cli/src/commands/release.rs",
+    "crates/callisto-cli/tests/pre_mode_tests.rs",
+    "crates/callisto-cli/tests/release_command_e2e_tests.rs",
+    "crates/callisto-cli/tests/status_version_selector_tests.rs",
+    "crates/callisto-graph/src/aggregate.rs",
+    "crates/callisto-graph/src/aggregate/tests.rs",
+    "crates/callisto-graph/src/config/groups.rs",
+    "crates/callisto-graph/src/config/pattern.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/src/identity.rs",
+    "crates/callisto-graph/src/walk/tests.rs",
+    "crates/callisto-graph/tests/config_resolve_tests.rs",
+    "crates/callisto-graph/tests/ecosystem_bugs_test.rs",
+    "crates/callisto-graph/tests/package_set_ecosystem_test.rs",
+    "crates/callisto-graph/tests/pre_baseline_conflict_tests.rs",
+    "crates/callisto-model/src/identity.rs",
+    "docs/architecture/identity.md",
+    "docs/errors.md",
+    "docs/specs/cli.json",
+    "docs/specs/workspace.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "717d913a8db7",
+  "checkpoint_transcript_start": 30996,
+  "transcript_lines_at_start": 30996,
+  "compact_transcript_start": 2707,
+  "token_usage": {
+    "input_tokens": 194,
+    "cache_creation_tokens": 438773,
+    "cache_read_tokens": 14669807,
+    "output_tokens": 63131,
+    "api_call_count": 94,
+    "subagent_tokens": {
+      "input_tokens": 62,
+      "cache_creation_tokens": 126246,
+      "cache_read_tokens": 2309491,
+      "output_tokens": 238,
+      "api_call_count": 31
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 180
+  },
+  "summary": {
+    "intent": "Drive Callisto (Rust release manager for Cargo/npm/PyPI) toward v1 by opening stacked PRs for decision-free fixes, then fixing commit-signing problems, getting PRs merged, and continuing with T06 PR 2 (reject the colon package-reference form).",
+    "outcome": "16 fix PRs were opened, their 17 unsigned commits re-signed and force-pushed, and 15 PRs merged. #267 was rebased to resolve its conflict with #266. T06 PR 2 (E316 colon rejection across config, changeset, pre.json and CLI inputs) passed `just ci` at 92.78% coverage and was committed signed and pushed as a ready-for-review PR.",
+    "learnings": {
+      "repo": [
+        "Release owner is derived (first release id by ecosystem priority Cargo > npm > PyPI) and sealed by the intent digest; no persisted owner field exists.",
+        "`just ci` includes a 90% coverage gate, a 40-line limit on the simple workflow template, pinned trycmd help text and insta snapshots; changes to these surfaces require updating the pinned outputs.",
+        "The CI coverage job does not install Verdaccio, pypiserver or cargo-http-registry, so tests that fail on missing tools under CI need `CALLISTO_ALLOW_MISSING_TOOLS=1` there.",
+        "Fake git runners in graph tests assert exact args, so new git probes (`rev-parse`, `grep`) need those fakes taught to answer them.",
+        "Package references are parsed across about 15 surfaces (changeset frontmatter, pre.json keys, add/matrix/release --package, fixed/linked groups, [[package]] match, [[package-set]] match, product-package and artifact package). Output already emits only the slash form.",
+        "Colon rejection is specified as E316, and a bare config reference as E317, in docs/projects/V1-SYSTEM-HARDENING.json and ADR 12.",
+        "The native GitHub stack CI trigger only fires for PRs in a native stack or targeting main.",
+        "Two PRs that each append tests to the end of the same test file conflict even when logically independent (#266/#267)."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/identity.rs",
+          "line": 82,
+          "end_line": 92,
+          "finding": "PackageId::parse tries the ':' prefix branch before the '/' branch; this is the root parser behind every colon-accepting surface."
+        },
+        {
+          "path": "crates/callisto-graph/src/identity.rs",
+          "line": 483,
+          "end_line": 487,
+          "finding": "resolve_native_with_fallback was the only colon emitter, formatting ambiguity candidates as `eco:name`; it was switched to slash."
+        },
+        {
+          "path": "crates/callisto-graph/src/config/pattern.rs",
+          "line": 26,
+          "end_line": 33,
+          "finding": "PackagePattern::parse looked for ':' before '/' with an explicit comment keeping it; this was made slash-only."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/release.rs",
+          "line": 189,
+          "end_line": 202,
+          "finding": "parse_release_selection accepted colon and normalised it to a ReleasePackageId, and its error text recommended the colon form."
+        }
+      ],
+      "workflow": [
+        "Commit with plain `git commit` and signing on. Copying `-c commit.gpgsign=false` from test-fixture repos silently produced 17 unsigned commits that blocked merging.",
+        "A background task's completion notification reports the wrapper's exit code, not the command's. Check the `exit=` line in the log.",
+        "zsh parses `$var:refs` as a modifier (use `${var}:refs`), unquoted `%G?` globs, and does not word-split unquoted variables; macOS `sed -i` differs from GNU. Python edits or quoting avoid these.",
+        "Re-signing can be done in a scratch worktree with a tree-identity check, then force-pushed with `--force-with-lease` on the old tips.",
+        "Merge-testing PR heads pairwise is a cheap way to decide which PRs actually need stacking.",
+        "Subagent hand-back reports can be wrong about the codebase and should be verified before relying on them.",
+        "Open PRs ready for review, not as drafts."
+      ]
+    },
+    "friction": [
+      "Unsigned commits were discovered only after the user noticed, requiring a re-sign and force-push of all 16 branches and a rerun of CI.",
+      "The first hosted CI run on #261 failed because the coverage job lacks the real-registry tools.",
+      "Clippy failed on single-element loops after the colon-test conversion, so `just ci` had to be rerun.",
+      "The background-task notification reported exit 0 while `just ci` had actually failed.",
+      "Many test fixtures used colon-form input, so converting them to the slash form was laborious.",
+      "The 40-line workflow limit, pinned help text and fake-runner arg assertions each caused CI failures.",
+      "Group resolution initially swallowed E316 and needed a fix to surface it.",
+      "I had previously told the user wrongly that the E101 spec and code disagreed."
+    ],
+    "open_items": [
+      "T06 PRs 3 to 5: canonical-required config (E317), canonical CLI arguments, canonical emission.",
+      "Decision-free CI work not started: MSRV job, scheduled `cargo deny` plus Cargo dependabot, semver-checks in CI, fuzz targets for manifest editors, edition 2024/resolver 3, panic hygiene.",
+      "T12 local TLS registry harness and production-path devpi/Verdaccio tests.",
+      "Owner decisions pending: OIDC trusted publishing (needs a policy exception for `id-token`), which crates go to 1.0, pre-release mode on the managed route, snapshot publishing and dist-tag policy, schemaVersion bump, E176/E157 detail carry, foreign-version and wrong-commit tagging.",
+      "Release PR #248 and the in-progress Release run on main are awaiting the user's decision to ship.",
+      "NEXT-WORK.md still needs shipped items removed and stale ADR/README pre-v1 language fixed.",
+      "The four retired crates have not been deprecated (parked by the user).",
+      "Maturin support, co-located with Cargo, is deferred until after v1.",
+      "The preferred native stack links between PRs were not verified after the force-push.",
+      "Hosted CI results for the new E316 PR and #267 had not yet been confirmed."
+    ]
+  }
+}
