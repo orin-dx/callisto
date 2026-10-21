@@ -1,0 +1,81 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5G48W97QY0MJXEDHC6DCMBV",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-21T21:01:13.403193Z",
+  "branch": "worktree-schemars-1",
+  "checkpoints_count": 2,
+  "save_step_count": 2,
+  "files_touched": [
+    ".changeset/schemas-use-json-schema-2020-12.md",
+    "Cargo.lock",
+    "Cargo.toml",
+    "crates/callisto-cli/tests/schema_guard_test.rs",
+    "crates/callisto-model/src/identity.rs",
+    "crates/callisto-model/src/release/decision.rs",
+    "crates/callisto-model/src/release/digest.rs",
+    "crates/callisto-model/src/release/execution.rs",
+    "crates/callisto-model/src/release/github.rs",
+    "crates/callisto-model/src/release/intent.rs",
+    "crates/callisto-model/src/release/operation.rs",
+    "crates/callisto-model/src/release_pr.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "7b2cfd5da512",
+  "checkpoint_transcript_start": 39737,
+  "transcript_lines_at_start": 39737,
+  "compact_transcript_start": 3365,
+  "token_usage": {
+    "input_tokens": 96,
+    "cache_creation_tokens": 48386,
+    "cache_read_tokens": 33803701,
+    "output_tokens": 19495,
+    "api_call_count": 46,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 200
+  }
+}

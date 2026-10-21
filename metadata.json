@@ -1,0 +1,44 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5G48W97QY0MJXEDHC6DCMBV",
+  "strategy": "manual-commit",
+  "branch": "worktree-schemars-1",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".changeset/schemas-use-json-schema-2020-12.md",
+    "Cargo.lock",
+    "Cargo.toml",
+    "crates/callisto-cli/tests/schema_guard_test.rs",
+    "crates/callisto-model/src/identity.rs",
+    "crates/callisto-model/src/release/decision.rs",
+    "crates/callisto-model/src/release/digest.rs",
+    "crates/callisto-model/src/release/execution.rs",
+    "crates/callisto-model/src/release/github.rs",
+    "crates/callisto-model/src/release/intent.rs",
+    "crates/callisto-model/src/release/operation.rs",
+    "crates/callisto-model/src/release_pr.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 96,
+    "cache_creation_tokens": 48386,
+    "cache_read_tokens": 33803701,
+    "output_tokens": 19495,
+    "api_call_count": 46,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  }
+}
