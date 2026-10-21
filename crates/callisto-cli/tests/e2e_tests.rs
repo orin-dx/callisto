@@ -60,7 +60,7 @@ edition = "2021"
     // 2. Run add
     let add_res = commands::add::handle(
         callisto_cli::cli::AddArgs {
-            packages: vec!["my-app:minor".to_string()],
+            packages: vec!["cargo/my-app:minor".to_string()],
             summary: Some("Added new feature".to_string()),
         },
         &global,
@@ -214,7 +214,7 @@ fn test_status_check_exit_codes() {
     // --- Workspace with a pending changeset (no errors) -> still exit code 0 ---
     commands::add::handle(
         callisto_cli::cli::AddArgs {
-            packages: vec!["my-app:patch".to_string()],
+            packages: vec!["cargo/my-app:patch".to_string()],
             summary: Some("test fix".to_string()),
         },
         &global,

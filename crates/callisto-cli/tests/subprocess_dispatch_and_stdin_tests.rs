@@ -71,7 +71,7 @@ fn subprocess_lifecycle_exercises_every_main_dispatch_arm() {
         "json",
         "add",
         "--package",
-        "core-crate:patch",
+        "cargo/core-crate:patch",
         "--summary",
         "Fix a bug",
     ]);
@@ -204,7 +204,7 @@ fn compose_pr_body_existing_body_dash_reads_from_stdin() {
             "json",
             "add",
             "--package",
-            "core-crate:patch",
+            "cargo/core-crate:patch",
             "--summary",
             "Fix a bug",
         ])

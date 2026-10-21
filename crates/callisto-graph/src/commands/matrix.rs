@@ -1,6 +1,6 @@
 use callisto_model::{CommandRunner, Diagnostic, DiagnosticCode, DiagnosticSeverity, MatrixReport, PackageId};
 
-use crate::error::GraphError;
+use crate::error::{ConfigError, GraphError};
 use crate::matrix::{
     add_release_artifact_groups, build_matrix_report, MatrixPackageInput, NapiCrate, ReleaseArtifactInput,
 };
@@ -113,6 +113,7 @@ fn resolve_selected_package(
     identity: &crate::IdentityIndex,
     raw: &str,
 ) -> Result<PackageId, GraphError> {
+    ConfigError::require_qualified(raw, "--package")?;
     let resolved = identity.resolve(raw)?;
     if all_packages.iter().any(|p| p.id == resolved) {
         Ok(resolved)

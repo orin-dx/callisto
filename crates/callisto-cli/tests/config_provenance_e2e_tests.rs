@@ -90,7 +90,7 @@ fn version_dry_run_text_output_shows_cascade_attribution_for_a_real_dependency_g
         &[
             "add",
             "--package",
-            "upstream-crate:major",
+            "cargo/upstream-crate:major",
             "--summary",
             "breaking change",
         ],
@@ -139,7 +139,13 @@ fn version_dry_run_text_output_prints_dry_run_header_and_plan_body() {
 
     let add_out = run_callisto_text(
         root,
-        &["add", "--package", "solo-crate:minor", "--summary", "a new feature"],
+        &[
+            "add",
+            "--package",
+            "cargo/solo-crate:minor",
+            "--summary",
+            "a new feature",
+        ],
     );
     assert!(add_out.contains("Added changeset"), "add did not succeed: {add_out}");
 

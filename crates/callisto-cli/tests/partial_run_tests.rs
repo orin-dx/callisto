@@ -284,7 +284,7 @@ fn test_version_twice_without_commit_is_refused_as_partial_run() {
 
     commands::add::handle(
         AddArgs {
-            packages: vec!["core-crate:patch".to_string()],
+            packages: vec!["cargo/core-crate:patch".to_string()],
             summary: Some("Fix the frobnication bug".to_string()),
         },
         &global,
@@ -339,7 +339,7 @@ fn decision_write_failure_leaves_staged_evidence_for_a_safe_retry_refusal() {
     std::fs::write(root.join("decision-parent"), "not a directory").unwrap();
     commands::add::handle(
         AddArgs {
-            packages: vec!["core-crate:patch".to_string()],
+            packages: vec!["cargo/core-crate:patch".to_string()],
             summary: Some("Retain recovery evidence".to_string()),
         },
         &global,

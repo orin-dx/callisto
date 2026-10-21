@@ -73,7 +73,7 @@ fn matrix_package_filter_restricts_to_one_package() {
     };
 
     let opts = MatrixOptions {
-        package: Some("pkg-a".to_string()),
+        package: Some("npm/pkg-a".to_string()),
         ..Default::default()
     };
     let report = matrix(&ws, &opts).expect("matrix should succeed");
@@ -114,7 +114,7 @@ fn matrix_unknown_package_errors() {
     };
 
     let opts = MatrixOptions {
-        package: Some("does-not-exist".to_string()),
+        package: Some("cargo/does-not-exist".to_string()),
         ..Default::default()
     };
     let err = matrix(&ws, &opts).unwrap_err();
@@ -238,15 +238,14 @@ fn matrix_same_bare_name_across_ecosystems_keys_by_qualified_id_and_binds_artifa
     );
 }
 
-/// A bare `--package shared` is ambiguous between the two ecosystems and
-/// must error listing both qualified candidates, never silently pick one.
+/// A bare `--package shared` is rejected with the qualified form named, never resolved by guessing an ecosystem.
 #[test]
-fn matrix_package_filter_bare_name_ambiguous_across_ecosystems_lists_both_candidates() {
+fn matrix_package_filter_bare_name_is_rejected_even_when_it_is_ambiguous() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     write_same_name_cross_ecosystem_fixture(root);
     let (cargo_id, npm_id) = same_name_cross_ecosystem_ids();
-    let graph = same_name_cross_ecosystem_graph(cargo_id.clone(), npm_id.clone());
+    let graph = same_name_cross_ecosystem_graph(cargo_id, npm_id);
 
     let cfg = callisto_graph::config::load(root).unwrap();
     let runner = DummyRunner;
@@ -267,15 +266,13 @@ fn matrix_package_filter_bare_name_ambiguous_across_ecosystems_lists_both_candid
         ..Default::default()
     };
     let err = matrix(&ws, &opts).unwrap_err();
-    match err {
-        callisto_graph::GraphError::AmbiguousName { name, candidates } => {
-            assert_eq!(name, "shared");
-            assert_eq!(candidates.len(), 2, "{candidates:?}");
-            assert!(candidates.contains(&cargo_id), "{candidates:?}");
-            assert!(candidates.contains(&npm_id), "{candidates:?}");
-        }
-        other => panic!("expected AmbiguousName, got {other:?}"),
-    }
+    assert!(
+        matches!(
+            err,
+            callisto_graph::GraphError::Config(callisto_graph::ConfigError::BareReference { .. })
+        ),
+        "{err:?}"
+    );
 }
 
 /// A qualified `--package cargo/shared` resolves unambiguously to the cargo

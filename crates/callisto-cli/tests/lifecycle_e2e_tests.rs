@@ -41,7 +41,10 @@ fn test_full_polyglot_workspace_release_lifecycle() {
     // 2. callisto add
     let add_res = commands::add::handle(
         AddArgs {
-            packages: vec!["core-crate:minor".to_string(), "@myorg/web-app:patch".to_string()],
+            packages: vec![
+                "cargo/core-crate:minor".to_string(),
+                "npm/@myorg/web-app:patch".to_string(),
+            ],
             summary: Some("Improve the core API and the web UI".to_string()),
         },
         &global,
@@ -117,7 +120,7 @@ edition = "2021"
 
     commands::add::handle(
         AddArgs {
-            packages: vec!["core-crate:patch".to_string()],
+            packages: vec!["cargo/core-crate:patch".to_string()],
             summary: Some("Patch update".to_string()),
         },
         &global,
@@ -155,7 +158,7 @@ fn test_compose_pr_body_before_version_and_subpkg_changelog() {
 
     commands::add::handle(
         AddArgs {
-            packages: vec!["core-crate:minor".to_string()],
+            packages: vec!["cargo/core-crate:minor".to_string()],
             summary: Some("Add new core component API".to_string()),
         },
         &global,
@@ -237,7 +240,7 @@ fn test_dry_run_flag_preserves_disk_state() {
 
     commands::add::handle(
         AddArgs {
-            packages: vec!["core-crate:minor".to_string()],
+            packages: vec!["cargo/core-crate:minor".to_string()],
             summary: Some("New feature".to_string()),
         },
         &GlobalArgs {
@@ -278,7 +281,7 @@ fn test_add_dry_run_does_not_write_changeset_file() {
 
     let add_res = commands::add::handle(
         AddArgs {
-            packages: vec!["core-crate:patch".to_string()],
+            packages: vec!["cargo/core-crate:patch".to_string()],
             summary: Some("Dry run should not write anything".to_string()),
         },
         &global_dry,

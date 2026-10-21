@@ -499,9 +499,9 @@ fn a_report_names_a_package_qualified_whether_or_not_it_was_promoted() {
     assert!(status_package(&status, "foo").is_none(), "status: {status}");
     run_ok(root, &["add", "--package", "cargo/foo:patch", "--summary", "After"]);
 
-    let out = callisto(root, &["add", "--package", "foo:patch", "--summary", "Ambiguous"]);
+    let out = callisto(root, &["add", "--package", "foo:patch", "--summary", "Bare"]);
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("E103") && stderr.contains("cargo/foo"), "{stderr}");
+    assert!(stderr.contains("E317") && stderr.contains("cargo/foo"), "{stderr}");
 }
 
 #[test]

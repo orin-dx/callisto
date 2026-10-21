@@ -103,7 +103,7 @@ fn poetry_caret_dependency_cascades_a_major_bump_that_breaks_its_range() {
 
     let add = run_callisto(
         root,
-        &["add", "--package", "pkg-a:major", "--summary", "breaking change"],
+        &["add", "--package", "pypi/pkg-a:major", "--summary", "breaking change"],
     );
     assert!(add.get("error").is_none(), "add failed: {add}");
 
@@ -141,7 +141,13 @@ fn poetry_caret_dependency_within_range_does_not_cascade() {
 
     let add = run_callisto(
         root,
-        &["add", "--package", "pkg-a:minor", "--summary", "compatible addition"],
+        &[
+            "add",
+            "--package",
+            "pypi/pkg-a:minor",
+            "--summary",
+            "compatible addition",
+        ],
     );
     assert!(add.get("error").is_none(), "add failed: {add}");
 

@@ -57,7 +57,10 @@ fn plugin_artifact_fixture(plugin_in_fixed_group: bool) -> (TempDir, String) {
     git(root, &["add", "."]);
     git(root, &["commit", "-m", "configure callisto"]);
 
-    let add = callisto(root, &["add", "--package", "core-crate:minor", "--summary", "Ship"]);
+    let add = callisto(
+        root,
+        &["add", "--package", "cargo/core-crate:minor", "--summary", "Ship"],
+    );
     assert!(add.status.success(), "add: {}", String::from_utf8_lossy(&add.stderr));
     git(root, &["add", "."]);
     git(root, &["commit", "-m", "add changeset"]);

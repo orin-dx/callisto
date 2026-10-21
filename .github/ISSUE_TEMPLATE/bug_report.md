@@ -11,7 +11,7 @@ assignees: ''
 ## What you expected instead
 
 ## Command run
-e.g. `callisto version --dry-run`, `callisto add --package my-crate:minor`
+e.g. `callisto version --dry-run`, `callisto add --package cargo/my-crate:minor`
 
 ## Ecosystem involved
 - [ ] Cargo

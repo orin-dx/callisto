@@ -83,7 +83,7 @@ mod tests {
         callisto_fixtures::scaffold_callisto(&global.cwd);
         crate::commands::add::handle(
             crate::cli::AddArgs {
-                packages: vec!["pkg-a:patch".to_string()],
+                packages: vec!["cargo/pkg-a:patch".to_string()],
                 summary: Some("Seed a changeset".to_string()),
             },
             &global,
