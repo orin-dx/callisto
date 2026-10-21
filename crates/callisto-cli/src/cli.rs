@@ -264,7 +264,7 @@ pub struct ComposePrBodyArgs {
 pub struct ReleaseCommandArgs {
     #[command(subcommand)]
     pub command: Option<ReleaseArgs>,
-    /// Release only this exact qualified package, for example `cargo/callisto-cli`. Repeatable.
+    /// Release this qualified package, for example `cargo/callisto-cli`, with every distribution of it and the members of its groups. Repeatable.
     #[arg(long = "package", value_name = "ECOSYSTEM/NAME")]
     pub packages: Vec<String>,
     /// Also write the release receipt to this file.
