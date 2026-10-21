@@ -19,7 +19,7 @@ pub struct RegistryBindingId {
     binding_digest: RegistryBindingDigest,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RegistryBindingIdWire {
     registry_key: String,
@@ -104,7 +104,7 @@ pub struct PlatformPackageV1 {
     directory: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PlatformPackageV1Wire {
     name: ReleasePackageId,
@@ -147,7 +147,7 @@ impl PlatformPackageV1 {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", tag = "kind", deny_unknown_fields)]
 enum ReleaseOperationRoleWire {
     RegistryPublish {

@@ -240,7 +240,7 @@ mod tests {
 
     #[test]
     fn string_leaf_definitions_stay_distinct_in_a_shared_schema() {
-        let mut generator = schemars::gen::SchemaGenerator::default();
+        let mut generator = schemars::SchemaGenerator::default();
         let references = [
             ("PackageId", generator.subschema_for::<PackageId>()),
             ("CommitSha", generator.subschema_for::<CommitSha>()),
@@ -260,7 +260,7 @@ mod tests {
         assert_eq!(generator.definitions().len(), references.len());
         for (name, reference) in references {
             let reference = serde_json::to_value(reference).unwrap();
-            assert_eq!(reference["$ref"], format!("#/definitions/{name}"));
+            assert_eq!(reference["$ref"], format!("#/$defs/{name}"));
             let definition = serde_json::to_value(&generator.definitions()[name]).unwrap();
             assert_eq!(definition["type"], "string");
         }

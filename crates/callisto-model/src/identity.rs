@@ -12,15 +12,15 @@ use crate::{Ecosystem, ModelError};
 macro_rules! string_json_schema {
     ($name:ident) => {
         impl ::schemars::JsonSchema for $name {
-            fn schema_name() -> String {
-                stringify!($name).to_string()
+            fn schema_name() -> ::std::borrow::Cow<'static, str> {
+                ::std::borrow::Cow::Borrowed(stringify!($name))
             }
 
             fn schema_id() -> ::std::borrow::Cow<'static, str> {
                 ::std::borrow::Cow::Borrowed(concat!(module_path!(), "::", stringify!($name)))
             }
 
-            fn json_schema(generator: &mut ::schemars::gen::SchemaGenerator) -> ::schemars::schema::Schema {
+            fn json_schema(generator: &mut ::schemars::SchemaGenerator) -> ::schemars::Schema {
                 <String as ::schemars::JsonSchema>::json_schema(generator)
             }
         }
@@ -389,14 +389,14 @@ where
     let root = serde_json::to_value(schemars::schema_for!(T)).unwrap();
     assert_eq!(root["title"], name);
     assert_eq!(root["type"], "string");
-    assert_eq!(root["$schema"], "http://json-schema.org/draft-07/schema#");
+    assert_eq!(root["$schema"], "https://json-schema.org/draft/2020-12/schema");
 
-    let mut generator = schemars::gen::SchemaGenerator::default();
+    let mut generator = schemars::SchemaGenerator::default();
     let reference = serde_json::to_value(generator.subschema_for::<T>()).unwrap();
-    assert_eq!(reference["$ref"], format!("#/definitions/{name}"));
+    assert_eq!(reference["$ref"], format!("#/$defs/{name}"));
     assert_eq!(
         generator.definitions()[name],
-        <String as JsonSchema>::json_schema(&mut schemars::gen::SchemaGenerator::default())
+        <String as JsonSchema>::json_schema(&mut schemars::SchemaGenerator::default())
     );
 
     for invalid in [
