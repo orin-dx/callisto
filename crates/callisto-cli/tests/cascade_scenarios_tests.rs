@@ -78,7 +78,7 @@ fn an_exact_pin_is_rewritten_in_place_and_its_dependent_released() {
 fn a_range_the_bump_leaves_behind_and_cannot_be_rewritten_stops_the_run_before_any_write() {
     let dir = cargo_workspace("{ version = \">=0.1.0, <0.2.0\", path = \"../lib\" }");
     let root = dir.path();
-    add_changeset(root, "lib-crate", "minor");
+    add_changeset(root, "cargo/lib-crate", "minor");
     let out = callisto(root, &["version"]);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(!out.status.success(), "{stderr}");

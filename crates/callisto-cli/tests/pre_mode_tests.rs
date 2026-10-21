@@ -848,7 +848,7 @@ mod python_baselines {
         version(root);
         run(
             root,
-            &["add", "--package", "py-lib:patch", "--summary", "Second change"],
+            &["add", "--package", "pypi/py-lib:patch", "--summary", "Second change"],
         );
         version(root);
         assert_versions(root, "1.3.0b1", "1.0.0", "2.0.0");
@@ -1161,7 +1161,13 @@ mod python_baselines {
         assert_versions(root, "1.3.0a0", "1.0.0", "2.0.0");
         run(
             root,
-            &["add", "--package", "py-lib:patch", "--summary", "Resumed second change"],
+            &[
+                "add",
+                "--package",
+                "pypi/py-lib:patch",
+                "--summary",
+                "Resumed second change",
+            ],
         );
         version(root);
         assert_versions(root, "1.3.0b0", "1.0.0", "2.0.0");
