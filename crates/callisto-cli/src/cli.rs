@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
-/// Changesets-style version and release manager for Rust workspaces.
+/// Changesets-style version and release manager for Cargo, npm and Python workspaces.
 #[derive(Parser)]
 #[command(name = "callisto", version, disable_help_subcommand = true)]
 pub struct Cli {

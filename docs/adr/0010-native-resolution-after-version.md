@@ -1,6 +1,6 @@
 # 10. The workspace resolves natively after `version` or `snapshot`
 
-Status: Proposed
+Status: Accepted (implemented in #158)
 
 ## Context
 

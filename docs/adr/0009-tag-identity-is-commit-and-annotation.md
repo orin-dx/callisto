@@ -1,6 +1,6 @@
 # 9. A tag's identity is its commit and being annotated
 
-Status: Proposed
+Status: Accepted (implemented in #154)
 
 ## Context
 

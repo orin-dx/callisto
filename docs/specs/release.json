@@ -15,7 +15,7 @@
       "signature": "callisto [--dry-run] [--format text|json] release [--package ECOSYSTEM/NAME]... [--receipt FILE]",
       "description": "Publishes every untagged package from the current checkout on any branch. With --dry-run it prints the plan and performs no effect.",
       "error_conditions": [
-        "Dirty worktree: E051.",
+        "Dirty worktree: E267.",
         "Workspace needs the CI route: E239.",
         "Invalid --package: E227, E102 or E169.",
         "Missing or unsafe origin push URL: E132."
@@ -110,7 +110,7 @@
     },
     {
       "id": "REL-CMD-06",
-      "criterion": "A tracked modification or an untracked file not covered by `.gitignore` makes `callisto release` fail with E051 naming a clean worktree and the offending path, before any effect. Ignored files never count.",
+      "criterion": "A tracked modification or an untracked file not covered by `.gitignore` makes `callisto release` fail with E267 naming a clean worktree and the offending path, before any effect. Ignored files never count.",
       "is_error_case": true
     },
     {
@@ -161,7 +161,7 @@
     },
     {
       "id": "REL-AUTH-05",
-      "criterion": "`release plan` and `release execute` require the source checkout at a detached HEAD and fail with E170 otherwise. `callisto release` accepts an attached HEAD. Every route requires a complete, non-shallow SHA-1 repository and fails with E051 otherwise.",
+      "criterion": "`release plan` and `release execute` require the source checkout at a detached HEAD and fail with E170 otherwise. `callisto release` accepts an attached HEAD. Every route requires a complete, non-shallow SHA-1 repository and fails with E266 otherwise.",
       "is_error_case": true
     },
     {
@@ -171,7 +171,7 @@
     },
     {
       "id": "REL-AUTH-07",
-      "criterion": "Before each operation, the executor re-checks HEAD, worktree cleanliness and the `origin` push URL. A change stops the run before that operation's effect, with E124 for a moved HEAD or remote and E051 for a dirty worktree.",
+      "criterion": "Before each operation, the executor re-checks HEAD, worktree cleanliness and the `origin` push URL. A change stops the run before that operation's effect, with E124 for a moved HEAD or remote and E267 for a dirty worktree.",
       "is_error_case": true
     },
     {

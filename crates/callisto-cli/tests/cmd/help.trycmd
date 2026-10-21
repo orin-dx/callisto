@@ -1,6 +1,6 @@
 ```console
 $ callisto --help
-Changesets-style version and release manager for Rust workspaces
+Changesets-style version and release manager for Cargo, npm and Python workspaces
 
 Usage: callisto [OPTIONS] <COMMAND>
 

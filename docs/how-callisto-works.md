@@ -71,16 +71,13 @@ Callisto is pre-v1. These rows describe current behavior rather than planned ada
 | Layout | Current boundary |
 | --- | --- |
 | Cargo product binaries | Generated CI builds discovered Cargo binary targets. Other products need a user authored builder. |
-| napi platform packages | Generated CI supports configured targets. Its workspace wide roster can include unrelated addons. |
+| napi platform packages | Generated CI supports configured targets and builds only the packages in the release. |
 | Co-located Cargo and Maturin | Discovery fails; no generated Maturin workflow. |
 | Custom product assets | Declared artifact slots can use a manual CI builder and Callisto's execute route. |
 
 Known release limits matter when choosing a workflow:
 
 - A multi-registry release is not atomic.
-- A tag does not yet prove that every distribution from one source package was published.
-- A fresh local retry can skip unfinished work after creating a tag.
-- PyPI observation does not yet prove that every intended wheel and sdist was uploaded.
 - Callisto does not infer arbitrary cross-language dependencies. Go and NuGet publishers are not available.
 
 Package owners control native lifecycle hooks. Callisto invokes supported tools without rewriting those hooks. See [publishing](publishing.md) for credentials and Python index limits, and [releasing](releasing.md) for the complete operation and recovery rules.

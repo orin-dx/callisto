@@ -68,7 +68,7 @@ impl TagTemplate {
         })
     }
 
-    /// `{name}@{version}` from the package's native name, so promotion to `eco/name` never changes its tags.
+    /// `{display id}@{version}`: the bare name while it is unique, and `eco/name` once a same-named package exists.
     pub fn default_for(id: &PackageId) -> Self {
         TagTemplate {
             prefix: format!("{}@", id.display_name()),

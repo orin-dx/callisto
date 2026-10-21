@@ -78,7 +78,7 @@
     },
     {
       "id": "MX-OUT-03",
-      "criterion": "`--format json` prints pretty JSON with no \"command\" key; an empty workspace prints exactly {\"schemaVersion\":1,\"platformTargets\":{},\"runtimeVersions\":{}} and exits 0, and the diagnostics key appears only when there is at least one diagnostic."
+      "criterion": "`--format json` prints pretty JSON with the standard report envelope (`command` and `dryRun`); an empty workspace prints {\"schemaVersion\":1,\"platformTargets\":{},\"runtimeVersions\":{},\"command\":\"matrix\",\"dryRun\":false} and exits 0, and the diagnostics key appears only when there is at least one diagnostic."
     },
     {
       "id": "MX-OUT-04",
