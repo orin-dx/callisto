@@ -189,14 +189,6 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
                     }
                 }
                 agg_input
-            } else if agg.pre_mode_recorded_only.contains(id) {
-                // Re-affirms an already-recorded pre-mode changeset, so no changelog entry is re-logged here.
-                ChangelogInput {
-                    package: id.clone(),
-                    from: from.clone(),
-                    to: Some(to.clone()),
-                    entries: Vec::new(),
-                }
             } else {
                 // No changeset drove this bump (cascade, group, inference, pre-release).
                 // Synthesize a single entry describing the reason so that render_section()
@@ -237,13 +229,10 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
                 });
             }
 
-            // An already-recorded pre-mode changeset with nothing else to log produces no entries; skip the write.
-            if !input.entries.is_empty() {
-                changelog_writes.push(crate::plan::ChangelogWrite {
-                    changelog_path: ch_path.clone(),
-                    input,
-                });
-            }
+            changelog_writes.push(crate::plan::ChangelogWrite {
+                changelog_path: ch_path.clone(),
+                input,
+            });
         }
     }
 
@@ -251,9 +240,9 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         .as_ref()
         .map(|s| s.mode == callisto_model::format::PreMode::Pre)
         .unwrap_or(false);
-    // The "no pending changesets" warning fires only when no changeset, new or already recorded, is active this run.
+    // In pre mode a changeset already recorded in pre.json is not pending: a rerun plans nothing for it.
     let nothing_pending = if is_pre_mode {
-        !agg.pre_mode_has_active_changeset
+        agg.new_pre_changesets.is_empty()
     } else {
         agg.consumed.is_empty()
     };

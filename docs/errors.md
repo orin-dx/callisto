@@ -311,6 +311,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E315 | Commit-based version inference needs the full Git history, but this repository is a shallow clone | Fetch the full history (`git fetch --unshallow`, or `fetch-depth: 0` for actions/checkout), or give the packages that need no commit inference `release-trigger = "changeset"`. |
 | E316 | A package reference uses the colon form (`cargo:foo`) | Write the slash form the message names (`cargo/foo`); it is the only qualified spelling in `callisto.toml`, changesets, `pre.json` and command-line arguments. |
 | E317 | A package named in `callisto.toml` has no ecosystem (`foo`) | Write `ecosystem/name` (`cargo/foo`, `npm/foo`, `pypi/foo`); `callisto.toml` accepts no other form. Changeset entries keep native names. |
+| E318 | `release-pr decide` was run while `.changeset/pre.json`'s mode is `pre` | Release prereleases locally with `callisto version` and `callisto release`, or run `callisto pre exit` before opening a release PR. |
 
 
-242 numeric E#### codes total in one registry.
+243 numeric E#### codes total in one registry.

@@ -410,6 +410,46 @@ fn test_pre_enter_rejects_empty_tag() {
     );
 }
 
+/// A release PR cannot release in pre mode, so it is refused before a pull request is opened.
+#[test]
+fn release_pr_decide_refuses_pre_mode_with_a_local_release_fix() {
+    let dir = setup_polyglot_git_repo();
+    let root = dir.path();
+    let callisto = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_callisto"))
+            .args(["--cwd", root.to_str().unwrap()])
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    assert!(callisto(&["pre", "enter", "beta"]).status.success());
+    let repository = callisto_model::GitHubRepository::parse("example/widget").unwrap();
+    let snapshot = callisto_model::ReleasePrSnapshotV2::new(
+        repository,
+        "main".into(),
+        callisto_model::CommitSha::parse(&"a".repeat(40)).unwrap(),
+        vec![],
+    )
+    .unwrap();
+    let snapshot = serde_json::to_string(&snapshot).unwrap();
+    let output = callisto(&[
+        "release-pr",
+        "decide",
+        "--snapshot",
+        &snapshot,
+        "--repository",
+        "example/widget",
+        "--base-branch",
+        "main",
+        "--release-branch",
+        "release/widget",
+    ]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{stderr}");
+    assert!(stderr.contains("E318") && stderr.contains("`beta`"), "{stderr}");
+    assert!(stderr.contains("callisto pre exit"), "{stderr}");
+}
+
 /// Bug 4: `pre enter` must stage `.changeset/pre.json` via `git add`.
 ///
 /// After a successful `pre enter`, `git status --porcelain` should show
@@ -729,6 +769,29 @@ mod python_baselines {
                 ],
             );
             for counter in 0..2 {
+                if counter == 1 {
+                    version(root);
+                    assert_versions(
+                        root,
+                        &format!("1.3.0{suffix}0"),
+                        &format!("1.0.1-{tag}.0"),
+                        &format!("2.0.1-{tag}.0"),
+                    );
+                    run(
+                        root,
+                        &[
+                            "add",
+                            "--package",
+                            "pypi/py-lib:patch",
+                            "--package",
+                            "cargo/rust-lib:patch",
+                            "--package",
+                            "npm/web-lib:patch",
+                            "--summary",
+                            "Second prerelease fix",
+                        ],
+                    );
+                }
                 version(root);
                 assert_versions(
                     root,
@@ -738,9 +801,10 @@ mod python_baselines {
                 );
                 let state = pre_json(root, dir);
                 assert_eq!(state["initialVersions"], initial["initialVersions"]);
-                assert_eq!(state["changesets"].as_array().unwrap().len(), 1);
-                let id = state["changesets"][0].as_str().unwrap();
-                assert!(root.join(dir).join(format!("{id}.md")).exists());
+                assert_eq!(state["changesets"].as_array().unwrap().len(), counter + 1);
+                for id in state["changesets"].as_array().unwrap() {
+                    assert!(root.join(dir).join(format!("{}.md", id.as_str().unwrap())).exists());
+                }
             }
             let changelog = fs::read_to_string(root.join("packages/python/CHANGELOG.md")).unwrap();
             assert_eq!(changelog.matches("Native prerelease feature").count(), 1);
@@ -776,6 +840,10 @@ mod python_baselines {
             &["add", "--package", "py-lib:minor", "--summary", "Qualified baseline"],
         );
         version(root);
+        run(
+            root,
+            &["add", "--package", "py-lib:patch", "--summary", "Second change"],
+        );
         version(root);
         assert_versions(root, "1.3.0b1", "1.0.0", "2.0.0");
         let state = pre_json(root, ".changeset");
@@ -808,6 +876,20 @@ mod python_baselines {
             ],
         );
         version(root);
+        run(
+            root,
+            &[
+                "add",
+                "--package",
+                "pypi/shared:patch",
+                "--package",
+                "cargo/shared:patch",
+                "--package",
+                "npm/shared:patch",
+                "--summary",
+                "Second native change",
+            ],
+        );
         version(root);
         assert_versions(root, "1.3.0b1", "1.0.1-beta.1", "2.0.1-beta.1");
         assert_eq!(
@@ -1058,8 +1140,13 @@ mod python_baselines {
         assert_eq!(resumed["mode"], "pre");
         assert_eq!(resumed["tag"], "beta");
         version(root);
+        assert_versions(root, "1.3.0a0", "1.0.0", "2.0.0");
+        run(
+            root,
+            &["add", "--package", "py-lib:patch", "--summary", "Resumed second change"],
+        );
         version(root);
-        assert_versions(root, "1.3.0b1", "1.0.0", "2.0.0");
+        assert_versions(root, "1.3.0b0", "1.0.0", "2.0.0");
         let changelog = fs::read_to_string(root.join("packages/python/CHANGELOG.md")).unwrap();
         assert_eq!(changelog.matches("Resumed Python cycle").count(), 1);
     }
