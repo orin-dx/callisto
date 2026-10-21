@@ -123,7 +123,7 @@ fn real_platform_manifest_resolves_via_fixed_group_and_feeds_napi_drift() {
     .unwrap();
     std::fs::write(
         root.join("callisto.toml"),
-        "[[fixed-group]]\nname = \"my-group\"\nmembers = [\"my-crate\", \"@myorg/my-crate-linux-x64-gnu\"]\n",
+        "[[fixed-group]]\nname = \"my-group\"\nmembers = [\"cargo/my-crate\", \"@myorg/my-crate-linux-x64-gnu\"]\n",
     )
     .unwrap();
 
@@ -1271,40 +1271,6 @@ fn npm_consumer_depending_on_ambiguous_lib_with_cargo_and_pypi_present_gets_exac
         1,
         "exactly one diagnostic, not one per candidate ecosystem"
     );
-}
-
-#[test]
-fn unprefixed_package_rule_matching_two_promoted_siblings_is_ambiguous() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let root = dir.path();
-    write_pkg(root, "crates/native-core", Ecosystem::Cargo, "native-core");
-    write_pkg(root, "packages/native-core", Ecosystem::Npm, "native-core");
-    std::fs::write(
-        root.join("callisto.toml"),
-        "[[package]]\nmatch = \"native-core\"\nrelease-trigger = \"auto\"\n",
-    )
-    .unwrap();
-    let locator = crate::locate::IgnoreWalkLocator::new(root);
-    let runner = NoopRunner;
-    let err = match crate::Workspace::load(root.to_path_buf(), &locator, &runner) {
-        Err(e) => e,
-        Ok(_) => panic!("expected AmbiguousName error, got Ok"),
-    };
-    match err {
-        GraphError::AmbiguousName { name, candidates } => {
-            assert_eq!(name, "native-core");
-            assert_eq!(candidates.len(), 2);
-            assert!(candidates.contains(&PackageId::Prefixed {
-                ecosystem: Ecosystem::Cargo,
-                name: "native-core".to_string()
-            }));
-            assert!(candidates.contains(&PackageId::Prefixed {
-                ecosystem: Ecosystem::Npm,
-                name: "native-core".to_string()
-            }));
-        }
-        other => panic!("expected AmbiguousName, got {other:?}"),
-    }
 }
 
 #[test]

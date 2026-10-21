@@ -40,7 +40,7 @@ fn plugin_artifact_fixture(plugin_in_fixed_group: bool) -> (TempDir, String) {
     assert!(init.status.success(), "init: {}", String::from_utf8_lossy(&init.stderr));
     let config = fs::read_to_string(root.join("callisto.toml")).unwrap();
     let group = if plugin_in_fixed_group {
-        "\n[[fixed-group]]\nname = \"product\"\nmembers = [\"core-crate\", \"plugin-crate\"]\n"
+        "\n[[fixed-group]]\nname = \"product\"\nmembers = [\"cargo/core-crate\", \"cargo/plugin-crate\"]\n"
     } else {
         ""
     };

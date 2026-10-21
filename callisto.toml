@@ -3,11 +3,11 @@
 [[fixed-group]]
 name = "workspace"
 members = [
-    "callisto-model",
-    "callisto-manifests",
-    "callisto-graph",
-    "callisto-cli",
-    "callisto-fixtures",
+    "cargo/callisto-model",
+    "cargo/callisto-manifests",
+    "cargo/callisto-graph",
+    "cargo/callisto-cli",
+    "cargo/callisto-fixtures",
 ]
 
 [changesets]

@@ -304,7 +304,7 @@ pub fn fixed_group_release_commit_fixture() -> (TempDir, String) {
             "{config}\n\
              [[package]]\nmatch = \"cargo/crate-a\"\npublish-to = [\"crates-io\"]\n\n\
              [[package]]\nmatch = \"cargo/crate-b\"\npublish-to = [\"crates-io\"]\n\n\
-             [[fixed-group]]\nname = \"demo\"\nmembers = [\"crate-a\", \"crate-b\"]\n",
+             [[fixed-group]]\nname = \"demo\"\nmembers = [\"cargo/crate-a\", \"cargo/crate-b\"]\n",
         ),
     )
     .unwrap();

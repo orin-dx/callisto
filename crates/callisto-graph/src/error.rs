@@ -1047,6 +1047,13 @@ pub enum ConfigError {
         canonical: String,
     },
 
+    #[error("{context}: `{given}` does not name its ecosystem")]
+    #[diagnostic(
+        code(E317),
+        help("Write the ecosystem and name with a slash, such as `cargo/{given}`, `npm/{given}` or `pypi/{given}`.")
+    )]
+    BareReference { context: String, given: String },
+
     #[error("group `{group}` has no members")]
     #[diagnostic(code(E251), help("Add at least one member to the group, or remove the group."))]
     EmptyGroup { group: GroupName },
@@ -1123,6 +1130,21 @@ impl ConfigError {
             }),
             None => Ok(()),
         }
+    }
+
+    /// Requires the canonical `eco/name` form: the colon form is E316 and a name without an ecosystem is E317.
+    pub fn require_qualified(raw: &str, context: &str) -> Result<(), Self> {
+        Self::reject_colon_form(raw, context)?;
+        let qualified = raw
+            .split_once('/')
+            .is_some_and(|(prefix, rest)| Ecosystem::from_prefix(prefix).is_some() && !rest.is_empty());
+        if qualified {
+            return Ok(());
+        }
+        Err(Self::BareReference {
+            context: context.to_owned(),
+            given: raw.to_owned(),
+        })
     }
 }
 

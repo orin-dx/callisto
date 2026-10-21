@@ -81,7 +81,9 @@ fn a_linked_group_naming_a_package_outside_the_workspace_is_rejected_with_the_me
     let config = read(root, "callisto.toml");
     fs::write(
         root.join("callisto.toml"),
-        format!("{config}\n[[linked-group]]\nname = \"pair\"\nmembers = [\"lib-crate\", \"ghost-crate\"]\n"),
+        format!(
+            "{config}\n[[linked-group]]\nname = \"pair\"\nmembers = [\"cargo/lib-crate\", \"cargo/ghost-crate\"]\n"
+        ),
     )
     .unwrap();
     let out = callisto(root, &["status"]);

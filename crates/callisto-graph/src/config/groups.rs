@@ -183,6 +183,8 @@ impl GroupTable {
                         });
                         continue;
                     }
+                    ConfigError::require_qualified(name, &format!("group `{}` member", rg.name))
+                        .map_err(GraphError::Config)?;
                     match index.resolve(name) {
                         Ok(id) => {
                             if let Some(other) = claimed_by.get(&id) {
@@ -209,7 +211,7 @@ impl GroupTable {
                                 member: name.clone(),
                             });
                         }
-                        // Ambiguous (E103) and the colon form (E316) are reportable as they are.
+                        // Ambiguous (E103) is reportable as it is.
                         Err(err) => return Err(err),
                     }
                 }
@@ -328,7 +330,6 @@ impl GroupTable {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use callisto_model::Ecosystem;
 
     fn raw_group(name: &str, members: &[&str]) -> RawGroup {
         RawGroup {
@@ -443,32 +444,6 @@ mod tests {
             }
             other => panic!("expected ConflictingGroupNames, got {other:?}"),
         }
-    }
-
-    /// An ambiguous member must surface as E103 (`GraphError::AmbiguousName`),
-    /// not E108 (`MissingGroupMember`).
-    #[test]
-    fn resolve_reports_ambiguous_name_as_e103_not_missing_member() {
-        let mut index = IdentityIndex::default();
-        let cargo_shared = PackageId::Bare("shared".to_string());
-        let npm_shared = PackageId::Prefixed {
-            ecosystem: Ecosystem::Npm,
-            name: "shared".to_string(),
-        };
-        index
-            .native
-            .insert((Ecosystem::Cargo, "shared".to_string()), cargo_shared);
-        index.native.insert((Ecosystem::Npm, "shared".to_string()), npm_shared);
-
-        let raw = RawGroupTable {
-            fixed: vec![raw_group("g", &["shared"])],
-            linked: vec![],
-        };
-        let err = GroupTable::resolve(&raw, &index).unwrap_err();
-        assert!(
-            matches!(err, GraphError::AmbiguousName { .. }),
-            "expected AmbiguousName (E103), got {err:?}"
-        );
     }
 
     fn group_def(name: &str, kind: GroupKind, members: &[&str]) -> GroupDef {

@@ -57,7 +57,7 @@ fn status_pending_severity_reflects_fixed_group_cascade() {
     }
     fs::write(
         root.join("callisto.toml"),
-        "[[fixed-group]]\nname = \"ab\"\nmembers = [\"pkg-a\", \"pkg-b\"]\n",
+        "[[fixed-group]]\nname = \"ab\"\nmembers = [\"cargo/pkg-a\", \"cargo/pkg-b\"]\n",
     )
     .unwrap();
     fs::create_dir_all(root.join(".changeset")).unwrap();

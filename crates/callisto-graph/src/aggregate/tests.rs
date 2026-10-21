@@ -1191,7 +1191,7 @@ fn test_aggregate_bare_name_config_policy_matches_prefixed_package() {
     // PackageId::matches() must bridge the gap; == does not.
     std::fs::write(
         root.join("callisto.toml"),
-        "[[package]]\nmatch = \"pkg-a\"\npre-major-inference = \"conservative\"\n",
+        "[[package]]\nmatch = \"cargo/pkg-a\"\npre-major-inference = \"conservative\"\n",
     )
     .unwrap();
 
@@ -1242,7 +1242,7 @@ fn test_aggregate_bare_name_config_policy_matches_prefixed_package() {
         capturing.saw_non_off.load(Ordering::SeqCst),
         "a bare-name [[package]] rule must match a prefixed package ID via \
              PackageId::matches(); the old == comparison was silently inert for \
-             cargo/pkg-a when callisto.toml uses match = \"pkg-a\""
+             cargo/pkg-a when callisto.toml uses match = \"cargo/pkg-a\""
     );
 }
 
@@ -1383,7 +1383,7 @@ fn test_aggregate_pre_major_inference_policy_applied() {
     // The [[package]] section requires a `match` field (pattern to match package names).
     std::fs::write(
         root.join("callisto.toml"),
-        "[[package]]\nmatch = \"pkg-a\"\npre-major-inference = \"conservative\"\n",
+        "[[package]]\nmatch = \"cargo/pkg-a\"\npre-major-inference = \"conservative\"\n",
     )
     .unwrap();
 
@@ -1460,8 +1460,8 @@ fn test_pre_major_inference_prefixed_beats_bare_when_bare_declared_first() {
     run_git(root, &["add", "."]);
     run_git(root, &["commit", "-q", "-m", "initial commit"]);
 
-    // Bare rule declared FIRST in TOML: match = "pkg", pre-major-inference = "conservative"
-    // Prefixed rule declared SECOND: match = "npm:pkg", pre-major-inference = "off"
+    // Bare rule declared FIRST in TOML: match = "cargo/pkg", pre-major-inference = "conservative"
+    // Prefixed rule declared SECOND: match = "npm/pkg", pre-major-inference = "off"
     // Single-pass find() returns pkg (Bare, declared first) -> conservative applied.
     // Two-pass resolve_package_config: pass 1 finds npm:pkg (Prefixed) -> OFF applied.
     // The package's own manifest is npm (`make_pkg`'s ecosystem-derived-from-id, via a
@@ -1470,7 +1470,7 @@ fn test_pre_major_inference_prefixed_beats_bare_when_bare_declared_first() {
     // about a rule applying to a package that was never really in that ecosystem.
     std::fs::write(
             root.join("callisto.toml"),
-            "[[package]]\nmatch = \"pkg\"\npre-major-inference = \"conservative\"\n\n[[package]]\nmatch = \"npm/pkg\"\npre-major-inference = \"off\"\n",
+            "[[package]]\nmatch = \"cargo/pkg\"\npre-major-inference = \"conservative\"\n\n[[package]]\nmatch = \"npm/pkg\"\npre-major-inference = \"off\"\n",
         )
         .unwrap();
 

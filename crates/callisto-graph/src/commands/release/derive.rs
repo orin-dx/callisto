@@ -1083,7 +1083,7 @@ mod tests {
 
         std::fs::write(
             root.join("callisto.toml"),
-            "# formatting/comments are not release policy\n[[package]]\nmatch = \"release-fixture\"\npublish-to = [\"crates-io\"]\n",
+            "# formatting/comments are not release policy\n[[package]]\nmatch = \"cargo/release-fixture\"\npublish-to = [\"crates-io\"]\n",
         )
         .unwrap();
         let reread = Workspace::load(root, &locator, &runner).unwrap();
@@ -1213,7 +1213,7 @@ mod tests {
                 format!("[package]\nname = \"{name}\"\nversion = \"1.0.0\"\nedition = \"2021\"\n{dependencies}"),
             ));
             files[1].1.push_str(&format!(
-                "[[package]]\nmatch = \"{name}\"\npublish-to = [\"crates-io\"]\n"
+                "[[package]]\nmatch = \"cargo/{name}\"\npublish-to = [\"crates-io\"]\n"
             ));
         }
         files
@@ -1507,7 +1507,7 @@ mod tests {
             ),
             (
                 "callisto.toml",
-                "[[package]]\nmatch = \"core\"\npublish-to = [\"crates-io\"]\n",
+                "[[package]]\nmatch = \"cargo/core\"\npublish-to = [\"crates-io\"]\n",
             ),
         ]);
         let locator = crate::IgnoreWalkLocator::new(dir.path());
@@ -1574,7 +1574,7 @@ mod tests {
             ("CHANGELOG.md", "# core\n\n## 1.0.0\n\n- fixed a bug\n"),
             (
                 "callisto.toml",
-                "[[package]]\nmatch = \"core\"\npublish-to = [\"github-release\"]\nchangelog = \"CHANGELOG.md\"\n",
+                "[[package]]\nmatch = \"cargo/core\"\npublish-to = [\"github-release\"]\nchangelog = \"CHANGELOG.md\"\n",
             ),
         ]);
         let decision = cargo_release(&["core"]);
@@ -1622,8 +1622,8 @@ mod tests {
                 "callisto.toml",
                 "[release]\nproduct-package = \"cargo/core\"\nforge-repository = \"example/parity\"\n\n\
                  [[release.artifact]]\npackage = \"cargo/plugin\"\ntarget = \"t\"\nasset-name = \"a.tar.gz\"\n\n\
-                 [[package]]\nmatch = \"core\"\npublish-to = [\"github-release\"]\n\n\
-                 [[package]]\nmatch = \"plugin\"\npublish-to = [\"crates-io\"]\n",
+                 [[package]]\nmatch = \"cargo/core\"\npublish-to = [\"github-release\"]\n\n\
+                 [[package]]\nmatch = \"cargo/plugin\"\npublish-to = [\"crates-io\"]\n",
             ),
         ])
     }
@@ -1861,7 +1861,7 @@ mod tests {
     #[test]
     fn two_targets_for_one_registry_are_a_duplicate() {
         let mut files = cargo_workspace(&[("a", "")]);
-        files[1].1 = "[[package]]\nmatch = \"a\"\npublish-to = [\"crates-io\", \"crates-io\"]\n".to_owned();
+        files[1].1 = "[[package]]\nmatch = \"cargo/a\"\npublish-to = [\"crates-io\", \"crates-io\"]\n".to_owned();
         let dir = repo_of(&files);
         let error = derive(&dir, &cargo_release(&["a"])).unwrap_err();
         assert!(
@@ -1939,7 +1939,7 @@ mod tests {
             ("dual/package.json", r#"{"name":"dual","version":"1.0.0"}"#),
             (
                 "callisto.toml",
-                "[[package]]\nmatch = \"dual\"\npublish-to = [\"crates-io\", \"npm\", \"github-release\"]\n",
+                "[[package]]\nmatch = \"cargo/dual\"\npublish-to = [\"crates-io\", \"npm\", \"github-release\"]\n",
             ),
         ])
     }
@@ -1982,7 +1982,7 @@ mod tests {
             ),
             (
                 "callisto.toml",
-                "[[package]]\nmatch = \"dual\"\npublish-to = [\"crates-io\", \"npm\"]\n\n[[package]]\nmatch = \"rs\"\npublish-to = [\"crates-io\"]\n\n[[package]]\nmatch = \"web\"\npublish-to = [\"npm\"]\n",
+                "[[package]]\nmatch = \"cargo/dual\"\npublish-to = [\"crates-io\", \"npm\"]\n\n[[package]]\nmatch = \"cargo/rs\"\npublish-to = [\"crates-io\"]\n\n[[package]]\nmatch = \"cargo/web\"\npublish-to = [\"npm\"]\n",
             ),
         ]);
         let decision = release(&[
@@ -2114,7 +2114,7 @@ mod tests {
                 "callisto.toml",
                 "[release]\nproduct-package = \"cargo/dual\"\nforge-repository = \"example/parity\"\n\n\
                  [[release.artifact]]\npackage = \"cargo/dual\"\ntarget = \"t\"\nasset-name = \"a.tar.gz\"\n\n\
-                 [[package]]\nmatch = \"dual\"\npublish-to = [\"crates-io\", \"npm\", \"github-release\"]\n",
+                 [[package]]\nmatch = \"cargo/dual\"\npublish-to = [\"crates-io\", \"npm\", \"github-release\"]\n",
             ),
         ]);
         let ((_, operations, _, _, slots), _) = derive_with_artifact_policy(&dir, &dual_owner_decision()).unwrap();

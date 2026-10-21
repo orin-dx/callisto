@@ -7,9 +7,8 @@ use globset::{Glob, GlobMatcher};
 /// `[[package-set]]` allows a single rule to target many packages at once
 /// via a glob (e.g. `"pkg-*"` matches `pkg-a`, `pkg-b`, etc.).
 ///
-/// Ecosystem prefixes in the pattern are respected: `"cargo/pkg-*"` only
-/// matches Cargo packages; a bare `"pkg-*"` matches packages in any ecosystem
-/// that have a matching name.
+/// The ecosystem prefix is respected: `"cargo/pkg-*"` only matches Cargo packages. Config loading requires the
+/// prefix; a bare pattern parses here but matches every ecosystem.
 #[derive(Clone, Debug)]
 pub struct PackagePattern {
     raw: String,

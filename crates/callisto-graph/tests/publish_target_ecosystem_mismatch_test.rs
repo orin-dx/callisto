@@ -57,7 +57,7 @@ fn cargo_package_with_mismatched_nuget_publish_target_is_rejected() {
 
     fs::write(
         root.join("callisto.toml"),
-        "[[package]]\nmatch = \"some-cargo-crate\"\npublish-to = [\"nuget\"]\n",
+        "[[package]]\nmatch = \"cargo/some-cargo-crate\"\npublish-to = [\"nuget\"]\n",
     )
     .unwrap();
 

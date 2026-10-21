@@ -103,11 +103,11 @@ url = "https://npm.internal.example.com"
 
 ## `[[package]]` and `[[package-set]]`
 
-Both blocks share five override fields, parsed identically; `[[package]]` also accepts `previous-tag-templates`. `[[package]]`'s `match` is an exact `PackageId` (first matching rule wins, prefixed forms like `cargo/foo` take priority over bare `foo` regardless of declaration order). `[[package-set]]`'s `match` is a glob `PackagePattern` and can match many packages at once; `[[package]]` always takes priority over `[[package-set]]` for a given package.
+Both blocks share five override fields, parsed identically; `[[package]]` also accepts `previous-tag-templates`. `[[package]]`'s `match` is an exact ecosystem-qualified id (first matching rule wins). `[[package-set]]`'s `match` is an ecosystem-qualified glob and can match many packages at once; a rule for several ecosystems is one rule per ecosystem; `[[package]]` always takes priority over `[[package-set]]` for a given package.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `match` | string | required | `[[package]]`: exact ecosystem-qualified id or bare name. `[[package-set]]`: glob pattern. |
+| `match` | string | required | `[[package]]`: exact `ecosystem/name`. `[[package-set]]`: `ecosystem/glob`. A name without its ecosystem is E317. |
 | `release-trigger` | string (`"changeset"` \| `"auto"`) | none — every field here is an `Option`; omitted means "use this package's own default", not a config-level default | What causes this package to be considered for release |
 | `publish-to` | array of strings (`"crates-io"` \| `"npm"` \| `"pypi"` \| `"nuget"` \| `"github-release"` \| `"none"`) | none | Where this package publishes |
 | `tag-template` | string | none | Git tag template, e.g. `"callisto@{version}"` |
@@ -131,7 +131,7 @@ Neither has a config-level default for its fields — both are required when the
 | Key | Type | Required | Meaning |
 | --- | --- | --- | --- |
 | `name` | string | yes | Group identifier, unique across both fixed and linked groups |
-| `members` | array of strings | yes, non-empty | Package names in the group |
+| `members` | array of strings | yes, non-empty | `ecosystem/name` of each package in the group. A platform package is named by its native name |
 
 `[[fixed-group]]`: all members bump in lock-step from the group's alignment base. `[[linked-group]]`: every member receives the highest severity and aligns to the highest target version produced by the members' bumps. Both currently require compatible version grammars; neither is an automatic cross-language version converter.
 
@@ -139,7 +139,7 @@ Example (this repo's own `callisto.toml`):
 ```toml
 [[fixed-group]]
 name = "workspace"
-members = ["callisto-model", "callisto-manifests", "callisto-graph", "callisto-cli"]
+members = ["cargo/callisto-model", "cargo/callisto-manifests", "cargo/callisto-graph", "cargo/callisto-cli"]
 ```
 
 ## `[init]`

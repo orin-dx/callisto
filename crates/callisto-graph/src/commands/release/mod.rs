@@ -150,7 +150,7 @@ pub(crate) mod tests {
         .unwrap();
         std::fs::write(
             dir.path().join("callisto.toml"),
-            "[[package]]\nmatch = \"release-fixture\"\npublish-to = [\"crates-io\"]\n",
+            "[[package]]\nmatch = \"cargo/release-fixture\"\npublish-to = [\"crates-io\"]\n",
         )
         .unwrap();
         callisto_fixtures::git::init_repo(dir.path());
@@ -213,7 +213,7 @@ pub(crate) mod tests {
         // no tag/registry operations, no git remote requirement.
         std::fs::write(
             dir.path().join("callisto.toml"),
-            "[[package]]\nmatch = \"release-fixture\"\npublish-to = []\n",
+            "[[package]]\nmatch = \"cargo/release-fixture\"\npublish-to = []\n",
         )
         .unwrap();
         callisto_fixtures::git::init_repo(dir.path());
@@ -306,7 +306,7 @@ pub(crate) mod tests {
         .unwrap();
         std::fs::write(
             dir.path().join("callisto.toml"),
-            "[[package]]\nmatch = \"addon\"\npublish-to = []\n",
+            "[[package]]\nmatch = \"cargo/addon\"\npublish-to = []\n",
         )
         .unwrap();
         let runner = RealGitRunner;
