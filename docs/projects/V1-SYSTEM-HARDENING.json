@@ -9,29 +9,6 @@
   ],
   "tasks": [
     {
-      "id": "D01",
-      "title": "Settle scoped model and compatibility contracts before architectural code",
-      "files": {
-        "modify": [
-          "docs/architecture/polyglot-v1.md",
-          "docs/adr/0012-canonical-distribution-release-ownership.md",
-          "docs/projects/V1-IMPLEMENTATION.md",
-          "docs/projects/V1-SYSTEM-HARDENING.json"
-        ],
-        "test": []
-      },
-      "steps": [
-        "Read the decision matrix in V1-IMPLEMENTATION.md and obtain owner confirmation only for material choices, not routine implementation details. Existing-contract fixes do not wait for this task.",
-        "Implement canonical slash-qualified IDs for all new exact references; reject new bare/colon aliases and resolve existing records only through explicit ownership migration. Settle new default tags and legacy history rules. Keep directory locator distinct from native output identity; do not rename remote tags or infer a genuine source move.",
-        "Fix admitted Maturin dynamic/static authority cases and native mapping errors; choose draft/public-announcement timing under the agreed registry-before-announcement policy.",
-        "Fix required registry file-set authority before model changes: plan declarations versus build-time filenames/digests, binding to the immutable intent/envelope and per-file versus aggregate partial-operation proof. Do not append operations or change the sealed intent after build.",
-        "Choose public Python support and explicit behavior for distinct read/upload routes; authenticated/HTML-only indexes and mutable npm channels remain optional owner decisions. Document that native lifecycle hooks and their effects remain package-owner-controlled and outside Callisto's operation graph.",
-        "Record testable cases and exact versioned wire migrations in the proposed architecture/ADR and per-PR packets. Author and approve matching area-spec amendments on implementation branches; current main specs must not assert unshipped behavior. Bind any formal execution handoff to raw approved spec hashes.",
-        "Inspect every shared-interface implementer named in V1-IMPLEMENTATION.md before passing the design boundary. Unresolved choices pause only dependent architectural tasks; do not mark this portfolio plan as a fully gated Smith handoff."
-      ],
-      "commit_message": "docs(architecture): settle scoped release ownership contracts"
-    },
-    {
       "id": "T06",
       "title": "Canonicalize new references through one owner-aware resolver",
       "files": {
@@ -64,17 +41,15 @@
         ]
       },
       "steps": [
-        "Baseline: status and version both resolve changeset selectors through IdentityIndex.resolve_id; new identifiers still depend on sibling collisions.",
-        "Implement D01's canonical-reference/migration contract at one shared owner-aware resolver, including native name normalization and actionable legacy ambiguity errors. Emit canonical exact references for add/init/reports/groups/config without conflating different outputs with release owners.",
-        "Migrate all selector consumers, both status helpers, package/group rules, changesets, pre-state and CLI selection together. Keep glob matching as an explicitly separate pattern language, not an exact-ID parser.",
-        "Align GroupTable::from_groups conflict validation with resolve so no alternate construction path silently bypasses the group invariant; add the sibling constructor regression in config/group tests.",
-        "Add paired status/version/matrix/release-selector tests for non-primary native names, unrelated ecosystem-qualified names, scoped npm names, normalized Python names, duplicate native distribution IDs, rejected new bare/colon aliases, migrated historical records and deterministic report ordering. Cover product-package and artifact package selectors alongside groups, package rules and changesets; retain glob patterns as a separate language.",
-        "Run rtk cargo test -p callisto-model, rtk cargo test -p callisto-graph and rtk cargo test -p callisto-cli --test identity_promotion_tests plus --test status_check_tests sequentially. Update current specs and migration docs with the behavior; retain historical tag readers for T06-HISTORY."
+        "Baseline: IdentityIndex.resolve_id resolves native names; the status helpers no longer use PackageId::resolve_unique, which is unused outside its tests. GroupTable::from_groups is deprecated and has no caller. Rules and packages match only the primary name, so a dual-manifest owner's npm name never matches a [[package]] rule.",
+        "Implement ADR 12's canonical-reference contract with one owner-aware resolver: canonical required in config, groups, rules, product and artifact packages, report and matrix keys and CLI arguments; colon rejected with a code that names the slash form (E316); a bare reference in config rejected with a fix-it (E317). Changesets and pre.json keep native names resolved at read time, with a hard error for colon. Platform-manifest npm names in groups stay native. Do not change tag names.",
+        "Match [[package]] and [[package-set]] rules through the identity index so a dual-manifest owner's secondary native name applies. Share group membership validation between GroupTable::resolve and try_from_groups, and delete the dead from_groups, resolve_unique and resolve_human with a Breaking note.",
+        "Emit canonical ids from one function in the report builders, matrix keys and diagnostics, leaving display_name() for tags, pre.json keys and changeset entries. Decide the schemaVersion of the status, version, snapshot and matrix reports with this task.",
+        "Add paired status/version/matrix/release-selector tests for non-primary native names, scoped npm names, declared Python names, duplicate native distribution IDs, rejected colon and bare references, and deterministic report ordering. Retain glob patterns as a separate language.",
+        "Slice into reviewable PRs: delete dead code and share group validation; reject the colon form; canonical-required config and rules, with the dogfood callisto.toml and AGENTS.md; canonical CLI arguments; canonical emission and the report version. Run rtk cargo test -p callisto-model, rtk cargo test -p callisto-graph and rtk cargo test -p callisto-cli sequentially."
       ],
       "commit_message": "refactor(identity)!: use canonical distribution references",
-      "depends_on": [
-        "D01"
-      ],
+      "depends_on": [],
       "covers_criteria": [
         "WS-ID-01",
         "WS-ID-02",
@@ -86,7 +61,14 @@
         "CLI-ADD-01",
         "MX-DISC-11",
         "MX-OUT-01",
-        "MX-ERR-07"
+        "MX-ERR-07",
+        "WS-ID-07",
+        "WS-CFG-03",
+        "WS-CFG-04",
+        "WS-CFG-08",
+        "VER-PRE-01",
+        "CLI-ADD-06",
+        "REL-CMD-07"
       ]
     },
     {
@@ -112,7 +94,7 @@
       "steps": [
         "Baseline: bare-tag ownership falls back to the manifest roster at the tag's commit and a demoted package keeps its qualified tags; a changed native name or an explicit rename still has no boundary.",
         "Share historical ownership resolution between tag selection and pre-state attribution using historical native names and the full admitted manifest roster at the relevant commit. Preserve a source owner's correct bare and qualified history after sibling addition/removal or primary-manifest changes.",
-        "Apply D01's explicit rename/move support boundary; refuse uncertain transfer with an actionable error rather than assigning another owner's tag. Do not rename existing tags or require an opaque identity ledger.",
+        "Apply ADR 12's rename boundary (previous-tag-templates); refuse uncertain transfer with an actionable error rather than assigning another owner's tag. Do not rename existing tags or require an opaque identity ledger.",
         "Test promotion/demotion, sibling rename, Cargo manifest added to an npm-first directory, changed native names, ambiguous old records, conflicting legacy and canonical pre-state keys, old prerelease keys and custom templates; verify last-release monotonicity and no cross-owner adoption without silently discarding a baseline.",
         "Run rtk cargo test -p callisto-graph and rtk cargo test -p callisto-cli --test identity_promotion_tests sequentially. Preserve lazy/cached Git discovery and update docs/specs/ADR status only with the implementation."
       ],
@@ -149,17 +131,16 @@
         ]
       },
       "steps": [
-        "Finding coverage: none open. Shipped: the owner publication barrier (a package tag waits for the registry publishes of every release identity it has) and one tag, forge release and forge publish per owner. Remaining: package dependencies order all owner outputs, and any wire versioning D01 requires.",
-        "Implement D01's single-owner physical effects and deterministic operation IDs; one tag/draft/upload/publication may be referenced by several distributions but executed once. Reject contradictory tag target/destination/owner declarations before any effect.",
+        "Finding coverage: none open. Shipped: the owner publication barrier (a package tag waits for the registry publishes of every release identity it has) and one tag, forge release and forge publish per owner. Remaining: package dependencies order all owner outputs, and any wire versioning ADR 12 requires.",
+        "Implement ADR 12's single-owner physical effects and deterministic operation IDs; one tag/draft/upload/publication may be referenced by several distributions but executed once. Reject contradictory tag target/destination/owner declarations before any effect.",
         "Project native dependency publication prerequisites from the relevant manifest/distribution, not every output of the source node. Gate current supported registry ecosystems' shared tag/publication on all required selected native publishes; retain platform-before-owner and artifact-before-publication prerequisites.",
         "Migrate intent validation/digests, preparation, production ValidatedReleaseIntent, SimWorld, provider dispatch, receipt evidence and schema guard tests as one compilation boundary. Do not add a scheduler or persisted execution state.",
         "Retain redacted native stderr for indeterminate failures. Fix a lost safe diagnostic in this batch; explicitly track a sibling outside the owned boundary.",
         "Add dual Cargo/npm permutations, failure of either registry, shared product assets, selected/unselected native dependencies, dev/non-dev cycles and duplicate/conflicting effects. Run rtk cargo test -p callisto-model, rtk cargo test -p callisto-graph and rtk cargo test -p callisto-cli --test durable_release_e2e_tests sequentially.",
-        "Verify deterministic DAG order and no public announcement before required publications; check Go's hypothetical tag-as-publication scenario without a Go provider. Version the wire if D01 changes identity/proof shape and keep old-reader policy explicit."
+        "Verify deterministic DAG order and no public announcement before required publications; check Go's hypothetical tag-as-publication scenario without a Go provider. Version the wire if ADR 12 changes identity/proof shape and keep old-reader policy explicit."
       ],
       "commit_message": "fix(release): complete shared effects across retries",
       "depends_on": [
-        "D01",
         "T06-HISTORY"
       ],
       "covers_criteria": [
@@ -232,14 +213,6 @@
     }
   ],
   "batches": [
-    {
-      "batch_id": "B06",
-      "title": "Owner-confirmed contract checkpoint",
-      "target_crate": "docs / model and release interfaces",
-      "task_ids": [
-        "D01"
-      ]
-    },
     {
       "batch_id": "B07",
       "title": "Canonical identity and history",

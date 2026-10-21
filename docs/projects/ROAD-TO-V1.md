@@ -13,15 +13,14 @@ Unshipped work only. Baseline: main `07154021c` (0.10.2). [Owner requirement](..
 
 ## Sequence
 
-The execution portfolio holds the remaining work as bounded units, including the D01 owner-contract checkpoint. The execution guide defines plugin routing, agent write ownership, serial Cargo verification and main-targeted stacked PRs under the existing CI trigger.
+The execution portfolio holds the remaining work as bounded units. The execution guide defines plugin routing, agent write ownership, serial Cargo verification and main-targeted stacked PRs under the existing CI trigger.
 
 ### 1. Correct the model in bounded changes
 
-- D01: confirm exact ownership, compatibility, native authority and registry-output proof contracts before architectural code; existing-contract repairs do not wait for it.
 - T06 and T06-HISTORY: canonical new references and legacy/history migration across selectors, config, groups, changesets, reports, pre-state and tags. Rename, manifest additions, promotion and demotion retain the right owner's history. [ADR 12](../adr/0012-canonical-distribution-release-ownership.md) remains proposed until implementation.
 - T08: shared physical effect ownership, so one tag, draft, upload or publication referenced by several distributions is executed once. The tag already waits for every registry publish of its package, and a rerun after a failed push completes the release. Retain the committed roster and no-journal executor. A future Go source tag is publication, not a universal completion marker.
 
-The plan is an implementation portfolio, not an approved future-behavior spec. Resolve wire/compatibility choices and update the matching area spec with implementation; do not treat architectural packets as fully gated implementer handoffs before D01.
+The plan is an implementation portfolio, not an approved future-behavior spec. Resolve wire/compatibility choices and update the matching area spec with implementation; the D01 contracts are decided in ADR 12.
 
 ### 2. Reconcile generated workflows
 

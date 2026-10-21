@@ -2,9 +2,9 @@
 
 Status: active execution portfolio. Baseline: `origin/main` at `07154021c` (0.10.2). [Task definitions](V1-SYSTEM-HARDENING.json), [findings](V1-FINDINGS.md), [roadmap](ROAD-TO-V1.md), [proposed model](../architecture/polyglot-v1.md).
 
-The current-contract repairs (release-PR compatibility, installer fidelity, schemas, durable versions, native dependencies, lockfiles, interrupted versioning, binary inventory and native authentication) shipped in 0.10.0 to 0.10.2. What remains is the D01-gated model work, the effect and registry-completion stacks, intent-selected workflow outputs and the production verification pass. Architectural D01 choices, remote delivery and publication remain separate decisions.
+The current-contract repairs (release-PR compatibility, installer fidelity, schemas, durable versions, native dependencies, lockfiles, interrupted versioning, binary inventory and native authentication) shipped in 0.10.0 to 0.10.2. What remains is the canonical-reference work, the effect-ordering stack, intent-selected workflow outputs and the production verification pass. Remote delivery and publication remain separate decisions.
 
-## Architectural stack after D01
+## Architectural stack
 
 | Stack | Order | What each boundary proves |
 | --- | --- | --- |
@@ -14,23 +14,20 @@ The current-contract repairs (release-PR compatibility, installer fidelity, sche
 
 T08 follows T06-HISTORY. Independent read-only review and native fixture drafting can run alongside those implementation units once their interfaces are fixed; competing edits cannot. JSON task dependencies are authoritative; stack grouping is not permission to ignore a dependency.
 
-## D01: approved directions and remaining model choices
+## D01: decided contracts
 
-The owner approved Cargo, npm/pnpm and Python/PyPI as current scope, architectural room for Go and .NET/NuGet, canonical-only new exact references, registry publication before shared tags/public announcements, and package-owner control of native lifecycle hooks. Remaining wire shapes and migration rules below are proposals, not hidden release gates.
+The owner approved Cargo, npm/pnpm and Python/PyPI as current scope, architectural room for Go and .NET/NuGet, registry publication before shared tags and public announcements, and package-owner control of native lifecycle hooks. The remaining contracts were decided on 2026-10-20; [ADR 12](../adr/0012-canonical-distribution-release-ownership.md) records them and stays proposed until the canonical-reference work lands.
 
-| Contract | Proposed bounded choice | Approval/evidence needed |
-| --- | --- | --- |
-| Canonical references | The owner chose canonical slash-qualified IDs for every new exact reference; reject new bare and colon-form aliases, and read existing forms only through an explicit ownership migration boundary | Specify which historical records remain readable and how migration is surfaced; cover config, groups, changesets, pre-state and reports |
-| Owner identity | Reuse a stable source-directory locator plus its explicit canonical distribution roster; do not introduce an opaque globally persistent ID | Choose a durable owner field versus deterministic derivation from the retained source snapshot; specify rename/move refusal or explicit mapping |
-| Tag migration | Do not rename existing tags; retain observed legacy templates/history and select one deterministic template for new releases | Settle independent/fixed defaults with owner identity; do not add a second inference-based tag authority |
-| Wire compatibility | Preserve existing string versions where context suffices; version documents whose owner/effect/output semantics change | Enumerate decision/intent/manifest/envelope/receipt readers, accepted old versions, stale decisions and old-intent rerun support; reject unsupported migration explicitly |
-| Conflicting pre-state aliases | A legacy bare key may resolve to an owner that already has a canonical key in the same file | Choose behavior when both keys carry different versions; current `or_insert` keeps the canonical value and silently drops the migrated legacy value |
-| Announcement | The owner chose required Cargo/npm/PyPI publications before a shared tag and public GitHub release; a future Go source tag can itself be a publication | Specify draft creation and upload ordering and prove all required owner outputs complete before public announcement |
-| Registry file set | Declare selected outputs before build; bind exact trusted filenames/digests after build without mutating sealed intent | Choose per-file effects or an aggregate operation with explicit partial-state proof; define how build inventory is covered by the existing envelope and how local retries retain original bytes |
-| Python destinations | Separate credential-free index/read and upload routing; public PyPI/TestPyPI first | Choose support versus explicit refusal for custom, authenticated and HTML-only indexes; Twine credentials do not authenticate observation automatically |
-| Native lifecycle hooks | Package owners control hook scripts and any effects they initiate; Callisto preserves native behavior and does not inspect, rewrite, suppress or reject hooks | Settled owner boundary: preserve it in future publisher changes; do not require hook migration or promise that external hook effects are coordinated |
+| Contract | Decision |
+| --- | --- |
+| Canonical references | Required in `callisto.toml`, report and matrix keys and command-line arguments; the colon form is rejected everywhere. Changesets and `pre.json` keep native names and resolve them when read, so `@changesets/cli` interoperability and dual-manifest owners keep working. Whether the status, version, snapshot and matrix reports bump their `schemaVersion` is decided with T06 |
+| Owner identity | Derived: the first release id of the package by ecosystem priority Cargo, npm, PyPI, sealed by the intent digest and re-derived at execute. No owner field and no opaque ID |
+| Tags | The default stays `{display id}@{version}`; existing tags are never renamed; a native rename is declared with `previous-tag-templates` |
+| Wire compatibility | No change for the current scope: release documents are already canonical-only and strict, and an intent from an older version is re-planned, never rerun across versions |
+| Conflicting pre-state aliases | A legacy and a canonical key with different versions fail with E305 |
+| Maturin | After v1 |
 
-D01 records testable contracts in the proposed architecture/ADR and PR packets. Area specs remain current-behavior documents: amend them on each implementation branch with the behavior, and review/hash-bind that contract before a gated implementation handoff. ADR 12 stays proposed until owner acceptance and the implementing merge. No single approved future delta spec currently exists, so the portfolio JSON intentionally has no `linked_spec` or fabricated `spec_hash`; affected criterion mappings are not coverage of all 220 existing criteria.
+Registry file set, Python destinations, announcement ordering, dual-package selection and lifecycle hooks are decided and implemented. Area specs stay current-behavior documents: amend them on each implementation branch.
 
 ## Stack mechanics
 
@@ -87,7 +84,7 @@ No concurrent Cargo builds/tests locally, even across tasks. Reserve one build s
 | Selector ownership | `IdentityIndex`; add/status/aggregate/matrix; config rules/groups; `history.rs::sole_owner_at` and pre-state/history readers | T06/T06-HISTORY unify exact selectors, distinguish glob syntax and migrate both tag/pre-state ownership consumers |
 | `ReleaseProviderSet` | Production `ValidatedReleaseIntent` and simulator `SimWorld` | T08 migrates both; fake CLI provider harness still exercises real dispatch |
 | Registry adapter/evidence | `CargoRegistry`, `NpmRegistry`, `PypiRegistry`; platform npm path | T08 gives every reached sibling a migrated or evidence-backed unaffected disposition |
-| Immutable release wires | Decision, input snapshot, intent, artifact manifest, envelope, receipt, schemas; CLI file/stdout producers and action scripts | D01 fixes compatibility; T08 migrates producers/consumers, including CLI registry-only inventory acceptance/envelope sealing and local build preparation |
+| Immutable release wires | Decision, input snapshot, intent, artifact manifest, envelope, receipt, schemas; CLI file/stdout producers and action scripts | ADR 12 fixes compatibility; T08 migrates producers/consumers, including CLI registry-only inventory acceptance/envelope sealing and local build preparation |
 | Selected builds and auth | Generated simple/matrix workflows, shared action execution, build matrix/placement, policy/contract tests | T12 verifies all routes, not just this repo's custom workflow; lifecycle scripts remain package-owner-controlled |
 
 This is an inspected candidate inventory, not a promise that no new call site exists. Each implementer re-runs syntactic and responsibility-based searches on its actual base. An external lifecycle hook or unavailable native environment remains an explicit coverage gap.
