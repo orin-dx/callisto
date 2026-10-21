@@ -160,14 +160,23 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
 
 /// Builds a package's snapshot version in its own grammar: `0.0.0-<tag>-<sha>` for SemVer,
 /// the equivalent PEP 440 dev/local form `0.0.0.dev0+<tag>.<sha>` for Pep440.
+const SNAPSHOT_SEMVER_PREFIX: &str = "0.0.0-";
+const SNAPSHOT_PEP440_PREFIX: &str = "0.0.0.dev0+";
+
+/// Whether `version` has the shape `snapshot` writes; a snapshot is never tagged or published.
+pub(crate) fn is_snapshot_version(version: &callisto_model::Version) -> bool {
+    let rendered = version.render();
+    rendered.starts_with(SNAPSHOT_SEMVER_PREFIX) || rendered.starts_with(SNAPSHOT_PEP440_PREFIX)
+}
+
 fn snapshot_version_for(
     grammar: callisto_model::VersionGrammar,
     tag: &str,
     sha_short: &str,
 ) -> Result<callisto_model::Version, GraphError> {
     let raw = match grammar {
-        callisto_model::VersionGrammar::SemVer => format!("0.0.0-{tag}-{sha_short}"),
-        callisto_model::VersionGrammar::Pep440 => format!("0.0.0.dev0+{tag}.{sha_short}"),
+        callisto_model::VersionGrammar::SemVer => format!("{SNAPSHOT_SEMVER_PREFIX}{tag}-{sha_short}"),
+        callisto_model::VersionGrammar::Pep440 => format!("{SNAPSHOT_PEP440_PREFIX}{tag}.{sha_short}"),
         _ => {
             return Err(GraphError::Bump(
                 callisto_model::format::BumpError::UnsupportedGrammar { grammar },

@@ -331,6 +331,25 @@ fn prepare_remote<R: CommandRunner, D: DependencyResolver>(
     Ok(git_remote)
 }
 
+/// A prerelease publishes under the tag its first identifier names (`1.0.0-beta.2` -> `beta`), `next` when that is not a
+/// plain word, and never `latest`; a stable version takes the registry default.
+fn npm_dist_tag(version: &Version) -> Option<String> {
+    if !version.is_prerelease() {
+        return None;
+    }
+    let prerelease = version.render().split_once('-').map_or("", |(_, rest)| rest);
+    let label: String = prerelease
+        .chars()
+        .take_while(char::is_ascii_alphabetic)
+        .collect::<String>()
+        .to_ascii_lowercase();
+    Some(if label.is_empty() || label == "latest" {
+        "next".to_string()
+    } else {
+        label
+    })
+}
+
 /// One registry publish per package target, with its platform publishes, and each package's input fingerprint.
 fn build_publish_leaves<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
@@ -352,6 +371,12 @@ fn build_publish_leaves<R: CommandRunner, D: DependencyResolver>(
     // First construct leaves so dependency prerequisites can refer only to
     // exact selected release identities, never PackageId's wildcard matcher.
     for (id, (package, version)) in selected {
+        if crate::commands::snapshot::is_snapshot_version(version) {
+            return Err(GraphError::ReleaseSelectionInvalid {
+                package: id.clone(),
+                reason: ReleaseSelectionInvalidReason::SnapshotVersion,
+            });
+        }
         let produces_tag = package
             .publish_to
             .iter()
@@ -398,7 +423,7 @@ fn build_publish_leaves<R: CommandRunner, D: DependencyResolver>(
                     _ => None,
                 };
                 let npm_tag = matches!(target, PublishTarget::Npm { .. })
-                    .then(|| version.is_prerelease().then_some("next".to_string()))
+                    .then(|| npm_dist_tag(version))
                     .flatten();
                 if matches!(target, PublishTarget::Npm { .. }) {
                     let mut platform_ids = Vec::new();
@@ -1854,6 +1879,37 @@ mod tests {
         let error = derive_with_artifact_policy(&dir, &cargo_release(&["core", "plugin"])).unwrap_err();
         assert!(
             matches!(error, GraphError::ReleaseArtifactRepositoryMismatch { .. }),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn a_prerelease_publishes_under_the_tag_its_first_identifier_names() {
+        let tag = |raw: &str| npm_dist_tag(&Version::parse(raw, VersionGrammar::SemVer).unwrap());
+        assert_eq!(tag("1.0.0"), None);
+        assert_eq!(tag("1.0.0-beta.2").as_deref(), Some("beta"));
+        assert_eq!(tag("1.0.0-RC.1").as_deref(), Some("rc"));
+        assert_eq!(tag("1.0.0-alpha-3").as_deref(), Some("alpha"));
+        assert_eq!(tag("2.0.0-next.0").as_deref(), Some("next"));
+        assert_eq!(tag("1.0.0-0").as_deref(), Some("next"));
+        assert_eq!(tag("1.0.0-latest.1").as_deref(), Some("next"));
+    }
+
+    #[test]
+    fn a_snapshot_version_is_never_selected_for_release() {
+        let dir = repo(&[
+            ("package.json", r#"{"name":"lib","version":"0.0.0-pre-abc1234"}"#),
+            ("callisto.toml", ""),
+        ]);
+        let error = derive(&dir, &release(&[(Ecosystem::Npm, "lib", "0.0.0-pre-abc1234")])).unwrap_err();
+        assert!(
+            matches!(
+                error,
+                GraphError::ReleaseSelectionInvalid {
+                    reason: ReleaseSelectionInvalidReason::SnapshotVersion,
+                    ..
+                }
+            ),
             "{error:?}"
         );
     }
