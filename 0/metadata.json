@@ -1,0 +1,122 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5G3K47X3ND2MW6DRVSMX4WD",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-21T20:49:27.509475Z",
+  "branch": "worktree-t06-cli-args",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "42d343bf63c3",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 198
+  },
+  "summary": {
+    "intent": "Work through the NEXT-WORK.md plan for the callisto release tool: start parallel lanes (cleanup/docs, SYS-RETRY, init.rs refactor, SYS-NAPI, derive.rs split) and then keep going through the hardening and T06 canonical-identity backlog until done.",
+    "outcome": "Opened a large set of PRs (#202-#208 and roughly a dozen more through #272 and beyond) covering the SYS-RETRY fix, mixed-routing test, docs refresh, init.rs/template refactors, SYS-NAPI, derive.rs split, CI hygiene, E317/E318/E319 errors, pre-mode no-repeat bump, dist-tag/snapshot refusal, canonical ecosystem/name emission, edition 2024, fuzz targets and unwrap denial. Each was gated by local `just ci`; the final panic-hygiene CI rerun was still in progress. Closed PR #201 after the user said the plan file must stay local.",
+    "learnings": {
+      "repo": [
+        "Plan/tracking files such as NEXT-WORK.md must stay local at .claude/plans/ (excluded via .git/info/exclude) and never go in a commit or PR.",
+        "Gate is `just ci`; the wrapper script's task-notification only reports the script exit, so the log's own `exit=` line must be read. Several runs showed exit=1 from fmt-check despite a wrapper exit 0.",
+        "Release tests rely on a fake publisher harness (release_harness.rs); fakes can hide real-tool bugs, so SYS-NAPI was proven with the real binary and real jq.",
+        "Existing tests assumed 'tag on HEAD means released', which was the SYS-RETRY defect; they had to tag an older commit instead.",
+        "Template constants for init now live in .tmpl files under crates/callisto-graph/src/templates/, with insta snapshots of rendered bytes guarding the move.",
+        "Generated workflow shell must be portable to macOS bash (no mapfile).",
+        "Intent omits artifactSlots when empty, so `.artifactSlots[]` iterates null in the template's jq.",
+        "Spec criteria in docs/specs/*.json, docs/errors.md (E317-E319 added) and a .changeset entry accompany each behavior change; breaking config changes need a minor bump.",
+        "Squash-merged branches make `git branch --merged` unreliable for cleanup; PRs are stacked with `gh stack` natively (#207 holds #205, #206, #208).",
+        "Commits are signed, PRs are opened ready-for-review, and no session link goes in commits or PRs per AGENTS.md."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "finding": "Roster derivation gained a 'resumable' set so packages tagged at HEAD are observed across all operations and stay selected until satisfied."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/tag.rs",
+          "finding": "Tag peeling originally compared annotation text and errored on multi-paragraph tag messages; fixed to read only the object type."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/derive.rs",
+          "finding": "The large derive function was split into stage functions with characterization snapshots first; uploads_by_package moved into OpIndex to satisfy clippy."
+        },
+        {
+          "path": "crates/callisto-graph/src/config/resolve.rs",
+          "finding": "After E317, the second bare pass, promoted_siblings and bare-rule diagnostic emission are unreachable and were removed in a follow-up PR."
+        }
+      ],
+      "workflow": [
+        "Write the failing reproduction first, then verify with mutation tests (revert/mutate source and confirm the test fails).",
+        "Scripted bulk edits (qualify.py/fixup.py) can silently alter unrelated comments; review the staged diff before committing.",
+        "The sandbox rejects inline env commands, heredocs, and some git-mentioning inline scripts and only allows edits inside the current worktree, so scripts were written to temp files and worktrees were switched.",
+        "Background sessions cannot edit the shared checkout, so the local plan file could not be updated from within worktrees.",
+        "An independent review agent was used on the riskiest PR (#202) and produced findings that were then fixed.",
+        "Escaped backticks in a quoted heredoc leave literal backslashes in PR bodies; use a body file instead."
+      ]
+    },
+    "friction": [
+      "Opened PR #201 containing a local-only plan file; the user objected and it had to be closed.",
+      "The plan path in the initial lane summary was wrong.",
+      "Sandbox restrictions on inline commands and cross-worktree edits forced many workarounds.",
+      "CI wrapper exit codes misleadingly showed 0 when the log showed failures (fmt-check), several times.",
+      "rg -E flag error dropped build output once, and a sed one-liner failed on macOS.",
+      "The scripted conversion double-prefixed ecosystems and corrupted a colon-form test input and two comments.",
+      "Initial coarse fixes and fake tools had hidden bugs, per the saved feedback memory."
+    ],
+    "open_items": [
+      "Branch deletion for W0: docs/next-work-plan, docs/spec-rewrite, fix/native-resolution and about 35 local branches need the user's per-branch decision.",
+      "W1 real-service credential check needs the user to decide where it runs in CI.",
+      "D01 decision blocks SYS-MATURIN and W9; W10 needs decisions on distinct target graph edges (RewriteKey) and Python dev group cascade; W11 needs credentials and an approved run.",
+      "#204 still lists SYS-RETRY/T08-RETRY and needs a follow-up edit once #202 merges.",
+      "#202 has no independent re-review after fixes, and real gh/cargo/registry reads are not proven.",
+      "Remove DiagnosticCode::BareRuleMatchesMultipleEcosystems variant at the wire change; cargo-semver-checks deliberately left out.",
+      "Panic-hygiene (unwrap denial) PR was awaiting its CI rerun before commit.",
+      "Lanes D (SYS-BARRIER), F (R1 walk.rs::build), W9 and W10 were not started or finished in the visible transcript."
+    ]
+  }
+}
