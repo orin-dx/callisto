@@ -180,12 +180,40 @@ fn assert_same_packages(root: &Path, selector: &str) {
 #[test]
 fn unique_package_bare_and_qualified_selectors_agree() {
     let dir = unique();
-    for selector in ["foo", "cargo/foo", "cargo:foo"] {
+    for selector in ["foo", "cargo/foo"] {
         assert_same_packages(dir.path(), selector);
         let (status, version) = outcomes(dir.path(), selector);
         assert_eq!(status.packages, BTreeSet::from(["foo".to_string()]), "{selector}");
         assert_eq!(version.packages, BTreeSet::from(["foo".to_string()]), "{selector}");
     }
+}
+
+#[test]
+fn a_colon_form_changeset_entry_stops_status_and_version_with_the_slash_form_named() {
+    let dir = unique();
+    fs::write(
+        dir.path().join(".changeset/probe.md"),
+        "---\n\"cargo:foo\": minor\n---\n\nChange.\n",
+    )
+    .unwrap();
+    for command in ["status", "version"] {
+        let (exit, stdout, stderr) = run(dir.path(), &[command]);
+        let output = format!("{stdout}{stderr}");
+        assert_ne!(exit, Some(0), "{command}: {output}");
+        assert!(
+            output.contains("E316") && output.contains("cargo/foo"),
+            "{command}: {output}"
+        );
+    }
+}
+
+#[test]
+fn a_colon_form_add_package_is_rejected_with_the_slash_form_named() {
+    let dir = unique();
+    let (exit, stdout, stderr) = run(dir.path(), &["add", "--package", "cargo:foo:minor", "--summary", "x"]);
+    let output = format!("{stdout}{stderr}");
+    assert_ne!(exit, Some(0), "{output}");
+    assert!(output.contains("E316") && output.contains("cargo/foo"), "{output}");
 }
 
 #[test]
@@ -202,7 +230,7 @@ fn unknown_name_is_resolved_by_neither_command() {
 #[test]
 fn dual_manifest_primary_name_selectors_agree() {
     let dir = dual();
-    for selector in ["native-core", "cargo/native-core", "cargo:native-core"] {
+    for selector in ["native-core", "cargo/native-core"] {
         assert_same_packages(dir.path(), selector);
         let (status, _) = outcomes(dir.path(), selector);
         assert_eq!(
@@ -224,11 +252,7 @@ fn dual_manifest_name_in_the_wrong_ecosystem_is_resolved_by_neither_command() {
 #[test]
 fn promoted_qualified_selectors_agree() {
     let dir = promoted();
-    for (selector, expected) in [
-        ("cargo/foo", "cargo/foo"),
-        ("npm/foo", "npm/foo"),
-        ("npm:foo", "npm/foo"),
-    ] {
+    for (selector, expected) in [("cargo/foo", "cargo/foo"), ("npm/foo", "npm/foo")] {
         assert_same_packages(dir.path(), selector);
         let (status, _) = outcomes(dir.path(), selector);
         assert_eq!(status.packages, BTreeSet::from([expected.to_string()]), "{selector}");
@@ -270,15 +294,13 @@ fn secondary_native_name_of_a_dual_manifest_package_resolves_the_same() {
 #[test]
 fn qualified_secondary_native_name_of_a_dual_manifest_package_resolves_the_same() {
     let dir = dual();
-    for selector in ["npm/@org/native-core-js", "npm:@org/native-core-js"] {
-        assert_same_packages(dir.path(), selector);
-    }
+    assert_same_packages(dir.path(), "npm/@org/native-core-js");
 }
 
 #[test]
 fn qualified_selector_for_an_ecosystem_that_lacks_the_name_resolves_the_same() {
     let dir = unique();
-    for selector in ["npm/foo", "npm:foo", "pypi/foo"] {
+    for selector in ["npm/foo", "pypi/foo"] {
         assert_same_packages(dir.path(), selector);
     }
 }

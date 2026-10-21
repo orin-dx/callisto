@@ -29,13 +29,13 @@ fn fixed_group_member_resolves_via_prefixed_unpromoted_cargo_package() {
     write_pkg(root, "crates/foo", Ecosystem::Cargo, "foo");
     std::fs::write(
         root.join("callisto.toml"),
-        "[[fixed-group]]\nname = \"g\"\nmembers = [\"cargo:foo\"]\n",
+        "[[fixed-group]]\nname = \"g\"\nmembers = [\"cargo/foo\"]\n",
     )
     .unwrap();
     let locator = crate::locate::IgnoreWalkLocator::new(root);
     let runner = NoopRunner;
     let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner)
-        .expect("Workspace::load must succeed for an unpromoted Cargo package referenced via cargo:foo");
+        .expect("Workspace::load must succeed for an unpromoted Cargo package referenced via cargo/foo");
     let native = ws
         .graph
         .identity()
@@ -68,7 +68,7 @@ fn fixed_group_member_naming_absent_ecosystem_is_missing_group_member() {
     write_pkg(root, "crates/foo", Ecosystem::Cargo, "foo");
     std::fs::write(
         root.join("callisto.toml"),
-        "[[fixed-group]]\nname = \"g\"\nmembers = [\"npm:foo\"]\n",
+        "[[fixed-group]]\nname = \"g\"\nmembers = [\"npm/foo\"]\n",
     )
     .unwrap();
     let locator = crate::locate::IgnoreWalkLocator::new(root);
@@ -79,7 +79,7 @@ fn fixed_group_member_naming_absent_ecosystem_is_missing_group_member() {
     };
     match err {
         GraphError::MissingGroupMember { member, .. } => {
-            assert_eq!(member, "npm:foo");
+            assert_eq!(member, "npm/foo");
         }
         other => panic!("expected MissingGroupMember, got {other:?}"),
     }
@@ -950,7 +950,7 @@ fn package_rule_matching_no_ecosystem_the_package_has_gets_a_matched_nothing_dia
     write_pkg(root, "foo", Ecosystem::Cargo, "foo");
     std::fs::write(
         root.join("callisto.toml"),
-        "[[package]]\nmatch = \"pypi:foo\"\npublish-to = [\"npm\"]\n",
+        "[[package]]\nmatch = \"pypi/foo\"\npublish-to = [\"npm\"]\n",
     )
     .unwrap();
 
@@ -1213,7 +1213,7 @@ fn npm_consumer_depending_on_cargo_only_name_gets_no_edge_and_diagnostic() {
                 && d.message.contains("foo")
         })
         .expect("an UnknownPackage warning diagnostic naming foo must be present");
-    assert!(diag.message.contains("ambiguous") || diag.message.contains("cargo:foo"));
+    assert!(diag.message.contains("ambiguous") || diag.message.contains("cargo/foo"));
 }
 
 #[test]
@@ -1242,7 +1242,7 @@ fn npm_consumer_depending_on_serde_with_cargo_serde_present_gets_no_edge_and_dia
                 && d.message.contains("serde")
         })
         .expect("an UnknownPackage warning diagnostic naming serde must be present");
-    assert!(diag.message.contains("ambiguous") || diag.message.contains("cargo:serde"));
+    assert!(diag.message.contains("ambiguous") || diag.message.contains("cargo/serde"));
 }
 
 #[test]
@@ -1315,7 +1315,7 @@ fn prefixed_package_rules_still_apply_correctly_to_promoted_siblings() {
     write_pkg(root, "packages/native-core", Ecosystem::Npm, "native-core");
     std::fs::write(
             root.join("callisto.toml"),
-            "[[package]]\nmatch = \"cargo:native-core\"\nrelease-trigger = \"changeset\"\n\n[[package]]\nmatch = \"npm:native-core\"\nrelease-trigger = \"auto\"\n",
+            "[[package]]\nmatch = \"cargo/native-core\"\nrelease-trigger = \"changeset\"\n\n[[package]]\nmatch = \"npm/native-core\"\nrelease-trigger = \"auto\"\n",
         )
         .unwrap();
     let locator = crate::locate::IgnoreWalkLocator::new(root);

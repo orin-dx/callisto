@@ -760,29 +760,27 @@ mod python_baselines {
 
     #[test]
     fn qualified_python_baselines_resolve_to_an_unpromoted_owner() {
-        for key in ["pypi/py-lib", "pypi:py-lib"] {
-            let temp = workspace(false, ".changeset");
-            let root = temp.path();
-            run(root, &["pre", "enter", "beta"]);
-            let mut state = pre_json(root, ".changeset");
-            let baseline = state["initialVersions"]
-                .as_object_mut()
-                .unwrap()
-                .remove("py-lib")
-                .unwrap();
-            state["initialVersions"][key] = baseline;
-            write(root, ".changeset/pre.json", &state.to_string());
-            run(
-                root,
-                &["add", "--package", "py-lib:minor", "--summary", "Qualified baseline"],
-            );
-            version(root);
-            version(root);
-            assert_versions(root, "1.3.0b1", "1.0.0", "2.0.0");
-            let state = pre_json(root, ".changeset");
-            assert_eq!(state["initialVersions"]["py-lib"], "1.2.3");
-            assert!(state["initialVersions"].get(key).is_none());
-        }
+        let temp = workspace(false, ".changeset");
+        let root = temp.path();
+        run(root, &["pre", "enter", "beta"]);
+        let mut state = pre_json(root, ".changeset");
+        let baseline = state["initialVersions"]
+            .as_object_mut()
+            .unwrap()
+            .remove("py-lib")
+            .unwrap();
+        state["initialVersions"]["pypi/py-lib"] = baseline;
+        write(root, ".changeset/pre.json", &state.to_string());
+        run(
+            root,
+            &["add", "--package", "py-lib:minor", "--summary", "Qualified baseline"],
+        );
+        version(root);
+        version(root);
+        assert_versions(root, "1.3.0b1", "1.0.0", "2.0.0");
+        let state = pre_json(root, ".changeset");
+        assert_eq!(state["initialVersions"]["py-lib"], "1.2.3");
+        assert!(state["initialVersions"].get("pypi/py-lib").is_none());
     }
 
     #[test]

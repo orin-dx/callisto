@@ -120,6 +120,12 @@ impl PackageId {
         Ok(())
     }
 
+    /// The slash form of a colon-qualified reference (`cargo:foo` becomes `cargo/foo`), or `None` when `s` is not one.
+    pub fn colon_form_canonical(s: &str) -> Option<String> {
+        let (prefix, remainder) = s.split_once(':')?;
+        (Ecosystem::from_prefix(prefix).is_some() && !remainder.is_empty()).then(|| format!("{prefix}/{remainder}"))
+    }
+
     /// Returns the canonical display form: bare names as-is, prefixed ids as `ecosystem/name`.
     pub fn display_name(&self) -> String {
         match self {

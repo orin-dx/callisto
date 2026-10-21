@@ -1470,7 +1470,7 @@ fn test_pre_major_inference_prefixed_beats_bare_when_bare_declared_first() {
     // about a rule applying to a package that was never really in that ecosystem.
     std::fs::write(
             root.join("callisto.toml"),
-            "[[package]]\nmatch = \"pkg\"\npre-major-inference = \"conservative\"\n\n[[package]]\nmatch = \"npm:pkg\"\npre-major-inference = \"off\"\n",
+            "[[package]]\nmatch = \"pkg\"\npre-major-inference = \"conservative\"\n\n[[package]]\nmatch = \"npm/pkg\"\npre-major-inference = \"off\"\n",
         )
         .unwrap();
 
@@ -1534,7 +1534,7 @@ fn test_pre_major_inference_prefixed_beats_bare_when_bare_declared_first() {
     );
     assert!(
         !capturing.saw_non_off.load(Ordering::SeqCst),
-        "expected OFF policy from Prefixed rule (npm:pkg); Bare rule (conservative) was \
+        "expected OFF policy from Prefixed rule (npm/pkg); Bare rule (conservative) was \
              applied instead. Two-pass specificity is required: Prefixed rules must win over \
              Bare rules regardless of declaration order."
     );

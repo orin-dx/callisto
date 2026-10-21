@@ -69,7 +69,7 @@
     },
     {
       "name": "release",
-      "signature": "callisto release [--package <ECOSYSTEM/NAME>|<ECOSYSTEM:NAME>]... [--receipt <FILE>]",
+      "signature": "callisto release [--package <ECOSYSTEM/NAME>]... [--receipt <FILE>]",
       "description": "Publishes every package whose current version is unreleased; with --dry-run prints the release plan only.",
       "error_conditions": [
         "Any planning or publishing failure exits 1; `Nothing to release.` exits 0."

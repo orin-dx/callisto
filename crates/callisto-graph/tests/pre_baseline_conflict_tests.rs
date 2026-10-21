@@ -6,7 +6,7 @@ use std::path::Path;
 
 use callisto_fixtures::git::{init_repo, run_git, GitRunner};
 use callisto_graph::locate::IgnoreWalkLocator;
-use callisto_graph::{GraphError, Workspace};
+use callisto_graph::{ConfigError, GraphError, Workspace};
 use callisto_model::format::{parse_pre_json, PreState};
 
 fn commit(root: &Path, message: &str) {
@@ -167,21 +167,19 @@ fn python_baselines_in_different_spellings_of_one_version_coalesce_to_the_canoni
 }
 
 #[test]
-fn two_legacy_spellings_with_no_canonical_key_must_agree() {
-    let error = resolve(true, &[("foo", "1.2.3"), ("pypi:foo", "1.2.4")]).unwrap_err();
-    assert_eq!(conflict(error), [pair("pypi:foo", "1.2.4"), pair("foo", "1.2.3")]);
-    let state = resolve(true, &[("foo", "1.2.3"), ("pypi:foo", "1.2.3")]).unwrap();
-    assert_eq!(versions(&state), vec![pair("pypi/foo", "1.2.3")]);
+fn a_colon_key_is_rejected_with_the_slash_form_named() {
+    let error = resolve(true, &[("foo", "1.2.3"), ("pypi:foo", "1.2.3")]).unwrap_err();
+    assert!(
+        matches!(&error, GraphError::Config(ConfigError::ColonReference { canonical, .. }) if canonical == "pypi/foo"),
+        "{error:?}"
+    );
 }
 
 #[test]
-fn three_keys_for_one_package_conflict_unless_all_agree() {
-    let state = resolve(true, &[("foo", "1.2.3"), ("pypi:foo", "1.2.3"), ("pypi/foo", "1.2.3")]).unwrap();
+fn a_bare_key_and_its_canonical_key_conflict_unless_they_agree() {
+    let state = resolve(true, &[("foo", "1.2.3"), ("pypi/foo", "1.2.3")]).unwrap();
     assert_eq!(versions(&state), vec![pair("pypi/foo", "1.2.3")]);
 
-    let error = resolve(true, &[("foo", "1.2.3"), ("pypi:foo", "1.2.4"), ("pypi/foo", "1.2.3")]).unwrap_err();
-    assert_eq!(conflict(error), [pair("pypi:foo", "1.2.4"), pair("pypi/foo", "1.2.3")]);
-
-    let error = resolve(true, &[("foo", "1.2.3"), ("pypi:foo", "1.2.3"), ("pypi/foo", "1.2.4")]).unwrap_err();
+    let error = resolve(true, &[("foo", "1.2.3"), ("pypi/foo", "1.2.4")]).unwrap_err();
     assert_eq!(conflict(error), [pair("foo", "1.2.3"), pair("pypi/foo", "1.2.4")]);
 }

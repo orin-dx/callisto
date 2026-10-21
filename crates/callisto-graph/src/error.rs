@@ -1039,6 +1039,14 @@ pub enum ConfigError {
     #[diagnostic(code(E250), help("Remove the duplicate member from the group's member list."))]
     DuplicateMemberInGroup { group: GroupName, member: String },
 
+    #[error("{context}: `{given}` uses the colon form, which is not accepted")]
+    #[diagnostic(code(E316), help("Write the ecosystem and name with a slash: `{canonical}`."))]
+    ColonReference {
+        context: String,
+        given: String,
+        canonical: String,
+    },
+
     #[error("group `{group}` has no members")]
     #[diagnostic(code(E251), help("Add at least one member to the group, or remove the group."))]
     EmptyGroup { group: GroupName },
@@ -1102,6 +1110,20 @@ pub enum ConfigError {
     #[error(transparent)]
     #[diagnostic(transparent)]
     VersionParse(#[from] VersionParseError),
+}
+
+impl ConfigError {
+    /// Rejects a colon-qualified package reference (`cargo:foo`); the slash form (`cargo/foo`) is the only qualified spelling.
+    pub fn reject_colon_form(raw: &str, context: &str) -> Result<(), Self> {
+        match PackageId::colon_form_canonical(raw) {
+            Some(canonical) => Err(Self::ColonReference {
+                context: context.to_owned(),
+                given: raw.to_owned(),
+                canonical,
+            }),
+            None => Ok(()),
+        }
+    }
 }
 
 #[cfg(test)]

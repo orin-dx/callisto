@@ -20,14 +20,14 @@
     {
       "name": "Package id",
       "signature": "PackageId = \"<name>\" | \"<ecosystem>/<name>\"",
-      "description": "Display and selector form: the bare manifest name, or `<ecosystem>/<name>` once another ecosystem declares the same name. JSON output, messages, changeset entries and `pre.json` keys use it; `<ecosystem>/<name>` and `<ecosystem>:<name>` select the package whether or not it is promoted.",
+      "description": "Display and selector form: the bare manifest name, or `<ecosystem>/<name>` once another ecosystem declares the same name. JSON output, messages, changeset entries and `pre.json` keys use it; `<ecosystem>/<name>` selects the package whether or not it is promoted.",
       "error_conditions": [
         "A bare name shared by promoted packages is E103; a qualified name with no such manifest is E102."
       ]
     },
     {
       "name": "[[package]] match",
-      "signature": "match = \"<name>\" | \"<ecosystem>:<name>\" | \"<ecosystem>/<name>\"",
+      "signature": "match = \"<name>\" | \"<ecosystem>/<name>\"",
       "description": "Exact package id. Ecosystem prefixes: cargo, npm, pypi.",
       "error_conditions": [
         "An empty, absolute, `..`-containing or otherwise unparseable id fails config loading."
@@ -35,8 +35,8 @@
     },
     {
       "name": "[[package-set]] match",
-      "signature": "match = \"<glob>\" | \"<ecosystem>:<glob>\" | \"<ecosystem>/<glob>\"",
-      "description": "Glob over package names. The colon and slash forms both scope the glob to an ecosystem; a bare glob matches any ecosystem.",
+      "signature": "match = \"<glob>\" | \"<ecosystem>/<glob>\"",
+      "description": "Glob over package names. The slash form scopes the glob to an ecosystem; a bare glob matches any ecosystem.",
       "error_conditions": [
         "An invalid glob fails config loading."
       ]
@@ -125,7 +125,7 @@
     },
     {
       "id": "WS-ID-05",
-      "criterion": "A `[[fixed-group]]` or `[[linked-group]]` member written `cargo:foo` or `cargo/foo` resolves to package `foo` when a Cargo manifest declares `foo`, promoted or not, through the same selector resolver used for `--package` and changesets; a member naming an ecosystem with no such manifest fails loading with E108, and a bare member name ambiguous across ecosystems fails loading with E103 (not E108). A group that names one package twice, under the same spelling or under two of its native names, fails loading with E250.",
+      "criterion": "A `[[fixed-group]]` or `[[linked-group]]` member written `cargo/foo` resolves to package `foo` when a Cargo manifest declares `foo`, promoted or not, through the same selector resolver used for `--package` and changesets; a member naming an ecosystem with no such manifest fails loading with E108, and a bare member name ambiguous across ecosystems fails loading with E103 (not E108). A group that names one package twice, under the same spelling or under two of its native names, fails loading with E250.",
       "is_error_case": true
     },
     {
@@ -135,7 +135,7 @@
     },
     {
       "id": "WS-ID-07",
-      "criterion": "A dependency edge is created only to a workspace package that declares the dependency's name in the depending manifest's own ecosystem; a name declared only in other ecosystems creates no edge and one `unknown-package` warning listing the candidates (`cargo:foo`), and an ordinary name no workspace package declares creates no edge and no diagnostic. An explicit pnpm `workspace:` reference that cannot resolve to an admitted npm member creates no edge and emits one `unknown-package` warning."
+      "criterion": "A dependency edge is created only to a workspace package that declares the dependency's name in the depending manifest's own ecosystem; a name declared only in other ecosystems creates no edge and one `unknown-package` warning listing the candidates (`cargo/foo`), and an ordinary name no workspace package declares creates no edge and no diagnostic. An explicit pnpm `workspace:` reference that cannot resolve to an admitted npm member creates no edge and emits one `unknown-package` warning."
     },
     {
       "id": "WS-ID-10",
@@ -145,6 +145,11 @@
       "id": "WS-ID-11",
       "criterion": "A package that uses the default tag template takes a `{name}@{version}` tag as its release only if the tag's commit did not hold a manifest of another ecosystem under that name; a package renamed into a name, or added beside a package that owned it, takes none of that package's tags or `pre.json` baseline. A commit with no manifest under the name is no evidence, so the tag is taken. `status` reports each rejected tag as an info diagnostic naming `previous-tag-templates`, and a version whose only tag was rejected is still planned for release.",
       "is_error_case": false
+    },
+    {
+      "id": "WS-ID-12",
+      "criterion": "A package reference written in the colon form (`cargo:foo`) is rejected with E316 naming the slash form (`cargo/foo`) wherever a package is named: `--package` on `add`, `matrix` and `release`, changeset entries, `pre.json` keys, group members, `[[package]]` and `[[package-set]]` `match`, `product-package` and `[[release.artifact]] package`. A bare name and the slash form are unaffected.",
+      "is_error_case": true
     },
     {
       "id": "WS-ID-08",

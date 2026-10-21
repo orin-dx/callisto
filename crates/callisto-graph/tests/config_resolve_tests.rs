@@ -125,7 +125,7 @@ members = ["my-lib"]
 
 [[fixed-group]]
 name = "group-b"
-members = ["cargo:my-lib"]
+members = ["cargo/my-lib"]
 "#,
     )
     .unwrap();
@@ -164,7 +164,7 @@ members = ["my-lib"]
 
 [[linked-group]]
 name = "linked-b"
-members = ["cargo:my-lib"]
+members = ["cargo/my-lib"]
 "#,
     )
     .unwrap();
@@ -225,4 +225,36 @@ members = ["beta"]
         .groups
         .linked
         .contains_key(&callisto_model::GroupName("linked-b".to_string())));
+}
+
+/// The colon form is not a spelling of a package: a group member written `cargo:my-lib` fails with the slash form named.
+#[test]
+fn a_group_member_in_the_colon_form_is_rejected_with_the_slash_form_named() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path();
+    write_two_crate_workspace(root, "my-lib", "other-lib");
+    fs::write(
+        root.join("callisto.toml"),
+        "[[fixed-group]]\nname = \"g\"\nmembers = [\"cargo:my-lib\"]\n",
+    )
+    .unwrap();
+
+    let runner = NoopRunner;
+    let locator = IgnoreWalkLocator::new(root);
+    let Err(error) = Workspace::load(root.to_path_buf(), &locator, &runner) else {
+        panic!("the colon form must be rejected");
+    };
+    let rendered = format!("{error}");
+    assert!(
+        rendered.contains("cargo:my-lib") && rendered.contains("colon form"),
+        "{rendered}"
+    );
+    let help = miette::Diagnostic::help(&error)
+        .map(|h| h.to_string())
+        .unwrap_or_default();
+    assert!(help.contains("cargo/my-lib"), "{help}");
+    assert_eq!(
+        miette::Diagnostic::code(&error).map(|c| c.to_string()).as_deref(),
+        Some("E316")
+    );
 }

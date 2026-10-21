@@ -7,7 +7,7 @@ use globset::{Glob, GlobMatcher};
 /// `[[package-set]]` allows a single rule to target many packages at once
 /// via a glob (e.g. `"pkg-*"` matches `pkg-a`, `pkg-b`, etc.).
 ///
-/// Ecosystem prefixes in the pattern are respected: `"cargo:pkg-*"` only
+/// Ecosystem prefixes in the pattern are respected: `"cargo/pkg-*"` only
 /// matches Cargo packages; a bare `"pkg-*"` matches packages in any ecosystem
 /// that have a matching name.
 #[derive(Clone, Debug)]
@@ -22,15 +22,9 @@ pub struct PackagePattern {
 
 impl PackagePattern {
     pub fn parse(s: &str) -> Result<Self, globset::Error> {
-        // Try `:` first so `cargo:pkg-*` keeps its existing meaning, then `/`
-        // so `cargo/pkg-*` is accepted too, matching `PackageId::parse`'s two
-        // qualified forms.
-        let (ecosystem, rest) = [':', '/']
-            .into_iter()
-            .find_map(|sep| {
-                let (prefix, rest) = s.split_once(sep)?;
-                Ecosystem::from_prefix(prefix).map(|eco| (Some(eco), rest))
-            })
+        let (ecosystem, rest) = s
+            .split_once('/')
+            .and_then(|(prefix, rest)| Ecosystem::from_prefix(prefix).map(|eco| (Some(eco), rest)))
             .unwrap_or((None, s));
         let glob = Glob::new(rest)?;
         Ok(Self {
@@ -89,7 +83,7 @@ impl std::fmt::Display for PackagePattern {
 mod tests {
     use super::*;
 
-    /// An ecosystem-prefixed pattern like `"cargo:internal-*"` must match only
+    /// An ecosystem-prefixed pattern like `"cargo/internal-*"` must match only
     /// packages in that ecosystem, not any package with a matching name
     /// regardless of ecosystem. Before the fix, `matches()` glob-matched
     /// against `id.name()` alone (which never contains the `cargo:` prefix
@@ -97,18 +91,18 @@ mod tests {
     /// zero packages of any ecosystem.
     #[test]
     fn ecosystem_prefixed_pattern_matches_only_that_ecosystem() {
-        let pattern = PackagePattern::parse("cargo:internal-*").expect("valid glob");
+        let pattern = PackagePattern::parse("cargo/internal-*").expect("valid glob");
 
         let cargo_pkg = PackageId::parse("cargo:internal-foo").expect("valid package id");
         let npm_pkg = PackageId::parse("npm:internal-foo").expect("valid package id");
 
         assert!(
             pattern.matches(&cargo_pkg),
-            "'cargo:internal-*' must match the Cargo package 'internal-foo'"
+            "'cargo/internal-*' must match the Cargo package 'internal-foo'"
         );
         assert!(
             !pattern.matches(&npm_pkg),
-            "'cargo:internal-*' must NOT match the npm package 'internal-foo'"
+            "'cargo/internal-*' must NOT match the npm package 'internal-foo'"
         );
     }
 
@@ -117,7 +111,7 @@ mod tests {
     /// (`"cargo/foo-*"`) was compiled as one literal glob that could never
     /// match a bare package name like `foo-a`.
     #[test]
-    fn slash_separated_pattern_matches_the_same_as_colon_separated() {
+    fn slash_separated_pattern_matches_only_that_ecosystem() {
         let pattern = PackagePattern::parse("cargo/foo-*").expect("valid glob");
         let cargo_pkg = PackageId::parse("cargo:foo-a").expect("valid package id");
         let npm_pkg = PackageId::parse("npm:foo-a").expect("valid package id");
