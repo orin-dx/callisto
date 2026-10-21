@@ -44,6 +44,23 @@ fn write_two_crate_workspace(root: &Path, crate_a: &str, crate_b: &str) {
     }
 }
 
+/// One directory holding both a Cargo and an npm manifest named `name`, so the package has two native names.
+fn write_dual_package(root: &Path, name: &str) {
+    callisto_fixtures::git::init_repo(root);
+    let dir = root.join(format!("packages/{name}"));
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("Cargo.toml"),
+        format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n"),
+    )
+    .unwrap();
+    fs::write(
+        dir.join("package.json"),
+        format!(r#"{{"name":"{name}","version":"0.1.0"}}"#),
+    )
+    .unwrap();
+}
+
 /// A `[[linked-group]]` defined in `callisto.toml` must appear in
 /// `ws.config.groups.linked` after `Workspace::load`.
 ///
@@ -60,7 +77,7 @@ fn linked_group_is_resolved_into_config() {
         r#"
 [[linked-group]]
 name = "ab"
-members = ["alpha", "beta"]
+members = ["cargo/alpha", "cargo/beta"]
 "#,
     )
     .unwrap();
@@ -89,7 +106,7 @@ fn fixed_group_is_resolved_into_config() {
         r#"
 [[fixed-group]]
 name = "fb"
-members = ["foo", "bar"]
+members = ["cargo/foo", "cargo/bar"]
 "#,
     )
     .unwrap();
@@ -114,18 +131,18 @@ members = ["foo", "bar"]
 fn conflicting_fixed_group_membership_across_spellings_is_rejected() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path();
-    write_two_crate_workspace(root, "my-lib", "other-lib");
+    write_dual_package(root, "my-lib");
 
     fs::write(
         root.join("callisto.toml"),
         r#"
 [[fixed-group]]
 name = "group-a"
-members = ["my-lib"]
+members = ["cargo/my-lib"]
 
 [[fixed-group]]
 name = "group-b"
-members = ["cargo/my-lib"]
+members = ["npm/my-lib"]
 "#,
     )
     .unwrap();
@@ -153,18 +170,18 @@ members = ["cargo/my-lib"]
 fn conflicting_membership_across_fixed_and_linked_groups_is_rejected() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path();
-    write_two_crate_workspace(root, "my-lib", "other-lib");
+    write_dual_package(root, "my-lib");
 
     fs::write(
         root.join("callisto.toml"),
         r#"
 [[fixed-group]]
 name = "fixed-a"
-members = ["my-lib"]
+members = ["cargo/my-lib"]
 
 [[linked-group]]
 name = "linked-b"
-members = ["cargo/my-lib"]
+members = ["npm/my-lib"]
 "#,
     )
     .unwrap();
@@ -201,11 +218,11 @@ fn non_conflicting_group_membership_resolves_ok() {
         r#"
 [[fixed-group]]
 name = "fixed-a"
-members = ["alpha"]
+members = ["cargo/alpha"]
 
 [[linked-group]]
 name = "linked-b"
-members = ["beta"]
+members = ["cargo/beta"]
 "#,
     )
     .unwrap();
@@ -256,5 +273,37 @@ fn a_group_member_in_the_colon_form_is_rejected_with_the_slash_form_named() {
     assert_eq!(
         miette::Diagnostic::code(&error).map(|c| c.to_string()).as_deref(),
         Some("E316")
+    );
+}
+
+/// A group member without its ecosystem fails with the qualified form's shape named.
+#[test]
+fn a_group_member_without_its_ecosystem_is_rejected() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path();
+    write_two_crate_workspace(root, "my-lib", "other-lib");
+    fs::write(
+        root.join("callisto.toml"),
+        "[[fixed-group]]\nname = \"g\"\nmembers = [\"my-lib\"]\n",
+    )
+    .unwrap();
+
+    let runner = NoopRunner;
+    let locator = IgnoreWalkLocator::new(root);
+    let Err(error) = Workspace::load(root.to_path_buf(), &locator, &runner) else {
+        panic!("a bare group member must be rejected");
+    };
+    let rendered = format!("{error}");
+    assert!(
+        rendered.contains("group `g` member") && rendered.contains("`my-lib`"),
+        "{rendered}"
+    );
+    let help = miette::Diagnostic::help(&error)
+        .map(|h| h.to_string())
+        .unwrap_or_default();
+    assert!(help.contains("cargo/my-lib"), "{help}");
+    assert_eq!(
+        miette::Diagnostic::code(&error).map(|c| c.to_string()).as_deref(),
+        Some("E317")
     );
 }

@@ -135,7 +135,7 @@ fn per_package_bare_name_match_works() {
         root.join("callisto.toml"),
         r#"
 [[package]]
-match = "my-lib"
+match = "cargo/my-lib"
 release-trigger = "auto"
 "#,
     )
@@ -198,58 +198,6 @@ release-trigger = "auto"
     );
 }
 
-/// A prefixed [[package]] rule (e.g. `cargo/my-crate`) must win over a bare
-/// rule (e.g. `my-crate`) even when the bare rule appears EARLIER in callisto.toml.
-///
-/// Scenario: bare rule declares `release-trigger = "auto"` and appears first; prefixed
-/// rule declares `changelog = "RELEASES.md"` and appears second.
-/// After the fix, the prefixed rule wins for all fields:
-///   - changelog ends with RELEASES.md   (prefixed rule's explicit setting)
-///   - release_trigger is Changeset       (prefixed rule has no override → default)
-///
-/// The bare rule's `auto` trigger must NOT be applied.
-#[test]
-fn prefixed_rule_wins_over_bare_rule_regardless_of_declaration_order() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path();
-    write_cargo_workspace(root, "my-crate");
-
-    fs::write(
-        root.join("callisto.toml"),
-        r#"
-[[package]]
-match = "my-crate"
-release-trigger = "auto"
-
-[[package]]
-match = "cargo/my-crate"
-changelog = "RELEASES.md"
-"#,
-    )
-    .unwrap();
-
-    let runner = NoopRunner;
-    let ws = load_workspace(root, &runner);
-
-    let pkg = ws
-        .graph
-        .packages()
-        .find(|p| p.id.matches(&PackageId::parse("my-crate").unwrap()))
-        .expect("package my-crate should be discovered");
-
-    let changelog = pkg.changelog.as_ref().expect("changelog should be set");
-    assert!(
-        changelog.ends_with("RELEASES.md"),
-        "prefixed rule must win: expected changelog ending in RELEASES.md, got {changelog:?}",
-    );
-    assert_eq!(
-        pkg.release_trigger,
-        ReleaseTrigger::Changeset,
-        "bare rule's release-trigger must NOT be applied when prefixed rule matches; \
-         expected Changeset (prefixed rule default), got {:?}",
-        pkg.release_trigger,
-    );
-}
 /// repro/ws-rule: a prefixed `[[package]]` rule must apply only to a package
 /// that actually has a manifest in that ecosystem. Here, `npm/cross-eco` is
 /// prefixed for npm but the package is Cargo-only, so it must be ignored,
@@ -263,7 +211,7 @@ fn prefixed_rule_does_not_apply_to_a_package_outside_its_ecosystem() {
         root.join("callisto.toml"),
         r#"
 [[package]]
-match = "cross-eco"
+match = "cargo/cross-eco"
 release-trigger = "auto"
 
 [[package]]
@@ -295,41 +243,6 @@ changelog = "RELEASES.md"
     );
 }
 
-/// When only Bare rules match a given package (non-matching Prefixed rules
-/// for different packages may exist in cfg.packages), the first Bare rule wins.
-#[test]
-fn bare_rule_applies_when_no_prefixed_rule_matches_this_package() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path();
-    write_cargo_workspace(root, "target-crate");
-    fs::write(
-        root.join("callisto.toml"),
-        r#"
-[[package]]
-match = "cargo/unrelated-crate"
-changelog = "WRONG.md"
-
-[[package]]
-match = "target-crate"
-release-trigger = "auto"
-"#,
-    )
-    .unwrap();
-    let runner = NoopRunner;
-    let ws = load_workspace(root, &runner);
-    let pkg = ws
-        .graph
-        .packages()
-        .find(|p| p.id.matches(&PackageId::parse("target-crate").unwrap()))
-        .expect("target-crate should be discovered");
-    assert_eq!(
-        pkg.release_trigger,
-        ReleaseTrigger::Auto,
-        "bare rule must apply when no prefixed rule matches this package; got {:?}",
-        pkg.release_trigger,
-    );
-}
-
 /// When no [[package]] rule matches, the first matching [[package-set]]
 /// rule in declaration order is applied (first-match-wins within the set tier).
 #[test]
@@ -345,11 +258,11 @@ match = "cargo/nomatch"
 changelog = "WRONG.md"
 
 [[package-set]]
-match = "*"
+match = "cargo/*"
 release-trigger = "auto"
 
 [[package-set]]
-match = "solo*"
+match = "cargo/solo*"
 changelog = "ALSO-WRONG.md"
 "#,
     )

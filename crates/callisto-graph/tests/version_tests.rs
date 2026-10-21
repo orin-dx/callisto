@@ -265,7 +265,7 @@ fn test_fixed_group_two_changesets_converge_on_single_bump_not_compounded() {
 
     fs::write(
         root.join("callisto.toml"),
-        "[[fixed-group]]\nname = \"ab-fixed\"\nmembers = [\"pkg-a\", \"pkg-b\"]\n",
+        "[[fixed-group]]\nname = \"ab-fixed\"\nmembers = [\"cargo/pkg-a\", \"cargo/pkg-b\"]\n",
     )
     .unwrap();
 

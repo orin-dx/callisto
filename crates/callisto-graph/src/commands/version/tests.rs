@@ -263,7 +263,7 @@ fn version_rejects_divergent_fixed_group_via_real_call_path() {
     }
     std::fs::write(
         root.join("callisto.toml"),
-        "[[fixed-group]]\nname = \"ab\"\nmembers = [\"pkg-a\", \"pkg-b\"]\n",
+        "[[fixed-group]]\nname = \"ab\"\nmembers = [\"cargo/pkg-a\", \"cargo/pkg-b\"]\n",
     )
     .unwrap();
     commit_all(root, "add packages");
@@ -314,7 +314,7 @@ fn version_rejects_grammar_mismatched_fixed_group_via_real_call_path() {
 
     std::fs::write(
         root.join("callisto.toml"),
-        "[[fixed-group]]\nname = \"mixed\"\nmembers = [\"pkg-a\", \"pkg-py\"]\n",
+        "[[fixed-group]]\nname = \"mixed\"\nmembers = [\"cargo/pkg-a\", \"pypi/pkg-py\"]\n",
     )
     .unwrap();
     commit_all(root, "add packages");
@@ -363,7 +363,7 @@ fn version_propagates_malformed_napi_package_json_as_manifest_parse_error() {
     .unwrap();
     std::fs::write(
         root.join("callisto.toml"),
-        "[[fixed-group]]\nname = \"solo\"\nmembers = [\"my-lib\"]\n",
+        "[[fixed-group]]\nname = \"solo\"\nmembers = [\"cargo/my-lib\"]\n",
     )
     .unwrap();
     commit_all(root, "add package");
@@ -415,7 +415,7 @@ fn version_merges_group_check_diagnostics_into_plan() {
     .unwrap();
     std::fs::write(
         root.join("callisto.toml"),
-        "[[fixed-group]]\nname = \"solo\"\nmembers = [\"my-lib\"]\n",
+        "[[fixed-group]]\nname = \"solo\"\nmembers = [\"cargo/my-lib\"]\n",
     )
     .unwrap();
     std::fs::create_dir_all(root.join(".changeset")).unwrap();
@@ -529,7 +529,7 @@ fn plan_version_emits_platform_write_for_bumped_owner_with_platform_sibling() {
     .unwrap();
     std::fs::write(
         root.join("callisto.toml"),
-        "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"hybrid\", \"@myorg/hybrid-darwin-arm64\"]\n",
+        "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"cargo/hybrid\", \"@myorg/hybrid-darwin-arm64\"]\n",
     )
     .unwrap();
     std::fs::create_dir_all(root.join(".changeset")).unwrap();
@@ -594,7 +594,7 @@ fn plan_version_platform_writes_empty_when_no_platform_members_exist() {
     .unwrap();
     std::fs::write(
         root.join("callisto.toml"),
-        "[[fixed-group]]\nname = \"solo\"\nmembers = [\"my-lib\"]\n",
+        "[[fixed-group]]\nname = \"solo\"\nmembers = [\"cargo/my-lib\"]\n",
     )
     .unwrap();
     std::fs::create_dir_all(root.join(".changeset")).unwrap();
@@ -649,7 +649,7 @@ fn plan_version_no_platform_write_when_owner_not_bumped() {
     .unwrap();
     std::fs::write(
         root.join("callisto.toml"),
-        "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"hybrid\", \"@myorg/hybrid-darwin-arm64\"]\n",
+        "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"cargo/hybrid\", \"@myorg/hybrid-darwin-arm64\"]\n",
     )
     .unwrap();
     // No changeset for "hybrid" -- outcome.severities for hybrid is
@@ -727,7 +727,7 @@ fn plan_version_platform_write_from_resolves_cargo_workspace_inherited_version()
 
     std::fs::write(
         root.join("callisto.toml"),
-        "[[fixed-group]]\nname = \"cargo-owner-group\"\nmembers = [\"cargo-owner\"]\n",
+        "[[fixed-group]]\nname = \"cargo-owner-group\"\nmembers = [\"cargo/cargo-owner\"]\n",
     )
     .unwrap();
     std::fs::create_dir_all(root.join(".changeset")).unwrap();
@@ -852,7 +852,7 @@ fn plan_version_emits_platform_write_for_each_of_two_platform_siblings() {
 
     std::fs::write(
         root.join("callisto.toml"),
-        "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"hybrid\", \"@myorg/hybrid-linux-x64-gnu\"]\n",
+        "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"cargo/hybrid\", \"@myorg/hybrid-linux-x64-gnu\"]\n",
     )
     .unwrap();
     std::fs::create_dir_all(root.join(".changeset")).unwrap();
@@ -971,7 +971,7 @@ fn plan_version_merges_two_platform_siblings_optional_dep_updates_into_one_entry
 
     std::fs::write(
         root.join("callisto.toml"),
-        "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"hybrid\", \"@myorg/hybrid-linux-x64-gnu\"]\n",
+        "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"cargo/hybrid\", \"@myorg/hybrid-linux-x64-gnu\"]\n",
     )
     .unwrap();
     std::fs::create_dir_all(root.join(".changeset")).unwrap();
@@ -1071,7 +1071,7 @@ fn plan_version_returns_err_when_platform_manifest_missing_from_disk_at_plan_tim
     .unwrap();
     std::fs::write(
         root.join("callisto.toml"),
-        "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"hybrid\", \"@myorg/hybrid-darwin-arm64\"]\n",
+        "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"cargo/hybrid\", \"@myorg/hybrid-darwin-arm64\"]\n",
     )
     .unwrap();
     std::fs::create_dir_all(root.join(".changeset")).unwrap();
@@ -1125,7 +1125,7 @@ fn plan_version_returns_err_when_platform_manifest_content_is_malformed() {
     .unwrap();
     std::fs::write(
         root.join("callisto.toml"),
-        "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"hybrid\", \"@myorg/hybrid-darwin-arm64\"]\n",
+        "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"cargo/hybrid\", \"@myorg/hybrid-darwin-arm64\"]\n",
     )
     .unwrap();
     std::fs::create_dir_all(root.join(".changeset")).unwrap();
@@ -1189,7 +1189,7 @@ fn plan_version_emits_optional_dep_update_when_owner_declares_matching_optional_
     .unwrap();
     std::fs::write(
         root.join("callisto.toml"),
-        "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"hybrid\", \"@myorg/hybrid-darwin-arm64\"]\n",
+        "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"cargo/hybrid\", \"@myorg/hybrid-darwin-arm64\"]\n",
     )
     .unwrap();
     std::fs::create_dir_all(root.join(".changeset")).unwrap();
@@ -1259,7 +1259,7 @@ fn plan_version_no_optional_dep_update_when_owner_has_no_matching_dependency() {
     .unwrap();
     std::fs::write(
         root.join("callisto.toml"),
-        "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"hybrid\", \"@myorg/hybrid-darwin-arm64\"]\n",
+        "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"cargo/hybrid\", \"@myorg/hybrid-darwin-arm64\"]\n",
     )
     .unwrap();
     std::fs::create_dir_all(root.join(".changeset")).unwrap();
@@ -1321,7 +1321,7 @@ fn plan_version_inference_reason_maps_to_most_recent_commit() {
     // release-trigger = auto: this test's FixedInference must actually run.
     std::fs::write(
         root.join("callisto.toml"),
-        "[[package]]\nmatch = \"pkg-a\"\nrelease-trigger = \"auto\"\n",
+        "[[package]]\nmatch = \"cargo/pkg-a\"\nrelease-trigger = \"auto\"\n",
     )
     .unwrap();
     commit_all(root, "add package");
@@ -1386,7 +1386,7 @@ fn plan_version_inference_reason_falls_back_when_commits_empty() {
     // release-trigger = auto: this test's FixedInference must actually run.
     std::fs::write(
         root.join("callisto.toml"),
-        "[[package]]\nmatch = \"pkg-a\"\nrelease-trigger = \"auto\"\n",
+        "[[package]]\nmatch = \"cargo/pkg-a\"\nrelease-trigger = \"auto\"\n",
     )
     .unwrap();
     commit_all(root, "add package");
@@ -1520,7 +1520,7 @@ fn plan_version_unions_changeset_with_inference_reason() {
     // alongside the pending changeset.
     std::fs::write(
         root.join("callisto.toml"),
-        "[[package]]\nmatch = \"pkg-a\"\nrelease-trigger = \"auto\"\n",
+        "[[package]]\nmatch = \"cargo/pkg-a\"\nrelease-trigger = \"auto\"\n",
     )
     .unwrap();
     commit_all(root, "add package and changeset");
@@ -1586,7 +1586,7 @@ fn plan_version_appends_new_group_member_entry_after_changeset() {
     }
     std::fs::write(
         root.join("callisto.toml"),
-        "[[fixed-group]]\nname = \"grp\"\nmembers = [\"pkg-released\", \"pkg-fresh\"]\n",
+        "[[fixed-group]]\nname = \"grp\"\nmembers = [\"cargo/pkg-released\", \"cargo/pkg-fresh\"]\n",
     )
     .unwrap();
     std::fs::create_dir_all(root.join(".changeset")).unwrap();
@@ -1757,7 +1757,7 @@ fn plan_version_new_group_member_entry_is_additive_after_cascade_union() {
     .unwrap();
     std::fs::write(
             root.join("callisto.toml"),
-            "[[fixed-group]]\nname = \"grp\"\nmembers = [\"pkg-released\", \"pkg-fresh\"]\n\n[cascade]\nbump-severity = \"minor\"\n",
+            "[[fixed-group]]\nname = \"grp\"\nmembers = [\"cargo/pkg-released\", \"cargo/pkg-fresh\"]\n\n[cascade]\nbump-severity = \"minor\"\n",
         )
         .unwrap();
     std::fs::create_dir_all(root.join(".changeset")).unwrap();

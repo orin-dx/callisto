@@ -430,7 +430,7 @@ fn a_selector_naming_a_group_members_secondary_name_plans_the_whole_group() {
     cargo_pkg(dir.path(), "crates/other", "other", "1.0.0");
     fs::write(
         dir.path().join("callisto.toml"),
-        "[[fixed-group]]\nname = \"pair\"\nmembers = [\"@org/native-core-js\", \"other\"]\n",
+        "[[fixed-group]]\nname = \"pair\"\nmembers = [\"npm/@org/native-core-js\", \"cargo/other\"]\n",
     )
     .unwrap();
     commit(dir.path());
@@ -455,13 +455,30 @@ fn a_group_naming_one_package_by_two_of_its_names_is_rejected() {
     npm_pkg(dir.path(), "crates/native-core", "@org/native-core-js", "1.0.0");
     fs::write(
         dir.path().join("callisto.toml"),
-        "[[fixed-group]]\nname = \"pair\"\nmembers = [\"native-core\", \"@org/native-core-js\"]\n",
+        "[[fixed-group]]\nname = \"pair\"\nmembers = [\"cargo/native-core\", \"npm/@org/native-core-js\"]\n",
     )
     .unwrap();
     commit(dir.path());
     let (exit, stdout, stderr) = run(dir.path(), &["status"]);
     assert_ne!(exit, Some(0), "{stdout}{stderr}");
     assert!(format!("{stdout}{stderr}").contains("E250"), "{stdout}{stderr}");
+}
+
+#[test]
+fn a_group_member_without_its_ecosystem_is_rejected_with_the_qualified_form_named() {
+    let dir = workspace(&["crates/native-core"]);
+    cargo_pkg(dir.path(), "crates/native-core", "native-core", "1.0.0");
+    fs::write(
+        dir.path().join("callisto.toml"),
+        "[[fixed-group]]\nname = \"pair\"\nmembers = [\"native-core\"]\n",
+    )
+    .unwrap();
+    commit(dir.path());
+    let (exit, stdout, stderr) = run(dir.path(), &["status"]);
+    let output = format!("{stdout}{stderr}");
+    assert_ne!(exit, Some(0), "{output}");
+    assert!(output.contains("E317"), "{output}");
+    assert!(output.contains("cargo/native-core"), "{output}");
 }
 
 #[test]

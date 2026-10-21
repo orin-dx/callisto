@@ -22,7 +22,7 @@ fn history(auto: bool) -> tempfile::TempDir {
     if auto {
         fs::write(
             root.join("callisto.toml"),
-            "[[package]]\nmatch = \"lib\"\nrelease-trigger = \"auto\"\n",
+            "[[package]]\nmatch = \"cargo/lib\"\nrelease-trigger = \"auto\"\n",
         )
         .unwrap();
     }

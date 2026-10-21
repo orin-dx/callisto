@@ -378,7 +378,7 @@ mod tests {
         std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = [\"app\", \"lib\"]\n").unwrap();
         std::fs::write(
             root.join("callisto.toml"),
-            "[[package]]\nmatch = \"app\"\npublish-to = [\"crates-io\"]\n\n[[package]]\nmatch = \"lib\"\npublish-to = [\"crates-io\"]\n",
+            "[[package]]\nmatch = \"cargo/app\"\npublish-to = [\"crates-io\"]\n\n[[package]]\nmatch = \"cargo/lib\"\npublish-to = [\"crates-io\"]\n",
         )
         .unwrap();
         for (name, dependencies) in [("app", "[dependencies]\nlib = { path = \"../lib\" }\n"), ("lib", "")] {
@@ -565,7 +565,7 @@ mod tests {
         }
         std::fs::write(
             root.join("callisto.toml"),
-            format!("[[{kind}-group]]\nname = \"g\"\nmembers = [\"a\", \"b\"]\n\n[[package]]\nmatch = \"*\"\npublish-to = [\"crates-io\"]\n"),
+            format!("[[{kind}-group]]\nname = \"g\"\nmembers = [\"cargo/a\", \"cargo/b\"]\n\n[[package]]\nmatch = \"cargo/*\"\npublish-to = [\"crates-io\"]\n"),
         )
         .unwrap();
         callisto_fixtures::git::init_repo(root);

@@ -467,7 +467,7 @@ mod tests {
         let (dir, runner) = super::super::tests::fixture();
         std::fs::write(
             dir.path().join("callisto.toml"),
-            "[registries.cratesIo]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index\"\n\n[[package]]\nmatch = \"release-fixture\"\npublish-to = [\"crates-io\"]\n",
+            "[registries.cratesIo]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index\"\n\n[[package]]\nmatch = \"cargo/release-fixture\"\npublish-to = [\"crates-io\"]\n",
         )
         .unwrap();
         let locator = crate::IgnoreWalkLocator::new(dir.path());
@@ -569,7 +569,7 @@ mod tests {
         let (dir, runner) = super::super::tests::fixture();
         std::fs::write(
             dir.path().join("callisto.toml"),
-            "[registries.cratesIo]\nkind = \"npm\"\n\n[[package]]\nmatch = \"release-fixture\"\npublish-to = [\"crates-io\"]\n",
+            "[registries.cratesIo]\nkind = \"npm\"\n\n[[package]]\nmatch = \"cargo/release-fixture\"\npublish-to = [\"crates-io\"]\n",
         )
         .unwrap();
         let locator = crate::IgnoreWalkLocator::new(dir.path());

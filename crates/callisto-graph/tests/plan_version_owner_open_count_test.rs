@@ -78,7 +78,7 @@ fn build_owner_with_two_platform_siblings(root: &Path) {
 
     std::fs::write(
         root.join("callisto.toml"),
-        "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"hybrid\", \"@myorg/hybrid-linux-x64-gnu\"]\n",
+        "[[fixed-group]]\nname = \"hybrid-group\"\nmembers = [\"cargo/hybrid\", \"@myorg/hybrid-linux-x64-gnu\"]\n",
     )
     .unwrap();
     std::fs::create_dir_all(root.join(".changeset")).unwrap();

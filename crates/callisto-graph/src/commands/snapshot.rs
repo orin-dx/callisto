@@ -272,7 +272,7 @@ mod tests {
         .unwrap();
         std::fs::write(
             root.join("callisto.toml"),
-            "[[fixed-group]]\nname = \"ab\"\nmembers = [\"pkg-a\", \"pkg-b\"]\n",
+            "[[fixed-group]]\nname = \"ab\"\nmembers = [\"cargo/pkg-a\", \"cargo/pkg-b\"]\n",
         )
         .unwrap();
 

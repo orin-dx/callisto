@@ -27,18 +27,18 @@
     },
     {
       "name": "[[package]] match",
-      "signature": "match = \"<name>\" | \"<ecosystem>/<name>\"",
-      "description": "Exact package id. Ecosystem prefixes: cargo, npm, pypi.",
+      "signature": "match = \"<ecosystem>/<name>\"",
+      "description": "Exact package id, ecosystem-qualified. Ecosystem prefixes: cargo, npm, pypi.",
       "error_conditions": [
-        "An empty, absolute, `..`-containing or otherwise unparseable id fails config loading."
+        "A name without its ecosystem is E317; an empty, absolute, `..`-containing or otherwise unparseable id fails config loading."
       ]
     },
     {
       "name": "[[package-set]] match",
-      "signature": "match = \"<glob>\" | \"<ecosystem>/<glob>\"",
-      "description": "Glob over package names. The slash form scopes the glob to an ecosystem; a bare glob matches any ecosystem.",
+      "signature": "match = \"<ecosystem>/<glob>\"",
+      "description": "Glob over package names, scoped to one ecosystem.",
       "error_conditions": [
-        "An invalid glob fails config loading."
+        "A glob without its ecosystem is E317; an invalid glob fails config loading."
       ]
     }
   ],
@@ -125,7 +125,7 @@
     },
     {
       "id": "WS-ID-05",
-      "criterion": "A `[[fixed-group]]` or `[[linked-group]]` member written `cargo/foo` resolves to package `foo` when a Cargo manifest declares `foo`, promoted or not, through the same selector resolver used for `--package` and changesets; a member naming an ecosystem with no such manifest fails loading with E108, and a bare member name ambiguous across ecosystems fails loading with E103 (not E108). A group that names one package twice, under the same spelling or under two of its native names, fails loading with E250.",
+      "criterion": "A `[[fixed-group]]` or `[[linked-group]]` member written `cargo/foo` resolves to package `foo` when a Cargo manifest declares `foo`, promoted or not, through the same selector resolver used for `--package` and changesets; a member naming an ecosystem with no such manifest fails loading with E108. A member without its ecosystem fails loading with E317, except the native name of a platform package. A group that names one package twice, under the same spelling or under two of its native names, fails loading with E250.",
       "is_error_case": true
     },
     {
@@ -148,7 +148,12 @@
     },
     {
       "id": "WS-ID-12",
-      "criterion": "A package reference written in the colon form (`cargo:foo`) is rejected with E316 naming the slash form (`cargo/foo`) wherever a package is named: `--package` on `add`, `matrix` and `release`, changeset entries, `pre.json` keys, group members, `[[package]]` and `[[package-set]]` `match`, `product-package` and `[[release.artifact]] package`. A bare name and the slash form are unaffected.",
+      "criterion": "A package reference written in the colon form (`cargo:foo`) is rejected with E316 naming the slash form (`cargo/foo`) wherever a package is named: `--package` on `add`, `matrix` and `release`, changeset entries, `pre.json` keys, group members, `[[package]]` and `[[package-set]]` `match`, `product-package` and `[[release.artifact]] package`. The slash form is unaffected.",
+      "is_error_case": true
+    },
+    {
+      "id": "WS-ID-13",
+      "criterion": "A package named in `callisto.toml` without its ecosystem is rejected with E317 showing the `<ecosystem>/<name>` form: group members (except the native name of a platform package), `[[package]]` and `[[package-set]]` `match`, `product-package` and `[[release.artifact]] package`. Changeset entries and `pre.json` keys keep their native names.",
       "is_error_case": true
     },
     {
@@ -163,12 +168,7 @@
     },
     {
       "id": "WS-CFG-01",
-      "criterion": "For each package, the first ecosystem-prefixed `[[package]]` rule whose ecosystem the package actually has a manifest in and whose name matches applies, regardless of declaration order relative to bare rules; a prefixed rule for an ecosystem the package has no manifest in never applies, even to a same-named package in another ecosystem. If no prefixed rule applies, the first matching bare rule applies."
-    },
-    {
-      "id": "WS-CFG-03",
-      "criterion": "A bare `[[package]]` rule that would apply to a promoted package fails loading with E103 listing the qualified candidates; prefixed rules for the same packages load normally.",
-      "is_error_case": true
+      "criterion": "For each package, the first `[[package]]` rule whose ecosystem the package actually has a manifest in and whose name matches applies,; a rule for an ecosystem the package has no manifest in never applies, even to a same-named package in another ecosystem."
     },
     {
       "id": "WS-CFG-04",
@@ -186,11 +186,6 @@
     {
       "id": "WS-CFG-07",
       "criterion": "A `[[package-set]]` that matches no package emits one `package-set-matched-nothing` warning naming its pattern; a set matching a package that a `[[package]]` rule shadows counts as matched.",
-      "is_error_case": true
-    },
-    {
-      "id": "WS-CFG-08",
-      "criterion": "A bare `[[package]]` rule matching packages whose manifests span two or more ecosystems, such as a dual-manifest package, emits one non-fatal `bare-rule-matches-multiple-ecosystems` warning; prefixed rules and `[[package-set]]` rules never emit it.",
       "is_error_case": true
     },
     {

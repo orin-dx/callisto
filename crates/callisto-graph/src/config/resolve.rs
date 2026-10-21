@@ -159,16 +159,10 @@ pub struct ProductArtifactConfig {
 /// Both `product-package` and every `[[release.artifact]] package` must name one
 /// ecosystem-qualified identity; one parser so the two cannot drift.
 fn parse_qualified_package(value: &str, key: &str) -> Result<PackageId, ConfigError> {
-    ConfigError::reject_colon_form(value, key)?;
-    let package = PackageId::parse(value).map_err(|_error| ConfigError::InvalidProductRelease {
+    ConfigError::require_qualified(value, key)?;
+    PackageId::parse(value).map_err(|_error| ConfigError::InvalidProductRelease {
         detail: format!("{key} must be an ecosystem-qualified package identity"),
-    })?;
-    if package.ecosystem().is_none() {
-        return Err(ConfigError::InvalidProductRelease {
-            detail: format!("{key} must be an ecosystem-qualified package identity"),
-        });
-    }
-    Ok(package)
+    })
 }
 
 fn resolve_product_release(raw: RawProductReleaseConfig) -> Result<ProductReleaseConfig, ConfigError> {
@@ -592,7 +586,7 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
     // Order is preserved: first matching rule wins during package construction.
     let mut packages: Vec<(PackageId, PackageConfig)> = Vec::new();
     for raw_pkg in raw.package.unwrap_or_default() {
-        ConfigError::reject_colon_form(&raw_pkg.pattern, "[[package]] match")?;
+        ConfigError::require_qualified(&raw_pkg.pattern, "[[package]] match")?;
         let pattern = PackageId::parse(&raw_pkg.pattern).map_err(|e| ConfigError::UnknownKey {
             path: callisto_toml.clone(),
             key: format!("[[package]] match = {:?}: {e}", raw_pkg.pattern),
@@ -628,7 +622,7 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
     // A [[package]] rule takes priority; [[package-set]] is the fallback (see walk.rs).
     let mut package_sets: Vec<(PackagePattern, PackageConfig)> = Vec::new();
     for raw_pkg in raw.package_set.unwrap_or_default() {
-        ConfigError::reject_colon_form(&raw_pkg.pattern, "[[package-set]] match")?;
+        ConfigError::require_qualified(&raw_pkg.pattern, "[[package-set]] match")?;
         let pattern = PackagePattern::parse(&raw_pkg.pattern).map_err(|e| ConfigError::UnknownKey {
             path: callisto_toml.clone(),
             key: format!("[[package-set]] match = {:?}: {e}", raw_pkg.pattern),
@@ -783,7 +777,7 @@ mod tests {
         let root = tmp.path();
         fs::write(
             root.join("callisto.toml"),
-            "[[package]]\nmatch = \"some-pkg\"\nchangelog = \"/tmp/should-not-be-written-here.md\"\n",
+            "[[package]]\nmatch = \"cargo/some-pkg\"\nchangelog = \"/tmp/should-not-be-written-here.md\"\n",
         )
         .expect("write callisto.toml");
 
@@ -820,7 +814,7 @@ mod tests {
         let root = tmp.path();
         fs::write(
             root.join("callisto.toml"),
-            "[[package-set]]\nmatch = \"pkg-*\"\npublish-to = [\"none\"]\nrelease-trigger = \"auto\"\n",
+            "[[package-set]]\nmatch = \"cargo/pkg-*\"\npublish-to = [\"none\"]\nrelease-trigger = \"auto\"\n",
         )
         .expect("write callisto.toml");
 
@@ -833,8 +827,8 @@ mod tests {
         );
         let (pattern, pkg_cfg) = &config.package_sets[0];
         assert!(
-            pattern.matches(&callisto_model::PackageId::parse("pkg-a").unwrap()),
-            "pattern 'pkg-*' must match 'pkg-a'"
+            pattern.matches(&callisto_model::PackageId::parse("cargo/pkg-a").unwrap()),
+            "pattern 'cargo/pkg-*' must match 'cargo/pkg-a'"
         );
         assert_eq!(
             pkg_cfg.publish_to,
@@ -846,6 +840,42 @@ mod tests {
             Some(callisto_model::ReleaseTrigger::Auto),
             "release-trigger = \"auto\" must be parsed"
         );
+    }
+
+    #[test]
+    fn a_rule_without_its_ecosystem_is_rejected_with_the_qualified_form_named() {
+        for (block, context) in [
+            ("[[package]]\nmatch = \"my-crate\"\n", "[[package]] match"),
+            ("[[package-set]]\nmatch = \"pkg-*\"\n", "[[package-set]] match"),
+            (
+                "[release]\nproduct-package = \"app\"\n[[release.artifact]]\npackage = \"cargo/app\"\ntarget = \"t\"\nasset-name = \"a\"\n",
+                "product-package",
+            ),
+        ] {
+            let tmp = tempfile::tempdir().expect("tempdir");
+            fs::write(tmp.path().join("callisto.toml"), block).expect("write callisto.toml");
+            let error = load(tmp.path()).expect_err("a bare reference must be rejected");
+            assert!(
+                matches!(&error, ConfigError::BareReference { context: c, .. } if c == context),
+                "{context}: {error:?}"
+            );
+            assert_eq!(
+                miette::Diagnostic::code(&error).map(|c| c.to_string()).as_deref(),
+                Some("E317")
+            );
+        }
+    }
+
+    #[test]
+    fn a_qualified_glob_is_accepted_and_a_scoped_npm_name_is_not_an_ecosystem() {
+        assert!(ConfigError::require_qualified("npm/@scope/pkg", "x").is_ok());
+        assert!(ConfigError::require_qualified("cargo/pkg-*", "x").is_ok());
+        assert!(ConfigError::require_qualified("@scope/pkg", "x").is_err());
+        assert!(ConfigError::require_qualified("cargo/", "x").is_err());
+        assert!(matches!(
+            ConfigError::require_qualified("cargo:pkg", "x"),
+            Err(ConfigError::ColonReference { .. })
+        ));
     }
 
     #[test]
@@ -869,7 +899,7 @@ mod tests {
         let root = tmp.path();
         fs::write(
             root.join("callisto.toml"),
-            "[[package]]\nmatch = \"my-crate\"\npublish-to = [\"none\"]\n",
+            "[[package]]\nmatch = \"cargo/my-crate\"\npublish-to = [\"none\"]\n",
         )
         .expect("write callisto.toml");
 
@@ -971,7 +1001,7 @@ mod tests {
         let root = tmp.path();
         fs::write(
             root.join("callisto.toml"),
-            "[[package]]\nmatch = \"foo\"\nrelease-trigger = \"auto\"\n\n[[package]]\nmatch = \"npm/foo\"\nrelease-trigger = \"changeset\"\n",
+            "[[package]]\nmatch = \"cargo/foo\"\nrelease-trigger = \"auto\"\n\n[[package]]\nmatch = \"npm/foo\"\nrelease-trigger = \"changeset\"\n",
         )
         .expect("write callisto.toml");
         let cfg = load(root).expect("load should succeed");
@@ -1017,33 +1047,6 @@ mod tests {
              in FIRST.md. cargo/other skipped (name mismatch); pypi/pkg never reached. \
              Got changelog: {:?}",
             pcfg.changelog
-        );
-    }
-
-    /// No Prefixed rule matches "pkg". Pass 1 finds nothing.
-    /// Pass 2 finds the Bare "pkg" entry and returns it.
-    #[test]
-    fn resolve_package_config_bare_rule_wins_via_pass_2_when_no_prefixed_matches() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let root = tmp.path();
-        // cargo/other: Prefixed but name "other" != "pkg" — pass 1 skips, pass 2 skips
-        // pkg (Bare):  pass 1 skips (ecosystem() is None), pass 2 finds it — wins
-        fs::write(
-            root.join("callisto.toml"),
-            "[[package]]\nmatch = \"cargo/other\"\nchangelog = \"WRONG.md\"\n\n[[package]]\nmatch = \"pkg\"\nrelease-trigger = \"auto\"\n",
-        )
-        .expect("write callisto.toml");
-        let cfg = load(root).expect("load should succeed");
-        let id = PackageId::parse("pkg").unwrap();
-        let pcfg = resolve_package_config(&id, &[], &cfg)
-            .unwrap()
-            .expect("resolve_package_config must return Some via pass 2 for Bare(\"pkg\")");
-        assert_eq!(
-            pcfg.release_trigger,
-            Some(ReleaseTrigger::Auto),
-            "Bare rule must win via pass 2: expected release_trigger = Some(Auto). \
-             Got: {:?}",
-            pcfg.release_trigger
         );
     }
 
@@ -1126,44 +1129,6 @@ mod tests {
              A sorted implementation would incorrectly return Some(Changeset). Got: {:?}",
             pcfg.release_trigger
         );
-    }
-
-    #[test]
-    fn resolve_package_config_returns_ambiguous_name_for_unprefixed_rule_matching_two_promoted_siblings() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let root = tmp.path();
-        fs::write(
-            root.join("callisto.toml"),
-            "[[package]]\nmatch = \"native-core\"\nrelease-trigger = \"auto\"\n",
-        )
-        .expect("write callisto.toml");
-        let mut cfg = load(root).expect("load should succeed");
-
-        let cargo_id = PackageId::Prefixed {
-            ecosystem: Ecosystem::Cargo,
-            name: "native-core".to_string(),
-        };
-        let npm_id = PackageId::Prefixed {
-            ecosystem: Ecosystem::Npm,
-            name: "native-core".to_string(),
-        };
-        let mut cargo_set = BTreeSet::new();
-        cargo_set.insert(Ecosystem::Cargo);
-        let mut npm_set = BTreeSet::new();
-        npm_set.insert(Ecosystem::Npm);
-        cfg.promoted_siblings.insert(
-            "native-core".to_string(),
-            vec![(cargo_id.clone(), cargo_set), (npm_id, npm_set)],
-        );
-
-        let err = resolve_package_config(&cargo_id, &[Ecosystem::Cargo], &cfg).unwrap_err();
-        match err {
-            GraphError::AmbiguousName { name, candidates } => {
-                assert_eq!(name, "native-core");
-                assert_eq!(candidates.len(), 2);
-            }
-            other => panic!("expected AmbiguousName, got {other:?}"),
-        }
     }
 
     /// repro/ws-rule: a `pypi/foo` rule must not apply to a Cargo-only `foo`.
@@ -1321,7 +1286,7 @@ mod tests {
         let root = tmp.path();
         fs::write(
             root.join("callisto.toml"),
-            "[[package]]\nmatch = \"my-crate\"\npublish-to = [\"bogus\"]\n",
+            "[[package]]\nmatch = \"cargo/my-crate\"\npublish-to = [\"bogus\"]\n",
         )
         .expect("write callisto.toml");
 
@@ -1345,7 +1310,7 @@ mod tests {
         let root = tmp.path();
         fs::write(
             root.join("callisto.toml"),
-            "[[package]]\nmatch = \"my-crate\"\nrelease-trigger = \"sometimes\"\n",
+            "[[package]]\nmatch = \"cargo/my-crate\"\nrelease-trigger = \"sometimes\"\n",
         )
         .expect("write callisto.toml");
 
@@ -1471,7 +1436,7 @@ mod tests {
 
     #[test]
     fn fixed_group_provenance_is_explicit_when_configured() {
-        let cfg = bare_resolve("[[fixed-group]]\nname = \"ab\"\nmembers = [\"pkg-a\", \"pkg-b\"]\n");
+        let cfg = bare_resolve("[[fixed-group]]\nname = \"ab\"\nmembers = [\"cargo/pkg-a\", \"cargo/pkg-b\"]\n");
         assert_eq!(cfg.provenance(&ConfigKey::FIXED_GROUP), ConfigProvenance::Explicit);
     }
 
@@ -1483,7 +1448,7 @@ mod tests {
 
     #[test]
     fn linked_group_provenance_is_explicit_when_configured() {
-        let cfg = bare_resolve("[[linked-group]]\nname = \"ab\"\nmembers = [\"pkg-a\", \"pkg-b\"]\n");
+        let cfg = bare_resolve("[[linked-group]]\nname = \"ab\"\nmembers = [\"cargo/pkg-a\", \"cargo/pkg-b\"]\n");
         assert_eq!(cfg.provenance(&ConfigKey::LINKED_GROUP), ConfigProvenance::Explicit);
     }
 

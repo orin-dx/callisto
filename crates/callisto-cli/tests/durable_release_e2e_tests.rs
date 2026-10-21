@@ -82,7 +82,7 @@ mod historical_version_authority {
             &format!(
                 "{config}\n[[package]]\nmatch = \"cargo/a\"\npublish-to = [\"crates-io\"]\n\n\
                  [[package]]\nmatch = \"cargo/b\"\npublish-to = [\"crates-io\"]\n\n\
-                 [[fixed-group]]\nname = \"shared\"\nmembers = [\"a\", \"b\"]\n",
+                 [[fixed-group]]\nname = \"shared\"\nmembers = [\"cargo/a\", \"cargo/b\"]\n",
             ),
         );
         git(root, &["add", "."]);
