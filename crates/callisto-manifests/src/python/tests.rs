@@ -940,6 +940,14 @@ fn raw_of(spec: Option<DepSpec>) -> Option<String> {
     }
 }
 
+/// The string `update_dependency_spec` writes for a rewritten range: the requirement's own rendering.
+fn written_of(spec: Option<DepSpec>) -> Option<String> {
+    match spec {
+        Some(DepSpec::Range(req, _)) => Some(req.render().to_string()),
+        _ => None,
+    }
+}
+
 #[test]
 fn round_trip_exact_pin_rewrites_to_new_version() {
     let spec = make_pypi_spec("==1.2.3");
@@ -1001,6 +1009,49 @@ fn round_trip_dev_local_target_exact_pin_preserves_the_full_identifier() {
         raw_of(round_trip(&spec, &target)).as_deref(),
         Some("==0.0.0.dev0+canary.abc1234")
     );
+}
+
+#[test]
+fn round_trip_range_of_one_minor_stays_one_minor_wide() {
+    let spec = make_pypi_spec(">=0.1.0,<0.2");
+    let target = make_pep440_version("0.2.0");
+    assert_eq!(raw_of(round_trip(&spec, &target)).as_deref(), Some(">=0.2.0,<0.3"));
+}
+
+#[test]
+fn round_trip_poetry_caret_moves_to_the_new_version_as_an_equivalent_range() {
+    let spec = DepSpec::Range(
+        VersionReq::parse(">=0.1.0,<0.2.0", Ecosystem::Pypi).unwrap(),
+        "^0.1.0".to_string(),
+    );
+    let target = make_pep440_version("0.2.0");
+    assert_eq!(
+        written_of(round_trip(&spec, &target)).as_deref(),
+        Some(">=0.2.0, <0.3.0")
+    );
+}
+
+#[test]
+fn round_trip_poetry_tilde_moves_to_the_new_version_as_an_equivalent_range() {
+    let spec = DepSpec::Range(
+        VersionReq::parse(">=1.4.0,<1.5.0", Ecosystem::Pypi).unwrap(),
+        "~1.4".to_string(),
+    );
+    let target = make_pep440_version("2.1.3");
+    assert_eq!(
+        written_of(round_trip(&spec, &target)).as_deref(),
+        Some(">=2.1.3, <2.2.0")
+    );
+}
+
+#[test]
+fn round_trip_poetry_caret_is_left_alone_for_a_prerelease_target() {
+    let spec = DepSpec::Range(
+        VersionReq::parse(">=1.0.0,<2.0.0", Ecosystem::Pypi).unwrap(),
+        "^1.0.0".to_string(),
+    );
+    let target = make_pep440_version("2.0.0a1");
+    assert!(round_trip(&spec, &target).is_none());
 }
 
 #[test]

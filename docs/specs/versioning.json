@@ -117,6 +117,11 @@
       "criterion": "A rewrite uses the source declaration's manifest ecosystem and preserves its declared dependency key or spelling, independent of either package's display prefix. A Cargo dependency's `package` name resolves its native target while edits retain its alias; inherited aliases resolve the declaration in the Cargo workspace that governs the member. Python distribution names match using PEP 503 normalization while edits retain the spelling in the dependency declaration. A Cargo dependency inherited with `workspace = true` is rewritten in the workspace root's `[workspace.dependencies]`, not in the member manifest."
     },
     {
+      "id": "VER-CAS-09",
+      "criterion": "A Python dependency range on a package released with its dependent is rewritten to cover the new version: `==`, `~=` and `>=` keep their operator; a two-clause `>=X,<Y` range becomes `>=NEW` with an upper bound one minor above NEW when the original spanned a single minor (`>=0.1.0,<0.2`) and the next major otherwise; and a Poetry caret or tilde becomes the equivalent PEP 440 range around NEW. A pre-release target is not written into a caret or tilde, and any other form is left unchanged with a `range-not-round-trippable` warning.",
+      "is_error_case": false
+    },
+    {
       "id": "VER-CAS-08",
       "criterion": "The cascade aborts with E105 when it does not settle within 4 x (package count) + 1 steps, and with a grammar-mismatch error when a spec and the new version use different version grammars (SemVer vs PEP 440).",
       "is_error_case": true
