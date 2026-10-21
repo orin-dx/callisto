@@ -1,0 +1,67 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5G31G1GE3E2WJTDN3HSST0X",
+  "strategy": "manual-commit",
+  "branch": "worktree-edition-2024",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "Cargo.lock",
+    "Cargo.toml",
+    "crates/callisto-cli/src/commands/release.rs",
+    "crates/callisto-cli/tests/common/release_harness.rs",
+    "crates/callisto-graph/Cargo.toml",
+    "crates/callisto-graph/src/apply/tests.rs",
+    "crates/callisto-graph/src/cascade.rs",
+    "crates/callisto-graph/src/commands/pr_body.rs",
+    "crates/callisto-graph/src/commands/registry_argv.rs",
+    "crates/callisto-graph/src/commands/release/binding.rs",
+    "crates/callisto-graph/src/commands/release/derive.rs",
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-graph/src/config/groups.rs",
+    "crates/callisto-graph/src/config/pattern.rs",
+    "crates/callisto-graph/src/conventional/commit.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/src/identity.rs",
+    "crates/callisto-graph/src/locate/ignore_walk.rs",
+    "crates/callisto-graph/src/matrix.rs",
+    "crates/callisto-graph/src/napi.rs",
+    "crates/callisto-graph/src/toposort.rs",
+    "crates/callisto-graph/src/walk.rs",
+    "crates/callisto-manifests/src/cargo.rs",
+    "crates/callisto-manifests/src/common.rs",
+    "crates/callisto-manifests/src/npm.rs",
+    "crates/callisto-manifests/src/python.rs",
+    "crates/callisto-model/src/atomic.rs",
+    "crates/callisto-model/src/format/bump.rs",
+    "crates/callisto-model/src/identity.rs",
+    "crates/callisto-model/src/release/digest.rs",
+    "crates/callisto-model/src/release/execution.rs",
+    "crates/callisto-model/src/release_observation.rs",
+    "crates/callisto-model/src/tag.rs",
+    "crates/callisto-model/src/vcs/access.rs",
+    "rustfmt.toml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 64,
+    "cache_creation_tokens": 23661,
+    "cache_read_tokens": 20017384,
+    "output_tokens": 11896,
+    "api_call_count": 30,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  }
+}

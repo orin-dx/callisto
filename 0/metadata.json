@@ -1,0 +1,147 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5G31G1GE3E2WJTDN3HSST0X",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-21T20:39:42.045941Z",
+  "branch": "worktree-edition-2024",
+  "checkpoints_count": 1,
+  "save_step_count": 2,
+  "files_touched": [
+    "Cargo.lock",
+    "Cargo.toml",
+    "crates/callisto-cli/src/commands/release.rs",
+    "crates/callisto-cli/tests/common/release_harness.rs",
+    "crates/callisto-graph/Cargo.toml",
+    "crates/callisto-graph/src/apply/tests.rs",
+    "crates/callisto-graph/src/cascade.rs",
+    "crates/callisto-graph/src/commands/pr_body.rs",
+    "crates/callisto-graph/src/commands/registry_argv.rs",
+    "crates/callisto-graph/src/commands/release/binding.rs",
+    "crates/callisto-graph/src/commands/release/derive.rs",
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-graph/src/config/groups.rs",
+    "crates/callisto-graph/src/config/pattern.rs",
+    "crates/callisto-graph/src/conventional/commit.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/src/identity.rs",
+    "crates/callisto-graph/src/locate/ignore_walk.rs",
+    "crates/callisto-graph/src/matrix.rs",
+    "crates/callisto-graph/src/napi.rs",
+    "crates/callisto-graph/src/toposort.rs",
+    "crates/callisto-graph/src/walk.rs",
+    "crates/callisto-manifests/src/cargo.rs",
+    "crates/callisto-manifests/src/common.rs",
+    "crates/callisto-manifests/src/npm.rs",
+    "crates/callisto-manifests/src/python.rs",
+    "crates/callisto-model/src/atomic.rs",
+    "crates/callisto-model/src/format/bump.rs",
+    "crates/callisto-model/src/identity.rs",
+    "crates/callisto-model/src/release/digest.rs",
+    "crates/callisto-model/src/release/execution.rs",
+    "crates/callisto-model/src/release_observation.rs",
+    "crates/callisto-model/src/tag.rs",
+    "crates/callisto-model/src/vcs/access.rs",
+    "rustfmt.toml"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "7a8865ed06ac",
+  "checkpoint_transcript_start": 38842,
+  "transcript_lines_at_start": 38842,
+  "compact_transcript_start": 3294,
+  "token_usage": {
+    "input_tokens": 64,
+    "cache_creation_tokens": 23661,
+    "cache_read_tokens": 20017384,
+    "output_tokens": 11896,
+    "api_call_count": 30,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 197
+  },
+  "summary": {
+    "intent": "Land a series of changes in the callisto Rust workspace as separate PRs: a CLI argument change, a docs update (10-minute claim, pre-v1 wording, internal-crate notes, invariant numbering), and a migration of the workspace to Rust edition 2024 with resolver 3.",
+    "outcome": "The CLI args PR and docs PR were committed and opened after local CI passed. The edition 2024 / resolver 3 migration was completed with local CI exit=0 and committed and rebased. The transcript ends before the push and PR for the edition change.",
+    "learnings": {
+      "repo": [
+        "The workspace uses git worktrees (EnterWorktree/ExitWorktree) with one worktree per PR-sized change.",
+        "A full local CI script is run in the background and its exit code is read from the log (exit=0) before committing, rebasing and opening a PR.",
+        "Moving to edition 2024 required pinning the rustfmt style edition in rustfmt.toml to avoid formatting churn across the workspace.",
+        "Under edition 2024 clippy flagged collapsible-if patterns that were fixed with auto-fix into let-chains.",
+        "Tests that mutated env vars with set_var/remove_var needed a change because these are unsafe in edition 2024. They were moved to the temp-env crate, added as a dev-dependency of callisto-graph.",
+        "Docs reference invariant numbers, so numbering and cross-references had to be checked when adding internal-crate notes.",
+        "The edition migration touched many files across callisto-cli, callisto-graph, callisto-manifests and callisto-model, mostly from migration lints and clippy let-chain fixes."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/Cargo.toml",
+          "finding": "Added temp-env as a dev-dependency to replace unsafe std::env mutation in graph tests."
+        },
+        {
+          "path": "rustfmt.toml",
+          "finding": "Style edition is pinned here so the edition 2024 move does not reformat the whole workspace."
+        },
+        {
+          "path": "Cargo.toml",
+          "finding": "Workspace edition flipped to 2024 and resolver set to 3."
+        }
+      ],
+      "workflow": [
+        "Python helper scripts written to a scratch jobs/tmp dir (docs_internal.py, fix_env.py) were used for bulk edits and then applied and verified in the same step.",
+        "Measure the cost of a migration (formatting churn, clippy error counts) before deciding how to handle it, e.g. pin the style edition rather than reformat everything.",
+        "Run long CI as a background task with a Monitor and only commit/PR after confirming the exit line."
+      ]
+    },
+    "friction": [
+      "Find the 10-minute claim and pre-v1 wording was run twice, once before and once after switching worktrees, suggesting the first run was in the wrong worktree.",
+      "The edition migration lint fix command was run twice in a row, suggesting a first attempt did not fully apply.",
+      "Edition 2024 broke the build in tests that used unsafe env mutation, requiring a dependency and a scripted rewrite."
+    ],
+    "open_items": [
+      "Push the edition 2024 / resolver 3 branch and open its PR; the transcript ends after commit and rebase.",
+      "The CLI args and docs PRs are open and awaiting review or merge."
+    ]
+  }
+}
