@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use callisto_model::{
-    CommandRunner, Diagnostic, DiagnosticCode, DiagnosticSeverity, Package, PackageId, Severity, StatusReport,
-    SCHEMA_VERSION,
+    BumpReason, CommandRunner, Diagnostic, DiagnosticCode, DiagnosticSeverity, Package, PackageId, Severity,
+    StatusReport, SCHEMA_VERSION,
 };
 
 use crate::aggregate::{resolve_target_package, LoadedChangeset};
@@ -147,6 +147,29 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
             message: format!("{}: {}", failure.path.display(), failure.source),
             package: None,
             path: Some(failure.path.clone()),
+            governed_by: None,
+            escalated_by: None,
+        });
+    }
+    for bump in plan.iter().flat_map(|plan| &plan.bumps) {
+        let Some(BumpReason::Inference { commits, .. }) = &bump.reason else {
+            continue;
+        };
+        let has_changeset = packages
+            .iter()
+            .any(|record| record.package == bump.package && !record.pending_changesets.is_empty());
+        if has_changeset {
+            continue;
+        }
+        diagnostics.push(Diagnostic {
+            code: DiagnosticCode::InferredReleaseWithoutChangeset,
+            severity: DiagnosticSeverity::Warning,
+            message: format!(
+                "`{}` has a pending release inferred from {commits} commit(s) and no changeset; the release pull request reads changesets only, so add one to release it",
+                bump.package.display_name()
+            ),
+            package: Some(bump.package.clone()),
+            path: None,
             governed_by: None,
             escalated_by: None,
         });

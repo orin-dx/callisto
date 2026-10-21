@@ -82,7 +82,14 @@ fn main() -> ExitCode {
                 let report = callisto_cli::error::format_error_json(command_name, &err);
                 let _res = callisto_cli::output::write_json(&mut std::io::stderr(), &report);
             } else {
+                let indeterminate = matches!(
+                    miette::Diagnostic::code(&err).map(|code| code.to_string()).as_deref(),
+                    Some("E157" | "E176")
+                );
                 eprintln!("{:?}", miette::Report::new(err));
+                if let Some(summary) = indeterminate.then(callisto_cli::runner::last_failed_command).flatten() {
+                    eprintln!("Most recent failed command (redacted):\n{summary}");
+                }
             }
             ExitCode::FAILURE
         }

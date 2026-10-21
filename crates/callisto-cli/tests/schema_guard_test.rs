@@ -526,6 +526,7 @@ fn diagnostic_code_enum_variants_match_expected_set() {
         "changelog-section-not-found",
         "changeset-read-error",
         "changeset-parse-failed",
+        "inferred-release-without-changeset",
         "git-discovery-failed",
         "init-origin-missing",
         "manifest-unresolved",

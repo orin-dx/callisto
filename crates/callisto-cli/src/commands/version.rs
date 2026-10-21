@@ -333,24 +333,14 @@ mod tests {
         }
     }
 
-    /// A `release-trigger = "auto"` package with a `feat:` commit and no changeset gets an
-    /// inferred minor bump through `select_inference()`, the call `handle()` makes.
-    #[test]
-    fn version_uses_real_commit_inference_for_auto_trigger() {
-        use crate::runner::CliCommandRunner;
-        use callisto_graph::locate::IgnoreWalkLocator;
-        use callisto_model::BumpReason;
-
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-
+    /// A tagged `auto` package with a `feat:` commit after the tag and no changeset.
+    fn auto_package_with_a_feat_commit(root: &std::path::Path) {
         git_init_with_commit(root);
         std::fs::write(
             root.join("Cargo.toml"),
             "[package]\nname = \"pkg-alpha\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
         )
         .unwrap();
-        // release-trigger = auto: this test's whole point is that real commit inference runs.
         std::fs::write(
             root.join("callisto.toml"),
             "[[package]]\nmatch = \"cargo/pkg-alpha\"\nrelease-trigger = \"auto\"\n",
@@ -375,6 +365,19 @@ mod tests {
         .unwrap();
         run_git(root, &["add", "."]);
         run_git(root, &["commit", "-q", "-m", "feat: add a new feature"]);
+    }
+
+    /// A `release-trigger = "auto"` package with a `feat:` commit and no changeset gets an
+    /// inferred minor bump through `select_inference()`, the call `handle()` makes.
+    #[test]
+    fn version_uses_real_commit_inference_for_auto_trigger() {
+        use crate::runner::CliCommandRunner;
+        use callisto_graph::locate::IgnoreWalkLocator;
+        use callisto_model::BumpReason;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        auto_package_with_a_feat_commit(root);
 
         let locator = IgnoreWalkLocator::new(root);
         let runner = CliCommandRunner;
@@ -402,6 +405,39 @@ mod tests {
              {:?}",
             bump.reason
         );
+    }
+
+    /// The release pull request reads changesets only, so `status` warns about an inferred release with none.
+    #[test]
+    fn status_warns_about_an_inferred_release_that_has_no_changeset() {
+        use crate::runner::CliCommandRunner;
+        use callisto_graph::locate::IgnoreWalkLocator;
+        use callisto_model::DiagnosticCode;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        auto_package_with_a_feat_commit(root);
+        let status_codes = |root: &std::path::Path| {
+            let locator = IgnoreWalkLocator::new(root);
+            let runner = CliCommandRunner;
+            let ws = callisto_graph::Workspace::load(root.to_path_buf(), &locator, &runner).unwrap();
+            let inference = crate::workspace::select_inference();
+            callisto_graph::commands::status(&ws, &inference, &callisto_graph::commands::StatusOptions::default())
+                .unwrap()
+                .diagnostics
+                .into_iter()
+                .map(|d| d.code)
+                .collect::<Vec<_>>()
+        };
+        assert!(status_codes(root).contains(&DiagnosticCode::InferredReleaseWithoutChangeset));
+
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(
+            root.join(".changeset/new-feature.md"),
+            "---\ncargo/pkg-alpha: minor\n---\n\nA new feature.\n",
+        )
+        .unwrap();
+        assert!(!status_codes(root).contains(&DiagnosticCode::InferredReleaseWithoutChangeset));
     }
 
     /// `callisto version --dry-run --format text` must print the `[DRY-RUN]`
