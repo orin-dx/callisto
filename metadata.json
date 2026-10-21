@@ -1,0 +1,56 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5G1P9RGP0QJHY1CG005Z7TH",
+  "strategy": "manual-commit",
+  "branch": "worktree-t06-canonical-emission",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/reports-name-packages-ecosystem-slash-name.md",
+    "crates/callisto-cli/src/commands/version.rs",
+    "crates/callisto-cli/tests/cascade_scenarios_tests.rs",
+    "crates/callisto-cli/tests/cli_tests.rs",
+    "crates/callisto-cli/tests/identity_promotion_tests.rs",
+    "crates/callisto-cli/tests/poetry_and_workspace_glob_e2e_tests.rs",
+    "crates/callisto-cli/tests/status_version_selector_tests.rs",
+    "crates/callisto-graph/src/commands/matrix.rs",
+    "crates/callisto-graph/src/commands/snapshot.rs",
+    "crates/callisto-graph/src/commands/status.rs",
+    "crates/callisto-graph/src/lib.rs",
+    "crates/callisto-graph/src/matrix.rs",
+    "crates/callisto-graph/src/plan.rs",
+    "crates/callisto-graph/src/walk.rs",
+    "crates/callisto-graph/tests/matrix_tests.rs",
+    "crates/callisto-graph/tests/snapshot_tests.rs",
+    "crates/callisto-graph/tests/status_cascade_and_wellformedness_tests.rs",
+    "crates/callisto-model/src/diagnostic.rs",
+    "crates/callisto-model/src/ecosystem.rs",
+    "crates/callisto-model/src/package.rs",
+    "crates/callisto-model/src/report.rs",
+    "docs/specs/cli.json",
+    "docs/specs/matrix.json",
+    "docs/specs/workspace.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 110,
+    "cache_creation_tokens": 78743,
+    "cache_read_tokens": 30749836,
+    "output_tokens": 31282,
+    "api_call_count": 54,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  }
+}
