@@ -161,24 +161,36 @@ pub fn write_pre_json_preserving(state: &PreState, existing: &str) -> String {
 
 fn render_pre_json(state: &PreState, indent_str: &str) -> String {
     let mut map = IndexMap::new();
-    map.insert("mode".to_string(), serde_json::to_value(state.mode).unwrap());
-    map.insert("tag".to_string(), serde_json::to_value(&state.tag).unwrap());
+    map.insert(
+        "mode".to_string(),
+        serde_json::to_value(state.mode).expect("a pre mode is a JSON string"),
+    );
+    map.insert(
+        "tag".to_string(),
+        serde_json::to_value(&state.tag).expect("a tag is a JSON string"),
+    );
 
     let mut init_map = IndexMap::new();
     for (pkg, ver) in &state.initial_versions {
-        init_map.insert(pkg.clone(), serde_json::to_value(ver).unwrap());
+        init_map.insert(
+            pkg.clone(),
+            serde_json::to_value(ver).expect("a version is a JSON string"),
+        );
     }
-    map.insert("initialVersions".to_string(), serde_json::to_value(init_map).unwrap());
+    map.insert(
+        "initialVersions".to_string(),
+        serde_json::to_value(init_map).expect("a map of strings is a JSON object"),
+    );
     map.insert(
         "changesets".to_string(),
-        serde_json::to_value(&state.changesets).unwrap(),
+        serde_json::to_value(&state.changesets).expect("a list of strings is a JSON array"),
     );
 
     let formatter = serde_json::ser::PrettyFormatter::with_indent(indent_str.as_bytes());
     let mut buf = Vec::new();
     let mut serializer = serde_json::Serializer::with_formatter(&mut buf, formatter);
-    serde::Serialize::serialize(&map, &mut serializer).unwrap();
-    let mut out = String::from_utf8(buf).unwrap();
+    serde::Serialize::serialize(&map, &mut serializer).expect("serializing JSON values into memory cannot fail");
+    let mut out = String::from_utf8(buf).expect("serde_json writes UTF-8");
     out.push('\n');
     out
 }

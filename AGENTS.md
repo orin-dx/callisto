@@ -32,6 +32,7 @@ Rules for AI agents working in this repo.
 4. User-facing errors derive `miette::Diagnostic` with a code and a fix.
 5. No emojis in docs or code.
 6. No cargo features in shipped crates; behaviour is chosen at runtime (#143). The dev-only `callisto-model/test-util` feature is the exception.
+7. No `unwrap()` outside tests (`just lint` denies it). An `expect` names the invariant that makes it unreachable.
 
 ## Fixing bugs
 

@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 //! Dev-only byte-compat corpus samples and shared test doubles for
 //! callisto's crates.
 

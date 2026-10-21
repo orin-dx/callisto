@@ -238,7 +238,9 @@ fn to_workspace_relative(path: &Path, root: &Path) -> Result<PathBuf, LocateErro
             root: root.to_path_buf(),
         });
     }
-    let rel = path.strip_prefix(root).unwrap();
+    let rel = path
+        .strip_prefix(root)
+        .expect("the walk only yields paths under its root");
     if rel.as_os_str().is_empty() {
         Ok(PathBuf::from("."))
     } else {

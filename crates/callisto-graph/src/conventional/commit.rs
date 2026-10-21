@@ -136,7 +136,7 @@ pub fn parse_commit(sha: CommitSha, message: &str) -> ParsedCommit {
             .last()
             .is_some_and(|block| !block.is_empty() && is_footer_line(block[0].trim()));
         if is_footer_block {
-            collected_footer_blocks.push(blocks.pop().unwrap());
+            collected_footer_blocks.push(blocks.pop().expect("the footer check read the last block"));
         } else {
             break;
         }

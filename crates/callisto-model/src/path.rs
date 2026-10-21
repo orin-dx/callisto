@@ -63,7 +63,7 @@ pub fn workspace_relative(path: impl AsRef<Path>) -> Result<PathBuf, ModelError>
         if i > 0 {
             out_str.push('/');
         }
-        out_str.push_str(c.as_os_str().to_str().unwrap());
+        out_str.push_str(c.as_os_str().to_str().expect("the path was built from UTF-8 text"));
     }
 
     Ok(PathBuf::from(out_str))
