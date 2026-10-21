@@ -183,8 +183,8 @@ fn matrix_napi_and_maturin_share_triple_derivation() {
     );
 
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let napi_group = &json["platformTargets"]["napi-mod"];
-    let maturin_group = &json["platformTargets"]["maturin-mod"];
+    let napi_group = &json["platformTargets"]["cargo/napi-mod"];
+    let maturin_group = &json["platformTargets"]["pypi/maturin-mod"];
     assert_eq!(napi_group["kind"], "napi");
     assert_eq!(maturin_group["kind"], "maturin");
     assert_eq!(napi_group["source"], "napi.targets");
@@ -258,8 +258,8 @@ fn matrix_lists_release_artifact_cargo_binaries_beside_napi_targets() {
         String::from_utf8_lossy(&output.stderr)
     );
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(json["platformTargets"]["napi-mod"]["kind"], "napi");
-    let cargo = &json["platformTargets"]["tool"];
+    assert_eq!(json["platformTargets"]["cargo/napi-mod"]["kind"], "napi");
+    let cargo = &json["platformTargets"]["cargo/tool"];
     assert_eq!(cargo["kind"], "cargo");
     assert_eq!(cargo["source"], "[[release.artifact]]");
     let targets = cargo["targets"].as_array().unwrap();
@@ -367,15 +367,15 @@ fn matrix_runtime_versions_npm_python_and_dual_manifest() {
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
 
     assert_eq!(
-        json["runtimeVersions"]["npm-only"],
+        json["runtimeVersions"]["npm/npm-only"],
         serde_json::json!([{"ecosystem":"npm","field":"engines.node","range":">=20.0.0"}])
     );
     assert_eq!(
-        json["runtimeVersions"]["py-only"],
+        json["runtimeVersions"]["pypi/py-only"],
         serde_json::json!([{"ecosystem":"python","field":"requires-python","range":">=3.9"}])
     );
     assert_eq!(
-        json["runtimeVersions"]["dual-pkg"],
+        json["runtimeVersions"]["npm/dual-pkg"],
         serde_json::json!([
             {"ecosystem":"npm","field":"engines.node","range":">=20.0.0"},
             {"ecosystem":"python","field":"requires-python","range":">=3.9"}
@@ -427,14 +427,14 @@ fn matrix_package_filter_and_unknown_package_via_binary() {
         .unwrap();
     assert!(filtered.status.success());
     let json: serde_json::Value = serde_json::from_slice(&filtered.stdout).unwrap();
-    assert!(json["platformTargets"].get("pkg-a").is_some());
-    assert!(json["platformTargets"].get("pkg-b").is_none());
+    assert!(json["platformTargets"].get("cargo/pkg-a").is_some());
+    assert!(json["platformTargets"].get("cargo/pkg-b").is_none());
     assert!(
-        json["runtimeVersions"].get("pkg-a").is_some(),
+        json["runtimeVersions"].get("cargo/pkg-a").is_some(),
         "runtimeVersions must include pkg-a"
     );
     assert!(
-        json["runtimeVersions"].get("pkg-b").is_none(),
+        json["runtimeVersions"].get("cargo/pkg-b").is_none(),
         "runtimeVersions must exclude pkg-b"
     );
 
@@ -512,15 +512,15 @@ fn matrix_orders_keys_lexicographically_across_three_packages() {
     let keys: Vec<&String> = json["platformTargets"].as_object().unwrap().keys().collect();
     assert_eq!(
         keys,
-        vec!["alpha", "mid", "zeta"],
+        vec!["cargo/mid", "cargo/zeta", "npm/alpha"],
         "keys must be lexicographically ordered"
     );
 
     // Alpha's entry is present-but-empty, not absent.
-    assert_eq!(json["platformTargets"]["alpha"]["targets"], serde_json::json!([]));
+    assert_eq!(json["platformTargets"]["npm/alpha"]["targets"], serde_json::json!([]));
 
     // Within zeta's group, targets[] must be ascending by triple.
-    let zeta_triples: Vec<String> = json["platformTargets"]["zeta"]["targets"]
+    let zeta_triples: Vec<String> = json["platformTargets"]["cargo/zeta"]["targets"]
         .as_array()
         .unwrap()
         .iter()
@@ -536,7 +536,7 @@ fn matrix_orders_keys_lexicographically_across_three_packages() {
 }
 
 /// A workspace with no relevant manifests anywhere produces exactly
-/// {"schemaVersion":1,"platformTargets":{},"runtimeVersions":{}} with no
+/// {"schemaVersion":2,"platformTargets":{},"runtimeVersions":{}} with no
 /// "diagnostics" key, and exits 0.
 #[test]
 fn matrix_empty_workspace_produces_exact_empty_report_shape() {
@@ -559,7 +559,7 @@ fn matrix_empty_workspace_produces_exact_empty_report_shape() {
     assert_eq!(
         json,
         serde_json::json!({
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "command": "matrix",
             "dryRun": false,
             "platformTargets": {},
@@ -635,7 +635,7 @@ fn matrix_unrecognised_triple_end_to_end_diagnostic_contract() {
         "the bad triple must not appear in any targets[] triple field: {all_triples:?}"
     );
 
-    let mixed_triples: Vec<String> = json["platformTargets"]["mixed-mod"]["targets"]
+    let mixed_triples: Vec<String> = json["platformTargets"]["cargo/mixed-mod"]["targets"]
         .as_array()
         .unwrap()
         .iter()
@@ -643,7 +643,7 @@ fn matrix_unrecognised_triple_end_to_end_diagnostic_contract() {
         .collect();
     assert_eq!(mixed_triples, vec!["aarch64-apple-darwin".to_string()]);
 
-    let clean_triples: Vec<String> = json["platformTargets"]["clean-mod"]["targets"]
+    let clean_triples: Vec<String> = json["platformTargets"]["cargo/clean-mod"]["targets"]
         .as_array()
         .unwrap()
         .iter()
@@ -727,7 +727,7 @@ fn matrix_resolves_a_split_napi_crate_manifest_path() {
     let output = run_matrix_json(root);
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let target = &json["platformTargets"]["@scope/napi"]["targets"][0];
+    let target = &json["platformTargets"]["npm/@scope/napi"]["targets"][0];
     assert_eq!(target["packageDir"], "packages/napi");
     assert_eq!(target["manifestPath"], "crates/scope-binding/Cargo.toml");
 }

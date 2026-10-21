@@ -139,7 +139,7 @@
     },
     {
       "id": "CLI-OUT-05",
-      "criterion": "With `--format json`, the status, add, init, pre and snapshot reports on stdout are single JSON objects with camelCase keys and a top-level `schemaVersion`, `command` (the subcommand name) and `dryRun`."
+      "criterion": "With `--format json`, the status, add, init, pre and snapshot reports on stdout are single JSON objects with camelCase keys and a top-level `schemaVersion`, `command` (the subcommand name) and `dryRun`. The status, version, snapshot and matrix reports carry `schemaVersion` 2 and name every package `ecosystem/name` for its primary ecosystem, promoted or not; the other reports carry 1."
     },
     {
       "id": "CLI-OUT-06",

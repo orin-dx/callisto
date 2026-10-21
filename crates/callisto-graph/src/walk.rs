@@ -276,7 +276,7 @@ impl<'a> IdentityAssigner<'a> {
         // Do NOT rely on enum discriminant order -- sort by this named
         // priority function so the precedence survives future variant
         // additions to `Ecosystem`.
-        list.sort_by_key(|a| ecosystem_primary_priority(a.0));
+        list.sort_by_key(|a| a.0.primary_priority());
 
         // E100 whenever any (ecosystem, native name) this path declares -- primary
         // or not -- is already owned by a different path; names both. Checked before
@@ -1042,23 +1042,6 @@ fn platform_owners(
         }
     }
     attached
-}
-
-/// Explicit ecosystem precedence for primary-ID selection when a single
-/// project directory contains manifests from multiple ecosystems (e.g., both
-/// `Cargo.toml` and `package.json`). Lower value = higher priority.
-///
-/// Precedence: Cargo (0) > Npm (1) > Pypi (2) > others (255).
-///
-/// This function is used instead of `Ecosystem`'s derived `Ord` so that the
-/// ordering is stable even if the `Ecosystem` variant sequence changes.
-fn ecosystem_primary_priority(e: Ecosystem) -> u8 {
-    match e {
-        Ecosystem::Cargo => 0,
-        Ecosystem::Npm => 1,
-        Ecosystem::Pypi => 2,
-        _ => u8::MAX,
-    }
 }
 
 #[cfg(test)]

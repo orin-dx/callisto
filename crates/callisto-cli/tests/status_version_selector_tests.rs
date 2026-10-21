@@ -183,8 +183,12 @@ fn unique_package_bare_and_qualified_selectors_agree() {
     for selector in ["foo", "cargo/foo"] {
         assert_same_packages(dir.path(), selector);
         let (status, version) = outcomes(dir.path(), selector);
-        assert_eq!(status.packages, BTreeSet::from(["foo".to_string()]), "{selector}");
-        assert_eq!(version.packages, BTreeSet::from(["foo".to_string()]), "{selector}");
+        assert_eq!(status.packages, BTreeSet::from(["cargo/foo".to_string()]), "{selector}");
+        assert_eq!(
+            version.packages,
+            BTreeSet::from(["cargo/foo".to_string()]),
+            "{selector}"
+        );
     }
 }
 
@@ -235,7 +239,7 @@ fn dual_manifest_primary_name_selectors_agree() {
         let (status, _) = outcomes(dir.path(), selector);
         assert_eq!(
             status.packages,
-            BTreeSet::from(["native-core".to_string()]),
+            BTreeSet::from(["cargo/native-core".to_string()]),
             "{selector}"
         );
     }
@@ -413,12 +417,12 @@ fn two_selectors_for_one_package_attach_it_once_with_the_higher_severity() {
     let (exit, report) = status_report(dir.path());
     assert_eq!(exit, Some(0), "{report}");
     let pkg = &report["packages"][0];
-    assert_eq!(pkg["package"], "native-core");
+    assert_eq!(pkg["package"], "cargo/native-core");
     assert_eq!(pkg["pendingChangesets"], serde_json::json!(["probe"]));
     assert_eq!(pkg["pendingSeverity"], "minor");
     assert_eq!(
         version_outcome(dir.path()).packages,
-        BTreeSet::from(["native-core".to_string()])
+        BTreeSet::from(["cargo/native-core".to_string()])
     );
 }
 
@@ -441,7 +445,7 @@ fn a_selector_naming_a_group_members_secondary_name_plans_the_whole_group() {
         assert_eq!(exit, Some(0), "`{selector}`: {report}");
         assert_eq!(
             planned_packages(&report),
-            BTreeSet::from(["native-core".to_string(), "other".to_string()]),
+            BTreeSet::from(["cargo/native-core".to_string(), "cargo/other".to_string()]),
             "`{selector}`"
         );
         assert_eq!(planned_packages(&report), version.packages, "`{selector}`");
@@ -518,6 +522,6 @@ fn selectors_resolve_the_same_in_a_prerelease_workspace() {
         assert_same_packages(dir.path(), selector);
     }
     let (status, version) = outcomes(dir.path(), "@org/native-core-js");
-    assert_eq!(status.packages, BTreeSet::from(["native-core".to_string()]));
+    assert_eq!(status.packages, BTreeSet::from(["cargo/native-core".to_string()]));
     assert_eq!(version.packages, status.packages);
 }

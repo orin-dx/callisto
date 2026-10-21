@@ -179,6 +179,11 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
         }
     }
 
+    /// Each package's id as reports print it.
+    pub fn report_ids(&self) -> plan::ReportIds {
+        plan::ReportIds::new(self.graph.packages())
+    }
+
     /// Returns the workspace's [`TagIndex`], building it on first access and
     /// reusing the cached result afterwards. See the doc comment on the
     /// `tags` field for why this is deferred rather than built eagerly by

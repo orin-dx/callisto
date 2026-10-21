@@ -8,6 +8,10 @@ use crate::{ConfigKey, DepKind, Diagnostic, GroupName, PackageId, ReleaseTrigger
 
 pub const SCHEMA_VERSION: u32 = 1;
 
+/// The schema version of the status, version, snapshot and matrix reports, whose package ids are always
+/// `ecosystem/name`.
+pub const PACKAGE_REPORT_SCHEMA_VERSION: u32 = 2;
+
 /// Trait for all structured JSON report payloads.
 pub trait Report: Serialize + DeserializeOwned + Send + Sync + 'static {
     const COMMAND: &'static str;

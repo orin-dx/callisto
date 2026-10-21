@@ -79,15 +79,15 @@ fn matrix_package_filter_restricts_to_one_package() {
     let report = matrix(&ws, &opts).expect("matrix should succeed");
 
     assert_eq!(report.platform_targets.len(), 1);
-    assert!(report.platform_targets.contains_key("pkg-a"));
-    assert!(!report.platform_targets.contains_key("pkg-b"));
+    assert!(report.platform_targets.contains_key("npm/pkg-a"));
+    assert!(!report.platform_targets.contains_key("npm/pkg-b"));
 
     assert_eq!(report.runtime_versions.len(), 1);
     assert!(
-        report.runtime_versions.contains_key("pkg-a"),
+        report.runtime_versions.contains_key("npm/pkg-a"),
         "runtimeVersions must also be restricted to pkg-a"
     );
-    assert!(!report.runtime_versions.contains_key("pkg-b"));
+    assert!(!report.runtime_versions.contains_key("npm/pkg-b"));
 }
 
 /// An unknown --package name is a hard error naming the package,

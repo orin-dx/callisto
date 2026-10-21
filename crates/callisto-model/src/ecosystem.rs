@@ -20,6 +20,17 @@ pub enum Ecosystem {
 }
 
 impl Ecosystem {
+    /// Precedence when one directory declares several canonical manifests: Cargo, then npm, then PyPI, then the rest.
+    /// Named rather than derived from the variant order so it survives new variants.
+    pub fn primary_priority(self) -> u8 {
+        match self {
+            Ecosystem::Cargo => 0,
+            Ecosystem::Npm => 1,
+            Ecosystem::Pypi => 2,
+            _ => u8::MAX,
+        }
+    }
+
     /// The three ecosystems package *identity discovery* treats as
     /// canonical -- each has exactly one manifest format
     /// ([`Ecosystem::canonical_manifest_format`]) that carries a package's

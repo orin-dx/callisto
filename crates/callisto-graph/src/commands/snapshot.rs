@@ -1,4 +1,4 @@
-use callisto_model::{CommandRunner, SnapshotReport, SCHEMA_VERSION};
+use callisto_model::{CommandRunner, SnapshotReport, PACKAGE_REPORT_SCHEMA_VERSION};
 
 use crate::error::GraphError;
 use crate::plan::VersionPlan;
@@ -53,7 +53,7 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
         });
 
         bumps.push(callisto_model::BumpRecord {
-            package: pkg.id.clone(),
+            package: pkg.canonical_id(),
             from,
             to: snapshot_ver.clone(),
             severity: callisto_model::Severity::Patch,
@@ -149,7 +149,7 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
     };
 
     let report = SnapshotReport {
-        schema_version: SCHEMA_VERSION,
+        schema_version: PACKAGE_REPORT_SCHEMA_VERSION,
         snapshot_tag,
         bumps,
         diagnostics: Vec::new(),

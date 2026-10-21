@@ -506,7 +506,7 @@ pub(crate) fn build_matrix_report(
     }
 
     Ok(MatrixReport {
-        schema_version: callisto_model::SCHEMA_VERSION,
+        schema_version: callisto_model::PACKAGE_REPORT_SCHEMA_VERSION,
         platform_targets,
         runtime_versions,
         diagnostics,
@@ -660,7 +660,7 @@ mod tests {
     #[test]
     fn build_matrix_report_empty_workspace_produces_empty_report() {
         let report = build_matrix_report(&[], None).unwrap();
-        assert_eq!(report.schema_version, callisto_model::SCHEMA_VERSION);
+        assert_eq!(report.schema_version, callisto_model::PACKAGE_REPORT_SCHEMA_VERSION);
         assert!(report.platform_targets.is_empty());
         assert!(report.runtime_versions.is_empty());
         assert!(report.diagnostics.is_empty());

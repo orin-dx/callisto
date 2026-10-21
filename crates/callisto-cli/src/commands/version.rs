@@ -71,7 +71,7 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
         })?;
     }
 
-    let report = plan.to_report(outcome.lockfile_refresh_results);
+    let report = plan.to_report(&ws.report_ids(), outcome.lockfile_refresh_results);
 
     if global.dry_run && global.format == OutputFormat::Text {
         emit_line("[DRY-RUN] Version Plan Calculated (no files modified):")?;
@@ -173,10 +173,10 @@ mod tests {
         };
 
         let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");
-        let report = plan.to_report(None);
+        let report = plan.to_report(&ws.report_ids(), None);
 
         // The report must include a bump for pkg-alpha.
-        let pkg_alpha = PackageId::parse("pkg-alpha").unwrap();
+        let pkg_alpha = PackageId::parse("cargo/pkg-alpha").unwrap();
         let bump = report
             .bumps
             .iter()
@@ -241,7 +241,7 @@ mod tests {
         };
 
         let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");
-        let report = plan.to_report(None);
+        let report = plan.to_report(&ws.report_ids(), None);
 
         assert!(
             report
@@ -284,7 +284,7 @@ mod tests {
         };
 
         let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");
-        let report = plan.to_report(None);
+        let report = plan.to_report(&ws.report_ids(), None);
 
         // Serialize to JSON via the same function the CLI uses.
         let mut json_out = Vec::new();
