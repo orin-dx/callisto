@@ -81,6 +81,7 @@ jobs:
           components: clippy
       - run: just lint
       - run: just doc-check
+      - run: just fuzz-check
 
   msrv:
     name: Minimum Supported Rust Version

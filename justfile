@@ -90,6 +90,10 @@ fmt:
 audit:
     cargo deny check
 
+# Compile the fuzz targets so they cannot rot (running them needs nightly and cargo-fuzz)
+fuzz-check:
+    cargo check --manifest-path fuzz/Cargo.toml --bins
+
 # Run mutation testing sweep via cargo-mutants
 mutants:
     cargo mutants --workspace
@@ -203,4 +207,4 @@ workflow-contracts: release-workflow-checks
 # Every check CI runs except actionlint (Docker) and the binary-dependent
 # release-PR decide contract and artifact preflight build. CI runs them as
 # parallel jobs (callisto-ci.yml); locally they run in sequence.
-ci: fmt-check lint test audit doc-check zizmor workflow-contracts release-workflow-behavior (coverage "90")
+ci: fmt-check lint fuzz-check test audit doc-check zizmor workflow-contracts release-workflow-behavior (coverage "90")

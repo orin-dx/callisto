@@ -4,12 +4,16 @@ version = "0.0.0"
 publish = false
 edition = "2021"
 
+[workspace]
+
 [package.metadata]
 cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
 callisto-model = { path = "../crates/callisto-model" }
+callisto-manifests = { path = "../crates/callisto-manifests" }
+tempfile = "3"
 
 [[bin]]
 name = "parse_package_id"
@@ -20,5 +24,17 @@ doc = false
 [[bin]]
 name = "parse_changeset"
 path = "fuzz_targets/parse_changeset.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "manifest_identity"
+path = "fuzz_targets/manifest_identity.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "manifest_editor"
+path = "fuzz_targets/manifest_editor.rs"
 test = false
 doc = false
