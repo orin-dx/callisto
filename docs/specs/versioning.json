@@ -181,7 +181,7 @@
     },
     {
       "id": "VER-PRE-07",
-      "criterion": "`callisto snapshot --tag <tag>` sets every workspace package, and every attached platform package and fixed-group platform manifest, to a snapshot version built from the same tag and sha7 (the first 7 characters of HEAD) in the package's own grammar: `0.0.0-{tag}-{sha7}` for a SemVer package, `0.0.0.dev0+{tag}.{sha7}` for a Pep440 package; it fails if HEAD cannot be resolved."
+      "criterion": "`callisto snapshot --tag <tag>` sets every workspace package, and every attached platform package and fixed-group platform manifest, to a snapshot version built from the same tag and sha7 (the first 7 characters of HEAD) in the package's own grammar: `0.0.0-{tag}-{sha7}` for a SemVer package, `0.0.0.dev0+{tag}.{sha7}` for a Pep440 package; it fails if HEAD cannot be resolved. A snapshot version is never tagged or published: `release` refuses it with E169."
     },
     {
       "id": "VER-PRE-08",

@@ -916,6 +916,10 @@ pub enum ReleaseSelectionInvalidReason {
     NoDispatchableTarget,
     #[error("the package has a duplicate registry target")]
     DuplicateRegistryTarget,
+    #[error(
+        "it is at a snapshot version, which is never tagged or published; run `callisto version` for a real release"
+    )]
+    SnapshotVersion,
     #[error("it is an unreleased workspace package a selected package depends on; select it too")]
     DependencyNotSelected,
 }

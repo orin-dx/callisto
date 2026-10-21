@@ -160,7 +160,7 @@ prepared:
                 Public,
             ),
             npm_tag: Some(
-                "next",
+                "beta",
             ),
             by_directory: false,
         },
