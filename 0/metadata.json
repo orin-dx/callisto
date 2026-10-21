@@ -1,0 +1,140 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5G0DW4N80MEMBEAPAF5DYN5",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-21T19:54:09.008099Z",
+  "branch": "worktree-t06-dead-bare",
+  "checkpoints_count": 1,
+  "save_step_count": 2,
+  "files_touched": [
+    "crates/callisto-graph/src/aggregate.rs",
+    "crates/callisto-graph/src/aggregate/tests.rs",
+    "crates/callisto-graph/src/config/groups.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/identity.rs",
+    "crates/callisto-graph/src/lib.rs",
+    "crates/callisto-graph/src/tags.rs",
+    "crates/callisto-graph/src/walk.rs",
+    "crates/callisto-graph/src/walk/tests.rs",
+    "crates/callisto-graph/tests/cross_ecosystem_diagnostic_test.rs",
+    "crates/callisto-graph/tests/promoted_siblings_aggregate_test.rs",
+    "crates/callisto-model/src/identity.rs",
+    "docs/architecture/identity.md",
+    "docs/projects/V1-SYSTEM-HARDENING.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "a3e6d47c12a5",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 50,
+    "cache_creation_tokens": 35428,
+    "cache_read_tokens": 11145591,
+    "output_tokens": 14374,
+    "api_call_count": 24,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 193
+  },
+  "summary": {
+    "intent": "Work through the callisto v1 hardening plan: ship planned fix PRs in parallel lanes, get recommendations for the pending owner decisions, and keep moving until the decision-free v1 work is done.",
+    "outcome": "Opened and merged many PRs (W2 retry fix, W1 test, W0 docs, R5 stack, R3 split, T06 colon rejection E316). Opened PRs for CI hygiene (#271), E317 bare-name rejection (#272), pre-mode no-repeat bump (E318), range hard-stop (E319), dist-tag/snapshot refusal, and a dead-bare-code deletion. The last one was being committed when the transcript ended. Decisions were accepted, including lockstep versioning with all four crates going to 1.0.",
+    "learnings": {
+      "repo": [
+        "Plans and tracking files live locally in .claude/plans/ (git-excluded via .git/info/exclude) and must never go in a commit or PR.",
+        "Standing rules: commits must be signed (plain git commit) and PRs must not be drafts; no session links in commits or PRs per AGENTS.md.",
+        "Each change needs a changeset (.changeset/*.md), except test-only and docs-only PRs; spec criteria in docs/specs/*.json, docs/errors.md and architecture docs are updated alongside code.",
+        "just ci is the gate; the background wrapper's exit code is not reliable, so the log's own exit= line must be read (a fmt-check failure showed exit=1 while the wrapper said 0).",
+        "callisto-model is MIT and the other crates are FSL, so it stays a separate crate. Consolidation to four published crates already shipped in #157; callisto-fixtures is dev-only.",
+        "The sandbox rejects inline env, heredocs, compound commands, and scripts mentioning git; workarounds are script files, the Write tool, or the Edit tool. Edits are limited to the current worktree.",
+        "macOS bash lacks mapfile and BSD sed rejects some one-liners, which affects generated workflow templates and local scripts.",
+        "Generated workflow templates live in crates/callisto-graph/src/templates/*.tmpl, and init.rs inline tests were moved to init/tests.rs.",
+        "Native stacks of PRs are linked with gh stack.",
+        "Michi (sibling repo) is moving to lockstep versioning with fewer crates (branch refactor/michi-core-merge)."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release/local.rs",
+          "finding": "A package whose version is tagged at HEAD must still have all operations (registry, tag, GitHub release) observed. Treating a tag on HEAD as 'released' was the SYS-RETRY defect."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/tag.rs",
+          "finding": "Tag inspection must read only the object type, not annotation text, so multi-paragraph or signed tag messages don't error."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/derive.rs",
+          "finding": "The large derive function was split into stage functions after characterization snapshots; uploads_by_package moved into OpIndex. Mutation tests confirmed the snapshots catch regressions."
+        }
+      ],
+      "workflow": [
+        "Write the failing black-box test first, and prove tests can fail by mutation (revert the fix or drop a persist) before trusting them.",
+        "For pure moves and refactors, commit characterization snapshots first, then do a mechanical move with snapshots unchanged.",
+        "Prove fixes with the real tool (real binary, real jq) rather than fakes; fakes hid the earlier gh bug.",
+        "Scripted bulk edits can corrupt unrelated text (double prefixes, altered comments); review the staged diff before committing.",
+        "Get an independent agent review on the riskiest PR; it surfaced real defects in #202.",
+        "Check closing state (PR draft flag, signature verification, hosted CI) before reporting a PR as ready."
+      ]
+    },
+    "friction": [
+      "Earlier mistake: the plan was put in PR #201 and had to be closed and moved to a local file.",
+      "Sandbox restrictions on heredocs, inline env, compound commands and git-mentioning scripts forced many workarounds.",
+      "Background-session limits prevented editing the shared-checkout plan file from a worktree, so the status couldn't be recorded at first.",
+      "The scripted bare-to-qualified conversion double-prefixed names and altered unrelated comments, requiring fixups.",
+      "Rebase conflicts in docs/errors.md occurred repeatedly across stacked E317/E318/E319 PRs.",
+      "The wrapper reported exit 0 while CI had actually failed fmt-check.",
+      "The #204 docs refresh still lists SYS-RETRY/T08-RETRY and needs a follow-up once #202 merges."
+    ],
+    "open_items": [
+      "Branch cleanup was not done: docs/next-work-plan, docs/spec-rewrite, fix/native-resolution, about 35 local branches and the stale docs/crate-consolidation-plan; it needs the user's call per branch.",
+      "T06 PR 4 deletion PR was mid-commit at the end; PR 5 (canonical emission, schemaVersion 2 on four reports, removal of the never-emitted BareRuleMatchesMultipleEcosystems variant) is still to do.",
+      "Remaining tasks: concurrency group for the generated simple release workflow, print-only redacted tail, status --check for pending-without-changeset, and a Python dev-table warning.",
+      "Also remaining: scheduled semver-checks (limited to promised surfaces), fuzz targets for manifest editors, edition 2024/resolver 3, panic hygiene, and T12a harness work.",
+      "Post-1.0: OIDC trusted publishing, merging callisto-manifests into callisto-graph.",
+      "Still needing a design spike or user input: A2 (bind tag/publish to the introducing commit), the A5 registry-metadata warning, and the T08/T12 credential-dependent verification.",
+      "The W1 real-service credential check needs a decision on where it runs in CI (an owner-run local script was recommended).",
+      "Floating v1 tag, Intel mac and aarch64-linux platforms, and dropping the unmeasured 10-minute claim were accepted but not yet implemented."
+    ]
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5G0DW4N80MEMBEAPAF5DYN5",
+  "strategy": "manual-commit",
+  "branch": "worktree-t06-dead-bare",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/aggregate.rs",
+    "crates/callisto-graph/src/aggregate/tests.rs",
+    "crates/callisto-graph/src/config/groups.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/identity.rs",
+    "crates/callisto-graph/src/lib.rs",
+    "crates/callisto-graph/src/tags.rs",
+    "crates/callisto-graph/src/walk.rs",
+    "crates/callisto-graph/src/walk/tests.rs",
+    "crates/callisto-graph/tests/cross_ecosystem_diagnostic_test.rs",
+    "crates/callisto-graph/tests/promoted_siblings_aggregate_test.rs",
+    "crates/callisto-model/src/identity.rs",
+    "docs/architecture/identity.md",
+    "docs/projects/V1-SYSTEM-HARDENING.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 50,
+    "cache_creation_tokens": 35428,
+    "cache_read_tokens": 11145591,
+    "output_tokens": 14374,
+    "api_call_count": 24,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  }
+}
