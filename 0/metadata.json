@@ -1,0 +1,117 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5GCCG9GP1EM31M29XAEFT79",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-21T23:23:04.89563Z",
+  "branch": "worktree-t06-cli-args",
+  "checkpoints_count": 3,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/tests/cascade_scenarios_tests.rs",
+    "crates/callisto-cli/tests/pre_mode_tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "6723fd53313b",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 62,
+    "cache_creation_tokens": 30541,
+    "cache_read_tokens": 24088039,
+    "output_tokens": 13456,
+    "api_call_count": 31,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 203
+  },
+  "summary": {
+    "intent": "Work through the multi-lane NEXT-WORK plan for the callisto release tool (cleanup, test debt, SYS-RETRY, refactors, SYS-NAPI, hardening items), then migrate schemars and sort out PR stacking and merge conflicts.",
+    "outcome": "Opened roughly a dozen-plus PRs (#202-#208, #274-#287 range), each with local `just ci` green: fixed SYS-RETRY, added tests, refreshed docs, split init.rs/derive.rs, fixed SYS-NAPI, and migrated schemars to 1.x. Closed a wrongly opened plan PR (#201), rebased conflicting PRs and stacked #279/#280; edition-2024 PR #283 still conflicts and A2 is undecided.",
+    "learnings": {
+      "repo": [
+        "Tracking/handoff plans (NEXT-WORK.md) are local only: they live in .claude/plans/ and are excluded via .git/info/exclude, never committed or put in a PR.",
+        "`just ci` is the gate; the background wrapper's 'exit code 0' is unreliable, so read the log's own `exit=` line (several runs showed exit=1 from fmt-check despite a wrapper exit 0).",
+        "AGENTS.md says to use no session link in commits or PRs; commits are signed.",
+        "docs/errors.md carries a total error-code count, so every PR adding an E-code row conflicts with the others and needs rebasing after each merge.",
+        "Release harness fakes git/gh/cargo/registry; the harness log now records read-only calls, so no-op assertions compare mutating calls only.",
+        "SYS-RETRY fix: a package tagged at HEAD now has all operations (registry, tag, GitHub release) observed and stays selected until satisfied; a tag on an older commit settles without contacting providers.",
+        "Reports (status, version, snapshot, matrix) now use `ecosystem/name` ids and schemaVersion 2; `add` and `matrix --package` require the qualified form (E317 for bare).",
+        "schemars 1.x emits JSON Schema 2020-12 with `$defs` and `const`; wire types read via try_from must derive JsonSchema.",
+        "Generated matrix workflow template must be portable to macOS bash (no `mapfile`).",
+        "Dependabot #275 failed only because of the schemars major bump."
+      ],
+      "code": [],
+      "workflow": [
+        "Write the failing black-box test first and prove tests fail via mutation (e.g. drop a persist, reorder steps) before trusting a passing test.",
+        "For refactors, commit characterization snapshots first, then do move-only changes and require the snapshots to pass unchanged.",
+        "Check pairwise merge conflicts across open PR branches before opening a batch; stack PRs that genuinely edit the same function via `gh stack`.",
+        "Get an independent review agent for risky changes like #202; it found a signed/multi-paragraph tag problem and a dependent-tagged-with-untagged-dependency case.",
+        "The sandbox blocks inline env commands, heredocs, cargo registry writes, GPG signing and network for gh; use script files or run those steps outside the sandbox.",
+        "A plain `git push` can silently do nothing when the local branch name differs from the remote; push explicitly."
+      ]
+    },
+    "friction": [
+      "Wrongly opened the local tracking plan as PR #201 and had to close it and relocate the file.",
+      "Sandbox restrictions repeatedly forced workarounds (heredocs, inline scripts, signing, cargo cache, gh TLS, uv lock tests).",
+      "Background-task 'exit code 0' notices masked real CI failures from fmt-check.",
+      "PRs were branched off main in parallel without checking overlap, causing merge conflicts on errors.md, status.rs and the edition PR.",
+      "PR #281 failed hosted Ubuntu CI on a verdaccio test that built a bare package name.",
+      "Could not edit the shared checkout's plan file from a background worktree session.",
+      "The existing `parse_changeset` fuzz target had not compiled for a long time."
+    ],
+    "open_items": [
+      "Merge order for open PRs (#276, #277, #278, #279, #280, #281, #285, #286, then #283) with rebases after each merge; #283 edition 2024 needs regenerating last.",
+      "Rebased #276, #280 and #281 have not had full local `just ci` rerun; rely on hosted CI.",
+      "A2 (local route releases HEAD) needs a design decision on false refusals.",
+      "A5 registry-repository check, floating `v1` action tag, Intel-mac and aarch64-linux binaries, T08 selection, T12 verification needing scratch-registry credentials.",
+      "W1 real-service credential check needs a decision on where it runs in CI.",
+      "W0 branch cleanup not done; leftover branches including docs/next-work-plan, docs/spec-rewrite, fix/native-resolution and ~35 local branches need per-branch decisions.",
+      "Follow-up edit to #204 for T08-RETRY references once #202 merges.",
+      "Fuzz targets only compile-checked, not run under libFuzzer; E176 never reproduced against a real registry.",
+      "Python dev-table warning dropped; OIDC trusted publishing is post-1.0.",
+      "Unmerged decisions: accept ADR 12 and cut 0.12.0 (#248); D01 blocks SYS-MATURIN and W9; W10 needs two decisions."
+    ]
+  }
+}
