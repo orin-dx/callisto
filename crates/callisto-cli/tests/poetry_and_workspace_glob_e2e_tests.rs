@@ -114,16 +114,16 @@ fn poetry_caret_dependency_cascades_a_major_bump_that_breaks_its_range() {
 
     let pkg_a = bumps
         .iter()
-        .find(|b| b["package"] == "pkg-a")
+        .find(|b| b["package"] == "pypi/pkg-a")
         .expect("pkg-a must be in the plan");
     assert_eq!(pkg_a["to"], "2.0.0");
 
-    let pkg_b = bumps.iter().find(|b| b["package"] == "pkg-b").unwrap_or_else(|| {
+    let pkg_b = bumps.iter().find(|b| b["package"] == "pypi/pkg-b").unwrap_or_else(|| {
         panic!("pkg-b must cascade from pkg-a's major bump (its ^1.0 range no longer covers 2.0.0); got plan: {plan}")
     });
     assert_eq!(pkg_b["from"], "1.0.0");
     assert_eq!(pkg_b["reason"]["kind"], "cascade");
-    assert_eq!(pkg_b["reason"]["via"], "pkg-a");
+    assert_eq!(pkg_b["reason"]["via"], "pypi/pkg-a");
     assert_eq!(
         pkg_b["reason"]["spec"], "^1.0",
         "the cascade reason must carry the original Poetry spec text"
@@ -155,7 +155,7 @@ fn poetry_caret_dependency_within_range_does_not_cascade() {
         1,
         "only pkg-a should bump; pkg-b's ^1.0 range still covers 1.1.0: {plan}"
     );
-    assert_eq!(bumps[0]["package"], "pkg-a");
+    assert_eq!(bumps[0]["package"], "pypi/pkg-a");
 }
 
 /// A Poetry dependency this normalizer cannot represent (here: no `version`
@@ -203,9 +203,12 @@ fn poetry_dependency_with_no_version_key_does_not_break_discovery() {
         .as_array()
         .expect("status must emit a packages array");
     let names: Vec<&str> = packages.iter().filter_map(|p| p["package"].as_str()).collect();
-    assert!(names.contains(&"pkg-a"), "pkg-a must still be discovered: {names:?}");
     assert!(
-        names.contains(&"pkg-b"),
+        names.contains(&"pypi/pkg-a"),
+        "pkg-a must still be discovered: {names:?}"
+    );
+    assert!(
+        names.contains(&"pypi/pkg-b"),
         "pkg-b must still be discovered despite its unrepresentable dependency: {names:?}"
     );
 }
@@ -251,11 +254,11 @@ fn npm_workspace_negated_glob_excludes_matching_package() {
     let names: Vec<&str> = packages.iter().filter_map(|p| p["package"].as_str()).collect();
 
     assert!(
-        names.contains(&"kept"),
+        names.contains(&"npm/kept"),
         "a package not named by the negative pattern must still be admitted: {names:?}"
     );
     assert!(
-        !names.contains(&"excluded-one"),
+        !names.contains(&"npm/excluded-one"),
         "a `!`-prefixed workspaces entry must exclude the package from discovery entirely, not just fail to error on it: {names:?}"
     );
 }

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use callisto_model::{
     BumpReason, CommandRunner, Diagnostic, DiagnosticCode, DiagnosticSeverity, Package, PackageId, Severity,
-    StatusReport, SCHEMA_VERSION,
+    StatusReport, PACKAGE_REPORT_SCHEMA_VERSION,
 };
 
 use crate::aggregate::{resolve_target_package, LoadedChangeset};
@@ -70,6 +70,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
     opts: &StatusOptions,
 ) -> Result<StatusReport, GraphError> {
     let mut packages = Vec::new();
+    let ids = ws.report_ids();
     let base_versions = ws.base_versions()?;
     let (loaded_changesets, changeset_load_failures) = crate::load_changesets_permissive(&ws.root, &ws.config)?;
     let tags = ws.tags()?;
@@ -119,7 +120,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
         let pending_severity = planned_severity.get(&pkg.id).copied();
 
         packages.push(callisto_model::StatusPackageRecord {
-            package: pkg.id.clone(),
+            package: ids.of(&pkg.id),
             current_version,
             last_tag,
             last_released_version,
@@ -157,7 +158,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
         };
         let has_changeset = packages
             .iter()
-            .any(|record| record.package == bump.package && !record.pending_changesets.is_empty());
+            .any(|record| record.package == ids.of(&bump.package) && !record.pending_changesets.is_empty());
         if has_changeset {
             continue;
         }
@@ -175,6 +176,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
         });
     }
     escalate(&mut diagnostics, opts.strict);
+    ids.diagnostics(&mut diagnostics);
 
     let has_changesets = packages.iter().any(|p| !p.pending_changesets.is_empty());
     // Count of packages with a planned bump, post-cascade/fixed/linked-group --
@@ -183,7 +185,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
     let pending = packages.iter().filter(|p| p.pending_severity.is_some()).count() as u32;
 
     Ok(StatusReport {
-        schema_version: SCHEMA_VERSION,
+        schema_version: PACKAGE_REPORT_SCHEMA_VERSION,
         has_changesets,
         pending,
         packages,

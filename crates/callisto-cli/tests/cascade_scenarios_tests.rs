@@ -161,7 +161,7 @@ fn a_catalog_dependency_is_reported_not_rewritten_and_does_not_cascade() {
         .iter()
         .find(|d| d["code"] == "catalog-spec-not-rewritten")
         .unwrap_or_else(|| panic!("missing catalog diagnostic: {diagnostics:?}"));
-    assert_eq!(catalog["package"], "app");
+    assert_eq!(catalog["package"], "npm/app");
     assert_eq!(catalog["path"], "packages/app/package.json");
     let bumped: Vec<&str> = plan["bumps"]
         .as_array()
@@ -171,7 +171,7 @@ fn a_catalog_dependency_is_reported_not_rewritten_and_does_not_cascade() {
         .collect();
     assert_eq!(
         bumped,
-        ["lib"],
+        ["npm/lib"],
         "a spec that cannot be tested must not cascade a release"
     );
     assert!(read(root, "packages/app/package.json").contains("\"lib\": \"catalog:\""));
@@ -241,10 +241,10 @@ lib-crate = { version = \"=0.1.0\", path = \"../lib\" }
         .as_array()
         .unwrap()
         .iter()
-        .find(|bump| bump["package"] == "app-crate")
+        .find(|bump| bump["package"] == "cargo/app-crate")
         .unwrap_or_else(|| panic!("a target-only dependent must be released with its dependency: {plan}"));
     assert_eq!(cascaded["reason"]["kind"], "cascade");
-    assert_eq!(cascaded["reason"]["via"], "lib-crate");
+    assert_eq!(cascaded["reason"]["via"], "cargo/lib-crate");
 }
 
 #[test]

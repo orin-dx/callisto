@@ -84,7 +84,7 @@ fn status_pending_severity_reflects_fixed_group_cascade() {
     let rec = report
         .packages
         .iter()
-        .find(|p| p.package == pkg_b)
+        .find(|p| p.package.name() == pkg_b.name())
         .expect("pkg-b must be in the report");
 
     assert_eq!(
@@ -145,7 +145,7 @@ fn status_skips_private_versionless_root_package_json() {
         "only the real member package must be reported, got: {:?}",
         report.packages
     );
-    assert_eq!(report.packages[0].package, PackageId::parse("x").unwrap());
+    assert_eq!(report.packages[0].package, PackageId::parse("npm/x").unwrap());
 }
 
 /// A package with no planned bump at all shows `None`, not a stale
@@ -343,7 +343,7 @@ fn status_reports_unparseable_changeset_as_error_diagnostic() {
     let rec = report
         .packages
         .iter()
-        .find(|p| p.package.display_name() == "pkg-a")
+        .find(|p| p.package.display_name() == "cargo/pkg-a")
         .expect("pkg-a must be present");
     assert_eq!(
         rec.pending_changesets,

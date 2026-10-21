@@ -152,8 +152,8 @@ pub enum DiagnosticCode {
     /// Git repository or tag discovery failed. Not emitted since `plan-publish` was removed;
     /// kept for wire compatibility.
     GitDiscoveryFailed,
-    /// A bare (unprefixed) `[[package]]` config rule matched packages in two or more
-    /// ecosystems — almost always unintended; use an ecosystem-prefixed pattern instead.
+    /// A bare (unprefixed) `[[package]]` config rule matched packages in two or more ecosystems. Not emitted
+    /// since config rejects a rule without its ecosystem; kept for wire compatibility.
     BareRuleMatchesMultipleEcosystems,
     /// `callisto matrix` found a platform triple in `napi.targets`/`[tool.maturin].targets`
     /// that neither the shared triple-to-role table nor matrix's own host-runner table

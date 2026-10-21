@@ -40,7 +40,7 @@ pub fn matrix<R: CommandRunner, D: DependencyResolver>(
         .map(|p| {
             let dir_rel = package_dir_rel(p);
             MatrixPackageInput {
-                id: p.id.clone(),
+                id: p.canonical_id(),
                 dir_abs: ws.root.join(&dir_rel),
                 dir_rel,
                 name: p.id.name().to_string(),
@@ -90,7 +90,7 @@ pub fn matrix<R: CommandRunner, D: DependencyResolver>(
             continue;
         };
         artifacts.push(ReleaseArtifactInput {
-            id: package.id.clone(),
+            id: package.canonical_id(),
             name: package.id.name().to_string(),
             dir_rel: manifest
                 .path

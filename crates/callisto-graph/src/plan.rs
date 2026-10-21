@@ -5,8 +5,43 @@ use crate::changelog::ChangelogInput;
 use callisto_model::format::PreState;
 use callisto_model::{
     BumpReason, BumpRecord, CommitSha, ConfigKey, Diagnostic, LockfileRefreshResult, PackageId, Severity, Version,
-    VersionReport, SCHEMA_VERSION,
+    VersionReport, PACKAGE_REPORT_SCHEMA_VERSION,
 };
+
+/// Each workspace package's id as reports print it: `ecosystem/name` for its primary ecosystem.
+#[derive(Clone, Debug, Default)]
+pub struct ReportIds(BTreeMap<PackageId, PackageId>);
+
+impl ReportIds {
+    pub fn new<'a>(packages: impl Iterator<Item = &'a callisto_model::Package>) -> Self {
+        Self(
+            packages
+                .map(|package| (package.id.clone(), package.canonical_id()))
+                .collect(),
+        )
+    }
+
+    /// The report id of `id`; an id naming no workspace package is returned as it is.
+    pub fn of(&self, id: &PackageId) -> PackageId {
+        self.0.get(id).cloned().unwrap_or_else(|| id.clone())
+    }
+
+    /// Rewrites every package a diagnostic names to its report id.
+    pub fn diagnostics(&self, diagnostics: &mut [Diagnostic]) {
+        for diagnostic in diagnostics {
+            if let Some(package) = &diagnostic.package {
+                diagnostic.package = Some(self.of(package));
+            }
+        }
+    }
+
+    /// Rewrites the package a bump reason points at to its report id.
+    pub fn reason(&self, reason: &mut BumpReason) {
+        if let BumpReason::Cascade { via, .. } | BumpReason::PeerEscalation { via, .. } = reason {
+            *via = self.of(via);
+        }
+    }
+}
 
 use crate::cascade::SpecRewrite;
 
@@ -69,24 +104,30 @@ pub struct ChangelogWrite {
 }
 
 impl VersionPlan {
-    pub fn to_report(&self, lockfiles: Option<Vec<LockfileRefreshResult>>) -> VersionReport {
+    pub fn to_report(&self, ids: &ReportIds, lockfiles: Option<Vec<LockfileRefreshResult>>) -> VersionReport {
         let mut bumps = Vec::new();
         for b in &self.bumps {
+            let mut reason = b.reason.clone();
+            if let Some(reason) = &mut reason {
+                ids.reason(reason);
+            }
             bumps.push(BumpRecord {
-                package: b.package.clone(),
+                package: ids.of(&b.package),
                 from: b.from.clone(),
                 to: b.to.clone(),
                 severity: b.severity,
                 governed_by: b.governed_by.clone(),
-                reason: b.reason.clone(),
+                reason,
             });
         }
+        let mut diagnostics = self.diagnostics.clone();
+        ids.diagnostics(&mut diagnostics);
 
         VersionReport {
-            schema_version: SCHEMA_VERSION,
+            schema_version: PACKAGE_REPORT_SCHEMA_VERSION,
             bumps,
             lockfile_refresh_results: lockfiles,
-            diagnostics: self.diagnostics.clone(),
+            diagnostics,
         }
     }
 }

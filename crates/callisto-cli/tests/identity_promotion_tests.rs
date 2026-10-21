@@ -272,7 +272,7 @@ fn a_demoted_package_keeps_the_qualified_tag_it_made_while_promoted() {
     git(root, &["commit", "-m", "remove npm foo"]);
 
     let status = run_ok(root, &["status"]);
-    let foo = status_package(&status, "foo").unwrap_or_else(|| panic!("no foo in status: {status}"));
+    let foo = status_package(&status, "cargo/foo").unwrap_or_else(|| panic!("no cargo/foo in status: {status}"));
     assert_eq!(foo["lastReleasedVersion"], "2.0.0", "status: {status}");
 }
 
@@ -484,12 +484,12 @@ fn a_decision_written_by_version_verifies_in_release_plan_after_promotion() {
 }
 
 #[test]
-fn display_id_is_bare_when_unique_and_qualified_when_promoted() {
+fn a_report_names_a_package_qualified_whether_or_not_it_was_promoted() {
     let dir = released_cargo_foo();
     let root = dir.path();
 
     let status = run_ok(root, &["status"]);
-    assert!(status_package(&status, "foo").is_some(), "status: {status}");
+    assert!(status_package(&status, "cargo/foo").is_some(), "status: {status}");
     run_ok(root, &["add", "--package", "cargo/foo:patch", "--summary", "Before"]);
 
     add_npm_foo(root);
@@ -686,7 +686,7 @@ fn a_package_that_gained_the_name_when_the_owner_was_renamed_takes_none_of_its_t
     commit(root, "rename npm foo to bar");
 
     let status = run_ok(root, &["status"]);
-    let foo = status_package(&status, "foo").unwrap_or_else(|| panic!("no foo in status: {status}"));
+    let foo = status_package(&status, "cargo/foo").unwrap_or_else(|| panic!("no cargo/foo in status: {status}"));
     assert!(foo["lastReleasedVersion"].is_null(), "foo adopted the tag: {status}");
     let diagnostics = status["diagnostics"].to_string();
     assert!(diagnostics.contains("tag-owned-by-another-package"), "{status}");
@@ -701,7 +701,7 @@ fn a_package_that_gained_the_name_when_the_owner_was_removed_takes_none_of_its_t
     commit(root, "remove npm foo");
 
     let status = run_ok(root, &["status"]);
-    let foo = status_package(&status, "foo").unwrap_or_else(|| panic!("no foo in status: {status}"));
+    let foo = status_package(&status, "cargo/foo").unwrap_or_else(|| panic!("no cargo/foo in status: {status}"));
     assert!(foo["lastReleasedVersion"].is_null(), "foo adopted the tag: {status}");
 }
 
@@ -726,7 +726,7 @@ fn a_bare_package_keeps_the_tags_it_made() {
     let dir = released_cargo_foo();
     let root = dir.path();
     let status = run_ok(root, &["status"]);
-    let foo = status_package(&status, "foo").unwrap_or_else(|| panic!("no foo in status: {status}"));
+    let foo = status_package(&status, "cargo/foo").unwrap_or_else(|| panic!("no cargo/foo in status: {status}"));
     assert_eq!(foo["lastReleasedVersion"], "1.0.0", "status: {status}");
     assert!(!status["diagnostics"]
         .to_string()

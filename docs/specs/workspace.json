@@ -20,7 +20,7 @@
     {
       "name": "Package id",
       "signature": "PackageId = \"<name>\" | \"<ecosystem>/<name>\"",
-      "description": "Display and selector form: the bare manifest name, or `<ecosystem>/<name>` once another ecosystem declares the same name. JSON output, messages, changeset entries and `pre.json` keys use it; `<ecosystem>/<name>` selects the package whether or not it is promoted.",
+      "description": "Display and selector form: the bare manifest name, or `<ecosystem>/<name>` once another ecosystem declares the same name. Messages, changeset entries, `pre.json` keys and default tags use it; `<ecosystem>/<name>` selects the package whether or not it is promoted. The status, version, snapshot and matrix JSON reports always print `<ecosystem>/<name>` for the package's primary ecosystem.",
       "error_conditions": [
         "A bare name shared by promoted packages is E103; a qualified name with no such manifest is E102."
       ]

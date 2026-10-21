@@ -166,7 +166,7 @@ fn test_snapshot_version_template_placeholders() {
     };
 
     let (_plan, report) = plan_snapshot(&ws, "canary").unwrap();
-    assert_eq!(report.schema_version, callisto_model::SCHEMA_VERSION);
+    assert_eq!(report.schema_version, callisto_model::PACKAGE_REPORT_SCHEMA_VERSION);
     assert_eq!(report.snapshot_tag, format!("0.0.0-canary-{expected_sha7}"));
 }
 

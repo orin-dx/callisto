@@ -12,7 +12,7 @@
     {
       "name": "callisto matrix",
       "signature": "callisto [--format text|json] matrix [--package <name>]",
-      "description": "Prints a MatrixReport with schemaVersion, platformTargets and runtimeVersions keyed by package id, plus diagnostics when any exist. Hidden from --help.",
+      "description": "Prints a MatrixReport with schemaVersion, platformTargets and runtimeVersions keyed by package id, plus diagnostics when any exist; package ids are `ecosystem/name`. Hidden from --help.",
       "error_conditions": [
         "E102: --package names no registered package.",
         "E103: bare --package name matches packages in more than one ecosystem.",
@@ -78,7 +78,7 @@
     },
     {
       "id": "MX-OUT-03",
-      "criterion": "`--format json` prints pretty JSON with the standard report envelope (`command` and `dryRun`); an empty workspace prints {\"schemaVersion\":1,\"platformTargets\":{},\"runtimeVersions\":{},\"command\":\"matrix\",\"dryRun\":false} and exits 0, and the diagnostics key appears only when there is at least one diagnostic."
+      "criterion": "`--format json` prints pretty JSON with the standard report envelope (`command` and `dryRun`); an empty workspace prints {\"schemaVersion\":2,\"platformTargets\":{},\"runtimeVersions\":{},\"command\":\"matrix\",\"dryRun\":false} and exits 0, and the diagnostics key appears only when there is at least one diagnostic."
     },
     {
       "id": "MX-OUT-04",

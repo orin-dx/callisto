@@ -27,6 +27,22 @@ impl Package {
         Some(PackageKey::new(manifest.path.parent().unwrap_or(Path::new(""))))
     }
 
+    /// The id reports and diagnostics print: `ecosystem/name` for the package's primary ecosystem (the same one
+    /// identity assignment promotes to), whether or not the package was ever promoted. A package with no canonical
+    /// manifest keeps its id.
+    pub fn canonical_id(&self) -> PackageId {
+        self.canonical_manifests()
+            .map(|manifest| manifest.ecosystem())
+            .min_by_key(|ecosystem| ecosystem.primary_priority())
+            .map_or_else(
+                || self.id.clone(),
+                |ecosystem| PackageId::Prefixed {
+                    ecosystem,
+                    name: self.id.name().to_string(),
+                },
+            )
+    }
+
     pub fn canonical_manifests(&self) -> impl Iterator<Item = &ManifestDecl> {
         self.manifests.iter().filter(|m| m.role == ManifestRole::Canonical)
     }
