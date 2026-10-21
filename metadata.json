@@ -1,0 +1,66 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5G2KKV2X0RXBHDRY2NHPJ5Y",
+  "strategy": "manual-commit",
+  "branch": "worktree-t06-cli-args",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/package-arguments-require-ecosystem.md",
+    ".github/ISSUE_TEMPLATE/bug_report.md",
+    "AGENTS.md",
+    "crates/callisto-cli/src/commands/add.rs",
+    "crates/callisto-cli/src/commands/compose_pr_body.rs",
+    "crates/callisto-cli/src/commands/snapshot.rs",
+    "crates/callisto-cli/tests/cascade_scenarios_tests.rs",
+    "crates/callisto-cli/tests/changelog_tests.rs",
+    "crates/callisto-cli/tests/cli_tests.rs",
+    "crates/callisto-cli/tests/common/release_harness.rs",
+    "crates/callisto-cli/tests/config_provenance_e2e_tests.rs",
+    "crates/callisto-cli/tests/dry_run_invariant_tests.rs",
+    "crates/callisto-cli/tests/durable_release_e2e_tests.rs",
+    "crates/callisto-cli/tests/e2e_tests.rs",
+    "crates/callisto-cli/tests/error_message_accuracy_e2e_tests.rs",
+    "crates/callisto-cli/tests/identity_promotion_tests.rs",
+    "crates/callisto-cli/tests/lifecycle_e2e_tests.rs",
+    "crates/callisto-cli/tests/native_resolution_e2e_tests.rs",
+    "crates/callisto-cli/tests/nested_cargo_workspace_e2e_tests.rs",
+    "crates/callisto-cli/tests/partial_run_tests.rs",
+    "crates/callisto-cli/tests/poetry_and_workspace_glob_e2e_tests.rs",
+    "crates/callisto-cli/tests/pre_mode_tests.rs",
+    "crates/callisto-cli/tests/python_dependency_tables_tests.rs",
+    "crates/callisto-cli/tests/release_artifact_owner_tests.rs",
+    "crates/callisto-cli/tests/release_plan_pypi_default_registry_test.rs",
+    "crates/callisto-cli/tests/single_package_root_tests.rs",
+    "crates/callisto-cli/tests/stageable_targets_e2e_tests.rs",
+    "crates/callisto-cli/tests/status_check_tests.rs",
+    "crates/callisto-cli/tests/subprocess_dispatch_and_stdin_tests.rs",
+    "crates/callisto-graph/src/commands/matrix.rs",
+    "crates/callisto-graph/tests/matrix_tests.rs",
+    "docs/errors.md",
+    "docs/specs/cli.json",
+    "docs/specs/matrix.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 74,
+    "cache_creation_tokens": 51191,
+    "cache_read_tokens": 22799122,
+    "output_tokens": 19489,
+    "api_call_count": 36,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  }
+}
