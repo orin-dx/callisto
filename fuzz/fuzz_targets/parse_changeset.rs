@@ -1,9 +1,9 @@
 #![no_main]
 use libfuzzer_sys::fuzz_target;
-use callisto_model::format::Changeset;
+use callisto_model::format::parse_changeset;
 
 fuzz_target!(|data: &[u8]| {
     if let Ok(s) = std::str::from_utf8(data) {
-        let _ = Changeset::parse(s);
+        let _ = parse_changeset(s);
     }
 });
