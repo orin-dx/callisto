@@ -264,7 +264,7 @@ pub(crate) fn version_is_tagged(
 
 fn tag_of_version(tags: &crate::TagIndex, package: &callisto_model::PackageId, version: &Version) -> Option<String> {
     let rendered = tags.template(package).render(version).to_string();
-    if tags.contains_tag(&rendered) {
+    if tags.is_tag_of(package, &rendered) {
         return Some(rendered);
     }
     tags.last_tag(package)

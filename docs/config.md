@@ -111,7 +111,7 @@ Both blocks share five override fields, parsed identically; `[[package]]` also a
 | `release-trigger` | string (`"changeset"` \| `"auto"`) | none — every field here is an `Option`; omitted means "use this package's own default", not a config-level default | What causes this package to be considered for release |
 | `publish-to` | array of strings (`"crates-io"` \| `"npm"` \| `"pypi"` \| `"nuget"` \| `"github-release"` \| `"none"`) | none | Where this package publishes |
 | `tag-template` | string | none | Git tag template, e.g. `"callisto@{version}"` |
-| `previous-tag-templates` | array of strings | `[]` | `[[package]]` only (`[[package-set]]` rejects it). Earlier tag templates checked (in order) for this package's last release tag, only if `tag-template` finds none |
+| `previous-tag-templates` | array of strings | `[]` | `[[package]]` only (`[[package-set]]` rejects it). Earlier tag templates checked (in order) for this package's last release tag, only if `tag-template` finds none. They are matched by name only, so this is how a renamed package claims the tags it made under its old name |
 | `changelog` | string | none | Changelog path, relative to the package's own root. Forward-slash-separated only; rejected if absolute or containing `..` (E113). |
 | `pre-major-inference` | string (`"off"` \| `"conservative"` \| `"conservative-feat"`) | `"off"` | Pre-1.0 severity-downgrade policy: `conservative` downgrades an inferred Major to Minor; `conservative-feat` also downgrades Minor to Patch |
 

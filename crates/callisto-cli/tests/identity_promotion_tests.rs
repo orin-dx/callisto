@@ -658,3 +658,77 @@ fn a_bare_pre_release_baseline_is_not_adopted_by_a_package_that_only_carries_the
     let manifest = fs::read_to_string(root.join("packages/foo/package.json")).unwrap();
     assert!(manifest.contains("\"version\": \"3.1.0-beta.0\""), "{manifest}");
 }
+
+/// npm `foo` released as `foo@<version>`, then a Cargo `foo` 0.1.0 added beside it.
+fn released_npm_foo_with_a_cargo_lookalike(version: &str) -> tempfile::TempDir {
+    let dir = empty_repo();
+    let root = dir.path();
+    write_manifest(root, "packages/foo/package.json", npm_manifest("foo", version));
+    commit(root, "release npm foo");
+    git(root, &["tag", &format!("foo@{version}")]);
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/foo\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("crates/foo/src")).unwrap();
+    fs::write(root.join("crates/foo/src/lib.rs"), "\n").unwrap();
+    write_manifest(root, "crates/foo/Cargo.toml", cargo_manifest("foo", "0.1.0"));
+    commit(root, "add a cargo foo");
+    dir
+}
+
+#[test]
+fn a_package_that_gained_the_name_when_the_owner_was_renamed_takes_none_of_its_tags() {
+    let dir = released_npm_foo_with_a_cargo_lookalike("1.0.0");
+    let root = dir.path();
+    write_manifest(root, "packages/foo/package.json", npm_manifest("bar", "1.0.0"));
+    commit(root, "rename npm foo to bar");
+
+    let status = run_ok(root, &["status"]);
+    let foo = status_package(&status, "foo").unwrap_or_else(|| panic!("no foo in status: {status}"));
+    assert!(foo["lastReleasedVersion"].is_null(), "foo adopted the tag: {status}");
+    let diagnostics = status["diagnostics"].to_string();
+    assert!(diagnostics.contains("tag-owned-by-another-package"), "{status}");
+    assert!(diagnostics.contains("previous-tag-templates"), "{status}");
+}
+
+#[test]
+fn a_package_that_gained_the_name_when_the_owner_was_removed_takes_none_of_its_tags() {
+    let dir = released_npm_foo_with_a_cargo_lookalike("5.0.0");
+    let root = dir.path();
+    git(root, &["rm", "-r", "-q", "packages/foo"]);
+    commit(root, "remove npm foo");
+
+    let status = run_ok(root, &["status"]);
+    let foo = status_package(&status, "foo").unwrap_or_else(|| panic!("no foo in status: {status}"));
+    assert!(foo["lastReleasedVersion"].is_null(), "foo adopted the tag: {status}");
+}
+
+#[test]
+fn a_package_whose_version_was_tagged_by_another_package_is_still_planned_for_release() {
+    let dir = released_npm_foo_with_a_cargo_lookalike("0.1.0");
+    let root = dir.path();
+    write_manifest(root, "packages/foo/package.json", npm_manifest("bar", "0.1.0"));
+    commit(root, "rename npm foo to bar");
+
+    let out = callisto(root, &["--dry-run", "release"]);
+    let plan = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success() && plan.contains("\"cargo/foo\""),
+        "the cargo foo must be planned, not skipped as tagged: {plan}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn a_bare_package_keeps_the_tags_it_made() {
+    let dir = released_cargo_foo();
+    let root = dir.path();
+    let status = run_ok(root, &["status"]);
+    let foo = status_package(&status, "foo").unwrap_or_else(|| panic!("no foo in status: {status}"));
+    assert_eq!(foo["lastReleasedVersion"], "1.0.0", "status: {status}");
+    assert!(!status["diagnostics"]
+        .to_string()
+        .contains("tag-owned-by-another-package"));
+}

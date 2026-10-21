@@ -208,6 +208,10 @@ pub enum DiagnosticCode {
     /// targets, dependency edges or platform role are unknown. Loading a workspace to plan a release
     /// fails on it; only `status` reports it and carries on.
     ManifestUnresolved,
+    /// A tag matched a package's default template by name, but its commit held a manifest of another ecosystem
+    /// under that name, so the package did not make it and does not take it as its last release. A package that
+    /// was renamed declares its old tags with `previous-tag-templates`.
+    TagOwnedByAnotherPackage,
 }
 
 #[cfg(test)]

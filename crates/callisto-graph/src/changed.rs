@@ -192,6 +192,7 @@ mod tests {
         };
         let git = GitAccess::new(root, &runner);
         let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
+        runner.calls.lock().unwrap().clear();
         let refs: Vec<&Package> = pkgs.iter().collect();
         let result = changed_since_last_tag(&refs, &tags, &git).unwrap();
         let calls = runner.calls.lock().unwrap().clone();
