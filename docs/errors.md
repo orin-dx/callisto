@@ -312,6 +312,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E316 | A package reference uses the colon form (`cargo:foo`) | Write the slash form the message names (`cargo/foo`); it is the only qualified spelling in `callisto.toml`, changesets, `pre.json` and command-line arguments. |
 | E317 | A package named in `callisto.toml` has no ecosystem (`foo`) | Write `ecosystem/name` (`cargo/foo`, `npm/foo`, `pypi/foo`); `callisto.toml` accepts no other form. Changeset entries keep native names. |
 | E318 | `release-pr decide` was run while `.changeset/pre.json`'s mode is `pre` | Release prereleases locally with `callisto version` and `callisto release`, or run `callisto pre exit` before opening a release PR. |
+| E319 | A dependency spec is out of range of the new version and cannot be rewritten mechanically (an npm range with spaces, `||`, a hyphen or a wildcard, or a Cargo range whose upper bound excludes the new version) | Edit the range in the manifest the message names so it covers the new version, then re-run. Nothing was written. |
 
 
-243 numeric E#### codes total in one registry.
+244 numeric E#### codes total in one registry.

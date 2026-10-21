@@ -75,6 +75,24 @@ fn an_exact_pin_is_rewritten_in_place_and_its_dependent_released() {
 }
 
 #[test]
+fn a_range_the_bump_leaves_behind_and_cannot_be_rewritten_stops_the_run_before_any_write() {
+    let dir = cargo_workspace("{ version = \">=0.1.0, <0.2.0\", path = \"../lib\" }");
+    let root = dir.path();
+    add_changeset(root, "lib-crate", "minor");
+    let out = callisto(root, &["version"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "{stderr}");
+    assert!(stderr.contains("E319"), "{stderr}");
+    assert!(stderr.contains("crates/app/Cargo.toml"), "{stderr}");
+    assert!(read(root, "crates/lib/Cargo.toml").contains("version = \"0.1.0\""));
+    assert!(read(root, "crates/app/Cargo.toml").contains(">=0.1.0, <0.2.0"));
+    assert!(
+        root.join(".changeset").read_dir().unwrap().count() > 1,
+        "the changeset stays"
+    );
+}
+
+#[test]
 fn a_linked_group_naming_a_package_outside_the_workspace_is_rejected_with_the_member_named() {
     let dir = cargo_workspace("{ version = \"=0.1.0\", path = \"../lib\" }");
     let root = dir.path();

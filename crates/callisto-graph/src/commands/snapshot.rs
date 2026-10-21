@@ -107,9 +107,7 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
                 continue;
             }
 
-            let eco = crate::cascade::manifest_ecosystem(&edge.from_manifest);
-
-            match crate::cascade::rewrite_spec(&edge.spec, snap_to, eco, &ws.config.cascade) {
+            match crate::cascade::rewrite_edge(edge, snap_to, &ws.config.cascade)? {
                 crate::cascade::RewriteOutcome::Rewritten(to_spec) => {
                     let key = crate::cascade::dependency_rewrite_key(edge);
                     rewrites

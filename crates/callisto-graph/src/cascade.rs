@@ -263,8 +263,7 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
                 }
 
                 if d.rewrite {
-                    let eco = manifest_ecosystem(&edge.from_manifest);
-                    match rewrite_spec(&edge.spec, &new_version, eco, input.cfg) {
+                    match rewrite_edge(&edge, &new_version, input.cfg)? {
                         RewriteOutcome::Rewritten(to_spec) => {
                             let key = dependency_rewrite_key(&edge);
                             rewrite_attempted.insert(key.clone());
@@ -463,14 +462,12 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
                 continue;
             }
 
-            let eco = manifest_ecosystem(&edge.from_manifest);
-
             let key = dependency_rewrite_key(&edge);
             if rewrite_attempted.contains(&key) {
                 continue;
             }
 
-            match rewrite_spec(&edge.spec, &new_version, eco, input.cfg) {
+            match rewrite_edge(&edge, &new_version, input.cfg)? {
                 RewriteOutcome::Rewritten(to_spec) => {
                     out.rewrites.entry(key.clone()).or_insert_with(|| SpecRewrite {
                         key,
@@ -597,6 +594,22 @@ pub struct SpecRewrite {
 pub enum RewriteOutcome {
     Rewritten(DepSpec),
     LeftAlone(Diagnostic),
+}
+
+/// Rewrites one dependency edge toward `new`. A range a consumer's published manifest would keep excluding `new`
+/// stops the run; only a dev dependency, which consumers never install, is left alone with a warning.
+pub(crate) fn rewrite_edge(edge: &DepEdge, new: &Version, cfg: &CascadeConfig) -> Result<RewriteOutcome, GraphError> {
+    let eco = manifest_ecosystem(&edge.from_manifest);
+    match rewrite_spec(&edge.spec, new, eco, cfg) {
+        RewriteOutcome::LeftAlone(_) if edge.kind != DepKind::Dev => Err(GraphError::UnrewritableRange {
+            dependent: edge.from.display_name(),
+            dependency: edge.to.display_name(),
+            spec: edge.spec.render(),
+            version: new.render().to_string(),
+            manifest: edge.from_manifest.display().to_string(),
+        }),
+        outcome => Ok(outcome),
+    }
 }
 
 pub fn rewrite_spec(original: &DepSpec, new: &Version, eco: Ecosystem, cfg: &CascadeConfig) -> RewriteOutcome {

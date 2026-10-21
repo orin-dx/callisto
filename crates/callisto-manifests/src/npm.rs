@@ -595,10 +595,15 @@ pub fn round_trip(spec: &DepSpec, target: &Version) -> Option<DepSpec> {
         DepSpec::Exact(_) => Some(DepSpec::Exact(target.clone())),
         DepSpec::Range(_, original) => {
             let (prefix, rest) = crate::common::split_single_operator_prefix(original)?;
-            if rest.contains(' ') || rest.contains('-') || rest.contains('|') || rest.contains(['x', 'X', '*']) {
+            // A prerelease clause (`^2.0.0-next.0`) is one version; a hyphen range or a set of ranges is not.
+            let core = rest.split(['-', '+']).next().unwrap_or(rest);
+            if rest.contains([' ', '|']) || core.contains(['x', 'X', '*']) {
                 return None;
             }
-            let rendered = format!("{prefix}{}", render_at_precision(target, rest));
+            if core != rest && Version::parse(rest, VersionGrammar::SemVer).is_err() {
+                return None;
+            }
+            let rendered = format!("{prefix}{}", render_at_precision(target, core));
             let req = VersionReq::parse(&rendered, Ecosystem::Npm).ok()?;
             Some(DepSpec::Range(req, rendered))
         }
