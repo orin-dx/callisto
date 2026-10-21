@@ -27,7 +27,7 @@ pub struct ReleaseIntentV1 {
 /// [`ReleaseIntentV1::from_wire`] keeps a caller's own typed [`ReleaseIntentError`]
 /// intact -- deserializing straight into `ReleaseIntentV1` still validates, but folds a
 /// validation failure into a generic `serde` string error, losing the code.
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReleaseIntentV1Wire {
     schema_version: u8,

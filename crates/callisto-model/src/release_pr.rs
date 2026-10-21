@@ -63,7 +63,7 @@ impl ReleasePrConfigV1 {
 /// [`ReleasePrDecisionError`] (e.g. `E142`) intact -- deserializing straight into
 /// `ReleasePrConfigV1` still validates, but folds a validation failure into a generic
 /// `serde` string error, losing the code.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReleasePrConfigWireV1 {
     pub schema_version: u8,
@@ -128,7 +128,7 @@ impl ReleasePrSnapshotV2 {
 /// The on-the-wire shape of [`ReleasePrSnapshotV2`], before its invariants are checked.
 /// See [`ReleasePrConfigWireV1`] for why the CLI deserializes this instead of
 /// `ReleasePrSnapshotV2` directly.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReleasePrSnapshotWireV2 {
     pub schema_version: u8,
@@ -315,7 +315,7 @@ impl ReleasePrDecisionV2 {
 /// The on-the-wire shape of [`ReleasePrDecisionV2`], with its nested config and
 /// snapshot still unvalidated. See [`ReleasePrConfigWireV1`] for why the CLI
 /// deserializes this instead of `ReleasePrDecisionV2` directly.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReleasePrDecisionWireV2 {
     pub schema_version: u8,

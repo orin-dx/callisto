@@ -503,11 +503,11 @@ fn report_struct_field_shapes_are_unchanged() {
 #[test]
 fn diagnostic_code_enum_variants_match_expected_set() {
     let status_schema = run_schema("status");
-    let variants: BTreeSet<String> = status_schema["definitions"]["DiagnosticCode"]["oneOf"]
+    let variants: BTreeSet<String> = status_schema["$defs"]["DiagnosticCode"]["oneOf"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|v| v["enum"][0].as_str().unwrap().to_string())
+        .map(|v| v["const"].as_str().unwrap().to_string())
         .collect();
 
     let expected = set(&[
@@ -562,7 +562,7 @@ fn durable_release_wire_shapes_match_their_schema_version() {
     assert_eq!(req, expected);
     assert_eq!(props, expected);
 
-    let (req, props) = required_and_props(&receipt["definitions"]["ReleaseRunEnvelopeV1"]);
+    let (req, props) = required_and_props(&receipt["$defs"]["ReleaseRunEnvelopeV1"]);
     let mut expected = set(&[
         "schemaVersion",
         "orchestrationRevision",
@@ -580,12 +580,12 @@ fn durable_release_wire_shapes_match_their_schema_version() {
 #[test]
 fn release_operation_roles_carry_exactly_their_declared_variants() {
     let receipt = run_schema("release-receipt");
-    let variants: BTreeSet<String> = receipt["definitions"]["ReleaseOperationRole"]["oneOf"]
+    let variants: BTreeSet<String> = receipt["$defs"]["ReleaseOperationRole"]["oneOf"]
         .as_array()
         .unwrap()
         .iter()
         .map(|variant| {
-            variant["properties"]["kind"]["enum"][0]
+            variant["properties"]["kind"]["const"]
                 .as_str()
                 .expect("every role variant names itself")
                 .to_owned()
@@ -611,14 +611,14 @@ fn release_operation_roles_carry_exactly_their_declared_variants() {
 fn provider_observation_enums_carry_exactly_their_declared_variants() {
     let receipt = run_schema("release-receipt");
     let variants = |name: &str| -> BTreeSet<String> {
-        receipt["definitions"][name]["oneOf"]
+        receipt["$defs"][name]["oneOf"]
             .as_array()
             .unwrap()
             .iter()
             .map(|variant| {
-                variant["enum"]
-                    .get(0)
-                    .or_else(|| variant["properties"]["kind"]["enum"].get(0))
+                variant
+                    .get("const")
+                    .or_else(|| variant["properties"]["kind"].get("const"))
                     .and_then(serde_json::Value::as_str)
                     .expect("every variant names itself")
                     .to_owned()

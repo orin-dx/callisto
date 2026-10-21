@@ -48,7 +48,7 @@ pub struct ReleaseDecisionEntry {
     pub reasons: Vec<ReleaseInclusionReason>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ReleaseDecisionEntryWire {
     package: ReleasePackageId,

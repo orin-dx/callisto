@@ -160,7 +160,7 @@ pub struct GitHubAttestationPolicyV1 {
     pub workflow_commit: CommitSha,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct GitHubAttestationPolicyV1Wire {
     repository: GitHubRepository,

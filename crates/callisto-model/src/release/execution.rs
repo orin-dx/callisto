@@ -398,11 +398,11 @@ impl Serialize for ReleaseReceiptV1 {
 }
 
 impl JsonSchema for ReleaseReceiptV1 {
-    fn schema_name() -> String {
-        "ReleaseReceiptV1".to_owned()
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed("ReleaseReceiptV1")
     }
 
-    fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         ReleaseReceiptV1Wire::json_schema(generator)
     }
 }
