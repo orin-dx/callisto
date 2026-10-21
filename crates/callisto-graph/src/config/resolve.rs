@@ -159,6 +159,7 @@ pub struct ProductArtifactConfig {
 /// Both `product-package` and every `[[release.artifact]] package` must name one
 /// ecosystem-qualified identity; one parser so the two cannot drift.
 fn parse_qualified_package(value: &str, key: &str) -> Result<PackageId, ConfigError> {
+    ConfigError::reject_colon_form(value, key)?;
     let package = PackageId::parse(value).map_err(|_error| ConfigError::InvalidProductRelease {
         detail: format!("{key} must be an ecosystem-qualified package identity"),
     })?;
@@ -303,7 +304,7 @@ pub fn parse_release_trigger(s: &str) -> Result<ReleaseTrigger, ConfigError> {
 /// Prefixed rule, `id`'s package actually has a manifest in that ecosystem.
 ///
 /// `PackageId::matches` alone is not enough here: it treats a Bare id as an
-/// ecosystem wildcard, so a Prefixed rule for one ecosystem (`pypi:foo`)
+/// ecosystem wildcard, so a Prefixed rule for one ecosystem (`pypi/foo`)
 /// would otherwise match a same-named package that only exists in another
 /// (a Cargo-only `foo`) -- `package_ecosystems` is the package's real,
 /// manifest-derived ecosystem set, independent of whether its `PackageId`
@@ -591,6 +592,7 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
     // Order is preserved: first matching rule wins during package construction.
     let mut packages: Vec<(PackageId, PackageConfig)> = Vec::new();
     for raw_pkg in raw.package.unwrap_or_default() {
+        ConfigError::reject_colon_form(&raw_pkg.pattern, "[[package]] match")?;
         let pattern = PackageId::parse(&raw_pkg.pattern).map_err(|e| ConfigError::UnknownKey {
             path: callisto_toml.clone(),
             key: format!("[[package]] match = {:?}: {e}", raw_pkg.pattern),
@@ -626,6 +628,7 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
     // A [[package]] rule takes priority; [[package-set]] is the fallback (see walk.rs).
     let mut package_sets: Vec<(PackagePattern, PackageConfig)> = Vec::new();
     for raw_pkg in raw.package_set.unwrap_or_default() {
+        ConfigError::reject_colon_form(&raw_pkg.pattern, "[[package-set]] match")?;
         let pattern = PackagePattern::parse(&raw_pkg.pattern).map_err(|e| ConfigError::UnknownKey {
             path: callisto_toml.clone(),
             key: format!("[[package-set]] match = {:?}: {e}", raw_pkg.pattern),
@@ -1163,7 +1166,7 @@ mod tests {
         }
     }
 
-    /// repro/ws-rule: a `pypi:foo` rule must not apply to a Cargo-only `foo`.
+    /// repro/ws-rule: a `pypi/foo` rule must not apply to a Cargo-only `foo`.
     /// Before the fix, `PackageId::matches` treated the Bare query id as an
     /// ecosystem wildcard, so a Prefixed rule for any ecosystem matched by
     /// name alone -- `package_ecosystems` (the package's real, manifest-derived
@@ -1174,7 +1177,7 @@ mod tests {
         let root = tmp.path();
         fs::write(
             root.join("callisto.toml"),
-            "[[package]]\nmatch = \"pypi:foo\"\nrelease-trigger = \"changeset\"\n",
+            "[[package]]\nmatch = \"pypi/foo\"\nrelease-trigger = \"changeset\"\n",
         )
         .expect("write callisto.toml");
         let cfg = load(root).expect("load should succeed");
@@ -1182,7 +1185,7 @@ mod tests {
         let result = resolve_package_config(&id, &[Ecosystem::Cargo], &cfg).unwrap();
         assert!(
             result.is_none(),
-            "a `pypi:foo` rule must not apply to a package whose only real ecosystem is Cargo; got {result:?}"
+            "a `pypi/foo` rule must not apply to a package whose only real ecosystem is Cargo; got {result:?}"
         );
     }
 

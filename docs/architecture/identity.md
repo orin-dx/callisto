@@ -13,9 +13,9 @@ How the workspace names packages, why bare names match across ecosystems, and wh
 | Form | Example | `ecosystem()` |
 | --- | --- | --- |
 | `Bare(name)` | `foo`, `@scope/foo` | `None` |
-| `Prefixed { ecosystem, name }` | `cargo:foo`, `npm/@scope/foo` | `Some(e)` |
+| `Prefixed { ecosystem, name }` | `cargo/foo`, `npm/@scope/foo` | `Some(e)` |
 
-- `parse` treats text before the first `:` or `/` as a prefix only when `Ecosystem::from_prefix` knows it, so `@scope/foo` stays bare.
+- `parse` treats text before the first `/` as a prefix only when `Ecosystem::from_prefix` knows it, so `@scope/foo` stays bare. It still reads `cargo:foo`; every user-facing input rejects that form with E316 first.
 - `display_name` renders a prefixed id as `ecosystem/name`.
 - `PackageId` is the display and selector form; `Package::key()` is the workspace-relative directory of the first canonical manifest. It survives display promotion, not a directory move. `ReleasePackageId` names each canonical distribution as `ecosystem/name` using that manifest's own native name.
 - Default tags use `display_name()`: `foo@{version}` while bare, `cargo/foo@{version}` after promotion. Promotion therefore also changes the namespace of newly created default tags (ADR 11).
@@ -27,7 +27,7 @@ How the workspace names packages, why bare names match across ecosystems, and wh
 
 ## Resolving ambiguity
 
-A workspace can hold `cargo:foo` and `npm:foo` as separate packages; ambiguity is resolved where a lookup happens. Qualified selectors work before and after promotion. Canonical-only new references are planned in [the v1 design](polyglot-v1.md), not implemented by today's parser.
+A workspace can hold `cargo/foo` and `npm/foo` as separate packages; ambiguity is resolved where a lookup happens. Qualified selectors work before and after promotion, and the colon form is rejected with E316. Canonical-only new references are planned in [the v1 design](polyglot-v1.md), not implemented by today's parser.
 
 - `aggregate::resolve_target_package` resolves changeset entries through `IdentityIndex::resolve_id`, which maps qualified native distribution names to their owner and rejects ambiguous bare names. `status` attributes changeset entries and checks their well-formedness through the same resolver. `PackageId::resolve_unique` scans display ids, is deprecated, and is not equivalent for dual-manifest packages with different native names.
 - `[[package]]` rules use `config::resolve::resolve_package_config`: two linear passes over the rules in declaration order, prefixed rules first, then bare. It never sorts the rules. A bare rule that reaches a promoted name is an `AmbiguousName` error, using `ResolvedConfig::promoted_siblings`.

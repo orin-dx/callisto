@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use callisto_model::{normalize_pypi_project_name, Ecosystem, ManifestRole, PackageId};
 
-use crate::error::GraphError;
+use crate::error::{ConfigError, GraphError};
 
 #[cfg(test)]
 mod tests {
@@ -73,8 +73,8 @@ mod tests {
         assert!(result.is_none());
         assert_eq!(diagnostics.len(), 1, "exactly one diagnostic, not zero and not two");
         assert!(
-            diagnostics[0].message.contains("cargo:ambiguous-lib")
-                && diagnostics[0].message.contains("pypi:ambiguous-lib")
+            diagnostics[0].message.contains("cargo/ambiguous-lib")
+                && diagnostics[0].message.contains("pypi/ambiguous-lib")
         );
     }
 
@@ -94,10 +94,10 @@ mod tests {
         );
 
         assert_eq!(index.resolve("npm/foo").unwrap(), npm_only);
-        assert_eq!(
-            index.resolve("npm:foo").unwrap(),
-            npm_only,
-            "eco:name must be accepted as an alias"
+        let err = index.resolve("npm:foo").unwrap_err();
+        assert!(
+            matches!(&err, GraphError::Config(ConfigError::ColonReference { canonical, .. }) if canonical == "npm/foo"),
+            "the colon form must be rejected with the slash form named, got {err:?}"
         );
     }
 
@@ -184,12 +184,12 @@ mod tests {
         index.resolve_native_with_fallback(Ecosystem::Npm, "foo-py", &mut diagnostics);
         assert_eq!(diagnostics.len(), 1);
         assert!(
-            diagnostics[0].message.contains("pypi:foo-py"),
+            diagnostics[0].message.contains("pypi/foo-py"),
             "expected the candidate's own native name in the message, got: {}",
             diagnostics[0].message
         );
         assert!(
-            !diagnostics[0].message.contains("pypi:foo)") && !diagnostics[0].message.contains("pypi:foo,"),
+            !diagnostics[0].message.contains("pypi/foo)") && !diagnostics[0].message.contains("pypi/foo,"),
             "must not list the owner's unrelated primary name, got: {}",
             diagnostics[0].message
         );
@@ -298,7 +298,7 @@ pub struct IdentityIndex {
 
 impl IdentityIndex {
     /// The one selector resolver: resolves a user- or config-typed package
-    /// selector (`eco:name`, `eco/name`, or a bare name) against registered
+    /// selector (`eco/name` or a bare name; the colon form is `E316`) against registered
     /// native manifest names.
     ///
     /// A qualified selector is an exact `(ecosystem, native name)` lookup: no
@@ -310,6 +310,7 @@ impl IdentityIndex {
     /// name -- not just a package's primary/display name -- is what lets a
     /// dual-manifest package be named by either of its manifests' names.
     pub fn resolve(&self, selector: &str) -> Result<PackageId, GraphError> {
+        ConfigError::reject_colon_form(selector, "package selector")?;
         let id = PackageId::parse(selector).unwrap_or_else(|_| PackageId::Bare(selector.to_string()));
         self.resolve_id(&id)
     }
@@ -483,7 +484,7 @@ impl IdentityIndex {
             _ => {
                 let candidate_names: Vec<String> = candidates
                     .iter()
-                    .map(|(e, n, _)| format!("{}:{n}", e.prefix()))
+                    .map(|(e, n, _)| format!("{}/{n}", e.prefix()))
                     .collect();
                 diagnostics.push(callisto_model::Diagnostic {
                     code: callisto_model::DiagnosticCode::UnknownPackage,

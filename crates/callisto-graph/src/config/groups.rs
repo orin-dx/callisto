@@ -203,15 +203,14 @@ impl GroupTable {
                             members.push(GroupMember::Package(id.clone()));
                             membership.insert(id, rg.name.clone());
                         }
-                        // Ambiguous is a real, reportable error (E103), not a
-                        // "try the next lookup" miss.
-                        Err(err @ GraphError::AmbiguousName { .. }) => return Err(err),
-                        Err(_) => {
+                        Err(GraphError::UnknownPackage { .. }) => {
                             return Err(GraphError::MissingGroupMember {
                                 group: rg.name.clone(),
                                 member: name.clone(),
                             });
                         }
+                        // Ambiguous (E103) and the colon form (E316) are reportable as they are.
+                        Err(err) => return Err(err),
                     }
                 }
                 members.sort();

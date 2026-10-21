@@ -446,9 +446,9 @@ fn a_dry_run_after_a_failed_tag_push_plans_the_remaining_operations() {
     let planned: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
     assert!(planned.get("nothingToRelease").is_none(), "{planned}");
 
-    let run = rig.run(root, &["release", "--package", "cargo:core-crate"]);
+    let run = rig.run(root, &["release", "--package", "cargo/core-crate"]);
     assert!(run.status.success(), "{}", stderr(&run));
-    let selected_again = rig.run(root, &["release", "--package", "cargo:core-crate"]);
+    let selected_again = rig.run(root, &["release", "--package", "cargo/core-crate"]);
     assert!(!selected_again.status.success(), "a finished release is not selectable");
 }
 

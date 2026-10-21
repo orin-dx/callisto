@@ -181,12 +181,9 @@ fn parse_selections(packages: &[String]) -> Result<Vec<ReleasePackageId>, CliErr
     packages.iter().map(|raw| parse_release_selection(raw)).collect()
 }
 
-/// Parses one `--package` release selection, accepting `eco:name` as an input
-/// alias for the canonical `eco/name` form (one id grammar, everywhere) --
-/// `ReleasePackageId::parse`'s own strict `eco/name`-only grammar stays as is
-/// for its durable, on-disk encoding (the release-decision file), which this
-/// never reads back through.
+/// Parses one `--package` release selection: `eco/name` only, the same grammar as the release decision file.
 fn parse_release_selection(raw: &str) -> Result<ReleasePackageId, CliError> {
+    callisto_graph::ConfigError::reject_colon_form(raw, "--package").map_err(callisto_graph::GraphError::Config)?;
     match PackageId::parse(raw) {
         Ok(PackageId::Prefixed { ecosystem, name }) => {
             ReleasePackageId::new(ecosystem, name).map_err(|error| CliError::ReleasePackageInvalid {
@@ -196,7 +193,7 @@ fn parse_release_selection(raw: &str) -> Result<ReleasePackageId, CliError> {
         }
         _ => Err(CliError::ReleasePackageInvalid {
             raw: raw.to_string(),
-            detail: "expected an ecosystem-qualified package id, e.g. `cargo/pkg` or `cargo:pkg`".to_string(),
+            detail: "expected an ecosystem-qualified package id, e.g. `cargo/pkg`".to_string(),
         }),
     }
 }
@@ -704,15 +701,15 @@ fn write_receipt(path: &std::path::Path, receipt: &ReleaseReceiptV1, permit: &Ap
 
 #[cfg(test)]
 mod tests {
-    /// `--package cargo:pkg` (colon form) must be accepted as an alias of
-    /// `cargo/pkg` -- `ReleasePackageId::parse` alone rejects `:` for its
-    /// durable on-disk encoding, but the CLI selector grammar is one grammar
-    /// everywhere, so this file's own selection parser normalizes first.
     #[test]
-    fn parse_release_selection_accepts_colon_as_an_alias_of_slash() {
-        let colon = super::parse_release_selection("cargo:pkg").expect("colon form must be accepted");
-        let slash = super::parse_release_selection("cargo/pkg").expect("slash form must be accepted");
-        assert_eq!(colon, slash);
+    fn parse_release_selection_rejects_the_colon_form_and_names_the_slash_form() {
+        let err = super::parse_release_selection("cargo:pkg").unwrap_err();
+        let rendered = format!("{err:?}");
+        assert!(
+            rendered.contains("ColonReference") && rendered.contains("cargo/pkg"),
+            "{rendered}"
+        );
+        assert!(super::parse_release_selection("cargo/pkg").is_ok());
     }
 
     #[test]

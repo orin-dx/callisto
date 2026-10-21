@@ -12,7 +12,7 @@ use callisto_model::{
 use crate::config::resolve::resolve_package_config;
 use crate::config::GroupTable;
 use crate::config::{PreMajorInferencePolicy, ResolvedConfig};
-use crate::error::GraphError;
+use crate::error::{ConfigError, GraphError};
 use crate::identity::IdentityIndex;
 use crate::infer::SeverityInference;
 use crate::resolver::DependencyResolver;
@@ -119,6 +119,9 @@ pub fn load_changesets_permissive(
         let rel_path = path.strip_prefix(root).unwrap_or(&path).to_path_buf();
         match parse_changeset(&content) {
             Ok(changeset) => {
+                for entry in &changeset.entries {
+                    ConfigError::reject_colon_form(&entry.name, &format!("changeset `{}`", rel_path.display()))?;
+                }
                 let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
                 loaded.push(LoadedChangeset {
                     path: rel_path,

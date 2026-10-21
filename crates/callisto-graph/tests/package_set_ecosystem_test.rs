@@ -34,7 +34,7 @@ impl CommandRunner for NoopRunner {
 /// diagnostic, not fail silently.
 ///
 /// The workspace has one Cargo-ecosystem package named "internal-foo". The
-/// rule `"npm:internal-*"` requires an npm-ecosystem package, which does not
+/// rule `"npm/internal-*"` requires an npm-ecosystem package, which does not
 /// exist here, so it must match nothing and be surfaced.
 #[test]
 fn ecosystem_prefixed_package_set_matching_nothing_emits_diagnostic() {
@@ -56,7 +56,7 @@ fn ecosystem_prefixed_package_set_matching_nothing_emits_diagnostic() {
 
     fs::write(
         root.join("callisto.toml"),
-        "[[package-set]]\nmatch = \"npm:internal-*\"\nrelease-trigger = \"auto\"\n",
+        "[[package-set]]\nmatch = \"npm/internal-*\"\nrelease-trigger = \"auto\"\n",
     )
     .unwrap();
 
@@ -81,7 +81,7 @@ fn ecosystem_prefixed_package_set_matching_nothing_emits_diagnostic() {
     );
 
     assert!(
-        matching[0].message.contains("npm:internal-*"),
+        matching[0].message.contains("npm/internal-*"),
         "diagnostic message must name the unmatched pattern; got: {:?}",
         matching[0].message,
     );
@@ -110,7 +110,7 @@ fn ecosystem_prefixed_package_set_matching_real_package_applies_and_is_silent() 
 
     fs::write(
         root.join("callisto.toml"),
-        "[[package-set]]\nmatch = \"cargo:internal-*\"\nrelease-trigger = \"auto\"\n",
+        "[[package-set]]\nmatch = \"cargo/internal-*\"\nrelease-trigger = \"auto\"\n",
     )
     .unwrap();
 
@@ -127,7 +127,7 @@ fn ecosystem_prefixed_package_set_matching_real_package_applies_and_is_silent() 
 
     assert!(
         matching.is_empty(),
-        "'cargo:internal-*' matches the real Cargo package 'internal-foo'; \
+        "'cargo/internal-*' matches the real Cargo package 'internal-foo'; \
          no PackageSetMatchedNothing diagnostic expected, got: {:?}",
         matching,
     );
@@ -140,6 +140,6 @@ fn ecosystem_prefixed_package_set_matching_real_package_applies_and_is_silent() 
     assert_eq!(
         pkg.release_trigger,
         callisto_model::ReleaseTrigger::Auto,
-        "the cargo:internal-* [[package-set]] override must have applied"
+        "the cargo/internal-* [[package-set]] override must have applied"
     );
 }

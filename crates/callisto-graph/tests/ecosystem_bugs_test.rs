@@ -236,7 +236,7 @@ fn mixed_cargo_python_workspace_loads_without_crashing() {
 /// silently resolve across the ecosystem boundary. `resolve_native_with_fallback`'s
 /// single-candidate cross-ecosystem match is suppressed: no DepEdge is created from the npm
 /// package to the cargo crate, and an UnknownPackage Warning diagnostic naming
-/// `cargo:rust-addon` is recorded instead, so the unresolved dependency name is
+/// `cargo/rust-addon` is recorded instead, so the unresolved dependency name is
 /// visible rather than silently satisfied.
 #[test]
 fn cross_ecosystem_npm_to_cargo_dep_edge_is_discovered() {
@@ -300,14 +300,14 @@ fn cross_ecosystem_npm_to_cargo_dep_edge_is_discovered() {
         edges.iter().map(|e| e.to.display_name()).collect::<Vec<_>>()
     );
 
-    // An UnknownPackage Warning diagnostic naming cargo:rust-addon must be present instead.
+    // An UnknownPackage Warning diagnostic naming cargo/rust-addon must be present instead.
     assert!(
         ws.graph.diagnostics().iter().any(|d| {
             d.code == callisto_model::DiagnosticCode::UnknownPackage
                 && d.severity == callisto_model::DiagnosticSeverity::Warning
-                && d.message.contains("cargo:rust-addon")
+                && d.message.contains("cargo/rust-addon")
         }),
-        "an UnknownPackage warning diagnostic naming cargo:rust-addon must be present"
+        "an UnknownPackage warning diagnostic naming cargo/rust-addon must be present"
     );
 }
 
