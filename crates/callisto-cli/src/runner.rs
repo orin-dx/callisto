@@ -389,8 +389,8 @@ fn run_with_timeout_impl(
 
     // Read stdout/stderr in separate threads to prevent pipe-buffer deadlock
     // when the child produces output while we wait for it to exit.
-    let stdout_handle = child.stdout.take().unwrap();
-    let stderr_handle = child.stderr.take().unwrap();
+    let stdout_handle = child.stdout.take().expect("stdout was piped");
+    let stderr_handle = child.stderr.take().expect("stderr was piped");
 
     // The reader threads signal completion over a channel rather than
     // being joined directly. Killing (or the natural exit of) the

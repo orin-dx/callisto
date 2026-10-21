@@ -553,7 +553,11 @@ fn raise<D: DependencyResolver>(
             out.reasons.insert(
                 sib.clone(),
                 BumpReason::FixedGroupUnion {
-                    group: groups.fixed_group_of(pkg).unwrap().name.clone(),
+                    group: groups
+                        .fixed_group_of(pkg)
+                        .expect("a fixed-group sibling implies the package has a fixed group")
+                        .name
+                        .clone(),
                 },
             );
             let sib_t = bump_target(sib, sev, input)?;

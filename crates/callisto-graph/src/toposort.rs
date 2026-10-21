@@ -62,8 +62,10 @@ where
     for u in &members {
         for (v, kind) in outgoing_edges(u) {
             if members.contains(&v) && edge_allowed(u, &v, kind) {
-                adj.get_mut(&v).unwrap().push(u.clone());
-                *in_degree.get_mut(u).unwrap() += 1;
+                adj.get_mut(&v)
+                    .expect("every member has an adjacency list")
+                    .push(u.clone());
+                *in_degree.get_mut(u).expect("every member has an in-degree") += 1;
             }
         }
     }
@@ -80,7 +82,7 @@ where
         sorted.push(u.clone());
         if let Some(neighbors) = adj.get(&u) {
             for v in neighbors {
-                let deg = in_degree.get_mut(v).unwrap();
+                let deg = in_degree.get_mut(v).expect("every member has an in-degree");
                 *deg -= 1;
                 if *deg == 0 {
                     queue.insert(v.clone());

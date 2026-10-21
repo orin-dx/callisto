@@ -61,6 +61,7 @@ provider-contract:
 # internal job scheduler parallelize across crates instead.
 lint:
     cargo clippy --workspace --all-targets -- -D warnings
+    cargo clippy --workspace --lib --bins -- -D warnings -D clippy::unwrap_used
 
 # Lint only projects affected by changes since the base branch. Uses moon's
 # project graph to find affected crates, then lints them in one cargo
@@ -77,6 +78,7 @@ lint-affected:
     args=()
     for p in $projects; do args+=(-p "$p"); done
     cargo clippy "${args[@]}" --all-targets -- -D warnings
+    cargo clippy "${args[@]}" --lib --bins -- -D warnings -D clippy::unwrap_used
 
 # Check code formatting compliance via moon
 fmt-check:

@@ -35,7 +35,9 @@ impl TagTemplate {
             });
         }
 
-        let (prefix, suffix) = raw.split_once(version_marker).unwrap();
+        let (prefix, suffix) = raw
+            .split_once(version_marker)
+            .expect("the template was checked to contain the version marker");
 
         if prefix.is_empty() && suffix.is_empty() {
             return Err(TagTemplateError::NoLiteralAnchor {

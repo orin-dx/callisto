@@ -147,7 +147,10 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         if sev == Severity::None {
             continue;
         }
-        let pkg = pkg_map.get(id).copied().unwrap();
+        let pkg = pkg_map
+            .get(id)
+            .copied()
+            .expect("every bumped package is in the workspace");
         let from = base_versions.get(id).cloned().ok_or_else(|| {
             GraphError::Manifest(callisto_model::ManifestError::MissingField {
                 path: pkg.manifests.first().map(|m| m.path.clone()).unwrap_or_default(),
