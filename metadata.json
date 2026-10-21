@@ -1,0 +1,65 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5FY6FTW4281Y5VEKVDF8CSF",
+  "strategy": "manual-commit",
+  "branch": "worktree-t06-canonical-config",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".changeset/require-qualified-config-references.md",
+    "callisto.toml",
+    "crates/callisto-cli/src/commands/version.rs",
+    "crates/callisto-cli/tests/cascade_scenarios_tests.rs",
+    "crates/callisto-cli/tests/common/release_harness.rs",
+    "crates/callisto-cli/tests/durable_release_e2e_tests.rs",
+    "crates/callisto-cli/tests/release_artifact_owner_tests.rs",
+    "crates/callisto-cli/tests/shallow_clone_e2e_tests.rs",
+    "crates/callisto-cli/tests/status_version_selector_tests.rs",
+    "crates/callisto-graph/src/aggregate/tests.rs",
+    "crates/callisto-graph/src/commands/release/binding.rs",
+    "crates/callisto-graph/src/commands/release/derive.rs",
+    "crates/callisto-graph/src/commands/release/local.rs",
+    "crates/callisto-graph/src/commands/release/mod.rs",
+    "crates/callisto-graph/src/commands/snapshot.rs",
+    "crates/callisto-graph/src/commands/version/tests.rs",
+    "crates/callisto-graph/src/config/groups.rs",
+    "crates/callisto-graph/src/config/pattern.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/src/walk/tests.rs",
+    "crates/callisto-graph/tests/config_resolve_tests.rs",
+    "crates/callisto-graph/tests/cross_ecosystem_diagnostic_test.rs",
+    "crates/callisto-graph/tests/per_package_config_test.rs",
+    "crates/callisto-graph/tests/plan_version_owner_open_count_test.rs",
+    "crates/callisto-graph/tests/publish_target_ecosystem_mismatch_test.rs",
+    "crates/callisto-graph/tests/status_cascade_and_wellformedness_tests.rs",
+    "crates/callisto-graph/tests/version_tests.rs",
+    "docs/architecture/identity.md",
+    "docs/config.md",
+    "docs/errors.md",
+    "docs/projects/V1-SYSTEM-HARDENING.json",
+    "docs/specs/workspace.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 222,
+    "cache_creation_tokens": 143357,
+    "cache_read_tokens": 21350198,
+    "output_tokens": 50563,
+    "api_call_count": 110,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  }
+}

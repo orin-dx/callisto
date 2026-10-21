@@ -1,0 +1,150 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5FY6FTW4281Y5VEKVDF8CSF",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-21T19:15:04.908079Z",
+  "branch": "worktree-t06-canonical-config",
+  "checkpoints_count": 2,
+  "save_step_count": 2,
+  "files_touched": [
+    ".changeset/require-qualified-config-references.md",
+    "callisto.toml",
+    "crates/callisto-cli/src/commands/version.rs",
+    "crates/callisto-cli/tests/cascade_scenarios_tests.rs",
+    "crates/callisto-cli/tests/common/release_harness.rs",
+    "crates/callisto-cli/tests/durable_release_e2e_tests.rs",
+    "crates/callisto-cli/tests/release_artifact_owner_tests.rs",
+    "crates/callisto-cli/tests/shallow_clone_e2e_tests.rs",
+    "crates/callisto-cli/tests/status_version_selector_tests.rs",
+    "crates/callisto-graph/src/aggregate/tests.rs",
+    "crates/callisto-graph/src/commands/release/binding.rs",
+    "crates/callisto-graph/src/commands/release/derive.rs",
+    "crates/callisto-graph/src/commands/release/local.rs",
+    "crates/callisto-graph/src/commands/release/mod.rs",
+    "crates/callisto-graph/src/commands/snapshot.rs",
+    "crates/callisto-graph/src/commands/version/tests.rs",
+    "crates/callisto-graph/src/config/groups.rs",
+    "crates/callisto-graph/src/config/pattern.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/src/walk/tests.rs",
+    "crates/callisto-graph/tests/config_resolve_tests.rs",
+    "crates/callisto-graph/tests/cross_ecosystem_diagnostic_test.rs",
+    "crates/callisto-graph/tests/per_package_config_test.rs",
+    "crates/callisto-graph/tests/plan_version_owner_open_count_test.rs",
+    "crates/callisto-graph/tests/publish_target_ecosystem_mismatch_test.rs",
+    "crates/callisto-graph/tests/status_cascade_and_wellformedness_tests.rs",
+    "crates/callisto-graph/tests/version_tests.rs",
+    "docs/architecture/identity.md",
+    "docs/config.md",
+    "docs/errors.md",
+    "docs/projects/V1-SYSTEM-HARDENING.json",
+    "docs/specs/workspace.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "667fdfe84902",
+  "checkpoint_transcript_start": 32704,
+  "transcript_lines_at_start": 32704,
+  "compact_transcript_start": 2841,
+  "token_usage": {
+    "input_tokens": 222,
+    "cache_creation_tokens": 143357,
+    "cache_read_tokens": 21350198,
+    "output_tokens": 50563,
+    "api_call_count": 110,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 188
+  },
+  "summary": {
+    "intent": "Land two pieces of v1 hardening work in the callisto repo: CI hygiene (MSRV job, weekly advisory scan, Cargo dependabot, tighter deny.toml) and T06 PR 3, which makes bare package names in callisto.toml an error (E317) requiring the eco/name form.",
+    "outcome": "PR #271 (CI hygiene) was opened signed and ready for review, and all 12 hosted checks passed. The E317 change was implemented across graph and CLI crates with tests, docs, spec, dogfood config and a changeset. Local `just ci` passed (exit=0, coverage 92.71%) and the signed commit was created, but the transcript doesn't show it pushed or a PR opened.",
+    "learnings": {
+      "repo": [
+        "Work is done in per-task git worktrees under .claude/worktrees/ (e.g. ci-hygiene, t06-canonical-config); commit messages are written to plans/ files and commits must be signed (verify with signature status 'G').",
+        "CI is driven through `just` recipes (`just ci`, `just zizmor`, `just workflow-contracts`) plus an action-pin check; hosted CI on a PR has 12 checks.",
+        "MSRV job reads `rust-version` from Cargo.toml and runs `cargo check --workspace --all-targets --locked`; workspace passes on Rust 1.96.",
+        "deny.toml now disallows AGPL-3.0-only and wildcard version requirements (path deps still allowed).",
+        "Error codes are defined in crates/callisto-graph/src/error.rs and documented in docs/errors.md; E317 was previously unused (E316 is the adjacent code).",
+        "Config references (package, package-set, product, group members) now go through a `require_qualified` helper that rejects bare names with a fix-it to `eco/name`.",
+        "Changesets live in .changeset/ and follow the format of prior PRs.",
+        "Plan/spec docs (docs/projects/V1-SYSTEM-HARDENING.json, docs/specs/workspace.json, docs/architecture/identity.md, docs/config.md) reference config reference forms and had to be kept in sync with the code change.",
+        "cargo-semver-checks was deliberately left out because libraries become internal at 1.0."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/config/resolve.rs",
+          "finding": "Bare-rule tests and a group ambiguity test became unreachable after E317 and were deleted; new unit tests cover bare [[package]], [[package-set]] and product references."
+        },
+        {
+          "path": "crates/callisto-graph/src/config/groups.rs",
+          "finding": "Group member parsing now rejects bare names; a bare group member rejection test was added and unused imports cleaned up."
+        },
+        {
+          "path": "crates/callisto-graph/tests/cross_ecosystem_diagnostic_test.rs",
+          "finding": "Spelling-conflict tests had to be rewritten around a dual-ecosystem package since bare names no longer parse."
+        }
+      ],
+      "workflow": [
+        "The Bash permission guard rejects compound commands, so run commands plainly one at a time (e.g. the MSRV check) and use dedicated search tools instead of piped commands.",
+        "Long-running `just ci` is best run via a script in the background with an `exit=` line in the log, then monitored for completion.",
+        "Scripted bulk edits of test fixtures need review: the qualify script double-prefixed references, corrupted colon-form inputs, and silently altered unrelated comments (runner.rs, init/tests.rs). Always inspect the staged diff before committing."
+      ]
+    },
+    "friction": [
+      "Compound shell command was rejected by the guard when running the MSRV check, requiring a rerun as a plain command.",
+      "The scripted conversion of bare references to eco/name caused double-prefixing and corrupted intentional colon-form test inputs, requiring fixup scripts and manual edits.",
+      "The cleanup script accidentally modified comments in unrelated files (runner.rs and commands/init/tests.rs), which was only caught while reviewing staged files.",
+      "Many test fixtures across graph and CLI crates relied on bare names, making the change very wide (30+ files)."
+    ],
+    "open_items": [
+      "Push the E317 branch and open the T06 PR 3 (the commit was created but push/PR not shown).",
+      "Delete the dead `resolve_human` helper (stated as part of T06 PR 3; not clearly confirmed done in the transcript).",
+      "Merge PR #271 once reviewed; hosted CI is green.",
+      "cargo-semver-checks intentionally deferred until the 1.0 public surface is defined."
+    ]
+  }
+}
