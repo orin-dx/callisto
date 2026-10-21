@@ -330,10 +330,10 @@ fn set_dependency_version(item: &mut toml_edit::Item, new_str: String) -> Result
     } else if let Some(tbl) = item.as_table_mut() {
         let decor = tbl.get("version").and_then(|i| i.as_value()).map(|v| v.decor().clone());
         tbl.insert("version", toml_edit::value(new_str));
-        if let Some(decor) = decor {
-            if let Some(new_item) = tbl.get_mut("version").and_then(|i| i.as_value_mut()) {
-                *new_item.decor_mut() = decor;
-            }
+        if let Some(decor) = decor
+            && let Some(new_item) = tbl.get_mut("version").and_then(|i| i.as_value_mut())
+        {
+            *new_item.decor_mut() = decor;
         }
     } else {
         return Err(());
@@ -490,10 +490,9 @@ impl Manifest for CargoToml {
                     }
                 } else if path.is_dir()
                     && is_file(&path.join("main.rs")).map_err(|error| unreadable(Path::new("src/bin"), error))?
+                    && let Some(name) = path.file_name().and_then(|name| name.to_str())
                 {
-                    if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
-                        names.insert(name.to_owned());
-                    }
+                    names.insert(name.to_owned());
                 }
             }
         }
@@ -530,10 +529,10 @@ impl Manifest for CargoToml {
 
     fn current_version(&self) -> Result<Version, ManifestError> {
         if self.inherited_version {
-            if let Some(ref inh) = self.inheritance {
-                if let Some(ref v) = inh.version {
-                    return Ok(v.clone());
-                }
+            if let Some(ref inh) = self.inheritance
+                && let Some(ref v) = inh.version
+            {
+                return Ok(v.clone());
             }
             return Err(ManifestError::WorkspaceInherited {
                 path: self.path.clone(),
@@ -797,10 +796,10 @@ fn parse_cargo_dep_item(item: &toml_edit::Item, kind: &mut DepKind) -> DepSpec {
 }
 
 fn parse_cargo_spec_str(s: &str) -> DepSpec {
-    if crate::common::is_bare_semver(s) {
-        if let Ok(v) = Version::parse(s, VersionGrammar::SemVer) {
-            return DepSpec::CargoBare(v);
-        }
+    if crate::common::is_bare_semver(s)
+        && let Ok(v) = Version::parse(s, VersionGrammar::SemVer)
+    {
+        return DepSpec::CargoBare(v);
     }
     if let Ok(req) = VersionReq::parse(s, Ecosystem::Cargo) {
         return DepSpec::Range(req, s.to_string());

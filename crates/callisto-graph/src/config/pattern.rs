@@ -59,10 +59,10 @@ impl PackagePattern {
     /// be supplied explicitly for an ecosystem-prefixed pattern to ever be
     /// able to match.
     pub fn matches_in_ecosystems(&self, name: &str, ecosystems: &[Ecosystem]) -> bool {
-        if let Some(want) = self.ecosystem {
-            if !ecosystems.contains(&want) {
-                return false;
-            }
+        if let Some(want) = self.ecosystem
+            && !ecosystems.contains(&want)
+        {
+            return false;
         }
         self.matcher.is_match(name)
     }

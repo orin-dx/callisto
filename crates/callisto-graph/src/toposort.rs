@@ -176,10 +176,11 @@ where
 
     for u in &members {
         for (v, kind) in outgoing_edges(u) {
-            if members.contains(&v) && ordering_kinds.contains(&kind) {
-                if let (Some(&u_idx), Some(&v_idx)) = (node_map.get(u), node_map.get(&v)) {
-                    graph.add_edge(u_idx, v_idx, ());
-                }
+            if members.contains(&v)
+                && ordering_kinds.contains(&kind)
+                && let (Some(&u_idx), Some(&v_idx)) = (node_map.get(u), node_map.get(&v))
+            {
+                graph.add_edge(u_idx, v_idx, ());
             }
         }
     }
@@ -292,10 +293,10 @@ mod tests {
 
         let result = toposort_impl(&subset, &all, &[DepKind::Runtime], |id| {
             // Find the index of this package; if it's not the last, it depends on the next.
-            if let Some(pos) = ids.iter().position(|x| x == id) {
-                if pos + 1 < ids.len() {
-                    return vec![(ids[pos + 1].clone(), DepKind::Runtime)];
-                }
+            if let Some(pos) = ids.iter().position(|x| x == id)
+                && pos + 1 < ids.len()
+            {
+                return vec![(ids[pos + 1].clone(), DepKind::Runtime)];
             }
             vec![]
         })

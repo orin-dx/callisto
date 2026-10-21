@@ -659,15 +659,15 @@ fn resolve_packages(
         // real publish downstream with zero diagnostic.
         if let Some(override_targets) = active_override.and_then(|o| o.publish_to.as_deref()) {
             for target in override_targets {
-                if let Some(target_ecosystem) = target.ecosystem() {
-                    if !package_ecosystems.contains(&target_ecosystem) {
-                        return Err(GraphError::PublishTargetEcosystemMismatch {
-                            package: id.clone(),
-                            target: target.config_str().to_string(),
-                            target_ecosystem,
-                            package_ecosystems,
-                        });
-                    }
+                if let Some(target_ecosystem) = target.ecosystem()
+                    && !package_ecosystems.contains(&target_ecosystem)
+                {
+                    return Err(GraphError::PublishTargetEcosystemMismatch {
+                        package: id.clone(),
+                        target: target.config_str().to_string(),
+                        target_ecosystem,
+                        package_ecosystems,
+                    });
                 }
             }
             // The override replaces *which* targets the package publishes

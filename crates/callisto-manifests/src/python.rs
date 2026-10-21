@@ -311,15 +311,16 @@ fn normalize_poetry_clause(clause: &str) -> String {
     } else if let Some(rest) = clause.strip_prefix('~') {
         // Distinguish Poetry's bare tilde ("~1.2.3") from PEP 440's
         // compatible-release operator ("~=1.2.3"), which is already valid.
-        if !rest.starts_with('=') {
-            if let Some(normalized) = normalize_tilde(rest) {
-                return normalized;
-            }
-        }
-    } else if clause.starts_with(|c: char| c.is_ascii_digit()) && clause.contains('*') {
-        if let Some(normalized) = normalize_wildcard(clause) {
+        if !rest.starts_with('=')
+            && let Some(normalized) = normalize_tilde(rest)
+        {
             return normalized;
         }
+    } else if clause.starts_with(|c: char| c.is_ascii_digit())
+        && clause.contains('*')
+        && let Some(normalized) = normalize_wildcard(clause)
+    {
+        return normalized;
     }
     clause.to_string()
 }

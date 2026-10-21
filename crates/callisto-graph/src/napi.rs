@@ -130,9 +130,10 @@ pub fn napi_drift(group: &GroupDef, declared: &[String], root: &Path) -> Vec<Dia
             _ => None,
         });
 
-        if let Some(abs_path) = manifest_path {
-            if abs_path.exists() {
-                diagnostics.push(Diagnostic {
+        if let Some(abs_path) = manifest_path
+            && abs_path.exists()
+        {
+            diagnostics.push(Diagnostic {
                     code: DiagnosticCode::NapiTargetRemovedStillOnDisk,
                     severity: DiagnosticSeverity::Warning,
                     message: format!(
@@ -144,7 +145,6 @@ pub fn napi_drift(group: &GroupDef, declared: &[String], root: &Path) -> Vec<Dia
                     governed_by: None,
                     escalated_by: Some(StrictFlag::Strict),
                 });
-            }
         }
     }
 

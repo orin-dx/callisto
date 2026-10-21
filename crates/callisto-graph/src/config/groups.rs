@@ -249,10 +249,10 @@ impl GroupTable {
         let mut sibs = Vec::new();
         if let Some(g) = self.fixed_group_of(id) {
             for m in g.members(GroupMemberKind::Package) {
-                if let GroupMember::Package(ref pkg_id) = m {
-                    if pkg_id != id {
-                        sibs.push(pkg_id);
-                    }
+                if let GroupMember::Package(pkg_id) = m
+                    && pkg_id != id
+                {
+                    sibs.push(pkg_id);
                 }
             }
         }
@@ -295,7 +295,7 @@ impl GroupTable {
 
         for g in fixed {
             for m in g.members(GroupMemberKind::Package) {
-                if let GroupMember::Package(ref id) = m {
+                if let GroupMember::Package(id) = m {
                     f_of.insert(id.clone(), g.name.clone());
                 }
             }
@@ -304,7 +304,7 @@ impl GroupTable {
 
         for g in linked {
             for m in g.members(GroupMemberKind::Package) {
-                if let GroupMember::Package(ref id) = m {
+                if let GroupMember::Package(id) = m {
                     l_of.insert(id.clone(), g.name.clone());
                 }
             }

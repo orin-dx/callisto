@@ -79,24 +79,24 @@ impl PackageId {
             return Err(PackageIdParseError::PathTraversal { raw: s.to_string() });
         }
 
-        if let Some((prefix, remainder)) = s.split_once(':') {
-            if let Some(ecosystem) = Ecosystem::from_prefix(prefix) {
-                Self::validate_prefixed_remainder(s, prefix, remainder)?;
-                return Ok(PackageId::Prefixed {
-                    ecosystem,
-                    name: remainder.to_string(),
-                });
-            }
+        if let Some((prefix, remainder)) = s.split_once(':')
+            && let Some(ecosystem) = Ecosystem::from_prefix(prefix)
+        {
+            Self::validate_prefixed_remainder(s, prefix, remainder)?;
+            return Ok(PackageId::Prefixed {
+                ecosystem,
+                name: remainder.to_string(),
+            });
         }
 
-        if let Some((prefix, remainder)) = s.split_once('/') {
-            if let Some(ecosystem) = Ecosystem::from_prefix(prefix) {
-                Self::validate_prefixed_remainder(s, prefix, remainder)?;
-                return Ok(PackageId::Prefixed {
-                    ecosystem,
-                    name: remainder.to_string(),
-                });
-            }
+        if let Some((prefix, remainder)) = s.split_once('/')
+            && let Some(ecosystem) = Ecosystem::from_prefix(prefix)
+        {
+            Self::validate_prefixed_remainder(s, prefix, remainder)?;
+            return Ok(PackageId::Prefixed {
+                ecosystem,
+                name: remainder.to_string(),
+            });
         }
 
         Ok(PackageId::Bare(s.to_string()))

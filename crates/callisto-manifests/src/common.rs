@@ -52,14 +52,14 @@ pub(crate) fn split_single_operator_prefix(s: &str) -> Option<(&str, &str)> {
 /// `cargo::set_scalar_preserving_decor` and a local closure inside
 /// `python::PyprojectToml::write_version`.
 pub(crate) fn set_scalar_preserving_decor(table: &mut dyn toml_edit::TableLike, key: &str, new_value: &str) {
-    if let Some(item) = table.get_mut(key) {
-        if let Some(val) = item.as_value_mut() {
-            let decor = val.decor().clone();
-            let mut new_val = toml_edit::Value::from(new_value);
-            *new_val.decor_mut() = decor;
-            *val = new_val;
-            return;
-        }
+    if let Some(item) = table.get_mut(key)
+        && let Some(val) = item.as_value_mut()
+    {
+        let decor = val.decor().clone();
+        let mut new_val = toml_edit::Value::from(new_value);
+        *new_val.decor_mut() = decor;
+        *val = new_val;
+        return;
     }
     table.insert(key, toml_edit::value(new_value));
 }

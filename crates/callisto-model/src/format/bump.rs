@@ -96,15 +96,15 @@ impl Versioning for SemVerVersioning {
         let mut counter_suffix = None;
         if current.is_prerelease() {
             let current_raw = current.render();
-            if let Some((rel_part, pre_part)) = current_raw.split_once('-') {
-                if rel_part == release.render() {
-                    let dotted_prefix = format!("{tag}.");
-                    counter_suffix = pre_part
-                        // Dotted form: e.g. "alpha.3" with tag "alpha" → "3"
-                        .strip_prefix(&dotted_prefix)
-                        // Undotted form: e.g. "alpha1" with tag "alpha" → "1"
-                        .or_else(|| pre_part.strip_prefix(tag));
-                }
+            if let Some((rel_part, pre_part)) = current_raw.split_once('-')
+                && rel_part == release.render()
+            {
+                let dotted_prefix = format!("{tag}.");
+                counter_suffix = pre_part
+                    // Dotted form: e.g. "alpha.3" with tag "alpha" → "3"
+                    .strip_prefix(&dotted_prefix)
+                    // Undotted form: e.g. "alpha1" with tag "alpha" → "1"
+                    .or_else(|| pre_part.strip_prefix(tag));
             }
         }
         let counter = next_counter(counter_suffix, overflow)?;

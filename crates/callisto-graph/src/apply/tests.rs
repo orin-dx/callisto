@@ -650,8 +650,8 @@ fn python_refresh_calls(lockfiles: &[&str]) -> Vec<(String, Vec<String>)> {
         transient: false,
     };
     apply_version_plan(root, &plan, &runner, &opts, &ApplyPermit::force_for_tests()).expect("apply should succeed");
-    let recorded = calls.lock().unwrap().clone();
-    recorded
+
+    calls.lock().unwrap().clone()
 }
 
 fn refreshed_python_tools(calls: &[(String, Vec<String>)]) -> Vec<&str> {

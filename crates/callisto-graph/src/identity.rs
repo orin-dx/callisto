@@ -469,7 +469,7 @@ impl IdentityIndex {
         None
     }
 
-    pub fn native_names(&self, id: &PackageId) -> impl Iterator<Item = (Ecosystem, &str)> {
+    pub fn native_names(&self, id: &PackageId) -> impl Iterator<Item = (Ecosystem, &str)> + use<'_> {
         let mut results = Vec::new();
         for ((e, name), registered_id) in &self.native {
             if registered_id == id {
@@ -494,7 +494,7 @@ impl IdentityIndex {
             .filter(|(_, path)| !owner.canonical_manifests().any(|m| m.path == *path))
     }
 
-    pub fn platforms_of(&self, owner: &PackageId) -> impl Iterator<Item = (&str, &Path)> {
+    pub fn platforms_of(&self, owner: &PackageId) -> impl Iterator<Item = (&str, &Path)> + use<'_> {
         let mut results = Vec::new();
         for (name, (plat_owner, path, _role)) in &self.platform {
             if plat_owner == owner {
