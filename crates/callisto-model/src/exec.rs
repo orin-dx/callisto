@@ -169,7 +169,7 @@ pub enum CommandError {
     #[diagnostic(code(E022), help("Run this command on a surface where `{program}` can be executed."))]
     Unsupported { program: String, reason: String },
 
-    #[error("`{program}` failed with exit code {exit_code:?}: {stderr}")]
+    #[error("`{program}` failed with exit code {exit_code:?}: {}", crate::registry::redact_command_stderr(.stderr))]
     #[diagnostic(code(E023), help("Inspect the reported stderr to diagnose why `{program}` failed."))]
     Failed {
         program: String,
@@ -320,5 +320,19 @@ mod tests {
         let redacted = output.redacted_stderr();
         assert!(!redacted.contains("ghs_leaked_secret"), "got: {redacted}");
         assert!(redacted.contains("[REDACTED]"), "got: {redacted}");
+    }
+
+    /// Every site that builds `CommandError::Failed` from raw stderr is covered by its message, not by each caller.
+    #[test]
+    fn a_failed_command_error_message_hides_credentials_in_its_stderr() {
+        let error = CommandError::Failed {
+            program: "git".to_string(),
+            exit_code: Some(128),
+            stderr: "fatal: could not read from https://u:ghs_leaked_secret@github.com/o/r.git, header Bearer abcdefghij0123456789xyz".to_string(),
+        };
+        let message = error.to_string();
+        assert!(!message.contains("ghs_leaked_secret"), "got: {message}");
+        assert!(!message.contains("abcdefghij0123456789xyz"), "got: {message}");
+        assert!(message.contains("exit code Some(128)"), "got: {message}");
     }
 }
