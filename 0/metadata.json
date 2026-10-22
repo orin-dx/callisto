@@ -1,0 +1,79 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5H3A36NSEVKEN3FNTY7FXBS",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-22T06:03:38.50152Z",
+  "branch": "chore/pin-moon",
+  "checkpoints_count": 3,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "f351481043b9",
+  "checkpoint_transcript_start": 49382,
+  "transcript_lines_at_start": 49382,
+  "compact_transcript_start": 4005,
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 3917,
+    "cache_read_tokens": 2581253,
+    "output_tokens": 2153,
+    "api_call_count": 4
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 238
+  },
+  "summary": {
+    "intent": "Pin the moon tool version in the repo's proto tool configuration and open a pull request for the change.",
+    "outcome": "Checked the proto pins and available moon versions, wrote a PR body, and pinned moon. The first commit attempt was blocked by the pre-commit hook because moon was missing. Moon 2.6.2 was installed locally and the commit, push and PR were retried. The transcript does not show whether the retry succeeded.",
+    "learnings": {
+      "repo": [
+        "Tool versions are pinned through proto, so moon is pinned in the repo's proto tool configuration.",
+        "A pre-commit hook invokes moon, so moon must be installed locally before committing."
+      ],
+      "code": [],
+      "workflow": [
+        "Install the tools a pre-commit hook needs before committing, or the commit fails and the commit, push and PR steps have to be redone.",
+        "Writing the PR body to a temp file such as /tmp/claude-501/body_moon.md keeps long PR descriptions manageable when opening a PR from the CLI.",
+        "Check the available versions of a tool before pinning it."
+      ]
+    },
+    "friction": null,
+    "open_items": null
+  }
+}
