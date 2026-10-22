@@ -560,6 +560,47 @@ fn an_npm_version_that_never_appears_is_absent_after_the_default_window() {
 }
 
 #[test]
+fn the_repository_a_registry_records_is_read_from_cargo_and_npm_output() {
+    let info = "core-crate #lib\nversion: 0.1.0\nlicense: MIT\nrepository: https://github.com/o/r\n";
+    assert_eq!(cargo_info_repository(info).as_deref(), Some("https://github.com/o/r"));
+    assert_eq!(cargo_info_repository("version: 0.1.0\n"), None);
+    assert_eq!(cargo_info_repository("repository:\n"), None);
+
+    assert_eq!(
+        npm_view_repository(r#"{"type":"git","url":"git+https://github.com/o/r.git"}"#).as_deref(),
+        Some("git+https://github.com/o/r.git")
+    );
+    assert_eq!(npm_view_repository(r#""o/r""#).as_deref(), Some("o/r"));
+    for none in ["", "null", "[]", r#"{"type":"git"}"#, r#""""#] {
+        assert_eq!(npm_view_repository(none), None, "{none:?}");
+    }
+}
+
+/// The query the foreign-repository warning relies on: npm is asked for the version's `repository` and a failed or
+/// empty answer reads as "none", never as an error.
+#[test]
+fn the_npm_adapter_reads_the_repository_a_published_version_names() {
+    let read = |output: CommandOutput| {
+        let runner = ScriptedNpm(output);
+        let root = std::env::temp_dir();
+        let context = ProviderContext::new(&root, &runner, None);
+        let operation = operation("npm", "callisto-no-such-package-zz", "1.0.0");
+        adapter_for(Ecosystem::Npm).unwrap().repository(&context, &operation)
+    };
+    assert_eq!(
+        read(npm_output(
+            Some(0),
+            r#"{"type":"git","url":"git+https://github.com/o/r.git"}"#,
+            ""
+        ))
+        .as_deref(),
+        Some("git+https://github.com/o/r.git")
+    );
+    assert_eq!(read(npm_output(Some(0), "", "")), None);
+    assert_eq!(read(npm_output(Some(1), "", "npm ERR! code ENOTFOUND\n")), None);
+}
+
+#[test]
 fn a_publish_command_runs_for_fifteen_minutes_unless_the_registry_sets_a_publish_timeout() {
     let mut op = operation("npm", "demo", "1.0.0");
     assert_eq!(publish_timeout(&op), std::time::Duration::from_secs(900));

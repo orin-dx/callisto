@@ -27,6 +27,7 @@ pub(crate) mod http;
 pub(crate) mod policy;
 mod pypi_files;
 pub(crate) mod registry;
+mod repository;
 pub(crate) mod tag;
 
 /// The captured provider fixtures, and the loopback HTTP server the forge
@@ -237,6 +238,11 @@ impl<'a> ProviderContext<'a> {
 
     pub(crate) fn sleeper(&self) -> &'a dyn policy::Sleeper {
         self.sleeper
+    }
+
+    /// The origin URL the release is bound to, if one is prepared. Not re-checked: it only labels a warning.
+    pub(crate) fn origin_endpoint(&self) -> Option<&'a str> {
+        self.git_remote.map(|remote| remote.endpoint.as_str())
     }
 
     pub(crate) fn checked_git_remote(&self) -> Result<&'a PreparedGitRemote, GraphError> {
