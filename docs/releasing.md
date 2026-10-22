@@ -50,6 +50,8 @@ Generated build support has these boundaries:
 
 The default branch is the approval boundary: a merge to it publishes. Protect it with a rule that requires pull requests and reviews (GitHub -> Settings -> Rules). Init prints this reminder after writing the file.
 
+Pin the Callisto actions by commit with the version in a comment, such as `uses: orin-dx/callisto/.github/actions/callisto-action@<sha> # callisto@1.0.0`. The action installs the release that commit belongs to. From 1.0.0 the floating tag `v1` also works (`@v1`): each stable 1.x release moves it to its release commit, never backwards, and the action installs that release. A mutable tag is only as safe as the repository that moves it, so a pinned commit stays the stricter choice.
+
 Build-matrix limits:
 
 - An addon crate outside the napi package directory needs a unique crate whose lib name matches `napi.binaryName` (E204).

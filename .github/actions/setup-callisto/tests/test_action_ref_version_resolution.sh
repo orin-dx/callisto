@@ -64,6 +64,27 @@ else
   echo "PASS test_unmatched_action_ref_falls_back_to_latest"
 fi
 
+# 3b. A named ref (the floating v1 tag) resolves through the commit it points at, lightweight or annotated.
+FLOATING=$'abc1230000000000000000000000000000000002\trefs/tags/callisto@0.8.0\nabc1230000000000000000000000000000000002\trefs/tags/v1\nfeed000000000000000000000000000000000003\trefs/tags/v2\nabc1230000000000000000000000000000000002\trefs/tags/v2^{}\n'
+out=$(run_case "latest" "v1" "$FLOATING")
+if [[ "$out" != *"TAG_NAME=callisto@0.8.0"* ]]; then
+  echo "FAIL test_floating_tag_ref_resolves_to_its_release: $out"; fail=1
+else
+  echo "PASS test_floating_tag_ref_resolves_to_its_release"
+fi
+out=$(run_case "latest" "v2" "$FLOATING")
+if [[ "$out" != *"TAG_NAME=callisto@0.8.0"* ]]; then
+  echo "FAIL test_annotated_floating_tag_ref_uses_its_peeled_commit: $out"; fail=1
+else
+  echo "PASS test_annotated_floating_tag_ref_uses_its_peeled_commit"
+fi
+out=$(run_case "latest" "v9" "$FLOATING")
+if [[ "$out" != *"TAG_NAME=latest"* ]]; then
+  echo "FAIL test_unknown_named_ref_falls_back_to_latest: $out"; fail=1
+else
+  echo "PASS test_unknown_named_ref_falls_back_to_latest"
+fi
+
 # 4. Explicit version override is never touched, even with a resolvable action ref.
 out=$(run_case "callisto@0.5.0" "abc1230000000000000000000000000000000002" "$TAGS")
 if [[ "$out" != *"TAG_NAME=callisto@0.5.0"* ]] || [[ "$out" == *"git ls-remote"* ]]; then

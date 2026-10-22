@@ -22,10 +22,14 @@ fi
 # invocation is pinned to (GITHUB_ACTION_REF, github.action_ref) rather than
 # whatever is newest, so `callisto-action@<sha> # callisto@X.Y.Z` always
 # installs X.Y.Z. Falls back to true "latest" when the ref is unset (local or
-# unpinned invocation) or matches no published callisto@ tag.
+# unpinned invocation) or matches no published callisto@ tag. A named ref such
+# as the floating `v1` tag stands for the commit it points at.
 if [[ "$SOURCE" == "auto" && "$TAG_NAME" == "latest" && -n "${GITHUB_ACTION_REF:-}" ]]; then
-  resolved_tag=$(git ls-remote --tags https://github.com/orin-dx/callisto.git 'callisto@*' 2>/dev/null \
-    | awk -v ref="$GITHUB_ACTION_REF" '$1 == ref { print $2 }' \
+  remote_tags=$(git ls-remote --tags https://github.com/orin-dx/callisto.git 'callisto@*' "$GITHUB_ACTION_REF" 2>/dev/null) || true
+  ref_commit=$(printf '%s\n' "$remote_tags" \
+    | awk -v ref="refs/tags/$GITHUB_ACTION_REF" '$2 == ref || $2 == ref "^{}" { sha = $1 } END { print sha }')
+  resolved_tag=$(printf '%s\n' "$remote_tags" \
+    | awk -v ref="${ref_commit:-$GITHUB_ACTION_REF}" '$1 == ref && $2 ~ /^refs\/tags\/callisto@/ { print $2 }' \
     | sed -e 's#^refs/tags/##' -e 's/\^{}$//' \
     | sort -V | tail -n1) || true
   if [[ -n "$resolved_tag" ]]; then

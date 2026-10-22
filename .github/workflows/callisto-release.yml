@@ -460,6 +460,12 @@ jobs:
             args+=(--artifact-manifest "$build_dir/release-artifacts/manifest.json" --artifact-dir "$build_dir/release-artifacts")
           fi
           callisto release execute "${args[@]}"
+      # Needs no secrets: a plain tag push with the checkout's Git credentials, like the release tags. A no-op before 1.0.0.
+      - name: Move the floating major tag
+        working-directory: release-source
+        env:
+          RELEASE_SOURCE_SHA: ${{ needs.release-candidate.outputs.release_source_sha }}
+        run: bash "$GITHUB_WORKSPACE/.github/scripts/move-floating-tag.sh" .callisto/release-decision.json cargo/callisto-cli "$RELEASE_SOURCE_SHA"
       - name: Summarize receipt
         if: always()
         run: |
