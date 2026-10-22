@@ -18,7 +18,9 @@ artifact_dir="$CALLISTO_RELEASE_ARTIFACT_DIR"
 
 case "$kind:$target:$asset" in
   cli:aarch64-apple-darwin:callisto-aarch64-apple-darwin.tar.gz | \
+  cli:x86_64-apple-darwin:callisto-x86_64-apple-darwin.tar.gz | \
   cli:x86_64-unknown-linux-gnu:callisto-x86_64-unknown-linux-gnu.tar.gz | \
+  cli:aarch64-unknown-linux-gnu:callisto-aarch64-unknown-linux-gnu.tar.gz | \
   cross:x86_64-unknown-linux-musl:callisto-x86_64-unknown-linux-musl.tar.gz)
     ;;
   *)
