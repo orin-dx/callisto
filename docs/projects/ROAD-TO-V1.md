@@ -56,7 +56,6 @@ Retain local real-registry tests and record missing prerequisites as skips. Run 
 ## Other open work retained
 
 - npm writes normalize arbitrary JSON layout; decide whether more than key order/indentation/line endings is needed.
-- Preserve redacted stderr for indeterminate provider failures; never stream unredacted native-tool output.
 - Publish final migration notices for retired callisto-format, callisto-vcs, callisto-conventional and callisto-changelog, naming callisto-model or callisto-graph.
 - Evaluate rustc-provided target facts instead of the 18-triple table without making the core model Rust-target-specific.
 - Require kind in explicit registry entries and attest napi .node outputs; define scope before adding a gate.
@@ -64,6 +63,7 @@ Retain local real-registry tests and record missing prerequisites as skips. Run 
 
 ## After 1.0 (additive)
 
+- OIDC trusted publishing for npm, crates.io and PyPI: [plan](OIDC-TRUSTED-PUBLISHING.md).
 - Effective-config explain from ConfigProvenance; remove redundant default-valued config afterward.
 - .sha256 release-asset sidecars and proto verification.
 - Glob fixed-group members.
