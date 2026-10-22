@@ -258,6 +258,11 @@
       "criterion": "When a Cargo or npm registry publish is adopted because the exact version is already published, and the registry entry names a repository whose host, owner and name differ from the `origin` remote's (compared case-insensitively, ignoring `.git`, `git+` and URL form), Callisto prints a warning on stderr naming both repositories. The run still adopts the version. No warning is printed when the registry names no repository, when either value cannot be read as a repository, or when they match. PyPI is not checked."
     },
     {
+      "id": "REL-PUB-15",
+      "criterion": "A `[registries.<name>]` entry must set `kind` to `cargo`, `npm` or `pypi`, except the built-in keys `cratesIo`, `npm` and `pypi`, which default to their own kind. A custom registry without `kind` is rejected when the configuration loads with E321, instead of being read as an npm registry.",
+      "is_error_case": true
+    },
+    {
       "id": "REL-RERUN-01",
       "criterion": "An operation whose result is already present and identical is recorded as already satisfied, and its effect is not repeated. For a registry version, stderr shows `warning: <package> <version> is already published; skipping`. During `release execute`, a Python release is satisfied only when every file its build produces is on the index, so a rerun after a partial upload uploads only the missing files. The check that finds a tagged package still to finish reads the version-level answer and does not build."
     },

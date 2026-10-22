@@ -1086,6 +1086,13 @@ pub enum ConfigError {
     )]
     BareReference { context: String, given: String },
 
+    #[error("`[registries.{registry}]` does not say what kind of registry it is")]
+    #[diagnostic(
+        code(E321),
+        help("Add `kind = \"cargo\"`, `kind = \"npm\"` or `kind = \"pypi\"` to `[registries.{registry}]`. Only the built-in `cratesIo`, `npm` and `pypi` registries may leave it out.")
+    )]
+    RegistryKindMissing { registry: String },
+
     #[error("group `{group}` has no members")]
     #[diagnostic(code(E251), help("Add at least one member to the group, or remove the group."))]
     EmptyGroup { group: GroupName },

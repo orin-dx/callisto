@@ -490,10 +490,19 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
     if let Some(raw_regs) = raw.registries {
         for (k_str, reg) in raw_regs {
             let key = RegistryKey(k_str);
+            let built_in_kind = match key.as_str() {
+                RegistryKey::CRATES_IO => Some(Ecosystem::Cargo),
+                RegistryKey::NPM => Some(Ecosystem::Npm),
+                RegistryKey::PYPI => Some(Ecosystem::Pypi),
+                _ => None,
+            };
             let kind = match reg.kind.as_deref() {
                 Some("cargo") => Ecosystem::Cargo,
-                Some("npm") | None => Ecosystem::Npm,
+                Some("npm") => Ecosystem::Npm,
                 Some("pypi") => Ecosystem::Pypi,
+                None => built_in_kind.ok_or_else(|| ConfigError::RegistryKindMissing {
+                    registry: key.as_str().to_owned(),
+                })?,
                 Some(other) => {
                     return Err(ConfigError::UnknownKey {
                         path: callisto_toml.clone(),
@@ -881,6 +890,37 @@ mod tests {
         let reg = &config.registries[&RegistryKey("my-pypi".to_string())];
         assert_eq!(reg.url.as_deref(), Some("https://pypi.example.com/simple"));
         assert_eq!(reg.publish_url.as_deref(), Some("https://pypi.example.com/legacy/"));
+    }
+
+    #[test]
+    fn a_built_in_registry_entry_may_leave_its_kind_out_and_keeps_it() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        fs::write(
+            tmp.path().join("callisto.toml"),
+            "[registries.cratesIo]\nconfirm-timeout = \"3m\"\n\n[registries.npm]\npublish-timeout = \"5m\"\n\n[registries.pypi]\nurl = \"https://pypi.example.com/simple\"\n",
+        )
+        .expect("write callisto.toml");
+        let config = load(tmp.path()).expect("load should succeed");
+        let kind = |key: &str| config.registries[&RegistryKey(key.to_string())].kind;
+        assert_eq!(kind(RegistryKey::CRATES_IO), Ecosystem::Cargo);
+        assert_eq!(kind(RegistryKey::NPM), Ecosystem::Npm);
+        assert_eq!(kind(RegistryKey::PYPI), Ecosystem::Pypi);
+    }
+
+    #[test]
+    fn a_custom_registry_without_a_kind_is_rejected() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        fs::write(
+            tmp.path().join("callisto.toml"),
+            "[registries.corp]\nurl = \"https://corp.example.com\"\n",
+        )
+        .expect("write callisto.toml");
+        let error = load(tmp.path()).expect_err("a registry with no kind must not load");
+        assert!(error.to_string().contains("[registries.corp]"), "{error}");
+        assert_eq!(
+            miette::Diagnostic::code(&error).map(|code| code.to_string()).as_deref(),
+            Some("E321")
+        );
     }
 
     #[test]
