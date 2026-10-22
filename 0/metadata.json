@@ -1,0 +1,126 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5GFSY9F08XM599V5XW80FXZ",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-22T00:22:53.321541Z",
+  "branch": "fix/operation-id-display",
+  "checkpoints_count": 1,
+  "save_step_count": 2,
+  "files_touched": [
+    ".changeset/indeterminate-release-names-the-operation.md",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-model/src/release/operation.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "395fad916184",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 32,
+    "cache_creation_tokens": 10356,
+    "cache_read_tokens": 13841914,
+    "output_tokens": 5316,
+    "api_call_count": 15,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 209
+  },
+  "summary": {
+    "intent": "Work through the v1 hardening plan for the callisto release tool in parallel lanes (SYS-RETRY fix, test debt, docs refresh, init/derive refactors, SYS-NAPI, canonical report ids, CLI arg changes, edition 2024, schemars migration, HEAD-binding fix), keeping PRs mergeable and stacked sensibly.",
+    "outcome": "Opened and, with the user's merges, landed a large set of PRs (#202-#205, #274-#288 and others), each with local `just ci` green. The last items, an A2 HEAD-binding fix PR and an E176 operation-id Display cleanup, were committed and pushed. Closed mistakenly opened PR #201 and moved the plan to a git-excluded local file.",
+    "learnings": {
+      "repo": [
+        "Local tracking and handoff plans (NEXT-WORK.md) live in `.claude/plans/` and are excluded via `.git/info/exclude`; they must never be committed or put in a PR.",
+        "`just ci` is the gate. Run it via a script that writes an `exit=` line to a log, and read that line, because the background-task notification only reports the wrapper's exit code and can say 0 while CI failed (it hid exit=1, 100 and 101 several times).",
+        "Each new error code adds a row to `docs/errors.md` and bumps the total-code count, so concurrent PRs that add codes conflict there. Rebase one at a time after each merge.",
+        "Native PR stacks are made with `gh stack link`; PRs touching the same files (status.rs, version.rs/identity.rs/schemas) should be stacked, others left independent.",
+        "Reports (`status`, `version`, `snapshot`, `matrix`) now use `ecosystem/name` ids with schemaVersion 2; `add` and `matrix --package` reject bare names with E317, so tests and fixtures must use qualified specs.",
+        "schemars 1.x emits JSON Schema 2020-12 (`$defs`, `const`) and takes the schema from wire types, so wire types need `JsonSchema` derives.",
+        "Insta snapshot characterization tests before a move/split refactor (init templates, derive.rs) then proving snapshots fail under a mutation was the pattern used for R3/R5b.",
+        "The generated matrix workflow template runs under macOS bash without `mapfile`; use portable loops. The intent omits `artifactSlots` when empty, so jq must tolerate null.",
+        "Hosted Ubuntu CI caught a verdaccio real-registry test passing a bare name that passed locally."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release/local.rs",
+          "finding": "SYS-RETRY: local selection now observes releases already tagged at HEAD across all operations; a tag on an older commit still settles without contacting providers; previews without an origin push URL skip observation."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/tag.rs",
+          "finding": "Tag observation must read only the object type, not the annotation message, since multi-paragraph or signed tag messages broke the for-each-ref parsing."
+        },
+        {
+          "path": "crates/callisto-graph/src/templates/matrix_workflow.tmpl",
+          "finding": "SYS-NAPI: napi roster is now derived per intent package via `callisto matrix`, and placement reads the plan job's napi_dirs output."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/version_commit.rs",
+          "finding": "New A2 module detecting a published version from a later commit so the local route refuses instead of releasing HEAD."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "Mistakenly opened PR #201 for a local-only plan file and had to close it.",
+      "Misleading task-notification 'exit code 0' repeatedly masked real CI failures.",
+      "Sandbox restrictions forced many workarounds (heredocs, inline env, signed commits, cargo fetch, gh TLS).",
+      "Parallel PRs off main produced seven pairwise conflicts, mostly docs/errors.md count bumps, plus a 35-file edition PR that had to be regenerated.",
+      "#281 failed hosted Ubuntu CI and then again after #274 merged, due to bare package specs in new tests.",
+      "A plain `git push` silently did nothing because the local branch name differed from the remote's.",
+      "Dependabot #275 failed until the schemars major was migrated."
+    ],
+    "open_items": [
+      "Branch cleanup: stale remote branches (docs/next-work-plan, docs/spec-rewrite, fix/native-resolution) and ~35 local branches need per-branch user approval before deletion.",
+      "W1 real-service credential check needs a decision on where it runs in CI.",
+      "D01 decision blocks SYS-MATURIN and W9; W10 needs decisions on distinct target edges and Python dev group cascade; W11 needs credentials and an approved run.",
+      "A5 registry-repository check, floating v1 action tag, Intel-mac and aarch64-linux binaries, T08 selection, T12 verification remain.",
+      "Fuzz targets are only compile-checked, never run under libFuzzer; E176 never reproduced against a real registry.",
+      "Python dev-table warning was dropped as too noisy for uv workspaces.",
+      "Post-1.0 OIDC trusted publishing; user acts remain to accept ADR 12 and cut 0.12.0.",
+      "Follow-up edits for T08-RETRY references after #202 merges.",
+      "The final A2 HEAD-binding PR and E176 operation Display PR need hosted CI confirmation and merging."
+    ]
+  }
+}

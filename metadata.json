@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5GFSY9F08XM599V5XW80FXZ",
+  "strategy": "manual-commit",
+  "branch": "fix/operation-id-display",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/indeterminate-release-names-the-operation.md",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-model/src/release/operation.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 32,
+    "cache_creation_tokens": 10356,
+    "cache_read_tokens": 13841914,
+    "output_tokens": 5316,
+    "api_call_count": 15,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  }
+}
