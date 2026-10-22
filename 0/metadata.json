@@ -1,0 +1,109 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5JY3Y6W7HCPAQJZ39J21RT3",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-22T23:11:26.332293Z",
+  "branch": "chore/moon-2-6-3",
+  "checkpoints_count": 3,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "79f11cc32c5c",
+  "checkpoint_transcript_start": 49448,
+  "transcript_lines_at_start": 49448,
+  "compact_transcript_start": 4009,
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 682037,
+    "cache_read_tokens": 11858929,
+    "output_tokens": 13444,
+    "api_call_count": 19,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 241
+  },
+  "summary": {
+    "intent": "Get Callisto 0.13.0 released (stacking registry `kind` and moon pin PRs), diagnose why no 0.13 version appeared, verify everything is healthy, and then move back to the latest moon version if it works.",
+    "outcome": "Diagnosed the failed release as moon 2.6.3 being advertised without downloadable archives, merged #312/#313/#314, re-ran a transient Identify failure to create release PR #316, and opened a moon bump PR for 2.6.3. 0.13.0 is still unpublished pending the user's go-ahead on the recovery dispatch.",
+    "learnings": {
+      "repo": [
+        "The built-in crates.io registry is keyed `cratesIo`, not `crates-io` as docs/config.md said. A `[registries.cratesIo]` entry with only timeouts was read as npm and failed with 'configured for ecosystem npm, not cargo'.",
+        "Custom registries now require `kind`; omitting it fails with E321. Built-in `cratesIo`, `npm` and `pypi` keep their own kind.",
+        "Release PRs created by the workflow's token do not trigger CI, so they need a manual re-trigger before merge.",
+        "The release workflow runs the orchestration at the release commit, so fixes such as the `.prototools` pin only protect runs whose commit includes them. A plain 're-run failed jobs' reuses the old commit and old pin.",
+        "Recovery path: `gh workflow run callisto-release.yml -f release_source_sha=<sha>` uses current orchestration with an explicit release commit and adopts anything already landed.",
+        "Merging a release PR bumps manifest versions even if publish fails, so main can show 0.13.0 while crates.io is still at 0.12.0. Merging the next release PR (#316, 0.14.0) before recovering would skip 0.13.0.",
+        "The 'Identify a merged Callisto release PR' job calls `gh api` with no retry and failed once with `unexpected end of JSON input`.",
+        "`.prototools` previously floated moon at `2`, which resolved to 2.6.3 even though only 2.6.2 had release assets."
+      ],
+      "code": [],
+      "workflow": [
+        "When a tool version is advertised but its assets 404, pin to the last good version and verify with CI before floating again.",
+        "Check the upstream release assets directly (HTTP status on archives) rather than trusting the version list.",
+        "Pre-commit hooks needed moon installed locally, so `proto install` of the pinned version was required.",
+        "Actions that publish crates and create releases were not run without user approval; the assistant asked first."
+      ]
+    },
+    "friction": [
+      "moon 2.6.3 was advertised to proto but its Linux archives returned 404, breaking the aarch64 Linux build in the Release run (39731671178).",
+      "Plain re-run could not pick up the moon pin because it reuses the release commit's orchestration.",
+      "The Release run on the #314 push failed with a transient `unexpected end of JSON input` in the Identify job, which has no retry.",
+      "The user was surprised that no 0.13 version appeared after merging, and the release PR had no CI checks because of the token limitation.",
+      "Main is left in an inconsistent state: manifests say 0.13.0 but nothing was published."
+    ],
+    "open_items": [
+      "Dispatch the 0.13.0 recovery: `gh workflow run callisto-release.yml -f release_source_sha=a94efafd9593562b9fe155c4782ba62b614b838b`, awaiting user approval.",
+      "Do not merge release PR #316 (0.14.0) until 0.13.0 is recovered.",
+      "Review and merge the moon 2.6.3 bump PR once CI confirms it works.",
+      "Open a small PR adding up to three retries on the `gh api` calls in the Identify job.",
+      "Waiting on michi-graph: layered publish with joint verify gate, and rework of the #290 guard.",
+      "Waiting on evidence or credentials: pnpm hang, and T12/T12-DX.",
+      "User to enable GitHub's immutable releases setting and decide on the no-output publish limit.",
+      "Scope decision needed from the user before attesting napi `.node` outputs.",
+      "Write the executor design in detail so it's ready when the michi-graph crate lands."
+    ]
+  }
+}
