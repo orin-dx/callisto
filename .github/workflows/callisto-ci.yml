@@ -118,23 +118,8 @@ jobs:
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2
         with:
           tool: cargo-nextest
-      # Real-registry e2e runs on Linux only; the tests skip elsewhere.
-      - name: Install Verdaccio (real-registry npm e2e coverage)
-        if: runner.os == 'Linux'
-        run: npm install -g verdaccio@6.10.4 # zizmor: ignore[adhoc-packages] pinned to an exact upstream release; a CI-only test-registry tool, not a shipped or lockfile-tracked dependency.
-      - name: Install pypiserver (real-registry PyPI e2e coverage)
-        if: runner.os == 'Linux'
-        # legacy-cgi: pypiserver 2.4.0 imports `cgi`, removed in Python 3.13.
-        # gunicorn: the test's `--server gunicorn` avoids a slow getfqdn() bind.
-        # setuptools/wheel: the test builds with `--no-isolation` against this venv's build
-        # backend, so no network fetch happens during `python -m build`; must be pre-installed.
-        run: |
-          python3 -m venv "$RUNNER_TEMP/pypi-e2e-venv"
-          "$RUNNER_TEMP/pypi-e2e-venv/bin/pip" install pypiserver==2.4.0 twine==6.2.0 build==1.4.4 legacy-cgi==2.6.3 gunicorn==26.2.0 setuptools==80.9.0 wheel==0.45.1
-          echo "$RUNNER_TEMP/pypi-e2e-venv/bin" >> "$GITHUB_PATH"
-      - name: Install cargo-http-registry (real-registry Cargo e2e coverage)
-        if: runner.os == 'Linux'
-        run: cargo install --locked cargo-http-registry@0.1.8 # zizmor: ignore[adhoc-packages] pinned to an exact upstream release; a CI-only test-registry tool, not a shipped or lockfile-tracked dependency.
+      - name: Install registry test tools
+        uses: $/.github/actions/install-registry-test-tools
       - run: just test
       - run: just release-workflow-behavior
       - name: Verify Release-PR action against the real callisto binary
