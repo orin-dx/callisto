@@ -53,17 +53,17 @@ OS_NAME=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH_NAME=$(uname -m)
 
 if [[ "$OS_NAME" == "darwin" ]]; then
-  if [[ "$ARCH_NAME" == "arm64" ]]; then
-    ASSET_NAME="callisto-aarch64-apple-darwin.tar.gz"
-  else
-    ASSET_NAME=""
-  fi
+  case "$ARCH_NAME" in
+    arm64) ASSET_NAME="callisto-aarch64-apple-darwin.tar.gz" ;;
+    x86_64) ASSET_NAME="callisto-x86_64-apple-darwin.tar.gz" ;;
+    *) ASSET_NAME="" ;;
+  esac
 elif [[ "$OS_NAME" == "linux" ]]; then
-  if [[ "$ARCH_NAME" == "x86_64" ]]; then
-    ASSET_NAME="callisto-x86_64-unknown-linux-gnu.tar.gz"
-  else
-    ASSET_NAME=""
-  fi
+  case "$ARCH_NAME" in
+    x86_64) ASSET_NAME="callisto-x86_64-unknown-linux-gnu.tar.gz" ;;
+    aarch64 | arm64) ASSET_NAME="callisto-aarch64-unknown-linux-gnu.tar.gz" ;;
+    *) ASSET_NAME="" ;;
+  esac
 elif [[ "$OS_NAME" == *"mingw"* || "$OS_NAME" == *"msys"* || "$OS_NAME" == *"windows"* ]]; then
   ASSET_NAME=""
 else

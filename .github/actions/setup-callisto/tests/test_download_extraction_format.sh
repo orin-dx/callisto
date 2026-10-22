@@ -111,6 +111,27 @@ else
   echo "PASS test_linux_amd64_still_uses_targz"
 fi
 
+# 3b. Every supported platform downloads its own asset; an older release without it falls back to crates.io (case 5).
+for platform in "Darwin arm64 callisto-aarch64-apple-darwin.tar.gz" \
+  "Darwin x86_64 callisto-x86_64-apple-darwin.tar.gz" \
+  "Linux x86_64 callisto-x86_64-unknown-linux-gnu.tar.gz" \
+  "Linux aarch64 callisto-aarch64-unknown-linux-gnu.tar.gz" \
+  "Linux arm64 callisto-aarch64-unknown-linux-gnu.tar.gz"; do
+  read -r os arch asset <<< "$platform"
+  out=$(run_case "$os" "$arch" 0); code=$?
+  if [[ $code -ne 0 ]] || [[ "$out" != *"curl "*"/$asset "* ]] || [[ "$out" != *"tar -xzf "* ]]; then
+    echo "FAIL test_${os}_${arch}_downloads_$asset: code=$code out=$out"; fail=1
+  else
+    echo "PASS test_${os}_${arch}_downloads_$asset"
+  fi
+done
+out=$(run_case "Linux" "riscv64" 0); code=$?
+if [[ $code -ne 0 ]] || [[ "$out" == *"tar -xzf"* ]] || [[ "$out" != *"cargo install callisto-cli"* ]]; then
+  echo "FAIL test_unsupported_architecture_uses_install_fallback: code=$code out=$out"; fail=1
+else
+  echo "PASS test_unsupported_architecture_uses_install_fallback"
+fi
+
 # 4. Unknown/exotic OS must likewise use the fallback chain rather than
 # guessing an archive target.
 out=$(run_case "SunOS" "sun4u" 0); code=$?
