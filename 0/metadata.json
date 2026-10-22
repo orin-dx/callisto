@@ -1,0 +1,123 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5GY6F92GKYK00X78E1KJNDX",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-22T04:34:22.146023Z",
+  "branch": "feat/floating-major-tag",
+  "checkpoints_count": 8,
+  "save_step_count": 1,
+  "files_touched": [
+    "docs/releasing.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "42e78184bfdf",
+  "checkpoint_transcript_start": 47068,
+  "transcript_lines_at_start": 47068,
+  "compact_transcript_start": 3860,
+  "token_usage": {
+    "input_tokens": 102,
+    "cache_creation_tokens": 54172,
+    "cache_read_tokens": 24488578,
+    "output_tokens": 32373,
+    "api_call_count": 51,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 235
+  },
+  "summary": {
+    "intent": "Land the callisto 0.12.0 release (consolidate changesets, merge the PR stack, merge the release PR), triage a stale issue, then start working through safe follow-up items grouped into stacked PRs that avoid the future michi-graph and pipeline work.",
+    "outcome": "Stack #300/#302/#303 merged, release PR #248 regenerated with 26 changes and merged, 0.12.0 verified on crates.io and GitHub, and stale issue #37 closed. Follow-up work began: PR A (floating v1 major tag) was implemented with tests and docs and opened, while the remaining items are not yet started.",
+    "learnings": {
+      "repo": [
+        "Changesets are consolidated by merging related entries; callisto status --check --strict validates the result (exit 0, all five crates pending a minor bump). It also prints three warnings about odd leftover tag candidates like callisto-graph@0.",
+        "Native GitHub stacks auto-retarget a stacked PR to main when the base PR merges, so no manual retarget is needed. Merge from the bottom up.",
+        "The release PR (callisto/version-packages) is pushed by the workflow token, so GitHub starts no CI on its head. Checks must be triggered manually (close/reopen or a push from a person or App token) before merging if protection requires them.",
+        "The release PR body template says 'All changes are backward compatible', which is wrong for 0.12.0. The changelog entries are accurate.",
+        "The Release workflow's execute job only runs after the release PR merges. It publishes crates to crates.io, creates tags, and creates the GitHub release with three binaries (aarch64-apple-darwin, x86_64-linux-gnu, x86_64-linux-musl).",
+        "callisto-fixtures is a dev-only crate and is intentionally not published to crates.io.",
+        "ADR 5 ('system Git only') removed the gix backend and callisto-vcs (106 fewer crates). callisto_model::vcs now has a single GitAccess type that shells out to git, which eliminated the yanked bisync 0.3.0 dependency chain.",
+        "Areas that would conflict with michi-graph/pipeline work: callisto-graph/src/toposort.rs, link_publish_prerequisites and the operation index in derive.rs, release-plan validation in callisto-model/src/release/intent.rs, release_execution.rs, the #290 guard, and the layered publish.",
+        "The E320 check follows the commit that set a package's own literal version, so workspace-inherited versions aren't covered. #290 merged with that gap and Codex found others.",
+        "The floating v1 tag work touched .github/scripts/move-floating-tag.sh, callisto-release.yml, the setup-callisto install-callisto.sh named-ref resolution, its ref-resolution test, the justfile, and docs/releasing.md. Workflow policy tests constrain which steps may appear in the execute job."
+      ],
+      "code": [
+        {
+          "path": ".github/actions/setup-callisto/scripts/install-callisto.sh",
+          "finding": "Named-ref resolution was extended so `uses: ...@v1` installs the matching release; covered by tests/test_action_ref_version_resolution.sh."
+        },
+        {
+          "path": ".github/scripts/move-floating-tag.sh",
+          "finding": "New script that moves the floating major tag, with a test in .github/tests/test-move-floating-tag.sh; wired into the execute job of callisto-release.yml."
+        }
+      ],
+      "workflow": [
+        "Verify stack/merge state with a state script and a wait-for-run script instead of assuming; re-read PR checks and bodies before telling the user it is ready.",
+        "Outward-facing actions (closing issues, merging) were left for explicit user approval; the issue was closed only after the user said so.",
+        "Check claims against the repo (Cargo.lock, deny.toml, ADRs) before declaring an issue stale.",
+        "Run workflow contract tests and zizmor locally before opening workflow-touching PRs.",
+        "The assistant misstated that the stacked PR 'will need a retarget'; the user's question corrected it. Verify stack mechanics before stating them."
+      ]
+    },
+    "friction": [
+      "The assistant wrongly said #303 would need a manual retarget, which the user had to question.",
+      "The release PR head had no CI checks, so merging required manually triggering them.",
+      "The release PR body contained an inaccurate backward-compatibility statement.",
+      "Status output printed three tag-candidate warnings of unclear origin.",
+      "michi 0.4's pnpm publish hang is unresolved and sits with the michi agent."
+    ],
+    "open_items": [
+      "PR A (floating v1 tag) was opened; the remaining planned PRs are not yet started: publish deadline (configurable limit plus no-output limit) and the pnpm hang investigation, and the registry-metadata vs origin warning.",
+      "Layered publish with joint verify needs the user's sign-off, since it relaxes ADR 3 for npm/PyPI dependents.",
+      "Rework the #290 guard by dropping the history lookup and checking where the executor adopts an already-published version.",
+      "Decisions needed: Intel macOS and aarch64-linux binaries (policy call) and the scratch-registry end-to-end script (needs the user's credentials).",
+      "The OIDC trusted-publishing spec/ADR (build is post-1.0), semver-checks, and refreshing local plans and docs after 0.12.0.",
+      "Waiting on the michi graph crate and michi pipeline work.",
+      "The user must decide whether Entire should push session checkpoints to the public repo.",
+      "The released binary smoke test and attestation verification were run, but their results are not reported in the transcript.",
+      "Fix the 'All changes are backward compatible' text in the release PR template."
+    ]
+  }
+}
