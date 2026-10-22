@@ -1,0 +1,138 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5GFCF65A7TV18NPTVA2BB1D",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-22T00:15:36.295823Z",
+  "branch": "worktree-smoke-main",
+  "checkpoints_count": 4,
+  "save_step_count": 3,
+  "files_touched": [
+    "crates/callisto-cli/tests/release_command_e2e_tests.rs",
+    "crates/callisto-graph/src/commands/release/capability.rs",
+    "crates/callisto-graph/src/commands/release/local.rs",
+    "crates/callisto-graph/src/commands/release/mod.rs",
+    "crates/callisto-graph/src/commands/release/version_commit.rs",
+    "crates/callisto-graph/src/error.rs",
+    "docs/errors.md",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "ddf515a0e42f",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 136,
+    "cache_creation_tokens": 99351,
+    "cache_read_tokens": 57089597,
+    "output_tokens": 46137,
+    "api_call_count": 66,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 208
+  },
+  "summary": {
+    "intent": "Work through the NEXT-WORK plan for the callisto repo toward v1: fix release bugs, close test and docs gaps, do refactors, and land the resulting PRs cleanly, including migrating schemars and stacking or rebasing PRs to avoid conflicts.",
+    "outcome": "Opened and got merged a large batch of PRs: SYS-RETRY fix, mixed-routing test, docs refresh, init/derive refactors, SYS-NAPI, range hard-stop, dist-tag, canonical report ids, ecosystem-qualified --package, edition 2024, schemars 1.x, fuzz targets and unwrap denial. The A2 HEAD-binding fix is committed locally with CI green, but not yet pushed or opened as a PR.",
+    "learnings": {
+      "repo": [
+        "Local tracking plans such as NEXT-WORK.md must never go in a commit or PR. They live at .claude/plans/NEXT-WORK.md, excluded via .git/info/exclude.",
+        "`just ci` is the gate, run per worktree. The wrapper task's exit code is unreliable, so read the log's own `exit=` line.",
+        "docs/errors.md has a total-code count that every PR adding an E-code bumps, so such PRs conflict with each other and need rebasing after each merge.",
+        "Tests that pass bare package names fail once `--package` requires `ecosystem/name` (E317). Newly merged tests must be re-qualified when rebasing.",
+        "Generated workflow templates are .tmpl files under crates/callisto-graph/src/templates, with insta snapshots and real-jq black-box tests. macOS bash lacks `mapfile`, so templates need portable loops.",
+        "Release harness fakes (gh, cargo, registry) can hide bugs, so the plan wants proof with the real tool where possible.",
+        "Edition 2024 migration needed temp-env for env mutation, a pinned style edition, and clippy let-chain autofixes.",
+        "Native PR stacks are linked with `gh stack link`.",
+        "Commits are signed, and AGENTS.md says no session links in commits or PRs.",
+        "Mutation testing (breaking the source temporarily) is used to prove new tests can fail."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release/local.rs",
+          "finding": "Local release route selection: a package tagged at HEAD is now observed across registry, tag and GitHub release rather than treated as released. A preview with no origin push URL must skip registry observation."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/tag.rs",
+          "finding": "Tag type detection must read only the object type, because multi-paragraph or signed tag messages made the old for-each-ref parsing error."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/version_commit.rs",
+          "finding": "New module for A2: detects a published version on a later commit so release refuses instead of binding to HEAD."
+        }
+      ],
+      "workflow": [
+        "Write the failing reproduction first, then fix, and mutate the source to confirm tests catch regressions.",
+        "Check pairwise merge conflicts across open PR branches before opening a batch, and stack PRs that touch the same files.",
+        "Sandbox blocks cargo registry writes, network tests, GPG signing and gh TLS. Those steps need to run outside the sandbox or the sandbox needs widening via /sandbox.",
+        "The command guard rejects inline scripts and heredocs, so write scripts to files and use the Edit tool.",
+        "Push explicitly to the PR branch when the local branch name differs from the remote's.",
+        "Get an independent agent review of risky PRs such as #202."
+      ]
+    },
+    "friction": [
+      "Wrongly opened PR #201 for a local tracking plan, which the user objected to and which required closing it.",
+      "Sandbox restrictions repeatedly blocked crate downloads, signed commits, gh TLS, inline scripts and some tests, forcing out-of-sandbox retries.",
+      "Merge conflicts across parallel PRs on docs/errors.md, status.rs and the edition PR, because overlap wasn't checked up front.",
+      "PR #281 failed hosted CI because bare package specs in newly merged tests hit E317.",
+      "Task-notification exit codes misleadingly showed 0 when the underlying CI had failed (exit=1, 100, 101).",
+      "Background sessions could not edit the shared checkout plan file.",
+      "A plain `git push` silently did nothing because of a branch name mismatch.",
+      "Dependabot #275 failed on the schemars major bump until the migration merged."
+    ],
+    "open_items": [
+      "Push and open the PR for the A2 HEAD-binding fix, which is committed with CI green.",
+      "A2 design call on false refusals for the local route, written up in the plan.",
+      "A5 registry-repository check.",
+      "Release plumbing: floating v1 action tag, Intel-mac and aarch64-linux binaries, T08 selection, and T12 with scratch-registry credentials.",
+      "W1 real-service credential check needs a decision on where it runs in CI.",
+      "W0 branch cleanup: stale local and remote branches, deletion pending the user's per-branch call.",
+      "D01 decision blocks SYS-MATURIN and W9. W10 needs decisions on target-declaration graph edges and Python dev-group cascade.",
+      "Python dev-table warning was dropped because it would be noisy for uv setups.",
+      "Fuzz targets are compile-checked only and haven't run under libFuzzer. E176 was never reproduced against a real registry.",
+      "OIDC trusted publishing is post-1.0. The user still needs to accept ADR 12 and cut 0.12.0 (#248).",
+      "Leftover branch docs/next-work-plan still exists on the remote and in a locked worktree."
+    ]
+  }
+}
