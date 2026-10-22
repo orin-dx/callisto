@@ -1,0 +1,124 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5GGS7KHK9KQ76EWJRCJQVCX",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-22T00:39:58.703149Z",
+  "branch": "ci/registry-test-tools-in-release",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    ".github/workflows/callisto-ci.yml"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "110fbcedaed0",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 46,
+    "cache_creation_tokens": 68219,
+    "cache_read_tokens": 9794576,
+    "output_tokens": 9695,
+    "api_call_count": 23
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 210
+  },
+  "summary": {
+    "intent": "Drive Callisto (a Rust release manager for Cargo/npm/PyPI monorepos) toward v1 by working through the local NEXT-WORK plan (bug fixes, gaps, features) as signed, non-draft, stacked PRs the user merges.",
+    "outcome": "Opened and got merged dozens of PRs (SYS-RETRY, mixed-routing test, docs refresh, init/derive refactors, SYS-NAPI, E317-E320 changes, schemars 1.x, edition 2024, and more). Open at the end: #290 (A2 fix), #291 (E176 operation display), #292 (dependency update) and #248 (0.12.0 release PR). The last item, extracting the registry test tools into a composite action to fix the failing Release verify job, was committed and pushed but the PR was not yet confirmed open.",
+    "learnings": {
+      "repo": [
+        "Local tracking and handoff plans (.claude/plans/NEXT-WORK.md) must never be committed or put in a PR; they are git-excluded via .git/info/exclude.",
+        "docs/errors.md carries an 'N numeric E#### codes total' count that conflicts across any PRs adding error rows, so they must be rebased in merge order.",
+        "The pre-commit hook runs fmt-check, so run cargo fmt --all before committing.",
+        "just lint runs clippy with -D clippy::unwrap_used on lib and bin targets only; use expect with an invariant message in non-test code.",
+        "The Release workflow's 'Verify release candidate' job lacked the verdaccio, pypiserver and cargo-http-registry install steps that the CI workflow has. The real-registry e2e tests fail rather than skip under CI, which broke every main push since #261 and blocked the 0.12.0 self-release.",
+        "Zizmor flags writes to GITHUB_PATH inside composite action files, so they need an ignore comment like the other suppressions in the repo.",
+        "schemars 1.x: wire types read via try_from need a JsonSchema derive, and output becomes draft 2020-12 ($defs, const). sha2 0.11 drops LowerHex on digests, comfy-table 8 renames load_preset to load_style, and toml 1.x str::parse::<Value> parses a single value rather than a document.",
+        "macOS bash lacks mapfile, so templates and tests run under it need a portable read loop.",
+        "AGENTS.md rules: no spec IDs in code, one changeset per user-visible topic, succinct docs, no emojis, never hard-wrap Markdown, no session links in commits or PRs."
+      ],
+      "code": [
+        {
+          "path": ".github/workflows/callisto-ci.yml",
+          "line": 119,
+          "end_line": 137,
+          "finding": "Inline Linux-only steps install verdaccio, pypiserver and cargo-http-registry for the real-registry e2e tests. They were extracted into a local composite action so the Release verify job can reuse them."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/version_commit.rs",
+          "finding": "New module for A2: detects packages whose published version sits behind newer commits (E320) via commit_setting_version and version_at. Recovery is to detach to the version-setting sha and rerun release."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/local.rs",
+          "finding": "refuse_a_published_version_left_behind must skip in Preview when there is no origin, otherwise registry derive fails with E132."
+        }
+      ],
+      "workflow": [
+        "The background-command notification 'exit code 0' only reflects the wrapper script; always read the log's own exit= line, which caught several real failures (fmt, clippy, test).",
+        "Prove with the real tool and reproduce the failure first; the real-binary reproduction plus mutation checks caught issues that fakes would have hidden.",
+        "Check pairwise merge conflicts (git merge-tree) before opening a batch of parallel PRs, and stack overlapping ones with gh stack link rather than leaving them to conflict.",
+        "The sandbox blocks heredocs, inline env, compound commands, GPG signing, cargo-registry writes and gh TLS; use script files written via Write and retry only the needed steps outside the sandbox, telling the user about /sandbox.",
+        "A plain git push can silently do nothing when the local branch name differs from the remote; push an explicit refspec.",
+        "When a rebase brings in tests from other PRs, re-scan for call patterns the PR's change invalidates, such as bare package specs after #281."
+      ]
+    },
+    "friction": [
+      "Closed PR #201 mistakenly because the plan file was committed to a PR instead of staying local tracking.",
+      "Opened a batch of PRs off main without checking overlap, so seven pairs conflicted and the user had to point it out twice.",
+      "#281's hosted CI failed because tests merged from other PRs still used bare package specs.",
+      "Sandbox restrictions repeatedly forced workarounds: script files, running commands outside the sandbox, and failures with signed commits and gh TLS.",
+      "Misleading wrapper exit-code notifications hid real CI failures several times.",
+      "Dependabot #275 and #289 kept failing on cascading major bumps (schemars, then sha2, comfy-table, toml).",
+      "The Release workflow verify job has been broken on main since #261 without anyone noticing."
+    ],
+    "open_items": [
+      "Confirm the PR for the composite-action fix is open and that the zizmor, workflow-contracts and action-pin checks pass; it unblocks release PR #248 (0.12.0).",
+      "Awaiting user merge of #290, #291, #292 and #248.",
+      "A5: warn when the registry repository metadata does not match origin.",
+      "Floating v1 action tag with immutable versions; Intel mac and aarch64-linux binaries (policy-sensitive).",
+      "T12/T12-DX owner-run scratch-registry verification needs credentials; T08 is mostly shipped and the plan needs a note.",
+      "Post-1.0: OIDC trusted publishing and semver-checks on promised surfaces.",
+      "Owner acts: accept ADR 12 and cut 0.12.0.",
+      "The fuzz targets are only compile-checked and have not been run under libFuzzer; E176 was never reproduced against a real registry.",
+      "Stale branch deletion (docs/next-work-plan, docs/spec-rewrite, fix/native-resolution and about 35 local branches) awaits the user's per-branch decision.",
+      "W1 real-service credential check needs a decision on where it runs in CI; the W2 SYS-RETRY entries in the roadmap, plan JSON and guide still need follow-up edits.",
+      "Update .claude/plans/NEXT-WORK.md with the latest state."
+    ]
+  }
+}
