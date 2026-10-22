@@ -184,6 +184,7 @@ fn operation(key: &str, package_name: &str, version: &str) -> RegistryPublishOpe
             publish_endpoint: None,
             identity: RegistryBindingDigest::from_normalized_binding(key.as_bytes()),
             confirm_timeout: None,
+            publish_timeout: None,
         },
         npm_access: None,
         npm_tag: None,
@@ -559,6 +560,14 @@ fn an_npm_version_that_never_appears_is_absent_after_the_default_window() {
 }
 
 #[test]
+fn a_publish_command_runs_for_fifteen_minutes_unless_the_registry_sets_a_publish_timeout() {
+    let mut op = operation("npm", "demo", "1.0.0");
+    assert_eq!(publish_timeout(&op), std::time::Duration::from_secs(900));
+    op.registry.publish_timeout = Some(std::time::Duration::from_secs(300));
+    assert_eq!(publish_timeout(&op), std::time::Duration::from_secs(300));
+}
+
+#[test]
 fn a_configured_confirm_timeout_replaces_the_default_window() {
     let window = std::time::Duration::from_secs(90);
     let (observation, waits) = confirm_npm(vec![captured_npm_output(fixtures::NPM_VIEW_MISSING)], Some(window));
@@ -921,6 +930,7 @@ fn a_timed_out_curl_call_retries_and_settles() {
             publish_endpoint: None,
             identity: RegistryBindingDigest::from_normalized_binding(b"pypi"),
             confirm_timeout: None,
+            publish_timeout: None,
         },
         npm_access: None,
         npm_tag: None,

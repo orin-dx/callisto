@@ -250,6 +250,7 @@ fn operation() -> RegistryPublishOperation {
             publish_endpoint: None,
             identity: RegistryBindingDigest::from_normalized_binding(b"pypi"),
             confirm_timeout: None,
+            publish_timeout: None,
         },
         npm_access: None,
         npm_tag: None,

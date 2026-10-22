@@ -129,6 +129,8 @@ pub struct RegistryConfig {
     pub publish_url: Option<String>,
     /// How long a version this run published may take to appear; `None` is the ecosystem's default.
     pub confirm_timeout: Option<std::time::Duration>,
+    /// The longest one publish command may run; `None` is the default of 15 minutes.
+    pub publish_timeout: Option<std::time::Duration>,
 }
 
 /// One declared release artifact. `target` is opaque -- Callisto passes it to
@@ -471,6 +473,7 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
             url: None,
             publish_url: None,
             confirm_timeout: None,
+            publish_timeout: None,
         },
     );
     registries.insert(
@@ -480,6 +483,7 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
             url: None,
             publish_url: None,
             confirm_timeout: None,
+            publish_timeout: None,
         },
     );
 
@@ -506,18 +510,20 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
                     ),
                 });
             }
-            let confirm_timeout = match reg.confirm_timeout.as_deref() {
-                None => None,
-                Some(text) => Some(
-                    super::duration::parse_duration(text).ok_or_else(|| ConfigError::UnknownKey {
+            let registry_duration = |field: &str, value: Option<&str>| match value {
+                None => Ok(None),
+                Some(text) => super::duration::parse_duration(text)
+                    .map(Some)
+                    .ok_or_else(|| ConfigError::UnknownKey {
                         path: callisto_toml.clone(),
                         key: format!(
-                        "[registries.{}] confirm-timeout = {text:?} (use a whole number with s, m or h, from 1s to 1h)",
-                        key.as_str()
-                    ),
-                    })?,
-                ),
+                            "[registries.{}] {field} = {text:?} (use a whole number with s, m or h, from 1s to 1h)",
+                            key.as_str()
+                        ),
+                    }),
             };
+            let confirm_timeout = registry_duration("confirm-timeout", reg.confirm_timeout.as_deref())?;
+            let publish_timeout = registry_duration("publish-timeout", reg.publish_timeout.as_deref())?;
             registries.insert(
                 key,
                 RegistryConfig {
@@ -525,6 +531,7 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
                     url: reg.url,
                     publish_url: reg.publish_url,
                     confirm_timeout,
+                    publish_timeout,
                 },
             );
         }
@@ -897,6 +904,39 @@ mod tests {
             config.registries[&RegistryKey(RegistryKey::CRATES_IO.to_string())].confirm_timeout,
             None
         );
+    }
+
+    #[test]
+    fn a_registry_may_set_how_long_a_publish_command_may_run() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        fs::write(
+            tmp.path().join("callisto.toml"),
+            "[registries.npm]\npublish-timeout = \"5m\"\n",
+        )
+        .expect("write callisto.toml");
+        let config = load(tmp.path()).expect("load should succeed");
+        assert_eq!(
+            config.registries[&RegistryKey("npm".to_string())].publish_timeout,
+            Some(std::time::Duration::from_secs(300))
+        );
+        assert_eq!(
+            config.registries[&RegistryKey(RegistryKey::CRATES_IO.to_string())].publish_timeout,
+            None
+        );
+    }
+
+    #[test]
+    fn an_unusable_publish_timeout_is_rejected() {
+        for bad in ["0s", "2h", "soon", "5"] {
+            let tmp = tempfile::tempdir().expect("tempdir");
+            fs::write(
+                tmp.path().join("callisto.toml"),
+                format!("[registries.npm]\npublish-timeout = \"{bad}\"\n"),
+            )
+            .expect("write callisto.toml");
+            let error = load(tmp.path()).expect_err("an unusable publish-timeout must not load");
+            assert!(error.to_string().contains("publish-timeout"), "{bad}: {error}");
+        }
     }
 
     #[test]
