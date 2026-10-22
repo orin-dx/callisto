@@ -1,0 +1,122 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5H3868H0SQX9Y2PG5C85K2G",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-22T06:02:37.912326Z",
+  "branch": "fix/registry-kind",
+  "checkpoints_count": 3,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/error.rs",
+    "docs/config.md",
+    "docs/errors.md",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "f351481043b9",
+  "checkpoint_transcript_start": 48998,
+  "transcript_lines_at_start": 48998,
+  "compact_transcript_start": 3982,
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 25240,
+    "cache_read_tokens": 11929992,
+    "output_tokens": 16445,
+    "api_call_count": 19,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 238
+  },
+  "summary": {
+    "intent": "Get the Callisto release stack (#305-#311) merged, decide what work comes next, and start the next planned item: requiring `kind` on custom registry entries, which previously defaulted silently to npm.",
+    "outcome": "The stack was merged and the release PR (#312) was inspected. A registry-kind fix then passed `just ci` and was committed, pushed and opened as a PR. It required `kind` on custom registries, added a new error code (E321) with docs, spec and test updates, plus a changeset. Entire auto-push was recorded as intended behavior in memory.",
+    "learnings": {
+      "repo": [
+        "Stacked PRs are managed as one native stack (#309) and merged in order.",
+        "Error codes are documented in docs/errors.md in numeric order, and a code-count reference elsewhere must be updated when a code is added. The E321 row had to be reordered to follow E320.",
+        "Adding a config requirement touches several places: resolve.rs, the UnknownKey/E317-style error variants in error.rs, docs/config.md, docs/specs/release.json, and every `[registries]` example in the docs.",
+        "User changes need a changeset, and `just ci` is the full check before shipping.",
+        "Entire session checkpoints are intentionally auto-pushed; `.entire/settings.json` should not be touched.",
+        "Immutable GitHub releases are compatible with Callisto, which drafts releases and publishes after all assets upload.",
+        "aarch64-unknown-linux-musl is excluded because the existing musl asset is built with `cross`, whose images are x86_64-hosted."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/config/resolve.rs",
+          "finding": "Registry kind defaulting was here: an entry without `kind` silently became npm. It now errors with the new E321 instead."
+        },
+        {
+          "path": "crates/callisto-graph/src/error.rs",
+          "finding": "A new error variant for a missing registry `kind` was added, modeled on the existing E317 and UnknownKey variants."
+        }
+      ],
+      "workflow": [
+        "Writing helper scripts to /tmp and running them via Bash made multi-step checks (CI status, PR inspection, behavior probes) repeatable.",
+        "Probing current behavior with a script (kind_probe.sh) before changing it confirmed the old default.",
+        "Running the graph and CLI tests before the full CI surfaced code that relied on the old npm default.",
+        "Confirming the CI exit line explicitly (`exit=0`) before shipping avoided assuming success.",
+        "The user's feedback about Entire auto-push was saved to memory so it won't be raised again."
+      ]
+    },
+    "friction": [
+      "The pnpm hang in michi's publish can't be diagnosed yet because pnpm's output isn't captured.",
+      "Real-registry verification needs the user's credentials, and crates.io can't delete test crates.",
+      "Doc edits needed a follow-up fix to put the E321 row in the right order after E320."
+    ],
+    "open_items": [
+      "Enable GitHub's immutable releases setting (user action).",
+      "Decide the no-output publish limit, which could cut off slow uploads and would change the MIT `CommandRunner` trait.",
+      "Cut 0.13.0 once release PR #312 merges, then verify the Intel macOS and arm64 Linux builds, including the Intel binary under Rosetta.",
+      "Pin the floating Moon minor in `.prototools` after a proto compatibility check.",
+      "Decide the scope for attesting napi `.node` outputs.",
+      "Publish migration notices for the retired crates callisto-format, -vcs, -conventional and -changelog (needs a crates.io publish by the user).",
+      "Layered publish with a joint verify gate, the ADR 3 note for npm and PyPI dependents, and the #290 guard rework are deferred until michi-graph lands.",
+      "T12 and T12-DX real-registry runs and the scratch-registry script need user credentials and packages.",
+      "Investigate michi's pnpm hang when the next failing publish shows pnpm's output."
+    ]
+  }
+}
