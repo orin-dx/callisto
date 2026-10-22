@@ -1,0 +1,98 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5K098ATBAXWMTQ11H14M0VQ",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-22T23:49:13.108083Z",
+  "branch": "fix/assemble-all-build-artifacts",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "bb55c3ea82a1",
+  "checkpoint_transcript_start": 49803,
+  "transcript_lines_at_start": 49803,
+  "compact_transcript_start": 4031,
+  "token_usage": {
+    "input_tokens": 26,
+    "cache_creation_tokens": 13900,
+    "cache_read_tokens": 8789507,
+    "output_tokens": 7458,
+    "api_call_count": 13,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 242
+  },
+  "summary": {
+    "intent": "Dispatch the recovery run to publish the unpublished 0.13.0 release after an earlier moon install race failure, and verify the publication.",
+    "outcome": "The recovery run was dispatched but its artifact assembly step failed. The assemble job's artifact downloads were fixed and the contract test extended, and a PR was opened for the fix. 0.13.0 publication was not confirmed in this session.",
+    "learnings": {
+      "repo": [
+        "The release workflow has an 'assemble' job that downloads build artifacts; its artifact download names had to be corrected, and every place that names a build artifact needs to stay consistent.",
+        "A workflow contract test extracts jobs from the workflow file and requires specific lines, so changes to the assemble job's downloads need matching test updates.",
+        "Moon is pinned in .prototools (PR #317 pins 2.6.3) because a floating `moon = \"2\"` caused a race where proto resolved to a release before moon had uploaded its archives.",
+        "Dependabot does not read .prototools; automated bumps would need Renovate or a scheduled workflow.",
+        "The recovery run builds using the orchestration on main, so it does not depend on #317 being merged."
+      ],
+      "code": [],
+      "workflow": [
+        "Long-running CI runs were handled with background watcher scripts and output file reads, with the user notified on completion.",
+        "When a CI job fails, reading the failed job's logs and then grepping every place that references the artifact names found the root cause and related usages.",
+        "Fixes to workflow files were paired with a contract-test change so the regression is pinned."
+      ]
+    },
+    "friction": [
+      "Pinned vs floating moon versions: the floating pin caused a release job failure from a race with moon's upload.",
+      "The recovery run failed at artifact assembly, adding another fix cycle before 0.13.0 could be published.",
+      "The recovery run was slow enough that it moved to the background and required repeated polling."
+    ],
+    "open_items": [
+      "0.13.0 is still unpublished; the recovery needs to be re-run after the assemble fix PR merges.",
+      "Automating moon version bumps (Renovate or a scheduled workflow) was not built.",
+      "PR #316 should not be merged before the recovery completes.",
+      "PR #317 (moon 2.6.3 pin) is still awaiting merge."
+    ]
+  }
+}
