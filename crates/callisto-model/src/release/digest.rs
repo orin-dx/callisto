@@ -6,6 +6,15 @@ use sha2::{Digest, Sha256};
 
 use crate::identity::string_json_schema;
 
+/// Lowercase hexadecimal text of `bytes`; digest outputs do not implement `LowerHex` in every `sha2` release.
+fn lower_hex(bytes: impl AsRef<[u8]>) -> String {
+    use std::fmt::Write;
+    bytes.as_ref().iter().fold(String::new(), |mut out, byte| {
+        write!(out, "{byte:02x}").expect("writing to a String cannot fail");
+        out
+    })
+}
+
 macro_rules! release_digest {
     ($name:ident, $description:literal) => {
         #[doc = $description]
@@ -37,7 +46,7 @@ macro_rules! release_digest {
             }
 
             fn from_sha256(bytes: impl AsRef<[u8]>) -> Self {
-                let rendered = format!("{:x}", Sha256::digest(bytes.as_ref()));
+                let rendered = lower_hex(Sha256::digest(bytes.as_ref()));
                 Self(rendered)
             }
         }
@@ -111,7 +120,7 @@ impl ArtifactDigest {
                 std::io::Error::new(std::io::ErrorKind::InvalidData, "artifact exceeds supported length")
             })?;
         }
-        Ok((Self(format!("{:x}", hasher.finalize())), length))
+        Ok((Self(lower_hex(hasher.finalize())), length))
     }
 }
 

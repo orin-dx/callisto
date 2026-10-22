@@ -19,7 +19,10 @@ const WHEEL: &str = "my_pkg-1.0.0-py3-none-any.whl";
 const SDIST: &str = "my_pkg-1.0.0.tar.gz";
 
 fn sha256(content: &str) -> String {
-    format!("{:x}", Sha256::digest(content.as_bytes()))
+    Sha256::digest(content.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>()
 }
 
 /// One file on the fake index.
