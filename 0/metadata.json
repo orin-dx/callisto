@@ -1,0 +1,107 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5GN7FTF8S1HGSZCW5MHRR78",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-22T01:57:33.035935Z",
+  "branch": "feat/registry-confirm-window",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/release/binding.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/pypi_file_set_tests.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/tests.rs",
+    "crates/callisto-graph/src/config/raw.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/error.rs",
+    "docs/architecture/release.md",
+    "docs/config.md",
+    "docs/errors.md",
+    "docs/releasing.md",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "8f78d39195fb",
+  "checkpoint_transcript_start": 44388,
+  "transcript_lines_at_start": 44388,
+  "compact_transcript_start": 3688,
+  "token_usage": {
+    "input_tokens": 130,
+    "cache_creation_tokens": 93112,
+    "cache_read_tokens": 16739714,
+    "output_tokens": 49734,
+    "api_call_count": 65
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 212
+  },
+  "summary": {
+    "intent": "Restack the PR stack (#291/#292) after a denied force-push, then implement a time-based registry confirmation window (policy, config key, E157 error) as a new PR on top of the stack in the callisto repo.",
+    "outcome": "Replaced #291/#292 with rebuilt branches/PRs excluding #290's commit, implemented the confirmation window across graph crate, tests, snapshots, docs and changeset; local `just ci` passed and the change was committed and pushed with a PR opened on the stack.",
+    "learnings": {
+      "repo": [
+        "Work is done in a git worktree at .claude/worktrees/smoke-main of the callisto repo; crate of interest is crates/callisto-graph.",
+        "Release registry confirmation logic lives in commands/release/provider/policy.rs and registry.rs, with PyPI tests in registry/pypi_file_set_tests.rs and adapter tests in registry/tests.rs.",
+        "Adding a config key requires edits across config/raw.rs, config/resolve.rs, release/binding.rs, error.rs (E157 variant), plus docs (config.md, errors.md, releasing.md, architecture/release.md, specs/release.json).",
+        "Config changes produce insta snapshots that must be accepted, and pending snapshot files must be removed afterward.",
+        "Clippy-style lint rejects `let _ =` in tests; a lint also flagged duration.rs on first CI run.",
+        "`just ci` runs the full pipeline locally; its log's own `exit=0` is the success signal.",
+        "Changesets are added for user-facing changes via a script."
+      ],
+      "code": [],
+      "workflow": [
+        "When force-push is denied, rebuild the stack on new branches and replace the PRs, relinking the stack, instead of retrying.",
+        "Batch multi-file edits via small Python/shell scripts in /tmp to apply and re-run formatting/tests quickly.",
+        "Run long local CI in the background while writing plan/docs files, then wait on the log.",
+        "A failed branch-creation command may still have created the branch; verify state before retrying."
+      ]
+    },
+    "friction": [
+      "Force-push to the existing PR branches was denied, forcing a rebuild and replacement of PRs #291/#292.",
+      "Branch creation with tracking config failed partway, leaving the branch created but misconfigured.",
+      "Several test/lint iterations: struct literal updates, PyPI test helper signature change, `let _ =` lint, duration.rs lint failure in CI.",
+      "Plan file write to the shared plans directory needed a workaround (write locally then copy)."
+    ],
+    "open_items": [
+      "Replaced PRs #291/#292 supersede the originals; old PRs/branches may need cleanup.",
+      "Uncommitted Entire settings change (.entire/settings.json) was inspected but not resolved in this session.",
+      "Plan file NPM-PUBLISH-WAVE.md written for the npm publish wave work; follow-up PRs in that wave remain."
+    ]
+  }
+}
