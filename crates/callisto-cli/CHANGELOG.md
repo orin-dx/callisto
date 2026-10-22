@@ -1,5 +1,12 @@
 # callisto-cli
 
+## 0.13.0
+
+- The release pull request no longer says "All changes are backward compatible" when a package is below 1.0.0 and gets a minor bump. It says that minor bumps below 1.0.0 can include breaking changes and to read the changes first.
+- A registry in callisto.toml can set `publish-timeout` (for example `publish-timeout = "5m"`) to change how long one publish command may run before Callisto stops it with E025. The default stays 15 minutes.
+- When a run adopts a Cargo or npm version that is already published, Callisto now warns if the registry records a different repository for it than this repository's origin, since the name may belong to someone else's package. It still adopts the version. A registry that records no repository, and PyPI, are not checked.
+- Release binaries are now published for Intel macOS (`x86_64-apple-darwin`) and arm64 Linux (`aarch64-unknown-linux-gnu`) as well as the existing three, and the `setup-callisto` action downloads them on those machines instead of building from crates.io. An older release without the new asset still installs from crates.io.
+
 ## 0.12.0
 
 - A `pypi` registry in `callisto.toml` can set `publish-url` when its upload endpoint differs from its simple index: Callisto reads releases from `url` and uploads to `publish-url`. Without it, `url` serves both, as before.

@@ -1,5 +1,9 @@
 # callisto-model
 
+## 0.13.0
+
+- Released together with the `workspace` fixed group.
+
 ## 0.12.0
 
 - Released together with the `workspace` fixed group.
