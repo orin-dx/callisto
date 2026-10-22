@@ -84,17 +84,17 @@ asset-name = "callisto-aarch64-apple-darwin.tar.gz"
 
 ## `[registries]`
 
-Keyed by registry name. Two entries exist by default even with no `[registries]` table at all: `crates-io` (kind `cargo`) and `npm` (kind `npm`), both with no URL override.
+Keyed by registry name. Three registries are built in, keyed `cratesIo` (kind `cargo`), `npm` (kind `npm`) and `pypi` (kind `pypi`). `cratesIo` and `npm` exist with no URL override even without a `[registries]` table; a `[registries.<built-in>]` entry changes their settings and may leave `kind` out.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `registries.<name>.kind` | string (`"cargo"` \| `"npm"` \| `"pypi"`) | `"npm"` if omitted | Registry ecosystem |
+| `registries.<name>.kind` | string (`"cargo"` \| `"npm"` \| `"pypi"`) | required, except for `cratesIo`, `npm` and `pypi`, which default to their own kind | Registry ecosystem. A custom registry without it fails with E321 |
 | `registries.<name>.url` | string | none | Registry endpoint override. For `pypi` it is the simple index Callisto reads, and the upload endpoint unless `publish-url` is set |
 | `registries.<name>.publish-url` | string | `url` | `pypi` only: the endpoint Twine uploads to when it differs from the index. Same HTTPS rules as `url` |
 | `registries.<name>.publish-timeout` | string | `15m` | The longest one publish command (`cargo publish`, `npm publish`, `twine upload`) may run before Callisto stops it with E025. Same format and range as `confirm-timeout` |
 | `registries.<name>.confirm-timeout` | string | `6m` for `npm` and `pypi`, `2m` for `cargo` | How long Callisto waits for a version it just published to appear on the registry before failing with E157. A whole number with `s`, `m` or `h`, from `1s` to `1h`. npm serves package documents from a cache that can answer stale for up to 5 minutes; raise it for a slower registry, and keep the release job's `timeout-minutes` above it |
 
-An explicit registry entry still defaults `kind` to npm when omitted; requiring it is planned. For `pypi`, set `publish-url` when the index and the upload endpoint differ, for example `url = "https://test.pypi.org/simple"` with `publish-url = "https://test.pypi.org/legacy/"`; see [Python support limits](publishing.md#current-python-support-limits). Accepting `nuget` as a target string does not provide a working NuGet publisher.
+For `pypi`, set `publish-url` when the index and the upload endpoint differ, for example `url = "https://test.pypi.org/simple"` with `publish-url = "https://test.pypi.org/legacy/"`; see [Python support limits](publishing.md#current-python-support-limits). Accepting `nuget` as a target string does not provide a working NuGet publisher.
 
 Example:
 ```toml
