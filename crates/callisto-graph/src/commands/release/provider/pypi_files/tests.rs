@@ -23,7 +23,10 @@ fn set() -> BuiltSet {
 }
 
 fn sha256(content: &str) -> String {
-    format!("{:x}", Sha256::digest(content.as_bytes()))
+    Sha256::digest(content.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>()
 }
 
 fn remote(filename: &str, sha256: Option<&str>, yanked: bool) -> PypiSimpleFile {

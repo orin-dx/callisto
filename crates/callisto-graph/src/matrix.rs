@@ -161,7 +161,7 @@ pub(crate) fn parse_pyproject_toml(pyproject_path: &Path) -> Result<Option<toml:
     else {
         return Ok(None);
     };
-    let val: toml::Value = content.parse().map_err(|e: toml::de::Error| {
+    let val = toml::from_str::<toml::Value>(&content).map_err(|e: toml::de::Error| {
         GraphError::Manifest(ManifestError::Parse {
             path: pyproject_path.to_path_buf(),
             format: ManifestFormat::PyprojectToml,
