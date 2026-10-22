@@ -168,7 +168,7 @@ impl CommandRunner for CliCommandRunner {
             args,
             cwd,
             timeout,
-            StderrMode::Live,
+            LiveEcho::STDERR,
             known_credential_env_values(std::env::vars()),
             ChildEnvironment {
                 remove: &remove,
@@ -194,7 +194,7 @@ impl CommandRunner for CliCommandRunner {
             args,
             cwd,
             timeout,
-            StderrMode::Live,
+            LiveEcho::STDERR,
             known_credential_env_values(std::env::vars()),
             ChildEnvironment {
                 remove: &remove,
@@ -220,7 +220,7 @@ impl CommandRunner for CliCommandRunner {
             args,
             cwd,
             timeout,
-            StderrMode::Live,
+            LiveEcho::BOTH,
             known_credential_env_values(std::env::vars()),
             ChildEnvironment {
                 remove: &remove,
@@ -236,7 +236,7 @@ impl CommandRunner for CliCommandRunner {
         cwd: &Path,
         timeout: Duration,
     ) -> Result<CommandOutput, CommandError> {
-        // Quiet mode never echoes stderr live (see `StderrMode::Quiet`
+        // Quiet mode never echoes stderr live (see `LiveEcho::NONE`
         // below), so there's nothing to redact -- pass an empty secrets
         // list rather than paying for an env scan that can only go unused.
         let remove = unrelated_credentials(program);
@@ -245,7 +245,7 @@ impl CommandRunner for CliCommandRunner {
             args,
             cwd,
             timeout,
-            StderrMode::Quiet,
+            LiveEcho::NONE,
             Vec::new(),
             ChildEnvironment {
                 remove: &remove,
@@ -332,14 +332,79 @@ impl CommandRunner for CliCommandRunner {
     }
 }
 
-/// Controls whether [`run_with_timeout_impl`]'s stderr reader thread prints
-/// each line live as it arrives. Captured `CommandOutput.stderr` is
-/// identical either way -- this only affects what's echoed to the
-/// terminal while the subprocess runs.
+/// Which of a subprocess's streams [`run_with_timeout_impl`] prints live, to this process's stderr, as lines arrive.
+/// Captured `CommandOutput` is identical either way; this only affects what the terminal shows while it runs.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum StderrMode {
-    Live,
-    Quiet,
+struct LiveEcho {
+    stdout: bool,
+    stderr: bool,
+}
+
+impl LiveEcho {
+    const NONE: Self = Self {
+        stdout: false,
+        stderr: false,
+    };
+    const STDERR: Self = Self {
+        stdout: false,
+        stderr: true,
+    };
+    /// A publish: pnpm prints its errors to stdout, so both streams are shown.
+    const BOTH: Self = Self {
+        stdout: true,
+        stderr: true,
+    };
+}
+
+/// Drains `reader` to its end and returns what it said, keeping at most [`MAX_CAPTURED_OUTPUT_BYTES`]; the rest is
+/// read and dropped so the child never blocks on a full pipe.
+///
+/// With `echo`, each line is also written to this process's stderr with `secrets` redacted first (registry tools can
+/// echo a credential verbatim). The returned text stays raw so classifiers keep matching exact upstream text. Lines
+/// are read as bytes: a line iterator has no bound on a single line, so a flood with no newlines would buffer without
+/// limit before it could be capped.
+fn capture_stream(mut reader: impl Read, echo: bool, secrets: &[String]) -> String {
+    let mut captured: Vec<u8> = Vec::new();
+    let mut truncated = false;
+    let mut pending_line: Vec<u8> = Vec::new();
+    let mut chunk = [0u8; 65536];
+    let echo_line = |line: &mut Vec<u8>| {
+        if line.last() == Some(&b'\r') {
+            line.pop();
+        }
+        eprintln!("{}", redact_known_secrets(&String::from_utf8_lossy(line), secrets));
+    };
+    loop {
+        match reader.read(&mut chunk) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => {
+                let data = &chunk[..n];
+                if echo {
+                    for &b in data {
+                        if b == b'\n' {
+                            echo_line(&mut pending_line);
+                            pending_line.clear();
+                        } else if pending_line.len() < MAX_CAPTURED_OUTPUT_BYTES {
+                            pending_line.push(b);
+                        }
+                    }
+                }
+                if !truncated {
+                    let take = data.len().min(MAX_CAPTURED_OUTPUT_BYTES - captured.len());
+                    captured.extend_from_slice(&data[..take]);
+                    truncated = take < data.len();
+                }
+            }
+        }
+    }
+    if echo && !pending_line.is_empty() {
+        echo_line(&mut pending_line);
+    }
+    let mut text = String::from_utf8_lossy(&captured).into_owned();
+    if truncated {
+        text.push_str("\n...[output truncated]\n");
+    }
+    text
 }
 
 /// `live_secrets`: known-credential values (see
@@ -357,7 +422,7 @@ fn run_with_timeout_impl(
     args: &[&str],
     cwd: &Path,
     timeout: Duration,
-    stderr_mode: StderrMode,
+    echo: LiveEcho,
     live_secrets: Vec<String>,
     child_env: ChildEnvironment<'_>,
 ) -> Result<CommandOutput, CommandError> {
@@ -403,105 +468,14 @@ fn run_with_timeout_impl(
     let (stdout_tx, stdout_rx) = std::sync::mpsc::channel::<String>();
     let (stderr_tx, stderr_rx) = std::sync::mpsc::channel::<String>();
 
+    let stdout_secrets = live_secrets.clone();
     std::thread::spawn(move || {
-        let mut reader = stdout_handle;
-        let mut captured: Vec<u8> = Vec::new();
-        let mut truncated = false;
-        let mut chunk = [0u8; 65536];
-        loop {
-            match reader.read(&mut chunk) {
-                Ok(0) => break,
-                Ok(n) => {
-                    // Bytes past the cap are still read (draining the
-                    // pipe so the child never blocks on a full buffer)
-                    // but not retained.
-                    if !truncated {
-                        let remaining = MAX_CAPTURED_OUTPUT_BYTES - captured.len();
-                        let take = n.min(remaining);
-                        captured.extend_from_slice(&chunk[..take]);
-                        if take < n {
-                            truncated = true;
-                        }
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-        let mut text = String::from_utf8_lossy(&captured).into_owned();
-        if truncated {
-            text.push_str("\n...[output truncated]\n");
-        }
-        drop(stdout_tx.send(text));
+        drop(stdout_tx.send(capture_stream(stdout_handle, echo.stdout, &stdout_secrets)));
     });
-    // Stream stderr line-by-line so publish progress (cargo/npm/twine
-    // write to stderr) appears in real time rather than after the
-    // process exits, while capping the accumulated text returned to
-    // the caller. Deliberately reads raw bytes rather than using
-    // `BufReader::lines()`: that iterator has no size bound on a
-    // single line, so a flood with no newlines at all would still
-    // buffer unboundedly inside it before ever yielding a line to cap.
-    // `stderr_mode` gates only the live eprintln -- captured output is
-    // identical either way (Live vs. Quiet).
-    //
-    // NOTE: captured output is no longer necessarily byte-identical to
-    // what was printed live. Each line handed to `eprintln!` is redacted
-    // via `live_secrets` first (registry CLIs can echo a credential
-    // verbatim in their own stderr diagnostics), while `captured` -- and
-    // therefore the returned `CommandOutput.stderr` -- deliberately stays
-    // raw so error classifiers keep matching exact upstream text. For a
-    // credential-bearing line, the terminal sees `[REDACTED]`; the
-    // returned `CommandOutput.stderr` still has the real value.
+    // Stderr streams line by line so publish progress (cargo/npm/twine write to stderr) appears in real time rather
+    // than after the process exits. `echo` gates only the live printing; captured output is identical either way.
     std::thread::spawn(move || {
-        let mut reader = stderr_handle;
-        let mut captured: Vec<u8> = Vec::new();
-        let mut truncated = false;
-        let mut pending_line: Vec<u8> = Vec::new();
-        let mut chunk = [0u8; 65536];
-        loop {
-            match reader.read(&mut chunk) {
-                Ok(0) => break,
-                Ok(n) => {
-                    let data = &chunk[..n];
-                    for &b in data {
-                        if b == b'\n' {
-                            if pending_line.last() == Some(&b'\r') {
-                                pending_line.pop();
-                            }
-                            if stderr_mode == StderrMode::Live {
-                                let line = redact_known_secrets(&String::from_utf8_lossy(&pending_line), &live_secrets);
-                                eprintln!("{line}");
-                            }
-                            pending_line.clear();
-                        } else if pending_line.len() < MAX_CAPTURED_OUTPUT_BYTES {
-                            pending_line.push(b);
-                        }
-                    }
-                    if !truncated {
-                        let remaining = MAX_CAPTURED_OUTPUT_BYTES - captured.len();
-                        let take = data.len().min(remaining);
-                        captured.extend_from_slice(&data[..take]);
-                        if take < data.len() {
-                            truncated = true;
-                        }
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-        if !pending_line.is_empty() {
-            if pending_line.last() == Some(&b'\r') {
-                pending_line.pop();
-            }
-            if stderr_mode == StderrMode::Live {
-                let line = redact_known_secrets(&String::from_utf8_lossy(&pending_line), &live_secrets);
-                eprintln!("{line}");
-            }
-        }
-        let mut text = String::from_utf8_lossy(&captured).into_owned();
-        if truncated {
-            text.push_str("\n...[output truncated]\n");
-        }
-        drop(stderr_tx.send(text));
+        drop(stderr_tx.send(capture_stream(stderr_handle, echo.stderr, &live_secrets)));
     });
 
     // Grace period to wait for the reader threads after the direct
@@ -1099,7 +1073,7 @@ mod tests {
     /// Sibling regression guard: `run_with_timeout` (the live-streaming
     /// path `run_quiet` is deliberately different from) must still echo
     /// live -- otherwise this pair of tests could both pass by accident if
-    /// `stderr_mode` were wired backwards.
+    /// the echo setting were wired backwards.
     #[test]
     fn run_with_timeout_still_streams_stderr_live() {
         const CHILD_ENV: &str = "CALLISTO_RUN_TIMEOUT_LIVE_CHILD";
@@ -1131,6 +1105,42 @@ mod tests {
         );
     }
 
+    /// pnpm prints its errors to stdout. A publish run echoes stdout to stderr live (never to stdout, which carries
+    /// reports), a plain run does not, and the captured stdout is returned either way.
+    #[test]
+    fn a_publisher_run_echoes_stdout_live_and_a_plain_run_does_not() {
+        const CHILD_ENV: &str = "CALLISTO_PUBLISHER_STDOUT_CHILD";
+
+        if std::env::var(CHILD_ENV).is_ok() {
+            let runner = CliCommandRunner;
+            let script = ["-c", "echo stdout-from-publisher"];
+            let published = runner
+                .run_with_timeout_publisher("sh", &script, std::path::Path::new("."), Duration::from_secs(5), &[])
+                .expect("publisher run");
+            assert!(published.stdout.contains("stdout-from-publisher"));
+            let script = ["-c", "echo stdout-from-plain-run"];
+            let plain = runner
+                .run_with_timeout("sh", &script, std::path::Path::new("."), Duration::from_secs(5))
+                .expect("plain run");
+            assert!(plain.stdout.contains("stdout-from-plain-run"));
+            return;
+        }
+
+        let exe = std::env::current_exe().expect("current_exe should be available in tests");
+        let output = std::process::Command::new(exe)
+            .arg("--exact")
+            .arg("runner::tests::a_publisher_run_echoes_stdout_live_and_a_plain_run_does_not")
+            .arg("--nocapture")
+            .env(CHILD_ENV, "1")
+            .output()
+            .expect("failed to re-exec test binary");
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.status.success(), "child failed: {stderr}");
+        assert!(stderr.contains("stdout-from-publisher"), "got: {stderr}");
+        assert!(!stderr.contains("stdout-from-plain-run"), "got: {stderr}");
+    }
+
     /// Security regression: the live-streamed stderr copy must be redacted
     /// the same way the captured/returned copy already is (see
     /// `CommandOutput::redacted_stderr`), but the *captured* copy handed
@@ -1147,7 +1157,7 @@ mod tests {
             &["-c", &format!("echo {secret} >&2")],
             std::path::Path::new("."),
             Duration::from_secs(5),
-            StderrMode::Live,
+            LiveEcho::STDERR,
             vec![secret.to_string()],
             ChildEnvironment { remove: &[], set: &[] },
         )
