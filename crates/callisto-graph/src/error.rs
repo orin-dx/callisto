@@ -700,9 +700,7 @@ pub enum GraphError {
         source: callisto_model::ProviderObservationError,
     },
 
-    #[error(
-        "cannot dispatch release operation `{operation:?}` because its provider observation is indeterminate: {cause}"
-    )]
+    #[error("cannot dispatch the {operation} because its provider observation is indeterminate: {cause}")]
     #[diagnostic(
         code(E176),
         help(

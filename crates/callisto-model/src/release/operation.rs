@@ -313,6 +313,29 @@ impl ReleaseOperationId {
     }
 }
 
+/// What the operation does to which package version, for messages: `tag of cargo/demo 0.10.0`.
+impl std::fmt::Display for ReleaseOperationId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let action = match &self.role {
+            ReleaseOperationRole::RegistryPublish { registry } => {
+                format!("registry publish to {}", registry.registry_key().as_str())
+            }
+            ReleaseOperationRole::Tag => "tag".to_owned(),
+            ReleaseOperationRole::ForgeRelease => "forge release draft".to_owned(),
+            ReleaseOperationRole::ArtifactUpload { slot } => {
+                format!("artifact upload {} ({})", slot.asset_name, slot.platform)
+            }
+            ReleaseOperationRole::ForgePublish => "forge release publication".to_owned(),
+            ReleaseOperationRole::PlatformPublish { registry, platform } => format!(
+                "platform package publish {} to {}",
+                platform.name(),
+                registry.registry_key().as_str()
+            ),
+        };
+        write!(f, "{action} of {} {}", self.package, self.version.render())
+    }
+}
+
 impl PartialOrd for ReleaseOperationId {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
@@ -461,6 +484,73 @@ mod tests {
     use super::super::test_support::registry_binding;
     use super::*;
     use crate::release::*;
+
+    #[test]
+    fn an_operation_id_reads_as_what_it_does_to_which_version() {
+        let package = ReleasePackageId::parse("cargo/demo").unwrap();
+        let version = Version::parse("0.10.0", crate::VersionGrammar::SemVer).unwrap();
+        assert_eq!(
+            ReleaseOperationId::tag(package.clone(), version.clone()).to_string(),
+            "tag of cargo/demo 0.10.0"
+        );
+        assert_eq!(
+            ReleaseOperationId::forge_release(package, version).to_string(),
+            "forge release draft of cargo/demo 0.10.0"
+        );
+    }
+
+    #[test]
+    fn operations_that_differ_only_by_registry_slot_or_platform_read_differently() {
+        let package = ReleasePackageId::parse("npm/demo").unwrap();
+        let version = Version::parse("1.0.0", crate::VersionGrammar::SemVer).unwrap();
+        let publish =
+            |key: &str| ReleaseOperationId::registry_publish(package.clone(), version.clone(), registry_binding(key));
+        assert_ne!(publish("npm").to_string(), publish("internal").to_string());
+        assert_eq!(
+            publish("internal").to_string(),
+            "registry publish to internal of npm/demo 1.0.0"
+        );
+
+        let upload = |platform: &str, asset: &str| {
+            ReleaseOperationId::artifact_upload(
+                ArtifactSlotId::new(
+                    package.clone(),
+                    version.clone(),
+                    platform,
+                    asset,
+                    GitHubRepository::parse("owner/repo").unwrap(),
+                    RELEASE_COORDINATOR_WORKFLOW_PATH,
+                    crate::CommitSha::parse(&"b".repeat(40)).unwrap(),
+                )
+                .unwrap(),
+            )
+        };
+        assert_eq!(
+            upload("linux-x64", "demo-linux.tar.gz").to_string(),
+            "artifact upload demo-linux.tar.gz (linux-x64) of npm/demo 1.0.0"
+        );
+        assert_ne!(
+            upload("linux-x64", "demo.tar.gz").to_string(),
+            upload("darwin-arm64", "demo.tar.gz").to_string()
+        );
+
+        let platform = |name: &str| {
+            ReleaseOperationId::platform_publish(
+                package.clone(),
+                version.clone(),
+                registry_binding("npm"),
+                PlatformPackageV1::new(ReleasePackageId::parse(name).unwrap(), "platform/dir").unwrap(),
+            )
+        };
+        assert_eq!(
+            platform("npm/demo-linux").to_string(),
+            "platform package publish npm/demo-linux to npm of npm/demo 1.0.0"
+        );
+        assert_ne!(
+            platform("npm/demo-linux").to_string(),
+            platform("npm/demo-darwin").to_string()
+        );
+    }
 
     /// Residual instance of the same defect class fixed above for
     /// `attestation_policy`: `ReleaseOperationId::cmp` used to key on
