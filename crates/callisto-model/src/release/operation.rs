@@ -313,6 +313,21 @@ impl ReleaseOperationId {
     }
 }
 
+/// What the operation does to which package version, for messages: `tag of cargo/demo 0.10.0`.
+impl std::fmt::Display for ReleaseOperationId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let action = match &self.role {
+            ReleaseOperationRole::RegistryPublish { .. } => "registry publish",
+            ReleaseOperationRole::Tag => "tag",
+            ReleaseOperationRole::ForgeRelease => "forge release draft",
+            ReleaseOperationRole::ArtifactUpload { .. } => "artifact upload",
+            ReleaseOperationRole::ForgePublish => "forge release publication",
+            ReleaseOperationRole::PlatformPublish { .. } => "platform package publish",
+        };
+        write!(f, "{action} of {} {}", self.package, self.version.render())
+    }
+}
+
 impl PartialOrd for ReleaseOperationId {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
@@ -461,6 +476,20 @@ mod tests {
     use super::super::test_support::registry_binding;
     use super::*;
     use crate::release::*;
+
+    #[test]
+    fn an_operation_id_reads_as_what_it_does_to_which_version() {
+        let package = ReleasePackageId::parse("cargo/demo").unwrap();
+        let version = Version::parse("0.10.0", crate::VersionGrammar::SemVer).unwrap();
+        assert_eq!(
+            ReleaseOperationId::tag(package.clone(), version.clone()).to_string(),
+            "tag of cargo/demo 0.10.0"
+        );
+        assert_eq!(
+            ReleaseOperationId::forge_release(package, version).to_string(),
+            "forge release draft of cargo/demo 0.10.0"
+        );
+    }
 
     /// Residual instance of the same defect class fixed above for
     /// `attestation_policy`: `ReleaseOperationId::cmp` used to key on
