@@ -182,7 +182,7 @@ pub enum CommandError {
     Io { program: String, message: String },
 
     #[error("`{program}` timed out after {seconds}s")]
-    #[diagnostic(code(E025), help("The process did not exit within the allowed time. This usually indicates a network stall or a registry that is unreachable."))]
+    #[diagnostic(code(E025), help("The process did not exit within the allowed time. This usually indicates a network stall or a registry that is unreachable. A publish command is stopped after 15 minutes unless the registry sets `publish-timeout` in callisto.toml."))]
     TimedOut { program: String, seconds: u64 },
 }
 

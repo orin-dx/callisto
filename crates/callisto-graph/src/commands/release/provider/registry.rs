@@ -125,6 +125,11 @@ fn registry_observation<A: RegistryEcosystem + ?Sized>(
     policy::retry_observation(context.sleeper(), || adapter.observe_once(context, operation))
 }
 
+/// The longest one publish command may run: the registry's configured `publish-timeout`, else the default.
+fn publish_timeout(operation: &RegistryPublishOperation) -> Duration {
+    operation.registry.publish_timeout.unwrap_or(timeouts::PUBLISH)
+}
+
 /// How long this publish's version may take to show up: the registry's configured `confirm-timeout`, else the default.
 fn visibility_window<A: RegistryEcosystem + ?Sized>(adapter: &A, operation: &RegistryPublishOperation) -> Duration {
     operation
@@ -232,16 +237,21 @@ pub(crate) fn adapter_for(ecosystem: Ecosystem) -> Result<&'static dyn RegistryE
 /// Runs an [`registry_argv::Argv`] built by the pure argv layer. This is the
 /// only place an adapter touches [`callisto_model::CommandRunner`] --
 /// everything about *what* to run was already decided by `registry_argv`.
-fn run_argv(context: &ProviderContext<'_>, argv: &registry_argv::Argv) -> Result<CommandOutput, GraphError> {
+fn run_argv(
+    context: &ProviderContext<'_>,
+    argv: &registry_argv::Argv,
+    timeout: Duration,
+) -> Result<CommandOutput, GraphError> {
     let args: Vec<&str> = argv.args.iter().map(String::as_str).collect();
     Ok(context
         .runner()
-        .run_with_timeout(&argv.program, &args, &argv.cwd, timeouts::PUBLISH)?)
+        .run_with_timeout(&argv.program, &args, &argv.cwd, timeout)?)
 }
 
 fn run_npm_publish_argv(
     context: &ProviderContext<'_>,
     argv: &registry_argv::Argv,
+    timeout: Duration,
 ) -> Result<CommandOutput, GraphError> {
     let token = std::env::var("NPM_TOKEN").ok().filter(|value| !value.is_empty());
     let config = std::env::var("CALLISTO_PUBLISH_NPM_CONFIG")
@@ -251,7 +261,7 @@ fn run_npm_publish_argv(
     let args: Vec<&str> = argv.args.iter().map(String::as_str).collect();
     Ok(context
         .runner()
-        .run_with_timeout_publisher(&argv.program, &args, &argv.cwd, timeouts::PUBLISH, &env)?)
+        .run_with_timeout_publisher(&argv.program, &args, &argv.cwd, timeout, &env)?)
 }
 
 fn npm_publisher_environment<'a>(
@@ -275,6 +285,7 @@ fn npm_publisher_environment<'a>(
 fn run_pypi_upload_argv(
     context: &ProviderContext<'_>,
     argv: &registry_argv::Argv,
+    timeout: Duration,
 ) -> Result<CommandOutput, GraphError> {
     let username = std::env::var("TWINE_USERNAME").ok();
     let password = std::env::var("TWINE_PASSWORD").ok();
@@ -282,7 +293,7 @@ fn run_pypi_upload_argv(
     let args: Vec<&str> = argv.args.iter().map(String::as_str).collect();
     Ok(context
         .runner()
-        .run_with_timeout_publisher(&argv.program, &args, &argv.cwd, timeouts::PUBLISH, &env)?)
+        .run_with_timeout_publisher(&argv.program, &args, &argv.cwd, timeout, &env)?)
 }
 
 fn pypi_publisher_environment<'a>(
@@ -417,7 +428,7 @@ impl RegistryEcosystem for CargoRegistry {
             &operation.version,
             registry_key,
         )?;
-        run_argv(context, &argv)
+        run_argv(context, &argv, publish_timeout(operation))
     }
 
     fn classify(&self, output: &CommandOutput) -> Result<PublishOutcome, RegistryError> {
@@ -576,7 +587,7 @@ impl RegistryEcosystem for NpmRegistry {
                 operation.npm_access,
                 operation.registry.endpoint.as_deref(),
             );
-            return run_npm_publish_argv(context, &argv);
+            return run_npm_publish_argv(context, &argv, publish_timeout(operation));
         }
         // The package manager and the directory it runs in belong to the workspace that holds the package.
         let workspace_root = context.root().join(&workspace_dir);
@@ -594,7 +605,7 @@ impl RegistryEcosystem for NpmRegistry {
             operation.npm_access,
             operation.registry.endpoint.as_deref(),
         );
-        run_npm_publish_argv(context, &argv)
+        run_npm_publish_argv(context, &argv, publish_timeout(operation))
     }
 
     fn classify(&self, output: &CommandOutput) -> Result<PublishOutcome, RegistryError> {
@@ -995,7 +1006,7 @@ impl RegistryEcosystem for PypiRegistry {
             operation.registry.upload_endpoint(),
             &paths,
         );
-        let output = run_pypi_upload_argv(context, &upload)?;
+        let output = run_pypi_upload_argv(context, &upload, publish_timeout(operation))?;
         if output.success() {
             set.mark_uploaded(&missing);
         }

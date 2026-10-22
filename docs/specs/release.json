@@ -241,12 +241,17 @@
     },
     {
       "id": "REL-PUB-11",
-      "criterion": "A publish command that fails with auth, rate-limit or other registry output fails the run with E163. A failing git or gh effect command fails with E164. No effect command is re-issued automatically. Tool output shown in these errors, in the live stderr echo and in JSON errors has credentials masked as `[REDACTED]`: the values of the known credential variables and of any variable named `*_TOKEN`, `*_SECRET` or `*_PASSWORD`, URL userinfo, `npm_`, `ghp_`-family, `github_pat_` and `pypi-` tokens, `Bearer` values, and `.npmrc` `_authToken`, `_auth` and `_password` values.",
+      "criterion": "A publish command that fails with auth, rate-limit or other registry output fails the run with E163, and the error carries the last 8 lines of the command's standard output followed by its standard error. A publish run also echoes its standard output to the live log, on stderr. A failing git or gh effect command fails with E164. No effect command is re-issued automatically. Tool output shown in these errors, in the live stderr echo and in JSON errors has credentials masked as `[REDACTED]`: the values of the known credential variables and of any variable named `*_TOKEN`, `*_SECRET` or `*_PASSWORD`, URL userinfo, `npm_`, `ghp_`-family, `github_pat_` and `pypi-` tokens, `Bearer` values, and `.npmrc` `_authToken`, `_auth` and `_password` values.",
       "is_error_case": true
     },
     {
       "id": "REL-PUB-12",
       "criterion": "A `pypi` `[registries]` entry may set `publish-url`, the endpoint Twine uploads to when the index at `url` is not also the upload route. Both endpoints follow the registry URL rules of REL-PUB-05 and both enter the registry binding, so changing either makes an earlier intent stale. A package-level `publish-to` index names both routes and overrides the entry's `publish-url`. A `publish-url` on a registry that is not `pypi` is rejected when the configuration loads."
+    },
+    {
+      "id": "REL-PUB-13",
+      "criterion": "A registry entry may set `publish-timeout`, the longest one publish command (`cargo publish`, `npm publish`, `twine upload`) may run, as a whole number with `s`, `m` or `h` from 1 s to 1 h; the default is 15 minutes. A command that runs longer is stopped and fails with E025. The value does not enter the registry binding, so changing it does not make an earlier intent stale. A value outside that form or range is rejected when the configuration loads.",
+      "is_error_case": true
     },
     {
       "id": "REL-RERUN-01",

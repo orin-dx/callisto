@@ -478,6 +478,7 @@ prepared:
                     "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
                 ),
                 confirm_timeout: None,
+                publish_timeout: None,
             },
             npm_access: None,
             npm_tag: None,

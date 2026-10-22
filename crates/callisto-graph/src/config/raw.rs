@@ -109,6 +109,9 @@ pub struct RawRegistryConfig {
     /// How long a version this run published may take to appear on the registry (`90s`, `6m`, `1h`).
     #[serde(rename = "confirm-timeout")]
     pub confirm_timeout: Option<String>,
+    /// The longest one publish command may run (`90s`, `15m`, `1h`).
+    #[serde(rename = "publish-timeout")]
+    pub publish_timeout: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

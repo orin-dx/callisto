@@ -34,7 +34,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E022 | Executing `<program>` is not supported on this surface: <reason> | Run this command on a surface where `<program>` can be executed. |
 | E023 | `<program>` failed with exit code <exit_code>: <stderr> | Inspect the reported stderr to diagnose why `<program>` failed. |
 | E024 | Failed to run `<program>`: <message> | Check that `<program>` is installed and executable, then retry. |
-| E025 | `<program>` timed out after <seconds>s | The process did not exit within the allowed time. This usually indicates a network stall or a registry that is unreachable. |
+| E025 | `<program>` timed out after <seconds>s | The process did not exit within the allowed time. This usually indicates a network stall or a registry that is unreachable. A publish command is stopped after 15 minutes unless the registry sets `publish-timeout` in `callisto.toml`. |
 | E026 | Commit walk failed: <message> | Inspect the reported backend failure; no more specific fix is known. |
 | E027 | Internal invariant violated while operating on a manifest path | — |
 | E028 | Manifest dependency has a TOML value that is neither a string nor a table; refusing to silently no-op the rewrite | Fix the dependency's TOML shape to a plain string or a table before running callisto again. |
