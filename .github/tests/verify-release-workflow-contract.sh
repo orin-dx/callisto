@@ -44,10 +44,18 @@ require_line "$build_artifact" '          path: ${{ runner.temp }}/release-inten
 require_line "$build_artifact" '          subject-path: ${{ runner.temp }}/release-artifacts/${{ matrix.asset }}' 'each target build must attest its staged artifact bytes'
 require_line "$build_artifact" '          bash .github/scripts/build-release-artifact.sh' 'production artifact builds must use the shared preflighted build recipe'
 require_line "$build_artifact" '            target: aarch64-apple-darwin' 'the product matrix must build macOS ARM64'
+require_line "$build_artifact" '            target: x86_64-apple-darwin' 'the product matrix must build macOS Intel'
+require_line "$build_artifact" '            target: aarch64-unknown-linux-gnu' 'the product matrix must build glibc Linux ARM64'
 require_line "$build_artifact" '            target: x86_64-unknown-linux-gnu' 'the product matrix must build glibc Linux x86_64'
 require_line "$build_artifact" '            target: x86_64-unknown-linux-musl' 'the product matrix must build musl Linux x86_64'
 
 build="$(job_block build execute)"
+require_line "$build" '          pattern: release-build-*' 'assembly must download every target build by pattern, not by a list of names that a new matrix target can miss'
+require_line "$build" '          merge-multiple: true' 'assembly must merge every target build into one artifact directory'
+if grep -Eq '^          name: release-build-' <<< "$build"; then
+  printf 'release workflow contract failed: assembly must not name individual target builds\n' >&2
+  exit 1
+fi
 require_line "$build" '          callisto release artifact-manifest --intent "${RUNNER_TEMP}/release-intent/release-intent.json" --artifact-dir "${RUNNER_TEMP}/release-artifacts" --out "${RUNNER_TEMP}/release-artifacts/manifest.json"' 'assembly must create the exact three-slot artifact manifest'
 
 plan="$(job_block plan build-artifact)"
