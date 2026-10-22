@@ -8,7 +8,7 @@ use callisto_model::{CommandRunner, ExecutionTrustProfileV1, ReleaseIntentV1, Re
 use crate::{DependencyResolver, GraphError, ProjectLocator, Workspace};
 
 use super::binding::optional_git_remote;
-use super::capability::{canonical_root, observe_source, unsatisfied_packages, ReleaseCheckout};
+use super::capability::{canonical_root, observe_source, published_packages, unsatisfied_packages, ReleaseCheckout};
 use super::derive::{
     derive_release_intent, derive_release_intent_with_prepared, ArtifactBuildPolicy, GitRemoteRequirement,
 };
@@ -139,6 +139,40 @@ fn incomplete_tagged_releases<R: CommandRunner, D: DependencyResolver>(
     ))
 }
 
+/// Refuses to tag a version the registry already holds while its package has moved on since the commit that set it.
+///
+/// A release that stopped after publishing leaves exactly this state. A rerun on a later commit would tag code that
+/// was never published, so it finishes from the version commit instead. Nothing is observed unless a package moved.
+fn refuse_a_published_version_left_behind<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    decision: &callisto_model::ReleaseDecisionV1,
+    resumable: &std::collections::BTreeSet<ReleasePackageId>,
+    source: &SourceIdentity,
+    profile: ExecutionTrustProfileV1,
+    mode: LocalReleaseSource,
+) -> Result<(), GraphError> {
+    let moved = super::version_commit::packages_moved_past_their_version(workspace, decision, resumable)?;
+    // Without an `origin` push URL a preview cannot observe the registry either.
+    if moved.is_empty()
+        || (mode == LocalReleaseSource::Preview && optional_git_remote(&workspace.root, workspace.runner)?.is_none())
+    {
+        return Ok(());
+    }
+    let (_, prepared) =
+        derive_release_intent_with_prepared(workspace, decision, source.clone(), profile, None, &mut Vec::new())?;
+    let among = moved.iter().map(|moved| moved.package.clone()).collect();
+    let published = published_packages(&workspace.root, workspace.runner, &prepared, &among);
+    match moved.into_iter().find(|moved| published.contains(&moved.package)) {
+        Some(moved) => Err(GraphError::ReleasePublishedVersionMoved {
+            package: moved.package.to_string(),
+            version: moved.version,
+            version_commit: moved.version_commit.chars().take(12).collect(),
+            newer_commits: moved.newer_commits,
+        }),
+        None => Ok(()),
+    }
+}
+
 /// [`plan_local_release`] over an already-loaded workspace, e.g. one built from an in-memory config.
 pub fn plan_workspace_release<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
@@ -157,6 +191,7 @@ pub fn plan_workspace_release<R: CommandRunner, D: DependencyResolver>(
         },
         LocalReleaseSource::Trusted => observe_source(workspace, profile, ReleaseCheckout::AnyHead)?,
     };
+    refuse_a_published_version_left_behind(workspace, &decision, &resumable, &source, profile, mode)?;
     // A local run is its own orchestration: slots bind to the source commit.
     let artifact_policy = match (&workspace.config.product_release, &source) {
         (Some(release), SourceIdentity::GitCommit { sha }) if !release.artifacts.is_empty() => {

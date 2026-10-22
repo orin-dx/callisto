@@ -342,6 +342,39 @@ pub(crate) fn unsatisfied_packages(
         .collect()
 }
 
+/// The packages in `among` with a registry publish already observed exactly satisfied.
+///
+/// A failed observation counts as not published; the run reports it itself.
+pub(crate) fn published_packages(
+    root: &Path,
+    runner: &dyn CommandRunner,
+    prepared: &super::derive::PreparedDerivation,
+    among: &std::collections::BTreeSet<callisto_model::ReleasePackageId>,
+) -> std::collections::BTreeSet<callisto_model::ReleasePackageId> {
+    let context = ProviderContext::new(root, runner, prepared.git_remote.as_ref());
+    prepared
+        .operations
+        .iter()
+        .filter(|(id, operation)| {
+            among.contains(&id.package) && matches!(operation, PreparedOperation::RegistryPublish(_))
+        })
+        .filter(|(id, operation)| {
+            let observed = checked_provider_for(operation).and_then(|provider| {
+                provider.observe(
+                    &context,
+                    &ProviderRequest {
+                        id,
+                        operation,
+                        artifacts: None,
+                    },
+                )
+            });
+            matches!(observed, Ok(ProviderObservationV1::Exact { .. }))
+        })
+        .map(|(id, _)| id.package.clone())
+        .collect()
+}
+
 pub(crate) fn canonical_root(root: &Path) -> Result<std::path::PathBuf, GraphError> {
     dunce::canonicalize(root).map_err(|error| GraphError::ReleaseInputRead {
         path: root.to_path_buf(),

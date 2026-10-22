@@ -276,6 +276,11 @@
       "is_error_case": true
     },
     {
+      "id": "REL-RERUN-07",
+      "criterion": "A local `callisto release` refuses with E320, before any effect, when a package it would release has commits touching its files after the commit that set its release version and the registry already holds that version. The error names the version commit; checking it out and running `callisto release` again adopts the published version and tags that commit. A package with no such commits, or whose version the registry does not yet hold, is unaffected.",
+      "is_error_case": true
+    },
+    {
       "id": "REL-GH-01",
       "criterion": "Every package with a publish target gets an annotated, unsigned tag named by its tag template, with message `Release <tag>`, on the source commit, pushed to the `origin` push URL."
     },

@@ -67,6 +67,7 @@ mod github;
 mod local;
 mod notes;
 pub(crate) mod provider;
+mod version_commit;
 
 use super::release_artifacts;
 
