@@ -1,6 +1,7 @@
 //! The registry-publish role: one adapter per ecosystem, selected once.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use callisto_model::{
     normalize_pypi_project_name, CommandOutput, Ecosystem, ExactEvidence, ProviderConflictReason, ProviderEvidenceV1,
@@ -68,30 +69,28 @@ impl ReleaseProvider for RegistryProvider {
         let operation = registry_operation(request)?;
         let adapter = adapter_for(request.id.package.ecosystem())?;
         let output = adapter.publish(context, request.id, operation, request.artifacts)?;
-        let outcome = adapter.classify(&output).map_err(|source| GraphError::Registry {
+        // A failed publish stops here. A published and an already-existing version are confirmed alike.
+        adapter.classify(&output).map_err(|source| GraphError::Registry {
             package: operation.package_name.clone(),
             source,
         })?;
         // Neither a zero exit nor the client's "already exists" text is a
         // receipt: a yanked version is not the version this intent authorized,
         // so only an exact observation may satisfy the operation.
-        let confirmed = adapter.confirm(
-            context,
-            request.id,
-            operation,
-            matches!(outcome, PublishOutcome::Published),
-            request.artifacts,
-        )?;
+        let confirmed = adapter.confirm(context, request.id, operation, request.artifacts)?;
+        let waited = visibility_window(adapter, operation);
         require_registry_confirmation(
             confirmed.is_terminal_success(),
             &operation.package_name,
             &operation.version,
+            waited,
         )?;
         confirmed
             .exact_evidence()
             .ok_or_else(|| GraphError::RegistryPublishUnconfirmed {
                 package: operation.package_name.clone(),
                 version: operation.version.clone(),
+                waited,
             })
     }
 }
@@ -126,15 +125,23 @@ fn registry_observation<A: RegistryEcosystem + ?Sized>(
     policy::retry_observation(context.sleeper(), || adapter.observe_once(context, operation))
 }
 
+/// How long this publish's version may take to show up: the registry's configured `confirm-timeout`, else the default.
+fn visibility_window<A: RegistryEcosystem + ?Sized>(adapter: &A, operation: &RegistryPublishOperation) -> Duration {
+    operation
+        .registry
+        .confirm_timeout
+        .unwrap_or_else(|| policy::default_visibility_window(adapter.ecosystem()))
+}
+
 /// The same observation, but an absence is treated as index-propagation lag
-/// rather than an answer: this only runs after a publish client reported the
-/// version as newly published.
+/// rather than an answer, for up to the registry's visibility window: this only
+/// runs after a publish client reported the version as published or already there.
 fn confirmed_registry_observation<A: RegistryEcosystem + ?Sized>(
     adapter: &A,
     context: &ProviderContext<'_>,
     operation: &RegistryPublishOperation,
 ) -> Result<ProviderObservationV1, GraphError> {
-    policy::retry_observation(context.sleeper(), || {
+    policy::retry_within_window(context.sleeper(), visibility_window(adapter, operation), || {
         Ok(match adapter.observe_once(context, operation)? {
             Attempt::Settled(ProviderObservationV1::Absent) => Attempt::Transient {
                 value: ProviderObservationV1::Absent,
@@ -149,6 +156,8 @@ fn confirmed_registry_observation<A: RegistryEcosystem + ?Sized>(
 /// branches on [`Ecosystem`]: adding a registry means adding an adapter here,
 /// not another match in preflight, dispatch, or confirmation.
 pub(crate) trait RegistryEcosystem {
+    fn ecosystem(&self) -> Ecosystem;
+
     /// Whether this registry exposes a query that proves an exact published
     /// version. `false` makes every observation `Indeterminate`, so a publish
     /// is never confirmed here and instead fails closed at the mandatory
@@ -191,16 +200,16 @@ pub(crate) trait RegistryEcosystem {
         }
     }
 
-    /// The observation that lets a finished publish be recorded; `published` means the index may still lag.
+    /// The observation that lets a finished publish be recorded. The client reported the version published or already
+    /// there, so a registry that does not show it yet is lagging, and is waited on.
     fn confirm(
         &self,
         context: &ProviderContext<'_>,
         _id: &ReleaseOperationId,
         operation: &RegistryPublishOperation,
-        published: bool,
         _artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<ProviderObservationV1, GraphError> {
-        if published && self.can_observe_versions() {
+        if self.can_observe_versions() {
             confirmed_registry_observation(self, context, operation)
         } else {
             registry_observation(self, context, operation)
@@ -358,6 +367,10 @@ fn cargo_info_args<'a>(spec: &'a str, registry: &'a str) -> [&'a str; 6] {
 }
 
 impl RegistryEcosystem for CargoRegistry {
+    fn ecosystem(&self) -> Ecosystem {
+        Ecosystem::Cargo
+    }
+
     fn can_observe_versions(&self) -> bool {
         true
     }
@@ -507,6 +520,10 @@ fn npm_stderr_code(stderr: &str) -> Option<String> {
 struct NpmRegistry;
 
 impl RegistryEcosystem for NpmRegistry {
+    fn ecosystem(&self) -> Ecosystem {
+        Ecosystem::Npm
+    }
+
     fn can_observe_versions(&self) -> bool {
         true
     }
@@ -859,6 +876,10 @@ fn warn_about_extra_files(operation: &RegistryPublishOperation, extras: &[&str])
 }
 
 impl RegistryEcosystem for PypiRegistry {
+    fn ecosystem(&self) -> Ecosystem {
+        Ecosystem::Pypi
+    }
+
     /// PyPI's own JSON simple index (PEP 691) answers exactly like every
     /// other registry: 200 with the version present or absent, 404 for an
     /// unknown project. `pip` cannot observe this; `curl` against the index
@@ -991,7 +1012,6 @@ impl RegistryEcosystem for PypiRegistry {
         context: &ProviderContext<'_>,
         id: &ReleaseOperationId,
         operation: &RegistryPublishOperation,
-        published: bool,
         artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<ProviderObservationV1, GraphError> {
         let set = Self::built_set(context, id, operation, artifacts)?;
@@ -1017,11 +1037,7 @@ impl RegistryEcosystem for PypiRegistry {
                 }
             })
         };
-        if published {
-            policy::observe_until_visible(context.sleeper(), observe)
-        } else {
-            observe()
-        }
+        policy::observe_within_window(context.sleeper(), visibility_window(self, operation), observe)
     }
 }
 

@@ -57,6 +57,76 @@ pub(crate) fn observation_backoff(attempt: u32) -> Duration {
     Duration::from_secs(2u64.saturating_pow(attempt + 1)).min(OBSERVATION_BACKOFF_CAP)
 }
 
+/// How long a version this run just published may take to appear on its registry's read path.
+///
+/// Sized to the cache lifetime of the read the observation uses, plus a minute of slack: npm serves a package's
+/// document with `max-age=300` (a missing package's 404 too), so a read that primed the cache just before the publish
+/// can answer stale for up to five minutes. `cargo publish` waits for the index itself.
+pub(crate) fn default_visibility_window(ecosystem: callisto_model::Ecosystem) -> Duration {
+    match ecosystem {
+        callisto_model::Ecosystem::Npm | callisto_model::Ecosystem::Pypi => Duration::from_secs(360),
+        _ => Duration::from_secs(120),
+    }
+}
+
+/// Longest single wait while a published version is not yet visible.
+const VISIBILITY_STEP_CAP: Duration = Duration::from_secs(30);
+
+/// Waits of 2s, 4s, 8s and 16s, then 30s steps, so a stale read is retried often without hammering the registry.
+fn visibility_backoff(attempt: u32) -> Duration {
+    observation_backoff(attempt).min(VISIBILITY_STEP_CAP)
+}
+
+/// Retries `attempt` while it reports `Transient`, until `window` of waiting is spent; the last answer is then reported.
+///
+/// Unlike [`retry_observation`] the bound is time, not tries: how long a registry lags is a property of the registry,
+/// not of how many times it was asked.
+pub(crate) fn retry_within_window<T>(
+    sleeper: &dyn Sleeper,
+    window: Duration,
+    mut attempt: impl FnMut() -> Result<Attempt<T>, GraphError>,
+) -> Result<T, GraphError> {
+    let mut waited = Duration::ZERO;
+    let mut index = 0;
+    loop {
+        match attempt()? {
+            Attempt::Settled(value) => return Ok(value),
+            Attempt::Transient { value, retry_after } => {
+                let remaining = window.saturating_sub(waited);
+                if remaining.is_zero() {
+                    return Ok(value);
+                }
+                let wait = retry_after
+                    .unwrap_or_else(|| visibility_backoff(index))
+                    .clamp(Duration::from_secs(1), OBSERVATION_BACKOFF_CAP)
+                    .min(remaining);
+                sleeper.sleep(wait);
+                waited += wait;
+                index += 1;
+            }
+        }
+    }
+}
+
+/// Re-observes this run's own publish while the registry reads `Absent` or cannot be asked, for up to `window`; any
+/// other answer is final.
+pub(crate) fn observe_within_window(
+    sleeper: &dyn Sleeper,
+    window: Duration,
+    mut observe: impl FnMut() -> Result<ProviderObservationV1, GraphError>,
+) -> Result<ProviderObservationV1, GraphError> {
+    retry_within_window(sleeper, window, || {
+        let observation = observe()?;
+        Ok(match observation {
+            ProviderObservationV1::Absent | ProviderObservationV1::Indeterminate { .. } => Attempt::Transient {
+                value: observation,
+                retry_after: None,
+            },
+            settled => Attempt::Settled(settled),
+        })
+    })
+}
+
 /// GitHub's reads lag its writes by seconds; waits of 2s to 32s cover about a minute.
 pub(crate) const EFFECT_VISIBILITY_ATTEMPTS: u32 = 6;
 
@@ -173,6 +243,7 @@ pub(crate) fn require_registry_confirmation(
     is_published: bool,
     package: &str,
     version: &Version,
+    waited: Duration,
 ) -> Result<(), GraphError> {
     if is_published {
         return Ok(());
@@ -180,6 +251,7 @@ pub(crate) fn require_registry_confirmation(
     Err(GraphError::RegistryPublishUnconfirmed {
         package: package.to_string(),
         version: version.clone(),
+        waited,
     })
 }
 
@@ -316,17 +388,23 @@ pub(crate) mod tests {
     #[test]
     fn require_registry_confirmation_rejects_unconfirmed_publish_with_its_own_variant() {
         let version = Version::parse("1.2.3", VersionGrammar::SemVer).unwrap();
-        let err = require_registry_confirmation(false, "left-pad", &version).unwrap_err();
+        let waited = Duration::from_secs(360);
+        let err = require_registry_confirmation(false, "left-pad", &version, waited).unwrap_err();
         match err {
-            GraphError::RegistryPublishUnconfirmed { package, version: v } => {
+            GraphError::RegistryPublishUnconfirmed {
+                package,
+                version: v,
+                waited: w,
+            } => {
                 assert_eq!(package, "left-pad");
                 assert_eq!(v, version);
+                assert_eq!(w, waited);
             }
             other => panic!("expected RegistryPublishUnconfirmed, got {other:?}"),
         }
         assert!(
             !matches!(
-                require_registry_confirmation(false, "left-pad", &version),
+                require_registry_confirmation(false, "left-pad", &version, Duration::ZERO),
                 Err(GraphError::ReleaseIntentStale { .. })
             ),
             "must not be reported as ReleaseIntentStale -- that help text would be false here"
@@ -336,7 +414,123 @@ pub(crate) mod tests {
     #[test]
     fn require_registry_confirmation_accepts_a_confirmed_publish() {
         let version = Version::parse("1.2.3", VersionGrammar::SemVer).unwrap();
-        assert!(require_registry_confirmation(true, "left-pad", &version).is_ok());
+        assert!(require_registry_confirmation(true, "left-pad", &version, Duration::ZERO).is_ok());
+    }
+
+    fn transient_answer() -> Result<Attempt<&'static str>, GraphError> {
+        Ok(Attempt::Transient {
+            value: "absent",
+            retry_after: None,
+        })
+    }
+
+    /// The registry never shows the version: the whole window is waited out, no more and no less, then the last answer
+    /// is reported.
+    #[test]
+    fn a_version_that_never_appears_waits_the_whole_window_and_no_longer() {
+        let sleeper = RecordingSleeper::new();
+        let window = Duration::from_secs(360);
+        let result = retry_within_window(&sleeper, window, transient_answer);
+        assert_eq!(result, Ok("absent"));
+        let waits = sleeper.waits();
+        assert_eq!(waits.iter().sum::<Duration>(), window);
+        assert_eq!(
+            waits[..6],
+            [2, 4, 8, 16, 30, 30].map(Duration::from_secs),
+            "short waits first, then a steady 30s"
+        );
+        assert!(waits.iter().all(|wait| *wait <= Duration::from_secs(30)));
+    }
+
+    /// A version that shows up partway through is returned as soon as it does, without waiting out the rest.
+    #[test]
+    fn a_version_that_appears_stops_the_wait() {
+        let sleeper = RecordingSleeper::new();
+        let tries = std::cell::Cell::new(0);
+        let result = retry_within_window(&sleeper, Duration::from_secs(360), || {
+            tries.set(tries.get() + 1);
+            if tries.get() < 7 {
+                transient_answer()
+            } else {
+                Ok(Attempt::Settled("exact"))
+            }
+        });
+        assert_eq!(result, Ok("exact"));
+        assert_eq!(sleeper.waits().len(), 6);
+    }
+
+    /// A server's own `Retry-After` is honoured, but never past the end of the window.
+    #[test]
+    fn a_retry_after_is_honoured_but_clipped_to_the_remaining_window() {
+        let sleeper = RecordingSleeper::new();
+        let result = retry_within_window(&sleeper, Duration::from_secs(100), || {
+            Ok(Attempt::Transient {
+                value: (),
+                retry_after: Some(Duration::from_secs(70)),
+            })
+        });
+        assert_eq!(result, Ok(()));
+        assert_eq!(sleeper.waits(), [70, 30].map(Duration::from_secs));
+    }
+
+    /// A zero `Retry-After` cannot spin: every wait is at least a second.
+    #[test]
+    fn a_zero_retry_after_still_makes_progress() {
+        let sleeper = RecordingSleeper::new();
+        let result = retry_within_window(&sleeper, Duration::from_secs(5), || {
+            Ok(Attempt::Transient {
+                value: (),
+                retry_after: Some(Duration::ZERO),
+            })
+        });
+        assert_eq!(result, Ok(()));
+        assert_eq!(sleeper.waits(), [1; 5].map(Duration::from_secs));
+    }
+
+    /// A hard error is never waited on.
+    #[test]
+    fn a_hard_error_inside_the_window_is_returned_at_once() {
+        let sleeper = RecordingSleeper::new();
+        let result: Result<(), GraphError> = retry_within_window(&sleeper, Duration::from_secs(360), || {
+            Err(GraphError::ReleaseInvariant {
+                detail: "boom".to_owned(),
+            })
+        });
+        assert!(result.is_err());
+        assert!(sleeper.waits().is_empty());
+    }
+
+    /// Absent and an unreachable registry are lag inside the window; an exact version or a conflict ends it.
+    #[test]
+    fn observing_within_the_window_waits_on_absent_and_unreachable_only() {
+        let sleeper = RecordingSleeper::new();
+        let answers = std::cell::RefCell::new(vec![
+            ProviderObservationV1::Absent,
+            ProviderObservationV1::Indeterminate {
+                cause: callisto_model::ProviderIndeterminateCause::CommandFailed,
+            },
+            ProviderObservationV1::Conflict {
+                reason: callisto_model::ProviderConflictReason::RegistryVersionYanked,
+            },
+        ]);
+        let result = observe_within_window(&sleeper, Duration::from_secs(360), || {
+            Ok(answers.borrow_mut().remove(0))
+        });
+        assert_eq!(
+            result,
+            Ok(ProviderObservationV1::Conflict {
+                reason: callisto_model::ProviderConflictReason::RegistryVersionYanked
+            })
+        );
+        assert_eq!(sleeper.waits(), [2, 4].map(Duration::from_secs));
+    }
+
+    #[test]
+    fn the_default_window_covers_npms_five_minute_cache() {
+        use callisto_model::Ecosystem;
+        assert!(default_visibility_window(Ecosystem::Npm) > Duration::from_secs(300));
+        assert!(default_visibility_window(Ecosystem::Pypi) > Duration::from_secs(300));
+        assert!(default_visibility_window(Ecosystem::Cargo) >= Duration::from_secs(60));
     }
 
     /// Records the schedule instead of waiting it out.

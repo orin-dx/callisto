@@ -183,6 +183,7 @@ fn operation(key: &str, package_name: &str, version: &str) -> RegistryPublishOpe
             endpoint: None,
             publish_endpoint: None,
             identity: RegistryBindingDigest::from_normalized_binding(key.as_bytes()),
+            confirm_timeout: None,
         },
         npm_access: None,
         npm_tag: None,
@@ -497,6 +498,82 @@ fn the_captured_npm_runs_classify_as_exact_and_absent() {
     assert_eq!(
         observe_npm(captured_npm_output(fixtures::NPM_VIEW_MISSING)),
         ProviderObservationV1::Absent
+    );
+}
+
+/// Answers each `npm view` with the next scripted output, repeating the last one.
+struct SequencedNpm(std::sync::Mutex<std::collections::VecDeque<CommandOutput>>);
+
+impl CommandRunner for SequencedNpm {
+    fn run(&self, _program: &str, _args: &[&str], _cwd: &Path) -> Result<CommandOutput, callisto_model::CommandError> {
+        let mut outputs = self.0.lock().unwrap();
+        Ok(if outputs.len() > 1 {
+            outputs.pop_front().expect("checked non-empty")
+        } else {
+            outputs.front().expect("a scripted output").clone()
+        })
+    }
+}
+
+/// The waits spent confirming an npm publish whose `npm view` answers are `outputs`, and what the confirmation saw.
+fn confirm_npm(
+    outputs: Vec<CommandOutput>,
+    confirm_timeout: Option<std::time::Duration>,
+) -> (ProviderObservationV1, Vec<std::time::Duration>) {
+    let runner = SequencedNpm(std::sync::Mutex::new(outputs.into()));
+    let sleeper = RecordingSleeper::new();
+    let root = std::env::temp_dir();
+    let context = ProviderContext::new(&root, &runner, None).with_sleeper(&sleeper);
+    let mut operation = operation("npm", "callisto-no-such-package-zz", "1.0.0");
+    operation.registry.confirm_timeout = confirm_timeout;
+    let observation =
+        confirmed_registry_observation(adapter_for(Ecosystem::Npm).unwrap(), &context, &operation).unwrap();
+    (observation, sleeper.waits())
+}
+
+/// npm serves a package's document from a cache that can answer stale for minutes after a publish.
+#[test]
+fn an_npm_version_that_appears_minutes_late_is_confirmed_without_failing_the_run() {
+    let missing = captured_npm_output(fixtures::NPM_VIEW_MISSING);
+    let found = captured_npm_output(fixtures::NPM_VIEW_FOUND);
+    let mut outputs = vec![missing; 12];
+    outputs.push(found);
+    let (observation, waits) = confirm_npm(outputs, None);
+    assert!(
+        matches!(observation, ProviderObservationV1::Exact { .. }),
+        "{observation:?}"
+    );
+    let waited: std::time::Duration = waits.iter().sum();
+    assert!(waited > std::time::Duration::from_secs(60), "waited {waited:?}");
+    assert!(waited < std::time::Duration::from_secs(360), "waited {waited:?}");
+}
+
+#[test]
+fn an_npm_version_that_never_appears_is_absent_after_the_default_window() {
+    let (observation, waits) = confirm_npm(vec![captured_npm_output(fixtures::NPM_VIEW_MISSING)], None);
+    assert_eq!(observation, ProviderObservationV1::Absent);
+    assert_eq!(
+        waits.iter().sum::<std::time::Duration>(),
+        std::time::Duration::from_secs(360)
+    );
+}
+
+#[test]
+fn a_configured_confirm_timeout_replaces_the_default_window() {
+    let window = std::time::Duration::from_secs(90);
+    let (observation, waits) = confirm_npm(vec![captured_npm_output(fixtures::NPM_VIEW_MISSING)], Some(window));
+    assert_eq!(observation, ProviderObservationV1::Absent);
+    assert_eq!(waits.iter().sum::<std::time::Duration>(), window);
+}
+
+/// An unreachable registry is waited on within the window too, then reported as unknown rather than absent.
+#[test]
+fn an_npm_registry_that_cannot_be_reached_is_retried_within_the_window() {
+    let (observation, waits) = confirm_npm(vec![npm_output(Some(1), "", "npm ERR! code ENOTFOUND\n")], None);
+    assert_eq!(observation, npm_command_failed());
+    assert_eq!(
+        waits.iter().sum::<std::time::Duration>(),
+        std::time::Duration::from_secs(360)
     );
 }
 
@@ -843,6 +920,7 @@ fn a_timed_out_curl_call_retries_and_settles() {
             endpoint: None,
             publish_endpoint: None,
             identity: RegistryBindingDigest::from_normalized_binding(b"pypi"),
+            confirm_timeout: None,
         },
         npm_access: None,
         npm_tag: None,

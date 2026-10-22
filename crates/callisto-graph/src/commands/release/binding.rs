@@ -28,6 +28,8 @@ pub(crate) struct PreparedRegistryBinding {
     /// Where uploads go when that differs from `endpoint` (a PyPI index that is not also its upload route).
     pub(crate) publish_endpoint: Option<String>,
     pub(crate) identity: RegistryBindingDigest,
+    /// How long a version this run published may take to appear; execution policy, so not part of `identity`.
+    pub(crate) confirm_timeout: Option<std::time::Duration>,
 }
 
 impl PreparedRegistryBinding {
@@ -112,6 +114,7 @@ pub(crate) fn prepared_registry_binding<R: CommandRunner, D: DependencyResolver>
         endpoint: index.as_ref().map(RegistryBindingV1::endpoint),
         publish_endpoint: publish.as_ref().map(RegistryBindingV1::endpoint),
         identity,
+        confirm_timeout: configured_registry.and_then(|registry| registry.confirm_timeout),
     })
 }
 

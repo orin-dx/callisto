@@ -91,6 +91,8 @@ A recovery is a new run using current orchestration and an explicit full release
 
 To retry a failed run for the same source, use "Re-run failed jobs". Matching completed effects are adopted; conflicting or uncertain results stop the run. A receipt is written only after every selected operation succeeds.
 
+After each registry publish Callisto waits for the version to appear before it moves on: 6 minutes for npm and PyPI, 2 for Cargo. If the registry is slower it stops with E157; re-run the failed job once the version shows, or set `confirm-timeout` on the registry in `callisto.toml` (see [configuration](config.md#registries)) and keep the job's `timeout-minutes` above the total wait.
+
 ## Recovering an older release
 
 Recovering a commit that is no longer a branch tip may require these manual actions:

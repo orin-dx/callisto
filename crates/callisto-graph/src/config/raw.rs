@@ -106,6 +106,9 @@ pub struct RawRegistryConfig {
     /// Where a `pypi` registry takes uploads when that differs from the index at `url`.
     #[serde(rename = "publish-url")]
     pub publish_url: Option<String>,
+    /// How long a version this run published may take to appear on the registry (`90s`, `6m`, `1h`).
+    #[serde(rename = "confirm-timeout")]
+    pub confirm_timeout: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

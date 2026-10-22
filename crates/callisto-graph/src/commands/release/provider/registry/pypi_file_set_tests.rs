@@ -249,6 +249,7 @@ fn operation() -> RegistryPublishOperation {
             endpoint: None,
             publish_endpoint: None,
             identity: RegistryBindingDigest::from_normalized_binding(b"pypi"),
+            confirm_timeout: None,
         },
         npm_access: None,
         npm_tag: None,
@@ -323,17 +324,11 @@ fn publish_and_confirm_with(
     let operation = operation();
     let context = run.context(runner);
     let output = PypiRegistry.publish(&context, &id(&operation), &operation, artifacts)?;
-    let outcome = PypiRegistry.classify(&output).map_err(|source| GraphError::Registry {
+    PypiRegistry.classify(&output).map_err(|source| GraphError::Registry {
         package: operation.package_name.clone(),
         source,
     })?;
-    PypiRegistry.confirm(
-        &context,
-        &id(&operation),
-        &operation,
-        matches!(outcome, PublishOutcome::Published),
-        artifacts,
-    )
+    PypiRegistry.confirm(&context, &id(&operation), &operation, artifacts)
 }
 
 /// Publishes and confirms `operation`, which may bind its own endpoints.
@@ -343,9 +338,7 @@ fn release_on(run: &Run, runner: &PypiRunner, operation: &RegistryPublishOperati
         .preflight(&context, &id(operation), operation, None)
         .unwrap();
     PypiRegistry.publish(&context, &id(operation), operation, None).unwrap();
-    PypiRegistry
-        .confirm(&context, &id(operation), operation, true, None)
-        .unwrap()
+    PypiRegistry.confirm(&context, &id(operation), operation, None).unwrap()
 }
 
 fn on_routes(endpoint: Option<&str>, publish_endpoint: Option<&str>) -> RegistryPublishOperation {

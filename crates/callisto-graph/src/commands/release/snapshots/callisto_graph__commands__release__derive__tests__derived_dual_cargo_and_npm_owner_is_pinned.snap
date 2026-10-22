@@ -296,6 +296,7 @@ prepared:
                 identity: RegistryBindingDigest(
                     "ce487bc8e6d76bf3252b8c97b6916f811c37370e3cd269d1dd81499bec4ed961",
                 ),
+                confirm_timeout: None,
             },
             npm_access: None,
             npm_tag: None,
@@ -433,6 +434,7 @@ prepared:
                 identity: RegistryBindingDigest(
                     "9cbb1cf20c84244f3c250e782d9e2819b2160dabe0b270fcfdf2b28ab197bd2b",
                 ),
+                confirm_timeout: None,
             },
             npm_access: None,
             npm_tag: None,
