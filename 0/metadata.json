@@ -1,0 +1,133 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5GMDKSPFDPTYHGE33ZX2N9R",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-22T01:43:29.53949Z",
+  "branch": "fix/operation-id-display",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "b8ce0789b972",
+  "checkpoint_transcript_start": 43407,
+  "transcript_lines_at_start": 43407,
+  "compact_transcript_start": 3621,
+  "token_usage": {
+    "input_tokens": 120,
+    "cache_creation_tokens": 117343,
+    "cache_read_tokens": 9544097,
+    "output_tokens": 32310,
+    "api_call_count": 60,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 212
+  },
+  "summary": {
+    "intent": "Get the failing Release workflow fixed and the open PRs organized as a stack, then investigate why multi-package npm releases stop with E157 after each publish (visibility check times out in ~14s while npm takes minutes) and decide on a design: longer/configurable timeouts, or publish all packages first and verify at the end.",
+    "outcome": "PR #293 (install registry test tools via shared local action) was opened with green CI, and #293/#291/#292 were linked as a native stack after #290 was split out as held for rework. The npm E157 investigation read the policy, registry, executor and ADR code and measured registry cache headers, but no design or fix was settled; the only code change was a #291 operation-display test and fix, which was committed and pushed.",
+    "learnings": {
+      "repo": [
+        "The Release workflow's verify job only runs on pushes to main and release dispatches, so PR CI cannot prove a fix to it; it must be re-run after merge.",
+        "Registry test tools (Verdaccio, pypiserver, cargo-http-registry) are now installed through the local action .github/actions/install-registry-test-tools, shared by the CI test job and release verify job.",
+        "Release policy: no GitHub Environment, and only the `execute` job receives registry secrets.",
+        "Local checks for workflow changes: `just workflow-contracts`, `just zizmor`, and the action-pin check.",
+        "The release flow generates the release PR (#248), so it is left out of PR stacks; Dependabot's duplicate PR (#289) closes itself once #292 merges.",
+        "E157 is raised when the post-publish registry visibility check times out (about 14s: 4 checks at 2, 4 and 8s backoff). Npm propagation can take minutes, so a successful publish is reported as failed.",
+        "Documented recovery for E157 is 'Re-run failed jobs', which resumes via ADR 0003 (reruns adopt landed effects), advancing roughly one package per re-run.",
+        "Michi is the main npm consumer of callisto; the same E157 stall happened on 0.3.1 and needed repeated manual re-runs.",
+        "Work is done in worktrees under /Users/gabe/Projects/callisto/.claude/worktrees/smoke-main."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/policy.rs",
+          "finding": "Holds the visibility retry policy (the short backoff behind E157) that would need a longer or configurable deadline."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/registry.rs",
+          "finding": "Registry provider code that drives the publish confirmation flow."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release_execution.rs",
+          "finding": "Executor that orders operations and handles resume on re-run."
+        },
+        {
+          "path": "crates/callisto-model/src/release/operation.rs",
+          "finding": "Operation Display impl was changed so same-package uploads and publishes print distinctly (E176 readability, PR #291), with a new test."
+        },
+        {
+          "path": "crates/callisto-model/src/release/test_support.rs",
+          "finding": "Provides test helpers for building slots, platforms and operation ids."
+        },
+        {
+          "path": "docs/config.md",
+          "finding": "Checked for existing configurable deadlines; none were found for the visibility wait."
+        }
+      ],
+      "workflow": [
+        "Native GitHub stacks work well for non-conflicting PRs; check pairwise branch conflicts first, and put the CI fix at the bottom.",
+        "Unstack and relink to pull a held PR out of a stack when others don't depend on it.",
+        "Scripts that call tools in loops hit zsh glob errors; writing them to files under /tmp or running plain commands was the workaround.",
+        "Measuring registry cache headers directly is a fallback when CI logs for a repo can't be found."
+      ]
+    },
+    "friction": [
+      "Could not locate the GitHub repo or logs for oxc-stack / oxc-react-codegen after several slug and org searches, so real E157 timings from that project were unavailable.",
+      "Scanning sibling repos for E157 failures took many attempts (shell script glob errors, wrong slugs).",
+      "A test import error required a second format-and-test run on the #291 change.",
+      "#290 had to be removed from the stack because it is held pending rework."
+    ],
+    "open_items": [
+      "Decide and implement the npm multi-package publish fix: longer, reason-dependent visibility timeouts with a configurable override and a sane default, and/or publish all packages first and verify at the end, redoing failures.",
+      "Merge #293 and re-run the Release workflow on main to confirm the verify job passes, then merge release PR #248 (0.12.0).",
+      "Rework #290 (release left behind after a later commit) and restack it.",
+      "Warn when registry repository metadata doesn't match `origin`.",
+      "Floating `v1` action tag with immutable versions.",
+      "Intel mac and aarch64-linux binaries (touches release policy).",
+      "Scratch-registry check, which needs the user's credentials.",
+      "User decisions: accept ADR 12 and cut 0.12.0."
+    ]
+  }
+}
