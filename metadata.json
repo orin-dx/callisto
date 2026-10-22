@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5GZ9MG7RXGBHECB7PM71HP3",
+  "strategy": "manual-commit",
+  "branch": "docs/oidc-trusted-publishing-plan",
+  "checkpoints_count": 8,
+  "files_touched": [
+    "docs/projects/ROAD-TO-V1.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 18999,
+    "cache_read_tokens": 5951729,
+    "output_tokens": 9905,
+    "api_call_count": 10
+  }
+}
