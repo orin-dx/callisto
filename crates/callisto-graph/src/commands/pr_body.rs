@@ -252,11 +252,6 @@ pub fn render_pr_body_from_plan(
     body.push_str("| Package | Ecosystem | Current | Target | Bump | Reason |\n");
     body.push_str("| :--- | :--- | :--- | :--- | :--- | :--- |\n");
 
-    let has_major = plan
-        .bumps
-        .iter()
-        .any(|bump| bump.severity == callisto_model::Severity::Major);
-
     // Major-first: a reviewer's real question is "is anything breaking,"
     // and that must be answerable from the top of the table without
     // scanning every row for a package whose name happens to sort late.
@@ -310,16 +305,7 @@ pub fn render_pr_body_from_plan(
     body.push('\n');
 
     // 2. Alert Callouts
-    if has_major {
-        body.push_str("> [!WARNING]\n");
-        body.push_str("> **Major Version Bumps Detected**: This release contains major breaking changes. Review the changes below before merging.\n\n");
-    } else {
-        body.push_str("> [!NOTE]\n");
-        body.push_str(&format!(
-            "> **{} package(s)** queued for versioning. All changes are backward compatible.\n\n",
-            plan.bumps.len()
-        ));
-    }
+    body.push_str(&review_callout(&plan.bumps));
 
     // 3. What's Changing -- grouped by underlying change, not by package, so
     // a changeset naming several packages (fan-out) renders once
@@ -454,11 +440,81 @@ pub fn render_pr_body_from_plan(
     })
 }
 
+/// The callout that opens the release PR body. Claims backward compatibility only for stable versions: below 1.0.0 a
+/// minor bump is where breaking changes go, so it cannot be called compatible.
+fn review_callout(bumps: &[crate::plan::PlannedBump]) -> String {
+    if bumps.iter().any(|bump| bump.severity == Severity::Major) {
+        return "> [!WARNING]\n> **Major Version Bumps Detected**: This release contains major breaking changes. Review \
+                the changes below before merging.\n\n"
+            .to_owned();
+    }
+    let pre_one_minor = bumps
+        .iter()
+        .any(|bump| bump.severity == Severity::Minor && bump.from.render().starts_with("0."));
+    let verdict = if pre_one_minor {
+        "Minor bumps below 1.0.0 can include breaking changes, so read the changes below before merging."
+    } else {
+        "All changes are backward compatible."
+    };
+    format!(
+        "> [!NOTE]\n> **{} package(s)** queued for versioning. {verdict}\n\n",
+        bumps.len()
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::plan::{PlannedBump, VersionPlan};
     use callisto_model::{BumpReason, PackageId, Severity, Version};
+
+    fn bump(from: Version, to: Version, severity: Severity) -> PlannedBump {
+        PlannedBump {
+            package: PackageId::parse("core-crate").unwrap(),
+            from,
+            to,
+            severity,
+            governed_by: None,
+            reason: None,
+            writes: vec![],
+        }
+    }
+
+    #[test]
+    fn a_pre_one_minor_bump_is_not_called_backward_compatible() {
+        let callout = review_callout(&[bump(
+            Version::semver(0, 11, 0),
+            Version::semver(0, 12, 0),
+            Severity::Minor,
+        )]);
+        assert!(!callout.contains("backward compatible"), "{callout}");
+        assert!(
+            callout.contains("below 1.0.0 can include breaking changes"),
+            "{callout}"
+        );
+    }
+
+    #[test]
+    fn stable_minor_and_patch_bumps_are_called_backward_compatible() {
+        let callout = review_callout(&[
+            bump(Version::semver(1, 2, 0), Version::semver(1, 3, 0), Severity::Minor),
+            bump(Version::semver(0, 4, 1), Version::semver(0, 4, 2), Severity::Patch),
+        ]);
+        assert!(
+            callout.contains("2 package(s)") && callout.contains("All changes are backward compatible."),
+            "{callout}"
+        );
+    }
+
+    #[test]
+    fn a_major_bump_warns() {
+        let callout = review_callout(&[bump(
+            Version::semver(1, 0, 0),
+            Version::semver(2, 0, 0),
+            Severity::Major,
+        )]);
+        assert!(callout.starts_with("> [!WARNING]"), "{callout}");
+    }
 
     #[test]
     fn test_compose_pr_body_snapshot() {
