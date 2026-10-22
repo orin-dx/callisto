@@ -65,7 +65,7 @@ fn render_status_table<W: io::Write>(report: &StatusReport, w: &mut W) -> io::Re
     // Our `use_color` gate is the sole authority -- never let comfy-table's own
     // TTY probe override it, so a forced/piped stdout still renders styled.
     table.force_no_tty().enforce_styling();
-    table.load_preset(UTF8_FULL);
+    table.load_style(UTF8_FULL);
     table.set_header(vec!["Package", "Version", "Pending"]);
     for pkg in &report.packages {
         let severity = status_severity_label(pkg);
