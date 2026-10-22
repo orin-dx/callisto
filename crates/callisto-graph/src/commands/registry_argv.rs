@@ -415,6 +415,21 @@ fn combined_lower(output: &CommandOutput) -> String {
     format!("{}\n{}", output.stdout, output.stderr).to_lowercase()
 }
 
+/// What a failed publish said: the last lines of redacted stdout, then redacted stderr. pnpm and twine print their
+/// errors to stdout, so stderr alone can leave the failure message empty.
+fn failure_detail(output: &CommandOutput) -> String {
+    const STDOUT_TAIL_LINES: usize = 8;
+    let stdout = callisto_model::redact_command_stderr(&output.stdout);
+    let tail: Vec<&str> = stdout.lines().rev().take(STDOUT_TAIL_LINES).collect();
+    let tail = tail.into_iter().rev().collect::<Vec<_>>().join("\n");
+    let stderr = output.redacted_stderr();
+    [tail.trim(), stderr.trim()]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Parses a numeric retry-after value (seconds) as reported by a registry
 /// tool's output.
 fn parse_retry_after(raw: &str) -> Option<Duration> {
@@ -492,7 +507,7 @@ pub(crate) fn classify_cargo_output(output: &CommandOutput) -> Result<PublishOut
     Err(RegistryError::Other(format!(
         "cargo publish failed (exit {:?}): {}",
         output.exit_code,
-        output.redacted_stderr().trim()
+        failure_detail(output)
     )))
 }
 
@@ -521,7 +536,7 @@ pub(crate) fn classify_npm_publish_output(output: &CommandOutput) -> Result<Publ
     Err(RegistryError::Other(format!(
         "npm publish failed (exit {:?}): {}",
         output.exit_code,
-        output.redacted_stderr().trim()
+        failure_detail(output)
     )))
 }
 
@@ -556,13 +571,10 @@ pub(crate) fn classify_twine_output(output: &CommandOutput) -> Result<PublishOut
     if let Some(err) = detect_auth_failure(&combined, output) {
         return Err(err);
     }
-    let progress = callisto_model::redact_command_stderr(&output.stdout);
-    let progress: Vec<_> = progress.lines().rev().take(8).collect();
     Err(RegistryError::Other(format!(
-        "twine upload failed (exit {:?}): {}{}",
+        "twine upload failed (exit {:?}): {}",
         output.exit_code,
-        progress.into_iter().rev().collect::<Vec<_>>().join("\n"),
-        output.redacted_stderr().trim_end()
+        failure_detail(output)
     )))
 }
 
@@ -576,6 +588,36 @@ mod tests {
             stdout: stdout.to_string(),
             stderr: stderr.to_string(),
         }
+    }
+
+    fn failure_message(result: Result<PublishOutcome, RegistryError>) -> String {
+        match result {
+            Err(RegistryError::Other(message)) => message,
+            other => panic!("expected an unclassified failure, got {other:?}"),
+        }
+    }
+
+    /// pnpm prints its errors to stdout, so a failure with an empty stderr must still say why.
+    #[test]
+    fn a_failed_publish_reports_what_the_tool_printed_to_stdout() {
+        let out = output(1, "ERR_PNPM_BAD_THING  something went wrong\nsecond line", "");
+        for message in [
+            failure_message(classify_npm_publish_output(&out)),
+            failure_message(classify_cargo_output(&out)),
+            failure_message(classify_twine_output(&out)),
+        ] {
+            assert!(message.contains("ERR_PNPM_BAD_THING"), "{message}");
+            assert!(message.contains("second line"), "{message}");
+        }
+    }
+
+    #[test]
+    fn a_failed_publish_reports_stdout_then_stderr_and_only_the_last_stdout_lines() {
+        let stdout = (1..=20).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n");
+        let message = failure_message(classify_npm_publish_output(&output(1, &stdout, "boom on stderr")));
+        assert!(message.contains("line 20") && message.contains("line 13"), "{message}");
+        assert!(!message.contains("line 12"), "{message}");
+        assert!(message.find("line 20") < message.find("boom on stderr"), "{message}");
     }
 
     fn v(raw: &str) -> Version {
