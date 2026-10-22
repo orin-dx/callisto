@@ -55,6 +55,9 @@ jobs:
         with:
           tool: cargo-nextest,ripgrep
 
+      - name: Install registry test tools
+        uses: $/.github/actions/install-registry-test-tools
+
       - name: Unit & Integration Tests
         run: just test
 

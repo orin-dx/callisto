@@ -428,6 +428,38 @@ fn a_rerun_after_a_failed_tag_push_completes_the_release() {
     assert_eq!(String::from_utf8_lossy(&again.stdout), "Nothing to release.\n");
 }
 
+/// A release that stopped after publishing is finished from the commit that set the version: a later commit in the
+/// package would be tagged with code the registry never received.
+#[test]
+fn a_published_version_is_not_tagged_on_a_later_commit() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    fs::write(format!("{}.core-crate", registry_marker(root).display()), "0.2.0").unwrap();
+    fs::write(
+        root.join("crates/core/src/lib.rs"),
+        "pub fn core() {}\n// changed after the version\n",
+    )
+    .unwrap();
+    git(root, &["add", "."]);
+    git(root, &["commit", "-m", "change core after the version"]);
+
+    let refused = rig.run(root, &["release"]);
+    assert!(!refused.status.success(), "{}", stderr(&refused));
+    assert!(stderr(&refused).contains("E320"), "{}", stderr(&refused));
+    assert_no_effects(&rig, root);
+
+    git(root, &["checkout", "--detach", "-q", &release_commit]);
+    let finished = rig.run(root, &["release"]);
+    assert!(finished.status.success(), "{}", stderr(&finished));
+    assert_eq!(git(root, &["rev-list", "-n", "1", "core-crate@0.2.0"]), release_commit);
+    assert_eq!(
+        rig.effects().matches("cargo publish").count(),
+        0,
+        "adopted, not published again"
+    );
+}
+
 /// The preview of an interrupted release shows the remaining work, and a selected package whose
 /// release is complete is still not a release.
 #[test]
