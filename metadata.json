@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5GYW22N0H87YNMCM7WFJDSC",
+  "strategy": "manual-commit",
+  "branch": "feat/registry-repository-check",
+  "checkpoints_count": 8,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/release/provider/mod.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/tests.rs",
+    "docs/architecture/release.md",
+    "docs/specs/release.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 20409,
+    "cache_read_tokens": 6573011,
+    "output_tokens": 14240,
+    "api_call_count": 12
+  }
+}
