@@ -293,6 +293,7 @@ prepared:
                 identity: RegistryBindingDigest(
                     "9cbb1cf20c84244f3c250e782d9e2819b2160dabe0b270fcfdf2b28ab197bd2b",
                 ),
+                confirm_timeout: None,
             },
             npm_access: Some(
                 Public,
@@ -386,6 +387,7 @@ prepared:
                 identity: RegistryBindingDigest(
                     "9cbb1cf20c84244f3c250e782d9e2819b2160dabe0b270fcfdf2b28ab197bd2b",
                 ),
+                confirm_timeout: None,
             },
             npm_access: Some(
                 Public,
@@ -451,6 +453,7 @@ prepared:
                 identity: RegistryBindingDigest(
                     "9cbb1cf20c84244f3c250e782d9e2819b2160dabe0b270fcfdf2b28ab197bd2b",
                 ),
+                confirm_timeout: None,
             },
             npm_access: Some(
                 Public,

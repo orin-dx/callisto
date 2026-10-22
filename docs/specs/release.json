@@ -231,12 +231,12 @@
     },
     {
       "id": "REL-PUB-09",
-      "criterion": "After a publish command reports success, Callisto re-observes the registry and treats \"absent\" as not yet propagated, retrying within the observation limit. A publish whose version the registry never shows fails with E157, including one whose output says the version already exists, and no receipt is written.",
+      "criterion": "After a publish command reports success, or says the version already exists, Callisto re-observes the registry and treats \"absent\" or an unreachable registry as not yet propagated, waiting within the registry's confirmation window: `confirm-timeout` on its `[registries]` entry (1 s to 1 h, written as `90s`, `6m` or `1h`), else 6 minutes for npm and PyPI and 2 minutes for Cargo. Waits are 2 s, 4 s, 8 s, 16 s, then 30 s. A publish whose version the registry never shows in that window fails with E157, and no receipt is written.",
       "is_error_case": true
     },
     {
       "id": "REL-PUB-10",
-      "criterion": "Read-only observations (registry query, GitHub release lookup, `git ls-remote`) run at most 5 attempts with exponential backoff from 2 s, capped at 300 s. HTTP 429, 5xx, rate-limited 403 and failed commands are retried, and an observation still indeterminate fails with E176 before that operation's effect.",
+      "criterion": "Read-only observations before an effect (registry query, GitHub release lookup, `git ls-remote`) run at most 5 attempts with exponential backoff from 2 s, capped at 300 s. HTTP 429, 5xx, rate-limited 403 and failed commands are retried, and an observation still indeterminate fails with E176 before that operation's effect.",
       "is_error_case": true
     },
     {

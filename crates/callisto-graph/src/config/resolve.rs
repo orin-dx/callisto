@@ -127,6 +127,8 @@ pub struct RegistryConfig {
     pub url: Option<String>,
     /// Upload endpoint of a `pypi` registry whose index (`url`) is not also where files are uploaded.
     pub publish_url: Option<String>,
+    /// How long a version this run published may take to appear; `None` is the ecosystem's default.
+    pub confirm_timeout: Option<std::time::Duration>,
 }
 
 /// One declared release artifact. `target` is opaque -- Callisto passes it to
@@ -468,6 +470,7 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
             kind: Ecosystem::Cargo,
             url: None,
             publish_url: None,
+            confirm_timeout: None,
         },
     );
     registries.insert(
@@ -476,6 +479,7 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
             kind: Ecosystem::Npm,
             url: None,
             publish_url: None,
+            confirm_timeout: None,
         },
     );
 
@@ -502,12 +506,25 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
                     ),
                 });
             }
+            let confirm_timeout = match reg.confirm_timeout.as_deref() {
+                None => None,
+                Some(text) => Some(
+                    super::duration::parse_duration(text).ok_or_else(|| ConfigError::UnknownKey {
+                        path: callisto_toml.clone(),
+                        key: format!(
+                        "[registries.{}] confirm-timeout = {text:?} (use a whole number with s, m or h, from 1s to 1h)",
+                        key.as_str()
+                    ),
+                    })?,
+                ),
+            };
             registries.insert(
                 key,
                 RegistryConfig {
                     kind,
                     url: reg.url,
                     publish_url: reg.publish_url,
+                    confirm_timeout,
                 },
             );
         }
@@ -857,6 +874,43 @@ mod tests {
         let reg = &config.registries[&RegistryKey("my-pypi".to_string())];
         assert_eq!(reg.url.as_deref(), Some("https://pypi.example.com/simple"));
         assert_eq!(reg.publish_url.as_deref(), Some("https://pypi.example.com/legacy/"));
+    }
+
+    #[test]
+    fn a_registry_may_set_how_long_a_published_version_is_waited_for() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        fs::write(
+            tmp.path().join("callisto.toml"),
+            "[registries.npm]\nconfirm-timeout = \"10m\"\n\n[registries.corp]\nkind = \"cargo\"\nconfirm-timeout = \"90s\"\n",
+        )
+        .expect("write callisto.toml");
+        let config = load(tmp.path()).expect("load should succeed");
+        assert_eq!(
+            config.registries[&RegistryKey("npm".to_string())].confirm_timeout,
+            Some(std::time::Duration::from_secs(600))
+        );
+        assert_eq!(
+            config.registries[&RegistryKey("corp".to_string())].confirm_timeout,
+            Some(std::time::Duration::from_secs(90))
+        );
+        assert_eq!(
+            config.registries[&RegistryKey(RegistryKey::CRATES_IO.to_string())].confirm_timeout,
+            None
+        );
+    }
+
+    #[test]
+    fn an_unusable_confirm_timeout_is_rejected() {
+        for bad in ["0s", "2h", "ten", "10"] {
+            let tmp = tempfile::tempdir().expect("tempdir");
+            fs::write(
+                tmp.path().join("callisto.toml"),
+                format!("[registries.npm]\nconfirm-timeout = \"{bad}\"\n"),
+            )
+            .expect("write callisto.toml");
+            let error = load(tmp.path()).expect_err("an unusable confirm-timeout must not load");
+            assert!(error.to_string().contains("confirm-timeout"), "{bad}: {error}");
+        }
     }
 
     #[test]

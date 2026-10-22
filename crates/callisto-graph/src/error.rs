@@ -374,18 +374,21 @@ pub enum GraphError {
     )]
     ReleaseIntentStale { reason: StaleReason },
 
-    #[error("registry reported `{package}@{version}` published, but does not yet show it")]
+    #[error("registry reported `{package}@{version}` published, but still did not show it after {}", crate::config::duration::render_duration(*.waited))]
     #[diagnostic(
         code(E157),
         help(
             "The publish command already ran and the registry client reported success; this is \
-             registry propagation lag, not an unauthorized or stale operation. Re-run \
-             reconciliation once the registry catches up -- do not regenerate the release intent."
+             registry propagation lag, not an unauthorized or stale operation. Re-run the failed \
+             job once the registry shows the version -- do not regenerate the release intent. To wait \
+             longer, set `confirm-timeout` on the registry in callisto.toml."
         )
     )]
     RegistryPublishUnconfirmed {
         package: String,
         version: callisto_model::Version,
+        /// The longest the confirmation waited for the version to appear.
+        waited: std::time::Duration,
     },
 
     #[error("the Python build for `{package}` {} produced no {missing}", .version.render())]

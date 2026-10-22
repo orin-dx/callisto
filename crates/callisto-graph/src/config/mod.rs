@@ -1,3 +1,4 @@
+pub mod duration;
 pub mod groups;
 pub mod pattern;
 pub mod raw;
