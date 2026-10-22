@@ -16,6 +16,7 @@ use crate::GraphError;
 use super::http::parse_http_response;
 use super::policy::{self, programs, require_registry_confirmation, run_observation, timeouts, Attempt};
 use super::pypi_files::{self, BuiltFile, BuiltSet, PypiSimpleFile, PypiSimpleIndex};
+use super::repository;
 use super::{
     preflight_from_observation, wrong_role, EffectAuthorization, PreparedOperation, ProviderCapabilities,
     ProviderContext, ProviderRequest, RegistryPublishOperation, ReleasePreflight, ReleaseProvider,
@@ -52,12 +53,13 @@ impl ReleaseProvider for RegistryProvider {
         context: &ProviderContext<'_>,
         request: &ProviderRequest<'_>,
     ) -> Result<ReleasePreflight, GraphError> {
-        adapter_for(request.id.package.ecosystem())?.preflight(
-            context,
-            request.id,
-            registry_operation(request)?,
-            request.artifacts,
-        )
+        let adapter = adapter_for(request.id.package.ecosystem())?;
+        let operation = registry_operation(request)?;
+        let preflight = adapter.preflight(context, request.id, operation, request.artifacts)?;
+        if matches!(preflight, ReleasePreflight::AlreadySatisfied { .. }) {
+            warn_if_foreign_repository(adapter, context, request.id, operation);
+        }
+        Ok(preflight)
     }
 
     fn publish(
@@ -92,6 +94,28 @@ impl ReleaseProvider for RegistryProvider {
                 version: operation.version.clone(),
                 waited,
             })
+    }
+}
+
+/// Adopting a version that is already published is by design (a rerun finishes a half-done release), but a version
+/// whose registry entry names another repository is more likely someone else's package. Warns, never blocks.
+fn warn_if_foreign_repository(
+    adapter: &dyn RegistryEcosystem,
+    context: &ProviderContext<'_>,
+    id: &ReleaseOperationId,
+    operation: &RegistryPublishOperation,
+) {
+    let Some(origin) = context.origin_endpoint() else {
+        return;
+    };
+    let registry_repository = adapter.repository(context, operation);
+    if let Some(warning) = repository::foreign_repository_warning(
+        &id.package.to_string(),
+        operation.version.render(),
+        registry_repository.as_deref(),
+        origin,
+    ) {
+        eprintln!("{warning}");
     }
 }
 
@@ -162,6 +186,12 @@ fn confirmed_registry_observation<A: RegistryEcosystem + ?Sized>(
 /// not another match in preflight, dispatch, or confirmation.
 pub(crate) trait RegistryEcosystem {
     fn ecosystem(&self) -> Ecosystem;
+
+    /// The repository the registry says this published version belongs to. Best effort: a registry that records
+    /// none, or a read that fails, is `None`.
+    fn repository(&self, _context: &ProviderContext<'_>, _operation: &RegistryPublishOperation) -> Option<String> {
+        None
+    }
 
     /// Whether this registry exposes a query that proves an exact published
     /// version. `false` makes every observation `Indeterminate`, so a publish
@@ -382,6 +412,27 @@ impl RegistryEcosystem for CargoRegistry {
         Ecosystem::Cargo
     }
 
+    fn repository(&self, context: &ProviderContext<'_>, operation: &RegistryPublishOperation) -> Option<String> {
+        let spec = format!("{}@{}", operation.package_name, operation.version.render());
+        let registry = cargo_registry_name(&operation.registry.key);
+        let args = cargo_info_args(&spec, registry);
+        let cwd = registry_argv::cargo_workspace_dir(context.root(), &operation.package_dir).ok()?;
+        let output = run_observation(
+            context.runner(),
+            programs::CARGO,
+            &args,
+            &cwd,
+            timeouts::REGISTRY_QUERY,
+            true,
+        )
+        .ok()?
+        .ok()?;
+        output
+            .success()
+            .then(|| cargo_info_repository(&output.stdout))
+            .flatten()
+    }
+
     fn can_observe_versions(&self) -> bool {
         true
     }
@@ -473,6 +524,15 @@ fn classify_cargo_info(output: &CommandOutput, spec: &str, version: &Version) ->
     transient(ProviderIndeterminateCause::CommandFailed, None)
 }
 
+/// The value of the `repository:` line `cargo info` prints, if the crate has one.
+fn cargo_info_repository(stdout: &str) -> Option<String> {
+    stdout
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("repository:"))
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+}
+
 /// Whether cargo's `version: X ...` line names exactly the requested version.
 fn reports_version(stdout: &str, version: &Version) -> bool {
     stdout.lines().any(|line| {
@@ -512,6 +572,17 @@ fn classify_npm_view(output: &CommandOutput, version: &Version) -> Attempt<Provi
     transient(ProviderIndeterminateCause::CommandFailed, None)
 }
 
+/// The repository URL in `npm view <spec> repository --json`: a string, or an object with a `url`.
+fn npm_view_repository(stdout: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(stdout.trim()).ok()?;
+    match value {
+        serde_json::Value::String(url) => Some(url),
+        serde_json::Value::Object(map) => map.get("url")?.as_str().map(str::to_owned),
+        _ => None,
+    }
+    .filter(|url| !url.is_empty())
+}
+
 /// The `error.code` of the JSON error body `npm --json` prints to stdout on failure.
 fn npm_error_code(stdout: &str) -> Option<String> {
     let body: serde_json::Value = serde_json::from_str(stdout.trim()).ok()?;
@@ -533,6 +604,26 @@ struct NpmRegistry;
 impl RegistryEcosystem for NpmRegistry {
     fn ecosystem(&self) -> Ecosystem {
         Ecosystem::Npm
+    }
+
+    fn repository(&self, context: &ProviderContext<'_>, operation: &RegistryPublishOperation) -> Option<String> {
+        let spec = format!("{}@{}", operation.package_name, operation.version.render());
+        let mut args = vec!["view", spec.as_str(), "repository", "--json", "--fetch-retries=0"];
+        if let Some(registry) = operation.registry.endpoint.as_deref() {
+            args.extend(["--registry", registry]);
+        }
+        let workspace_dir = crate::workspace_owner::npm_workspace_dir(context.root(), &operation.package_dir).ok()?;
+        let output = run_observation(
+            context.runner(),
+            programs::NPM,
+            &args,
+            &context.root().join(workspace_dir),
+            timeouts::REGISTRY_QUERY,
+            true,
+        )
+        .ok()?
+        .ok()?;
+        output.success().then(|| npm_view_repository(&output.stdout)).flatten()
     }
 
     fn can_observe_versions(&self) -> bool {
