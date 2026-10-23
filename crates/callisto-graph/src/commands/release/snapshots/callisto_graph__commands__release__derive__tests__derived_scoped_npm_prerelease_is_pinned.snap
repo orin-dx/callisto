@@ -193,7 +193,7 @@ prepared:
             target: CommitSha(
                 "<commit>",
             ),
-            annotation: "Release @s/lib@1.0.0-beta.1",
+            annotation: "Release @s/lib@1.0.0-beta.1\n\nCallisto-Hints: 1\nCallisto-Package: npm/@s/lib\nCallisto-Tree: . <commit>\n",
         },
     ),
 }

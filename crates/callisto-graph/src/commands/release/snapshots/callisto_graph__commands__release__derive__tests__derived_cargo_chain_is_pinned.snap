@@ -415,7 +415,7 @@ prepared:
             target: CommitSha(
                 "<commit>",
             ),
-            annotation: "Release a@1.0.0",
+            annotation: "Release a@1.0.0\n\nCallisto-Hints: 1\nCallisto-Package: cargo/a\nCallisto-Tree: a <commit>\n",
         },
     ),
     ReleaseOperationId {
@@ -501,7 +501,7 @@ prepared:
             target: CommitSha(
                 "<commit>",
             ),
-            annotation: "Release b@1.0.0",
+            annotation: "Release b@1.0.0\n\nCallisto-Hints: 1\nCallisto-Package: cargo/b\nCallisto-Tree: b <commit>\n",
         },
     ),
     ReleaseOperationId {
@@ -587,7 +587,7 @@ prepared:
             target: CommitSha(
                 "<commit>",
             ),
-            annotation: "Release c@1.0.0",
+            annotation: "Release c@1.0.0\n\nCallisto-Hints: 1\nCallisto-Package: cargo/c\nCallisto-Tree: c <commit>\n",
         },
     ),
 }

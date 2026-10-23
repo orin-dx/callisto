@@ -15,6 +15,8 @@ pub use permit::*;
 
 pub mod tag;
 pub use tag::*;
+pub mod tag_hints;
+pub use tag_hints::TagHints;
 
 pub mod error;
 pub use error::*;

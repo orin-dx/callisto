@@ -118,6 +118,16 @@ pub(crate) mod tests {
                 stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
             })
         }
+
+        fn run_with_stdin(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+            stdin: &[u8],
+        ) -> Result<CommandOutput, CommandError> {
+            callisto_fixtures::git::GitRunner.run_with_stdin(program, args, cwd, stdin)
+        }
     }
 
     /// Real git except `ls-remote`, whose answer is read from a file. The
@@ -135,6 +145,16 @@ pub(crate) mod tests {
                 });
             }
             RealGitRunner.run(program, args, cwd)
+        }
+
+        fn run_with_stdin(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+            stdin: &[u8],
+        ) -> Result<CommandOutput, CommandError> {
+            RealGitRunner.run_with_stdin(program, args, cwd, stdin)
         }
     }
 
@@ -524,7 +544,14 @@ pub(crate) mod tests {
             })
             .expect("the tag operation must retain its render, target, and annotation policy");
         assert_eq!(tag.0.as_str(), "release-fixture@1.2.3");
-        assert_eq!(tag.2, "Release release-fixture@1.2.3");
+        assert!(tag.2.starts_with("Release release-fixture@1.2.3\n\n"), "{}", tag.2);
+        let hints = callisto_model::TagHints::parse(tag.2).expect("the annotation carries hints");
+        assert_eq!(hints.package, "cargo/release-fixture");
+        assert_eq!(
+            hints.trees,
+            std::collections::BTreeMap::from([(".".to_owned(), git_stdout(dir.path(), &["rev-parse", "HEAD^{tree}"]))]),
+            "a root package records the root tree of the release commit"
+        );
         assert_eq!(tag.1.as_str().len(), 40);
 
         let registry = inputs

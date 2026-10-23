@@ -244,7 +244,7 @@ fn derive_release_inputs_with<R: CommandRunner, D: DependencyResolver>(
     let mut ops = Ops::default();
     build_publish_leaves(workspace, &selected, git_remote.as_ref(), &mut package_inputs, &mut ops)?;
     link_publish_prerequisites(workspace, &selected, &package_ids, &publish_edges, &mut ops)?;
-    add_tags(&selected, &package_ids, &owners, &source, &mut ops)?;
+    add_tags(workspace, &selected, &package_ids, &owners, &source, &mut ops)?;
     add_forge_releases(workspace, &selected, &owners, &mut ops)?;
     let artifact_slots = add_artifact_uploads(workspace, &selected, &owners, artifact_policy, &mut ops, diagnostics)?;
     add_forge_publishes(&selected, &owners, &mut ops)?;
@@ -544,7 +544,42 @@ fn link_publish_prerequisites<R: CommandRunner, D: DependencyResolver>(
     Ok(())
 }
 
-fn add_tags(
+/// The git tree id each directory of each package holds in the release commit, asked for in one process. A tree that
+/// cannot be read is left out, so the hint written for it is partial and a reader does the read itself.
+fn release_trees<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    source: &SourceIdentity,
+    packages: &[(&ReleasePackageId, &callisto_model::Package)],
+) -> BTreeMap<ReleasePackageId, BTreeMap<String, String>> {
+    let SourceIdentity::GitCommit { sha } = source else {
+        return BTreeMap::new();
+    };
+    let wanted: Vec<(&ReleasePackageId, String)> = packages
+        .iter()
+        .flat_map(|(id, package)| {
+            crate::changed::package_paths(package)
+                .into_iter()
+                .map(move |directory| (*id, directory.to_string_lossy().into_owned()))
+        })
+        .collect();
+    let specs: Vec<String> = wanted
+        .iter()
+        .map(|(_, directory)| format!("{}:{}", sha.as_str(), if directory == "." { "" } else { directory }))
+        .collect();
+    let Ok(ids) = workspace.git_access().object_ids(&specs) else {
+        return BTreeMap::new();
+    };
+    let mut trees: BTreeMap<ReleasePackageId, BTreeMap<String, String>> = BTreeMap::new();
+    for ((id, directory), tree) in wanted.into_iter().zip(ids) {
+        if let Some(tree) = tree {
+            trees.entry(id.clone()).or_default().insert(directory, tree);
+        }
+    }
+    trees
+}
+
+fn add_tags<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
     selected: &BTreeMap<ReleasePackageId, (&callisto_model::Package, Version)>,
     package_ids: &BTreeMap<callisto_model::PackageId, Vec<ReleasePackageId>>,
     owners: &Owners,
@@ -556,6 +591,17 @@ fn add_tags(
         prepared,
         index,
     } = ops;
+
+    let tagged: Vec<(&ReleasePackageId, &callisto_model::Package)> = owned(selected, owners)
+        .filter(|(_, (package, _))| {
+            package
+                .publish_to
+                .iter()
+                .any(|target| !matches!(target, PublishTarget::None))
+        })
+        .map(|(id, (package, _))| (id, *package))
+        .collect();
+    let mut trees = release_trees(workspace, source, &tagged);
 
     for (id, (package, version)) in owned(selected, owners) {
         if !package
@@ -590,7 +636,11 @@ fn add_tags(
         prepared.insert(
             tag.id().clone(),
             PreparedOperation::Tag(TagOperation {
-                annotation: format!("Release {tag_name}"),
+                annotation: callisto_model::TagHints {
+                    package: id.to_string(),
+                    trees: trees.remove(id).unwrap_or_default(),
+                }
+                .annotation(&format!("Release {tag_name}")),
                 name: tag_name,
                 target,
             }),
