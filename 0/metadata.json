@@ -1,0 +1,138 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5N54N3R796T1XT1KC0R4TS7",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-23T19:52:46.10776Z",
+  "branch": "docs/adr-13-tag-hints",
+  "checkpoints_count": 3,
+  "save_step_count": 3,
+  "files_touched": [
+    "docs/adr/0013-tag-annotation-hints-skip-work-not-identity.md",
+    "docs/adr/README.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "1640a6ef6fd7",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 26902,
+    "cache_read_tokens": 13444970,
+    "output_tokens": 18205,
+    "api_call_count": 16,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 289
+  },
+  "summary": {
+    "intent": "Work through the NEXT-WORK plan for the Callisto release tool (cleanup, test debt, SYS-RETRY, SYS-NAPI, derive.rs split), then pivot to making status/version/release fast on large monorepos and absorb the michi 0.6 handoff.",
+    "outcome": "Opened and merged a series of PRs: SYS-RETRY fix, mixed-routing test, docs refresh, init/template moves, SYS-NAPI, derive.rs split, and a performance stack (#327, #328, #330, #333) that replaced history scans with tree-id comparison. ADR 13 (tag annotation hints) is open as a proposal. Michi 0.6 adoption is analyzed but not started.",
+    "learnings": {
+      "repo": [
+        "Plan/tracking files such as NEXT-WORK.md must stay local (.claude/plans/, excluded via .git/info/exclude) and never go in a commit or PR; PR #201 was closed for this reason.",
+        "`just ci` is the gate; its wrapper script can exit 0 even when the log shows failure, so read the log's own `exit=` line (a real failure showed exit=100). Coverage gate is 90%.",
+        "Rerun selection previously treated a tag on HEAD as 'released', which was the SYS-RETRY defect. Packages tagged at HEAD now have every operation observed (registry, tag, GitHub release); a tag on an older commit settles the version without contacting providers.",
+        "The release harness fakes gh, cargo and registry reads, which hid bugs earlier. Real-tool tests (real jq, real binary) are needed for template work like SYS-NAPI.",
+        "Generated workflow templates run on macOS bash without `mapfile`, so use portable while-read loops.",
+        "The intent omits `artifactSlots` when empty, so jq `.artifactSlots[]` iterates null; the dry-run report flattens the intent with envelope fields that must be stripped to get the plain intent.",
+        "Stacked PRs are linked with `gh stack`; a closed PR in a stack blocks relinking, so unstack and recreate.",
+        "Commits/PRs must not include a session link per AGENTS.md; ADRs must be marked Proposed until the implementing PR merges.",
+        "System git is the chosen backend (ADR 5). gix was benchmarked: gix-pack caches only the final delta-resolved object, so history walks are 3-10x slower than `git log` on wide trees; keep gix out.",
+        "Tag ownership manifest reads are a safety check against renamed or removed packages adopting a bare-named tag, not waste, so they should not be skipped on name uniqueness.",
+        "The 'changed since last tag' meaning is now net change (tree id comparison); a reverted edit no longer counts as changed, and this is stated in the spec."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/vcs/access.rs",
+          "line": 510,
+          "end_line": 510,
+          "finding": "Callisto's Git access uses the system git binary here, so there is no gix cache to tune in production code."
+        },
+        {
+          "path": "crates/callisto-graph/src/identity.rs",
+          "finding": "IdentityIndex::native_names, native_name and platforms_of scan the whole name map per package (quadratic, about 12% of status at 10,000 packages); fixed with a mutex-backed reverse index cache."
+        },
+        {
+          "path": "crates/callisto-graph/src/locate/ignore_walk.rs",
+          "finding": "The locator probes three canonical manifest files per directory and then re-opens each manifest; parallel reading and passing content on removed the double read."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/derive.rs",
+          "finding": "Release derivation was split into stage functions with OpIndex holding the prerequisite maps (including uploads_by_package), protected by insta characterization snapshots and error-path tests added first."
+        }
+      ],
+      "workflow": [
+        "Write the failing reproduction first, then fix, and prove a new test can fail by mutating the source (done for the W1 and R3 tests).",
+        "For pure refactors, commit snapshot/characterization tests on the old code first, then do the mechanical move and confirm snapshots pass unchanged.",
+        "Profile with a corrected, uncontended machine before trusting numbers; noisy timings and warm second passes misled earlier conclusions, and the assistant retracted two claims after measuring properly.",
+        "Sandbox rejects inline env, heredocs and scripts mentioning git; write scripts to temp files, use Edit/Write tools, and only edit inside the current worktree.",
+        "Run an independent review agent on risky PRs such as #202 while other work proceeds.",
+        "Use throwaway spike crates outside the repo to compare libraries (gix, git2) before adopting a dependency."
+      ]
+    },
+    "friction": [
+      "The plan file was initially committed in PR #201 contrary to the user's intent for local tracking, requiring a close and relocation.",
+      "Sandbox restrictions (inline env, heredocs, git-mentioning scripts, edits outside the current worktree) forced many workarounds, including switching worktrees to edit docs.",
+      "Background sessions could not edit the shared checkout, so the plan status was not updated in .claude/plans/NEXT-WORK.md.",
+      "CI failures required follow-up edits: three existing tests assumed tag-on-HEAD means released, plus a stray blank line in the moved tests.",
+      "Profiling noise from another process compiling on the machine, and an incomplete first profile, produced misleading numbers.",
+      "A push to PR #330 was rejected as non-fast-forward and needed a rebase; closing #331 forced unstacking and relinking the stack.",
+      "gh PR bodies with escaped backticks in quoted heredocs rendered literal backslashes and had to be fixed."
+    ],
+    "open_items": [
+      "Branch cleanup (docs/next-work-plan, docs/spec-rewrite, fix/native-resolution, about 35 local branches) awaits per-branch user approval.",
+      "W1 real-service credential check needs a decision on where it runs in CI; W11 verification needs credentials and an approved run.",
+      "D01-blocked work (SYS-MATURIN, W9) and the W10 decisions (distinct target declaration graph edges, Python dev group cascade) await the user.",
+      "Follow-up edits to T08-RETRY entries in the roadmap, plan JSON and guide once #202 merges; PR #204 still lists SYS-RETRY.",
+      "Independent review findings on #202 (multi-paragraph tag, dependent tagged at HEAD with untagged dependency) were being addressed; final status is not shown in the transcript.",
+      "Lanes C (SYS-PYFILES, SYS-PYROUTES, redacted provider output), D SYS-BARRIER and F (R1 walk.rs::build) not started.",
+      "ADR 13 (tag annotation hints) PR is open as Proposed and needs the user's acceptance before implementation.",
+      "Release PR #316 is stale (7 changesets vs 9 pending) and must be regenerated before merging 0.14.0.",
+      "The settle_issued window bugs (restarts wait per confirmation, counts only sleeps) remain on main; plan is to fix via michi 0.6 poll_step with deadline_group.",
+      "Michi 0.6 trial not started; npm 0.6.0 is held until 2026-10-24 02:55 UTC and ready_by_edge awaits michi-graph PR #48; the org NPM_TOKEN is the deprecated bypass-2FA type, keeping OIDC on the list.",
+      "Possible upstream gix-pack issue (cache intermediate delta bases) with a wide-tree benchmark, if the user wants it drafted."
+    ]
+  }
+}
