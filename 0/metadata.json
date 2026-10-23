@@ -1,0 +1,118 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5K3ZMEG4SKNFNVJFNSYDHNC",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-23T00:53:55.885803Z",
+  "branch": "refactor/operation-order-michi-graph",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "ARCHITECTURE.md",
+    "crates/callisto-graph/src/commands/release/derive.rs",
+    "docs/architecture/release.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "8ac8646f5a90",
+  "checkpoint_transcript_start": 50031,
+  "transcript_lines_at_start": 50031,
+  "compact_transcript_start": 4045,
+  "token_usage": {
+    "input_tokens": 86,
+    "cache_creation_tokens": 66508,
+    "cache_read_tokens": 30891624,
+    "output_tokens": 32830,
+    "api_call_count": 43,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 244
+  },
+  "summary": {
+    "intent": "Ship the Callisto 0.13.0 release by re-dispatching the recovery run after merging the #318 fix, then adopt the newly published michi-graph 0.5.0 in callisto-model in place of hand-rolled DAG/topological ordering code.",
+    "outcome": "The second recovery run published all four crates at 0.13.0 on crates.io, but the tag push, GitHub release and binary upload failed (E180), so the user has to push the tags manually and the run must be re-dispatched. Separately, the michi-graph adoption was implemented in callisto-model and derive, docs and a license-boundary check were added, the full CI passed, and a PR was opened.",
+    "learnings": {
+      "repo": [
+        "The release assemble job used to download target builds by listing artifact names, so adding a matrix target without updating that list broke it. It now downloads `release-build-*` by pattern, and a contract test enforces this.",
+        "GitHub rejects a tag push by a GitHub App token when the tagged commit's workflow files differ from every branch tip. This is the E180 case, and docs/releasing.md ('Recovering an older release') says to push the annotated tags manually, then re-dispatch.",
+        "Release tags are annotated with 'Release <tag>'. The 0.13.0 set is callisto, callisto-graph, callisto-manifests and callisto-model, all at the release SHA a94efafd9593562b9fe155c4782ba62b614b838b.",
+        "A rerun of callisto-release.yml adopts already-published crates, creates the GitHub release with all five binaries and writes the receipt.",
+        "The caliper workflow pins callisto@0.11.0, which waits only about 30s per publish. The confirmation-window fix (#299) and the `confirm-timeout` input ship from 0.12.0, and the wait is up to 6 minutes for npm and PyPI.",
+        "callisto-model had two hand-rolled Kahn topological-sort copies (intent.rs and derive's ordering). The adoption replaced the model's copy with michi-graph and made derive delegate to the model.",
+        "A `license-boundary` check was added to the just recipes and wired into CI. It was verified to detect an FSL-licensed crate. The crate tables and the license-boundary invariant in ARCHITECTURE.md and docs/architecture/release.md were updated."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/release/intent.rs",
+          "finding": "Held the hand-rolled DAG validation and Kahn ordering, now replaced by michi-graph 0.5, with oracle tests added."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/derive.rs",
+          "finding": "Had a second copy of the topological ordering. It now delegates to the model's canonical order."
+        }
+      ],
+      "workflow": [
+        "Check the state of tags and releases on GitHub before and after dispatching a recovery run to see what was actually published.",
+        "Third-party crates fetched for inspection were downloaded into their own empty directory, with scripts kept elsewhere.",
+        "A permission classifier can deny pushing release tags with the user's credentials. When that happens, hand the user the exact commands instead of retrying.",
+        "Delete stray proptest regression files produced by an earlier buggy generator before committing."
+      ]
+    },
+    "friction": [
+      "The first recovery run failed in assemble (E213) because of the missing artifact-name list entry from #308, which an earlier arm64 moon failure had hidden.",
+      "The second recovery run left the release half published: the crates were out but the tags, GitHub release and binaries were not (E180).",
+      "The permission classifier denied the agent's attempt to push the release tags, which forced a manual handoff to the user.",
+      "The first proptest DAG generator was wrong, which broke the tests and left a stray regression file that needed cleanup."
+    ],
+    "open_items": [
+      "The user must push the four annotated 0.13.0 tags, then the recovery must be re-dispatched so the GitHub release, binaries and receipt are completed and verified.",
+      "Do not merge #316 before 0.13.0 is fully out.",
+      "Offered but not done: bump caliper's Callisto pin and action SHA to 0.12.0 or 0.13.0, and set generous `timeout-minutes` for packages with 8 or more npm packages.",
+      "The structural fix of publishing in layers and verifying once at the end is waiting on michi-graph and michi-pipeline.",
+      "michi-pipeline features not yet built, pending a Callisto trial: deadline-bounded poll step, shared group deadline, per-key concurrency cap, adapter for blocking steps, and typed step outputs.",
+      "Trial michi-pipeline 0.5.0 in Callisto's release path to decide which of those features to build next.",
+      "The michi-graph adoption PR is open and awaiting review and merge."
+    ]
+  }
+}
