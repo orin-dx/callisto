@@ -1,0 +1,42 @@
+Something in michi was still pointing to orin-axi:
+
+[entire] Pushing 5 checkpoint ref(s) to origin..............
+[entire] Checkpoint ref push failed; retrying 5 ref(s) individually.......................... pushed 3 of 5
+[entire] Warning: checkpoint ref refs/entire/checkpoints/10/01M127C0S6XVNTQKQ5WZVTQY10 remains queued (showing one rejection):
+remote: This repository moved. Please use the new location:        
+remote:   git@github.com:orin-dx/michi.git        
+remote: error: GH013: Repository rule violations found for refs/entire/checkpoints/10/01M127C0S6XVNTQKQ5WZVTQY10.        
+remote: 
+remote: - GITHUB PUSH PROTECTION        
+remote:   —————————————————————————————————————————        
+remote:     Resolve the following violations before pushing again        
+remote: 
+remote:     - Push cannot contain secrets        
+remote: 
+remote:             
+remote:      (?) Learn how to resolve a blocked push        
+remote:      https://docs.github.com/code-security/secret-scanning/working-with-secret-sca […]    —— npm Access Token ——————————————————————————————————        
+remote:        locations:        
+remote:          - commit: f89c2e66353224eb8ca3f8f6d921edbb63ba305e        
+remote:            path: 0/full.jsonl:23363        
+remote:             
+remote:        (?) To push, remove secret from commit(s) or follow this URL to allow the secret.        
+remote:        https://github.com/orin-dx/michi/security/secret-scanning/unblock-secret/3L6x008RICZvR1zOYawHHeDoJ6g        
+remote:             
+remote:             
+remote:       —— npm Access Token ——————————————————————————————————        
+remote:        locations:        
+remote:          - commit: f89c2e66353224eb8ca3f8f6d921edbb63ba305e        
+remote:            path: 0/full.jsonl:23372        
+remote:             
+remote:        (?) To push, remove secret from commit(s) or follow this URL to allow the secret.        
+remote:        https://github.com/orin-dx/michi/security/secret-scanning/unblock-secret/REDACTED        
+remote:             
+remote: 
+remote: 
+error: failed to push some refs to 'github.com:orin-axi/michi.git'
+To github.com:orin-axi/michi.git
+!	refs/entire/checkpoints/10/01M127C0S6XVNTQKQ5WZVTQY10:refs/entire/checkpoints/10/01M127C0S6XVNTQKQ5WZVTQY10	[remote rejected] (push declined due to repository rule violations)
+Done
+
+Is it possible the same is true here?
