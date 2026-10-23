@@ -1,5 +1,17 @@
 # callisto-cli
 
+## 0.14.0
+
+- After publishing, Callisto looks for a new npm version right away and then at 15 seconds, 45 seconds, 2 minutes and 3 minutes, instead of every 30 seconds, so a release makes about five looks per window rather than seventeen. The window and `confirm-timeout` are unchanged.
+- A release no longer stops with E319 when a dependent's range already covers the new version but cannot be raised, such as `*` or a bare Python requirement. A range that a rewrite would leave excluding the new version, such as `<2.0.0` for 2.0.0, now fails with E319 instead of being published.
+- A `[[package]]` or `[[package-set]]` rule is now matched against a package's name in the rule's own ecosystem. For a dual Cargo and npm package whose npm name differs, such as the napi package `@orin-dx/michi` in a directory called `michi-node`, `npm/michi-node` used to apply to it silently while a `[[fixed-group]]` rejected the same spelling. It now matches nothing, the matched-no-packages warning suggests `npm/@orin-dx/michi`, and a group member's E108 does too.
+- A `[registries.<name>]` entry for a custom registry must now set `kind` to `cargo`, `npm` or `pypi`; without it Callisto fails with E321 instead of silently reading the registry as npm. The built-in `cratesIo`, `npm` and `pypi` entries may leave it out and keep their own kind, so `[registries.cratesIo]` with only a `confirm-timeout` no longer turns the crates.io registry into an npm one.
+- A release of several npm packages now waits for the registry once instead of once per package. Callisto publishes the npm packages back to back, a package after the dependency it follows without waiting for the registry to show that dependency, then looks at all of them together until each version is visible. Tags, GitHub releases and uploads still wait until every npm version they follow is shown, so nothing is announced early. A release of eight npm packages that took eight waits of up to six minutes now takes one. Cargo and PyPI publishes are still confirmed one at a time.
+- status, version and release --dry-run read tags and manifests in a handful of git calls instead of several per package, so they take well under a second on workspaces with hundreds of packages.
+- Workspaces with thousands of packages load and plan about a quarter faster: manifests are read and parsed on several threads, and package name lookups no longer slow down as the package count grows.
+- A local release no longer tags a published version onto code that was never published when the package inherits its version from the workspace, has more than 100 edits to its manifest, or was merged after unrelated commits; a registry that cannot be read now stops the release. Signed commits no longer break change detection when log.showSignature is set.
+- status decides whether a package changed since its last tag by comparing its directories with the tagged ones, so it takes a fraction of a second however many commits the repository has, and a change that was later reverted no longer counts as a change.
+
 ## 0.13.0
 
 - The release pull request no longer says "All changes are backward compatible" when a package is below 1.0.0 and gets a minor bump. It says that minor bumps below 1.0.0 can include breaking changes and to read the changes first.
