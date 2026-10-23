@@ -1,0 +1,134 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5N0T6PRVRCW8FDSVHHX105C",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-23T18:37:09.412565Z",
+  "branch": "perf/parallel-history",
+  "checkpoints_count": 2,
+  "save_step_count": 2,
+  "files_touched": [
+    "crates/callisto-graph/src/changed.rs",
+    "crates/callisto-model/src/vcs/access.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "ace53a212405",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 138,
+    "cache_creation_tokens": 134441,
+    "cache_read_tokens": 42565549,
+    "output_tokens": 91413,
+    "api_call_count": 69,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 280
+  },
+  "summary": {
+    "intent": "Work through the NEXT-WORK plan for the Callisto release tool (SYS-RETRY fix, test debt, docs refresh, init/derive refactors, SYS-NAPI), then optimize the critical path performance, including whether to replace system git with gix or another library, and ideas like git hooks and ref metadata.",
+    "outcome": "Opened many PRs (#202-#208 for plan lanes, #327/#328/#330 stacked perf PRs, plus a parallel-history PR) with `just ci` passing. Measured gix and git2 against system git and kept the git binary, because gix is 3-10x slower on deep history at large scale. Closed the mistaken plan PR #201 and kept the plan local.",
+    "learnings": {
+      "repo": [
+        "Tracking and handoff plans such as NEXT-WORK.md must stay local (`.claude/plans/`, excluded via `.git/info/exclude`) and never go in a PR.",
+        "`just ci` is the gate (coverage threshold 90%); the wrapper script's exit code is not the verdict, so read the log's own `exit=` line.",
+        "The sandbox rejects inline `env` commands, heredocs, and scripts mentioning `git`, so scripts go in files via the Write tool, and edits are only allowed inside the current worktree.",
+        "macOS bash lacks `mapfile`, so generated workflow templates must use portable loops.",
+        "Release harness fakes (gh, cargo, registry) can hide bugs; black-box tests with the real binary and real jq are preferred (e.g. generated_workflow_napi_roster_tests.rs).",
+        "Commits and PRs must not include session links, per AGENTS.md; ADR changes (e.g. superseding ADR 5) require user acceptance.",
+        "Native stacks are linked with `gh stack` (e.g. #207 holds #205, #206, #208; #329 holds #327, #328, #330).",
+        "Benchmark fixtures must tag packages independently across history; tagging all packages on one commit hid a 500-process `git log` problem (status at 500 packages was 11.7 s vs 206 ms after the single-pass fix).",
+        "Intent JSON omits `artifactSlots` when empty, so jq `.artifactSlots[]` iterates null in generated workflows."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/vcs/access.rs",
+          "line": 510,
+          "finding": "GitAccess uses the system git binary, so there is no gix cache to tune in production code today."
+        },
+        {
+          "path": "crates/callisto-graph/src/changed.rs",
+          "finding": "changed_since_last_tag now uses a single `git log` pass with a symmetric-difference rule (a commit counts if reachable from HEAD or the tag but not both), verified equivalent to the old per-tag walk across merge and unmerged-hotfix topologies."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "finding": "Local release selection now observes releases already tagged at HEAD across all providers, so a rerun after a failed tag push completes; a tag on an older commit still settles without provider contact."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/tag.rs",
+          "finding": "Tag type check reads only the object type, so signed or multi-paragraph tag messages are no longer rejected."
+        }
+      ],
+      "workflow": [
+        "Write the failing reproduction first, and mutation-test new tests (revert or break the source to confirm they fail).",
+        "For refactors, commit snapshot/characterization tests on unchanged code first, then do moves-only commits with the snapshots passing unchanged.",
+        "Measure before swapping libraries: spikes showed gix 3-10x slower than git log at large history, and the first profile and benchmarks were misleading until the fixture was made realistic.",
+        "Retract earlier claims when measurement contradicts them (the 2 GB cache speedup was warm second-pass reuse; the 5x commit-hash batch claim measured about 25%).",
+        "Stack dependent PRs and run just ci one at a time, since the cargo lock is shared; use a separate target dir for profiling builds."
+      ]
+    },
+    "friction": [
+      "PR #201 wrongly put the local plan file in a PR and had to be closed.",
+      "Sandbox restrictions on heredocs, inline env, and compound commands forced script-file workarounds repeatedly.",
+      "A subagent could not edit the shared checkout's plan file, so PR status was not recorded in NEXT-WORK.md.",
+      "Several CI runs failed on lints, a stray blank line, or tests that assumed the old behavior, requiring reruns.",
+      "Push of the redesign to #330 was rejected as non-fast-forward and needed a rebase.",
+      "Benchmark timings were noisy because another process was compiling on the machine.",
+      "The first gix spike was unfair (unused diff resource cache) and the user had to point out the missed optimization.",
+      "The first profile was incomplete and misleading, and it exposed quadratic aggregation in newly written code."
+    ],
+    "open_items": [
+      "Delete leftover branches (`docs/next-work-plan`, `docs/spec-rewrite`, `fix/native-resolution`, ~35 local branches) only after the user decides per branch.",
+      "W1 real-service credential check needs a decision on where it runs in CI.",
+      "D01 decision blocks SYS-MATURIN and W9; W10 needs decisions on target-declaration graph edges and Python dev group cascade; W11 needs credentials and an approved run.",
+      "#204 still lists SYS-RETRY/T08-RETRY and needs a follow-up edit once #202 merges.",
+      "Lane D's SYS-BARRIER and Lane C/F work have not been started.",
+      "Independent review findings on #202 were being addressed; #202 still needs final review before merge.",
+      "Possible upstream gix issue or patch (cache intermediate delta bases in gix-pack) with a wide-tree benchmark, if the user wants it.",
+      "Parallelize manifest parsing and the workspace walk; consider the commit-hash manifest batch and a single tag listing; test mimalloc on the musl build.",
+      "Explore the user's ideas of git hooks to pre-warm caches and metadata saved in refs (modeled on Entire's checkpoint refs); the investigation had just started.",
+      "Add ADR 13 only if gix is adopted; petgraph can be dropped after #319/#320 merge."
+    ]
+  }
+}
