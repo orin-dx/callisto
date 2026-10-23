@@ -612,18 +612,13 @@ pub enum GraphError {
         reason: ReleaseSelectionInvalidReason,
     },
 
-    #[error(
-        "`{package}` {version} is already published, but `{package}` has {newer_commits} newer commit(s) since {version_commit}, the commit that set it"
-    )]
-    #[diagnostic(
-        code(E320),
-        help("Check out {version_commit} (`git checkout --detach {version_commit}`) and run `callisto release` again to finish that release. Releasing from here would tag code that was not published.")
-    )]
+    #[error("`{package}` {version} is already published, but `{package}` differs from {since}")]
+    #[diagnostic(code(E320), help("{fix}"))]
     ReleasePublishedVersionMoved {
         package: String,
         version: String,
-        version_commit: String,
-        newer_commits: usize,
+        since: String,
+        fix: String,
     },
 
     #[error("release precondition unmet: requires {requirement}")]

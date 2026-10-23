@@ -447,13 +447,51 @@ impl GitAccess<'_> {
             return Ok(None);
         }
         let path = path.to_string_lossy();
-        let args = ["log", "--diff-filter=A", "--format=%H", "-1", "--", &path];
+        let args = [
+            "log",
+            "--no-show-signature",
+            "--diff-filter=A",
+            "--format=%H",
+            "-1",
+            "--",
+            &path,
+        ];
         let output = self.runner.run("git", &args, &self.root)?;
         if !output.success() {
             return Err(probe_failed(&args, &self.root, &output));
         }
         let sha = output.stdout_trimmed();
         Ok((!sha.is_empty()).then(|| sha.to_string()))
+    }
+
+    /// The commits on HEAD's first-parent line that changed `pathspecs`, newest first. A merge commit counts when
+    /// it changes them relative to its first parent, so a squash or merge landing a release is one entry.
+    pub fn first_parent_commits_touching(&self, pathspecs: &[PathBuf]) -> Result<Vec<String>, VcsError> {
+        let mut args: Vec<String> = ["log", "--no-show-signature", "--first-parent", "--format=%H", "--"]
+            .map(str::to_owned)
+            .into();
+        args.extend(pathspecs.iter().map(|path| path.to_string_lossy().into_owned()));
+        let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let output = self.runner.run("git", &arg_refs, &self.root)?;
+        if !output.success() {
+            return Err(probe_failed(&arg_refs, &self.root, &output));
+        }
+        Ok(output.stdout_lines().map(str::to_owned).collect())
+    }
+
+    /// Whether `pathspecs` hold identical content in the trees of `a` and `b`.
+    pub fn same_content_at(&self, a: &str, b: &str, pathspecs: &[PathBuf]) -> Result<bool, VcsError> {
+        let mut args: Vec<String> = ["diff", "--quiet", "--no-ext-diff", a, b, "--"]
+            .map(str::to_owned)
+            .into();
+        args.extend(pathspecs.iter().map(|path| path.to_string_lossy().into_owned()));
+        let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let output = self.runner.run("git", &arg_refs, &self.root)?;
+        match output.exit_code {
+            Some(0) => Ok(true),
+            Some(1) => Ok(false),
+            _ => Err(probe_failed(&arg_refs, &self.root, &output)),
+        }
     }
 
     /// Lists tag names, optionally filtered by `glob` (a [`globset::Glob`]
@@ -530,6 +568,7 @@ impl GitAccess<'_> {
     pub fn commits_since(&self, since_ref: Option<&str>, pathspecs: &[PathBuf]) -> Result<Vec<GitCommit>, VcsError> {
         let mut args: Vec<String> = vec![
             "log".to_string(),
+            "--no-show-signature".to_string(),
             "--no-merges".to_string(),
             "--full-history".to_string(),
             format!("--format={RECORD_SEP}%H{FIELD_SEP}%B"),
@@ -594,6 +633,7 @@ impl GitAccess<'_> {
         let range = format!("{since_ref}..HEAD");
         self.name_only(&[
             "log",
+            "--no-show-signature",
             "--no-merges",
             "--full-history",
             "--no-renames",
