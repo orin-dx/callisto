@@ -324,6 +324,11 @@ struct SimWorld {
     deferring: bool,
     /// How often the executor waited for an issued publish to show.
     pauses: Cell<usize>,
+    /// The simulated clock: where it started, and how far waiting and looking have moved it.
+    started: std::time::Instant,
+    elapsed: Cell<Duration>,
+    /// What one observation costs on that clock.
+    look_cost: Cell<Duration>,
 }
 
 impl SimWorld {
@@ -350,6 +355,9 @@ impl SimWorld {
             lying_provider,
             deferring: false,
             pauses: Cell::new(0),
+            started: std::time::Instant::now(),
+            elapsed: Cell::new(Duration::ZERO),
+            look_cost: Cell::new(Duration::ZERO),
         }
     }
 
@@ -506,6 +514,7 @@ impl ReleaseProviderSet for SimWorld {
         id: &ReleaseOperationId,
         _artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<ProviderObservationV1, GraphError> {
+        self.elapsed.set(self.elapsed.get() + self.look_cost.get());
         self.observe_internal(id)
     }
 
@@ -554,8 +563,13 @@ impl ReleaseProviderSet for SimWorld {
         }
     }
 
-    fn pause(&self, _duration: Duration) {
+    fn pause(&self, duration: Duration) {
         self.pauses.set(self.pauses.get() + 1);
+        self.elapsed.set(self.elapsed.get() + duration);
+    }
+
+    fn now(&self) -> std::time::Instant {
+        self.started + self.elapsed.get()
     }
 }
 
@@ -1381,6 +1395,87 @@ fn a_registry_that_shows_a_version_late_is_waited_on_within_the_run() {
     if let Err(violation) = check_invariants(&intent, &run) {
         panic!("{violation:?}\n{}", trace_lines(&run.context));
     }
+}
+
+/// A world with registry publishes deferred, each registry operation lagging by the count `lag_of` gives it.
+fn deferring_world(
+    intent: &ReleaseIntentV1,
+    context: &Rc<SimContext>,
+    lag_of: impl Fn(&callisto_model::ReleaseOperationId) -> usize,
+) -> SimWorld {
+    let world = SimWorld::new(
+        intent.clone(),
+        Scenario {
+            crash: None,
+            fault: None,
+        },
+        Rc::clone(context),
+        false,
+    )
+    .deferring();
+    for operation in &intent.operations {
+        if is_registry(&operation.id().role) {
+            world
+                .lag
+                .borrow_mut()
+                .insert(operation.id().clone(), lag_of(operation.id()));
+        }
+    }
+    world
+}
+
+/// The window opens when the first publish is issued and is not started again by a publish that shows along the way:
+/// alpha shows at the second look and the others never do, yet the run gives up after the window and not after more.
+#[test]
+fn a_publish_that_shows_along_the_way_does_not_restart_the_window() {
+    let (intent, manifest) = simulator_intent();
+    let context = Rc::new(SimContext::default());
+    let world = deferring_world(&intent, &context, |id| {
+        if id.package.name() == "alpha" {
+            1
+        } else {
+            1_000_000
+        }
+    });
+
+    let run = run_world(world, context, &manifest);
+
+    assert!(
+        run.context
+            .trace
+            .borrow()
+            .iter()
+            .any(|event| matches!(event, TraceEvent::RunEnd { outcome, .. } if outcome.contains("RegistryPublishUnconfirmed"))),
+        "{}",
+        trace_lines(&run.context)
+    );
+    assert_eq!(
+        run.world.elapsed.get(),
+        Duration::from_secs(360),
+        "the whole wait, across every look, should be the one window"
+    );
+}
+
+/// Time spent looking counts against the window as well as time spent waiting between looks, so a slow registry
+/// read cannot stretch the wait to many windows.
+#[test]
+fn time_spent_looking_counts_against_the_window() {
+    let (intent, manifest) = simulator_intent();
+    let context = Rc::new(SimContext::default());
+    let world = deferring_world(&intent, &context, |_| 1_000_000);
+    world.look_cost.set(Duration::from_secs(100));
+
+    let run = run_world(world, context, &manifest);
+
+    assert!(
+        run.world.elapsed.get() <= Duration::from_secs(360 + 3 * 100),
+        "waited {:?}: more than the window plus the look that ran past it",
+        run.world.elapsed.get()
+    );
+    assert!(
+        run.world.pauses.get() < 4,
+        "looks that cost time should leave fewer pauses"
+    );
 }
 
 /// A version the registry never shows stops the run with the unconfirmed-publish error, after the whole window and

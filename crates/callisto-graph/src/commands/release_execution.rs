@@ -4,7 +4,6 @@
 //! before acting, so a rerun adopts whatever an earlier run already landed.
 
 use std::collections::BTreeSet;
-use std::time::Duration;
 
 use michi_graph::{Dag, Order};
 
@@ -41,12 +40,16 @@ pub fn execute_release<P: ReleaseProviderSet + ?Sized>(
     let dag = operation_dag(intent)?;
     // Registry publishes issued but not yet seen on their registry; they stay `Attempting` until they are.
     let mut issued = BTreeSet::new();
+    let mut wave: Option<ConfirmationWave> = None;
     loop {
         let Some(operation) = eligible_in(&dag, &state, &issued).first().cloned() else {
-            if issued.is_empty() {
+            let Some(open) = wave.as_mut() else {
                 break;
+            };
+            settle_issued(capability, artifacts, &mut state, &mut issued, open)?;
+            if issued.is_empty() {
+                wave = None;
             }
-            settle_issued(capability, artifacts, &mut state, &mut issued)?;
             continue;
         };
         capability.recheck_trust()?;
@@ -71,6 +74,7 @@ pub fn execute_release<P: ReleaseProviderSet + ?Sized>(
                 };
                 if capability.defers_confirmation(&operation) {
                     capability.issue(permit, proof, &operation, artifacts)?;
+                    wave.get_or_insert_with(|| ConfirmationWave::open(capability.now()));
                     issued.insert(operation);
                 } else {
                     let evidence = capability.publish(permit, proof, &operation, artifacts)?;
@@ -184,6 +188,20 @@ pub(crate) fn operation_dag(intent: &ReleaseIntentV1) -> Result<Dag<ReleaseOpera
     })
 }
 
+/// The wait for issued publishes to show. It opens when the first of them is issued and stays open until none is
+/// outstanding, so a publish confirmed along the way does not start the window again, and it runs on the clock, so the
+/// time spent looking counts. The looks keep their schedule from one settle to the next.
+struct ConfirmationWave {
+    opened: std::time::Instant,
+    looks: u32,
+}
+
+impl ConfirmationWave {
+    fn open(now: std::time::Instant) -> Self {
+        ConfirmationWave { opened: now, looks: 0 }
+    }
+}
+
 /// Looks at every issued operation until one is shown, so the run goes on with whatever that unlocks, or gives up
 /// once the registries have had their whole window.
 ///
@@ -194,14 +212,13 @@ fn settle_issued<P: ReleaseProviderSet + ?Sized>(
     artifacts: Option<&VerifiedArtifactManifest<'_>>,
     state: &mut ReleaseExecutionStateV1,
     issued: &mut BTreeSet<ReleaseOperationId>,
+    wave: &mut ConfirmationWave,
 ) -> Result<(), GraphError> {
     let window = issued
         .iter()
         .map(|id| capability.confirmation_window(id))
         .max()
         .unwrap_or_default();
-    let mut waited = Duration::ZERO;
-    let mut step = 0;
     loop {
         let mut progressed = false;
         for id in issued.clone() {
@@ -214,7 +231,7 @@ fn settle_issued<P: ReleaseProviderSet + ?Sized>(
         if issued.is_empty() || progressed {
             return Ok(());
         }
-        let remaining = window.saturating_sub(waited);
+        let remaining = (wave.opened + window).saturating_duration_since(capability.now());
         if remaining.is_zero() {
             let mut unconfirmed = issued.iter();
             let Some(first) = unconfirmed.next() else {
@@ -229,10 +246,9 @@ fn settle_issued<P: ReleaseProviderSet + ?Sized>(
                 waited: window,
             });
         }
-        let wait = crate::commands::release::provider::policy::visibility_backoff(step).min(remaining);
+        let wait = crate::commands::release::provider::policy::visibility_backoff(wave.looks).min(remaining);
         capability.pause(wait);
-        waited += wait;
-        step += 1;
+        wave.looks = wave.looks.saturating_add(1);
     }
 }
 
