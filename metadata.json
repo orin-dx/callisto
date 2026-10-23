@@ -1,0 +1,37 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5N22Y9HTN3CXSEN6F5C5T0Y",
+  "strategy": "manual-commit",
+  "branch": "perf/where-the-time-goes",
+  "checkpoints_count": 3,
+  "files_touched": [
+    ".changeset/vivid-dolphins-jump.md",
+    "crates/callisto-graph/src/changed.rs",
+    "crates/callisto-model/src/vcs/access.rs",
+    "crates/callisto-model/src/vcs/mod.rs",
+    "docs/specs/cli.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 50,
+    "cache_creation_tokens": 42947,
+    "cache_read_tokens": 17254493,
+    "output_tokens": 32886,
+    "api_call_count": 24,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  }
+}
