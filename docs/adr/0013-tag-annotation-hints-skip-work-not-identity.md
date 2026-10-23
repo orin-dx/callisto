@@ -27,7 +27,7 @@ Status: Proposed
 ## Consequences
 
 - At 10,000 packages the two reads are about 0.55 s of a 2.2 s command; at 400 packages they are tens of milliseconds. The larger value is a shallow or partial checkout that no longer has to read the tag commit's trees or manifest.
-- The annotation text of new tags changes, so a sealed intent that carries it has a different digest than the same release would have had. Existing intents are unaffected.
+- The annotation of new tags is longer. It is part of the prepared tag operation and not of the sealed intent, so no intent digest changes.
 - A tag object is immutable, so a hint cannot go stale. It can be wrong if someone writes a false annotation, which is the trust ADR 9 already extends to any annotated tag on the planned commit; a wrong hint changes what a read reports, never what an effect does.
 - Hints and the fallback are two code paths per consumer, each tested against the same repository.
 
