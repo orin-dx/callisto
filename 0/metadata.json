@@ -1,0 +1,121 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5N5PAH3TDVY9DKB25T57KQB",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-23T20:02:24.266674Z",
+  "branch": "chore/michi-0.6",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "30d19899106e",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 40,
+    "cache_creation_tokens": 45776,
+    "cache_read_tokens": 17415822,
+    "output_tokens": 16987,
+    "api_call_count": 20,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 290
+  },
+  "summary": {
+    "intent": "Work through the NEXT-WORK plan for the Callisto release tool (cleanup, test debt, SYS-RETRY, SYS-NAPI, refactors), then optimize performance for large monorepos, draft ADR 13 for tag-annotation hints, and start adopting michi 0.6.",
+    "outcome": "Opened and merged many PRs: #202-#208 (retry fix, tests, docs refresh, init/derive refactors, napi roster), the perf stack #327/#328/#330/#333 (merged), ADR 13 as PR #335 (Proposed), and a michi-graph 0.6 bump PR. The michi pipeline trial and ADR 13 implementation were started but not completed.",
+    "learnings": {
+      "repo": [
+        "docs/projects/NEXT-WORK.md is local tracking only; it now lives at .claude/plans/NEXT-WORK.md, excluded via .git/info/exclude. Tracking and handoff plans must never go in a commit or PR.",
+        "`just ci` is the gate (90% coverage threshold); it is run through wrapper scripts and the log's own `exit=` line must be read, not the task-notification exit code.",
+        "AGENTS.md forbids session links in commits/PRs; ADRs need user acceptance and stay Proposed until the implementing PR merges.",
+        "Stacked PRs are linked with `gh stack`; a closed PR in a stack blocks relinking, so unstack and recreate the stack.",
+        "Release harness fakes (gh, cargo, registry) can hide bugs; tests should use the real tool where possible (e.g. real jq and real binary for the napi roster test).",
+        "Callisto uses system git via crates/callisto-model/src/vcs/access.rs; ADR 5 chose the git binary. Measurements showed gix is 3-10x slower than git log for history at scale, so gix was rejected.",
+        "Changed-since-tag now compares git tree ids per package directory (net change), so reverted edits no longer count; status is flat in commit count.",
+        "IdentityIndex native_names/native_name/platforms_of were quadratic; fixed with a reverse index. Locator and manifest pre-open now run in parallel (parallel.rs).",
+        "The tag-ownership manifest read is a safety check against renamed/removed packages and should not be skipped on name uniqueness; the proposed fix is tag annotation hints (ADR 13).",
+        "macOS bash lacks mapfile, so generated workflow scripts must use portable loops.",
+        "Local ~/Projects/michi checkout was behind published 0.6 (no poll.rs/blocking.rs); michi 0.6 crates are on crates.io, npm package held until 2026-10-24 02:55 UTC."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/vcs/access.rs",
+          "line": 510,
+          "finding": "Callisto's git access uses the system binary here; there is no gix cache to tune in production code."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/derive.rs",
+          "finding": "Large derive function was split into stage functions after characterization snapshots; uploads_by_package moved into OpIndex."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release_execution.rs",
+          "finding": "Contains settle_issued, whose confirmation window restarts after each confirmation and counts only sleeps; slated to be replaced by michi poll_step/deadline_group."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "Mistakenly put the local-only plan file in PR #201; user objected and it was closed.",
+      "Sandbox blocked inline env commands, heredocs and scripts mentioning git, forcing script-file workarounds.",
+      "Background sessions could not edit the shared checkout's .claude/plans file to record PR status.",
+      "First gix spike created a diff resource cache but never used it, leading to an unfair comparison and later retractions.",
+      "User was annoyed when the assistant fetched michi 0.6 into a scratch crate rather than reading the local checkout, which turned out to be stale.",
+      "Release PR #316 became stale after the perf stack merged and needs regeneration.",
+      "Closed PR in a stack blocked gh stack relink."
+    ],
+    "open_items": [
+      "Delete leftover branch docs/next-work-plan and ~35 stale local branches (needs per-branch user approval).",
+      "W1 real-service credential check needs a decision on where it runs in CI.",
+      "Regenerate release PR #316 and re-trigger CI before merging to ship 0.14.0.",
+      "Fix settle_issued window bugs via michi 0.6 poll_step/deadline_group/precheck trial (own PR stacked after #316).",
+      "Adopt michi-graph ready_by_edge once PR #48 releases; consider OIDC instead of the deprecated NPM_TOKEN.",
+      "ADR 13 (PR #335) awaits acceptance; implementation tasks for writing and reading tag hints are pending.",
+      "#204 still lists SYS-RETRY/T08-RETRY and needs a follow-up edit after #202 merges; independent review findings on #202 were being addressed.",
+      "Remaining lanes: D SYS-BARRIER, F R1 walk.rs::build, W9, W10, W11 and decisions on D01, RewriteKey, and Python dev groups.",
+      "Optional upstream gix-pack issue about caching intermediate delta objects was offered but not requested."
+    ]
+  }
+}
