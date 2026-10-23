@@ -10,7 +10,7 @@ The types that make a release run safe to crash and rerun, and how the two relea
 - Product package: `[release].product-package`. Every artifact slot uploads to the product's one GitHub Release, even when another package built the bytes (`ArtifactSlotId.package`).
 - Decision: the package and version roster (`ReleaseDecisionV1`).
 - Intent: the decision plus the source snapshot, every operation with its prerequisites, and the artifact slots, sealed by a digest (`ReleaseIntentV1`).
-- Operation: one effect on one provider, identified by package, version and role: registry publish, platform publish, tag, forge release (draft), artifact upload, forge publish.
+- Operation: one effect on one provider, identified by package, version and role: registry publish, platform publish, tag, forge release (draft), artifact upload, forge publish. The operations form a DAG by prerequisite; `callisto_model::canonical_operation_order`, built on `michi-graph`, validates it (a cycle is reported as one operation on it) and fixes the order: the smallest topological order by operation id.
 
 ## Layers
 

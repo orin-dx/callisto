@@ -6,13 +6,13 @@ Rules for AI agents working in this repo.
 
 | Crate | License | Depends on |
 | --- | --- | --- |
-| callisto-model | MIT | none |
+| callisto-model | MIT | none (external: `michi-graph`, MIT) |
 | callisto-manifests | FSL-1.1-MIT | model |
 | callisto-graph | FSL-1.1-MIT | model, manifests |
 | callisto-cli | FSL-1.1-MIT | model, manifests, graph |
 | callisto-fixtures | FSL-1.1-MIT | model (dev-only) |
 
-- `callisto-model` (MIT) must never depend on an FSL crate.
+- `callisto-model` (MIT) must never depend on an FSL crate. It depends on `michi-graph` (MIT, no dependencies of its own) for dependency-graph validation and ordering. `just license-boundary` fails if anything it builds with is FSL.
 - Check with `grep -H "^license" crates/*/Cargo.toml` after adding or moving a crate.
 
 ## Commands
