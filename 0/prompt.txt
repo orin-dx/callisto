@@ -1,0 +1,33 @@
+We did some work that needs a deep level of adversarial analysis like we've been doing:
+
+Four PRs are open as one stack, merged in this order, and each passes just ci locally. #241, #242 and #244 are also fully green on GitHub (12 of 12 checks); #245 was only just opened, so its checks haven't run yet.
+
+┌──────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│  PR  │                                                              What it does                                                               │
+├──────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ #241 │ A Cargo workspace below the repo root (native/, rust/) now works, including version and its lockfile.                                   │
+├──────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ #242 │ The same for npm, pnpm and uv: nested membership, nested lockfile refresh, and a private versionless workspace holder is no longer a    │
+│      │ package.                                                                                                                                │
+├──────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ #244 │ The two Codex findings, plus a bigger bug I found reproducing the first (see below).                                                    │
+├──────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ #245 │ The remaining leftovers that need no decision from you (listed below).                                                                  │
+└──────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+#244:
+- Ignored lockfile: a library that gitignores Cargo.lock failed every version with E023 after the manifests were written and some files staged. The lockfile is now refreshed but not staged.
+- Ignored changelog or manifest: version now stops with E314 before writing anything, naming the file. Codex's first finding is fixed.
+- Concurrent add: add now creates the changeset exclusively. Twelve concurrent add processes keep all twelve in the end-to-end test. Codex's second finding is fixed.
+- Preflight probe: it no longer creates directories.
+
+#245:
+- Shallow clone: inference from commits stops with E315, because a shallow clone silently shortens the commit window.
+- Cargo root detection: it now reads inline, dotted and sub-table workspace forms the way Cargo does.
+- npm publishing: it detects pnpm-workspace.yaml, errors instead of falling back to npm when it can't inspect a file, and publishes a nested workspace from its own directory.
+- NAPI target check: it reads the main package's own manifest instead of guessing root/<name>/package.json.
+- Unreadable inputs: bin_names and relative workspace paths report an unreadable input as an error instead of "nothing there".
+
+Two earlier problems are still open:
+- Release notes: a missing, unreadable or empty changelog section falls back to gh release create --generate-notes. Failing instead changes what a release can do, so it's your call. Which do you want?
+- Nested Cargo inside a root Cargo workspace: the root's members and exclude still decide. So exclude = ["native"] keeps native/ unreleased, as today.
