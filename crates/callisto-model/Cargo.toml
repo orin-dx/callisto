@@ -22,6 +22,7 @@ workspace = true
 test-util = []
 
 [dependencies]
+michi-graph.workspace = true
 semver.workspace = true
 pep440_rs.workspace = true
 serde.workspace = true

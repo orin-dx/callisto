@@ -1,4 +1,6 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
+
+use michi_graph::{Dag, Order, Violation};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -277,53 +279,47 @@ fn validate_operations(operations: &[ReleaseOperation]) -> Result<(), ReleaseInt
             }
         }
     }
-    let edges: BTreeMap<_, _> = operations
-        .iter()
-        .map(|operation| (operation.id.clone(), operation.prerequisites.clone()))
-        .collect();
-    let canonical = stable_kahn_order(&edges)?;
+    let canonical = canonical_operation_order(
+        operations
+            .iter()
+            .map(|operation| (operation.id.clone(), operation.prerequisites.clone())),
+    )?;
     if operations.iter().map(ReleaseOperation::id).ne(canonical.iter()) {
         return Err(ReleaseIntentError::NonCanonicalOperationOrder);
     }
     Ok(())
 }
 
-fn stable_kahn_order(
-    prerequisites: &BTreeMap<ReleaseOperationId, Vec<ReleaseOperationId>>,
+/// The canonical order of release operations: the smallest topological order by operation id, so the same operations
+/// always order the same way. Each operation comes with its prerequisites.
+///
+/// # Errors
+///
+/// The first problem found, in this order: a repeated operation, a prerequisite that is no operation, an operation
+/// that is its own prerequisite, then a cycle, named by one operation on it.
+pub fn canonical_operation_order(
+    operations: impl IntoIterator<Item = (ReleaseOperationId, Vec<ReleaseOperationId>)>,
 ) -> Result<Vec<ReleaseOperationId>, ReleaseIntentError> {
-    let mut remaining: BTreeMap<_, usize> = prerequisites
-        .iter()
-        .map(|(id, prerequisites)| (id.clone(), prerequisites.len()))
-        .collect();
-    let mut dependents = BTreeMap::<ReleaseOperationId, Vec<ReleaseOperationId>>::new();
-    for (id, prerequisites) in prerequisites {
-        for prerequisite in prerequisites {
-            dependents.entry(prerequisite.clone()).or_default().push(id.clone());
-        }
-    }
-    let mut ready: BTreeSet<_> = remaining
-        .iter()
-        .filter_map(|(id, count)| (*count == 0).then_some(id.clone()))
-        .collect();
-    let mut ordered = Vec::with_capacity(prerequisites.len());
-    while let Some(id) = ready.pop_first() {
-        ordered.push(id.clone());
-        for dependent in dependents.get(&id).into_iter().flatten() {
-            let count = remaining.get_mut(dependent).expect("known DAG node");
-            *count -= 1;
-            if *count == 0 {
-                ready.insert(dependent.clone());
-            }
-        }
-    }
-    if ordered.len() != prerequisites.len() {
-        let id = remaining
-            .into_iter()
-            .find_map(|(id, count)| (count != 0).then_some(id))
-            .expect("a nonempty cyclic DAG has a remaining node");
-        return Err(ReleaseIntentError::Cycle { id: Box::new(id) });
-    }
-    Ok(ordered)
+    let dag = Dag::from_nodes(operations, Order::Key).map_err(|violations| {
+        let first = violations.into_iter().find_map(|violation| match violation {
+            Violation::DuplicateNode { key } => Some(ReleaseIntentError::DuplicateOperation { id: Box::new(key) }),
+            Violation::UnknownDependency {
+                dependent,
+                prerequisite,
+            } => Some(ReleaseIntentError::UnknownPrerequisite {
+                id: Box::new(dependent),
+                prerequisite: Box::new(prerequisite),
+            }),
+            Violation::SelfDependency { key } => Some(ReleaseIntentError::SelfPrerequisite { id: Box::new(key) }),
+            Violation::Cycle(cycle) => cycle.members().first().map(|id| ReleaseIntentError::Cycle {
+                id: Box::new(id.clone()),
+            }),
+            _ => None,
+        });
+        // Only a graph too large to hold in memory reports nothing above.
+        first.unwrap_or(ReleaseIntentError::NonCanonicalOperationOrder)
+    })?;
+    Ok(dag.keys_in_order().cloned().collect())
 }
 
 /// Validation failure for a durable intent DAG.
@@ -410,6 +406,8 @@ pub enum ReleaseIntentError {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use crate::Ecosystem;
 
     use super::super::test_support::{native_intent_with_slot, native_versions, registry_binding, test_intent};
@@ -582,6 +580,110 @@ mod tests {
             vec![cycle_publish, tag],
         );
         assert!(matches!(cycle, Err(ReleaseIntentError::Cycle { .. })));
+    }
+
+    fn tag_id(index: usize) -> ReleaseOperationId {
+        ReleaseOperationId::tag(
+            ReleasePackageId::parse(&format!("cargo/p{index:03}")).unwrap(),
+            Version::semver(1, 0, 0),
+        )
+    }
+
+    /// The order the previous hand-written Kahn pass produced, kept as the oracle for the shared implementation.
+    fn reference_order(
+        prerequisites: &BTreeMap<ReleaseOperationId, Vec<ReleaseOperationId>>,
+    ) -> Vec<ReleaseOperationId> {
+        let mut remaining: BTreeMap<_, usize> = prerequisites.iter().map(|(id, p)| (id.clone(), p.len())).collect();
+        let mut dependents = BTreeMap::<ReleaseOperationId, Vec<ReleaseOperationId>>::new();
+        for (id, prerequisites) in prerequisites {
+            for prerequisite in prerequisites {
+                dependents.entry(prerequisite.clone()).or_default().push(id.clone());
+            }
+        }
+        let mut ready: BTreeSet<_> = remaining
+            .iter()
+            .filter(|(_, n)| **n == 0)
+            .map(|(id, _)| id.clone())
+            .collect();
+        let mut ordered = Vec::new();
+        while let Some(id) = ready.pop_first() {
+            ordered.push(id.clone());
+            for dependent in dependents.get(&id).into_iter().flatten() {
+                let count = remaining.get_mut(dependent).unwrap();
+                *count -= 1;
+                if *count == 0 {
+                    ready.insert(dependent.clone());
+                }
+            }
+        }
+        ordered
+    }
+
+    proptest::proptest! {
+        /// Any acyclic roster orders exactly as the previous implementation did, whatever order it is supplied in.
+        #[test]
+        fn the_shared_order_matches_the_previous_implementation(
+            size in 1usize..14,
+            edges in proptest::collection::vec((0usize..14, 0usize..14), 0..40),
+            reverse in proptest::bool::ANY,
+        ) {
+            let mut prerequisites: BTreeMap<ReleaseOperationId, Vec<ReleaseOperationId>> =
+                (0..size).map(|i| (tag_id(i), Vec::new())).collect();
+            for (a, b) in edges {
+                let (low, high) = ((a % size).min(b % size), (a % size).max(b % size));
+                if low != high {
+                    // Edges only point from a higher index to a lower one, so the roster is acyclic.
+                    prerequisites.get_mut(&tag_id(high)).unwrap().push(tag_id(low));
+                }
+            }
+            for list in prerequisites.values_mut() {
+                list.sort();
+                list.dedup();
+            }
+            let mut supplied: Vec<_> = prerequisites.clone().into_iter().collect();
+            if reverse {
+                supplied.reverse();
+            }
+            proptest::prop_assert_eq!(
+                canonical_operation_order(supplied).unwrap(),
+                reference_order(&prerequisites)
+            );
+        }
+    }
+
+    #[test]
+    fn a_cycle_names_an_operation_on_it_and_a_long_chain_does_not_overflow_the_stack() {
+        let (a, b, c) = (tag_id(1), tag_id(2), tag_id(3));
+        let error = canonical_operation_order([
+            (a.clone(), vec![c.clone()]),
+            (b.clone(), vec![a.clone()]),
+            (c.clone(), vec![b.clone()]),
+        ])
+        .unwrap_err();
+        match error {
+            ReleaseIntentError::Cycle { id } => assert!([a, b, c].contains(&*id)),
+            other => panic!("expected a cycle, got {other:?}"),
+        }
+
+        let chain = (0..50_000usize).map(|i| (tag_id(i), if i == 0 { vec![] } else { vec![tag_id(i - 1)] }));
+        assert_eq!(canonical_operation_order(chain).unwrap().len(), 50_000);
+    }
+
+    #[test]
+    fn an_unknown_self_or_repeated_operation_is_named() {
+        let (a, b) = (tag_id(1), tag_id(2));
+        assert!(matches!(
+            canonical_operation_order([(a.clone(), vec![b.clone()])]),
+            Err(ReleaseIntentError::UnknownPrerequisite { .. })
+        ));
+        assert!(matches!(
+            canonical_operation_order([(a.clone(), vec![a.clone()])]),
+            Err(ReleaseIntentError::SelfPrerequisite { .. })
+        ));
+        assert!(matches!(
+            canonical_operation_order([(a.clone(), vec![]), (a, vec![])]),
+            Err(ReleaseIntentError::DuplicateOperation { .. })
+        ));
     }
 
     #[test]

@@ -89,8 +89,12 @@ fmt:
     moon run :format
 
 # Security advisory, ban, license & source check via cargo-deny (workspace root, one pass)
-audit:
+audit: license-boundary
     cargo deny check
+
+# callisto-model is MIT: nothing it depends on at build or run time, directly or not, may be FSL-licensed or a Callisto FSL crate.
+license-boundary:
+    ! cargo tree -p callisto-model -e normal,build --prefix none --format '{p} {l}' | grep -E 'FSL|callisto-(manifests|graph|cli|fixtures)'
 
 # Compile the fuzz targets so they cannot rot (running them needs nightly and cargo-fuzz)
 fuzz-check:

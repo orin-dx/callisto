@@ -982,40 +982,24 @@ fn release_trigger_text(trigger: callisto_model::ReleaseTrigger) -> &'static str
 }
 
 pub(crate) fn canonical_operation_order(
-    operations: BTreeMap<ReleaseOperationId, ReleaseOperation>,
+    mut operations: BTreeMap<ReleaseOperationId, ReleaseOperation>,
 ) -> Result<Vec<ReleaseOperation>, GraphError> {
-    let mut remaining: BTreeMap<_, usize> = operations
+    let order = callisto_model::canonical_operation_order(
+        operations
+            .iter()
+            .map(|(id, operation)| (id.clone(), operation.prerequisites().to_vec())),
+    )
+    .map_err(|source| GraphError::ReleaseInvariant {
+        detail: format!("the release operations do not form a valid DAG: {source}"),
+    })?;
+    order
         .iter()
-        .map(|(id, operation)| (id.clone(), operation.prerequisites().len()))
-        .collect();
-    let mut dependents = BTreeMap::<ReleaseOperationId, Vec<ReleaseOperationId>>::new();
-    for (id, operation) in &operations {
-        for prerequisite in operation.prerequisites() {
-            dependents.entry(prerequisite.clone()).or_default().push(id.clone());
-        }
-    }
-    let mut ready: BTreeSet<_> = remaining
-        .iter()
-        .filter_map(|(id, count)| (*count == 0).then_some(id.clone()))
-        .collect();
-    let mut ordered = Vec::with_capacity(operations.len());
-    while let Some(id) = ready.pop_first() {
-        ordered.push(operations.get(&id).expect("known operation").clone());
-        for dependent in dependents.get(&id).into_iter().flatten() {
-            let count = remaining.get_mut(dependent).expect("known operation");
-            *count -= 1;
-            if *count == 0 {
-                ready.insert(dependent.clone());
-            }
-        }
-    }
-    if ordered.len() != operations.len() {
-        return Err(GraphError::ReleaseInvariant {
-            detail: "release operation DAG contains a cycle: topological sort could not order every operation"
-                .to_string(),
-        });
-    }
-    Ok(ordered)
+        .map(|id| {
+            operations.remove(id).ok_or_else(|| GraphError::ReleaseInvariant {
+                detail: format!("the canonical order names an operation that was not planned: {id}"),
+            })
+        })
+        .collect()
 }
 
 fn digest_bytes(tag: &str, bytes: &[u8]) -> SemanticInputDigest {

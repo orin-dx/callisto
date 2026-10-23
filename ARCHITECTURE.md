@@ -28,7 +28,7 @@ Dev-only           callisto-fixtures
 
 | Crate | License | Depends on | Purpose |
 | :--- | :--- | :--- | :--- |
-| [`callisto-model`](crates/callisto-model) | MIT | none | Domain primitives (`PackageId`, `Version`, `Severity`, `Changeset`, `PreState`), `atomic_write`, `ApplyPermit`, the `CommandRunner`/`DependencyResolver` trait seams; `format`: `.changeset/*.md` and `pre.json` parser/writer; `vcs`: `GitAccess`, every Git operation as a subprocess through `CommandRunner` |
+| [`callisto-model`](crates/callisto-model) | MIT | none (external: `michi-graph`) | Domain primitives (`PackageId`, `Version`, `Severity`, `Changeset`, `PreState`), `atomic_write`, `ApplyPermit`, the `CommandRunner`/`DependencyResolver` trait seams; `format`: `.changeset/*.md` and `pre.json` parser/writer; `vcs`: `GitAccess`, every Git operation as a subprocess through `CommandRunner` |
 | [`callisto-manifests`](crates/callisto-manifests) | FSL-1.1-MIT | model | `Manifest` trait; format-preserving Cargo/npm/PyPI manifest editors |
 | [`callisto-graph`](crates/callisto-graph) | FSL-1.1-MIT | model, manifests | Dependency graph, cascade engine, version planning, release execution; `conventional`: Conventional Commit parsing and bump inference; `changelog`: Markdown changelog rendering |
 | [`callisto-cli`](crates/callisto-cli) | FSL-1.1-MIT | model, manifests, graph | `clap` CLI surface, `miette` diagnostic rendering |
