@@ -10,6 +10,11 @@ build:
 build-release:
     cargo build --release -p callisto-cli
 
+# Time `status`, `version --dry-run` and `release --dry-run` over generated workspaces and count their git processes.
+# `CALLISTO_BENCH_PACKAGES=50,200` picks the sizes.
+bench:
+    cargo bench -p callisto-cli --bench commands
+
 # Run unit, integration, doctests, and E2E tests. This intentionally uses the
 # same Nextest command as CI: a runner/configuration failure must never be
 # mistaken for a passing Moon fallback.

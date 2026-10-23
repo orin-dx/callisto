@@ -19,6 +19,10 @@ workspace = true
 name = "callisto"
 path = "src/main.rs"
 
+[[bench]]
+name = "commands"
+harness = false
+
 [dependencies]
 callisto-graph = { path = "../callisto-graph", version = "0.13.0" }
 callisto-manifests = { path = "../callisto-manifests", version = "0.13.0" }

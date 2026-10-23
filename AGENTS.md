@@ -18,6 +18,7 @@ Rules for AI agents working in this repo.
 ## Commands
 
 - Full pipeline: `just ci` (includes the 90% coverage gate). `just test`, `just lint`, `just fmt`.
+- Performance: `just bench` times `status`, `version --dry-run` and `release --dry-run` over generated workspaces and counts the git processes each starts (`CALLISTO_BENCH_SHAPES=1` lists which). A change that adds a git process per package fails review.
 - Scoped iteration: one `cargo test -p <crate>` or `cargo clippy -p <crate> --all-targets -- -D warnings` at a time.
   - Not `moon run <project>:test`: its per-project fan-out serializes on `target/`'s build lock.
   - Never run cargo builds in parallel.
