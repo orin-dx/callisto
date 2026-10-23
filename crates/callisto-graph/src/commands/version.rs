@@ -347,10 +347,12 @@ pub fn check_partial_run<R: CommandRunner, D: DependencyResolver>(ws: &Workspace
     let in_pre_release_cycle = pre_mode == Some(callisto_model::format::PreMode::Pre);
 
     let changed = SourceChanges::since(ws, head)?;
+    // The paths that can set each manifest's version are found once and used by both passes below.
+    let mut sources: HashMap<std::path::PathBuf, Vec<String>> = HashMap::new();
     let staged_manifests = if in_pre_release_cycle {
         BTreeSet::new()
     } else {
-        canonical_manifest_staged_paths(ws, head, &changed)?
+        canonical_manifest_staged_paths(ws, head, &changed, &mut sources)?
     };
     let pending = !in_pre_release_cycle
         && (head_has_pending_changeset(ws, head)?
@@ -375,7 +377,7 @@ pub fn check_partial_run<R: CommandRunner, D: DependencyResolver>(ws: &Workspace
             let Some(head_version) = manifest_version_at(ws, head, &path, &head_texts, &mut head_reads)? else {
                 continue;
             };
-            let index_path_changed = version_source_paths(ws, head, &changed, decl)?
+            let index_path_changed = version_sources(ws, head, &changed, decl, &mut sources)?
                 .iter()
                 .any(|source| staged_manifests.contains(source));
             let index_version = if index_path_changed {
@@ -460,10 +462,11 @@ fn canonical_manifest_staged_paths<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     head: &str,
     changed: &SourceChanges,
+    sources: &mut HashMap<std::path::PathBuf, Vec<String>>,
 ) -> Result<BTreeSet<String>, GraphError> {
     let mut paths = BTreeSet::new();
     for decl in ws.graph.packages().flat_map(|pkg| pkg.canonical_manifests()) {
-        paths.extend(version_source_paths(ws, head, changed, decl)?);
+        paths.extend(version_sources(ws, head, changed, decl, sources)?);
     }
     // The index-versus-HEAD diff `SourceChanges` already read answers this for every path at once.
     Ok(paths.into_iter().filter(|path| changed.staged.contains(path)).collect())
@@ -601,6 +604,22 @@ impl SourceChanges {
         }
         Ok(SourceChanges { changed, staged })
     }
+}
+
+/// [`version_source_paths`], remembered per manifest.
+fn version_sources<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+    head: &str,
+    changed: &SourceChanges,
+    decl: &callisto_model::ManifestDecl,
+    memo: &mut HashMap<std::path::PathBuf, Vec<String>>,
+) -> Result<Vec<String>, GraphError> {
+    if let Some(known) = memo.get(&decl.path) {
+        return Ok(known.clone());
+    }
+    let sources = version_source_paths(ws, head, changed, decl)?;
+    memo.insert(decl.path.clone(), sources.clone());
+    Ok(sources)
 }
 
 /// Every path whose staged change could alter the effective version of `decl`: its own manifest and, for Cargo, each
