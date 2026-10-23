@@ -518,6 +518,17 @@ impl ReleaseProviderSet for SimWorld {
         self.observe_internal(id)
     }
 
+    fn observe_within(
+        &self,
+        id: &ReleaseOperationId,
+        _artifacts: Option<&VerifiedArtifactManifest<'_>>,
+        patience: Duration,
+    ) -> Result<ProviderObservationV1, GraphError> {
+        self.elapsed
+            .set(self.elapsed.get() + self.look_cost.get().min(patience));
+        self.observe_internal(id)
+    }
+
     fn publish(
         &self,
         _permit: &ApplyPermit,
@@ -1476,6 +1487,29 @@ fn time_spent_looking_counts_against_the_window() {
         run.world.pauses.get() < 4,
         "looks that cost time should leave fewer pauses"
     );
+}
+
+/// A look that would retry for far longer than the window is held to what the window has left, so the run gives up
+/// when the window ends and not after the look.
+#[test]
+fn a_look_that_would_retry_for_hours_is_held_to_the_window() {
+    let (intent, manifest) = simulator_intent();
+    let context = Rc::new(SimContext::default());
+    let world = deferring_world(&intent, &context, |_| 1_000_000);
+    world.look_cost.set(Duration::from_secs(10_000));
+
+    let run = run_world(world, context, &manifest);
+
+    assert!(
+        run.context
+            .trace
+            .borrow()
+            .iter()
+            .any(|event| matches!(event, TraceEvent::RunEnd { outcome, .. } if outcome.contains("RegistryPublishUnconfirmed"))),
+        "{}",
+        trace_lines(&run.context)
+    );
+    assert_eq!(run.world.elapsed.get(), Duration::from_secs(360));
 }
 
 /// A version the registry never shows stops the run with the unconfirmed-publish error, after the whole window and
