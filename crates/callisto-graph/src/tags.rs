@@ -21,6 +21,24 @@ pub(crate) fn fetch_all_tags(git: &GitAccess<'_>) -> Result<Vec<String>, GraphEr
     Ok(tags.into_iter().map(|t| t.as_str().to_string()).collect())
 }
 
+/// Tag names in byte order. The tags beginning with a literal prefix are one contiguous run, found by binary search, so
+/// matching a template against them does not test every tag in the repository.
+struct SortedTags<'a>(Vec<&'a str>);
+
+impl<'a> SortedTags<'a> {
+    fn new(tags: &'a [String]) -> Self {
+        let mut sorted: Vec<&str> = tags.iter().map(String::as_str).collect();
+        sorted.sort_unstable();
+        SortedTags(sorted)
+    }
+
+    fn starting_with(&self, prefix: &str) -> &[&'a str] {
+        let start = self.0.partition_point(|tag| *tag < prefix);
+        let run = self.0[start..].iter().take_while(|tag| tag.starts_with(prefix)).count();
+        &self.0[start..start + run]
+    }
+}
+
 /// Filters `all_tags` down to those matching `template`'s glob.
 ///
 /// Compiles the glob via [`callisto_model::vcs::compile_tag_glob`] -- the same
@@ -30,15 +48,21 @@ pub(crate) fn fetch_all_tags(git: &GitAccess<'_>) -> Result<Vec<String>, GraphEr
 /// `Err(GraphError::Vcs(VcsError::InvalidGlob))` -- matching every tag is
 /// the unsafe alternative, since a malformed template must never silently
 /// make "last tag" resolution pick an unrelated package's tag.
-fn matching_tags<'a>(all_tags: &'a [String], template: &TagTemplate) -> Result<Vec<&'a str>, GraphError> {
+fn matching_tags<'a>(all_tags: &SortedTags<'a>, template: &TagTemplate) -> Result<Vec<&'a str>, GraphError> {
     let glob = template.glob();
     GLOB_COMPILE_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let matcher = callisto_model::vcs::compile_tag_glob(&glob).map_err(GraphError::Vcs)?;
 
+    // A match must begin with the glob's literal text before its first wildcard, so only that run is tested.
+    let literal = glob
+        .split(['*', '?', '[', ']', '{', '}', '\\'])
+        .next()
+        .unwrap_or_default();
     Ok(all_tags
+        .starting_with(literal)
         .iter()
-        .filter(|t| matcher.is_match(t.as_str()))
-        .map(|s| s.as_str())
+        .copied()
+        .filter(|tag| matcher.is_match(tag))
         .collect())
 }
 
@@ -75,7 +99,7 @@ pub fn glob_compile_count() -> usize {
 /// the same `globset::Glob` and rescan the full tag list once per package
 /// sharing that template, instead of once per distinct template.
 fn select_from_tags_cached<'a>(
-    all_tags: &'a [String],
+    all_tags: &SortedTags<'a>,
     template: &TagTemplate,
     grammar: VersionGrammar,
     cache: &mut std::collections::HashMap<String, Vec<&'a str>>,
@@ -86,7 +110,7 @@ fn select_from_tags_cached<'a>(
 
 /// The tags matching `template`, scanned once per distinct glob.
 fn candidates_cached<'a>(
-    all_tags: &'a [String],
+    all_tags: &SortedTags<'a>,
     template: &TagTemplate,
     cache: &mut std::collections::HashMap<String, Vec<&'a str>>,
 ) -> Result<Vec<&'a str>, GraphError> {
@@ -195,8 +219,9 @@ impl TagIndex {
 
         // Fetch the raw tag list exactly once for the whole build, not once
         // per package -- see `fetch_all_tags` for why.
-        let all_tags = fetch_all_tags(git)?;
-        let all_tags_set: std::collections::BTreeSet<String> = all_tags.iter().cloned().collect();
+        let all_tag_names = fetch_all_tags(git)?;
+        let all_tags_set: std::collections::BTreeSet<String> = all_tag_names.iter().cloned().collect();
+        let all_tags = SortedTags::new(&all_tag_names);
         let mut glob_cache: std::collections::HashMap<String, Vec<&str>> = std::collections::HashMap::new();
 
         let mut rosters = crate::history::Rosters::default();
@@ -316,8 +341,7 @@ impl TagIndex {
                         name: pkg.id.name().to_string(),
                     });
                     let qualified_last = take_chosen(
-                        select_last_tag(&qualified, grammar, all_tags.iter().map(String::as_str))
-                            .map_err(GraphError::from)?,
+                        select_last_tag(&qualified, grammar, all_tags.0.iter().copied()).map_err(GraphError::from)?,
                         &mut diagnostics,
                     );
                     chosen = newest(chosen, qualified_last);
@@ -571,7 +595,7 @@ mod tests {
             "other".to_string(),
         ];
         let tmpl = TagTemplate::parse("pkg-a@{version}").unwrap();
-        let matched = matching_tags(&all, &tmpl).unwrap();
+        let matched = matching_tags(&SortedTags::new(&all), &tmpl).unwrap();
         assert_eq!(matched, vec!["pkg-a@1.0.0", "pkg-a@2.0.0-beta"]);
     }
 
@@ -596,7 +620,7 @@ mod tests {
         // uncompilable.
         assert!(globset::Glob::new(&tmpl.glob()).is_err());
 
-        let result = matching_tags(&all, &tmpl);
+        let result = matching_tags(&SortedTags::new(&all), &tmpl);
 
         assert!(
             matches!(

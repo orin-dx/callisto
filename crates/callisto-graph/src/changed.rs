@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use callisto_model::vcs::{GitAccess, VcsError};
+use callisto_model::vcs::{GitAccess, HistoryPosition, VcsError};
 use callisto_model::{CommitSha, Package, PackageId};
 
 use crate::error::GraphError;
@@ -62,14 +62,26 @@ pub fn changed_since_last_tag(
                     Err(VcsError::Command(e)) => return Err(VcsError::Command(e).into()),
                     Err(_) => None,
                 };
-                let mut since: BTreeMap<&CommitSha, Vec<PathBuf>> = BTreeMap::new();
-                for ((pkg, _), commit) in tagged.iter().zip(&commits) {
-                    let committed = since
-                        .entry(commit)
-                        .or_insert_with(|| history.paths_since(commit).into_iter().map(Path::to_path_buf).collect());
-                    let specs = package_paths(pkg);
-                    let is_changed =
-                        touches(committed, &specs) || uncommitted.as_ref().is_none_or(|paths| touches(paths, &specs));
+                let specs: Vec<Vec<PathBuf>> = tagged.iter().map(|(pkg, _)| package_paths(pkg)).collect();
+                let owners = SpecIndex::new(&specs);
+                // Per package, the listed commits that touched it; positions come in increasing order.
+                let mut touching: Vec<Vec<HistoryPosition>> = vec![Vec::new(); tagged.len()];
+                for (position, paths) in history.commits() {
+                    for path in paths {
+                        owners.owners_of(path, |package| {
+                            if touching[package].last() != Some(&position) {
+                                touching[package].push(position);
+                            }
+                        });
+                    }
+                }
+                let mut uncommitted_by_package = vec![uncommitted.is_none(); tagged.len()];
+                for path in uncommitted.iter().flatten() {
+                    owners.owners_of(path, |package| uncommitted_by_package[package] = true);
+                }
+                for (index, ((pkg, _), commit)) in tagged.iter().zip(&commits).enumerate() {
+                    let is_changed = uncommitted_by_package[index]
+                        || history.any_differing(history.position(commit), &touching[index]);
                     changed.insert(pkg.id.clone(), is_changed);
                 }
                 return Ok(changed);
@@ -127,6 +139,44 @@ fn changed_by_tag_commit(
         }
     }
     Ok(())
+}
+
+/// Which packages a path belongs to: those with a spec that is an ancestor directory of it, and those with the `.`
+/// spec, which every path falls under.
+struct SpecIndex<'a> {
+    by_directory: std::collections::HashMap<&'a Path, Vec<usize>>,
+    everywhere: Vec<usize>,
+}
+
+impl<'a> SpecIndex<'a> {
+    fn new(specs: &'a [Vec<PathBuf>]) -> Self {
+        let mut by_directory: std::collections::HashMap<&Path, Vec<usize>> = std::collections::HashMap::new();
+        let mut everywhere = Vec::new();
+        for (package, package_specs) in specs.iter().enumerate() {
+            for spec in package_specs {
+                if spec.as_path() == Path::new(".") {
+                    everywhere.push(package);
+                } else {
+                    by_directory.entry(spec.as_path()).or_default().push(package);
+                }
+            }
+        }
+        SpecIndex {
+            by_directory,
+            everywhere,
+        }
+    }
+
+    fn owners_of(&self, path: &Path, mut found: impl FnMut(usize)) {
+        for &package in &self.everywhere {
+            found(package);
+        }
+        for directory in path.ancestors() {
+            for &package in self.by_directory.get(directory).into_iter().flatten() {
+                found(package);
+            }
+        }
+    }
 }
 
 /// Whether any of `paths` falls under one of `specs` as a literal `git`
@@ -275,7 +325,7 @@ mod tests {
         assert!(!result[&id("pkg-b")]);
         assert!(!result[&id("pkg-c")]);
         let count = |sub: &str| calls.iter().filter(|c| c.starts_with(sub)).count();
-        assert_eq!(count("rev-parse"), 0, "{calls:?}");
+        assert_eq!(count("rev-parse"), 1, "{calls:?}");
         assert_eq!(count("for-each-ref"), 1, "{calls:?}");
         assert_eq!(count("log"), 1, "{calls:?}");
         assert_eq!(count("diff"), 1, "{calls:?}");
@@ -394,6 +444,28 @@ mod tests {
             "b changed on the side branch and in the working tree"
         );
         assert!(single[&id("pkg-c")], "c changed after the merge");
+    }
+
+    /// A package released from a branch that was never merged: what the branch shares with `HEAD` is already in the
+    /// release, but the branch's own fix is missing from `HEAD`, so the package differs from its tag.
+    #[test]
+    fn a_tag_on_an_unmerged_branch_differs_from_head_by_the_branch_and_by_what_came_after() {
+        let dir = tagged_repo();
+        let root = dir.path();
+        commit(root, "pkg-a/shared.txt", "s\n", "feat: a before the split");
+        run_git(root, &["switch", "-q", "-c", "hotfix"]);
+        commit(root, "pkg-b/fix.txt", "f\n", "fix: b on the hotfix branch");
+        run_git(root, &["tag", "-a", "-m", "release", "pkg-b@1.0.1"]);
+        run_git(root, &["switch", "-q", "-"]);
+        commit(root, "pkg-c/later.txt", "l\n", "feat: c on the main line");
+        let pkgs = [make_pkg("pkg-a"), make_pkg("pkg-b"), make_pkg("pkg-c")];
+
+        let (single, _) = changed(root, &pkgs);
+
+        assert_eq!(single, changed_per_tag_commit(root, &pkgs));
+        assert!(single[&id("pkg-a")], "a changed before the split, after its own tag");
+        assert!(single[&id("pkg-b")], "HEAD lacks the fix the hotfix tag has");
+        assert!(single[&id("pkg-c")]);
     }
 
     /// The root-level package's `.` pathspec matches every path.

@@ -23,21 +23,28 @@ pub struct GitAccess<'r> {
     root: PathBuf,
 }
 
-/// The commits after some ancestor of `HEAD`, as `git log` listed them: who their parents are, and which paths each
-/// one changed. Built by [`GitAccess::change_history`].
+/// A commit's place in a [`ChangeHistory`]: `HEAD`-side commits come before the commits they descend from.
+pub type HistoryPosition = usize;
+
+/// The history of `HEAD` and some boundary commits, as `git log --topo-order` listed it: each commit's parents and
+/// the paths it changed. Built by [`GitAccess::change_history`].
 pub struct ChangeHistory {
     commits: Vec<HistoryCommit>,
     index: std::collections::HashMap<String, usize>,
+    /// Every listed commit is reachable from `HEAD` and has at most one parent, so the history is one line.
+    linear: bool,
+    ancestors: std::cell::RefCell<std::collections::HashMap<usize, std::rc::Rc<Vec<bool>>>>,
 }
 
 struct HistoryCommit {
-    /// Parents that are themselves in the listed history. A parent outside it is an ancestor of every boundary.
+    /// Parents that are themselves listed. A parent that is not is an ancestor of every boundary.
     parents: Vec<usize>,
     paths: Vec<PathBuf>,
+    from_head: bool,
 }
 
 impl ChangeHistory {
-    fn parse(stdout: &str, root: &Path) -> Result<Self, VcsError> {
+    fn parse(stdout: &str, root: &Path, head: &CommitSha) -> Result<Self, VcsError> {
         let malformed = |detail: &str| VcsError::MalformedLogOutput {
             detail: format!("in `{}`: {detail}", root.display()),
         };
@@ -75,32 +82,89 @@ impl ChangeHistory {
             .enumerate()
             .map(|(position, (sha, _, _))| (sha.clone(), position))
             .collect();
-        let commits = records
+        let mut commits: Vec<HistoryCommit> = records
             .into_iter()
             .map(|(_, parents, paths)| HistoryCommit {
                 parents: parents.iter().filter_map(|parent| index.get(parent).copied()).collect(),
                 paths,
+                from_head: false,
             })
             .collect();
-        Ok(ChangeHistory { commits, index })
+        // Parents come after their children in `--topo-order`, so one pass from the front marks everything reachable.
+        if let Some(&start) = index.get(head.as_str()) {
+            commits[start].from_head = true;
+            for position in start..commits.len() {
+                if commits[position].from_head {
+                    for parent in commits[position].parents.clone() {
+                        commits[parent].from_head = true;
+                    }
+                }
+            }
+        }
+        let linear = commits
+            .iter()
+            .all(|commit| commit.from_head && commit.parents.len() <= 1);
+        Ok(ChangeHistory {
+            commits,
+            index,
+            linear,
+            ancestors: std::cell::RefCell::new(std::collections::HashMap::new()),
+        })
     }
 
-    /// The paths changed by commits reachable from `HEAD` but not from `boundary`.
-    pub fn paths_since(&self, boundary: &CommitSha) -> Vec<&Path> {
-        let mut before = vec![false; self.commits.len()];
-        let mut pending: Vec<usize> = self.index.get(boundary.as_str()).copied().into_iter().collect();
+    /// Every listed commit, `HEAD`-side first, with its position and the paths it changed.
+    pub fn commits(&self) -> impl Iterator<Item = (HistoryPosition, &[PathBuf])> {
+        self.commits
+            .iter()
+            .enumerate()
+            .map(|(position, commit)| (position, commit.paths.as_slice()))
+    }
+
+    /// Where `boundary` is listed. `None` means it is the common ancestor itself, which is not listed, so every commit
+    /// reachable from `HEAD` is after it.
+    pub fn position(&self, boundary: &CommitSha) -> Option<HistoryPosition> {
+        self.index.get(boundary.as_str()).copied()
+    }
+
+    /// Whether any of `commits` separates `HEAD` from `boundary`: it is reachable from one and not from the other. A
+    /// commit after the boundary is reachable from `HEAD` only. One on a branch that the boundary has and `HEAD` lacks
+    /// counts too, because `HEAD`'s files then differ from the boundary's.
+    pub fn any_differing(&self, boundary: Option<HistoryPosition>, commits: &[HistoryPosition]) -> bool {
+        let Some(boundary) = boundary else {
+            return commits.iter().any(|&commit| self.commits[commit].from_head);
+        };
+        // Ancestors are listed after their descendants, so a `HEAD` commit listed before the boundary is not one.
+        if commits
+            .iter()
+            .any(|&commit| commit < boundary && self.commits[commit].from_head)
+        {
+            return true;
+        }
+        if self.linear {
+            return false;
+        }
+        let ancestors = self.ancestors_of(boundary);
+        commits
+            .iter()
+            .any(|&commit| self.commits[commit].from_head != ancestors[commit])
+    }
+
+    /// The boundary and every listed commit it descends from, computed once per boundary.
+    fn ancestors_of(&self, boundary: usize) -> std::rc::Rc<Vec<bool>> {
+        if let Some(known) = self.ancestors.borrow().get(&boundary) {
+            return known.clone();
+        }
+        let mut reached = vec![false; self.commits.len()];
+        let mut pending = vec![boundary];
         while let Some(commit) = pending.pop() {
-            if std::mem::replace(&mut before[commit], true) {
+            if std::mem::replace(&mut reached[commit], true) {
                 continue;
             }
             pending.extend(self.commits[commit].parents.iter().copied());
         }
-        self.commits
-            .iter()
-            .zip(before)
-            .filter(|(_, before)| !before)
-            .flat_map(|(commit, _)| commit.paths.iter().map(PathBuf::as_path))
-            .collect()
+        let reached = std::rc::Rc::new(reached);
+        self.ancestors.borrow_mut().insert(boundary, reached.clone());
+        reached
     }
 }
 
@@ -781,15 +845,18 @@ impl GitAccess<'_> {
         ])
     }
 
-    /// The history after the common ancestor of `boundaries`, with the paths each commit changed, read with two git
-    /// processes however many boundaries there are. [`ChangeHistory::paths_since`] then answers "what changed after
-    /// this boundary" for each boundary without another process.
+    /// The history of `HEAD` and of every boundary back to their common ancestor, with the paths each commit changed,
+    /// read with a few git processes however many boundaries there are. [`ChangeHistory`] then answers "did anything
+    /// change after this boundary" without another process.
     ///
     /// A merge commit counts for the paths where it differs from every parent (a conflict resolution), as `git log
     /// --cc` reports them.
     pub fn change_history(&self, boundaries: &[CommitSha]) -> Result<ChangeHistory, VcsError> {
+        let head = self.head_sha()?;
         let base = self.common_ancestor(boundaries)?;
-        let exclusion = base.as_ref().map(|base| format!("^{}", base.as_str()));
+        let mut revs: Vec<String> = vec!["HEAD".to_owned()];
+        revs.extend(boundaries.iter().map(|boundary| boundary.as_str().to_owned()));
+        revs.extend(base.as_ref().map(|base| format!("^{}", base.as_str())));
         let mut args = vec![
             "log",
             "--no-show-signature",
@@ -797,16 +864,24 @@ impl GitAccess<'_> {
             "--relative",
             "--name-only",
             "--cc",
+            "--topo-order",
             "-z",
             "--format=%x1e%H%x1f%P",
-            "HEAD",
         ];
-        args.extend(exclusion.as_deref());
-        let output = self.runner.run("git", &args, &self.root)?;
+        // Many revisions go through stdin so the argument list stays short.
+        const MAX_REVS_AS_ARGUMENTS: usize = 2000;
+        let output = if revs.len() <= MAX_REVS_AS_ARGUMENTS {
+            args.extend(revs.iter().map(String::as_str));
+            self.runner.run("git", &args, &self.root)?
+        } else {
+            args.push("--stdin");
+            let stdin = revs.join("\n") + "\n";
+            self.runner.run_with_stdin("git", &args, &self.root, stdin.as_bytes())?
+        };
         if !output.success() {
             return Err(probe_failed(&args, &self.root, &output));
         }
-        ChangeHistory::parse(&output.stdout, &self.root)
+        ChangeHistory::parse(&output.stdout, &self.root, &head)
     }
 
     /// One commit every boundary descends from, or `None` when they share none (or there are none).
@@ -1349,20 +1424,22 @@ mod tests {
         );
     }
 
+    /// A runner that answers `rev-parse HEAD` with `head`, `merge-base` with `base` and everything else with `log`.
+    fn history_runner(head: String, base: String, log: String) -> FakeRunner {
+        FakeRunner {
+            calls: Mutex::new(Vec::new()),
+            response: Box::new(move |args| match args.first() {
+                Some(&"rev-parse") => Ok(ok(format!("{head}\n"))),
+                Some(&"merge-base") => Ok(ok(format!("{base}\n"))),
+                _ => Ok(ok(log.clone())),
+            }),
+        }
+    }
+
     /// A history record whose header does not start with a commit id is the typed E301, so the caller can fall back.
     #[test]
     fn change_history_rejects_a_header_that_is_not_a_commit_id() {
-        let base = "b".repeat(40);
-        let runner = FakeRunner {
-            calls: Mutex::new(Vec::new()),
-            response: Box::new(move |args| {
-                if args.first() == Some(&"merge-base") {
-                    Ok(ok(format!("{base}\n")))
-                } else {
-                    Ok(ok("\u{1e}not-a-commit\u{1f}\0".to_string()))
-                }
-            }),
-        };
+        let runner = history_runner("a".repeat(40), "b".repeat(40), "\u{1e}not-a-commit\u{1f}\0".to_string());
         let git = GitAccess::new(PathBuf::from("."), &runner);
         let boundary = CommitSha::parse(&"c".repeat(40)).unwrap();
         let err = git
@@ -1372,32 +1449,62 @@ mod tests {
         assert!(matches!(err, VcsError::MalformedLogOutput { .. }), "got {err:?}");
     }
 
-    /// Paths come back per commit, and a boundary's own ancestors are left out.
+    /// `tip` and `middle` are on the line from `HEAD`, `side` only reaches `middle`: a tag on `side` has `tip`
+    /// after it, and `middle` before it.
     #[test]
-    fn change_history_lists_the_paths_after_a_boundary() {
-        let (tip, middle, root_commit) = ("1".repeat(40), "2".repeat(40), "3".repeat(40));
-        let stdout = format!(
-            "\u{1e}{tip}\u{1f}{middle}\0\nsrc/b\0\u{1e}{middle}\u{1f}{root_commit}\0\nsrc/a\0\u{1e}{root_commit}\u{1f}\0\nsrc/root\0"
+    fn change_history_tells_what_came_after_a_boundary_even_on_a_side_branch() {
+        let (tip, middle, side, root_commit) = ("1".repeat(40), "2".repeat(40), "3".repeat(40), "4".repeat(40));
+        let log = format!(
+            "\u{1e}{tip}\u{1f}{middle}\0\nsrc/tip\0\u{1e}{side}\u{1f}{middle}\0\nsrc/side\0\u{1e}{middle}\u{1f}{root_commit}\0\nsrc/middle\0\u{1e}{root_commit}\u{1f}\0\nsrc/root\0"
         );
-        let base = root_commit.clone();
-        let runner = FakeRunner {
-            calls: Mutex::new(Vec::new()),
-            response: Box::new(move |args| {
-                if args.first() == Some(&"merge-base") {
-                    Ok(ok(format!("{base}\n")))
-                } else {
-                    Ok(ok(stdout.clone()))
-                }
-            }),
-        };
+        let runner = history_runner(tip.clone(), root_commit.clone(), log);
         let git = GitAccess::new(PathBuf::from("."), &runner);
         let history = git
-            .change_history(&[CommitSha::parse(&middle).unwrap()])
+            .change_history(&[CommitSha::parse(&side).unwrap(), CommitSha::parse(&middle).unwrap()])
             .expect("a well-formed history parses");
-        let after_middle = history.paths_since(&CommitSha::parse(&middle).unwrap());
-        assert_eq!(after_middle, vec![Path::new("src/b")]);
-        let after_root = history.paths_since(&CommitSha::parse(&root_commit).unwrap());
-        assert_eq!(after_root, vec![Path::new("src/b"), Path::new("src/a")]);
+
+        let listed: Vec<(HistoryPosition, Vec<&Path>)> = history
+            .commits()
+            .map(|(position, paths)| (position, paths.iter().map(PathBuf::as_path).collect()))
+            .collect();
+        assert_eq!(listed.len(), 4);
+        let position_of = |path: &str| {
+            listed
+                .iter()
+                .find(|(_, paths)| paths == &vec![Path::new(path)])
+                .unwrap()
+                .0
+        };
+        let (tip_at, side_at, middle_at) = (
+            position_of("src/tip"),
+            position_of("src/side"),
+            position_of("src/middle"),
+        );
+
+        let on_side = history.position(&CommitSha::parse(&side).unwrap());
+        assert!(
+            history.any_differing(on_side, &[tip_at]),
+            "tip is after a tag on the side branch"
+        );
+        assert!(
+            history.any_differing(on_side, &[side_at]),
+            "the side commit is in the tag but not in HEAD, so HEAD lacks it"
+        );
+        assert!(
+            !history.any_differing(on_side, &[middle_at]),
+            "middle is in both HEAD and the side tag"
+        );
+        let on_middle = history.position(&CommitSha::parse(&middle).unwrap());
+        assert!(history.any_differing(on_middle, &[tip_at]));
+        assert!(
+            !history.any_differing(on_middle, &[side_at]),
+            "the side commit is on neither side of a tag on the shared middle"
+        );
+        assert!(
+            !history.any_differing(on_middle, &[middle_at]),
+            "a boundary is not after itself"
+        );
+        assert!(!history.any_differing(None, &[]), "nothing touched, nothing after");
     }
 
     /// `git log`'s custom `--format=` output missing the `FIELD_SEP`-delimited message is a
