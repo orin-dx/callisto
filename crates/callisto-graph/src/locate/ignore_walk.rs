@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use callisto_model::{workspace_relative, Ecosystem, PackageId, ProjectRoot};
 use ignore::WalkBuilder;
 
+use crate::parallel::map_in_parallel;
+
 use crate::locate::membership;
 use crate::locate::{find_workspace_root, LocateError, ProjectLocator};
 
@@ -65,17 +67,22 @@ impl ProjectLocator for IgnoreWalkLocator {
             })
             .build();
 
+        let mut directories = Vec::new();
         for entry_res in walker {
             let entry = entry_res.map_err(|e| LocateError::Walk {
                 path: self.root.clone(),
                 message: e.to_string(),
             })?;
-
-            let path = entry.path();
-            if !path.is_dir() {
-                continue;
+            if entry.path().is_dir() {
+                directories.push(entry.into_path());
             }
+        }
 
+        // Reading and parsing the manifests is independent per directory, so it runs on several threads. Everything
+        // that decides, reports or fails stays below, in walk order.
+        let first_pass = map_in_parallel(&directories, |directory| read_manifests(directory));
+
+        for (path, (parsed, failures)) in directories.iter().map(PathBuf::as_path).zip(first_pass) {
             let rel = to_workspace_relative(path, &self.root)?;
             let is_root = rel == Path::new(".");
             let admits = |ecosystem: Ecosystem| match ecosystem {
@@ -93,32 +100,6 @@ impl ProjectLocator for IgnoreWalkLocator {
                 Ecosystem::Pypi => python_membership.admits_explicitly(&rel, is_root),
                 _ => false,
             };
-
-            // First pass: read and parse every canonical manifest present in this
-            // directory, so a parse failure below can check whether a *sibling*
-            // manifest here was admitted, not only its own ecosystem's membership.
-            let mut parsed: Vec<(Ecosystem, String, callisto_manifests::ManifestIdentity)> = Vec::new();
-            let mut failures: Vec<(PathBuf, ManifestFailure)> = Vec::new();
-            for ecosystem in Ecosystem::CANONICAL {
-                // Every `Ecosystem::CANONICAL` member has a canonical
-                // manifest format by construction -- see its doc comment.
-                let format = ecosystem
-                    .canonical_manifest_format()
-                    .expect("CANONICAL ecosystems always have a canonical manifest format");
-                let manifest_path = path.join(format.file_name());
-                let content = match callisto_model::strict_fs::read_optional(&manifest_path) {
-                    Ok(Some(content)) => content,
-                    Ok(None) => continue,
-                    Err(e) => {
-                        failures.push((manifest_path, ManifestFailure::Unreadable(e.to_string())));
-                        continue;
-                    }
-                };
-                match callisto_manifests::read_identity(format, &content, &manifest_path) {
-                    Ok(identity) => parsed.push((ecosystem, content, identity)),
-                    Err(e) => failures.push((manifest_path, ManifestFailure::Unparseable(e.to_string()))),
-                }
-            }
 
             // Explicit only, like `self_admitted` below -- a sibling that's merely admitted by
             // the fallback admit-all (no restriction present for that ecosystem) doesn't make
@@ -190,6 +171,39 @@ impl ProjectLocator for IgnoreWalkLocator {
         platform_candidates.sort_by(|a, b| a.path.cmp(&b.path));
         Ok((results, platform_candidates))
     }
+}
+
+/// What reading a directory's canonical manifests found: those that parsed, and those that could not be read or parsed.
+type DirectoryManifests = (
+    Vec<(Ecosystem, String, callisto_manifests::ManifestIdentity)>,
+    Vec<(PathBuf, ManifestFailure)>,
+);
+
+/// Reads and parses every canonical manifest present in `path`, so a parse failure can later check whether a *sibling*
+/// manifest in the directory was admitted, not only its own ecosystem's membership.
+fn read_manifests(path: &Path) -> DirectoryManifests {
+    let mut parsed = Vec::new();
+    let mut failures = Vec::new();
+    for ecosystem in Ecosystem::CANONICAL {
+        // Every `Ecosystem::CANONICAL` member has a canonical manifest format by construction -- see its doc comment.
+        let Some(format) = ecosystem.canonical_manifest_format() else {
+            continue;
+        };
+        let manifest_path = path.join(format.file_name());
+        let content = match callisto_model::strict_fs::read_optional(&manifest_path) {
+            Ok(Some(content)) => content,
+            Ok(None) => continue,
+            Err(e) => {
+                failures.push((manifest_path, ManifestFailure::Unreadable(e.to_string())));
+                continue;
+            }
+        };
+        match callisto_manifests::read_identity(format, &content, &manifest_path) {
+            Ok(identity) => parsed.push((ecosystem, content, identity)),
+            Err(e) => failures.push((manifest_path, ManifestFailure::Unparseable(e.to_string()))),
+        }
+    }
+    (parsed, failures)
 }
 
 /// Git cannot stage a path beneath a symbolic link, so a package there could be edited on disk but never committed.

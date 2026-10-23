@@ -11,7 +11,7 @@ use callisto_manifests::Manifest;
 use callisto_model::vcs::GitAccess;
 use callisto_model::{CommandRunner, PackageId, Version};
 
-pub mod aggregate;
+mod aggregate;
 pub mod apply;
 pub mod cascade;
 pub mod changed;
@@ -28,6 +28,7 @@ pub mod locate;
 mod manifest_cache;
 pub(crate) mod matrix;
 pub mod napi;
+mod parallel;
 pub mod plan;
 pub(crate) mod registry_endpoint;
 pub mod resolver;

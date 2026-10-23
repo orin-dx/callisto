@@ -17,6 +17,7 @@ use crate::error::GraphError;
 use crate::identity::IdentityIndex;
 use crate::locate::ProjectLocator;
 use crate::manifest_cache::open_cached;
+use crate::parallel::map_in_parallel;
 
 /// `Path::canonicalize`, with a path that does not exist as `None`. Any other failure (a permission error, a loop) is an
 /// error: reading it as "no such directory" would drop a dependency edge unseen.
@@ -557,6 +558,28 @@ impl<'a> IdentityAssigner<'a> {
     }
 }
 
+/// Opens the canonical manifests that `resolve_packages` is about to open one at a time, on several threads: opening
+/// reads and parses the file, which is independent per manifest. One that fails to open is opened again below, which
+/// reports it.
+fn prewarm_manifests(
+    package_manifest_decls: &BTreeMap<PackageId, (PathBuf, Vec<ManifestDecl>)>,
+    manifest_cache: &RefCell<BTreeMap<PathBuf, Arc<dyn Manifest>>>,
+    ctx: &OpenContext<'_>,
+) {
+    let wanted: Vec<&ManifestDecl> = package_manifest_decls
+        .values()
+        .flat_map(|(_, decls)| decls.iter())
+        .filter(|decl| decl.role == ManifestRole::Canonical && !manifest_cache.borrow().contains_key(&decl.path))
+        .collect();
+    let opened = map_in_parallel(&wanted, |decl| callisto_manifests::open(decl, ctx));
+    let mut cache = manifest_cache.borrow_mut();
+    for (decl, opened) in wanted.into_iter().zip(opened) {
+        if let Ok(manifest) = opened {
+            cache.insert(decl.path.clone(), Arc::from(manifest));
+        }
+    }
+}
+
 /// Applies `[[package]]` and `[[package-set]]` rules to each identified package, then reports rules that matched
 /// nothing or matched across ecosystems.
 fn resolve_packages(
@@ -567,6 +590,8 @@ fn resolve_packages(
     ctx: &OpenContext<'_>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<BTreeMap<PackageId, Package>, GraphError> {
+    prewarm_manifests(&package_manifest_decls, manifest_cache, ctx);
+
     // Tracks, per cfg.package_sets entry (by index), whether it matched at
     // least one real discovered package during this walk. A [[package-set]]
     // rule that matches nothing is almost always a typo or a stale

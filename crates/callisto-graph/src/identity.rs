@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use callisto_model::{normalize_pypi_project_name, Ecosystem, ManifestRole, PackageId};
@@ -251,6 +251,49 @@ mod tests {
             assert!(diagnostics[0].message.contains("my_lib"));
         }
     }
+
+    /// Lookups by package use a view built from the name maps, which must follow later changes to them.
+    #[test]
+    fn lookups_by_package_follow_changes_to_the_name_maps() {
+        let owner = PackageId::parse("dual").unwrap();
+        let other = PackageId::parse("other").unwrap();
+        let mut index = IdentityIndex::default();
+        index
+            .native
+            .insert((Ecosystem::Cargo, "dual".to_string()), owner.clone());
+        index
+            .native
+            .insert((Ecosystem::Npm, "@scope/dual".to_string()), owner.clone());
+        index
+            .native
+            .insert((Ecosystem::Cargo, "other".to_string()), other.clone());
+
+        assert_eq!(index.native_name(&owner, Ecosystem::Npm), Some("@scope/dual"));
+        assert_eq!(
+            index.native_names(&owner).collect::<Vec<_>>(),
+            vec![(Ecosystem::Cargo, "dual"), (Ecosystem::Npm, "@scope/dual")]
+        );
+        assert_eq!(index.native_name(&other, Ecosystem::Npm), None);
+
+        index
+            .native
+            .insert((Ecosystem::Npm, "other-js".to_string()), other.clone());
+        index.platform.insert(
+            "@scope/dual-linux".to_string(),
+            (
+                owner.clone(),
+                PathBuf::from("npm/linux/package.json"),
+                ManifestRole::Canonical,
+            ),
+        );
+
+        assert_eq!(index.native_name(&other, Ecosystem::Npm), Some("other-js"));
+        assert_eq!(
+            index.platforms_of(&owner).collect::<Vec<_>>(),
+            vec![("@scope/dual-linux", Path::new("npm/linux/package.json"))]
+        );
+        assert_eq!(index.platforms_of(&other).count(), 0);
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -267,9 +310,59 @@ pub struct IdentityIndex {
     /// their own). The `ManifestRole::Platform` is carried alongside so
     /// `GroupTable::resolve` doesn't need a second disk read to recover it.
     pub platform: BTreeMap<String, (PackageId, PathBuf, ManifestRole)>,
+    /// `native` and `platform` seen from the package that owns each name, so a lookup by package does not scan every
+    /// name. Built by the first such lookup and rebuilt when either map has changed size since.
+    by_package: ByPackageCache,
+}
+
+/// The by-package view behind a lock, so the index stays shareable between threads. A clone starts empty.
+#[derive(Debug, Default)]
+struct ByPackageCache(std::sync::Mutex<Option<ByPackage>>);
+
+impl Clone for ByPackageCache {
+    fn clone(&self) -> Self {
+        ByPackageCache::default()
+    }
+}
+
+#[derive(Debug, Default)]
+struct ByPackage {
+    sizes: (usize, usize),
+    native: HashMap<PackageId, Vec<(Ecosystem, String)>>,
+    platform: HashMap<PackageId, Vec<String>>,
 }
 
 impl IdentityIndex {
+    /// Runs `lookup` on the by-package view of `native` and `platform`, building it first when it is missing or stale.
+    fn by_package<T>(&self, lookup: impl FnOnce(&ByPackage) -> T) -> T {
+        let sizes = (self.native.len(), self.platform.len());
+        let mut cached = self
+            .by_package
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if cached.as_ref().is_some_and(|known| known.sizes != sizes) {
+            *cached = None;
+        }
+        let view = cached.get_or_insert_with(|| {
+            let mut view = ByPackage {
+                sizes,
+                ..ByPackage::default()
+            };
+            for ((ecosystem, name), id) in &self.native {
+                view.native
+                    .entry(id.clone())
+                    .or_default()
+                    .push((*ecosystem, name.clone()));
+            }
+            for (name, (owner, _, _)) in &self.platform {
+                view.platform.entry(owner.clone()).or_default().push(name.clone());
+            }
+            view
+        });
+        lookup(view)
+    }
+
     /// The one selector resolver: resolves a user- or config-typed package
     /// selector (`eco/name` or a bare name; the colon form is `E316`) against registered
     /// native manifest names.
@@ -461,12 +554,11 @@ impl IdentityIndex {
     }
 
     pub fn native_name(&self, id: &PackageId, eco: Ecosystem) -> Option<&str> {
-        for ((e, name), registered_id) in &self.native {
-            if e == &eco && registered_id == id {
-                return Some(name.as_str());
-            }
-        }
-        None
+        let keys = self.by_package(|view| view.native.get(id).cloned().unwrap_or_default());
+        keys.iter()
+            .filter(|(ecosystem, _)| *ecosystem == eco)
+            .find_map(|key| self.native.get_key_value(key))
+            .map(|((_, name), _)| name.as_str())
     }
 
     /// For an ecosystem-qualified `eco/name` that no package has under that native name, the `eco/native` of the one
@@ -489,12 +581,12 @@ impl IdentityIndex {
     }
 
     pub fn native_names(&self, id: &PackageId) -> impl Iterator<Item = (Ecosystem, &str)> + use<'_> {
-        let mut results = Vec::new();
-        for ((e, name), registered_id) in &self.native {
-            if registered_id == id {
-                results.push((*e, name.as_str()));
-            }
-        }
+        let keys = self.by_package(|view| view.native.get(id).cloned().unwrap_or_default());
+        let results: Vec<(Ecosystem, &str)> = keys
+            .iter()
+            .filter_map(|key| self.native.get_key_value(key))
+            .map(|((ecosystem, name), _)| (*ecosystem, name.as_str()))
+            .collect();
         results.into_iter()
     }
 
@@ -514,12 +606,12 @@ impl IdentityIndex {
     }
 
     pub fn platforms_of(&self, owner: &PackageId) -> impl Iterator<Item = (&str, &Path)> + use<'_> {
-        let mut results = Vec::new();
-        for (name, (plat_owner, path, _role)) in &self.platform {
-            if plat_owner == owner {
-                results.push((name.as_str(), path.as_path()));
-            }
-        }
+        let names = self.by_package(|view| view.platform.get(owner).cloned().unwrap_or_default());
+        let results: Vec<(&str, &Path)> = names
+            .iter()
+            .filter_map(|name| self.platform.get_key_value(name))
+            .map(|(name, (_, path, _))| (name.as_str(), path.as_path()))
+            .collect();
         results.into_iter()
     }
 }
