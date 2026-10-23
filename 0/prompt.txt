@@ -1,0 +1,1 @@
+let's checkout gix and save this on a file there so I can pickup in a new session. Use ~/projects
