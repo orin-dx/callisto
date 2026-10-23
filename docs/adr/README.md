@@ -13,6 +13,8 @@
 - [11. Directory-keyed packages and promotion-aware history](0011-directory-keyed-package-identity.md) — the directory key survives display promotion; new default tags use the promoted display id and historical bare records use an ownership fallback; guardrail: do not derive paths or persisted keys from the display id without a new ADR.
 - [12. Canonical distribution references and explicit release ownership](0012-canonical-distribution-release-ownership.md) — proposed v1 correction; not accepted or implemented. Separates native distribution identities, version authority and shared effects while preserving deliberate historical migration.
 
+- [13. A tag's annotation can carry hints that skip work, never identity](0013-tag-annotation-hints-skip-work-not-identity.md) — proposed; trailers on the tag record the package and its directory tree ids so large workspaces skip two reads, with a permanent fallback when a hint is absent or unusable. Identity stays commit plus annotated (ADR 9).
+
 ## Rules
 
 - An ADR records an architecturally significant decision that had a credible alternative.
