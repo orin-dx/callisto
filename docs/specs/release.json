@@ -301,7 +301,7 @@
     },
     {
       "id": "REL-GH-01",
-      "criterion": "Every package with a publish target gets an annotated, unsigned tag named by its tag template, with message `Release <tag>`, on the source commit, pushed to the `origin` push URL."
+      "criterion": "Every package with a publish target gets an annotated, unsigned tag named by its tag template, on the source commit, pushed to the `origin` push URL. Its message is `Release <tag>`, a blank line and the trailers `Callisto-Hints: 1`, `Callisto-Package: <ecosystem/name>` and one `Callisto-Tree: <directory> <tree id>` for each directory of the package that could be read in the source commit (`.` for a root package). The trailers are hints and never part of a tag's identity, which stays its commit and being annotated."
     },
     {
       "id": "REL-GH-02",

@@ -371,7 +371,7 @@ prepared:
             target: CommitSha(
                 "<commit>",
             ),
-            annotation: "Release core@1.0.0",
+            annotation: "Release core@1.0.0\n\nCallisto-Hints: 1\nCallisto-Package: cargo/core\nCallisto-Tree: core <commit>\n",
         },
     ),
     ReleaseOperationId {
@@ -510,7 +510,7 @@ prepared:
             target: CommitSha(
                 "<commit>",
             ),
-            annotation: "Release plugin@1.0.0",
+            annotation: "Release plugin@1.0.0\n\nCallisto-Hints: 1\nCallisto-Package: cargo/plugin\nCallisto-Tree: plugin <commit>\n",
         },
     ),
     ReleaseOperationId {
