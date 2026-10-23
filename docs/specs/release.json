@@ -335,6 +335,10 @@
       "criterion": "Callisto finds a GitHub release by tag, draft or published, with the GraphQL `release(tagName:)` lookup followed by `GET /repos/{owner}/{repo}/releases/{id}`; it never reads the release list. After its own release create, asset upload or publish, a release or asset still absent is looked up again with 2s, 4s, 8s, 16s and 32s waits before the run fails with E167."
     },
     {
+      "id": "REL-GH-09",
+      "criterion": "Tag hints only let a read be skipped and never decide a tag's identity. Tags and their hints are read with one `git for-each-ref`. A tag whose hints name the package (`Callisto-Package` is one of its release ids) is taken as the package's without reading the manifest history at the tag, and the directory trees it records stand in for reading them at the tag's commit when it has an entry for every directory of the package. A lightweight tag, an annotation without well-formed hints, an unknown `Callisto-Hints` version, a hint naming another package, a missing directory entry, or a hint read that fails leaves the tag judged by the reads it would have had without hints."
+    },
+    {
       "id": "REL-PR-01",
       "criterion": "`release-pr decide` returns `noop` when there are no pending changesets. It returns `update` when one open PR from the same repository has head `<release-branch>` or `<release-branch>--<40 lowercase hex>`, and `create` otherwise."
     },
