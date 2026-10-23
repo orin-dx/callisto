@@ -198,6 +198,11 @@ const NPM_ORIGIN: &str = "https://github.com/example/npm-registry-fixture.git";
 /// it's written after the release commit is sealed and `release execute`'s
 /// clean-worktree gate (E051) would otherwise reject the untracked file.
 fn npm_registry_release_fixture(package_name: &str) -> (tempfile::TempDir, String) {
+    npm_release_fixture(&[(package_name, &[])])
+}
+
+/// The same fixture for several npm packages, each with the packages it depends on. Every package gets a minor bump.
+fn npm_release_fixture(packages: &[(&str, &[&str])]) -> (tempfile::TempDir, String) {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     callisto_fixtures::git::init_repo(root);
@@ -206,40 +211,50 @@ fn npm_registry_release_fixture(package_name: &str) -> (tempfile::TempDir, Strin
     fs::write(root.join(".gitignore"), ".npmrc\n").unwrap();
     fs::write(
         root.join("package.json"),
-        "{\n  \"name\": \"npm-registry-fixture-root\",\n  \"version\": \"0.0.0\",\n  \"private\": true,\n  \"workspaces\": [\"packages/probe\"]\n}\n",
+        "{\n  \"name\": \"npm-registry-fixture-root\",\n  \"version\": \"0.0.0\",\n  \"private\": true,\n  \"workspaces\": [\"packages/*\"]\n}\n",
     )
     .unwrap();
-    fs::create_dir_all(root.join("packages/probe")).unwrap();
-    fs::write(
-        root.join("packages/probe/package.json"),
-        format!("{{\n  \"name\": \"{package_name}\",\n  \"version\": \"0.1.0\"\n}}\n"),
-    )
-    .unwrap();
+    for (name, dependencies) in packages {
+        let directory = root.join("packages").join(name.replace('/', "-"));
+        fs::create_dir_all(&directory).unwrap();
+        let dependencies = dependencies
+            .iter()
+            .map(|dependency| format!("\"{dependency}\": \"^0.1.0\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        fs::write(
+            directory.join("package.json"),
+            format!(
+                "{{\n  \"name\": \"{name}\",\n  \"version\": \"0.1.0\",\n  \"dependencies\": {{{dependencies}}}\n}}\n"
+            ),
+        )
+        .unwrap();
+    }
     git(root, &["add", "."]);
     git(root, &["commit", "-m", "initial workspace"]);
 
     let init = callisto(root, &["init", "--yes", "--versioning", "independent"]);
     assert!(init.status.success(), "init failed: {}", stderr_of(&init));
     let config_path = root.join("callisto.toml");
-    let config = fs::read_to_string(&config_path).unwrap();
-    fs::write(
-        &config_path,
-        format!("{config}\n[[package]]\nmatch = \"npm/{package_name}\"\npublish-to = [\"npm\"]\n"),
-    )
-    .unwrap();
+    let mut config = fs::read_to_string(&config_path).unwrap();
+    for (name, _) in packages {
+        config.push_str(&format!(
+            "\n[[package]]\nmatch = \"npm/{name}\"\npublish-to = [\"npm\"]\n"
+        ));
+    }
+    fs::write(&config_path, config).unwrap();
     git(root, &["add", "."]);
     git(root, &["commit", "-m", "configure callisto"]);
 
-    let add = callisto(
-        root,
-        &[
-            "add",
-            "--package",
-            &format!("npm/{package_name}:minor"),
-            "--summary",
-            "Ship real-registry e2e coverage",
-        ],
-    );
+    let mut add_args = vec!["add".to_owned()];
+    for (name, _) in packages {
+        add_args.push("--package".to_owned());
+        add_args.push(format!("npm/{name}:minor"));
+    }
+    add_args.push("--summary".to_owned());
+    add_args.push("Ship real-registry e2e coverage".to_owned());
+    let add_args: Vec<&str> = add_args.iter().map(String::as_str).collect();
+    let add = callisto(root, &add_args);
     assert!(add.status.success(), "add failed: {}", stderr_of(&add));
     git(root, &["add", "."]);
     git(root, &["commit", "-m", "add release changeset"]);
@@ -256,7 +271,7 @@ fn npm_registry_release_fixture(package_name: &str) -> (tempfile::TempDir, Strin
         }
     }
     git(root, &["add", "-A"]);
-    git(root, &["commit", "-m", "release npm package 0.2.0"]);
+    git(root, &["commit", "-m", "release npm packages 0.2.0"]);
     let release_commit = git(root, &["rev-parse", "HEAD"]);
     git(root, &["checkout", "--detach", &release_commit]);
     (dir, release_commit)
@@ -350,6 +365,75 @@ fn npm_publish_against_a_real_verdaccio_registry_is_retrievable_afterward() {
         git(&bare, &["tag", "--list", &tag]).contains(&tag),
         "the release tag must reach the remote"
     );
+}
+
+/// Two npm packages, the second depending on the first, released together against a real Verdaccio: both are
+/// published before either is waited for, both reach the registry, and both tags reach the remote.
+#[test]
+fn a_dependent_npm_package_is_published_with_its_dependency_against_a_real_verdaccio_registry() {
+    let Some(_verdaccio) = find_on_path("verdaccio") else {
+        skip_missing("npm: `verdaccio` is not installed");
+        return;
+    };
+
+    let (dir, release_commit) = npm_release_fixture(&[
+        ("callisto-e2e-dependency", &[]),
+        ("callisto-e2e-dependent", &["callisto-e2e-dependency"]),
+    ]);
+    let root = dir.path();
+    let external = tempfile::tempdir().unwrap();
+
+    let intent = external.path().join("release-intent.json");
+    let plan = callisto(
+        root,
+        &[
+            "release",
+            "plan",
+            "--from-release-commit",
+            &release_commit,
+            "--decision",
+            DECISION_PATH,
+            "--out",
+            intent.to_str().unwrap(),
+        ],
+    );
+    assert!(plan.status.success(), "release plan failed: {}", stderr_of(&plan));
+
+    let (_verdaccio_guard, port) = start_verdaccio(external.path());
+    fs::write(
+        root.join(".npmrc"),
+        format!("registry=http://127.0.0.1:{port}/\n//127.0.0.1:{port}/:_authToken=callisto-e2e-test-token\n"),
+    )
+    .unwrap();
+
+    let bare = bare_remote(external.path());
+    let mut rig = Rig::new(external.path(), &release_commit);
+    rig.real_git_push(&bare, NPM_ORIGIN);
+
+    let receipt = external.path().join("release-receipt.json");
+    let output = execute_rig(root, &intent, &receipt, &rig, "callisto-e2e-dependent@0.2.0", &[], None);
+    assert!(
+        output.status.success(),
+        "real-registry npm release execute failed: {}\neffect log:\n{}",
+        stderr_of(&output),
+        fs::read_to_string(&rig.log).unwrap_or_default(),
+    );
+    assert!(receipt.exists(), "a successful release must persist a terminal receipt");
+
+    for package in ["callisto-e2e-dependency", "callisto-e2e-dependent"] {
+        let metadata_raw = curl_get(&format!("http://127.0.0.1:{port}/{package}"));
+        let metadata: serde_json::Value = serde_json::from_str(&metadata_raw)
+            .unwrap_or_else(|error| panic!("registry metadata was not JSON: {error}\n{metadata_raw}"));
+        assert!(
+            metadata["versions"]["0.2.0"].is_object(),
+            "{package} 0.2.0 must be retrievable from the registry's own metadata: {metadata}"
+        );
+        let tag = format!("{package}@0.2.0");
+        assert!(
+            git(&bare, &["tag", "--list", &tag]).contains(&tag),
+            "the {tag} tag must reach the remote"
+        );
+    }
 }
 
 // --------------------------------------------------------------------- pypi

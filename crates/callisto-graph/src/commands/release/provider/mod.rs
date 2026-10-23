@@ -6,6 +6,7 @@
 //! [`super::ValidatedReleaseIntent`] supplies the production implementation.
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use callisto_model::{
     AbsentProof, ApplyPermit, ArtifactSlotId, CommandRunner, CommitSha, ExactEvidence, NpmAccess,
@@ -158,6 +159,53 @@ pub trait ReleaseProviderSet {
         id: &ReleaseOperationId,
         artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<ExactEvidence, GraphError>;
+
+    /// Whether this operation is issued now and confirmed later, so that waiting for one registry to show a
+    /// version does not hold up issuing the next. Only a registry operation whose completion is nothing but the
+    /// version being visible qualifies.
+    fn defers_confirmation(&self, _id: &ReleaseOperationId) -> bool {
+        false
+    }
+
+    /// The mutating action of a deferring operation, without waiting for the provider to show it. The operation stays
+    /// `Attempting` until [`Self::settle`] sees it.
+    fn issue(
+        &self,
+        _permit: &ApplyPermit,
+        _proof: &AbsentProof,
+        id: &ReleaseOperationId,
+        _artifacts: Option<&VerifiedArtifactManifest<'_>>,
+    ) -> Result<(), GraphError> {
+        Err(GraphError::ReleaseInvariant {
+            detail: format!("`{id}` does not defer its confirmation, so it cannot be issued without one"),
+        })
+    }
+
+    /// How long an issued operation may take to be shown before the run gives up on it.
+    fn confirmation_window(&self, _id: &ReleaseOperationId) -> Duration {
+        Duration::ZERO
+    }
+
+    /// The evidence of an issued operation once the provider shows it, `None` while it does not yet. A different
+    /// object where this operation's belongs is an error, never a wait.
+    fn settle(
+        &self,
+        id: &ReleaseOperationId,
+        artifacts: Option<&VerifiedArtifactManifest<'_>>,
+    ) -> Result<Option<ExactEvidence>, GraphError> {
+        match self.observe(id, artifacts)? {
+            observation @ ProviderObservationV1::Exact { .. } => Ok(observation.exact_evidence()),
+            ProviderObservationV1::Conflict { .. } => Err(GraphError::ReleaseRemoteConflict {
+                conflict: RemoteConflict::RegistryVersionDiffers,
+            }),
+            ProviderObservationV1::Absent | ProviderObservationV1::Indeterminate { .. } => Ok(None),
+        }
+    }
+
+    /// Waits between two looks at an issued operation. Tests replace it so no schedule is spent.
+    fn pause(&self, duration: Duration) {
+        policy::Sleeper::sleep(&policy::ThreadSleeper, duration);
+    }
 }
 
 /// What one provider role can do.
@@ -284,6 +332,28 @@ pub(crate) trait ReleaseProvider {
         request: &ProviderRequest<'_>,
         effect: &EffectAuthorization<'_>,
     ) -> Result<ExactEvidence, GraphError>;
+
+    /// Whether this operation is issued now and confirmed by a later [`Self::observe`].
+    fn defers_confirmation(&self, _request: &ProviderRequest<'_>) -> bool {
+        false
+    }
+
+    /// [`Self::publish`] without the confirmation, for an operation that defers it.
+    fn issue(
+        &self,
+        _context: &ProviderContext<'_>,
+        request: &ProviderRequest<'_>,
+        _effect: &EffectAuthorization<'_>,
+    ) -> Result<(), GraphError> {
+        Err(GraphError::ReleaseInvariant {
+            detail: format!("`{}` does not defer its confirmation", request.id),
+        })
+    }
+
+    /// How long the provider may take to show an issued effect.
+    fn confirmation_window(&self, _request: &ProviderRequest<'_>) -> Duration {
+        Duration::ZERO
+    }
 
     /// The disagreement this role reports when a pre-effect observation is
     /// neither absent nor exactly the intended result.

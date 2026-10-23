@@ -73,7 +73,7 @@ pub(crate) fn default_visibility_window(ecosystem: callisto_model::Ecosystem) ->
 const VISIBILITY_STEP_CAP: Duration = Duration::from_secs(30);
 
 /// Waits of 2s, 4s, 8s and 16s, then 30s steps, so a stale read is retried often without hammering the registry.
-fn visibility_backoff(attempt: u32) -> Duration {
+pub(crate) fn visibility_backoff(attempt: u32) -> Duration {
     observation_backoff(attempt).min(VISIBILITY_STEP_CAP)
 }
 

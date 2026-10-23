@@ -190,11 +190,16 @@
     },
     {
       "id": "REL-ORD-02",
-      "criterion": "A selected package publishes after the selected packages it depends on through runtime, build, optional or dev edges, and waits for the dependency's distribution in the ecosystem of the declaring manifest, so a Cargo dependent follows a dual package's crate and an npm dependent follows its npm package. A dev edge between two packages in the same dependency cycle does not order them, and a runtime, build or optional cycle fails with E104."
+      "criterion": "A selected package publishes after the selected packages it depends on through runtime, build, optional or dev edges, and waits for the dependency's distribution in the ecosystem of the declaring manifest, so a Cargo dependent follows a dual package's crate and an npm dependent follows its npm package. An npm dependent follows the dependency's publish command, not the registry showing the version. A dev edge between two packages in the same dependency cycle does not order them, and a runtime, build or optional cycle fails with E104."
     },
     {
       "id": "REL-ORD-03",
-      "criterion": "An npm package with attached platform packages publishes each platform package with `npm publish <platform-dir>` before publishing the owner package. Operations run one at a time and the first failure stops the run, so an owner package is never published after one of its platform packages fails."
+      "criterion": "An npm package with attached platform packages publishes each platform package with `npm publish <platform-dir>` before publishing the owner package. Operations start one at a time and a failed publish command stops the run, so an owner package is never published after the command for one of its platform packages fails."
+    },
+    {
+      "id": "REL-ORD-04",
+      "criterion": "An npm registry publish, platform packages included, is issued without waiting for the registry to show the version, and stays unconfirmed. Another npm publish may then start, but no tag, GitHub release draft, upload or publication does until the registry has shown the version of every publish behind it. When no operation can start, Callisto looks at every unconfirmed publish together and waits between looks, 2 s, 4 s, 8 s, 16 s, then 30 s steps, for as long as the longest `confirm-timeout` among them (default 6 minutes), so the wait is the slowest registry's and not the sum. A publish still not shown then fails the run with E157, naming the first, and no receipt is written; a rerun adopts every version already published. Cargo and PyPI publishes are confirmed as they are published.",
+      "is_error_case": true
     },
     {
       "id": "REL-PUB-01",
