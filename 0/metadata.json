@@ -1,0 +1,160 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5KKXQM64E6Q2Q32B1SPXZCX",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-23T05:32:37.144662Z",
+  "branch": "fix/version-commit-guard",
+  "checkpoints_count": 2,
+  "save_step_count": 3,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/release/capability.rs",
+    "crates/callisto-graph/src/commands/release/local.rs",
+    "crates/callisto-graph/src/commands/release/version_commit.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-model/src/vcs/access.rs",
+    "docs/errors.md",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "b3a6e7f9338f",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 98,
+    "cache_creation_tokens": 77857,
+    "cache_read_tokens": 11746990,
+    "output_tokens": 35677,
+    "api_call_count": 47,
+    "subagent_tokens": {
+      "input_tokens": 322,
+      "cache_creation_tokens": 49856,
+      "cache_read_tokens": 2159615,
+      "output_tokens": 2682,
+      "api_call_count": 11
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 265
+  },
+  "summary": {
+    "intent": "Work through the NEXT-WORK plan for the callisto repo across parallel lanes (cleanup/docs, test debt, SYS-RETRY, init.rs refactor, SYS-NAPI, derive.rs split), then act on audit findings from subagents covering performance, release execution and architecture.",
+    "outcome": "Closed PR #201 (plan file moved to a git-excluded local file) and opened PRs #202 (SYS-RETRY fix), #203 (mixed-routing test), #204 (docs refresh), stack #207 (#205, #206, #208 for init tests, templates and SYS-NAPI), an R3 derive.rs PR, a rewrite-correctness PR and a version-commit guard rework PR; each was gated on `just ci` exit=0 except where noted. Remaining audit PRs, branch cleanup, W1 credential check and the architecture audit report are still pending.",
+    "learnings": {
+      "repo": [
+        "Tracking and handoff plans (NEXT-WORK.md) must stay local: live at .claude/plans/ and are excluded via .git/info/exclude, never committed or put in a PR.",
+        "`just ci` is the gate; background-task notifications report only the wrapper script's exit code, so the log's own `exit=` line must be read (it showed 100/101 several times when the notice said 0).",
+        "Stray `.claude` directories created by the harness under `crates/` break the workspace glob and cause spurious CI failures; remove them before running CI.",
+        "The sandbox rejects inline `env` commands, heredocs and scripts mentioning `git`; workarounds are script files written with Write or the Edit tool. Edits are only allowed inside the current worktree, so switching worktrees is required for cross-worktree edits.",
+        "Release harness fakes (gh, cargo, registry) can hide bugs; the plan requires proving with the real tool, and black-box tests with real jq/binary were used for SYS-NAPI.",
+        "macOS bash lacks `mapfile` and macOS sed rejects some GNU one-liners; generated workflow scripts need portable loops.",
+        "Stacked PRs are linked with a native stack (`gh stack`), e.g. #207 holds #205, #206, #208.",
+        "AGENTS.md says to use no session link in commits or PRs."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release_execution.rs",
+          "line": 52,
+          "finding": "recheck_trust() runs before preflight for every operation, including ones only observed, costing about 7 git spawns each."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/release_pr.rs",
+          "line": 121,
+          "end_line": 124,
+          "finding": "`release-pr decide` runs full status() but only reads status.has_changesets, about 14.6s at 200 packages."
+        },
+        {
+          "path": "crates/callisto-cli/src/runner.rs",
+          "line": 518,
+          "finding": "run_with_timeout sleeps 50ms after the first try_wait, so every timed subprocess costs at least 50ms."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/registry_argv.rs",
+          "line": 495,
+          "finding": "Publish classifier matches 'already exists'/'409 conflict' substrings in combined output before checking exit code, so failed publishes can count as already published."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/version_commit.rs",
+          "line": 93,
+          "end_line": 99,
+          "finding": "Original guard read only literal versions (skipping version.workspace=true), capped at 100 commits, and used V..HEAD with --no-merges; reworked in PR 2 to use read_effective_version, first-parent walk, and tree diff."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/capability.rs",
+          "line": 417,
+          "finding": "published_packages treated every non-Exact observation as 'not published'; changed to fail closed with an error."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "line": 213,
+          "finding": "version_is_tagged check skipped packages whose tag was on any commit; SYS-RETRY adds a 'resumable' set for tags at HEAD so unfinished operations are still observed."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release_execution.rs",
+          "line": 207,
+          "finding": "settle_issued waits count only sleeps, not observation time, and restart the window after each confirmed publish, so confirm-timeout isn't a wall-clock bound."
+        }
+      ],
+      "workflow": [
+        "Write the failing reproduction first, confirm it fails on current code, then fix; for tests that pass first try, mutate the source to prove the test can fail.",
+        "For refactors, commit characterization snapshots on unchanged code first, then do moves-only commits, and mutate to verify snapshots catch regressions.",
+        "Independently verify subagent audit findings in code before acting; subagent reports carry no user authority.",
+        "Run an independent review agent on risky PRs before merge.",
+        "Check PR bodies after creation; literal backslashes from heredoc quoting needed fixing."
+      ]
+    },
+    "friction": [
+      "Initially put the local-only plan in PR #201, which the user objected to; had to close the PR and relocate the file.",
+      "CI wrapper exit codes were misleading, requiring repeated log inspection after failures.",
+      "Sandbox restrictions on heredocs, inline env, and git-mentioning scripts forced many workaround script files.",
+      "Could not update .claude/plans/NEXT-WORK.md from a background worktree session.",
+      "Three existing tests encoded the defect (tag on HEAD means released) and needed rewriting; the guard rework also broke an init test with uncommitted packages.",
+      "Clippy and rustfmt rewraps and a stray leading blank line caused extra CI cycles.",
+      "One subagent's scratch-repo experiment was refused by the sandbox, so its finding was code-traced only."
+    ],
+    "open_items": [
+      "Delete or keep remote branches docs/next-work-plan, docs/spec-rewrite, fix/native-resolution and about 35 local branches; needs user per-branch decision.",
+      "W1 real-service credential check needs a decision on where it runs in CI.",
+      "D01 decision blocks SYS-MATURIN and W9; W10 needs decisions on target-declaration graph edges and Python dev group cascade; W11 needs credentials and an approved run.",
+      "#204 still lists SYS-RETRY/T08-RETRY and needs a follow-up edit once #202 merges.",
+      "Remaining planned PRs: publish classification via observation plus wall-clock deadline, credential hardening, CI additions, performance fixes (decide boolean, 50ms poll, tag map, concurrent preflight), smaller items.",
+      "Architecture audit report is still outstanding; its claims on git failures downgraded to warnings, 0.0.0-* snapshot check, raw stderr in version.rs, and test sleep-scale env on the production path were verified but not fixed.",
+      "Moving the trust recheck into the Proceed branch changes when the stale-worktree guard fires and needs user decision.",
+      "Lane D SYS-BARRIER, Lane F R1 walk.rs::build, and W9 not started; #202 independent review findings were being addressed in the truncated portion."
+    ]
+  }
+}
