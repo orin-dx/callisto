@@ -1,0 +1,110 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5K804VTTHX0Q70A47BM7T7N",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-23T02:04:05.822963Z",
+  "branch": "feat/layered-publish",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/release/capability.rs",
+    "crates/callisto-graph/src/commands/release/provider/mod.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry.rs",
+    "crates/callisto-graph/src/commands/release_execution.rs",
+    "docs/architecture/release.md",
+    "docs/releasing.md",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "d5ad8340466a",
+  "checkpoint_transcript_start": 51846,
+  "transcript_lines_at_start": 51846,
+  "compact_transcript_start": 4151,
+  "token_usage": {
+    "input_tokens": 74,
+    "cache_creation_tokens": 94657,
+    "cache_read_tokens": 33495951,
+    "output_tokens": 49064,
+    "api_call_count": 37
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 248
+  },
+  "summary": {
+    "intent": "Implement a 'layered publish' feature for the release executor: add deferred confirmation (issue and settle) seams so package publishes, notably npm, are no longer confirmed serially. Verify it with simulator tests, a real Verdaccio end-to-end test and updated docs, then ship it as a PR stacked on #320.",
+    "outcome": "Added deferral seams to the provider traits, capability and registry provider, and rewrote the executor loop with issue/settle. Extended the simulator and added tests, added a two-package real-Verdaccio npm test, updated the spec, ADR 3, architecture doc and operator guide, and added a changeset. `just ci` passed (exit=0), then the work was committed, pushed and opened as a PR stacked on #320.",
+    "learnings": {
+      "repo": [
+        "Release code lives in crates/callisto-graph/src/commands/release/ (capability.rs, provider/mod.rs, provider/registry.rs) and release_execution.rs holds the executor loop.",
+        "The release subsystem has a simulator with world, intent, scenarios and invariants, plus enumeration tests. Any change to executor semantics must be mirrored in the simulator's entry points.",
+        "Real-registry (Verdaccio) tests are gated to Linux only, so they do not run on macOS unless the gate is temporarily lifted.",
+        "Spec criteria live in docs/specs/release.json (execution order and rerun criteria are affected by deferral). Docs touched alongside code: ADR 3, docs/architecture/release.md, docs/releasing.md.",
+        "Changes require a changeset, and `just ci` is the full pipeline that catches end-to-end tests assuming serial npm confirmation.",
+        "Work is organized as a stack of PRs on worktrees under .claude/worktrees/."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release_execution.rs",
+          "finding": "The executor loop was rewritten to separate issuing a publish from settling its confirmation, enabling layered/deferred confirmation instead of serial confirmation."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/registry.rs",
+          "finding": "The registry provider gained deferral seams so confirmation can be settled later, which matters for late-registry visibility cases."
+        }
+      ],
+      "workflow": [
+        "Batch edits were done via throwaway Python scripts in /tmp, which made multi-file edits repeatable but needed follow-up fix scripts when anchors or paths were wrong.",
+        "When new tests failed, the traces were read first to decide whether the test or the executor was wrong. Here the simulator tests were corrected.",
+        "The Linux-only test gate was temporarily lifted to prove the npm path locally with a throwaway Verdaccio install, then restored and checked with a change listing.",
+        "Running the whole suite and the full CI pipeline before shipping caught assumptions in existing tests."
+      ]
+    },
+    "friction": [
+      "Two of the new simulator tests failed initially, including the late-registry trace, and needed several correction rounds (fix_layered_tests, 2, 3).",
+      "A duplicate function and a wrong path in the first executor rewrite needed a fix script before it compiled.",
+      "The real-registry test target ran no tests locally because of the Linux-only gate, so it had to be temporarily changed to run on macOS.",
+      "Documentation spec anchor text had to be fixed before the doc edits applied.",
+      "Assertion text changed after formatting, so it had to be located again before editing."
+    ],
+    "open_items": [
+      "Real-Verdaccio tests remain Linux-gated, so the macOS local run was only a temporary verification; CI on Linux is the authoritative check.",
+      "The PR is stacked on #320 and depends on it landing first."
+    ]
+  }
+}
