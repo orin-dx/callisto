@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_012ypSSTmVpeeXTimPFnAMCF",
+  "agent_id": "ae38fb701fb6e23e4",
+  "subagent_type": "bug-hunter",
+  "task_description": "Audit config, versioning, manifests bugs",
+  "token_usage": {
+    "input_tokens": 110,
+    "cache_creation_tokens": 327173,
+    "cache_read_tokens": 10636797,
+    "output_tokens": 21275,
+    "api_call_count": 55
+  },
+  "started_at": "2026-10-22T22:00:13.86425-07:00",
+  "completed_at": "2026-10-22T22:08:57.831393-07:00"
+}

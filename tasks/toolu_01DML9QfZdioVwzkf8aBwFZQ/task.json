@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01DML9QfZdioVwzkf8aBwFZQ",
+  "agent_id": "a251a88a7fbed9342",
+  "subagent_type": "bug-hunter",
+  "task_description": "Audit release execution bugs",
+  "token_usage": {
+    "input_tokens": 102,
+    "cache_creation_tokens": 285162,
+    "cache_read_tokens": 8373635,
+    "output_tokens": 14816,
+    "api_call_count": 51
+  },
+  "started_at": "2026-10-22T22:00:13.85143-07:00",
+  "completed_at": "2026-10-22T22:12:16.35107-07:00"
+}

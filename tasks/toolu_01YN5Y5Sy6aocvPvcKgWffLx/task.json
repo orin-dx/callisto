@@ -1,0 +1,19 @@
+{
+  "tool_use_id": "toolu_01YN5Y5Sy6aocvPvcKgWffLx",
+  "agent_id": "aspec-drift-28400a390669e7a1",
+  "subagent_type": "bug-hunter",
+  "task_description": "Spec and ADR drift sampling",
+  "files": [
+    ".changeset/indeterminate-release-names-the-operation.md",
+    ".changeset/release-refuses-published-version-on-later-commit.md"
+  ],
+  "token_usage": {
+    "input_tokens": 166,
+    "cache_creation_tokens": 234521,
+    "cache_read_tokens": 11671618,
+    "output_tokens": 8284,
+    "api_call_count": 83
+  },
+  "started_at": "2026-10-22T22:01:52.938628-07:00",
+  "completed_at": "2026-10-22T22:01:52.939108-07:00"
+}

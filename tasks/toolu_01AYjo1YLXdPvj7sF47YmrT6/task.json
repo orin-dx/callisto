@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01AYjo1YLXdPvj7sF47YmrT6",
+  "agent_id": "a5519370d08a0333a",
+  "subagent_type": "general-purpose",
+  "task_description": "Audit best practices and hardening",
+  "token_usage": {
+    "input_tokens": 122,
+    "cache_creation_tokens": 225261,
+    "cache_read_tokens": 9383111,
+    "output_tokens": 1405,
+    "api_call_count": 61
+  },
+  "started_at": "2026-10-22T22:00:13.866657-07:00",
+  "completed_at": "2026-10-22T22:08:00.608031-07:00"
+}

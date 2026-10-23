@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01FZfWXt3Rufdh4WmTBDq2GC",
+  "agent_id": "ad4aafb42e5baa23e",
+  "subagent_type": "general-purpose",
+  "task_description": "Audit performance and scalability",
+  "token_usage": {
+    "input_tokens": 140,
+    "cache_creation_tokens": 258468,
+    "cache_read_tokens": 11587287,
+    "output_tokens": 717,
+    "api_call_count": 70
+  },
+  "started_at": "2026-10-22T22:00:13.864888-07:00",
+  "completed_at": "2026-10-22T22:11:09.996635-07:00"
+}
