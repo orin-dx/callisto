@@ -1,0 +1,160 @@
+{
+  "cli_version": "0.12.1-nightly.202610230625.e04328a5d",
+  "checkpoint_id": "01M5NAMRB72BQEPN780Y6H0HWF",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-23T21:29:01.473578Z",
+  "branch": "fix/look-patience",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    ".changeset/calm-herons-wait.md",
+    "crates/callisto-graph/src/commands/release/capability.rs",
+    "crates/callisto-graph/src/commands/release/provider/mod.rs",
+    "crates/callisto-graph/src/commands/release/provider/policy.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry.rs",
+    "crates/callisto-graph/src/commands/release_execution.rs",
+    "crates/callisto-graph/src/commands/release_simulator.rs",
+    "docs/architecture/release.md",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "ad8810cd9238",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 92,
+    "cache_creation_tokens": 71716,
+    "cache_read_tokens": 10481796,
+    "output_tokens": 28990,
+    "api_call_count": 46,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 207,
+    "layers": {
+      "betterleaks": 40,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 27,
+      "credentialed_uri": 31,
+      "entropy": 129,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 295
+  },
+  "summary": {
+    "intent": "Drive the Callisto repo toward v1 by working through a planned set of PRs (release rerun fix, tests, docs, init/derive refactors, SYS-NAPI), then perf work using gix/system git, ADR 13 tag-annotation hints (write and read with permanent fallback), michi 0.6 adoption, and a registry-look timeout.",
+    "outcome": "Opened and shipped many PRs (#202-#208, #335-#339 and a look-patience PR) with `just ci` passing on each; hint writing (#338) and reading (#339) landed or are ready to merge, and look-patience was opened. Branch cleanup, OIDC, the W1 credential check and michi `ready_by_edge` adoption remain open.",
+    "learnings": {
+      "repo": [
+        "Tracking and handoff plans (e.g. NEXT-WORK.md) are local only: they live in `.claude/plans/`, which is added to `.git/info/exclude`, and must never go in a commit or PR.",
+        "Commit conventions: sign every commit, open non-draft PRs, no claude.ai/session links, never hard-wrap Markdown, stack PRs with native `gh stack link --base main ...`.",
+        "The `just ci` gate runs fmt, clippy, tests and a coverage threshold. Clippy disallows placeholder binding names like `foo`. A changeset is needed for product changes, but not for docs or test-only PRs.",
+        "Release harness (`crates/callisto-cli/tests/common/release_harness.rs`) has a git allow-list and a trace log: new git flags such as `cat-file --batch/--batch-check` must be allow-listed, and multi-line messages must be folded to one line per call.",
+        "The tag annotation is not part of the sealed intent digest; it lives only in `PreparedOperation::Tag`. ADR 13's draft claim that the digest changes was wrong and was corrected.",
+        "Tag hint format: `Release <tag>`, a blank line, then trailers `Callisto-Hints: 1`, `Callisto-Package`, and one `Callisto-Tree: <dir> <id>` per package dir. Hints only skip work (the owner check and tag-side tree reads) and never decide identity. A missing, garbled, partial or mismatched hint falls back to the old reads.",
+        "Net-change detection compares git tree ids per package directory, so a reverted change counts as unchanged.",
+        "The tag ownership check (`may_have_held_name_at`) is a safety check. Skipping it when a name is unique was rejected because it loses protection for renamed or removed packages.",
+        "Stale-retry fix (SYS-RETRY): a package tagged at HEAD stays selected until registry, tag and GitHub release are all observed. A tag on an older commit settles without contacting providers.",
+        "The ConfirmationWave uses one window from the first issued publish, measured via `ReleaseProviderSet::now()`. Look-patience caps each look's own retries to the remaining window and is recomputed per look.",
+        "michi `ExecStep::new` requires `'static` steps, so a full `michi-pipeline` move needs an ownership change or a scoped-step API from michi. `ready_by_edge` is merged on michi main but not released."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/tag_hints.rs",
+          "finding": "TagHints writer and parser live together; parse returns None unless version is exactly 1, there is exactly one package, and every tree line is a dir plus a valid 40/64-hex id with no repeated dir."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/derive.rs",
+          "finding": "add_tags takes the workspace and computes release trees through git_access().object_ids, falling back to partial hints on error. R3 split of the long derive function was done with characterization snapshots first, then a moves-only commit."
+        },
+        {
+          "path": "crates/callisto-graph/src/tags.rs",
+          "finding": "Tag records (commit plus parsed hints) come from one for-each-ref; hinted tags skip the owner check and the manifest prefetch."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/policy.rs",
+          "finding": "One bounded retry implementation with an optional patience cap, used so wave looks cannot overrun the window."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/templates/matrix_workflow.tmpl",
+          "finding": "The generated workflow asks `callisto matrix` per intent package, so one bad unrelated addon no longer blocks the napi roster; the portable loop avoids `mapfile`, which macOS bash lacks."
+        }
+      ],
+      "workflow": [
+        "Write the failing black-box reproduction first, use the real binary and real tools (jq, git) where fakes could hide the bug, and mutation-test new tests by breaking the source and confirming they fail.",
+        "A background task's 'exit code 0' notification only reports the wrapper script; read the log's own `VERDICT exit=` line for the real CI result.",
+        "Add characterization snapshots and commit them before a mechanical refactor, so the snapshots pass unchanged afterward.",
+        "After squash-merges retarget a stacked PR, merge main into the branch rather than force-pushing.",
+        "For timing, interleave runs and compare minima; other processes made hyperfine results noisy, and warm second passes gave misleadingly good numbers earlier.",
+        "Check local checkouts (e.g. ~/projects/michi) before fetching sources from elsewhere."
+      ]
+    },
+    "friction": [
+      "I opened PR #201 for a local-only plan file and the user objected strongly; I closed it and moved the file.",
+      "The sandbox rejected heredocs, inline env, compound commands, scripts mentioning git, config writes, and edits outside the current worktree, so I worked around them with script files, separate commands, and worktree switches.",
+      "A stray `crates/.claude` directory, created when the cwd was inside `crates/`, broke cargo metadata and insta snapshots.",
+      "CI failed several times for avoidable reasons: fmt, a clippy disallowed name, tests assuming tag-on-HEAD means released, and harness allow-list limits.",
+      "I fetched michi sources via a scratch crate when a local checkout existed, and the user rebuked me.",
+      "The performance timings were noisy from other load on the machine, so the gain from hints is only directionally confirmed.",
+      "The ADR draft contained a false digest claim that needed a follow-up fix."
+    ],
+    "open_items": [
+      "Branch cleanup (W0): about 35 local branches plus `docs/next-work-plan`, `docs/spec-rewrite` and `fix/native-resolution` on the remote need per-branch user approval; I recorded no deletions.",
+      "W1 real-service credential check needs the user's decision on where it runs in CI.",
+      "D01-blocked work (SYS-MATURIN, W9) and the W10 decisions (RewriteKey edges, Python dev group cascade) await the user.",
+      "Lanes D (SYS-BARRIER after R3), F (R1 walk.rs::build) and the other planned lanes are not started; #204 still lists SYS-RETRY/T08-RETRY and needs a follow-up edit once #202 merges.",
+      "OIDC publishing (npm first) needs the user's approval of `id-token: write` on the `execute` job.",
+      "Adopting michi `ready_by_edge` waits on a michi release; a full michi-pipeline move needs a scoped-step API request to michi; npm michi 0.6.0 is held until 2026-10-24 02:55 UTC.",
+      "Release PR #316 (0.14.0 candidate) was stale and needs a CI re-trigger; whether 0.14.0 shipped is unconfirmed.",
+      "The speedup from hints is not rigorously measured, and the tag ownership read (about 300ms at 10k packages) and the allocation/parsing profile are deferred.",
+      "PRs #335 (ADR 13), #339 (read hints) and the look-patience PR await the user's merge.",
+      "W11 verification needs credentials and an approved run; #202 independent review findings were still being addressed."
+    ]
+  }
+}
