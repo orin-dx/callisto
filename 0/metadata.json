@@ -1,0 +1,112 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5KAT1KXR8B5FRF7Y5F2451Z",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-23T02:53:10.233695Z",
+  "branch": "feat/spaced-confirmation-looks",
+  "checkpoints_count": 3,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/release/provider/registry/tests.rs",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "452792d948a4",
+  "checkpoint_transcript_start": 52592,
+  "transcript_lines_at_start": 52592,
+  "compact_transcript_start": 4188,
+  "token_usage": {
+    "input_tokens": 32,
+    "cache_creation_tokens": 22128,
+    "cache_read_tokens": 15275412,
+    "output_tokens": 16251,
+    "api_call_count": 16,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 251
+  },
+  "summary": {
+    "intent": "Finish and publish the 0.13.0 release of Callisto, including stacked PRs for npm deferred confirmation and dual-package rules, and revise the npm post-publish verification schedule to fit the new deferred-check design.",
+    "outcome": "Dual-package rule fix (#322) and layered npm publish (#323) were opened. The look schedule was changed to a spaced one, CI passed, the four 0.13.0 tags were pushed, the recovery run succeeded and the release was verified. A schedule PR was opened and stacked.",
+    "learnings": {
+      "repo": [
+        "npm publishes, platform packages included, are now issued back to back and left Attempting. Tags, release drafts, uploads and publications wait until every npm version is visible, and the executor confirms all issued publishes together for up to the longest confirm-timeout (6 minutes by default).",
+        "ADR 3's rule that a prerequisite must be published is relaxed only for the npm publish to npm publish edge. PyPI is deliberately excluded because its completion is a whole file set. Cargo is unchanged.",
+        "Rules for [[package]] and [[package-set]] now match on the package name in the rule's own ecosystem, so npm/michi-node no longer applies to a package whose npm name is @orin-dx/michi.",
+        "The crash-and-fault simulator runs its full enumeration twice, once with deferral. The real-Verdaccio test runs only on Linux in CI.",
+        "The release schedule is stated in several places: the backoff policy in crates/callisto-graph/src/commands/release/provider/policy.rs, the registry tests, and docs/specs/release.json."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/policy.rs",
+          "finding": "Holds the backoff/look schedule for registry confirmation. It was edited to a spaced schedule, replacing the fine-grained 2s/4s/8s/16s/30s poll, after a remaining assertion pinning the old schedule was found."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/registry/tests.rs",
+          "finding": "Tests pin the look schedule and had to be updated for the spaced schedule."
+        }
+      ],
+      "workflow": [
+        "The user rejected a fixed 3-retry count, but wanted a delayed first check and a few spaced retries now that deferral exists. Time-based confirmation against npm's roughly 5-minute packument cache is more robust than a try count.",
+        "Tag pushes and other outward-facing steps were gated on the user's allow rule. A denied script write meant the tag script had to be re-created once the rule existed.",
+        "Verification after release covered crates.io, the GitHub release, attestations and smoke tests of the new binaries."
+      ]
+    },
+    "friction": [
+      "The user's questions about retries were misread twice: the assistant first defended the time-based design, then assumed they wanted the old setup back, and the user had to clarify they were not asking for a revert.",
+      "The earlier tag-script write was denied, so the 0.13.0 tag push was delayed until the allow rule was added.",
+      "The real-Verdaccio test only passed locally after the Linux-only gate was temporarily lifted.",
+      "An experiment checking whether a cache-busting query string bypasses the npm registry cache was run, but its result is not recorded in the transcript."
+    ],
+    "open_items": [
+      "npm's real cache lag is unproven, since a local registry has none. The first multi-package npm release should be watched closely.",
+      "michi decision: add an ignore switch on a [[package]] rule for the private root package.json, rather than treating all private manifests as non-packages.",
+      "michi decision: the group release tag and title need a design pass.",
+      "OIDC for npm is the next priority because of the deprecated token type.",
+      "Optionally add a hard cap on the number of looks alongside confirm-timeout; the assistant recommended keeping the time window as the default."
+    ]
+  }
+}
