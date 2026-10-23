@@ -1,0 +1,25 @@
+From claude:
+
+I now have a fair comparison, and it changes the answer: gix wins at realistic sizes and loses at extreme ones. On repacked repositories (like real clones), the history walk with changed paths:
+
+┌────────────────────┬────────────────┬──────────────────────────────────────────┬─────────────┐
+│ packages / commits │ system git log │              gix low-level               │     gix     │
+├────────────────────┼────────────────┼──────────────────────────────────────────┼─────────────┤
+│ 500 / 1000         │          60 ms │                                    17 ms │ 3.5× faster │
+├────────────────────┼────────────────┼──────────────────────────────────────────┼─────────────┤
+│ 2000 / 4000        │         304 ms │                                   253 ms │ 1.2× faster │
+├────────────────────┼────────────────┼──────────────────────────────────────────┼─────────────┤
+│ 4000 / 8000        │       ~1020 ms │ 3380 ms (2000 ms with a 1 GB pack cache) │ 3× slower   │
+└────────────────────┴────────────────┴──────────────────────────────────────────┴─────────────┘
+
+- The diff resource cache wasn't the lever. Reusing it moved 4000 packages from 3.3 s to 3.0 s. The sample showed 75% of the time in zlib inflate and memmove, which is delta-chain resolution. The 150 KB crates tree is rewritten 8000 times in that fixture. That is the pathological case: one flat directory with 4000 entries and deep history.
+- Manifest reads: gix is about 25% faster at 4000 packages (~200 ms vs 255 ms). Tag listing is a wash (~80 ms vs ~65 ms).
+- Where gix can't do it: it has no combined-diff for merge commits (--cc). A path differs from every parent exactly when it appears in each parent's diff, so I can intersect per-parent diffs. It also has to fall back to the system git on any error.
+
+My plan, keeping the binary as the fallback exactly as you asked:
+1. Add a native read backend (tags with commits, blob reads, history with changed paths) inside GitAccess, with the same results as the CLI path. Writes, signing, trust checks and the worktree diff stay on git.
+2. Fall back to the CLI on any gix error, an unusual repository (shallow, repository root not the workspace root), or a runtime switch (CALLISTO_GIT_BACKEND=system) so I can keep benchmarking both.
+3. Test equivalence against the CLI on the same merge and hotfix histories, and keep the process-count gate.
+4. Write ADR 13, which supersedes ADR 5, with these numbers and the 4000-entry regression as the revisit trigger. You'd need to accept it, per AGENTS.md.
+
+The one open question is the flat 4000+-entry case, where the CLI is 3× faster. My default is to take gix anyway and set a pack cache of a few hundred MB, because it is rare, and real monorepos spread packages over directories. If you'd rather not regress it, I can read the first tree's size and pick the backend per repository. Starting stage 1 on a new branch off #330.
