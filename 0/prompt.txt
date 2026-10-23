@@ -1,0 +1,25 @@
+Let's take a look at these:
+
+
+Recommendations
+1. W1, where the credential check runs: add a callisto-ci.yml job with permissions: contents: read and GH_TOKEN: ${{ github.token }}. It downloads the latest release asset with gh release download and verifies its attestation. It gets no registry secrets, and the release-workflow policy script stays untouched.
+   - Run it on pushes to main and same-repo PRs only, because fork PRs get no token.
+   - I'd start this first. It's small, and it covers the exact regression behind 0.10.1.
+2. W3, Python partial uploads (SYS-PYFILES): the required set is every file the build produced.
+   - A package counts as satisfied only when each required file is present, not yanked, and has a matching sha256.
+   - If files are missing, upload only those.
+   - A yanked required file, or a digest mismatch, is a conflict. Never un-yank or overwrite it.
+   - That matches how tags and assets already work (REL-RERUN-03).
+3. W4, redacted provider output:
+   - The brief names a redact_native_output helper that doesn't exist. The real ones are redact_known_secrets and redact_command_stderr in callisto-model, and both remove known patterns, so a miss leaks.
+   - So make details a closed enum (exit code, HTTP status, and a fixed set of auth, not-found and conflict kinds) with no free text. Nothing can leak by construction, and the persisted receipt schema stays small.
+4. W10 (smaller decisions):
+   - Target declarations: add the RewriteKey discriminator so distinct target declarations get their own graph edges. An untracked pin means stale published metadata, the same class as the Cargo-target and extras bugs fixed in 0.10.x. It is a public-API change that check-api guards.
+   - Python dev groups: lean yes, cascade them like Cargo dev-dependencies. This is the shakiest of the five, because dev groups aren't published metadata.
+5. D01, owner contract. This unblocks W8 (SYS-MATURIN) and W9 (SYS-OWNER, SYS-DEMOTION and the resolver divergence). Most rows already have a proposed default in V1-IMPLEMENTATION.md. These are the ones that need your call:
+   - Conflicting pre-state aliases: fail with a typed error naming both keys and both versions. I checked that PreState::entering uses entry().or_insert, where the first value wins silently. I did not find the exact legacy-versus-canonical merge site, so confirm that before relying on it.
+   - Owner identity: derive it deterministically from the retained source snapshot, with no persisted ID, and refuse renames until an explicit mapping exists. This avoids a second authority. It is my recommendation, not something I verified.
+   - Wire compatibility: bump a document's version only when its meaning changes, and reject unsupported old versions with an explicit error.
+
+
+evaluate the work, the reasoning and the plan that claude put together. Do an adversarial analysis on each
