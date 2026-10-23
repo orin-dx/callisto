@@ -1,0 +1,45 @@
+Why is entire reporting no token usage in the last 7 days? We've had claude and codex sessions running right?
+
+---
+
+Is there any issue in our checkpoints? Triple check out setup
+
+---
+
+❯ You can access entire but you need elevation
+
+---
+
+How do I catch up?
+
+---
+
+I did this and it's still not showing it up in the UI
+
+---
+
+Can you fix the callisto ones?
+
+---
+
+Is the way we merge and stack pull requests causing a problem?
+
+---
+
+yes
+
+---
+
+What about other repos?
+
+---
+
+Fix all of them
+
+---
+
+Use excalation, you're forgetting again
+
+---
+
+Yes do so
