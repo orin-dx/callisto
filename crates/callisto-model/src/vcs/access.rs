@@ -700,6 +700,45 @@ impl GitAccess<'_> {
         ])
     }
 
+    /// The object id each `<revision>:<path>` names, `None` for one that names nothing, from one `git cat-file
+    /// --batch-check`. An empty path names the revision's root tree. Two specs name the same content exactly when their
+    /// ids are equal, so this compares directories at two commits without reading either.
+    pub fn object_ids(&self, specs: &[String]) -> Result<Vec<Option<String>>, VcsError> {
+        if specs.is_empty() {
+            return Ok(Vec::new());
+        }
+        let args = ["cat-file", "--batch-check"];
+        let stdin = specs.join("\n") + "\n";
+        let output = self.runner.run_with_stdin("git", &args, &self.root, stdin.as_bytes())?;
+        if !output.success() {
+            return Err(probe_failed(&args, &self.root, &output));
+        }
+        let malformed = |detail: String| VcsError::MalformedLogOutput {
+            detail: format!("in `{}`: {detail}", self.root.display()),
+        };
+        let lines: Vec<&str> = output.stdout.lines().collect();
+        if lines.len() != specs.len() {
+            return Err(malformed(format!(
+                "`git cat-file --batch-check` answered {} lines for {} objects",
+                lines.len(),
+                specs.len()
+            )));
+        }
+        specs
+            .iter()
+            .zip(lines)
+            .map(|(spec, line)| {
+                if line.strip_prefix(spec.as_str()) == Some(" missing") {
+                    return Ok(None);
+                }
+                match line.split(' ').next() {
+                    Some(id) if CommitSha::parse(id).is_ok() => Ok(Some(id.to_owned())),
+                    _ => Err(malformed(format!("`{spec}` was answered with `{line}`"))),
+                }
+            })
+            .collect()
+    }
+
     fn name_only(&self, args: &[&str]) -> Result<Vec<PathBuf>, VcsError> {
         let output = self.runner.run("git", args, &self.root)?;
         if !output.success() {
@@ -881,6 +920,16 @@ mod tests {
                 .unwrap()
                 .push(args.iter().map(|s| s.to_string()).collect());
             (self.response)(args)
+        }
+
+        fn run_with_stdin(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+            _stdin: &[u8],
+        ) -> Result<CommandOutput, CommandError> {
+            self.run(program, args, cwd)
         }
     }
 
@@ -1216,6 +1265,45 @@ mod tests {
             miette::Diagnostic::code(&err).map(|c| c.to_string()),
             Some("E302".to_string())
         );
+    }
+
+    /// A runner that pipes input, answering `cat-file --batch-check` with `answer`.
+    fn batch_check_runner(answer: String) -> FakeRunner {
+        FakeRunner {
+            calls: Mutex::new(Vec::new()),
+            response: Box::new(move |_args| Ok(ok(answer.clone()))),
+        }
+    }
+
+    #[test]
+    fn object_ids_reports_each_id_and_each_missing_object_in_order() {
+        let id = "a".repeat(40);
+        let runner = batch_check_runner(format!("{id} tree 100\nHEAD:gone missing\n"));
+        let git = GitAccess::new(PathBuf::from("."), &runner);
+        let specs = vec!["HEAD:crates/a".to_owned(), "HEAD:gone".to_owned()];
+
+        assert_eq!(git.object_ids(&specs).unwrap(), vec![Some(id), None]);
+    }
+
+    #[test]
+    fn object_ids_rejects_an_answer_that_is_not_one_line_per_object() {
+        let runner = batch_check_runner(format!("{} tree 100\n", "a".repeat(40)));
+        let git = GitAccess::new(PathBuf::from("."), &runner);
+        let specs = vec!["HEAD:a".to_owned(), "HEAD:b".to_owned()];
+
+        let err = git.object_ids(&specs).expect_err("a short answer must fail");
+        assert!(matches!(err, VcsError::MalformedLogOutput { .. }), "got {err:?}");
+    }
+
+    #[test]
+    fn object_ids_rejects_an_answer_that_is_not_an_object_id() {
+        let runner = batch_check_runner("HEAD:a ambiguous\n".to_owned());
+        let git = GitAccess::new(PathBuf::from("."), &runner);
+
+        let err = git
+            .object_ids(&["HEAD:a".to_owned()])
+            .expect_err("an ambiguous name must fail");
+        assert!(matches!(err, VcsError::MalformedLogOutput { .. }), "got {err:?}");
     }
 
     /// `git log`'s custom `--format=` output missing the `FIELD_SEP`-delimited message is a

@@ -1,7 +1,8 @@
 //! A large, deterministic Cargo workspace in a real Git repository, built with one `git fast-import` stream.
 //!
-//! Every package is tagged `pkg-<n>@1.0.0` on the first commit. Later commits each edit one package, and the last
-//! commit adds a changeset to every tenth package, so `status`, `version` and `release --dry-run` have real work.
+//! Every package is tagged `pkg-<n>@1.0.0`, each at one of the first `extra_commits + 1` commits in turn, as if released
+//! at different times. The commits after the first each edit one package, and the last commit adds a changeset to every
+//! tenth package, so `status`, `version` and `release --dry-run` have real work.
 
 use std::io::Write;
 use std::path::Path;
@@ -55,17 +56,6 @@ impl ScaledWorkspace {
         }
         commit(&mut out, mark, "chore: scaffold the workspace", &files);
 
-        for index in 0..self.packages {
-            let name = format!("pkg-{index}@1.0.0");
-            let message = format!("Release {name}\n");
-            write!(
-                out,
-                "tag {name}\nfrom :1\ntagger Bench <bench@example.com> {TIMESTAMP} +0000\ndata {}\n{message}\n",
-                message.len()
-            )
-            .unwrap();
-        }
-
         for step in 0..self.extra_commits {
             mark += 1;
             let target = (step * 7919) % self.packages;
@@ -74,6 +64,20 @@ impl ScaledWorkspace {
                 format!("pub fn f() {{}}\n// edit {step}\n"),
             )];
             commit(&mut out, mark, &format!("fix: edit pkg-{target}"), &files);
+        }
+
+        // Independent versioning: packages were released at different points in history, so their tags are spread
+        // over the commits instead of sharing one.
+        for index in 0..self.packages {
+            let name = format!("pkg-{index}@1.0.0");
+            let message = format!("Release {name}\n");
+            let target = 1 + index % (self.extra_commits + 1);
+            write!(
+                out,
+                "tag {name}\nfrom :{target}\ntagger Bench <bench@example.com> {TIMESTAMP} +0000\ndata {}\n{message}\n",
+                message.len()
+            )
+            .unwrap();
         }
 
         mark += 1;

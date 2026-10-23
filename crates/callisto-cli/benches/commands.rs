@@ -21,10 +21,23 @@ const COMMANDS: &[(&str, &[&str])] = &[
 struct Measured {
     wall: Duration,
     git_processes: usize,
+    /// Time the git processes ran, from the `exit` events in git's trace.
+    git_time: Duration,
     ok: bool,
     first_error_line: String,
     /// How many git processes ran per command shape (the subcommand and its leading flags).
     shapes: std::collections::BTreeMap<String, usize>,
+    /// Seconds each command shape ran, summed over its processes.
+    shape_seconds: std::collections::BTreeMap<String, f64>,
+}
+
+/// How long a git process ran, when `line` is its `exit` event.
+fn exit_seconds(line: &str) -> Option<f64> {
+    let event: serde_json::Value = serde_json::from_str(line).ok()?;
+    if event.get("event")?.as_str()? != "exit" {
+        return None;
+    }
+    event.get("t_abs")?.as_f64()
 }
 
 /// The git command a trace line started, without the revisions and paths that vary per package.
@@ -61,10 +74,30 @@ fn measure(root: &Path, args: &[&str], trace: &Path) -> Measured {
     for shape in trace_text.lines().filter_map(shape_of) {
         *shapes.entry(shape).or_insert(0) += 1;
     }
+    let git_time = Duration::from_secs_f64(trace_text.lines().filter_map(exit_seconds).sum());
+    let mut shape_by_session = std::collections::BTreeMap::new();
+    let mut shape_seconds = std::collections::BTreeMap::new();
+    for line in trace_text.lines() {
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let session = event
+            .get("sid")
+            .and_then(|sid| sid.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        if let Some(shape) = shape_of(line) {
+            shape_by_session.insert(session, shape);
+        } else if let (Some(seconds), Some(shape)) = (exit_seconds(line), shape_by_session.get(&session)) {
+            *shape_seconds.entry(shape.clone()).or_insert(0.0) += seconds;
+        }
+    }
     Measured {
         wall,
         git_processes: shapes.values().sum(),
+        git_time,
         shapes,
+        shape_seconds,
         ok: output.status.success(),
         first_error_line: String::from_utf8_lossy(&output.stderr)
             .lines()
@@ -80,8 +113,8 @@ fn main() {
         .map(|raw| raw.split(',').filter_map(|part| part.trim().parse().ok()).collect())
         .unwrap_or_else(|| vec![50, 200, 500]);
 
-    println!("| packages | command | median ms | git processes | result |");
-    println!("| ---: | --- | ---: | ---: | --- |");
+    println!("| packages | command | median ms | git ms | git processes | result |");
+    println!("| ---: | --- | ---: | ---: | ---: | --- |");
     for packages in sizes {
         let dir = tempfile::tempdir().unwrap();
         ScaledWorkspace {
@@ -103,15 +136,20 @@ fn main() {
                 format!("failed: {}", median.first_error_line)
             };
             println!(
-                "| {packages} | {label} | {} | {} | {result} |",
+                "| {packages} | {label} | {} | {} | {} | {result} |",
                 median.wall.as_millis(),
+                median.git_time.as_millis(),
                 median.git_processes
             );
             if std::env::var_os("CALLISTO_BENCH_SHAPES").is_some() {
                 let mut shapes: Vec<_> = median.shapes.iter().collect();
-                shapes.sort_by_key(|(_, count)| std::cmp::Reverse(**count));
+                shapes.sort_by(|(left, _), (right, _)| {
+                    let seconds = |shape: &&String| median.shape_seconds.get(*shape).copied().unwrap_or(0.0);
+                    seconds(right).total_cmp(&seconds(left))
+                });
                 for (shape, count) in shapes.into_iter().take(8) {
-                    println!("|  |  | {count} x | `git {shape}` |  |");
+                    let ms = median.shape_seconds.get(shape).copied().unwrap_or(0.0) * 1000.0;
+                    println!("|  |  |  | {ms:.0} | {count} x | `git {shape}` |  |");
                 }
             }
         }
