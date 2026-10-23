@@ -161,14 +161,29 @@ fn refuse_a_published_version_left_behind<R: CommandRunner, D: DependencyResolve
     let (_, prepared) =
         derive_release_intent_with_prepared(workspace, decision, source.clone(), profile, None, &mut Vec::new())?;
     let among = moved.iter().map(|moved| moved.package.clone()).collect();
-    let published = published_packages(&workspace.root, workspace.runner, &prepared, &among);
+    let published = published_packages(&workspace.root, workspace.runner, &prepared, &among)?;
     match moved.into_iter().find(|moved| published.contains(&moved.package)) {
-        Some(moved) => Err(GraphError::ReleasePublishedVersionMoved {
-            package: moved.package.to_string(),
-            version: moved.version,
-            version_commit: moved.version_commit.chars().take(12).collect(),
-            newer_commits: moved.newer_commits,
-        }),
+        Some(moved) => {
+            let (since, fix) = match moved.version_commit {
+                Some(commit) => {
+                    let short: String = commit.chars().take(12).collect();
+                    (
+                        format!("{short}, the commit that set it"),
+                        format!("Check out {short} (`git checkout --detach {short}`) and run `callisto release` again to finish that release. Releasing from here would tag code that was not published."),
+                    )
+                }
+                None => (
+                    "the commit that set it, which this history does not show".to_owned(),
+                    "Check out the commit that was published and run `callisto release` again, or tag that commit by hand. Releasing from here could tag code that was not published.".to_owned(),
+                ),
+            };
+            Err(GraphError::ReleasePublishedVersionMoved {
+                package: moved.package.to_string(),
+                version: moved.version,
+                since,
+                fix,
+            })
+        }
         None => Ok(()),
     }
 }

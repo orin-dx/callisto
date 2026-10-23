@@ -296,7 +296,7 @@
     },
     {
       "id": "REL-RERUN-07",
-      "criterion": "A local `callisto release` refuses with E320, before any effect, when a package it would release has commits touching its files after the commit that set its release version and the registry already holds that version. The error names the version commit; checking it out and running `callisto release` again adopts the published version and tags that commit. A package with no such commits, or whose version the registry does not yet hold, is unaffected.",
+      "criterion": "A local `callisto release` refuses with E320, before any effect, when the registry already holds a version it would release and the package's files differ from the commit that set that version, or no commit on the first-parent history sets it. The version is read from the package manifest or, for a Cargo package that inherits it, from the workspace manifest; files are compared by content, so a reverted change and a change made inside a merge commit count. The error names the version commit; checking it out and running `callisto release` again adopts the published version and tags that commit. A registry that cannot be read stops the release before any effect. A package whose manifest is not committed is not checked here; the clean-tree rule covers it. A package whose files match that commit, or whose version the registry does not yet hold, is unaffected.",
       "is_error_case": true
     },
     {
