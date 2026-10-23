@@ -3,7 +3,7 @@
   "entries": [
     {
       "package": "cargo/callisto-cli",
-      "targetVersion": "0.14.0",
+      "targetVersion": "0.14.1",
       "reasons": [
         {
           "kind": "changeset"
@@ -12,7 +12,7 @@
     },
     {
       "package": "cargo/callisto-fixtures",
-      "targetVersion": "0.14.0",
+      "targetVersion": "0.14.1",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -22,7 +22,7 @@
     },
     {
       "package": "cargo/callisto-graph",
-      "targetVersion": "0.14.0",
+      "targetVersion": "0.14.1",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -32,7 +32,7 @@
     },
     {
       "package": "cargo/callisto-manifests",
-      "targetVersion": "0.14.0",
+      "targetVersion": "0.14.1",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -42,7 +42,7 @@
     },
     {
       "package": "cargo/callisto-model",
-      "targetVersion": "0.14.0",
+      "targetVersion": "0.14.1",
       "reasons": [
         {
           "kind": "fixedGroup",
@@ -51,5 +51,5 @@
       ]
     }
   ],
-  "digest": "9d2629b1d401b877fa6128abee45cf83021cd1683b209aee8a71bcb187629aaa"
+  "digest": "5c0c41a4c1b7e8a6902c127f5f771ce6b8bb019e0ac6218a2472066fa3aa5c7e"
 }
