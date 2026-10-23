@@ -2,4 +2,4 @@
 callisto-cli: patch
 ---
 
-status and version no longer start a git process for every release when packages were released at different times: the history after all of them is read once, so a workspace of 500 independently released packages takes a fraction of a second instead of over ten.
+status decides whether a package changed since its last tag by comparing its directories with the tagged ones, so it takes a fraction of a second however many commits the repository has, and a change that was later reverted no longer counts as a change.

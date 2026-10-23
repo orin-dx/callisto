@@ -170,7 +170,7 @@
     },
     {
       "id": "CLI-STATUS-03",
-      "criterion": "`status --format json` reports `hasChangesets`, `pending` (count of packages with a planned bump), and per package `package`, `currentVersion`, `lastReleasedVersion`, `pendingSeverity` (omitted when no bump is planned), `changedSinceLastTag`, `releaseTrigger` and `pendingChangesets`."
+      "criterion": "`status --format json` reports `hasChangesets`, `pending` (count of packages with a planned bump), and per package `package`, `currentVersion`, `lastReleasedVersion`, `pendingSeverity` (omitted when no bump is planned), `changedSinceLastTag`, `releaseTrigger` and `pendingChangesets`. `changedSinceLastTag` is true for a package with no tag, when any directory of the package holds different files than at its last tag, or when its tracked files have uncommitted changes; a change that was later reverted does not count."
     },
     {
       "id": "CLI-STATUS-04",
