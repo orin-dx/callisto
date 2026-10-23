@@ -27,5 +27,19 @@
       "output_tokens": 0,
       "api_call_count": 0
     }
+  },
+  "redaction": {
+    "replacements": 205,
+    "layers": {
+      "betterleaks": 40,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 27,
+      "credentialed_uri": 31,
+      "entropy": 127,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
   }
 }
