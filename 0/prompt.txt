@@ -1,0 +1,1 @@
+What can we learn from native git, its bloom filters, etc? What has Anthropic and others done to optimize their source control that we could learn from and apply to gix?
