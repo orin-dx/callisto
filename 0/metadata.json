@@ -1,0 +1,141 @@
+{
+  "cli_version": "0.12.1-nightly.202610230625.e04328a5d",
+  "checkpoint_id": "01M5N6V7E3B99BNG3TG6JAR60P",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-23T20:22:35.73548Z",
+  "branch": "docs/adr-13-tag-hints",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "docs/adr/0013-tag-annotation-hints-skip-work-not-identity.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "6755fdd53f43",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 2421,
+    "cache_read_tokens": 1928184,
+    "output_tokens": 1404,
+    "api_call_count": 2
+  },
+  "redaction": {
+    "replacements": 205,
+    "layers": {
+      "betterleaks": 40,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 27,
+      "credentialed_uri": 31,
+      "entropy": 127,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 293
+  },
+  "summary": {
+    "intent": "Work through the post-0.10.2 Callisto plan (release rerun fix, test debt, docs refresh, init/derive refactors, SYS-NAPI), then speed up status/version/release at monorepo scale, adopt michi 0.6, and implement the tag-annotation hints proposed in ADR 13.",
+    "outcome": "Opened many PRs: #202-#208 (SYS-RETRY, mixed-routing test, docs refresh, init/derive refactors, SYS-NAPI), the performance stack #327/#328/#330/#333 (merged), michi 0.6 bump #336, confirmation-wave fix #337, ADR 13 #335, and hint writing #338; hint reading (part 2) and the full michi-pipeline move remain undone.",
+    "learnings": {
+      "repo": [
+        "Plan/tracking files like NEXT-WORK.md are local-only: keep them in .claude/plans/ and excluded via .git/info/exclude, never in a commit or PR (PR #201 was closed over this).",
+        "Always run `just ci` and read the log's own `exit=` line; the background task notification only reports the wrapper script's exit.",
+        "Release e2e harness (crates/callisto-cli/tests/common/release_harness.rs) allow-lists git calls and logs args with \"$*\", so multi-line tag messages looked like several commands; the allow-list needed cat-file --batch/--batch-check and the trace needed newline folding.",
+        "Tests that treated 'tag on HEAD' as released encoded the SYS-RETRY defect; they now tag an older commit.",
+        "Snapshots (insta) are committed on the old code first, then code is moved, so the refactors (R3 derive.rs split, R5b templates) are provably behavior-preserving.",
+        "The tag annotation lives only in the graph crate's prepared tag operation, not in the sealed intent, so ADR 13's claim that digests change was wrong and was corrected.",
+        "michi-graph 0.6 builds with no code changes; michi-pipeline steps must be 'static, which conflicts with the executor's borrowed non-cloneable intent proof.",
+        "The tag-ownership manifest read is a safety check against tags adopted by renamed or removed packages, so it should not be skipped just because a name is currently unique.",
+        "IdentityIndex::native_names/native_name/platforms_of were quadratic per package; fixed with a mutex-backed reverse-index cache, since the resolver trait requires Sync.",
+        "The status change meaning moved to net tree-id comparison, so a reverted edit no longer counts as changed.",
+        "macOS bash lacks mapfile and BSD sed rejects some one-liners, so the generated workflow template uses portable loops."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/tag_hints.rs",
+          "finding": "TagHints writer and parser live together; the parser returns nothing unless version is exactly 1, there is one package, and tree lines are valid and unique, which gives the permanent fallback."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/derive.rs",
+          "finding": "The derive function was split into stage functions with uploads_by_package moved into OpIndex, with characterization snapshots covering platform publish and error paths."
+        },
+        {
+          "path": "crates/callisto-graph/src/templates/matrix_workflow.tmpl",
+          "finding": "The napi roster is now derived per intent package by calling `callisto matrix`, and placement reads the plan job's napi_dirs output."
+        }
+      ],
+      "workflow": [
+        "Write the failing reproduction first, and mutate the code to confirm new tests can fail; the plan's feedback rule is to prove with the real tool, not fakes.",
+        "Read the local checkout (~/Projects/michi) before fetching from crates.io; it was 83 commits behind origin/main, so read origin/main without touching the working tree.",
+        "An independent review agent on a risky PR (#202) surfaced real issues such as signed or multi-paragraph tag rejection.",
+        "The sandbox rejects inline env commands, heredocs and scripts mentioning git, so scripts are written to files first; edits are only allowed in the current worktree.",
+        "Benchmark carefully: a reported 2 GB cache speedup was a warm second pass, so use cold single-pass runs and hyperfine.",
+        "Quoted heredocs with escaped backticks leave literal backslashes in PR bodies; write bodies to files instead.",
+        "gh stack link and unstack manage native PR stacks, and a closed PR must be unstacked before relinking."
+      ]
+    },
+    "friction": [
+      "Initially treated the plan as a PR (#201), which the user rejected and which required closing it.",
+      "Fetched michi from crates.io into a scratch crate instead of reading the local checkout; the user interrupted.",
+      "Sandbox restrictions repeatedly forced workarounds: no inline env, heredocs, or git-mentioning scripts, and edits only within the current worktree.",
+      "Background sessions could not edit the shared checkout, so the PR status could not be recorded in .claude/plans/NEXT-WORK.md.",
+      "Some CI runs failed from test-harness issues rather than product bugs (the init tests, three local.rs tests, the cat-file allow-list and trace newlines).",
+      "Earlier performance claims had to be corrected (the gix cache speedup and the 5x commit-id claim).",
+      "Cargo builds cannot run in parallel, so the planned parallel lanes were done serially.",
+      "The release PR #316 went stale after the performance stack merged."
+    ],
+    "open_items": [
+      "Hint reading (ADR 13 part 2): the single for-each-ref returning trailers, skip logic, fallback tests for each case, an equivalence test, and spec criteria.",
+      "ADR 13 (#335) is still Proposed pending acceptance and the implementing PRs.",
+      "Regenerate and merge release PR #316 to ship 0.14.0.",
+      "Move the confirmation wave onto michi-pipeline (poll_step, precheck), which needs an ownership restructure or a scoped step API from michi; a single registry look can still overrun the window.",
+      "Adopt ready_by_edge when michi-graph PR #48 releases; the npm 0.6.0 package is held until 2026-10-24 02:55 UTC.",
+      "W0 branch cleanup is not done (about 35 local branches, plus the remote docs/next-work-plan, docs/spec-rewrite and fix/native-resolution) and needs the user's per-branch call.",
+      "W1 real-service credential check needs a decision on where it runs in CI.",
+      "Blocked on user decisions: D01 (SYS-MATURIN, W9), plus two W10 questions (graph edges for distinct target declarations, Python dev group cascade); W11 needs credentials and an approved run.",
+      "Remaining lanes: R1 walk.rs::build, W3 SYS-PYFILES/PYROUTES and W4, SYS-BARRIER, and W9.",
+      "#204 still lists SYS-RETRY/T08-RETRY and needs a follow-up once #202 merges; #202 had no review of its real gh/cargo/registry reads.",
+      "Remaining performance levers: a single tag listing instead of two, and the optional upstream gix issue on delta intermediates.",
+      "The RewriteKey and per-registry concurrency options from michi are not yet used."
+    ]
+  }
+}
