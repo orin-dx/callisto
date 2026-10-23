@@ -1,0 +1,141 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5N4CKAZT46N3ND71B19ADS2",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-23T19:39:42.869076Z",
+  "branch": "perf/many-packages",
+  "checkpoints_count": 3,
+  "save_step_count": 2,
+  "files_touched": [
+    ".changeset/quick-tigers-run.md",
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-graph/src/identity.rs",
+    "crates/callisto-graph/src/lib.rs",
+    "crates/callisto-graph/src/locate/ignore_walk.rs",
+    "crates/callisto-graph/src/parallel.rs",
+    "crates/callisto-graph/src/walk.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "c0565d3de060",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 88,
+    "cache_creation_tokens": 85704,
+    "cache_read_tokens": 33500189,
+    "output_tokens": 50056,
+    "api_call_count": 43,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 286
+  },
+  "summary": {
+    "intent": "Work through the Callisto NEXT-WORK plan (parallel lanes of fixes, test debt, refactors and docs), then investigate and optimize `status`/`version`/`release` performance for repos with hundreds to thousands of packages, including whether to adopt gix and git hooks/refs caching.",
+    "outcome": "Closed the mistakenly opened plan PR #201 and kept the plan local; opened PRs for W2 SYS-RETRY (#202), W1 mixed-routing test (#203), W0 docs refresh (#204), Lane E stack (#205, #206, #208), R3 derive split, and a perf stack (#327 → #328 → #330 plus a many-packages PR). Perf work replaced the history scan with tree-id comparison (net-change semantics), added a reverse identity index and parallel manifest reads, and concluded gix is slower than system git for history walks, so it was not adopted.",
+    "learnings": {
+      "repo": [
+        "Plans/handoff files like NEXT-WORK.md are local-only: kept at .claude/plans/ and excluded via .git/info/exclude; never commit them or open a PR for them.",
+        "`just ci` is the gate (90% coverage threshold); agent checks the log's own `exit=` line rather than the background task notification, which only reports the wrapper script exit.",
+        "AGENTS.md says no session link in commits/PRs, and ADR changes need user acceptance (e.g. a gix ADR superseding ADR 5; tag-annotation idea would amend ADR 9).",
+        "Release harness fakes (gh, cargo, registry) can hide bugs; the plan requires proving fixes with the real tool where a fake could hide the bug.",
+        "Tag-ownership manifest read for bare-named tags is a safety check against tags adopted by renamed/removed packages, so it should not be skipped just because the name is currently unique.",
+        "Stacked PRs are linked with `gh stack`; a closed PR in a stack blocks relinking, so unstack and relink the open PRs.",
+        "Release rerun fix: a package tagged at HEAD now has all operations (registry, tag, GitHub release) observed and stays selected until satisfied; a tag on an older commit settles the version without provider contact.",
+        "Template constants in graph init.rs were moved to .tmpl files with insta snapshots committed first to prove byte-for-byte equality."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/vcs/access.rs",
+          "line": 510,
+          "finding": "Production git access uses the system binary via this path; there is no gix cache to add today."
+        },
+        {
+          "path": "crates/callisto-graph/src/identity.rs",
+          "finding": "IdentityIndex::native_names/native_name/platforms_of scanned the whole name map per package (quadratic, ~12% at 10k packages); fixed with a Mutex-backed reverse index cache that clones to empty."
+        },
+        {
+          "path": "crates/callisto-graph/src/changed.rs",
+          "finding": "changedSinceLastTag changed from per-tag history walk to comparing package directory tree ids at tag vs HEAD (net-change semantics); ~22 ms flat in commit count at 400 packages."
+        },
+        {
+          "path": "crates/callisto-graph/src/templates/matrix_workflow.tmpl",
+          "finding": "SYS-NAPI fix derives napi roster per intent package via `callisto matrix`; macOS bash lacks `mapfile`, so a portable loop is required."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/derive.rs",
+          "finding": "R3 split of the derive function into stage functions was pinned by characterization snapshots and error-path tests; snapshot mutation test confirmed they catch regressions."
+        }
+      ],
+      "workflow": [
+        "Write the failing reproduction first, and mutate source to confirm new tests actually fail before trusting a first-try pass.",
+        "Measure before extrapolating: earlier perf numbers (6 git processes, 5x commit-hash speedup, gix cache hypothesis) were overturned or withdrawn by realistic fixtures and instrumented probes.",
+        "Compare libraries fairly (reuse diff resource cache, repack repos, cold vs warm passes) before concluding; the user's pasted critique led to a corrected gix comparison.",
+        "Sandbox rejects inline env, heredocs, compound commands and edits outside the current worktree; use script files and Write/Edit tools, and switch worktrees to edit other branches.",
+        "macOS sed one-liners fail; use Edit or Python scripts, and cargo fmt can reflow text so patch scripts must match formatted text.",
+        "Verify PR bodies render correctly (literal backslashes in quoted heredocs)."
+      ]
+    },
+    "friction": [
+      "Initially treated PR #201 as the right home for the plan file, wasting a round trip; user objected that it is local tracking only.",
+      "Sandbox restrictions (inline env, heredocs, git-mentioning scripts, cross-worktree edits) forced many script-file workarounds.",
+      "Could not update .claude/plans/NEXT-WORK.md from a background worktree session.",
+      "Push of the redesign to PR #330 was rejected as non-fast-forward and needed a rebase.",
+      "Timing noise (about ±1.1 s) from another compiling process on the machine; early profile missed the start of the run and was misleading.",
+      "Several of the agent's own perf claims had to be retracted (6 git processes, 5x commit-hash gain, gix 2 GB cache speedup).",
+      "CI failures from existing tests assuming tag-on-HEAD means released, a stray blank line, and a callisto-model lint."
+    ],
+    "open_items": [
+      "W0 branch cleanup: delete stale remote/local branches (docs/next-work-plan, docs/spec-rewrite, fix/native-resolution, ~35 local branches) pending per-branch user decision.",
+      "W1 real-service credential check needs a decision on where it runs in CI.",
+      "#204 still lists SYS-RETRY/T08-RETRY; needs a follow-up edit after #202 merges.",
+      "#202 has had an independent review with findings addressed in the transcript, but is not yet merged; real gh/cargo/registry reads are unproven.",
+      "Lanes D (SYS-BARRIER) and rest of the plan, W9, W10, W11, SYS-MATURIN remain; D01 blocker and W10 decisions are still with the user.",
+      "Lever 4 (skip tag-ownership read) deferred; proposal to record package identity and tree id in tag annotations (ADR 9 amendment) awaits user go-ahead.",
+      "Offered but undecided: draft an upstream gix-pack issue about caching intermediate delta bases; ADR for gix not written since gix not adopted.",
+      "Remaining perf ideas: single for-each-ref tag listing, per-commit index/ref/hook/maintenance caching, flat-directory 10k-entry case.",
+      "The many-packages PR was just opened and stacked on #330; the state of the stack/merge is not yet confirmed."
+    ]
+  }
+}
