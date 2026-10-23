@@ -1,0 +1,58 @@
+Claude did some more analysis, can you validate what it found and assess the severity? Also look for what Claude may have missed.
+
+I've confirmed Codex's findings 1 and 3 and part of 2 in the code, and the broader sweep is still running.
+
+Confirmed:
+- Dropped publish targets (walk.rs:488): if let Ok(editor) = open_cached(...) skips a package whose manifest fails to reopen. It then falls through to publish_to.push(PublishTarget::None), so the package silently never publishes. The line numbers Codex gave were off, but the bug is real.
+- Dropped dependencies (walk.rs:727): the same if let Ok(m) = open_cached(...) shape. A failed reopen means the package has no dependency edges, which corrupts the cascade and the publish ordering.
+- Discovery (ignore_walk.rs:109): let Ok(content) = fs::read_to_string(..) else { continue } treats permission errors and invalid UTF-8 as "no manifest here". A package whose Cargo.toml can't be read vanishes from the release with no diagnostic.
+- Atomic writer (atomic.rs:42): the directory-sync errors are discarded with let _res = ..., yet the function returns Ok and documents a durable replace.
+- Symlinks: discovery follows directory symlinks on purpose, and apply stages the path through the link. I haven't reproduced the Git rejection. I'll check it when I fix it.
+
+You're right that this is a pattern, not three isolated bugs. I and the earlier audits kept finding these one at a time, so I've started an independent read-only agent. It is sweeping all of crates/*/src for every swallowed-error shape (.ok(), if let Ok, unwrap_or_default, exists(), let _ =, ignored exit codes). I told it to treat the leads as unconfirmed, grade each hit by whether it affects what gets released or written, and propose a shared helper that makes the unsafe shape impossible. Per AGENTS.md, siblings get fixed together, not one at a time.
+
+When it reports, I'll fix this in a new worktree off main as its own PR, separate from #233, with a test per distinct shape. The symlink case will need your call: either discovery stops following symlinks that Git can't track, or it reports an error naming the package.
+
+› Message from @bug-hunter (ctrl+o to expand)
+
+The sweep found that the swallowed-error pattern is systemic, not three bugs. The agent traced all of it from source and ran nothing. I checked the walk, discovery and atomic-write sites myself, and the rest is its read, so treat Groups C to H as leads until each fix has a test. The release effect path (registry, tag and forge observation, artifact verification) came back clean. There, errors become Indeterminate or typed errors, and absence is only proven by a 404.
+
+High severity (a package can silently drop out of or change a release):
+
+┌──────────────────────────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│            Group             │                                                What goes wrong                                                 │
+├──────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│                              │ A manifest that fails to reopen loses its publish target and its dependency edges. The usual trigger is an     │
+│ A. Graph build (walk.rs:488, │ unparseable root Cargo.toml or a Cargo workspace in a subdirectory, because OpenContext::for_workspace_root    │
+│  727, 287)                   │ turns load errors into None. Every inheriting member then fails to open and is silently dropped from the       │
+│                              │ roster.                                                                                                        │
+├──────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ B. Discovery                 │ Any read error, including invalid UTF-8 or a permission error, means "no manifest here". A broken member is    │
+│ (ignore_walk.rs:109)         │ also dropped with only a stderr warning and exit 0.                                                            │
+├──────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ C. Membership                │ A typo in the root Cargo.toml, pyproject.toml, package.json or pnpm-workspace.yaml falls back to admit         │
+│ (locate/membership.rs,       │ everything. Vendored copies, examples/ and excluded crates then become releasable packages. A package.json     │
+│ root.rs)                     │ with a BOM does the same.                                                                                      │
+├──────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ D. Version inputs            │ An unresolvable last tag becomes "infer from full history", which inflates the bump. A pending changeset can   │
+│ (aggregate.rs)               │ vanish when a directory entry fails to read. A malformed newer tag is ignored, so an older tag becomes the     │
+│                              │ last one.                                                                                                      │
+└──────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+Medium severity:
+- E. Git probes: GitAccess treats any non-zero exit as "absent". list_tags matches the English text "not a git repository" in stderr, and a shallow clone looks like zero tags.
+- F. .exists() as an absence check:
+  - Wrong decisions: a missing pre.json, callisto.toml, changelog, or init guard file can be misread, so a bump goes stable instead of pre-release, config falls back to defaults, or an existing file is overwritten.
+  - Lost history: a changelog the code believes is absent is replaced, which drops its history.
+- G. Atomic write and runner: directory-sync errors are dropped after the rename. The process runner can return exit 0 with empty stdout when a reader thread times out.
+- H. Fallbacks: the release-notes fallback, a GitHub release body missing draft, and a changeset slug collision that silently overwrites a pending changeset.
+
+Proposed PRs, each in a new worktree off main, separate from #233, with a test per shape:
+1. Strict filesystem helpers in callisto-model: read-optional, try-exists and read-dir that separate "not found" from every other error. Convert Groups B, F and the atomic-write tail, and add a clippy disallowed-methods rule so Path::exists can't come back.
+2. Make the graph build total: OpenContext::for_workspace_root returns a Result, the .ok() and if let Ok sites in walk.rs become errors carrying the manifest path, and membership gets typed states (Group C).
+3. Three-state git probe (present, absent, error) for GitAccs (tag resolution, changeset listing, skipped tags).
+4. Smaller items from Groups G and H.
+
+Two decisions for you before I start PR 2, since they turn warnings into errors:
+1. Unparseable root manifest: should it fail the command, ors everything? Tests pin the current admit-all behavior. I'dmake it an error that names the file.
+2. Symlinked packages: discovery follows symlinks, but Git cone. Should discovery refuse and name the package, or keepfollowing and fail clearly at apply? I'd refuse at discovery.
