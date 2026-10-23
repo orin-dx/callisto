@@ -206,6 +206,12 @@ pub trait ReleaseProviderSet {
     fn pause(&self, duration: Duration) {
         policy::Sleeper::sleep(&policy::ThreadSleeper, duration);
     }
+
+    /// The current time, which the confirmation window is measured on. Tests replace it with a clock that
+    /// [`Self::pause`] moves.
+    fn now(&self) -> std::time::Instant {
+        std::time::Instant::now()
+    }
 }
 
 /// What one provider role can do.
