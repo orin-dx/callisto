@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use callisto_model::vcs::{GitAccess, VcsError};
-use callisto_model::{Package, PackageId};
+use callisto_model::{CommitSha, Package, PackageId};
 
 use crate::error::GraphError;
 use crate::tags::TagIndex;
@@ -21,12 +21,12 @@ pub fn package_paths(pkg: &Package) -> Vec<PathBuf> {
     set.into_iter().collect()
 }
 
-/// Whether each of `packages` changed since its last tag: a non-merge commit
-/// in `tag..HEAD` touched one of its paths, or its tracked files differ from
-/// the tag. An untagged package counts as changed.
+/// Whether each of `packages` changed since its last tag: a commit after the tag touched one of its paths, or its
+/// tracked files have uncommitted changes. An untagged package counts as changed.
 ///
-/// One `git rev-parse` for every tag, then per distinct tag commit one `git
-/// log` and at most one `git diff`, however many packages share that commit.
+/// The history after the tags is read once, however many distinct tag commits there are: two git processes for the
+/// history and one for uncommitted changes. When the tags cannot be resolved to commits or git cannot summarize the
+/// history in bulk, each distinct tag commit is walked on its own instead.
 pub fn changed_since_last_tag(
     packages: &[&Package],
     tags: &TagIndex,
@@ -36,8 +36,7 @@ pub fn changed_since_last_tag(
     let mut tagged = Vec::new();
     for pkg in packages {
         match tags.last_tag(&pkg.id) {
-            // Fully qualified so a tag name can never be misread as a flag.
-            Some(last) => tagged.push((*pkg, format!("refs/tags/{}", last.name.as_str()))),
+            Some(last) => tagged.push((*pkg, last.name.as_str())),
             None => {
                 changed.insert(pkg.id.clone(), true);
             }
@@ -47,13 +46,56 @@ pub fn changed_since_last_tag(
         return Ok(changed);
     }
 
-    let refs: Vec<String> = tagged.iter().map(|(_, r)| r.clone()).collect();
+    let resolved: Vec<Option<CommitSha>> = tagged
+        .iter()
+        .map(|(_, tag)| tags.commit_of(git, tag))
+        .collect::<Result<_, _>>()?;
+    if let Some(commits) = resolved.into_iter().collect::<Option<Vec<CommitSha>>>() {
+        let mut distinct = commits.clone();
+        distinct.sort();
+        distinct.dedup();
+        match git.change_history(&distinct) {
+            Ok(history) => {
+                // Uncommitted changes count for every package; a diff that could not run counts as changed.
+                let uncommitted = match git.paths_differing_from("HEAD") {
+                    Ok(paths) => Some(paths),
+                    Err(VcsError::Command(e)) => return Err(VcsError::Command(e).into()),
+                    Err(_) => None,
+                };
+                let mut since: BTreeMap<&CommitSha, Vec<PathBuf>> = BTreeMap::new();
+                for ((pkg, _), commit) in tagged.iter().zip(&commits) {
+                    let committed = since
+                        .entry(commit)
+                        .or_insert_with(|| history.paths_since(commit).into_iter().map(Path::to_path_buf).collect());
+                    let specs = package_paths(pkg);
+                    let is_changed =
+                        touches(committed, &specs) || uncommitted.as_ref().is_none_or(|paths| touches(paths, &specs));
+                    changed.insert(pkg.id.clone(), is_changed);
+                }
+                return Ok(changed);
+            }
+            Err(VcsError::Command(e)) => return Err(VcsError::Command(e).into()),
+            Err(_) => {}
+        }
+    }
+    changed_by_tag_commit(&tagged, git, &mut changed)?;
+    Ok(changed)
+}
+
+/// The fallback: one `git log` and at most one `git diff` per distinct tag commit, however many packages share it.
+fn changed_by_tag_commit(
+    tagged: &[(&Package, &str)],
+    git: &GitAccess<'_>,
+    changed: &mut BTreeMap<PackageId, bool>,
+) -> Result<(), GraphError> {
+    // Fully qualified so a tag name can never be misread as a flag.
+    let refs: Vec<String> = tagged.iter().map(|(_, tag)| format!("refs/tags/{tag}")).collect();
     let keys: Vec<String> = match git.resolve_commits(&refs)? {
         Some(shas) => shas.iter().map(|sha| sha.as_str().to_string()).collect(),
         None => refs,
     };
     let mut groups: BTreeMap<String, Vec<&Package>> = BTreeMap::new();
-    for ((pkg, _), key) in tagged.into_iter().zip(keys) {
+    for ((pkg, _), key) in tagged.iter().zip(keys) {
         groups.entry(key).or_default().push(pkg);
     }
 
@@ -84,7 +126,7 @@ pub fn changed_since_last_tag(
             changed.insert(pkg.id.clone(), is_changed);
         }
     }
-    Ok(changed)
+    Ok(())
 }
 
 /// Whether any of `paths` falls under one of `specs` as a literal `git`
@@ -218,8 +260,8 @@ mod tests {
         assert!(runner.calls.lock().unwrap().is_empty());
     }
 
-    /// Only the package a commit touched is changed, and packages sharing a
-    /// tag commit share one `git log` and one `git diff`.
+    /// Only the package a commit touched is changed, and the tags' commits come from one `git for-each-ref`, the
+    /// history from one `git log` and the uncommitted changes from one `git diff`.
     #[test]
     fn a_commit_changes_only_the_package_it_touched() {
         let dir = tagged_repo();
@@ -233,7 +275,8 @@ mod tests {
         assert!(!result[&id("pkg-b")]);
         assert!(!result[&id("pkg-c")]);
         let count = |sub: &str| calls.iter().filter(|c| c.starts_with(sub)).count();
-        assert_eq!(count("rev-parse"), 1, "{calls:?}");
+        assert_eq!(count("rev-parse"), 0, "{calls:?}");
+        assert_eq!(count("for-each-ref"), 1, "{calls:?}");
         assert_eq!(count("log"), 1, "{calls:?}");
         assert_eq!(count("diff"), 1, "{calls:?}");
     }
@@ -296,7 +339,7 @@ mod tests {
         assert!(!result[&id("pkg-a")]);
     }
 
-    /// Packages tagged at different commits each get their own range.
+    /// Packages tagged at different commits each get their own range, from one `git log`.
     #[test]
     fn packages_tagged_at_different_commits_use_their_own_range() {
         let dir = tagged_repo();
@@ -309,7 +352,48 @@ mod tests {
 
         assert!(result[&id("pkg-a")]);
         assert!(!result[&id("pkg-b")]);
-        assert_eq!(calls.iter().filter(|c| c.starts_with("log")).count(), 2, "{calls:?}");
+        assert_eq!(calls.iter().filter(|c| c.starts_with("log")).count(), 1, "{calls:?}");
+    }
+
+    /// The fallback that walks each tag commit on its own, for comparison with the single pass.
+    fn changed_per_tag_commit(root: &Path, pkgs: &[Package]) -> BTreeMap<PackageId, bool> {
+        let graph = FixedGraph { pkgs: pkgs.to_vec() };
+        let cfg = crate::config::load(root).unwrap();
+        let git = GitAccess::new(root, &GitRunner);
+        let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
+        let tagged: Vec<(&Package, &str)> = pkgs
+            .iter()
+            .filter_map(|pkg| Some((pkg, tags.last_tag(&pkg.id)?.name.as_str())))
+            .collect();
+        let mut changed = BTreeMap::new();
+        changed_by_tag_commit(&tagged, &git, &mut changed).unwrap();
+        changed
+    }
+
+    /// A tag on a side branch, a merge, and a commit on each line: the single pass answers as the per-tag walk does.
+    #[test]
+    fn the_single_pass_agrees_with_walking_each_tag_commit_across_a_merge() {
+        let dir = tagged_repo();
+        let root = dir.path();
+        run_git(root, &["switch", "-q", "-c", "side"]);
+        commit(root, "pkg-b/side.txt", "s\n", "feat: b on the side");
+        run_git(root, &["tag", "-a", "-m", "release", "pkg-c@1.1.0"]);
+        run_git(root, &["switch", "-q", "-"]);
+        commit(root, "pkg-a/main.txt", "m\n", "feat: a on main");
+        run_git(root, &["merge", "-q", "--no-ff", "-m", "merge side", "side"]);
+        commit(root, "pkg-c/later.txt", "l\n", "feat: c after the merge");
+        run_git(root, &["tag", "-a", "-m", "release", "pkg-a@1.1.0"]);
+        write(root, "pkg-b/Cargo.toml", "[package]\nname = \"b\"\n");
+        let pkgs = [make_pkg("pkg-a"), make_pkg("pkg-b"), make_pkg("pkg-c")];
+
+        let (single, _) = changed(root, &pkgs);
+
+        assert_eq!(single, changed_per_tag_commit(root, &pkgs));
+        assert!(
+            single[&id("pkg-b")],
+            "b changed on the side branch and in the working tree"
+        );
+        assert!(single[&id("pkg-c")], "c changed after the merge");
     }
 
     /// The root-level package's `.` pathspec matches every path.

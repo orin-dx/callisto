@@ -5,7 +5,7 @@ use thiserror::Error;
 
 pub mod access;
 
-pub use access::GitAccess;
+pub use access::{ChangeHistory, GitAccess};
 
 #[derive(Clone, Debug, Error, miette::Diagnostic, PartialEq, Eq)]
 #[non_exhaustive]

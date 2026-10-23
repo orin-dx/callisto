@@ -23,6 +23,87 @@ pub struct GitAccess<'r> {
     root: PathBuf,
 }
 
+/// The commits after some ancestor of `HEAD`, as `git log` listed them: who their parents are, and which paths each
+/// one changed. Built by [`GitAccess::change_history`].
+pub struct ChangeHistory {
+    commits: Vec<HistoryCommit>,
+    index: std::collections::HashMap<String, usize>,
+}
+
+struct HistoryCommit {
+    /// Parents that are themselves in the listed history. A parent outside it is an ancestor of every boundary.
+    parents: Vec<usize>,
+    paths: Vec<PathBuf>,
+}
+
+impl ChangeHistory {
+    fn parse(stdout: &str, root: &Path) -> Result<Self, VcsError> {
+        let malformed = |detail: &str| VcsError::MalformedLogOutput {
+            detail: format!("in `{}`: {detail}", root.display()),
+        };
+        let mut records: Vec<(String, Vec<String>, Vec<PathBuf>)> = Vec::new();
+        for record in stdout.split('\u{1e}').filter(|record| !record.is_empty()) {
+            let (header, paths) = record
+                .split_once('\0')
+                .ok_or_else(|| malformed("a commit has no header terminator"))?;
+            let (sha, parents) = header
+                .split_once('\u{1f}')
+                .ok_or_else(|| malformed("a header has no parents"))?;
+            let sha = CommitSha::parse(sha)
+                .map_err(|error| malformed(&format!("a header does not start with a commit id: {error}")))?;
+            let parents = parents
+                .split(' ')
+                .filter(|parent| !parent.is_empty())
+                .map(|parent| {
+                    CommitSha::parse(parent)
+                        .map(|parent| parent.as_str().to_owned())
+                        .map_err(|error| {
+                            malformed(&format!("a header names a parent that is not a commit id: {error}"))
+                        })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let paths = paths
+                .split('\0')
+                .map(|path| path.trim_start_matches('\n'))
+                .filter(|path| !path.is_empty())
+                .map(PathBuf::from)
+                .collect();
+            records.push((sha.as_str().to_owned(), parents, paths));
+        }
+        let index: std::collections::HashMap<String, usize> = records
+            .iter()
+            .enumerate()
+            .map(|(position, (sha, _, _))| (sha.clone(), position))
+            .collect();
+        let commits = records
+            .into_iter()
+            .map(|(_, parents, paths)| HistoryCommit {
+                parents: parents.iter().filter_map(|parent| index.get(parent).copied()).collect(),
+                paths,
+            })
+            .collect();
+        Ok(ChangeHistory { commits, index })
+    }
+
+    /// The paths changed by commits reachable from `HEAD` but not from `boundary`.
+    pub fn paths_since(&self, boundary: &CommitSha) -> Vec<&Path> {
+        let mut before = vec![false; self.commits.len()];
+        let mut pending: Vec<usize> = self.index.get(boundary.as_str()).copied().into_iter().collect();
+        while let Some(commit) = pending.pop() {
+            if std::mem::replace(&mut before[commit], true) {
+                continue;
+            }
+            pending.extend(self.commits[commit].parents.iter().copied());
+        }
+        self.commits
+            .iter()
+            .zip(before)
+            .filter(|(_, before)| !before)
+            .flat_map(|(commit, _)| commit.paths.iter().map(PathBuf::as_path))
+            .collect()
+    }
+}
+
 /// Fresh Git checkout facts used to bind a durable release intent to the
 /// exact repository it was validated against.
 ///
@@ -700,6 +781,56 @@ impl GitAccess<'_> {
         ])
     }
 
+    /// The history after the common ancestor of `boundaries`, with the paths each commit changed, read with two git
+    /// processes however many boundaries there are. [`ChangeHistory::paths_since`] then answers "what changed after
+    /// this boundary" for each boundary without another process.
+    ///
+    /// A merge commit counts for the paths where it differs from every parent (a conflict resolution), as `git log
+    /// --cc` reports them.
+    pub fn change_history(&self, boundaries: &[CommitSha]) -> Result<ChangeHistory, VcsError> {
+        let base = self.common_ancestor(boundaries)?;
+        let exclusion = base.as_ref().map(|base| format!("^{}", base.as_str()));
+        let mut args = vec![
+            "log",
+            "--no-show-signature",
+            "--no-renames",
+            "--relative",
+            "--name-only",
+            "--cc",
+            "-z",
+            "--format=%x1e%H%x1f%P",
+            "HEAD",
+        ];
+        args.extend(exclusion.as_deref());
+        let output = self.runner.run("git", &args, &self.root)?;
+        if !output.success() {
+            return Err(probe_failed(&args, &self.root, &output));
+        }
+        ChangeHistory::parse(&output.stdout, &self.root)
+    }
+
+    /// One commit every boundary descends from, or `None` when they share none (or there are none).
+    fn common_ancestor(&self, boundaries: &[CommitSha]) -> Result<Option<CommitSha>, VcsError> {
+        // Each chunk is merged with the ancestor found so far, so the argument list stays short for any number of tags.
+        const CHUNK: usize = 1000;
+        let mut base: Option<CommitSha> = None;
+        for chunk in boundaries.chunks(CHUNK) {
+            let mut args = vec!["merge-base", "--octopus"];
+            args.extend(base.as_ref().map(CommitSha::as_str));
+            args.extend(chunk.iter().map(CommitSha::as_str));
+            let output = self.runner.run("git", &args, &self.root)?;
+            match output.exit_code {
+                Some(0) => base = CommitSha::parse(output.stdout_trimmed()).ok(),
+                Some(1) => return Ok(None),
+                _ => return Err(probe_failed(&args, &self.root, &output)),
+            }
+            if base.is_none() {
+                return Ok(None);
+            }
+        }
+        Ok(base)
+    }
+
     fn name_only(&self, args: &[&str]) -> Result<Vec<PathBuf>, VcsError> {
         let output = self.runner.run("git", args, &self.root)?;
         if !output.success() {
@@ -1216,6 +1347,57 @@ mod tests {
             miette::Diagnostic::code(&err).map(|c| c.to_string()),
             Some("E302".to_string())
         );
+    }
+
+    /// A history record whose header does not start with a commit id is the typed E301, so the caller can fall back.
+    #[test]
+    fn change_history_rejects_a_header_that_is_not_a_commit_id() {
+        let base = "b".repeat(40);
+        let runner = FakeRunner {
+            calls: Mutex::new(Vec::new()),
+            response: Box::new(move |args| {
+                if args.first() == Some(&"merge-base") {
+                    Ok(ok(format!("{base}\n")))
+                } else {
+                    Ok(ok("\u{1e}not-a-commit\u{1f}\0".to_string()))
+                }
+            }),
+        };
+        let git = GitAccess::new(PathBuf::from("."), &runner);
+        let boundary = CommitSha::parse(&"c".repeat(40)).unwrap();
+        let err = git
+            .change_history(&[boundary])
+            .err()
+            .expect("a malformed header must fail");
+        assert!(matches!(err, VcsError::MalformedLogOutput { .. }), "got {err:?}");
+    }
+
+    /// Paths come back per commit, and a boundary's own ancestors are left out.
+    #[test]
+    fn change_history_lists_the_paths_after_a_boundary() {
+        let (tip, middle, root_commit) = ("1".repeat(40), "2".repeat(40), "3".repeat(40));
+        let stdout = format!(
+            "\u{1e}{tip}\u{1f}{middle}\0\nsrc/b\0\u{1e}{middle}\u{1f}{root_commit}\0\nsrc/a\0\u{1e}{root_commit}\u{1f}\0\nsrc/root\0"
+        );
+        let base = root_commit.clone();
+        let runner = FakeRunner {
+            calls: Mutex::new(Vec::new()),
+            response: Box::new(move |args| {
+                if args.first() == Some(&"merge-base") {
+                    Ok(ok(format!("{base}\n")))
+                } else {
+                    Ok(ok(stdout.clone()))
+                }
+            }),
+        };
+        let git = GitAccess::new(PathBuf::from("."), &runner);
+        let history = git
+            .change_history(&[CommitSha::parse(&middle).unwrap()])
+            .expect("a well-formed history parses");
+        let after_middle = history.paths_since(&CommitSha::parse(&middle).unwrap());
+        assert_eq!(after_middle, vec![Path::new("src/b")]);
+        let after_root = history.paths_since(&CommitSha::parse(&root_commit).unwrap());
+        assert_eq!(after_root, vec![Path::new("src/b"), Path::new("src/a")]);
     }
 
     /// `git log`'s custom `--format=` output missing the `FIELD_SEP`-delimited message is a
