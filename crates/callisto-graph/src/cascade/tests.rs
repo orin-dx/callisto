@@ -77,8 +77,8 @@ impl callisto_model::CommandRunner for FakeGitTagRunner {
         _cwd: &std::path::Path,
     ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
         assert_eq!(program, "git");
-        // A probe of a tag's commit finds nothing, so no other owner is evident.
-        if matches!(args.first(), Some(&"rev-parse" | &"grep")) {
+        // A probe of a tag's commit finds nothing, so no other owner is evident, and the tags carry no hints.
+        if matches!(args.first(), Some(&"rev-parse" | &"grep" | &"for-each-ref")) {
             return Ok(callisto_model::CommandOutput {
                 exit_code: Some(1),
                 stdout: String::new(),

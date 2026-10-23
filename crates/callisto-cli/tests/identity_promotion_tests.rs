@@ -732,3 +732,104 @@ fn a_bare_package_keeps_the_tags_it_made() {
         .to_string()
         .contains("tag-owned-by-another-package"));
 }
+
+/// The message of a release tag as Callisto writes it.
+fn hinted_message(tag: &str, package: &str, trees: &[(&str, &str)]) -> String {
+    let mut message = format!("Release {tag}\n\nCallisto-Hints: 1\nCallisto-Package: {package}\n");
+    for (directory, tree) in trees {
+        message.push_str(&format!("Callisto-Tree: {directory} {tree}\n"));
+    }
+    message
+}
+
+/// A bare `foo@5.0.0` made when npm held `foo`, in a workspace where only Cargo `foo` is left.
+fn status_of_cargo_foo_beside_a_tag_npm_foo_made(tag_message: Option<&str>) -> serde_json::Value {
+    let dir = empty_repo();
+    let root = dir.path();
+    write_manifest(root, "packages/y/package.json", npm_manifest("foo", "5.0.0"));
+    commit(root, "release npm foo");
+    match tag_message {
+        Some(message) => git(root, &["tag", "-a", "-m", message, "foo@5.0.0"]),
+        None => git(root, &["tag", "foo@5.0.0"]),
+    };
+    git(root, &["rm", "-r", "-q", "packages/y"]);
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/a\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("crates/a/src")).unwrap();
+    fs::write(root.join("crates/a/src/lib.rs"), "\n").unwrap();
+    write_manifest(root, "crates/a/Cargo.toml", cargo_manifest("foo", "0.1.0"));
+    commit(root, "replace npm foo with cargo foo");
+    run_ok(root, &["status"])
+}
+
+fn adopted_version(status: &serde_json::Value) -> Option<String> {
+    let package = status_package(status, "foo")
+        .or_else(|| status_package(status, "cargo/foo"))
+        .unwrap_or_else(|| panic!("no foo in status: {status}"));
+    package["lastReleasedVersion"].as_str().map(str::to_owned)
+}
+
+/// Without a usable hint the history decides, and it says another ecosystem made the tag.
+#[test]
+fn a_tag_without_a_hint_that_vouches_for_the_package_is_judged_by_history() {
+    let for_npm = hinted_message("foo@5.0.0", "npm/foo", &[]);
+    let version_two = hinted_message("foo@5.0.0", "cargo/foo", &[]).replace("Hints: 1", "Hints: 2");
+    let no_package = hinted_message("foo@5.0.0", "cargo/foo", &[]).replace("Callisto-Package: cargo/foo\n", "");
+    let cases: [(&str, Option<&str>); 6] = [
+        ("lightweight tag", None),
+        ("annotation without hints", Some("Release foo@5.0.0")),
+        ("hints naming the package that made it", Some(&for_npm)),
+        ("an unknown hint version", Some(&version_two)),
+        ("hints without a package", Some(&no_package)),
+        (
+            "a package that is not a release id",
+            Some("Callisto-Hints: 1\nCallisto-Package: foo\n"),
+        ),
+    ];
+    for (name, message) in cases {
+        let status = status_of_cargo_foo_beside_a_tag_npm_foo_made(message);
+        assert_eq!(adopted_version(&status), None, "{name}: {status}");
+    }
+}
+
+/// A hint that names the package is believed: the read of the history it would otherwise need is skipped.
+#[test]
+fn a_hint_that_names_the_package_vouches_for_its_tag() {
+    let message = hinted_message("foo@5.0.0", "cargo/foo", &[]);
+
+    let status = status_of_cargo_foo_beside_a_tag_npm_foo_made(Some(&message));
+
+    assert_eq!(adopted_version(&status).as_deref(), Some("5.0.0"), "{status}");
+}
+
+/// With the hints of a release Callisto made, `status` reports what it reports for the same tag without them.
+#[test]
+fn status_is_the_same_with_and_without_hints() {
+    let reports = |hinted: bool| {
+        let dir = released_cargo_foo();
+        let root = dir.path();
+        if hinted {
+            let tree = git(root, &["rev-parse", "HEAD:crates/foo"]);
+            let message = hinted_message("foo@1.0.0", "cargo/foo", &[("crates/foo", &tree)]);
+            git(root, &["tag", "-f", "-a", "-m", &message, "foo@1.0.0"]);
+        }
+        let clean = run_ok(root, &["status"]);
+        fs::write(root.join("crates/foo/src/lib.rs"), "// changed\n").unwrap();
+        commit(root, "change foo");
+        (clean, run_ok(root, &["status"]))
+    };
+
+    let (plain_clean, plain_changed) = reports(false);
+    let (hinted_clean, hinted_changed) = reports(true);
+
+    assert_eq!(hinted_clean, plain_clean);
+    assert_eq!(hinted_changed, plain_changed);
+    let package = status_package(&hinted_changed, "foo").or_else(|| status_package(&hinted_changed, "cargo/foo"));
+    assert!(
+        package.is_some_and(|package| package["changedSinceLastTag"] == true),
+        "{hinted_changed}"
+    );
+}

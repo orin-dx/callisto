@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use callisto_model::vcs::GitAccess;
+use callisto_model::vcs::{GitAccess, TagRecord};
 use callisto_model::{
     select_last_tag, CommitSha, Diagnostic, DiagnosticCode, DiagnosticSeverity, LastTag, LastTagSelection, PackageId,
     TagTemplate, VersionGrammar,
@@ -19,6 +19,34 @@ use crate::IdentityIndex;
 pub(crate) fn fetch_all_tags(git: &GitAccess<'_>) -> Result<Vec<String>, GraphError> {
     let tags = git.list_tags(None)?;
     Ok(tags.into_iter().map(|t| t.as_str().to_string()).collect())
+}
+
+/// Reads every tag's commit and hints into `records` unless that was done. A failed read leaves it empty and is
+/// reported, so a caller that can do without the hints ignores it.
+fn load_records(
+    git: &GitAccess<'_>,
+    records: &std::cell::OnceCell<BTreeMap<String, TagRecord>>,
+) -> Result<(), callisto_model::vcs::VcsError> {
+    if records.get().is_none() {
+        let loaded = git
+            .tag_records()?
+            .into_iter()
+            .map(|record| (record.name.as_str().to_owned(), record))
+            .collect();
+        drop(records.set(loaded));
+    }
+    Ok(())
+}
+
+/// Whether the annotation of `tag` names one of `refs`, which are the release ids of one package. Only a tag whose
+/// annotation carries well-formed hints can, so a lightweight tag, a hand-made annotation and a tag the records could
+/// not be read for all answer no.
+fn names_package(records: &std::cell::OnceCell<BTreeMap<String, TagRecord>>, tag: &str, refs: &[String]) -> bool {
+    records
+        .get()
+        .and_then(|records| records.get(tag))
+        .and_then(|record| record.hints.as_ref())
+        .is_some_and(|hints| refs.contains(&hints.package))
 }
 
 /// Tag names in byte order. The tags beginning with a literal prefix are one contiguous run, found by binary search, so
@@ -198,8 +226,10 @@ pub struct TagIndex {
     /// package) can consult this in-memory set instead of re-querying `git`
     /// once per check.
     all_tags: std::collections::BTreeSet<String>,
-    /// The commit each tag ends at, read with one `git for-each-ref` the first time a caller asks for any.
-    commits: std::cell::OnceCell<BTreeMap<String, CommitSha>>,
+    /// The commit and hints of each tag, read with one `git for-each-ref` the first time a caller asks for any.
+    records: std::cell::OnceCell<BTreeMap<String, TagRecord>>,
+    /// The release package ids each package's tags may name in their hints.
+    refs: BTreeMap<PackageId, Vec<String>>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -216,6 +246,8 @@ impl TagIndex {
         let mut pre_cursor = BTreeMap::new();
         let mut foreign: BTreeMap<PackageId, std::collections::BTreeSet<String>> = BTreeMap::new();
         let mut diagnostics = Vec::new();
+        let records = std::cell::OnceCell::new();
+        let mut records_tried = false;
 
         // Fetch the raw tag list exactly once for the whole build, not once
         // per package -- see `fetch_all_tags` for why.
@@ -224,8 +256,20 @@ impl TagIndex {
         let all_tags = SortedTags::new(&all_tag_names);
         let mut glob_cache: std::collections::HashMap<String, Vec<&str>> = std::collections::HashMap::new();
 
+        // A name that does not form a release id names nothing in a hint, so the reads decide.
+        let refs: BTreeMap<PackageId, Vec<String>> = graph
+            .packages()
+            .map(|pkg| {
+                let ids = crate::commands::release_decision::release_package_ids(identity, pkg)
+                    .map(|ids| ids.iter().map(ToString::to_string).collect())
+                    .unwrap_or_default();
+                (pkg.id.clone(), ids)
+            })
+            .collect();
+
         let mut rosters = crate::history::Rosters::default();
-        // The first candidate of every bare-named package is checked below; read their manifests together.
+        // The first candidate of every bare-named package that its tag's annotation does not vouch for is checked
+        // below; read their manifests together.
         let mut wanted = Vec::new();
         for pkg in graph.packages() {
             if pkg.tag_template.is_some() || pkg.id.ecosystem().is_some() {
@@ -242,7 +286,13 @@ impl TagIndex {
                 continue;
             };
             if let Some(tag) = take_chosen(selection, &mut Vec::new()) {
-                wanted.push((tag.name.as_str().to_owned(), manifest.path.clone()));
+                if !records_tried {
+                    records_tried = true;
+                    drop(load_records(git, &records));
+                }
+                if !names_package(&records, tag.name.as_str(), &refs[&pkg.id]) {
+                    wanted.push((tag.name.as_str().to_owned(), manifest.path.clone()));
+                }
             }
         }
         rosters.prefetch(git, &wanted);
@@ -271,16 +321,18 @@ impl TagIndex {
                     let Some(tag) = take_chosen(selection, &mut diagnostics) else {
                         break None;
                     };
+                    // A tag whose annotation names this package needs no look at the history; any other tag does.
                     // History that cannot be read is no evidence of another owner.
-                    let held = crate::history::may_have_held_name_at(
-                        git,
-                        tag.name.as_str(),
-                        pkg.id.name(),
-                        pkg,
-                        identity,
-                        &mut rosters,
-                    )
-                    .unwrap_or(true);
+                    let held = names_package(&records, tag.name.as_str(), &refs[&pkg.id])
+                        || crate::history::may_have_held_name_at(
+                            git,
+                            tag.name.as_str(),
+                            pkg.id.name(),
+                            pkg,
+                            identity,
+                            &mut rosters,
+                        )
+                        .unwrap_or(true);
                     if held {
                         break Some(tag);
                     }
@@ -358,7 +410,8 @@ impl TagIndex {
             pre_cursor,
             foreign,
             all_tags: all_tags_set,
-            commits: std::cell::OnceCell::new(),
+            records,
+            refs,
             diagnostics,
         })
     }
@@ -390,18 +443,30 @@ impl TagIndex {
         if !self.all_tags.contains(tag_name) {
             return Ok(git.resolve_commit(&format!("refs/tags/{tag_name}"))?);
         }
-        if self.commits.get().is_none() {
-            let commits = git
-                .tags_with_commits()?
-                .into_iter()
-                .filter_map(|(name, commit)| Some((name.as_str().to_owned(), commit?)))
-                .collect();
-            drop(self.commits.set(commits));
-        }
-        match self.commits.get().and_then(|commits| commits.get(tag_name)) {
+        load_records(git, &self.records)?;
+        match self
+            .records
+            .get()
+            .and_then(|records| records.get(tag_name))
+            .and_then(|record| record.commit.as_ref())
+        {
             Some(commit) => Ok(Some(commit.clone())),
             None => Ok(git.resolve_commit(&format!("refs/tags/{tag_name}"))?),
         }
+    }
+
+    /// The tree id each directory held in the commit `tag_name` was made on, when the tag's annotation says so and
+    /// names `id`. `None` for anything else, including a tag that cannot be read: the caller reads the trees itself.
+    pub fn released_trees(
+        &self,
+        git: &GitAccess<'_>,
+        id: &PackageId,
+        tag_name: &str,
+    ) -> Option<&BTreeMap<String, String>> {
+        load_records(git, &self.records).ok()?;
+        let refs = self.refs.get(id)?;
+        let hints = self.records.get()?.get(tag_name)?.hints.as_ref()?;
+        refs.contains(&hints.package).then_some(&hints.trees)
     }
 
     /// Whether `tag_name` exists and was made by `id`, not by another package that held the same name.
@@ -418,7 +483,8 @@ impl TagIndex {
             pre_cursor: BTreeMap::new(),
             foreign: BTreeMap::new(),
             all_tags: std::collections::BTreeSet::new(),
-            commits: std::cell::OnceCell::new(),
+            records: std::cell::OnceCell::new(),
+            refs: BTreeMap::new(),
             diagnostics: Vec::new(),
         }
     }
@@ -485,8 +551,8 @@ mod tests {
     impl CommandRunner for FakeGitTagRunner {
         fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
             assert_eq!(program, "git");
-            // A probe of a tag's commit finds nothing, so no other owner is evident.
-            if matches!(args.first(), Some(&"rev-parse" | &"grep")) {
+            // A probe of a tag's commit finds nothing, so no other owner is evident, and the tags carry no hints.
+            if matches!(args.first(), Some(&"rev-parse" | &"grep" | &"for-each-ref")) {
                 return Ok(CommandOutput {
                     exit_code: Some(1),
                     stdout: String::new(),

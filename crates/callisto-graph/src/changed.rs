@@ -48,29 +48,41 @@ pub fn changed_since_last_tag(
 
     let specs: Vec<Vec<PathBuf>> = tagged.iter().map(|(pkg, _)| package_paths(pkg)).collect();
     let mut differs = vec![false; tagged.len()];
-    // Each package directory is asked for twice, at its tag and at `HEAD`; `pair_owners` says whose pair it is.
+    // Each package directory is compared at its tag and at `HEAD`. The tag's tree is read from the tag's annotation when
+    // it holds one for every directory of the package, and otherwise from the repository, together with `HEAD`'s.
     let mut objects = Vec::new();
-    let mut pair_owners = Vec::new();
-    for (index, ((_, tag), directories)) in tagged.iter().zip(&specs).enumerate() {
+    let mut pairs = Vec::new();
+    for (index, ((pkg, tag), directories)) in tagged.iter().zip(&specs).enumerate() {
         let Some(commit) = tags.commit_of(git, tag)? else {
             // A tag that does not end at a commit cannot be compared, so the package is proposed for release.
             differs[index] = true;
             continue;
         };
+        let hinted = tags.released_trees(git, &pkg.id, tag).filter(|trees| {
+            directories
+                .iter()
+                .all(|directory| trees.contains_key(&*directory.to_string_lossy()))
+        });
         for directory in directories {
-            let directory = if directory.as_path() == Path::new(".") {
-                String::new()
-            } else {
-                directory.to_string_lossy().into_owned()
-            };
-            objects.push(format!("{}:{directory}", commit.as_str()));
-            objects.push(format!("HEAD:{directory}"));
-            pair_owners.push(index);
+            let key = directory.to_string_lossy();
+            let path = if key == "." { "" } else { &*key };
+            let released = hinted.and_then(|trees| trees.get(&*key)).cloned();
+            if released.is_none() {
+                objects.push(format!("{}:{path}", commit.as_str()));
+            }
+            objects.push(format!("HEAD:{path}"));
+            pairs.push((index, released));
         }
     }
     let ids = git.object_ids(&objects)?;
-    for (pair, &owner) in pair_owners.iter().enumerate() {
-        if ids[2 * pair] != ids[2 * pair + 1] {
+    let mut ids = ids.into_iter();
+    for (owner, released) in pairs {
+        let released = match released {
+            Some(tree) => Some(tree),
+            None => ids.next().expect("an answer for every object asked for"),
+        };
+        let head = ids.next().expect("an answer for every object asked for");
+        if released != head {
             differs[owner] = true;
         }
     }
@@ -262,8 +274,9 @@ mod tests {
         assert!(runner.calls.lock().unwrap().is_empty());
     }
 
-    /// Only the package a commit changed differs from its tag. The tags' commits come from one `git for-each-ref`, the
-    /// trees from one `git cat-file`, and the uncommitted changes from one `git diff`; no history is read.
+    /// Only the package a commit changed differs from its tag. The tags' commits were read with one `git for-each-ref`
+    /// while the tags were indexed, the trees come from one `git cat-file`, and the uncommitted changes from one
+    /// `git diff`; no history is read.
     #[test]
     fn a_commit_changes_only_the_package_it_touched() {
         let dir = tagged_repo();
@@ -277,7 +290,7 @@ mod tests {
         assert!(!result[&id("pkg-b")]);
         assert!(!result[&id("pkg-c")]);
         let count = |sub: &str| calls.iter().filter(|c| c.starts_with(sub)).count();
-        assert_eq!(count("for-each-ref"), 1, "{calls:?}");
+        assert_eq!(count("for-each-ref"), 0, "{calls:?}");
         assert_eq!(count("cat-file"), 1, "{calls:?}");
         assert_eq!(count("diff"), 1, "{calls:?}");
         assert_eq!(count("log"), 0, "{calls:?}");
@@ -308,6 +321,118 @@ mod tests {
         let pkgs = [make_pkg("pkg-a")];
 
         let (result, _) = changed(root, &pkgs);
+
+        assert!(!result[&id("pkg-a")]);
+    }
+
+    fn tree_of(root: &Path, spec: &str) -> String {
+        GitRunner
+            .run("git", &["rev-parse", spec], root)
+            .unwrap()
+            .stdout_trimmed()
+            .to_owned()
+    }
+
+    /// Replaces `pkg-a@1.0.0` with an annotated tag carrying `message`, or a lightweight one when there is none.
+    fn retag(root: &Path, message: Option<&str>) {
+        match message {
+            Some(message) => run_git(root, &["tag", "-f", "-a", "-m", message, "pkg-a@1.0.0"]),
+            None => run_git(root, &["tag", "-f", "pkg-a@1.0.0"]),
+        }
+    }
+
+    fn hints(package: &str, trees: &[(&str, &str)]) -> String {
+        callisto_model::TagHints {
+            package: package.to_owned(),
+            trees: trees.iter().map(|(d, t)| ((*d).to_owned(), (*t).to_owned())).collect(),
+        }
+        .annotation("Release pkg-a@1.0.0")
+    }
+
+    /// Hints that name the right trees give the same answer as reading them.
+    #[test]
+    fn hinted_trees_agree_with_the_repository() {
+        let dir = tagged_repo();
+        let root = dir.path();
+        retag(
+            root,
+            Some(&hints("cargo/pkg-a", &[("pkg-a", &tree_of(root, "HEAD:pkg-a"))])),
+        );
+        commit(root, "pkg-b/x.txt", "x\n", "feat: b");
+        let unchanged = changed(root, &[make_pkg("pkg-a")]).0;
+        commit(root, "pkg-a/x.txt", "x\n", "feat: a");
+        let changed_after = changed(root, &[make_pkg("pkg-a")]).0;
+
+        assert!(!unchanged[&id("pkg-a")]);
+        assert!(changed_after[&id("pkg-a")]);
+    }
+
+    /// A hint is believed when it is well formed and names the package, so a wrong one changes what is reported.
+    #[test]
+    fn a_wrong_hinted_tree_is_what_the_report_says() {
+        let dir = tagged_repo();
+        let root = dir.path();
+        retag(root, Some(&hints("cargo/pkg-a", &[("pkg-a", &"f".repeat(40))])));
+
+        let (result, _) = changed(root, &[make_pkg("pkg-a")]);
+
+        assert!(result[&id("pkg-a")]);
+    }
+
+    /// Whatever is wrong with the annotation, the answer is the one the repository gives: here nothing changed.
+    #[test]
+    fn a_tag_without_usable_hints_is_compared_by_reading_the_repository() {
+        let bogus = "f".repeat(40);
+        let cases: Vec<(&str, Option<String>)> = vec![
+            ("lightweight tag", None),
+            ("annotation without hints", Some("Release pkg-a@1.0.0".to_owned())),
+            (
+                "unknown hint version",
+                Some(hints("cargo/pkg-a", &[("pkg-a", &bogus)]).replace("Callisto-Hints: 1", "Callisto-Hints: 2")),
+            ),
+            (
+                "garbled tree",
+                Some(hints("cargo/pkg-a", &[("pkg-a", &bogus)]).replace(&bogus, "not-a-tree")),
+            ),
+            ("no tree for the directory", Some(hints("cargo/pkg-a", &[]))),
+            (
+                "a directory missing from the hints",
+                Some(hints("cargo/pkg-a", &[("elsewhere", &bogus)])),
+            ),
+            (
+                "hints naming another package",
+                Some(hints("cargo/pkg-b", &[("pkg-a", &bogus)])),
+            ),
+            (
+                "hints naming another ecosystem",
+                Some(hints("npm/pkg-a", &[("pkg-a", &bogus)])),
+            ),
+            (
+                "no package",
+                Some(hints("cargo/pkg-a", &[("pkg-a", &bogus)]).replace("Callisto-Package: cargo/pkg-a\n", "")),
+            ),
+        ];
+        for (name, message) in cases {
+            let dir = tagged_repo();
+            let root = dir.path();
+            retag(root, message.as_deref());
+
+            let (result, _) = changed(root, &[make_pkg("pkg-a")]);
+
+            assert!(!result[&id("pkg-a")], "{name}: the repository holds what was released");
+        }
+    }
+
+    /// A lightweight tag's annotation is its commit's message, which must not be read as hints.
+    #[test]
+    fn hints_in_the_message_of_a_lightweight_tags_commit_are_ignored() {
+        let dir = tagged_repo();
+        let root = dir.path();
+        let message = hints("cargo/pkg-a", &[("pkg-a", &"f".repeat(40))]);
+        commit(root, "unrelated.txt", "u\n", &message);
+        retag(root, None);
+
+        let (result, _) = changed(root, &[make_pkg("pkg-a")]);
 
         assert!(!result[&id("pkg-a")]);
     }
