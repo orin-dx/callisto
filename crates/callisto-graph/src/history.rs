@@ -1,23 +1,59 @@
 //! Which package owned a shared name at an earlier commit, judged by the manifests that commit contained.
 
 use std::collections::{BTreeSet, HashMap};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use callisto_manifests::read_identity;
 use callisto_model::vcs::GitAccess;
 use callisto_model::{normalize_pypi_project_name, Ecosystem, ManifestFormat, Package};
 
+use crate::commands::git_batch::{batch_blobs, BatchBlob};
 use crate::error::GraphError;
 use crate::IdentityIndex;
 
-/// The ecosystems with a manifest declaring a name at a revision, for every (revision, name) already read.
+/// The ecosystems with a manifest declaring a name at a revision, for every (revision, name) already read, and the
+/// manifest texts read so far.
 #[derive(Default)]
-pub(crate) struct Rosters(HashMap<(String, String), BTreeSet<Ecosystem>>);
+pub(crate) struct Rosters {
+    declaring: HashMap<(String, String), BTreeSet<Ecosystem>>,
+    texts: HashMap<(String, PathBuf), Option<String>>,
+}
 
 impl Rosters {
+    /// Reads every `(rev, path)` not read yet in one `git cat-file --batch`, so the lookups that follow cost no process.
+    ///
+    /// A failed batch is not an error: the lookups then read one at a time, as they always could.
+    pub(crate) fn prefetch(&mut self, git: &GitAccess<'_>, wanted: &[(String, PathBuf)]) {
+        let missing: Vec<&(String, PathBuf)> = wanted.iter().filter(|key| !self.texts.contains_key(*key)).collect();
+        let objects: Vec<String> = missing
+            .iter()
+            .map(|(rev, path)| format!("{rev}:./{}", path.display()))
+            .collect();
+        let Ok(blobs) = batch_blobs(git.runner(), git.root(), &objects) else {
+            return;
+        };
+        for (key, blob) in missing.into_iter().zip(blobs) {
+            let text = match blob {
+                BatchBlob::Blob(text) => Some(text),
+                BatchBlob::Missing => None,
+            };
+            self.texts.insert(key.clone(), text);
+        }
+    }
+
+    fn manifest_text(&mut self, git: &GitAccess<'_>, rev: &str, path: &Path) -> Result<Option<String>, GraphError> {
+        let key = (rev.to_owned(), path.to_path_buf());
+        if let Some(known) = self.texts.get(&key) {
+            return Ok(known.clone());
+        }
+        let text = git.read_at(rev, path)?;
+        self.texts.insert(key, text.clone());
+        Ok(text)
+    }
+
     fn declaring_at(&mut self, git: &GitAccess<'_>, rev: &str, name: &str) -> Result<BTreeSet<Ecosystem>, GraphError> {
         let key = (rev.to_string(), name.to_string());
-        if let Some(known) = self.0.get(&key) {
+        if let Some(known) = self.declaring.get(&key) {
             return Ok(known.clone());
         }
         let mut declaring = BTreeSet::new();
@@ -26,7 +62,7 @@ impl Rosters {
                 declaring.insert(ecosystem);
             }
         }
-        self.0.insert(key, declaring.clone());
+        self.declaring.insert(key, declaring.clone());
         Ok(declaring)
     }
 }
@@ -77,12 +113,18 @@ fn names_equal(ecosystem: Ecosystem, left: &str, right: &str) -> bool {
 }
 
 /// Whether `pkg`'s current first manifest held a manifest declaring `name` at `rev`.
-fn first_manifest_declares_at(git: &GitAccess<'_>, rev: &str, pkg: &Package, name: &str) -> Result<bool, GraphError> {
+fn first_manifest_declares_at(
+    git: &GitAccess<'_>,
+    rev: &str,
+    pkg: &Package,
+    name: &str,
+    rosters: &mut Rosters,
+) -> Result<bool, GraphError> {
     let Some(manifest) = pkg.canonical_manifests().next() else {
         return Ok(false);
     };
     let path = Path::new(&manifest.path);
-    let Some(text) = git.read_at(rev, path)? else {
+    let Some(text) = rosters.manifest_text(git, rev, path)? else {
         return Ok(false);
     };
     // A manifest that was broken at `rev` simply names nobody.
@@ -107,7 +149,7 @@ pub(crate) fn sole_owner_at<'p>(
 ) -> Result<Option<&'p Package>, GraphError> {
     let mut owner = None;
     for pkg in candidates {
-        if first_manifest_declares_at(git, rev, pkg, name)? {
+        if first_manifest_declares_at(git, rev, pkg, name, rosters)? {
             if owner.is_some() {
                 return Ok(None);
             }
@@ -141,7 +183,7 @@ pub(crate) fn may_have_held_name_at(
     identity: &IdentityIndex,
     rosters: &mut Rosters,
 ) -> Result<bool, GraphError> {
-    if first_manifest_declares_at(git, rev, pkg, name)? {
+    if first_manifest_declares_at(git, rev, pkg, name, rosters)? {
         return Ok(true);
     }
     let declaring = rosters.declaring_at(git, rev, name)?;

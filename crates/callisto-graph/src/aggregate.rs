@@ -166,8 +166,8 @@ pub fn apply_pre_major(
 ///
 /// A tag that is listed but does not resolve to a commit is an error: guessing "infer over full history" would
 /// plan a bump from commits the last release already covered.
-fn resolve_since(git: &GitAccess<'_>, tag_name: &str) -> Result<CommitSha, GraphError> {
-    git.resolve_commit(&format!("refs/tags/{tag_name}"))?.ok_or_else(|| {
+fn resolve_since(git: &GitAccess<'_>, tags: &TagIndex, tag_name: &str) -> Result<CommitSha, GraphError> {
+    tags.commit_of(git, tag_name)?.ok_or_else(|| {
         GraphError::Vcs(callisto_model::vcs::VcsError::RefNotFound {
             ref_name: tag_name.to_string(),
         })
@@ -239,7 +239,9 @@ where
         // release_trigger: Changeset packages take severity from pending changesets only --
         // commit inference must not run for them, so neither does resolving its window.
         let inferred = if pkg.release_trigger == ReleaseTrigger::Auto {
-            let since = last_tag.map(|t| resolve_since(git, t.name.as_str())).transpose()?;
+            let since = last_tag
+                .map(|t| resolve_since(git, tags, t.name.as_str()))
+                .transpose()?;
             let window = crate::infer::InferenceWindowSpec {
                 pathspecs: &pathspecs,
                 since,
