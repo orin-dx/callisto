@@ -537,7 +537,7 @@ fn confirm_npm(
 fn an_npm_version_that_appears_minutes_late_is_confirmed_without_failing_the_run() {
     let missing = captured_npm_output(fixtures::NPM_VIEW_MISSING);
     let found = captured_npm_output(fixtures::NPM_VIEW_FOUND);
-    let mut outputs = vec![missing; 12];
+    let mut outputs = vec![missing; 3];
     outputs.push(found);
     let (observation, waits) = confirm_npm(outputs, None);
     assert!(

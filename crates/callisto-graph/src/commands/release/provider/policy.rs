@@ -69,12 +69,22 @@ pub(crate) fn default_visibility_window(ecosystem: callisto_model::Ecosystem) ->
     }
 }
 
-/// Longest single wait while a published version is not yet visible.
-const VISIBILITY_STEP_CAP: Duration = Duration::from_secs(30);
-
-/// Waits of 2s, 4s, 8s and 16s, then 30s steps, so a stale read is retried often without hammering the registry.
+/// The waits between looks at a version that is not yet visible: 15s, 45s, 2m, then 3m steps.
+///
+/// A look is the first thing done after the publishes are issued, so a registry that purges its cache shows the
+/// version at once, and the earlier packages of a release have aged by the time the last is looked at. What is left
+/// is a stale cache that expires on its own, up to five minutes after it was filled, so the looks are spaced to catch
+/// that, not to poll: five looks cover the default six-minute window.
 pub(crate) fn visibility_backoff(attempt: u32) -> Duration {
-    observation_backoff(attempt).min(VISIBILITY_STEP_CAP)
+    const STEPS: [u64; 3] = [15, 45, 120];
+    const LAST_STEP: u64 = 180;
+    Duration::from_secs(
+        usize::try_from(attempt)
+            .ok()
+            .and_then(|index| STEPS.get(index))
+            .copied()
+            .unwrap_or(LAST_STEP),
+    )
 }
 
 /// Retries `attempt` while it reports `Transient`, until `window` of waiting is spent; the last answer is then reported.
@@ -435,11 +445,10 @@ pub(crate) mod tests {
         let waits = sleeper.waits();
         assert_eq!(waits.iter().sum::<Duration>(), window);
         assert_eq!(
-            waits[..6],
-            [2, 4, 8, 16, 30, 30].map(Duration::from_secs),
-            "short waits first, then a steady 30s"
+            waits,
+            [15, 45, 120, 180].map(Duration::from_secs),
+            "an immediate look, then a few spaced ones that span the window"
         );
-        assert!(waits.iter().all(|wait| *wait <= Duration::from_secs(30)));
     }
 
     /// A version that shows up partway through is returned as soon as it does, without waiting out the rest.
@@ -449,14 +458,14 @@ pub(crate) mod tests {
         let tries = std::cell::Cell::new(0);
         let result = retry_within_window(&sleeper, Duration::from_secs(360), || {
             tries.set(tries.get() + 1);
-            if tries.get() < 7 {
+            if tries.get() < 3 {
                 transient_answer()
             } else {
                 Ok(Attempt::Settled("exact"))
             }
         });
         assert_eq!(result, Ok("exact"));
-        assert_eq!(sleeper.waits().len(), 6);
+        assert_eq!(sleeper.waits(), [15, 45].map(Duration::from_secs));
     }
 
     /// A server's own `Retry-After` is honoured, but never past the end of the window.
@@ -522,7 +531,7 @@ pub(crate) mod tests {
                 reason: callisto_model::ProviderConflictReason::RegistryVersionYanked
             })
         );
-        assert_eq!(sleeper.waits(), [2, 4].map(Duration::from_secs));
+        assert_eq!(sleeper.waits(), [15, 45].map(Duration::from_secs));
     }
 
     #[test]
