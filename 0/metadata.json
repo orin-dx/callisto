@@ -1,0 +1,133 @@
+{
+  "cli_version": "0.11.7-nightly.202610210625.fedd31ca1",
+  "checkpoint_id": "01M5MYHNR40JPRR5QDKKBK2FHC",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-23T17:57:40.164126Z",
+  "branch": "perf/where-the-time-goes",
+  "checkpoints_count": 1,
+  "save_step_count": 2,
+  "files_touched": [
+    "crates/callisto-graph/src/changed.rs",
+    "crates/callisto-graph/src/tags.rs",
+    "crates/callisto-model/src/vcs/access.rs",
+    "crates/callisto-model/src/vcs/mod.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "1524d5881e69",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 72,
+    "cache_creation_tokens": 73046,
+    "cache_read_tokens": 18161934,
+    "output_tokens": 49488,
+    "api_call_count": 35,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 278
+  },
+  "summary": {
+    "intent": "Work through the Callisto NEXT-WORK plan in parallel lanes (release retry fix, test debt, docs refresh, init/derive refactors, SYS-NAPI, guard hardening), then pivot to a performance investigation: benchmark the CLI, batch/bulk git operations, evaluate gix and other libraries, and profile where time goes.",
+    "outcome": "Closed the mistaken plan PR #201 and kept the plan local; opened PRs #202-#208 (SYS-RETRY fix, mixed-routing test, docs refresh, init test/template moves, SYS-NAPI, derive split), hardening PRs #325/#326, and a stacked perf series (#327 benchmark, #328 bulk reads, #330 single-pass history). Status at 200 packages went from ~2 s/405 git processes to ~78 ms/6, and the history redesign was committed and pushed to #330 after CI passed.",
+    "learnings": {
+      "repo": [
+        "Tracking and handoff plans such as NEXT-WORK.md must stay local (.claude/plans/, excluded via .git/info/exclude), never in a commit or PR.",
+        "`just ci` must be judged by the log's own `exit=` line, not the background wrapper's exit code; the task notification only reports that the script exited.",
+        "AGENTS.md forbids session links in commits/PRs, and reversing an ADR (e.g. ADR 5 system-git-only) needs a new owner-accepted ADR.",
+        "ADR 5 removed gix because two backends diverged (gix ignored TagSignPolicy), it added 106 crates, and the CLI needed the git binary anyway; ADR 6 dropped WASM because gix object reads panic under WASI mmap.",
+        "Release test harness fakes cargo/gh/registry, so fakes can hide bugs; tests should use the real tool where possible. The harness has set_registry_unreachable but cannot make a registry fail once and then recover.",
+        "Fixtures that tag every package on one commit hide per-package git log cost; a realistic independent-versioning fixture revealed 11.7 s status at 500 packages vs the apparent 6 git processes.",
+        "Sandbox/guard rejects inline env commands, heredocs, and compound commands mentioning git, so scripts are written to files and run separately; edits are only permitted inside the current worktree; macOS bash lacks mapfile and BSD sed rejects some one-liners.",
+        "Test fakes that answer `git tag --list` make switching the tag index to a single for-each-ref call a wide change."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "finding": "Release selection previously treated a tag at HEAD as 'released'; SYS-RETRY fix now observes all operations for packages tagged at HEAD before deciding. A private cat-file --batch reader here was moved to a shared git_batch module."
+        },
+        {
+          "path": "crates/callisto-graph/src/aggregate.rs",
+          "line": 273,
+          "finding": "Git failure in change inference is downgraded to a warning under a borrowed diagnostic code, so the package is silently not bumped."
+        },
+        {
+          "path": "runner.rs",
+          "line": 518,
+          "finding": "Subprocess runner sleeps 50 ms after the first poll, imposing a 50 ms floor on every git call."
+        },
+        {
+          "path": "crates/callisto-graph/src/changed.rs",
+          "finding": "Change detection now uses a single git log pass; correct semantics for tags are commits reachable from HEAD xor the tag (symmetric difference), matching the old per-tag walk including unmerged hotfix tags."
+        }
+      ],
+      "workflow": [
+        "Write the failing reproduction first, and mutate the source to prove new tests can fail (done for the mixed-routing and derive snapshot tests).",
+        "For pure refactors, commit characterization/snapshot tests first on unchanged code, then do the move so snapshots pass unchanged.",
+        "Measure before adding dependencies; the benchmark corrected earlier estimates (retracted a claimed 5x commit-hash batch speedup, measured ~25%).",
+        "Use a separate target directory for profiling builds so they don't contend with CI's cargo lock; timings are noisy when another process compiles.",
+        "Stack dependent PRs with the native gh stack linking (#207, #329)."
+      ]
+    },
+    "friction": [
+      "Plan file was initially published as PR #201 against the user's intent, requiring a closure and an apology.",
+      "Plan path in the original lane summary was wrong and the plan file could not be updated from a background session in the shared checkout.",
+      "Several CI runs failed late (stray blank line, lint on complex return type, init tests relying on tag-at-HEAD premise, uncommitted package refused), costing full gate re-runs.",
+      "Sandbox restrictions on heredocs, inline env, and git-mentioning scripts forced many temp script files.",
+      "My first profile was misleading and earlier performance claims (6 git processes) were fixture artifacts, requiring retractions.",
+      "Benchmark timings were noisy because another process was compiling."
+    ],
+    "open_items": [
+      "PR #202 review findings (multi-paragraph tag rejection, dependent tagged at HEAD with untagged dependency) were being addressed; no independent review result recorded as merged.",
+      "#204 still lists SYS-RETRY/T08-RETRY and needs a follow-up edit after #202 merges.",
+      "W0 branch deletion (about 35 local branches plus docs/next-work-plan, docs/spec-rewrite, fix/native-resolution) awaits the user's per-branch call; docs/next-work-plan branch/worktree remains.",
+      "W1 real-service credential check needs a decision on where it runs in CI; D01 blocks SYS-MATURIN and W9; W10 needs two decisions; W11 needs credentials.",
+      "#326 does not enforce the A2 check at executor adoption; fail-closed registry path is only covered by code reading.",
+      "Unmerged stack bug (#323/#324): npm confirmation window restarts per publish and counts only sleep time, so it can be unbounded; to fix.",
+      "Credential-hardening PR for version.rs raw git stderr (7 sites), silent inference failures, 0.0.0-alpha snapshot misdetection, and the __CALLISTO_TEST_SLEEP_SCALE production-path hazard are not yet fixed.",
+      "Structural audit items (digest from enum order, pre.json version, public fields on validated types, dead public API, license-boundary recipe) need user approval.",
+      "Perf follow-ups: commit-hash manifest batch plus single tag listing, a git-time column in the benchmark, CPU profile of non-git time, parallel manifest parsing/directory walk, mimalloc on musl, bounded thread pool for preflight, moving trust re-check (needs sign-off), release-pr decide running full status(), gix read-only experiment (needs new ADR), a CI benchmark threshold."
+    ]
+  }
+}
