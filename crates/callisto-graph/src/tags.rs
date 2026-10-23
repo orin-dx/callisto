@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use callisto_model::vcs::GitAccess;
 use callisto_model::{
-    select_last_tag, CommitSha, Diagnostic, DiagnosticCode, DiagnosticSeverity, Ecosystem, LastTag, LastTagSelection,
-    PackageId, TagTemplate, VersionGrammar,
+    select_last_tag, CommitSha, Diagnostic, DiagnosticCode, DiagnosticSeverity, LastTag, LastTagSelection, PackageId,
+    TagTemplate, VersionGrammar,
 };
 
 use crate::config::ResolvedConfig;
@@ -250,10 +250,9 @@ impl TagIndex {
                 )
             };
             if chosen.is_none() {
-                let package_ecosystems: Vec<Ecosystem> = pkg.canonical_manifests().map(|m| m.ecosystem()).collect();
-                if let Some(previous) =
-                    crate::config::resolve::resolve_package_config(&pkg.id, &package_ecosystems, cfg)
-                        .map(|package_config| package_config.previous_tag_templates.as_slice())
+                let native_names: Vec<_> = identity.native_names(&pkg.id).collect();
+                if let Some(previous) = crate::config::resolve::resolve_package_config(&native_names, cfg)
+                    .map(|package_config| package_config.previous_tag_templates.as_slice())
                 {
                     for template in previous {
                         chosen = take_chosen(

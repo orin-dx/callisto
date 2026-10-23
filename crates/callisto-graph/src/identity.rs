@@ -469,6 +469,25 @@ impl IdentityIndex {
         None
     }
 
+    /// For an ecosystem-qualified `eco/name` that no package has under that native name, the `eco/native` of the one
+    /// package that is called `name` in another ecosystem (or by its directory) and has a manifest in `eco`. A dual
+    /// package's npm side is often named differently from its Cargo side, so `npm/michi-node` is easy to write for
+    /// `npm/@orin-dx/michi`.
+    pub fn suggest_native(&self, qualified: &str) -> Option<String> {
+        let (prefix, name) = qualified.split_once('/')?;
+        let ecosystem = Ecosystem::from_prefix(prefix)?;
+        if self.native.contains_key(&(ecosystem, name.to_owned())) {
+            return None;
+        }
+        let mut candidates = self
+            .native
+            .iter()
+            .filter(|((eco, native), owner)| *eco == ecosystem && native != name && owner.name() == name)
+            .map(|((_, native), _)| format!("{prefix}/{native}"));
+        let first = candidates.next()?;
+        candidates.next().is_none().then_some(first)
+    }
+
     pub fn native_names(&self, id: &PackageId) -> impl Iterator<Item = (Ecosystem, &str)> + use<'_> {
         let mut results = Vec::new();
         for ((e, name), registered_id) in &self.native {

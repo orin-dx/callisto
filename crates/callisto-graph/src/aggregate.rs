@@ -5,9 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::changelog::{ChangeSource, ChangelogEntry, ChangelogInput};
 use callisto_model::format::{parse_changeset, Changeset};
 use callisto_model::vcs::GitAccess;
-use callisto_model::{
-    BumpReason, CommitSha, Diagnostic, Ecosystem, Package, PackageId, ReleaseTrigger, Severity, Version,
-};
+use callisto_model::{BumpReason, CommitSha, Diagnostic, Package, PackageId, ReleaseTrigger, Severity, Version};
 
 use crate::config::resolve::resolve_package_config;
 use crate::config::GroupTable;
@@ -233,8 +231,8 @@ where
                 })
             })?;
 
-        let package_ecosystems: Vec<Ecosystem> = pkg.canonical_manifests().map(|m| m.ecosystem()).collect();
-        let policy = resolve_package_config(&pkg.id, &package_ecosystems, config)
+        let native_names: Vec<_> = identity.native_names(&pkg.id).collect();
+        let policy = resolve_package_config(&native_names, config)
             .and_then(|pcfg| pcfg.pre_major_inference)
             .unwrap_or(PreMajorInferencePolicy::Off);
 

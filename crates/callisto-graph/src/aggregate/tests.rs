@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use callisto_model::{
-    CommandError, CommandOutput, CommandRunner, DepEdge, GroupKind, GroupName, ManifestDecl, ManifestFormat,
+    CommandError, CommandOutput, CommandRunner, DepEdge, Ecosystem, GroupKind, GroupName, ManifestDecl, ManifestFormat,
     ManifestRole, Package,
 };
 

@@ -105,7 +105,7 @@ url = "https://npm.internal.example.com"
 
 ## `[[package]]` and `[[package-set]]`
 
-Both blocks share five override fields, parsed identically; `[[package]]` also accepts `previous-tag-templates`. `[[package]]`'s `match` is an exact ecosystem-qualified id (first matching rule wins). `[[package-set]]`'s `match` is an ecosystem-qualified glob and can match many packages at once; a rule for several ecosystems is one rule per ecosystem; `[[package]]` always takes priority over `[[package-set]]` for a given package.
+Both blocks share five override fields, parsed identically; `[[package]]` also accepts `previous-tag-templates`. `[[package]]`'s `match` is an exact ecosystem-qualified id: the package's own name in that ecosystem, which for a dual package can differ per ecosystem (first matching rule wins). `[[package-set]]`'s `match` is an ecosystem-qualified glob, compared with each package's name in that ecosystem, and can match many packages at once; a rule for several ecosystems is one rule per ecosystem; `[[package]]` always takes priority over `[[package-set]]` for a given package.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
