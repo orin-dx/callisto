@@ -209,6 +209,10 @@ impl GroupTable {
                             return Err(GraphError::MissingGroupMember {
                                 group: rg.name.clone(),
                                 member: name.clone(),
+                                hint: index
+                                    .suggest_native(name)
+                                    .map(|suggestion| format!(" Did you mean `{suggestion}`?"))
+                                    .unwrap_or_default(),
                             });
                         }
                         // Ambiguous (E103) is reportable as it is.

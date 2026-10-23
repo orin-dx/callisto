@@ -85,6 +85,54 @@ fn fixed_group_member_naming_absent_ecosystem_is_missing_group_member() {
     }
 }
 
+/// The dual package whose npm name differs from its Cargo name: a group member written with the Cargo name under
+/// `npm/` is not found, and the error names the member the group needs.
+#[test]
+fn a_group_member_with_the_directory_name_under_npm_suggests_the_npm_name() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    write_pkg(root, "packages/michi-node", Ecosystem::Cargo, "michi-node");
+    std::fs::write(
+        root.join("packages/michi-node/package.json"),
+        r#"{"name":"@orin-dx/michi","version":"0.1.0"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("callisto.toml"),
+        "[[fixed-group]]\nname = \"g\"\nmembers = [\"npm/michi-node\"]\n",
+    )
+    .unwrap();
+    let locator = crate::locate::IgnoreWalkLocator::new(root);
+    let runner = NoopRunner;
+    let err = match crate::Workspace::load(root.to_path_buf(), &locator, &runner) {
+        Err(e) => e,
+        Ok(_) => panic!("expected MissingGroupMember error, got Ok"),
+    };
+    assert!(
+        matches!(&err, GraphError::MissingGroupMember { hint, .. } if hint == " Did you mean `npm/@orin-dx/michi`?"),
+        "{err:?}"
+    );
+    let help = miette::Diagnostic::help(&err)
+        .map(|help| help.to_string())
+        .unwrap_or_default();
+    assert!(help.contains("Did you mean `npm/@orin-dx/michi`?"), "{help}");
+
+    // Without a package by that name there is nothing to suggest.
+    std::fs::write(
+        root.join("callisto.toml"),
+        "[[fixed-group]]\nname = \"g\"\nmembers = [\"npm/other\"]\n",
+    )
+    .unwrap();
+    let err = match crate::Workspace::load(root.to_path_buf(), &locator, &runner) {
+        Err(e) => e,
+        Ok(_) => panic!("expected MissingGroupMember error, got Ok"),
+    };
+    assert!(
+        matches!(&err, GraphError::MissingGroupMember { hint, .. } if hint.is_empty()),
+        "{err:?}"
+    );
+}
+
 struct NoopRunner;
 impl CommandRunner for NoopRunner {
     fn run(
@@ -962,6 +1010,64 @@ fn package_rule_matching_no_ecosystem_the_package_has_gets_a_matched_nothing_dia
             .any(|d| d.code == DiagnosticCode::PackageRuleMatchedNothing && d.message.contains("pypi/foo")),
         "expected a PackageRuleMatchedNothing diagnostic naming pypi/foo, got: {:?}",
         ws.graph.diagnostics
+    );
+}
+
+/// A dual Cargo/npm package whose npm name differs from its Cargo name: a `[[package]]` rule written with the Cargo
+/// name under `npm/` matches nothing, and the warning names the npm identity the rule meant, the same one a
+/// `[[fixed-group]]` member needs. The correctly written rule applies.
+#[test]
+fn a_package_rule_with_the_directory_name_under_the_npm_ecosystem_gets_a_did_you_mean() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    write_pkg(root, "packages/michi-node", Ecosystem::Cargo, "michi-node");
+    std::fs::write(
+        root.join("packages/michi-node/package.json"),
+        r#"{"name":"@orin-dx/michi","version":"0.1.0"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("callisto.toml"),
+        "[[package]]\nmatch = \"npm/michi-node\"\nrelease-trigger = \"auto\"\n\n[[package]]\nmatch = \"npm/@orin-dx/michi\"\ntag-template = \"michi@{version}\"\n",
+    )
+    .unwrap();
+
+    let locator = crate::locate::IgnoreWalkLocator::new(root);
+    let runner = NoopRunner;
+    let ws = crate::Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace load must succeed");
+
+    let warning = ws
+        .graph
+        .diagnostics
+        .iter()
+        .find(|d| d.code == DiagnosticCode::PackageRuleMatchedNothing)
+        .unwrap_or_else(|| panic!("expected a matched-nothing warning, got: {:?}", ws.graph.diagnostics));
+    assert!(warning.message.contains("npm/michi-node"), "{}", warning.message);
+    assert!(
+        warning.message.contains("did you mean `npm/@orin-dx/michi`?"),
+        "{}",
+        warning.message
+    );
+    assert_eq!(
+        ws.graph
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == DiagnosticCode::PackageRuleMatchedNothing)
+            .count(),
+        1,
+        "only the mistaken rule is reported: {:?}",
+        ws.graph.diagnostics
+    );
+    let package = ws.graph.packages().next().expect("one package");
+    assert_eq!(
+        package.tag_template,
+        Some(callisto_model::TagTemplate::parse("michi@{version}").unwrap()),
+        "the correct rule applied"
+    );
+    assert_eq!(
+        package.release_trigger,
+        callisto_model::ReleaseTrigger::Changeset,
+        "the mistaken rule did not"
     );
 }
 

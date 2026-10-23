@@ -155,9 +155,14 @@ pub enum GraphError {
     #[error("group `{group}` lists member `{member}`, which was not found in the workspace")]
     #[diagnostic(
         code(E108),
-        help("Remove the member from the group, or add its manifest to the workspace.")
+        help("Remove the member from the group, or add its manifest to the workspace.{hint}")
     )]
-    MissingGroupMember { group: GroupName, member: String },
+    MissingGroupMember {
+        group: GroupName,
+        member: String,
+        /// Empty, or ` Did you mean `eco/name`?`.
+        hint: String,
+    },
 
     #[error(
         "fixed group `{group}` aligns on tagged member `{}`, but it has no base version in the workspace",

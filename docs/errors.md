@@ -175,7 +175,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E105 | Version cascade failed to converge after its iteration limit | Check for oscillating peer or linked group dependencies. |
 | E106 | Fixed group's members have divergent on-disk versions | Align on-disk versions for all members of the fixed group. |
 | E107 | Group's members use incompatible version grammars | Use the same version grammar for every member of the group. |
-| E108 | Group lists a member not found in the workspace | Remove the member from the group, or add its manifest to the workspace. |
+| E108 | Group lists a member not found in the workspace | Remove the member from the group, or add its manifest to the workspace. A member is a package's name in that ecosystem, so a dual Cargo and npm package whose npm name is `@orin-dx/michi` is `npm/@orin-dx/michi`, not `npm/michi-node`; the message suggests the name when one package has it under another ecosystem or directory. |
 | E109 | Package is listed in more than one conflicting group | List the package in only one fixed or linked group. |
 | E114 | Failed to parse `.changeset/pre.json` | Check that .changeset/pre.json is valid JSON and was not partially written. Delete the file and re-run `callisto pre enter` to recover. |
 | E115 | Failed to read `.changeset/pre.json` | Check that .changeset/pre.json is readable. Delete the file and re-run `callisto pre enter` to recover. |

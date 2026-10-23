@@ -67,6 +67,14 @@ impl PackagePattern {
         self.matcher.is_match(name)
     }
 
+    /// Whether any of a package's native names, one per ecosystem it has a manifest in, matches this pattern: the
+    /// ecosystem must be the pattern's when it names one, and the glob is compared with that ecosystem's own name.
+    pub fn matches_native(&self, names: &[(Ecosystem, &str)]) -> bool {
+        names.iter().any(|(ecosystem, name)| {
+            self.ecosystem.is_none_or(|want| want == *ecosystem) && self.matcher.is_match(name)
+        })
+    }
+
     pub fn as_str(&self) -> &str {
         &self.raw
     }

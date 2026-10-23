@@ -282,25 +282,30 @@ pub fn parse_release_trigger(s: &str) -> Result<ReleaseTrigger, ConfigError> {
     }
 }
 
-/// A `[[package]]` rule applies to `id` when the names match and the package has a manifest in the rule's ecosystem.
+/// A `[[package]]` rule applies to a package when it has a manifest in the rule's ecosystem whose own name is the
+/// rule's name.
 ///
-/// `package_ecosystems` is the package's real, manifest-derived ecosystem set, so a `pypi/foo` rule never applies to a
-/// Cargo-only `foo`, whether or not the package's `PackageId` carries an ecosystem.
-pub(crate) fn rule_applies(rule_id: &PackageId, id: &PackageId, package_ecosystems: &[Ecosystem]) -> bool {
-    rule_id.name() == id.name() && rule_id.ecosystem().is_some_and(|eco| package_ecosystems.contains(&eco))
+/// `native_names` is the package's name in each ecosystem it has a manifest in. A dual package's names can differ per
+/// ecosystem, so `npm/michi-node` does not apply to the package whose npm name is `@orin-dx/michi`, whatever its
+/// directory or Cargo name is, which is the same identity a `[[fixed-group]]` member must give.
+pub(crate) fn rule_applies(rule_id: &PackageId, native_names: &[(Ecosystem, &str)]) -> bool {
+    rule_id.ecosystem().is_some_and(|eco| {
+        native_names
+            .iter()
+            .any(|(ecosystem, name)| *ecosystem == eco && *name == rule_id.name())
+    })
 }
 
 /// The first `[[package]]` rule, in TOML declaration order, that applies to `id`; `None` if none does.
 ///
 /// MUST NOT sort or partition `cfg.packages`: declaration order is the specificity.
 pub(crate) fn resolve_package_config<'a>(
-    id: &PackageId,
-    package_ecosystems: &[Ecosystem],
+    native_names: &[(Ecosystem, &str)],
     cfg: &'a ResolvedConfig,
 ) -> Option<&'a PackageConfig> {
     cfg.packages
         .iter()
-        .find(|(rule_id, _)| rule_applies(rule_id, id, package_ecosystems))
+        .find(|(rule_id, _)| rule_applies(rule_id, native_names))
         .map(|(_, pcfg)| pcfg)
 }
 
@@ -1042,7 +1047,7 @@ mod tests {
         .expect("write callisto.toml");
         let cfg = load(root).expect("load should succeed");
         let id = PackageId::parse("foo").unwrap();
-        let pcfg = resolve_package_config(&id, &[Ecosystem::Npm], &cfg)
+        let pcfg = resolve_package_config(&names_of(&id, &[Ecosystem::Npm]), &cfg)
             .expect("resolve_package_config must return Some for npm/foo (Prefixed)");
         assert_eq!(
             pcfg.release_trigger,
@@ -1070,7 +1075,7 @@ mod tests {
         .expect("write callisto.toml");
         let cfg = load(root).expect("load should succeed");
         let id = PackageId::parse("pkg").unwrap();
-        let pcfg = resolve_package_config(&id, &[Ecosystem::Npm], &cfg)
+        let pcfg = resolve_package_config(&names_of(&id, &[Ecosystem::Npm]), &cfg)
             .expect("resolve_package_config must return Some for npm/pkg matching pkg");
         assert!(
             pcfg.changelog
@@ -1098,7 +1103,7 @@ mod tests {
         .expect("write callisto.toml");
         let cfg = load(root).expect("load should succeed");
         let id = PackageId::parse("pkg").unwrap();
-        let result = resolve_package_config(&id, &[], &cfg);
+        let result = resolve_package_config(&names_of(&id, &[]), &cfg);
         assert!(
             result.is_none(),
             "resolve_package_config must return None when no rule matches; got Some(...)"
@@ -1121,7 +1126,7 @@ mod tests {
         );
         for id_str in &["pkg", "npm/pkg", "cargo/pkg"] {
             let id = PackageId::parse(id_str).unwrap();
-            let result = resolve_package_config(&id, &[], &cfg);
+            let result = resolve_package_config(&names_of(&id, &[]), &cfg);
             assert!(
                 result.is_none(),
                 "resolve_package_config must return None for empty packages, \
@@ -1134,6 +1139,27 @@ mod tests {
     /// Both rules set release_trigger with different values so the winner is directly observable.
     /// npm/foo (first): release-trigger = "auto" -> release_trigger = Some(Auto).
     /// cargo/foo (second): release-trigger = "changeset" -> release_trigger = Some(Changeset).
+    /// A package's native names when it has the same name in each of `ecosystems`.
+    fn names_of<'a>(id: &'a PackageId, ecosystems: &[Ecosystem]) -> Vec<(Ecosystem, &'a str)> {
+        ecosystems.iter().map(|ecosystem| (*ecosystem, id.name())).collect()
+    }
+
+    /// A dual napi package is `michi-node` to Cargo and `@orin-dx/michi` to npm. A qualified rule is that ecosystem's
+    /// own name, so `npm/michi-node` is not `@orin-dx/michi`, whatever the directory or Cargo name is.
+    #[test]
+    fn a_qualified_rule_matches_the_native_name_in_its_own_ecosystem() {
+        let names = [(Ecosystem::Cargo, "michi-node"), (Ecosystem::Npm, "@orin-dx/michi")];
+        let rule = |text: &str| PackageId::parse(text).unwrap();
+        assert!(rule_applies(&rule("cargo/michi-node"), &names));
+        assert!(rule_applies(&rule("npm/@orin-dx/michi"), &names));
+        assert!(
+            !rule_applies(&rule("npm/michi-node"), &names),
+            "the Cargo name is not the npm name"
+        );
+        assert!(!rule_applies(&rule("cargo/@orin-dx/michi"), &names));
+        assert!(!rule_applies(&rule("pypi/michi-node"), &names));
+    }
+
     /// Pass 1 returns the first matching Prefixed entry in Vec (TOML declaration) order.
     /// Vec order must govern: npm/foo is first -> release_trigger must be Some(Auto).
     /// A sorted implementation (cargo < npm alphabetically) would return Some(Changeset).
@@ -1152,7 +1178,7 @@ mod tests {
         .expect("write callisto.toml");
         let cfg = load(root).expect("load should succeed");
         let id = PackageId::parse("foo").unwrap();
-        let pcfg = resolve_package_config(&id, &[Ecosystem::Npm, Ecosystem::Cargo], &cfg)
+        let pcfg = resolve_package_config(&names_of(&id, &[Ecosystem::Npm, Ecosystem::Cargo]), &cfg)
             .expect("resolve_package_config must return Some for Bare(\"foo\")");
         assert_eq!(
             pcfg.release_trigger,
@@ -1180,7 +1206,7 @@ mod tests {
         .expect("write callisto.toml");
         let cfg = load(root).expect("load should succeed");
         let id = PackageId::parse("foo").unwrap();
-        let result = resolve_package_config(&id, &[Ecosystem::Cargo], &cfg);
+        let result = resolve_package_config(&names_of(&id, &[Ecosystem::Cargo]), &cfg);
         assert!(
             result.is_none(),
             "a `pypi/foo` rule must not apply to a package whose only real ecosystem is Cargo; got {result:?}"

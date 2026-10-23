@@ -156,7 +156,14 @@ impl ManifestWalkResolver {
         } = assign_identities(discovered, manifest_cache, &ctx)?;
         diagnostics.extend(unresolved);
 
-        let packages = resolve_packages(package_manifest_decls, cfg, manifest_cache, &ctx, &mut diagnostics)?;
+        let packages = resolve_packages(
+            package_manifest_decls,
+            &index,
+            cfg,
+            manifest_cache,
+            &ctx,
+            &mut diagnostics,
+        )?;
 
         let (edges, out_index, in_index) = build_edges(root, &packages, &index, manifest_cache, &ctx, &mut diagnostics);
 
@@ -554,6 +561,7 @@ impl<'a> IdentityAssigner<'a> {
 /// nothing or matched across ecosystems.
 fn resolve_packages(
     package_manifest_decls: BTreeMap<PackageId, (PathBuf, Vec<ManifestDecl>)>,
+    index: &IdentityIndex,
     cfg: &ResolvedConfig,
     manifest_cache: &RefCell<BTreeMap<PathBuf, Arc<dyn Manifest>>>,
     ctx: &OpenContext<'_>,
@@ -570,6 +578,7 @@ fn resolve_packages(
     // packages (e.g. an ecosystem prefix the package doesn't actually have) is just as
     // likely a typo as an empty `[[package-set]]` glob, so it gets the same diagnostic.
     let mut package_rule_matched = vec![false; cfg.packages.len()];
+    let mut package_rule_hint: Vec<Option<String>> = vec![None; cfg.packages.len()];
 
     let mut packages = BTreeMap::new();
     for (id, (rel_path, decls)) in package_manifest_decls {
@@ -604,20 +613,23 @@ fn resolve_packages(
         let package_ecosystems: Vec<Ecosystem> = decls.iter().map(|d| d.ecosystem()).collect();
 
         // The first [[package]] rule, in declaration order, whose ecosystem this package has and whose name matches.
-        let pkg_override = resolve_package_config(&id, &package_ecosystems, cfg);
+        let native_names: Vec<(Ecosystem, &str)> = index.native_names(&id).collect();
+        let pkg_override = resolve_package_config(&native_names, cfg);
 
         // Record which [[package-set]] patterns match this package,
         // independent of whether a [[package]] rule ends up shadowing the
         // fallback below — a pattern that is always shadowed still
         // "matched" for the purpose of the zero-match diagnostic.
         for (idx, (pattern, _)) in cfg.package_sets.iter().enumerate() {
-            if pattern.matches_in_ecosystems(id.name(), &package_ecosystems) {
+            if pattern.matches_native(&native_names) {
                 package_set_matched[idx] = true;
             }
         }
         for (idx, (rule_id, _)) in cfg.packages.iter().enumerate() {
-            if rule_applies(rule_id, &id, &package_ecosystems) {
+            if rule_applies(rule_id, &native_names) {
                 package_rule_matched[idx] = true;
+            } else if package_rule_hint[idx].is_none() {
+                package_rule_hint[idx] = index.suggest_native(&rule_id.to_string());
             }
         }
 
@@ -627,7 +639,7 @@ fn resolve_packages(
         let set_override = if pkg_override.is_none() {
             cfg.package_sets
                 .iter()
-                .find(|(pattern, _)| pattern.matches_in_ecosystems(id.name(), &package_ecosystems))
+                .find(|(pattern, _)| pattern.matches_native(&native_names))
                 .map(|(_, cfg)| cfg)
         } else {
             None
@@ -732,7 +744,10 @@ fn resolve_packages(
             diagnostics.push(Diagnostic {
                 code: DiagnosticCode::PackageRuleMatchedNothing,
                 severity: DiagnosticSeverity::Warning,
-                message: format!("[[package]] `{rule_id}` matched no packages"),
+                message: match &package_rule_hint[idx] {
+                    Some(hint) => format!("[[package]] `{rule_id}` matched no packages; did you mean `{hint}`?"),
+                    None => format!("[[package]] `{rule_id}` matched no packages"),
+                },
                 package: None,
                 path: None,
                 escalated_by: None,
