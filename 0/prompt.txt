@@ -1,0 +1,1 @@
+I'm looking at using gix for callisto but native git seems to be quite a bit faster. How is that the case? Are the bug or performance optimizations that we could contribute to gix?
