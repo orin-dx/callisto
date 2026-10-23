@@ -77,6 +77,11 @@ impl ChangeHistory {
                 .collect();
             records.push((sha.as_str().to_owned(), parents, paths));
         }
+        Ok(Self::from_records(records, head))
+    }
+
+    /// Builds the history from commits listed children before parents: each one's id, its parents' ids and its paths.
+    fn from_records(records: Vec<(String, Vec<String>, Vec<PathBuf>)>, head: &CommitSha) -> Self {
         let index: std::collections::HashMap<String, usize> = records
             .iter()
             .enumerate()
@@ -104,12 +109,12 @@ impl ChangeHistory {
         let linear = commits
             .iter()
             .all(|commit| commit.from_head && commit.parents.len() <= 1);
-        Ok(ChangeHistory {
+        ChangeHistory {
             commits,
             index,
             linear,
             ancestors: std::cell::RefCell::new(std::collections::HashMap::new()),
-        })
+        }
     }
 
     /// Every listed commit, `HEAD`-side first, with its position and the paths it changed.
@@ -857,19 +862,134 @@ impl GitAccess<'_> {
         let mut revs: Vec<String> = vec!["HEAD".to_owned()];
         revs.extend(boundaries.iter().map(|boundary| boundary.as_str().to_owned()));
         revs.extend(base.as_ref().map(|base| format!("^{}", base.as_str())));
-        let mut args = vec![
-            "log",
-            "--no-show-signature",
+        // Any failure of the parallel read, such as a runner that cannot pipe input, is answered by one `git log`.
+        match self.change_history_in_parallel(&head, &revs) {
+            Ok(history) => Ok(history),
+            Err(_) => self.change_history_by_log(&head, &revs),
+        }
+    }
+
+    /// The commits come from one `git rev-list`, and their changed paths from several `git diff-tree` processes that
+    /// each take a slice of them, so the work of diffing a long history spreads over the machine's cores.
+    fn change_history_in_parallel(&self, head: &CommitSha, revs: &[String]) -> Result<ChangeHistory, VcsError> {
+        // The most processes started at once, and the fewest commits worth giving one of them.
+        const MAX_WORKERS: usize = 8;
+        const MIN_COMMITS_PER_WORKER: usize = 2000;
+
+        let listing = self.run_with_revisions(&["rev-list", "--parents", "--topo-order"], revs)?;
+        let mut commits: Vec<(String, Vec<String>)> = Vec::new();
+        for line in listing.stdout.lines().filter(|line| !line.is_empty()) {
+            let mut ids = line.split(' ').map(|id| {
+                CommitSha::parse(id)
+                    .map(|id| id.as_str().to_owned())
+                    .map_err(|error| VcsError::MalformedLogOutput {
+                        detail: format!("`git rev-list --parents` listed `{id}`, which is not a commit id: {error}"),
+                    })
+            });
+            let Some(sha) = ids.next() else { continue };
+            commits.push((sha?, ids.collect::<Result<Vec<_>, _>>()?));
+        }
+
+        let shas: Vec<&str> = commits.iter().map(|(sha, _)| sha.as_str()).collect();
+        let workers = std::thread::available_parallelism()
+            .map_or(1, usize::from)
+            .min(MAX_WORKERS);
+        let slice_len = shas.len().div_ceil(workers).max(MIN_COMMITS_PER_WORKER);
+        let slices: Vec<Result<std::collections::HashMap<String, Vec<PathBuf>>, VcsError>> =
+            std::thread::scope(|scope| {
+                let workers: Vec<_> = shas
+                    .chunks(slice_len)
+                    .map(|slice| scope.spawn(move || self.paths_changed_by(slice)))
+                    .collect();
+                workers
+                    .into_iter()
+                    .map(|worker| {
+                        worker
+                            .join()
+                            .unwrap_or_else(|_| Err(VcsError::Git("a `git diff-tree` worker stopped".to_owned())))
+                    })
+                    .collect()
+            });
+        let mut paths: std::collections::HashMap<String, Vec<PathBuf>> = std::collections::HashMap::new();
+        for slice in slices {
+            paths.extend(slice?);
+        }
+        let records = commits
+            .into_iter()
+            .map(|(sha, parents)| {
+                let changed = paths.remove(&sha).unwrap_or_default();
+                (sha, parents, changed)
+            })
+            .collect();
+        Ok(ChangeHistory::from_records(records, head))
+    }
+
+    /// What each of `commits` changed, from one `git diff-tree --stdin`. A merge lists the paths where it differs from
+    /// every parent. `-z` prints each commit id and then its paths with no other separator, so the ids asked for are
+    /// what tell the two apart.
+    fn paths_changed_by(&self, commits: &[&str]) -> Result<std::collections::HashMap<String, Vec<PathBuf>>, VcsError> {
+        let args = [
+            "diff-tree",
+            "--stdin",
+            "--root",
+            "--cc",
+            "-r",
+            "--name-only",
+            "-z",
             "--no-renames",
             "--relative",
-            "--name-only",
-            "--cc",
-            "--topo-order",
-            "-z",
-            "--format=%x1e%H%x1f%P",
         ];
-        // Many revisions go through stdin so the argument list stays short.
+        let stdin = commits.join("\n") + "\n";
+        let output = self.runner.run_with_stdin("git", &args, &self.root, stdin.as_bytes())?;
+        if !output.success() {
+            return Err(probe_failed(&args, &self.root, &output));
+        }
+        let asked: std::collections::HashSet<&str> = commits.iter().copied().collect();
+        let mut paths: std::collections::HashMap<String, Vec<PathBuf>> = std::collections::HashMap::new();
+        let mut current: Option<&str> = None;
+        for token in output
+            .stdout
+            .split('\0')
+            .map(|token| token.trim_start_matches('\n'))
+            .filter(|token| !token.is_empty())
+        {
+            if asked.contains(token) {
+                current = Some(token);
+                paths.entry(token.to_owned()).or_default();
+            } else if let Some(commit) = current {
+                paths.entry(commit.to_owned()).or_default().push(PathBuf::from(token));
+            } else {
+                return Err(VcsError::MalformedLogOutput {
+                    detail: format!("`git diff-tree --stdin` printed `{token}` before any commit it was asked about"),
+                });
+            }
+        }
+        Ok(paths)
+    }
+
+    /// The same history from a single `git log`, for a runner that cannot start the parallel reads.
+    fn change_history_by_log(&self, head: &CommitSha, revs: &[String]) -> Result<ChangeHistory, VcsError> {
+        let output = self.run_with_revisions(
+            &[
+                "log",
+                "--no-show-signature",
+                "--no-renames",
+                "--relative",
+                "--name-only",
+                "--cc",
+                "--topo-order",
+                "-z",
+                "--format=%x1e%H%x1f%P",
+            ],
+            revs,
+        )?;
+        ChangeHistory::parse(&output.stdout, &self.root, head)
+    }
+
+    /// Runs `git <base_args> <revs>`. Many revisions go through stdin so the argument list stays short.
+    fn run_with_revisions(&self, base_args: &[&str], revs: &[String]) -> Result<CommandOutput, VcsError> {
         const MAX_REVS_AS_ARGUMENTS: usize = 2000;
+        let mut args: Vec<&str> = base_args.to_vec();
         let output = if revs.len() <= MAX_REVS_AS_ARGUMENTS {
             args.extend(revs.iter().map(String::as_str));
             self.runner.run("git", &args, &self.root)?
@@ -881,7 +1001,7 @@ impl GitAccess<'_> {
         if !output.success() {
             return Err(probe_failed(&args, &self.root, &output));
         }
-        ChangeHistory::parse(&output.stdout, &self.root, &head)
+        Ok(output)
     }
 
     /// One commit every boundary descends from, or `None` when they share none (or there are none).

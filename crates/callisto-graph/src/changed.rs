@@ -405,6 +405,17 @@ mod tests {
         assert_eq!(calls.iter().filter(|c| c.starts_with("log")).count(), 1, "{calls:?}");
     }
 
+    /// The single pass through a runner that can pipe input, so the history is read by parallel `git diff-tree`
+    /// processes and not by the one `git log` the recording runner falls back to.
+    fn changed_in_parallel(root: &Path, pkgs: &[Package]) -> BTreeMap<PackageId, bool> {
+        let graph = FixedGraph { pkgs: pkgs.to_vec() };
+        let cfg = crate::config::load(root).unwrap();
+        let git = GitAccess::new(root, &GitRunner);
+        let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
+        let refs: Vec<&Package> = pkgs.iter().collect();
+        changed_since_last_tag(&refs, &tags, &git).unwrap()
+    }
+
     /// The fallback that walks each tag commit on its own, for comparison with the single pass.
     fn changed_per_tag_commit(root: &Path, pkgs: &[Package]) -> BTreeMap<PackageId, bool> {
         let graph = FixedGraph { pkgs: pkgs.to_vec() };
@@ -439,6 +450,7 @@ mod tests {
         let (single, _) = changed(root, &pkgs);
 
         assert_eq!(single, changed_per_tag_commit(root, &pkgs));
+        assert_eq!(single, changed_in_parallel(root, &pkgs));
         assert!(
             single[&id("pkg-b")],
             "b changed on the side branch and in the working tree"
@@ -463,6 +475,7 @@ mod tests {
         let (single, _) = changed(root, &pkgs);
 
         assert_eq!(single, changed_per_tag_commit(root, &pkgs));
+        assert_eq!(single, changed_in_parallel(root, &pkgs));
         assert!(single[&id("pkg-a")], "a changed before the split, after its own tag");
         assert!(single[&id("pkg-b")], "HEAD lacks the fix the hotfix tag has");
         assert!(single[&id("pkg-c")]);
