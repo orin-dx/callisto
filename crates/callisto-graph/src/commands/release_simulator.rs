@@ -14,6 +14,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::time::Duration;
 
 use callisto_model::{
     AbsentProof, ApplyPermit, ArtifactDigest, ArtifactManifestEntryV1, ArtifactManifestV1, ArtifactSlotId, CommitSha,
@@ -319,6 +320,10 @@ struct SimWorld {
     /// Every observation outside a post-effect confirmation answers `Absent`
     /// about an effect the world already holds. Used only to prove the checker.
     lying_provider: bool,
+    /// Registry publishes are issued now and confirmed later, as npm's are in production.
+    deferring: bool,
+    /// How often the executor waited for an issued publish to show.
+    pauses: Cell<usize>,
 }
 
 impl SimWorld {
@@ -343,7 +348,15 @@ impl SimWorld {
             lagged_ever: RefCell::new(BTreeSet::new()),
             calls_after_execution: Cell::new(0),
             lying_provider,
+            deferring: false,
+            pauses: Cell::new(0),
         }
+    }
+
+    /// The same world with registry publishes deferred.
+    fn deferring(mut self) -> Self {
+        self.deferring = true;
+        self
     }
 
     fn faults_armed(&self) -> bool {
@@ -503,6 +516,52 @@ impl ReleaseProviderSet for SimWorld {
         id: &ReleaseOperationId,
         _artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<ExactEvidence, GraphError> {
+        self.land_effect(id)?;
+        // Production confirms an effect by re-observing it, never by the
+        // client's exit code, so the confirmation goes through the same seam.
+        let confirmation = self.remote_observation(id, true);
+        confirmation
+            .exact_evidence()
+            .ok_or_else(|| GraphError::ReleaseRemoteConflict {
+                conflict: remote_conflict_for(id),
+            })
+    }
+
+    fn defers_confirmation(&self, id: &ReleaseOperationId) -> bool {
+        self.deferring
+            && matches!(
+                id.role,
+                callisto_model::ReleaseOperationRole::RegistryPublish { .. }
+                    | callisto_model::ReleaseOperationRole::PlatformPublish { .. }
+            )
+    }
+
+    fn issue(
+        &self,
+        _permit: &ApplyPermit,
+        _proof: &AbsentProof,
+        id: &ReleaseOperationId,
+        _artifacts: Option<&VerifiedArtifactManifest<'_>>,
+    ) -> Result<(), GraphError> {
+        self.land_effect(id)
+    }
+
+    fn confirmation_window(&self, id: &ReleaseOperationId) -> Duration {
+        if self.defers_confirmation(id) {
+            Duration::from_secs(360)
+        } else {
+            Duration::ZERO
+        }
+    }
+
+    fn pause(&self, _duration: Duration) {
+        self.pauses.set(self.pauses.get() + 1);
+    }
+}
+
+impl SimWorld {
+    /// The effect itself: the faults, the landing and the lost response, but not the confirmation.
+    fn land_effect(&self, id: &ReleaseOperationId) -> Result<(), GraphError> {
         let index = self.effect_calls.get();
         self.effect_calls.set(index + 1);
         self.check_prerequisites(id);
@@ -540,14 +599,7 @@ impl ReleaseProviderSet for SimWorld {
         if fault.is_some_and(FaultKind::lands_the_effect) {
             return Err(command_failure("response lost after the effect landed"));
         }
-        // Production confirms an effect by re-observing it, never by the
-        // client's exit code, so the confirmation goes through the same seam.
-        let confirmation = self.remote_observation(id, true);
-        confirmation
-            .exact_evidence()
-            .ok_or_else(|| GraphError::ReleaseRemoteConflict {
-                conflict: remote_conflict_for(id),
-            })
+        Ok(())
     }
 }
 
@@ -647,8 +699,19 @@ struct ScenarioRun {
 
 /// One end-to-end simulated release, including the operator's reruns.
 fn run_scenario(intent: &ReleaseIntentV1, manifest: &ArtifactManifestV1, scenario: Scenario) -> ScenarioRun {
+    run_scenario_in(intent, manifest, scenario, false)
+}
+
+/// [`run_scenario`] with registry publishes deferred when `deferring`.
+fn run_scenario_in(
+    intent: &ReleaseIntentV1,
+    manifest: &ArtifactManifestV1,
+    scenario: Scenario,
+    deferring: bool,
+) -> ScenarioRun {
     let context = Rc::new(SimContext::default());
     let world = SimWorld::new(intent.clone(), scenario, Rc::clone(&context), false);
+    let world = if deferring { world.deferring() } else { world };
     run_world(world, context, manifest)
 }
 
@@ -879,14 +942,15 @@ struct Dimensions {
     provider_calls: usize,
 }
 
-fn measure(intent: &ReleaseIntentV1, manifest: &ArtifactManifestV1) -> Dimensions {
-    let run = run_scenario(
+fn measure(intent: &ReleaseIntentV1, manifest: &ArtifactManifestV1, deferring: bool) -> Dimensions {
+    let run = run_scenario_in(
         intent,
         manifest,
         Scenario {
             crash: None,
             fault: None,
         },
+        deferring,
     );
     assert_eq!(
         run.outcomes,
@@ -983,8 +1047,19 @@ fn trace_lines(context: &SimContext) -> String {
 
 #[test]
 fn the_release_executor_survives_every_enumerated_crash_and_provider_fault() {
+    survives_every_scenario(false);
+}
+
+/// The same enumeration with registry publishes issued first and confirmed together afterwards. Every invariant
+/// holds: nothing announced before its registries show it, no second landing, a receipt only for a real release.
+#[test]
+fn the_release_executor_with_deferred_confirmation_survives_every_enumerated_crash_and_provider_fault() {
+    survives_every_scenario(true);
+}
+
+fn survives_every_scenario(deferring: bool) {
     let (intent, manifest) = simulator_intent();
-    let dimensions = measure(&intent, &manifest);
+    let dimensions = measure(&intent, &manifest, deferring);
     let (all, singles_crash, singles_fault, pairs) = scenarios(&dimensions);
 
     println!(
@@ -1006,7 +1081,7 @@ fn the_release_executor_survives_every_enumerated_crash_and_provider_fault() {
     let mut converged = 0usize;
     let mut conflicted = 0usize;
     for scenario in all {
-        let run = run_scenario(&intent, &manifest, scenario);
+        let run = run_scenario_in(&intent, &manifest, scenario, deferring);
         let classification = match check_invariants(&intent, &run) {
             Ok(classification) => classification,
             Err(violation) => panic!(
@@ -1214,4 +1289,147 @@ fn the_checker_reports_a_receipt_whose_evidence_the_world_does_not_hold() {
         matches!(violation, Violation::ReceiptEvidenceDisagreesWithWorld { .. }),
         "expected ReceiptEvidenceDisagreesWithWorld, got {violation:?}"
     );
+}
+
+fn first_effect_of(run: &ScenarioRun, role: fn(&callisto_model::ReleaseOperationRole) -> bool) -> Option<usize> {
+    run.context
+        .trace
+        .borrow()
+        .iter()
+        .position(|event| matches!(event, TraceEvent::Effect { id, landed: true, .. } if role(&id.role)))
+}
+
+fn is_tag(role: &callisto_model::ReleaseOperationRole) -> bool {
+    matches!(role, callisto_model::ReleaseOperationRole::Tag)
+}
+
+fn is_registry(role: &callisto_model::ReleaseOperationRole) -> bool {
+    matches!(
+        role,
+        callisto_model::ReleaseOperationRole::RegistryPublish { .. }
+            | callisto_model::ReleaseOperationRole::PlatformPublish { .. }
+    )
+}
+
+/// With confirmation deferred, every registry publish of the release is issued before the first tag: the dependent
+/// registry publish does not wait for its platform package to be shown, and the tag waits for all of them.
+#[test]
+fn deferred_registry_publishes_are_all_issued_before_the_first_tag() {
+    let (intent, manifest) = simulator_intent();
+    let run = run_scenario_in(
+        &intent,
+        &manifest,
+        Scenario {
+            crash: None,
+            fault: None,
+        },
+        true,
+    );
+    assert_eq!(
+        run.outcomes,
+        vec![RunOutcome::Receipted],
+        "{}",
+        trace_lines(&run.context)
+    );
+    let first_tag = first_effect_of(&run, is_tag).expect("a tag landed");
+    let registry_effects = run
+        .context
+        .trace
+        .borrow()
+        .iter()
+        .enumerate()
+        .filter(|(_, event)| matches!(event, TraceEvent::Effect { id, landed: true, .. } if is_registry(&id.role)))
+        .map(|(position, _)| position)
+        .collect::<Vec<_>>();
+    assert_eq!(registry_effects.len(), 3, "alpha, the beta platform package and beta");
+    assert!(
+        registry_effects.iter().all(|position| *position < first_tag),
+        "a registry publish waited behind a tag:\n{}",
+        trace_lines(&run.context)
+    );
+}
+
+/// A registry that shows a published version late no longer costs a run: the executor waits, together, for every
+/// issued publish, then goes on to the tags.
+#[test]
+fn a_registry_that_shows_a_version_late_is_waited_on_within_the_run() {
+    let (intent, manifest) = simulator_intent();
+    let context = Rc::new(SimContext::default());
+    let world = SimWorld::new(
+        intent.clone(),
+        Scenario {
+            crash: None,
+            fault: None,
+        },
+        Rc::clone(&context),
+        false,
+    )
+    .deferring();
+    for operation in &intent.operations {
+        if is_registry(&operation.id().role) {
+            world.lag.borrow_mut().insert(operation.id().clone(), LAG_SPAN);
+        }
+    }
+    let run = run_world(world, context, &manifest);
+    assert_eq!(
+        run.outcomes,
+        vec![RunOutcome::Receipted],
+        "{}",
+        trace_lines(&run.context)
+    );
+    assert!(run.world.pauses.get() > 0, "the lag should have been waited out");
+    if let Err(violation) = check_invariants(&intent, &run) {
+        panic!("{violation:?}\n{}", trace_lines(&run.context));
+    }
+}
+
+/// A version the registry never shows stops the run with the unconfirmed-publish error, after the whole window and
+/// before that package is announced; every rerun stops the same way.
+#[test]
+fn a_version_that_never_shows_stops_the_run_before_any_tag() {
+    let (intent, manifest) = simulator_intent();
+    let context = Rc::new(SimContext::default());
+    let world = SimWorld::new(
+        intent.clone(),
+        Scenario {
+            crash: None,
+            fault: None,
+        },
+        Rc::clone(&context),
+        false,
+    )
+    .deferring();
+    let alpha_registry = intent
+        .operations
+        .iter()
+        .find(|operation| is_registry(&operation.id().role) && operation.id().package.name() == "alpha")
+        .unwrap()
+        .id()
+        .clone();
+    world.lag.borrow_mut().insert(alpha_registry, 1_000_000);
+
+    let run = run_world(world, context, &manifest);
+    assert!(
+        run.outcomes.iter().all(|outcome| *outcome == RunOutcome::Failed),
+        "{:?}",
+        run.outcomes
+    );
+    assert!(
+        run.context
+            .trace
+            .borrow()
+            .iter()
+            .any(|event| matches!(event, TraceEvent::RunEnd { outcome, .. } if outcome.contains("RegistryPublishUnconfirmed"))),
+        "{}",
+        trace_lines(&run.context)
+    );
+    let alpha_tag_landed = run.context.trace.borrow().iter().any(|event| {
+        matches!(event, TraceEvent::Effect { id, landed: true, .. } if is_tag(&id.role) && id.package.name() == "alpha")
+    });
+    assert!(
+        !alpha_tag_landed,
+        "alpha was announced before its registry showed it:\n{}",
+        trace_lines(&run.context)
+    );
+    assert!(run.world.pauses.get() > 0);
 }

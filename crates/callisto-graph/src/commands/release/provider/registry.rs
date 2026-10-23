@@ -62,6 +62,33 @@ impl ReleaseProvider for RegistryProvider {
         Ok(preflight)
     }
 
+    fn defers_confirmation(&self, request: &ProviderRequest<'_>) -> bool {
+        adapter_for(request.id.package.ecosystem()).is_ok_and(|adapter| adapter.defers_confirmation())
+    }
+
+    fn issue(
+        &self,
+        context: &ProviderContext<'_>,
+        request: &ProviderRequest<'_>,
+        _effect: &EffectAuthorization<'_>,
+    ) -> Result<(), GraphError> {
+        let operation = registry_operation(request)?;
+        let adapter = adapter_for(request.id.package.ecosystem())?;
+        if !adapter.defers_confirmation() {
+            return Err(GraphError::ReleaseInvariant {
+                detail: format!("`{}` is confirmed as it is published", request.id),
+            });
+        }
+        run_publish_client(adapter, context, request, operation)
+    }
+
+    fn confirmation_window(&self, request: &ProviderRequest<'_>) -> Duration {
+        match (registry_operation(request), adapter_for(request.id.package.ecosystem())) {
+            (Ok(operation), Ok(adapter)) => visibility_window(adapter, operation),
+            _ => Duration::ZERO,
+        }
+    }
+
     fn publish(
         &self,
         context: &ProviderContext<'_>,
@@ -70,12 +97,7 @@ impl ReleaseProvider for RegistryProvider {
     ) -> Result<ExactEvidence, GraphError> {
         let operation = registry_operation(request)?;
         let adapter = adapter_for(request.id.package.ecosystem())?;
-        let output = adapter.publish(context, request.id, operation, request.artifacts)?;
-        // A failed publish stops here. A published and an already-existing version are confirmed alike.
-        adapter.classify(&output).map_err(|source| GraphError::Registry {
-            package: operation.package_name.clone(),
-            source,
-        })?;
+        run_publish_client(adapter, context, request, operation)?;
         // Neither a zero exit nor the client's "already exists" text is a
         // receipt: a yanked version is not the version this intent authorized,
         // so only an exact observation may satisfy the operation.
@@ -117,6 +139,24 @@ fn warn_if_foreign_repository(
     ) {
         eprintln!("{warning}");
     }
+}
+
+/// Runs the ecosystem's publish client. A failed publish stops here; a published and an already-existing version are
+/// both left for the confirmation.
+fn run_publish_client(
+    adapter: &dyn RegistryEcosystem,
+    context: &ProviderContext<'_>,
+    request: &ProviderRequest<'_>,
+    operation: &RegistryPublishOperation,
+) -> Result<(), GraphError> {
+    let output = adapter.publish(context, request.id, operation, request.artifacts)?;
+    adapter
+        .classify(&output)
+        .map(|_outcome| ())
+        .map_err(|source| GraphError::Registry {
+            package: operation.package_name.clone(),
+            source,
+        })
 }
 
 fn proceed() -> ReleasePreflight {
@@ -186,6 +226,12 @@ fn confirmed_registry_observation<A: RegistryEcosystem + ?Sized>(
 /// not another match in preflight, dispatch, or confirmation.
 pub(crate) trait RegistryEcosystem {
     fn ecosystem(&self) -> Ecosystem;
+
+    /// Whether a publish here is complete once the version is visible, so the run can issue the next publish while
+    /// this one propagates. Not true where completion is more than visibility: PyPI compares a whole file set.
+    fn defers_confirmation(&self) -> bool {
+        false
+    }
 
     /// The repository the registry says this published version belongs to. Best effort: a registry that records
     /// none, or a read that fails, is `None`.
@@ -604,6 +650,10 @@ struct NpmRegistry;
 impl RegistryEcosystem for NpmRegistry {
     fn ecosystem(&self) -> Ecosystem {
         Ecosystem::Npm
+    }
+
+    fn defers_confirmation(&self) -> bool {
+        true
     }
 
     fn repository(&self, context: &ProviderContext<'_>, operation: &RegistryPublishOperation) -> Option<String> {

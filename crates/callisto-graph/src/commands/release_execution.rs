@@ -3,6 +3,9 @@
 //! Every run starts from a fresh in-memory state and observes each provider
 //! before acting, so a rerun adopts whatever an earlier run already landed.
 
+use std::collections::BTreeSet;
+use std::time::Duration;
+
 use michi_graph::{Dag, Order};
 
 use callisto_model::{
@@ -36,12 +39,25 @@ pub fn execute_release<P: ReleaseProviderSet + ?Sized>(
     let mut state = ReleaseExecutionStateV1::new(intent, envelope.clone())
         .map_err(|source| GraphError::ReleaseExecutionState { source })?;
     let dag = operation_dag(intent)?;
-    while let Some(operation) = eligible_in(&dag, &state).first().cloned() {
+    // Registry publishes issued but not yet seen on their registry; they stay `Attempting` until they are.
+    let mut issued = BTreeSet::new();
+    loop {
+        let Some(operation) = eligible_in(&dag, &state, &issued).first().cloned() else {
+            if issued.is_empty() {
+                break;
+            }
+            settle_issued(capability, artifacts, &mut state, &mut issued)?;
+            continue;
+        };
         capability.recheck_trust()?;
-        let event = match capability.preflight(&operation, artifacts)? {
+        match capability.preflight(&operation, artifacts)? {
             ReleasePreflight::AlreadySatisfied { evidence } => {
                 warn_if_registry_version_adopted(&operation);
-                OperationEvent::ObservedExactBeforeEffect { evidence }
+                apply(
+                    &mut state,
+                    &operation,
+                    &OperationEvent::ObservedExactBeforeEffect { evidence },
+                )?;
             }
             ReleasePreflight::Proceed { proof } => {
                 let attempt = OperationEvent::Attempt { proof };
@@ -53,12 +69,15 @@ pub fn execute_release<P: ReleaseProviderSet + ?Sized>(
                         detail: "the attempt event just built is not an Attempt".to_owned(),
                     });
                 };
-                OperationEvent::Confirmed {
-                    evidence: capability.publish(permit, proof, &operation, artifacts)?,
+                if capability.defers_confirmation(&operation) {
+                    capability.issue(permit, proof, &operation, artifacts)?;
+                    issued.insert(operation);
+                } else {
+                    let evidence = capability.publish(permit, proof, &operation, artifacts)?;
+                    apply(&mut state, &operation, &OperationEvent::Confirmed { evidence })?;
                 }
             }
-        };
-        apply(&mut state, &operation, &event)?;
+        }
     }
     require_terminal_success(intent, &state)?;
     Ok(state)
@@ -165,33 +184,104 @@ pub(crate) fn operation_dag(intent: &ReleaseIntentV1) -> Result<Dag<ReleaseOpera
     })
 }
 
-/// The pending operations whose every transitive prerequisite is exactly `Published` or `AlreadySatisfied`, in the
-/// intent's canonical order.
+/// Looks at every issued operation until one is shown, so the run goes on with whatever that unlocks, or gives up
+/// once the registries have had their whole window.
 ///
-/// `ready` checks direct prerequisites; the ancestor check keeps a defective executor that recorded a later
+/// Each look is one observation per issued operation, and the issued operations are looked at together: the wait is
+/// the slowest registry's, not the sum of them.
+fn settle_issued<P: ReleaseProviderSet + ?Sized>(
+    capability: &P,
+    artifacts: Option<&VerifiedArtifactManifest<'_>>,
+    state: &mut ReleaseExecutionStateV1,
+    issued: &mut BTreeSet<ReleaseOperationId>,
+) -> Result<(), GraphError> {
+    let window = issued
+        .iter()
+        .map(|id| capability.confirmation_window(id))
+        .max()
+        .unwrap_or_default();
+    let mut waited = Duration::ZERO;
+    let mut step = 0;
+    loop {
+        let mut progressed = false;
+        for id in issued.clone() {
+            if let Some(evidence) = capability.settle(&id, artifacts)? {
+                apply(state, &id, &OperationEvent::Confirmed { evidence })?;
+                issued.remove(&id);
+                progressed = true;
+            }
+        }
+        if issued.is_empty() || progressed {
+            return Ok(());
+        }
+        let remaining = window.saturating_sub(waited);
+        if remaining.is_zero() {
+            let mut unconfirmed = issued.iter();
+            let Some(first) = unconfirmed.next() else {
+                return Ok(());
+            };
+            for other in unconfirmed {
+                eprintln!("warning: {other} is also still not shown by its registry");
+            }
+            return Err(GraphError::RegistryPublishUnconfirmed {
+                package: first.package.name().to_owned(),
+                version: first.version.clone(),
+                waited: window,
+            });
+        }
+        let wait = crate::commands::release::provider::policy::visibility_backoff(step).min(remaining);
+        capability.pause(wait);
+        waited += wait;
+        step += 1;
+    }
+}
+
+/// A registry publish, which is issued now and shown later.
+fn is_registry_effect(id: &ReleaseOperationId) -> bool {
+    matches!(
+        id.role,
+        ReleaseOperationRole::RegistryPublish { .. } | ReleaseOperationRole::PlatformPublish { .. }
+    )
+}
+
+/// The pending operations that may start, in the intent's canonical order.
+///
+/// An operation may start when every one of its transitive prerequisites is `Published` or `AlreadySatisfied`. A
+/// registry publish may also follow a registry publish that is only `issued`: npm takes a package whose dependency is
+/// not visible yet, and everything announced (tag, release, uploads, publication) still waits for the version to be
+/// shown. `ready` checks direct prerequisites; the ancestor check keeps a defective executor that recorded a later
 /// operation's success before its prerequisite from making anything behind it eligible.
-pub(crate) fn eligible_in(dag: &Dag<ReleaseOperationId>, state: &ReleaseExecutionStateV1) -> Vec<ReleaseOperationId> {
+pub(crate) fn eligible_in(
+    dag: &Dag<ReleaseOperationId>,
+    state: &ReleaseExecutionStateV1,
+    issued: &BTreeSet<ReleaseOperationId>,
+) -> Vec<ReleaseOperationId> {
     let succeeded = |id: &ReleaseOperationId| state.operation_state(id).is_some_and(OperationState::is_success);
-    dag.ready(succeeded, |id| {
-        state.operation_state(id) == Some(OperationState::Pending)
+    dag.ready(
+        |id| succeeded(id) || issued.contains(id),
+        |id| state.operation_state(id) == Some(OperationState::Pending),
+    )
+    .filter_map(|ix| dag.key(ix).map(|id| (ix, id)))
+    .filter(|(ix, id)| {
+        dag.ancestors(&[*ix]).into_iter().all(|ancestor| {
+            dag.key(ancestor).is_some_and(|prerequisite| {
+                succeeded(prerequisite)
+                    || (issued.contains(prerequisite) && is_registry_effect(id) && is_registry_effect(prerequisite))
+            })
+        })
     })
-    .filter(|&ix| {
-        dag.ancestors(&[ix])
-            .into_iter()
-            .all(|ancestor| dag.key(ancestor).is_some_and(succeeded))
-    })
-    .filter_map(|ix| dag.key(ix).cloned())
+    .map(|(_, id)| id.clone())
     .collect()
 }
 
-/// [`eligible_in`] for a caller that has only the intent.
+/// [`eligible_in`] for a caller that has only the intent and issued nothing.
 #[cfg(test)]
 pub(crate) fn eligible_operations(
     intent: &ReleaseIntentV1,
     state: &ReleaseExecutionStateV1,
 ) -> Vec<ReleaseOperationId> {
     let dag = operation_dag(intent).expect("a test intent is a valid DAG");
-    eligible_in(&dag, state)
+    eligible_in(&dag, state, &BTreeSet::new())
 }
 
 #[cfg(test)]
@@ -203,7 +293,7 @@ mod tests {
 
     use super::*;
     use crate::commands::release_test_support::{
-        already_satisfied_event, attempt_event, pending_state, publish_operation,
+        already_satisfied_event, attempt_event, confirmed_event, pending_state, publish_operation,
     };
 
     fn intent() -> ReleaseIntentV1 {
@@ -559,6 +649,64 @@ mod tests {
         let eligible = eligible_operations(&intent, &state);
         assert_eq!(eligible, [publish]);
         assert!(!eligible.contains(&forge));
+    }
+
+    /// A registry publish may follow a registry publish that is only issued; anything announced may not.
+    #[test]
+    fn an_issued_registry_publish_unlocks_registry_publishes_but_not_the_tag() {
+        let package = ReleasePackageId::new(Ecosystem::Npm, "a").unwrap();
+        let dependent = ReleasePackageId::new(Ecosystem::Npm, "b").unwrap();
+        let version = Version::semver(1, 0, 0);
+        let registry = RegistryBindingId::new("npm", RegistryBindingDigest::from_normalized_binding(b"npm")).unwrap();
+        let first =
+            ReleaseOperation::registry_publish(package.clone(), version.clone(), registry.clone(), vec![]).unwrap();
+        let second =
+            ReleaseOperation::registry_publish(dependent.clone(), version.clone(), registry, vec![first.id().clone()])
+                .unwrap();
+        let tag = ReleaseOperation::tag(package.clone(), version.clone(), vec![first.id().clone()]).unwrap();
+        let decision = callisto_model::ReleaseDecisionV1::new(vec![
+            callisto_model::ReleaseDecisionEntry {
+                package: package.clone(),
+                target_version: version.clone(),
+                reasons: vec![callisto_model::ReleaseInclusionReason::ExplicitSelection],
+            },
+            callisto_model::ReleaseDecisionEntry {
+                package: dependent,
+                target_version: version,
+                reasons: vec![callisto_model::ReleaseInclusionReason::ExplicitSelection],
+            },
+        ])
+        .unwrap();
+        let intent = ReleaseIntentV1::new(
+            decision,
+            ReleaseInputSnapshotV1::new(SourceIdentity::git_commit("a".repeat(40)).unwrap(), vec![]).unwrap(),
+            ExecutionTrustProfileV1::GitCommit,
+            crate::commands::release::canonical_operation_order(
+                [first.clone(), second.clone(), tag.clone()]
+                    .into_iter()
+                    .map(|operation| (operation.id().clone(), operation))
+                    .collect(),
+            )
+            .unwrap(),
+            vec![],
+        )
+        .unwrap();
+        let dag = operation_dag(&intent).unwrap();
+        let mut state = pending_state(&intent);
+        state.apply(first.id(), &attempt_event()).unwrap();
+        let mut issued = BTreeSet::new();
+        issued.insert(first.id().clone());
+
+        let eligible = eligible_in(&dag, &state, &issued);
+        assert_eq!(
+            eligible,
+            [second.id().clone()],
+            "only the dependent registry publish: {eligible:?}"
+        );
+
+        // Once the first is shown, the tag is eligible too.
+        state.apply(first.id(), &confirmed_event(first.id())).unwrap();
+        assert!(eligible_in(&dag, &state, &BTreeSet::new()).contains(tag.id()));
     }
 
     #[test]

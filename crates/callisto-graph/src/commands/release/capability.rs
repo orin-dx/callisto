@@ -172,6 +172,51 @@ impl ReleaseProviderSet for ValidatedReleaseIntent<'_> {
             &EffectAuthorization { permit, proof },
         )
     }
+
+    fn defers_confirmation(&self, id: &ReleaseOperationId) -> bool {
+        let Ok(operation) = self.prepared_operation(id) else {
+            return false;
+        };
+        checked_provider_for(operation).is_ok_and(|provider| {
+            provider.defers_confirmation(&ProviderRequest {
+                id,
+                operation,
+                artifacts: None,
+            })
+        })
+    }
+
+    fn issue(
+        &self,
+        permit: &ApplyPermit,
+        proof: &AbsentProof,
+        id: &ReleaseOperationId,
+        artifacts: Option<&VerifiedArtifactManifest<'_>>,
+    ) -> Result<(), GraphError> {
+        let operation = self.prepared_operation(id)?;
+        checked_provider_for(operation)?.issue(
+            &self.context(),
+            &ProviderRequest {
+                id,
+                operation,
+                artifacts,
+            },
+            &EffectAuthorization { permit, proof },
+        )
+    }
+
+    fn confirmation_window(&self, id: &ReleaseOperationId) -> std::time::Duration {
+        let Ok(operation) = self.prepared_operation(id) else {
+            return std::time::Duration::ZERO;
+        };
+        checked_provider_for(operation).map_or(std::time::Duration::ZERO, |provider| {
+            provider.confirmation_window(&ProviderRequest {
+                id,
+                operation,
+                artifacts: None,
+            })
+        })
+    }
 }
 
 /// Builds a release intent from a fresh root-bound observation.

@@ -67,6 +67,7 @@ The generated release action maps credentials without changing owner-defined pub
 - `ReleaseOperationObservationV1::new` rejects evidence whose shape does not belong to the operation's role; deserialization goes through it too.
 - Proof tokens: `AbsentProof` is minted only from `Absent`, `ExactEvidence` only from `Exact`.
 - `execute_release` observes each operation once before its effect: exact is adopted, absent is performed then confirmed, anything else stops the run before the effect.
+- An npm registry publish is the exception to "then confirmed": it is issued, stays `Attempting`, and another npm publish may follow it. When nothing else can start, the executor looks at all issued publishes together until each is shown or the longest `confirm-timeout` is spent. The tag, release draft, uploads and publication wait for the confirmation, so nothing is announced before the registry shows the version. Cargo and PyPI publishes are confirmed as they are published (PyPI completion is a file set, not a version).
 
 Provider reads use native tools for Cargo and npm, and `curl` for PyPI's PEP 691 JSON simple index:
 
