@@ -1,0 +1,9 @@
+Here is what the profile shows, with the caveats:
+
+At 4000 packages and 8000 commits, status is about 2.2 s, and 74% of it is waiting on git. My first profile was misleading: it missed the start of the run and showed a git-dominated picture that was incomplete. The corrected one found two problems in code I had just written, and I've fixed both:
+- The aggregation was quadratic (about 640 ms): it cloned paths per tag and tested every path against every package. It's now linear, with each package getting a list of the commits that touched it.
+- A tag on an unmerged branch was treated as "everything after it". The old code counted a package as changed when its files differ from the tag, which includes a hotfix that HEAD lacks. The rule is now exact: a commit counts if it is reachable from HEAD or the tag, but not both. Tests cover a merge and a hotfix branch, each checked against the old per-tag walk.
+
+I also fixed the tag-glob matching (a sorted index replaces testing every glob against every tag, worth about 220 ms), and I retracted my earlier claim that commit hashes would make the manifest batch 5× faster: measured, it's about 25%, so I dropped it.
+
+What's left is git doing real work (git log over 8000 commits, 730 ms) and the sequential directory walk (230 ms). The timings are noisy, because another process on this machine is compiling. I'll push the redesign onto PR #330 once CI reports exit=0.
