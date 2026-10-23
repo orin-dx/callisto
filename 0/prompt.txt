@@ -1,0 +1,24 @@
+context from claude:
+
+No, not for this workload. Of the Rust git libraries, gix is the better one, but neither beats the git binary where it matters most for us.
+
+I measured the three operations that dominate Callisto's time on the 4000-package fixture (8002 commits), release builds, same machine:
+
+┌────────────────────────────┬────────────────────┬───────────────┬─────────────────────┐
+│         operation          │ system git (today) │   gix 0.90    │ git2 0.21 (libgit2) │
+├────────────────────────────┼────────────────────┼───────────────┼─────────────────────┤
+│ tags with their commits    │             ~65 ms │        ~80 ms │          ~90–120 ms │
+├────────────────────────────┼────────────────────┼───────────────┼─────────────────────┤
+│ manifest at every tag      │            ~255 ms │       ~200 ms │       ~1100–1600 ms │
+├────────────────────────────┼────────────────────┼───────────────┼─────────────────────┤
+│ history with changed paths │            ~730 ms │ ~3300–3600 ms │   ~20,000–22,000 ms │
+└────────────────────────────┴────────────────────┴───────────────┴─────────────────────┘
+
+- gix vs git2: gix is far better, about 6× faster on the history walk and 5–8× on blob reads. It's pure Rust, actively developed, and what cargo itself is moving toward. If we use a Rust library, it's gix.
+- gix vs the git binary: git wins the history walk by about 4.5×. gix is only ahead on manifest reads, and by about 25%. That's roughly 50 ms at 4000 packages and about 6 ms at 500.
+- Tuning: I tried an object cache and the repository's own tree diff, and neither changed the history result. gix has no combined-diff support either, so merge commits would still need the binary.
+- Caveats: These are naive single-threaded spikes, not tuned production code, and another process was compiling on the machine, so expect noise of about ±15%. The history gap is too large for that to change the conclusion.
+
+My recommendation is to keep system git for all of it. Adopting gix for the manifest reads would add 100+ crates, an ADR reversal and a second code path, for about 6 ms on a realistic workspace. That is not a good trade. I'd revisit if gix's tree diff gets much faster. The spike is in the job's temp directory, not the repo, so nothing needs reverting.
+
+The remaining time is git log itself and the sequential directory walk. The walk (~230 ms at 4000 packages) is ours to speed up, so that is what I'll do next: read manifests in parallel during workspace load.
