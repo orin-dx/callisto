@@ -1,0 +1,1 @@
+What can we contribute to fix for making it the most high-performance git tool out there? Seems like there might be a LOT of room for performance optimizations.
