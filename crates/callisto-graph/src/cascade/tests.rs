@@ -1911,3 +1911,64 @@ fn an_unrewritable_dev_range_warns_once() {
              loop and the floor-raise pass visit it: {warnings:?}"
     );
 }
+
+fn two_package_cascade(spec: &str, seed: &[(&PackageId, Severity)]) -> Result<CascadeOutcome, GraphError> {
+    let pkg_a = PackageId::parse("pkg-a").unwrap();
+    let pkg_b = PackageId::parse("pkg-b").unwrap();
+    let edge = make_dep_edge_kind(&pkg_a, &pkg_b, spec, Ecosystem::Cargo, DepKind::Runtime);
+    let graph = TestGraph {
+        packages: vec![bare_package(&pkg_a), bare_package(&pkg_b)],
+        edges: vec![edge],
+    };
+    let base: BTreeMap<_, _> = [
+        (pkg_a.clone(), Version::semver(1, 0, 0)),
+        (pkg_b, Version::semver(1, 0, 0)),
+    ]
+    .into();
+    let seed: BTreeMap<_, _> = seed.iter().map(|(id, severity)| ((*id).clone(), *severity)).collect();
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+    run_cascade(CascadeInput {
+        graph: &graph,
+        groups: &GroupTable::default(),
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &BTreeMap::new(),
+        named_by: &BTreeMap::new(),
+        base: &base,
+        pre: None,
+        tags: &TagIndex::empty(),
+        identity: &IdentityIndex::default(),
+    })
+}
+
+/// `<2.0.0` rewritten to itself still excludes 2.0.0: that is an unrewritable range, not a rewrite.
+#[test]
+fn a_single_upper_bound_excluding_the_new_version_stops_the_cascade() {
+    let pkg_b = PackageId::parse("pkg-b").unwrap();
+    let Err(error) = two_package_cascade("<2.0.0", &[(&pkg_b, Severity::Major)]) else {
+        panic!("a range that keeps excluding the new version must stop the run");
+    };
+    assert!(matches!(error, GraphError::UnrewritableRange { .. }), "{error:?}");
+}
+
+/// A wildcard cannot be raised, but it already covers the co-released dependency, so the run goes on.
+#[test]
+fn a_covering_range_that_cannot_be_raised_does_not_stop_a_co_release() {
+    let pkg_a = PackageId::parse("pkg-a").unwrap();
+    let pkg_b = PackageId::parse("pkg-b").unwrap();
+    two_package_cascade("*", &[(&pkg_a, Severity::Patch), (&pkg_b, Severity::Patch)])
+        .expect("a wildcard covers every version, so there is nothing to raise");
+}
+
+/// A bare Cargo version is a caret requirement, and it always matches the pre-release it names (a snapshot pins one).
+#[test]
+fn a_bare_cargo_version_covers_the_pre_release_it_names() {
+    let snapshot = Version::parse("0.0.0-canary-8bc4c1a", callisto_model::VersionGrammar::SemVer).unwrap();
+    let spec = DepSpec::CargoBare(snapshot.clone());
+    assert_eq!(coverage(&spec, &snapshot).unwrap(), Coverage::Covers);
+}

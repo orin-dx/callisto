@@ -107,6 +107,10 @@ pub(crate) fn caret_covers(cur: &Version, new: &Version) -> Result<bool, Grammar
     if cmp.is_lt() {
         return Ok(false);
     }
+    // A caret requirement always matches the version it names, pre-release or not.
+    if new == cur {
+        return Ok(true);
+    }
     // Pre-release versions are never covered by a caret range: ^1.2.3 must not
     // satisfy 1.9.0-alpha.1 even though 1.9.0-alpha.1 > 1.2.3 and they share
     // the same major. Caret ranges cover stable releases within the allowed
@@ -467,6 +471,21 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
                 continue;
             }
 
+            // A floor that cannot be raised (`*`, a bare Python requirement, `||` sets) is harmless while it covers.
+            if matches!(coverage(&edge.spec, &new_version), Ok(Coverage::Covers))
+                && matches!(
+                    rewrite_spec(
+                        &edge.spec,
+                        &new_version,
+                        manifest_ecosystem(&edge.from_manifest),
+                        input.cfg
+                    ),
+                    RewriteOutcome::LeftAlone(_)
+                )
+            {
+                continue;
+            }
+
             match rewrite_edge(&edge, &new_version, input.cfg)? {
                 RewriteOutcome::Rewritten(to_spec) => {
                     out.rewrites.entry(key.clone()).or_insert_with(|| SpecRewrite {
@@ -621,7 +640,10 @@ pub fn rewrite_spec(original: &DepSpec, new: &Version, eco: Ecosystem, cfg: &Cas
         return RewriteOutcome::Rewritten(DepSpec::Exact(new.clone()));
     }
 
-    match callisto_manifests::round_trip(eco, original, new) {
+    // A rewrite that still excludes `new` is no rewrite: the dependent would publish a range its dependency cannot meet.
+    match callisto_manifests::round_trip(eco, original, new)
+        .filter(|rewritten| matches!(coverage(rewritten, new), Ok(Coverage::Covers | Coverage::Unknown)))
+    {
         Some(rewritten) => RewriteOutcome::Rewritten(rewritten),
         _ => RewriteOutcome::LeftAlone(Diagnostic {
             code: DiagnosticCode::RangeNotRoundTrippable,
