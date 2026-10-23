@@ -1,6 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashSet};
 
 use callisto_model::{DepKind, PackageId};
+use michi_graph::{Graph, GraphBuilder, Order, UnknownTargets, Violation, Violations};
 
 use crate::error::GraphError;
 
@@ -51,54 +52,50 @@ where
         }
     }
 
-    let mut in_degree: BTreeMap<PackageId, usize> = BTreeMap::new();
-    let mut adj: BTreeMap<PackageId, Vec<PackageId>> = BTreeMap::new();
+    let dag = member_graph(&members, &outgoing_edges)
+        .validate_filtered(
+            |edge| edge_allowed(edge.dependent, edge.prerequisite, *edge.kind),
+            Order::Key,
+        )
+        .map_err(|violations| GraphError::Cycle {
+            cycle: cycle_of(&violations),
+        })?;
+    Ok(dag.keys_in_order().cloned().collect())
+}
 
-    for u in &members {
-        in_degree.insert(u.clone(), 0);
-        adj.insert(u.clone(), Vec::new());
-    }
-
-    for u in &members {
-        for (v, kind) in outgoing_edges(u) {
-            if members.contains(&v) && edge_allowed(u, &v, kind) {
-                adj.get_mut(&v)
-                    .expect("every member has an adjacency list")
-                    .push(u.clone());
-                *in_degree.get_mut(u).expect("every member has an in-degree") += 1;
+/// The members as a graph, in key order, with every edge between two members. Which edges count is chosen when the
+/// graph is validated, so one graph serves cascade ordering and publish ordering.
+fn member_graph<F>(members: &BTreeSet<PackageId>, outgoing_edges: &F) -> Graph<PackageId, DepKind>
+where
+    F: Fn(&PackageId) -> Vec<(PackageId, DepKind)>,
+{
+    let mut builder = GraphBuilder::<PackageId, DepKind>::with_capacity(members.len());
+    for package in members {
+        let node = builder.node(package.clone());
+        for (dependency, kind) in outgoing_edges(package) {
+            if members.contains(&dependency) {
+                builder.depends_on(node, dependency, kind);
             }
         }
     }
+    builder.build(UnknownTargets::Error)
+}
 
-    let mut queue: BTreeSet<PackageId> = BTreeSet::new();
-    for (u, &deg) in &in_degree {
-        if deg == 0 {
-            queue.insert(u.clone());
-        }
+/// One loop to show for a failed sort, each package followed by the one that depends on it and the first repeated at
+/// the end. Members are distinct and every edge points at a member, so a cycle is the only thing validation reports.
+fn cycle_of(violations: &Violations<PackageId>) -> Vec<PackageId> {
+    let mut cycle: Vec<PackageId> = violations
+        .iter()
+        .find_map(|violation| match violation {
+            Violation::Cycle(cycle) => Some(cycle.path().iter().rev().cloned().collect()),
+            Violation::SelfDependency { key } => Some(vec![key.clone()]),
+            _ => None,
+        })
+        .unwrap_or_default();
+    if let Some(first) = cycle.first().cloned() {
+        cycle.push(first);
     }
-
-    let mut sorted = Vec::new();
-    while let Some(u) = queue.pop_first() {
-        sorted.push(u.clone());
-        if let Some(neighbors) = adj.get(&u) {
-            for v in neighbors {
-                let deg = in_degree.get_mut(v).expect("every member has an in-degree");
-                *deg -= 1;
-                if *deg == 0 {
-                    queue.insert(v.clone());
-                }
-            }
-        }
-    }
-
-    if sorted.len() < members.len() {
-        let set: HashSet<PackageId> = sorted.iter().cloned().collect();
-        let remaining: Vec<PackageId> = members.into_iter().filter(|m| !set.contains(m)).collect();
-        let cycle = extract_cycle(&remaining, &adj);
-        return Err(GraphError::Cycle { cycle });
-    }
-
-    Ok(sorted)
+    cycle
 }
 
 /// Edge kinds cascade/version-bump propagation cares about: a `Dev`-only
@@ -164,101 +161,18 @@ pub fn cyclic_sccs<F>(
 where
     F: Fn(&PackageId) -> Vec<(PackageId, DepKind)>,
 {
-    use petgraph::algo::tarjan_scc;
-    use petgraph::graph::DiGraph;
-
     let members: BTreeSet<PackageId> = subset.iter().cloned().collect();
-    let mut graph = DiGraph::<PackageId, ()>::new();
-    let mut node_map = BTreeMap::new();
-
-    for pkg in &members {
-        let idx = graph.add_node(pkg.clone());
-        node_map.insert(pkg.clone(), idx);
-    }
-
-    for u in &members {
-        for (v, kind) in outgoing_edges(u) {
-            if members.contains(&v)
-                && ordering_kinds.contains(&kind)
-                && let (Some(&u_idx), Some(&v_idx)) = (node_map.get(u), node_map.get(&v))
-            {
-                graph.add_edge(u_idx, v_idx, ());
-            }
-        }
-    }
-
-    tarjan_scc(&graph)
+    member_graph(&members, &outgoing_edges)
+        .cycles(|edge| ordering_kinds.contains(edge.kind), Order::Key)
         .into_iter()
-        .filter(|scc| scc.len() > 1 || (scc.len() == 1 && graph.contains_edge(scc[0], scc[0])))
-        .map(|scc| scc.into_iter().map(|idx| graph[idx].clone()).collect())
+        .map(|cycle| cycle.members().iter().cloned().collect())
         .collect()
-}
-
-fn extract_cycle(remaining: &[PackageId], adj: &BTreeMap<PackageId, Vec<PackageId>>) -> Vec<PackageId> {
-    use petgraph::algo::tarjan_scc;
-    use petgraph::graph::DiGraph;
-
-    let mut graph = DiGraph::<PackageId, ()>::new();
-    let mut node_map = BTreeMap::new();
-    let mut rev_map = BTreeMap::new();
-
-    for pkg in remaining {
-        let idx = graph.add_node(pkg.clone());
-        node_map.insert(pkg.clone(), idx);
-        rev_map.insert(idx, pkg.clone());
-    }
-
-    for u in remaining {
-        if let Some(neighbors) = adj.get(u) {
-            for v in neighbors {
-                if let (Some(&u_idx), Some(&v_idx)) = (node_map.get(u), node_map.get(v)) {
-                    graph.add_edge(u_idx, v_idx, ());
-                }
-            }
-        }
-    }
-
-    let sccs = tarjan_scc(&graph);
-    for scc in sccs {
-        let is_self_loop = scc.len() == 1 && graph.contains_edge(scc[0], scc[0]);
-        if scc.len() > 1 || is_self_loop {
-            let mut cycle = Vec::new();
-            let start_idx = scc[0];
-            let mut curr = start_idx;
-            let scc_set: std::collections::HashSet<_> = scc.iter().copied().collect();
-
-            cycle.push(rev_map[&curr].clone());
-            loop {
-                let mut next_found = None;
-                for neighbor in graph.neighbors(curr) {
-                    if scc_set.contains(&neighbor) {
-                        next_found = Some(neighbor);
-                        break;
-                    }
-                }
-
-                if let Some(next) = next_found {
-                    curr = next;
-                    cycle.push(rev_map[&curr].clone());
-                    if curr == start_idx {
-                        break;
-                    }
-                } else {
-                    break;
-                }
-            }
-
-            if cycle.len() > 1 {
-                return cycle;
-            }
-        }
-    }
-
-    remaining.to_vec()
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
 
     #[test]
@@ -373,5 +287,85 @@ mod tests {
 
         assert_eq!(sccs.len(), 1);
         assert_eq!(sccs[0], vec![pkg_a].into_iter().collect::<HashSet<_>>());
+    }
+
+    /// The Kahn pass this module used before michi-graph, kept as the oracle: `None` when it cannot order everything.
+    fn reference_sort(
+        members: &BTreeSet<PackageId>,
+        edges: &[(PackageId, PackageId, DepKind)],
+        allowed: &[DepKind],
+    ) -> Option<Vec<PackageId>> {
+        let mut in_degree: BTreeMap<&PackageId, usize> = members.iter().map(|m| (m, 0)).collect();
+        let mut dependents: BTreeMap<&PackageId, Vec<&PackageId>> = BTreeMap::new();
+        for (from, to, kind) in edges {
+            if allowed.contains(kind) {
+                *in_degree.get_mut(from).unwrap() += 1;
+                dependents.entry(to).or_default().push(from);
+            }
+        }
+        let mut queue: BTreeSet<&PackageId> = in_degree.iter().filter(|(_, d)| **d == 0).map(|(m, _)| *m).collect();
+        let mut sorted = Vec::new();
+        while let Some(next) = queue.pop_first() {
+            sorted.push(next.clone());
+            for dependent in dependents.get(next).into_iter().flatten() {
+                let degree = in_degree.get_mut(dependent).unwrap();
+                *degree -= 1;
+                if *degree == 0 {
+                    queue.insert(dependent);
+                }
+            }
+        }
+        (sorted.len() == members.len()).then_some(sorted)
+    }
+
+    proptest::proptest! {
+        /// Random graphs, cyclic or not, with random edge kinds: the sort agrees with the previous implementation on
+        /// whether it succeeds and on the exact order, and a failure names a loop whose members all take part in it.
+        #[test]
+        fn the_sort_matches_the_previous_implementation(
+            size in 1usize..10,
+            raw in proptest::collection::vec((0usize..10, 0usize..10, 0u8..4), 0..30),
+        ) {
+            let ids: Vec<PackageId> = (0..size).map(|i| PackageId::parse(&format!("pkg-{i}")).unwrap()).collect();
+            let kinds = [DepKind::Runtime, DepKind::Build, DepKind::Optional, DepKind::Dev];
+            let members: BTreeSet<PackageId> = ids.iter().cloned().collect();
+            let edges: Vec<(PackageId, PackageId, DepKind)> = raw
+                .into_iter()
+                .map(|(a, b, k)| (ids[a % size].clone(), ids[b % size].clone(), kinds[usize::from(k)]))
+                .collect();
+            let subset: HashSet<PackageId> = members.iter().cloned().collect();
+            let result = toposort_impl(&subset, &ids, CASCADE_ORDERING_KINDS, |id| {
+                edges.iter().filter(|(from, _, _)| from == id).map(|(_, to, kind)| (to.clone(), *kind)).collect()
+            });
+            match reference_sort(&members, &edges, CASCADE_ORDERING_KINDS) {
+                Some(expected) => proptest::prop_assert_eq!(result.unwrap(), expected),
+                None => match result {
+                    Err(GraphError::Cycle { cycle }) => {
+                        proptest::prop_assert!(cycle.len() >= 2);
+                        proptest::prop_assert_eq!(cycle.first(), cycle.last());
+                        proptest::prop_assert!(cycle.iter().all(|member| members.contains(member)));
+                    }
+                    other => proptest::prop_assert!(false, "expected a cycle, got {:?}", other),
+                },
+            }
+        }
+    }
+
+    #[test]
+    fn a_failed_sort_names_the_loop_in_dependency_to_dependent_order() {
+        let (a, b) = (PackageId::parse("pkg-a").unwrap(), PackageId::parse("pkg-b").unwrap());
+        let subset: HashSet<_> = [a.clone(), b.clone()].into_iter().collect();
+        let all = vec![a.clone(), b.clone()];
+        let error = toposort_impl(&subset, &all, &[DepKind::Runtime], |id| {
+            vec![(if id == &a { b.clone() } else { a.clone() }, DepKind::Runtime)]
+        })
+        .unwrap_err();
+        match error {
+            GraphError::Cycle { cycle } => {
+                assert_eq!(cycle.len(), 3, "{cycle:?}");
+                assert_eq!(cycle.first(), cycle.last());
+            }
+            other => panic!("expected a cycle, got {other:?}"),
+        }
     }
 }

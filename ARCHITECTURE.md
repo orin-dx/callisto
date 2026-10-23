@@ -56,7 +56,7 @@ release                                                 decision -> intent -> en
   per operation                                         observe provider -> adopt, or perform and confirm
 ```
 
-Cycles are detected with `petgraph::algo::tarjan_scc`. Git access goes through `GitAccess` (`callisto_model::vcs`).
+Package ordering, cycle reports and release-operation readiness all run on `michi-graph` (validation reports every problem at once; edge kinds are chosen per validation). Git access goes through `GitAccess` (`callisto_model::vcs`).
 
 Depth:
 

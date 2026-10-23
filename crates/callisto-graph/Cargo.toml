@@ -20,6 +20,7 @@ tempfile = { workspace = true }
 sha2 = { workspace = true }
 callisto-model = { path = "../callisto-model", version = "0.13.0" }
 callisto-manifests = { path = "../callisto-manifests", version = "0.13.0" }
+michi-graph = { workspace = true }
 dunce = { workspace = true }
 ignore = { workspace = true }
 toml = { workspace = true }
@@ -31,7 +32,6 @@ yaml-rust2 = { workspace = true }
 thiserror = { workspace = true }
 miette = { workspace = true }
 indexmap = { workspace = true }
-petgraph = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]

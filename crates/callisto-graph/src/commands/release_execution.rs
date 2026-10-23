@@ -3,7 +3,7 @@
 //! Every run starts from a fresh in-memory state and observes each provider
 //! before acting, so a rerun adopts whatever an earlier run already landed.
 
-use std::collections::{BTreeMap, BTreeSet};
+use michi_graph::{Dag, Order};
 
 use callisto_model::{
     ApplyPermit, OperationEvent, OperationState, ReleaseExecutionStateV1, ReleaseIntentV1, ReleaseOperationId,
@@ -35,7 +35,8 @@ pub fn execute_release<P: ReleaseProviderSet + ?Sized>(
         .map_err(|source| GraphError::ReleaseRunEnvelope { source })?;
     let mut state = ReleaseExecutionStateV1::new(intent, envelope.clone())
         .map_err(|source| GraphError::ReleaseExecutionState { source })?;
-    while let Some(operation) = eligible_operations(intent, &state).first().cloned() {
+    let dag = operation_dag(intent)?;
+    while let Some(operation) = eligible_in(&dag, &state).first().cloned() {
         capability.recheck_trust()?;
         let event = match capability.preflight(&operation, artifacts)? {
             ReleasePreflight::AlreadySatisfied { evidence } => {
@@ -149,61 +150,48 @@ fn require_artifact_manifest_matches_intent(
     }
 }
 
-/// The pending operations whose every transitive prerequisite is exactly
-/// `Published` or `AlreadySatisfied`, in the intent's canonical order.
+/// The intent's operations as a DAG, built once per run. A constructed intent is already a proven DAG, so a failure
+/// here means the intent was altered after validation.
+pub(crate) fn operation_dag(intent: &ReleaseIntentV1) -> Result<Dag<ReleaseOperationId>, GraphError> {
+    Dag::from_nodes(
+        intent
+            .operations
+            .iter()
+            .map(|operation| (operation.id().clone(), operation.prerequisites().to_vec())),
+        Order::Key,
+    )
+    .map_err(|violations| GraphError::ReleaseInvariant {
+        detail: format!("the release operations do not form a valid DAG: {violations}"),
+    })
+}
+
+/// The pending operations whose every transitive prerequisite is exactly `Published` or `AlreadySatisfied`, in the
+/// intent's canonical order.
+///
+/// `ready` checks direct prerequisites; the ancestor check keeps a defective executor that recorded a later
+/// operation's success before its prerequisite from making anything behind it eligible.
+pub(crate) fn eligible_in(dag: &Dag<ReleaseOperationId>, state: &ReleaseExecutionStateV1) -> Vec<ReleaseOperationId> {
+    let succeeded = |id: &ReleaseOperationId| state.operation_state(id).is_some_and(OperationState::is_success);
+    dag.ready(succeeded, |id| {
+        state.operation_state(id) == Some(OperationState::Pending)
+    })
+    .filter(|&ix| {
+        dag.ancestors(&[ix])
+            .into_iter()
+            .all(|ancestor| dag.key(ancestor).is_some_and(succeeded))
+    })
+    .filter_map(|ix| dag.key(ix).cloned())
+    .collect()
+}
+
+/// [`eligible_in`] for a caller that has only the intent.
+#[cfg(test)]
 pub(crate) fn eligible_operations(
     intent: &ReleaseIntentV1,
     state: &ReleaseExecutionStateV1,
 ) -> Vec<ReleaseOperationId> {
-    let prerequisites: BTreeMap<_, _> = intent
-        .operations
-        .iter()
-        .map(|operation| (operation.id().clone(), operation.prerequisites().to_vec()))
-        .collect();
-    let mut satisfied = BTreeMap::new();
-    intent
-        .operations
-        .iter()
-        .filter(|operation| state.operation_state(operation.id()) == Some(OperationState::Pending))
-        .filter(|operation| {
-            prerequisites_satisfied_transitively(
-                operation.id(),
-                &prerequisites,
-                state,
-                &mut BTreeSet::new(),
-                &mut satisfied,
-            )
-        })
-        .map(|operation| operation.id().clone())
-        .collect()
-}
-
-/// `satisfied` memoizes each subtree's answer, so the walk is linear in the DAG.
-fn prerequisites_satisfied_transitively(
-    id: &ReleaseOperationId,
-    prerequisites: &BTreeMap<ReleaseOperationId, Vec<ReleaseOperationId>>,
-    state: &ReleaseExecutionStateV1,
-    on_path: &mut BTreeSet<ReleaseOperationId>,
-    satisfied: &mut BTreeMap<ReleaseOperationId, bool>,
-) -> bool {
-    if let Some(known) = satisfied.get(id) {
-        return *known;
-    }
-    // The intent is already a proven DAG; the on-path guard fails closed on a cycle anyway.
-    if !on_path.insert(id.clone()) {
-        return false;
-    }
-    let result = prerequisites.get(id).is_some_and(|direct| {
-        direct.iter().all(|prerequisite| {
-            state
-                .operation_state(prerequisite)
-                .is_some_and(OperationState::is_success)
-                && prerequisites_satisfied_transitively(prerequisite, prerequisites, state, on_path, satisfied)
-        })
-    });
-    on_path.remove(id);
-    satisfied.insert(id.clone(), result);
-    result
+    let dag = operation_dag(intent).expect("a test intent is a valid DAG");
+    eligible_in(&dag, state)
 }
 
 #[cfg(test)]
