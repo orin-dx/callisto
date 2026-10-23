@@ -1133,9 +1133,9 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "michi-graph"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d08693badbbeb4b1d5fa19f6b15e4f93b5fecdb751ec0a402f163731a7d509d6"
+checksum = "9e7e7cb5d0759378d3d325ad39c284530a06ef162d0bccd5dc1bb8b05312aa05"
 
 [[package]]
 name = "micromap"
