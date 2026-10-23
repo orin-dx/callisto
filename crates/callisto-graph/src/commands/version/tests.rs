@@ -16,7 +16,8 @@ struct IndexInspectionFailureRunner {
 
 impl CommandRunner for IndexInspectionFailureRunner {
     fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
-        if program == "git" && args.iter().copied().eq(self.failed_args.iter().map(String::as_str)) {
+        let failed: Vec<&str> = self.failed_args.iter().map(String::as_str).collect();
+        if program == "git" && args.starts_with(&failed) {
             return Ok(CommandOutput {
                 exit_code: Some(128),
                 stdout: String::new(),
@@ -138,9 +139,7 @@ fn check_partial_run_propagates_fatal_staged_manifest_inspection_errors() {
 
     let locator = IgnoreWalkLocator::new(root);
     let runner = IndexInspectionFailureRunner {
-        failed_args: ["diff", "--cached", "--quiet", "--", "pkg-a/Cargo.toml"]
-            .map(str::to_string)
-            .to_vec(),
+        failed_args: ["diff", "--cached", "--name-only", "-z"].map(str::to_string).to_vec(),
     };
     let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
     let error = check_partial_run(&ws).unwrap_err();

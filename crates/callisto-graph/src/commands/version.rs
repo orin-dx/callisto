@@ -8,6 +8,7 @@ use callisto_model::{BumpReason, CommandRunner, GroupKind, ManifestRole, Severit
 use crate::aggregate::aggregate;
 use crate::cascade::{run_cascade, CascadeInput};
 use crate::commands::escalate;
+use crate::commands::git_batch::{batch_blobs, BatchBlob};
 use crate::config::groups::{GroupMember, GroupMemberKind};
 use crate::error::GraphError;
 use crate::infer::SeverityInference;
@@ -361,6 +362,7 @@ pub fn check_partial_run<R: CommandRunner, D: DependencyResolver>(ws: &Workspace
 
     let head_texts = RefCell::new(HashMap::new());
     let index_texts = RefCell::new(HashMap::new());
+    prefetch_head_manifests(ws, head, &head_texts)?;
     let mut head_reads = callisto_manifests::WorkspaceReads::default();
     let mut index_reads = callisto_manifests::WorkspaceReads::default();
     let base_versions = ws.base_versions()?;
@@ -413,6 +415,34 @@ pub fn check_partial_run<R: CommandRunner, D: DependencyResolver>(ws: &Workspace
     Ok(())
 }
 
+/// Reads every canonical manifest at `head` in one `git cat-file --batch`, so the version reads that follow cost no
+/// process each. A failed batch is not an error: those reads then run one at a time, as they always could.
+fn prefetch_head_manifests<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+    head: &str,
+    texts: &ManifestTexts,
+) -> Result<(), GraphError> {
+    let mut paths = BTreeSet::new();
+    for decl in ws.graph.packages().flat_map(|pkg| pkg.canonical_manifests()) {
+        paths.insert(super::release_decision::normalized_git_path(&decl.path)?);
+    }
+    let objects: Vec<String> = paths.iter().map(|path| format!("{head}:{path}")).collect();
+    let Ok(blobs) = batch_blobs(ws.runner, &ws.root, &objects) else {
+        return Ok(());
+    };
+    let mut texts = texts.borrow_mut();
+    for (path, blob) in paths.into_iter().zip(blobs) {
+        texts.insert(
+            path,
+            match blob {
+                BatchBlob::Blob(text) => Some(text),
+                BatchBlob::Missing => None,
+            },
+        );
+    }
+    Ok(())
+}
+
 /// True when an untracked or tracked changeset remains in the configured directory on disk.
 fn working_tree_has_pending_changeset<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
@@ -435,27 +465,8 @@ fn canonical_manifest_staged_paths<R: CommandRunner, D: DependencyResolver>(
     for decl in ws.graph.packages().flat_map(|pkg| pkg.canonical_manifests()) {
         paths.extend(version_source_paths(ws, head, changed, decl)?);
     }
-    let mut staged = BTreeSet::new();
-    for path in paths {
-        let output = ws
-            .runner
-            .run("git", &["diff", "--cached", "--quiet", "--", &path], &ws.root)
-            .map_err(GraphError::Command)?;
-        match output.exit_code {
-            Some(0) => {}
-            Some(1) => {
-                staged.insert(path);
-            }
-            exit_code => {
-                return Err(GraphError::Command(callisto_model::CommandError::Failed {
-                    program: "git".to_string(),
-                    exit_code,
-                    stderr: output.stderr,
-                }))
-            }
-        }
-    }
-    Ok(staged)
+    // The index-versus-HEAD diff `SourceChanges` already read answers this for every path at once.
+    Ok(paths.into_iter().filter(|path| changed.staged.contains(path)).collect())
 }
 
 /// Whether `<rev>:<path>` names an object; `--quiet` keeps a missing path from printing to stderr.
@@ -551,8 +562,11 @@ fn manifest_blob_in_index<R: CommandRunner, D: DependencyResolver>(
     Ok(Some(output.stdout))
 }
 
-/// The paths that differ from `HEAD` in the working tree or the index.
-struct SourceChanges(BTreeSet<String>);
+/// The paths that differ from `HEAD` in the working tree or the index, and those that differ in the index alone.
+struct SourceChanges {
+    changed: BTreeSet<String>,
+    staged: BTreeSet<String>,
+}
 
 impl SourceChanges {
     fn since<R: CommandRunner, D: DependencyResolver>(
@@ -560,9 +574,10 @@ impl SourceChanges {
         head: &str,
     ) -> Result<Self, GraphError> {
         let mut changed = BTreeSet::new();
+        let mut staged = BTreeSet::new();
         let working_tree = vec!["diff", "--name-only", "-z", head];
         let index = vec!["diff", "--cached", "--name-only", "-z", head];
-        for args in [working_tree, index] {
+        for (args, is_index) in [(working_tree, false), (index, true)] {
             let output = ws.runner.run("git", &args, &ws.root).map_err(GraphError::Command)?;
             if !output.success() {
                 return Err(GraphError::Command(callisto_model::CommandError::Failed {
@@ -571,15 +586,20 @@ impl SourceChanges {
                     stderr: output.stderr,
                 }));
             }
-            changed.extend(
-                output
-                    .stdout
-                    .split('\0')
-                    .filter(|path| !path.is_empty())
-                    .map(str::to_owned),
-            );
+            let paths = output
+                .stdout
+                .split('\0')
+                .filter(|path| !path.is_empty())
+                .map(str::to_owned);
+            if is_index {
+                let paths: Vec<String> = paths.collect();
+                staged.extend(paths.iter().cloned());
+                changed.extend(paths);
+            } else {
+                changed.extend(paths);
+            }
         }
-        Ok(SourceChanges(changed))
+        Ok(SourceChanges { changed, staged })
     }
 }
 
@@ -598,7 +618,7 @@ fn version_source_paths<R: CommandRunner, D: DependencyResolver>(
         for candidate in callisto_manifests::workspace_manifest_candidates(&ws.root, &decl.path)? {
             sources.push(super::release_decision::normalized_git_path(&candidate)?);
         }
-        if changed.0.contains(&own) {
+        if changed.changed.contains(&own) {
             for text in [manifest_blob_at(ws, head, &own)?, manifest_blob_in_index(ws, &own)?]
                 .into_iter()
                 .flatten()

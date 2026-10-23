@@ -174,6 +174,8 @@ pub struct TagIndex {
     /// package) can consult this in-memory set instead of re-querying `git`
     /// once per check.
     all_tags: std::collections::BTreeSet<String>,
+    /// The commit each tag ends at, read with one `git for-each-ref` the first time a caller asks for any.
+    commits: std::cell::OnceCell<BTreeMap<String, CommitSha>>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -198,6 +200,27 @@ impl TagIndex {
         let mut glob_cache: std::collections::HashMap<String, Vec<&str>> = std::collections::HashMap::new();
 
         let mut rosters = crate::history::Rosters::default();
+        // The first candidate of every bare-named package is checked below; read their manifests together.
+        let mut wanted = Vec::new();
+        for pkg in graph.packages() {
+            if pkg.tag_template.is_some() || pkg.id.ecosystem().is_some() {
+                continue;
+            }
+            let (Some(manifest), Ok(grammar)) = (pkg.canonical_manifests().next(), pkg.version_grammar()) else {
+                continue;
+            };
+            let tmpl = TagTemplate::default_for(&pkg.id);
+            let Ok(candidates) = candidates_cached(&all_tags, &tmpl, &mut glob_cache) else {
+                continue;
+            };
+            let Ok(selection) = select_last_tag(&tmpl, grammar, candidates.iter().copied()) else {
+                continue;
+            };
+            if let Some(tag) = take_chosen(selection, &mut Vec::new()) {
+                wanted.push((tag.name.as_str().to_owned(), manifest.path.clone()));
+            }
+        }
+        rosters.prefetch(git, &wanted);
 
         for pkg in graph.packages() {
             // `TagTemplate::default_for` is the single source of truth for a
@@ -311,6 +334,7 @@ impl TagIndex {
             pre_cursor,
             foreign,
             all_tags: all_tags_set,
+            commits: std::cell::OnceCell::new(),
             diagnostics,
         })
     }
@@ -336,6 +360,26 @@ impl TagIndex {
         self.all_tags.contains(tag_name)
     }
 
+    /// The commit `tag_name` ends at. Every tag is read in one process the first time, so asking once per package
+    /// costs no process each; a tag that ends at something else is left to `git rev-parse`.
+    pub fn commit_of(&self, git: &GitAccess<'_>, tag_name: &str) -> Result<Option<CommitSha>, GraphError> {
+        if !self.all_tags.contains(tag_name) {
+            return Ok(git.resolve_commit(&format!("refs/tags/{tag_name}"))?);
+        }
+        if self.commits.get().is_none() {
+            let commits = git
+                .tags_with_commits()?
+                .into_iter()
+                .filter_map(|(name, commit)| Some((name.as_str().to_owned(), commit?)))
+                .collect();
+            drop(self.commits.set(commits));
+        }
+        match self.commits.get().and_then(|commits| commits.get(tag_name)) {
+            Some(commit) => Ok(Some(commit.clone())),
+            None => Ok(git.resolve_commit(&format!("refs/tags/{tag_name}"))?),
+        }
+    }
+
     /// Whether `tag_name` exists and was made by `id`, not by another package that held the same name.
     pub fn is_tag_of(&self, id: &PackageId, tag_name: &str) -> bool {
         self.contains_tag(tag_name) && !self.foreign.get(id).is_some_and(|tags| tags.contains(tag_name))
@@ -350,6 +394,7 @@ impl TagIndex {
             pre_cursor: BTreeMap::new(),
             foreign: BTreeMap::new(),
             all_tags: std::collections::BTreeSet::new(),
+            commits: std::cell::OnceCell::new(),
             diagnostics: Vec::new(),
         }
     }

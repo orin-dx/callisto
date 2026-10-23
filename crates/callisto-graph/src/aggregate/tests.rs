@@ -147,7 +147,7 @@ fn test_resolve_since_resolves_the_tag_through_git() {
     };
     let git = GitAccess::new(dir.path(), &runner);
 
-    let resolved = resolve_since(&git, "pkg-a@1.0.0").unwrap();
+    let resolved = resolve_since(&git, &TagIndex::empty(), "pkg-a@1.0.0").unwrap();
 
     assert_eq!(resolved, sha);
     assert_eq!(runner.calls.load(Ordering::SeqCst), 1);

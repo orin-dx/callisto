@@ -534,6 +534,46 @@ impl GitAccess<'_> {
             .collect())
     }
 
+    /// Every tag with the commit it ends at, from one `git for-each-ref`. The commit is `None` when the tag ends at
+    /// something else (a tree, a blob, a tag of a tag), which [`Self::resolve_commit`] then decides.
+    pub fn tags_with_commits(&self) -> Result<Vec<(TagName, Option<CommitSha>)>, VcsError> {
+        let args = [
+            "for-each-ref",
+            "--format=%(refname:strip=2)%00%(objecttype)%00%(objectname)%00%(*objecttype)%00%(*objectname)",
+            "refs/tags",
+        ];
+        let output = self.runner.run("git", &args, &self.root)?;
+        if !output.success() {
+            return Err(probe_failed(&args, &self.root, &output));
+        }
+        Ok(output
+            .stdout
+            .lines()
+            .filter_map(|line| {
+                let mut fields = line.split('\0');
+                let name = TagName::parse(fields.next()?).ok()?;
+                let (kind, object, peeled_kind, peeled) =
+                    (fields.next()?, fields.next()?, fields.next()?, fields.next()?);
+                let commit = match (kind, peeled_kind) {
+                    ("commit", _) => CommitSha::parse(object).ok(),
+                    ("tag", "commit") => CommitSha::parse(peeled).ok(),
+                    _ => None,
+                };
+                Some((name, commit))
+            })
+            .collect())
+    }
+
+    /// The directory every git command runs in.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// The runner every git command goes through.
+    pub fn runner(&self) -> &dyn CommandRunner {
+        self.runner
+    }
+
     /// Resolves `refname` (tag, branch, or partial/full SHA) to the commit
     /// it points at. An unresolvable ref resolves to `Ok(None)`, which
     /// callers treat as "no bound" / "infer over full history".

@@ -1,5 +1,6 @@
 use callisto_model::{Diagnostic, DiagnosticSeverity};
 
+pub(crate) mod git_batch;
 pub mod init;
 pub mod matrix;
 pub mod pr_body;
