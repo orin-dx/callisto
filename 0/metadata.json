@@ -1,0 +1,125 @@
+{
+  "cli_version": "0.12.1-nightly.202610240623.b9639ba5b",
+  "checkpoint_id": "01M5QZKS7ZXH6TTQQWNJEXEW4S",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-24T22:13:48.244529Z",
+  "branch": "fix/npm-space-ranges",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/tests/cascade_scenarios_tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "6f1c9753d700",
+  "checkpoint_transcript_start": 72057,
+  "transcript_lines_at_start": 72057,
+  "compact_transcript_start": 5348,
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 114574,
+    "cache_read_tokens": 16279923,
+    "output_tokens": 15061,
+    "api_call_count": 19
+  },
+  "redaction": {
+    "replacements": 210,
+    "layers": {
+      "betterleaks": 40,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 27,
+      "credentialed_uri": 31,
+      "entropy": 132,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 338
+  },
+  "summary": {
+    "intent": "Continue the Callisto v1 hardening queue autonomously; in this window, fix npm space-separated and hyphen version ranges so a dependent with `>=1.0.0 <2.0.0` stops the run with E319 instead of being silently skipped.",
+    "outcome": "Added `npm_comparators` normalization in callisto-model version parsing, with unit and end-to-end cascade tests and a changeset. After fixing a comma-form regression, full CI passed (631 unit tests, 92.9% coverage) and the commit/push/PR step was run for `fix/npm-space-ranges`.",
+    "learnings": {
+      "repo": [
+        "npm ranges with spaces (`>=1.0.0 <2.0.0`) previously went to the `semver` crate unmodified, which requires commas, so parsing failed and the spec was treated as opaque and silently skipped in cascades.",
+        "Spec VER-CAS-06 already says ranges the bump leaves behind stop the run (E319); the code now matches it.",
+        "Hyphen ranges map exactly to a comparator pair only when both ends are full semver; partial ones (`1.0 - 2`) stay unsupported.",
+        "The comma-form range `>=1.0.0, <2.0.0` is covered by an existing test in callisto-manifests (`round_trip_comma_compound_range_returns_none`), so any range rewrite must leave comma clauses intact.",
+        "Cascade scenario tests in callisto-cli/tests/cascade_scenarios_tests.rs are the model for end-to-end tests of version-stop behavior.",
+        "`just ci` has to run with sandbox disabled, and a stray `crates/.claude` dir has to be removed before it runs."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/version.rs",
+          "finding": "`npm_comparators(clause)` splits on whitespace, merges operator-only tokens with the next token, converts full-semver hyphen ranges to `>=low, <=high`, and returns None for dangling operators or other standalone `-`. It is used in the npm branch of `VersionReq::parse`. Tokens must drop trailing commas, or the clause must be returned untouched if it already contains commas, otherwise the rewrite doubles the comma."
+        },
+        {
+          "path": "crates/callisto-manifests/src/npm/tests.rs",
+          "line": 1102,
+          "finding": "`round_trip_comma_compound_range_returns_none` builds its spec via `make_npm_spec`, which unwraps `VersionReq::parse`, so it caught the comma-doubling regression."
+        },
+        {
+          "path": "crates/callisto-cli/tests/cascade_scenarios_tests.rs",
+          "finding": "Added `a_space_separated_npm_range_the_bump_leaves_behind_stops_the_run_before_any_write` (peer `>=0.1.0 <1.0.0`, lib major bump gives E319, manifest unchanged)."
+        }
+      ],
+      "workflow": [
+        "`git switch main` lands on a stale local main; branch from `origin/main` instead and rebuild before reproducing.",
+        "`version` stages its result, so a plain `git diff` looks empty; use `git diff --staged`.",
+        "Run a repro script visibly before concluding a fix did not apply.",
+        "Use unique PR body filenames to avoid stale bodies being reused.",
+        "Run the full CI after refactoring a parser; an existing test in a different crate caught a regression the new unit tests missed."
+      ]
+    },
+    "friction": [
+      "The first `package.json` repro ran against a stale build because of the stale local main.",
+      "The empty-diff result was misleading because the output was staged.",
+      "The comma-form regression only surfaced in full CI, in a different crate from the change.",
+      "The commit/push/PR command was issued twice and its result is not shown in the transcript."
+    ],
+    "open_items": [
+      "Confirm PR for `fix/npm-space-ranges` was created, and check merge state of #353-#357 and #349, keeping branches current without force-pushing.",
+      "Remaining hardening queue: peer ratchet exclusion, tighten 'already published' classification, E121 message for uncommitted first run, BOM changelog duplicate H1, release notes cut at indented `# `, Poetry comment preservation, Python `~=` precision, snapshot `--tag` validation, `git add -A` in release-PR script, YAML-quote branch, pnpm/yarn/bun in TOOL_SHAPES, first-release metadata preflight.",
+      "Owner decisions pending: accept ADR 12, OIDC for npm, private-root exclusion shape, fixed-group shared tag/title, nuget `publish-to` rejection, tag-naming policy, review of docs/stability.md.",
+      "Deferred known gaps: `CARGO_REGISTRIES_*_TOKEN` not scrubbed from non-cargo children, lossy package.json rewrite for hand-formatted files, dist-tag `latest` moving backwards, E320 equivalence comparing only the package dir, orphaned published-untagged versions."
+    ]
+  }
+}
