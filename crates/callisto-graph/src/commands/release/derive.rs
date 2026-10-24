@@ -17,7 +17,7 @@ use crate::error::{ReleasePreconditionRequirement, ReleaseSelectionInvalidReason
 use crate::{DependencyResolver, GraphError, Workspace};
 
 use super::binding::{optional_git_remote, prepared_git_remote, prepared_registry_binding, PreparedGitRemote};
-use super::notes::release_notes;
+use super::notes::group_release_notes;
 use super::provider::{
     ArtifactUploadOperation, ForgePublishOperation, ForgeReleaseOperation, PreparedOperation, RegistryPublishOperation,
     TagOperation,
@@ -601,6 +601,23 @@ fn add_tags(
     Ok(())
 }
 
+/// The other members of `package`'s fixed group that keep a changelog, with the name each is shown by in release notes.
+fn fixed_group_changelogs<'w, R: CommandRunner, D: DependencyResolver>(
+    workspace: &'w Workspace<'_, R, D>,
+    package: &callisto_model::Package,
+) -> Vec<(String, &'w std::path::Path)> {
+    let groups = &workspace.config.groups;
+    let Some(group) = groups.fixed_of.get(&package.id) else {
+        return Vec::new();
+    };
+    workspace
+        .graph
+        .packages()
+        .filter(|member| member.id != package.id && groups.fixed_of.get(&member.id) == Some(group))
+        .filter_map(|member| Some((member.canonical_id().to_string(), member.changelog.as_deref()?)))
+        .collect()
+}
+
 fn add_forge_releases<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     selected: &BTreeMap<ReleasePackageId, (&callisto_model::Package, Version)>,
@@ -642,7 +659,12 @@ fn add_forge_releases<R: CommandRunner, D: DependencyResolver>(
                 PreparedOperation::ForgeRelease(ForgeReleaseOperation {
                     tag,
                     prerelease: version.is_prerelease(),
-                    notes: release_notes(&workspace.root, package.changelog.as_deref(), version)?,
+                    notes: group_release_notes(
+                        &workspace.root,
+                        package.changelog.as_deref(),
+                        &fixed_group_changelogs(workspace, package),
+                        version,
+                    )?,
                 }),
             );
             forge_by_package.insert(id.clone(), operation.id().clone());
@@ -1613,6 +1635,41 @@ mod tests {
         );
         assert_eq!(snapshot, after_snapshot);
         assert_eq!(operations, after_operations);
+    }
+
+    /// core owns the GitHub release of a fixed group; the change was recorded against `other`, so the notes carry it.
+    #[test]
+    fn a_fixed_group_release_carries_the_entries_recorded_against_its_other_members() {
+        let dir = repo(&[
+            ("Cargo.toml", "[workspace]\nmembers = [\"core\", \"other\"]\n"),
+            (
+                "core/Cargo.toml",
+                "[package]\nname = \"core\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+            ),
+            (
+                "other/Cargo.toml",
+                "[package]\nname = \"other\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+            ),
+            (
+                "core/CHANGELOG.md",
+                "# core\n\n## 1.0.0\n\n- Released together with the `lockstep` fixed group.\n",
+            ),
+            ("other/CHANGELOG.md", "# other\n\n## 1.0.0\n\n- A feature in other.\n"),
+            (
+                "callisto.toml",
+                "[[package]]\nmatch = \"cargo/core\"\npublish-to = [\"github-release\"]\nchangelog = \"CHANGELOG.md\"\n\n\
+                 [[package]]\nmatch = \"cargo/other\"\nchangelog = \"CHANGELOG.md\"\n\n\
+                 [[fixed-group]]\nname = \"lockstep\"\nmembers = [\"cargo/core\", \"cargo/other\"]\n",
+            ),
+        ]);
+        let decision = cargo_release(&["core", "other"]);
+
+        let (_, _, prepared, _, _) = derive(&dir, &decision).unwrap();
+
+        assert_eq!(
+            forge_notes(&prepared),
+            ReleaseNotes::Section("- `cargo/other`: A feature in other.".to_owned())
+        );
     }
 
     /// core publishes to github-release; plugin owns one `[[release.artifact]]` slot on core's release.
