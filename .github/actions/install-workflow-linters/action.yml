@@ -1,0 +1,21 @@
+name: 'Install workflow linters'
+description: 'Installs zizmor and actionlint for the tests that lint generated workflows. The tests fail without them under CI.'
+
+runs:
+  using: 'composite'
+  steps:
+    - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2
+      with:
+        tool: zizmor@1.30.0
+    - name: Install actionlint
+      shell: bash
+      run: | # zizmor: ignore[github-env] the PATH entry is a fixed child of the runner home, not attacker-controlled input.
+        v=1.7.12
+        case "$RUNNER_OS" in Linux) t=linux_amd64 ;; macOS) t=darwin_arm64 ;; esac
+        base="https://github.com/rhysd/actionlint/releases/download/v$v"
+        curl -fsSLO "$base/actionlint_${v}_$t.tar.gz"
+        curl -fsSLO "$base/actionlint_${v}_checksums.txt"
+        grep " actionlint_${v}_$t.tar.gz\$" "actionlint_${v}_checksums.txt" | shasum -a 256 -c -
+        tar -xzf "actionlint_${v}_$t.tar.gz" actionlint
+        mkdir -p "$HOME/.local/bin" && mv actionlint "$HOME/.local/bin/"
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"

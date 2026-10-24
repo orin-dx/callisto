@@ -122,18 +122,9 @@ jobs:
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2
         with:
-          tool: cargo-nextest,zizmor@1.30.0
-      - name: Install actionlint
-        run: |
-          v=1.7.12
-          case "$RUNNER_OS" in Linux) t=linux_amd64 ;; macOS) t=darwin_arm64 ;; esac
-          base="https://github.com/rhysd/actionlint/releases/download/v$v"
-          curl -fsSLO "$base/actionlint_${v}_$t.tar.gz"
-          curl -fsSLO "$base/actionlint_${v}_checksums.txt"
-          grep " actionlint_${v}_$t.tar.gz\$" "actionlint_${v}_checksums.txt" | shasum -a 256 -c -
-          tar -xzf "actionlint_${v}_$t.tar.gz" actionlint
-          mkdir -p "$HOME/.local/bin" && mv actionlint "$HOME/.local/bin/"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          tool: cargo-nextest
+      - name: Install workflow linters
+        uses: $/.github/actions/install-workflow-linters
       - name: Install registry test tools
         uses: $/.github/actions/install-registry-test-tools
       - run: just test
@@ -207,6 +198,8 @@ jobs:
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2
         with:
           tool: cargo-llvm-cov
+      - name: Install workflow linters
+        uses: $/.github/actions/install-workflow-linters
       # Measures lines only: the Test Suite job installs the real-registry tools and runs those tests for real.
       - run: just coverage 90
         env:
