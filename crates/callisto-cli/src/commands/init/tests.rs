@@ -199,22 +199,20 @@ fn nothing_written(root: &Path) -> bool {
         && !root.join(".github/workflows/callisto-release.yml").exists()
 }
 
-// Facts precede the only questions: versioning and the write confirm.
+// Facts precede the only questions. One package is not asked how to version: fixed and independent are the same.
 #[test]
-fn interactive_run_without_binaries_asks_versioning_then_confirms() {
+fn interactive_run_for_one_package_skips_versioning_and_defaults_the_workflow_to_yes() {
     let dir = workspace(0);
     let run = run_init(
         dir.path(),
         InitArgs::default(),
         true,
-        vec![Answer::Select(1), Answer::Confirm(false), Answer::Confirm(true)],
+        vec![Answer::Confirm(false), Answer::Confirm(true)],
         false,
     );
     assert_eq!(run.result.unwrap(), ExitCode::SUCCESS);
-    assert_eq!(
-        run.prompter.prompts(),
-        [VERSIONING_PROMPT, WORKFLOW_PROMPT, WRITE_PROMPT]
-    );
+    assert_eq!(run.prompter.prompts(), [WORKFLOW_PROMPT, WRITE_PROMPT]);
+    assert_eq!(run.prompter.asked[0].1.as_deref(), Some("true"), "defaults to Y");
     let before = run.prompter.output_at_first_prompt.clone().unwrap();
     for fact in [
         "ecosystems: cargo",
@@ -223,9 +221,72 @@ fn interactive_run_without_binaries_asks_versioning_then_confirms() {
     ] {
         assert!(before.contains(fact), "`{fact}` before the first question:\n{before}");
     }
-    assert!(config(dir.path()).contains("[[fixed-group]]\nname = \"all\"\nmembers = [\"cargo/core\"]"));
+    assert!(
+        !config(dir.path()).contains("[[fixed-group]]"),
+        "independent by default"
+    );
     assert!(dir.path().join(".changeset/README.md").exists());
     assert!(run.out.contains("Initialized callisto configuration"));
+}
+
+// `--yes` alone is enough: packages version independently and the workflow is written for a GitHub origin.
+#[test]
+fn yes_alone_versions_independently_and_writes_the_workflow() {
+    let dir = workspace(0);
+    let args = InitArgs {
+        yes: true,
+        ..Default::default()
+    };
+    let run = run_init_with_runner(
+        dir.path(),
+        args,
+        false,
+        vec![],
+        false,
+        &fake_ls_remote(env!("CARGO_PKG_VERSION")),
+    );
+    assert_eq!(run.result.unwrap(), ExitCode::SUCCESS);
+    assert!(run.prompter.asked.is_empty());
+    assert!(!config(dir.path()).contains("[[fixed-group]]"));
+    assert!(dir.path().join(".github/workflows/callisto-release.yml").exists());
+    assert!(run.out.contains("Next steps:"), "{}", run.out);
+    assert!(run.out.contains("callisto add"), "{}", run.out);
+}
+
+// The unrequested workflow never fails `init`: with the release tag unresolvable it is skipped with a warning.
+#[test]
+fn an_unrequested_workflow_that_cannot_be_built_is_skipped_not_fatal() {
+    let dir = workspace(0);
+    let args = InitArgs {
+        yes: true,
+        ..Default::default()
+    };
+    let run = run_init_with_runner(dir.path(), args, false, vec![], false, &FakeLsRemote { stdout: "" });
+    assert_eq!(run.result.unwrap(), ExitCode::SUCCESS);
+    assert!(dir.path().join("callisto.toml").exists());
+    assert!(!dir.path().join(".github/workflows/callisto-release.yml").exists());
+    assert!(run.out.contains("Skipping the GitHub Actions workflow"), "{}", run.out);
+}
+
+// An origin that is not on GitHub gets no workflow unasked.
+#[test]
+fn a_non_github_origin_gets_no_unrequested_workflow() {
+    let dir = workspace(0);
+    git(
+        dir.path(),
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "https://gitlab.example.com/example/tools.git",
+        ],
+    );
+    let args = InitArgs {
+        yes: true,
+        ..Default::default()
+    };
+    run_init(dir.path(), args, false, vec![], false).result.unwrap();
+    assert!(!dir.path().join(".github/workflows/callisto-release.yml").exists());
 }
 
 // A supplied flag pre-answers its question on a TTY.
@@ -408,7 +469,7 @@ fn declining_the_preview_writes_nothing() {
         dir.path(),
         InitArgs::default(),
         true,
-        vec![Answer::Select(0), Answer::Confirm(false), Answer::Confirm(false)],
+        vec![Answer::Confirm(false), Answer::Confirm(false)],
         false,
     );
     assert_eq!(run.result.unwrap(), ExitCode::SUCCESS);
@@ -428,30 +489,23 @@ fn an_existing_config_errors() {
 }
 
 #[test]
-fn non_tty_without_yes_names_yes_and_missing_flags() {
+fn non_tty_without_yes_names_yes() {
     let dir = workspace(0);
     let error = run_init(dir.path(), InitArgs::default(), false, vec![], false)
         .result
         .unwrap_err();
-    assert!(matches!(&error, CliError::InitRequiresYes { missing } if missing == &["--yes", "--versioning"]));
-    assert!(error.to_string().contains("--yes, --versioning"), "{error}");
+    assert!(matches!(&error, CliError::InitRequiresYes { missing } if missing == &["--yes"]));
+    assert!(error.to_string().contains("--yes"), "{error}");
     assert!(nothing_written(dir.path()));
 }
 
 #[test]
-fn yes_requires_versioning_forge_and_product() {
+fn yes_with_targets_requires_forge_and_product() {
     let dir = workspace(2);
     let missing = |args| match run_init(dir.path(), args, false, vec![], false).result.unwrap_err() {
         CliError::InitMissingFlags { missing } => missing,
         other => panic!("{other}"),
     };
-    assert_eq!(
-        missing(InitArgs {
-            yes: true,
-            ..Default::default()
-        }),
-        ["--versioning"]
-    );
     assert_eq!(
         missing(InitArgs {
             artifact_targets: vec!["x86_64-unknown-linux-gnu".to_owned()],
@@ -683,6 +737,7 @@ fn non_interactive_matches_interactive() {
         flags_dir.path(),
         InitArgs {
             versioning: Some(InitVersioning::Fixed),
+            no_workflow: true,
             ..with_targets(&["x86_64-unknown-linux-gnu"])
         },
         false,
@@ -729,11 +784,11 @@ fn dry_run_previews_and_writes_nothing() {
         dir.path(),
         InitArgs::default(),
         true,
-        vec![Answer::Select(0), Answer::Confirm(false)],
+        vec![Answer::Confirm(false)],
         true,
     );
     run.result.unwrap();
-    assert_eq!(run.prompter.prompts(), [VERSIONING_PROMPT, WORKFLOW_PROMPT]);
+    assert_eq!(run.prompter.prompts(), [WORKFLOW_PROMPT]);
     assert!(run.out.contains("Release plan:"), "{}", run.out);
     assert!(run.out.contains("[DRY-RUN]"));
     assert!(nothing_written(dir.path()));
@@ -872,16 +927,13 @@ fn interactive_workflow_confirm_writes_the_generated_file() {
         dir.path(),
         InitArgs::default(),
         true,
-        vec![Answer::Select(0), Answer::Confirm(true), Answer::Confirm(true)],
+        vec![Answer::Confirm(true), Answer::Confirm(true)],
         false,
         &fake_ls_remote(env!("CARGO_PKG_VERSION")),
     );
     run.result.unwrap();
-    assert_eq!(
-        run.prompter.prompts(),
-        [VERSIONING_PROMPT, WORKFLOW_PROMPT, WRITE_PROMPT]
-    );
-    assert_eq!(run.prompter.asked[1].1.as_deref(), Some("false"), "defaults to N");
+    assert_eq!(run.prompter.prompts(), [WORKFLOW_PROMPT, WRITE_PROMPT]);
+    assert_eq!(run.prompter.asked[0].1.as_deref(), Some("true"), "defaults to Y");
     let workflow = workflow_file(dir.path());
     assert!(
         workflow.contains(&format!(
@@ -981,7 +1033,11 @@ fn preexisting_changesets_config_json_warns_per_unhonoured_key() {
 
     let out = Shared::default();
     let err = Shared::default();
-    run_with_json(dir.path(), yes(InitVersioning::Independent), false, &out, &err);
+    let args = InitArgs {
+        no_workflow: true,
+        ..yes(InitVersioning::Independent)
+    };
+    run_with_json(dir.path(), args, false, &out, &err);
     let report: serde_json::Value = serde_json::from_str(&out.text()).unwrap();
     let diagnostics = report["diagnostics"].as_array().unwrap();
     assert_eq!(diagnostics.len(), 2, "{report}");
@@ -1043,15 +1099,15 @@ fn unresolvable_version_errors_naming_the_fix() {
     assert!(!dir.path().join(".github/workflows/callisto-release.yml").exists());
 }
 
-// Declining interactively, `--no-workflow`, and `--yes` with neither flag all write nothing.
+// Declining interactively and `--no-workflow` write no workflow.
 #[test]
-fn workflow_not_requested_writes_nothing() {
+fn workflow_declined_or_disabled_writes_nothing() {
     let declined = workspace(0);
     let run = run_init(
         declined.path(),
         InitArgs::default(),
         true,
-        vec![Answer::Select(0), Answer::Confirm(false), Answer::Confirm(true)],
+        vec![Answer::Confirm(false), Answer::Confirm(true)],
         false,
     );
     run.result.unwrap();
@@ -1066,21 +1122,6 @@ fn workflow_not_requested_writes_nothing() {
     run.result.unwrap();
     assert!(run.prompter.prompts().is_empty());
     assert!(!no_flag.path().join(".github/workflows/callisto-release.yml").exists());
-
-    let default_yes = workspace(0);
-    run_init(
-        default_yes.path(),
-        yes(InitVersioning::Independent),
-        false,
-        vec![],
-        false,
-    )
-    .result
-    .unwrap();
-    assert!(!default_yes
-        .path()
-        .join(".github/workflows/callisto-release.yml")
-        .exists());
 }
 
 // An existing workflow file errors before the preview, in both normal and --dry-run runs.
