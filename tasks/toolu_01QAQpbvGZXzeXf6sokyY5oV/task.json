@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01QAQpbvGZXzeXf6sokyY5oV",
+  "agent_id": "a3f92ba7fa6abcfcd",
+  "subagent_type": "general-purpose",
+  "task_description": "Verify release spec",
+  "token_usage": {
+    "input_tokens": 164,
+    "cache_creation_tokens": 244024,
+    "cache_read_tokens": 13311379,
+    "output_tokens": 926,
+    "api_call_count": 82
+  },
+  "started_at": "2026-10-23T23:10:42.199378-07:00",
+  "completed_at": "2026-10-23T23:18:26.148754-07:00"
+}

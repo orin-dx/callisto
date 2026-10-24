@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01DLgjHA1MACwL9sYe8mLAXZ",
+  "agent_id": "a3eedd32066f04c78",
+  "subagent_type": "general-purpose",
+  "task_description": "Verify versioning spec",
+  "token_usage": {
+    "input_tokens": 152,
+    "cache_creation_tokens": 224471,
+    "cache_read_tokens": 12239265,
+    "output_tokens": 723,
+    "api_call_count": 76
+  },
+  "started_at": "2026-10-23T23:10:42.199399-07:00",
+  "completed_at": "2026-10-23T23:17:35.162729-07:00"
+}

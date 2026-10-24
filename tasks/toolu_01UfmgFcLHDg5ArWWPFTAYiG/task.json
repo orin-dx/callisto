@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01UfmgFcLHDg5ArWWPFTAYiG",
+  "agent_id": "a32473932ef694858",
+  "subagent_type": "general-purpose",
+  "task_description": "Verify workspace spec",
+  "token_usage": {
+    "input_tokens": 124,
+    "cache_creation_tokens": 205332,
+    "cache_read_tokens": 8043209,
+    "output_tokens": 825,
+    "api_call_count": 62
+  },
+  "started_at": "2026-10-23T23:10:42.199377-07:00",
+  "completed_at": "2026-10-23T23:16:44.458964-07:00"
+}
