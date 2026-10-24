@@ -50,6 +50,9 @@ pub fn last_failed_command() -> Option<String> {
 const MAX_CAPTURED_OUTPUT_BYTES: usize = 10 * 1024 * 1024;
 
 const RELEASE_CREDENTIALS: &[&str] = &[
+    // The job's OIDC request: only npm needs it, to attach provenance.
+    "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
+    "ACTIONS_ID_TOKEN_REQUEST_URL",
     "CARGO_REGISTRY_TOKEN",
     "GH_TOKEN",
     "GITHUB_TOKEN",
@@ -83,7 +86,13 @@ struct ChildEnvironment<'a> {
 /// A tool absent here needs none; publishers receive theirs explicitly instead.
 fn credentials_needed_by(tool: &str) -> &'static [&'static str] {
     match tool {
-        "npm" | "pnpm" | "yarn" | "bun" => &["NPM_CONFIG_TOKEN", "NPM_TOKEN", "NODE_AUTH_TOKEN"],
+        "npm" | "pnpm" | "yarn" | "bun" => &[
+            "NPM_CONFIG_TOKEN",
+            "NPM_TOKEN",
+            "NODE_AUTH_TOKEN",
+            "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
+            "ACTIONS_ID_TOKEN_REQUEST_URL",
+        ],
         "cargo" => &["CARGO_REGISTRY_TOKEN"],
         // `gh` reads GH_TOKEN, and GITHUB_TOKEN when that is unset; it runs the attestation
         // check and every forge call, and refuses to run without a token.
@@ -679,7 +688,12 @@ mod tests {
     /// to carry no secret value, so a new secret cannot be added to a list and escape redaction.
     #[test]
     fn every_credential_the_runner_handles_is_redacted_or_known_not_to_be_secret() {
-        const NOT_SECRET: &[&str] = &["TWINE_USERNAME", "CALLISTO_PUBLISH_NPM_CONFIG", "NPM_CONFIG_USERCONFIG"];
+        const NOT_SECRET: &[&str] = &[
+            "TWINE_USERNAME",
+            "CALLISTO_PUBLISH_NPM_CONFIG",
+            "NPM_CONFIG_USERCONFIG",
+            "ACTIONS_ID_TOKEN_REQUEST_URL",
+        ];
         for name in RELEASE_CREDENTIALS.iter().chain(ACTION_SECRET_INPUTS) {
             assert!(
                 callisto_model::SECRET_CREDENTIAL_ENV.contains(name) || NOT_SECRET.contains(name),
@@ -696,6 +710,8 @@ mod tests {
             ("NPM_CONFIG_TOKEN", &["npm", "pnpm", "yarn", "bun"]),
             ("NPM_TOKEN", &["npm", "pnpm", "yarn", "bun"]),
             ("NODE_AUTH_TOKEN", &["npm", "pnpm", "yarn", "bun"]),
+            ("ACTIONS_ID_TOKEN_REQUEST_TOKEN", &["npm", "pnpm", "yarn", "bun"]),
+            ("ACTIONS_ID_TOKEN_REQUEST_URL", &["npm", "pnpm", "yarn", "bun"]),
             ("CARGO_REGISTRY_TOKEN", &["cargo"]),
             ("GH_TOKEN", &["gh"]),
             ("GITHUB_TOKEN", &["gh"]),

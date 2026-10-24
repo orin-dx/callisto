@@ -17,7 +17,6 @@ This reference describes current keys, not the unimplemented parts of the [polyg
 | `[[package-set]]` | array of tables | no | Per-package glob-match overrides |
 | `[[fixed-group]]` | array of tables | no | Packages that version in lock-step |
 | `[[linked-group]]` | array of tables | no | Packages that share severity, not version |
-| `[init]` | table | no | Deprecated; parsed for compatibility, never read |
 
 ## `[changesets]`
 
@@ -60,7 +59,6 @@ Credentials and registry endpoints are deliberately excluded — this table only
 | `product-package` | string | required | Ecosystem-qualified package whose binaries ship as release assets, e.g. `cargo/callisto-cli` |
 | `forge-repository` | string | none | `owner/repo` the product release publishes to |
 | `[[release.artifact]]` | array of tables | `[]` | Declared binary artifacts (see below) |
-| `[release.profiles]` | table | none | Legacy; only `profiles.production` is read, to migrate its `forge-repository` into the top-level key. Conflicting values between the two are a hard error. |
 
 ### `[[release.artifact]]`
 
@@ -143,10 +141,6 @@ Example (this repo's own `callisto.toml`):
 name = "workspace"
 members = ["cargo/callisto-model", "cargo/callisto-manifests", "cargo/callisto-graph", "cargo/callisto-cli"]
 ```
-
-## `[init]`
-
-Deprecated. `ecosystems` (array of strings) is parsed so older config files still load, but nothing reads it.
 
 ## Identity and defaults
 

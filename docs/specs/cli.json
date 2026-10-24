@@ -224,7 +224,7 @@
     },
     {
       "id": "CLI-INIT-02",
-      "criterion": "Interactive init asks only: versioning (independent or fixed); whether to ship Cargo binaries as GitHub release assets, only when a supported Cargo binary target exists; the product package, only when more than one Cargo package produces a binary; the forge repository, pre-filled from origin; comma-separated target triples; whether to generate a workflow (default no); and whether to write callisto.toml (default yes)."
+      "criterion": "Interactive init asks only: versioning (independent or fixed), only when the workspace has more than one package; whether to ship Cargo binaries as GitHub release assets, only when a supported Cargo binary target exists; the product package, only when more than one Cargo package produces a binary; the forge repository, pre-filled from origin; comma-separated target triples; whether to generate a workflow (default yes); and whether to write callisto.toml (default yes). Without --versioning, packages version independently."
     },
     {
       "id": "CLI-INIT-03",
@@ -258,7 +258,7 @@
     },
     {
       "id": "CLI-INIT-10",
-      "criterion": "With a non-terminal stdin and no --yes, init exits 1 with `E240` naming --yes and every other missing flag; with --yes it exits 1 with `E241` naming each missing flag: --versioning always, --forge-repository when --artifact-target is given, and --product-package when --artifact-target is given and more than one supported Cargo package produces a binary.",
+      "criterion": "With a non-terminal stdin and no --yes, init exits 1 with `E240` naming --yes and every other missing flag; with --yes it exits 1 with `E241` naming each missing flag: --forge-repository when --artifact-target is given, and --product-package when --artifact-target is given and more than one supported Cargo package produces a binary.",
       "is_error_case": true
     },
     {
@@ -290,11 +290,11 @@
     },
     {
       "id": "CLI-WF-01",
-      "criterion": "A workflow is written to .github/workflows/callisto-release.yml only when --workflow is given or the interactive workflow question is answered yes; after writing, init prints that merging to the default branch publishes and advises requiring pull requests and reviews on it."
+      "criterion": "A workflow is written to .github/workflows/callisto-release.yml when --workflow is given, the interactive workflow question is answered yes, or, with --yes and no --no-workflow, the origin is a GitHub repository. A workflow nobody asked for that cannot be built (the release tag cannot be resolved, or the file exists) is skipped with a warning and init succeeds. After writing, init prints that merging to the default branch publishes, advises requiring pull requests and reviews on it, and lists the next steps: the repository secrets for the detected registries, `callisto add`, `callisto release --dry-run` and the first-publish guide."
     },
     {
       "id": "CLI-WF-02",
-      "criterion": "init never overwrites an existing .github/workflows/callisto-release.yml: when a workflow is requested and the file exists, init exits 1 before writing any file.",
+      "criterion": "init never overwrites an existing .github/workflows/callisto-release.yml: when a workflow is requested with --workflow or the interactive question and the file exists, init exits 1 before writing any file.",
       "is_error_case": true
     },
     {
