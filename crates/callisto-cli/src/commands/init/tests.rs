@@ -419,7 +419,7 @@ fn declining_the_preview_writes_nothing() {
 #[test]
 fn an_existing_config_errors() {
     let dir = workspace(0);
-    std::fs::write(dir.path().join("callisto.toml"), "[init]\necosystems = []\n").unwrap();
+    std::fs::write(dir.path().join("callisto.toml"), "# existing\n").unwrap();
     let error = run_init(dir.path(), yes(InitVersioning::Fixed), false, vec![], false)
         .result
         .unwrap_err();

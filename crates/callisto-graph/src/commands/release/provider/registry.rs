@@ -390,6 +390,8 @@ fn pypi_publisher_environment<'a>(
 
 /// Withheld from a build backend, which runs project code and needs none of them.
 const RELEASE_CREDENTIALS: &[&str] = &[
+    "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
+    "ACTIONS_ID_TOKEN_REQUEST_URL",
     "CARGO_REGISTRY_TOKEN",
     "GH_TOKEN",
     "GITHUB_TOKEN",

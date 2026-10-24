@@ -1123,6 +1123,8 @@ fn python_build_removes_every_release_credential_from_its_environment() {
     assert_eq!(
         runner.0.lock().unwrap().as_slice(),
         [
+            "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
+            "ACTIONS_ID_TOKEN_REQUEST_URL",
             "CARGO_REGISTRY_TOKEN",
             "GH_TOKEN",
             "GITHUB_TOKEN",
@@ -1258,7 +1260,11 @@ fn observing_and_publishing_a_nested_npm_package_all_run_in_the_workspace_that_o
 /// no secret value, so a new secret cannot be added here and escape redaction in an error.
 #[test]
 fn every_credential_withheld_from_a_build_is_redacted_or_known_not_to_be_secret() {
-    const NOT_SECRET: &[&str] = &["TWINE_USERNAME", "NPM_CONFIG_USERCONFIG"];
+    const NOT_SECRET: &[&str] = &[
+        "TWINE_USERNAME",
+        "NPM_CONFIG_USERCONFIG",
+        "ACTIONS_ID_TOKEN_REQUEST_URL",
+    ];
     for name in super::RELEASE_CREDENTIALS {
         assert!(
             callisto_model::SECRET_CREDENTIAL_ENV.contains(name) || NOT_SECRET.contains(name),

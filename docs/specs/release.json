@@ -375,7 +375,7 @@
     },
     {
       "id": "REL-ERR-03",
-      "criterion": "A `[release]` section fails config loading with E197 when it has no `[[release.artifact]]`, an unqualified `product-package` or artifact `package`, an unsafe `target` or `asset-name`, or a duplicate `asset-name`. It also fails for a `[release.profiles.<name>]` other than `production`, or a `production` forge-repository that conflicts with the top-level key.",
+      "criterion": "A `[release]` section fails config loading with E197 when it has no `[[release.artifact]]`, an unqualified `product-package` or artifact `package`, an unsafe `target` or `asset-name`, or a duplicate `asset-name`. A `[release.profiles]` table is an unknown key and fails config loading.",
       "is_error_case": true
     }
   ],

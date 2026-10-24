@@ -182,13 +182,8 @@ elif [[ "$TAG_NAME" != "latest" ]] && cargo install callisto-cli --version "$CRA
   echo "Callisto installed from crates.io ($CRATE_VERSION)"
   cp "${RUNNER_TEMP}/callisto-cargo-install/bin/callisto" "$CALLISTO_BIN_DIR/callisto"
 else
-  if [[ "$TAG_NAME" != "latest" ]]; then
-    echo "::error::callisto $TAG_NAME is available neither as a prebuilt asset nor on crates.io"
-    exit 1
-  fi
-  echo "Installing from git source (crates.io install failed or was skipped)..."
-  cargo install --locked --git https://github.com/orin-dx/callisto.git callisto-cli --root "${RUNNER_TEMP}/callisto-cargo-install" --quiet
-  cp "${RUNNER_TEMP}/callisto-cargo-install/bin/callisto" "$CALLISTO_BIN_DIR/callisto"
+  echo "::error::callisto $TAG_NAME is available neither as a prebuilt asset nor on crates.io"
+  exit 1
 fi
 
 echo "$CALLISTO_BIN_DIR" >> $GITHUB_PATH
