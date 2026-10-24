@@ -6,6 +6,12 @@ Callisto delegates authentication to `cargo`, `npm`/`pnpm`, and `twine`. Configu
 
 ---
 
+## Where a publish goes
+
+A registry with no `url` in `callisto.toml` publishes wherever the checkout's own configuration says: `.npmrc` for npm and `.cargo/config.toml` for Cargo. Callisto honors that on purpose, so a private registry set there keeps working, and it means those files decide where the registry token is sent. Review changes to them like code. A release pull request cannot carry such a change: a version commit may only touch manifests, lockfiles, changelogs, changesets and the decision file, and any other path fails verification with E165. Set `url` on the registry entry to pin the destination in `callisto.toml`.
+
+---
+
 ## npm
 
 Two supported patterns.
