@@ -260,7 +260,7 @@
     },
     {
       "id": "REL-PUB-14",
-      "criterion": "When a Cargo or npm registry publish is adopted because the exact version is already published, and the registry entry names a repository whose host, owner and name differ from the `origin` remote's (compared case-insensitively, ignoring `.git`, `git+` and URL form), Callisto prints a warning on stderr naming both repositories. The run still adopts the version. No warning is printed when the registry names no repository, when either value cannot be read as a repository, or when they match. PyPI is not checked."
+      "criterion": "When a Cargo or npm registry publish is adopted because the exact version is already published, and the registry entry names a repository whose host, owner and name differ from the `origin` remote's (compared case-insensitively, ignoring `.git`, `git+` and URL form), Callisto prints a warning on stderr naming both repositories. The run still adopts the version. No warning is printed when the registry names no repository, when either value cannot be read as a repository, or when they match. PyPI is not checked. When the package has no tag in this repository (a first release) and the registry holds the version under a differing repository, `release` and `release --dry-run` fail with E322 before anything else, because the version is another project's; tagging the commit that set the version by hand makes the package no longer a first release."
     },
     {
       "id": "REL-PUB-15",

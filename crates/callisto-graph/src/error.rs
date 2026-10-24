@@ -626,6 +626,25 @@ pub enum GraphError {
         fix: String,
     },
 
+    #[error(
+        "`{package}` {version} is already published, and its registry entry names {registry_repository}, not this \
+         repository ({origin})"
+    )]
+    #[diagnostic(
+        code(E322),
+        help(
+            "This looks like another project's package: this repository has never released `{package}`, yet the \
+             registry holds that version for a different repository. Rename the package. If it is yours (it moved \
+             repositories), tag the commit that set this version by hand and run `callisto release` again."
+        )
+    )]
+    ReleaseNameTaken {
+        package: String,
+        version: String,
+        registry_repository: String,
+        origin: String,
+    },
+
     #[error("release precondition unmet: requires {requirement}")]
     #[diagnostic(
         code(E170),

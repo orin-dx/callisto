@@ -325,7 +325,7 @@ pub(crate) fn has_dispatchable_target(package: &Package) -> bool {
 }
 
 /// The workspace package with this exact release identity.
-fn workspace_package<'w, R: callisto_model::CommandRunner, D: DependencyResolver>(
+pub(crate) fn workspace_package<'w, R: callisto_model::CommandRunner, D: DependencyResolver>(
     workspace: &'w Workspace<'_, R, D>,
     id: &ReleasePackageId,
 ) -> Option<&'w Package> {

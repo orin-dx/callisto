@@ -300,6 +300,15 @@ pub(crate) trait RegistryEcosystem {
     }
 }
 
+/// The repository the registry records for a published version of this package, if it records one and can be read.
+pub(crate) fn recorded_repository(
+    context: &ProviderContext<'_>,
+    ecosystem: Ecosystem,
+    operation: &RegistryPublishOperation,
+) -> Option<String> {
+    adapter_for(ecosystem).ok()?.repository(context, operation)
+}
+
 /// The production adapter set, keyed by ecosystem.
 pub(crate) fn adapter_for(ecosystem: Ecosystem) -> Result<&'static dyn RegistryEcosystem, GraphError> {
     match ecosystem {

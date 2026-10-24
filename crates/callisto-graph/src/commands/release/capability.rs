@@ -444,6 +444,63 @@ pub(crate) fn published_packages(
     Ok(published)
 }
 
+/// A published version whose registry entry names another project's repository.
+pub(crate) struct TakenName {
+    pub(crate) package: callisto_model::ReleasePackageId,
+    pub(crate) version: String,
+    pub(crate) registry_repository: String,
+    pub(crate) origin: String,
+}
+
+/// Of the registry publishes of `among`, those whose version the registry already holds under a repository other than
+/// this one. An unreadable or unrecorded repository proves nothing, so it is not reported; neither is a publish that
+/// cannot be observed.
+pub(crate) fn names_taken_by_other_projects(
+    root: &Path,
+    runner: &dyn CommandRunner,
+    prepared: &super::derive::PreparedDerivation,
+    among: &std::collections::BTreeSet<callisto_model::ReleasePackageId>,
+) -> Result<Vec<TakenName>, GraphError> {
+    let context = ProviderContext::new(root, runner, prepared.git_remote.as_ref());
+    let Some(origin) = context.origin_endpoint() else {
+        return Ok(Vec::new());
+    };
+    let mut taken = Vec::new();
+    for (id, operation) in &prepared.operations {
+        let PreparedOperation::RegistryPublish(publish) = operation else {
+            continue;
+        };
+        if !among.contains(&id.package) {
+            continue;
+        }
+        // A registry that cannot be reached, or a tool that is missing, leaves this check unable to tell: the
+        // publish itself reports that when it matters.
+        let observed = checked_provider_for(operation)?.observe(
+            &context,
+            &ProviderRequest {
+                id,
+                operation,
+                artifacts: None,
+            },
+        );
+        if !matches!(observed, Ok(ProviderObservationV1::Exact { .. })) {
+            continue;
+        }
+        let recorded = super::provider::registry::recorded_repository(&context, id.package.ecosystem(), publish);
+        if let Some((registry_repository, origin)) =
+            super::provider::repository::differing_repositories(recorded.as_deref(), origin)
+        {
+            taken.push(TakenName {
+                package: id.package.clone(),
+                version: publish.version.render().to_string(),
+                registry_repository,
+                origin,
+            });
+        }
+    }
+    Ok(taken)
+}
+
 pub(crate) fn canonical_root(root: &Path) -> Result<std::path::PathBuf, GraphError> {
     dunce::canonicalize(root).map_err(|error| GraphError::ReleaseInputRead {
         path: root.to_path_buf(),
