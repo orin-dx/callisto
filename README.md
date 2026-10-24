@@ -63,7 +63,7 @@ flowchart LR
     class outputs output
 ```
 
-Callisto is pre-v1. The [guide](docs/how-callisto-works.md) covers current support, known limits, and when another tool may be a better fit.
+Callisto is pre-v1. The [guide](docs/how-callisto-works.md) covers current support, known limits, and when another tool may be a better fit, and [stability](docs/stability.md) says what will and will not change.
 
 ## Install
 
