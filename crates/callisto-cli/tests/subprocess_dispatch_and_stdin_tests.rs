@@ -50,6 +50,7 @@ fn subprocess_lifecycle_exercises_every_main_dispatch_arm() {
         "--yes",
         "--versioning",
         "independent",
+        "--no-workflow",
     ]);
     assert!(
         init.status.success(),
@@ -191,6 +192,7 @@ fn compose_pr_body_existing_body_dash_reads_from_stdin() {
             "--yes",
             "--versioning",
             "independent",
+            "--no-workflow",
         ])
         .output()
         .unwrap();

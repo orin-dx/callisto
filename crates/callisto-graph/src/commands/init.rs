@@ -863,6 +863,19 @@ pub fn resolve_release_commit<R: CommandRunner>(runner: &R, root: &Path, version
     commit.or(tag_object).ok_or_else(unresolved)
 }
 
+/// The repository secrets the generated workflow reads, one per registry ecosystem the workspace has.
+pub fn registry_secret_names(facts: &InitFacts) -> Vec<&'static str> {
+    [
+        (Ecosystem::Cargo, "CARGO_REGISTRY_TOKEN"),
+        (Ecosystem::Npm, "NPM_TOKEN"),
+        (Ecosystem::Pypi, "PYPI_TOKEN"),
+    ]
+    .into_iter()
+    .filter(|(ecosystem, _)| facts.ecosystems.contains(ecosystem))
+    .map(|(_, name)| name)
+    .collect()
+}
+
 /// Renders the release workflow for `shape`.
 ///
 /// `commit` pins the generated `orin-dx/callisto` action references to the
@@ -870,16 +883,12 @@ pub fn resolve_release_commit<R: CommandRunner>(runner: &R, root: &Path, version
 /// `version` names the CLI `setup-callisto` installs and a trailing comment.
 pub fn render_workflow(facts: &InitFacts, shape: WorkflowShape, branch: &str, commit: &str, version: &str) -> String {
     let mut secrets = Vec::new();
-    if facts.ecosystems.contains(&Ecosystem::Cargo) {
-        secrets.push("CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}".to_owned());
-    }
-    if facts.ecosystems.contains(&Ecosystem::Npm) {
-        secrets.push("NPM_TOKEN: ${{ secrets.NPM_TOKEN }}".to_owned());
-        // Uses the job's id-token: write; npm publishes no provenance without it.
-        secrets.push("NPM_CONFIG_PROVENANCE: \"true\"".to_owned());
-    }
-    if facts.ecosystems.contains(&Ecosystem::Pypi) {
-        secrets.push("PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}".to_owned());
+    for name in registry_secret_names(facts) {
+        secrets.push(format!("{name}: ${{{{ secrets.{name} }}}}"));
+        if name == "NPM_TOKEN" {
+            // Uses the job's id-token: write; npm publishes no provenance without it.
+            secrets.push("NPM_CONFIG_PROVENANCE: \"true\"".to_owned());
+        }
     }
     secrets.push("GH_TOKEN: ${{ github.token }}".to_owned());
     let env_lines: Vec<String> = secrets.iter().map(|line| format!("          {line}")).collect();
