@@ -183,7 +183,9 @@ fn resolve_product_release(raw: RawProductReleaseConfig) -> Result<ProductReleas
             asset_name: entry.asset_name.clone(),
         });
     }
-    let forge_repository = resolve_forge_repository(&raw)?
+    let forge_repository = raw
+        .forge_repository
+        .clone()
         .map(|raw| {
             GitHubRepository::parse(&raw).map_err(|error| ConfigError::InvalidProductRelease {
                 detail: format!("forge-repository `{raw}` is invalid: {error}"),
@@ -196,31 +198,6 @@ fn resolve_product_release(raw: RawProductReleaseConfig) -> Result<ProductReleas
         forge_repository,
     })
 }
-
-/// `[release].forge-repository`, else the legacy `[release.profiles.production]` one.
-fn resolve_forge_repository(raw: &RawProductReleaseConfig) -> Result<Option<String>, ConfigError> {
-    let mut legacy = None;
-    for (name, profile) in raw.profiles.iter().flatten() {
-        if name != LEGACY_PRODUCTION_PROFILE {
-            return Err(ConfigError::InvalidProductRelease {
-                detail: format!(
-                    "release profile `{name}` is not supported: only a top-level [release].forge-repository key, or the `production` profile name for migration, is accepted"
-                ),
-            });
-        }
-        legacy = Some(profile.forge_repository.clone());
-    }
-    match (raw.forge_repository.clone(), legacy) {
-        (Some(current), Some(legacy)) if current != legacy => Err(ConfigError::InvalidProductRelease {
-            detail: format!(
-                "[release].forge-repository `{current}` conflicts with [release.profiles.production].forge-repository `{legacy}`"
-            ),
-        }),
-        (current, legacy) => Ok(current.or(legacy)),
-    }
-}
-
-const LEGACY_PRODUCTION_PROFILE: &str = "production";
 
 /// Per-package overrides from a `[[package]]` block in `callisto.toml`.
 ///
@@ -1414,59 +1391,15 @@ mod tests {
         assert_eq!(forge(&config).as_deref(), Some("orin-dx/callisto"));
     }
 
+    /// The removed `[release.profiles]` and `[init]` tables are unknown keys now, not silently accepted.
     #[test]
-    fn legacy_production_profile_forge_repository_migrates() {
-        let config = resolve_str("[release.profiles.production]\nforge-repository = \"orin-dx/legacy\"\n").unwrap();
-        assert_eq!(forge(&config).as_deref(), Some("orin-dx/legacy"));
-    }
-
-    #[test]
-    fn differing_top_level_and_legacy_forge_repositories_are_rejected() {
-        let detail = detail(resolve_str(
-            "forge-repository = \"orin-dx/one\"\n[release.profiles.production]\nforge-repository = \"orin-dx/two\"\n",
-        ));
-        assert!(
-            detail.contains("orin-dx/one") && detail.contains("orin-dx/two"),
-            "{detail}"
-        );
-    }
-
-    #[test]
-    fn identical_top_level_and_legacy_forge_repositories_resolve() {
-        let config = resolve_str(
-            "forge-repository = \"orin-dx/one\"\n[release.profiles.production]\nforge-repository = \"orin-dx/one\"\n",
-        )
-        .unwrap();
-        assert_eq!(forge(&config).as_deref(), Some("orin-dx/one"));
-    }
-
-    #[test]
-    fn a_non_production_profile_is_rejected_naming_it() {
+    fn removed_legacy_tables_are_rejected() {
         for body in [
-            "[release.profiles.rehearsal]\nforge-repository = \"orin-dx/rehearsal\"\n",
-            "forge-repository = \"orin-dx/one\"\n[release.profiles.rehearsal]\nforge-repository = \"orin-dx/rehearsal\"\n",
+            "[release.profiles.production]\nforge-repository = \"orin-dx/legacy\"\n",
+            "[init]\necosystems = [\"cargo\"]\n",
         ] {
-            let detail = detail(resolve_str(body));
-            assert!(detail.contains("`rehearsal`"), "{detail}");
-            assert!(
-                detail.contains("only a top-level [release].forge-repository key, or the `production` profile name for migration, is accepted"),
-                "{detail}"
-            );
+            assert!(toml::from_str::<RawConfig>(body).is_err(), "{body}");
         }
-    }
-
-    #[test]
-    fn legacy_registry_routes_change_nothing() {
-        let with = resolve_str(
-            "[release.profiles.production]\nforge-repository = \"orin-dx/one\"\nregistry-routes = { cratesIo = \"elsewhere\" }\n",
-        )
-        .unwrap();
-        let without = resolve_str("[release.profiles.production]\nforge-repository = \"orin-dx/one\"\n").unwrap();
-        assert_eq!(with.product_release, without.product_release);
-        assert_eq!(
-            with.registries.keys().collect::<Vec<_>>(),
-            without.registries.keys().collect::<Vec<_>>()
-        );
     }
 
     #[test]
@@ -1478,7 +1411,7 @@ mod tests {
     fn load_is_read_parse_then_resolve() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let content = format!(
-            "{RELEASE_HEAD}forge-repository = \"orin-dx/callisto\"\n{ARTIFACT}\n[cascade]\nmode = \"always\"\n\n[registries.corp]\nkind = \"cargo\"\nurl = \"https://corp.example/index\"\n\n[[package]]\nmatch = \"cargo/demo\"\npublish-to = [\"crates-io\"]\n\n[init]\necosystems = [\"cargo\"]\n"
+            "{RELEASE_HEAD}forge-repository = \"orin-dx/callisto\"\n{ARTIFACT}\n[cascade]\nmode = \"always\"\n\n[registries.corp]\nkind = \"cargo\"\nurl = \"https://corp.example/index\"\n\n[[package]]\nmatch = \"cargo/demo\"\npublish-to = [\"crates-io\"]\n"
         );
         fs::write(tmp.path().join("callisto.toml"), &content).expect("write callisto.toml");
         let loaded = load(tmp.path()).unwrap();

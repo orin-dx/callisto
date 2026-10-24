@@ -16,8 +16,6 @@ pub struct RawConfig {
     pub fixed_group: Option<Vec<crate::config::groups::RawGroup>>,
     #[serde(rename = "linked-group")]
     pub linked_group: Option<Vec<crate::config::groups::RawGroup>>,
-    /// Deprecated `[init]` bookkeeping from the removed reconcile flow: parsed, never read.
-    pub init: Option<RawInitConfig>,
 }
 
 /// Product binary release declaration. Credentials and provider endpoints are
@@ -35,8 +33,6 @@ pub struct RawProductReleaseConfig {
     /// The GitHub repository (`owner/repo`) the product release publishes to.
     #[serde(rename = "forge-repository")]
     pub forge_repository: Option<String>,
-    /// Legacy `[release.profiles]`, read only to migrate `production`.
-    pub profiles: Option<BTreeMap<String, RawLegacyReleaseProfile>>,
 }
 
 /// One declared release artifact. `target` is opaque to Callisto: it is passed
@@ -48,23 +44,6 @@ pub struct RawArtifactConfig {
     pub target: String,
     #[serde(rename = "asset-name")]
     pub asset_name: String,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RawLegacyReleaseProfile {
-    #[serde(rename = "forge-repository")]
-    pub forge_repository: String,
-    /// Accepted so legacy files parse; never read.
-    #[serde(rename = "registry-routes")]
-    pub registry_routes: Option<toml::Value>,
-}
-
-/// Deprecated `[init]` table; accepted so older configs still load.
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RawInitConfig {
-    pub ecosystems: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

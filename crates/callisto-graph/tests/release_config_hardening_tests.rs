@@ -60,9 +60,8 @@ fn invalid_artifact_declarations_are_rejected() {
     }
 }
 #[test]
-fn invalid_profile_name_or_forge_repository_is_rejected() {
-    assert!(load("[release.profiles.\"bad/name\"]\nforge-repository=\"o/a\"\n").is_err());
-    assert!(load("[release.profiles.production]\nforge-repository=\"not a repo\"\n").is_err());
+fn a_profile_table_or_an_invalid_forge_repository_is_rejected() {
+    assert!(load("[release.profiles.production]\nforge-repository=\"o/a\"\n").is_err());
     let d = tempfile::tempdir().unwrap();
     fs::write(
         d.path().join("callisto.toml"),

@@ -166,11 +166,11 @@ fn npm_bin_does_not_make_a_cargo_library_an_artifact_builder() {
     ));
 }
 
-// An existing config is an error, and its [init] table is never read.
+// An existing config is an error, and it is left as it was.
 #[test]
 fn existing_config_is_already_initialized() {
     let dir = workspace();
-    let config = "[init]\necosystems = [\"cargo\"]\n";
+    let config = "# existing\n";
     std::fs::write(dir.path().join("callisto.toml"), config).unwrap();
     let error = detect_in(dir.path()).unwrap_err();
     assert!(matches!(error, GraphError::InitAlreadyInitialized { .. }), "{error}");
@@ -179,7 +179,6 @@ fn existing_config_is_already_initialized() {
         std::fs::read_to_string(dir.path().join("callisto.toml")).unwrap(),
         config
     );
-    assert!(crate::config::load(dir.path()).is_ok(), "[init] still parses");
     let permit = ApplyPermit::force_for_tests();
     assert!(matches!(
         write(dir.path(), empty_config(), &permit).unwrap_err(),

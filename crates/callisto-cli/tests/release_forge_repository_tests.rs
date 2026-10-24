@@ -57,8 +57,6 @@ fn status_with(keys: &str, fragment: &str) -> (bool, Vec<String>, String) {
     (out.status.success(), codes, detail)
 }
 
-const E197: &str = "E197";
-
 /// Runs `callisto <args>` from a directory that does not exist, so any workspace load would fail.
 fn without_workspace(args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_callisto"))
@@ -101,37 +99,16 @@ fn top_level_forge_repository_loads() {
     assert!(ok && codes.is_empty(), "codes {codes:?}: {detail}");
 }
 
+/// The old `[release.profiles]` table is gone: it is an unknown key, named in the error.
 #[test]
-fn legacy_production_profile_still_loads() {
-    let (ok, codes, detail) = status_with(
-        "",
-        "\n[release.profiles.production]\nforge-repository = \"org/one\"\nregistry-routes = { cratesIo = \"cratesIo\" }\n",
-    );
-    assert!(ok && codes.is_empty(), "codes {codes:?}: {detail}");
-}
-
-#[test]
-fn a_non_production_profile_is_rejected_naming_it() {
-    let (ok, codes, detail) = status_with(
-        "",
-        "\n[release.profiles.rehearsal]\nforge-repository = \"org/rehearsal\"\n",
-    );
-    assert!(
-        !ok && codes.iter().any(|c| c == E197) && detail.contains("`rehearsal`"),
-        "expected E197, got ok={ok} codes {codes:?}: {detail}"
-    );
-}
-
-#[test]
-fn a_conflicting_legacy_forge_repository_is_rejected() {
-    let (ok, codes, detail) = status_with(
-        "forge-repository = \"org/one\"\n",
-        "\n[release.profiles.production]\nforge-repository = \"org/two\"\n",
-    );
-    assert!(
-        !ok && codes.iter().any(|c| c == E197) && detail.contains("org/one") && detail.contains("org/two"),
-        "expected E197, got ok={ok} codes {codes:?}: {detail}"
-    );
+fn a_release_profile_table_is_rejected() {
+    for profile in ["production", "rehearsal"] {
+        let (ok, _, detail) = status_with(
+            "forge-repository = \"org/one\"\n",
+            &format!("\n[release.profiles.{profile}]\nforge-repository = \"org/two\"\n"),
+        );
+        assert!(!ok && detail.contains("profiles"), "{profile}: ok={ok}: {detail}");
+    }
 }
 
 fn repo_file(path: &str) -> String {

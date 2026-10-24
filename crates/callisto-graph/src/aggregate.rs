@@ -303,114 +303,96 @@ where
         // on disk); instead, an UnknownPackage diagnostic is emitted and the
         // file is left for the user to clean up manually.
         //
-        // A changeset with a MIX of resolved and unresolved entries must also
-        // stay unconsumed: consuming it would delete the file (or, in pre
-        // mode, mark it as already-applied) and permanently lose the
-        // unresolved entry's bump once that entry's target reappears.
-        let mut matched_any = false;
+        // A changeset with a MIX of resolved and unresolved entries is ignored
+        // in full, not applied in part: it stays on disk (so it cannot lose the
+        // unresolved entry's bump), and applying its resolved entries every
+        // run would bump those packages again each time while it stays.
         let mut has_unresolved = false;
+        let mut resolved = Vec::new();
         for entry in cs.changeset.entries {
-            let id = match PackageId::parse(&entry.name) {
-                Ok(id) => id,
-                Err(_) => {
-                    has_unresolved = true;
-                    agg.diagnostics.push(Diagnostic {
-                        code: callisto_model::DiagnosticCode::UnknownPackage,
-                        severity: callisto_model::DiagnosticSeverity::Warning,
-                        message: format!(
-                            "Changeset `{}` contains invalid package name `{}`; the changeset \
-                             will not be consumed until this entry is resolved",
-                            cs.path.display(),
-                            entry.name
-                        ),
-                        package: None,
-                        path: Some(cs.path.clone()),
-                        governed_by: None,
-                        escalated_by: None,
-                    });
-                    continue;
-                }
+            let unresolved = match PackageId::parse(&entry.name) {
+                Err(_) => Some("contains invalid package name"),
+                Ok(id) => match resolve_target_package(graph.packages(), identity, &id)? {
+                    Some(target_pkg) => {
+                        resolved.push((entry, target_pkg));
+                        continue;
+                    }
+                    None => Some("references a package that is not in the workspace:"),
+                },
             };
-            match resolve_target_package(graph.packages(), identity, &id)? {
-                Some(target_pkg) => {
-                    matched_any = true;
-                    let canonical_id = target_pkg.id.clone();
-                    let cur_sev = agg.severities.get(&canonical_id).copied().unwrap_or(Severity::None);
-                    if entry.severity > cur_sev {
-                        agg.severities.insert(canonical_id.clone(), entry.severity);
-                        agg.reasons.insert(
-                            canonical_id.clone(),
-                            BumpReason::Changeset {
-                                changesets: vec![cs.id.clone()],
-                            },
-                        );
-                        agg.named_by.insert(canonical_id.clone(), NamedBy::Changeset);
-                    }
-
-                    if entry.severity != Severity::None && is_already_recorded {
-                        recorded_only.insert(canonical_id.clone());
-                    }
-                    if entry.severity != Severity::None && !is_already_recorded {
-                        // In pre-release mode use the pre-cycle entry version as the
-                        // changelog "from" baseline so the log covers the full pre
-                        // range rather than reflecting live (pre-tagged) versions.
-                        let pkg_ver = if is_pre_mode {
-                            pre.and_then(|s| crate::pre_initial_version(s, &canonical_id))
-                                .cloned()
-                                .or_else(|| base_versions.get(&canonical_id).cloned())
-                                .unwrap_or_else(|| Version::semver(0, 0, 0))
-                        } else {
-                            tags.last_tag(&canonical_id)
-                                .map(|t| t.version.clone())
-                                .or_else(|| base_versions.get(&canonical_id).cloned())
-                                .unwrap_or_else(|| Version::semver(0, 0, 0))
-                        };
-                        let cl_input =
-                            agg.changelog_inputs
-                                .entry(canonical_id.clone())
-                                .or_insert_with(|| ChangelogInput {
-                                    package: canonical_id.clone(),
-                                    from: pkg_ver,
-                                    to: None,
-                                    entries: Vec::new(),
-                                });
-                        cl_input.entries.push(ChangelogEntry {
-                            severity: entry.severity,
-                            source: ChangeSource::Changeset {
-                                filename: cs.id.clone(),
-                                summary: cs.changeset.summary.clone(),
-                            },
-                        });
-                    }
-                }
-                None => {
-                    // Entry references a package not in the workspace (e.g. a
-                    // package that was removed since the changeset was written).
-                    // Emit a diagnostic so the user knows, but do NOT count
-                    // this as a match -- a fully-orphaned changeset stays on
-                    // disk rather than being silently deleted.
-                    has_unresolved = true;
-                    agg.diagnostics.push(Diagnostic {
-                        code: callisto_model::DiagnosticCode::UnknownPackage,
-                        severity: callisto_model::DiagnosticSeverity::Warning,
-                        message: format!(
-                            "Changeset `{}` references package `{}` which is not in the \
-                             workspace; the changeset will not be consumed until this entry \
-                             is resolved",
-                            cs.path.display(),
-                            entry.name
-                        ),
-                        package: None,
-                        path: Some(cs.path.clone()),
-                        governed_by: None,
-                        escalated_by: None,
-                    });
-                }
+            if let Some(what) = unresolved {
+                has_unresolved = true;
+                agg.diagnostics.push(Diagnostic {
+                    code: callisto_model::DiagnosticCode::UnknownPackage,
+                    severity: callisto_model::DiagnosticSeverity::Warning,
+                    message: format!(
+                        "Changeset `{}` {what} `{}`; none of its entries apply until this entry is fixed or removed",
+                        cs.path.display(),
+                        entry.name
+                    ),
+                    package: None,
+                    path: Some(cs.path.clone()),
+                    governed_by: None,
+                    escalated_by: None,
+                });
             }
         }
-        // A changeset with any unresolved entry (orphaned or invalid) is left on disk and
-        // unrecorded regardless of mode, so a later rerun can still pick up its bump.
-        if matched_any && !has_unresolved {
+        if has_unresolved {
+            continue;
+        }
+        let mut matched_any = false;
+        for (entry, target_pkg) in resolved {
+            matched_any = true;
+            let canonical_id = target_pkg.id.clone();
+            let cur_sev = agg.severities.get(&canonical_id).copied().unwrap_or(Severity::None);
+            if entry.severity > cur_sev {
+                agg.severities.insert(canonical_id.clone(), entry.severity);
+                agg.reasons.insert(
+                    canonical_id.clone(),
+                    BumpReason::Changeset {
+                        changesets: vec![cs.id.clone()],
+                    },
+                );
+                agg.named_by.insert(canonical_id.clone(), NamedBy::Changeset);
+            }
+
+            if entry.severity != Severity::None && is_already_recorded {
+                recorded_only.insert(canonical_id.clone());
+            }
+            if entry.severity != Severity::None && !is_already_recorded {
+                // In pre-release mode use the pre-cycle entry version as the
+                // changelog "from" baseline so the log covers the full pre
+                // range rather than reflecting live (pre-tagged) versions.
+                let pkg_ver = if is_pre_mode {
+                    pre.and_then(|s| crate::pre_initial_version(s, &canonical_id))
+                        .cloned()
+                        .or_else(|| base_versions.get(&canonical_id).cloned())
+                        .unwrap_or_else(|| Version::semver(0, 0, 0))
+                } else {
+                    tags.last_tag(&canonical_id)
+                        .map(|t| t.version.clone())
+                        .or_else(|| base_versions.get(&canonical_id).cloned())
+                        .unwrap_or_else(|| Version::semver(0, 0, 0))
+                };
+                let cl_input = agg
+                    .changelog_inputs
+                    .entry(canonical_id.clone())
+                    .or_insert_with(|| ChangelogInput {
+                        package: canonical_id.clone(),
+                        from: pkg_ver,
+                        to: None,
+                        entries: Vec::new(),
+                    });
+                cl_input.entries.push(ChangelogEntry {
+                    severity: entry.severity,
+                    source: ChangeSource::Changeset {
+                        filename: cs.id.clone(),
+                        summary: cs.changeset.summary.clone(),
+                    },
+                });
+            }
+        }
+        if matched_any {
             if is_pre_mode {
                 // Records newly-seen ids so a rerun treats them as already-applied and skips the changelog entry.
                 if !is_already_recorded {

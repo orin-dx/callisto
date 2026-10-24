@@ -21,10 +21,6 @@ inputs:
     description: 'Release-PR label'
     required: false
     default: 'callisto: release'
-  setup_git_user:
-    description: 'Unused no-op, kept for backward compatibility. The managed branch is committed through the forge commit API, not a local `git commit`, so no Git identity is ever configured.'
-    required: false
-    default: 'true'
   branch:
     description: 'Base branch for the release PR'
     required: false
@@ -117,7 +113,6 @@ runs:
         INPUT_COMMIT_MESSAGE: ${{ inputs.commit_message }}
         INPUT_TITLE: ${{ inputs.title }}
         INPUT_PR_LABEL: ${{ inputs.pr_label }}
-        INPUT_SETUP_GIT_USER: ${{ inputs.setup_git_user }}
         INPUT_BRANCH: ${{ inputs.branch }}
         INPUT_RELEASE_BRANCH: ${{ inputs.release_branch }}
         INPUT_CWD: ${{ inputs.cwd }}
