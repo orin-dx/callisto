@@ -17,7 +17,7 @@
       "error_conditions": [
         "Dirty worktree: E267.",
         "Workspace needs the CI route: E239.",
-        "Invalid --package: E227, E102 or E169.",
+        "Invalid --package, or a snapshot version: E227, E102 or E169.",
         "Missing or unsafe origin push URL: E132."
       ]
     },
@@ -101,7 +101,7 @@
     },
     {
       "id": "REL-CMD-04",
-      "criterion": "`callisto release --dry-run` prints each package as `<ecosystem/name> <version>` with its operations (a table on a colour terminal, `Release plan:` lines otherwise) and performs no effect. This holds on a dirty worktree, without an `origin` remote, and in a workspace that needs the CI route. With `--format json` it prints the plan document, whose `digest` equals the receipt's `intentDigest` from a following `callisto release` on the same state; the document carries a sibling `diagnostics` array (e.g. an artifact owner selected without its product) when derivation raised any, and omits the field otherwise. `release plan`'s JSON output carries the same `diagnostics` array; the `--out` file it writes never does."
+      "criterion": "`callisto release --dry-run` prints a `Release plan:` header and each package as `<ecosystem/name> <version>` with its operations (a table on a colour terminal, indented lines otherwise) and performs no effect. This holds on a dirty worktree, without an `origin` remote, and in a workspace that needs the CI route. With `--format json` it prints the plan document, whose `digest` equals the receipt's `intentDigest` from a following `callisto release` on the same state; the document carries a sibling `diagnostics` array (e.g. an artifact owner selected without its product) when derivation raised any, and omits the field otherwise. `release plan`'s JSON output carries the same `diagnostics` array; the `--out` file it writes never does."
     },
     {
       "id": "REL-CMD-05",
@@ -119,7 +119,7 @@
     },
     {
       "id": "REL-CMD-08",
-      "criterion": "A malformed `--package` value fails with `E227` and an unknown package with E102. A duplicate selection, a version whose release is complete, or a package with no publish target fails with E169.",
+      "criterion": "A malformed `--package` value fails with `E227` and an unknown package with E102. A duplicate selection, a version whose release is complete, a package with no publish target, or a package whose current version is a `callisto snapshot` version fails with E169.",
       "is_error_case": true
     },
     {
@@ -246,7 +246,7 @@
     },
     {
       "id": "REL-PUB-11",
-      "criterion": "A publish command that fails with auth, rate-limit or other registry output fails the run with E163, and the error carries the last 8 lines of the command's standard output followed by its standard error. A publish run also echoes its standard output to the live log, on stderr. A failing git or gh effect command fails with E164. No effect command is re-issued automatically. Tool output shown in these errors, in the live stderr echo and in JSON errors has credentials masked as `[REDACTED]`: the values of the known credential variables and of any variable named `*_TOKEN`, `*_SECRET` or `*_PASSWORD`, URL userinfo, `npm_`, `ghp_`-family, `github_pat_` and `pypi-` tokens, `Bearer` values, and `.npmrc` `_authToken`, `_auth` and `_password` values.",
+      "criterion": "A publish command that fails with auth, rate-limit or other registry output fails the run with E163, and the error carries the last 8 lines of the command's standard output followed by its standard error. A publish run also echoes its standard output to the live log, on stderr. A failing git or gh effect command fails with E164. No effect command is re-issued automatically. Tool output shown in these errors, in the live stderr echo and in JSON errors has credentials masked as `[REDACTED]`: the values of the known credential variables, of `CARGO_REGISTRIES_*_TOKEN`, and of any variable named `*_TOKEN`, `*_SECRET` or `*_PASSWORD` whose value is at least 8 characters, URL userinfo, `npm_`, `ghp_`-family, `github_pat_` and `pypi-` tokens, `Bearer` values, and `.npmrc` `_authToken`, `_auth` and `_password` values.",
       "is_error_case": true
     },
     {

@@ -170,7 +170,7 @@
     },
     {
       "id": "CLI-STATUS-03",
-      "criterion": "`status --format json` reports `hasChangesets`, `pending` (count of packages with a planned bump), and per package `package`, `currentVersion`, `lastReleasedVersion`, `pendingSeverity` (omitted when no bump is planned), `changedSinceLastTag`, `releaseTrigger` and `pendingChangesets`. `changedSinceLastTag` is true for a package with no tag, when any directory of the package holds different files than at its last tag, or when its tracked files have uncommitted changes; a change that was later reverted does not count."
+      "criterion": "`status --format json` reports `hasChangesets`, `pending` (count of packages with a planned bump), and per package `package`, `currentVersion`, `lastReleasedVersion`, `lastTag` (omitted when the package has no tag), `pendingSeverity` (omitted when no bump is planned), `changedSinceLastTag`, `releaseTrigger` and `pendingChangesets`. `changedSinceLastTag` is true for a package with no tag, when any directory of the package holds different files than at its last tag, or when its tracked files have uncommitted changes; a change that was later reverted does not count."
     },
     {
       "id": "CLI-STATUS-04",
@@ -215,7 +215,7 @@
     },
     {
       "id": "CLI-ADD-06",
-      "criterion": "A --package value missing `:severity`, with an unknown severity, or naming a package not in the workspace exits 1 and writes nothing; an unknown package name reports E102, and a bare name ambiguous across ecosystems reports E103 listing the qualified candidates.",
+      "criterion": "A --package value missing `:severity`, with an unknown severity, or naming a package not in the workspace exits 1 and writes nothing; an unknown package name reports E102, a name without its ecosystem reports E317, and the colon form reports E316.",
       "is_error_case": true
     },
     {
