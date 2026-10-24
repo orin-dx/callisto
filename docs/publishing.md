@@ -10,7 +10,7 @@ Callisto delegates authentication to `cargo`, `npm`/`pnpm`, and `twine`. Configu
 
 A package that has never been published is released from its manifest version with no changeset. Callisto plans it like any other release, and the first publish is the one most likely to fail for reasons outside Callisto:
 
-- **Check the name first.** A name another project already owns is rejected by the registry, or worse, an existing version with the same number looks like yours. Search the registry before the first release.
+- **Check the name first.** A name another project already owns is rejected by the registry. If it already holds the version you are releasing under another repository, `callisto release` stops with E322 and names that repository. Search the registry before the first release.
 - **Fill in the metadata the registry requires.** crates.io needs `description` and `license` (or `license-file`) in `Cargo.toml`. A crate that fails this check can stop a multi-crate release part way; fix it and run `callisto release` again, which adopts what already landed.
 - **Use a token that can create the package.** A token scoped to existing packages cannot publish a new one. Trusted publishing (OIDC) is configured per package on the registry and generally needs the package, or a pending publisher, to exist first, so plan on one token-based first publish. Follow each registry's current documentation.
 - **Scoped npm packages** publish with `--access public` by default. A private scoped package sets `publishConfig.access` to `"restricted"` in its `package.json`, which Callisto passes through.
