@@ -122,7 +122,7 @@ jobs:
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2
         with:
-          tool: cargo-nextest,zizmor@1.30.0,actionlint@1.7.12
+          tool: cargo-nextest,zizmor@1.30.0,actionlint
       - name: Install registry test tools
         uses: $/.github/actions/install-registry-test-tools
       - run: just test
