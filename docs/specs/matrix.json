@@ -66,11 +66,11 @@
     },
     {
       "id": "MX-DISC-11",
-      "criterion": "`--package <name>` limits platformTargets and runtimeVersions to the one package it resolves to; a bare name resolves only when it matches exactly one package, and a qualified id such as `cargo/foo` selects the promoted package in that ecosystem."
+      "criterion": "`--package <ecosystem/name>` limits platformTargets and runtimeVersions to that one package; a name without its ecosystem is E317."
     },
     {
       "id": "MX-OUT-01",
-      "criterion": "platformTargets and runtimeVersions are keyed by the package's display id: the bare name, or `<ecosystem>/<name>` when packages in two ecosystems share that name, so a cargo crate and an npm package named alike get separate entries."
+      "criterion": "platformTargets and runtimeVersions are keyed by the package's `<ecosystem>/<name>` id for its primary ecosystem, so a cargo crate and an npm package named alike get separate entries."
     },
     {
       "id": "MX-OUT-02",
@@ -120,7 +120,7 @@
     },
     {
       "id": "MX-ERR-07",
-      "criterion": "`--package` naming no registered package exits 1 with E102 naming it, and a bare name matching packages in several ecosystems exits 1 with E103 listing the qualified candidates.",
+      "criterion": "`--package` naming no registered package exits 1 with E102 naming it, and a name without its ecosystem exits 1 with E317.",
       "is_error_case": true
     },
     {
