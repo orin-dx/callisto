@@ -148,6 +148,49 @@ fn pnpm_catalog_workspace() -> tempfile::TempDir {
     dir
 }
 
+/// An npm range written with spaces between its comparators is one range: once its dependency leaves it, the run
+/// stops before any write, instead of skipping the dependent as if the range could not be read.
+#[test]
+fn a_space_separated_npm_range_the_bump_leaves_behind_stops_the_run_before_any_write() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    callisto_fixtures::git::init_repo(root);
+    fs::write(
+        root.join("package.json"),
+        "{\n  \"name\": \"root\",\n  \"private\": true,\n  \"workspaces\": [\"packages/*\"]\n}\n",
+    )
+    .unwrap();
+    for (name, extra) in [
+        ("lib", String::new()),
+        (
+            "app",
+            ",\n  \"peerDependencies\": {\n    \"lib\": \">=0.1.0 <1.0.0\"\n  }".to_owned(),
+        ),
+    ] {
+        fs::create_dir_all(root.join(format!("packages/{name}"))).unwrap();
+        fs::write(
+            root.join(format!("packages/{name}/package.json")),
+            format!("{{\n  \"name\": \"{name}\",\n  \"version\": \"0.1.0\"{extra}\n}}\n"),
+        )
+        .unwrap();
+    }
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "workspace"]);
+    let init = callisto(root, &["init", "--yes", "--no-workflow"]);
+    assert!(init.status.success(), "{}", String::from_utf8_lossy(&init.stderr));
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "configure callisto"]);
+    add_changeset(root, "npm/lib", "major");
+    let before = read(root, "packages/app/package.json");
+
+    let out = callisto(root, &["version", "--no-refresh-lockfiles"]);
+
+    assert!(!out.status.success(), "the range must stop the run");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("E319") && stderr.contains(">=0.1.0 <1.0.0"), "{stderr}");
+    assert_eq!(read(root, "packages/app/package.json"), before, "nothing was written");
+}
+
 #[test]
 fn a_catalog_dependency_is_reported_not_rewritten_and_does_not_cascade() {
     let dir = pnpm_catalog_workspace();
