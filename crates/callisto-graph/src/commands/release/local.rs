@@ -8,7 +8,10 @@ use callisto_model::{CommandRunner, ExecutionTrustProfileV1, ReleaseIntentV1, Re
 use crate::{DependencyResolver, GraphError, ProjectLocator, Workspace};
 
 use super::binding::optional_git_remote;
-use super::capability::{canonical_root, observe_source, published_packages, unsatisfied_packages, ReleaseCheckout};
+use super::capability::{
+    canonical_root, names_taken_by_other_projects, observe_source, published_packages, unsatisfied_packages,
+    ReleaseCheckout,
+};
 use super::derive::{
     derive_release_intent, derive_release_intent_with_prepared, ArtifactBuildPolicy, GitRemoteRequirement,
 };
@@ -95,7 +98,7 @@ pub fn plan_local_release<L: ProjectLocator, R: CommandRunner>(
 ) -> Result<Option<LocalReleasePlan>, GraphError> {
     let root = canonical_root(root)?;
     let workspace = Workspace::load(root, locator, runner)?;
-    plan_workspace_release(&workspace, selections, mode)
+    plan_release(&workspace, selections, mode, true)
 }
 
 /// The tagged releases on HEAD whose operations are not all observed satisfied: a rerun finishes them.
@@ -137,6 +140,50 @@ fn incomplete_tagged_releases<R: CommandRunner, D: DependencyResolver>(
         &prepared,
         &tagged,
     ))
+}
+
+/// Refuses a first release whose name another project already owns.
+///
+/// A package this repository has never tagged has no history here, so a version of it that the registry already holds
+/// under a different repository is that project's, not ours; adopting it would tag this commit as their release.
+/// A package that has a tag is left alone: its published versions are its own history.
+fn refuse_a_name_another_project_owns<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    decision: &callisto_model::ReleaseDecisionV1,
+    source: &SourceIdentity,
+    profile: ExecutionTrustProfileV1,
+    mode: LocalReleaseSource,
+) -> Result<(), GraphError> {
+    let tags = workspace.tags()?;
+    let first_releases: std::collections::BTreeSet<ReleasePackageId> = decision
+        .entries
+        .iter()
+        .filter(|entry| {
+            crate::commands::release_decision::workspace_package(workspace, &entry.package)
+                .is_some_and(|package| tags.last_tag(&package.id).is_none())
+        })
+        .map(|entry| entry.package.clone())
+        .collect();
+    // Without an `origin` push URL a preview cannot tell whose repository the registry names.
+    if first_releases.is_empty()
+        || (mode == LocalReleaseSource::Preview && optional_git_remote(&workspace.root, workspace.runner)?.is_none())
+    {
+        return Ok(());
+    }
+    let (_, prepared) =
+        derive_release_intent_with_prepared(workspace, decision, source.clone(), profile, None, &mut Vec::new())?;
+    match names_taken_by_other_projects(&workspace.root, workspace.runner, &prepared, &first_releases)?
+        .into_iter()
+        .next()
+    {
+        Some(taken) => Err(GraphError::ReleaseNameTaken {
+            package: taken.package.to_string(),
+            version: taken.version,
+            registry_repository: taken.registry_repository,
+            origin: taken.origin,
+        }),
+        None => Ok(()),
+    }
 }
 
 /// Refuses to tag a version the registry already holds while its package has moved on since the commit that set it.
@@ -189,10 +236,22 @@ fn refuse_a_published_version_left_behind<R: CommandRunner, D: DependencyResolve
 }
 
 /// [`plan_local_release`] over an already-loaded workspace, e.g. one built from an in-memory config.
+///
+/// This looks at no registry for a name another project owns, so a caller that must stay offline, such as the plan
+/// `init` previews, can use it; [`plan_local_release`] does look.
 pub fn plan_workspace_release<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     selections: &[ReleasePackageId],
     mode: LocalReleaseSource,
+) -> Result<Option<LocalReleasePlan>, GraphError> {
+    plan_release(workspace, selections, mode, false)
+}
+
+fn plan_release<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    selections: &[ReleasePackageId],
+    mode: LocalReleaseSource,
+    check_taken_names: bool,
 ) -> Result<Option<LocalReleasePlan>, GraphError> {
     let resumable = incomplete_tagged_releases(workspace, mode)?;
     let Some(decision) = crate::commands::release_decision::derive_release_roster(workspace, selections, &resumable)?
@@ -206,6 +265,9 @@ pub fn plan_workspace_release<R: CommandRunner, D: DependencyResolver>(
         },
         LocalReleaseSource::Trusted => observe_source(workspace, profile, ReleaseCheckout::AnyHead)?,
     };
+    if check_taken_names {
+        refuse_a_name_another_project_owns(workspace, &decision, &source, profile, mode)?;
+    }
     refuse_a_published_version_left_behind(workspace, &decision, &resumable, &source, profile, mode)?;
     // A local run is its own orchestration: slots bind to the source commit.
     let artifact_policy = match (&workspace.config.product_release, &source) {

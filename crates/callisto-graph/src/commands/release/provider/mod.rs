@@ -28,7 +28,7 @@ pub(crate) mod http;
 pub(crate) mod policy;
 mod pypi_files;
 pub(crate) mod registry;
-mod repository;
+pub(crate) mod repository;
 pub(crate) mod tag;
 
 /// The captured provider fixtures, and the loopback HTTP server the forge

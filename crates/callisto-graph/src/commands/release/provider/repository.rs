@@ -28,19 +28,24 @@ pub(crate) fn repository_identity(url: &str) -> Option<String> {
     (!host.is_empty() && !repo.is_empty()).then(|| format!("{host}/{owner}/{repo}").to_ascii_lowercase())
 }
 
-/// The warning for adopting a published version whose registry entry names another repository, if it does.
+/// The repository a registry entry names and this repository, as `host/owner/repo`, when they differ.
 ///
-/// Silent when the registry names no repository, when either side cannot be read as a repository, and when they match:
-/// a missing or unreadable value proves nothing about who owns the name.
+/// `None` when the registry names no repository, when either side cannot be read as a repository, and when they
+/// match: a missing or unreadable value proves nothing about who owns the name.
+pub(crate) fn differing_repositories(registry_repository: Option<&str>, origin: &str) -> Option<(String, String)> {
+    let registry = repository_identity(registry_repository?)?;
+    let ours = repository_identity(origin)?;
+    (registry != ours).then_some((registry, ours))
+}
+
+/// The warning for adopting a published version whose registry entry names another repository, if it does.
 pub(crate) fn foreign_repository_warning(
     package: &str,
     version: &str,
     registry_repository: Option<&str>,
     origin: &str,
 ) -> Option<String> {
-    let registry = repository_identity(registry_repository?)?;
-    let ours = repository_identity(origin)?;
-    (registry != ours).then(|| {
+    differing_repositories(registry_repository, origin).map(|(registry, ours)| {
         format!(
             "warning: {package} {version} is already published, and its registry entry names {registry}, not this \
              repository ({ours}). Callisto adopts the published version and tags this commit; check that the name is \
@@ -96,6 +101,29 @@ mod tests {
         ] {
             assert_eq!(repository_identity(url), None, "{url:?}");
         }
+    }
+
+    #[test]
+    fn differing_repositories_names_both_sides_and_stays_silent_when_it_cannot_tell() {
+        let origin = "https://github.com/example/single.git";
+        assert_eq!(
+            differing_repositories(Some("https://github.com/CAD97/rust-single"), origin),
+            Some((
+                "github.com/cad97/rust-single".to_owned(),
+                "github.com/example/single".to_owned()
+            ))
+        );
+        // The same repository in another spelling, no recorded repository, and unreadable values prove nothing.
+        assert_eq!(
+            differing_repositories(Some("git+https://github.com/example/single"), origin),
+            None
+        );
+        assert_eq!(differing_repositories(None, origin), None);
+        assert_eq!(differing_repositories(Some("not a url"), origin), None);
+        assert_eq!(
+            differing_repositories(Some("https://github.com/a/b"), "/tmp/local/remote.git"),
+            None
+        );
     }
 
     #[test]
