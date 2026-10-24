@@ -4,12 +4,12 @@ name = "callisto"
 type = "cli"
 
 [platform.macos]
-archs = ["aarch64"]
+archs = ["aarch64", "x86_64"]
 download-file = "callisto-{arch}-apple-darwin.tar.gz"
 exe-path = "callisto"
 
 [platform.linux]
-archs = ["x86_64"]
+archs = ["x86_64", "aarch64"]
 download-file = "callisto-{arch}-unknown-linux-{libc}.tar.gz"
 exe-path = "callisto"
 
