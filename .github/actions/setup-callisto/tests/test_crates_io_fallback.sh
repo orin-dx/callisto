@@ -6,7 +6,7 @@
 # `cargo install --git` (broken on main by an unrelated yanked dependency).
 # callisto-cli@0.5.0 was already published and installable from crates.io
 # the whole time. This proves the new crates.io fallback is actually tried,
-# in the right order, with the right args, before the git-source fallback.
+# in the right order, with the right args. There is no git-source fallback.
 set -u
 INSTALL_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/install-callisto.sh"
 
@@ -91,13 +91,13 @@ else
   echo "PASS: explicit version tag strips to bare semver for --version"
 fi
 
-# When crates.io install also fails, the git-source fallback must still run
-# (it isn't removed, just demoted to last resort).
-out=$(run_case "latest" "fail" "crates-io-fails")
-if [[ "$out" != *"--git"* ]]; then
-  echo "FAIL: git fallback must still run when crates.io install fails too, got: $out"; fail=1
+# When crates.io install also fails, `latest` fails like a pin does: building the
+# default branch would run unreleased code in a job that holds publish credentials.
+out=$(run_case "latest" "fail" "crates-io-fails"); code=$?
+if [[ $code -eq 0 || "$out" == *"--git"* ]]; then
+  echo "FAIL: latest must fail without a git install when crates.io fails too: code=$code out=$out"; fail=1
 else
-  echo "PASS: git fallback still runs when crates.io install fails"
+  echo "PASS: latest fails without a git install when crates.io fails too"
 fi
 
 for version in callisto@0.5.0 callisto-cli@0.5.0 0.5.0; do

@@ -732,3 +732,38 @@ fn a_bare_package_keeps_the_tags_it_made() {
         .to_string()
         .contains("tag-owned-by-another-package"));
 }
+
+/// One bad entry (a typo, a removed package) makes the whole changeset wait: nothing from it applies, so
+/// running `version` again and again never bumps the package it also names.
+#[test]
+fn a_changeset_with_an_unresolved_entry_applies_nothing_on_any_run() {
+    let dir = empty_repo();
+    let root = dir.path();
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"core\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("core/src")).unwrap();
+    fs::write(root.join("core/src/lib.rs"), "\n").unwrap();
+    write_manifest(root, "core/Cargo.toml", cargo_manifest("core", "1.0.0"));
+    fs::write(
+        root.join(".changeset/typo.md"),
+        "---\n\"cargo/core\": minor\n\"cargo/ghost\": patch\n---\n\nA feature.\n",
+    )
+    .unwrap();
+    commit(root, "a changeset with a typo");
+
+    for _ in 0..2 {
+        let out = callisto(root, &["version", "--no-refresh-lockfiles"]);
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(text.contains("none of its entries apply"), "{text}");
+        let manifest = fs::read_to_string(root.join("core/Cargo.toml")).unwrap();
+        assert!(manifest.contains("version = \"1.0.0\""), "{manifest}");
+        assert!(root.join(".changeset/typo.md").exists());
+    }
+}

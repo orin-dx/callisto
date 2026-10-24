@@ -99,7 +99,7 @@ Start in a Git repository with an `origin` push URL and crates.io credentials. T
 
 ```bash
 # 1. Scaffold callisto.toml and .changeset/ in the workspace root
-callisto init --yes --versioning independent --no-workflow
+callisto init --yes --no-workflow
 
 # 2. Record a pending change against a package
 callisto add --package cargo/my-crate:minor --summary "Add authentication middleware"

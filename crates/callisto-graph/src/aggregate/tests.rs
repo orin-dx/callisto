@@ -885,11 +885,10 @@ fn test_orphaned_changeset_not_consumed_emits_unknown_package_diagnostic() {
 }
 
 /// Spec: a changeset with a MIX of a known and an unknown package entry
-/// must NOT be consumed. Consuming it (as the previous code did once
-/// `matched_any` went true) deletes the changeset file while the unknown
-/// entry's bump is never recorded anywhere, silently losing it -- despite
-/// the accompanying diagnostic claiming the changeset "will not be
-/// consumed until this entry is resolved".
+/// is ignored in full. It is not consumed (that would delete the file and
+/// lose the unknown entry's bump) and it does not bump the known package
+/// either: it stays on disk, so applying it would bump that package again
+/// on every run.
 #[test]
 fn test_changeset_with_one_unknown_entry_not_consumed() {
     let ws_dir = tempfile::tempdir().unwrap();
@@ -943,9 +942,10 @@ fn test_changeset_with_one_unknown_entry_not_consumed() {
         agg.consumed
     );
 
-    // The known entry's severity must still be tracked for this run, even
-    // though the changeset itself stays on disk pending the unknown entry.
-    assert_eq!(agg.severities.get(&pkg_bar_id).copied(), Some(Severity::Patch));
+    // The known entry must not bump: the changeset stays on disk, so applying it would bump the package again
+    // on every run until the unknown entry is fixed.
+    assert_eq!(agg.severities.get(&pkg_bar_id).copied(), None);
+    assert!(agg.changelog_inputs.is_empty(), "{:?}", agg.changelog_inputs);
 
     let unknown_pkg_diags: Vec<_> = agg
         .diagnostics

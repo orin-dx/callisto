@@ -39,6 +39,22 @@ fn merge_publishes_note(branch: &str) -> String {
         "Merging to `{branch}` publishes: require pull requests and reviews on `{branch}` (GitHub → Settings → Rules)."
     )
 }
+/// Printed once a generated workflow is written: what to do before the first release.
+fn next_steps_note(secrets: &[&str]) -> String {
+    let secrets = if secrets.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n  - Add the repository secrets {} (GitHub → Settings → Secrets and variables → Actions).",
+            secrets.join(", ")
+        )
+    };
+    format!(
+        "\nNext steps:{secrets}\n  - Describe a change with `callisto add`, then commit.\n  - Preview the first release with `callisto release --dry-run`.\n  - A new package's first publish needs a token that can create it: see {FIRST_PUBLISH_URL}."
+    )
+}
+/// Where the registry-by-registry first-publish guidance lives.
+const FIRST_PUBLISH_URL: &str = "https://github.com/orin-dx/callisto/blob/main/docs/publishing.md#first-publish";
 const VERSIONING_CHOICES: [&str; 2] = [
     "independent: each package has its own version",
     "fixed: every package shares one version",
@@ -166,19 +182,32 @@ pub fn run<R: CommandRunner>(
         None => false,
         Some(_) if args.workflow => true,
         Some(_) if args.no_workflow => false,
-        Some(_) if prompting && facts.origin.is_some() => prompter.confirm(WORKFLOW_PROMPT, false)?,
-        Some(_) => false,
+        Some(_) if prompting && facts.origin.is_some() => prompter.confirm(WORKFLOW_PROMPT, true)?,
+        // The workflow is GitHub Actions, so only a GitHub origin gets it unasked.
+        Some(_) => facts.origin_repository.is_some(),
     };
+    // A workflow nobody asked for (the default) never fails `init`: if it cannot be built, say why and go on.
+    let asked_for_workflow = args.workflow || prompting;
     let workflow = match shape.filter(|_| want_workflow) {
-        Some(shape) => {
-            scaffold::ensure_workflow_absent(&facts.root)?;
-            let branch = scaffold::default_branch(runner, &facts.root);
-            writeln!(human, "  default branch: {} (from {})", branch.name, branch.source)?;
-            let version = env!("CARGO_PKG_VERSION");
-            let commit = scaffold::resolve_release_commit(runner, &facts.root, version)?;
-            let content = scaffold::render_workflow(&facts, shape, &branch.name, &commit, version);
-            Some((content, branch.name))
-        }
+        Some(shape) => match build_workflow(&facts, shape, runner, human) {
+            Ok(built) => Some(built),
+            Err(error) if !asked_for_workflow => {
+                let note =
+                    format!("Skipping the GitHub Actions workflow: {error}. Run `callisto init --workflow` to retry.");
+                writeln!(human, "{note}")?;
+                diagnostics.push(callisto_model::Diagnostic {
+                    code: callisto_model::DiagnosticCode::WorkflowGenerationUnsupported,
+                    severity: callisto_model::DiagnosticSeverity::Warning,
+                    message: note,
+                    package: None,
+                    path: None,
+                    escalated_by: None,
+                    governed_by: None,
+                });
+                None
+            }
+            Err(error) => return Err(error),
+        },
         None => None,
     };
 
@@ -226,6 +255,7 @@ pub fn run<R: CommandRunner>(
             scaffold::write_workflow(&facts.root, workflow, &permit)?;
             let note = merge_publishes_note(branch);
             writeln!(human, "{note}")?;
+            writeln!(human, "{}", next_steps_note(&scaffold::registry_secret_names(&facts)))?;
             diagnostics.push(callisto_model::Diagnostic {
                 code: callisto_model::DiagnosticCode::WorkflowMergePublishes,
                 severity: callisto_model::DiagnosticSeverity::Info,
@@ -246,6 +276,22 @@ pub fn run<R: CommandRunner>(
         render::render_init(&report, &mut &mut *out)?;
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// The workflow text and the default branch it triggers on.
+fn build_workflow<R: CommandRunner>(
+    facts: &InitFacts,
+    shape: scaffold::WorkflowShape,
+    runner: &R,
+    human: &mut dyn Write,
+) -> Result<(String, String), CliError> {
+    scaffold::ensure_workflow_absent(&facts.root)?;
+    let branch = scaffold::default_branch(runner, &facts.root);
+    writeln!(human, "  default branch: {} (from {})", branch.name, branch.source)?;
+    let version = env!("CARGO_PKG_VERSION");
+    let commit = scaffold::resolve_release_commit(runner, &facts.root, version)?;
+    let content = scaffold::render_workflow(facts, shape, &branch.name, &commit, version);
+    Ok((content, branch.name))
 }
 
 /// Printed, and recorded as a warning diagnostic, when no `origin` remote is configured.
@@ -292,9 +338,6 @@ fn write_facts(facts: &InitFacts, out: &mut dyn Write) -> Result<(), CliError> {
 /// Flags `--yes` needs that were not supplied.
 fn missing_flags(args: &InitArgs, facts: &InitFacts) -> Vec<&'static str> {
     let mut missing = Vec::new();
-    if args.versioning.is_none() {
-        missing.push("--versioning");
-    }
     if !args.artifact_targets.is_empty() && facts.binary_packages().next().is_some() {
         if args.forge_repository.is_none() {
             missing.push("--forge-repository");
@@ -319,14 +362,15 @@ fn collect_answers(
     let versioning = match args.versioning {
         Some(InitVersioning::Fixed) => Versioning::Fixed,
         Some(InitVersioning::Independent) => Versioning::Independent,
-        None if prompting => {
+        // Fixed and independent mean the same for one package, so only several packages are asked.
+        None if prompting && facts.packages.len() > 1 => {
             let choices: Vec<String> = VERSIONING_CHOICES.iter().map(|choice| (*choice).to_owned()).collect();
             match prompter.select(VERSIONING_PROMPT, &choices)? {
                 0 => Versioning::Independent,
                 _ => Versioning::Fixed,
             }
         }
-        None => return Err(missing("--versioning")),
+        None => Versioning::Independent,
     };
     let no_binaries = InitAnswers {
         versioning,

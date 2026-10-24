@@ -6,6 +6,34 @@ Callisto delegates authentication to `cargo`, `npm`/`pnpm`, and `twine`. Configu
 
 ---
 
+## First publish
+
+A package that has never been published is released from its manifest version with no changeset. Callisto plans it like any other release, and the first publish is the one most likely to fail for reasons outside Callisto:
+
+- **Check the name first.** A name another project already owns is rejected by the registry, or worse, an existing version with the same number looks like yours. Search the registry before the first release.
+- **Fill in the metadata the registry requires.** crates.io needs `description` and `license` (or `license-file`) in `Cargo.toml`. A crate that fails this check can stop a multi-crate release part way; fix it and run `callisto release` again, which adopts what already landed.
+- **Use a token that can create the package.** A token scoped to existing packages cannot publish a new one. Trusted publishing (OIDC) is configured per package on the registry and generally needs the package, or a pending publisher, to exist first, so plan on one token-based first publish. Follow each registry's current documentation.
+- **Scoped npm packages** publish with `--access public` by default. A private scoped package sets `publishConfig.access` to `"restricted"` in its `package.json`, which Callisto passes through.
+- **Rehearse.** `callisto release --dry-run` shows what would be published and in which order, and works without credentials.
+
+## Pulling a release
+
+Callisto never deletes, yanks or deprecates anything. Pulling a release is a manual registry action, and the version stays used:
+
+| Registry | Soft pull | Delete |
+| --- | --- | --- |
+| crates.io | `cargo yank` hides it from new resolution; it stays downloadable and existing lockfiles keep working. | Limited to 72 hours after publishing, or a single owner, few downloads and no dependents. |
+| npm | `npm deprecate` keeps it installable with a warning. | `npm unpublish` within 72 hours if nothing depends on it; later only with no dependents, under 300 weekly downloads and a single owner. A used version number can never be reused, and removing every version blocks the name for 24 hours. |
+| PyPI | Yank (PEP 592) hides it from normal resolution. | Permanent. A filename cannot be reused even after deletion, and deleting a project frees its name for anyone. |
+
+Registries cache their indexes for minutes, so a pulled version can keep appearing briefly. Prefer the soft pull, then release a fixed, higher version through the normal flow. Leave the git tag in place: Callisto treats an existing tag as a release already made. Yanking does not undo a leaked secret; rotate it.
+
+If you remove a version that is still the manifest version, `callisto release` will try to finish it again and stop with an error. Bump the version with a changeset instead.
+
+See the registries' own pages for current rules: [cargo yank](https://doc.rust-lang.org/cargo/commands/cargo-yank.html), [npm unpublish](https://docs.npmjs.com/policies/unpublish) and the [PyPI help](https://pypi.org/help/).
+
+---
+
 ## npm
 
 Two supported patterns.

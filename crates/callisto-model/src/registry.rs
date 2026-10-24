@@ -260,6 +260,7 @@ const MIN_SECRET_VALUE_LEN: usize = 8;
 /// (`TWINE_USERNAME`, `NPM_CONFIG_USERCONFIG`, `CALLISTO_PUBLISH_NPM_CONFIG`) are credentials to keep out of
 /// unrelated children but are not secret values, so they are not listed.
 pub const SECRET_CREDENTIAL_ENV: &[&str] = &[
+    "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
     "NPM_TOKEN",
     "NPM_CONFIG_TOKEN",
     "NODE_AUTH_TOKEN",
