@@ -3,9 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::{
-    ApplyPermit, CommandOutput, CommandRunner, CommitSha, StagedChangeKindV1, StagedChangeV1, TagHints, TagName,
-};
+use crate::{ApplyPermit, CommandOutput, CommandRunner, CommitSha, StagedChangeKindV1, StagedChangeV1, TagName};
 
 use crate::vcs::{GitCommit, TagSignPolicy, VcsError};
 
@@ -17,14 +15,6 @@ const RECORD_SEP: char = '\u{1e}';
 /// Unit separator between a commit's sha and its raw message body in
 /// `git log --format=` output.
 const FIELD_SEP: char = '\u{1f}';
-
-/// One tag as [`GitAccess::tag_records`] reads it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TagRecord {
-    pub name: TagName,
-    pub commit: Option<CommitSha>,
-    pub hints: Option<TagHints>,
-}
 
 /// Every Git read and write callisto performs, each one `git` subprocess
 /// run in `root` through a [`CommandRunner`].
@@ -544,14 +534,12 @@ impl GitAccess<'_> {
             .collect())
     }
 
-    /// Every tag with the commit it ends at and the hints in its annotation, from one `git for-each-ref`. The commit
-    /// is `None` when the tag ends at something else (a tree, a blob, a tag of a tag), which [`Self::resolve_commit`]
-    /// then decides. The hints are `None` for a lightweight tag and for an annotation without well-formed hints.
-    pub fn tag_records(&self) -> Result<Vec<TagRecord>, VcsError> {
+    /// Every tag with the commit it ends at, from one `git for-each-ref`. The commit is `None` when the tag ends at
+    /// something else (a tree, a blob, a tag of a tag), which [`Self::resolve_commit`] then decides.
+    pub fn tags_with_commits(&self) -> Result<Vec<(TagName, Option<CommitSha>)>, VcsError> {
         let args = [
             "for-each-ref",
-            "--format=%(refname:strip=2)%00%(objecttype)%00%(objectname)%00%(*objecttype)%00%(*objectname)%00\
-             %(contents:trailers:only,unfold)%1e",
+            "--format=%(refname:strip=2)%00%(objecttype)%00%(objectname)%00%(*objecttype)%00%(*objectname)",
             "refs/tags",
         ];
         let output = self.runner.run("git", &args, &self.root)?;
@@ -560,25 +548,18 @@ impl GitAccess<'_> {
         }
         Ok(output
             .stdout
-            .split(RECORD_SEP)
-            .filter_map(|record| {
-                let mut fields = record.trim_start_matches('\n').splitn(6, '\0');
+            .lines()
+            .filter_map(|line| {
+                let mut fields = line.split('\0');
                 let name = TagName::parse(fields.next()?).ok()?;
-                let (kind, object, peeled_kind, peeled, trailers) = (
-                    fields.next()?,
-                    fields.next()?,
-                    fields.next()?,
-                    fields.next()?,
-                    fields.next()?,
-                );
+                let (kind, object, peeled_kind, peeled) =
+                    (fields.next()?, fields.next()?, fields.next()?, fields.next()?);
                 let commit = match (kind, peeled_kind) {
                     ("commit", _) => CommitSha::parse(object).ok(),
                     ("tag", "commit") => CommitSha::parse(peeled).ok(),
                     _ => None,
                 };
-                // A lightweight tag's contents are its commit's message, which says nothing about the tag.
-                let hints = if kind == "tag" { TagHints::parse(trailers) } else { None };
-                Some(TagRecord { name, commit, hints })
+                Some((name, commit))
             })
             .collect())
     }
@@ -1024,68 +1005,6 @@ mod tests {
                 .expect_err("unsupported repository trust evidence must reject");
             assert!(error.to_string().contains(response), "got: {error}");
         }
-    }
-
-    /// One `for-each-ref` record the way git prints it: fields split by NUL, the trailers last, then the separator.
-    fn record(name: &str, kind: &str, object: &str, peeled_kind: &str, peeled: &str, trailers: &str) -> String {
-        format!("{name}\0{kind}\0{object}\0{peeled_kind}\0{peeled}\0{trailers}\x1e\n")
-    }
-
-    #[test]
-    fn tag_records_reads_each_commit_and_only_an_annotated_tags_hints() {
-        let (a, b, c) = ("a".repeat(40), "b".repeat(40), "c".repeat(40));
-        let tree = "d".repeat(40);
-        let hints = format!("Callisto-Hints: 1\nCallisto-Package: cargo/core\nCallisto-Tree: crates/core {tree}\n");
-        let stdout = [
-            record("core@1.0.0", "tag", &a, "commit", &b, &hints),
-            // A lightweight tag's contents are its commit's message, so hints there say nothing about the tag.
-            record("core@0.9.0", "commit", &c, "", "", &hints),
-            record("core@0.8.0", "tag", &a, "commit", &b, "Signed-off-by: someone\n"),
-            record("blob", "blob", &a, "", "", ""),
-        ]
-        .concat();
-        let runner = FakeRunner {
-            calls: Mutex::new(Vec::new()),
-            response: Box::new(move |_args| Ok(ok(stdout.clone()))),
-        };
-        let git = GitAccess::new(PathBuf::from("."), &runner);
-
-        let records = git.tag_records().unwrap();
-
-        let by_name = |name: &str| records.iter().find(|r| r.name.as_str() == name).unwrap();
-        assert_eq!(records.len(), 4);
-        assert_eq!(
-            by_name("core@1.0.0").commit.as_ref().map(CommitSha::as_str),
-            Some(b.as_str())
-        );
-        let parsed = by_name("core@1.0.0").hints.as_ref().expect("an annotated tag's hints");
-        assert_eq!(parsed.package, "cargo/core");
-        assert_eq!(parsed.trees["crates/core"], tree);
-        assert_eq!(
-            by_name("core@0.9.0").commit.as_ref().map(CommitSha::as_str),
-            Some(c.as_str())
-        );
-        assert_eq!(by_name("core@0.9.0").hints, None);
-        assert_eq!(by_name("core@0.8.0").hints, None);
-        assert_eq!(by_name("blob").commit, None);
-        assert_eq!(runner.calls.lock().unwrap().len(), 1);
-    }
-
-    #[test]
-    fn tag_records_fails_when_git_does() {
-        let runner = FakeRunner {
-            calls: Mutex::new(Vec::new()),
-            response: Box::new(|_args| {
-                Ok(CommandOutput {
-                    exit_code: Some(128),
-                    stdout: String::new(),
-                    stderr: "fatal".into(),
-                })
-            }),
-        };
-        let git = GitAccess::new(PathBuf::from("."), &runner);
-
-        assert!(git.tag_records().is_err());
     }
 
     #[test]

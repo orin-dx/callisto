@@ -186,7 +186,9 @@ fn registry_observation<A: RegistryEcosystem + ?Sized>(
             cause: ProviderIndeterminateCause::UnsupportedProvider,
         });
     }
-    policy::retry_observation(context.sleeper(), || adapter.observe_once(context, operation))
+    policy::retry_observation_within(context.sleeper(), context.patience(), || {
+        adapter.observe_once(context, operation)
+    })
 }
 
 /// The longest one publish command may run: the registry's configured `publish-timeout`, else the default.

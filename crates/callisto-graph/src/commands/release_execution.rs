@@ -222,7 +222,10 @@ fn settle_issued<P: ReleaseProviderSet + ?Sized>(
     loop {
         let mut progressed = false;
         for id in issued.clone() {
-            if let Some(evidence) = capability.settle(&id, artifacts)? {
+            // A look waits no longer than the window has left, so a registry that asks for long waits cannot hold it
+            // past, and the looks of one pass share what is left.
+            let patience = (wave.opened + window).saturating_duration_since(capability.now());
+            if let Some(evidence) = capability.settle(&id, artifacts, patience)? {
                 apply(state, &id, &OperationEvent::Confirmed { evidence })?;
                 issued.remove(&id);
                 progressed = true;
