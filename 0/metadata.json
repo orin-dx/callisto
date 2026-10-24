@@ -1,0 +1,140 @@
+{
+  "cli_version": "0.12.1-nightly.202610230625.e04328a5d",
+  "checkpoint_id": "01M5QK3V66CN453V0H6WR4XZE7",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-24T18:35:21.006645Z",
+  "branch": "fix/unresolved-changeset-entry",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/aggregate.rs",
+    "crates/callisto-graph/src/aggregate/tests.rs",
+    "crates/callisto-graph/src/locate/ignore_walk.rs",
+    "docs/specs/versioning.json",
+    "docs/specs/workspace.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "2d6b296c1777",
+  "checkpoint_transcript_start": 68921,
+  "transcript_lines_at_start": 68921,
+  "compact_transcript_start": 5179,
+  "token_usage": {
+    "input_tokens": 56,
+    "cache_creation_tokens": 39858,
+    "cache_read_tokens": 19558048,
+    "output_tokens": 19866,
+    "api_call_count": 28,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 210,
+    "layers": {
+      "betterleaks": 40,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 27,
+      "credentialed_uri": 31,
+      "entropy": 132,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 338
+  },
+  "summary": {
+    "intent": "Continue working through the queued Callisto fixes one PR at a time, starting with making an unresolved changeset entry a hard error and skipping non-publishable (versionless) workspace members.",
+    "outcome": "Implemented both fixes: aggregation now resolves all changeset entries first and skips the whole changeset if any is unresolved, and discovery excludes versionless crates such as xtask with publish=false. Added unit and end-to-end tests, updated specs, added a changeset, ran full CI, and committed, pushed and opened a PR.",
+    "learnings": {
+      "repo": [
+        "Work happens in a git worktree at /Users/gabe/Projects/callisto/.claude/worktrees/smoke-main; PRs are opened via a body file written to /tmp and then commit/push.",
+        "Specs live in docs/specs/*.json (versioning.json, workspace.json) and must be updated alongside behavior changes; changesets go in .changeset/*.md.",
+        "Several callers consume base_versions, so versionless members are best excluded at discovery rather than handled in base_versions, following the existing precedent for versionless private npm roots.",
+        "Cargo package identity distinguishes an absent version from an inherited (workspace) version, which makes it possible to detect truly versionless crates.",
+        "Python identity reading is the risk area for the versionless filter, since it may miss version sources that current_version handles.",
+        "`just ci` is the full pipeline used to validate PRs; some tests fail in the sandbox independent of changes (three known sandbox failures).",
+        "Error code E013 is the missing-version-field error that previously aborted the whole run for versionless members."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/aggregate.rs",
+          "finding": "Changeset application loop was split into a resolve-all-entries phase followed by an apply phase, so any unresolved entry skips the entire changeset instead of partially applying it."
+        },
+        {
+          "path": "crates/callisto-graph/src/locate/ignore_walk.rs",
+          "finding": "Discovery now drops cargo members with no version (e.g. xtask with publish=false), mirroring how versionless private npm roots are already dropped; discovery test added here."
+        },
+        {
+          "path": "crates/callisto-graph/src/aggregate/tests.rs",
+          "finding": "An existing mixed-entry changeset test encoded the old partial-apply behavior and had to be rewritten."
+        },
+        {
+          "path": "crates/callisto-cli/tests/identity_promotion_tests.rs",
+          "finding": "Hosts the new end-to-end test for the unresolved-entry re-bump through the binary."
+        }
+      ],
+      "workflow": [
+        "Prefer the Edit tool over heredocs when appending to test files.",
+        "After a structural edit, check for leftover redundant nested blocks and reformat; compiling does not catch them.",
+        "Run the tests to find which existing ones encode the old behavior before rewriting them.",
+        "Choose the narrowest fix location (discovery) when many callers consume a shared function."
+      ]
+    },
+    "friction": [
+      "Initial edit left two redundant nested blocks that needed a cleanup pass.",
+      "Three tests fail in the sandbox for environmental reasons, which adds noise when looking for real regressions.",
+      "A heredoc attempt for adding the end-to-end test was abandoned in favor of the Edit tool.",
+      "An earlier PR body had the wrong criterion id (CLI-INIT-12 instead of CLI-INIT-10) and needed a correction."
+    ],
+    "open_items": [
+      "Remaining queue: legacy removals, release-commit allow-list and registry binding, first-release preflight (taken package name currently reported as already published, E320), metadata checks, and cheap test fixes.",
+      "Release PR #349 is open from earlier merges and has not been touched.",
+      "Python identity reader may miss version sources handled by current_version, so the versionless filter should be checked for Python projects.",
+      "First-publish guidance on tokens and trusted publishing in publishing.md is hedged and needs the user's verification.",
+      "PR #350 (init defaults) is awaiting review, and the new PR for the changeset hard-error and versionless-member fix is also open."
+    ]
+  }
+}
