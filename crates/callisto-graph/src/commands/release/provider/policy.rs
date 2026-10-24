@@ -224,20 +224,36 @@ pub(crate) fn run_observation(
 /// attempt did not take effect.
 pub(crate) fn retry_observation<T>(
     sleeper: &dyn Sleeper,
+    attempt: impl FnMut() -> Result<Attempt<T>, GraphError>,
+) -> Result<T, GraphError> {
+    retry_observation_within(sleeper, None, attempt)
+}
+
+/// [`retry_observation`] that stops retrying once `patience` of waiting is spent, and reports the last answer. A
+/// caller that is itself waiting out a window gives its look the window that is left, so a registry that asks for
+/// long waits cannot hold the look past it.
+pub(crate) fn retry_observation_within<T>(
+    sleeper: &dyn Sleeper,
+    patience: Option<Duration>,
     mut attempt: impl FnMut() -> Result<Attempt<T>, GraphError>,
 ) -> Result<T, GraphError> {
     let mut exhausted = None;
+    let mut waited = Duration::ZERO;
     for index in 0..OBSERVATION_MAX_ATTEMPTS {
         match attempt()? {
             Attempt::Settled(value) => return Ok(value),
             Attempt::Transient { value, retry_after } => {
                 exhausted = Some(value);
                 if index + 1 < OBSERVATION_MAX_ATTEMPTS {
-                    sleeper.sleep(
-                        retry_after
-                            .unwrap_or_else(|| observation_backoff(index))
-                            .min(OBSERVATION_BACKOFF_CAP),
-                    );
+                    let wait = retry_after
+                        .unwrap_or_else(|| observation_backoff(index))
+                        .min(OBSERVATION_BACKOFF_CAP);
+                    let wait = patience.map_or(wait, |patience| wait.min(patience.saturating_sub(waited)));
+                    if wait.is_zero() && patience.is_some() {
+                        break;
+                    }
+                    sleeper.sleep(wait);
+                    waited += wait;
                 }
             }
         }
@@ -365,6 +381,54 @@ pub(crate) mod tests {
         assert!(matches!(observed, ProviderObservationV1::Absent));
         assert_eq!(calls, EFFECT_VISIBILITY_ATTEMPTS);
         assert_eq!(sleeper.waits().iter().sum::<Duration>(), Duration::from_secs(62));
+    }
+
+    fn transient_asking_for(wait: Duration) -> Result<Attempt<u32>, GraphError> {
+        Ok(Attempt::Transient {
+            value: 7,
+            retry_after: Some(wait),
+        })
+    }
+
+    /// A registry that asks for five minutes between tries cannot hold a look past the patience it was given.
+    #[test]
+    fn retry_observation_within_waits_no_longer_than_its_patience() {
+        let sleeper = RecordingSleeper::new();
+        let mut tries = 0;
+
+        let result = retry_observation_within(&sleeper, Some(Duration::from_secs(20)), || {
+            tries += 1;
+            transient_asking_for(Duration::from_secs(300))
+        });
+
+        assert_eq!(result, Ok(7));
+        assert_eq!(sleeper.waits(), vec![Duration::from_secs(20)]);
+        assert_eq!(tries, 2, "one try, the wait that is left, one more try");
+    }
+
+    #[test]
+    fn retry_observation_within_with_no_patience_left_tries_once() {
+        let sleeper = RecordingSleeper::new();
+        let mut tries = 0;
+
+        let result = retry_observation_within(&sleeper, Some(Duration::ZERO), || {
+            tries += 1;
+            transient_asking_for(Duration::from_secs(2))
+        });
+
+        assert_eq!(result, Ok(7));
+        assert!(sleeper.waits().is_empty());
+        assert_eq!(tries, 1);
+    }
+
+    #[test]
+    fn retry_observation_without_patience_is_unbounded_by_time() {
+        let sleeper = RecordingSleeper::new();
+
+        let result = retry_observation(&sleeper, || transient_asking_for(Duration::from_secs(300)));
+
+        assert_eq!(result, Ok(7));
+        assert_eq!(sleeper.waits(), vec![Duration::from_secs(300); 4]);
     }
 
     #[test]

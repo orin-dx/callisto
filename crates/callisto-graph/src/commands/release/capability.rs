@@ -154,6 +154,23 @@ impl ReleaseProviderSet for ValidatedReleaseIntent<'_> {
         )
     }
 
+    fn observe_within(
+        &self,
+        id: &ReleaseOperationId,
+        artifacts: Option<&VerifiedArtifactManifest<'_>>,
+        patience: std::time::Duration,
+    ) -> Result<ProviderObservationV1, GraphError> {
+        let operation = self.prepared_operation(id)?;
+        checked_provider_for(operation)?.observe(
+            &self.context().with_patience(patience),
+            &ProviderRequest {
+                id,
+                operation,
+                artifacts,
+            },
+        )
+    }
+
     fn publish(
         &self,
         permit: &ApplyPermit,

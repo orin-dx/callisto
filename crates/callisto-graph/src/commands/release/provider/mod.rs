@@ -186,14 +186,26 @@ pub trait ReleaseProviderSet {
         Duration::ZERO
     }
 
+    /// [`Self::observe`] that spends no more than `patience` waiting between its own tries, for a look that is itself
+    /// part of a wait. A provider that does not retry has nothing to bound.
+    fn observe_within(
+        &self,
+        id: &ReleaseOperationId,
+        artifacts: Option<&VerifiedArtifactManifest<'_>>,
+        _patience: Duration,
+    ) -> Result<ProviderObservationV1, GraphError> {
+        self.observe(id, artifacts)
+    }
+
     /// The evidence of an issued operation once the provider shows it, `None` while it does not yet. A different
-    /// object where this operation's belongs is an error, never a wait.
+    /// object where this operation's belongs is an error, never a wait. The look waits no longer than `patience`.
     fn settle(
         &self,
         id: &ReleaseOperationId,
         artifacts: Option<&VerifiedArtifactManifest<'_>>,
+        patience: Duration,
     ) -> Result<Option<ExactEvidence>, GraphError> {
-        match self.observe(id, artifacts)? {
+        match self.observe_within(id, artifacts, patience)? {
             observation @ ProviderObservationV1::Exact { .. } => Ok(observation.exact_evidence()),
             ProviderObservationV1::Conflict { .. } => Err(GraphError::ReleaseRemoteConflict {
                 conflict: RemoteConflict::RegistryVersionDiffers,
@@ -248,6 +260,8 @@ pub(crate) struct ProviderContext<'a> {
     sleeper: &'a dyn policy::Sleeper,
     /// The Python file sets built so far in this run.
     file_sets: Option<&'a PypiFileSets>,
+    /// The longest an observation may spend waiting between its own tries; `None` for the standard schedule.
+    patience: Option<Duration>,
 }
 
 impl<'a> ProviderContext<'a> {
@@ -262,7 +276,17 @@ impl<'a> ProviderContext<'a> {
             git_remote,
             sleeper: &policy::ThreadSleeper,
             file_sets: None,
+            patience: None,
         }
+    }
+
+    pub(crate) fn with_patience(mut self, patience: Duration) -> Self {
+        self.patience = Some(patience);
+        self
+    }
+
+    pub(crate) fn patience(&self) -> Option<Duration> {
+        self.patience
     }
 
     pub(crate) fn with_file_sets(mut self, file_sets: &'a PypiFileSets) -> Self {
