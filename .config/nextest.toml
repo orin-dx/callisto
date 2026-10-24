@@ -1,0 +1,3 @@
+[profile.default]
+# A test that hangs (a network wait, a git prompt) is killed after eight minutes, not left to the job's timeout.
+slow-timeout = { period = "120s", terminate-after = 4 }
