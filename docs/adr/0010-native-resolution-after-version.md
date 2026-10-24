@@ -36,5 +36,5 @@ After `version` or `snapshot`, the workspace must resolve with each ecosystem's 
 
 ## Sources
 
-- Owner decision, `docs/projects/ROAD-TO-V1.md` "v1 fix plan" decisions (2026-09-25)
+- Owner decision, `git show 07154021c:docs/projects/ROAD-TO-V1.md` "v1 fix plan" decisions (2026-09-25)
 - The fix in this PR: raising the floor of co-released dependents in `cascade.rs`

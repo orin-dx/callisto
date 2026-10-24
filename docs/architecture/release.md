@@ -40,7 +40,7 @@ Callisto's own [release workflow](../../.github/workflows/callisto-release.yml) 
 - The action commits non-workflow changes through `createCommitOnBranch`, then moves the release ref through REST. It does not run a local `git push`. Workflow files remain unchanged, so the built-in `GITHUB_TOKEN` needs no workflow-write permission.
 - Commits are GitHub-signed as `github-actions[bot]`. An App or fine-grained token can use another identity.
 - Branch protection must require reviews and CI checks. CODEOWNERS alone does not enforce review.
-- `version-pr` maintains the PR; `release` runs the local release route. Artifact and platform packages use plan/build/execute. Deprecated `publish` and `create_github_release` action inputs are ignored. The [action manifest](../../.github/actions/callisto-action/action.yml) defines current inputs and outputs.
+- `version-pr` maintains the PR; `release` runs the local release route. Artifact and platform packages use plan/build/execute. The [action manifest](../../.github/actions/callisto-action/action.yml) defines current inputs and outputs.
 - Only `execute` receives registry credentials. Plan and build jobs receive none. Temporary intent, receipt, artifacts, and build output live under `RUNNER_TEMP`, outside the checkout.
 
 GitHub Actions schedules jobs, transports artifacts, and injects credentials. Callisto validates source, provenance, plan, observations, transitions, terminality, receipts, and artifacts. Workflow shell must not reimplement those semantics. Recovery dispatch uses current orchestration on `main` with an explicit merged source SHA and runs credential-free `recovery-checks` instead of full `verify`.
@@ -72,7 +72,7 @@ The generated release action maps credentials without changing owner-defined pub
 Provider reads use native tools for Cargo and npm, and `curl` for PyPI's PEP 691 JSON simple index:
 
 - Cargo: `cargo info NAME@VERSION --registry REGISTRY` runs from the source root. Matching `version:` means exact; exit 101 with ``could not find `NAME@VERSION` `` means absent. Other results are indeterminate. Yanked versions are invisible to `cargo info`; a rejected publish ends without a receipt.
-- npm: `npm view NAME@VERSION version --json`.
+- npm: `npm view NAME@VERSION --json --fetch-retries=0`.
 - PyPI: a matching file means exact; 404 or no match means absent; transport failure or non-JSON means indeterminate. Yanked matches count as absent. Before an effect, `release execute` also builds the release's files once into a temporary directory and compares their names with the index, so a partly uploaded release uploads only what is missing and is satisfied only when the whole set is there.
 
 Adopting a version that is already published is by design, so a rerun can finish a half-done release. Because a foreign package would be adopted the same way, a Cargo or npm adoption also reads the repository the registry records for that version (`repository:` in `cargo info`, `repository` in `npm view`) and warns, without blocking, when it names a different repository from `origin`. A registry that records none, or a failed read, says nothing; PyPI's simple index records no repository, so it is not checked.

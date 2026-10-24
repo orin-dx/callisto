@@ -13,9 +13,9 @@ use globset::{Glob, GlobMatcher};
 pub struct PackagePattern {
     raw: String,
     /// The ecosystem parsed off the front of the pattern (e.g. `cargo` in
-    /// `"cargo:pkg-*"`), or `None` for a bare pattern like `"pkg-*"`.
+    /// `"cargo/pkg-*"`), or `None` for a bare pattern like `"pkg-*"`.
     ecosystem: Option<Ecosystem>,
-    /// Compiled from the pattern with any `ecosystem:` prefix stripped.
+    /// Compiled from the pattern with any `ecosystem/` prefix stripped.
     matcher: GlobMatcher,
 }
 
@@ -34,16 +34,16 @@ impl PackagePattern {
     }
 
     /// Returns the ecosystem this pattern was scoped to via an
-    /// `ecosystem:` prefix, or `None` for a bare pattern.
+    /// `ecosystem/` prefix, or `None` for a bare pattern.
     pub fn ecosystem(&self) -> Option<Ecosystem> {
         self.ecosystem
     }
 
     /// Returns true when the given `PackageId` matches this pattern.
     ///
-    /// A bare pattern (no `ecosystem:` prefix) matches any ecosystem, so
-    /// `"pkg-*"` matches both `cargo:pkg-a` and `npm:pkg-b`. An
-    /// ecosystem-prefixed pattern like `"cargo:pkg-*"` matches only packages
+    /// A bare pattern (no `ecosystem/` prefix) matches any ecosystem, so
+    /// `"pkg-*"` matches both `cargo/pkg-a` and `npm/pkg-b`. An
+    /// ecosystem-prefixed pattern like `"cargo/pkg-*"` matches only packages
     /// in that ecosystem — `id.ecosystem()` must equal the parsed prefix
     /// before the glob remainder is compared against `id.name()`.
     pub fn matches(&self, id: &PackageId) -> bool {

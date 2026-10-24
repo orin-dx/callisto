@@ -826,27 +826,6 @@ impl GitAccess<'_> {
             ))),
         }
     }
-
-    /// Force-creates or -moves the floating tag `major_name` to
-    /// `target_sha`. Writes a ref, so it requires an [`ApplyPermit`].
-    pub fn create_floating_major(
-        &self,
-        major_name: &str,
-        target_sha: &CommitSha,
-        _permit: &ApplyPermit,
-    ) -> Result<(), VcsError> {
-        let output = self
-            .runner
-            .run("git", &["tag", "-f", "--", major_name, target_sha.as_str()], &self.root)?;
-        if !output.success() {
-            return Err(VcsError::Git(format!(
-                "`git tag -f` failed in `{}`: {}",
-                self.root.display(),
-                output.redacted_stderr()
-            )));
-        }
-        Ok(())
-    }
 }
 
 /// Parses the `<RECORD_SEP>%H<FIELD_SEP>%B`-formatted `git log` output
@@ -1497,21 +1476,6 @@ mod tests {
     }
 
     #[test]
-    fn test_create_floating_major_shells_force_tag() {
-        let runner = FakeRunner {
-            calls: Mutex::new(Vec::new()),
-            response: Box::new(|_args| Ok(ok(""))),
-        };
-        let git = GitAccess::new(PathBuf::from("."), &runner);
-        let sha = CommitSha::parse(&"f".repeat(40)).unwrap();
-
-        git.create_floating_major("pkg-a@1", &sha, &permit()).unwrap();
-
-        let calls = runner.calls.lock().unwrap();
-        assert_eq!(calls[0], vec!["tag", "-f", "--", "pkg-a@1", sha.as_str()]);
-    }
-
-    #[test]
     fn test_head_sha_returns_current_head_commit() {
         let sha = "a".repeat(40);
         let sha_clone = sha.clone();
@@ -1597,20 +1561,6 @@ mod tests {
                 &permit(),
             )
             .expect_err("must fail");
-        let rendered = format!("{err}");
-        assert!(!rendered.contains("ghs_leaked_secret"), "got: {rendered}");
-        assert!(rendered.contains("[REDACTED]"), "got: {rendered}");
-    }
-
-    #[test]
-    fn create_floating_major_failure_redacts_credential() {
-        let runner = FakeRunner {
-            calls: Mutex::new(Vec::new()),
-            response: Box::new(leaky_response),
-        };
-        let git = GitAccess::new(PathBuf::from("."), &runner);
-        let sha = CommitSha::parse(&"a".repeat(40)).unwrap();
-        let err = git.create_floating_major("v1", &sha, &permit()).expect_err("must fail");
         let rendered = format!("{err}");
         assert!(!rendered.contains("ghs_leaked_secret"), "got: {rendered}");
         assert!(rendered.contains("[REDACTED]"), "got: {rendered}");

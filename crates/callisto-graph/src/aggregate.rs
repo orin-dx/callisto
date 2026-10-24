@@ -181,7 +181,7 @@ fn resolve_since(git: &GitAccess<'_>, tags: &TagIndex, tag_name: &str) -> Result
 /// selector for one ecosystem select a same-named package in another).
 ///
 /// `Ok(None)`: no match (unknown package, reported separately by
-/// `validate`). `Ok(Some(pkg))`: unambiguous. `Err(AmbiguousName)`: two or
+/// `status`). `Ok(Some(pkg))`: unambiguous. `Err(AmbiguousName)`: two or
 /// more matches (E103).
 pub(crate) fn resolve_target_package<'a>(
     packages: impl Iterator<Item = &'a Package>,

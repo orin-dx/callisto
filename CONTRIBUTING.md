@@ -60,10 +60,10 @@ For iterating on one crate instead of the whole workspace, see AGENTS.md's scope
 Non-interactive, for scripts, agents, and most contributors:
 
 ```bash
-callisto add --package <crate>:<bump> --summary "..."
+callisto add --package cargo/<crate>:<bump> --summary "..."
 ```
 
-`--package` takes repeatable `name:severity` pairs (`none`, `patch`, `minor`, `major`).
+`--package` takes repeatable `ecosystem/name:severity` pairs (`none`, `patch`, `minor`, `major`).
 
 Interactive wizard (omit `--package`/`--summary`, run from a TTY): prompts for packages, then major-bump packages, then minor-bump packages (rest default to patch), then a summary, then a confirmation preview before writing `.changeset/<slug>.md`.
 
@@ -80,7 +80,7 @@ CI (`.github/workflows/callisto-ci.yml`) gates on:
 - **`fmt`** — `just fmt-check`
 - **`clippy`** — `just lint` + `just doc-check`
 - **`test`** — `just test`, `just release-workflow-behavior`, and the Release-PR action's binary contract test, on Linux and macOS
-- **`release-artifact-preflight`** — builds the release binary for each configured target (macOS arm64, Linux gnu/musl)
+- **`release-artifact-preflight`** — builds the release binary for each configured target (macOS arm64 and x64, Linux x64 gnu, arm64 gnu and x64 musl)
 - **`coverage`** — `just coverage 90` (workspace line coverage must not regress below 90%); per-crate coverage runs non-blocking
 - **`security`** — `just audit`
 - **`validate`** — changeset and workspace-status validation

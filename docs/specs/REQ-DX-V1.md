@@ -2,7 +2,7 @@
 
 Stakeholder: Callisto owner (sole maintainer); users releasing Rust, npm (incl. napi-rs) and Python monorepos.
 
-Status: open. The command surface and release machinery exist, but verified correctness and integration gaps remain. [The findings register](../projects/V1-FINDINGS.md) records evidence and coverage; [the roadmap](../projects/ROAD-TO-V1.md) and [sequencing plan](../projects/V1-SYSTEM-HARDENING.json) track the work. Cargo real-registry tests now exist; they do not establish full production release-path coverage.
+Status: open. The command surface and release machinery exist; [the roadmap](../projects/ROAD-TO-V1.md) lists the verification and onboarding work that remains. Real local npm, Cargo and PyPI tests exist; the Cargo and PyPI ones drive the publisher directly and do not cover registry binding or observation.
 
 Why: Callisto's release engine is rigorous but its surface is confusing and its setup is heavy. Goal: a new repo goes from `callisto init` to its first published release in under 10 minutes, with one obvious release command and no known correctness bugs.
 
@@ -24,7 +24,7 @@ Why: Callisto's release engine is rigorous but its surface is confusing and its 
 - The CI split (plan → build → execute across jobs) works through `release` flags or hidden subcommands, and callisto's own workflow uses them.
 - `publish`, `plan-publish`, `tag`, `filter-plan` are removed; one plan implementation serves preview and execution and includes every check listed above.
 - Text output uses colour/tables on a TTY, plain text when piped or `NO_COLOR` is set, no schema versions in text; `status` shows cascaded bumps.
-- Verified defects in the findings register are fixed with regression coverage across affected siblings. CI runs the shipped runtime behavior; no shipped Cargo feature variants. Existing real local npm/Cargo/PyPI tests are retained, with skipped prerequisites distinguished from executed coverage and production binding/observation paths checked separately.
+- A verified defect is fixed with regression coverage across affected siblings. CI runs the shipped runtime behavior; no shipped Cargo feature variants. The real local npm/Cargo/PyPI tests fail, not skip, under CI when a tool is missing, and production binding/observation paths are checked separately.
 - `callisto init` detects ecosystems/packages, asks only intent (fixed vs independent; release artifacts if binaries exist), writes minimal config, and can write a GitHub workflow using `callisto-action` of <= 40 lines; a non-interactive mode exists.
 - Supported fixtures cover separate native packages, and dual Cargo/npm outputs. Native dependency ranges/names, all affected lockfiles and built distribution metadata agree after versioning.
 - A retry completes required missing effects without inventing a new version, even after tag creation or a partial Python/platform upload. Required outputs and shared public-announcement prerequisites are explicit; version/tag existence alone is not completion evidence.

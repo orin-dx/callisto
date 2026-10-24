@@ -137,8 +137,8 @@ pub struct HelpArgs {
 /// Arguments for the `add` command.
 #[derive(Args, Clone, Debug)]
 pub struct AddArgs {
-    /// Package and severity to include, as `name:severity` (none, patch, minor, or major); repeatable. Omit to enter the interactive wizard.
-    #[arg(long = "package", value_name = "NAME:SEVERITY")]
+    /// Package and severity to include, as `ecosystem/name:severity` (none, patch, minor, or major); repeatable. Omit to enter the interactive wizard.
+    #[arg(long = "package", value_name = "ECOSYSTEM/NAME:SEVERITY")]
     pub packages: Vec<String>,
     /// Human-readable summary of the change to record in the changeset.
     #[arg(long)]
@@ -159,8 +159,7 @@ pub struct StatusArgs {
 /// Arguments for the `matrix` command.
 #[derive(Args, Clone, Debug, Default)]
 pub struct MatrixArgs {
-    /// Restrict output to one package: a bare name (only if it names exactly
-    /// one package) or an ecosystem-qualified id, for example `cargo/foo`.
+    /// Restrict output to one package, by its ecosystem-qualified id, for example `cargo/foo`.
     #[arg(long)]
     pub package: Option<String>,
 }

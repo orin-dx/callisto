@@ -1,4 +1,5 @@
-//! Dependency graph, cascade, aggregation, and config resolution for callisto.
+//! Dependency graph, cascade, aggregation, config resolution, version planning and release derivation and execution
+//! for callisto.
 
 #![allow(clippy::result_large_err)]
 

@@ -12,7 +12,7 @@ Two supported patterns.
 
 ### Pattern A: manual `.npmrc` via `NPM_TOKEN`
 
-Set an `NPM_TOKEN` secret. Add this only in the protected `execute` job, immediately before the publish step:
+Set an `NPM_TOKEN` secret. Add this only in the `execute` job, immediately before the publish step:
 
 ```yaml
 - name: Authenticate with npm registry
@@ -101,4 +101,4 @@ Callisto supports static PEP 621 or Poetry versions with `python -m build` and T
 - A package tagged by an earlier version of callisto with only some of its files uploaded is reported as released when rerun at the same commit. Finish it by uploading the missing files with `twine`.
 - A configured `url` is the simple index Callisto reads and, unless `publish-url` names another endpoint, the one Twine uploads to. Private indexes with read authentication or HTML-only responses need explicit support. Twine credentials do not authenticate `curl`.
 - Dependencies in `[dependency-groups]`, Poetry groups and the legacy dev-dependency tables are not followed or rewritten when a workspace package is released. Under uv a version pin on a workspace member is ignored, and Poetry normally references siblings by path, so a stale pin there is harmless; a group that pins a registry version of a sibling is not updated.
-- Snapshots use a PEP 440 local label (`0.0.0.dev0+<tag>.<sha>`), which public PyPI rejects. See [PEP 440](https://packaging.python.org/en/latest/specifications/version-specifiers/).
+- `release` refuses snapshot versions (E169), so a snapshot is never published. Python snapshots use a PEP 440 local label (`0.0.0.dev0+<tag>.<sha>`), which public PyPI would reject anyway. See [PEP 440](https://packaging.python.org/en/latest/specifications/version-specifiers/).

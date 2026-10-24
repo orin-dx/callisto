@@ -93,12 +93,6 @@ impl TagTemplate {
         TagName::new_unchecked(format!("{}{}{}", self.prefix, version.render(), self.suffix))
     }
 
-    pub fn render_floating_major(&self, version: &Version) -> Option<TagName> {
-        let major = version.major()?;
-        let rendered = format!("{}{}{}", self.prefix, major, self.suffix);
-        TagName::parse(&rendered).ok()
-    }
-
     pub fn glob(&self) -> String {
         format!("{}*{}", self.prefix, self.suffix)
     }
@@ -350,16 +344,14 @@ mod tests {
 
         let ver = Version::parse("1.2.3", VersionGrammar::SemVer).unwrap();
         assert_eq!(tmpl.render(&ver).as_str(), "v1.2.3");
-        assert_eq!(tmpl.render_floating_major(&ver).unwrap().as_str(), "v1");
         assert_eq!(tmpl.extract_version_str("v1.2.3"), Some("1.2.3"));
     }
 
     #[test]
-    fn test_render_floating_major_scoped_package() {
+    fn renders_a_scoped_package_tag() {
         let tmpl = TagTemplate::parse("@scope/pkg@{version}").unwrap();
         let ver = Version::parse("2.4.0", VersionGrammar::SemVer).unwrap();
         assert_eq!(tmpl.render(&ver).as_str(), "@scope/pkg@2.4.0");
-        assert_eq!(tmpl.render_floating_major(&ver).unwrap().as_str(), "@scope/pkg@2");
     }
 
     #[test]

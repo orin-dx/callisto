@@ -24,7 +24,7 @@ Status: Accepted (implemented in #167)
 
 ## Consequences
 
-- Adding a same-named package changes new default tag names, but does not rename existing tags or move the CHANGELOG. Historical bare tags and pre-release baselines are assigned through the ownership fallback; rename, manifest-roster and demotion gaps are tracked in [the findings register](../projects/V1-FINDINGS.md).
+- Adding a same-named package changes new default tag names, but does not rename existing tags or move the CHANGELOG. Historical bare tags and pre-release baselines are assigned through the ownership fallback; rename, manifest-roster and demotion cases are handled by [ADR 12](0012-canonical-distribution-release-ownership.md).
 - Workspaces that are already promoted keep their `cargo/foo@*` tags unchanged.
 - Ownership costs one `git rev-parse` per candidate tag of a promoted package.
 - A pending changeset that names the bare `foo` is ambiguous after promotion (E103, WS-ID-06) and must be qualified.
@@ -42,5 +42,5 @@ Status: Accepted (implemented in #167)
 
 ## Sources
 
-- Owner decision, `docs/projects/ROAD-TO-V1.md` "v1 fix plan" decisions (2026-09-25)
+- Owner decision, `git show 07154021c:docs/projects/ROAD-TO-V1.md` "v1 fix plan" decisions (2026-09-25)
 - #167 ("refactor(identity)!: key packages by directory; promotion is display-only") and its zero-config follow-up
