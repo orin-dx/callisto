@@ -82,7 +82,8 @@ pub(crate) use derive::canonical_operation_order;
 pub(crate) use derive::is_platform_package;
 pub use derive::ArtifactBuildPolicy;
 pub use local::{
-    ci_release_route, plan_local_release, plan_workspace_release, CiReleaseRoute, LocalReleasePlan, LocalReleaseSource,
+    ci_release_route, plan_local_release, plan_workspace_release, tags_missing_from_origin, CiReleaseRoute,
+    LocalReleasePlan, LocalReleaseSource,
 };
 pub(crate) use provider::policy::{programs, timeouts};
 pub use provider::{ReleasePreflight, ReleaseProviderSet};
