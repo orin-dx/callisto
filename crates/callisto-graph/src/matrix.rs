@@ -12,7 +12,7 @@
 pub(crate) fn triple_host_runner_use_cross(triple: &str) -> Option<(&'static str, bool)> {
     Some(match triple {
         "aarch64-apple-darwin" => ("macos-latest", false),
-        "x86_64-apple-darwin" => ("macos-13", false),
+        "x86_64-apple-darwin" => ("macos-latest", false),
         "x86_64-unknown-linux-gnu" => ("ubuntu-latest", false),
         "x86_64-unknown-linux-musl" => ("ubuntu-latest", true),
         "aarch64-unknown-linux-gnu" => ("ubuntu-latest", true),
@@ -898,7 +898,7 @@ mod tests {
     fn triple_host_runner_use_cross_matches_all_18_triples() {
         let expected: &[(&str, &str, bool)] = &[
             ("aarch64-apple-darwin", "macos-latest", false),
-            ("x86_64-apple-darwin", "macos-13", false),
+            ("x86_64-apple-darwin", "macos-latest", false),
             ("x86_64-unknown-linux-gnu", "ubuntu-latest", false),
             ("x86_64-unknown-linux-musl", "ubuntu-latest", true),
             ("aarch64-unknown-linux-gnu", "ubuntu-latest", true),

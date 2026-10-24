@@ -46,7 +46,7 @@
     },
     {
       "id": "MX-DISC-06",
-      "criterion": "hostRunner is \"macos-latest\" for aarch64-apple-darwin, \"macos-13\" for x86_64-apple-darwin, \"windows-latest\" for windows triples and \"ubuntu-latest\" for all others; useCross is true for every ubuntu-hosted triple except x86_64-unknown-linux-gnu and the two wasm32 triples."
+      "criterion": "hostRunner is \"macos-latest\" for both Apple triples, \"windows-latest\" for windows triples and \"ubuntu-latest\" for all others; useCross is true for every ubuntu-hosted triple except x86_64-unknown-linux-gnu and the two wasm32 triples."
     },
     {
       "id": "MX-DISC-07",
