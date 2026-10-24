@@ -148,6 +148,17 @@ impl ProjectLocator for IgnoreWalkLocator {
                     continue;
                 }
 
+                // A crate with no `version` (an xtask or other internal tool; Cargo reads it as 0.0.0 and cannot
+                // publish it) has nothing to version or release, so it is not a package. One that inherits its
+                // version from the workspace still is.
+                if ecosystem == Ecosystem::Cargo && identity.version.is_none() {
+                    eprintln!(
+                        "note: skipping `{}`: it declares no version, so Callisto cannot version or release it",
+                        rel.display()
+                    );
+                    continue;
+                }
+
                 let admitted = admits(ecosystem)
                     && (is_root
                         || membership::nested_workspace_admits(&self.root, &rel, ecosystem, &content, &mut nested)?);
@@ -1060,6 +1071,34 @@ mod tests {
     /// hold `workspaces` -- it must never surface as an Npm project itself,
     /// even though it would otherwise qualify as a hybrid root. The real
     /// member package is still discovered normally.
+    /// A crate with no version (an xtask) is not a package, so it cannot stop a run; a crate that inherits its
+    /// version from the workspace still is one.
+    #[test]
+    fn a_cargo_crate_without_a_version_is_skipped_and_an_inheriting_one_is_kept() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"lib\", \"inherits\", \"xtask\"]\n\n[workspace.package]\nversion = \"1.2.3\"\n",
+        )
+        .unwrap();
+        for (dir, manifest) in [
+            ("lib", "[package]\nname = \"lib\"\nversion = \"1.0.0\"\n"),
+            ("inherits", "[package]\nname = \"inherits\"\nversion.workspace = true\n"),
+            ("xtask", "[package]\nname = \"xtask\"\npublish = false\n"),
+        ] {
+            std::fs::create_dir_all(root.join(dir)).unwrap();
+            std::fs::write(root.join(dir).join("Cargo.toml"), manifest).unwrap();
+        }
+
+        let projects = IgnoreWalkLocator::new(root).projects().unwrap();
+
+        let paths: Vec<_> = projects.iter().map(|p| p.path.display().to_string()).collect();
+        assert!(paths.contains(&"lib".to_owned()), "{paths:?}");
+        assert!(paths.contains(&"inherits".to_owned()), "{paths:?}");
+        assert!(!paths.contains(&"xtask".to_owned()), "{paths:?}");
+    }
+
     #[test]
     fn private_versionless_root_package_json_is_not_a_project() {
         let tmp = tempfile::tempdir().unwrap();
