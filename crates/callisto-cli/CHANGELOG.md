@@ -1,5 +1,11 @@
 # callisto-cli
 
+## 0.14.1
+
+- Release tags now record the package that made them and the git tree of each of its directories in the tag message, as Callisto-Package and Callisto-Tree lines. Nothing reads them yet, and tags without them keep working.
+- Waiting for npm packages to appear is now one window of confirm-timeout for the whole release: a package that shows up along the way no longer restarts it, and the time spent checking the registry counts, so a slow registry cannot stretch the wait to several windows.
+- `status`, `version` and `release` skip two history reads for tags made by a recent release. They still read them for every other tag, so older and hand-made tags behave as before.
+
 ## 0.14.0
 
 - After publishing, Callisto looks for a new npm version right away and then at 15 seconds, 45 seconds, 2 minutes and 3 minutes, instead of every 30 seconds, so a release makes about five looks per window rather than seventeen. The window and `confirm-timeout` are unchanged.
