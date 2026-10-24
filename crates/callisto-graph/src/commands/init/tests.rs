@@ -726,7 +726,7 @@ fn lint_workflow(workflow: &str) {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         ),
-        Err(_) => eprintln!("actionlint not installed; skipping that check"),
+        Err(_) => lint_tool_missing("actionlint"),
     }
     match std::process::Command::new("zizmor")
         .args(["--offline", path.to_str().unwrap()])
@@ -738,8 +738,18 @@ fn lint_workflow(workflow: &str) {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         ),
-        Err(_) => eprintln!("zizmor not installed; skipping that check"),
+        Err(_) => lint_tool_missing("zizmor"),
     }
+}
+
+/// A missing linter skips the check on a developer machine, but fails under CI, where a skip would let a broken
+/// generated workflow ship to every `callisto init` user.
+fn lint_tool_missing(tool: &str) {
+    assert!(
+        std::env::var_os("CI").is_none(),
+        "{tool} must be installed in CI to lint the generated workflow"
+    );
+    eprintln!("{tool} not installed; skipping that check");
 }
 
 /// oxc-react-codegen's shape: a cargo CLI shipping binaries, plus a napi addon with platform packages.

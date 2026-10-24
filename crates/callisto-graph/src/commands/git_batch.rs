@@ -206,3 +206,144 @@ pub(crate) fn batch_blobs<R: CommandRunner + ?Sized>(
 
     Ok(results)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use callisto_model::{CommandError, CommandOutput, CommandRunner};
+
+    use super::*;
+
+    /// A runner whose `git cat-file --batch` answers with a fixed output and exit code.
+    struct Answers {
+        stdout: String,
+        exit_code: i32,
+    }
+
+    impl CommandRunner for Answers {
+        fn run(&self, _: &str, _: &[&str], _: &Path) -> Result<CommandOutput, CommandError> {
+            panic!("only the batch read is expected");
+        }
+
+        fn run_with_stdin(&self, _: &str, _: &[&str], _: &Path, _: &[u8]) -> Result<CommandOutput, CommandError> {
+            Ok(CommandOutput {
+                exit_code: Some(self.exit_code),
+                stdout: self.stdout.clone(),
+                stderr: String::new(),
+            })
+        }
+    }
+
+    const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    fn read(stdout: &str, objects: &[&str]) -> Result<Vec<BatchBlob>, GraphError> {
+        let runner = Answers {
+            stdout: stdout.to_owned(),
+            exit_code: 0,
+        };
+        let objects: Vec<String> = objects.iter().map(|object| (*object).to_owned()).collect();
+        batch_blobs(&runner, Path::new("."), &objects)
+    }
+
+    fn malformed(stdout: &str, objects: &[&str]) -> String {
+        match read(stdout, objects) {
+            Err(error) => error.to_string(),
+            Ok(_) => panic!("`{stdout:?}` must be refused"),
+        }
+    }
+
+    #[test]
+    fn blobs_and_missing_paths_come_back_in_request_order() {
+        let stdout = format!("{SHA} blob 5\nhello\nHEAD:gone missing\n{SHA} blob 0\n\n");
+
+        let blobs = read(&stdout, &["HEAD:a", "HEAD:gone", "HEAD:empty"]).unwrap();
+
+        assert!(matches!(&blobs[0], BatchBlob::Blob(content) if content == "hello"));
+        assert!(matches!(blobs[1], BatchBlob::Missing));
+        assert!(matches!(&blobs[2], BatchBlob::Blob(content) if content.is_empty()));
+    }
+
+    #[test]
+    fn no_objects_ask_nothing() {
+        struct Never;
+        impl CommandRunner for Never {
+            fn run(&self, _: &str, _: &[&str], _: &Path) -> Result<CommandOutput, CommandError> {
+                panic!("no process for no objects");
+            }
+        }
+
+        assert!(batch_blobs(&Never, Path::new("."), &[]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_failing_git_fails_the_read() {
+        let runner = Answers {
+            stdout: String::new(),
+            exit_code: 128,
+        };
+
+        assert!(batch_blobs(&runner, Path::new("."), &["HEAD:a".to_owned()]).is_err());
+    }
+
+    /// Each way the framing can be wrong fails the whole batch, so one manifest's text is never taken for another's.
+    #[test]
+    fn every_framing_defect_fails_closed() {
+        let cases: [(&str, String, &[&str]); 11] = [
+            ("no header line", "HEAD:a".to_owned(), &["HEAD:a"]),
+            (
+                "a missing object that was not the one asked for",
+                "HEAD:b missing\n".to_owned(),
+                &["HEAD:a"],
+            ),
+            ("an ambiguous name", "HEAD:a ambiguous\n".to_owned(), &["HEAD:a"]),
+            ("a header with too few fields", format!("{SHA} blob\nx\n"), &["HEAD:a"]),
+            (
+                "a header with too many fields",
+                format!("{SHA} blob 1 extra\nx\n"),
+                &["HEAD:a"],
+            ),
+            ("a sha that is not hex", "zzzz blob 1\nx\n".to_owned(), &["HEAD:a"]),
+            (
+                "a tree where a blob was asked for",
+                format!("{SHA} tree 1\nx\n"),
+                &["HEAD:a"],
+            ),
+            (
+                "a size that is not a number",
+                format!("{SHA} blob many\nx\n"),
+                &["HEAD:a"],
+            ),
+            (
+                "a size larger than the output",
+                format!("{SHA} blob 99\nx\n"),
+                &["HEAD:a"],
+            ),
+            ("no newline after the content", format!("{SHA} blob 1\nxy"), &["HEAD:a"]),
+            (
+                "more output than objects asked for",
+                format!("{SHA} blob 1\nx\nextra\n"),
+                &["HEAD:a"],
+            ),
+        ];
+        for (what, stdout, objects) in cases {
+            assert!(read(&stdout, objects).is_err(), "{what} must be refused");
+        }
+    }
+
+    #[test]
+    fn a_size_inside_a_character_is_refused_not_a_panic() {
+        // "é" is two bytes, so a declared size of one lands inside it.
+        let message = malformed(&format!("{SHA} blob 1\né\n"), &["HEAD:a"]);
+
+        assert!(message.contains("UTF-8"), "{message}");
+    }
+
+    #[test]
+    fn a_desynced_size_cannot_hand_one_paths_content_to_another() {
+        // The first object declares one byte too few, so the second header is no longer where it should be.
+        let stdout = format!("{SHA} blob 4\nabcde\n{SHA} blob 1\nz\n");
+
+        assert!(read(&stdout, &["HEAD:a", "HEAD:b"]).is_err());
+    }
+}

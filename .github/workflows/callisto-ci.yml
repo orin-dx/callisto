@@ -19,6 +19,7 @@ jobs:
   workflow-contracts:
     name: Workflow Contracts
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
     steps:
@@ -50,6 +51,7 @@ jobs:
   fmt:
     name: Code Formatting (Moon & Just)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -67,6 +69,7 @@ jobs:
   clippy:
     name: Clippy Lints (Moon & Just)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -86,6 +89,7 @@ jobs:
   msrv:
     name: Minimum Supported Rust Version
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -101,6 +105,7 @@ jobs:
   test:
     name: Test Suite (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -118,6 +123,8 @@ jobs:
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2
         with:
           tool: cargo-nextest
+      - name: Install workflow linters
+        uses: $/.github/actions/install-workflow-linters
       - name: Install registry test tools
         uses: $/.github/actions/install-registry-test-tools
       - run: just test
@@ -128,6 +135,7 @@ jobs:
   release-artifact-preflight:
     name: Release Artifact Preflight (${{ matrix.id }})
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -175,6 +183,7 @@ jobs:
   coverage:
     name: Code Coverage & Test Report
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -189,6 +198,8 @@ jobs:
       - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2
         with:
           tool: cargo-llvm-cov
+      - name: Install workflow linters
+        uses: $/.github/actions/install-workflow-linters
       # Measures lines only: the Test Suite job installs the real-registry tools and runs those tests for real.
       - run: just coverage 90
         env:
@@ -202,6 +213,7 @@ jobs:
   security:
     name: Security & Advisory Audit (Moon & Just)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -220,6 +232,7 @@ jobs:
   validate:
     name: Validate Changesets & Workspace Status
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -232,6 +245,7 @@ jobs:
     # Fork PRs also receive a read-only GITHUB_TOKEN and only lack secrets; same-repo-only is a cost/policy choice.
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
     env:
