@@ -415,11 +415,13 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
     let changed = git_stdout(workspace.runner, &workspace.root, &diff_tree_args)?;
     let changed = parse_name_status(&changed, &diff_tree_args)?;
 
+    let decision_path_str = normalized_git_path(decision_path)?;
+    let changeset_dir = normalized_git_path(&workspace.config.changesets_dir)?;
+
     // The decision must be freshly authored as part of *this* commit, not a
     // stale leftover an earlier release already committed and this one never
     // touched -- otherwise a commit that changes nothing real could still
     // carry forward a prior, unrelated decision's authority.
-    let decision_path_str = normalized_git_path(decision_path)?;
     let decision_freshly_written = changed
         .iter()
         .any(|(status, path)| path == &decision_path_str && matches!(status.as_str(), "A" | "M"));
@@ -434,7 +436,6 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
     // application and not just a hand-crafted decision file: some real
     // changeset was actually consumed. The decision's own entries, not this
     // changeset's content, remain the sole authority verified below.
-    let changeset_dir = normalized_git_path(&workspace.config.changesets_dir)?;
     let consumed_a_changeset = changed
         .iter()
         .any(|(status, path)| status == "D" && is_changeset_path(path, &changeset_dir));
@@ -443,6 +444,24 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
             commit: release_commit.clone(),
             reason: CommitVerificationFailure::NoChangesetConsumed,
         });
+    }
+
+    // A version commit changes versions and what records them, nothing else. Any other path (build scripts, source,
+    // a package manager's `.npmrc` or `.cargo/config.toml`, `callisto.toml`, an action) could change what is published
+    // or where, under the cover of a bot-authored diff.
+    let changelogs = workspace
+        .graph
+        .packages()
+        .filter_map(|package| package.changelog.as_deref())
+        .map(normalized_git_path)
+        .collect::<Result<std::collections::BTreeSet<_>, _>>()?;
+    for (_, path) in &changed {
+        if !is_version_commit_path(path, &decision_path_str, &changeset_dir, &changelogs) {
+            return Err(GraphError::ReleaseCommitVerificationFailed {
+                commit: release_commit.clone(),
+                reason: CommitVerificationFailure::UnexpectedPath { path: path.clone() },
+            });
+        }
     }
 
     let decision_source = git_file(
@@ -576,6 +595,45 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
     }
 
     Ok(decision)
+}
+
+/// The manifests Callisto writes versions and dependency ranges into.
+const VERSION_MANIFESTS: &[&str] = &["Cargo.toml", "package.json", "pyproject.toml"];
+
+/// The lockfiles Callisto refreshes after it writes versions.
+const VERSION_LOCKFILES: &[&str] = &[
+    "Cargo.lock",
+    "package-lock.json",
+    "npm-shrinkwrap.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "bun.lock",
+    "bun.lockb",
+    "uv.lock",
+    "poetry.lock",
+    "pdm.lock",
+];
+
+/// Whether a version commit may change `path`: a manifest or lockfile anywhere, a package's changelog, the decision
+/// file, a changeset, or the changesets directory's `pre.json`.
+fn is_version_commit_path(
+    path: &str,
+    decision_path: &str,
+    changeset_dir: &str,
+    changelogs: &std::collections::BTreeSet<String>,
+) -> bool {
+    let file_name = path.rsplit('/').next().unwrap_or(path);
+    let pre_json = if changeset_dir.is_empty() {
+        "pre.json".to_owned()
+    } else {
+        format!("{changeset_dir}/pre.json")
+    };
+    path == decision_path
+        || path == pre_json
+        || VERSION_MANIFESTS.contains(&file_name)
+        || VERSION_LOCKFILES.contains(&file_name)
+        || changelogs.contains(path)
+        || is_changeset_path(path, changeset_dir)
 }
 
 fn is_changeset_path(path: &str, changeset_dir: &str) -> bool {
@@ -1259,6 +1317,87 @@ mod tests {
             "expected exactly 2 `git cat-file --batch` invocations (one per commit) for 3 \
              canonical manifests, not one per manifest per commit"
         );
+    }
+
+    /// The same version commit with one more changed path, `extra`: verification stops at that path.
+    fn verify_with_extra_path(extra: &str) -> Result<ReleaseDecisionV1, GraphError> {
+        let release_commit_sha = "a".repeat(40);
+        let parent_sha = "b".repeat(40);
+        let mut blobs = std::collections::BTreeMap::new();
+        blobs.insert(
+            (parent_sha.clone(), "pkg-a/Cargo.toml".to_owned()),
+            cargo_manifest_source("pkg-a", "1.0.0"),
+        );
+        blobs.insert(
+            (release_commit_sha.clone(), "pkg-a/Cargo.toml".to_owned()),
+            cargo_manifest_source("pkg-a", "1.1.0"),
+        );
+        let decision = ReleaseDecisionV1::new(vec![ReleaseDecisionEntry {
+            package: ReleasePackageId::new(Ecosystem::Cargo, "pkg-a").unwrap(),
+            target_version: Version::parse("1.1.0", Ecosystem::Cargo.version_grammar()).unwrap(),
+            reasons: vec![ReleaseInclusionReason::Changeset],
+        }])
+        .unwrap();
+        let name_status = [
+            "A\t.callisto/release-decision.json",
+            "D\t.changeset/a-minor.md",
+            "M\tpkg-a/Cargo.toml",
+            "M\tpkg-a/CHANGELOG.md",
+            "M\tCargo.lock",
+            extra,
+        ]
+        .join("\n");
+        let runner = CountingBatchRunner {
+            release_commit: release_commit_sha.clone(),
+            parent: parent_sha,
+            decision_json: serde_json::to_string(&decision).unwrap(),
+            name_status,
+            blobs,
+            run_calls: std::sync::Mutex::new(Vec::new()),
+            batch_calls: std::sync::Mutex::new(0),
+        };
+        let workspace = fixture_workspace(&runner, vec![cargo_package("pkg-a")]);
+        derive_release_commit_decision(
+            &workspace,
+            &CommitSha::parse(&release_commit_sha).unwrap(),
+            std::path::Path::new(".callisto/release-decision.json"),
+        )
+    }
+
+    /// A version commit may change manifests, lockfiles, changelogs, changesets and the decision file, anywhere.
+    #[test]
+    fn a_version_commit_that_changes_only_what_a_version_commit_changes_verifies() {
+        for extra in [
+            "M\tcrates/inner/Cargo.toml",
+            "M\tpackages/web/pnpm-lock.yaml",
+            "M\t.changeset/pre.json",
+        ] {
+            let result = verify_with_extra_path(extra);
+            assert!(result.is_ok(), "{extra}: {result:?}");
+        }
+    }
+
+    /// Anything else could change what is published or where, so a version commit that carries it is refused.
+    #[test]
+    fn a_version_commit_that_also_changes_anything_else_is_refused() {
+        for path in [
+            "build.rs",
+            "src/lib.rs",
+            ".npmrc",
+            ".cargo/config.toml",
+            "callisto.toml",
+            ".github/actions/setup/action.yml",
+            "pkg-a/Cargo.toml.bak",
+            ".changeset/config.json",
+        ] {
+            match verify_with_extra_path(&format!("M\t{path}")) {
+                Err(GraphError::ReleaseCommitVerificationFailed {
+                    reason: CommitVerificationFailure::UnexpectedPath { path: refused },
+                    ..
+                }) => assert_eq!(refused, path),
+                other => panic!("{path}: expected UnexpectedPath, got {other:?}"),
+            }
+        }
     }
 
     /// A merged commit whose actual `HEAD` differs from the commit

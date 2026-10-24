@@ -899,6 +899,8 @@ pub enum CommitVerificationFailure {
     UnclaimedVersionChange,
     #[error("a claimed package was not observed in this commit")]
     ClaimedPackageNotObserved,
+    #[error("`{path}` is changed by this commit, but a version commit only changes manifests, lockfiles, changelogs, changesets and the decision file")]
+    UnexpectedPath { path: String },
 }
 
 /// A remote Git tag or forge release that already exists with content
