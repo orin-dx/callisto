@@ -54,6 +54,76 @@ pub(crate) fn release_notes(
     })
 }
 
+/// A fixed-group member's changelog line that only says it was released with the group.
+fn is_group_boilerplate(entry: &str) -> bool {
+    entry.starts_with("- Released together with the `") || entry.starts_with("- Joined the `")
+}
+
+/// The changelog entries of a section: each `- ` bullet with its indented continuation lines.
+fn entries(section: &str) -> Vec<String> {
+    let mut entries: Vec<String> = Vec::new();
+    for line in section.lines() {
+        match entries.last_mut() {
+            Some(last) if line.starts_with(' ') || line.is_empty() => {
+                last.push('\n');
+                last.push_str(line);
+            }
+            _ if line.starts_with("- ") => entries.push(line.to_owned()),
+            _ => {}
+        }
+    }
+    entries.iter().map(|entry| entry.trim_end().to_owned()).collect()
+}
+
+/// Release notes for a package in a fixed group: its own changelog section, then the entries that the group's other
+/// members recorded for the same version, each marked with the member it came from. The group is released as one
+/// unit, so a change recorded against a member that owns no release still belongs in the release's notes. An entry
+/// that is only the group boilerplate, or that the notes already hold, is left out. With no entry from another member
+/// the notes are exactly [`release_notes`].
+///
+/// # Errors
+///
+/// A changelog exists but cannot be read.
+pub(crate) fn group_release_notes(
+    root: &Path,
+    changelog: Option<&Path>,
+    members: &[(String, &Path)],
+    version: &Version,
+) -> Result<ReleaseNotes, GraphError> {
+    let own = release_notes(root, changelog, version)?;
+    let text = match &own {
+        ReleaseNotes::Section(section) => section.clone(),
+        ReleaseNotes::Generated { .. } => String::new(),
+    };
+    let mut extra = Vec::new();
+    for (name, member_changelog) in members {
+        let Ok(section) = changelog_section(root, member_changelog, version)? else {
+            continue;
+        };
+        for entry in entries(&section) {
+            let Some(body) = entry.strip_prefix("- ") else {
+                continue;
+            };
+            if is_group_boilerplate(&entry)
+                || text.contains(body)
+                || extra.iter().any(|seen: &String| seen.contains(body))
+            {
+                continue;
+            }
+            extra.push(format!("- `{name}`: {body}"));
+        }
+    }
+    if extra.is_empty() {
+        return Ok(own);
+    }
+    let mut kept: Vec<String> = entries(&text)
+        .into_iter()
+        .filter(|entry| !is_group_boilerplate(entry))
+        .collect();
+    kept.extend(extra);
+    Ok(ReleaseNotes::Section(kept.join("\n")))
+}
+
 #[cfg(test)]
 mod tests {
     use callisto_model::VersionGrammar;
@@ -115,5 +185,92 @@ mod tests {
                 "{unreadable}: {error:?}"
             );
         }
+    }
+
+    /// `files` are `(name, changelog)` pairs; the first is the release owner, the rest its fixed-group mates.
+    fn group_notes(files: &[(&str, Option<&str>)]) -> ReleaseNotes {
+        let dir = tempfile::tempdir().unwrap();
+        let mut paths = Vec::new();
+        for (name, body) in files {
+            let path = std::path::PathBuf::from(format!("{}.md", name.replace('/', "-")));
+            if let Some(body) = body {
+                std::fs::write(dir.path().join(&path), body).unwrap();
+            }
+            paths.push(((*name).to_owned(), path));
+        }
+        let version = Version::parse("1.0.0", VersionGrammar::SemVer).unwrap();
+        let (_, owner) = &paths[0];
+        let mates: Vec<(String, &Path)> = paths[1..].iter().map(|(n, p)| (n.clone(), p.as_path())).collect();
+        group_release_notes(dir.path(), Some(owner), &mates, &version).unwrap()
+    }
+
+    const BOILERPLATE: &str = "## 1.0.0\n\n- Released together with the `lockstep` fixed group.\n";
+
+    /// The owner records only that it was released with the group, while the change was recorded against a mate.
+    #[test]
+    fn a_mates_entries_reach_the_owners_release_notes() {
+        let notes = group_notes(&[
+            ("cargo/a", Some(BOILERPLATE)),
+            ("cargo/b", Some("## 1.0.0\n\n- B gets a feature.\n")),
+        ]);
+        assert_eq!(
+            notes,
+            ReleaseNotes::Section("- `cargo/b`: B gets a feature.".to_owned())
+        );
+    }
+
+    #[test]
+    fn the_owners_own_entries_come_first_and_a_shared_entry_is_listed_once() {
+        let notes = group_notes(&[
+            ("cargo/a", Some("## 1.0.0\n\n- Shared change.\n- A only.\n")),
+            (
+                "cargo/b",
+                Some("## 1.0.0\n\n- Shared change.\n- B only.\n- Joined the `lockstep` group at this version.\n"),
+            ),
+            ("cargo/c", Some("## 1.0.0\n\n- B only.\n")),
+        ]);
+        assert_eq!(
+            notes,
+            ReleaseNotes::Section("- Shared change.\n- A only.\n- `cargo/b`: B only.".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_multi_line_entry_keeps_its_continuation_lines() {
+        let notes = group_notes(&[
+            ("cargo/a", Some(BOILERPLATE)),
+            ("cargo/b", Some("## 1.0.0\n\n- Big change.\n  with detail.\n")),
+        ]);
+        assert_eq!(
+            notes,
+            ReleaseNotes::Section("- `cargo/b`: Big change.\n  with detail.".to_owned())
+        );
+    }
+
+    /// With nothing to add from a mate, the notes are what they were before groups were considered.
+    #[test]
+    fn a_group_with_nothing_to_add_leaves_the_owners_notes_alone() {
+        let own = Some("## 1.0.0\n\n- A change.\n- Released together with the `lockstep` fixed group.\n");
+        assert_eq!(
+            group_notes(&[("cargo/a", own), ("cargo/b", Some(BOILERPLATE))]),
+            ReleaseNotes::Section("- A change.\n- Released together with the `lockstep` fixed group.".to_owned())
+        );
+        assert_eq!(
+            group_notes(&[("cargo/a", None), ("cargo/b", Some(BOILERPLATE))]),
+            generated(NotesFallback::FileMissing)
+        );
+    }
+
+    /// An owner with no changelog section still gets the group's entries rather than generated notes.
+    #[test]
+    fn an_owner_without_a_section_takes_the_mates_entries() {
+        let notes = group_notes(&[
+            ("cargo/a", None),
+            ("cargo/b", Some("## 1.0.0\n\n- B gets a feature.\n")),
+        ]);
+        assert_eq!(
+            notes,
+            ReleaseNotes::Section("- `cargo/b`: B gets a feature.".to_owned())
+        );
     }
 }
