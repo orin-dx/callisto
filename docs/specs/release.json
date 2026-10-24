@@ -301,7 +301,7 @@
     },
     {
       "id": "REL-GH-01",
-      "criterion": "Every package with a publish target gets an annotated, unsigned tag named by its tag template, on the source commit, pushed to the `origin` push URL. Its message is `Release <tag>`, a blank line and the trailers `Callisto-Hints: 1`, `Callisto-Package: <ecosystem/name>` and one `Callisto-Tree: <directory> <tree id>` for each directory of the package that could be read in the source commit (`.` for a root package). The trailers are hints and never part of a tag's identity, which stays its commit and being annotated."
+      "criterion": "Every package with a publish target gets an annotated, unsigned tag named by its tag template, with message `Release <tag>`, on the source commit, pushed to the `origin` push URL."
     },
     {
       "id": "REL-GH-02",
@@ -333,10 +333,6 @@
     {
       "id": "REL-GH-08",
       "criterion": "Callisto finds a GitHub release by tag, draft or published, with the GraphQL `release(tagName:)` lookup followed by `GET /repos/{owner}/{repo}/releases/{id}`; it never reads the release list. After its own release create, asset upload or publish, a release or asset still absent is looked up again with 2s, 4s, 8s, 16s and 32s waits before the run fails with E167."
-    },
-    {
-      "id": "REL-GH-09",
-      "criterion": "Tag hints only let a read be skipped and never decide a tag's identity. Tags and their hints are read with one `git for-each-ref`. A tag whose hints name the package (`Callisto-Package` is one of its release ids) is taken as the package's without reading the manifest history at the tag, and the directory trees it records stand in for reading them at the tag's commit when it has an entry for every directory of the package. A lightweight tag, an annotation without well-formed hints, an unknown `Callisto-Hints` version, a hint naming another package, a missing directory entry, or a hint read that fails leaves the tag judged by the reads it would have had without hints."
     },
     {
       "id": "REL-PR-01",

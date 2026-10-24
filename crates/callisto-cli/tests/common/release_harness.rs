@@ -533,7 +533,7 @@ pub fn fake_publishers(
     fs::write(
         bin.join("git"),
         format!(
-            "#!/bin/sh\nprintf 'git %s\\n' \"$(printf '%s' \"$*\" | tr '\\n' ' ')\" >> \"$CALLISTO_TEST_GIT_TRACE\"\n{FAKE_GIT_REMOTE_TAGS}\nif [ \"$1\" = push ]; then\n  no_flags_allowed \"$@\"\n  printf 'git %s\\n' \"$*\" >> \"$CALLISTO_TEST_LOG\"\n  record_pushed_tag \"$3\"\n  exit 0\nfi\nexec \"$CALLISTO_TEST_REAL_GIT\" \"$@\"\n"
+            "#!/bin/sh\nprintf 'git %s\\n' \"$*\" >> \"$CALLISTO_TEST_GIT_TRACE\"\n{FAKE_GIT_REMOTE_TAGS}\nif [ \"$1\" = push ]; then\n  no_flags_allowed \"$@\"\n  printf 'git %s\\n' \"$*\" >> \"$CALLISTO_TEST_LOG\"\n  record_pushed_tag \"$3\"\n  exit 0\nfi\nexec \"$CALLISTO_TEST_REAL_GIT\" \"$@\"\n"
         ),
     )
     .unwrap();
@@ -801,7 +801,7 @@ pub const TOOL_SHAPES: &[ToolShape] = &[
     ToolShape {
         tool: "git",
         subcommand: &["cat-file"],
-        flags: &["--batch", "--batch-check"],
+        flags: &[],
     },
     ToolShape {
         tool: "git",
@@ -1233,7 +1233,7 @@ fi
 "#;
 
 const RIG_GIT: &str = r#"#!/bin/sh
-printf 'git %s\n' "$(printf '%s' "$*" | tr '\n' ' ')" >> "$CALLISTO_TEST_GIT_TRACE"
+printf 'git %s\n' "$*" >> "$CALLISTO_TEST_GIT_TRACE"
 if [ "$CALLISTO_TEST_PUSH" = real ]; then
   if [ "$1" = push ]; then printf 'git %s\n' "$*" >> "$CALLISTO_TEST_LOG"; fi
   n=$#

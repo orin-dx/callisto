@@ -108,14 +108,6 @@ fn release_on_a_branch_publishes_tags_and_releases_then_has_nothing_left() {
     }
     let mutations = rig.mutations();
     assert!(git(root, &["tag", "--list", "core-crate@0.2.0"]).contains("core-crate@0.2.0"));
-    let annotation = git(root, &["tag", "-l", "--format=%(contents)", "core-crate@0.2.0"]);
-    let hints = callisto_model::TagHints::parse(&annotation).expect("the release tag carries hints");
-    assert_eq!(hints.package, "cargo/core-crate");
-    assert_eq!(
-        hints.trees["crates/core"],
-        git(root, &["rev-parse", "core-crate@0.2.0^{commit}:crates/core"]),
-        "the hint records the package directory's tree in the tagged commit"
-    );
     assert_eq!(git(root, &["symbolic-ref", "--short", "HEAD"]), "main");
 
     let receipt: serde_json::Value = serde_json::from_slice(&run.stdout).unwrap();

@@ -328,7 +328,7 @@ prepared:
             target: CommitSha(
                 "<commit>",
             ),
-            annotation: "Release @s/cli@0.1.0\n\nCallisto-Hints: 1\nCallisto-Package: npm/@s/cli\nCallisto-Tree: packages/cli <commit>\nCallisto-Tree: packages/cli/npm/darwin-arm64 <commit>\nCallisto-Tree: packages/cli/npm/linux-x64-gnu <commit>\n",
+            annotation: "Release @s/cli@0.1.0",
         },
     ),
     ReleaseOperationId {
