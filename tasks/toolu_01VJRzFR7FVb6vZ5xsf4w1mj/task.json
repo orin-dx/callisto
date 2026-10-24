@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01VJRzFR7FVb6vZ5xsf4w1mj",
+  "agent_id": "a09833c9f278a9ab6",
+  "subagent_type": "bug-hunter",
+  "task_description": "Adversarial: release security",
+  "token_usage": {
+    "input_tokens": 114,
+    "cache_creation_tokens": 218457,
+    "cache_read_tokens": 7895610,
+    "output_tokens": 2706,
+    "api_call_count": 57
+  },
+  "started_at": "2026-10-24T09:51:59.86857-07:00",
+  "completed_at": "2026-10-24T10:00:51.171919-07:00"
+}

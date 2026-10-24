@@ -1,0 +1,159 @@
+{
+  "cli_version": "0.12.1-nightly.202610230625.e04328a5d",
+  "checkpoint_id": "01M5QH77M6HHW1NTDBT40EKFHX",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-24T18:02:22.606091Z",
+  "branch": "feat/init-defaults",
+  "checkpoints_count": 14,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/init.rs",
+    "crates/callisto-graph/src/commands/init.rs",
+    "docs/publishing.md",
+    "docs/specs/cli.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "0c29eb45fb55",
+  "checkpoint_transcript_start": 67633,
+  "transcript_lines_at_start": 67633,
+  "compact_transcript_start": 5101,
+  "token_usage": {
+    "input_tokens": 126,
+    "cache_creation_tokens": 679285,
+    "cache_read_tokens": 34824856,
+    "output_tokens": 67846,
+    "api_call_count": 59,
+    "subagent_tokens": {
+      "input_tokens": 612,
+      "cache_creation_tokens": 1022207,
+      "cache_read_tokens": 36633368,
+      "output_tokens": 10273,
+      "api_call_count": 307
+    }
+  },
+  "redaction": {
+    "replacements": 210,
+    "layers": {
+      "betterleaks": 40,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 27,
+      "credentialed_uri": 31,
+      "entropy": 132,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 337
+  },
+  "summary": {
+    "intent": "Run a principal-engineer adversarial review of Callisto (a polyglot release tool) ahead of v1, re-scope it to avoid over-engineering, then plan and start hardening first-release mechanics and initial-setup DX (easy defaults, expert config).",
+    "outcome": "Produced a five-lens adversarial report and a trimmed ship-first v1 plan (8 gates, soon-after list, explicit over-engineering list, legacy-removal list), plus analysis of first-publish and package-pull policies. Implemented and opened a PR making `init` default to independent versioning, write the workflow by default for GitHub origins, and print next-steps secrets, with updated tests, specs, README, publishing.md and a changeset; CI passed.",
+    "learnings": {
+      "repo": [
+        "Callisto ADRs: committed decision is release authority (ADR 2), no-journal recovery by observing registries/git (ADR 3/9), native tools publish and own auth (ADR 4), format-preserving writes (ADR 8), directory-keyed internal identity (ADR 11); ADR 12 still says 'Proposed' though canonical ecosystem/name ids are shipped.",
+        "Default tag template is `{display id}@{version}`, so tag names change (e.g. `foo@1.0.0` to `cargo/foo@1.1.0`) when another ecosystem adds a same-named package; a key 1.0 contract risk.",
+        "Hidden CLI commands (release plan/execute/artifact-manifest, release-pr, matrix, compose-pr-body, schema) are required by generated workflows and are effectively public API; six release documents carry different schemaVersions.",
+        "npm access comes from `publishConfig.access` in package.json, not a Callisto registry config key.",
+        "AGENTS.md forbids citing spec/criterion IDs in tests, so spec-to-test traceability tooling is structurally awkward; docs/specs/*.json hold ~244 acceptance criteria.",
+        "Integration tests that run `init --yes` in a repo with a GitHub origin now also get a workflow, so they need `--no-workflow`.",
+        "Sandbox causes unrelated test failures (uv can't write its cache); the authoritative CI run must be done outside the sandbox.",
+        "Perf gains in 0.12+ came entirely from batching; other perf hints were reverted.",
+        "Registry cache windows: npm docs up to ~5 min, PyPI index and crates.io sparse index up to ~10 min."
+      ],
+      "code": [
+        {
+          "path": ".github/workflows/callisto-release.yml",
+          "line": 424,
+          "finding": "release-source checkout uses persist-credentials: true, leaving a contents:write token readable by publish-time build scripts; policy script requires it and templates copy it."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "line": 385,
+          "end_line": 579,
+          "finding": "Release-commit verification checks only decision file, changeset deletion, claimed manifests and changelogs; other paths (.npmrc, build.rs, callisto.toml) can change undetected."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/binding.rs",
+          "line": 82,
+          "end_line": 106,
+          "finding": "Built-in registries with no configured URL pass no explicit --registry, so destination comes from the checkout's .npmrc/.cargo/config.toml."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/init/tests.rs",
+          "line": 726,
+          "end_line": 742,
+          "finding": "actionlint/zizmor lint of the generated workflow silently skips when tools are missing, and CI does not install them."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/git_batch.rs",
+          "line": 60,
+          "end_line": 197,
+          "finding": "Trust-path git batch parser claims fail-closed behavior but has no unit tests."
+        },
+        {
+          "path": "crates/callisto-cli/tests/common/release_harness.rs",
+          "line": 742,
+          "finding": "TOOL_SHAPES lists only gh, git, npm and cargo, so pnpm/yarn/bun publish argv is never checked against real tools."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "Stale /tmp PR body file caused PR #348 to be created with old text; had to detect and fix it.",
+      "Security subagent could not run git commands due to the worktree guard, so its findings are read-only, unreproduced.",
+      "Agent scratch directories collided, requiring some probes to be redone.",
+      "Nine init tests plus a subprocess dispatch test broke from the changed defaults and needed updating.",
+      "Sandbox-specific test failures (uv cache) obscured real results until CI was rerun outside the sandbox.",
+      "Required-check ruleset is not in the repo, so which CI jobs gate merges is unknown."
+    ],
+    "open_items": [
+      "Decisions for user: tag naming (keep+document vs always qualify), accept/trim ADR 12, skip non-publishable members by default, reject `publish-to = nuget`, OIDC for npm, private workspace root exclusion.",
+      "v1 gates not yet implemented: unresolved changeset entry hard error, skip version-less/non-publishable members, release-commit path allow-list, explicit built-in registry URL, local-only tag diagnostic, installer main-HEAD fallback removal and --source-ref attestation, extend credential scrub list, stability page.",
+      "Legacy removal PR: delete [init] table, release.profiles, setup_git_user input, and the installer fallback.",
+      "First-release work: static metadata preflight in release --dry-run, 'first publish' shown in plan, taken-name diagnosis replacing misleading E320, 'pulling a release' runbook, error for publish-says-exists-but-not-visible.",
+      "Scripted 'first ten minutes' matrix and fresh-repo rehearsal with local registries; real-registry end-to-end run needs user credentials.",
+      "Soon-after cheap fixes: npm range parsing, peer co-release floor, 'already published' detection, E121 message, package.json inline formatting, CI timeouts, scheduled provider-contract, git_batch tests, pnpm/yarn/bun flag contract.",
+      "Verify crates.io deletion thresholds and PEP 763 status against live sources before documenting; verify registry first-publish credential claims.",
+      "Real-registry run script and stability page not started; init defaults PR opened but not yet merged."
+    ]
+  }
+}

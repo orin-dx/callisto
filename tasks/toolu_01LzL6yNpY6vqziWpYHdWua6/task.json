@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01LzL6yNpY6vqziWpYHdWua6",
+  "agent_id": "a574527607dc61c5f",
+  "subagent_type": "bug-hunter",
+  "task_description": "Adversarial: test assurance",
+  "token_usage": {
+    "input_tokens": 100,
+    "cache_creation_tokens": 104972,
+    "cache_read_tokens": 3298133,
+    "output_tokens": 435,
+    "api_call_count": 50
+  },
+  "started_at": "2026-10-24T09:51:59.868748-07:00",
+  "completed_at": "2026-10-24T09:57:37.317418-07:00"
+}
