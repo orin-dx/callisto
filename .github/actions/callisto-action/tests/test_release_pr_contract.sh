@@ -159,7 +159,6 @@ STUBS
     INPUT_COMMIT_MESSAGE='chore(release): version packages' \
     INPUT_TITLE='chore(release): version packages' \
     INPUT_PR_LABEL='callisto: release' \
-    INPUT_SETUP_GIT_USER=true \
     INPUT_BRANCH=main \
     INPUT_RELEASE_BRANCH='callisto/version-packages' \
     INPUT_CWD=. \
