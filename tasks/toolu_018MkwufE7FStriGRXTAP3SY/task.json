@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_018MkwufE7FStriGRXTAP3SY",
+  "agent_id": "a8e92bc1c502c6818",
+  "subagent_type": "bug-hunter",
+  "task_description": "Adversarial: failure and recovery",
+  "token_usage": {
+    "input_tokens": 146,
+    "cache_creation_tokens": 255439,
+    "cache_read_tokens": 11867959,
+    "output_tokens": 5729,
+    "api_call_count": 74
+  },
+  "started_at": "2026-10-24T09:51:59.868555-07:00",
+  "completed_at": "2026-10-24T13:26:44.341627-07:00"
+}
