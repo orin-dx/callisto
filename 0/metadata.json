@@ -1,0 +1,136 @@
+{
+  "cli_version": "0.12.1-nightly.202610230625.e04328a5d",
+  "checkpoint_id": "01M5NS11ETYHG1NKHRF2CBF2P4",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-24T01:40:14.735853Z",
+  "branch": "revert/tag-hints",
+  "checkpoints_count": 8,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/tests/common/release_harness.rs",
+    "crates/callisto-cli/tests/release_command_e2e_tests.rs",
+    "crates/callisto-graph/src/commands/release/derive.rs",
+    "crates/callisto-model/src/lib.rs",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "465cf19a2c46",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 2364,
+    "cache_read_tokens": 298439,
+    "output_tokens": 497,
+    "api_call_count": 1
+  },
+  "redaction": {
+    "replacements": 210,
+    "layers": {
+      "betterleaks": 40,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 27,
+      "credentialed_uri": 31,
+      "entropy": 132,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 303
+  },
+  "summary": {
+    "intent": "Work through a planned roadmap for the Callisto release tool (fixes, test debt, docs, refactors, perf work and tag annotation hints), keeping local planning files out of PRs. The session ended with the user questioning whether the tag hints were worth the added code.",
+    "outcome": "Opened PRs for SYS-RETRY (#202), mixed-routing test (#203), docs refresh (#204), init/template/NAPI stack (#205/#206/#208), R3 derive split, read-tag-hints (#339) and look-patience (#341). After measuring that hints gave only noise-level gains, the user rejected them as over-engineering, so the assistant decided to close #339 and #335, revert #338 and keep #341, with the revert's CI run still in progress.",
+    "learnings": {
+      "repo": [
+        "`just ci` is the gate; the real result is the `exit=`/VERDICT line in the log, not the background wrapper's exit code notification.",
+        "Planning and handoff files live in `.claude/plans/` (excluded via `.git/info/exclude`) and must never be committed or put in a PR.",
+        "Release harness fakes (gh, cargo, registry) can hide bugs, so black-box tests with real tools (real `jq`, real binary) are preferred.",
+        "A tag on HEAD does not mean released: SYS-RETRY selection now observes registry, tag and GitHub release for packages tagged at HEAD, while a tag on an older commit settles without contacting providers.",
+        "Clippy in this repo disallows some binding names such as `foo`; `just ci` also enforces rustfmt and a 90% line-coverage gate.",
+        "Workflow template tests run under macOS bash, which lacks `mapfile`; use portable loops in templates.",
+        "Squash-merged stacked PRs leave the remote branch with pre-squash commits; merge main in rather than force-pushing.",
+        "Perf gains in Callisto came from batching git calls (6-11 processes per command instead of thousands), not from tag hints."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release/derive.rs",
+          "finding": "R3 split of the large derive function into stage functions was pinned by insta snapshots plus error-path tests first; mutation checks confirmed the snapshots catch regressions."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release_execution.rs",
+          "finding": "Confirmation-wave looks previously could run past the 6-minute window through registry Retry-After retries; each look now gets the remaining window as patience, computed per look."
+        },
+        {
+          "path": "crates/callisto-cli/tests/common/release_harness.rs",
+          "finding": "The harness log now records read-only calls, so no-op assertions must compare mutating calls only."
+        }
+      ],
+      "workflow": [
+        "Write the failing reproduction first, then fix, and mutation-test new tests to prove they can fail.",
+        "The sandbox rejects heredocs, compound commands and inline scripts; use Write to create script files and run them.",
+        "Harness-created `crates/.claude` dirs break cargo metadata and insta; run from the repo root and remove it.",
+        "Don't run long comparisons with output hidden behind `tail`; use per-run timeouts to avoid hours-long hangs.",
+        "Measure before adding clever optimizations; the user prefers dropping code that doesn't show meaningful value."
+      ]
+    },
+    "friction": [
+      "Planning file was initially committed in PR #201, which the user rejected and the assistant had to close.",
+      "Sandbox guards repeatedly blocked heredocs, compound commands, git config writes and writes outside the current worktree, forcing workarounds.",
+      "Timing measurements were noisy because other processes loaded the machine, so hint benefit couldn't be separated from noise.",
+      "The v0.12 comparison run hung for hours because its output was hidden and 0.12 got stuck on a 10,000-package status.",
+      "Several earlier claims were wrong (ADR digest claim, 5x batch speedup, warm-cache speedup) and had to be corrected.",
+      "Background sessions couldn't edit the shared checkout's plan file."
+    ],
+    "open_items": [
+      "Finish the revert of #338, confirm CI passes, and close #339 and #335.",
+      "Delete leftover branch `docs/next-work-plan` and many stale local branches, pending the user's per-branch decision.",
+      "W1 real-service credential check needs a decision on where it runs in CI.",
+      "Adopt michi `ready_by_edge` once michi releases a version containing it.",
+      "npm michi 0.6.0 is held until 2026-10-24 02:55 UTC.",
+      "OIDC publishing needs the user's decision on `id-token: write` for the execute job.",
+      "Blocked or sequenced work: D01-dependent SYS-MATURIN and W9, W10 decisions, and W11 verification needing credentials.",
+      "Remaining lanes C, D (SYS-BARRIER) and F (R1 walk.rs::build) are not started.",
+      "PRs #202 (review findings), #203, #204, #205/#206/#208 stack, the R3 PR and #341 are awaiting merge.",
+      "Remove stale T08-RETRY references in #204's docs after #202 merges."
+    ]
+  }
+}
