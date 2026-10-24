@@ -54,7 +54,7 @@
     },
     {
       "id": "VER-CS-07",
-      "criterion": "Writing fails for an empty summary with entries (E056), an empty package name (E057), or a name containing `\"`. A changeset with no entries and no summary writes as an empty file.",
+      "criterion": "Writing fails for an empty summary with entries (E056), an empty package name (E057), or a name containing `\"`. A changeset with no entries and no summary writes as `---`, `---` and a blank line, the shape `@changesets/cli add --empty` writes.",
       "is_error_case": true
     },
     {
@@ -68,7 +68,7 @@
     },
     {
       "id": "VER-AGG-02",
-      "criterion": "An entry name resolves to a workspace package by prefixed id (`cargo/foo`) or bare name; a bare name that matches packages in two or more ecosystems aborts the run with an ambiguous-name error (E103).",
+      "criterion": "An entry name resolves to a workspace package by prefixed id (`cargo/foo`) or bare name; a bare name that matches packages in two or more ecosystems aborts the run with an ambiguous-name error (E103). An entry written with the colon form (`cargo:foo`) aborts the run with E316.",
       "is_error_case": true
     },
     {
@@ -106,11 +106,11 @@
     },
     {
       "id": "VER-CAS-05",
-      "criterion": "Coverage: an exact spec covers only the equal version, a bare Cargo version is a caret requirement, a caret requirement never covers a prerelease, a Cargo `workspace = true` spec is tested using the root `[workspace.dependencies]` spec, and an npm `workspace:` shorthand (`workspace:`, `workspace:*`, `workspace:^` or `workspace:~`) always covers. A pnpm `workspace:` explicit range or exact version is tested using npm SemVer rules; an alias uses the range after its final `@`, and a relative path binds only to the admitted npm member at that directory. A catalog or other untestable spec is treated as covering and never rewritten; a catalog spec emits a CatalogSpecNotRewritten warning."
+      "criterion": "Coverage: an exact spec covers only the equal version, a bare Cargo version is a caret requirement, a caret requirement never covers a prerelease, a Cargo `workspace = true` spec is tested using the root `[workspace.dependencies]` spec, and an npm `workspace:` shorthand (`workspace:`, `workspace:*`, `workspace:^` or `workspace:~`) always covers. A pnpm `workspace:` explicit range or exact version is tested using npm SemVer rules; an alias uses the range after its final `@`, and a relative path binds only to the admitted npm member at that directory. A catalog or other untestable spec is treated as covering and never rewritten; a catalog spec emits a catalog-spec-not-rewritten warning."
     },
     {
       "id": "VER-CAS-06",
-      "criterion": "A spec that no longer covers the new version is rewritten to it, keeping the operator and precision for Cargo and npm (`^1.2` becomes `^2.0` for 2.0.0), or to the exact version for npm when `preserve-npm-ranges = false`. A runtime, optional, build or peer dependent that is itself released in this run, for any reason, has every such spec on a bumped internal dependency raised to the dependency's new version the same way, even when the spec still covers it (a covering spec that cannot be raised, such as a wildcard or a bare Python requirement, is left unchanged); a dependent that is not releasing keeps its spec unless out of range. `workspace = true`, pnpm rolling `workspace:` shorthands and catalog specs are never rewritten by either rule; an out-of-range pnpm explicit range is rewritten while retaining its `workspace:` protocol and alias. A dev dependent's spec is rewritten only when out of range. An npm range may carry a prerelease or build clause (`^2.0.0-next.0` becomes `^3.0.0`). A runtime, optional, build or peer spec that is out of range and cannot be rewritten mechanically, such as an npm range with spaces, `||`, a hyphen or a wildcard, or a Cargo range whose upper bound excludes the new version, fails the run with E319 before anything is written. A rewrite that would still exclude the new version, such as `<2.0.0` for 2.0.0, counts as one that cannot be rewritten. A dev spec that cannot be rewritten is left unchanged with a RangeNotRoundTrippable warning."
+      "criterion": "A spec that no longer covers the new version is rewritten to it, keeping the operator and precision for Cargo and npm (`^1.2` becomes `^2.0` for 2.0.0), or to the exact version for npm when `preserve-npm-ranges = false`. A runtime, optional, build or peer dependent that is itself released in this run, for any reason, has every such spec on a bumped internal dependency raised to the dependency's new version the same way, even when the spec still covers it (a covering spec that cannot be raised, such as a wildcard or a bare Python requirement, is left unchanged); a dependent that is not releasing keeps its spec unless out of range. A member's `workspace = true` entry, pnpm rolling `workspace:` shorthands and catalog specs are never rewritten in place by either rule (a Cargo `workspace = true` spec is rewritten in the root `[workspace.dependencies]`); an out-of-range pnpm explicit range is rewritten while retaining its `workspace:` protocol and alias. A dev dependent's spec is rewritten only when out of range. An npm range may carry a prerelease or build clause (`^2.0.0-next.0` becomes `^3.0.0`). A runtime, optional, build or peer spec that is out of range and cannot be rewritten mechanically, such as an npm range with spaces, `||`, a hyphen or a wildcard, or a Cargo range whose upper bound excludes the new version, fails the run with E319 before anything is written. A rewrite that would still exclude the new version, such as `<2.0.0` for 2.0.0, counts as one that cannot be rewritten. A dev spec that cannot be rewritten is left unchanged with a range-not-round-trippable warning."
     },
     {
       "id": "VER-CAS-07",
@@ -155,7 +155,7 @@
     },
     {
       "id": "VER-PRE-01",
-      "criterion": "`callisto pre enter <tag>` writes `.changeset/pre.json` with `mode` `pre`, the tag, every package's current version under `initialVersions`, keyed by its display id (`foo`, or `cargo/foo` when another ecosystem has a `foo`) and an empty `changesets` list, then stages the file with git; under `--dry-run` it prints the content and writes nothing. For promoted packages, an older bare key is assigned to the unique historical owner at the commit that added pre.json; if no unique owner exists, version fails with E245."
+      "criterion": "`callisto pre enter <tag>` writes `pre.json` in the changesets directory (default `.changeset/pre.json`) with `mode` `pre`, the tag, every package's current version under `initialVersions`, keyed by its display id (`foo`, or `cargo/foo` when another ecosystem has a `foo`) and an empty `changesets` list, then stages the file with git; under `--dry-run` it prints the content and writes nothing. For promoted packages, an older bare key is assigned to the unique historical owner at the commit that added pre.json; if no unique owner exists, version fails with E245."
     },
     {
       "id": "VER-PRE-02",
@@ -185,7 +185,7 @@
     },
     {
       "id": "VER-PRE-08",
-      "criterion": "A snapshot writes manifests and refreshes each active ecosystem's existing lockfile, unconditionally (there is no `--no-refresh-lockfiles` for `snapshot`), so a subsequent locked install resolves against the snapshot version; it ignores and keeps pending changesets, writes no changelog or `pre.json`, and stages nothing in git; under `--dry-run` it writes nothing."
+      "criterion": "A snapshot writes manifests and refreshes the lockfile of each active ecosystem (creating a missing `Cargo.lock` but never staging it), unconditionally (there is no `--no-refresh-lockfiles` for `snapshot`), so a subsequent locked install resolves against the snapshot version; it ignores and keeps pending changesets, writes no changelog or `pre.json`, and stages nothing in git; under `--dry-run` it writes nothing."
     },
     {
       "id": "VER-PRE-09",
@@ -255,7 +255,7 @@
     },
     {
       "id": "VER-APPLY-08",
-      "criterion": "Outside pre mode, `version` refreshes affected lockfiles and stages written manifests, changelogs, `pre.json` changes and existing lockfiles before consuming release inputs. It stages consumed changeset and `pre.json` deletions via `git rm --cached --ignore-unmatch` before unlinking those files from disk. If refresh, generated-state staging or input-deletion staging fails, changesets and pre-state deletion inputs remain on disk for retry."
+      "criterion": "`version` refreshes affected lockfiles and stages written manifests, changelogs, `pre.json` changes and existing lockfiles before consuming release inputs; in pre mode it consumes no changesets. It stages consumed changeset and `pre.json` deletions via `git rm --cached --ignore-unmatch` before unlinking those files from disk. If refresh, generated-state staging or input-deletion staging fails, changesets and pre-state deletion inputs remain on disk for retry."
     },
     {
       "id": "VER-APPLY-09",
@@ -263,7 +263,7 @@
     },
     {
       "id": "VER-APPLY-10",
-      "criterion": "`version --emit-decision <path>` writes the release decision JSON to `<path>` relative to the workspace root after the plan has been applied successfully: `schemaVersion` 2, a digest, and one entry per canonical manifest of each bumped package (ecosystem-qualified name, target version, reasons) sorted by package. Reason `kind` is `changeset`, `inference`, `fixedGroup` or `linkedGroup` (with `groupId`), `cascade` (with source package and edge kind, `peer` for peer escalation) or `preReleasePolicy` (with the prerelease tag)."
+      "criterion": "`version --emit-decision <path>` writes the release decision JSON to `<path>` relative to the workspace root after the plan has been applied successfully: `schemaVersion` 2, a digest, and one entry per canonical manifest of each bumped package (ecosystem-qualified name, target version, reasons) sorted by package. Reason `kind` is `changeset`, `inference`, `fixedGroup` or `linkedGroup` (with `groupId`), `cascade` (with `from`, the source package, and `edgeKind`: `Runtime`, `Optional`, `Build` or `Peer`, or lowercase `peer` for peer escalation) or `preReleasePolicy` (with `policyId`, the prerelease tag)."
     },
     {
       "id": "VER-APPLY-11",

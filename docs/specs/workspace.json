@@ -103,7 +103,7 @@
     },
     {
       "id": "WS-LOAD-02",
-      "criterion": "A Cargo package belongs to the workspace its `package.workspace` names, else to the nearest `Cargo.toml` at or above its directory, never above the workspace root, that has a `workspace` table (the package itself counts); it need not be the root's. A `version.workspace = true` or `{ workspace = true }` dependency resolves against that workspace's `[workspace.package]` and `[workspace.dependencies]`, and a version or dependency spec rewrite is written to that workspace's manifest. A package that inherits when no such workspace exists, whose `package.workspace` names no workspace or leaves the root, or whose ancestors cannot be read or parsed, fails with E313 naming the package.",
+      "criterion": "A Cargo package belongs to the workspace its `package.workspace` names, else to the nearest `Cargo.toml` at or above its directory, never above the workspace root, that has a `workspace` table (the package itself counts); it need not be the root's. A `version.workspace = true` or `{ workspace = true }` dependency resolves against that workspace's `[workspace.package]` and `[workspace.dependencies]`, and a version or dependency spec rewrite is written to that workspace's manifest. A package that inherits when no Cargo.toml at or above it has a `workspace` table fails with E313 naming its manifest. A `package.workspace` that names a directory without a `[workspace]` or leaves the workspace root fails with E310, and an ancestor Cargo.toml that cannot be parsed fails with E209, each naming the file.",
       "is_error_case": true
     },
     {
@@ -130,7 +130,7 @@
     },
     {
       "id": "WS-ID-06",
-      "criterion": "A changeset, `callisto add --package` or `callisto matrix --package` naming the bare name of promoted packages fails with E103 listing every qualified candidate and showing the qualified form to write; naming a package that does not exist under that name in that ecosystem fails with E102.",
+      "criterion": "A changeset entry naming the bare name of promoted packages fails `version` with E103 listing every qualified candidate and showing the qualified form to write, and `status` reports it as an error diagnostic. `callisto add --package` and `callisto matrix --package` reject any bare name with E317 and a qualified name no package has with E102. A changeset entry naming a package that does not exist is a warning in `version`, and the changeset is not consumed.",
       "is_error_case": true
     },
     {
@@ -153,7 +153,7 @@
     },
     {
       "id": "WS-ID-13",
-      "criterion": "A package named in `callisto.toml` without its ecosystem is rejected with E317 showing the `<ecosystem>/<name>` form: group members (except the native name of a platform package), `[[package]]` and `[[package-set]]` `match`, `product-package` and `[[release.artifact]] package`. Changeset entries and `pre.json` keys keep their native names.",
+      "criterion": "A package named in `callisto.toml` without its ecosystem is rejected with E317 showing the `<ecosystem>/<name>` form: group members (except the native name of a platform package), `[[package]]` and `[[package-set]]` `match`, `product-package` and `[[release.artifact]] package`, and likewise `add --package` and `matrix --package`. Changeset entries and `pre.json` keys keep their native names.",
       "is_error_case": true
     },
     {
@@ -168,11 +168,11 @@
     },
     {
       "id": "WS-CFG-01",
-      "criterion": "For each package, the first `[[package]]` rule whose ecosystem the package actually has a manifest in and whose name matches applies,; a rule for an ecosystem the package has no manifest in never applies, even to a same-named package in another ecosystem."
+      "criterion": "For each package, the first `[[package]]` rule whose ecosystem the package actually has a manifest in and whose name matches applies; a rule for an ecosystem the package has no manifest in never applies, even to a same-named package in another ecosystem."
     },
     {
       "id": "WS-CFG-04",
-      "criterion": "A `[[package-set]]` rule applies only when no `[[package]]` rule matches, the first matching set in declaration order wins, and a `cargo:`/`cargo/`, `npm:`/`npm/` or `pypi:`/`pypi/` prefix restricts it to packages with a manifest in that ecosystem."
+      "criterion": "A `[[package-set]]` rule applies only when no `[[package]]` rule matches, the first matching set in declaration order wins, its `match` must start with `cargo/`, `npm/` or `pypi/` (a bare pattern is E317, the colon form E316), and the glob is compared with the package's name in that ecosystem."
     },
     {
       "id": "WS-CFG-05",
