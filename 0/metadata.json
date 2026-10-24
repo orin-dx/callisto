@@ -1,0 +1,112 @@
+{
+  "cli_version": "0.12.1-nightly.202610240623.b9639ba5b",
+  "checkpoint_id": "01M5QN0A3RJ6AG7HM2RG4621YE",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-24T19:08:17.775284Z",
+  "branch": "fix/release-commit-allowlist",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/init.rs",
+    "crates/callisto-cli/src/runner.rs",
+    "crates/callisto-graph/src/aggregate.rs",
+    "crates/callisto-graph/src/aggregate/tests.rs",
+    "crates/callisto-graph/src/commands/init.rs",
+    "crates/callisto-graph/src/commands/init/tests.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/tests.rs",
+    "crates/callisto-graph/src/config/raw.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/locate/ignore_walk.rs",
+    "crates/callisto-model/src/registry.rs",
+    "docs/config.md",
+    "docs/publishing.md",
+    "docs/specs/cli.json",
+    "docs/specs/release.json",
+    "docs/specs/versioning.json",
+    "docs/specs/workspace.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "f1b41783f2b3",
+  "checkpoint_transcript_start": 70949,
+  "transcript_lines_at_start": 70949,
+  "compact_transcript_start": 5287,
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 6106,
+    "cache_read_tokens": 4275962,
+    "output_tokens": 2121,
+    "api_call_count": 5
+  },
+  "redaction": {
+    "replacements": 210,
+    "layers": {
+      "betterleaks": 40,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 27,
+      "credentialed_uri": 31,
+      "entropy": 132,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 338
+  },
+  "summary": {
+    "intent": "Resolve a merge conflict in PR #353 (the allow-list branch) by merging main into it, as part of landing a stack of related PRs (#353, #354).",
+    "outcome": "Merged main into the #353 branch with a single conflict in docs/publishing.md, resolved by keeping both sections (\"Where a publish goes\" placed after the main-branch ones). A forward reference to E322 was reverted because that error code exists only in #354, and the merge was committed.",
+    "learnings": {
+      "repo": [
+        "Stacked PRs in this repo (#353, #354) both edit docs/publishing.md in the same spot, so merging main into one branch produces conflicts there.",
+        "Error code E322 is introduced only in PR #354, so docs or code on the #353 branch must not reference it.",
+        "The work is done in a git worktree at /Users/gabe/Projects/callisto/.claude/worktrees/smoke-main."
+      ],
+      "code": [],
+      "workflow": [
+        "When a conflict-resolution edit depends on content from another PR in a stack, make that edit in the PR that owns the dependency rather than adding a forward reference.",
+        "Merge and conflict-resolution steps were scripted (merge353.sh, resolve_publishing.py in /tmp/claude-501) and followed by a check of section order before committing."
+      ]
+    },
+    "friction": null,
+    "open_items": null
+  }
+}
