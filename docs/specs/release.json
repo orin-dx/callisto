@@ -300,6 +300,10 @@
       "is_error_case": true
     },
     {
+      "id": "REL-RERUN-08",
+      "criterion": "`callisto release` and `callisto release --dry-run` print a warning on stderr for each package's last tag that exists in the repository but not on `origin` (one `git ls-remote` for all of them), saying its release may not have finished. The warning does not change the plan or the exit status, and nothing is printed when there is no `origin`, no tag, or the remote cannot be read."
+    },
+    {
       "id": "REL-GH-01",
       "criterion": "Every package with a publish target gets an annotated, unsigned tag named by its tag template, with message `Release <tag>`, on the source commit, pushed to the `origin` push URL."
     },

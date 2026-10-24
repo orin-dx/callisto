@@ -75,6 +75,57 @@ pub fn ci_release_route<R: CommandRunner, D: DependencyResolver>(
         }))
 }
 
+/// The tags that name a package's last release here but are not on `origin`.
+///
+/// A release that tagged locally and then failed to push leaves exactly this, and a later rerun on another commit
+/// treats the tagged version as finished, so the remote tag and the forge release never happen. Best effort: no
+/// `origin`, no tags, or a remote that cannot be read all report nothing.
+pub fn tags_missing_from_origin<L: ProjectLocator, R: CommandRunner>(
+    root: &Path,
+    locator: &L,
+    runner: &R,
+) -> Result<Vec<String>, GraphError> {
+    let workspace = Workspace::load(canonical_root(root)?, locator, runner)?;
+    let Some(remote) = optional_git_remote(&workspace.root, runner)? else {
+        return Ok(Vec::new());
+    };
+    let tags = workspace.tags()?;
+    let names: std::collections::BTreeSet<String> = workspace
+        .graph
+        .packages()
+        .filter_map(|package| tags.last_tag(&package.id))
+        .map(|tag| tag.name.as_str().to_owned())
+        .collect();
+    if names.is_empty() {
+        return Ok(Vec::new());
+    }
+    let references: Vec<String> = names.iter().map(|name| format!("refs/tags/{name}")).collect();
+    let mut args = vec!["ls-remote", remote.endpoint.as_str()];
+    args.extend(references.iter().map(String::as_str));
+    let Ok(output) = runner.run_with_timeout(
+        super::provider::policy::programs::GIT,
+        &args,
+        &workspace.root,
+        super::provider::policy::timeouts::GIT_LS_REMOTE,
+    ) else {
+        return Ok(Vec::new());
+    };
+    if !output.success() {
+        return Ok(Vec::new());
+    }
+    let on_remote: std::collections::BTreeSet<&str> = output
+        .stdout
+        .lines()
+        .filter_map(|line| line.split_once('\t'))
+        .filter_map(|(_, reference)| reference.strip_prefix("refs/tags/"))
+        .map(|name| name.strip_suffix("^{}").unwrap_or(name))
+        .collect();
+    Ok(names
+        .into_iter()
+        .filter(|name| !on_remote.contains(name.as_str()))
+        .collect())
+}
+
 /// A derived local release.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LocalReleasePlan {

@@ -428,6 +428,44 @@ fn a_rerun_after_a_failed_tag_push_completes_the_release() {
     assert_eq!(String::from_utf8_lossy(&again.stdout), "Nothing to release.\n");
 }
 
+/// A tag made here that never reached `origin` is a release that may not have finished; `release` says so even when
+/// it has nothing to plan, and stops saying so once the tag is pushed.
+#[test]
+fn a_tag_that_never_reached_origin_is_called_out() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    git(
+        root,
+        &[
+            "tag",
+            "-a",
+            "-m",
+            "Release core-crate@0.2.0",
+            "core-crate@0.2.0",
+            &release_commit,
+        ],
+    );
+
+    let warned = rig.run(root, &["release", "--dry-run"]);
+    assert!(
+        stderr(&warned).contains("tag `core-crate@0.2.0` exists here but not on `origin`"),
+        "{}",
+        stderr(&warned)
+    );
+
+    // The remote now holds the tag, in the shape `ls-remote` reports an annotated one.
+    let object = git(root, &["rev-parse", "refs/tags/core-crate@0.2.0"]);
+    let remote_tags = format!("{}.remote-tags", rig.git_trace.display());
+    fs::write(
+        remote_tags,
+        format!("{object}\trefs/tags/core-crate@0.2.0\n{release_commit}\trefs/tags/core-crate@0.2.0^{{}}\n"),
+    )
+    .unwrap();
+    let quiet = rig.run(root, &["release", "--dry-run"]);
+    assert!(!stderr(&quiet).contains("not on `origin`"), "{}", stderr(&quiet));
+}
+
 /// A release that stopped after publishing is finished from the commit that set the version: a later commit in the
 /// package would be tagged with code the registry never received.
 #[test]

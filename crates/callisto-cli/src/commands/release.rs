@@ -10,8 +10,8 @@ use std::process::ExitCode;
 use callisto_graph::commands::{
     build_release_intent, build_release_intent_with_artifacts, ci_release_route, derive_release_commit_decision,
     derive_selected_release_decision, execute_release, plan_local_release, seal_python_distributions,
-    validate_local_release_intent, validate_release_intent, verify_artifact_manifest, LocalReleasePlan,
-    LocalReleaseSource, VersionOptions,
+    tags_missing_from_origin, validate_local_release_intent, validate_release_intent, verify_artifact_manifest,
+    LocalReleasePlan, LocalReleaseSource, VersionOptions,
 };
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_model::{
@@ -45,6 +45,14 @@ pub fn handle(args: ReleaseCommandArgs, global: &GlobalArgs) -> Result<ExitCode,
 pub const TAGS_UNBOUND_NOTE: &str =
     "note: `origin` has no push URL, so tag operations are unbound; `callisto release` will refuse until one is set";
 
+/// Stderr warning for a tag that exists here but not on `origin`.
+fn tag_missing_from_origin_note(tag: &str) -> String {
+    format!(
+        "warning: tag `{tag}` exists here but not on `origin`, so its release may not have finished: check out the \
+         tagged commit and run `callisto release` again, or push the tag if the release is complete"
+    )
+}
+
 /// Exact stdout when no package has an unreleased version.
 pub const NOTHING_TO_RELEASE: &str = "Nothing to release.";
 
@@ -58,6 +66,10 @@ fn release(
     let workspace = load_workspace(global, &runner)?;
     let root = workspace.root.clone();
     let locator = IgnoreWalkLocator::new(&root);
+    // Best effort: a tag that never reached `origin` is a release that did not finish, whatever the plan says next.
+    for tag in tags_missing_from_origin(&root, &locator, &runner).unwrap_or_default() {
+        eprintln!("{}", tag_missing_from_origin_note(&tag));
+    }
     if global.dry_run {
         let plan = plan_local_release(&root, &locator, &runner, &selections, LocalReleaseSource::Preview)?;
         write_release_preview(plan.as_ref(), global.format, &mut std::io::stdout())?;
