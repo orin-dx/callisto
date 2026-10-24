@@ -146,7 +146,7 @@
     },
     {
       "id": "REL-AUTH-02",
-      "criterion": "`release plan --from-release-commit` fails with E165 and writes no output file in any of these cases: HEAD is not the given commit; the commit neither adds nor modifies the decision file; it deletes no direct-child changeset `.md` file (nested Markdown files and `README.md` do not count); a claimed package's manifest does not change to its claimed version; a claimed package's changelog is unchanged; an unclaimed manifest version changes; or a claimed package is not found.",
+      "criterion": "`release plan --from-release-commit` fails with E165 and writes no output file in any of these cases: HEAD is not the given commit; the commit neither adds nor modifies the decision file; it deletes no direct-child changeset `.md` file (nested Markdown files and `README.md` do not count); a claimed package's manifest does not change to its claimed version; a claimed package's changelog is unchanged; an unclaimed manifest version changes; a claimed package is not found; or the commit changes any path other than a manifest (`Cargo.toml`, `package.json`, `pyproject.toml`) or lockfile (`Cargo.lock`, `package-lock.json`, `npm-shrinkwrap.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `bun.lockb`, `uv.lock`, `poetry.lock`, `pdm.lock`) anywhere, a package's changelog, the decision file, a direct-child changeset, or the changesets directory's `pre.json`.",
       "is_error_case": true
     },
     {
