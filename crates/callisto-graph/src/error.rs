@@ -645,6 +645,16 @@ pub enum GraphError {
         origin: String,
     },
 
+    #[error("`{package}` has no {missing} in its Cargo.toml, which crates.io requires to publish")]
+    #[diagnostic(
+        code(E323),
+        help(
+            "Add {missing} to the package's Cargo.toml (or inherit it from `[workspace.package]`), commit it, and run \
+             `callisto release` again. Nothing has been published."
+        )
+    )]
+    ReleaseMetadataMissing { package: String, missing: String },
+
     #[error("release precondition unmet: requires {requirement}")]
     #[diagnostic(
         code(E170),

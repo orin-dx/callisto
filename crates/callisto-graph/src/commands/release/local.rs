@@ -3,7 +3,10 @@
 
 use std::path::Path;
 
-use callisto_model::{CommandRunner, ExecutionTrustProfileV1, ReleaseIntentV1, ReleasePackageId, SourceIdentity};
+use callisto_model::{
+    CommandRunner, ExecutionTrustProfileV1, ManifestFormat, PublishTarget, ReleaseIntentV1, ReleasePackageId,
+    SourceIdentity,
+};
 
 use crate::{DependencyResolver, GraphError, ProjectLocator, Workspace};
 
@@ -193,6 +196,66 @@ fn incomplete_tagged_releases<R: CommandRunner, D: DependencyResolver>(
     ))
 }
 
+/// The packages in `decision` this repository has never tagged.
+fn first_release_packages<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    decision: &callisto_model::ReleaseDecisionV1,
+) -> Result<std::collections::BTreeSet<ReleasePackageId>, GraphError> {
+    let tags = workspace.tags()?;
+    Ok(decision
+        .entries
+        .iter()
+        .filter(|entry| {
+            crate::commands::release_decision::workspace_package(workspace, &entry.package)
+                .is_some_and(|package| tags.last_tag(&package.id).is_none())
+        })
+        .map(|entry| entry.package.clone())
+        .collect())
+}
+
+/// Refuses a first release to crates.io of a crate that lacks the metadata crates.io requires.
+///
+/// Cargo only warns about it locally; crates.io rejects the upload, which can land after other packages published.
+fn refuse_a_crate_crates_io_would_reject<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    decision: &callisto_model::ReleaseDecisionV1,
+) -> Result<(), GraphError> {
+    for id in first_release_packages(workspace, decision)? {
+        let Some(package) = crate::commands::release_decision::workspace_package(workspace, &id) else {
+            continue;
+        };
+        if !package.publish_to.contains(&PublishTarget::CratesIo) {
+            continue;
+        }
+        let Some(manifest) = package
+            .canonical_manifests()
+            .find(|manifest| manifest.format == ManifestFormat::CargoToml)
+            .map(|manifest| manifest.path.clone())
+        else {
+            continue;
+        };
+        let Some(text) = callisto_manifests::read_manifest_text(&workspace.root)(&manifest)? else {
+            continue;
+        };
+        let document = callisto_manifests::parse_manifest(&manifest, &text)?;
+        let root = callisto_manifests::enclosing_workspace_manifest(&workspace.root, &manifest, &document)?;
+        let root_document = match root {
+            Some(root) => callisto_manifests::read_manifest_text(&workspace.root)(&root)?
+                .map(|text| callisto_manifests::parse_manifest(&root, &text))
+                .transpose()?,
+            None => None,
+        };
+        let missing = callisto_manifests::missing_crates_io_metadata(&document, root_document.as_ref());
+        if !missing.is_empty() {
+            return Err(GraphError::ReleaseMetadataMissing {
+                package: id.to_string(),
+                missing: missing.join(" or "),
+            });
+        }
+    }
+    Ok(())
+}
+
 /// Refuses a first release whose name another project already owns.
 ///
 /// A package this repository has never tagged has no history here, so a version of it that the registry already holds
@@ -205,16 +268,7 @@ fn refuse_a_name_another_project_owns<R: CommandRunner, D: DependencyResolver>(
     profile: ExecutionTrustProfileV1,
     mode: LocalReleaseSource,
 ) -> Result<(), GraphError> {
-    let tags = workspace.tags()?;
-    let first_releases: std::collections::BTreeSet<ReleasePackageId> = decision
-        .entries
-        .iter()
-        .filter(|entry| {
-            crate::commands::release_decision::workspace_package(workspace, &entry.package)
-                .is_some_and(|package| tags.last_tag(&package.id).is_none())
-        })
-        .map(|entry| entry.package.clone())
-        .collect();
+    let first_releases = first_release_packages(workspace, decision)?;
     // Without an `origin` push URL a preview cannot tell whose repository the registry names.
     if first_releases.is_empty()
         || (mode == LocalReleaseSource::Preview && optional_git_remote(&workspace.root, workspace.runner)?.is_none())
@@ -317,6 +371,7 @@ fn plan_release<R: CommandRunner, D: DependencyResolver>(
         LocalReleaseSource::Trusted => observe_source(workspace, profile, ReleaseCheckout::AnyHead)?,
     };
     if check_taken_names {
+        refuse_a_crate_crates_io_would_reject(workspace, &decision)?;
         refuse_a_name_another_project_owns(workspace, &decision, &source, profile, mode)?;
     }
     refuse_a_published_version_left_behind(workspace, &decision, &resumable, &source, profile, mode)?;
@@ -549,7 +604,7 @@ mod tests {
             std::fs::write(root.join(name).join("src/lib.rs"), "\n").unwrap();
             std::fs::write(
                 root.join(name).join("Cargo.toml"),
-                format!("[package]\nname = \"{name}\"\nversion = \"1.0.0\"\nedition = \"2021\"\n{dependencies}"),
+                format!("[package]\nname = \"{name}\"\nversion = \"1.0.0\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n{dependencies}"),
             )
             .unwrap();
         }
@@ -653,7 +708,7 @@ mod tests {
             match dirt {
                 "tracked" => std::fs::write(
                     dir.path().join("Cargo.toml"),
-                    "[package]\nname = \"release-fixture\"\nversion = \"1.2.3\"\nedition = \"2021\"\n# edit\n",
+                    "[package]\nname = \"release-fixture\"\nversion = \"1.2.3\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n# edit\n",
                 )
                 .unwrap(),
                 _ => std::fs::write(dir.path().join("scratch.txt"), "x").unwrap(),
@@ -722,7 +777,7 @@ mod tests {
             std::fs::create_dir_all(root.join(name)).unwrap();
             std::fs::write(
                 root.join(name).join("Cargo.toml"),
-                format!("[package]\nname = \"{name}\"\nversion = \"1.0.0\"\nedition = \"2021\"\n"),
+                format!("[package]\nname = \"{name}\"\nversion = \"1.0.0\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n"),
             )
             .unwrap();
         }

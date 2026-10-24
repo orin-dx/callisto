@@ -10,6 +10,48 @@ use callisto_model::{ManifestDecl, ManifestFormat, ManifestRole};
 use tempfile::tempdir;
 
 #[test]
+fn crates_io_metadata_is_missing_until_description_and_a_license_are_set() {
+    let parse = |text: &str| text.parse::<toml_edit::DocumentMut>().unwrap();
+    let workspace = parse("[workspace.package]\ndescription = \"shared\"\nlicense = \"MIT\"\n");
+    let cases = [
+        ("[package]\nname = \"a\"\n", vec!["description", "license"]),
+        (
+            "[package]\nname = \"a\"\ndescription = \"  \"\nlicense = \"\"\n",
+            vec!["description", "license"],
+        ),
+        (
+            "[package]\nname = \"a\"\ndescription = \"d\"\nlicense = \"MIT\"\n",
+            vec![],
+        ),
+        (
+            "[package]\nname = \"a\"\ndescription = \"d\"\nlicense-file = \"LICENSE\"\n",
+            vec![],
+        ),
+        (
+            "[package]\nname = \"a\"\ndescription.workspace = true\nlicense.workspace = true\n",
+            vec![],
+        ),
+        (
+            "[package]\nname = \"a\"\ndescription = { workspace = true }\nlicense = \"MIT\"\n",
+            vec![],
+        ),
+    ];
+    for (manifest, missing) in cases {
+        assert_eq!(
+            missing_crates_io_metadata(&parse(manifest), Some(&workspace)),
+            missing,
+            "{manifest}"
+        );
+    }
+    // An inherited field with no workspace to read it from is unset.
+    let inherited = parse("[package]\nname = \"a\"\ndescription.workspace = true\nlicense.workspace = true\n");
+    assert_eq!(
+        missing_crates_io_metadata(&inherited, None),
+        vec!["description", "license"]
+    );
+}
+
+#[test]
 fn cargo_package_name_reads_package_name() {
     let doc: toml_edit::DocumentMut = "[package]\nname = \"my-crate\"\nversion = \"0.1.0\"\n".parse().unwrap();
     assert_eq!(cargo_package_name(&doc), Some("my-crate"));

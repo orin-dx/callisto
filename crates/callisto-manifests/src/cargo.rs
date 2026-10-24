@@ -297,6 +297,40 @@ pub fn cargo_package_name(doc: &toml_edit::DocumentMut) -> Option<&str> {
     doc.get("package").and_then(|p| p.get("name")).and_then(|n| n.as_str())
 }
 
+/// The metadata crates.io requires that `doc` leaves unset: `description`, and `license` or `license-file`. A field set
+/// to `{ workspace = true }` is read from `workspace` (the governing `[workspace.package]`), and an empty string counts
+/// as unset.
+pub fn missing_crates_io_metadata(
+    doc: &toml_edit::DocumentMut,
+    workspace: Option<&toml_edit::DocumentMut>,
+) -> Vec<&'static str> {
+    let set = |key: &str| {
+        let Some(value) = doc.get("package").and_then(|package| package.get(key)) else {
+            return false;
+        };
+        let inherited = value.get("workspace").and_then(toml_edit::Item::as_bool) == Some(true);
+        let value = if inherited {
+            workspace
+                .and_then(|workspace| workspace.get("workspace"))
+                .and_then(|table| table.get("package"))
+                .and_then(|package| package.get(key))
+        } else {
+            Some(value)
+        };
+        value
+            .and_then(toml_edit::Item::as_str)
+            .is_some_and(|text| !text.trim().is_empty())
+    };
+    let mut missing = Vec::new();
+    if !set("description") {
+        missing.push("description");
+    }
+    if !set("license") && !set("license-file") {
+        missing.push("license");
+    }
+    missing
+}
+
 /// Rewrites a dependency entry's `version` to `new_str`, preserving decor
 /// across the three shapes Cargo allows for a dependency value: a bare
 /// version string, an inline table with a `version` key, or a full

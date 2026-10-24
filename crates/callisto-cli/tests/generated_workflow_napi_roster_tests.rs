@@ -45,7 +45,7 @@ fn addon_with(root: &Path, dir: &str, crate_name: &str, npm_name: &str, broken: 
         fs::write(path.join("src/lib.rs"), "\n").unwrap();
         fs::write(
             path.join("Cargo.toml"),
-            format!("[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n[dependencies]\nnapi = \"3\"\n"),
+            format!("[package]\nname = \"{crate_name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n\n[lib]\ncrate-type = [\"cdylib\"]\n\n[dependencies]\nnapi = \"3\"\n"),
         )
         .unwrap();
     }
@@ -91,7 +91,7 @@ fn workspace_with(release_wanted: bool, broken_unrelated: bool) -> tempfile::Tem
     fs::write(root.join("crates/lib/src/lib.rs"), "\n").unwrap();
     fs::write(
         root.join("crates/lib/Cargo.toml"),
-        "[package]\nname = \"lib\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        "[package]\nname = \"lib\"\nversion = \"0.1.0\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n",
     )
     .unwrap();
     addon_with(root, "unrelated", "unrelated", "unrelated-js", broken_unrelated);
