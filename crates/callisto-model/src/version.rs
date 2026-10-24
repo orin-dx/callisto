@@ -197,6 +197,36 @@ pub(crate) enum ParsedVersionReq {
     Pep440(pep440_rs::VersionSpecifiers),
 }
 
+/// npm joins the comparators of one range with spaces (`>=1.0.0 <2.0.0`, `>= 1.0.0 < 2.0.0`); the `semver` crate wants
+/// commas. A hyphen range of two full versions (`1.0.0 - 2.0.0`) is the pair `>=1.0.0, <=2.0.0`. `None` for a clause
+/// that is a single comparator, or a hyphen range with a partial version, whose upper bound npm rounds up.
+fn npm_comparators(clause: &str) -> Option<String> {
+    let mut comparators: Vec<String> = Vec::new();
+    let mut operator = String::new();
+    let tokens: Vec<&str> = clause.split_whitespace().collect();
+    if let [low, "-", high] = tokens.as_slice() {
+        let full = |version: &str| Version::parse(version, VersionGrammar::SemVer).is_ok();
+        return (full(low) && full(high)).then(|| format!(">={low}, <={high}"));
+    }
+    for token in tokens {
+        // A comma already joining two comparators is not part of either.
+        let token = token.trim_end_matches(',');
+        if token.is_empty() {
+            continue;
+        }
+        if token == "-" {
+            return None;
+        }
+        if token.chars().all(|c| matches!(c, '<' | '>' | '=' | '^' | '~')) {
+            operator.push_str(token);
+        } else {
+            comparators.push(format!("{operator}{token}"));
+            operator.clear();
+        }
+    }
+    (operator.is_empty() && comparators.len() > 1).then(|| comparators.join(", "))
+}
+
 /// Parsed version requirement.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VersionReq {
@@ -227,6 +257,8 @@ impl VersionReq {
                             message: "empty npm range alternative".to_string(),
                         });
                     }
+                    let spaced = (ecosystem == Ecosystem::Npm).then(|| npm_comparators(clause)).flatten();
+                    let clause = spaced.as_deref().unwrap_or(clause);
                     let normalized = if ecosystem == Ecosystem::Npm && Version::parse(clause, grammar).is_ok() {
                         format!("={clause}")
                     } else if ecosystem == Ecosystem::Npm && is_npm_partial_version(clause) {
@@ -416,6 +448,33 @@ mod tests {
             assert_eq!(requirement.render(), range);
         }
         for invalid in ["^1.0.0 ||", "|| ^1.0.0", "^1.0.0 || nonsense"] {
+            assert!(VersionReq::parse(invalid, Ecosystem::Npm).is_err(), "{invalid}");
+        }
+    }
+
+    /// npm writes the comparators of one range with spaces; they must read as one range, not as an unparseable one.
+    #[test]
+    fn npm_space_separated_comparators_form_one_range() {
+        for (range, candidate, expected) in [
+            (">=1.0.0 <2.0.0", "1.5.0", true),
+            (">=1.0.0 <2.0.0", "2.0.0", false),
+            (">= 1.0.0 < 2.0.0", "1.9.9", true),
+            (">= 1.0.0 < 2.0.0", "0.9.0", false),
+            ("  >=1.0.0   <2.0.0  ", "1.2.0", true),
+            (">=1.2.3 <2.0.0 || ^3.0.0", "3.1.0", true),
+            (">=1.2.3 <2.0.0 || ^3.0.0", "2.5.0", false),
+            (">=1.0.0, <2.0.0", "1.5.0", true),
+            ("1.0.0 - 2.0.0", "2.0.0", true),
+            ("1.0.0 - 2.0.0", "2.0.1", false),
+            ("1.0.0 - 2.0.0 || 4.0.0", "4.0.0", true),
+        ] {
+            let requirement = VersionReq::parse(range, Ecosystem::Npm).unwrap_or_else(|e| panic!("{range}: {e}"));
+            let version = Version::parse(candidate, VersionGrammar::SemVer).unwrap();
+            assert_eq!(requirement.matches(&version).unwrap(), expected, "{range}: {candidate}");
+            assert_eq!(requirement.render(), range, "the wire spelling is kept");
+        }
+        // A dangling operator, and a hyphen range with a partial version (npm rounds its upper bound up), are refused.
+        for invalid in [">=1.0.0 <", "1.0 - 2", "1.0.0 - 2"] {
             assert!(VersionReq::parse(invalid, Ecosystem::Npm).is_err(), "{invalid}");
         }
     }
