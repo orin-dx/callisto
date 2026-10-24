@@ -1,0 +1,123 @@
+{
+  "cli_version": "0.12.1-nightly.202610240623.b9639ba5b",
+  "checkpoint_id": "01M5QMY8CBBDYYJ1Q6KZFY7MFV",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-24T19:07:14.339817Z",
+  "branch": "fix/taken-name-first-release",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/release/capability.rs",
+    "crates/callisto-graph/src/commands/release/local.rs",
+    "crates/callisto-graph/src/commands/release/provider/mod.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry.rs",
+    "crates/callisto-graph/src/commands/release_decision.rs",
+    "crates/callisto-graph/src/error.rs",
+    "docs/errors.md",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "f1b41783f2b3",
+  "checkpoint_transcript_start": 70387,
+  "transcript_lines_at_start": 70387,
+  "compact_transcript_start": 5256,
+  "token_usage": {
+    "input_tokens": 62,
+    "cache_creation_tokens": 49770,
+    "cache_read_tokens": 25715215,
+    "output_tokens": 23722,
+    "api_call_count": 31
+  },
+  "redaction": {
+    "replacements": 210,
+    "layers": {
+      "betterleaks": 40,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 27,
+      "credentialed_uri": 31,
+      "entropy": 132,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 338
+  },
+  "summary": {
+    "intent": "Make a first-release package whose name is already taken on the registry (e.g. crates.io) by someone else produce a clear, dedicated error instead of reading as 'already published'. This was the next item after opening PR #353.",
+    "outcome": "Implemented a taken-name check for first releases with a new error code (E322), a shared repository comparison helper, unit tests, spec/docs/changeset updates, and a passing full CI. Verified against a real crates.io collision and opened a new PR; PR #353, which still has a merge conflict, was left to resolve next.",
+    "learnings": {
+      "repo": [
+        "Error codes are defined in crates/callisto-graph/src/error.rs and documented in docs/errors.md, where rows must stay in numeric order and a count line must be bumped when adding a code.",
+        "Release behavior is specified in docs/specs/release.json with criteria IDs like REL-PUB-14; new behavior extends or adds criteria there.",
+        "Changes need a changeset file in .claude/changeset/ style dir (.changeset/*.md) before shipping.",
+        "The foreign-repository adoption warning and the new taken-name check share a repository comparison helper in provider/repository.rs; the registry module and repository module needed crate visibility changes to be reused.",
+        "plan_workspace_release and plan_local_release have multiple callers (including the init preview), so adding a check there affects init tests too.",
+        "A fake cargo harness is used in tests/e2e to simulate `cargo info` output and repository parsing."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release/capability.rs",
+          "finding": "Registry observation errors must be treated as 'can't tell' rather than failing the plan; the taken-name check must not fail when a registry is unreachable."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/repository.rs",
+          "finding": "Repository comparison logic was refactored into a shared helper so both the foreign-repo warning and the taken-name check use it."
+        }
+      ],
+      "workflow": [
+        "Running the full CI pipeline after each change surfaced regressions in the init preview test and a local.rs test that targeted code paths affected by the new check.",
+        "Verifying against a real-world crates.io name collision gave end-to-end confidence beyond the fake-registry tests.",
+        "When several PRs are open, checking mergeability first helped decide to ship the finished branch before resolving the conflicted one."
+      ]
+    },
+    "friction": [
+      "Inserted E322 before E321 in errors.md and had to reorder the rows.",
+      "The first CI run failed on the init test because the new check altered plan_workspace_release callers.",
+      "A second CI failure showed the check failed plans when the registry was unreachable, requiring a fix to treat observation errors as unknown.",
+      "Module visibility and import errors required several build-fix iterations."
+    ],
+    "open_items": [
+      "PR #353 still has a merge conflict that needs resolving.",
+      "The new taken-name PR is open and awaiting review/merge."
+    ]
+  }
+}
