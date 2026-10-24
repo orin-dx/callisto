@@ -1,0 +1,149 @@
+{
+  "cli_version": "0.12.1-nightly.202610230625.e04328a5d",
+  "checkpoint_id": "01M5P9W07HDHRNBZ58RX2QG1Z6",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-24T06:34:39.811087Z",
+  "branch": "fix/group-release-notes",
+  "checkpoints_count": 3,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/release/derive.rs",
+    "crates/callisto-graph/src/commands/release/notes.rs",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "43ae75891009",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 48,
+    "cache_creation_tokens": 35621,
+    "cache_read_tokens": 12070964,
+    "output_tokens": 19557,
+    "api_call_count": 24,
+    "subagent_tokens": {
+      "input_tokens": 2,
+      "cache_creation_tokens": 1987,
+      "cache_read_tokens": 242037,
+      "output_tokens": 8,
+      "api_call_count": 1
+    }
+  },
+  "redaction": {
+    "replacements": 210,
+    "layers": {
+      "betterleaks": 40,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 27,
+      "credentialed_uri": 31,
+      "entropy": 132,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 323
+  },
+  "summary": {
+    "intent": "Work through the local NEXT-WORK plan for the Callisto release tool (cleanup, test debt, SYS-RETRY, SYS-NAPI, derive.rs refactor), then figure out what remains before v1 and fix the fixed-group GitHub release notes bug.",
+    "outcome": "Opened PRs for W2 SYS-RETRY (#202), W1 mixed-routing test (#203), W0 docs refresh (#204), a stacked R5a/R5b/SYS-NAPI set (#205, #206, #208, stack #207), R3 derive.rs split, a spec-drift fix (#346) and a fixed-group release-notes union fix; each had `just ci` passing. Closed the mistaken PR #201 and moved the plan to a git-excluded local file. Real-tool proof, W0 branch deletion and several user decisions remain open.",
+    "learnings": {
+      "repo": [
+        "Tracking and handoff plans (NEXT-WORK.md) must stay local: they live at .claude/plans/ and are excluded via .git/info/exclude, never in a commit or PR.",
+        "Release selection used to treat a tag on HEAD as 'released'. SYS-RETRY fix: a package tagged at HEAD now has all operations observed (registry, tag, GitHub release) and stays selected until each is satisfied, while a tag on an older commit settles the version without contacting providers.",
+        "Release e2e harness fakes git, gh, cargo and the registry; its effects log now records read-only calls, so no-op assertions compare mutating calls only.",
+        "Generated workflow napi roster: the plan job's jq iterates `.artifactSlots[]`, but the intent omits that field when empty; `callisto matrix` fails with E204 for unrelated addons without a valid crate. The fix asks `matrix` per intent package and placement reads the plan job's `napi_dirs` output.",
+        "macOS bash lacks `mapfile`, so templates that run in tests use portable while-read loops.",
+        "Bare package names are now E317 and the colon form is E316; most spec drift came from specs still describing bare names resolving or giving E103.",
+        "Changeset entries naming a bare shared name fail `version` with E103, but `status` only reports an error diagnostic and exits 0.",
+        "Pre mode still refreshes and stages lockfiles/manifests; only consumption of changesets is skipped. `pre.json` lives in the configured changesets dir.",
+        "Diagnostic names on the wire are kebab-case (e.g. `range-not-round-trippable`).",
+        "A GitHub release for a fixed group takes notes only from the owning package's changelog section. Changes recorded under a non-owner member (and boilerplate like 'Released together with the lockstep group') leave the notes empty. Fix: union all members' sections, drop boilerplate, dedupe, and prefix entries from other members with the package name.",
+        "Configured changelog paths are relative to the package directory; fixed-group config needs a `name`.",
+        "Snapshot-first (insta) then move-only commits works for the derive.rs and init.rs refactors; mutation checks confirm the snapshots catch regressions."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release/notes.rs",
+          "finding": "Release notes were derived from only the owner package's changelog section; now extended to merge fixed-group members' sections."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/derive.rs",
+          "finding": "Long derive function split into stage functions with `uploads_by_package` moved into `OpIndex`; `add_forge_releases` now looks up fixed-group mates and their changelogs for notes."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/tag.rs",
+          "finding": "Tag inspection errored on multi-paragraph or signed tag messages; fixed to read only the object type, as the spec says annotation text is never compared."
+        }
+      ],
+      "workflow": [
+        "Prove with the real tool, not fakes: fake tools hid the earlier gh bug and layered PRs only compiled.",
+        "Write the failing reproduction first, then fix; mutation-test new tests (revert source to confirm they fail) when they pass on the first run.",
+        "Read the log's own `exit=` line for background `just ci`; the task-notification only reports that the wrapper script exited.",
+        "The sandbox rejects inline env, heredoc and some git-mentioning scripts, so use script files, Write and Edit instead; edits are limited to the current worktree.",
+        "Use separate worktrees per lane and run `just ci` one at a time; `gh stack` links stacked PRs natively.",
+        "Get an independent subagent review of the riskiest PR (#202), and fan out spec-drift checks across spec files to parallel agents.",
+        "Subagents sharing a /tmp scratch dir clobbered each other (one deleted another's directory); give each agent its own scratch path.",
+        "Confirm before outward-facing or irreversible actions such as deleting branches."
+      ]
+    },
+    "friction": [
+      "Plan file was only on PR #201, which was opened by mistake; the user objected and the PR was closed.",
+      "Sandbox restrictions on inline env, heredocs and git-containing commands forced script-file workarounds.",
+      "Background sessions could not edit the shared checkout's .claude/plans/NEXT-WORK.md to record PR status.",
+      "Three existing tests assumed 'tag on HEAD means released' and had to be rewritten after the SYS-RETRY fix.",
+      "CI failures along the way: init tests, local.rs tests, a stray blank line in R5a.",
+      "The fixture for the napi tests took several rounds to match E204, intent shape and dry-run report envelope.",
+      "Parallel subagents collided on scratch directories, and one ran commands inside the worktree."
+    ],
+    "open_items": [
+      "Decision D01 blocks SYS-MATURIN and W9; W10 needs two decisions (graph edges for distinct target declarations, Python dev group cascade).",
+      "W1 real-service credential check needs a decision on where it runs in CI; W11 needs credentials and an approved run.",
+      "W0 branch cleanup is not done: about 35 local branches (squash-merged) and remote branches docs/next-work-plan, docs/spec-rewrite, fix/native-resolution await per-branch approval.",
+      "#204 still lists SYS-RETRY/T08-RETRY and needs a follow-up edit once #202 merges.",
+      "Real `gh`, `cargo` and registry reads for SYS-RETRY remain unproven; #202 has had an independent review but its findings were still being worked.",
+      "Lanes B (done), C (W3 SYS-PYFILES/PYROUTES/W4), D SYS-BARRIER and F (R1 walk.rs::build) are not started; W9 waits on W2 and R1.",
+      "Pre-v1 list: real end-to-end registry run, a stability page pinning one-way doors, and decisions on ADR 12, npm OIDC, private-root exclusion, and shared fixed-group tag/title and private PyPI indexes.",
+      "The fixed-group release still has no title and one release per package, a separate design gap.",
+      "Known gaps: private root package.json listed as a package, the #290 guard's history-cap and merge-only-edit cases need re-checking, plus small cleanup (README/SECURITY pre-v1 wording, macos-13 runner, proto/callisto.toml platforms, immutable releases, manual first publish docs).",
+      "Spec-drift pass left unverified: live npm/cargo/twine/gh behavior, E320 version-commit walk, PyPI digest matching, interactive `add` wizard."
+    ]
+  }
+}
