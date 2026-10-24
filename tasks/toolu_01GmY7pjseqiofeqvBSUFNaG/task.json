@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01GmY7pjseqiofeqvBSUFNaG",
+  "agent_id": "ae930361c4545e516",
+  "subagent_type": "general-purpose",
+  "task_description": "Stale docs versus code",
+  "token_usage": {
+    "input_tokens": 206,
+    "cache_creation_tokens": 234055,
+    "cache_read_tokens": 16765771,
+    "output_tokens": 1515,
+    "api_call_count": 103
+  },
+  "started_at": "2026-10-23T20:06:42.612299-07:00",
+  "completed_at": "2026-10-23T20:16:33.125242-07:00"
+}

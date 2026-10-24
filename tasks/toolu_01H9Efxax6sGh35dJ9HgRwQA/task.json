@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01H9Efxax6sGh35dJ9HgRwQA",
+  "agent_id": "a9689c904d3df2e2c",
+  "subagent_type": "general-purpose",
+  "task_description": "Which V1 plan tasks shipped",
+  "token_usage": {
+    "input_tokens": 154,
+    "cache_creation_tokens": 171040,
+    "cache_read_tokens": 9512273,
+    "output_tokens": 2440,
+    "api_call_count": 77
+  },
+  "started_at": "2026-10-23T20:06:42.612284-07:00",
+  "completed_at": "2026-10-23T20:13:21.693828-07:00"
+}
