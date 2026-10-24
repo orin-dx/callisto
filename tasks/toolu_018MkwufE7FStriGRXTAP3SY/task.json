@@ -1,0 +1,7 @@
+{
+  "tool_use_id": "toolu_018MkwufE7FStriGRXTAP3SY",
+  "agent_id": "a8e92bc1c502c6818",
+  "subagent_type": "bug-hunter",
+  "task_description": "Adversarial: failure and recovery",
+  "started_at": "2026-10-24T09:51:59.868555-07:00"
+}

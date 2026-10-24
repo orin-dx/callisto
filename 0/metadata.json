@@ -1,0 +1,119 @@
+{
+  "cli_version": "0.12.1-nightly.202610230625.e04328a5d",
+  "checkpoint_id": "01M5QKRH7187XWAFTB1K6B49FR",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-24T18:46:38.263698Z",
+  "branch": "chore/remove-legacy-surface",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/runner.rs",
+    "crates/callisto-graph/src/commands/init/tests.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/tests.rs",
+    "crates/callisto-graph/src/config/raw.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-model/src/registry.rs",
+    "docs/config.md",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "2d6b296c1777",
+  "checkpoint_transcript_start": 69402,
+  "transcript_lines_at_start": 69402,
+  "compact_transcript_start": 5208,
+  "token_usage": {
+    "input_tokens": 58,
+    "cache_creation_tokens": 50657,
+    "cache_read_tokens": 21582485,
+    "output_tokens": 20803,
+    "api_call_count": 29
+  },
+  "redaction": {
+    "replacements": 210,
+    "layers": {
+      "betterleaks": 40,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 27,
+      "credentialed_uri": 31,
+      "entropy": 132,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 338
+  },
+  "summary": {
+    "intent": "Remove legacy config tables and related cruft from the callisto repo (follow-on to PR #351): legacy config structs and migration code, a no-op setup_git_user action input, the installer's unsafe git `main` fallback, and update the child-process credential scrub list.",
+    "outcome": "Removed the two legacy config tables with their migration code, tests and docs, deleted the no-op action input, made the installer fail closed instead of falling back to git, and updated the credential scrub lists. Full CI passed and a PR for the legacy removal was committed, pushed and opened.",
+    "learnings": {
+      "repo": [
+        "Config handling is split between crates/callisto-graph/src/config/raw.rs (raw structs) and resolve.rs (resolution/migration logic); legacy tables touched both plus tests in callisto-cli and callisto-graph.",
+        "Credential scrubbing for child processes is defined in several places that must stay in sync: callisto-graph release provider registry.rs, callisto-cli runner.rs, and callisto-model registry.rs, with a parallel redaction list and tests (credential matrix, redaction invariant, Python build credential test).",
+        "The setup-callisto GitHub action has shell-based contract tests (e.g. tests/test_crates_io_fallback.sh) that run in CI as workflow-contract checks and assert installer behavior, so installer changes require updating them.",
+        "docs/specs/release.json and docs/config.md document config options and error specs (e.g. ERR-03) and must be updated alongside config removals.",
+        "Repo uses changesets (.changeset/*.md) for change tracking, and a single full CI command that runs format and all checks.",
+        "A 'remote origin already exists' line in CI output comes from a test fixture and is expected noise."
+      ],
+      "code": [
+        {
+          "path": ".github/actions/setup-callisto/scripts/install-callisto.sh",
+          "finding": "Installer had an unsafe fallback to installing from git `main` when attestation/crates.io install was unavailable; it was removed so `latest` fails closed."
+        },
+        {
+          "path": ".github/actions/setup-callisto/tests/test_crates_io_fallback.sh",
+          "finding": "Test previously asserted the git-source fallback; now asserts that `latest` fails closed with no git install."
+        }
+      ],
+      "workflow": [
+        "Iterating on full CI after each fix surfaced follow-on failures in order (unused constant, redaction invariant test, Python build credential test, then workflow-contract shell test); fixing tests that asserted removed behavior is a recurring step in removals.",
+        "Removing a constant or feature can leave unused items that fail lint in CI (e.g. unused E197 constant), so rerun CI after deletions.",
+        "PR body was written to a temp file and passed to the PR creation command."
+      ]
+    },
+    "friction": [
+      "Multiple CI reruns needed: unused constant, redaction invariant test, Python build credential test, and the workflow-contract fallback test each failed in sequence after the changes.",
+      "Legacy references were scattered across code, tests, docs, specs and action scripts, requiring repeated grep/read passes."
+    ],
+    "open_items": []
+  }
+}
