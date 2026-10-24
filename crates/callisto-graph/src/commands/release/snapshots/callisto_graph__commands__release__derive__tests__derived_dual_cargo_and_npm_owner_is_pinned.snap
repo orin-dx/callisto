@@ -329,7 +329,7 @@ prepared:
             target: CommitSha(
                 "<commit>",
             ),
-            annotation: "Release dual@1.0.0\n\nCallisto-Hints: 1\nCallisto-Package: cargo/dual\nCallisto-Tree: dual <commit>\n",
+            annotation: "Release dual@1.0.0",
         },
     ),
     ReleaseOperationId {

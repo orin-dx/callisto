@@ -66,8 +66,8 @@ impl FakeGitTagRunner {
 impl CommandRunner for FakeGitTagRunner {
     fn run(&self, program: &str, args: &[&str], _cwd: &Path) -> Result<CommandOutput, CommandError> {
         assert_eq!(program, "git");
-        // A probe of a tag's commit finds nothing, so no other owner is evident, and the tags carry no hints.
-        if matches!(args.first(), Some(&"rev-parse" | &"grep" | &"for-each-ref")) {
+        // A probe of a tag's commit finds nothing, so no other owner is evident.
+        if matches!(args.first(), Some(&"rev-parse" | &"grep")) {
             return Ok(CommandOutput {
                 exit_code: Some(1),
                 stdout: String::new(),
