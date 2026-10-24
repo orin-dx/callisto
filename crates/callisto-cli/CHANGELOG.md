@@ -1,5 +1,10 @@
 # callisto-cli
 
+## 0.14.2
+
+- A release no longer waits past its confirmation window when a registry keeps asking to retry later. The run now gives up when the window ends, as the error already said.
+- The help for `add --package` and `matrix --package` now shows the `ecosystem/name` form they require, and the contributor and publishing guides match.
+
 ## 0.14.1
 
 - Release tags now record the package that made them and the git tree of each of its directories in the tag message, as Callisto-Package and Callisto-Tree lines. Nothing reads them yet, and tags without them keep working.
