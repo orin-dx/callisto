@@ -2,7 +2,7 @@
 
 Every key `callisto.toml` accepts, from `crates/callisto-graph/src/config/{raw,resolve,groups}.rs`. Unknown keys are rejected (`#[serde(deny_unknown_fields)]`).
 
-This reference describes current keys, not the [proposed canonical-identity/polyglot design](architecture/polyglot-v1.md). Exact references can currently be bare or qualified; prefer `cargo/name`, `npm/@scope/name` and `pypi/name` when writing new configuration. No release-owner, generic build-input or per-file PyPI configuration is implemented yet.
+This reference describes current keys, not the unimplemented parts of the [polyglot design](architecture/polyglot-v1.md). Every package named in this file must be written `cargo/name`, `npm/@scope/name` or `pypi/name`; a bare name is E317 and the colon form is E316. No release-owner, generic build-input or per-file PyPI configuration exists.
 
 ## Top-level tables
 

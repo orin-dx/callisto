@@ -25,7 +25,7 @@ Every run observes each operation's provider state immediately before that opera
 - A registry publish that is complete once its version is visible (npm) is issued and confirmed in two steps within one run: the executor issues every publish it can, lets another npm publish follow an issued one, and confirms the issued publishes together before anything is announced. The issued set lives in memory like the rest of the run; a crash between issue and confirmation leaves the operation unproven, and the rerun observes it first, as for any other effect.
 - Adoption depends on precise observation. An effect that landed differently (for example a conflicting existing tag) must fail closed, never be adopted.
 - No local record of a failed run survives it; the providers are the record.
-- Tag identity follows [ADR 9](0009-tag-identity-is-commit-and-annotation.md). Python version observation does not establish complete file-set publication; this is tracked in [the findings register](../projects/V1-FINDINGS.md).
+- Tag identity follows [ADR 9](0009-tag-identity-is-commit-and-annotation.md). A Python release is complete when every built file is on the index, not when the version is visible (E306, E307).
 
 ## Enforcement
 

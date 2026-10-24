@@ -78,7 +78,7 @@ Four traits decouple the engine from platform I/O (`callisto-model::exec`, `call
 
 `PackageId` is a flexible selector/display form; `PackageKey` is a directory locator; `ReleasePackageId` is a canonical ecosystem-qualified distribution identity. A directory can own several canonical manifests, but the current package model requires one version grammar. Registry version observations do not establish a complete Python file set or identical package bytes.
 
-Known contract failures and verification gaps are tracked in [`docs/projects/V1-FINDINGS.md`](docs/projects/V1-FINDINGS.md). The proposed canonical-identity and polyglot model is in [`docs/architecture/polyglot-v1.md`](docs/architecture/polyglot-v1.md); it is not an implemented extension seam. The existing dependency graph and release-operation DAG remain the basis of the plan.
+Remaining v1 work is in [`docs/projects/ROAD-TO-V1.md`](docs/projects/ROAD-TO-V1.md). The canonical-identity and polyglot model is in [`docs/architecture/polyglot-v1.md`](docs/architecture/polyglot-v1.md); only the parts it marks as design are not implemented, and none is an extension seam. The existing dependency graph and release-operation DAG remain the basis of the plan.
 
 ## Not covered here
 

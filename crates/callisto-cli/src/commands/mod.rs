@@ -37,7 +37,7 @@ pub(crate) fn read_json_arg(arg: &str) -> Result<String, crate::error::CliError>
 /// diagnostic that is `Error` severity afterward.
 ///
 /// Used by `snapshot`, which must abort *before* touching any
-/// files/tags on an error diagnostic -- unlike `status`/`validate`/`version`,
+/// files/tags on an error diagnostic -- unlike `status`/`version`,
 /// which fold escalated diagnostics into their report and gate on exit code
 /// instead of an `Err`.
 pub(crate) fn abort_on_graph_errors(

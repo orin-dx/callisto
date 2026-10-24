@@ -23,7 +23,7 @@ Every Git command in the `callisto` binary runs the user's `git` through `Comman
 - Callisto depends on the installed git version and parses its output.
 - Annotated tags work on runners with no git identity: the tagger falls back to the target commit's committer (#145).
 - The managed release-PR action is outside this decision: it writes its commit and branch refs through the GitHub API (`.github/actions/callisto-action/scripts/create-or-update-release-pr.sh`).
-- Today `release-pr commit-plan` reads staged bytes from the worktree, not the index (docs/projects/ROAD-TO-V1.md, v1 fix plan §1).
+- Today `release-pr commit-plan` reads staged bytes from the worktree, not the index (as of 0.10.2; `git show 07154021c:docs/projects/ROAD-TO-V1.md`, v1 fix plan §1).
 
 ## Enforcement
 

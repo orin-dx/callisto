@@ -21,7 +21,7 @@ A `package.json` with no co-located admitted package of another ecosystem, with 
 ## Consequences
 
 - A changeset naming a platform package directly resolves to unknown; changesets must target the owner package.
-- Discovery is npm-only and directory-scoped, so maturin platform packages are not covered (docs/projects/ROAD-TO-V1.md, Design). A platform named by several owners is diagnosed, not attached (`walk.rs`).
+- Discovery is npm-only and directory-scoped, so maturin platform packages are not covered ([the roadmap](../projects/ROAD-TO-V1.md) puts Maturin after v1). A platform named by several owners is diagnosed, not attached (`walk.rs`).
 - `callisto release` refuses a workspace with attached platforms (`E239`, via `ci_release_route`); it must release through `release plan`, `release artifact-manifest` and `release execute` in CI (`crates/callisto-cli/src/error.rs`).
 
 ## Enforcement
@@ -38,4 +38,4 @@ A `package.json` with no co-located admitted package of another ecosystem, with 
 
 - PR #111 (b46079a62): commit bodies and PR body; `.claude/semantic-model/core-identity.md` in b46079a62
 - docs/00-design.md §0, §5.3, §9.2 (`git show 11038b11b^:docs/00-design.md`)
-- docs/projects/ROAD-TO-V1.md, Design section
+- `git show 07154021c:docs/projects/ROAD-TO-V1.md`, Design section

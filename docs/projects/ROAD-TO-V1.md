@@ -1,71 +1,37 @@
 # Road to v1
 
-Unshipped work only. Baseline: main `07154021c` (0.10.2). [Owner requirement](../specs/REQ-DX-V1.md), [findings](V1-FINDINGS.md), [implementation and stacked-PR execution](V1-IMPLEMENTATION.md), [task definitions](V1-SYSTEM-HARDENING.json), [scoped model and prior art](../architecture/polyglot-v1.md).
+Unshipped work only. Baseline: main at 0.14.0. [Owner requirement](../specs/REQ-DX-V1.md), [scoped model and prior art](../architecture/polyglot-v1.md).
+
+Canonical `ecosystem/name` references, historical tag ownership, one tag and release per package, per-distribution publish ordering and the redacted failure tail have shipped. [ADR 12](../adr/0012-canonical-distribution-release-ownership.md) records them.
 
 ## Scope and guardrails
 
-- Rust/Cargo, npm/pnpm and Python/PyPI now, including concrete napi-rs layouts. Co-located Cargo/Maturin is after v1; separate-directory Cargo and Python packages are supported. Go and C#/.NET/NuGet are architecture examples only.
-- Canonical native distribution references; deliberate legacy migration; separate release ownership and version authority.
-- Reuse the dependency graph and operation DAG. Native dependency, build input and version coupling do not mean the same thing.
-- Native tools/CI own building, packing and authentication. No universal package manager, build scheduler, public plugin platform, service graph or cross-registry transaction.
-- Keep committed release authority and provider-observed recovery with no execution journal. Only execute receives registry secrets; no GitHub Environment or separate reviewer gate in this repo.
-- Each implementation PR updates affected specs, tests and docs, with one changeset per independent user-facing topic. Future behavior is not inserted into current specs before its implementation.
+- Rust/Cargo, npm/pnpm and Python/PyPI, including napi-rs layouts. Co-located Cargo/Maturin is after v1; separate-directory Cargo and Python packages are supported. Go and NuGet are architecture examples only.
+- Native tools and CI own building, packing and authentication. No universal package manager, build scheduler, public plugin platform or cross-registry transaction.
+- Committed release authority and provider-observed recovery with no execution journal. Only `execute` receives registry secrets; the repo has no GitHub Environment or reviewer gate.
+- Each implementation PR updates the affected specs, tests and docs, with one changeset per independent user-facing topic.
 
-## Sequence
+## Open work
 
-The execution portfolio holds the remaining work as bounded units. The execution guide defines plugin routing, agent write ownership, serial Cargo verification and main-targeted stacked PRs under the existing CI trigger.
-
-### 1. Correct the model in bounded changes
-
-- T06 and T06-HISTORY: canonical new references and legacy/history migration across selectors, config, groups, changesets, reports, pre-state and tags. Rename, manifest additions, promotion and demotion retain the right owner's history. [ADR 12](../adr/0012-canonical-distribution-release-ownership.md) remains proposed until implementation.
-- T08: shared physical effect ownership, so one tag, draft, upload or publication referenced by several distributions is executed once. The tag already waits for every registry publish of its package, and a rerun after a failed push completes the release. Retain the committed roster and no-journal executor. A future Go source tag is publication, not a universal completion marker.
-
-The plan is an implementation portfolio, not an approved future-behavior spec. Resolve wire/compatibility choices and update the matching area spec with implementation; the D01 contracts are decided in ADR 12.
-
-### 2. Reconcile generated workflows
-
-The generated build-matrix workflow builds and places napi addons only for packages in the release intent. Native lifecycle hooks remain package-owner-defined and outside Callisto's release-operation graph; Callisto does not inspect or alter them.
-
-A native Python argv test does not imply a generated Maturin workflow or authenticated private-index observation.
-
-### 3. Verify supported workflows and onboarding
-
-Each implementation unit adds its own regression/fault tests. T12 integrates these representative cases through production/native paths; T12-DX measures onboarding:
-
-| Fixture | Evidence needed |
+| Item | State |
 | --- | --- |
-| Cargo workspace | Inherited/root versions, renamed dependencies, locked resolution and index propagation |
-| npm/pnpm | Workspace ranges, aliases, paths, catalogs, peer/optional/private policy and packed metadata |
-| Python | Native versions, extras/markers, prereleases, required wheel/sdist set and partial upload |
-| Cargo+napi | Selected target builds, owner-defined lifecycle hooks preserved, Callisto-owned publication ordering and clean install/load |
-| Mixed workspace | No unrelated addon builds, foreign-name rewrites or missed affected lockfiles |
-| History/retry | Correct ownership through transitions; missing push/forge/assets/files completed with original artifacts |
+| Co-located Cargo/Maturin | After v1. Both a static and a dynamic Python version fail with E007. |
+| Production-path registry tests for Cargo and PyPI | The tests drive the publisher argv directly and bypass registry binding and observation. A path through binding is blocked because `registry_endpoint.rs` rejects non-https URLs, loopback included. Decide the approach, then build it or drop it. npm already goes through the real adapter. |
+| Native fixture evidence | Cargo and napi clean install and load, mixed workspaces and packed pnpm metadata are not recorded as a verification matrix. |
+| First-release onboarding time | The goal of under ten minutes from a fresh repo to a first published release has not been measured. |
+| Release target table | `matrix.rs` carries its own 18-triple table instead of reading rustc's target facts. |
 
-Retain local real-registry tests and record missing prerequisites as skips. Run `just ci` for implementation handoffs and workflow contract/policy checks for workflow changes. Measure fresh-repo first publication against the owner's ten-minute goal. Go/NuGet examples check model assumptions only; they are not new runtime gates.
+## Owner decisions still open
 
-## Owner decisions
+- Private and HTML-only PyPI indexes: [publishing](../publishing.md) says they need explicit support.
+- npm channel promotion. Prereleases already publish under their own dist-tag.
+- Universal checksums, and wrapper bump severity.
+- Inferred-only releases in managed CI: `status` warns, but whether inference may open the release PR is an ADR 2 question.
+- Release-commit provenance: ADR 2 documents the unkeyed digest.
+- Whether to add a workspace-wide check for discarded source errors. The lints deny `let_underscore_must_use`, `let_underscore_untyped` and `map_err_ignore`.
+- npm JSON layout normalization, and the scope of napi `.node` attestation.
+- External items: rust-cache pin, bot-PR check policy, token rotation and the retired-crate migration notices.
 
-- Canonical-reference compatibility, including colon form; source-owner representation and versioned wire migration.
-- Authenticated private PyPI/HTML-only scope, npm channel policy, universal checksum requirements and wrapper bump severity.
-- Inferred-only/manual releases: managed PR selection depends on changesets and verification requires a consumed changeset (ADR 2). Decide before broadening authorization.
-- Build or drop a workspace-wide source-error-discard check; the Cargo lint is only a partial guard.
-- Default tags for fixed/independent mode must be settled with canonical ownership, not a second tag-selection mechanism.
-- Release-commit provenance: an unkeyed digest and decision/diff agreement do not prove which producer created the file. Decide whether existing authority is sufficient.
-- Rust-cache pin in orin-dx/actions, bot-PR check policy and token rotation remain owner items.
+## After 1.0
 
-## Other open work retained
-
-- npm writes normalize arbitrary JSON layout; decide whether more than key order/indentation/line endings is needed.
-- Publish final migration notices for retired callisto-format, callisto-vcs, callisto-conventional and callisto-changelog, naming callisto-model or callisto-graph.
-- Evaluate rustc-provided target facts instead of the 18-triple table without making the core model Rust-target-specific.
-- Require kind in explicit registry entries and attest napi .node outputs; define scope before adding a gate.
-- Pin the floating moon minor in .prototools after checking proto compatibility.
-
-## After 1.0 (additive)
-
-- OIDC trusted publishing for npm, crates.io and PyPI: [plan](OIDC-TRUSTED-PUBLISHING.md).
-- Effective-config explain from ConfigProvenance; remove redundant default-valued config afterward.
-- .sha256 release-asset sidecars and proto verification.
-- Glob fixed-group members.
-- Auto-include README, LICENSE and CHANGELOG in release archives.
-- Go/NuGet adapters and additional relationships only when concrete use cases and native tests justify them.
+OIDC trusted publishing ([plan](OIDC-TRUSTED-PUBLISHING.md)), `cargo-semver-checks` on the promised surfaces (schema output, config and report formats), and a review of the remaining `expect` calls.

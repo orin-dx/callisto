@@ -6,7 +6,7 @@ This proposal revises ADR 11's selector promotion when implemented. ADR 11 remai
 
 ## Context
 
-The owner selected Rust/Cargo, npm/pnpm and Python/PyPI as the current scope, with architectural room for Go and .NET/NuGet. The system audit found that display promotion leaks into dependency rewrites, historical ownership and shared tag/forge ordering. Fresh Cargo/Maturin projects also fail because one package requires one grammar. Evidence and implementation work are recorded in [the findings register](../projects/V1-FINDINGS.md).
+The owner selected Rust/Cargo, npm/pnpm and Python/PyPI as the current scope, with architectural room for Go and .NET/NuGet. The system audit found that display promotion leaks into dependency rewrites, historical ownership and shared tag/forge ordering. Fresh Cargo/Maturin projects also fail because one package requires one grammar. The evidence is in `git show 07154021c:docs/projects/V1-FINDINGS.md`.
 
 ## Proposed decision
 
@@ -37,4 +37,4 @@ Pre-v1 breaking references are allowed by the owner requirement, but historical 
 
 - Owner scope and canonical-identity discussion, 2026-09-26; [REQ-DX-V1](../specs/REQ-DX-V1.md).
 - [Scoped model and primary-source prior art](../architecture/polyglot-v1.md).
-- [System findings and verification limits](../projects/V1-FINDINGS.md).
+- System findings and verification limits: `git show 07154021c:docs/projects/V1-FINDINGS.md`.

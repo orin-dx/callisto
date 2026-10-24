@@ -16,4 +16,4 @@ How the code implements these specs: [`ARCHITECTURE.md`](../../ARCHITECTURE.md) 
 
 When code and a spec disagree, reproduce the behavior first. Fix the spec if the intended contract changed; otherwise fix the code.
 
-Known failing contracts and unverified integrations are recorded in [V1-FINDINGS](../projects/V1-FINDINGS.md), not converted into successful exceptions. Proposed canonical-reference, version-authority and required-output behavior lives in [the scoped design](../architecture/polyglot-v1.md) and [sequencing plan](../projects/V1-SYSTEM-HARDENING.json). Amend the matching current-behavior spec in the same change that implements it; these documents do not make future behavior current.
+Remaining v1 work is in [the roadmap](../projects/ROAD-TO-V1.md). Behavior not yet implemented, such as co-located Cargo/Maturin version derivation, lives in [the scoped design](../architecture/polyglot-v1.md). Amend the matching current-behavior spec in the same change that implements it; the design does not make future behavior current.

@@ -1,6 +1,6 @@
 # Scoped polyglot release model
 
-Status: proposed v1 design, not current behavior. Owner scope: Rust/Cargo, npm/pnpm and Python/PyPI now; leave room for Go and .NET/NuGet without implementing their publishers. Current contracts remain in [the specs](../specs/INDEX.md). Work is sequenced in [the roadmap](../projects/ROAD-TO-V1.md) and [the plan](../projects/V1-SYSTEM-HARDENING.json).
+Status: partly implemented. Canonical references, derived release ownership, per-distribution publish ordering, registry-before-tag ordering, PyPI file-set completion, platform packages before their owner, the `publish-url` split and prerelease npm dist-tags are current behavior ([ADR 12](../adr/0012-canonical-distribution-release-ownership.md)). Co-located Cargo/Maturin version derivation, build-input relationships, authenticated private PyPI, npm dist-tag promotion and the Go and NuGet adapters are design only. Owner scope: Rust/Cargo, npm/pnpm and Python/PyPI now; leave room for Go and .NET/NuGet without implementing their publishers. Current contracts remain in [the specs](../specs/INDEX.md). Remaining work is in [the roadmap](../projects/ROAD-TO-V1.md).
 
 ## Four concepts
 
@@ -19,7 +19,7 @@ Keep existing types where they already express these responsibilities. A `Packag
 - Short labels may remain in human output, but never become an alternate identity authority. Ecosystem-specific native names stay available for manifest rewrites and publisher arguments.
 - A bare name in a changeset or `pre.json` resolves through established ownership; ambiguous input fails with an actionable diagnostic. Persisted release documents are already canonical-only.
 - Adding or removing a same-named sibling, adding a canonical manifest or changing the primary manifest must not transfer another owner's history or regress the last release. A genuine rename/move needs a declared migration boundary, not guessing from current path existence.
-- Keep [ADR 11](../adr/0011-directory-keyed-package-identity.md) in force, including its default tag `{display id}@{version}`, until [the proposed replacement](../adr/0012-canonical-distribution-release-ownership.md) is implemented and accepted. Do not rename existing tags to canonicalize selectors; a native rename is declared with `previous-tag-templates`.
+- Keep [ADR 11](../adr/0011-directory-keyed-package-identity.md) in force, including its default tag `{display id}@{version}`, which [ADR 12](../adr/0012-canonical-distribution-release-ownership.md) keeps. Do not rename existing tags to canonicalize selectors; a native rename is declared with `previous-tag-templates`.
 
 ## Native versions and dependencies
 
@@ -36,7 +36,7 @@ For pnpm, retain the difference between `workspace:*`, explicit workspace ranges
 
 ## Effects and completion
 
-For current registry ecosystems, the proposed default is required registry publications confirmed before a shared tag and public GitHub announcement. A draft and uploads may be preparatory effects; public publication waits for all required outputs of that release owner. Exact draft timing must be specified with the implementation. This is Callisto's policy, not a universal ecosystem order.
+For current registry ecosystems, the default is required registry publications confirmed before a shared tag and public GitHub announcement. A draft and uploads may be preparatory effects; public publication waits for all required outputs of that release owner. This is Callisto's policy, not a universal ecosystem order.
 
 Within Callisto's release-operation graph, one physical tag, forge release or upload has one owner even when several distributions share it. Native package-manager lifecycle hooks retain package-owner-defined behavior and environment. Callisto does not inspect, rewrite, suppress or reject those hooks; any effects they initiate are outside Callisto's graph and remain the package owner's responsibility. For example, NAPI `prepublishOnly` may publish platform packages or GitHub assets while Callisto also performs configured release effects.
 
@@ -65,7 +65,7 @@ These are model checks only. Go/NuGet discovery, rewriting, packing, authenticat
 
 Sources checked on 2026-09-26: [Maturin version authority](https://www.maturin.rs/metadata), [pnpm workspace transformations](https://pnpm.io/workspaces), [catalogs](https://pnpm.io/catalogs), [Python name normalization](https://packaging.python.org/en/latest/specifications/name-normalization/), [PEP 440](https://packaging.python.org/en/latest/specifications/version-specifiers/), [PyPI one-file uploads](https://docs.pypi.org/api/upload/), [per-file index evidence](https://packaging.python.org/en/latest/specifications/simple-repository-api/), [NAPI publication hooks](https://napi.rs/docs/cli/pre-publish), [Go module versions](https://go.dev/doc/modules/version-numbers), [NuGet normalization](https://learn.microsoft.com/en-us/nuget/concepts/package-versioning), [NuGet native assets](https://learn.microsoft.com/en-us/nuget/create-packages/native-files-in-net-packages).
 
-Competitor release workflows were inspected, not executed. Fresh co-located static and dynamic Cargo/Maturin discovery fixtures both reproduced E007, and the maturin 1.15.0 metadata hook agreed with `pep440_rs` on every version tried. Native pack/install tests and partial-upload fault injection remain planned; see [the findings register](../projects/V1-FINDINGS.md).
+Competitor release workflows were inspected, not executed. Fresh co-located static and dynamic Cargo/Maturin discovery fixtures both reproduced E007, and the maturin 1.15.0 metadata hook agreed with `pep440_rs` on every version tried. Partial-upload fault injection shipped with the PyPI file-set work. Native pack/install tests remain open in [the roadmap](../projects/ROAD-TO-V1.md).
 
 ## Non-goals
 

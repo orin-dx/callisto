@@ -145,8 +145,8 @@ mod tests {
     fn resolve_native_with_fallback_lists_the_candidates_own_native_name_not_the_primary_name() {
         // The Pypi candidate's stored value is a Cargo-primary package whose
         // pyproject.toml declares a *different* name ("foo-py") -- the
-        // diagnostic must say "pypi:foo-py" (what Pypi actually calls it),
-        // not "pypi:foo" (this package's unrelated Cargo/primary name).
+        // diagnostic must say "pypi/foo-py" (what Pypi actually calls it),
+        // not "pypi/foo" (this package's unrelated Cargo/primary name).
         let mut index = IdentityIndex::default();
         let owner = PackageId::Bare("foo".to_string());
         index

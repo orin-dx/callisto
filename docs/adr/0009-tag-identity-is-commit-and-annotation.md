@@ -33,5 +33,5 @@ An existing tag is the planned tag when it names the planned commit and is annot
 
 ## Sources
 
-- Owner decision, `docs/projects/ROAD-TO-V1.md` "v1 fix plan" decisions (2026-09-25)
+- Owner decision, `git show 07154021c:docs/projects/ROAD-TO-V1.md` "v1 fix plan" decisions (2026-09-25)
 - The fix in this PR: "fix: stop comparing tag annotation text in release rerun observation"

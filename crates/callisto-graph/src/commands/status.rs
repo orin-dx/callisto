@@ -133,9 +133,8 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
 
     let mut diagnostics = ws.graph.diagnostics().to_vec();
     diagnostics.extend(tags.diagnostics.iter().cloned());
-    // Fold in every well-formedness diagnostic `validate` used to
-    // report (EmptyChangeset, UnknownPackage, AmbiguousPackageName,
-    // InvalidPackageName) now that `validate` is gone.
+    // Fold in every changeset well-formedness diagnostic (EmptyChangeset, UnknownPackage, AmbiguousPackageName,
+    // InvalidPackageName).
     diagnostics.extend(changeset_wellformedness_diagnostics(
         all_packages.iter().copied(),
         &ws.identity,
@@ -193,9 +192,7 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
     })
 }
 
-/// The per-changeset well-formedness diagnostics `validate` used to emit
-/// (crates/callisto-graph/src/commands/validate.rs, now removed): entries shape and
-/// package-name resolution. Resolves through the same identity index
+/// The per-changeset well-formedness diagnostics: entries shape and package-name resolution. Resolves through the same identity index
 /// `resolve_pending_changesets` does, but this scan must never abort early,
 /// so an unknown or ambiguous entry becomes a diagnostic instead of an
 /// early return.
