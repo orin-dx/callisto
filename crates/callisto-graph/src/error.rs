@@ -655,6 +655,13 @@ pub enum GraphError {
     )]
     ReleaseMetadataMissing { package: String, missing: String },
 
+    #[error("snapshot tag `{tag}` must be non-empty and use only letters, digits and `-`")]
+    #[diagnostic(
+        code(E324),
+        help("Pass a tag such as `canary` or `pr-42`; it becomes part of the pre-release version.")
+    )]
+    SnapshotTagInvalid { tag: String },
+
     #[error("release precondition unmet: requires {requirement}")]
     #[diagnostic(
         code(E170),

@@ -193,6 +193,20 @@ fn config(root: &Path) -> String {
     std::fs::read_to_string(root.join("callisto.toml")).unwrap()
 }
 
+#[test]
+fn an_init_with_no_settings_says_the_defaults_apply_instead_of_printing_an_empty_file() {
+    let dir = workspace(1);
+    let run = run_init(dir.path(), yes(InitVersioning::Independent), false, vec![], false);
+    run.result.unwrap();
+    assert!(
+        run.out
+            .contains("callisto.toml: no settings needed, the defaults apply."),
+        "{}",
+        run.out
+    );
+    assert!(!run.out.contains("# callisto configuration"), "{}", run.out);
+}
+
 fn nothing_written(root: &Path) -> bool {
     !root.join("callisto.toml").exists()
         && !root.join(".changeset").exists()

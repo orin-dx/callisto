@@ -331,7 +331,7 @@
     },
     {
       "id": "CLI-SNAP-01",
-      "criterion": "`callisto snapshot --tag <tag>` sets each SemVer package's manifest version to `0.0.0-<tag>-<short HEAD sha>` and each PEP 440 package's to `0.0.0.dev0+<tag>.<short HEAD sha>`, prints each `from → to`, and leaves changesets in place."
+      "criterion": "`callisto snapshot --tag <tag>` sets each SemVer package's manifest version to `0.0.0-<tag>-<short HEAD sha>` and each PEP 440 package's to `0.0.0.dev0+<tag>.<short HEAD sha>`, prints each `from → to`, and leaves changesets in place. A tag that is empty or has a character other than a letter, digit or `-` is rejected with E324 before anything is planned."
     },
     {
       "id": "CLI-COMP-01",

@@ -9,6 +9,9 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     tag: &str,
 ) -> Result<(VersionPlan, SnapshotReport), GraphError> {
+    if tag.is_empty() || !tag.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return Err(GraphError::SnapshotTagInvalid { tag: tag.to_owned() });
+    }
     // Resolve HEAD for real rather than faking it, so unrelated snapshot runs never collide.
     let sha = ws.git_access().head_sha()?;
     let sha_short = sha.short();
@@ -194,7 +197,7 @@ mod tests {
     use std::path::Path;
 
     use crate::locate::IgnoreWalkLocator;
-    use crate::Workspace;
+    use crate::{GraphError, Workspace};
     use callisto_model::{CommandError, CommandOutput, CommandRunner};
 
     use super::plan_snapshot;
@@ -253,6 +256,28 @@ mod tests {
             result.is_err(),
             "plan_snapshot must propagate a tags-build failure as Err, not silently proceed"
         );
+    }
+
+    #[test]
+    fn plan_snapshot_rejects_a_tag_that_cannot_be_part_of_a_version() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        git_init_with_commit(root);
+        std::fs::create_dir_all(root.join("pkg-a")).unwrap();
+        std::fs::write(
+            root.join("pkg-a/Cargo.toml"),
+            "[package]\nname = \"pkg-a\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        let locator = IgnoreWalkLocator::new(root);
+        let runner = callisto_fixtures::git::GitRunner;
+        let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+
+        for tag in ["", "bad tag", "x/y", "ünï", "a.b"] {
+            let error = plan_snapshot(&ws, tag).expect_err(tag);
+            assert!(matches!(error, GraphError::SnapshotTagInvalid { .. }), "{tag}: {error}");
+        }
+        assert!(plan_snapshot(&ws, "pr-42").is_ok());
     }
 
     /// Plan_snapshot's synthetic snapshot version overwrites every
