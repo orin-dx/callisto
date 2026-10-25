@@ -1,0 +1,139 @@
+{
+  "cli_version": "0.12.1-nightly.202610240623.b9639ba5b",
+  "checkpoint_id": "01M5R7WTHRKB7YGNXY0GK4JTTC",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-25T00:38:29.982977Z",
+  "branch": "perf/measure",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/release.rs",
+    "crates/callisto-graph/src/commands/mod.rs",
+    "crates/callisto-graph/src/commands/release/capability.rs",
+    "crates/callisto-graph/src/commands/release/local.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "55387adfc86b",
+  "checkpoint_transcript_start": 75612,
+  "transcript_lines_at_start": 75612,
+  "compact_transcript_start": 5563,
+  "token_usage": {
+    "input_tokens": 94,
+    "cache_creation_tokens": 64791,
+    "cache_read_tokens": 13811913,
+    "output_tokens": 35279,
+    "api_call_count": 47,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 210,
+    "layers": {
+      "betterleaks": 40,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 27,
+      "credentialed_uri": 31,
+      "entropy": 132,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 346
+  },
+  "summary": {
+    "intent": "Continue improving callisto: first finish stacking open PRs correctly (#360, #361, #363, with #359 independent), then pursue amazing performance, great DX and reliability by measuring and optimizing the CLI against real workloads.",
+    "outcome": "Built a native GitHub stack #360 → #361 → #363 (merged without force-push, `just ci` green), then opened a new performance PR that loads the workspace once, runs the ls-remote tag probe on a scoped thread, and parallelizes release observation loops and the moved-past-version check; CI passed locally.",
+    "learnings": {
+      "repo": [
+        "Open PRs #361 and #363 both edit `init.rs`, its tests, `docs/errors.md` and `error.rs`, so they must be stacked rather than left independent; #359 touches different files and stays on `main`.",
+        "A pre-commit hook rejects broken files, so a bad merge resolution did not commit and nothing broken was pushed.",
+        "`just ci` is the full local check (includes clippy, which flags collapsible `if`s); a `bench` recipe exists for command benchmarks.",
+        "`CommandRunner` is already `Send + Sync`, and the provider context types are `Sync`, so observation loops can be parallelized without extra bounds.",
+        "`cargo info` costs ~100 ms per call and barely parallelizes because cargo takes a lock; PyPI observation already uses direct HTTP, so the Cargo path is a candidate for the same approach.",
+        "In a single-package `release --dry-run` with no tags the ls-remote probe did not run, so another part of the plan (the tag provider's ls-remote observation) also makes the network call.",
+        "#360 also edits `release/local.rs`, so overlap with the perf PR had to be checked before shipping."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release/local.rs",
+          "finding": "Added `plan_loaded_release` entry point that reuses an already-loaded workspace and keeps the registry name check; exported through `commands/mod.rs`."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/capability.rs",
+          "finding": "Added an order-preserving bounded worker helper (`in_parallel`) used by three observation loops; also exposed for the per-package moved-past-version check."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/release.rs",
+          "finding": "CLI release entry now loads the workspace once, starts the tag-missing-from-origin probe on a scoped thread, then plans with the loaded workspace."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/init/tests.rs",
+          "finding": "Merge of #361 into #363 conflicted because both sides add tests at the same spot; scripted resolution dropped a closing brace and a `#[test]` line."
+        }
+      ],
+      "workflow": [
+        "When stacking PRs with overlapping edits, merge each branch into the one above it and push without force-push.",
+        "A scripted conflict resolution can produce invalid code; run the relevant tests immediately after resolving, before committing.",
+        "Measure before optimizing: benchmark, list process shapes per command and profile external processes with shims, then re-time after each change.",
+        "Check overlap with open PR branches before opening a new PR touching shared files.",
+        "Reproduce reported issues before building; unreproducible items (E121 message) were dropped."
+      ]
+    },
+    "friction": [
+      "Scripted merge conflict resolution produced invalid Rust and was nearly committed; the hook caught it.",
+      "The first perf probe had no effect in the single-package case because a different code path made the network call, requiring a hunt for all ls-remote call sites.",
+      "`cargo info` serializes on a cargo lock, limiting the parallelism gain for the Cargo path.",
+      "Clippy flagged a collapsible `if` that required an extra CI round."
+    ],
+    "open_items": [
+      "Python `~=` precision and Poetry comment loss: to be reproduced before building, skipped if not reproducible.",
+      "Cargo registry observation could use a direct HTTP call (as PyPI does) instead of `cargo info` to avoid the lock bottleneck.",
+      "Merge #360, #361, #363 in order and retarget as GitHub prompts; #359 and the new perf PR are awaiting review/merge.",
+      "Continue the performance and DX dogfooding on real repositories."
+    ]
+  }
+}
