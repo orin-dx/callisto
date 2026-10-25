@@ -6,8 +6,8 @@ use callisto_model::CommandRunner;
 use crate::locate::membership::{parse_error, read_root_manifest};
 use crate::locate::LocateError;
 
-/// Finds the root between `start` and its Git toplevel (never above it): the nearest
-/// workspace marker, else the outermost package manifest so vendored packages can't shadow it.
+/// Finds the root between `start` and its Git toplevel (never above it): the nearest workspace marker (a
+/// `callisto.toml` counts), else the outermost package manifest so vendored packages can't shadow it.
 ///
 /// The toplevel comes from `git rev-parse --show-toplevel` (via `runner`), not a hand-rolled
 /// walk for a `.git` entry -- `git` alone honors `GIT_DIR`/`GIT_WORK_TREE`/
@@ -85,7 +85,9 @@ fn is_workspace_root(dir: &Path) -> Result<bool, LocateError> {
         }
     }
 
-    Ok(path_exists(&dir.join("pnpm-workspace.yaml"))? || dir.join(".moon").is_dir())
+    Ok(path_exists(&dir.join("pnpm-workspace.yaml"))?
+        || dir.join(".moon").is_dir()
+        || path_exists(&dir.join("callisto.toml"))?)
 }
 
 #[cfg(test)]
