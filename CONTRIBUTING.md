@@ -14,6 +14,8 @@ Agent-specific rules (invariants, fixing-bugs workflow, specs/plans, crate/licen
 
 - Rust toolchain: pinned in `rust-toolchain.toml`, installed via `rustup`.
 - [`just`](https://github.com/casey/just): command runner for all workspace recipes.
+- Cargo tools the recipes call: `cargo-nextest`, `cargo-llvm-cov`, `cargo-deny`, `cargo-machete` and `cargo-semver-checks`.
+- Workflow linters `zizmor` and `actionlint`: tests that lint the workflow `callisto init` generates run them. A missing one skips the check on your machine and fails the test under CI.
 - [`moon`](https://moonrepo.dev): a few recipes (`build`, `fmt`, `fmt-check`, `lint-affected`) delegate to it; installed like any other tool via [proto](https://moonrepo.dev/proto) (`proto/callisto.toml` shows the same pattern for installing `callisto` itself).
 
 ```bash
@@ -40,7 +42,12 @@ just ci      # full local verification pipeline
 | `just audit` | `cargo deny check` (advisories, bans, licenses, sources) |
 | `just doc-check` | `cargo doc --no-deps --workspace` with warnings as errors |
 | `just coverage [threshold]` | `cargo llvm-cov` workspace report to `lcov.info`; `just coverage 90` is what CI's `coverage` job and `just ci` both call, so a coverage failure always reproduces locally |
-| `just coverage-per-crate [threshold]` | Same profile data, gated per crate instead of workspace-total (CI runs this non-blocking today; default threshold 90) |
+| `just coverage-per-crate [threshold]` | Same profile data, gated per crate instead of workspace-total; CI runs it blocking at 90 |
+| `just machete` | Unused dependencies (`cargo machete`); CI runs it |
+| `just features-boundary` | Fails if the dev-only `test-util` feature reaches the shipped `callisto-cli` build; CI runs it |
+| `just check-api` | Public API compared with the published crates (`cargo semver-checks`); CI runs it on the release PR, where versions have moved |
+| `just bench` | Wall time and process counts for `status`, `version --dry-run` and `release --dry-run` over generated workspaces |
+| `just fuzz-check` | Compiles the fuzz targets so they cannot rot; CI runs it |
 | `just zizmor` | Static security audit of workflow/action YAML (requires `zizmor`) |
 | `just workflow-contracts` | Release-workflow contract/policy tests, action pin verification, installer tests — what the CI `workflow-contracts` job runs besides actionlint |
 | `just release-workflow-behavior` | Release lifecycle exercised at the real CLI boundary with faked registry/Git/forge/attestation providers |
@@ -49,7 +56,9 @@ just ci      # full local verification pipeline
 | `just hooks` | Installs the native `pre-commit`/`pre-push` git hooks above |
 | `just clean` | Clears moon task caches, `cargo clean`, removes `lcov.info` / `callisto-schema.json` |
 
-Maintainer-only recipes not part of the normal PR loop: `mutants` (mutation testing), `machete` (unused deps), `check-api` (SemVer diff via `cargo-semver-checks`), `fuzz`, `provider-fixtures`/`provider-contract` (re-capture/verify the real-provider test fixtures under `testing/fixtures/`).
+Maintainer-only recipes not part of the normal PR loop: `mutants` (mutation testing), `fuzz` (runs a fuzz target; needs nightly and `cargo-fuzz`), `provider-fixtures`/`provider-contract` (re-capture/verify the real-provider test fixtures under `testing/fixtures/`).
+
+A weekly workflow (`callisto-quality.yml`, also runnable by hand) fuzzes the four parser targets for ten minutes each and runs mutation testing over `callisto-model` and `callisto-manifests` in six shards. Both report and never block a merge: a crash uploads its input as an artifact, and the surviving mutants of each shard are listed in its job summary. A surviving mutant is a change that passes every test, so each one is either a missing test or dead code.
 
 For iterating on one crate instead of the whole workspace, see AGENTS.md's scoped-iteration guidance (`cargo test -p <crate>`, one invocation at a time — never parallel cargo builds).
 
@@ -81,11 +90,14 @@ CI (`.github/workflows/callisto-ci.yml`) gates on:
 - **`clippy`** — `just lint` + `just doc-check`
 - **`test`** — `just test`, `just release-workflow-behavior`, and the Release-PR action's binary contract test, on Linux and macOS
 - **`release-artifact-preflight`** — builds the release binary for each configured target (macOS arm64 and x64, Linux x64 gnu, arm64 gnu and x64 musl)
-- **`coverage`** — `just coverage 90` (workspace line coverage must not regress below 90%); per-crate coverage runs non-blocking
+- **`coverage`** — `just coverage 90` (workspace line coverage must not regress below 90%) and `just coverage-per-crate 90` (each crate too)
+- **`hygiene`** — `just machete`, `just features-boundary`, and on the release PR `just check-api`
 - **`security`** — `just audit`
 - **`validate`** — changeset and workspace-status validation
 - **`release-asset-attestation`** — downloads the latest release's Linux asset with CI's read-only token and verifies its attestation (same-repo PRs and pushes to main only; skipped when no release exists)
 - **`workflow-contracts`** — actionlint, zizmor, action pin verification, and the release-workflow contract/policy tests
+
+Tests earn their place by covering a behavior, an edge case or an error state, not a line. A change that adds a diagnostic code also adds its row to [docs/errors.md](docs/errors.md); a test fails without it.
 
 Before opening a PR: run `just ci` locally (covers everything above except the Docker-based actionlint step and the binary-dependent artifact-preflight build) and make sure `just pre-push` is clean. Add a changeset for any user-facing change (see above). Follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages.
 

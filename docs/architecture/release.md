@@ -77,6 +77,14 @@ Provider reads use native tools for Cargo and npm, and `curl` for PyPI's PEP 691
 
 Adopting a version that is already published is by design, so a rerun can finish a half-done release. Because a foreign package would be adopted the same way, a Cargo or npm adoption also reads the repository the registry records for that version (`repository:` in `cargo info`, `repository` in `npm view`) and warns, without blocking, when it names a different repository from `origin`. A registry that records none, or a failed read, says nothing; PyPI's simple index records no repository, so it is not checked.
 
+Planning looks at many packages at once, so its reads are built to scale with the number of packages, not to add a process or a round trip per package:
+
+- Observations that the plan makes before any effect (the published-version check, the name check, the resumable-release check) are independent reads and run side by side, up to eight at a time, in package order.
+- The name check is advisory, so it waits at most one second between its own tries and says nothing when a registry does not answer; the checks a release depends on keep the full retry schedule. An unreachable network therefore costs a preview seconds, not a minute.
+- Git history for all packages is read in batches (one `cat-file --batch` for manifests, one for each package's candidate version commit and its parent, one `cat-file --batch-check` that compares package directories by tree id), plus one `git log` per package.
+- The workspace is loaded once per command, and the one `git ls-remote` that finds tags missing from `origin` runs beside planning.
+- `just bench` reports wall time and git process counts per command; a change that adds a git process per package fails review.
+
 These reads are version-level checks, not proof of identical bytes or the npm dist-tag. Registry endpoints must be HTTPS. Read-only observations before an effect retry 429, 5xx, rate-limited 403, and transport failures with backoff and `Retry-After`. Effects are never blindly retried; outbound commands have deadlines.
 
 After a registry publish the version may not be readable yet: npm serves a package's document with `max-age=300`, a missing package's 404 included, so a read just before the publish can answer stale for five minutes. The confirmation therefore waits by time, not tries, treating absent and unreachable as lag until the registry's window (`confirm-timeout`, default 6 minutes for npm and PyPI, 2 for Cargo) is spent, then fails with E157. An exact version or a conflict ends the wait at once.

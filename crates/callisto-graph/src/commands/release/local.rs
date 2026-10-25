@@ -781,6 +781,82 @@ mod tests {
         ));
     }
 
+    fn validate<'a>(
+        root: &Path,
+        intent: ReleaseIntentV1,
+    ) -> Result<crate::commands::ValidatedReleaseIntent<'a>, GraphError> {
+        crate::commands::validate_local_release_intent(
+            root,
+            &crate::IgnoreWalkLocator::new(root),
+            &RealGitRunner,
+            intent,
+        )
+    }
+
+    /// A trusted intent for the fixture on `main`, validated.
+    fn validated_on_main(root: &Path) -> (ReleaseIntentV1, crate::commands::ValidatedReleaseIntent<'static>) {
+        git(root, &["checkout", "-q", "main"]);
+        let intent = plan(root, &[], LocalReleaseSource::Trusted)
+            .unwrap()
+            .expect("unreleased");
+        let validated = validate(root, intent.clone()).unwrap();
+        (intent, validated)
+    }
+
+    #[test]
+    fn an_intent_is_refused_once_the_repository_has_moved_past_the_commit_it_was_planned_at() {
+        let (dir, _) = fixture();
+        git(dir.path(), &["checkout", "-q", "main"]);
+        let intent = plan(dir.path(), &[], LocalReleaseSource::Trusted)
+            .unwrap()
+            .expect("unreleased");
+        std::fs::write(dir.path().join("NOTES.md"), "later\n").unwrap();
+        git(dir.path(), &["add", "NOTES.md"]);
+        git(dir.path(), &["commit", "-q", "-m", "later"]);
+
+        let error = validate(dir.path(), intent).unwrap_err();
+        assert!(matches!(error, GraphError::ReleaseIntentStale { .. }), "{error:?}");
+    }
+
+    #[test]
+    fn trust_is_rechecked_before_each_operation_and_fails_once_head_has_moved() {
+        use crate::commands::ReleaseProviderSet;
+        let (dir, _) = fixture();
+        let (_, validated) = validated_on_main(dir.path());
+        validated
+            .recheck_trust()
+            .expect("an untouched repository is still trusted");
+
+        std::fs::write(dir.path().join("NOTES.md"), "moved\n").unwrap();
+        git(dir.path(), &["add", "NOTES.md"]);
+        git(dir.path(), &["commit", "-q", "-m", "moved"]);
+        let error = validated.recheck_trust().unwrap_err();
+        assert!(matches!(error, GraphError::ReleaseIntentStale { .. }), "{error:?}");
+    }
+
+    #[test]
+    fn trust_is_rechecked_against_the_remote_the_intent_was_bound_to() {
+        use crate::commands::ReleaseProviderSet;
+        let (dir, _) = fixture();
+        let (_, validated) = validated_on_main(dir.path());
+
+        git(
+            dir.path(),
+            &[
+                "remote",
+                "set-url",
+                "--push",
+                "origin",
+                "https://github.com/someone-else/elsewhere.git",
+            ],
+        );
+        let error = validated.recheck_trust().unwrap_err();
+        assert!(
+            matches!(error, GraphError::ReleaseIntentStale { .. }),
+            "a release must not push to a different remote than it was planned for: {error:?}"
+        );
+    }
+
     #[test]
     fn preview_and_trusted_derive_the_same_intent() {
         let (dir, _) = fixture();

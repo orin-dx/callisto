@@ -56,7 +56,7 @@ release                                                 decision -> intent -> en
   per operation                                         observe provider -> adopt, or perform and confirm
 ```
 
-Package ordering, cycle reports and release-operation readiness all run on `michi-graph` (validation reports every problem at once; edge kinds are chosen per validation). Git access goes through `GitAccess` (`callisto_model::vcs`).
+Package ordering, cycle reports and release-operation readiness all run on `michi-graph` (validation reports every problem at once; edge kinds are chosen per validation). Git access goes through `GitAccess` (`callisto_model::vcs`). Reads that cover every package are batched or run side by side, so a command's cost does not grow by a process or a round trip per package ([release](docs/architecture/release.md) lists them; `just bench` measures them).
 
 Depth:
 

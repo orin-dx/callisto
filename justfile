@@ -109,6 +109,10 @@ fuzz-check:
 mutants:
     cargo mutants --workspace
 
+# The shipped binary is built with the features its crates default to, and none of them is the dev-only `test-util`.
+features-boundary:
+    ! cargo tree -p callisto-cli -e normal,build -f '{p} {f}' | grep 'test-util'
+
 # Run unused dependency check via cargo-machete
 machete:
     cargo machete

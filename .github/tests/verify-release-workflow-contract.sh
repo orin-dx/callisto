@@ -120,3 +120,11 @@ if rg -U 'run: \|(?s:.*?)\$\{\{ inputs\.' .github/actions/setup-callisto/action.
   printf 'workflow contract failed: composite-action inputs must enter shell through named environment variables\n' >&2
   exit 1
 fi
+
+# The tests that lint generated workflows fail without zizmor and actionlint, so every workflow that runs them installs both.
+for file in .github/workflows/*.yml; do
+  if rg -q 'run: just (test|coverage)' "$file" && ! rg -q 'install-workflow-linters' "$file"; then
+    printf 'workflow contract failed: %s runs the tests but never installs the workflow linters (install-workflow-linters)\n' "$file" >&2
+    exit 1
+  fi
+done

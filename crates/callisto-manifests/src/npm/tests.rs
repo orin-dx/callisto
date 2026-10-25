@@ -247,6 +247,92 @@ fn open_manifest(dir: &tempfile::TempDir, content: &str) -> PackageJson {
 }
 
 #[test]
+fn a_package_json_that_is_not_json_fails_to_open_with_a_parse_error_naming_the_file() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("package.json"), "{ \"name\": \"broken\", ").unwrap();
+    let decl = ManifestDecl::new("package.json", ManifestRole::Canonical, ManifestFormat::PackageJson).unwrap();
+    let ctx = OpenContext {
+        workspace_root: dir.path(),
+        cargo_workspace: None,
+        cargo_roots: Default::default(),
+        npm_workspace_kind: None,
+    };
+    let error = PackageJson::open(&decl, &ctx)
+        .err()
+        .expect("a truncated package.json must not open");
+    assert!(
+        matches!(&error, ManifestError::Parse { path, format: ManifestFormat::PackageJson, .. } if path.ends_with("package.json")),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn only_a_named_package_that_is_not_private_is_publishable() {
+    let dir = tempdir().unwrap();
+    let publishable = |json: &str| open_manifest(&dir, json).is_publishable();
+    assert!(publishable(r#"{"name":"lib","version":"1.0.0"}"#));
+    assert!(publishable(r#"{"name":"lib","version":"1.0.0","private":false}"#));
+    assert!(!publishable(r#"{"name":"lib","version":"1.0.0","private":true}"#));
+    assert!(
+        !publishable(r#"{"version":"1.0.0"}"#),
+        "a package with no name has nothing to publish"
+    );
+}
+
+#[test]
+fn publish_config_registry_and_access_are_read_and_unknown_access_is_ignored() {
+    let dir = tempdir().unwrap();
+    let targets = |json: &str| open_manifest(&dir, json).publish_targets();
+    assert_eq!(
+        targets(
+            r#"{"name":"@s/p","version":"1.0.0","publishConfig":{"registry":"https://npm.example.com","access":"restricted"}}"#
+        ),
+        vec![callisto_model::PublishTarget::Npm {
+            registry: Some("https://npm.example.com".to_owned()),
+            access: Some(callisto_model::NpmAccess::Restricted),
+        }]
+    );
+    assert_eq!(
+        targets(r#"{"name":"@s/p","version":"1.0.0","publishConfig":{"access":"public"}}"#),
+        vec![callisto_model::PublishTarget::Npm {
+            registry: None,
+            access: Some(callisto_model::NpmAccess::Public),
+        }]
+    );
+    assert_eq!(
+        targets(r#"{"name":"p","version":"1.0.0","publishConfig":{"access":"internal"}}"#),
+        vec![callisto_model::PublishTarget::Npm {
+            registry: None,
+            access: None,
+        }]
+    );
+    assert_eq!(
+        targets(r#"{"name":"p","version":"1.0.0","private":true}"#),
+        vec![callisto_model::PublishTarget::None]
+    );
+}
+
+#[test]
+fn name_and_version_errors_say_which_field_is_missing_or_invalid() {
+    let dir = tempdir().unwrap();
+    let nameless = open_manifest(&dir, r#"{"version":"1.0.0"}"#);
+    assert!(matches!(
+        nameless.package_name(),
+        Err(ManifestError::MissingField { field: "name", .. })
+    ));
+    let versionless = open_manifest(&dir, r#"{"name":"p"}"#);
+    assert!(matches!(
+        versionless.current_version(),
+        Err(ManifestError::MissingField { field: "version", .. })
+    ));
+    let invalid = open_manifest(&dir, r#"{"name":"p","version":"one.two"}"#);
+    assert!(matches!(
+        invalid.current_version(),
+        Err(ManifestError::InvalidVersion { raw, .. }) if raw == "one.two"
+    ));
+}
+
+#[test]
 fn bin_names_read_string_and_object_bin_fields() {
     let dir = tempdir().unwrap();
     let library = open_manifest(&dir, r#"{"name":"lib","version":"1.0.0"}"#);

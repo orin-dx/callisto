@@ -1972,3 +1972,255 @@ fn a_bare_cargo_version_covers_the_pre_release_it_names() {
     let spec = DepSpec::CargoBare(snapshot.clone());
     assert_eq!(coverage(&spec, &snapshot).unwrap(), Coverage::Covers);
 }
+
+/// The cascade over random acyclic dependency graphs, checked against what a user relies on rather than against any
+/// one scenario: afterwards no dependent declares a range its dependency has left, and nothing moves backwards.
+mod properties {
+    use super::*;
+    use proptest::prelude::*;
+
+    fn seed_severity(code: u8) -> Severity {
+        match code % 3 {
+            0 => Severity::Patch,
+            1 => Severity::Minor,
+            _ => Severity::Major,
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(256))]
+
+        #[test]
+        fn a_cascade_leaves_every_dependency_range_covering_its_dependency(
+            bases in prop::collection::vec((0u64..3, 0u64..4, 0u64..4), 2..8),
+            edge_bits in prop::collection::vec(any::<bool>(), 1..28),
+            seeds in prop::collection::vec(prop::option::of(0u8..3), 2..8),
+            always in any::<bool>(),
+            bump_minor in any::<bool>(),
+        ) {
+            let ids: Vec<PackageId> = (0..bases.len()).map(|i| PackageId::parse(&format!("pkg-{i}")).unwrap()).collect();
+            let base: BTreeMap<PackageId, Version> = ids
+                .iter()
+                .zip(&bases)
+                .map(|(id, (major, minor, patch))| (id.clone(), Version::semver(*major, *minor, *patch)))
+                .collect();
+
+            // Package `i` may depend on any package before it, so the graph has no cycle.
+            let mut edges = Vec::new();
+            let mut bit = 0;
+            for dependent in 1..ids.len() {
+                for dependency in 0..dependent {
+                    if edge_bits[bit % edge_bits.len()] {
+                        let range = format!("^{}", base[&ids[dependency]].render());
+                        edges.push(make_dep_edge(&ids[dependent], &ids[dependency], &range, Ecosystem::Cargo));
+                    }
+                    bit += 1;
+                }
+            }
+            let graph = TestGraph { packages: ids.iter().map(bare_package).collect(), edges };
+
+            let seed: BTreeMap<PackageId, Severity> = ids
+                .iter()
+                .enumerate()
+                .filter_map(|(i, id)| seeds.get(i).copied().flatten().map(|code| (id.clone(), seed_severity(code))))
+                .collect();
+            let cfg = CascadeConfig {
+                mode: if always { CascadeMode::Always } else { CascadeMode::OutOfRange },
+                bump_severity: if bump_minor { CascadeBumpSeverity::Minor } else { CascadeBumpSeverity::Patch },
+                peer_escalation: true,
+                preserve_npm_ranges: false,
+            };
+            let groups = GroupTable::default();
+            let (reasons, named_by) = (BTreeMap::new(), BTreeMap::new());
+            let identity = IdentityIndex::default();
+            let run = || {
+                run_cascade(CascadeInput {
+                    graph: &graph,
+                    groups: &groups,
+                    cfg: &cfg,
+                    seed: &seed,
+                    reasons: &reasons,
+                    named_by: &named_by,
+                    base: &base,
+                    pre: None,
+                    tags: &TagIndex::empty(),
+                    identity: &identity,
+                })
+            };
+
+            let outcome = run().expect("an acyclic graph of caret ranges always converges");
+
+            // A package the changesets name keeps at least the severity they gave it.
+            for (id, wanted) in &seed {
+                prop_assert!(outcome.severities.get(id).is_some_and(|got| got >= wanted), "{id} lost its severity");
+            }
+            // A version only moves forward.
+            for (id, target) in &outcome.targets {
+                prop_assert_eq!(
+                    target.compare(&base[id]).unwrap(),
+                    std::cmp::Ordering::Greater,
+                    "{} went from {} to {}",
+                    id,
+                    base[id].render(),
+                    target.render()
+                );
+            }
+            for edge in &graph.edges {
+                let released = outcome.targets.get(&edge.to).unwrap_or(&base[&edge.to]);
+                // No dependent is left declaring a range its dependency has left.
+                let declared = outcome.rewrites.get(&dependency_rewrite_key(edge)).map_or(&edge.spec, |rewrite| &rewrite.to);
+                prop_assert_eq!(
+                    coverage(declared, released).unwrap(),
+                    Coverage::Covers,
+                    "{} still declares {:?} on {} which is now {}",
+                    edge.from, declared, edge.to, released.render()
+                );
+                // A dependent whose range stopped covering is itself released, since its manifest changed.
+                if coverage(&edge.spec, released).unwrap() == Coverage::DoesNotCover {
+                    prop_assert!(outcome.targets.contains_key(&edge.from), "{} was not released", edge.from);
+                }
+            }
+            // Planning twice gives the same plan.
+            let again = run().unwrap();
+            prop_assert_eq!(format!("{outcome:?}"), format!("{again:?}"));
+        }
+    }
+}
+
+/// One dependent `app` on `lib`, `lib` seeded patch at `lib_base`; the cascade over that pair.
+fn cascade_pair(
+    spec: DepSpec,
+    lib_base: Version,
+    seed_lib: Severity,
+) -> Result<(CascadeOutcome, PackageId, PackageId), GraphError> {
+    let app = PackageId::parse("app").unwrap();
+    let lib = PackageId::parse("lib").unwrap();
+    let mut edge = make_dep_edge(&app, &lib, "^1.0.0", Ecosystem::Cargo);
+    edge.spec = spec;
+    let graph = TestGraph {
+        packages: vec![bare_package(&app), bare_package(&lib)],
+        edges: vec![edge],
+    };
+    let base = BTreeMap::from([(app.clone(), Version::semver(1, 0, 0)), (lib.clone(), lib_base)]);
+    let seed = BTreeMap::from([(lib.clone(), seed_lib)]);
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+    let outcome = run_cascade(CascadeInput {
+        graph: &graph,
+        groups: &GroupTable::default(),
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &BTreeMap::new(),
+        named_by: &BTreeMap::new(),
+        base: &base,
+        pre: None,
+        tags: &TagIndex::empty(),
+        identity: &IdentityIndex::default(),
+    })?;
+    Ok((outcome, app, lib))
+}
+
+#[test]
+fn a_range_in_another_version_grammar_than_its_dependency_stops_the_cascade_with_both_packages_named() {
+    let pep440 = Version::parse("1.0.0", VersionGrammar::Pep440).unwrap();
+    let spec = make_dep_edge(
+        &PackageId::parse("app").unwrap(),
+        &PackageId::parse("lib").unwrap(),
+        "^1.0.0",
+        Ecosystem::Cargo,
+    )
+    .spec;
+    let error = cascade_pair(spec, pep440, Severity::Patch).unwrap_err();
+    assert!(
+        matches!(&error, GraphError::GrammarMismatch { from, to, .. } if from.name() == "app" && to.name() == "lib"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn a_catalog_spec_cannot_be_tested_so_it_warns_and_is_never_rewritten() {
+    let (outcome, app, _) = cascade_pair(
+        DepSpec::Catalog(Some("shared".to_owned())),
+        Version::semver(1, 0, 0),
+        Severity::Major,
+    )
+    .unwrap();
+    assert!(
+        outcome.rewrites.is_empty(),
+        "a catalog entry is edited where the catalog lives, not here"
+    );
+    let warning = outcome
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == DiagnosticCode::CatalogSpecNotRewritten)
+        .expect("a catalog spec gets a warning");
+    assert_eq!(warning.package.as_ref(), Some(&app));
+    assert_eq!(warning.severity, DiagnosticSeverity::Warning);
+    assert!(warning.message.contains("catalog:shared"), "{}", warning.message);
+}
+
+#[test]
+fn an_opaque_spec_is_left_alone_without_a_warning() {
+    let (outcome, _, _) = cascade_pair(
+        DepSpec::Opaque("git+https://example.com/lib.git".to_owned()),
+        Version::semver(1, 0, 0),
+        Severity::Major,
+    )
+    .unwrap();
+    assert!(outcome.rewrites.is_empty());
+    assert!(outcome.diagnostics.is_empty(), "{:?}", outcome.diagnostics);
+}
+
+#[test]
+fn a_linked_group_member_that_is_not_in_the_workspace_is_skipped_with_a_warning() {
+    let kept = PackageId::parse("kept").unwrap();
+    let stale = PackageId::parse("stale").unwrap();
+    let graph = TestGraph {
+        packages: vec![bare_package(&kept)],
+        edges: vec![],
+    };
+    let mut groups = GroupTable::default();
+    let group = GroupDef {
+        name: GroupName("pair".to_owned()),
+        kind: GroupKind::Linked,
+        members: vec![GroupMember::Package(kept.clone()), GroupMember::Package(stale.clone())],
+    };
+    groups.linked.insert(group.name.clone(), group);
+    let base = BTreeMap::from([(kept.clone(), Version::semver(1, 0, 0))]);
+    let seed = BTreeMap::from([(kept.clone(), Severity::Minor)]);
+    let cfg = CascadeConfig {
+        mode: CascadeMode::OutOfRange,
+        bump_severity: CascadeBumpSeverity::Patch,
+        peer_escalation: true,
+        preserve_npm_ranges: false,
+    };
+    let outcome = run_cascade(CascadeInput {
+        graph: &graph,
+        groups: &groups,
+        cfg: &cfg,
+        seed: &seed,
+        reasons: &BTreeMap::new(),
+        named_by: &BTreeMap::new(),
+        base: &base,
+        pre: None,
+        tags: &TagIndex::empty(),
+        identity: &IdentityIndex::default(),
+    })
+    .unwrap();
+    assert_eq!(outcome.targets.get(&kept).map(Version::render), Some("1.1.0"));
+    assert!(!outcome.targets.contains_key(&stale));
+    let warning = outcome
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code == DiagnosticCode::UnknownPackage)
+        .expect("a stale member is reported");
+    assert!(
+        warning.message.contains("pair") && warning.message.contains("stale"),
+        "{}",
+        warning.message
+    );
+}
