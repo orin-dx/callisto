@@ -44,101 +44,12 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             });
         }
     } else if tty::is_interactive() {
-        // Interactive 5-step Changesets Wizard (matching @changesets/cli)
-        let all_packages: Vec<String> = collect_package_names(ws.graph.packages());
-
-        if all_packages.is_empty() {
-            return Err(CliError::AddNoPackagesInWorkspace);
-        }
-
-        // Step 1: Package Selection
-        prompt_line("Which packages would you like to include in this changeset?");
-        let selected_indices = MultiSelect::new().items(&all_packages).interact()?;
-
-        if selected_indices.is_empty() {
-            return Err(CliError::AddNoPackagesSelected);
-        }
-
-        let selected_packages: Vec<String> = selected_indices.into_iter().map(|i| all_packages[i].clone()).collect();
-
-        // Step 2: Major Bump Selection
-        prompt_line("\nWhich of these packages should be a MAJOR bump?");
-        prompt_line("(Select none if there are no breaking changes)");
-        let major_indices = MultiSelect::new().items(&selected_packages).interact()?;
-
-        let major_set: std::collections::HashSet<usize> = major_indices.into_iter().collect();
-
-        // Step 3: Minor Bump Selection (excluding major packages)
-        let minor_candidates: Vec<String> = selected_packages
-            .iter()
-            .enumerate()
-            .filter(|(idx, _)| !major_set.contains(idx))
-            .map(|(_, name)| name.clone())
-            .collect();
-
-        let minor_indices = if !minor_candidates.is_empty() {
-            prompt_line("\nWhich of these packages should be a MINOR bump?");
-            prompt_line("(Any remaining packages will default to a PATCH bump)");
-            MultiSelect::new().items(&minor_candidates).interact()?
-        } else {
-            Vec::new()
-        };
-
-        let minor_set: std::collections::HashSet<String> = minor_indices
-            .into_iter()
-            .map(|idx| minor_candidates[idx].clone())
-            .collect();
-
-        // Build entries with assigned severities
-        for (idx, pkg_name) in selected_packages.iter().enumerate() {
-            let severity = if major_set.contains(&idx) {
-                Severity::Major
-            } else if minor_set.contains(pkg_name) {
-                Severity::Minor
-            } else {
-                Severity::Patch
-            };
-
-            entries.push(Entry {
-                name: pkg_name.clone(),
-                severity,
-            });
-        }
-
-        // Step 4: Summary Entry
-        if summary.is_none() {
-            prompt_line("\nPlease enter a summary for this change:");
-            let input_summary: String = Input::new()
-                .validate_with(|input: &String| -> Result<(), &str> {
-                    if input.trim().is_empty() {
-                        Err("Summary cannot be empty. Please enter a description of the change.")
-                    } else {
-                        Ok(())
-                    }
-                })
-                .interact_text()?;
-            summary = Some(input_summary);
-        }
-
-        // Step 5: Confirmation Preview
-        let summary_text = summary.as_deref().unwrap_or("Updated package.");
-        let temp_changeset = Changeset {
-            entries: entries.clone(),
-            summary: summary_text.to_string(),
-        };
-
-        let preview_text = callisto_model::format::write_changeset(&temp_changeset)?;
-        prompt_line(&format!("\n=== Changeset Preview ===\n{preview_text}"));
-
-        let confirm = Confirm::new()
-            .with_prompt("Is this your desired changeset?")
-            .default(true)
-            .interact()?;
-
-        if !confirm {
-            prompt_line("Changeset creation cancelled.");
+        let all_packages = collect_package_names(ws.graph.packages());
+        let Some((chosen, written)) = run_wizard(&all_packages, summary.clone(), &mut TerminalAddPrompter)? else {
             return Ok(ExitCode::SUCCESS);
-        }
+        };
+        entries = chosen;
+        summary = Some(written);
     } else {
         return Err(CliError::NotATty);
     }
@@ -196,6 +107,117 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
     }
 
     Ok(ExitCode::SUCCESS)
+}
+
+/// The wizard's questions; a scripted implementation drives tests.
+trait AddPrompter {
+    /// The indices the contributor ticked.
+    fn multi_select(&mut self, items: &[String]) -> Result<Vec<usize>, CliError>;
+    fn summary(&mut self) -> Result<String, CliError>;
+    fn confirm(&mut self, prompt: &str, default: bool) -> Result<bool, CliError>;
+}
+
+struct TerminalAddPrompter;
+
+impl AddPrompter for TerminalAddPrompter {
+    fn multi_select(&mut self, items: &[String]) -> Result<Vec<usize>, CliError> {
+        Ok(MultiSelect::new().items(items).interact()?)
+    }
+
+    fn summary(&mut self) -> Result<String, CliError> {
+        Ok(Input::new()
+            .validate_with(|input: &String| -> Result<(), &str> {
+                if input.trim().is_empty() {
+                    Err("Summary cannot be empty. Please enter a description of the change.")
+                } else {
+                    Ok(())
+                }
+            })
+            .interact_text()?)
+    }
+
+    fn confirm(&mut self, prompt: &str, default: bool) -> Result<bool, CliError> {
+        Ok(Confirm::new().with_prompt(prompt).default(default).interact()?)
+    }
+}
+
+/// The interactive five-step wizard (as in `@changesets/cli`): packages, which are major, which of the rest are minor
+/// (the remainder default to patch), a summary unless one was given, then a preview to confirm. `None` when the
+/// contributor declines the preview.
+fn run_wizard(
+    all_packages: &[String],
+    summary: Option<String>,
+    prompter: &mut impl AddPrompter,
+) -> Result<Option<(Vec<Entry>, String)>, CliError> {
+    if all_packages.is_empty() {
+        return Err(CliError::AddNoPackagesInWorkspace);
+    }
+
+    prompt_line("Which packages would you like to include in this changeset?");
+    let selected_indices = prompter.multi_select(all_packages)?;
+    if selected_indices.is_empty() {
+        return Err(CliError::AddNoPackagesSelected);
+    }
+    let selected_packages: Vec<String> = selected_indices.into_iter().map(|i| all_packages[i].clone()).collect();
+
+    prompt_line("\nWhich of these packages should be a MAJOR bump?");
+    prompt_line("(Select none if there are no breaking changes)");
+    let major_set: std::collections::HashSet<usize> = prompter.multi_select(&selected_packages)?.into_iter().collect();
+
+    let minor_candidates: Vec<String> = selected_packages
+        .iter()
+        .enumerate()
+        .filter(|(idx, _)| !major_set.contains(idx))
+        .map(|(_, name)| name.clone())
+        .collect();
+    let minor_set: std::collections::HashSet<String> = if minor_candidates.is_empty() {
+        std::collections::HashSet::new()
+    } else {
+        prompt_line("\nWhich of these packages should be a MINOR bump?");
+        prompt_line("(Any remaining packages will default to a PATCH bump)");
+        prompter
+            .multi_select(&minor_candidates)?
+            .into_iter()
+            .map(|idx| minor_candidates[idx].clone())
+            .collect()
+    };
+
+    let entries: Vec<Entry> = selected_packages
+        .iter()
+        .enumerate()
+        .map(|(idx, name)| Entry {
+            name: name.clone(),
+            severity: if major_set.contains(&idx) {
+                Severity::Major
+            } else if minor_set.contains(name) {
+                Severity::Minor
+            } else {
+                Severity::Patch
+            },
+        })
+        .collect();
+
+    let summary = match summary {
+        Some(summary) => summary,
+        None => {
+            prompt_line("\nPlease enter a summary for this change:");
+            prompter.summary()?
+        }
+    };
+
+    let preview = Changeset {
+        entries: entries.clone(),
+        summary: summary.clone(),
+    };
+    prompt_line(&format!(
+        "\n=== Changeset Preview ===\n{}",
+        callisto_model::format::write_changeset(&preview)?
+    ));
+    if !prompter.confirm("Is this your desired changeset?", true)? {
+        prompt_line("Changeset creation cancelled.");
+        return Ok(None);
+    }
+    Ok(Some((entries, summary)))
 }
 
 /// Parses a CLI-supplied severity string, reporting every value `Severity`
@@ -331,6 +353,140 @@ mod tests {
     use callisto_model::{ManifestDecl, ManifestFormat, ManifestRole, Package, PackageId, ReleaseTrigger};
     use std::collections::HashSet;
     use std::path::PathBuf;
+
+    /// Answers the wizard from a script: each multi-select, then the summary, then the confirmation.
+    #[derive(Default)]
+    struct Scripted {
+        selections: std::collections::VecDeque<Vec<usize>>,
+        summary: Option<String>,
+        confirm: bool,
+        /// The items each multi-select was shown, in order.
+        shown: Vec<Vec<String>>,
+        summary_asked: bool,
+    }
+
+    impl AddPrompter for Scripted {
+        fn multi_select(&mut self, items: &[String]) -> Result<Vec<usize>, CliError> {
+            self.shown.push(items.to_vec());
+            Ok(self.selections.pop_front().expect("an unexpected multi-select"))
+        }
+
+        fn summary(&mut self) -> Result<String, CliError> {
+            self.summary_asked = true;
+            Ok(self.summary.clone().expect("an unexpected summary prompt"))
+        }
+
+        fn confirm(&mut self, _prompt: &str, _default: bool) -> Result<bool, CliError> {
+            Ok(self.confirm)
+        }
+    }
+
+    fn names(names: &[&str]) -> Vec<String> {
+        names.iter().map(|name| (*name).to_owned()).collect()
+    }
+
+    fn severities(entries: &[Entry]) -> Vec<(&str, Severity)> {
+        entries
+            .iter()
+            .map(|entry| (entry.name.as_str(), entry.severity))
+            .collect()
+    }
+
+    #[test]
+    fn the_wizard_gives_majors_then_minors_and_defaults_the_rest_to_patch() {
+        let mut prompter = Scripted {
+            selections: [vec![0, 1, 2], vec![0], vec![0]].into(),
+            summary: Some("Rework the API".to_owned()),
+            confirm: true,
+            ..Default::default()
+        };
+        let (entries, summary) = run_wizard(&names(&["cargo/a", "cargo/b", "cargo/c"]), None, &mut prompter)
+            .unwrap()
+            .expect("confirmed");
+        assert_eq!(
+            severities(&entries),
+            [
+                ("cargo/a", Severity::Major),
+                ("cargo/b", Severity::Minor),
+                ("cargo/c", Severity::Patch)
+            ]
+        );
+        assert_eq!(summary, "Rework the API");
+        // The minor question is only about the packages that are not already major.
+        assert_eq!(prompter.shown[2], names(&["cargo/b", "cargo/c"]));
+    }
+
+    #[test]
+    fn the_wizard_only_offers_the_packages_that_were_selected_for_the_bump_questions() {
+        let mut prompter = Scripted {
+            selections: [vec![2, 0], vec![], vec![]].into(),
+            summary: Some("Fix".to_owned()),
+            confirm: true,
+            ..Default::default()
+        };
+        let (entries, _) = run_wizard(&names(&["cargo/a", "cargo/b", "cargo/c"]), None, &mut prompter)
+            .unwrap()
+            .expect("confirmed");
+        assert_eq!(
+            severities(&entries),
+            [("cargo/c", Severity::Patch), ("cargo/a", Severity::Patch)]
+        );
+        assert_eq!(prompter.shown[1], names(&["cargo/c", "cargo/a"]));
+    }
+
+    #[test]
+    fn when_every_package_is_major_there_is_no_minor_question() {
+        let mut prompter = Scripted {
+            selections: [vec![0, 1], vec![0, 1]].into(),
+            summary: Some("Breaking".to_owned()),
+            confirm: true,
+            ..Default::default()
+        };
+        run_wizard(&names(&["cargo/a", "cargo/b"]), None, &mut prompter).unwrap();
+        assert_eq!(prompter.shown.len(), 2, "no third multi-select");
+    }
+
+    #[test]
+    fn a_summary_given_on_the_command_line_is_not_asked_for_again() {
+        let mut prompter = Scripted {
+            selections: [vec![0], vec![], vec![]].into(),
+            confirm: true,
+            ..Default::default()
+        };
+        let (_, summary) = run_wizard(&names(&["cargo/a"]), Some("From the flag".to_owned()), &mut prompter)
+            .unwrap()
+            .expect("confirmed");
+        assert_eq!(summary, "From the flag");
+        assert!(!prompter.summary_asked);
+    }
+
+    #[test]
+    fn declining_the_preview_cancels_without_a_changeset() {
+        let mut prompter = Scripted {
+            selections: [vec![0], vec![], vec![]].into(),
+            summary: Some("Never mind".to_owned()),
+            confirm: false,
+            ..Default::default()
+        };
+        assert!(run_wizard(&names(&["cargo/a"]), None, &mut prompter).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_workspace_with_no_packages_and_a_selection_of_none_are_errors_with_their_own_message() {
+        let mut prompter = Scripted::default();
+        assert!(matches!(
+            run_wizard(&[], None, &mut prompter),
+            Err(CliError::AddNoPackagesInWorkspace)
+        ));
+        let mut prompter = Scripted {
+            selections: [vec![]].into(),
+            ..Default::default()
+        };
+        assert!(matches!(
+            run_wizard(&names(&["cargo/a"]), None, &mut prompter),
+            Err(CliError::AddNoPackagesSelected)
+        ));
+    }
 
     /// Constructs a minimal `Package` for a given id string (e.g. `"cargo/foo"`).
     fn make_package(id_str: &str) -> Package {
