@@ -204,11 +204,28 @@ jobs:
       - run: just coverage 90
         env:
           CALLISTO_ALLOW_MISSING_TOOLS: "1"
-      # Non-blocking for now: the workspace-total gate above can pass while
-      # a small crate is far below threshold (a few large crates dominate
-      # the total line count). Visible in logs so regressions get noticed;
-      # promote to a required check once existing per-crate gaps are closed.
-      - run: just coverage-per-crate 90 || echo "::warning::one or more crates below 90% line coverage (non-blocking, see job log above)"
+      # The workspace total can pass while a small crate is far below threshold, because a few large crates dominate
+      # the line count, so each crate is held to the same floor.
+      - run: just coverage-per-crate 90
+
+  hygiene:
+    name: Dependency & API Hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2
+        with:
+          tool: just@1.58.0,cargo-machete,cargo-semver-checks
+      - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
+      - run: just machete
+      - run: just features-boundary
+      # A version only moves on the release PR, so that is where the public API is compared with the published one.
+      - if: github.head_ref == 'callisto/version-packages'
+        run: just check-api
 
   security:
     name: Security & Advisory Audit (Moon & Just)

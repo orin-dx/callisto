@@ -317,14 +317,12 @@ version = "0.15.0"
 dependencies = [
  "callisto-fixtures",
  "callisto-model",
- "camino",
  "indexmap",
  "proptest",
  "serde",
  "serde_json",
  "serial_test",
  "tempfile",
- "thiserror",
  "toml_edit",
 ]
 
