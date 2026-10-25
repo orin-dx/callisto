@@ -30,7 +30,7 @@ pub(super) fn packages_moved_past_their_version<R: callisto_model::CommandRunner
     resumable: &BTreeSet<ReleasePackageId>,
 ) -> Result<Vec<MovedPast>, GraphError> {
     let git = workspace.git_access();
-    let mut moved = Vec::new();
+    let mut candidates = Vec::new();
     for package in workspace.graph.packages() {
         let ids = crate::commands::release_decision::release_package_ids(&workspace.identity, package)?;
         let Some(entry) = decision
@@ -40,25 +40,31 @@ pub(super) fn packages_moved_past_their_version<R: callisto_model::CommandRunner
         else {
             continue;
         };
+        candidates.push((package, entry));
+    }
+    // Each package's history is read independently, so the reads run side by side.
+    let checked = super::capability::in_parallel(&candidates, |(package, entry)| {
         let Some(manifest) = package.canonical_manifests().next() else {
-            continue;
+            return Ok(None);
         };
         // A manifest that is not committed has no history to compare; the clean-tree rule covers it.
         let Some(head) = effective_version_at(git, "HEAD", manifest)? else {
-            continue;
+            return Ok(None);
         };
         let version_commit = commit_setting_version(git, manifest, &head, &entry.target_version)?;
         let unchanged = match &version_commit {
             Some(commit) => git.same_content_at(commit, "HEAD", &package_paths(package))?,
             None => false,
         };
-        if !unchanged {
-            moved.push(MovedPast {
-                package: entry.package.clone(),
-                version: entry.target_version.render().to_owned(),
-                version_commit,
-            });
-        }
+        Ok::<_, GraphError>((!unchanged).then(|| MovedPast {
+            package: entry.package.clone(),
+            version: entry.target_version.render().to_owned(),
+            version_commit,
+        }))
+    });
+    let mut moved = Vec::new();
+    for found in checked {
+        moved.extend(found?);
     }
     Ok(moved)
 }
