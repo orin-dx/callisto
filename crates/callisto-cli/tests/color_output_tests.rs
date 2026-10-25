@@ -27,7 +27,7 @@ fn fixture() -> TempDir {
     fs::create_dir_all(root.join("crates/demo/src")).unwrap();
     fs::write(
         root.join("crates/demo/Cargo.toml"),
-        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\nlicense = \"MIT\"\n",
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n",
     )
     .unwrap();
     fs::write(root.join("crates/demo/src/lib.rs"), "pub fn hi() {}\n").unwrap();

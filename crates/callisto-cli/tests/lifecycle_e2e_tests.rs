@@ -109,6 +109,8 @@ name = "core-crate"
 version = "0.1.0" # Important inline comment
 # Important section comment
 edition = "2021"
+description = "t"
+license = "MIT"
 "#;
     fs::write(root.join("crates/core/Cargo.toml"), cargo_toml).unwrap();
 

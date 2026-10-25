@@ -316,7 +316,8 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E320 | A local release would tag a version the registry already holds on a commit whose files differ from the commit that set it, or whose version commit is not in this history | Check out the commit the message names (`git checkout --detach <sha>`) and run `callisto release` again; it adopts the published version and tags that commit. When no commit is named, check out the commit that was published, or tag it by hand. |
 | E321 | A `[registries.<name>]` entry for a custom registry has no `kind` | Add `kind = "cargo"`, `kind = "npm"` or `kind = "pypi"`. Only the built-in `cratesIo`, `npm` and `pypi` entries may leave it out. |
 | E322 | A first release's version is already on the registry under a different repository, so the name belongs to another project | Rename the package. If it is yours (it moved repositories), tag the commit that set this version by hand and run `callisto release` again. |
+| E323 | A first crates.io release of a crate with no `description`, or neither `license` nor `license-file` | Add the missing field to the package's Cargo.toml (or inherit it from `[workspace.package]`), commit it, and run `callisto release` again. Nothing has been published. |
 | E324 | A snapshot `--tag` is empty or has a character other than a letter, digit or `-` | Pass a tag such as `canary` or `pr-42`; it becomes part of the pre-release version. |
 
 
-248 numeric E#### codes total in one registry.
+249 numeric E#### codes total in one registry.

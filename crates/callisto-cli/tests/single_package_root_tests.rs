@@ -98,7 +98,7 @@ fn single_crate_repository() {
     let dir = repo(&[
         (
             "Cargo.toml",
-            "[package]\nname = \"solo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+            "[package]\nname = \"solo\"\nversion = \"0.1.0\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n",
         ),
         ("src/lib.rs", "\n"),
     ]);
@@ -134,7 +134,7 @@ fn root_package_release_commit_accepts_default_and_configured_changelog_paths() 
             "cargo/solo",
             "crates-io",
             "Cargo.toml",
-            "[package]\nname = \"solo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+            "[package]\nname = \"solo\"\nversion = \"0.1.0\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n",
             "src/lib.rs",
         ),
         (
