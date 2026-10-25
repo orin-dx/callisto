@@ -144,6 +144,17 @@ mod tests {
     const CRATE: &str = "[package]\nname = \"app\"\nversion = \"1.0.0\"\n";
 
     #[test]
+    fn a_callisto_toml_roots_a_repository_whose_manifests_are_all_in_subdirectories() {
+        let (_dir, root) = repo();
+        write(&root, "rs/Cargo.toml", CRATE);
+        write(&root, "js/package.json", r#"{"name":"app","version":"1.0.0"}"#);
+        assert!(matches!(find(&root), Err(LocateError::WorkspaceRootNotFound { .. })));
+
+        write(&root, "callisto.toml", "# callisto configuration\n");
+        assert_eq!(find(&root.join("rs")).unwrap(), root);
+    }
+
+    #[test]
     fn a_single_package_at_the_toplevel_is_the_root_from_a_subdirectory() {
         for (manifest, content) in [
             ("Cargo.toml", CRATE),

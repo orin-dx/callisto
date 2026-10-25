@@ -193,6 +193,41 @@ fn config(root: &Path) -> String {
     std::fs::read_to_string(root.join("callisto.toml")).unwrap()
 }
 
+#[test]
+fn init_makes_the_git_toplevel_the_root_of_a_repository_whose_manifests_are_all_in_subdirectories() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::create_dir_all(root.join("core/src")).unwrap();
+    std::fs::write(
+        root.join("core/Cargo.toml"),
+        "[package]\nname = \"core\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("core/src/lib.rs"), "\n").unwrap();
+    callisto_fixtures::git::init_repo(root);
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "fixture"]);
+
+    let run = run_init(root, yes(InitVersioning::Independent), false, vec![], false);
+    run.result.unwrap();
+    assert!(root.join("callisto.toml").exists());
+    assert!(run.out.contains("cargo/core 1.0.0"), "{}", run.out);
+}
+
+#[test]
+fn init_in_a_repository_with_no_packages_still_reports_no_workspace_root() {
+    let dir = tempfile::tempdir().unwrap();
+    callisto_fixtures::git::init_repo(dir.path());
+
+    let run = run_init(dir.path(), yes(InitVersioning::Independent), false, vec![], false);
+    let error = run.result.unwrap_err();
+    assert!(
+        matches!(&error, CliError::Locate(LocateError::WorkspaceRootNotFound { .. })),
+        "{error}"
+    );
+    assert!(nothing_written(dir.path()));
+}
+
 fn nothing_written(root: &Path) -> bool {
     !root.join("callisto.toml").exists()
         && !root.join(".changeset").exists()
