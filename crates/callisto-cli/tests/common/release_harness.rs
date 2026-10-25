@@ -179,7 +179,7 @@ pub fn release_commit_fixture_with_product_release(product_release: bool) -> (Te
     fs::create_dir_all(root.join("crates/core/src")).unwrap();
     fs::write(
         root.join("crates/core/Cargo.toml"),
-        "[package]\nname = \"core-crate\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        "[package]\nname = \"core-crate\"\nversion = \"0.1.0\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n",
     )
     .unwrap();
     fs::write(root.join("crates/core/src/lib.rs"), "pub fn core() {}\n").unwrap();
@@ -280,7 +280,7 @@ pub fn fixed_group_release_commit_fixture() -> (TempDir, String) {
         fs::create_dir_all(root.join(format!("crates/{name}/src"))).unwrap();
         fs::write(
             root.join(format!("crates/{name}/Cargo.toml")),
-            format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n"),
+            format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n"),
         )
         .unwrap();
         fs::write(root.join(format!("crates/{name}/src/lib.rs")), "\n").unwrap();

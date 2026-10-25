@@ -38,7 +38,7 @@ fn tag(root: &Path, name: &str) {
 }
 
 fn cargo(name: &str, version: &str) -> String {
-    format!("[package]\nname = \"{name}\"\nversion = \"{version}\"\nedition = \"2021\"\n")
+    format!("[package]\nname = \"{name}\"\nversion = \"{version}\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n")
 }
 
 /// A Cargo binary `app`, a Cargo library `core`, and an npm library `web`.
@@ -142,7 +142,7 @@ fn npm_bin_does_not_make_a_cargo_library_an_artifact_builder() {
         &[
             (
                 "my-pkg/Cargo.toml",
-                "[package]\nname = \"my-pkg\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+                "[package]\nname = \"my-pkg\"\nversion = \"1.0.0\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n",
             ),
             ("my-pkg/src/lib.rs", "pub fn library() {}\n"),
             (

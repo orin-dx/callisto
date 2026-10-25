@@ -38,7 +38,7 @@ fn setup_repo() -> tempfile::TempDir {
     fs::create_dir_all(root.join("crates/core/src")).unwrap();
     fs::write(
         root.join("crates/core/Cargo.toml"),
-        "[package]\nname = \"core-crate\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        "[package]\nname = \"core-crate\"\nversion = \"0.1.0\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n",
     )
     .unwrap();
     fs::write(root.join("crates/core/src/lib.rs"), "pub fn hello() {}\n").unwrap();

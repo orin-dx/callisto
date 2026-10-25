@@ -25,6 +25,8 @@ resolver = "2"
 name = "core-crate"
 version = "0.1.0"
 edition = "2021"
+description = "t"
+license = "MIT"
 "#;
     fs::write(root.join("crates/core/Cargo.toml"), crate_toml).unwrap();
     fs::write(root.join("crates/core/src/lib.rs"), "pub fn hello() {}\n").unwrap();

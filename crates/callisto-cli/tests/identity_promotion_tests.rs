@@ -20,7 +20,7 @@ fn released_cargo_foo() -> tempfile::TempDir {
     fs::create_dir_all(root.join("crates/foo/src")).unwrap();
     fs::write(
         root.join("crates/foo/Cargo.toml"),
-        "[package]\nname = \"foo\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+        "[package]\nname = \"foo\"\nversion = \"1.0.0\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n",
     )
     .unwrap();
     fs::write(root.join("crates/foo/src/lib.rs"), "\n").unwrap();
@@ -96,7 +96,7 @@ fn promoted_dual_npm_source_workspace() -> tempfile::TempDir {
     fs::create_dir_all(root.join("crates/source/src")).unwrap();
     fs::write(
         root.join("crates/source/Cargo.toml"),
-        "[package]\nname = \"source\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+        "[package]\nname = \"source\"\nversion = \"1.0.0\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n",
     )
     .unwrap();
     fs::write(root.join("crates/source/src/lib.rs"), "\n").unwrap();
@@ -149,7 +149,7 @@ fn add_cargo_package(root: &Path, relative: &str, name: &str, extra: &str) {
     fs::create_dir_all(root.join(relative).join("src")).unwrap();
     fs::write(
         root.join(relative).join("Cargo.toml"),
-        format!("[package]\nname = \"{name}\"\nversion = \"1.0.0\"\nedition = \"2021\"\n{extra}"),
+        format!("[package]\nname = \"{name}\"\nversion = \"1.0.0\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n{extra}"),
     )
     .unwrap();
     fs::write(root.join(relative).join("src/lib.rs"), "\n").unwrap();
@@ -244,7 +244,7 @@ fn a_package_that_gains_a_primary_manifest_keeps_the_bare_tag_history() {
     fs::write(root.join("packages/foo/src/lib.rs"), "\n").unwrap();
     fs::write(
         root.join("packages/foo/Cargo.toml"),
-        "[package]\nname = \"foo\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+        "[package]\nname = \"foo\"\nversion = \"1.0.0\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n",
     )
     .unwrap();
     commit(root, "add cargo foo beside npm foo");
@@ -263,7 +263,7 @@ fn a_demoted_package_keeps_the_qualified_tag_it_made_while_promoted() {
     add_npm_foo(root);
     fs::write(
         root.join("crates/foo/Cargo.toml"),
-        "[package]\nname = \"foo\"\nversion = \"2.0.0\"\nedition = \"2021\"\n",
+        "[package]\nname = \"foo\"\nversion = \"2.0.0\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n",
     )
     .unwrap();
     commit(root, "release cargo foo 2.0.0");
@@ -290,7 +290,7 @@ fn write_manifest(root: &Path, relative: &str, content: String) {
 }
 
 fn cargo_manifest(name: &str, version: &str) -> String {
-    format!("[package]\nname = \"{name}\"\nversion = \"{version}\"\nedition = \"2021\"\n")
+    format!("[package]\nname = \"{name}\"\nversion = \"{version}\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n")
 }
 
 fn npm_manifest(name: &str, version: &str) -> String {
