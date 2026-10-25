@@ -1,0 +1,113 @@
+{
+  "cli_version": "0.12.1-nightly.202610240623.b9639ba5b",
+  "checkpoint_id": "01M5R68MX07B468XTY8GJ65JWG",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-25T00:09:57.716354Z",
+  "branch": "feat/callisto-toml-roots-workspace",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/locate/root.rs",
+    "docs/errors.md",
+    "docs/specs/workspace.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "ce103d78ac7d",
+  "checkpoint_transcript_start": 75343,
+  "transcript_lines_at_start": 75343,
+  "compact_transcript_start": 5548,
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 12363,
+    "cache_read_tokens": 3861337,
+    "output_tokens": 7123,
+    "api_call_count": 15
+  },
+  "redaction": {
+    "replacements": 210,
+    "layers": {
+      "betterleaks": 40,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 27,
+      "credentialed_uri": 31,
+      "entropy": 132,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 345
+  },
+  "summary": {
+    "intent": "Resolve merge conflicts on a stacked PR branch, link PRs #360 and #361 as a native stack, then implement root-detection marker support (spec, error docs, tests, changeset) and open a PR.",
+    "outcome": "Merge conflicts in error.rs and related files were resolved by keeping both sides, merge pushed, #360/#361 linked as a native stack, root-detection spec/E030 docs updated, tests added and full CI passing after fixing one test, and a PR opened.",
+    "learnings": {
+      "repo": [
+        "Callisto uses git worktrees under .claude/worktrees (e.g. smoke-main) for parallel branch work.",
+        "Error codes are documented in docs/errors.md and an error-doc test checks docs against error.rs variants, so adding an error variant requires a matching doc row (e.g. E030).",
+        "Workspace behavior criteria live in docs/specs/workspace.json and should be updated alongside behavior changes.",
+        "Changesets are required for changes and are added before running the full CI.",
+        "Stacked PRs are linked with the `gh stack link` command.",
+        "Root detection treats the starting directory as the package root if it contains the marker, so a 'not found' test must start from the repository root rather than inside a package directory."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/locate/root.rs",
+          "finding": "Added unit test for the root marker; the not-found case must start at the repo root because starting inside `rs` makes `rs` itself the package root."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/init/tests.rs",
+          "finding": "Added CLI init test covering the no-root fallback, using the existing workspace test helper."
+        }
+      ],
+      "workflow": [
+        "git merge-tree output may only hint at conflicts; additional files (like error.rs) can conflict during the actual merge, so check all conflict markers after merging.",
+        "When both sides add a variant at the same spot, keep both; scripting the resolution (Python in /tmp) makes it repeatable and verifiable.",
+        "Run the relevant test subsets (model, graph, init) after a merge before pushing, then run full CI before opening the PR."
+      ]
+    },
+    "friction": [
+      "error.rs conflicted unexpectedly beyond what the earlier merge-tree preview showed, requiring a second resolution pass.",
+      "Initial test premise for the root-detection not-found case was wrong and failed full CI, requiring a fix and rerun."
+    ],
+    "open_items": []
+  }
+}
