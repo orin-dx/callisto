@@ -599,6 +599,77 @@ fn test_cargo_is_publishable() {
     assert!(!manifest.is_publishable());
 }
 
+#[test]
+fn publish_field_decides_whether_a_crate_is_publishable() {
+    let dir = tempdir().unwrap();
+    for (publish, expected) in [
+        ("", true),
+        ("publish = true\n", true),
+        ("publish = false\n", false),
+        ("publish = []\n", false),
+        ("publish = [\"my-registry\"]\n", true),
+    ] {
+        let manifest = open_cargo(
+            dir.path(),
+            &format!("[package]\nname = \"c\"\nversion = \"0.1.0\"\n{publish}"),
+        );
+        assert_eq!(manifest.is_publishable(), expected, "{publish:?}");
+    }
+    // A manifest with no `[package]` table (a virtual workspace root) publishes nothing.
+    assert!(!open_cargo(dir.path(), "[workspace]\nmembers = []\n").is_publishable());
+}
+
+#[test]
+fn optional_dependencies_are_not_a_cargo_concept_and_refuse_to_be_updated() {
+    let dir = tempdir().unwrap();
+    let mut manifest = open_cargo(dir.path(), "[package]\nname = \"c\"\nversion = \"0.1.0\"\n");
+    let error = manifest
+        .update_optional_dependencies(
+            &[("x".to_owned(), Version::parse("1.0.0", VersionGrammar::SemVer).unwrap())],
+            &permit(),
+        )
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            ManifestError::UnsupportedOperation {
+                format: ManifestFormat::CargoToml,
+                ..
+            }
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn a_workspace_version_is_read_with_or_without_a_byte_order_mark_and_bad_input_is_an_error() {
+    let path = std::path::Path::new("Cargo.toml");
+    let read = |source: &str| workspace_version_from_source(source, path);
+
+    let declared = "[workspace.package]\nversion = \"2.3.4\"\n";
+    let expected = Some(Version::parse("2.3.4", VersionGrammar::SemVer).unwrap());
+    assert_eq!(read(declared).unwrap(), expected);
+    assert_eq!(read(&format!("\u{feff}{declared}")).unwrap(), expected);
+    assert_eq!(read("[workspace]\nmembers = []\n").unwrap(), None);
+
+    let malformed = read("[workspace.package\nversion = \"1.0.0\"\n").unwrap_err();
+    assert!(
+        matches!(
+            &malformed,
+            ManifestError::Parse {
+                format: ManifestFormat::CargoToml,
+                ..
+            }
+        ),
+        "{malformed:?}"
+    );
+    let not_semver = read("[workspace.package]\nversion = \"one\"\n").unwrap_err();
+    assert!(
+        matches!(&not_semver, ManifestError::Parse { message, .. } if message.contains("invalid [workspace.package] version")),
+        "{not_semver:?}"
+    );
+}
+
 /// Regression lock for F25: `CargoToml` no longer overrides
 /// `publish_targets()` -- it falls through to the `Manifest` trait's
 /// default impl, which dispatches on `ecosystem()` (`Ecosystem::Cargo`
