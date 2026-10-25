@@ -1,5 +1,14 @@
 # callisto-cli
 
+## 0.15.0
+
+- `callisto init --yes` now works with no other flags: packages version independently unless `--versioning fixed` is given, and a GitHub repository gets the release workflow unless `--no-workflow` is given. A single package is no longer asked how to version. If the unrequested workflow cannot be built, such as offline, `init` skips it with a warning instead of failing. After writing the workflow, `init` lists the repository secrets to add and the first commands to run, and the publishing guide has new sections on first publishes and on pulling a release.
+- The GitHub release of a package in a fixed group now lists the changes recorded against the group's other members, each marked with its package, instead of only its own changelog section.
+- A generated build matrix builds `x86_64-apple-darwin` on `macos-latest`, since GitHub has retired the `macos-13` runner it used. The proto plugin now installs the Intel macOS and arm64 Linux release binaries.
+- A changeset with an entry that names no package in the workspace, such as a typo or a removed package, now applies none of its entries and says so. Before, its other entries were applied and the file stayed on disk, so every `version` run bumped those packages again. A Cargo crate with no version, such as an xtask, no longer stops every run with E013: it is skipped with a note.
+- A release commit is now checked for what else it changes. Verification (E165) refuses a version commit that touches any path other than manifests, lockfiles, changelogs, changesets, `pre.json` and the decision file, so a release pull request can no longer carry a change to source, a build script, `.npmrc` or `.cargo/config.toml` under the cover of a bot-authored diff. Move such edits to a separate commit.
+- The leftover `[init]` and `[release.profiles]` tables in `callisto.toml` are removed, and a config that still has one now fails to load, naming the key; move a profile's `forge-repository` to `[release]`. The no-op `setup_git_user` action input is removed, and the setup action no longer falls back to building unreleased `main` when a release cannot be installed. The job's OIDC request variables now reach only the package-manager tools, not cargo, git or gh.
+
 ## 0.14.2
 
 - A release no longer waits past its confirmation window when a registry keeps asking to retry later. The run now gives up when the window ends, as the error already said.
