@@ -95,10 +95,11 @@ Available targets: `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknow
 
 ## Quick start
 
-Start in a Git repository with an `origin` push URL and crates.io credentials. This registry-only example publishes a crate and creates a tag; it does not build assets or create a GitHub Release. See [releasing](docs/releasing.md) for CI and product releases.
+Start in a Git repository with an `origin` push URL and registry credentials. This example publishes from your machine; to publish from CI instead, keep the workflow `init` writes and see [releasing](docs/releasing.md).
 
 ```bash
-# 1. Scaffold callisto.toml and .changeset/ in the workspace root
+# 1. Detect packages, write callisto.toml and .changeset/, preview the first release.
+#    With a GitHub origin it also writes the release workflow, and it prints what to do next.
 callisto init --yes --no-workflow
 
 # 2. Record a pending change against a package
@@ -121,6 +122,8 @@ git commit -m "chore(release): version packages"
 callisto release --dry-run
 callisto release
 ```
+
+Drop `--no-workflow` to publish from GitHub Actions instead: a push to the default branch opens a release PR, and merging it publishes. A first release of a Cargo crate needs a `description` and a `license`; Callisto stops with a fix before publishing anything if they are missing.
 
 Run `callisto --help` for prerelease mode, snapshots, CI checks, JSON output, and shell completions.
 
