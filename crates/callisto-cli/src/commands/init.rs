@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use callisto_graph::commands::init::{
     self as scaffold, BinaryRelease, InitAnswers, InitFacts, InitPackage, Versioning,
 };
-use callisto_graph::locate::IgnoreWalkLocator;
+use callisto_graph::locate::{IgnoreWalkLocator, LocateError};
 use callisto_graph::GraphError;
 use callisto_model::{ApplyPermit, CommandRunner, InitReport, SCHEMA_VERSION};
 use dialoguer::{Confirm, Input, Select};
@@ -110,9 +110,20 @@ pub fn run<R: CommandRunner>(
     runner: &R,
 ) -> Result<ExitCode, CliError> {
     validate_flags(&args)?;
-    let root = workspace_root(global, runner)?;
+    // A repository whose manifests all sit in subdirectories has no root yet: init makes the Git toplevel one.
+    let (root, no_root) = match workspace_root(global, runner) {
+        Ok(root) => (root, None),
+        Err(CliError::Locate(LocateError::WorkspaceRootNotFound { start, toplevel })) => (
+            toplevel.clone(),
+            Some(LocateError::WorkspaceRootNotFound { start, toplevel }),
+        ),
+        Err(error) => return Err(error),
+    };
     let locator = IgnoreWalkLocator::new(&root);
     let facts = scaffold::detect(&root, &locator, runner)?;
+    if let Some(error) = no_root.filter(|_| facts.packages.is_empty()) {
+        return Err(error.into());
+    }
     let json = global.format == OutputFormat::Json;
     // JSON keeps stdout for the report.
     let human: &mut dyn Write = if json { &mut *err } else { &mut *out };

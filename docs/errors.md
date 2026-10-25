@@ -160,7 +160,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 
 | Code | Meaning | Fix |
 | --- | --- | --- |
-| E030 | Workspace root not found between `<path>` and the Git repository root `<path>` | Callisto never searches above the Git repository root. Add a workspace manifest (Cargo.toml with [workspace], package.json with a workspaces field, pnpm-workspace.yaml, or a .moon directory) or a package manifest (Cargo.toml with [package], package.json, or pyproject.toml) inside the repository. |
+| E030 | Workspace root not found between `<path>` and the Git repository root `<path>` | Callisto never searches above the Git repository root. Run `callisto init` there, or add a callisto.toml, a workspace manifest (Cargo.toml with [workspace], package.json with a workspaces field, pnpm-workspace.yaml, or a .moon directory) or a package manifest (Cargo.toml with [package], package.json, or pyproject.toml) inside the repository. |
 | E031 | Failed to walk filesystem under `<path>`: <message> | — |
 | E032 | Project path `<path>` is outside the workspace root `<root>` | — |
 | E033 | VCS error during workspace location: <0> | — |
