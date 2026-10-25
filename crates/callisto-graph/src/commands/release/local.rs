@@ -75,19 +75,23 @@ pub fn ci_release_route<R: CommandRunner, D: DependencyResolver>(
         }))
 }
 
-/// The tags that name a package's last release here but are not on `origin`.
+/// What it takes to ask `origin` which of a package's last-release tags it holds.
 ///
-/// A release that tagged locally and then failed to push leaves exactly this, and a later rerun on another commit
-/// treats the tagged version as finished, so the remote tag and the forge release never happen. Best effort: no
-/// `origin`, no tags, or a remote that cannot be read all report nothing.
-pub fn tags_missing_from_origin<L: ProjectLocator, R: CommandRunner>(
-    root: &Path,
-    locator: &L,
-    runner: &R,
-) -> Result<Vec<String>, GraphError> {
-    let workspace = Workspace::load(canonical_root(root)?, locator, runner)?;
-    let Some(remote) = optional_git_remote(&workspace.root, runner)? else {
-        return Ok(Vec::new());
+/// Built from the loaded workspace without touching the network, so the one `git ls-remote` in [`Self::missing`] can
+/// run beside the rest of the plan.
+#[derive(Clone, Debug)]
+pub struct OriginTagProbe {
+    endpoint: String,
+    cwd: std::path::PathBuf,
+    tags: std::collections::BTreeSet<String>,
+}
+
+/// The probe for `workspace`'s last-release tags, or `None` when there is no `origin` push URL or nothing is tagged.
+pub fn origin_tag_probe<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+) -> Result<Option<OriginTagProbe>, GraphError> {
+    let Some(remote) = optional_git_remote(&workspace.root, workspace.runner)? else {
+        return Ok(None);
     };
     let tags = workspace.tags()?;
     let names: std::collections::BTreeSet<String> = workspace
@@ -96,34 +100,47 @@ pub fn tags_missing_from_origin<L: ProjectLocator, R: CommandRunner>(
         .filter_map(|package| tags.last_tag(&package.id))
         .map(|tag| tag.name.as_str().to_owned())
         .collect();
-    if names.is_empty() {
-        return Ok(Vec::new());
+    Ok((!names.is_empty()).then(|| OriginTagProbe {
+        endpoint: remote.endpoint.clone(),
+        cwd: workspace.root.clone(),
+        tags: names,
+    }))
+}
+
+impl OriginTagProbe {
+    /// The tags that name a package's last release here but are not on `origin`.
+    ///
+    /// A release that tagged locally and then failed to push leaves exactly this, and a later rerun on another commit
+    /// treats the tagged version as finished, so the remote tag and the forge release never happen. Best effort: a
+    /// remote that cannot be read reports nothing.
+    pub fn missing<R: CommandRunner + ?Sized>(&self, runner: &R) -> Vec<String> {
+        let references: Vec<String> = self.tags.iter().map(|name| format!("refs/tags/{name}")).collect();
+        let mut args = vec!["ls-remote", self.endpoint.as_str()];
+        args.extend(references.iter().map(String::as_str));
+        let Ok(output) = runner.run_with_timeout(
+            super::provider::policy::programs::GIT,
+            &args,
+            &self.cwd,
+            super::provider::policy::timeouts::GIT_LS_REMOTE,
+        ) else {
+            return Vec::new();
+        };
+        if !output.success() {
+            return Vec::new();
+        }
+        let on_remote: std::collections::BTreeSet<&str> = output
+            .stdout
+            .lines()
+            .filter_map(|line| line.split_once('\t'))
+            .filter_map(|(_, reference)| reference.strip_prefix("refs/tags/"))
+            .map(|name| name.strip_suffix("^{}").unwrap_or(name))
+            .collect();
+        self.tags
+            .iter()
+            .filter(|name| !on_remote.contains(name.as_str()))
+            .cloned()
+            .collect()
     }
-    let references: Vec<String> = names.iter().map(|name| format!("refs/tags/{name}")).collect();
-    let mut args = vec!["ls-remote", remote.endpoint.as_str()];
-    args.extend(references.iter().map(String::as_str));
-    let Ok(output) = runner.run_with_timeout(
-        super::provider::policy::programs::GIT,
-        &args,
-        &workspace.root,
-        super::provider::policy::timeouts::GIT_LS_REMOTE,
-    ) else {
-        return Ok(Vec::new());
-    };
-    if !output.success() {
-        return Ok(Vec::new());
-    }
-    let on_remote: std::collections::BTreeSet<&str> = output
-        .stdout
-        .lines()
-        .filter_map(|line| line.split_once('\t'))
-        .filter_map(|(_, reference)| reference.strip_prefix("refs/tags/"))
-        .map(|name| name.strip_suffix("^{}").unwrap_or(name))
-        .collect();
-    Ok(names
-        .into_iter()
-        .filter(|name| !on_remote.contains(name.as_str()))
-        .collect())
 }
 
 /// A derived local release.
@@ -296,6 +313,16 @@ pub fn plan_workspace_release<R: CommandRunner, D: DependencyResolver>(
     mode: LocalReleaseSource,
 ) -> Result<Option<LocalReleasePlan>, GraphError> {
     plan_release(workspace, selections, mode, false)
+}
+
+/// [`plan_local_release`] over an already-loaded workspace: the same plan, including the registry checks, without
+/// loading the workspace again.
+pub fn plan_loaded_release<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    selections: &[ReleasePackageId],
+    mode: LocalReleaseSource,
+) -> Result<Option<LocalReleasePlan>, GraphError> {
+    plan_release(workspace, selections, mode, true)
 }
 
 fn plan_release<R: CommandRunner, D: DependencyResolver>(
