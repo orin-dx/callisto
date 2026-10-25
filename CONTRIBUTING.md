@@ -51,6 +51,8 @@ just ci      # full local verification pipeline
 
 Maintainer-only recipes not part of the normal PR loop: `mutants` (mutation testing), `machete` (unused deps), `check-api` (SemVer diff via `cargo-semver-checks`), `fuzz`, `provider-fixtures`/`provider-contract` (re-capture/verify the real-provider test fixtures under `testing/fixtures/`).
 
+A weekly workflow (`callisto-quality.yml`, also runnable by hand) fuzzes the four parser targets for ten minutes each and runs mutation testing over `callisto-model` and `callisto-manifests` in six shards. Both report and never block a merge: a crash uploads its input as an artifact, and the surviving mutants of each shard are listed in its job summary. A surviving mutant is a change that passes every test, so each one is either a missing test or dead code.
+
 For iterating on one crate instead of the whole workspace, see AGENTS.md's scoped-iteration guidance (`cargo test -p <crate>`, one invocation at a time — never parallel cargo builds).
 
 ---

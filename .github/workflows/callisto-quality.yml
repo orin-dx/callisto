@@ -1,0 +1,85 @@
+name: Callisto Quality Sweeps
+
+# Slow checks that find what the per-PR gates cannot: parsers fed hostile input, and tests that pass without asserting
+# anything. They report; they do not block a merge.
+on:
+  schedule:
+    - cron: "41 3 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: Fuzz ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [manifest_editor, manifest_identity, parse_changeset, parse_package_id]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2
+        with:
+          tool: cargo-fuzz
+      - name: Install nightly
+        run: rustup toolchain install nightly --profile minimal
+      - name: Fuzz for ten minutes
+        working-directory: fuzz
+        env:
+          TARGET: ${{ matrix.target }}
+        run: cargo +nightly fuzz run "$TARGET" -- -max_total_time=600
+      - name: Keep the crashing input
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-crash-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}
+          if-no-files-found: ignore
+
+  mutants:
+    name: Mutants, shard ${{ matrix.shard }} of 6
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2
+        with:
+          tool: cargo-mutants
+      # A surviving mutant means a change to that line would pass every test: report it, do not fail the sweep.
+      - name: Mutate the libraries that hold the parsing and version rules
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: cargo mutants -p callisto-model -p callisto-manifests --shard "$SHARD/6" --timeout 120 || [ $? -eq 2 ]
+      - name: Summarize
+        if: always()
+        run: |
+          {
+            echo "### Surviving mutants, shard ${{ matrix.shard }}"
+            if [ -f mutants.out/missed.txt ]; then
+              echo '```'
+              cat mutants.out/missed.txt
+              echo '```'
+            else
+              echo "none recorded"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutants-shard-${{ matrix.shard }}
+          path: mutants.out
+          if-no-files-found: ignore
