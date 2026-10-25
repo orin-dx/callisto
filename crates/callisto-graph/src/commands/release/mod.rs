@@ -105,6 +105,20 @@ pub(crate) mod tests {
     pub(crate) struct RealGitRunner;
     impl CommandRunner for RealGitRunner {
         fn run(&self, program: &str, args: &[&str], cwd: &Path) -> Result<CommandOutput, CommandError> {
+            // A registry lookup never reaches the network from a test: every crate is unpublished.
+            if program == "cargo" && args.contains(&"info") {
+                let spec = args
+                    .iter()
+                    .skip_while(|arg| **arg != "info")
+                    .nth(1)
+                    .copied()
+                    .unwrap_or_default();
+                return Ok(CommandOutput {
+                    exit_code: Some(101),
+                    stdout: String::new(),
+                    stderr: format!("error: could not find `{spec}` in registry `crates-io`\n"),
+                });
+            }
             let output = std::process::Command::new(program)
                 .args(args)
                 .current_dir(cwd)
