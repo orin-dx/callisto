@@ -1,0 +1,119 @@
+{
+  "cli_version": "0.12.1-nightly.202610240623.b9639ba5b",
+  "checkpoint_id": "01M5R5PZPR5QAK42AXKBEX4B5J",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-25T00:00:21.834415Z",
+  "branch": "fix/init-output-and-e121",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/init.rs",
+    "crates/callisto-graph/src/error.rs",
+    "docs/errors.md",
+    "docs/specs/cli.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "8b05974411b3",
+  "checkpoint_transcript_start": 74554,
+  "transcript_lines_at_start": 74554,
+  "compact_transcript_start": 5504,
+  "token_usage": {
+    "input_tokens": 56,
+    "cache_creation_tokens": 24816,
+    "cache_read_tokens": 6106661,
+    "output_tokens": 12144,
+    "api_call_count": 28
+  },
+  "redaction": {
+    "replacements": 210,
+    "layers": {
+      "betterleaks": 40,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 27,
+      "credentialed_uri": 31,
+      "entropy": 132,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 345
+  },
+  "summary": {
+    "intent": "Smoke-test the first-run (new-user) flow of the callisto CLI and fix the rough edges found, including the init output polish (item 3), E121 (item 4) and snapshot --tag validation (item 5).",
+    "outcome": "E121 could not be reproduced and was dropped. The init output was polished with a new test assertion, and snapshot --tag now validates up front with a new E324 diagnostic, test, docs and spec criterion. Two changesets were added, full CI was run after formatting, and a PR was committed, pushed and opened.",
+    "learnings": {
+      "repo": [
+        "Work happens in a git worktree at .claude/worktrees/smoke-main of the callisto repo; scratch scripts and PR bodies go in /tmp/claude-501/.",
+        "The Rust workspace has crates callisto-cli (commands/init.rs, init/tests.rs) and callisto-graph (commands/snapshot.rs, error.rs).",
+        "New error codes need three updates: the error definition in callisto-graph/src/error.rs, a row in docs/errors.md, and a spec criterion in docs/specs/cli.json.",
+        "User-visible changes need one changeset per topic (two here), and full CI must pass before opening a PR.",
+        "Full CI includes a formatting check, so run the formatter and then re-run CI.",
+        "Init stdout assertions can be added to the existing init unit tests in crates/callisto-cli/src/commands/init/tests.rs."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/snapshot.rs",
+          "finding": "plan_snapshot did not validate --tag. A bad tag surfaced as 'internal error' (E038) and an empty tag silently produced version 0.0.0--sha. Validation now happens up front and returns the new GraphError E324. The test module needed a GraphError import."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/init.rs",
+          "finding": "The top of the init output (header text before the detected summary and config body) was polished, and a stdout assertion was added in init/tests.rs."
+        }
+      ],
+      "workflow": [
+        "Try to reproduce reported issues in a real new-user flow with a smoke script before fixing, and drop items that do not reproduce (E121 showed a clean E267 instead).",
+        "Probe the current behavior with a throwaway script before changing code, to confirm the bug.",
+        "Search for tests and docs that reference old text before changing user-facing strings."
+      ]
+    },
+    "friction": [
+      "E121 could not be reproduced in the new-user flow.",
+      "Finding the init config printer and the existing stdout-asserting tests took many grep and read calls.",
+      "The new snapshot test failed to compile at first because of a missing GraphError import in the test module.",
+      "The first full CI run needed a formatting pass and a re-run."
+    ],
+    "open_items": [
+      "E121 (item 4) was dropped as unreproducible; revisit if it is reported again with a concrete repro.",
+      "The Files Modified list omits snapshot.rs and init/tests.rs, so check that the PR includes every edited file."
+    ]
+  }
+}
