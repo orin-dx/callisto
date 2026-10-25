@@ -9,8 +9,8 @@ use std::process::ExitCode;
 
 use callisto_graph::commands::{
     build_release_intent, build_release_intent_with_artifacts, ci_release_route, derive_release_commit_decision,
-    derive_selected_release_decision, execute_release, plan_local_release, seal_python_distributions,
-    tags_missing_from_origin, validate_local_release_intent, validate_release_intent, verify_artifact_manifest,
+    derive_selected_release_decision, execute_release, origin_tag_probe, plan_loaded_release,
+    seal_python_distributions, validate_local_release_intent, validate_release_intent, verify_artifact_manifest,
     LocalReleasePlan, LocalReleaseSource, VersionOptions,
 };
 use callisto_graph::locate::IgnoreWalkLocator;
@@ -66,21 +66,33 @@ fn release(
     let workspace = load_workspace(global, &runner)?;
     let root = workspace.root.clone();
     let locator = IgnoreWalkLocator::new(&root);
-    // Best effort: a tag that never reached `origin` is a release that did not finish, whatever the plan says next.
-    for tag in tags_missing_from_origin(&root, &locator, &runner).unwrap_or_default() {
-        eprintln!("{}", tag_missing_from_origin_note(&tag));
-    }
-    if global.dry_run {
-        let plan = plan_local_release(&root, &locator, &runner, &selections, LocalReleaseSource::Preview)?;
-        write_release_preview(plan.as_ref(), global.format, &mut std::io::stdout())?;
-        return Ok(ExitCode::SUCCESS);
-    }
-    if let Some(route) = ci_release_route(&workspace)? {
+    if let Some(route) = ci_release_route(&workspace)?.filter(|_| !global.dry_run) {
         return Err(CliError::ReleaseRequiresCiRoute {
             reason: route.to_string(),
         });
     }
-    let Some(plan) = plan_local_release(&root, &locator, &runner, &selections, LocalReleaseSource::Trusted)? else {
+    let mode = if global.dry_run {
+        LocalReleaseSource::Preview
+    } else {
+        LocalReleaseSource::Trusted
+    };
+    // The one `ls-remote` is network latency; it runs beside the plan rather than before it. Best effort: a tag that
+    // never reached `origin` is a release that did not finish, whatever the plan says next.
+    let probe = origin_tag_probe(&workspace).ok().flatten();
+    let (missing, planned) = std::thread::scope(|scope| {
+        let missing = probe.as_ref().map(|probe| scope.spawn(|| probe.missing(&runner)));
+        let planned = plan_loaded_release(&workspace, &selections, mode);
+        (missing.map(|handle| handle.join().unwrap_or_default()), planned)
+    });
+    for tag in missing.unwrap_or_default() {
+        eprintln!("{}", tag_missing_from_origin_note(&tag));
+    }
+    let plan = planned?;
+    if global.dry_run {
+        write_release_preview(plan.as_ref(), global.format, &mut std::io::stdout())?;
+        return Ok(ExitCode::SUCCESS);
+    }
+    let Some(plan) = plan else {
         print_nothing_to_release(global)?;
         return Ok(ExitCode::SUCCESS);
     };

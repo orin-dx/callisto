@@ -372,6 +372,37 @@ fn validate_intent<'a, L: ProjectLocator, R: CommandRunner>(
     })
 }
 
+/// The most registry or remote observations in flight at once.
+const OBSERVATION_WORKERS: usize = 8;
+
+/// `work` over every item, results in item order. Observations are independent reads that spend their time waiting on a
+/// registry or remote, so they run side by side instead of one after another.
+pub(super) fn in_parallel<I: Sync, T: Send>(items: &[I], work: impl Fn(&I) -> T + Sync) -> Vec<T> {
+    let workers = items.len().min(OBSERVATION_WORKERS);
+    if workers <= 1 {
+        return items.iter().map(work).collect();
+    }
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let done = std::sync::Mutex::new(Vec::with_capacity(items.len()));
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            scope.spawn(|| loop {
+                let index = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let Some(item) = items.get(index) else {
+                    break;
+                };
+                let value = work(item);
+                done.lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push((index, value));
+            });
+        }
+    });
+    let mut done = done.into_inner().unwrap_or_else(std::sync::PoisonError::into_inner);
+    done.sort_by_key(|(index, _)| *index);
+    done.into_iter().map(|(_, value)| value).collect()
+}
+
 /// The packages in `among` with any operation of `prepared` that is not observed exactly satisfied.
 ///
 /// Other packages' operations are not observed. An observation that fails counts as unsatisfied, so the run
@@ -383,24 +414,29 @@ pub(crate) fn unsatisfied_packages(
     among: &std::collections::BTreeSet<callisto_model::ReleasePackageId>,
 ) -> std::collections::BTreeSet<callisto_model::ReleasePackageId> {
     let context = ProviderContext::new(root, runner, prepared.git_remote.as_ref());
-    prepared
+    let operations: Vec<_> = prepared
         .operations
         .iter()
         .filter(|(id, _)| among.contains(&id.package))
-        .filter(|(id, operation)| {
-            let observed = checked_provider_for(operation).and_then(|provider| {
-                provider.observe(
-                    &context,
-                    &ProviderRequest {
-                        id,
-                        operation,
-                        artifacts: None,
-                    },
-                )
-            });
-            !matches!(observed, Ok(ProviderObservationV1::Exact { .. }))
-        })
-        .map(|(id, _)| id.package.clone())
+        .collect();
+    let unsatisfied = in_parallel(&operations, |(id, operation)| {
+        let observed = checked_provider_for(operation).and_then(|provider| {
+            provider.observe(
+                &context,
+                &ProviderRequest {
+                    id,
+                    operation,
+                    artifacts: None,
+                },
+            )
+        });
+        !matches!(observed, Ok(ProviderObservationV1::Exact { .. }))
+    });
+    operations
+        .into_iter()
+        .zip(unsatisfied)
+        .filter(|(_, unsatisfied)| *unsatisfied)
+        .map(|((id, _), _)| id.package.clone())
         .collect()
 }
 
@@ -415,20 +451,26 @@ pub(crate) fn published_packages(
     among: &std::collections::BTreeSet<callisto_model::ReleasePackageId>,
 ) -> Result<std::collections::BTreeSet<callisto_model::ReleasePackageId>, GraphError> {
     let context = ProviderContext::new(root, runner, prepared.git_remote.as_ref());
-    let mut published = std::collections::BTreeSet::new();
-    for (id, operation) in &prepared.operations {
-        if !among.contains(&id.package) || !matches!(operation, PreparedOperation::RegistryPublish(_)) {
-            continue;
-        }
-        let observed = checked_provider_for(operation)?.observe(
+    let publishes: Vec<_> = prepared
+        .operations
+        .iter()
+        .filter(|(id, operation)| {
+            among.contains(&id.package) && matches!(operation, PreparedOperation::RegistryPublish(_))
+        })
+        .collect();
+    let observed = in_parallel(&publishes, |(id, operation)| {
+        checked_provider_for(operation)?.observe(
             &context,
             &ProviderRequest {
                 id,
                 operation,
                 artifacts: None,
             },
-        )?;
-        match observed {
+        )
+    });
+    let mut published = std::collections::BTreeSet::new();
+    for ((id, _), observed) in publishes.into_iter().zip(observed) {
+        match observed? {
             ProviderObservationV1::Exact { .. } => {
                 published.insert(id.package.clone());
             }
@@ -465,14 +507,17 @@ pub(crate) fn names_taken_by_other_projects(
     let Some(origin) = context.origin_endpoint() else {
         return Ok(Vec::new());
     };
-    let mut taken = Vec::new();
-    for (id, operation) in &prepared.operations {
+    let publishes: Vec<_> = prepared
+        .operations
+        .iter()
+        .filter(|(id, operation)| {
+            among.contains(&id.package) && matches!(operation, PreparedOperation::RegistryPublish(_))
+        })
+        .collect();
+    let found = in_parallel(&publishes, |(id, operation)| -> Result<Option<TakenName>, GraphError> {
         let PreparedOperation::RegistryPublish(publish) = operation else {
-            continue;
+            return Ok(None);
         };
-        if !among.contains(&id.package) {
-            continue;
-        }
         // A registry that cannot be reached, or a tool that is missing, leaves this check unable to tell: the
         // publish itself reports that when it matters.
         let observed = checked_provider_for(operation)?.observe(
@@ -484,19 +529,23 @@ pub(crate) fn names_taken_by_other_projects(
             },
         );
         if !matches!(observed, Ok(ProviderObservationV1::Exact { .. })) {
-            continue;
+            return Ok(None);
         }
         let recorded = super::provider::registry::recorded_repository(&context, id.package.ecosystem(), publish);
-        if let Some((registry_repository, origin)) =
-            super::provider::repository::differing_repositories(recorded.as_deref(), origin)
-        {
-            taken.push(TakenName {
-                package: id.package.clone(),
-                version: publish.version.render().to_string(),
-                registry_repository,
-                origin,
-            });
-        }
+        Ok(
+            super::provider::repository::differing_repositories(recorded.as_deref(), origin).map(
+                |(registry_repository, origin)| TakenName {
+                    package: id.package.clone(),
+                    version: publish.version.render().to_string(),
+                    registry_repository,
+                    origin,
+                },
+            ),
+        )
+    });
+    let mut taken = Vec::new();
+    for found in found {
+        taken.extend(found?);
     }
     Ok(taken)
 }
@@ -554,5 +603,23 @@ fn observe_git_trust<R: CommandRunner, D: DependencyResolver>(
 fn source_from_trust(evidence: &GitCommitTrustEvidence) -> SourceIdentity {
     SourceIdentity::GitCommit {
         sha: evidence.head().clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{in_parallel, OBSERVATION_WORKERS};
+
+    #[test]
+    fn in_parallel_returns_every_result_in_item_order() {
+        let items: Vec<usize> = (0..OBSERVATION_WORKERS * 4 + 3).collect();
+        let doubled = in_parallel(&items, |item| {
+            // Later items finish first, so order comes from the index and not from completion.
+            std::thread::sleep(std::time::Duration::from_millis((items.len() - item) as u64 % 5));
+            item * 2
+        });
+        assert_eq!(doubled, items.iter().map(|item| item * 2).collect::<Vec<_>>());
+        assert!(in_parallel(&Vec::<usize>::new(), |item| *item).is_empty());
+        assert_eq!(in_parallel(&[7], |item| item + 1), vec![8]);
     }
 }
