@@ -58,6 +58,9 @@ jobs:
       - name: Install registry test tools
         uses: $/.github/actions/install-registry-test-tools
 
+      - name: Install workflow linters
+        uses: $/.github/actions/install-workflow-linters
+
       - name: Unit & Integration Tests
         run: just test
 
