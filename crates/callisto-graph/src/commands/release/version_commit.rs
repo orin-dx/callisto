@@ -1,13 +1,16 @@
 //! The commit that set a package's version, so a rerun after a half-finished release cannot tag later code.
 
 use std::cell::RefCell;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use callisto_manifests::{read_effective_version, WorkspaceReads};
-use callisto_model::vcs::{GitAccess, VcsError};
+use callisto_model::vcs::GitAccess;
 use callisto_model::{ManifestDecl, ManifestError, ReleaseDecisionV1, ReleasePackageId, Version};
 
 use crate::changed::package_paths;
+use crate::commands::git_batch::{batch_blobs, BatchBlob};
 use crate::{DependencyResolver, GraphError, Workspace};
 
 /// A package whose files differ from the commit that set the version it is about to release, or whose version
@@ -40,31 +43,64 @@ pub(super) fn packages_moved_past_their_version<R: callisto_model::CommandRunner
         else {
             continue;
         };
-        candidates.push((package, entry));
+        // A package with no manifest has no version to have been set.
+        if let Some(manifest) = package.canonical_manifests().next() {
+            candidates.push((package, entry, manifest));
+        }
     }
-    // Each package's history is read independently, so the reads run side by side.
-    let checked = super::capability::in_parallel(&candidates, |(package, entry)| {
-        let Some(manifest) = package.canonical_manifests().next() else {
-            return Ok(None);
-        };
+
+    // Every manifest at `HEAD` in one read; each package's own history is then read side by side.
+    let reads = RevReads::new(git);
+    let at_head: Vec<(String, PathBuf)> = candidates
+        .iter()
+        .map(|(_, _, manifest)| ("HEAD".to_owned(), manifest.path.clone()))
+        .collect();
+    reads.preload(&at_head)?;
+    let version_commits = super::capability::in_parallel(&candidates, |(_, entry, manifest)| {
         // A manifest that is not committed has no history to compare; the clean-tree rule covers it.
-        let Some(head) = effective_version_at(git, "HEAD", manifest)? else {
+        let Some(head) = effective_version_at(&reads, "HEAD", manifest)? else {
             return Ok(None);
         };
-        let version_commit = commit_setting_version(git, manifest, &head, &entry.target_version)?;
-        let unchanged = match &version_commit {
-            Some(commit) => git.same_content_at(commit, "HEAD", &package_paths(package))?,
-            None => false,
-        };
-        Ok::<_, GraphError>((!unchanged).then(|| MovedPast {
-            package: entry.package.clone(),
-            version: entry.target_version.render().to_owned(),
-            version_commit,
-        }))
+        commit_setting_version(&reads, git, manifest, &head, &entry.target_version).map(Some)
     });
+    let mut checked = Vec::new();
+    for ((package, entry, _), version_commit) in candidates.into_iter().zip(version_commits) {
+        if let Some(version_commit) = version_commit? {
+            checked.push((package, entry, version_commit));
+        }
+    }
+
+    // A package is compared by tree content: each of its directories at the version commit and at `HEAD`, by object id,
+    // all asked for in one read.
+    let mut objects = Vec::new();
+    for (package, _, version_commit) in &checked {
+        let Some(commit) = version_commit else {
+            continue;
+        };
+        for directory in package_paths(package) {
+            let directory = if directory.as_path() == std::path::Path::new(".") {
+                String::new()
+            } else {
+                directory.to_string_lossy().into_owned()
+            };
+            objects.push(format!("{commit}:./{directory}"));
+            objects.push(format!("HEAD:./{directory}"));
+        }
+    }
+    let mut ids = git.object_ids(&objects)?.into_iter();
     let mut moved = Vec::new();
-    for found in checked {
-        moved.extend(found?);
+    for (package, entry, version_commit) in checked {
+        let unchanged = version_commit.is_some()
+            && package_paths(package)
+                .iter()
+                .all(|_| ids.next().flatten() == ids.next().flatten());
+        if !unchanged {
+            moved.push(MovedPast {
+                package: entry.package.clone(),
+                version: entry.target_version.render().to_owned(),
+                version_commit,
+            });
+        }
     }
     Ok(moved)
 }
@@ -74,6 +110,7 @@ pub(super) fn packages_moved_past_their_version<R: callisto_model::CommandRunner
 /// Only the manifest and, for an inherited version, the workspace manifest that declares it can set the version, so
 /// those are the only paths walked. A history with no such commit gives `None`, never a guess.
 fn commit_setting_version(
+    reads: &RevReads<'_, '_>,
     git: &GitAccess<'_>,
     manifest: &ManifestDecl,
     head: &callisto_manifests::EffectiveManifestVersion,
@@ -84,33 +121,94 @@ fn commit_setting_version(
         paths.push(head.authority.clone());
     }
     for commit in git.first_parent_commits_touching(&paths)? {
-        if effective_version_at(git, &commit, manifest)?
+        // A root commit has no parent, so the version was set there.
+        let parent = format!("{commit}^");
+        let wanted: Vec<(String, PathBuf)> = [&commit, &parent]
+            .into_iter()
+            .flat_map(|rev| paths.iter().map(move |path| (rev.clone(), path.clone())))
+            .collect();
+        reads.preload(&wanted)?;
+        if effective_version_at(reads, &commit, manifest)?
             .map(|found| found.version)
             .as_ref()
             != Some(version)
         {
             continue;
         }
-        // A root commit has no parent, so the version was set there.
-        let parent = effective_version_at(git, &format!("{commit}^"), manifest)?;
-        if parent.map(|found| found.version).as_ref() != Some(version) {
+        let before = effective_version_at(reads, &parent, manifest)?;
+        if before.map(|found| found.version).as_ref() != Some(version) {
             return Ok(Some(commit));
         }
     }
     Ok(None)
 }
 
+/// Manifest text by revision and path, fetched in batches and kept: the same file is wanted by many packages (an
+/// inherited version's workspace manifest) and at both a commit and its parent.
+struct RevReads<'g, 'r> {
+    git: &'g GitAccess<'r>,
+    cache: Mutex<BTreeMap<(String, PathBuf), Option<String>>>,
+}
+
+impl<'g, 'r> RevReads<'g, 'r> {
+    fn new(git: &'g GitAccess<'r>) -> Self {
+        RevReads {
+            git,
+            cache: Mutex::new(BTreeMap::new()),
+        }
+    }
+
+    fn entries(&self) -> MutexGuard<'_, BTreeMap<(String, PathBuf), Option<String>>> {
+        self.cache.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Fetches every wanted `(revision, path)` not yet held with one `git cat-file --batch`.
+    fn preload(&self, wanted: &[(String, PathBuf)]) -> Result<(), GraphError> {
+        let missing: BTreeSet<&(String, PathBuf)> = {
+            let held = self.entries();
+            wanted.iter().filter(|key| !held.contains_key(*key)).collect()
+        };
+        if missing.is_empty() {
+            return Ok(());
+        }
+        let objects: Vec<String> = missing
+            .iter()
+            .map(|(rev, path)| format!("{rev}:./{}", path.display()))
+            .collect();
+        let blobs = batch_blobs(self.git.runner(), self.git.root(), &objects)?;
+        let mut held = self.entries();
+        for ((rev, path), blob) in missing.into_iter().zip(blobs) {
+            let text = match blob {
+                BatchBlob::Blob(text) => Some(text),
+                BatchBlob::Missing => None,
+            };
+            held.insert((rev.clone(), path.clone()), text);
+        }
+        Ok(())
+    }
+
+    /// The text of `path` at `rev`, `None` when it has none there.
+    fn text(&self, rev: &str, path: &std::path::Path) -> Result<Option<String>, GraphError> {
+        let key = (rev.to_owned(), path.to_path_buf());
+        if let Some(held) = self.entries().get(&key) {
+            return Ok(held.clone());
+        }
+        self.preload(std::slice::from_ref(&key))?;
+        Ok(self.entries().get(&key).cloned().flatten())
+    }
+}
+
 /// The version `manifest` holds at `rev`, resolving a workspace-inherited one. A manifest that is absent, does not
 /// parse or declares no version there gives `None`; a failing git read is an error.
 fn effective_version_at(
-    git: &GitAccess<'_>,
+    reads: &RevReads<'_, '_>,
     rev: &str,
     manifest: &ManifestDecl,
 ) -> Result<Option<callisto_manifests::EffectiveManifestVersion>, GraphError> {
     // `read_effective_version` reports manifest errors only, so a git failure is held here and returned after.
-    let git_failure: RefCell<Option<VcsError>> = RefCell::new(None);
+    let git_failure: RefCell<Option<GraphError>> = RefCell::new(None);
     let mut read = |path: &std::path::Path| -> Result<Option<String>, ManifestError> {
-        Ok(git.read_at(rev, path).unwrap_or_else(|error| {
+        Ok(reads.text(rev, path).unwrap_or_else(|error| {
             git_failure.borrow_mut().get_or_insert(error);
             None
         }))
@@ -128,7 +226,7 @@ fn effective_version_at(
         None => None,
     };
     match git_failure.into_inner() {
-        Some(error) => Err(error.into()),
+        Some(error) => Err(error),
         None => Ok(found),
     }
 }
