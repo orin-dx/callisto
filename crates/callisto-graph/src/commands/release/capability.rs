@@ -372,6 +372,9 @@ fn validate_intent<'a, L: ProjectLocator, R: CommandRunner>(
     })
 }
 
+/// The longest an advisory observation waits between its own tries: one retry past a transient failure, no more.
+const ADVISORY_OBSERVATION_PATIENCE: std::time::Duration = std::time::Duration::from_secs(1);
+
 /// The most registry or remote observations in flight at once.
 const OBSERVATION_WORKERS: usize = 8;
 
@@ -503,7 +506,10 @@ pub(crate) fn names_taken_by_other_projects(
     prepared: &super::derive::PreparedDerivation,
     among: &std::collections::BTreeSet<callisto_model::ReleasePackageId>,
 ) -> Result<Vec<TakenName>, GraphError> {
-    let context = ProviderContext::new(root, runner, prepared.git_remote.as_ref());
+    // Advisory: a registry that does not answer promptly leaves the check unable to tell, so it does not wait out the
+    // full retry schedule that the checks a release depends on use.
+    let context =
+        ProviderContext::new(root, runner, prepared.git_remote.as_ref()).with_patience(ADVISORY_OBSERVATION_PATIENCE);
     let Some(origin) = context.origin_endpoint() else {
         return Ok(Vec::new());
     };

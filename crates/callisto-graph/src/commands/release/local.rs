@@ -519,6 +519,57 @@ mod tests {
         assert!(!preview.tags_unbound);
     }
 
+    /// Real git, and a registry that never answers: every `cargo info` fails the way an unreachable network does.
+    struct DeadRegistry {
+        lookups: std::sync::atomic::AtomicUsize,
+    }
+    impl callisto_model::CommandRunner for DeadRegistry {
+        fn run(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            if program == "cargo" && args.contains(&"info") {
+                self.lookups.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                return Ok(callisto_model::CommandOutput {
+                    exit_code: Some(101),
+                    stdout: String::new(),
+                    stderr: "error: failed to load source for dependency".to_owned(),
+                });
+            }
+            RealGitRunner.run(program, args, cwd)
+        }
+
+        fn run_with_stdin(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+            stdin: &[u8],
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            RealGitRunner.run_with_stdin(program, args, cwd, stdin)
+        }
+    }
+
+    #[test]
+    fn an_unreachable_registry_costs_the_name_check_one_retry_and_does_not_stop_the_plan() {
+        let (dir, _) = fixture();
+        let runner = DeadRegistry {
+            lookups: std::sync::atomic::AtomicUsize::new(0),
+        };
+        let preview = plan_local_release(
+            dir.path(),
+            &crate::IgnoreWalkLocator::new(dir.path()),
+            &runner,
+            &[],
+            LocalReleaseSource::Preview,
+        )
+        .unwrap();
+        assert!(preview.is_some());
+        assert_eq!(runner.lookups.load(std::sync::atomic::Ordering::Relaxed), 2);
+    }
+
     fn fixture_id() -> ReleasePackageId {
         ReleasePackageId::new(Ecosystem::Cargo, "release-fixture").unwrap()
     }
