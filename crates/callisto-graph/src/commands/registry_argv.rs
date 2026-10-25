@@ -236,6 +236,9 @@ pub fn npm_publish_argv(
     access: Option<NpmAccess>,
     registry: Option<&str>,
 ) -> Argv {
+    // `yarn npm publish` has no `--registry` option (it rejects one) and reads `publishConfig.registry` from the
+    // manifest itself, which is where this value came from.
+    let registry = registry.filter(|_| !matches!(package_manager, NpmPackageManager::Yarn));
     let extra = npm_publish_flags(package_name, tag, access, registry);
 
     let (program, mut args, cwd) = match package_manager {
@@ -882,6 +885,51 @@ mod tests {
                 "--registry",
                 "https://registry.example.com",
             ]
+        );
+    }
+
+    /// Each argv was checked against the real tool's `publish --help` (pnpm 10, yarn 4.9, bun 1.2, npm 11): yarn's
+    /// `npm publish` accepts `--access` and `--tag` but rejects `--registry`, and reads `publishConfig.registry` itself.
+    #[test]
+    fn every_package_manager_gets_only_the_publish_flags_it_accepts() {
+        let argv = |manager| {
+            npm_publish_argv(
+                Path::new("/workspace"),
+                Path::new("packages/a"),
+                "pkg-a",
+                manager,
+                Some("next"),
+                Some(NpmAccess::Public),
+                Some("https://registry.example.com"),
+            )
+        };
+        let flags = ["--tag", "next", "--access", "public"];
+        let registry = ["--registry", "https://registry.example.com"];
+        let expect = |base: &[&str], with_registry: bool| -> Vec<String> {
+            let mut args: Vec<String> = base.iter().chain(&flags).map(|arg| (*arg).to_owned()).collect();
+            if with_registry {
+                args.extend(registry.iter().map(|arg| (*arg).to_owned()));
+            }
+            args
+        };
+        assert_eq!(
+            argv(NpmPackageManager::Pnpm).args,
+            expect(&["publish", "--filter=pkg-a", "--no-git-checks"], true)
+        );
+        assert_eq!(
+            argv(NpmPackageManager::Yarn).args,
+            expect(&["workspace", "pkg-a", "npm", "publish"], false)
+        );
+        let bun = argv(NpmPackageManager::Bun);
+        assert_eq!(bun.args, expect(&["publish"], true));
+        assert_eq!(
+            bun.cwd,
+            Path::new("/workspace/packages/a"),
+            "bun publishes the directory it runs in"
+        );
+        assert_eq!(
+            argv(NpmPackageManager::Npm).args,
+            expect(&["publish", "--workspace=pkg-a"], true)
         );
     }
 
