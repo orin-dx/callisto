@@ -40,10 +40,14 @@ pub fn prepend(
     // Normalise CRLF → LF so the prefix patterns always match, then restore
     // the original line endings on the way out if the file used CRLF.
     let had_crlf = existing.contains("\r\n");
+    let (bom, existing) = match existing.strip_prefix('\u{feff}') {
+        Some(rest) => ("\u{feff}", rest),
+        None => ("", existing.as_str()),
+    };
     let normalised = if had_crlf {
         existing.replace("\r\n", "\n")
     } else {
-        existing.clone()
+        existing.to_owned()
     };
 
     // Bug 8 guard: if the version heading we are about to insert already exists
@@ -68,7 +72,7 @@ pub fn prepend(
         &normalised
     };
 
-    let mut new_content = String::new();
+    let mut new_content = String::from(bom);
     new_content.push_str(&format!("# {display_name}\n\n"));
     new_content.push_str(rendered);
     if !rendered.ends_with('\n') {
@@ -113,10 +117,17 @@ pub fn find_section<'a>(changelog: &'a str, version: &Version) -> Option<&'a str
 
     let mut end = slice_after.len();
     let mut line_offset = 0;
+    let mut in_fence = false;
 
     for line in slice_after.split_inclusive('\n') {
         let trimmed = line.trim_start();
-        if line_offset > 0 && (trimmed.starts_with("## ") || trimmed.starts_with("# ")) {
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+        }
+        // Four or more leading spaces is indented content, not a heading.
+        let indent = line.len() - trimmed.len();
+        let heading = trimmed.starts_with("## ") || trimmed.starts_with("# ");
+        if line_offset > 0 && !in_fence && indent < 4 && heading {
             end = line_offset;
             break;
         }
@@ -219,6 +230,31 @@ mod tests {
         let pos_new = result.find("1.1.0").expect("new version missing");
         let pos_old = result.find("1.0.0").expect("old version missing");
         assert!(pos_new < pos_old, "new entry should precede old entry — got:\n{result}");
+    }
+
+    #[test]
+    fn prepend_keeps_one_title_and_the_byte_order_mark_of_a_changelog_that_starts_with_one() {
+        let workspace = tempfile::tempdir().unwrap();
+        let root = workspace.path();
+        let changelog_path = std::path::Path::new("CHANGELOG.md");
+        let full_path = root.join(changelog_path);
+        fs::write(&full_path, "\u{feff}# My Package\n\n## 1.0.0\n\nSome content\n").unwrap();
+
+        prepend(root, changelog_path, "My Package", "## 1.1.0\n\nNew stuff\n", &permit()).unwrap();
+
+        let result = fs::read_to_string(&full_path).unwrap();
+        assert!(result.starts_with("\u{feff}# My Package\n\n## 1.1.0"), "got:\n{result}");
+        assert_eq!(result.matches("# My Package").count(), 1, "got:\n{result}");
+    }
+
+    #[test]
+    fn a_section_runs_past_headings_inside_a_code_block_or_indented_under_a_list_item() {
+        let changelog = "# pkg\n\n## 1.1.0\n\n- Run it:\n\n  ```sh\n  # install\n  ## not a heading\n  make\n  ```\n\n- Next\n\n## 1.0.0\n\n- First\n";
+        let v = Version::parse("1.1.0", VersionGrammar::SemVer).unwrap();
+        let section = extract_section(changelog, &v).unwrap();
+        assert!(section.contains("make"), "cut short:\n{section}");
+        assert!(section.ends_with("- Next"), "got:\n{section}");
+        assert!(!section.contains("First"));
     }
 
     #[test]
