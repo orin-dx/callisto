@@ -228,7 +228,14 @@ pub fn run<R: CommandRunner>(
     } else {
         None
     };
-    writeln!(human, "\ncallisto.toml:\n{config}")?;
+    if config
+        .lines()
+        .all(|line| line.trim().is_empty() || line.trim_start().starts_with('#'))
+    {
+        writeln!(human, "\ncallisto.toml: no settings needed, the defaults apply.")?;
+    } else {
+        writeln!(human, "\ncallisto.toml:\n{config}")?;
+    }
     match plan {
         Some(plan) => {
             writeln!(human, "First release preview (`callisto release --dry-run`):")?;

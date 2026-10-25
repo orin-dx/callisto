@@ -15,9 +15,10 @@ pub mod npm;
 pub mod python;
 
 pub use cargo::{
-    cargo_package_name, cargo_workspace_of, declares_workspace, enclosing_workspace_manifest, named_workspace_manifest,
-    parse_manifest, read_manifest_text, workspace_manifest_candidates, CargoToml, InheritedDep, WorkspaceCargoResolver,
-    WorkspaceInheritance, WorkspaceReads,
+    cargo_package_name, cargo_workspace_of, declares_workspace, enclosing_workspace_manifest,
+    missing_crates_io_metadata, named_workspace_manifest, parse_manifest, read_manifest_text,
+    workspace_manifest_candidates, CargoToml, InheritedDep, WorkspaceCargoResolver, WorkspaceInheritance,
+    WorkspaceReads,
 };
 pub use npm::{
     detect_npm_workspace_kind, napi_binary_name, npm_declares_private, npm_package_name, npm_role_from_source,

@@ -147,7 +147,7 @@ pub(crate) mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("Cargo.toml"),
-            "[package]\nname = \"release-fixture\"\nversion = \"1.2.3\"\nedition = \"2021\"\n",
+            "[package]\nname = \"release-fixture\"\nversion = \"1.2.3\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n",
         )
         .unwrap();
         std::fs::write(
@@ -203,7 +203,7 @@ pub(crate) mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("Cargo.toml"),
-            "[package]\nname = \"release-fixture\"\nversion = \"1.2.3\"\nedition = \"2021\"\n",
+            "[package]\nname = \"release-fixture\"\nversion = \"1.2.3\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n",
         )
         .unwrap();
         std::fs::write(
@@ -298,7 +298,7 @@ pub(crate) mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(
             dir.path().join("Cargo.toml"),
-            "[package]\nname = \"addon\"\nversion = \"1.2.3\"\nedition = \"2021\"\n",
+            "[package]\nname = \"addon\"\nversion = \"1.2.3\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n",
         )
         .unwrap();
         std::fs::write(
@@ -491,7 +491,7 @@ pub(crate) mod tests {
         validate_release_intent(dir.path(), &locator, &runner, intent.clone()).unwrap();
         std::fs::write(
             dir.path().join("Cargo.toml"),
-            "[package]\nname = \"release-fixture\"\nversion = \"1.2.4\"\nedition = \"2021\"\n",
+            "[package]\nname = \"release-fixture\"\nversion = \"1.2.4\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n",
         )
         .unwrap();
         let error = validate_release_intent(dir.path(), &locator, &runner, intent)

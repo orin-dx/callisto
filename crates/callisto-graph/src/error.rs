@@ -645,6 +645,23 @@ pub enum GraphError {
         origin: String,
     },
 
+    #[error("`{package}` has no {missing} in its Cargo.toml, which crates.io requires to publish")]
+    #[diagnostic(
+        code(E323),
+        help(
+            "Add {missing} to the package's Cargo.toml (or inherit it from `[workspace.package]`), commit it, and run \
+             `callisto release` again. Nothing has been published."
+        )
+    )]
+    ReleaseMetadataMissing { package: String, missing: String },
+
+    #[error("snapshot tag `{tag}` must be non-empty and use only letters, digits and `-`")]
+    #[diagnostic(
+        code(E324),
+        help("Pass a tag such as `canary` or `pr-42`; it becomes part of the pre-release version.")
+    )]
+    SnapshotTagInvalid { tag: String },
+
     #[error("release precondition unmet: requires {requirement}")]
     #[diagnostic(
         code(E170),

@@ -194,6 +194,20 @@ fn config(root: &Path) -> String {
 }
 
 #[test]
+fn an_init_with_no_settings_says_the_defaults_apply_instead_of_printing_an_empty_file() {
+    let dir = workspace(1);
+    let run = run_init(dir.path(), yes(InitVersioning::Independent), false, vec![], false);
+    run.result.unwrap();
+    assert!(
+        run.out
+            .contains("callisto.toml: no settings needed, the defaults apply."),
+        "{}",
+        run.out
+    );
+    assert!(!run.out.contains("# callisto configuration"), "{}", run.out);
+}
+
+#[test]
 fn init_makes_the_git_toplevel_the_root_of_a_repository_whose_manifests_are_all_in_subdirectories() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();

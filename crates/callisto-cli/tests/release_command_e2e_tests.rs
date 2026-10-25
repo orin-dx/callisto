@@ -151,6 +151,34 @@ fn receipt_flag_writes_to_the_given_path() {
     assert!(String::from_utf8_lossy(&run.stdout).contains(receipt.to_str().unwrap()));
 }
 
+/// A first crates.io release of a crate with no description or license is refused before any effect.
+#[test]
+fn a_first_release_without_the_metadata_crates_io_requires_is_refused_before_any_effect() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    let manifest = root.join("crates/core/Cargo.toml");
+
+    let complete = fs::read_to_string(&manifest).unwrap();
+    fs::write(
+        &manifest,
+        complete.replace("description = \"t\"\nlicense = \"MIT\"\n", ""),
+    )
+    .unwrap();
+    let refused = rig.run(root, &["--dry-run", "release"]);
+    assert!(!refused.status.success());
+    let message = stderr(&refused);
+    assert!(
+        message.contains("E323") && message.contains("description or license"),
+        "{message}"
+    );
+    assert_no_effects(&rig, root);
+
+    fs::write(&manifest, complete).unwrap();
+    let allowed = rig.run(root, &["--dry-run", "release"]);
+    assert!(allowed.status.success(), "{}", stderr(&allowed));
+}
+
 /// A dirty worktree blocks the run but not the preview; ignored files never count.
 #[test]
 fn dirty_worktree_blocks_release_before_any_effect() {
@@ -581,7 +609,7 @@ fn unreleased_dual_package() -> tempfile::TempDir {
     let write_versions = |version: &str| {
         fs::write(
             root.join("dual/Cargo.toml"),
-            format!("[package]\nname = \"dual\"\nversion = \"{version}\"\nedition = \"2021\"\n"),
+            format!("[package]\nname = \"dual\"\nversion = \"{version}\"\nedition = \"2021\"\ndescription = \"t\"\nlicense = \"MIT\"\n"),
         )
         .unwrap();
         fs::write(
