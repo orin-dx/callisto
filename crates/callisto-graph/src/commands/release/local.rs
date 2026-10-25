@@ -614,6 +614,16 @@ mod tests {
             }
             RealGitRunner.run(program, args, cwd)
         }
+
+        fn run_with_stdin(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+            stdin: &[u8],
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            RealGitRunner.run_with_stdin(program, args, cwd, stdin)
+        }
     }
 
     /// Crates `app` (depends on `lib`) and `lib`, both unreleased, with a GitHub `origin`, at a detached HEAD.

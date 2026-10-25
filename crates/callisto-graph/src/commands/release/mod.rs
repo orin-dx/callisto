@@ -119,6 +119,16 @@ pub(crate) mod tests {
                 stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
             })
         }
+
+        fn run_with_stdin(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+            stdin: &[u8],
+        ) -> Result<CommandOutput, CommandError> {
+            callisto_fixtures::git::GitRunner.run_with_stdin(program, args, cwd, stdin)
+        }
     }
 
     /// Real git except `ls-remote`, whose answer is read from a file. The
@@ -136,6 +146,16 @@ pub(crate) mod tests {
                 });
             }
             RealGitRunner.run(program, args, cwd)
+        }
+
+        fn run_with_stdin(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+            stdin: &[u8],
+        ) -> Result<CommandOutput, CommandError> {
+            RealGitRunner.run_with_stdin(program, args, cwd, stdin)
         }
     }
 
