@@ -255,7 +255,7 @@
     },
     {
       "id": "VER-APPLY-07",
-      "criterion": "A changelog section lists each changeset summary as a bullet (continuation lines indented), an inferred bump as a commit subject with its short sha, a group bump as \"Released together with the `{group}` {fixed|linked} group.\", a new fixed-group member as \"Joined the `{group}` group at this version.\", a peer escalation as \"Peer dependency `{dep}` requires `{version}`\", and cascaded bumps as \"`{dep}` → `{version}`\" lines under a \"Dependency updates\" bullet."
+      "criterion": "A changelog section lists each changeset summary as a bullet (nonblank continuation lines indented and blank lines empty), an inferred bump as a commit subject with its short sha, a group bump as \"Released together with the `{group}` {fixed|linked} group.\", a new fixed-group member as \"Joined the `{group}` group at this version.\", a peer escalation as \"Peer dependency `{dep}` requires `{version}`\", and cascaded bumps as \"`{dep}` → `{version}`\" lines under a \"Dependency updates\" bullet."
     },
     {
       "id": "VER-APPLY-08",

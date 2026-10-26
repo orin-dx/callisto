@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use indexmap::IndexMap;
 
+use crate::changelog::render::indent_changeset_summary;
 use crate::changelog::ChangeSource;
 use callisto_model::{CommandRunner, ComposePrBodyReport, PackageId, Severity, SCHEMA_VERSION};
 
@@ -88,13 +89,7 @@ impl ChangeGroup {
 /// empty-summary skip).
 fn render_entry_text(source: &ChangeSource) -> Option<String> {
     match source {
-        ChangeSource::Changeset { summary, .. } => {
-            if summary.trim().is_empty() {
-                return None;
-            }
-            let indented = summary.trim_end_matches('\n');
-            Some(indented.replace('\n', "\n  "))
-        }
+        ChangeSource::Changeset { summary, .. } => indent_changeset_summary(summary),
         ChangeSource::Commit { subject, sha } => Some(format!("{subject} ({})", sha.short())),
         ChangeSource::DependencyUpdate { dependency, to, .. } => {
             Some(format!("`{}` → `{}`", dependency.display_name(), to.render()))
@@ -467,6 +462,18 @@ mod tests {
     use super::*;
     use crate::plan::{PlannedBump, VersionPlan};
     use callisto_model::{BumpReason, PackageId, Severity, Version};
+
+    #[test]
+    fn changeset_details_leave_blank_lines_empty() {
+        let source = ChangeSource::Changeset {
+            filename: "fix.md".to_owned(),
+            summary: "First line.\n\n- A detail.".to_owned(),
+        };
+        assert_eq!(
+            render_entry_text(&source).as_deref(),
+            Some("First line.\n\n  - A detail.")
+        );
+    }
 
     fn bump(from: Version, to: Version, severity: Severity) -> PlannedBump {
         PlannedBump {

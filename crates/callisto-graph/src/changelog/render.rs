@@ -2,6 +2,27 @@ use callisto_model::GroupKind;
 
 use crate::changelog::{ChangeSource, ChangelogError, ChangelogInput};
 
+pub(crate) fn indent_changeset_summary(summary: &str) -> Option<String> {
+    let summary = summary.trim_end_matches('\n');
+    if summary.trim().is_empty() {
+        return None;
+    }
+    let mut indented = String::new();
+    for (index, line) in summary.lines().enumerate() {
+        if index > 0 {
+            indented.push('\n');
+        }
+        if line.trim().is_empty() {
+            continue;
+        }
+        if index > 0 {
+            indented.push_str("  ");
+        }
+        indented.push_str(line);
+    }
+    Some(indented)
+}
+
 pub fn render_section(input: &ChangelogInput) -> Result<String, ChangelogError> {
     if input.entries.is_empty() {
         return Err(ChangelogError::EmptyInput);
@@ -27,12 +48,9 @@ pub fn render_section(input: &ChangelogInput) -> Result<String, ChangelogError> 
     for entry in &input.entries {
         match &entry.source {
             ChangeSource::Changeset { summary, .. } => {
-                if summary.trim().is_empty() {
-                    continue;
+                if let Some(indented) = indent_changeset_summary(summary) {
+                    out.push_str(&format!("- {indented}\n"));
                 }
-                let indented = summary.trim_end_matches('\n');
-                let indented = indented.replace('\n', "\n  ");
-                out.push_str(&format!("- {indented}\n"));
             }
             ChangeSource::Commit { subject, sha } => {
                 out.push_str(&format!("- {subject} ({})\n", sha.short()));
@@ -152,18 +170,9 @@ mod tests {
 
     #[test]
     fn render_section_indents_multiline_summary_continuation_lines() {
-        let input = make_input("First line.\n\nSecond paragraph.");
+        let input = make_input("First line.\n\n- A detail.");
         let rendered = render_section(&input).unwrap();
-        // Continuation lines must be indented — bare "\nSecond paragraph." is wrong
-        assert!(
-            !rendered.contains("\nSecond paragraph."),
-            "continuation line must not appear unindented; got:\n{rendered}"
-        );
-        // Must appear with at least 2-space indent
-        assert!(
-            rendered.contains("\n  Second paragraph."),
-            "continuation line must be indented by 2 spaces; got:\n{rendered}"
-        );
+        assert_eq!(rendered, "## 1.1.0\n\n- First line.\n\n  - A detail.\n");
     }
 
     #[test]
