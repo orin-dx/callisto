@@ -97,6 +97,18 @@ The queue is oldest first, and a failed item is selected again on every main pus
 
 Callisto waits for a published version to appear before it announces anything: up to 6 minutes for npm and PyPI, 2 for Cargo. npm packages are published back to back and waited for together, so a release of many npm packages waits once, not once per package; Cargo and PyPI publishes are waited for as they are published. If the registry is slower it stops with E157; re-run the failed job once the version shows, or set `confirm-timeout` on the registry in `callisto.toml` (see [configuration](config.md#registries)) and keep the job's `timeout-minutes` above the total wait.
 
+## Finding releases that did not finish
+
+`callisto release pending` lists the merged release commits whose release did not finish, oldest first, with what is missing. It reads each release commit's committed decision and checks that every package has its tag and every GitHub release is published, so it needs no checkout of the old commit and publishes nothing. A release publishes to the registries before it tags, so a missing tag means the release stopped early.
+
+```sh
+callisto release pending                    # text
+callisto --format json release pending      # for a workflow
+callisto release pending --from <sha>       # skip an older release that cannot finish
+```
+
+Recover each one with the dispatch below, oldest first.
+
 ## Recovering an older release
 
 Recovering a commit that is no longer a branch tip may require these manual actions:

@@ -321,6 +321,10 @@
       "criterion": "Only after `execute` succeeds, including receipt upload, the workflow verifies the merged PR's exact merge SHA, removes `callisto: pending` and adds `callisto: complete`. A failed execution leaves the PR pending. After completion it dispatches the next pending release by full merge SHA; when none remains, it refreshes the managed release PR for changesets now on main. A failed dispatch fails the drain job and does not refresh the release PR, leaving the next merge pending for retry. Dispatch and completion jobs receive no registry secrets."
     },
     {
+      "id": "REL-RERUN-11",
+      "criterion": "`callisto release pending` lists, oldest first, the merged release commits whose release did not finish, from the last `--limit` commits (default 10) on HEAD's first-parent line that wrote the committed decision file (`--decision`, default `.callisto/release-decision.json`). A release is finished when every package in that commit's decision that has a publish target has a tag for its version, and every such package released to GitHub has a published (not draft) release; one that cannot be read counts as unfinished. The scan stops at the newest finished release, since releases are sequential. With `--from <sha>` only that release commit and newer ones count, and a SHA that is not a release commit on the branch is an error. The command lists the commit, its packages and versions, and what is missing, in text or in JSON under `pending`; it publishes nothing and exits 0 when there are none."
+    },
+    {
       "id": "REL-GH-01",
       "criterion": "Every package with a publish target gets an annotated, unsigned tag named by its tag template, with message `Release <tag>`, on the source commit, pushed to the `origin` push URL."
     },
