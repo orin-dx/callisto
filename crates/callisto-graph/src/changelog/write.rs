@@ -117,17 +117,19 @@ pub fn find_section<'a>(changelog: &'a str, version: &Version) -> Option<&'a str
 
     let mut end = slice_after.len();
     let mut line_offset = 0;
-    let mut in_fence = false;
+    let mut fence: Option<(char, usize)> = None;
 
     for line in slice_after.split_inclusive('\n') {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
-            in_fence = !in_fence;
-        }
-        // Four or more leading spaces is indented content, not a heading.
-        let indent = line.len() - trimmed.len();
-        let heading = trimmed.starts_with("## ") || trimmed.starts_with("# ");
-        if line_offset > 0 && !in_fence && indent < 4 && heading {
+        let content = line.trim_start();
+        let inside_fence = fence.is_some();
+        fence = match fence {
+            None => fence_opening(strip_list_marker(content)),
+            Some((marker, length)) if closes_fence(content, marker, length) => None,
+            open => open,
+        };
+        // The sections Callisto writes start at column 0; a heading-like line in a summary is indented under its bullet.
+        let heading = line.starts_with("## ") || line.starts_with("# ");
+        if line_offset > 0 && !inside_fence && heading {
             end = line_offset;
             break;
         }
@@ -135,6 +137,33 @@ pub fn find_section<'a>(changelog: &'a str, version: &Version) -> Option<&'a str
     }
 
     Some(slice_after[..end.min(slice_after.len())].trim())
+}
+
+/// `text` without a leading list marker (`-`, `*`, `+`, `1.` or `1)`), so a fence opened on a bullet's first line is seen.
+fn strip_list_marker(text: &str) -> &str {
+    for marker in ["- ", "* ", "+ "] {
+        if let Some(rest) = text.strip_prefix(marker) {
+            return rest.trim_start();
+        }
+    }
+    let after_digits = text.trim_start_matches(|c: char| c.is_ascii_digit());
+    if after_digits.len() < text.len() && (after_digits.starts_with(". ") || after_digits.starts_with(") ")) {
+        return after_digits[2..].trim_start();
+    }
+    text
+}
+
+/// The marker character and length of a fence that `text` opens (three or more backticks or tildes).
+fn fence_opening(text: &str) -> Option<(char, usize)> {
+    let marker = text.chars().next().filter(|c| matches!(c, '`' | '~'))?;
+    let length = text.chars().take_while(|c| *c == marker).count();
+    (length >= 3).then_some((marker, length))
+}
+
+/// Whether `text` closes a fence opened with `length` of `marker`: the same character, at least as many, nothing else.
+fn closes_fence(text: &str, marker: char, length: usize) -> bool {
+    let run = text.chars().take_while(|c| *c == marker).count();
+    run >= length && text[run..].trim().is_empty()
 }
 
 #[cfg(test)]
@@ -255,6 +284,43 @@ mod tests {
         assert!(section.contains("make"), "cut short:\n{section}");
         assert!(section.ends_with("- Next"), "got:\n{section}");
         assert!(!section.contains("First"));
+    }
+
+    fn notes(changelog: &str) -> String {
+        let v = Version::parse("1.1.0", VersionGrammar::SemVer).unwrap();
+        extract_section(changelog, &v).unwrap().to_owned()
+    }
+
+    #[test]
+    fn a_heading_written_in_a_summary_does_not_end_the_section() {
+        // A summary line `## Details` is rendered indented under its bullet.
+        let changelog = "# pkg\n\n## 1.1.0\n\n- Rework the API\n\n  ## Details\n\n  # Not a title either\n\n  More text\n\n## 1.0.0\n\n- First\n";
+        let section = notes(changelog);
+        assert!(
+            section.contains("## Details") && section.contains("More text"),
+            "cut short:\n{section}"
+        );
+        assert!(!section.contains("First"), "ran into the older version:\n{section}");
+    }
+
+    #[test]
+    fn a_fence_opened_on_a_bullet_closes_where_it_says_and_not_before() {
+        let changelog = "# pkg\n\n## 1.1.0\n\n- ~~~sh\n  ## inside\n  ~~~\n\n- After\n\n## 1.0.0\n\n- First\n";
+        let section = notes(changelog);
+        assert!(section.contains("- After"), "{section}");
+        assert!(
+            !section.contains("First"),
+            "the closing fence was missed and the older version leaked in:\n{section}"
+        );
+
+        // A longer fence is not closed by a shorter run of the same character, nor by a different character.
+        let nested = "# pkg\n\n## 1.1.0\n\n````md\n```\n## still inside\n~~~\n````\n\nafter\n\n## 1.0.0\n\n- First\n";
+        let section = notes(nested);
+        assert!(
+            section.contains("## still inside") && section.contains("after"),
+            "{section}"
+        );
+        assert!(!section.contains("First"), "{section}");
     }
 
     #[test]

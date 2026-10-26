@@ -608,7 +608,36 @@ impl Manifest for CargoToml {
                     path: self.path.clone(),
                     field: "package",
                 })?;
+            // The comment above the entry and the one after it belong to the line being replaced. In the dotted form
+            // (`version.workspace = true`) they hang off `version` and `workspace`, so both are read.
+            let mut prefix = pkg.key("version").and_then(|key| key.leaf_decor().prefix()).cloned();
+            let mut suffix = None;
+            if let Some(item) = pkg.get("version") {
+                // A value (`version = { workspace = true }`) carries its trailing comment itself; the dotted form is a
+                // table whose trailing comment is on the `workspace` value inside it.
+                if let Some(value) = item.as_value() {
+                    suffix = value.decor().suffix().cloned();
+                } else if let Some(inner) = item.as_table_like() {
+                    prefix = prefix.or_else(|| {
+                        inner
+                            .get_key_value("workspace")
+                            .and_then(|(key, _)| key.leaf_decor().prefix().cloned())
+                    });
+                    suffix = inner
+                        .get("workspace")
+                        .and_then(|value| value.as_value())
+                        .and_then(|value| value.decor().suffix().cloned());
+                }
+            }
             pkg.insert("version", toml_edit::value(v.render()));
+            if let Some(mut key) = pkg.key_mut("version")
+                && let Some(prefix) = prefix
+            {
+                key.leaf_decor_mut().set_prefix(prefix);
+            }
+            if let (Some(value), Some(suffix)) = (pkg.get_mut("version").and_then(|item| item.as_value_mut()), suffix) {
+                value.decor_mut().set_suffix(suffix);
+            }
             self.inherited_version = false;
             return Ok(());
         }
