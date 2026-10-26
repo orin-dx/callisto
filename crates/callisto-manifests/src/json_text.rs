@@ -328,10 +328,50 @@ mod tests {
         }
     }
 
+    /// Pretty printing with whitespace before and after each colon, which JSON allows and some editors write.
+    struct SpacedColon<'a>(serde_json::ser::PrettyFormatter<'a>);
+
+    impl serde_json::ser::Formatter for SpacedColon<'_> {
+        fn begin_array<W: ?Sized + std::io::Write>(&mut self, w: &mut W) -> std::io::Result<()> {
+            self.0.begin_array(w)
+        }
+        fn end_array<W: ?Sized + std::io::Write>(&mut self, w: &mut W) -> std::io::Result<()> {
+            self.0.end_array(w)
+        }
+        fn begin_array_value<W: ?Sized + std::io::Write>(&mut self, w: &mut W, first: bool) -> std::io::Result<()> {
+            self.0.begin_array_value(w, first)
+        }
+        fn end_array_value<W: ?Sized + std::io::Write>(&mut self, w: &mut W) -> std::io::Result<()> {
+            self.0.end_array_value(w)
+        }
+        fn begin_object<W: ?Sized + std::io::Write>(&mut self, w: &mut W) -> std::io::Result<()> {
+            self.0.begin_object(w)
+        }
+        fn end_object<W: ?Sized + std::io::Write>(&mut self, w: &mut W) -> std::io::Result<()> {
+            self.0.end_object(w)
+        }
+        fn begin_object_key<W: ?Sized + std::io::Write>(&mut self, w: &mut W, first: bool) -> std::io::Result<()> {
+            self.0.begin_object_key(w, first)
+        }
+        fn begin_object_value<W: ?Sized + std::io::Write>(&mut self, w: &mut W) -> std::io::Result<()> {
+            w.write_all(b" :  ")
+        }
+        fn end_object_value<W: ?Sized + std::io::Write>(&mut self, w: &mut W) -> std::io::Result<()> {
+            self.0.end_object_value(w)
+        }
+    }
+
     fn source_with_layout(doc: &Map<String, Value>, layout: u8) -> String {
         match layout {
             0 => serde_json::to_string(doc).unwrap(),
             1 => serde_json::to_string_pretty(doc).unwrap(),
+            3 => {
+                let mut bytes = Vec::new();
+                let formatter = SpacedColon(serde_json::ser::PrettyFormatter::with_indent(b"    "));
+                let mut serializer = serde_json::Serializer::with_formatter(&mut bytes, formatter);
+                doc.serialize(&mut serializer).unwrap();
+                String::from_utf8(bytes).unwrap()
+            }
             _ => {
                 let mut bytes = Vec::new();
                 let formatter = serde_json::ser::PrettyFormatter::with_indent(b"\t");
@@ -345,7 +385,7 @@ mod tests {
     #[test]
     fn layout_fixture_preserves_string_values() {
         let doc = parse(r#"{"a":" :  ","x":{"b":": "}}"#);
-        for layout in 0..3 {
+        for layout in 0..4 {
             assert_eq!(parse(&source_with_layout(&doc, layout)), doc);
         }
     }
@@ -358,7 +398,7 @@ mod tests {
         #[test]
         fn changing_one_string_changes_nothing_else_in_any_layout(
             root in prop::collection::btree_map("[a-z\"\\\\]{1,4}", json(), 1..5),
-            layout in 0u8..3,
+            layout in 0u8..4,
             pick in any::<prop::sample::Index>(),
             new in "[ -~é]{0,8}",
         ) {

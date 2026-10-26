@@ -616,6 +616,57 @@ fn test_cargo_is_publishable() {
     assert!(!manifest.is_publishable());
 }
 
+/// Pins an inherited version on a member and returns the file.
+fn pinned_over_inherited(source: &str) -> String {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[workspace]\nmembers = [\"member\"]\n\n[workspace.package]\nversion = \"1.0.0\"\n",
+    )
+    .unwrap();
+    fs::create_dir(dir.path().join("member")).unwrap();
+    fs::write(dir.path().join("member/Cargo.toml"), source).unwrap();
+    let decl = ManifestDecl::new("member/Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
+    let ctx = OpenContext {
+        workspace_root: dir.path(),
+        cargo_workspace: None,
+        cargo_roots: Default::default(),
+        npm_workspace_kind: None,
+    };
+    let mut manifest = CargoToml::open(&decl, &ctx).unwrap();
+    manifest
+        .write_version(&Version::parse("1.0.1", VersionGrammar::SemVer).unwrap(), &permit())
+        .unwrap();
+    manifest.persist(&permit()).unwrap();
+    fs::read_to_string(dir.path().join("member/Cargo.toml")).unwrap()
+}
+
+#[test]
+fn pinning_a_version_over_an_inherited_one_keeps_the_comments_around_that_line() {
+    // The workspace's own `[workspace.package]` is not needed: the member only has to declare the inheritance.
+    for (inherited, pinned) in [
+        ("version.workspace = true", "version = \"1.0.1\""),
+        ("version = { workspace = true }", "version = \"1.0.1\""),
+    ] {
+        let source =
+            format!("[package]\nname = \"d\"\n# above inherited\n{inherited} # trail inherited\nedition = \"2021\"\n");
+        assert_eq!(
+            pinned_over_inherited(&source),
+            format!("[package]\nname = \"d\"\n# above inherited\n{pinned} # trail inherited\nedition = \"2021\"\n"),
+            "{inherited}"
+        );
+    }
+}
+
+#[test]
+fn pinning_a_version_over_an_inherited_one_keeps_crlf_line_endings_and_their_comments() {
+    let source = "[package]\r\nname = \"c\"\r\n# crlf comment\r\nversion.workspace = true\r\nedition = \"2021\"\r\n";
+    assert_eq!(
+        pinned_over_inherited(source),
+        "[package]\r\nname = \"c\"\r\n# crlf comment\r\nversion = \"1.0.1\"\r\nedition = \"2021\"\r\n"
+    );
+}
+
 #[test]
 fn publish_field_decides_whether_a_crate_is_publishable() {
     let dir = tempdir().unwrap();
