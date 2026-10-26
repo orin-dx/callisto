@@ -1,0 +1,131 @@
+{
+  "cli_version": "0.12.1-nightly.202610240623.b9639ba5b",
+  "checkpoint_id": "01M5X0M8DXDMJ82PVXQS5XJF5D",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-26T21:07:43.821198Z",
+  "branch": "feat/release-pending",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/cli.rs",
+    "crates/callisto-cli/src/commands/release.rs",
+    "crates/callisto-graph/src/commands/mod.rs",
+    "crates/callisto-graph/src/commands/release_decision.rs",
+    "docs/releasing.md",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "bbcc2eb70a99",
+  "checkpoint_transcript_start": 83585,
+  "transcript_lines_at_start": 83585,
+  "compact_transcript_start": 6016,
+  "token_usage": {
+    "input_tokens": 56,
+    "cache_creation_tokens": 47847,
+    "cache_read_tokens": 25819656,
+    "output_tokens": 32010,
+    "api_call_count": 28,
+    "subagent_tokens": {
+      "input_tokens": 6,
+      "cache_creation_tokens": 103943,
+      "cache_read_tokens": 102883,
+      "output_tokens": 936,
+      "api_call_count": 2
+    }
+  },
+  "redaction": {
+    "replacements": 214,
+    "layers": {
+      "betterleaks": 40,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 27,
+      "credentialed_uri": 31,
+      "entropy": 136,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 370
+  },
+  "summary": {
+    "intent": "Build the release recovery mechanism now rather than merging open PRs first: a `callisto release pending` discovery command that finds unfinished releases from committed decisions, replacing the label scripts and queue.",
+    "outcome": "Implemented `pending_releases` discovery in a new pending.rs plus a `callisto release pending` CLI command (text and JSON output) with six passing tests, spec and docs updates, and a changeset. Full CI passed after a clippy fix, and the work was shipped as its own PR. The workflow switch, `--from` execute integration and deletion of the label scripts and queue remain.",
+    "learnings": {
+      "repo": [
+        "Release architecture publishes to registries first, then tags, then creates and publishes the forge release. A release is therefore complete when every package in its committed decision has its tag and the product's GitHub release is published.",
+        "Completion can be checked cheaply by reading the decision at each candidate commit with `git show`, with no checkout, per-commit plan or artifact digests.",
+        "`releases_tagged_at` already maps tags to decision entries, and `TagIndex`, `TagName` and the GitHub release lookup in provider/forge.rs were reusable building blocks. `tag_of_version` had to be made crate-visible.",
+        "The decision file path is passed explicitly elsewhere, so the new command defaults to `.callisto/release-decision.json` with an override.",
+        "Release specs live in docs/specs/release.json, which has a criterion field convention and sequential rerun spec ids. Recovery docs are in docs/releasing.md. Changes also need a changeset.",
+        "Full CI includes clippy and rejected the first version of pending.rs until a lint was fixed.",
+        "Work happens in the worktree .claude/worktrees/smoke-main, and many small PRs (#389-#396) are open against main."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release/pending.rs",
+          "finding": "New discovery module: reads each release commit's committed decision via git, checks every package's tag and the GitHub release's published state, and returns pending releases. Tests cover finished, unfinished, oldest-first ordering, stop-at-first-finished, `--from` and unknown `--from`."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/release.rs",
+          "finding": "Added the handler for the `release pending` subcommand with text and JSON output and no new report type."
+        }
+      ],
+      "workflow": [
+        "Validating the new command against the real repository (expecting 0.15.0 as the one pending release) was used as the most meaningful end-to-end test.",
+        "Checking the existing test fixture before writing tests allowed reuse without new scaffolding.",
+        "Splitting the discovery command into its own PR keeps the larger workflow switch reviewable."
+      ]
+    },
+    "friction": [
+      "Building on top of unmerged PRs (#392, #395, #396) that touch reusable code risks conflicts, since the user chose to build before merging.",
+      "The first CI run failed on a clippy complaint in pending.rs and needed a fix and rerun.",
+      "Several lookups were needed to find the CLI enum, dispatch, import block and decision path default across crates."
+    ],
+    "open_items": [
+      "Switch the release workflow to use `release pending`, plus the existing execute path against the oldest pending release, with `--from <sha>` as the escape for a stuck one.",
+      "Delete the label scripts and the queue.",
+      "The 0.15.0 recovery is still waiting on the user's go; merging #391 first would let the tap pick it up automatically.",
+      "Merge the open PRs (#389-#393, #395, #396).",
+      "Small tidy-ups skipped on purpose: folding the two prepared structs, merging the two roster loops, and the five-derivations point."
+    ]
+  }
+}
