@@ -21,6 +21,10 @@ inputs:
     description: 'Release-PR label'
     required: false
     default: 'callisto: release'
+  pending_pr_label:
+    description: 'Optional label retained until the host workflow verifies the merged release'
+    required: false
+    default: ''
   branch:
     description: 'Base branch for the release PR'
     required: false
@@ -113,6 +117,7 @@ runs:
         INPUT_COMMIT_MESSAGE: ${{ inputs.commit_message }}
         INPUT_TITLE: ${{ inputs.title }}
         INPUT_PR_LABEL: ${{ inputs.pr_label }}
+        INPUT_PENDING_PR_LABEL: ${{ inputs.pending_pr_label }}
         INPUT_BRANCH: ${{ inputs.branch }}
         INPUT_RELEASE_BRANCH: ${{ inputs.release_branch }}
         INPUT_CWD: ${{ inputs.cwd }}

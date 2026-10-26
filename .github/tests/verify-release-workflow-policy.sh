@@ -21,6 +21,8 @@ ALLOWED_WRITES = {
     "version-pr": {"contents", "pull-requests"},
     "build-artifact": {"attestations", "id-token"},
     "execute": {"contents"},
+    "finalize": {"pull-requests"},
+    "drain": {"actions"},
 }
 
 
@@ -205,20 +207,31 @@ _GATES = {"verify", "recovery-checks", "release-candidate"}
 # (scenario, event, ref, inputs, results, outputs, expected jobs that run)
 SCENARIOS = [
     ("push: release PR merge with artifacts", "push", MAIN, {}, {},
-     {"release-candidate": {"is_release_pr": "true"}, "plan": {"has_artifacts": "true"}},
-     _GATES - {"recovery-checks"} | {"plan", "build-artifact", "build", "execute"}),
+     {"release-candidate": {"is_release_pr": "true"}, "plan": {"has_artifacts": "true"}, "drain": {"has_pending": "false"}},
+     _GATES - {"recovery-checks"} | {"plan", "build-artifact", "build", "execute", "finalize", "drain", "version-pr"}),
     ("push: release PR merge without artifacts", "push", MAIN, {}, {},
-     {"release-candidate": {"is_release_pr": "true"}, "plan": {"has_artifacts": "false"}},
-     _GATES - {"recovery-checks"} | {"plan", "execute"}),
+     {"release-candidate": {"is_release_pr": "true"}, "plan": {"has_artifacts": "false"}, "drain": {"has_pending": "false"}},
+     _GATES - {"recovery-checks"} | {"plan", "execute", "finalize", "drain", "version-pr"}),
+    ("push: an older release remains pending", "push", MAIN, {}, {},
+     {"release-candidate": {"is_release_pr": "true"}, "plan": {"has_artifacts": "false"}, "drain": {"has_pending": "true"}},
+     _GATES - {"recovery-checks"} | {"plan", "execute", "finalize", "drain"}),
     ("push: ordinary commit opens the release PR", "push", MAIN, {}, {},
      {"release-candidate": {"is_release_pr": "false"}},
      _GATES - {"recovery-checks"} | {"version-pr"}),
     ("dispatch: recovery of a merged release", "workflow_dispatch", MAIN, {"release_source_sha": _SHA}, {},
-     {"release-candidate": {"is_release_pr": "true"}, "plan": {"has_artifacts": "true"}},
-     _GATES - {"verify"} | {"plan", "build-artifact", "build", "execute"}),
-    ("dispatch: recovery of an unmanaged commit", "workflow_dispatch", MAIN, {"release_source_sha": _SHA}, {},
-     {"release-candidate": {"is_release_pr": "false"}},
+     {"release-candidate": {"is_release_pr": "true"}, "plan": {"has_artifacts": "true"}, "drain": {"has_pending": "false"}},
+     _GATES - {"verify"} | {"plan", "build-artifact", "build", "execute", "finalize", "drain", "version-pr"}),
+    ("push: execute fails and pending marker remains", "push", MAIN, {}, {"execute": "failure"},
+     {"release-candidate": {"is_release_pr": "true"}, "plan": {"has_artifacts": "false"}},
+     _GATES - {"recovery-checks"} | {"plan", "execute"}),
+    ("push: completion marker fails and no next release starts", "push", MAIN, {}, {"finalize": "failure"},
+     {"release-candidate": {"is_release_pr": "true"}, "plan": {"has_artifacts": "false"}},
+     _GATES - {"recovery-checks"} | {"plan", "execute", "finalize"}),
+    ("dispatch: recovery of an unmanaged commit", "workflow_dispatch", MAIN, {"release_source_sha": _SHA},
+     {"release-candidate": "failure"}, {},
      _GATES - {"verify"}),
+    ("push: invalid pending merge blocks version-pr", "push", MAIN, {},
+     {"release-candidate": "failure"}, {}, _GATES - {"recovery-checks"}),
     ("dispatch without a source sha acts like a push", "workflow_dispatch", MAIN, {}, {},
      {"release-candidate": {"is_release_pr": "false"}},
      _GATES - {"recovery-checks"} | {"version-pr"}),
@@ -373,12 +386,12 @@ def check(path):
     if not re.search(r'\[\[ "\$resolved_sha" != "\$release_source_sha" \]\]; then\s*echo [^\n]*\n\s*exit 1', script):
         errs.append("release-candidate must reject a release_source_sha whose resolved sha differs")
     prs_line = next((l for l in script.splitlines() if l.strip().startswith("prs=$(")), "")
-    for frag in ('.merged_at != null', '.base.ref == "main"', '.head.repo.full_name == "', 'callisto/version-packages'):
+    for frag in ('.merged_at != null', '.merge_commit_sha == $sha', '.base.ref == "main"', '.head.repo.full_name == $repo', 'callisto/version-packages'):
         if frag not in prs_line:
             errs.append(f"release-candidate managed-PR association check lost {frag!r}")
     if not re.search(r"^\s*verified=\$\(gh api [^\n]*--jq '\.commit\.verification\.verified'\)$", script, re.M):
         errs.append("release-candidate must compute the commit verification from .commit.verification.verified")
-    if not re.search(r"if \[\[ \"\$prs\" == 1 && \"\$verified\" == true \]\]; then\s*\{\s*echo 'is_release_pr=true'", script):
+    if not re.search(r"if \[\[ \"\$\(jq 'length' <<< \"\$prs\"\)\" == 1 && \"\$verified\" == true \]\]; then\s*\{\s*echo 'is_release_pr=true'", script):
         errs.append("is_release_pr=true must require exactly one managed PR and a verified commit")
     if len(re.findall(r"is_release_pr=true", script)) != 1:
         errs.append("is_release_pr=true must be set in exactly one place")
@@ -425,6 +438,8 @@ def check(path):
     up = [s for s in steps if str(s.get("uses", "")).startswith("actions/upload-artifact@") and str((s.get("with") or {}).get("name", "")).startswith("release-receipt")]
     if len(up) != 1 or "github.run_attempt" not in str(up[0]["with"]["name"]):
         errs.append("execute must upload exactly one receipt artifact named per github.run_attempt so an earlier attempt's receipt is not shadowed")
+    elif up[0]["with"].get("if-no-files-found") != "error":
+        errs.append("execute must fail when its successful run has no receipt to upload")
     return errs
 
 
@@ -535,9 +550,10 @@ def mutants(text):
         return text[:j] + new + text[j + len(old):]
 
     return {
-        "verified requirement dropped": sub('if [[ "$prs" == 1 && "$verified" == true ]]', 'if [[ "$prs" == 1 ]]'),
+        "verified requirement dropped": sub("if [[ \"$(jq 'length' <<< \"$prs\")\" == 1 && \"$verified\" == true ]]", "if [[ \"$(jq 'length' <<< \"$prs\")\" == 1 ]]"),
         "dispatch sha regex weakened": sub("^[0-9a-f]{40}$", "^.+$"),
         "resolved-sha equality dropped": sub('if [[ "$resolved_sha" != "$release_source_sha" ]]', 'if false'),
+        "exact PR merge SHA dropped": sub('.merge_commit_sha == $sha and ', ''),
         "execute loses its status function": sub("      !cancelled() && needs.plan.result == 'success' &&",
             "      needs.plan.result == 'success' &&"),
         "execute runs when cancelled": sub("      !cancelled() && needs.plan.result == 'success' &&",
@@ -563,6 +579,7 @@ def mutants(text):
         "checksum records absolute path": sub('(cd "$handoff_dir" && shasum -a 256 release-intent.json > release-intent.json.sha256)',
             'shasum -a 256 "$handoff_dir/release-intent.json" > "$handoff_dir/release-intent.json.sha256"'),
         "receipt name not per attempt": sub("name: release-receipt-attempt-${{ github.run_attempt }}", "name: release-receipt"),
+        "missing receipt ignored": after("      - name: Upload receipt\n", "if-no-files-found: error", "if-no-files-found: ignore"),
         "handoff step disabled": sub("      - name: Verify same-run handoff before credentials\n", "      - name: Verify same-run handoff before credentials\n        if: false\n"),
         "handoff step renamed away": sub("Verify same-run handoff before credentials", "Handoff"),
         "handoff continue-on-error": sub("      - name: Verify same-run handoff before credentials\n        env:", "      - name: Verify same-run handoff before credentials\n        continue-on-error: true\n        env:"),

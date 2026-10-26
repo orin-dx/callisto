@@ -296,7 +296,7 @@
     },
     {
       "id": "REL-RERUN-05",
-      "criterion": "`workflow_dispatch` with `release_source_sha` releases that commit using the current workflow run's commit as the orchestration revision. The SHA must be 40 lowercase hex characters, resolve to that same commit, and be a GitHub-verified commit merged into `main` from `callisto/version-packages` or `callisto/version-packages--<40-hex>` in the same repository. A recovery run skips `verify` and `version-pr` and is gated by `recovery-checks`."
+      "criterion": "`workflow_dispatch` with `release_source_sha` releases that commit using the current workflow run's commit as the orchestration revision. The SHA must be 40 lowercase hex characters, resolve to that same commit, lie on the triggering `main` commit's history, and equal the exact merge commit of one GitHub-verified PR merged into `main` from `callisto/version-packages` or `callisto/version-packages--<40-hex>` in the same repository. An invalid explicit source fails the candidate job without planning or updating the release PR. A valid recovery run skips `verify`, uses `recovery-checks`, and does not update the release PR before execution."
     },
     {
       "id": "REL-RERUN-06",
@@ -311,6 +311,14 @@
     {
       "id": "REL-RERUN-08",
       "criterion": "`callisto release` and `callisto release --dry-run` print a warning on stderr for each package's last tag that exists in the repository but not on `origin` (one `git ls-remote` for all of them), saying its release may not have finished. The warning does not change the plan or the exit status, and nothing is printed when there is no `origin`, no tag, or the remote cannot be read."
+    },
+    {
+      "id": "REL-RERUN-09",
+      "criterion": "The repository's release workflow opts into `callisto-action`'s `pending_pr_label` input so created and updated PRs carry `callisto: pending`; consumer workflows without that input get no pending label. On a main push or manual dispatch without an explicit source, the workflow selects the merged, same-repository managed PR with that label having the earliest merge time, breaking ties by PR number; with none pending, it examines the triggering commit. It rejects a selected source that is not an ancestor of the triggering main commit or is not the exact merge commit of exactly one GitHub-verified managed PR, rather than moving on to a newer release PR. A `callisto: complete` label excludes a PR even if a stale search result still lists its pending label. Labels select candidates only; the committed decision and provider observations remain authoritative."
+    },
+    {
+      "id": "REL-RERUN-10",
+      "criterion": "Only after `execute` succeeds, including receipt upload, the workflow verifies the merged PR's exact merge SHA, removes `callisto: pending` and adds `callisto: complete`. A failed execution leaves the PR pending. After completion it dispatches the next pending release by full merge SHA; when none remains, it refreshes the managed release PR for changesets now on main. A failed dispatch fails the drain job and does not refresh the release PR, leaving the next merge pending for retry. Dispatch and completion jobs receive no registry secrets."
     },
     {
       "id": "REL-GH-01",

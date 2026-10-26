@@ -85,6 +85,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - name: Install ripgrep
         uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2
@@ -113,8 +114,13 @@ jobs:
     outputs:
       is_release_pr: ${{ steps.candidate.outputs.is_release_pr }}
       release_source_sha: ${{ steps.candidate.outputs.release_source_sha }}
+      release_pr_number: ${{ steps.candidate.outputs.release_pr_number }}
       orchestration_sha: ${{ steps.candidate.outputs.orchestration_sha }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - id: candidate
         shell: bash
         env:
@@ -123,7 +129,13 @@ jobs:
           TRIGGERING_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          release_source_sha="${RELEASE_SOURCE_SHA_INPUT:-$TRIGGERING_SHA}"
+          release_source_sha="$RELEASE_SOURCE_SHA_INPUT"
+          selected_pending=false
+          if [[ -z "$release_source_sha" ]]; then
+            release_source_sha=$(bash .github/scripts/find-pending-release.sh "$GITHUB_REPOSITORY" main 'callisto: pending')
+            [[ -n "$release_source_sha" ]] && selected_pending=true
+            release_source_sha="${release_source_sha:-$TRIGGERING_SHA}"
+          fi
           if [[ ! "$release_source_sha" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error::release_source_sha must be exactly 40 lowercase hex characters"
             exit 1
@@ -131,6 +143,10 @@ jobs:
           resolved_sha=$(gh api "/repos/${GITHUB_REPOSITORY}/commits/${release_source_sha}" --jq '.sha')
           if [[ "$resolved_sha" != "$release_source_sha" ]]; then
             echo "::error::release_source_sha does not resolve to that exact commit"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$release_source_sha" "$TRIGGERING_SHA"; then
+            echo "::error::release_source_sha is not on main's history"
             exit 1
           fi
           # Attestations are stamped with this run's own SHA, so the
@@ -141,25 +157,31 @@ jobs:
           # The GitHub API check is complementary provenance evidence: a
           # trusted merge must be both an actual merge of the managed PR and
           # a GitHub-verified signed commit. It cannot be a direct push.
-          prs=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/commits/${release_source_sha}/pulls" --jq '[.[] | select(.merged_at != null and .base.ref == "main" and .head.repo.full_name == "'"${GITHUB_REPOSITORY}"'" and (.head.ref == "callisto/version-packages" or (.head.ref | test("^callisto/version-packages--[0-9a-f]{40}$"))))] | length')
+          prs=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/commits/${release_source_sha}/pulls" | jq -s --arg repo "$GITHUB_REPOSITORY" --arg sha "$release_source_sha" '[.[][] | select(.merged_at != null and .merge_commit_sha == $sha and .base.ref == "main" and .head.repo.full_name == $repo and (.head.ref == "callisto/version-packages" or (.head.ref | test("^callisto/version-packages--[0-9a-f]{40}$")))) | .number]')
           verified=$(gh api "/repos/${GITHUB_REPOSITORY}/commits/${release_source_sha}" --jq '.commit.verification.verified')
-          if [[ "$prs" == 1 && "$verified" == true ]]; then
+          if [[ "$(jq 'length' <<< "$prs")" == 1 && "$verified" == true ]]; then
             {
               echo 'is_release_pr=true'
               echo "release_source_sha=$release_source_sha"
+              echo "release_pr_number=$(jq -r '.[0]' <<< "$prs")"
               echo "orchestration_sha=$orchestration_sha"
             } >> "$GITHUB_OUTPUT"
+          elif [[ "$selected_pending" == true || -n "$RELEASE_SOURCE_SHA_INPUT" || "$(jq 'length' <<< "$prs")" != 0 ]]; then
+            echo "::error::release source is not one verified merged managed PR"
+            exit 1
           else
             echo 'is_release_pr=false' >> "$GITHUB_OUTPUT"
           fi
 
   version-pr:
     name: Create or update the Callisto release PR
-    needs: release-candidate
+    needs: [release-candidate, drain]
     if: >-
       always() && needs.release-candidate.result == 'success' &&
-      needs.release-candidate.outputs.is_release_pr != 'true' &&
-      inputs.release_source_sha == ''
+      ((needs.release-candidate.outputs.is_release_pr != 'true' &&
+        needs.drain.result == 'skipped' && inputs.release_source_sha == '') ||
+       (needs.release-candidate.outputs.is_release_pr == 'true' &&
+        needs.drain.result == 'success' && needs.drain.outputs.has_pending == 'false'))
     timeout-minutes: 10
     concurrency:
       group: version-pr
@@ -186,6 +208,7 @@ jobs:
           setup_callisto: 'false'
           branch: main
           release_branch: callisto/version-packages
+          pending_pr_label: 'callisto: pending'
           # Interdependent Cargo packages bump together, so Cargo.lock must be refreshed in the release PR.
           version_command: 'callisto version --refresh-lockfiles'
         env:
@@ -492,5 +515,60 @@ jobs:
           # Per attempt: keeps each attempt's receipt instead of shadowing the prior one.
           name: release-receipt-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/callisto-release-receipt/${{ github.run_id }}
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 7
+
+  finalize:
+    name: Mark the merged release PR complete
+    needs: [execute, release-candidate]
+    if: >-
+      !cancelled() && needs.execute.result == 'success' &&
+      needs.release-candidate.outputs.is_release_pr == 'true'
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Reconcile the PR marker after verified completion
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_PR_NUMBER: ${{ needs.release-candidate.outputs.release_pr_number }}
+          RELEASE_SOURCE_SHA: ${{ needs.release-candidate.outputs.release_source_sha }}
+        run: bash .github/scripts/mark-release-complete.sh "$RELEASE_PR_NUMBER" "$RELEASE_SOURCE_SHA"
+
+  drain:
+    name: Start the next pending release
+    needs: [finalize, release-candidate]
+    if: >-
+      !cancelled() && needs.finalize.result == 'success' &&
+      needs.release-candidate.outputs.is_release_pr == 'true'
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
+    outputs:
+      has_pending: ${{ steps.pending.outputs.has_pending }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Dispatch the oldest pending merge
+        id: pending
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SOURCE_SHA: ${{ needs.release-candidate.outputs.release_source_sha }}
+        run: |
+          set -euo pipefail
+          next_sha=$(bash .github/scripts/find-pending-release.sh "$GITHUB_REPOSITORY" main 'callisto: pending' "$RELEASE_SOURCE_SHA")
+          if [[ -n "$next_sha" ]]; then
+            gh workflow run callisto-release.yml --ref main -f release_source_sha="$next_sha"
+            echo 'has_pending=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'has_pending=false' >> "$GITHUB_OUTPUT"
+          fi
