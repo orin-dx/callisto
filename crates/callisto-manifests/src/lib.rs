@@ -11,6 +11,7 @@ pub mod atomic;
 
 pub mod cargo;
 mod common;
+mod json_text;
 pub mod npm;
 pub mod python;
 

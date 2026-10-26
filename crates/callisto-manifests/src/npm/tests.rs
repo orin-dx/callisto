@@ -246,6 +246,92 @@ fn open_manifest(dir: &tempfile::TempDir, content: &str) -> PackageJson {
     PackageJson::open(&decl, &ctx).unwrap()
 }
 
+/// Opens `source`, applies `change`, persists and returns the file.
+fn persisted(source: &str, change: impl FnOnce(&mut PackageJson)) -> String {
+    let dir = tempdir().unwrap();
+    let mut manifest = open_manifest(&dir, source);
+    change(&mut manifest);
+    manifest.persist(&permit()).unwrap();
+    fs::read_to_string(dir.path().join("package.json")).unwrap()
+}
+
+fn bump(manifest: &mut PackageJson) {
+    manifest
+        .write_version(&Version::parse("1.1.0", VersionGrammar::SemVer).unwrap(), &permit())
+        .unwrap();
+}
+
+#[test]
+fn a_version_bump_changes_one_line_however_the_rest_of_the_file_is_laid_out() {
+    let hand_written = "{\n  \"name\": \"lib\",\n  \"version\": \"1.0.0\",\n  \"keywords\": [\"a\", \"b\"],\n  \"exports\": { \".\": \"./dist/index.js\" },\n  \"empty\": [],\n  \"unicode\": \"caf\\u00e9\",\n  \"num\": 1.0\n}\n";
+    assert_eq!(persisted(hand_written, bump), hand_written.replace("1.0.0", "1.1.0"));
+
+    let tabs_and_crlf = "{\r\n\t\"name\": \"lib\",\r\n\t\"version\": \"1.0.0\",\r\n\t\"files\": [\"dist\"]\r\n}\r\n";
+    assert_eq!(persisted(tabs_and_crlf, bump), tabs_and_crlf.replace("1.0.0", "1.1.0"));
+
+    let bom_no_trailing_newline = "\u{FEFF}{\"name\":\"lib\",\"version\":\"1.0.0\"}";
+    assert_eq!(
+        persisted(bom_no_trailing_newline, bump),
+        bom_no_trailing_newline.replace("1.0.0", "1.1.0")
+    );
+}
+
+#[test]
+fn persisting_without_a_change_leaves_every_byte_alone() {
+    let source = "{\n    \"name\": \"lib\",\n    \"version\": \"1.0.0\",\n    \"files\": [\"dist\"]\n}\n";
+    assert_eq!(persisted(source, |_| {}), source);
+}
+
+#[test]
+fn a_rewritten_dependency_range_is_replaced_where_it_stands() {
+    let source = "{\n  \"name\": \"app\",\n  \"version\": \"1.0.0\",\n  \"dependencies\": { \"lib\": \"^1.0.0\", \"other\": \"^2.0.0\" },\n  \"peerDependencies\": {\n    \"lib\": \">=1.0.0 <2.0.0\"\n  }\n}\n";
+    let rewritten = persisted(source, |manifest| {
+        let locator = manifest
+            .iter_dependencies()
+            .find(|entry| entry.name == "lib" && entry.kind == callisto_model::DepKind::Runtime)
+            .expect("a runtime dependency on lib")
+            .locator;
+        manifest
+            .update_dependency_spec(
+                "lib",
+                callisto_model::DepKind::Runtime,
+                &locator,
+                make_npm_spec("^2.0.0"),
+                &permit(),
+            )
+            .unwrap();
+    });
+    assert_eq!(rewritten, source.replace("\"lib\": \"^1.0.0\"", "\"lib\": \"^2.0.0\""));
+}
+
+#[test]
+fn a_change_that_is_not_a_string_replacement_still_writes_a_valid_file() {
+    // The file has no version to replace, so the whole document is written, as before.
+    let source = "{\n  \"name\": \"lib\",\n  \"files\": [\"dist\"]\n}\n";
+    let written = persisted(source, bump);
+    let parsed: Value = serde_json::from_str(&written).unwrap();
+    assert_eq!(parsed["version"], "1.1.0");
+    assert_eq!(parsed["files"], serde_json::json!(["dist"]));
+    assert!(written.ends_with("}\n"));
+}
+
+#[test]
+fn a_second_persist_is_measured_against_what_the_first_wrote() {
+    let dir = tempdir().unwrap();
+    let source = "{\"name\":\"lib\",\"version\":\"1.0.0\",\"files\":[\"dist\"]}\n";
+    let mut manifest = open_manifest(&dir, source);
+    bump(&mut manifest);
+    manifest.persist(&permit()).unwrap();
+    manifest
+        .write_version(&Version::parse("1.2.0", VersionGrammar::SemVer).unwrap(), &permit())
+        .unwrap();
+    manifest.persist(&permit()).unwrap();
+    assert_eq!(
+        fs::read_to_string(dir.path().join("package.json")).unwrap(),
+        source.replace("1.0.0", "1.2.0")
+    );
+}
+
 #[test]
 fn a_package_json_that_is_not_json_fails_to_open_with_a_parse_error_naming_the_file() {
     let dir = tempdir().unwrap();

@@ -28,7 +28,7 @@ Rules for AI agents working in this repo.
 ## Invariants
 
 1. Safe Rust only: `unsafe_code = "forbid"`.
-2. Manifest edits preserve format: `toml_edit` for TOML; JSON keeps key order and fingerprinted indentation. No regex or line edits.
+2. Manifest edits preserve format: `toml_edit` for TOML; JSON changes that only replace string values are written into the original text by span (`json_text`), anything else keeps key order and fingerprinted indentation. No regex or line edits.
 3. File writes go through `callisto_model::atomic::atomic_write`.
 4. User-facing errors derive `miette::Diagnostic` with a code and a fix.
 5. No emojis in docs or code.

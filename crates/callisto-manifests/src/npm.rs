@@ -15,6 +15,10 @@ pub struct PackageJson {
     absolute: PathBuf,
     role: ManifestRole,
     doc: Map<String, Value>,
+    /// The file as last read or written (byte order mark removed) and its parse, so a change that only replaces string
+    /// values can be written into that text instead of reflowing the whole file.
+    source: String,
+    source_doc: Map<String, Value>,
     fingerprint: FormatFingerprint,
     npm_workspace_kind: Option<WorkspaceKind>,
     workspace_root: PathBuf,
@@ -58,11 +62,31 @@ impl PackageJson {
             path: rel_path,
             absolute: abs_path,
             role: decl.role.clone(),
+            source_doc: doc.clone(),
+            source: clean_content.to_owned(),
             doc,
             fingerprint,
             npm_workspace_kind: ctx.npm_workspace_kind,
             workspace_root: ctx.workspace_root.to_path_buf(),
         })
+    }
+
+    /// Writes `text` (without its byte order mark, which is put back when the file had one) and remembers it as the
+    /// file's content, so the next change is measured against what is now on disk.
+    fn write_text(&mut self, text: String, permit: &ApplyPermit) -> Result<(), ManifestError> {
+        let on_disk = if self.fingerprint.common.has_bom {
+            format!("\u{FEFF}{text}")
+        } else {
+            text.clone()
+        };
+        crate::atomic::atomic_write(&self.absolute, &on_disk, permit).map_err(|e| ManifestError::Write {
+            path: self.path.clone(),
+            message: e.to_string(),
+        })?;
+        crate::record_persist_call();
+        self.source = text;
+        self.source_doc = self.doc.clone();
+        Ok(())
     }
 
     fn dependency_target(&self, name: &str, spec: &DepSpec) -> String {
@@ -287,6 +311,12 @@ fn napi_linux_abi_from_package_name(name: &str) -> Option<String> {
 
 impl Manifest for PackageJson {
     fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
+        // A version or dependency range is a string, so the usual change is the same file with a few literals replaced.
+        let in_place = crate::json_text::string_edits(&self.source_doc, &self.doc)
+            .and_then(|edits| crate::json_text::replace_strings(&self.source, &edits));
+        if let Some(text) = in_place {
+            return self.write_text(text, permit);
+        }
         let indent_str = match self.fingerprint.indent {
             Indent::Spaces(n) => " ".repeat(n as usize),
             Indent::Tabs => "\t".to_string(),
@@ -318,16 +348,7 @@ impl Manifest for PackageJson {
             }
         }
 
-        if self.fingerprint.common.has_bom {
-            out = format!("\u{FEFF}{}", out);
-        }
-
-        crate::atomic::atomic_write(&self.absolute, &out, permit).map_err(|e| ManifestError::Write {
-            path: self.path.clone(),
-            message: e.to_string(),
-        })?;
-        crate::record_persist_call();
-        Ok(())
+        self.write_text(out, permit)
     }
 
     fn path(&self) -> &Path {
