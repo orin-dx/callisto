@@ -13,6 +13,7 @@ A package that has never been published is released from its manifest version wi
 - **Check the name first.** A name another project already owns is rejected by the registry. If it already holds the version you are releasing under another repository, `callisto release` stops with E322 and names that repository. Search the registry before the first release.
 - **Fill in the metadata the registry requires.** crates.io needs `description` and `license` (or `license-file`) in `Cargo.toml`. A first release of a crate without them stops with E323 before anything is published.
 - **Use a token that can create the package.** A token scoped to existing packages cannot publish a new one. Trusted publishing (OIDC) is configured per package on the registry and generally needs the package, or a pending publisher, to exist first, so plan on one token-based first publish. Follow each registry's current documentation.
+- **Package managers.** An npm package is published with the manager its workspace uses (`npm`, `pnpm`, `yarn` 4 or `bun`), passing `--tag`, `--access` and, where the manager takes one, `--registry`. Yarn takes no `--registry`; it reads `publishConfig.registry` from the package itself.
 - **Scoped npm packages** publish with `--access public` by default. A private scoped package sets `publishConfig.access` to `"restricted"` in its `package.json`, which Callisto passes through.
 - **Rehearse.** `callisto release --dry-run` shows what would be published and in which order, and works without credentials.
 
