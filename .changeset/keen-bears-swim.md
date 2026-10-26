@@ -2,4 +2,4 @@
 callisto-cli: patch
 ---
 
-A snapshot tag that is empty or has a character a version cannot hold, such as a space or `/`, now stops with E324 and a fix. Before, it failed as an internal error, or an empty tag produced a version with a doubled dash.
+Empty snapshot tags, or tags containing spaces or `/`, now fail with a clear fix instead of producing a malformed version or an internal error.

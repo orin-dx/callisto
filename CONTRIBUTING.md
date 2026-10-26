@@ -74,6 +74,16 @@ callisto add --package cargo/<crate>:<bump> --summary "..."
 
 `--package` takes repeatable `ecosystem/name:severity` pairs (`none`, `patch`, `minor`, `major`).
 
+Write the summary as the changelog entry users will read:
+
+- Lead with the new behavior or benefit.
+- Add a required action or important limit when it matters.
+- Use one short sentence for a simple change. For related details or migration steps, use a short lead and nested bullets. Skip internal details and the old failure unless they clarify the change.
+
+Callisto puts each summary under a version heading as one bullet. Nested bullets in the summary stay nested in the changelog.
+
+For example: `Python ~= dependency updates keep the original precision: ~=1.2 becomes ~=2.0, leaving later 2.x releases eligible.`
+
 Interactive wizard (omit `--package`/`--summary`, run from a TTY): prompts for packages, then major-bump packages, then minor-bump packages (rest default to patch), then a summary, then a confirmation preview before writing `.changeset/<slug>.md`.
 
 ```bash

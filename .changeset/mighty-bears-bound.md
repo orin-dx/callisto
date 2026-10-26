@@ -2,4 +2,4 @@
 callisto-cli: patch
 ---
 
-When `init` has no settings to write, it says the defaults apply instead of printing an empty `callisto.toml`.
+`init` now explains that defaults apply when there is no configuration to write.

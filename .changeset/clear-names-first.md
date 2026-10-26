@@ -2,4 +2,7 @@
 callisto-cli: patch
 ---
 
-A first release of a package whose name another project already owns is now refused with a clear error (E322), naming the repository the registry records for it, where before `release` reported the version as already published and told you to check out an old commit. This applies to a package this repository has never tagged; tag the version commit by hand if the package really is yours.
+Callisto now blocks a first release when the registry links the package name to another repository.
+
+- The error names that repository.
+- If the package moved and is yours, tag its version commit before retrying.
