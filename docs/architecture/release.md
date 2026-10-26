@@ -52,6 +52,8 @@ The generated release action maps credentials without changing owner-defined pub
 - PyPI: map `PYPI_TOKEN` to `TWINE_USERNAME=__token__` and `TWINE_PASSWORD` for upload. The build backend receives no registry or forge credentials.
 - Cargo: pass `CARGO_REGISTRY_TOKEN` through to Cargo.
 
+The CLI runner also passes `CARGO_REGISTRIES_*_TOKEN` only to Cargo. Other child processes receive neither the default nor named Cargo registry tokens.
+
 ## Run envelope and state (`release/execution.rs`)
 
 - `ReleaseRunEnvelopeV1` is one run's identity: orchestration revision, release-source revision, intent digest, artifact-manifest digest.
