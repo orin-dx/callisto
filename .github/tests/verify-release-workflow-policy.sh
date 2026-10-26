@@ -334,8 +334,10 @@ def check(path):
             errs.append(f"{name}: secrets referenced outside execute")
         if name == "execute":
             used = set(re.findall(r"secrets\.([A-Za-z0-9_]+)", blob))
-            if used != {"CARGO_REGISTRY_TOKEN"}:
-                errs.append(f"execute: secrets must be exactly CARGO_REGISTRY_TOKEN, found {sorted(used)}")
+            if used != {"CARGO_REGISTRY_TOKEN", "TAP_APP_PRIVATE_KEY"}:
+                errs.append(
+                    f"execute: secrets must be exactly CARGO_REGISTRY_TOKEN and TAP_APP_PRIVATE_KEY, found {sorted(used)}"
+                )
         perms = job.get("permissions")
         if not isinstance(perms, dict) or not perms:
             errs.append(f"{name}: permissions must be declared per job")
