@@ -1,0 +1,127 @@
+{
+  "cli_version": "0.12.1-nightly.202610240623.b9639ba5b",
+  "checkpoint_id": "01M5WW5Q7QFGXZFP68KTX36FC1",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-26T19:49:51.145299Z",
+  "branch": "simplify/json-in-place",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-manifests/src/npm.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "8ff11ae4aed4",
+  "checkpoint_transcript_start": 82676,
+  "transcript_lines_at_start": 82676,
+  "compact_transcript_start": 5964,
+  "token_usage": {
+    "input_tokens": 22,
+    "cache_creation_tokens": 12786,
+    "cache_read_tokens": 8781177,
+    "output_tokens": 12293,
+    "api_call_count": 11,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 214,
+    "layers": {
+      "betterleaks": 40,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 27,
+      "credentialed_uri": 31,
+      "entropy": 136,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 365
+  },
+  "summary": {
+    "intent": "Cut over-engineering from the Callisto release tooling: get an honest audit of where the assistant had added complexity without real value, then simplify the parts the user agreed were overkill, starting with the in-place JSON scanner.",
+    "outcome": "The user agreed the in-place JSON scanner was overkill, kept the weekly fuzz/mutation workflow and the per-crate coverage gate, and the assistant replaced the custom scanner with the maintained jsonc-parser (CST) crate. The 256 manifests tests and cargo deny passed, full CI was run, and a simplification PR was shipped. Earlier, PR #391 was opened with only a tap-notification step, a policy change and an AGENTS.md clause.",
+    "learnings": {
+      "repo": [
+        "Callisto version bumps in package.json are meant to produce a one-line diff; layout tests in callisto-manifests pin this behavior.",
+        "The workspace uses cargo deny for dependency checks, and new dependencies are declared in the root Cargo.toml then referenced from crate Cargo.tomls.",
+        "The release recovery queue (#383) can re-select a failed item on every push and has no lock, so it can wedge future releases. Manual dispatch with a full SHA already exists as a simpler recovery path.",
+        "The tap polls daily, which covers a missed post-release notification and makes extra checks on that notification unnecessary.",
+        "Work is done in git worktrees under .claude/worktrees (e.g. smoke-main).",
+        "In #365, batched git history cut process count from 78 to 33 but barely moved wall time because `cargo info` dominates; the parallel registry lookups in #364 had already captured the win."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-manifests/src/json_text.rs",
+          "finding": "Rewritten to wrap the jsonc-parser CST (MIT, from dprint) for in-place JSON value edits instead of a hand-built scanner and diff layer."
+        },
+        {
+          "path": "crates/callisto-manifests/src/npm.rs",
+          "finding": "Switched to the library-backed json_text edit path; the existing layout tests still pass."
+        }
+      ],
+      "workflow": [
+        "Before writing any test, check or script, state the failure it prevents and how likely and costly it is. This was saved to memory by extending an existing entry.",
+        "When replacing bespoke code, check that a maintained library exists and fits (license, API surface) before building, then verify with existing tests, cargo deny and full CI.",
+        "Property tests and custom scanners are often overkill when a few unit tests or a library cover the need.",
+        "The user prefers fast, simple, straightforward solutions that add real value, and will override the assistant's proposed cuts selectively."
+      ]
+    },
+    "friction": [
+      "The assistant over-built several pieces (JSON scanner with property test, batched git history, add-wizard prompter refactor), which prompted the user's pushback.",
+      "The custom JSON formatter in the property test needed a fixture patch from Codex, adding extra churn.",
+      "The blocking per-crate coverage gate was added after the user said meaningful tests matter more than the number, though the user later decided to keep it."
+    ],
+    "open_items": [
+      "The 0.15.0 recovery is waiting on the user's go-ahead; the assistant recommends merging #391 first so the recovery is the first live test of the tap notification.",
+      "Decide whether to simplify or remove the release recovery queue (#383) in favor of documented manual recovery; the user has not decided.",
+      "Review the core release machinery (decision, intent, envelope, capability, observe/adopt/confirm) for over-complexity; this needs a deliberate decision.",
+      "Possible cuts not yet decided: `features-boundary` check, `add` wizard prompter refactor (#373), `init` message and `callisto.toml` root marker (#363), and the batched git history (#365).",
+      "Most of the ten proposed queue negative tests are probably to be dropped; one test, that a failed oldest item doesn't block later ones, is to be checked and written only if that is the actual behavior.",
+      "The in-progress lock for the queue is on hold until a duplicate run causes real harm."
+    ]
+  }
+}
