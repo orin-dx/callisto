@@ -1,0 +1,144 @@
+{
+  "cli_version": "0.12.1-nightly.202610240623.b9639ba5b",
+  "checkpoint_id": "01M5WXKN1ET06453R7MVRGD14C",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-26T20:14:56.101976Z",
+  "branch": "refactor/split-commit-decision-check",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/release_decision.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "fe1004aeae0c",
+  "checkpoint_transcript_start": 83428,
+  "transcript_lines_at_start": 83428,
+  "compact_transcript_start": 6006,
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 20222,
+    "cache_read_tokens": 7053361,
+    "output_tokens": 14113,
+    "api_call_count": 8,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 214,
+    "layers": {
+      "betterleaks": 40,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 27,
+      "credentialed_uri": 31,
+      "entropy": 136,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 369
+  },
+  "summary": {
+    "intent": "Reduce complexity in the Callisto release tooling: split registry providers by ecosystem, slim workflow checks, simplify the JSON scanner, design `release --recover`, and check whether decision/intent/prepared-inputs types duplicate each other.",
+    "outcome": "Opened PRs #392, #393 and #395, wrote up the `release --recover` design, and completed the overlap review. Split `derive_release_commit_decision` into helpers (compiles, 19 decision tests pass, full CI run, PR shipped), and deferred the other cleanups.",
+    "learnings": {
+      "repo": [
+        "Decision, intent and prepared inputs are three deliberate layers: the decision is the committed roster (ADR 2), the intent is sealed by digest, and prepared operations hold private argv, paths and registry bindings.",
+        "`validate_intent` deliberately re-derives the intent and compares it with the received one. This is staleness detection and must run in `execute`, because the CI build and execute jobs are separate processes.",
+        "Callisto stays git-only (ADR 5), so the workflow must keep the GitHub-side checks (exactly one managed PR, GitHub-verified merge commit).",
+        "A candidate release that can never succeed (e.g. the E180 tag-push case) would block later releases, since releases are sequential. The escape is to fix it or pass `--from <sha>`.",
+        "`just bench` exists and is the stated gate for deciding whether to merge the repeated derivations."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "line": 385,
+          "end_line": 619,
+          "finding": "`derive_release_commit_decision` was about 234 lines doing four jobs: HEAD/parent verification, diff and path policy, decision decode and claim checks, batched manifest and changelog checks. It was split into helpers."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "line": 198,
+          "end_line": 302,
+          "finding": "`derive_release_roster` (:198) and `releases_tagged_at` (:286) repeat the 'unreleased version' entry-building loop, and tag template rendering appears at :274 and :302."
+        },
+        {
+          "path": "crates/callisto-graph/src/capability.rs",
+          "line": 362,
+          "finding": "Copies `git_remote` and `operations` from `PreparedDerivation` into `PreparedReleaseInputs`, so the two structs overlap."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/local.rs",
+          "line": 421,
+          "finding": "`plan_release` derives once. Guards at :207, :296 and :331 can each derive again, and the CLI validation derives a further time (`release.rs:121`), giving up to 5 derivations on a real local release."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "line": 28,
+          "finding": "`release_package_ids` already unifies package id computation across 6 call sites."
+        }
+      ],
+      "workflow": [
+        "Run the full CI after a refactor. The unit tests alone don't exercise the end-to-end release checks.",
+        "Set a benefit threshold for cleanups. Skip tidy-ups with no user-visible gain, and gate risky ones on measurement.",
+        "Teammate reports can arrive truncated, so ask for the remainder via SendMessage rather than acting on partial findings.",
+        "Reading-based call counts from a reviewer who ran no cargo builds are estimates, not measurements."
+      ]
+    },
+    "friction": [
+      "The overlap report was truncated mid-finding 5 and needed a follow-up request.",
+      "The reviewer ran no cargo builds, so the derivation counts are unmeasured.",
+      "The end-to-end release tests that exercise the decision check run only in full CI, not locally."
+    ],
+    "open_items": [
+      "Build `callisto release --recover`: the discovery function, `release pending --format json`, the action changes, the ADR 3 amendment and removal of ADR 13. First confirm the cost of observing old candidates and that committed-decision verification works at arbitrary commits.",
+      "Split `registry_argv.rs` (1,201 lines) by ecosystem as a follow-up, if wanted.",
+      "Deferred low-value cleanups: fold `PreparedDerivation` into `PreparedReleaseInputs`, merge the duplicate roster loops, and dedupe the tag rendering.",
+      "Share one derivation across the local guards in `plan_release` (medium risk because guard ordering changes). Do it only if `just bench` shows a cost.",
+      "Check `derive.rs` (about 1090 production lines) for further splits; the largest-function scan was only partial."
+    ]
+  }
+}
