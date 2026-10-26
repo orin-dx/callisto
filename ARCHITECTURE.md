@@ -8,7 +8,7 @@
 
 1. **Safe Rust only.** `unsafe_code = "forbid"` workspace-wide.
 2. **License boundary.** `callisto-model` is MIT and must never depend on an FSL-1.1-MIT crate. Every other crate is FSL-1.1-MIT. Check with `grep -H "^license" crates/*/Cargo.toml`.
-3. **Format-preserving manifest edits.** `Cargo.toml` goes through `toml_edit`'s CST; `package.json` is fingerprinted for indent style and line endings before a `serde_json` (`preserve_order`) round trip. No regex or line-based edits to manifests.
+3. **Format-preserving manifest edits.** `Cargo.toml` goes through `toml_edit`'s CST. String-only `package.json` changes replace scanned literal spans in the original text; other changes keep key order and fingerprinted indentation and line endings. No regex or line-based edits to manifests.
 4. **One file-write primitive, capability-gated.** `callisto_model::atomic::atomic_write` (`NamedTempFile` in the target's own directory, `fsync`, `persist` via `fs::rename`, then `fsync` the parent directory, and its parent when the call created it; a failed sync is returned unless the filesystem cannot sync a directory) is the only way file content is written; deletions and directory creation use `std::fs`. It takes `&ApplyPermit`, a token with a private field that only `ApplyPermit::granted_unless_dry_run(dry_run)` can construct, returning `None` on a dry run. A write path that forgets to check `--dry-run` has no permit to pass and fails to compile.
 5. **System Git only.** All VCS reads and writes shell out to the user's `git` binary (`callisto_model::vcs`), so Callisto sees exactly the repository, config, and identity Git itself does. No embedded Git implementation.
 6. **Versioning.** The four published crates version in lockstep (one fixed group). Only `callisto-cli`, its command-line interface and its JSON reports are a compatibility surface; `callisto-model`, `callisto-manifests` and `callisto-graph` are internal and may change in any release.
@@ -76,7 +76,7 @@ Four traits decouple the engine from platform I/O (`callisto-model::exec`, `call
 
 ## Current boundaries and planned changes
 
-`PackageId` is a flexible selector/display form; `PackageKey` is a directory locator; `ReleasePackageId` is a canonical ecosystem-qualified distribution identity. A directory can own several canonical manifests, but the current package model requires one version grammar. Registry version observations do not establish a complete Python file set or identical package bytes.
+`PackageId` is a flexible selector/display form; `PackageKey` is a directory locator; `ReleasePackageId` is a canonical ecosystem-qualified distribution identity. A directory can own several canonical manifests, but the current package model requires one version grammar. Registry version observations alone do not establish identical package bytes. CI can seal a Python file set in the artifact manifest and verify each file on execution.
 
 Remaining v1 work is in [`docs/projects/ROAD-TO-V1.md`](docs/projects/ROAD-TO-V1.md). The canonical-identity and polyglot model is in [`docs/architecture/polyglot-v1.md`](docs/architecture/polyglot-v1.md); only the parts it marks as design are not implemented, and none is an extension seam. The existing dependency graph and release-operation DAG remain the basis of the plan.
 

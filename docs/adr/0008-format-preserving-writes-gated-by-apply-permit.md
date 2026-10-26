@@ -10,7 +10,7 @@ Status: Accepted (implemented in 2c27f8d0b)
 
 ## Decision
 
-- TOML edits go through `toml_edit`, changing the existing item in place. `package.json` goes through `serde_json` with `preserve_order`, and indentation, line endings and BOM are detected on read and reproduced on write (`FormatFingerprint`). Callisto-owned JSON such as `pre.json` is regenerated canonically (`crates/callisto-model/src/format/pre.rs`).
+- TOML edits go through `toml_edit`, changing the existing item in place. String-only `package.json` edits replace scanner-identified literal spans; other changes use `serde_json` with `preserve_order` and reproduce fingerprinted indentation, line endings and BOM (`FormatFingerprint`). Callisto-owned JSON such as `pre.json` is regenerated canonically (`crates/callisto-model/src/format/pre.rs`).
 - Every file content write goes through `callisto_model::atomic::atomic_write`: temp file in the target's directory, fsync, rename, then fsync the parent and grandparent. Deletions (consumed changesets, `pre.json`) and directory creation use `std::fs` directly.
 - Write primitives take `&ApplyPermit`. Its only field is private; outside tests the only constructor is `ApplyPermit::granted_unless_dry_run(dry_run)`, which returns `None` on a dry run.
 
@@ -22,7 +22,7 @@ Status: Accepted (implemented in 2c27f8d0b)
 
 ## Consequences
 
-- TOML manifest diffs in release PRs show only version and dependency-spec changes. `package.json` is re-serialized with serde_json's pretty printer, keeping key order, indentation, line endings, BOM and trailing newline; other layout (for example an inline array) is normalized (`crates/callisto-manifests/src/npm.rs`).
+- TOML manifest diffs in release PRs show only version and dependency-spec changes. String-only `package.json` edits preserve every byte outside the changed literals. Other changes re-serialize with serde_json's pretty printer, keeping key order, indentation, line endings, BOM and trailing newline; inline layout may be normalized (`crates/callisto-manifests/src/npm.rs`).
 - CRLF manifests and changelogs stay CRLF.
 - A failed run can leave earlier files updated; `atomic_write` only prevents a torn single file (VER-APPLY-05).
 - Tests need `ApplyPermit::force_for_tests()`, behind `cfg(test)` or the `callisto-model/test-util` feature, enabled only under `[dev-dependencies]`.
