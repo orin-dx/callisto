@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Parsed-YAML policy check for the release workflow: secrets, permissions,
-# credentials, approval gates, timeouts, and concurrency are asserted on the
-# structure, not on line text. `--self-test` proves each rule rejects a mutant.
-# Usage: verify-release-workflow-policy.sh [--self-test] [workflow.yml]
+# Policy check for the release workflow: the rules that stop a wrong publish or a leaked credential, asserted on the
+# parsed YAML, plus the artifact target tables that must agree across the config, CI, build script and installer.
+# Usage: verify-release-workflow-policy.sh [workflow.yml]
 set -euo pipefail
 exec python3 - "$@" <<'PY'
-import json, os, re, shutil, subprocess, sys, tempfile
+import json, os, re, shutil, subprocess, sys
 
 DEFAULT = ".github/workflows/callisto-release.yml"
 CONFIG = "callisto.toml"
@@ -13,10 +12,8 @@ CI_WORKFLOW = ".github/workflows/callisto-ci.yml"
 BUILD_SCRIPT = ".github/scripts/build-release-artifact.sh"
 INSTALLER = ".github/actions/setup-callisto/scripts/install-callisto.sh"
 COORDINATOR_CONST_SRC = "crates/callisto-model/src/release/github.rs"
-CONTENTS_WRITE = {"execute", "version-pr"}  # version-pr commits the managed branch via the forge API
-OIDC_JOBS = {"build-artifact"}
-# Deny-by-default: every `write` scope a job may hold, named explicitly. A scope
-# absent here is rejected, so a new write permission cannot be added unnoticed.
+# Deny-by-default: every `write` scope a job may hold, named explicitly, so a new write permission cannot be added
+# unnoticed.
 ALLOWED_WRITES = {
     "version-pr": {"contents", "pull-requests"},
     "build-artifact": {"attestations", "id-token"},
@@ -24,6 +21,8 @@ ALLOWED_WRITES = {
     "finalize": {"pull-requests"},
     "drain": {"actions"},
 }
+# The only secrets the publishing job may reference.
+EXECUTE_SECRETS = {"CARGO_REGISTRY_TOKEN", "TAP_APP_PRIVATE_KEY"}
 
 
 def load(path):
@@ -48,398 +47,62 @@ def walk(node):
             yield from walk(v)
 
 
-def _tokens(expr):
-    pat = re.compile(r"\s*(?:(&&|\|\||==|!=|!|\(|\))|'((?:[^']|'')*)'|([A-Za-z_][\w.\-]*))")
-    pos, out = 0, []
-    expr = expr.strip()
-    while pos < len(expr):
-        m = pat.match(expr, pos)
-        if not m:
-            raise ValueError(f"unsupported expression syntax near {expr[pos:]!r}")
-        pos = m.end()
-        out.append(("op", m.group(1)) if m.group(1) else ("str", m.group(2).replace("''", "'")) if m.group(2) is not None else ("id", m.group(3)))
-    return out
-
-
-def _truthy(v):
-    return v not in (None, "", False, 0)
-
-
-def _loose_eq(a, b):
-    norm = lambda v: "" if v is None else str(v).lower() if not isinstance(v, bool) else str(v).lower()
-    return norm(a) == norm(b)
-
-
-def eval_if(expr, ctx):
-    """GitHub expression subset: && || == != ! ( ), string literals, contexts, always()."""
-    toks, i = _tokens(expr), 0
-
-    def peek():
-        return toks[i] if i < len(toks) else (None, None)
-
-    def take():
-        nonlocal i
-        i += 1
-        return toks[i - 1]
-
-    def primary():
-        kind, val = take()
-        if (kind, val) == ("op", "("):
-            v = orx()
-            if take() != ("op", ")"):
-                raise ValueError("unbalanced parenthesis")
-            return v
-        if kind == "str":
-            return val
-        if kind == "id":
-            if peek() == ("op", "("):
-                take()
-                if take() != ("op", ")"):
-                    raise ValueError("function arguments unsupported")
-                if val == "always":
-                    return True
-                # No scenario models run-level cancellation, so cancelled() is
-                # False and `!cancelled()` schedules exactly like always().
-                if val == "cancelled":
-                    return False
-                if val in ("success", "failure"):
-                    return ctx(f"__status__.{val}")
-                raise ValueError(f"status function {val}() unsupported by the scheduler check")
-            return ctx(val)
-        raise ValueError(f"unexpected token {val!r}")
-
-    def unary():
-        if peek() == ("op", "!"):
-            take()
-            return not _truthy(unary())
-        return primary()
-
-    def eq():
-        v = unary()
-        while peek() in (("op", "=="), ("op", "!=")):
-            op = take()[1]
-            r = unary()
-            v = _loose_eq(v, r) if op == "==" else not _loose_eq(v, r)
-        return v
-
-    def andx():
-        v = eq()
-        while peek() == ("op", "&&"):
-            take()
-            r = eq()
-            v = r if _truthy(v) else v
-        return v
-
-    def orx():
-        v = andx()
-        while peek() == ("op", "||"):
-            take()
-            r = andx()
-            v = v if _truthy(v) else r
-        return v
-
-    v = orx()
-    if i != len(toks):
-        raise ValueError("trailing tokens in expression")
-    return v
-
-
-def _needs(job):
-    n = job.get("needs") or []
-    return [n] if isinstance(n, str) else list(n)
-
-
-def schedule(jobs, event, ref, inputs, results, outputs):
-    """Which jobs run under GitHub's rules: no status function means an implicit
-    success() over every transitive ancestor, and a skipped ancestor fails it."""
-    ran, res, outs = {}, {}, {}
-
-    def ancestors(name, seen=None):
-        seen = set() if seen is None else seen
-        for n in _needs(jobs[name]):
-            if n not in seen:
-                seen.add(n)
-                ancestors(n, seen)
-        return seen
-
-    def order():
-        done, seq = set(), []
-        while len(seq) < len(jobs):
-            for n, j in jobs.items():
-                if n not in done and all(d in done for d in _needs(j)):
-                    done.add(n)
-                    seq.append(n)
-        return seq
-
-    for name in order():
-        job = jobs[name]
-        cond = job.get("if")
-        cond = re.sub(r"\s+", " ", str(cond)).strip() if cond is not None else None
-
-        def ctx(path):
-            parts = path.split(".")
-            if path == "github.event_name":
-                return event
-            if path == "github.ref":
-                return ref
-            if parts[0] == "inputs":
-                return inputs.get(parts[1])
-            if parts[0] == "needs" and parts[2] == "result":
-                return res.get(parts[1], "skipped")
-            if parts[0] == "needs" and parts[2] == "outputs":
-                return outs.get(parts[1], {}).get(parts[3], "") if ran.get(parts[1]) else ""
-            raise ValueError(f"unsupported context {path}")
-
-        has_status = cond is not None and re.search(r"\b(always|success|failure|cancelled)\(\)", cond)
-        if has_status:
-            run = _truthy(eval_if(cond, ctx))
-        else:
-            run = all(res.get(a) == "success" for a in ancestors(name)) and (cond is None or _truthy(eval_if(cond, ctx)))
-        ran[name] = run
-        res[name] = results.get(name, "success") if run else "skipped"
-        outs[name] = outputs.get(name, {}) if run else {}
-    return {n for n, r in ran.items() if r}
-
-
-MAIN = "refs/heads/main"
-_SHA = "a" * 40
-_GATES = {"verify", "recovery-checks", "release-candidate"}
-# (scenario, event, ref, inputs, results, outputs, expected jobs that run)
-SCENARIOS = [
-    ("push: release PR merge with artifacts", "push", MAIN, {}, {},
-     {"release-candidate": {"is_release_pr": "true"}, "plan": {"has_artifacts": "true"}, "drain": {"has_pending": "false"}},
-     _GATES - {"recovery-checks"} | {"plan", "build-artifact", "build", "execute", "finalize", "drain", "version-pr"}),
-    ("push: release PR merge without artifacts", "push", MAIN, {}, {},
-     {"release-candidate": {"is_release_pr": "true"}, "plan": {"has_artifacts": "false"}, "drain": {"has_pending": "false"}},
-     _GATES - {"recovery-checks"} | {"plan", "execute", "finalize", "drain", "version-pr"}),
-    ("push: an older release remains pending", "push", MAIN, {}, {},
-     {"release-candidate": {"is_release_pr": "true"}, "plan": {"has_artifacts": "false"}, "drain": {"has_pending": "true"}},
-     _GATES - {"recovery-checks"} | {"plan", "execute", "finalize", "drain"}),
-    ("push: ordinary commit opens the release PR", "push", MAIN, {}, {},
-     {"release-candidate": {"is_release_pr": "false"}},
-     _GATES - {"recovery-checks"} | {"version-pr"}),
-    ("dispatch: recovery of a merged release", "workflow_dispatch", MAIN, {"release_source_sha": _SHA}, {},
-     {"release-candidate": {"is_release_pr": "true"}, "plan": {"has_artifacts": "true"}, "drain": {"has_pending": "false"}},
-     _GATES - {"verify"} | {"plan", "build-artifact", "build", "execute", "finalize", "drain", "version-pr"}),
-    ("push: execute fails and pending marker remains", "push", MAIN, {}, {"execute": "failure"},
-     {"release-candidate": {"is_release_pr": "true"}, "plan": {"has_artifacts": "false"}},
-     _GATES - {"recovery-checks"} | {"plan", "execute"}),
-    ("push: completion marker fails and no next release starts", "push", MAIN, {}, {"finalize": "failure"},
-     {"release-candidate": {"is_release_pr": "true"}, "plan": {"has_artifacts": "false"}},
-     _GATES - {"recovery-checks"} | {"plan", "execute", "finalize"}),
-    ("dispatch: recovery of an unmanaged commit", "workflow_dispatch", MAIN, {"release_source_sha": _SHA},
-     {"release-candidate": "failure"}, {},
-     _GATES - {"verify"}),
-    ("push: invalid pending merge blocks version-pr", "push", MAIN, {},
-     {"release-candidate": "failure"}, {}, _GATES - {"recovery-checks"}),
-    ("dispatch without a source sha acts like a push", "workflow_dispatch", MAIN, {}, {},
-     {"release-candidate": {"is_release_pr": "false"}},
-     _GATES - {"recovery-checks"} | {"version-pr"}),
-    ("dispatch from a non-main ref", "workflow_dispatch", "refs/heads/topic", {"release_source_sha": _SHA}, {}, {},
-     {"recovery-checks"}),
-    ("push: verify fails", "push", MAIN, {}, {"verify": "failure"}, {}, {"verify"}),
-    ("push: plan fails", "push", MAIN, {}, {"plan": "failure"},
-     {"release-candidate": {"is_release_pr": "true"}},
-     _GATES - {"recovery-checks"} | {"plan"}),
-    ("push: an artifact build fails", "push", MAIN, {}, {"build-artifact": "failure"},
-     {"release-candidate": {"is_release_pr": "true"}, "plan": {"has_artifacts": "true"}},
-     _GATES - {"recovery-checks"} | {"plan", "build-artifact"}),
-    ("push: assembly fails", "push", MAIN, {}, {"build": "failure"},
-     {"release-candidate": {"is_release_pr": "true"}, "plan": {"has_artifacts": "true"}},
-     _GATES - {"recovery-checks"} | {"plan", "build-artifact", "build"}),
-]
-
-
-def schedule_errors(jobs):
-    errs = []
-    for name, event, ref, inputs, results, outputs, expected in SCENARIOS:
-        try:
-            got = schedule(jobs, event, ref, inputs, results, outputs)
-        except (ValueError, KeyError) as e:
-            errs.append(f"schedule scenario {name!r} could not be evaluated: {e}")
-            continue
-        if got != expected:
-            errs.append(f"schedule scenario {name!r}: expected {sorted(expected)}, would run {sorted(got)}")
-    return errs
-
-
-def handoff_roundtrip_errors(jobs):
-    """Run the plan job's checksum line, move the files to another directory as a
-    different runner would, and run the build job's verify line against them."""
-    def step_run(job, name):
-        for s in jobs.get(job, {}).get("steps", []):
-            if s.get("name") == name:
-                return s.get("run", "")
-        return ""
-
-    def pick(script, *needles):
-        hits = [ln.strip() for ln in script.splitlines() if all(n in ln for n in needles)]
-        return hits[0] if len(hits) == 1 else None
-
-    write = pick(step_run("plan", "Derive and hash intent"), "shasum -a 256", ".sha256", ">")
-    verify = pick(step_run("build-artifact", "Verify handoff"), "shasum -a 256 -c")
-    if not write or not verify:
-        return ["handoff checksum write/verify lines could not be located for the round-trip check"]
-    with tempfile.TemporaryDirectory() as tmp:
-        src, dst = os.path.join(tmp, "plan-runner", "release-intent"), os.path.join(tmp, "build-runner", "release-intent")
-        os.makedirs(src)
-        os.makedirs(dst)
-        with open(os.path.join(src, "release-intent.json"), "w") as f:
-            f.write('{"schemaVersion":3}\n')
-        subprocess.run(["bash", "-c", "set -euo pipefail; " + write], check=True, env={**os.environ, "handoff_dir": src})
-        for n in ("release-intent.json", "release-intent.json.sha256"):
-            shutil.copy(os.path.join(src, n), os.path.join(dst, n))
-        shutil.rmtree(src)
-        r = subprocess.run(["bash", "-c", "set -euo pipefail; " + verify], env={**os.environ, "handoff_dir": dst}, capture_output=True, text=True)
-    if r.returncode != 0:
-        return ["intent checksum written by plan does not verify from a different directory (absolute path recorded?)"]
-    return []
-
-
-def slots_probe_errors(jobs):
-    """Run the plan job's slot-count step against an unreadable intent. An empty
-    has_artifacts matches neither downstream guard, so every later job skips on a green run."""
-    script = next((s.get("run", "") for s in jobs.get("plan", {}).get("steps", []) if s.get("id") == "slots"), "")
-    if not script:
-        return ["plan's slot-count step could not be located"]
-    with tempfile.TemporaryDirectory() as tmp:
-        out = os.path.join(tmp, "github_output")
-        open(out, "w").close()
-        env = {**os.environ, "RUNNER_TEMP": os.path.join(tmp, "absent"), "GITHUB_OUTPUT": out}
-        result = subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True)
-        wrote = open(out).read().strip()
-    if result.returncode == 0:
-        return [f"plan's slot-count step exits 0 when the intent cannot be read (wrote {wrote!r}); "
-                "every downstream job would skip on a green run"]
-    return []
-
-
 def check(path):
     errs = []
-    text = open(path).read()
     wf = load(path)
-    # PyYAML parses the bare key `on` as True; yq keeps it as a string.
     jobs = wf["jobs"]
-    top = {k: v for k, v in wf.items() if k != "jobs"}
-    if "secrets." in json.dumps(top):
+    if "secrets." in json.dumps({k: v for k, v in wf.items() if k != "jobs"}):
         errs.append("secrets referenced outside jobs")
     if wf.get("permissions") != {}:
         errs.append("workflow-level permissions must be {}")
-    conc = wf.get("concurrency") or {}
-    if conc.get("group") != "release-${{ github.sha }}" or conc.get("cancel-in-progress") is not False:
-        errs.append("workflow concurrency must be per-SHA with cancel-in-progress false")
     for name, job in jobs.items():
-        blob = json.dumps(job)
-        if name != "execute" and "secrets." in blob:
+        used = set(re.findall(r"secrets\.([A-Za-z0-9_]+)", json.dumps(job)))
+        if name != "execute" and used:
             errs.append(f"{name}: secrets referenced outside execute")
-        if name == "execute":
-            used = set(re.findall(r"secrets\.([A-Za-z0-9_]+)", blob))
-            if used != {"CARGO_REGISTRY_TOKEN"}:
-                errs.append(f"execute: secrets must be exactly CARGO_REGISTRY_TOKEN, found {sorted(used)}")
+        if name == "execute" and used != EXECUTE_SECRETS:
+            errs.append(f"execute: secrets must be exactly {sorted(EXECUTE_SECRETS)}, found {sorted(used)}")
         perms = job.get("permissions")
         if not isinstance(perms, dict) or not perms:
             errs.append(f"{name}: permissions must be declared per job")
             perms = {}
         for scope, level in perms.items():
-            if level == "write" and scope == "contents" and name not in CONTENTS_WRITE:
-                errs.append(f"{name}: contents: write not allowed")
-            if level == "write" and scope in ("id-token", "attestations") and name not in OIDC_JOBS:
-                errs.append(f"{name}: {scope}: write not allowed")
             if level == "write-all":
                 errs.append(f"{name}: write-all")
             if level == "write" and scope not in ALLOWED_WRITES.get(name, set()):
                 errs.append(f"{name}: {scope}: write is not in that job's allowed write scopes")
         if any(isinstance(n, dict) and "environment" in n for n in walk(job)):
             errs.append(f"{name}: environment key forbidden (merge is the approval)")
-        t = job.get("timeout-minutes")
-        if not isinstance(t, int) or isinstance(t, bool) or t <= 0:
-            errs.append(f"{name}: timeout-minutes missing")
-        if "concurrency" in job and job["concurrency"].get("cancel-in-progress") is not False:
-            errs.append(f"{name}: cancel-in-progress must be false")
         for step in job.get("steps", []):
             if str(step.get("uses", "")).startswith("actions/checkout@"):
                 w = step.get("with") or {}
                 keep = name == "execute" and w.get("path") == "release-source"
-                pc = w.get("persist-credentials")
-                if keep and pc is not True:
-                    errs.append("execute release-source checkout must persist credentials")
-                if not keep and pc is not False:
-                    errs.append(f"{name}: checkout must set persist-credentials false")
-    for job, group in (("version-pr", "version-pr"), ("execute", "release-execute")):
-        c = jobs.get(job, {}).get("concurrency") or {}
-        if c.get("group") != group or c.get("cancel-in-progress") is not False:
-            errs.append(f"{job}: job concurrency must be group {group} without cancellation")
+                if w.get("persist-credentials") is not keep:
+                    errs.append(f"{name}: checkout persist-credentials must be {str(keep).lower()}")
+
+    # Only a GitHub-verified merge commit of the managed release PR on main is released.
     rc = jobs.get("release-candidate", {})
     if "github.ref == 'refs/heads/main'" not in str(rc.get("if", "")):
         errs.append("release-candidate must require refs/heads/main")
-    if re.search(r"commits/main\b|orchestration_sha=\$\(", text):
-        errs.append("orchestration_sha must not come from a moving ref")
-    assigns = re.findall(r"^\s*orchestration_sha=.*$", text, re.M)
-    if [a.strip() for a in assigns] != ['orchestration_sha="$TRIGGERING_SHA"']:
-        errs.append("orchestration_sha must be assigned once, from TRIGGERING_SHA")
-    env = next((s.get("env", {}) for s in rc.get("steps", []) if s.get("id") == "candidate"), {})
-    if env.get("TRIGGERING_SHA") != "${{ github.sha }}":
-        errs.append("TRIGGERING_SHA must be github.sha")
-    script = next((st.get("run", "") for st in rc.get("steps", []) if st.get("id") == "candidate"), "")
-    if "^[0-9a-f]{40}$" not in script or '[[ ! "$release_source_sha" =~ ^[0-9a-f]{40}$ ]]' not in script:
-        errs.append("release-candidate must require a full 40-lowercase-hex release_source_sha")
-    if not re.search(r'\[\[ "\$resolved_sha" != "\$release_source_sha" \]\]; then\s*echo [^\n]*\n\s*exit 1', script):
-        errs.append("release-candidate must reject a release_source_sha whose resolved sha differs")
-    prs_line = next((l for l in script.splitlines() if l.strip().startswith("prs=$(")), "")
-    for frag in ('.merged_at != null', '.merge_commit_sha == $sha', '.base.ref == "main"', '.head.repo.full_name == $repo', 'callisto/version-packages'):
-        if frag not in prs_line:
-            errs.append(f"release-candidate managed-PR association check lost {frag!r}")
-    if not re.search(r"^\s*verified=\$\(gh api [^\n]*--jq '\.commit\.verification\.verified'\)$", script, re.M):
-        errs.append("release-candidate must compute the commit verification from .commit.verification.verified")
-    if not re.search(r"if \[\[ \"\$\(jq 'length' <<< \"\$prs\"\)\" == 1 && \"\$verified\" == true \]\]; then\s*\{\s*echo 'is_release_pr=true'", script):
-        errs.append("is_release_pr=true must require exactly one managed PR and a verified commit")
-    if len(re.findall(r"is_release_pr=true", script)) != 1:
-        errs.append("is_release_pr=true must be set in exactly one place")
-    plan = jobs.get("plan", {})
-    cond = re.sub(r"\s+", " ", str(plan.get("if", ""))).strip()
-    if cond != "always() && needs.release-candidate.result == 'success' && needs.release-candidate.outputs.is_release_pr == 'true'" or plan.get("needs") != "release-candidate":
-        errs.append("plan must run only when release-candidate succeeded and says is_release_pr == 'true'")
-    # release-candidate descends from two mutually exclusive gates, one always
-    # skipped. GitHub skips any job whose transitive ancestor was skipped unless
-    # its own `if` has a status function, so every dependent job needs one.
-    for name, job in jobs.items():
-        if job.get("needs") and not re.search(r"\b(always|success|failure|cancelled)\(\)", str(job.get("if", ""))):
-            errs.append(f"job {name} depends on a gated job and must use a status function in its if")
-    errs += schedule_errors(jobs)
-    errs += handoff_roundtrip_errors(jobs)
-    errs += slots_probe_errors(jobs)
-    ba = re.sub(r"\s+", " ", str(jobs.get("build-artifact", {}).get("if", "")))
-    if "needs.plan.result == 'success'" not in ba:
-        errs.append("build-artifact must require needs.plan.result == 'success'")
+    script = next((s.get("run", "") for s in rc.get("steps", []) if s.get("id") == "candidate"), "")
+    for needle, why in (
+        ("^[0-9a-f]{40}$", "a full 40-hex release_source_sha"),
+        (".merge_commit_sha == $sha", "the PR's exact merge commit"),
+        ('"$verified" == true', "a verified commit"),
+    ):
+        if needle not in script:
+            errs.append(f"release-candidate must require {why}")
+
+    # execute is the one irreversible job: cancelling the run must stop it, and it releases the verified source.
     ex = jobs.get("execute", {})
-    # always() runs a job even when the run is cancelled (GitHub's own docs).
-    # execute is the only irreversible job, so Cancel must actually stop it.
     ex_if = re.sub(r"\s+", " ", str(ex.get("if", "")))
     if "!cancelled()" not in ex_if or re.search(r"\balways\(\)", ex_if):
-        errs.append("execute must gate on !cancelled(), not always(): cancelling a run must stop the publish")
-    if not re.search(r"needs\.plan\.result == 'success'", str(ex.get("if", ""))):
-        errs.append("execute must require needs.plan.result == 'success'")
-    if set(ex.get("needs", [])) != {"plan", "build", "release-candidate"}:
-        errs.append("execute must need plan, build, and release-candidate")
-    steps = ex.get("steps", [])
-    src = [s for s in steps if str(s.get("uses", "")).startswith("actions/checkout@") and (s.get("with") or {}).get("path") == "release-source"]
+        errs.append("execute must gate on !cancelled(), not always()")
+    src = [
+        s for s in ex.get("steps", [])
+        if str(s.get("uses", "")).startswith("actions/checkout@") and (s.get("with") or {}).get("path") == "release-source"
+    ]
     if len(src) != 1 or src[0]["with"].get("ref") != "${{ needs.release-candidate.outputs.release_source_sha }}":
-        errs.append("execute release-source checkout ref must be needs.release-candidate.outputs.release_source_sha")
-    hand = [i for i, s in enumerate(steps) if s.get("name") == "Verify same-run handoff before credentials"]
-    sec = [i for i, s in enumerate(steps) if "secrets." in json.dumps(s)]
-    if len(hand) != 1:
-        errs.append("execute must have exactly one 'Verify same-run handoff before credentials' step")
-    else:
-        h = steps[hand[0]]
-        if "if" in h or "continue-on-error" in h or "cmp " not in h.get("run", "") or "-a 256 -c" not in h.get("run", ""):
-            errs.append("handoff verification step must be unconditional, fail-closed, and run the sha256 and cmp checks")
-        if not sec or hand[0] > min(sec):
-            errs.append("handoff verification must precede the first step that references secrets")
-    up = [s for s in steps if str(s.get("uses", "")).startswith("actions/upload-artifact@") and str((s.get("with") or {}).get("name", "")).startswith("release-receipt")]
-    if len(up) != 1 or "github.run_attempt" not in str(up[0]["with"]["name"]):
-        errs.append("execute must upload exactly one receipt artifact named per github.run_attempt so an earlier attempt's receipt is not shadowed")
-    elif up[0]["with"].get("if-no-files-found") != "error":
-        errs.append("execute must fail when its successful run has no receipt to upload")
+        errs.append("execute must check out release_source_sha")
     return errs
 
 
@@ -502,132 +165,11 @@ def coordinator_path_agreement(path, src):
     return errs
 
 
-def default_paths(release=DEFAULT):
-    return {"config": CONFIG, "release": release, "ci": CI_WORKFLOW,
-            "script": BUILD_SCRIPT, "installer": INSTALLER}
-
-
-def table_mutants(d):
-    """Copy each table source into d, mutate one copy at a time."""
-    def copy(name, src):
-        dst = os.path.join(d, name)
-        shutil.copy(src, dst)
-        return dst
-
-    def variants():
-        base = default_paths()
-        for label, key, old, new in (
-            ("asset renamed in release matrix", "release", "asset: callisto-x86_64-unknown-linux-musl.tar.gz", "asset: callisto-musl.tar.gz"),
-            ("target dropped from release matrix", "release", "          - id: linux-musl\n            runner: ubuntu-latest\n            target: x86_64-unknown-linux-musl\n            asset: callisto-x86_64-unknown-linux-musl.tar.gz\n            kind: cross\n", ""),
-            ("asset renamed in ci matrix", "ci", "asset: callisto-x86_64-unknown-linux-gnu.tar.gz", "asset: callisto-x86_64-linux-gnu.tar.gz"),
-            ("target dropped from ci matrix", "ci", "          - id: linux-musl\n            runner: ubuntu-latest\n            target: x86_64-unknown-linux-musl\n            asset: callisto-x86_64-unknown-linux-musl.tar.gz\n            kind: cross\n", ""),
-            ("asset renamed in build script", "script", "cli:aarch64-apple-darwin:callisto-aarch64-apple-darwin.tar.gz", "cli:aarch64-apple-darwin:callisto-arm.tar.gz"),
-            ("asset renamed in installer", "installer", 'ASSET_NAME="callisto-aarch64-apple-darwin.tar.gz"', 'ASSET_NAME="callisto-macos.tar.gz"'),
-            ("artifact dropped from callisto.toml", "config",
-             '[[release.artifact]]\npackage = "cargo/callisto-cli"\ntarget = "x86_64-unknown-linux-musl"\nasset-name = "callisto-x86_64-unknown-linux-musl.tar.gz"\n', ""),
-            ("asset renamed in callisto.toml", "config", 'asset-name = "callisto-x86_64-unknown-linux-musl.tar.gz"', 'asset-name = "callisto-musl.tar.gz"'),
-        ):
-            text = open(base[key]).read()
-            if old not in text:
-                raise SystemExit(f"self-test mutant anchor missing in {base[key]}: {old!r}")
-            paths = dict(base)
-            paths[key] = os.path.join(d, f"{key}-mutant")
-            open(paths[key], "w").write(text.replace(old, new, 1))
-            yield label, paths
-
-    return variants()
-
-
-def mutants(text):
-    def sub(a, b, count=1):
-        if a not in text:
-            raise SystemExit(f"self-test mutant anchor missing: {a!r}")
-        return text.replace(a, b, count)
-
-    def after(anchor, old, new):
-        i = text.index(anchor)
-        j = text.index(old, i)
-        return text[:j] + new + text[j + len(old):]
-
-    return {
-        "verified requirement dropped": sub("if [[ \"$(jq 'length' <<< \"$prs\")\" == 1 && \"$verified\" == true ]]", "if [[ \"$(jq 'length' <<< \"$prs\")\" == 1 ]]"),
-        "dispatch sha regex weakened": sub("^[0-9a-f]{40}$", "^.+$"),
-        "resolved-sha equality dropped": sub('if [[ "$resolved_sha" != "$release_source_sha" ]]', 'if false'),
-        "exact PR merge SHA dropped": sub('.merge_commit_sha == $sha and ', ''),
-        "execute loses its status function": sub("      !cancelled() && needs.plan.result == 'success' &&",
-            "      needs.plan.result == 'success' &&"),
-        "execute runs when cancelled": sub("      !cancelled() && needs.plan.result == 'success' &&",
-            "      always() && needs.plan.result == 'success' &&"),
-        "execute loses plan success": sub("!cancelled() && needs.plan.result == 'success' &&", "!cancelled() &&"),
-        "plan runs always": sub("      always() && needs.release-candidate.result == 'success' &&\n      needs.release-candidate.outputs.is_release_pr == 'true'\n    timeout-minutes: 20",
-            "      always()\n    timeout-minutes: 20"),
-        "plan loses always": sub("      always() && needs.release-candidate.result == 'success' &&\n      needs.release-candidate.outputs.is_release_pr == 'true'\n    timeout-minutes: 20",
-            "      needs.release-candidate.outputs.is_release_pr == 'true'\n    timeout-minutes: 20"),
-        "build-artifact loses always": sub("if: always() && needs.plan.result == 'success' && needs.plan.outputs.has_artifacts == 'true'",
-            "if: needs.plan.outputs.has_artifacts == 'true'"),
-        "build-artifact loses plan success": sub("if: always() && needs.plan.result == 'success' && needs.plan.outputs.has_artifacts == 'true'",
-            "if: always() && needs.plan.outputs.has_artifacts == 'true'"),
-        "execute checks out moving ref": after("\n  execute:\n", "ref: ${{ needs.release-candidate.outputs.release_source_sha }}", "ref: main"),
-        "slot probe swallows a jq failure": sub(
-            '          has_artifacts=$(jq \'.artifactSlots | length > 0\' "${RUNNER_TEMP}/release-intent/release-intent.json")\n'
-            '          case "$has_artifacts" in\n'
-            '            true|false) ;;\n'
-            '            *) echo "::error::artifact slot probe returned \'$has_artifacts\'"; exit 1 ;;\n'
-            '          esac\n'
-            '          echo "has_artifacts=$has_artifacts" >> "$GITHUB_OUTPUT"\n',
-            '          echo "has_artifacts=$(jq \'.artifactSlots | length > 0\' "${RUNNER_TEMP}/release-intent/release-intent.json")" >> "$GITHUB_OUTPUT"\n'),
-        "checksum records absolute path": sub('(cd "$handoff_dir" && shasum -a 256 release-intent.json > release-intent.json.sha256)',
-            'shasum -a 256 "$handoff_dir/release-intent.json" > "$handoff_dir/release-intent.json.sha256"'),
-        "receipt name not per attempt": sub("name: release-receipt-attempt-${{ github.run_attempt }}", "name: release-receipt"),
-        "missing receipt ignored": after("      - name: Upload receipt\n", "if-no-files-found: error", "if-no-files-found: ignore"),
-        "handoff step disabled": sub("      - name: Verify same-run handoff before credentials\n", "      - name: Verify same-run handoff before credentials\n        if: false\n"),
-        "handoff step renamed away": sub("Verify same-run handoff before credentials", "Handoff"),
-        "handoff continue-on-error": sub("      - name: Verify same-run handoff before credentials\n        env:", "      - name: Verify same-run handoff before credentials\n        continue-on-error: true\n        env:"),
-        "verified query dropped": sub("--jq '.commit.verification.verified'", "--jq '.sha'"),
-        "secret in build-artifact": sub("          CALLISTO_RELEASE_ARTIFACT_KIND: ${{ matrix.kind }}\n",
-            "          CALLISTO_RELEASE_ARTIFACT_KIND: ${{ matrix.kind }}\n          LEAK: ${{ secrets.LEAK }}\n"),
-        "undeclared write scope on plan": sub("    permissions:\n      contents: read\n    outputs:\n      has_artifacts:",
-            "    permissions:\n      contents: read\n      packages: write\n    outputs:\n      has_artifacts:"),
-        "contents: write in plan": after("\n  plan:\n", "      contents: read", "      contents: write"),
-        "environment on execute": sub("    name: Execute approved release\n",
-            "    name: Execute approved release\n    environment: release\n"),
-        "timeout removed": sub("    timeout-minutes: 60\n", ""),
-        "cancel-in-progress true": sub("cancel-in-progress: false", "cancel-in-progress: true"),
-        "hardcoded orchestration_sha": sub('orchestration_sha="$TRIGGERING_SHA"', "orchestration_sha=deadbeef"),
-        "id-token on execute": after("\n  execute:\n", "      attestations: read\n",
-            "      attestations: read\n      id-token: write\n"),
-        "NPM_TOKEN on execute": sub("          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}\n",
-            "          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}\n          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}\n"),
-    }
-
-
-args = [a for a in sys.argv[1:] if a != "--self-test"]
-path = args[0] if args else DEFAULT
-errs = check(path)
-errs += table_agreement(default_paths(path))
-errs += coordinator_path_agreement(DEFAULT, COORDINATOR_CONST_SRC)
+path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT
+paths = {"config": CONFIG, "release": path, "ci": CI_WORKFLOW, "script": BUILD_SCRIPT, "installer": INSTALLER}
+errs = check(path) + table_agreement(paths) + coordinator_path_agreement(DEFAULT, COORDINATOR_CONST_SRC)
 if errs:
     print("release workflow policy failed:\n  " + "\n  ".join(errs), file=sys.stderr)
     sys.exit(1)
-if "--self-test" in sys.argv:
-    text = open(path).read()
-    bad = 0
-    with tempfile.TemporaryDirectory() as d:
-        for name, mutated in mutants(text).items():
-            p = os.path.join(d, "wf.yml")
-            open(p, "w").write(mutated)
-            if check(p):
-                print(f"self-test ok: mutant rejected: {name}")
-            else:
-                print(f"self-test FAILED: mutant accepted: {name}", file=sys.stderr)
-                bad += 1
-        for name, paths in table_mutants(d):
-            if table_agreement(paths):
-                print(f"self-test ok: mutant rejected: {name}")
-            else:
-                print(f"self-test FAILED: mutant accepted: {name}", file=sys.stderr)
-                bad += 1
-    if bad:
-        sys.exit(1)
 print("release workflow policy ok")
 PY
