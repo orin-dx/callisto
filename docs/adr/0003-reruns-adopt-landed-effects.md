@@ -16,6 +16,7 @@ Every run observes each operation's provider state immediately before that opera
 
 - **Persisted execution state file with resume** — shipped in #39, proposed again in incident report §8, removed in #124: "CI never reads execution state back (every run is a fresh runner), yet an Initial run turned an already-published registry version into E174, so 'Re-run failed jobs' could never finish a partial release" (#124).
 - **Recovery commands (`release reconcile`, `release execute --recovery`, `--state`) and Initial/Recovery run kinds** — rejected with the state file in #124. Removed with them: the workspace lock, `AdoptedExact`/`RecoveredExact`, E173, E174 and the release-state schema.
+- **A label or file queue of unfinished releases** — rejected. `callisto release pending` derives the unfinished releases from the committed decisions, tags and GitHub releases, so a queue has no state to lose or to disagree with the providers. It reads and publishes nothing, so it is not a recovery command.
 - **Rerun the historical workflow run to recover** — rejected. A rerun of an old GitHub Actions run does not pick up workflow fixes merged later (incident report §2 requirement 6; §6 F-003).
 - **Post-publish re-observation pass to build the receipt** — rejected: a flaky registry read could fail a release whose effects had all landed (#122, #124).
 
