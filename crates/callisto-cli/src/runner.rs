@@ -102,10 +102,7 @@ fn credentials_needed_by(tool: &str) -> &'static [&'static str] {
 }
 
 fn unrelated_credentials(program: &str) -> Vec<&'static str> {
-    let tool = Path::new(program)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or(program);
+    let tool = tool_name(program);
     let keep = credentials_needed_by(tool);
     RELEASE_CREDENTIALS
         .iter()
@@ -114,9 +111,38 @@ fn unrelated_credentials(program: &str) -> Vec<&'static str> {
         .collect()
 }
 
+fn tool_name(program: &str) -> &str {
+    Path::new(program)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(program)
+}
+
 fn remove_env(command: &mut std::process::Command, names: &[&str]) {
     for name in names {
         command.env_remove(name);
+    }
+}
+
+fn remove_unrelated_cargo_registry_tokens(command: &mut std::process::Command, program: &str) {
+    const PREFIX: &[u8] = b"CARGO_REGISTRIES_";
+    const SUFFIX: &[u8] = b"_TOKEN";
+    if tool_name(program) == "cargo" {
+        return;
+    }
+    for (name, _) in std::env::vars_os() {
+        let named_token = name.to_str().is_some_and(|name| {
+            let bytes = name.as_bytes();
+            bytes
+                .get(..PREFIX.len())
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case(PREFIX))
+                && bytes
+                    .get(bytes.len().saturating_sub(SUFFIX.len())..)
+                    .is_some_and(|suffix| suffix.eq_ignore_ascii_case(SUFFIX))
+        });
+        if named_token {
+            command.env_remove(name);
+        }
     }
 }
 
@@ -127,6 +153,7 @@ impl CommandRunner for CliCommandRunner {
         let mut command = std::process::Command::new(program);
         command.args(args).current_dir(cwd);
         remove_env(&mut command, &unrelated_credentials(program));
+        remove_unrelated_cargo_registry_tokens(&mut command, program);
         let output = command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -273,6 +300,7 @@ impl CommandRunner for CliCommandRunner {
         let mut command = std::process::Command::new(program);
         command.args(args).current_dir(cwd);
         remove_env(&mut command, &unrelated_credentials(program));
+        remove_unrelated_cargo_registry_tokens(&mut command, program);
         let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -448,6 +476,7 @@ fn run_with_timeout_impl(
     for (name, value) in child_env.set {
         command.env(name, value);
     }
+    remove_unrelated_cargo_registry_tokens(&mut command, program);
     let mut child = command.spawn().map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             CommandError::NotFound {
@@ -652,6 +681,74 @@ mod tests {
         );
         let ordinary = runner.run("/usr/bin/env", &[], Path::new(".")).unwrap();
         assert!(!ordinary.stdout.contains("publisher-secret"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn named_cargo_registry_token_reaches_only_cargo_children() {
+        const CHILD: &str = "CALLISTO_TEST_NAMED_CARGO_TOKEN_CHILD";
+        const TOKEN: &str = "CARGO_REGISTRIES_PRIVATE_TOKEN=test-registry-secret";
+        const LOWER_TOKEN: &str = "cargo_registries_other_token=test-lower-secret";
+
+        if std::env::var_os(CHILD).is_some() {
+            let runner = CliCommandRunner;
+            let cwd = Path::new(".");
+            let timeout = Duration::from_secs(5);
+            let outputs = [
+                runner.run("/usr/bin/env", &[], cwd).unwrap(),
+                runner.run_with_timeout("/usr/bin/env", &[], cwd, timeout).unwrap(),
+                runner
+                    .run_with_timeout_env_filtered("/usr/bin/env", &[], cwd, timeout, &[])
+                    .unwrap(),
+                runner.run_quiet("/usr/bin/env", &[], cwd, timeout).unwrap(),
+                runner.run_with_stdin("/usr/bin/env", &[], cwd, b"").unwrap(),
+            ];
+            for output in outputs {
+                assert!(output.success());
+                assert!(
+                    !output.stdout.contains(TOKEN),
+                    "a non-Cargo child inherited a named registry token"
+                );
+                assert!(
+                    !output.stdout.contains(LOWER_TOKEN),
+                    "a non-Cargo child inherited a lowercase registry token"
+                );
+            }
+            let publisher = runner
+                .run_with_timeout_publisher(
+                    "/bin/sh",
+                    &["-c", "test -z \"$CARGO_REGISTRIES_PRIVATE_TOKEN\""],
+                    cwd,
+                    timeout,
+                    &[("CARGO_REGISTRIES_PRIVATE_TOKEN", "test-registry-secret")],
+                )
+                .unwrap();
+            assert!(
+                publisher.success(),
+                "a non-Cargo publisher inherited a named registry token"
+            );
+
+            let dir = tempfile::tempdir().unwrap();
+            let cargo = dir.path().join("cargo");
+            std::os::unix::fs::symlink("/usr/bin/env", &cargo).unwrap();
+            let output = runner.run(cargo.to_str().unwrap(), &[], cwd).unwrap();
+            assert!(
+                output.stdout.contains(TOKEN),
+                "Cargo must retain its named registry token"
+            );
+            return;
+        }
+
+        let exe = std::env::current_exe().unwrap();
+        let output = std::process::Command::new(exe)
+            .arg("--exact")
+            .arg("runner::tests::named_cargo_registry_token_reaches_only_cargo_children")
+            .env(CHILD, "1")
+            .env("CARGO_REGISTRIES_PRIVATE_TOKEN", "test-registry-secret")
+            .env("cargo_registries_other_token", "test-lower-secret")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "nested child test failed");
     }
 
     #[test]
