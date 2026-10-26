@@ -31,10 +31,12 @@ if ! rg -Fqx 'command+=(--emit-decision "$INPUT_DECISION_PATH")' "$action"; then
 fi
 
 release_candidate="$(job_block release-candidate version-pr)"
-require_line "$release_candidate" '          prs=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/commits/${release_source_sha}/pulls" --jq '\''[.[] | select(.merged_at != null and .base.ref == "main" and .head.repo.full_name == "'\''"${GITHUB_REPOSITORY}"'\''" and (.head.ref == "callisto/version-packages" or (.head.ref | test("^callisto/version-packages--[0-9a-f]{40}$"))))] | length'\'')' 'release-candidate must validate an explicit source only when it is a merged managed branch'
+require_line "$release_candidate" '          prs=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/commits/${release_source_sha}/pulls" | jq -s --arg repo "$GITHUB_REPOSITORY" --arg sha "$release_source_sha" '\''[.[][] | select(.merged_at != null and .merge_commit_sha == $sha and .base.ref == "main" and .head.repo.full_name == $repo and (.head.ref == "callisto/version-packages" or (.head.ref | test("^callisto/version-packages--[0-9a-f]{40}$")))) | .number]'\'')' 'release-candidate must validate an explicit source only when it is the exact merged managed PR commit'
 require_line "$release_candidate" '          RELEASE_SOURCE_SHA_INPUT: ${{ inputs.release_source_sha }}' 'release-candidate must pass a dispatch input through an environment variable'
 require_line "$release_candidate" '          TRIGGERING_SHA: ${{ github.sha }}' 'release-candidate must pass the triggering commit through an environment variable'
-require_line "$release_candidate" '          release_source_sha="${RELEASE_SOURCE_SHA_INPUT:-$TRIGGERING_SHA}"' 'release-candidate must not interpolate user-controlled SHA input into shell'
+require_line "$release_candidate" '          release_source_sha="$RELEASE_SOURCE_SHA_INPUT"' 'release-candidate must not interpolate user-controlled SHA input into shell'
+require_line "$release_candidate" '            release_source_sha=$(bash .github/scripts/find-pending-release.sh "$GITHUB_REPOSITORY" main '\''callisto: pending'\'')' 'release-candidate must consider a pending older release first'
+require_line "$release_candidate" '          if ! git merge-base --is-ancestor "$release_source_sha" "$TRIGGERING_SHA"; then' 'release-candidate must require the source on main history'
 
 build_artifact="$(job_block build-artifact build)"
 require_line "$build_artifact" '      contents: read' 'each target build must read the intent-bound source tree'
