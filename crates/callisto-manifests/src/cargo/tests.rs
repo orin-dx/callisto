@@ -520,6 +520,23 @@ path = "../serde"
 }
 
 #[test]
+fn write_dependency_preserves_comments_around_plain_and_full_table_values() {
+    for source in [
+        "[workspace]\nmembers = []\n\n[workspace.dependencies]\n# before dependency\nserde = \"1.0.0\" # after dependency\n# following comment\n",
+        "[workspace]\nmembers = []\n\n[workspace.dependencies.serde]\n# before version\nversion = \"1.0.0\" # after version\n# following comment\npath = \"../serde\"\n",
+    ] {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("Cargo.toml");
+        fs::write(&path, source).unwrap();
+        let mut resolver = WorkspaceCargoResolver::load(&path).unwrap();
+        let spec = DepSpec::Range(VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(), "^1.1.0".to_string());
+        resolver.write_dependency("serde", spec, &permit()).unwrap();
+        resolver.persist(&permit()).unwrap();
+        assert_eq!(fs::read_to_string(path).unwrap(), source.replace("1.0.0", "^1.1.0"));
+    }
+}
+
+#[test]
 fn write_dependency_preserves_decor_on_inline_table_version() {
     let dir = tempdir().unwrap();
     let manifest_path = dir.path().join("Cargo.toml");
@@ -932,6 +949,7 @@ name = "my-crate"
 version = "0.1.0"
 
 [dependencies.helper]
+# keep this note above the version
 version = "1.0.0" # pinned intentionally, do not bump lightly
 path = "../helper"
 "#;
@@ -962,11 +980,7 @@ path = "../helper"
     manifest.persist(&permit()).unwrap();
 
     let updated = fs::read_to_string(&manifest_path).unwrap();
-    assert!(updated.contains("version = \"^1.1.0\""));
-    assert!(
-        updated.contains("# pinned intentionally, do not bump lightly"),
-        "expected trailing comment on version field to survive full-table write, got:\n{updated}"
-    );
+    assert_eq!(updated, content.replace("1.0.0", "^1.1.0"));
 }
 
 #[test]

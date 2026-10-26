@@ -118,7 +118,7 @@
     },
     {
       "id": "VER-CAS-08",
-      "criterion": "A version or dependency-range change to a `package.json` replaces only the string literals that changed: every other byte of the file, including inline arrays and objects, escape sequences, line endings and a byte order mark, is as the author wrote it. A change that adds or removes a key rewrites the file with key order, indentation, line endings, byte order mark and trailing newline kept. A Python or Cargo dependency edit keeps the comments written above and after it."
+      "criterion": "A version or dependency-range change to a `package.json` replaces only the string literals that changed: every other byte of the file, including inline arrays and objects, escape sequences, line endings and a byte order mark, is as the author wrote it. A change that adds or removes a key rewrites the file with key order, indentation, line endings, byte order mark and trailing newline kept. A Python or Cargo dependency edit keeps the comments written above and after it, including a comment above a full-table Cargo `version` key in `[workspace.dependencies]`."
     },
     {
       "id": "VER-CAS-09",
@@ -126,7 +126,7 @@
       "is_error_case": false
     },
     {
-      "id": "VER-CAS-08",
+      "id": "VER-CAS-10",
       "criterion": "The cascade aborts with E105 when it does not settle within 4 x (package count) + 1 steps, and with a grammar-mismatch error when a spec and the new version use different version grammars (SemVer vs PEP 440).",
       "is_error_case": true
     },

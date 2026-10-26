@@ -362,12 +362,14 @@ fn set_dependency_version(item: &mut toml_edit::Item, new_str: String) -> Result
             return Err(());
         }
     } else if let Some(tbl) = item.as_table_mut() {
-        let decor = tbl.get("version").and_then(|i| i.as_value()).map(|v| v.decor().clone());
-        tbl.insert("version", toml_edit::value(new_str));
-        if let Some(decor) = decor
-            && let Some(new_item) = tbl.get_mut("version").and_then(|i| i.as_value_mut())
-        {
-            *new_item.decor_mut() = decor;
+        if let Some(existing) = tbl.get_mut("version") {
+            let value = existing.as_value_mut().ok_or(())?;
+            let decor = value.decor().clone();
+            let mut new_val = toml_edit::Value::from(new_str);
+            *new_val.decor_mut() = decor;
+            *value = new_val;
+        } else {
+            tbl.insert("version", toml_edit::value(new_str));
         }
     } else {
         return Err(());
