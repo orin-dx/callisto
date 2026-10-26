@@ -1,6 +1,6 @@
 # Road to v1
 
-Unshipped work only. Baseline: main at 0.14.0. [Owner requirement](../specs/REQ-DX-V1.md), [scoped model and prior art](../architecture/polyglot-v1.md).
+Unshipped work only. [Owner requirement](../specs/REQ-DX-V1.md), [scoped model and prior art](../architecture/polyglot-v1.md).
 
 Canonical `ecosystem/name` references, historical tag ownership, one tag and release per package, per-distribution publish ordering and the redacted failure tail have shipped. [ADR 12](../adr/0012-canonical-distribution-release-ownership.md) records them.
 

@@ -1,6 +1,6 @@
 # 13. The merged release PR anchors recovery
 
-Status: Proposed
+Status: Accepted (implemented in #383)
 
 ## Context
 
