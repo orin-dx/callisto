@@ -594,14 +594,15 @@ impl Manifest for PyprojectToml {
                     .and_then(|p| p.get_mut("dependencies"))
                     .and_then(|d| d.as_table_like_mut())
                     .ok_or_else(not_found)?;
-                let existing = table.get_mut(name).ok_or_else(not_found)?;
-                match existing.as_table_like_mut() {
-                    Some(fields) => {
-                        fields.insert("version", value(new_spec_str));
-                    }
-                    None => {
-                        table.insert(name, value(new_spec_str));
-                    }
+                // Edited in place, so the comment above the dependency and the one after it stay.
+                if table.get(name).ok_or_else(not_found)?.is_table_like() {
+                    let fields = table
+                        .get_mut(name)
+                        .and_then(|existing| existing.as_table_like_mut())
+                        .ok_or_else(not_found)?;
+                    crate::common::set_scalar_preserving_decor(fields, "version", &new_spec_str);
+                } else {
+                    crate::common::set_scalar_preserving_decor(table, name, &new_spec_str);
                 }
             }
             container => {
@@ -772,8 +773,17 @@ pub fn round_trip(spec: &DepSpec, target: &Version) -> Option<DepSpec> {
 fn rewrite_single(original: &str, op: &str, target: &Version) -> Option<DepSpec> {
     // Validate that the original clause parses correctly (guards against
     // unknown version syntax that happens to start with a known prefix).
-    let _rest = original.strip_prefix(op)?;
-    let rendered = format!("{op}{}", render_target(op, target)?);
+    let rest = original.strip_prefix(op)?;
+    let mut rendered_target = render_target(op, target)?;
+    // `~=1.2` allows any 1.x from 1.2, and `~=1.2.0` only 1.2.x, so a compatible-release clause keeps the number of
+    // components it was written with.
+    if op == "~="
+        && !target.is_prerelease()
+        && parse_version_core(rest.trim()).is_some_and(|(_, minor, patch)| minor.is_some() && patch.is_none())
+    {
+        rendered_target = format!("{}.{}", target.major()?, target.minor()?);
+    }
+    let rendered = format!("{op}{rendered_target}");
     let req = VersionReq::parse(&rendered, Ecosystem::Pypi).ok()?;
     Some(DepSpec::Range(req, rendered))
 }

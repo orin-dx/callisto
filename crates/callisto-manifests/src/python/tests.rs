@@ -963,6 +963,69 @@ fn round_trip_compatible_release_rewrites_to_new_version() {
 }
 
 #[test]
+fn a_compatible_release_clause_keeps_the_precision_it_was_written_with() {
+    let target = make_pep440_version("2.1.3");
+    // `~=1.2` is "any 1.x from 1.2"; rewriting it to `~=2.1.3` would silently shrink it to 2.1.x.
+    assert_eq!(
+        raw_of(round_trip(&make_pypi_spec("~=1.2"), &target)).as_deref(),
+        Some("~=2.1")
+    );
+    assert_eq!(
+        raw_of(round_trip(&make_pypi_spec("~=1.2.0"), &target)).as_deref(),
+        Some("~=2.1.3")
+    );
+    assert_eq!(
+        raw_of(round_trip(&make_pypi_spec("~= 1.2"), &target)).as_deref(),
+        Some("~=2.1")
+    );
+}
+
+/// Opens `source` as a `pyproject.toml`, rewrites `dependency` to `new`, and returns the persisted file.
+fn poetry_rewrite(source: &str, dependency: &str, new: &str) -> String {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("pyproject.toml"), source).unwrap();
+    let decl = ManifestDecl {
+        path: PathBuf::from("pyproject.toml"),
+        role: ManifestRole::Canonical,
+        format: ManifestFormat::PyprojectToml,
+    };
+    let ctx = OpenContext {
+        workspace_root: dir.path(),
+        cargo_workspace: None,
+        cargo_roots: Default::default(),
+        npm_workspace_kind: None,
+    };
+    let mut manifest = PyprojectToml::open(&decl, &ctx).unwrap();
+    let at = locator_of(&manifest, dependency);
+    manifest
+        .update_dependency_spec(dependency, DepKind::Runtime, &at, make_pypi_spec(new), &permit())
+        .unwrap();
+    manifest.persist(&permit()).unwrap();
+    fs::read_to_string(dir.path().join("pyproject.toml")).unwrap()
+}
+
+#[test]
+fn rewriting_a_poetry_dependency_keeps_the_comments_around_it() {
+    let source = "[tool.poetry]\nname = \"app\"\nversion = \"0.1.0\"\n\n[tool.poetry.dependencies]\npython = \"^3.10\"\n# the core library, pinned compatibly\nzz-core = \"~=1.2\"  # compatible release\nother = \"^1.0\"  # untouched\n";
+    let rewritten = poetry_rewrite(source, "zz-core", "~=2.0");
+    assert_eq!(rewritten, source.replace("~=1.2", "~=2.0"));
+}
+
+#[test]
+fn rewriting_a_pep_621_dependency_keeps_the_comments_around_it() {
+    let source = "[project]\nname = \"app\"\nversion = \"0.1.0\"\ndependencies = [\n    # the core library\n    \"zz-core~=1.2\",  # compatible release\n    \"other>=1.0\",  # untouched\n]\n";
+    let rewritten = poetry_rewrite(source, "zz-core", "~=2.0");
+    assert_eq!(rewritten, source.replace("~=1.2", "~=2.0"));
+}
+
+#[test]
+fn rewriting_a_poetry_dependency_written_as_a_table_keeps_its_other_fields_and_comments() {
+    let source = "[tool.poetry]\nname = \"app\"\nversion = \"0.1.0\"\n\n[tool.poetry.dependencies]\n# optional extras\nzz-core = { version = \"~=1.2\", extras = [\"fast\"] }  # pinned\n";
+    let rewritten = poetry_rewrite(source, "zz-core", "~=2.0");
+    assert_eq!(rewritten, source.replace("~=1.2", "~=2.0"));
+}
+
+#[test]
 fn round_trip_lower_bound_only_rewrites_to_new_version() {
     let spec = make_pypi_spec(">=1.0.0");
     let target = make_pep440_version("2.5.1");
