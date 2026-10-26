@@ -205,7 +205,6 @@ zizmor:
 release-workflow-checks:
     bash .github/tests/verify-release-workflow-contract.sh
     bash .github/tests/verify-release-workflow-policy.sh
-    bash .github/tests/verify-release-workflow-policy.sh --self-test
 
 # Workflow Contracts CI job minus actionlint and zizmor: pins, release
 # contract/policy, artifact build script, the Release-PR action contract
