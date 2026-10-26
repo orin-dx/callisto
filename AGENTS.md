@@ -22,7 +22,7 @@ Rules for AI agents working in this repo.
 - Scoped iteration: one `cargo test -p <crate>` or `cargo clippy -p <crate> --all-targets -- -D warnings` at a time.
   - Not `moon run <project>:test`: its per-project fan-out serializes on `target/`'s build lock.
   - Never run cargo builds in parallel.
-- Changesets: `callisto add --package cargo/callisto-cli:<bump> --summary "..."` (non-interactive). Target `callisto-cli`: its changelog is the one users read. One changeset per user-visible topic, written as the changelog entry: what the user sees now, no internal names or mechanism.
+- Changesets: `callisto add --package cargo/callisto-cli:<bump> --summary "..."` (non-interactive). Target `callisto-cli`: its changelog is the one users read. One changeset per user-visible topic. Lead with what the user sees now; add an action or limit when it matters. Use a short sentence for a simple change, or a short lead and bullets for related details. No internal names, mechanism or filler.
 - Never `git checkout -- Cargo.lock` as cleanup. A lockfile diff means investigate, not discard.
 
 ## Invariants

@@ -2,4 +2,4 @@
 callisto-cli: patch
 ---
 
-A first release of a crate with no description or license now stops with E323 before anything is published, instead of failing at crates.io after other packages have already gone out.
+A crate's first release now checks for a description and a license or license file before publishing, avoiding a partial release.
