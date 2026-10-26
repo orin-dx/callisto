@@ -220,6 +220,7 @@ impl<'a> Scanner<'a> {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+    use serde::Serialize;
 
     fn parse(text: &str) -> Map<String, Value> {
         serde_json::from_str(text).unwrap()
@@ -327,6 +328,28 @@ mod tests {
         }
     }
 
+    fn source_with_layout(doc: &Map<String, Value>, layout: u8) -> String {
+        match layout {
+            0 => serde_json::to_string(doc).unwrap(),
+            1 => serde_json::to_string_pretty(doc).unwrap(),
+            _ => {
+                let mut bytes = Vec::new();
+                let formatter = serde_json::ser::PrettyFormatter::with_indent(b"\t");
+                let mut serializer = serde_json::Serializer::with_formatter(&mut bytes, formatter);
+                doc.serialize(&mut serializer).unwrap();
+                String::from_utf8(bytes).unwrap()
+            }
+        }
+    }
+
+    #[test]
+    fn layout_fixture_preserves_string_values() {
+        let doc = parse(r#"{"a":" :  ","x":{"b":": "}}"#);
+        for layout in 0..3 {
+            assert_eq!(parse(&source_with_layout(&doc, layout)), doc);
+        }
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(300))]
 
@@ -345,11 +368,7 @@ mod tests {
             prop_assume!(!paths.is_empty());
             let path = pick.get(&paths).clone();
 
-            let source = match layout {
-                0 => serde_json::to_string(&doc).unwrap(),
-                1 => serde_json::to_string_pretty(&doc).unwrap(),
-                _ => serde_json::to_string_pretty(&doc).unwrap().replace("  ", "\t").replace(": ", " :  "),
-            };
+            let source = source_with_layout(&doc, layout);
             let mut expected = doc.clone();
             set(&mut expected, &path, &new);
             let old = {
