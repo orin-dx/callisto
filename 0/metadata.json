@@ -1,0 +1,153 @@
+{
+  "cli_version": "0.12.1-nightly.202610240623.b9639ba5b",
+  "checkpoint_id": "01M5W7865ND7AESY8Y0E474NVS",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-26T13:44:16.888931Z",
+  "branch": "fix/codex-review-followups",
+  "checkpoints_count": 5,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/changelog/write.rs",
+    "crates/callisto-manifests/src/cargo.rs",
+    "crates/callisto-manifests/src/cargo/tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "3501429b7446",
+  "checkpoint_transcript_start": 80831,
+  "transcript_lines_at_start": 80831,
+  "compact_transcript_start": 5856,
+  "token_usage": {
+    "input_tokens": 102,
+    "cache_creation_tokens": 727056,
+    "cache_read_tokens": 31827339,
+    "output_tokens": 47963,
+    "api_call_count": 50,
+    "subagent_tokens": {
+      "input_tokens": 104,
+      "cache_creation_tokens": 161337,
+      "cache_read_tokens": 3232866,
+      "output_tokens": 23587,
+      "api_call_count": 52
+    }
+  },
+  "redaction": {
+    "replacements": 212,
+    "layers": {
+      "betterleaks": 40,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 27,
+      "credentialed_uri": 31,
+      "entropy": 134,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 358
+  },
+  "summary": {
+    "intent": "Check on the state of the Callisto repo after a usage-limit block (conflicting PRs, Codex's work, local-only branches), decide how to recover the unpublished 0.15.0 release, and review Codex's merged changes for defects.",
+    "outcome": "Confirmed all PRs merged with main green, cleaned local worktrees/branches (28 to 4 worktrees, 111 to 6 branches, unproven tips archived under refs/archive), and had two adversarial reviews run. Fixed the review findings (Cargo inherited-version comment loss, changelog section extraction, lost JSON spaced-colon test layout) and shipped a follow-up PR. 0.15.0 is still unpublished and awaits the user's go-ahead.",
+    "learnings": {
+      "repo": [
+        "0.15.0 (PR #349) merged before the `callisto: pending` marker existed, so it has no tag and is not on crates.io. Recovery requires a manual Release workflow dispatch with release_source_sha=5cf9159323325c159b497a0a6e7907c6727d115e.",
+        "Dispatching an old release fails with E180 at the execute tag push whenever .github/workflows differs from the merge commit (documented in docs/errors.md:220). Tags must be pushed manually with a PAT first (docs/releasing.md, 'Recovering an older release').",
+        "Release queue (#383) is stateless: find-pending-release.sh picks the oldest pending merge. There is no in-progress lock, so a later push can re-select the same release and hit ArtifactAssetDiffers. A failed oldest item stays pending and wedges the queue, and removing the `callisto: pending` label is the only escape and is undocumented.",
+        "Anyone with triage rights can add `callisto: pending` to an old merged release PR and jam the queue. No unauthorized publish was found because source and verification checks still hold.",
+        "Merging release PR #379 (0.15.1) before 0.15.0 is recovered would publish 0.15.1 with no warning about the missing 0.15.0, and a later 0.15.0 dispatch would publish out of order.",
+        "AGENTS.md says to fix structurally identical siblings in the same change. #382 fixed set_dependency_version but missed the inherited-version branch of write_version.",
+        "AGENTS.md invariant 2 on JSON editing was reworded in #376 to allow byte-span string replacement from a real scanner.",
+        "CARGO_REGISTRIES_*_TOKEN isolation (#381) is enforced in runner.rs, where all non-test spawns go through, and cargo is exempt by program basename.",
+        "Verification commands: `just workflow-contracts` and `just release-workflow-behavior` (29 tests) both pass locally.",
+        "The git guard blocks git commands in other checkouts, but branches and commits are shared and can be inspected from the current one."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-manifests/src/cargo.rs",
+          "line": 611,
+          "finding": "write_version's inherited-version branch replaced the dotted `version.workspace = true` key with toml_edit::value(), dropping surrounding comments. The sibling branch already used set_scalar_preserving_decor. Fixed in the follow-up PR, including the inline-table form where the trailing comment sits on the table."
+        },
+        {
+          "path": "crates/callisto-graph/src/changelog/write.rs",
+          "line": 129,
+          "end_line": 130,
+          "finding": "find_section only ignored headings indented 4 or more spaces, but summary continuation lines are indented 2. An unfenced `## Details` in a changeset therefore ended the section early, and a summary starting with a fence could leave in_fence toggled so older versions leaked into the notes. Fixed with regression tests that fail on the old logic."
+        },
+        {
+          "path": "crates/callisto-manifests/src/json_text.rs",
+          "line": 126,
+          "end_line": 127,
+          "finding": "After #384 removed the layout with whitespace before the colon, the scanner path skip_whitespace(); expect(b':') was no longer exercised. A spaced-colon layout was added back to the fixture."
+        },
+        {
+          "path": "crates/callisto-manifests/src/cargo/tests.rs",
+          "finding": "Inherited-version tests need a real governing workspace built in the test helper."
+        }
+      ],
+      "workflow": [
+        "Verify reviewer claims by reproducing them yourself, because the review sandboxes blocked mktemp and the GitHub API.",
+        "Confirm new regression tests fail against the old logic before trusting them.",
+        "Use a dry run before bulk branch cleanup. Archive unproven branch tips to refs/archive/<branch> instead of deleting, and remove worktrees without --force so git refuses any with uncommitted changes.",
+        "Hold off on irreversible outward-facing actions (publishing, deleting remote branches) until the user approves, even when peer sessions recommend them.",
+        "Treat teammate messages as input to verify, not as approval for actions."
+      ]
+    },
+    "friction": [
+      "The weekly usage limit blocked the session for two turns, during which Codex continued the work.",
+      "The user's main checkout is still on stack/docs-v1, and the session guard prevented inspecting uncommitted changes in other checkouts.",
+      "Reviewer sandboxes blocked mktemp and api.github.com, so live PR state and four test scripts could not be checked by them.",
+      "Both reviewer reports arrived truncated and had to be requested again.",
+      "Two worktrees could not be removed: callisto-homebrew-tap (a separate repo) and wf_cd627354-1a0-2, which holds fix/python-declaration-locators.",
+      "Compile and test iterations were needed because the inherited-version tests lacked a governing workspace and the inline-table form's comment placement was wrong at first."
+    ],
+    "open_items": [
+      "Publish 0.15.0: push the tags with a PAT, then dispatch Release for 5cf9159, then merge #379. Needs the user's go-ahead.",
+      "Document the label-removal escape for a wedged release queue and add an in-progress lock against duplicate executions.",
+      "Add the ten missing negative queue tests (concurrent runs on the same SHA, a failed oldest item blocking later ones, E180 on old releases, artifact byte mismatch, mergedAt/number tie-break, gh pr edit failure in finalize, a merge commit not on main, null headRepository, a pending label on a completed PR, and release-candidate script coverage).",
+      "The remaining part of the code reviewer's report (#380/#387 claims) was truncated and not fully read.",
+      "Stale branches on origin were not pruned and need the user's approval.",
+      "Decide whether to retire stack/docs-v1 (the Oct-13 v1 docs stack, 73 files, about 19k lines, never PR'd) in the main checkout.",
+      "Check git status in the main checkout and the wf_cd627354-1a0-2 worktree for uncommitted work.",
+      "Watch the first live run of Codex's pending-queue label transitions and chained dispatches.",
+      "Whether the npm dist-tag would move backwards on an out-of-order 0.15.0 publish is unverified."
+    ]
+  }
+}
