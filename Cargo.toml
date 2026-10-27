@@ -21,6 +21,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"
 michi-graph = "0.6"
 indexmap = { version = "2", features = ["serde"] }
+jsonc-parser = { version = "0.34", features = ["cst"] }
 toml_edit = "0.25"
 ignore = "0.4"
 toml = "1.1"

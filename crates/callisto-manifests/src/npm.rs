@@ -312,8 +312,10 @@ fn napi_linux_abi_from_package_name(name: &str) -> Option<String> {
 impl Manifest for PackageJson {
     fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
         // A version or dependency range is a string, so the usual change is the same file with a few literals replaced.
+        // The result must parse to exactly the document being written, or the whole file is written instead.
         let in_place = crate::json_text::string_edits(&self.source_doc, &self.doc)
-            .and_then(|edits| crate::json_text::replace_strings(&self.source, &edits));
+            .and_then(|edits| crate::json_text::replace_strings(&self.source, &edits))
+            .filter(|text| serde_json::from_str::<Map<String, Value>>(text).is_ok_and(|parsed| parsed == self.doc));
         if let Some(text) = in_place {
             return self.write_text(text, permit);
         }
