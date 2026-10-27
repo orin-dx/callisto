@@ -35,7 +35,7 @@ require_line "$release_candidate" '          prs=$(gh api --paginate "/repos/${G
 require_line "$release_candidate" '          RELEASE_SOURCE_SHA_INPUT: ${{ inputs.release_source_sha }}' 'release-candidate must pass a dispatch input through an environment variable'
 require_line "$release_candidate" '          TRIGGERING_SHA: ${{ github.sha }}' 'release-candidate must pass the triggering commit through an environment variable'
 require_line "$release_candidate" '          release_source_sha="$RELEASE_SOURCE_SHA_INPUT"' 'release-candidate must not interpolate user-controlled SHA input into shell'
-require_line "$release_candidate" '            release_source_sha=$(bash .github/scripts/find-pending-release.sh "$GITHUB_REPOSITORY" main '\''callisto: pending'\'')' 'release-candidate must consider a pending older release first'
+require_line "$release_candidate" '            release_source_sha=$(callisto --format json release pending | jq -r '\''.pending[0].source // empty'\'')' 'release-candidate must consider a pending older release first'
 require_line "$release_candidate" '          if ! git merge-base --is-ancestor "$release_source_sha" "$TRIGGERING_SHA"; then' 'release-candidate must require the source on main history'
 
 build_artifact="$(job_block build-artifact build)"

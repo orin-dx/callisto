@@ -66,6 +66,7 @@ mod derive;
 mod github;
 mod local;
 mod notes;
+mod pending;
 pub(crate) mod provider;
 mod version_commit;
 
@@ -85,6 +86,7 @@ pub use local::{
     ci_release_route, origin_tag_probe, plan_loaded_release, plan_local_release, plan_workspace_release,
     CiReleaseRoute, LocalReleasePlan, LocalReleaseSource, OriginTagProbe,
 };
+pub use pending::{pending_releases, PendingRelease};
 pub(crate) use provider::policy::{programs, timeouts};
 pub use provider::{ReleasePreflight, ReleaseProviderSet};
 

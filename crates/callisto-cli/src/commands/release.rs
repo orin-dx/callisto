@@ -9,13 +9,13 @@ use std::process::ExitCode;
 
 use callisto_graph::commands::{
     build_release_intent, build_release_intent_with_artifacts, ci_release_route, derive_release_commit_decision,
-    derive_selected_release_decision, execute_release, origin_tag_probe, plan_loaded_release,
+    derive_selected_release_decision, execute_release, origin_tag_probe, pending_releases, plan_loaded_release,
     seal_python_distributions, validate_local_release_intent, validate_release_intent, verify_artifact_manifest,
     LocalReleasePlan, LocalReleaseSource, VersionOptions,
 };
 use callisto_graph::locate::IgnoreWalkLocator;
 use callisto_model::{
-    ApplyPermit, ArtifactDigest, ArtifactManifestEntryV1, ArtifactManifestV1, ExecutionTrustProfileV1,
+    ApplyPermit, ArtifactDigest, ArtifactManifestEntryV1, ArtifactManifestV1, CommitSha, ExecutionTrustProfileV1,
     GitHubArtifactAttestationV1, PackageId, ReleaseArtifactManifestReport, ReleaseDryRunReport, ReleaseExecuteReport,
     ReleaseIntentV1, ReleaseIntentV1Wire, ReleaseNothingReport, ReleasePackageId, ReleasePlanReport, ReleaseReceiptV1,
     ReleaseReport, ReleaseRunEnvelopeV1,
@@ -23,7 +23,7 @@ use callisto_model::{
 
 use crate::cli::{
     GlobalArgs, OutputFormat, ReleaseArgs, ReleaseArtifactManifestArgs, ReleaseBuildPythonArgs, ReleaseCommandArgs,
-    ReleaseExecuteArgs, ReleaseInspectArgs, ReleasePlanArgs,
+    ReleaseExecuteArgs, ReleaseInspectArgs, ReleasePendingArgs, ReleasePlanArgs,
 };
 use crate::error::CliError;
 use crate::output::{emit_line, emit_report, log_line, write_json};
@@ -33,6 +33,7 @@ use crate::workspace::{load_workspace, select_inference};
 pub fn handle(args: ReleaseCommandArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     match args.command {
         None => release(&args.packages, args.receipt, global),
+        Some(ReleaseArgs::Pending(args)) => pending(args, global),
         Some(ReleaseArgs::Plan(args)) => plan(args, global),
         Some(ReleaseArgs::Inspect(args)) => inspect(args, global),
         Some(ReleaseArgs::BuildPython(args)) => build_python(args, global),
@@ -286,6 +287,63 @@ fn render_release_plan_table(intent: &ReleaseIntentV1) -> String {
         ]);
     }
     format!("{table}\n")
+}
+
+/// Exact stdout when every release commit has finished.
+pub const NO_PENDING_RELEASES: &str = "No pending releases.";
+
+fn pending(args: ReleasePendingArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
+    let from = args
+        .from
+        .as_deref()
+        .map(CommitSha::parse)
+        .transpose()
+        .map_err(|error| callisto_graph::GraphError::ReleaseInvariant {
+            detail: format!("`--from` must be a full commit SHA: {error}"),
+        })?;
+    let runner = CliCommandRunner;
+    let workspace = load_workspace(global, &runner)?;
+    let found = pending_releases(&workspace, &args.decision, args.limit, from.as_ref())?;
+    match global.format {
+        OutputFormat::Json => {
+            let releases: Vec<_> = found
+                .iter()
+                .map(|release| {
+                    serde_json::json!({
+                        "source": release.source.as_str(),
+                        "packages": release
+                            .packages
+                            .iter()
+                            .map(|(package, version)| serde_json::json!({
+                                "package": package.to_string(),
+                                "version": version.render(),
+                            }))
+                            .collect::<Vec<_>>(),
+                        "missing": release.missing,
+                    })
+                })
+                .collect();
+            write_json(&mut std::io::stdout(), &serde_json::json!({ "pending": releases }))?;
+        }
+        OutputFormat::Text if found.is_empty() => emit_line(NO_PENDING_RELEASES)?,
+        OutputFormat::Text => {
+            emit_line("Pending releases, oldest first:")?;
+            for release in &found {
+                let packages: Vec<String> = release
+                    .packages
+                    .iter()
+                    .map(|(package, version)| format!("{package} {}", version.render()))
+                    .collect();
+                emit_line(&format!(
+                    "  {}  {}  (missing: {})",
+                    &release.source.as_str()[..12],
+                    packages.join(", "),
+                    release.missing.join(", ")
+                ))?;
+            }
+        }
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 fn build_python(args: ReleaseBuildPythonArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {

@@ -121,6 +121,9 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - uses: $/.github/actions/setup-callisto
+        with:
+          source: local
       - id: candidate
         shell: bash
         env:
@@ -132,7 +135,7 @@ jobs:
           release_source_sha="$RELEASE_SOURCE_SHA_INPUT"
           selected_pending=false
           if [[ -z "$release_source_sha" ]]; then
-            release_source_sha=$(bash .github/scripts/find-pending-release.sh "$GITHUB_REPOSITORY" main 'callisto: pending')
+            release_source_sha=$(callisto --format json release pending | jq -r '.pending[0].source // empty')
             [[ -n "$release_source_sha" ]] && selected_pending=true
             release_source_sha="${release_source_sha:-$TRIGGERING_SHA}"
           fi
@@ -208,7 +211,6 @@ jobs:
           setup_callisto: 'false'
           branch: main
           release_branch: callisto/version-packages
-          pending_pr_label: 'callisto: pending'
           # Interdependent Cargo packages bump together, so Cargo.lock must be refreshed in the release PR.
           version_command: 'callisto version --refresh-lockfiles'
         env:
@@ -496,6 +498,27 @@ jobs:
         env:
           RELEASE_SOURCE_SHA: ${{ needs.release-candidate.outputs.release_source_sha }}
         run: bash "$GITHUB_WORKSPACE/.github/scripts/move-floating-tag.sh" .callisto/release-decision.json cargo/callisto-cli "$RELEASE_SOURCE_SHA"
+      - name: Find the CLI tag this release created
+        id: cli-tag
+        working-directory: release-source
+        run: |
+          set -euo pipefail
+          git fetch --tags --quiet origin
+          tag=$(git tag --points-at HEAD --list 'callisto@*' | head -n 1)
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          [[ -n "$tag" ]] || echo 'This run released no CLI version; the Homebrew tap is not notified.'
+      # Our own pipeline, not part of what Callisto does for others. The tap also checks daily, so a failed
+      # notification never fails the release.
+      - name: Notify the Homebrew tap
+        if: steps.cli-tag.outputs.tag != ''
+        continue-on-error: true
+        uses: orin-dx/actions/notify-homebrew-tap@687b60169775ae9e9270af098a4cabb5e1c2a08e # main
+        with:
+          client-id: ${{ vars.TAP_APP_CLIENT_ID }}
+          private-key: ${{ secrets.TAP_APP_PRIVATE_KEY }}
+          tap-repository: orin-dx/homebrew-tap
+          tool: callisto
+          release-tag: ${{ steps.cli-tag.outputs.tag }}
       - name: Summarize receipt
         if: always()
         run: |
@@ -518,54 +541,36 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  finalize:
-    name: Mark the merged release PR complete
+  drain:
+    name: Start the next unfinished release
     needs: [execute, release-candidate]
     if: >-
       !cancelled() && needs.execute.result == 'success' &&
       needs.release-candidate.outputs.is_release_pr == 'true'
-    timeout-minutes: 5
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Reconcile the PR marker after verified completion
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_PR_NUMBER: ${{ needs.release-candidate.outputs.release_pr_number }}
-          RELEASE_SOURCE_SHA: ${{ needs.release-candidate.outputs.release_source_sha }}
-        run: bash .github/scripts/mark-release-complete.sh "$RELEASE_PR_NUMBER" "$RELEASE_SOURCE_SHA"
-
-  drain:
-    name: Start the next pending release
-    needs: [finalize, release-candidate]
-    if: >-
-      !cancelled() && needs.finalize.result == 'success' &&
-      needs.release-candidate.outputs.is_release_pr == 'true'
-    timeout-minutes: 5
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     permissions:
       actions: write
       contents: read
-      pull-requests: read
     outputs:
       has_pending: ${{ steps.pending.outputs.has_pending }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
-      - name: Dispatch the oldest pending merge
+      - uses: $/.github/actions/setup-callisto
+        with:
+          source: local
+      - name: Dispatch the oldest unfinished release
         id: pending
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_SOURCE_SHA: ${{ needs.release-candidate.outputs.release_source_sha }}
         run: |
           set -euo pipefail
-          next_sha=$(bash .github/scripts/find-pending-release.sh "$GITHUB_REPOSITORY" main 'callisto: pending' "$RELEASE_SOURCE_SHA")
+          # The release just executed is excluded: a release that cannot be read back as finished must not start itself again.
+          next_sha=$(callisto --format json release pending | jq -r --arg sha "$RELEASE_SOURCE_SHA" '[.pending[] | select(.source != $sha)][0].source // empty')
           if [[ -n "$next_sha" ]]; then
             gh workflow run callisto-release.yml --ref main -f release_source_sha="$next_sha"
             echo 'has_pending=true' >> "$GITHUB_OUTPUT"

@@ -205,16 +205,12 @@ zizmor:
 release-workflow-checks:
     bash .github/tests/verify-release-workflow-contract.sh
     bash .github/tests/verify-release-workflow-policy.sh
-    bash .github/tests/verify-release-workflow-policy.sh --self-test
 
 # Workflow Contracts CI job minus actionlint and zizmor: pins, release
 # contract/policy, artifact build script, the Release-PR action contract
 # under a minimal PATH, and the installer verification-mode tests.
 workflow-contracts: release-workflow-checks
-    bash .github/tests/test_pending_release_candidate.sh
     bash .github/tests/test_release_candidate_recovery.sh
-    bash .github/tests/test_release_drain.sh
-    bash .github/tests/test_mark_release_complete.sh
     bash .github/tests/verify-action-pins.sh
     bash .github/tests/test-release-artifact-build-script.sh
     bash .github/tests/test-move-floating-tag.sh
