@@ -28,7 +28,7 @@ Callisto's own GitHub workflow labels its managed release PR pending before merg
 ## Enforcement
 
 - `.github/tests/test_pending_release_candidate.sh` and `.github/tests/test_mark_release_complete.sh` exercise queue selection and completion marking.
-- `.github/tests/verify-release-workflow-policy.sh` checks scheduling and job permissions.
+- `.github/tests/verify-release-workflow-policy.sh` checks job permissions and the verified-source rules.
 - The recovery criteria in `docs/specs/release.json` describe the workflow behavior.
 
 ## Revisit when
