@@ -391,6 +391,20 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
     release_commit: &CommitSha,
     decision_path: &std::path::Path,
 ) -> Result<ReleaseDecisionV1, GraphError> {
+    let (parent, changed) = commit_delta(workspace, release_commit)?;
+    let decision_path_str = normalized_git_path(decision_path)?;
+    require_version_commit_shape(workspace, release_commit, &changed, &decision_path_str)?;
+    let decision = read_committed_decision(workspace, release_commit, decision_path, &decision_path_str)?;
+    require_manifests_match_decision(workspace, release_commit, &parent, &changed, &decision)?;
+    Ok(decision)
+}
+
+/// The commit's parent and what the commit changed against it, as `(status, path)` pairs. Fails unless `HEAD` is the
+/// release commit.
+fn commit_delta<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    release_commit: &CommitSha,
+) -> Result<(String, Vec<(String, String)>), GraphError> {
     let head_args = ["rev-parse", "HEAD"];
     let head = git_stdout(workspace.runner, &workspace.root, &head_args)?;
     let head =
@@ -418,8 +432,17 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
     ];
     let changed = git_stdout(workspace.runner, &workspace.root, &diff_tree_args)?;
     let changed = parse_name_status(&changed, &diff_tree_args)?;
+    Ok((parent, changed))
+}
 
-    let decision_path_str = normalized_git_path(decision_path)?;
+/// The commit has the shape of a version commit: it wrote the decision, consumed a changeset, and touched only the
+/// paths a version commit may touch.
+fn require_version_commit_shape<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    release_commit: &CommitSha,
+    changed: &[(String, String)],
+    decision_path: &str,
+) -> Result<(), GraphError> {
     let changeset_dir = normalized_git_path(&workspace.config.changesets_dir)?;
 
     // The decision must be freshly authored as part of *this* commit, not a
@@ -428,7 +451,7 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
     // carry forward a prior, unrelated decision's authority.
     let decision_freshly_written = changed
         .iter()
-        .any(|(status, path)| path == &decision_path_str && matches!(status.as_str(), "A" | "M"));
+        .any(|(status, path)| path == decision_path && matches!(status.as_str(), "A" | "M"));
     if !decision_freshly_written {
         return Err(GraphError::ReleaseCommitVerificationFailed {
             commit: release_commit.clone(),
@@ -459,26 +482,45 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
         .filter_map(|package| package.changelog.as_deref())
         .map(normalized_git_path)
         .collect::<Result<std::collections::BTreeSet<_>, _>>()?;
-    for (_, path) in &changed {
-        if !is_version_commit_path(path, &decision_path_str, &changeset_dir, &changelogs) {
+    for (_, path) in changed {
+        if !is_version_commit_path(path, decision_path, &changeset_dir, &changelogs) {
             return Err(GraphError::ReleaseCommitVerificationFailed {
                 commit: release_commit.clone(),
                 reason: CommitVerificationFailure::UnexpectedPath { path: path.clone() },
             });
         }
     }
+    Ok(())
+}
 
+/// The decision file as the release commit holds it. Its own deserializer rejects entries that do not match its digest.
+fn read_committed_decision<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    release_commit: &CommitSha,
+    decision_path: &std::path::Path,
+    decision_path_str: &str,
+) -> Result<ReleaseDecisionV1, GraphError> {
     let decision_source = git_file(
         workspace.runner,
         &workspace.root,
         release_commit.as_str(),
-        &decision_path_str,
+        decision_path_str,
     )?;
-    let decision: ReleaseDecisionV1 =
-        serde_json::from_str(&decision_source).map_err(|error| GraphError::ReleaseDecisionDecode {
-            path: decision_path.to_path_buf(),
-            message: error.to_string(),
-        })?;
+    serde_json::from_str(&decision_source).map_err(|error| GraphError::ReleaseDecisionDecode {
+        path: decision_path.to_path_buf(),
+        message: error.to_string(),
+    })
+}
+
+/// Every package the decision claims has its changelog and manifest in the diff with exactly the claimed version, and
+/// no package the decision does not claim changed version.
+fn require_manifests_match_decision<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    release_commit: &CommitSha,
+    parent: &str,
+    changed: &[(String, String)],
+    decision: &ReleaseDecisionV1,
+) -> Result<(), GraphError> {
     let claimed = decision
         .entries
         .iter()
@@ -525,10 +567,10 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
     // workspace has -- replaces what was previously 2*N separate `git
     // show` spawns (one `manifest_version_at` call per manifest per
     // commit).
-    let before_blobs = batch_manifest_blobs_at(workspace.runner, &workspace.root, &parent, &query_paths)?;
+    let before_blobs = batch_manifest_blobs_at(workspace.runner, &workspace.root, parent, &query_paths)?;
     let after_blobs =
         batch_manifest_blobs_at(workspace.runner, &workspace.root, release_commit.as_str(), &query_paths)?;
-    let before = CommitBlobs::new(workspace.runner, &workspace.root, &parent, &query_paths, before_blobs);
+    let before = CommitBlobs::new(workspace.runner, &workspace.root, parent, &query_paths, before_blobs);
     let after = CommitBlobs::new(
         workspace.runner,
         &workspace.root,
@@ -597,8 +639,7 @@ pub fn derive_release_commit_decision<R: CommandRunner, D: DependencyResolver>(
             reason: CommitVerificationFailure::ClaimedPackageNotObserved,
         });
     }
-
-    Ok(decision)
+    Ok(())
 }
 
 /// The manifests Callisto writes versions and dependency ranges into.
