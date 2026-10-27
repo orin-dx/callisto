@@ -270,7 +270,11 @@ pub(crate) fn version_is_tagged(
     tag_of_version(tags, package, version).is_some()
 }
 
-fn tag_of_version(tags: &crate::TagIndex, package: &callisto_model::PackageId, version: &Version) -> Option<String> {
+pub(crate) fn tag_of_version(
+    tags: &crate::TagIndex,
+    package: &callisto_model::PackageId,
+    version: &Version,
+) -> Option<String> {
     let rendered = tags.template(package).render(version).to_string();
     if tags.is_tag_of(package, &rendered) {
         return Some(rendered);

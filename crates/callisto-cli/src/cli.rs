@@ -274,6 +274,8 @@ pub struct ReleaseCommandArgs {
 /// Durable release subcommands for the CI plan/build/execute route.
 #[derive(Subcommand, Clone, Debug)]
 pub enum ReleaseArgs {
+    /// List merged release commits whose release never finished, oldest first.
+    Pending(ReleasePendingArgs),
     /// Create a read-only durable release intent from exact package selections.
     #[command(hide = true)]
     Plan(ReleasePlanArgs),
@@ -385,6 +387,19 @@ pub struct ReleasePlanArgs {
     /// Explicit path where the immutable intent JSON will be atomically written.
     #[arg(long, value_name = "FILE")]
     pub out: PathBuf,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct ReleasePendingArgs {
+    /// The committed decision file a release commit writes.
+    #[arg(long, value_name = "FILE", default_value = ".callisto/release-decision.json")]
+    pub decision: PathBuf,
+    /// Count only this release commit and newer ones: the way past a release that cannot finish.
+    #[arg(long, value_name = "SHA")]
+    pub from: Option<String>,
+    /// How many of the newest release commits to examine.
+    #[arg(long, value_name = "N", default_value_t = 10)]
+    pub limit: usize,
 }
 
 #[derive(Args, Clone, Debug)]
