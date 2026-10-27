@@ -19,7 +19,6 @@ fi
 cat > "$dir/gh" <<'SH'
 #!/usr/bin/env bash
 case "$1 $2" in
-  'pr list') cat "$PR_LIST_FILE" ;;
   'api --paginate') cat "$PULLS_FILE" ;;
   api\ /repos/owner/repo/commits/*)
     case "$4" in
@@ -31,10 +30,14 @@ case "$1 $2" in
 esac
 SH
 chmod +x "$dir/gh"
+cat > "$dir/callisto" <<'SH'
+#!/usr/bin/env bash
+cat "$PENDING_FILE"
+SH
+chmod +x "$dir/callisto"
 export PATH="$dir:$PATH" GITHUB_REPOSITORY=owner/repo
-export PR_LIST_FILE="$dir/prs.json" PULLS_FILE="$dir/pulls.json"
-mkdir -p "$dir/repo/.github/scripts"
-cp "$root/.github/scripts/find-pending-release.sh" "$dir/repo/.github/scripts/"
+export PENDING_FILE="$dir/pending.json" PULLS_FILE="$dir/pulls.json"
+mkdir -p "$dir/repo"
 git -C "$dir/repo" init -q
 git -C "$dir/repo" -c user.name=Test -c user.email=test@example.com commit --allow-empty -qm source
 export TEST_SOURCE_SHA
@@ -44,8 +47,8 @@ export TRIGGERING_SHA GITHUB_OUTPUT="$dir/output"
 TRIGGERING_SHA="$(git -C "$dir/repo" rev-parse HEAD)"
 printf '[]\n' > "$PULLS_FILE"
 
-cat > "$PR_LIST_FILE" <<JSON
-[{"number":9,"mergedAt":"2026-10-25T09:00:00Z","mergeCommit":{"oid":"$TEST_SOURCE_SHA"},"headRefName":"callisto/version-packages","headRepository":{"nameWithOwner":"owner/repo"},"baseRefName":"main","labels":[{"name":"callisto: pending"}]}]
+cat > "$PENDING_FILE" <<JSON
+{"pending":[{"source":"$TEST_SOURCE_SHA","packages":[],"missing":["tag x@1.0.0"]}]}
 JSON
 export RELEASE_SOURCE_SHA_INPUT=''
 if (cd "$dir/repo" && bash "$dir/candidate.sh") > "$dir/stdout" 2> "$dir/stderr"; then
@@ -57,7 +60,7 @@ if [[ -f "$GITHUB_OUTPUT" ]] && grep -Fq 'is_release_pr=false' "$GITHUB_OUTPUT";
   exit 1
 fi
 
-printf '[]\n' > "$PR_LIST_FILE"
+printf '{"pending":[]}\n' > "$PENDING_FILE"
 : > "$GITHUB_OUTPUT"
 (cd "$dir/repo" && bash "$dir/candidate.sh")
 grep -Fxq 'is_release_pr=false' "$GITHUB_OUTPUT"
@@ -103,8 +106,8 @@ grep -Fxq 'release_pr_number=9' "$GITHUB_OUTPUT"
 grep -Fxq "release_source_sha=$TEST_SOURCE_SHA" "$GITHUB_OUTPUT"
 grep -Fxq "orchestration_sha=$TRIGGERING_SHA" "$GITHUB_OUTPUT"
 
-cat > "$PR_LIST_FILE" <<JSON
-[{"number":9,"mergedAt":"2026-10-25T09:00:00Z","mergeCommit":{"oid":"$TEST_SOURCE_SHA"},"headRefName":"callisto/version-packages","headRepository":{"nameWithOwner":"owner/repo"},"baseRefName":"main","labels":[{"name":"callisto: pending"}]}]
+cat > "$PENDING_FILE" <<JSON
+{"pending":[{"source":"$TEST_SOURCE_SHA","packages":[],"missing":["tag x@1.0.0"]}]}
 JSON
 : > "$GITHUB_OUTPUT"
 export RELEASE_SOURCE_SHA_INPUT=''

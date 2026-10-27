@@ -314,11 +314,11 @@
     },
     {
       "id": "REL-RERUN-09",
-      "criterion": "The repository's release workflow opts into `callisto-action`'s `pending_pr_label` input so created and updated PRs carry `callisto: pending`; consumer workflows without that input get no pending label. On a main push or manual dispatch without an explicit source, the workflow selects the merged, same-repository managed PR with that label having the earliest merge time, breaking ties by PR number; with none pending, it examines the triggering commit. It rejects a selected source that is not an ancestor of the triggering main commit or is not the exact merge commit of exactly one GitHub-verified managed PR, rather than moving on to a newer release PR. A `callisto: complete` label excludes a PR even if a stale search result still lists its pending label. Labels select candidates only; the committed decision and provider observations remain authoritative."
+      "criterion": "On a main push or manual dispatch without an explicit source, the repository's release workflow builds Callisto and takes the first release from `callisto release pending` as the source; with none pending, it examines the triggering commit. It rejects a selected source that is not an ancestor of the triggering main commit or is not the exact merge commit of exactly one GitHub-verified managed PR, rather than moving on to a newer release PR. Nothing is recorded on the PR; the committed decision and provider observations remain authoritative."
     },
     {
       "id": "REL-RERUN-10",
-      "criterion": "Only after `execute` succeeds, including receipt upload, the workflow verifies the merged PR's exact merge SHA, removes `callisto: pending` and adds `callisto: complete`. A failed execution leaves the PR pending. After completion it dispatches the next pending release by full merge SHA; when none remains, it refreshes the managed release PR for changesets now on main. A failed dispatch fails the drain job and does not refresh the release PR, leaving the next merge pending for retry. Dispatch and completion jobs receive no registry secrets."
+      "criterion": "After `execute` succeeds, including receipt upload, the workflow dispatches the oldest unfinished release other than the one just executed, by full merge SHA; when none remains, it refreshes the managed release PR for changesets now on main. A failed execution leaves the release unfinished and selected again. A failed dispatch fails the drain job and does not refresh the release PR. The drain job receives no registry secrets."
     },
     {
       "id": "REL-RERUN-11",

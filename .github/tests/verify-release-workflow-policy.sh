@@ -18,7 +18,6 @@ ALLOWED_WRITES = {
     "version-pr": {"contents", "pull-requests"},
     "build-artifact": {"attestations", "id-token"},
     "execute": {"contents"},
-    "finalize": {"pull-requests"},
     "drain": {"actions"},
 }
 # The only secrets the publishing job may reference.
