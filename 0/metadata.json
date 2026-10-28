@@ -1,0 +1,132 @@
+{
+  "cli_version": "0.12.3-nightly.202610261136.c4f103d8d",
+  "checkpoint_id": "01M60PN8PYGGRZCVM7QWG3BXX0",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-28T07:30:28.390687Z",
+  "branch": "ci/serialize-release-runs",
+  "checkpoints_count": 4,
+  "save_step_count": 1,
+  "files_touched": [
+    "docs/releasing.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "2671addb81ea",
+  "checkpoint_transcript_start": 86230,
+  "transcript_lines_at_start": 86230,
+  "compact_transcript_start": 6197,
+  "token_usage": {
+    "input_tokens": 50,
+    "cache_creation_tokens": 671526,
+    "cache_read_tokens": 4808489,
+    "output_tokens": 17593,
+    "api_call_count": 25,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 220,
+    "layers": {
+      "betterleaks": 44,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 27,
+      "credentialed_uri": 31,
+      "entropy": 138,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 395
+  },
+  "summary": {
+    "intent": "Clean up stale information after merging release PRs (#401, #379/#402) and decide what hardening work comes next, then fix the duplicate release run that failed with E167 after #402 merged during the 0.16.0 release.",
+    "outcome": "Confirmed 0.16.0 is intact (GitHub release, crates.io, four tags), diagnosed the duplicate run as a per-SHA workflow concurrency gap, and committed a signed fix changing the group to a single fixed `release` name with docs/releasing.md updated. The stale NEXT-WORK.md could not be written from the worktree and the PR was not yet opened or proven live.",
+    "learnings": {
+      "repo": [
+        "The workflow-level concurrency group in callisto-release.yml was `release-${{ github.sha }}`, so it only deduped reruns of the same push and never serialized different pushes.",
+        "The `execute` job has its own `release-execute` group that serializes executes, but it is too late because `release pending` already selected the release before the lock.",
+        "The per-SHA group existed because a shared group drops queued release merges (GitHub keeps one pending run per group). That is now harmless since every run asks `release pending` what is unfinished.",
+        "E167 fires when a second run rebuilds artifacts that differ from assets the first run already uploaded.",
+        "E180: GitHub Actions' token cannot push tags at a commit that is not a branch tip, so automated drain cannot recover non-tip releases and a person must push tags.",
+        "The release PR created by the workflow token gets no CI checks, so CI must be re-triggered before merging a release PR.",
+        "A guard blocks writing to the shared checkout (.claude/plans) from a worktree.",
+        "Workflow-contract test output contains passing tests with 'failed' in their names, so the real exit status must be checked."
+      ],
+      "code": [
+        {
+          "path": ".github/workflows/callisto-release.yml",
+          "finding": "Workflow-level concurrency changed from per-SHA group to a fixed `release` group with cancel-in-progress false so pushes during a release queue behind it."
+        },
+        {
+          "path": "docs/releasing.md",
+          "finding": "Guide's description of reruns/concurrency updated to match the new single release group."
+        }
+      ],
+      "workflow": [
+        "Read the plan file and in-repo roadmap before recommending next work rather than relying on memory, and flag that items were not re-verified.",
+        "When test output is noisy, confirm the real exit status separately instead of trusting text matches.",
+        "Work done from a worktree can be blocked from writing to the shared checkout; stage the file in a tmp dir and give the user a copy command."
+      ]
+    },
+    "friction": [
+      "Could not write the rewritten NEXT-WORK.md directly because the guard blocks writes to the shared checkout from the worktree.",
+      "The concurrency fix cannot be tested locally; it needs two real pushes in quick succession.",
+      "Test output with 'failed' in test names made the contract run look like a failure.",
+      "Earlier `.claude/settings.json` edit (entire doctor hook-timeout) had to be reverted and was left in the job tmp directory."
+    ],
+    "open_items": [
+      "Open the PR for the concurrency fix and note in it that the first proof is live.",
+      "User must copy the rewritten NEXT-WORK.md into .claude/plans/ and the memory index entry stays marked stale until then.",
+      "Edge case: a manual dispatch with an explicit `release_source_sha` could be replaced in the queue by a push-triggered run; redispatch if so.",
+      "Remove the dead `pending_pr_label` action input and its test, with a changeset since it is a public input.",
+      "Delete stale local branches and worktrees (several squash-merged, needing -D).",
+      "Hardening backlog: dispatch CI on the release PR branch, decide on a recovery credential for non-tip releases, re-audit spec drift and #290 guard gaps, T12 real-path registry tests, native fixture evidence.",
+      "Feature gaps: private workspace-root package.json listed as a package, shared tag/release title for fixed groups (E194), onboarding timing, private/HTML-only PyPI indexes, npm channel promotion/checksums/wrapper bump severity decisions.",
+      "Small cleanups: split registry_argv.rs per package manager, replace matrix.rs 18-triple table with rustc target facts, accept ADR 12.",
+      "Org variable TAP_APP_CLIENT_ID and secret TAP_APP_PRIVATE_KEY still exist on GitHub; remove Callisto's access if desired."
+    ]
+  }
+}
