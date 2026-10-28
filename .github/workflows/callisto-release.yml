@@ -498,27 +498,6 @@ jobs:
         env:
           RELEASE_SOURCE_SHA: ${{ needs.release-candidate.outputs.release_source_sha }}
         run: bash "$GITHUB_WORKSPACE/.github/scripts/move-floating-tag.sh" .callisto/release-decision.json cargo/callisto-cli "$RELEASE_SOURCE_SHA"
-      - name: Find the CLI tag this release created
-        id: cli-tag
-        working-directory: release-source
-        run: |
-          set -euo pipefail
-          git fetch --tags --quiet origin
-          tag=$(git tag --points-at HEAD --list 'callisto@*' | head -n 1)
-          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-          [[ -n "$tag" ]] || echo 'This run released no CLI version; the Homebrew tap is not notified.'
-      # Our own pipeline, not part of what Callisto does for others. The tap also checks daily, so a failed
-      # notification never fails the release.
-      - name: Notify the Homebrew tap
-        if: steps.cli-tag.outputs.tag != ''
-        continue-on-error: true
-        uses: orin-dx/actions/notify-homebrew-tap@687b60169775ae9e9270af098a4cabb5e1c2a08e # main
-        with:
-          client-id: ${{ vars.TAP_APP_CLIENT_ID }}
-          private-key: ${{ secrets.TAP_APP_PRIVATE_KEY }}
-          tap-repository: orin-dx/homebrew-tap
-          tool: callisto
-          release-tag: ${{ steps.cli-tag.outputs.tag }}
       - name: Summarize receipt
         if: always()
         run: |
