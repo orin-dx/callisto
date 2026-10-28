@@ -1,0 +1,117 @@
+{
+  "cli_version": "0.12.3-nightly.202610261136.c4f103d8d",
+  "checkpoint_id": "01M61K2KF28QK9HGHK9H3AP7QM",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-28T15:47:04.741374Z",
+  "branch": "ci/merge-group-trigger",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    ".github/workflows/callisto-ci.yml"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "2671addb81ea",
+  "checkpoint_transcript_start": 86679,
+  "transcript_lines_at_start": 86679,
+  "compact_transcript_start": 6230,
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 2001,
+    "cache_read_tokens": 700763,
+    "output_tokens": 1058,
+    "api_call_count": 3,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 220,
+    "layers": {
+      "betterleaks": 44,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 27,
+      "credentialed_uri": 31,
+      "entropy": 138,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 396
+  },
+  "summary": {
+    "intent": "Fix a duplicate CI/release workflow run in callisto by serializing the release workflow's concurrency, then open a PR for the change.",
+    "outcome": "Changed the workflow's concurrency group to a single shared `release` group, updated the comment and docs/releasing.md, and opened PR #403. Local `just workflow-contracts` passed; CI on the PR has not been observed and the change is not tested live.",
+    "learnings": {
+      "repo": [
+        "The callisto repo has a `just workflow-contracts` recipe that validates workflow files and exits 0 when they pass.",
+        "The release workflow previously used a per-commit concurrency group, so pushes during a release could start a duplicate run.",
+        "docs/releasing.md documents release behavior and should be updated when workflow concurrency semantics change.",
+        "PR bodies in this repo should not include a session link (a user rule).",
+        "NEXT-WORK.md lives in a shared checkout and is refreshed separately; its first item (the duplicate run) is now addressed by #403."
+      ],
+      "code": [
+        {
+          "path": ".github/workflows/callisto-ci.yml",
+          "finding": "Concurrency group changed from one per pushed commit to a single `release` group so pushes queue behind an in-progress release and then find nothing pending. The comment was updated to match. No specific line numbers were referenced in the transcript."
+        }
+      ],
+      "workflow": [
+        "Write the PR body to a temp file (e.g. under ~/.claude/jobs/.../tmp) and use it when opening the PR.",
+        "Report plainly what was verified locally versus what remains unverified (CI run, live release-time push test)."
+      ]
+    },
+    "friction": [
+      "A single shared concurrency group has an edge case: an explicit-SHA dispatch queued behind a push can be replaced, so users must dispatch it again.",
+      "The refreshed NEXT-WORK.md still has to be manually copied into the shared checkout."
+    ],
+    "open_items": [
+      "Watch the CI run on PR #403 once it starts.",
+      "Live-test by pushing during a release to confirm it queues and then only refreshes the release PR.",
+      "Copy the refreshed NEXT-WORK.md into the shared checkout.",
+      "Consider whether the explicit-SHA dispatch replacement edge case needs a better fix than the documented re-dispatch workaround."
+    ]
+  }
+}
