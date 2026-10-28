@@ -21,7 +21,7 @@ ALLOWED_WRITES = {
     "drain": {"actions"},
 }
 # The only secrets the publishing job may reference.
-EXECUTE_SECRETS = {"CARGO_REGISTRY_TOKEN", "TAP_APP_PRIVATE_KEY"}
+EXECUTE_SECRETS = {"CARGO_REGISTRY_TOKEN"}
 
 
 def load(path):
