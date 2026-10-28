@@ -58,3 +58,8 @@ Rules for AI agents working in this repo.
 - Never hard-wrap Markdown or PR bodies: one line per paragraph.
 - Code comments: one short line, only for a non-obvious why. Wrap at 120 columns (`rustfmt.toml`). No history ("used to", "previously"): git records it.
 - No claude.ai session links in commits, PRs or files.
+
+<!-- entire-agent:begin -->
+Read .entire/agent-guide.md for this repository's workflow, source inspection, and verification guidance.
+@.entire/agent-guide.md
+<!-- entire-agent:end -->
