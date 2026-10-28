@@ -1,5 +1,35 @@
 # callisto-cli
 
+## 0.16.0
+
+- Pinning a version over `version.workspace = true` keeps the comment above that line and the one after it.
+- `version` now changes only the updated values in `package.json`, keeping inline arrays and objects in place for smaller release PR diffs.
+- New `callisto release pending` lists merged release commits whose release never finished (a missing tag or an unpublished GitHub release), oldest first, so a release that stopped partway can be found and recovered. It reads the committed decision of each release commit and publishes nothing.
+- Callisto now blocks a first release when the registry links the package name to another repository.
+
+  - The error names that repository.
+  - If the package moved and is yours, tag its version commit before retrying.
+- Publishing with Yarn now honors `publishConfig.registry` without failing on an unsupported `--registry` flag.
+- Release planning is about twice as fast in large workspaces, including with `--dry-run`.
+- Empty snapshot tags, or tags containing spaces or `/`, now fail with a clear fix instead of producing a malformed version or an internal error.
+- Poetry dependency updates now preserve nearby comments.
+- `init` now explains that defaults apply when there is no configuration to write.
+- npm ranges with spaced comparators are now recognized. If a new dependency version falls outside the range, `version` stops and asks you to update it instead of silently leaving the dependent unchanged.
+- A crate's first release now checks for a description and a license or license file before publishing, avoiding a partial release.
+- Generated changelogs and release PR details now keep blank lines clean around nested bullets.
+- `release` now warns when a package's latest tag exists locally but not on `origin`, including in `--dry-run`. This exposes an unfinished tag push instead of reporting `Nothing to release.`
+- Cargo dependency updates now keep comments immediately above a version, including shared entries in `[workspace.dependencies]`.
+- `release --dry-run` now returns its plan in a few seconds when an optional registry name check cannot respond.
+- `init` now supports repositories with all packages in subdirectories and no top-level manifest.
+- A release note that contains a heading line, or a code block opened on a bullet, is no longer cut short or run on into the older versions when it is shown or published.
+- Release notes no longer stop at headings inside code blocks or indented list items. Changelogs with a byte order mark no longer gain a duplicate title.
+- Callisto's GitHub release workflow can finish an interrupted release after `main` advances.
+
+  - It resumes from the merged release PR's commit.
+  - It finishes older pending releases before preparing the next release PR.
+- Python `~=` dependency updates keep the original precision: `~=1.2` becomes `~=2.0`, leaving later 2.x releases eligible.
+- Named Cargo registry tokens now reach Cargo only. Git, the GitHub CLI and other publishing tools no longer inherit them.
+
 ## 0.15.0
 
 - `callisto init --yes` now works with no other flags: packages version independently unless `--versioning fixed` is given, and a GitHub repository gets the release workflow unless `--no-workflow` is given. A single package is no longer asked how to version. If the unrequested workflow cannot be built, such as offline, `init` skips it with a warning instead of failing. After writing the workflow, `init` lists the repository secrets to add and the first commands to run, and the publishing guide has new sections on first publishes and on pulling a release.
