@@ -1,0 +1,3 @@
+Generate a concise commit message from the working copy changes in this repository.
+
+Use only staged changes to create the commit message.
