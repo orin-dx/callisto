@@ -1,0 +1,50 @@
+{
+  "cli_version": "0.12.3-nightly.202610300619.cea1b3cee",
+  "checkpoint_id": "01M67VSXD46GDH6P675YQ2Z5YM",
+  "strategy": "manual-commit",
+  "branch": "ci/remove-pending-label-input",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".changeset/quick-hawks-swim.md",
+    ".github/actions/callisto-action/action.yml",
+    ".github/actions/callisto-action/scripts/create-or-update-release-pr.sh",
+    ".github/actions/callisto-action/tests/test_release_pr_contract.sh"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 48,
+    "cache_creation_tokens": 242422,
+    "cache_read_tokens": 5967788,
+    "output_tokens": 14078,
+    "api_call_count": 24,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 220,
+    "layers": {
+      "betterleaks": 44,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 27,
+      "credentialed_uri": 31,
+      "entropy": 138,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01N6TFGgGXAQHyTgd7kJzhgt",
+  "agent_id": "a32224d00eb885d2f",
+  "subagent_type": "scribe:drift-checker",
+  "task_description": "Drift check release spec",
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 82724,
+    "cache_read_tokens": 384474,
+    "output_tokens": 8138,
+    "api_call_count": 7
+  },
+  "started_at": "2026-10-30T19:13:02.095514-07:00",
+  "completed_at": "2026-10-30T19:14:22.544837-07:00"
+}

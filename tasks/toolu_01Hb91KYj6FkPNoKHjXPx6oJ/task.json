@@ -1,0 +1,7 @@
+{
+  "tool_use_id": "toolu_01Hb91KYj6FkPNoKHjXPx6oJ",
+  "agent_id": "af9c86db0e1852425",
+  "subagent_type": "scribe:drift-checker",
+  "task_description": "Drift check cli spec",
+  "started_at": "2026-10-30T19:13:02.095539-07:00"
+}

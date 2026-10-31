@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01Sps6sxFfhCdkHgtwhei8a3",
+  "agent_id": "a65a8193cd4378766",
+  "subagent_type": "general-purpose",
+  "task_description": "Audit #290 tag guard gaps",
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 68155,
+    "cache_read_tokens": 228178,
+    "output_tokens": 3408,
+    "api_call_count": 5
+  },
+  "started_at": "2026-10-30T19:13:02.095528-07:00",
+  "completed_at": "2026-10-30T19:13:33.22763-07:00"
+}
