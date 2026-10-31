@@ -176,22 +176,14 @@ label_exists=$(gh label list --limit 1000 --json name --jq 'any(.[]; .name == en
 if [[ "$label_exists" != true ]]; then
   gh label create "$INPUT_PR_LABEL" --color 0e8a16 --description 'Callisto release packages'
 fi
-if [[ -n "$INPUT_PENDING_PR_LABEL" ]]; then
-  pending_label_exists=$(gh label list --limit 1000 --json name --jq 'any(.[]; .name == env.INPUT_PENDING_PR_LABEL)')
-  if [[ "$pending_label_exists" != true ]]; then
-    gh label create "$INPUT_PENDING_PR_LABEL" --color fbca04 --description 'Merged release may have work left to finish'
-  fi
-fi
 
 case "$decision_kind" in
   create)
     create_args=(--head "$release_branch" --base "$INPUT_BRANCH" --title "$INPUT_TITLE" --body "$body" --label "$INPUT_PR_LABEL")
-    [[ -n "$INPUT_PENDING_PR_LABEL" ]] && create_args+=(--label "$INPUT_PENDING_PR_LABEL")
     gh pr create "${create_args[@]}"
     ;;
   update)
     edit_args=(--title "$INPUT_TITLE" --body "$body" --add-label "$INPUT_PR_LABEL")
-    [[ -n "$INPUT_PENDING_PR_LABEL" ]] && edit_args+=(--add-label "$INPUT_PENDING_PR_LABEL")
     gh pr edit "$existing_pr" "${edit_args[@]}"
     ;;
 esac

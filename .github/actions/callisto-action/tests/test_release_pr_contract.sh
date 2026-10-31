@@ -14,7 +14,7 @@ action_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 script="$action_dir/scripts/create-or-update-release-pr.sh"
 
 run_case() {
-  local prs="$1" decision="$2" label_exists="${3:-true}" pending_label="${4-callisto: pending}"
+  local prs="$1" decision="$2" label_exists="${3:-true}"
   local calls_file output_file harness verify_count_file stale_file
   calls_file="$(mktemp)"
   output_file="$(mktemp)"
@@ -159,7 +159,6 @@ STUBS
     INPUT_COMMIT_MESSAGE='chore(release): version packages' \
     INPUT_TITLE='chore(release): version packages' \
     INPUT_PR_LABEL='callisto: release' \
-    INPUT_PENDING_PR_LABEL="$pending_label" \
     INPUT_BRANCH=main \
     INPUT_RELEASE_BRANCH='callisto/version-packages' \
     INPUT_CWD=. \
@@ -218,7 +217,7 @@ if [[ "$output" != 0$'\n'* ]] \
   || [[ "$output" != *"gh api -X POST repos/orin-dx/callisto/git/refs -f ref=refs/heads/callisto/version-packages -f sha=$default_new_sha"* ]] \
   || [[ "$output" != *"gh api -X DELETE repos/orin-dx/callisto/git/refs/heads/callisto/version-packages--staging"* ]] \
   || [[ "$output" != *'gh pr create --head callisto/version-packages --base main'* ]] \
-  || [[ "$output" != *'--label callisto: release --label callisto: pending'* ]] \
+  || [[ "$output" != *'--label callisto: release'* ]] \
   || [[ "$output" == *'git push'* ]] \
   || [[ "$output" == *'nativeMatrix'* ]]; then
   echo "FAIL: executes Callisto create decision through the forge commit API with three mutation-boundary checks: $output"
@@ -228,22 +227,12 @@ else
 fi
 assert_verify_flags create "$output" ''
 
-output="$(run_case '[]' "$create" true '')"
-if [[ "$output" != 0$'\n'* ]] \
-  || [[ "$output" != *'--label callisto: release'* ]] \
-  || [[ "$output" == *'callisto: pending'* ]]; then
-  echo "FAIL: an unconfigured consumer action must not claim pending recovery: $output"
-  fail=1
-else
-  echo 'PASS: pending marker is opt-in'
-fi
-
 output="$(run_case '[{"number":42,"headRefName":"callisto/version-packages","headRepository":{"nameWithOwner":"orin-dx/callisto"},"headRefOid":"0123456789abcdef0123456789abcdef01234567"}]' "$update" false)"
 if [[ "$output" != 0$'\n'* ]] \
   || [[ "$output" != *'gh label create callisto: release'* ]] \
   || [[ "$output" != *"gh api -X PATCH repos/orin-dx/callisto/git/refs/heads/callisto/version-packages -f sha=$default_new_sha -F force=true"* ]] \
   || [[ "$output" != *'gh pr edit 42'* ]] \
-  || [[ "$output" != *'--add-label callisto: release --add-label callisto: pending'* ]] \
+  || [[ "$output" != *'--add-label callisto: release'* ]] \
   || [[ "$output" == *'gh pr create'* ]] \
   || [[ "$output" == *'git push'* ]] \
   || [[ "$output" == *'nativeMatrix'* ]]; then
