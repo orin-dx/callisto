@@ -1,5 +1,9 @@
 # callisto-cli
 
+## 0.17.0
+
+- The release action no longer has a pending_pr_label input. Merged releases are now found with callisto release pending, so nothing reads or sets that label. A workflow that still passes the input gets an unused-input warning from GitHub; delete the line.
+
 ## 0.16.0
 
 - Pinning a version over `version.workspace = true` keeps the comment above that line and the one after it.
