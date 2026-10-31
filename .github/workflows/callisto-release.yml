@@ -13,10 +13,10 @@ on:
 
 permissions: {}
 
-# One group per commit: GitHub replaces a pending run in a shared group, which
-# could silently drop a release merge queued behind an unrelated push.
+# One run at a time: each run asks `callisto release pending` what is unfinished when it starts, so a run queued behind
+# a release sees it finished. GitHub keeps one pending run per group, and the surviving run selects the same release.
 concurrency:
-  group: release-${{ github.sha }}
+  group: release
   cancel-in-progress: false
 
 jobs:
