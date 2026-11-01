@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.12.3-nightly.202610300619.cea1b3cee",
+  "checkpoint_id": "01M6AA41GXSENZE2XKS6YVNRY6",
+  "strategy": "manual-commit",
+  "branch": "fix/duration-token-scrub-git-failure",
+  "checkpoints_count": 9,
+  "files_touched": [
+    "crates/callisto-cli/src/runner.rs",
+    "crates/callisto-graph/src/config/duration.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 16855,
+    "cache_read_tokens": 1716765,
+    "output_tokens": 3730,
+    "api_call_count": 5,
+    "subagent_tokens": {
+      "input_tokens": 185,
+      "cache_creation_tokens": 291331,
+      "cache_read_tokens": 9186692,
+      "output_tokens": 41254,
+      "api_call_count": 98
+    }
+  },
+  "redaction": {
+    "replacements": 222,
+    "layers": {
+      "betterleaks": 44,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 29,
+      "credentialed_uri": 31,
+      "entropy": 138,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}

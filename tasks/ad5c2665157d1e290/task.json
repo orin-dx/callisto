@@ -1,0 +1,18 @@
+{
+  "tool_use_id": "ad5c2665157d1e290",
+  "agent_id": "ad5c2665157d1e290",
+  "subagent_type": "workflow-subagent",
+  "files": [
+    "pr_body_scratch.md",
+    "spec_edit_scratch.py"
+  ],
+  "token_usage": {
+    "input_tokens": 114,
+    "cache_creation_tokens": 104878,
+    "cache_read_tokens": 5316977,
+    "output_tokens": 21873,
+    "api_call_count": 60
+  },
+  "started_at": "2026-10-31T17:51:25.977314-07:00",
+  "completed_at": "2026-10-31T17:57:58.394774-07:00"
+}
