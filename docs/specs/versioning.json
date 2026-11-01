@@ -267,7 +267,7 @@
     },
     {
       "id": "VER-APPLY-10",
-      "criterion": "`version --emit-decision <path>` writes the release decision JSON to `<path>` relative to the workspace root after the plan has been applied successfully: `schemaVersion` 2, a digest, and one entry per canonical manifest of each bumped package (ecosystem-qualified name, target version, reasons) sorted by package. Reason `kind` is `changeset`, `inference`, `fixedGroup` or `linkedGroup` (with `groupId`), `cascade` (with `from`, the source package, and `edgeKind`: `Runtime`, `Optional`, `Build` or `Peer`, or lowercase `peer` for peer escalation) or `preReleasePolicy` (with `policyId`, the prerelease tag)."
+      "criterion": "`version --emit-decision <path>` writes the release decision JSON to `<path>` relative to the workspace root after the plan has been applied successfully: `schemaVersion` 2, a digest, and one entry per canonical manifest of each bumped package (ecosystem-qualified name, target version, reasons) sorted by package. Reason `kind` is `changeset`, `inference`, `fixedGroup` or `linkedGroup` (with `groupId`), `cascade` (with `from`, the source package's distribution that the dependent's dependency names, the one in the entry's own ecosystem when it names several, and `edgeKind`: `Runtime`, `Optional`, `Build` or `Peer`, or lowercase `peer` for peer escalation) or `preReleasePolicy` (with `policyId`, the prerelease tag)."
     },
     {
       "id": "VER-APPLY-11",
