@@ -730,7 +730,9 @@ mod tests {
 
             let dir = tempfile::tempdir().unwrap();
             let cargo = dir.path().join("cargo");
-            std::os::unix::fs::symlink("/usr/bin/env", &cargo).unwrap();
+            // A script, not a symlink: a multi-call coreutils `env` rejects an argv[0] of `cargo`.
+            std::fs::write(&cargo, "#!/bin/sh\nexec /usr/bin/env\n").unwrap();
+            std::fs::set_permissions(&cargo, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
             let output = runner.run(cargo.to_str().unwrap(), &[], cwd).unwrap();
             assert!(
                 output.stdout.contains(TOKEN),
