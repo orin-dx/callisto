@@ -3,7 +3,8 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 workflow="${WORKFLOW_FILE:-$root/.github/workflows/callisto-release.yml}"
-dir="$(mktemp -d)"
+dir="$(mktemp -d "${TMPDIR:-/tmp}/callisto.XXXXXX")"
+[[ -n "$dir" && -d "$dir" ]] || { echo "mktemp -d failed" >&2; exit 1; }
 trap 'rm -rf "$dir"' EXIT
 if command -v yq > /dev/null; then
   yq -r '.jobs."release-candidate".steps[] | select(.id == "candidate") | .run' "$workflow" > "$dir/candidate.sh"

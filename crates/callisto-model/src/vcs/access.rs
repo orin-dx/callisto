@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::release_pr::REGULAR_FILE_MODE;
 use crate::{ApplyPermit, CommandOutput, CommandRunner, CommitSha, StagedChangeKindV1, StagedChangeV1, TagName};
 
 use crate::vcs::{GitCommit, TagSignPolicy, VcsError};
@@ -125,7 +126,10 @@ impl<'r> GitAccess<'r> {
         for entry in entries {
             let kind = staged_change_kind(entry.status);
             let contents = match kind {
-                StagedChangeKindV1::Added | StagedChangeKindV1::Modified => {
+                // Any other mode gets no contents so the commit plan rejects it before a symlink or submodule is read.
+                StagedChangeKindV1::Added | StagedChangeKindV1::Modified
+                    if entry.new_mode == Some(REGULAR_FILE_MODE) =>
+                {
                     let bytes = std::fs::read(root.join(&entry.path)).map_err(|error| {
                         VcsError::Git(format!("could not read staged file `{}`: {error}", entry.path))
                     })?;
@@ -169,9 +173,12 @@ impl<'r> GitAccess<'r> {
     }
 
     /// Confirms the worktree bytes just read for `path` hash to the same blob sha the index has staged, without
-    /// round-tripping content through a lossy `String` capture.
+    /// round-tripping content through a lossy `String` capture. Filters are skipped so the hash covers the bytes
+    /// that are sent, not their clean-filtered form.
     fn verify_staged_blob(&self, root: &Path, path: &str, expected_sha: &str) -> Result<(), VcsError> {
-        let output = self.runner.run("git", &["hash-object", "--", path], root)?;
+        let output = self
+            .runner
+            .run("git", &["hash-object", "--no-filters", "--", path], root)?;
         if !output.success() {
             return Err(VcsError::Git(format!(
                 "`git hash-object` failed for `{path}` in `{}`: {}",
@@ -1672,8 +1679,8 @@ mod tests {
                 ["diff", "--cached", "--raw", "-z", "--no-renames", "--no-abbrev", sha] if sha == &"0".repeat(40) => {
                     Ok(ok(raw.clone()))
                 }
-                ["hash-object", "--", "VERSION"] => Ok(ok(format!("{}\n", "1".repeat(40)))),
-                ["hash-object", "--", "pkg/binary.bin"] => Ok(ok(format!("{}\n", "2".repeat(40)))),
+                ["hash-object", "--no-filters", "--", "VERSION"] => Ok(ok(format!("{}\n", "1".repeat(40)))),
+                ["hash-object", "--no-filters", "--", "pkg/binary.bin"] => Ok(ok(format!("{}\n", "2".repeat(40)))),
                 other => panic!("unexpected command: {other:?}"),
             }),
         };
@@ -1719,7 +1726,7 @@ mod tests {
                     Ok(ok(raw.clone()))
                 }
                 // A different sha than the `--raw` entry claims: the worktree read does not match the staged content.
-                ["hash-object", "--", "VERSION"] => Ok(ok(format!("{}\n", "9".repeat(40)))),
+                ["hash-object", "--no-filters", "--", "VERSION"] => Ok(ok(format!("{}\n", "9".repeat(40)))),
                 other => panic!("unexpected command: {other:?}"),
             }),
         };

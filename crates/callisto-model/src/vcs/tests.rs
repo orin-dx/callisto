@@ -3,7 +3,10 @@
 use std::path::{Path, PathBuf};
 
 use crate::vcs::{GitAccess, TagSignPolicy, VcsError};
-use crate::{ApplyPermit, CommandError, CommandOutput, CommandRunner, CommitSha};
+use crate::{
+    ApplyPermit, CommandError, CommandOutput, CommandRunner, CommitSha, ReleasePrCommitPlanV1, ReleasePrDecisionError,
+    StagedChangeV1,
+};
 
 /// Runs real `git`, isolated from the developer's global and system config.
 struct SystemGit;
@@ -420,6 +423,81 @@ fn staged_changes_since_rejects_worktree_content_edited_after_staging() {
 
     assert!(
         matches!(result, Err(VcsError::StagedContentMismatch { ref path, .. }) if path == "a.txt"),
+        "got {result:?}"
+    );
+}
+
+fn commit_plan(
+    base: &CommitSha,
+    changes: Vec<StagedChangeV1>,
+) -> Result<ReleasePrCommitPlanV1, ReleasePrDecisionError> {
+    ReleasePrCommitPlanV1::from_changes(base.clone(), "chore: release".to_string(), changes)
+}
+
+#[cfg(unix)]
+#[test]
+fn staged_symlink_is_refused_before_its_content_is_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init_repo(root);
+    commit_file(root, "a.txt", b"seed\n", "feat: seed");
+    let base = head(root);
+    std::os::unix::fs::symlink("a.txt", root.join("link")).unwrap();
+    git(root, &["add", "link"]);
+
+    let changes = GitAccess::new(root, &SystemGit).staged_changes_since(&base).unwrap();
+
+    assert_eq!(changes.len(), 1);
+    assert_eq!(changes[0].contents, None);
+    assert!(
+        matches!(
+            commit_plan(&base, changes),
+            Err(ReleasePrDecisionError::UnsupportedFileMode { mode: 0o120000, .. })
+        ),
+        "a staged symlink must be refused by mode"
+    );
+}
+
+#[test]
+fn staged_submodule_is_refused_before_its_content_is_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init_repo(root);
+    commit_file(root, "a.txt", b"seed\n", "feat: seed");
+    let base = head(root);
+    let cacheinfo = format!("160000,{},sub", base.as_str());
+    git(root, &["update-index", "--add", "--cacheinfo", &cacheinfo]);
+
+    let changes = GitAccess::new(root, &SystemGit).staged_changes_since(&base).unwrap();
+
+    assert_eq!(changes.len(), 1);
+    assert_eq!(changes[0].contents, None);
+    assert!(
+        matches!(
+            commit_plan(&base, changes),
+            Err(ReleasePrDecisionError::UnsupportedFileMode { mode: 0o160000, .. })
+        ),
+        "a staged submodule must be refused by mode"
+    );
+}
+
+/// With `core.autocrlf` the index holds the LF-normalized blob while the worktree bytes sent are CRLF, so a hash
+/// that applies filters would pass a payload that does not match what is staged.
+#[test]
+fn staged_content_changed_by_a_clean_filter_is_a_mismatch() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init_repo(root);
+    commit_file(root, "a.txt", b"seed\n", "feat: seed");
+    let base = head(root);
+    git(root, &["config", "core.autocrlf", "true"]);
+    std::fs::write(root.join("crlf.txt"), b"one\r\ntwo\r\n").unwrap();
+    git(root, &["add", "crlf.txt"]);
+
+    let result = GitAccess::new(root, &SystemGit).staged_changes_since(&base);
+
+    assert!(
+        matches!(result, Err(VcsError::StagedContentMismatch { ref path, .. }) if path == "crlf.txt"),
         "got {result:?}"
     );
 }

@@ -28,9 +28,10 @@ run_case() {
   local curl_behavior="$2"    # "fail" or "succeed"
   local cargo_behavior="$3"   # "crates-io-succeeds" or "crates-io-fails"
   local calls_file tmp_script workdir
-  calls_file="$(mktemp)"
-  workdir="$(mktemp -d)"
-  tmp_script="$(mktemp)"
+  calls_file="$(mktemp "${TMPDIR:-/tmp}/callisto.XXXXXX")"
+  workdir="$(mktemp -d "${TMPDIR:-/tmp}/callisto.XXXXXX")"
+  [[ -n "$workdir" && -d "$workdir" ]] || { echo "mktemp -d failed" >&2; exit 1; }
+  tmp_script="$(mktemp "${TMPDIR:-/tmp}/callisto.XXXXXX")"
   {
     echo "curl() { echo \"curl \$*\" >> '${calls_file}'; [[ '${curl_behavior}' == fail ]] && return 1 || return 0; }"
     echo "tar() { return 0; }"

@@ -28,14 +28,17 @@ run_case() {
   local mode="${5-}"
   local tag="${6:-latest}"
   local calls_file workspace runner_temp bin_dir github_path tmp_script
-  calls_file="$(mktemp)"
-  workspace="$(mktemp -d)"
-  runner_temp="$(mktemp -d)"
-  bin_dir="$(mktemp -d)"
-  github_path="$(mktemp)"
-  tmp_script="$(mktemp)"
+  calls_file="$(mktemp "${TMPDIR:-/tmp}/callisto.XXXXXX")"
+  workspace="$(mktemp -d "${TMPDIR:-/tmp}/callisto.XXXXXX")"
+  runner_temp="$(mktemp -d "${TMPDIR:-/tmp}/callisto.XXXXXX")"
+  bin_dir="$(mktemp -d "${TMPDIR:-/tmp}/callisto.XXXXXX")"
+  github_path="$(mktemp "${TMPDIR:-/tmp}/callisto.XXXXXX")"
+  tmp_script="$(mktemp "${TMPDIR:-/tmp}/callisto.XXXXXX")"
   local isolated_path
-  isolated_path="$(mktemp -d)"
+  isolated_path="$(mktemp -d "${TMPDIR:-/tmp}/callisto.XXXXXX")"
+  for d in "$workspace" "$runner_temp" "$bin_dir" "$isolated_path"; do
+    [[ -n "$d" && -d "$d" ]] || { echo "mktemp -d failed" >&2; exit 1; }
+  done
   for t in tr grep rm; do ln -s "$(command -v "$t")" "$isolated_path/$t"; done
   {
     printf 'uname() {\n'

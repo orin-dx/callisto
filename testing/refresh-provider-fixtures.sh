@@ -39,6 +39,7 @@ drop_headers() {
 }
 
 work=$(mktemp -d)
+[[ -n "$work" && -d "$work" ]] || { echo "mktemp -d failed" >&2; exit 1; }
 
 # Captures one command's exit code, stdout and stderr into a `.cmd` envelope,
 # which is exactly what the production classifiers are fed in unit tests.
