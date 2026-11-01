@@ -1,0 +1,54 @@
+{
+  "cli_version": "0.12.3-nightly.202610300619.cea1b3cee",
+  "checkpoint_id": "01M6A9PDC0WEEECG962Q4GGEP4",
+  "strategy": "manual-commit",
+  "branch": "docs/spec-drift-corrections",
+  "checkpoints_count": 9,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/matrix.rs",
+    "crates/callisto-graph/src/matrix.rs",
+    "crates/callisto-model/src/matrix.rs",
+    "docs/releasing.md",
+    "docs/specs/cli.json",
+    "docs/specs/release.json",
+    "docs/specs/versioning.json",
+    "docs/specs/workspace.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 80,
+    "cache_creation_tokens": 372785,
+    "cache_read_tokens": 10303907,
+    "output_tokens": 30399,
+    "api_call_count": 36,
+    "subagent_tokens": {
+      "input_tokens": 1292,
+      "cache_creation_tokens": 1915333,
+      "cache_read_tokens": 81526495,
+      "output_tokens": 259521,
+      "api_call_count": 643
+    }
+  },
+  "redaction": {
+    "replacements": 222,
+    "layers": {
+      "betterleaks": 44,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 29,
+      "credentialed_uri": 31,
+      "entropy": 138,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}

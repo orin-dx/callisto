@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_019XkH4WVQ3oSKDBEXRMqw5s",
+  "agent_id": "a628f0ed8c9cbf49d",
+  "subagent_type": "scribe:drift-checker",
+  "task_description": "Drift check workspace and matrix specs",
+  "token_usage": {
+    "input_tokens": 140,
+    "cache_creation_tokens": 253817,
+    "cache_read_tokens": 11650635,
+    "output_tokens": 27742,
+    "api_call_count": 70
+  },
+  "started_at": "2026-10-30T19:13:02.096115-07:00",
+  "completed_at": "2026-10-30T19:19:09.244905-07:00"
+}

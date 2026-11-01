@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_013i1LaZsH8ej4dxm43wWUJb",
+  "agent_id": "a4b6f32b6a2b326c9",
+  "subagent_type": "general-purpose",
+  "task_description": "Drift check GH/PR/ERR criteria",
+  "token_usage": {
+    "input_tokens": 182,
+    "cache_creation_tokens": 161845,
+    "cache_read_tokens": 11061491,
+    "output_tokens": 32463,
+    "api_call_count": 91
+  },
+  "started_at": "2026-10-30T19:14:21.511515-07:00",
+  "completed_at": "2026-10-30T19:22:49.228425-07:00"
+}

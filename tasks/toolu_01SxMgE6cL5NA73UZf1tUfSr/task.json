@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01SxMgE6cL5NA73UZf1tUfSr",
+  "agent_id": "a0302d1d3a1c36ee7",
+  "subagent_type": "general-purpose",
+  "task_description": "Drift check CMD criteria",
+  "token_usage": {
+    "input_tokens": 90,
+    "cache_creation_tokens": 142859,
+    "cache_read_tokens": 5721443,
+    "output_tokens": 18671,
+    "api_call_count": 45
+  },
+  "started_at": "2026-10-30T19:14:21.51147-07:00",
+  "completed_at": "2026-10-30T19:18:29.065283-07:00"
+}

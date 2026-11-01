@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01Hb91KYj6FkPNoKHjXPx6oJ",
+  "agent_id": "af9c86db0e1852425",
+  "subagent_type": "scribe:drift-checker",
+  "task_description": "Drift check cli spec",
+  "token_usage": {
+    "input_tokens": 134,
+    "cache_creation_tokens": 218553,
+    "cache_read_tokens": 10457337,
+    "output_tokens": 30487,
+    "api_call_count": 67
+  },
+  "started_at": "2026-10-30T19:13:02.095539-07:00",
+  "completed_at": "2026-10-30T19:20:19.661802-07:00"
+}

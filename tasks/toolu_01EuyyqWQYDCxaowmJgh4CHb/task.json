@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01EuyyqWQYDCxaowmJgh4CHb",
+  "agent_id": "a31bfed519a11589b",
+  "subagent_type": "general-purpose",
+  "task_description": "Drift check PUB-01..09",
+  "token_usage": {
+    "input_tokens": 88,
+    "cache_creation_tokens": 143515,
+    "cache_read_tokens": 5067181,
+    "output_tokens": 18537,
+    "api_call_count": 44
+  },
+  "started_at": "2026-10-30T19:14:21.511823-07:00",
+  "completed_at": "2026-10-30T19:18:19.376725-07:00"
+}

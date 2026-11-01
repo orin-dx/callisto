@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01P4CWTuxNut5PdTnVTufvyq",
+  "agent_id": "a83dc411a3b0ad712",
+  "subagent_type": "general-purpose",
+  "task_description": "Drift check AUTH/ORD criteria",
+  "token_usage": {
+    "input_tokens": 134,
+    "cache_creation_tokens": 171727,
+    "cache_read_tokens": 8126335,
+    "output_tokens": 27149,
+    "api_call_count": 67
+  },
+  "started_at": "2026-10-30T19:14:21.511697-07:00",
+  "completed_at": "2026-10-30T19:20:25.994989-07:00"
+}
