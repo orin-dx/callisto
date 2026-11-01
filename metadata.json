@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.12.3-nightly.202610300619.cea1b3cee",
+  "checkpoint_id": "01M6AG9A840XCDP9RM4BPXQ472",
+  "strategy": "manual-commit",
+  "branch": "fix/runner-test-without-env-symlink",
+  "checkpoints_count": 10,
+  "files_touched": [
+    "crates/callisto-cli/src/runner.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 126,
+    "cache_creation_tokens": 66829,
+    "cache_read_tokens": 28371728,
+    "output_tokens": 37691,
+    "api_call_count": 63
+  },
+  "redaction": {
+    "replacements": 232,
+    "layers": {
+      "betterleaks": 54,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 29,
+      "credentialed_uri": 31,
+      "entropy": 138,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
