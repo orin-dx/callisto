@@ -1115,21 +1115,36 @@ mod python_baselines {
 
     #[test]
     fn malformed_owned_baselines_prevent_exit_and_resume_writes() {
-        for (mode, args) in [("pre", &["pre", "exit"][..]), ("exit", &["pre", "enter", "beta"][..])] {
-            let temp = workspace(false, ".changeset");
-            let root = temp.path();
-            let text = json!({"mode":mode,"tag":"alpha","initialVersions":{"py-lib":"1.2.3-alpha.beta"},"changesets":["recorded"]}).to_string();
-            write(root, ".changeset/pre.json", &text);
-            let output = callisto(root, args);
-            assert!(!output.status.success());
-            assert!(
-                String::from_utf8_lossy(&output.stderr).contains("E114"),
-                "{}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            assert_eq!(fs::read_to_string(root.join(".changeset/pre.json")).unwrap(), text);
-            assert_versions(root, "1.2.3", "1.0.0", "2.0.0");
+        for baseline in ["1.2.3-alpha.beta", "not-a-version"] {
+            for (mode, args) in [("pre", &["pre", "exit"][..]), ("exit", &["pre", "enter", "beta"][..])] {
+                let temp = workspace(false, ".changeset");
+                let root = temp.path();
+                let text =
+                    json!({"mode":mode,"tag":"alpha","initialVersions":{"py-lib":baseline},"changesets":["recorded"]})
+                        .to_string();
+                write(root, ".changeset/pre.json", &text);
+                let output = callisto(root, args);
+                assert!(!output.status.success());
+                assert!(
+                    String::from_utf8_lossy(&output.stderr).contains("E114"),
+                    "{baseline} {mode}: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                assert_eq!(fs::read_to_string(root.join(".changeset/pre.json")).unwrap(), text);
+                assert_versions(root, "1.2.3", "1.0.0", "2.0.0");
+            }
         }
+    }
+
+    #[test]
+    fn unparseable_pre_json_is_still_e212() {
+        let temp = workspace(false, ".changeset");
+        let root = temp.path();
+        write(root, ".changeset/pre.json", "{ not json");
+        let output = callisto(root, &["pre", "exit"]);
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("E212") && !stderr.contains("E114"), "{stderr}");
     }
 
     #[test]

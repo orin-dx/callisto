@@ -398,14 +398,14 @@ impl From<std::io::Error> for CliError {
 }
 
 impl CliError {
-    /// The filesystem path this error concerns, when it carries a
-    /// structured one. `Io` is the only variant with a real `PathBuf`
-    /// field; every other path-carrying variant already embeds its path as
-    /// a `String` inside its own message (covered by `error.message`), so
-    /// this stays `None` for those rather than re-parsing a message string.
+    /// The filesystem path this error concerns, when it carries a structured one (a `PathBuf` field, here or in
+    /// a wrapped graph or config error). Variants that only embed a path in their message text stay `None`.
     fn path(&self) -> Option<&std::path::Path> {
         match self {
             CliError::Io { path, .. } => path.as_deref(),
+            CliError::ReleaseIntentSchemaUnsupported { path, .. } => Some(path),
+            CliError::Graph(error) => error.path(),
+            CliError::Config(error) => error.path(),
             _ => None,
         }
     }
@@ -532,6 +532,42 @@ mod tests {
             help.contains("path exists"),
             "help should reference path existence check; got: {help}"
         );
+    }
+
+    #[test]
+    fn format_error_json_carries_the_path_of_wrapped_graph_and_config_errors() {
+        let init_io = CliError::Graph(GraphError::InitIo {
+            path: std::path::PathBuf::from("/ws/callisto.toml"),
+            message: "denied".to_owned(),
+        });
+        let json = format_error_json("init", &init_io);
+        assert_envelope_shape("init", &json);
+        assert_eq!(json["error"]["code"], "E278");
+        assert_eq!(json["error"]["path"], "/ws/callisto.toml");
+
+        let exists = CliError::Graph(GraphError::InitAlreadyInitialized {
+            path: std::path::PathBuf::from("/ws/callisto.toml"),
+        });
+        assert_eq!(format_error_json("init", &exists)["error"]["path"], "/ws/callisto.toml");
+
+        let workflow = CliError::Graph(GraphError::InitWorkflowExists {
+            path: std::path::PathBuf::from("/ws/.github/workflows/release.yml"),
+        });
+        assert_eq!(
+            format_error_json("init", &workflow)["error"]["path"],
+            "/ws/.github/workflows/release.yml"
+        );
+
+        let config = CliError::Config(ConfigError::Read {
+            path: std::path::PathBuf::from("/ws/callisto.toml"),
+            message: "denied".to_owned(),
+        });
+        assert_eq!(
+            format_error_json("status", &config)["error"]["path"],
+            "/ws/callisto.toml"
+        );
+
+        assert!(format_error_json("add", &CliError::AddSummaryEmpty)["error"]["path"].is_null());
     }
 
     /// Structural consistency: two different error variants must produce the same
