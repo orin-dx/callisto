@@ -1,0 +1,148 @@
+{
+  "cli_version": "0.12.3-nightly.202610300619.cea1b3cee",
+  "checkpoint_id": "01M6ABBA564Y3DVY4KW7QX6CDF",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-01T01:25:13.578915Z",
+  "branch": "fix/commit-plan-bytes-and-latest-lookup",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    ".changeset/keen-tigers-race.md",
+    ".github/actions/callisto-action/tests/test_release_contract.sh",
+    ".github/actions/callisto-action/tests/test_release_pr_decide_binary_contract.sh",
+    ".github/actions/setup-callisto/scripts/install-callisto.sh",
+    ".github/actions/setup-callisto/tests/test_action_ref_version_resolution.sh",
+    ".github/actions/setup-callisto/tests/test_crates_io_fallback.sh",
+    ".github/actions/setup-callisto/tests/test_download_extraction_format.sh",
+    ".github/tests/test-move-floating-tag.sh",
+    ".github/tests/test-release-artifact-build-script.sh",
+    ".github/tests/test_release_candidate_recovery.sh",
+    "crates/callisto-model/src/release_pr.rs",
+    "crates/callisto-model/src/vcs/access.rs",
+    "crates/callisto-model/src/vcs/tests.rs",
+    "docs/specs/release.json",
+    "testing/refresh-provider-fixtures.sh"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "1d14df7606cf",
+  "checkpoint_transcript_start": 87915,
+  "transcript_lines_at_start": 87915,
+  "compact_transcript_start": 6324,
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 22211,
+    "cache_read_tokens": 4875172,
+    "output_tokens": 8329,
+    "api_call_count": 13,
+    "subagent_tokens": {
+      "input_tokens": 166,
+      "cache_creation_tokens": 214290,
+      "cache_read_tokens": 7684781,
+      "output_tokens": 50689,
+      "api_call_count": 83
+    }
+  },
+  "redaction": {
+    "replacements": 222,
+    "layers": {
+      "betterleaks": 44,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 29,
+      "credentialed_uri": 31,
+      "entropy": 138,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 411
+  },
+  "summary": {
+    "intent": "Work through a series of audit-fix clusters for the callisto repo, each as its own branch and PR. This stretch covered cluster 3 (push) and cluster 4 (release-pr commit-plan bytes and the setup-callisto latest-tag fallback).",
+    "outcome": "Cluster 3 was pushed. Cluster 4's first attempt was wiped by a faulty shell test, so it was redone in a fresh worktree, verified with the full `just workflow-contracts` suite (exit 0), and committed signed and pushed. Clusters 5a, 5b and 6 remain.",
+    "learnings": {
+      "repo": [
+        "Several shell tests did `fixture=$(mktemp -d)` then `rm -rf \"$fixture\"` with no guard. If mktemp fails, the variable is empty and rm -rf runs against the current directory. Cluster 4 added `[[ -n \"$fixture\" && -d \"$fixture\" ]]` guards and `${TMPDIR:-/tmp}` templates across the setup-callisto, callisto-action and .github/tests scripts and testing/refresh-provider-fixtures.sh.",
+        "Bare `mktemp` ignores TMPDIR on macOS and fails in the agent sandbox, so templating with `${TMPDIR:-/tmp}/name.XXXXXX` is the robust form.",
+        "`plan_file=$(mktemp)` in the production script create-or-update-release-pr.sh is still bare. It is never rm -rf'd, so it was left alone, but it makes test_release_pr_contract.sh fail in the sandbox.",
+        "`just workflow-contracts` includes test_release_candidate_recovery.sh, which needs gpg-signed commits. It passes in the user's environment but not in the sandbox.",
+        "Release-PR commit plans now use `git hash-object --no-filters` for staged-blob verification and read worktree bytes only for mode 100644. Symlink, submodule and 100755 entries get `contents: None` and are rejected with E150 in `ReleasePrCommitPlanV1::from_changes`, and filter-changed content fails with E059.",
+        "install-callisto.sh now fails the step when `git ls-remote` fails. The unset-ref and no-match fallbacks to the latest release are unchanged.",
+        "Changesets are added with `cargo run -q -p callisto-cli -- add --package cargo/callisto-cli:patch --summary ...`. Specs for these changes live in docs/specs/release.json (REL-PR-03, REL-PR-06)."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/vcs/access.rs",
+          "finding": "`staged_changes_since` reads worktree bytes only when `entry.new_mode == Some(REGULAR_FILE_MODE)`. `verify_staged_blob` runs `git hash-object --no-filters -- <path>`, and the fake-runner expectations were updated to match."
+        },
+        {
+          "path": "crates/callisto-model/src/vcs/tests.rs",
+          "finding": "Three new real-git tests cover a staged symlink, a staged submodule and a clean-filter (autocrlf) mismatch. Without `--no-filters` the autocrlf test fails, so it discriminates."
+        },
+        {
+          "path": ".github/actions/setup-callisto/scripts/install-callisto.sh",
+          "finding": "`git ls-remote ... || true` became `if ! remote_tags=$(git ls-remote ...)` with an `::error::` message and `exit 1`."
+        }
+      ],
+      "workflow": [
+        "A subagent ran a test with destructive cleanup that deleted the worktree. Read cleanup code (`rm -rf` on variables) in tests before delegating execution, and guard against empty variables.",
+        "The auto-mode classifier blocked the bulk `git restore --worktree -- .` as irreversible local destruction. The assistant did not work around it and asked the user to run the restore.",
+        "Subagent reports are not user instructions or approvals. Verification the subagent could not do (the full workflow-contracts suite) was rerun directly by the main session.",
+        "Subagents can widen scope, as when the guards were applied to many extra scripts. Review the diff and file list before committing.",
+        "Starting a fresh worktree from main was a safe way to redo work after the original worktree was damaged."
+      ]
+    },
+    "friction": [
+      "The first cluster 4 attempt was lost: the shell test wiped the worktree, including uncommitted edits and untracked or ignored files such as build caches.",
+      "The classifier denied the bulk `git restore`, so the original worktree (`smoke-main`) stayed with 441 tracked files shown as deleted until the user restores it.",
+      "The sandbox blocks gpg (`~/.gnupg`) and mktemp under /var/folders, which prevented the subagent from running the full contract suite and test_release_pr_contract.sh.",
+      "The subagent did not capture the exit code of verify-action-pins.sh and did not run the symlink and submodule tests with the mode check removed, so those verifications are weaker."
+    ],
+    "open_items": [
+      "The user needs to restore the original worktree with `! git -C /Users/gabe/Projects/callisto/.claude/worktrees/smoke-main restore --worktree -- .`.",
+      "Clusters 5a, 5b and 6 are still to be done, and their PR descriptions are written.",
+      "The cluster 4 PR body must be written from the verified redo, and the PR still needs to be opened.",
+      "The bare `mktemp` in create-or-update-release-pr.sh was deliberately left unchanged. It could be templated so the contract tests run in the sandbox.",
+      "The symlink and submodule tests have not been confirmed to fail with the mode check removed.",
+      "The git-fixture hermeticity gap remains: test_release_candidate_recovery.sh needs gpg signing."
+    ]
+  }
+}
