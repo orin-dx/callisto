@@ -119,20 +119,21 @@ pub(crate) fn retry_within_window<T>(
 }
 
 /// Re-observes this run's own publish while the registry reads `Absent` or cannot be asked, for up to `window`; any
-/// other answer is final.
+/// other answer is final. Each `observe` is one look: its own retries would wait outside the window.
 pub(crate) fn observe_within_window(
     sleeper: &dyn Sleeper,
     window: Duration,
-    mut observe: impl FnMut() -> Result<ProviderObservationV1, GraphError>,
+    mut observe: impl FnMut() -> Result<Attempt<ProviderObservationV1>, GraphError>,
 ) -> Result<ProviderObservationV1, GraphError> {
     retry_within_window(sleeper, window, || {
-        let observation = observe()?;
-        Ok(match observation {
-            ProviderObservationV1::Absent | ProviderObservationV1::Indeterminate { .. } => Attempt::Transient {
+        Ok(match observe()? {
+            Attempt::Settled(
+                observation @ (ProviderObservationV1::Absent | ProviderObservationV1::Indeterminate { .. }),
+            ) => Attempt::Transient {
                 value: observation,
                 retry_after: None,
             },
-            settled => Attempt::Settled(settled),
+            attempt => attempt,
         })
     })
 }
@@ -587,7 +588,7 @@ pub(crate) mod tests {
             },
         ]);
         let result = observe_within_window(&sleeper, Duration::from_secs(360), || {
-            Ok(answers.borrow_mut().remove(0))
+            Ok(Attempt::Settled(answers.borrow_mut().remove(0)))
         });
         assert_eq!(
             result,

@@ -236,7 +236,7 @@
     },
     {
       "id": "REL-PUB-09",
-      "criterion": "After a publish command reports success, or says the version already exists, Callisto re-observes the registry and treats \"absent\" or an unreachable registry as not yet propagated, waiting within the registry's confirmation window: `confirm-timeout` on its `[registries]` entry (1 s to 1 h, written as `90s`, `6m` or `1h`), else 6 minutes for npm and PyPI and 2 minutes for Cargo. Looks are spaced 15 s, 45 s, 2 minutes, then 3 minutes apart. A publish whose version the registry never shows in that window fails with E157, and no receipt is written.",
+      "criterion": "After a publish command reports success, or says the version already exists, Callisto re-observes the registry and treats \"absent\" or an unreachable registry as not yet propagated, waiting within the registry's confirmation window: `confirm-timeout` on its `[registries]` entry (1 s to 1 h, written as `90s`, `6m` or `1h`), else 6 minutes for npm and PyPI and 2 minutes for Cargo. Looks are spaced 15 s, 45 s, 2 minutes, then 3 minutes apart, or by the registry's `Retry-After`; no wait runs past the window. A publish whose version the registry never shows in that window fails with E157, and no receipt is written.",
       "is_error_case": true
     },
     {
