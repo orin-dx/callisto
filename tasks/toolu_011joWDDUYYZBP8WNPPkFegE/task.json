@@ -1,0 +1,20 @@
+{
+  "tool_use_id": "toolu_011joWDDUYYZBP8WNPPkFegE",
+  "agent_id": "af9b2480bcdd4a166",
+  "task_description": "Cluster 2: PyPI window and digest",
+  "files": [
+    "crates/callisto-graph/src/commands/release/provider/policy.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/pypi.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/pypi_file_set_tests.rs",
+    "docs/specs/release.json"
+  ],
+  "token_usage": {
+    "input_tokens": 84,
+    "cache_creation_tokens": 138133,
+    "cache_read_tokens": 4450827,
+    "output_tokens": 25500,
+    "api_call_count": 42
+  },
+  "started_at": "2026-10-31T18:04:53.035684-07:00",
+  "completed_at": "2026-10-31T18:10:25.562901-07:00"
+}

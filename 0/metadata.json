@@ -1,0 +1,168 @@
+{
+  "cli_version": "0.12.3-nightly.202610300619.cea1b3cee",
+  "checkpoint_id": "01M6AAGXH3TZEW4GDSKQBRH1S0",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-01T01:10:55.286166Z",
+  "branch": "fix/pypi-confirmation-window-and-digest",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/release/provider/policy.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/pypi.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/pypi_file_set_tests.rs",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "8b7a5cdd711b",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 9637,
+    "cache_read_tokens": 2477199,
+    "output_tokens": 4664,
+    "api_call_count": 7,
+    "subagent_tokens": {
+      "input_tokens": 4,
+      "cache_creation_tokens": 64303,
+      "cache_read_tokens": 42915,
+      "output_tokens": 444,
+      "api_call_count": 2
+    }
+  },
+  "redaction": {
+    "replacements": 222,
+    "layers": {
+      "betterleaks": 44,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 29,
+      "credentialed_uri": 31,
+      "entropy": 138,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 408
+  },
+  "summary": {
+    "intent": "Work through the NEXT-WORK plan for the callisto repo (parallel lanes of fixes, refactors and docs), then audit the specs against the code and close the drift findings in small PRs using agent teams and workflows.",
+    "outcome": "Opened PRs #202 (SYS-RETRY fix), #203, #204, the #205-#208 stack and an R3 derive.rs split. Ran five spec-drift audits (29 of 251 criteria drifted) and launched a workflow that produced the spec-wording branch, cluster 1 (signed commit pushed) and cluster 2 (PyPI window fix, commit just attempted). Several PRs remain unopened because gh could not mint a bot token.",
+    "learnings": {
+      "repo": [
+        "The tracking plan NEXT-WORK.md must stay local at .claude/plans/ and be excluded via .git/info/exclude; never commit it or open a PR for it.",
+        "just ci must run one at a time and cargo builds cannot run in parallel (AGENTS.md); I check the log's own exit= line, not the background wrapper's exit code.",
+        "Commits must be signed and carry no session links; PRs are opened through a bot-token mechanism, and gh refuses with the user's own credentials.",
+        "Entire Gates check fails on every PR because the trail has no reviewer approval, not because CI failed; a trail is created automatically per PR.",
+        "AGENTS.md requires owner confirmation before a new requirement gates anything, so the PyPI missing-digest rule (REL-PUB-08) is a user decision.",
+        "Native stacked PRs are linked with gh stack (stack #207 holds #205, #206, #208).",
+        "Test sandbox quirks: inline env commands and heredocs are rejected, so scripts go in temp files. macOS bash lacks mapfile and macOS sed rejects some one-liners.",
+        "Edits are only allowed inside the current worktree, so switching worktrees is needed to edit another branch's files."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/config/duration.rs",
+          "line": 10,
+          "finding": "parse_duration uses split_at(len-1), which panics on a multi-byte last character such as \"5é\"; fixed with split_at_checked."
+        },
+        {
+          "path": "crates/callisto-graph/src/aggregate.rs",
+          "line": 273,
+          "end_line": 283,
+          "finding": "A commit-walk failure during inference was downgraded to a PreMajorInferenceInert warning instead of failing as VER-READ-02 requires."
+        },
+        {
+          "path": "crates/callisto-cli/src/runner.rs",
+          "line": 479,
+          "finding": "The registry-token scrub only removed names present in the parent environment, so child-only tokens leaked; it now also checks the child's own variables."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/registry/pypi.rs",
+          "line": 209,
+          "finding": "PyPI confirm looks used an unbounded retry with Retry-After up to 300 s, so waits could exceed confirm-timeout; replaced with single looks inside observe_within_window."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/pypi_files.rs",
+          "line": 230,
+          "finding": "A non-sealed uploaded file whose index entry has no sha256 is accepted deliberately; docs/publishing.md:131 and a test document this."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/notes.rs",
+          "line": 93,
+          "end_line": 124,
+          "finding": "GitHub release notes drop the owner's headings once other members add entries, and the already-held check is a substring match."
+        },
+        {
+          "path": "crates/callisto-model/src/vcs/access.rs",
+          "line": 174,
+          "finding": "commit-plan hashes worktree bytes without --no-filters, so autocrlf or clean filters pass the check against the wrong bytes."
+        }
+      ],
+      "workflow": [
+        "Write the failing black-box reproduction first, then fix, and prove the fix with mutation checks that the test fails when the behavior is reverted.",
+        "Commit characterization snapshots before a refactor, then verify they pass unchanged after the move.",
+        "Verify subagent audit claims in the code myself before counting them; agent hand-backs carry no user authority.",
+        "Fake tools can hide bugs; state plainly what is not proven against the real gh, cargo or registry.",
+        "Sandbox limits (network, gpg, git config writes) stalled workflow agents; check for uncommitted staged work before launching the next agent in the same checkout."
+      ]
+    },
+    "friction": [
+      "Wrongly opened PR #201 for the local-only plan file; the user objected and it was closed.",
+      "Workflow agents hit sandbox limits: gpg signing blocked, network denied, and gh could not mint a bot token, so the spec and cluster 1 PRs were not opened and the spec PR body was lost.",
+      "Cluster 2 agent initially refused to start because cluster 1's staged changes were left in the shared checkout.",
+      "Three existing tests assumed a tag on HEAD means released (the defect), and CI failures in init and local.rs tests needed fixes.",
+      "Three native_resolution and lifecycle e2e tests failed in the sandbox due to blocked network and were not confirmed on main.",
+      "PR body backslash escaping in a quoted heredoc left literal backslashes that had to be stripped.",
+      "The sandbox blocked inline scripts mentioning git, which forced workarounds with the Edit tool."
+    ],
+    "open_items": [
+      "Open the PRs for docs/spec-drift-corrections and fix/duration-token-scrub-git-failure once the bot token works; the spec PR body needs rewriting; the cluster 2 PR is also pending.",
+      "Remaining workflow clusters: release notes (REL-GH-03), commit-plan and install (REL-PR-03, REL-PR-06), spec conformance (WS-CFG-04, WS-ID-07, CLI-OUT-06, VER-PRE-10), dual-manifest cascade (VER-APPLY-10) and missing tests; the full output of those agents was truncated and not reviewed.",
+      "User decision needed on REL-PUB-08: reject a missing index digest on uploaded files, which could break private indexes.",
+      "Decision needed on D01 (blocks SYS-MATURIN and W9) and the W10 questions (distinct target declaration graph edges, Python dev group cascade).",
+      "Lane D SYS-BARRIER, SYS-OWNER, SYS-DEMOTION and the resolver divergence are not started; R1 walk.rs::build (Lane F) is also not started.",
+      "#204 still lists SYS-RETRY and T08-RETRY and needs a follow-up once #202 merges; #202 had independent review findings being addressed.",
+      "W0 branch deletion was not done: docs/next-work-plan, docs/spec-rewrite, fix/native-resolution and about 35 local branches await per-branch approval.",
+      "The W1 real-service credential check CI location needs a decision, and W11 verification needs credentials and an approved run.",
+      "Terminal-only checks (CLICOLOR=0, wizard prompts to stderr, broken pipe) and real callisto-action credential checks (CLI-WF-03/04) are unverified.",
+      "Entire Gates approval on trails: the user must approve or make the gate non-blocking; the user was offered a trail per audit PR."
+    ]
+  }
+}
