@@ -140,8 +140,8 @@ pub enum DiagnosticCode {
     /// `init` found a `.changeset/config.json` key from `@changesets/cli` that callisto never
     /// reads; no translation happens, the key is just inert.
     ChangesetsConfigKeyDropped,
-    /// Commit-severity inference failed for a package (e.g. a `git log` error) — the package's
-    /// inferred severity is treated as absent rather than the run failing outright.
+    /// Commit-severity inference failed for a package. Not emitted since a Git failure fails the
+    /// command; kept for wire compatibility.
     PreMajorInferenceInert,
     /// A release's section was missing from its package's `CHANGELOG.md`. Not emitted since
     /// `plan-publish` was removed; kept for wire compatibility.

@@ -635,6 +635,9 @@ impl GitAccess<'_> {
                     ref_name: r.to_string(),
                 });
             }
+            if self.head_is_unborn() {
+                return Ok(Vec::new());
+            }
             return Err(VcsError::Git(format!(
                 "`git log` failed in `{}`: {}",
                 self.root.display(),
@@ -643,6 +646,13 @@ impl GitAccess<'_> {
         }
 
         parse_git_log_output(&output.stdout, &self.root)
+    }
+
+    /// A repository with no commits yet; a damaged one must not look empty, so HEAD is not peeled.
+    fn head_is_unborn(&self) -> bool {
+        self.runner
+            .run("git", &["rev-parse", "--verify", "--quiet", "HEAD"], &self.root)
+            .is_ok_and(|output| output.exit_code == Some(1))
     }
 
     /// Resolves every ref in `refs` to its commit with one `git rev-parse`.

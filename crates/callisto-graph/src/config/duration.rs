@@ -7,7 +7,7 @@ pub const MAX_DURATION: Duration = Duration::from_secs(3600);
 
 /// Parses `<digits><s|m|h>`; zero and anything over [`MAX_DURATION`] are rejected.
 pub fn parse_duration(text: &str) -> Option<Duration> {
-    let (digits, unit) = text.split_at(text.len().checked_sub(1)?);
+    let (digits, unit) = text.split_at_checked(text.len().checked_sub(1)?)?;
     let seconds_per_unit = match unit {
         "s" => 1,
         "m" => 60,
@@ -59,6 +59,8 @@ mod tests {
             "6 m",
             "6M",
             "99999999999999999999s",
+            "5é",
+            "é",
         ] {
             assert_eq!(parse_duration(bad), None, "{bad:?}");
         }
