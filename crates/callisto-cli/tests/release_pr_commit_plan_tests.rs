@@ -138,6 +138,45 @@ fn commit_plan_reproduces_git_write_tree() {
 }
 
 #[test]
+fn commit_plan_json_carries_the_report_envelope_beside_its_own_fields() {
+    let dir = setup_polyglot_git_repo();
+    let root = dir.path();
+    let base_sha = git_ok(root, &["rev-parse", "HEAD"]);
+    fs::write(root.join("NEW_FILE.txt"), b"brand new\n").unwrap();
+    assert!(git(root, &["add", "-A"]).status.success());
+
+    let run = |dry_run: bool| {
+        let mut args = vec!["--cwd", root.to_str().unwrap(), "--format", "json"];
+        if dry_run {
+            args.push("--dry-run");
+        }
+        args.extend([
+            "release-pr",
+            "commit-plan",
+            "--base-commit",
+            &base_sha,
+            "--message",
+            "m",
+        ]);
+        let out = Command::new(bin()).args(&args).output().unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        serde_json::from_slice::<serde_json::Value>(&out.stdout).unwrap()
+    };
+
+    let plan = run(false);
+    assert_eq!(plan["schemaVersion"], 1);
+    assert_eq!(plan["command"], "release-pr commit-plan");
+    assert_eq!(plan["dryRun"], false);
+    assert_eq!(plan["baseCommit"], base_sha);
+    assert_eq!(plan["message"], "m");
+    assert_eq!(plan["additions"][0]["path"], "NEW_FILE.txt");
+    assert!(plan["deletions"].as_array().unwrap().is_empty());
+    assert_eq!(plan["totalContentBytes"], 10);
+
+    assert_eq!(run(true)["dryRun"], true);
+}
+
+#[test]
 fn commit_plan_fails_closed_on_executable_bit() {
     let dir = setup_polyglot_git_repo();
     let root = dir.path();

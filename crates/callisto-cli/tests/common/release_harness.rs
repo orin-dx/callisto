@@ -98,6 +98,11 @@ pub mod test_registry {
         .expect("flap state");
     }
 
+    /// Makes the fake `cargo info` name `url` as the repository of every version it serves for `root`.
+    pub fn set_registry_repository(root: &Path, url: &str) {
+        std::fs::write(directory(root).join("repository"), format!("{url}\n")).expect("repository state");
+    }
+
     /// Makes every observation for `root`'s registry fail the way an
     /// unreachable index does, or restores the marker-backed answers.
     pub fn set_registry_unreachable(root: &Path, unreachable: bool) {
@@ -110,7 +115,7 @@ pub mod test_registry {
     }
 }
 
-pub use test_registry::{registry_marker, set_registry_flap, set_registry_unreachable};
+pub use test_registry::{registry_marker, set_registry_flap, set_registry_repository, set_registry_unreachable};
 
 pub fn git(root: &Path, args: &[&str]) -> String {
     let output = Command::new("git").args(args).current_dir(root).output().unwrap();
@@ -969,6 +974,7 @@ if [ "$key" = info ]; then
   fi
   if [ "$serve" = 1 ]; then
     printf '%s\nversion: %s (from registry `%s`)\nlicense: unknown\nrust-version: unknown\n' "$crate" "$want" "$registry"
+    if [ -f "$state/repository" ]; then printf 'repository: %s\n' "$(cat "$state/repository")"; fi
     exit 0
   fi
   printf '    Updating `%s` index\n' "$registry" >&2

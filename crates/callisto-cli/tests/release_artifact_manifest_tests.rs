@@ -134,3 +134,127 @@ fn an_intent_without_artifact_slots_cannot_produce_a_manifest() {
     assert!(stderr.contains("E219"), "{stderr}");
     assert!(!external.path().join("artifact-manifest.json").exists());
 }
+
+fn execute_with(root: &Path, external: &Path, intent: &Path, extra: &[&str]) -> Output {
+    let receipt = external.join("release-receipt.json");
+    let mut args = vec![
+        "release",
+        "execute",
+        "--intent",
+        intent.to_str().unwrap(),
+        "--receipt",
+        receipt.to_str().unwrap(),
+        "--orchestration-revision",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    ];
+    args.extend(extra);
+    callisto(root, &args)
+}
+
+fn assert_execute_refused(external: &Path, out: &Output, code: &str) {
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "must be refused: {stderr}");
+    assert!(stderr.contains(code), "must fail with {code}: {stderr}");
+    assert!(!external.join("release-receipt.json").exists());
+}
+
+#[test]
+fn execute_with_artifact_slots_requires_both_manifest_and_directory() {
+    let product = product();
+    let external = product.external.path();
+    assert!(manifest(&product, &product.artifacts).status.success());
+    let sealed = external.join("artifact-manifest.json");
+
+    let neither = execute_with(&product.root, external, &product.intent, &[]);
+    assert_execute_refused(external, &neither, "E233");
+    let only_manifest = execute_with(
+        &product.root,
+        external,
+        &product.intent,
+        &["--artifact-manifest", sealed.to_str().unwrap()],
+    );
+    assert_execute_refused(external, &only_manifest, "E233");
+}
+
+#[test]
+fn execute_without_artifact_slots_rejects_artifact_inputs() {
+    let product = product();
+    assert!(manifest(&product, &product.artifacts).status.success());
+    let sealed = product.external.path().join("artifact-manifest.json");
+    let (repo, release_commit) = release_commit_fixture();
+    let external = tempfile::tempdir().unwrap();
+    let intent = plan_intent(repo.path(), external.path(), &release_commit);
+    let dir = external.path().to_str().unwrap();
+
+    let only_manifest = execute_with(
+        repo.path(),
+        external.path(),
+        &intent,
+        &["--artifact-manifest", sealed.to_str().unwrap()],
+    );
+    assert_execute_refused(external.path(), &only_manifest, "E232");
+    let both = execute_with(
+        repo.path(),
+        external.path(),
+        &intent,
+        &["--artifact-manifest", sealed.to_str().unwrap(), "--artifact-dir", dir],
+    );
+    assert_execute_refused(external.path(), &both, "E232");
+}
+
+#[test]
+fn plan_for_a_product_release_requires_both_orchestration_flags() {
+    let (repo, release_commit) = product_release_commit_fixture();
+    let external = tempfile::tempdir().unwrap();
+    let out_path = external.path().join("release-intent.json");
+    for flags in [&["--orchestration-revision", release_commit.as_str()][..], &[][..]] {
+        let mut args = vec![
+            "release",
+            "plan",
+            "--from-release-commit",
+            release_commit.as_str(),
+            "--decision",
+            DECISION_PATH,
+            "--out",
+            out_path.to_str().unwrap(),
+        ];
+        args.extend(flags);
+        let out = callisto(repo.path(), &args);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(!out.status.success(), "{flags:?} must be refused: {stderr}");
+        assert!(stderr.contains("E231"), "{flags:?}: {stderr}");
+        assert!(!out_path.exists());
+    }
+}
+
+#[test]
+fn plan_without_a_release_section_ignores_the_orchestration_flags_and_plans_no_slots() {
+    let (repo, release_commit) = release_commit_fixture();
+    let external = tempfile::tempdir().unwrap();
+    let out_path = external.path().join("release-intent.json");
+    let out = callisto(
+        repo.path(),
+        &[
+            "release",
+            "plan",
+            "--from-release-commit",
+            &release_commit,
+            "--decision",
+            DECISION_PATH,
+            "--orchestration-revision",
+            &release_commit,
+            "--artifact-repository",
+            "example/core-crate",
+            "--out",
+            out_path.to_str().unwrap(),
+        ],
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("ignored: the source has no [release] section"),
+        "{stderr}"
+    );
+    let intent: serde_json::Value = serde_json::from_slice(&fs::read(&out_path).unwrap()).unwrap();
+    assert_eq!(intent["artifactSlots"].as_array().map(Vec::len), Some(0));
+}

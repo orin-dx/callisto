@@ -526,6 +526,27 @@ fn a_published_version_is_not_tagged_on_a_later_commit() {
     );
 }
 
+/// A first release whose version the registry holds for another repository is that project's, so it is refused.
+#[test]
+fn a_first_release_of_a_name_another_project_published_is_refused_before_any_effect() {
+    let (dir, release_commit) = on_branch();
+    let root = dir.path();
+    let rig = Rig::new(&release_commit);
+    fs::write(format!("{}.core-crate", registry_marker(root).display()), "0.2.0").unwrap();
+    set_registry_repository(root, "https://github.com/someone-else/core-crate.git");
+
+    for args in [&["release"][..], &["release", "--dry-run"][..]] {
+        let refused = rig.run(root, args);
+        assert!(!refused.status.success(), "{args:?}: {}", stderr(&refused));
+        assert!(stderr(&refused).contains("E322"), "{args:?}: {}", stderr(&refused));
+        assert_no_effects(&rig, root);
+    }
+
+    set_registry_repository(root, "git+https://GitHub.com/Example/core-crate.git");
+    let same = rig.run(root, &["release", "--dry-run"]);
+    assert!(same.status.success(), "{}", stderr(&same));
+}
+
 /// The preview of an interrupted release shows the remaining work, and a selected package whose
 /// release is complete is still not a release.
 #[test]

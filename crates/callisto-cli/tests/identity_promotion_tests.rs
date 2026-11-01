@@ -628,6 +628,18 @@ fn a_package_renamed_into_a_shared_name_does_not_take_the_tag_of_the_package_tha
     assert_eq!(cargo["lastReleasedVersion"], "1.0.0", "status: {status}");
     let npm = status_package(&status, "npm/foo").unwrap_or_else(|| panic!("no npm/foo in status: {status}"));
     assert!(npm["lastReleasedVersion"].is_null(), "status: {status}");
+
+    let out = callisto(root, &["--dry-run", "release"]);
+    let plan = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success() && plan.contains("\"npm/foo\""),
+        "the npm foo whose only tag was rejected must still be planned: {plan}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !plan.contains("\"cargo/foo\""),
+        "the cargo foo is already released and must not be planned: {plan}"
+    );
 }
 
 #[test]
