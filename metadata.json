@@ -1,0 +1,54 @@
+{
+  "cli_version": "0.12.3-nightly.202610300619.cea1b3cee",
+  "checkpoint_id": "01M6AD2Y903XMDQTASG843PZHC",
+  "strategy": "manual-commit",
+  "branch": "fix/status-strict-and-artifact-input-message",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/lively-leopards-pounce.md",
+    "crates/callisto-cli/src/commands/release.rs",
+    "crates/callisto-cli/src/error.rs",
+    "crates/callisto-cli/tests/durable_release_e2e_tests.rs",
+    "crates/callisto-cli/tests/status_check_tests.rs",
+    "crates/callisto-graph/src/commands/status.rs",
+    "docs/errors.md",
+    "docs/specs/release.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 7683,
+    "cache_read_tokens": 1658123,
+    "output_tokens": 2998,
+    "api_call_count": 4,
+    "subagent_tokens": {
+      "input_tokens": 104,
+      "cache_creation_tokens": 161899,
+      "cache_read_tokens": 5631938,
+      "output_tokens": 23554,
+      "api_call_count": 52
+    }
+  },
+  "redaction": {
+    "replacements": 222,
+    "layers": {
+      "betterleaks": 44,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 29,
+      "credentialed_uri": 31,
+      "entropy": 138,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
