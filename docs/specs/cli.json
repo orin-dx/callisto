@@ -307,7 +307,7 @@
     },
     {
       "id": "CLI-WF-05",
-      "criterion": "Every callisto-action reference in a generated workflow is pinned to the commit SHA of the `callisto@<cli version>` tag, and init exits 1 when that tag cannot be resolved.",
+      "criterion": "Every callisto-action reference in a generated workflow is pinned to the commit SHA of the `callisto@<cli version>` tag, and when that tag cannot be resolved init exits 1 if the workflow was requested (`--workflow` or the interactive question) and otherwise skips the workflow with a warning.",
       "is_error_case": true
     },
     {

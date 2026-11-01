@@ -136,7 +136,7 @@
     },
     {
       "id": "VER-GRP-02",
-      "criterion": "A fixed group whose released members have different on-disk versions aborts the run with E106, one whose released members use different version grammars (or whose untagged members do) aborts with E107, one whose released member has no on-disk base version aborts with E205, and one with no live member carrying a base version aborts with E206.",
+      "criterion": "A fixed group whose released members have different on-disk versions aborts the run with E106, one whose released members use different version grammars (or whose untagged members do) aborts with E107, one whose released member has no on-disk base version aborts with E205, and one with no live member carrying a base version aborts with E206. A member that is not a workspace package is dropped with a warning before alignment, so E205 and E206 are defensive checks behind that filter.",
       "is_error_case": true
     },
     {
@@ -218,7 +218,7 @@
     },
     {
       "id": "VER-APPLY-05",
-      "criterion": "Files are written one at a time, each by atomic replacement, so an interrupted run never leaves a partially written file; a failing write stops the run and leaves earlier files in place. A write also fails when the directory holding the new file cannot be synced, unless the filesystem cannot sync a directory."
+      "criterion": "Files are written one at a time, each by atomic replacement, so an interrupted run never leaves a partially written file; a failing write stops the run and leaves earlier files in place. A write also fails when the directory holding the new file cannot be synced, unless the filesystem cannot sync a directory or the directory cannot be opened for reading (permission denied)."
     },
     {
       "id": "VER-APPLY-17",
@@ -227,7 +227,7 @@
     },
     {
       "id": "VER-READ-01",
-      "criterion": "Only a missing file is treated as absent when reading `callisto.toml`, `.changeset/pre.json`, a changelog, or the changeset directory. A file that cannot be read or inspected (a permission error, a directory, invalid UTF-8) fails the command naming the path; a dangling link or an entry removed during listing holds no changeset.",
+      "criterion": "Only a missing file is treated as absent when reading `callisto.toml`, `.changeset/pre.json`, a changelog, or the changeset directory. A file that cannot be read or inspected (a permission error, a directory, invalid UTF-8) fails the command naming the path; a dangling link or an entry removed during listing holds no changeset, and a directory entry named like a changeset inside the changeset directory is skipped.",
       "is_error_case": true
     },
     {
@@ -286,7 +286,7 @@
     },
     {
       "id": "VER-APPLY-14",
-      "criterion": "By default, applying a plan refreshes and stages lockfiles for every ecosystem represented by an actual version, dependency, platform or optional-dependency write target, including all manifests of a dual-manifest package and workspace-root Cargo writes. It refreshes each existing lockfile, and creates and stages a missing `Cargo.lock`: `cargo update --workspace`, run in the directory of each Cargo workspace written to and refreshing the `Cargo.lock` beside its root manifest, for Cargo; for Pypi, `uv lock` if `uv.lock` exists, else `poetry lock --no-update` if `poetry.lock` exists, else `pdm lock --update-reuse` if `pdm.lock` exists; for Npm, `npm install --package-lock-only --ignore-scripts` for `package-lock.json`, `pnpm install --lockfile-only` for `pnpm-lock.yaml`, `yarn install --mode update-lockfile` for `yarn.lock`, and `bun install --lockfile-only` for `bun.lock` or `bun.lockb`, each independently when its lockfile is present. An npm or Python package's lockfile is the one in the workspace that owns it (the nearest directory at or above it that declares a workspace, else for a package none declares the nearest with a lockfile), and its refresh runs in that directory, so a workspace below the root keeps its own. `--no-refresh-lockfiles` skips refresh; applicable existing lockfiles are still staged."
+      "criterion": "By default, applying a plan refreshes and stages lockfiles for every ecosystem represented by an actual version, dependency, platform or optional-dependency write target, including all manifests of a dual-manifest package and workspace-root Cargo writes. It refreshes each existing lockfile, and creates and stages a missing `Cargo.lock`: `cargo update --workspace`, run in the directory of each Cargo workspace written to and refreshing the `Cargo.lock` beside its root manifest, for Cargo; for Pypi, `uv lock` if `uv.lock` exists, else `poetry lock --no-update` if `poetry.lock` exists, else `pdm lock --update-reuse` if `pdm.lock` exists; for Npm, `npm install --package-lock-only --ignore-scripts` for `package-lock.json`, `pnpm install --lockfile-only` for `pnpm-lock.yaml`, `yarn install --mode update-lockfile` for `yarn.lock`, and `bun install --lockfile-only` for `bun.lock` or `bun.lockb`, each independently when its lockfile is present. An npm or Python package's lockfile is the one in the workspace that owns it (the nearest directory at or above it that declares a workspace, else for a package none declares the nearest with a lockfile), and its refresh runs in that directory, so a workspace below the root keeps its own. `--no-refresh-lockfiles` skips refresh; applicable existing lockfiles are still staged. Staging takes every known lockfile of those ecosystems that exists in the owning directory, whether or not it was refreshed, except one a `.gitignore` ignores."
     },
     {
       "id": "VER-APPLY-15",

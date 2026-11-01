@@ -119,7 +119,7 @@
     },
     {
       "id": "REL-CMD-08",
-      "criterion": "A malformed `--package` value fails with `E227` and an unknown package with E102. A duplicate selection, a version whose release is complete, a package with no publish target, or a package whose current version is a `callisto snapshot` version fails with E169.",
+      "criterion": "A `--package` value in colon form (`cargo:x`) fails with E316, any other malformed value with E227, and an unknown package with E102. A duplicate selection, a version whose release is complete, a package with no publish target, or a package whose current version is a `callisto snapshot` version fails with E169.",
       "is_error_case": true
     },
     {
@@ -161,7 +161,7 @@
     },
     {
       "id": "REL-AUTH-05",
-      "criterion": "`release plan` and `release execute` require the source checkout at a detached HEAD and fail with E170 otherwise. `callisto release` accepts an attached HEAD. Every route requires a complete, non-shallow SHA-1 repository and fails with E266 otherwise.",
+      "criterion": "`release plan` and `release execute` require the source checkout at a detached HEAD and fail with E170 otherwise. `callisto release` accepts an attached HEAD. Every route requires a complete, non-shallow SHA-1 repository and fails with E265 for a repository that is not SHA-1 and E266 for a shallow one.",
       "is_error_case": true
     },
     {
@@ -171,7 +171,7 @@
     },
     {
       "id": "REL-AUTH-07",
-      "criterion": "Before each operation, the executor re-checks HEAD, worktree cleanliness and the `origin` push URL. A change stops the run before that operation's effect, with E124 for a moved HEAD or remote and E267 for a dirty worktree.",
+      "criterion": "Before each operation, the executor re-checks HEAD, worktree cleanliness and the `origin` push URL. A change stops the run before that operation's effect, with E124 for a moved HEAD or a changed `origin` push URL, E132 when `origin` has lost its push URL, and E267 for a dirty worktree.",
       "is_error_case": true
     },
     {
@@ -207,7 +207,7 @@
     },
     {
       "id": "REL-PUB-02",
-      "criterion": "npm publish picks its tool from the workspace that owns the package and runs there. The owner is the nearest directory at or above the package whose `package.json` declares `workspaces` or that has a `pnpm-workspace.yaml`, else for a package no workspace declares the nearest directory with a lockfile, else the root; a lockfile beside a package never moves it out of a declared workspace. The `npm view` observation and a publish by directory run in that same directory, so one `.npmrc` governs what is looked for and what is published. A marker that cannot be inspected is an error, not `npm`. `pnpm-workspace.yaml` alone means pnpm. The tools: `pnpm publish --filter=<name> --no-git-checks`, `yarn workspace <name> npm publish`, `bun publish` in the package directory, and otherwise `npm publish --workspace=<name>`. It appends `--tag <label>` for prerelease versions, where the label is the lowercase letters that start the first prerelease identifier (`1.0.0-beta.2` publishes under `beta`), or `next` when there are none or the word is `latest`, and `--access` and `--registry` when set. A stable version takes the registry default tag."
+      "criterion": "npm publish picks its tool from the workspace that owns the package and runs there. The owner is the nearest directory at or above the package whose `package.json` declares `workspaces` or whose `pnpm-workspace.yaml` has a `packages` list, else for a package no workspace declares the nearest directory with a lockfile, else the root; a lockfile beside a package never moves it out of a declared workspace. The `npm view` observation and a publish by directory run in that same directory, so one `.npmrc` governs what is looked for and what is published. A marker that cannot be inspected is an error, not `npm`. A `pnpm-workspace.yaml` alone, without a lockfile, selects pnpm. The tools: `pnpm publish --filter=<name> --no-git-checks`, `yarn workspace <name> npm publish`, `bun publish` in the package directory, and otherwise `npm publish --workspace=<name>`. It appends `--tag <label>` for prerelease versions, where the label is the lowercase letters that start the first prerelease identifier (`1.0.0-beta.2` publishes under `beta`), or `next` when there are none or the word is `latest`, and `--access` and, except for yarn (which reads `publishConfig.registry` from the manifest), `--registry` when set. A stable version takes the registry default tag."
     },
     {
       "id": "REL-PUB-03",
@@ -246,7 +246,7 @@
     },
     {
       "id": "REL-PUB-11",
-      "criterion": "A publish command that fails with auth, rate-limit or other registry output fails the run with E163, and the error carries the last 8 lines of the command's standard output followed by its standard error. A publish run also echoes its standard output to the live log, on stderr. A failing git or gh effect command fails with E164. No effect command is re-issued automatically. Tool output shown in these errors, in the live stderr echo and in JSON errors has credentials masked as `[REDACTED]`: the values of the known credential variables, of `CARGO_REGISTRIES_*_TOKEN`, and of any variable named `*_TOKEN`, `*_SECRET` or `*_PASSWORD` whose value is at least 8 characters, URL userinfo, `npm_`, `ghp_`-family, `github_pat_` and `pypi-` tokens, `Bearer` values, and `.npmrc` `_authToken`, `_auth` and `_password` values.",
+      "criterion": "A publish command that fails fails the run with E163. For an auth failure the error carries the command's standard error; for a rate limit it carries the wait the tool asked for and no command output; for any other failure it carries the last 8 lines of standard output followed by standard error. A publish run echoes its standard error to the live log, and npm and PyPI publishes also echo standard output; `cargo publish` standard output is not echoed. A failing git or gh effect command fails with E164. No effect command is re-issued automatically. Tool output shown in these errors, in the live stderr echo and in JSON errors has credentials masked as `[REDACTED]`: the values of the known credential variables, of `CARGO_REGISTRIES_*_TOKEN`, and of any variable named `*_TOKEN`, `*_SECRET` or `*_PASSWORD` whose value is at least 8 characters, URL userinfo, `npm_`, `ghp_`-family, `github_pat_` and `pypi-` tokens of at least 20 characters after the prefix, `Bearer` values of at least 16 characters, and `.npmrc` `_authToken`, `_auth` and `_password` values.",
       "is_error_case": true
     },
     {
@@ -322,7 +322,7 @@
     },
     {
       "id": "REL-RERUN-11",
-      "criterion": "`callisto release pending` lists, oldest first, the merged release commits whose release did not finish, from the last `--limit` commits (default 10) on HEAD's first-parent line that wrote the committed decision file (`--decision`, default `.callisto/release-decision.json`). A release is finished when every package in that commit's decision that has a publish target has a tag for its version, and every such package released to GitHub has a published (not draft) release; one that cannot be read counts as unfinished. The scan stops at the newest finished release, since releases are sequential. With `--from <sha>` only that release commit and newer ones count, and a SHA that is not a release commit on the branch is an error. The command lists the commit, its packages and versions, and what is missing, in text or in JSON under `pending`; it publishes nothing and exits 0 when there are none."
+      "criterion": "`callisto release pending` lists, oldest first, the merged release commits whose release did not finish, from the last `--limit` commits (default 10) on HEAD's first-parent line that wrote the committed decision file (`--decision`, default `.callisto/release-decision.json`). A release is finished when every package in that commit's decision that has a publish target has a tag for its version, and every such package released to GitHub has a published (not draft) release; one that cannot be read counts as unfinished. A package missing from the current workspace, or without a publish target, is skipped; with no forge repository configured the GitHub release check is skipped; a decision that cannot be decoded is an error. The scan stops at the newest finished release, since releases are sequential. With `--from <sha>` only that release commit and newer ones count, and a SHA that is not a release commit on the branch is an error. The command lists the commit, its packages and versions, and what is missing, in text or in JSON under `pending`; it publishes nothing and exits 0 when there are none."
     },
     {
       "id": "REL-GH-01",
@@ -365,7 +365,7 @@
     },
     {
       "id": "REL-PR-02",
-      "criterion": "`release-pr decide` fails in these cases: pre mode (E318, because a release PR cannot consume the changesets pre mode keeps), an invalid repository (E141), an unsafe branch name (E142), duplicate PR numbers (E143), a snapshot for another repository or base branch (E144), a managed-branch PR from a fork (E145), more than one managed PR (E146), a malformed SHA suffix (E147), or a PR headed at `<release-branch>--staging` (E154). Each of these carries its own code even when `--snapshot`/`--decision` is a file, inline JSON, or stdin. `release-pr verify` accepts either the bare decision wire or unchanged `release-pr decide --format json` output through all three input forms. Report metadata, when present, contains both `command: release-pr decide` and boolean `dryRun`; unknown or duplicate fields and malformed, partial or null metadata fail with E281. Nested domain validation retains its typed diagnostic. Verification exits 0 when a fresh snapshot equals the decision's snapshot and fails with E148 otherwise.",
+      "criterion": "`release-pr decide` fails in these cases: pre mode (E318, because a release PR cannot consume the changesets pre mode keeps), an invalid `--repository` flag (E141), an unsafe branch name (E142), duplicate PR numbers (E143), a snapshot for another repository or base branch (E144), a managed-branch PR from a fork (E145), more than one managed PR (E146), a malformed SHA suffix (E147), or a PR headed at `<release-branch>--staging` (E154). Each of these carries its own code even when `--snapshot`/`--decision` is a file, inline JSON, or stdin, except that an invalid repository inside that JSON fails with E281 as malformed JSON. `release-pr verify` accepts either the bare decision wire or unchanged `release-pr decide --format json` output through all three input forms. Report metadata, when present, contains both `command: release-pr decide` and boolean `dryRun`; unknown or duplicate fields and malformed, partial or null metadata fail with E281. Nested domain validation retains its typed diagnostic. Verification exits 0 when a fresh snapshot equals the decision's snapshot and fails with E148 otherwise.",
       "is_error_case": true
     },
     {
@@ -375,7 +375,7 @@
     },
     {
       "id": "REL-PR-04",
-      "criterion": "The release-PR action runs the version command with `--emit-decision <decision_path>` (default `.callisto/release-decision.json`). It commits the result with GitHub's `createCommitOnBranch` on `<release-branch>--staging` reset to the base commit, and refuses unless the remote tree equals the locally staged tree. It then moves the release branch ref through the REST API and never runs `git push`. Before creating the commit, before moving the ref, and before any label or PR write, it runs `callisto release-pr verify` against a fresh snapshot and stops when verification fails. After an update ref move is read back successfully, the final check supplies `--applied-head <new_sha>`. This accepts only a consistent update decision's selected PR changing to that exact head; any other snapshot change, wrong applied head, or create/noop use fails E148. The final check is retried for up to 27 seconds while the PR list still shows the old head, because the forge can lag a ref move; a head that never shows the applied commit still fails E148. Checks before the move and the create path retain strict original-snapshot equality."
+      "criterion": "The release-PR action runs the version command with `--emit-decision <decision_path>` (default `.callisto/release-decision.json`). It commits the result with GitHub's `createCommitOnBranch` on `<release-branch>--staging` reset to the base commit, and refuses unless the remote tree equals the locally staged tree. It then moves the release branch ref through the REST API and never runs `git push`. Before creating the commit, before moving the ref, and before any label or PR write, it runs `callisto release-pr verify` against a fresh snapshot and stops when verification fails. After an update ref move is read back successfully, the final check supplies `--applied-head <new_sha>`. This accepts only a consistent update decision's selected PR changing to that exact head; any other snapshot change, wrong applied head, or create/noop use fails E148. The final check is retried up to 9 times, 3 seconds apart, after any verification failure, because the forge can lag a ref move; one that never passes then fails with the last verification's own error, E148 for a head that never shows the applied commit. Checks before the move and the create path retain strict original-snapshot equality."
     },
     {
       "id": "REL-PR-05",
@@ -391,7 +391,7 @@
     },
     {
       "id": "REL-ERR-01",
-      "criterion": "Every release failure exits 1 with a diagnostic carrying an `E####` code."
+      "criterion": "Every release failure after the command line is parsed exits 1 with a diagnostic carrying an `E####` code. A command-line usage error exits 2 with no code."
     },
     {
       "id": "REL-ERR-02",
@@ -400,7 +400,7 @@
     },
     {
       "id": "REL-ERR-03",
-      "criterion": "A `[release]` section fails config loading with E197 when it has no `[[release.artifact]]`, an unqualified `product-package` or artifact `package`, an unsafe `target` or `asset-name`, or a duplicate `asset-name`. A `[release.profiles]` table is an unknown key and fails config loading.",
+      "criterion": "A `[release]` section fails config loading with E197 when it has no `[[release.artifact]]`, an unsafe `target` or `asset-name`, or a duplicate `asset-name`. An unqualified `product-package` or artifact `package` fails config loading with E317 (a bare name) or E316 (the colon form). A `[release.profiles]` table is an unknown key and fails config loading.",
       "is_error_case": true
     }
   ],
