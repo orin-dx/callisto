@@ -245,7 +245,7 @@ pub enum CliError {
     )]
     ReleaseUnexpectedArtifactInputs,
 
-    #[error("release intent declares binary artifact slots; provide both --artifact-manifest and --artifact-dir")]
+    #[error("release intent declares binary artifact slots or the manifest seals Python files; provide both --artifact-manifest and --artifact-dir")]
     #[diagnostic(code(E233), help("pass both --artifact-manifest and --artifact-dir"))]
     ReleaseMissingArtifactInputs,
 

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use callisto_model::{
     BumpReason, CommandRunner, Diagnostic, DiagnosticCode, DiagnosticSeverity, Package, PackageId, Severity,
-    StatusReport, PACKAGE_REPORT_SCHEMA_VERSION,
+    StatusReport, StrictFlag, PACKAGE_REPORT_SCHEMA_VERSION,
 };
 
 use crate::aggregate::{resolve_target_package, LoadedChangeset};
@@ -173,6 +173,15 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
             governed_by: None,
             escalated_by: None,
         });
+    }
+    // The plan's strict-escalatable warnings, so `status --strict` fails where `version --strict` does.
+    for d in plan.iter().flat_map(|plan| &plan.diagnostics) {
+        let reported = diagnostics
+            .iter()
+            .any(|seen| seen.code == d.code && seen.message == d.message);
+        if d.escalated_by == Some(StrictFlag::Strict) && !reported {
+            diagnostics.push(d.clone());
+        }
     }
     escalate(&mut diagnostics, opts.strict);
     ids.diagnostics(&mut diagnostics);
