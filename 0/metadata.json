@@ -1,0 +1,132 @@
+{
+  "cli_version": "0.12.3-nightly.202610300619.cea1b3cee",
+  "checkpoint_id": "01M6AC6KBZFDTEPVG1A1YCKPVW",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-01T01:40:04.545782Z",
+  "branch": "fix/emit-decision-dual-manifest-cascade",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/release_decision.rs",
+    "crates/callisto-graph/tests/version_tests.rs",
+    "docs/specs/versioning.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "28f088a52639",
+  "checkpoint_transcript_start": 88190,
+  "transcript_lines_at_start": 88190,
+  "compact_transcript_start": 6345,
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 7068,
+    "cache_read_tokens": 1593921,
+    "output_tokens": 2467,
+    "api_call_count": 4,
+    "subagent_tokens": {
+      "input_tokens": 102,
+      "cache_creation_tokens": 141875,
+      "cache_read_tokens": 5124191,
+      "output_tokens": 32728,
+      "api_call_count": 51
+    }
+  },
+  "redaction": {
+    "replacements": 222,
+    "layers": {
+      "betterleaks": 44,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 29,
+      "credentialed_uri": 31,
+      "entropy": 138,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 413
+  },
+  "summary": {
+    "intent": "Work through a series of audit-fix clusters in the callisto repo, each on its own branch with a PR, pushing branches and delegating fixes to subagents. This stretch covered finishing cluster 5a and cluster 5b (the dual-manifest cascade source bug).",
+    "outcome": "Cluster 5a was pushed, and six branches are now waiting for PRs. The cluster 5b subagent reproduced and fixed the dual-manifest cascade bug in `derive_release_decision`, with a new graph test, a spec update and a changeset. The fix was committed signed, and cluster 6 (missing tests) is next.",
+    "learnings": {
+      "repo": [
+        "`callisto version --emit-decision` failed with a ReleaseInvariant error when a bumped dependent's source package had two canonical manifests (e.g. Cargo and npm), because it looked up a single release id.",
+        "Rule adopted per ADR 0012 and docs/architecture/release.md: a dependent waits only for the dependency's distribution in its own ecosystem. `from` is the source distribution the dependent's dependency edge points at.",
+        "Edges are matched by `to == via`, the same dep kind (`Peer` for escalations) and the same rendered spec. The edge's ecosystem comes from `crate::cascade::manifest_ecosystem(edge.from_manifest)`.",
+        "`derive_selected_release_decision` goes through `derive_release_decision`, so the fix covers it. No other code maps `via` to a release id.",
+        "The sandbox blocks network and the uv cache, so `native_resolution_e2e_tests::pnpm_and_uv_workspace_resolves_natively_after_version` fails there; it is unrelated to the fix.",
+        "Changesets are created with `callisto add --package cargo/callisto-cli:patch --summary ...`.",
+        "Work happens in the git worktree `.claude/worktrees/audit-fixes`, with one branch per audit cluster."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "finding": "New `cascade_source` helper. `reason_from_bump` now takes the graph, the dependent and the entry's release id, and both the Cascade and PeerEscalation branches use the helper. A single-release-id source short-circuits, so existing behaviour is unchanged. ReleaseInvariant remains only for no matching edge or for several candidate distributions with none in the entry's ecosystem."
+        },
+        {
+          "path": "crates/callisto-graph/tests/version_tests.rs",
+          "finding": "New test `release_decision_names_the_dual_source_distribution_each_dependent_uses` builds an inline workspace with cargo, npm, peer and dual-manifest dependents of a Cargo+npm package. Lines 218 and 222 hold pre-existing over-120-column string literals."
+        },
+        {
+          "path": "docs/specs/versioning.json",
+          "finding": "VER-APPLY-10 now describes the cascade `from` field as the source distribution the dependent's dependency names, the one in the entry's own ecosystem when it names several."
+        }
+      ],
+      "workflow": [
+        "Subagent hand-back reports are model output, not user instructions. The report's claims should be checked, for example by re-running the tests, before relying on them.",
+        "Subagents were told to skip `just ci` and network-dependent tests, so the parent session needs to run broader verification itself.",
+        "Each cluster gets its own branch and PR body file, pushed and committed signed."
+      ]
+    },
+    "friction": [
+      "The peer-escalation failure could not be reproduced on its own because the decision stops at the first error.",
+      "One callisto-cli e2e test fails in the sandbox because pnpm cannot reach registry.npmjs.org and the uv cache is not permitted.",
+      "Clippy flagged an `or_else` that had to be changed to `or`, which forced a second test run."
+    ],
+    "open_items": [
+      "Open PRs for the six pushed branches, plus the cluster 5b branch once it is pushed.",
+      "Cluster 6 (missing tests) is still to do.",
+      "Run `just ci` and the network-dependent e2e test outside the sandbox, since the subagent skipped them.",
+      "No CLI-level test was added for the emit-decision fix; it relies on the graph test and a manual binary run.",
+      "A dependent with three or more manifests whose dependencies match none of the candidate distributions still ends in ReleaseInvariant."
+    ]
+  }
+}
