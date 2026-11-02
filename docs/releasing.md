@@ -19,6 +19,8 @@ For registry credential setup (npm, crates.io, PyPI), see [`publishing.md`](publ
 
 `cargo`, `npm`, `twine`, and `gh` report their own authentication failures. With the original release intent, the executor can adopt matching completed effects.
 
+A local release refuses with E320, before any effect, when the registry already holds a version it would release but the package's files changed since the commit that set that version, or no commit in this history sets it. Check out the version commit the error names and run `callisto release` again: it adopts the published version and tags that commit. When no commit is named, check out the commit that was published, or tag it by hand.
+
 ### Current retry limit
 
 If a local release tags a version but fails before pushing the tag or completing GitHub work, a fresh `callisto release` at the same commit lists the package again, observes each remaining effect and finishes it.

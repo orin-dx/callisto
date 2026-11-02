@@ -452,13 +452,9 @@ pub(crate) fn assemble_runtime_versions(
     Ok(entries)
 }
 
-/// Assembles the full MatrixReport for `packages`. Map keys are each
-/// package's ecosystem-qualified id (`PackageId::display_name()` -- a bare
-/// name when the package was never promoted, `ecosystem/name` once a
-/// same-name package in another ecosystem forced promotion; the
-/// BTreeMap ordering comes from this for free) so a Cargo package and an npm
-/// package sharing a bare name (the common napi split layout) never collide
-/// on the same map entry; a package contributes no platformTargets entry when it declares neither
+/// Assembles the full MatrixReport for `packages`. Map keys are each package's `ecosystem/name` id (the BTreeMap
+/// ordering comes from this for free) so a Cargo package and an npm package sharing a name (the common napi split
+/// layout) never collide on the same map entry; a package contributes no platformTargets entry when it declares neither
 /// napi.targets nor [tool.maturin].targets, and no runtimeVersions entry when
 /// it declares neither engines.node nor requires-python.
 ///

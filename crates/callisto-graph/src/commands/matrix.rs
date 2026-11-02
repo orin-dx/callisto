@@ -10,13 +10,9 @@ use crate::Workspace;
 #[derive(Clone, Debug, Default)]
 pub struct MatrixOptions {
     /// When Some, restrict the report to exactly this one registered package.
-    /// Accepts a bare name -- resolved only when it matches exactly one
-    /// registered package (`GraphError::AmbiguousName` otherwise, listing
-    /// the qualified candidates) -- or an ecosystem-qualified id
-    /// (`cargo/foo`, `npm/foo`). Err(GraphError::UnknownPackage) when no
-    /// registered package matches. Resolved through
-    /// [`crate::IdentityIndex::resolve`], the one selector resolver shared
-    /// with every other package-selecting surface.
+    /// Must be an ecosystem-qualified id (`cargo/foo`, `npm/foo`); a bare name is rejected with E317.
+    /// Err(GraphError::UnknownPackage) when no registered package matches. Resolved through
+    /// [`crate::IdentityIndex::resolve`], the one selector resolver shared with every other package-selecting surface.
     pub package: Option<String>,
     /// Resolve each napi package's addon crate into `manifestPath` (E204 when not exactly one).
     pub napi_crates: bool,
