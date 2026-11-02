@@ -1,0 +1,102 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6F7E4C1QGQY1BFX0HPAG54P",
+  "session_id": "01a169ee-fe5a-7710-a10c-22ab645f4912",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-02T22:53:01.451408Z",
+  "checkpoints_count": 1,
+  "save_step_count": 15,
+  "files_touched": null,
+  "agent": "Codex",
+  "model": "",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 498354,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 15823616,
+    "output_tokens": 52532,
+    "api_call_count": 123,
+    "subagent_tokens_complete": false
+  },
+  "redaction": {
+    "replacements": 39,
+    "layers": {
+      "betterleaks": 6,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 2,
+      "entropy": 43,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "summary": {
+    "intent": "Determine why native git outperforms gix for Callisto's history walk, whether Callisto could use gix optimally, and which upstream gix performance contributions are worth pursuing; then hand the work off to a new session.",
+    "outcome": "Analysis located the gap in wide-tree pack delta decoding and cache behavior (not diff resource cache), ranked contribution candidates, cloned gitoxide to ~/projects/gix with a handoff note at etc/plan/callisto-history-performance.md, and produced a detailed goal-and-outcome prompt for the next session. No Callisto code changed and the reported timings were not independently reproduced.",
+    "learnings": {
+      "repo": [
+        "Callisto uses system git only per ADR 0005 (docs/adr/0005-system-git-only.md); reintroducing gix requires a superseding ADR (proposed ADR 13) that the user must accept per AGENTS.md.",
+        "The old gix backend lived in crates/callisto-vcs (removed in commit 7ad333311); current Git access is crates/callisto-model/src/vcs/access.rs, with the changed-paths history command near line 510.",
+        "Callisto's hot path collects changed paths for the whole history window then maps them to packages; it is not a path-filtered git log, so Bloom filters do not help it.",
+        "Reported benchmarks (4000 pkgs/8002 commits): history walk git ~730-1020ms vs gix ~3.3-3.6s; manifest reads gix ~200ms vs git ~255ms; tag listing roughly equal. At 500 pkgs gix is 3.5x faster, crossover near 2000.",
+        "Callisto-side costs found separately were its own algorithms (quadratic aggregation ~640ms, tag glob matching ~220ms), not gix defects.",
+        "Correctness rule for Callisto: a commit counts if reachable from HEAD xor tag (symmetric); any gix comparison must reproduce that, including merges and hotfix branches.",
+        "Gitoxide already tracks pack delta caching and Bloom filters in etc/plan/performance.md; it asks for a discussion before changes above ~500 source lines."
+      ],
+      "code": [
+        {
+          "path": "gix-pack-0.77.0/src/data/file/decode/entry.rs",
+          "line": 492,
+          "finding": "Cached decoder appears to cache only the final requested object, whereas git's unpack_entry caches intermediate delta bases; a candidate cause of repeated inflation."
+        },
+        {
+          "path": "gix-pack-0.77.0/src/data/file/decode/entry.rs",
+          "line": 38,
+          "finding": "Outcome describes total decompressed chain bytes but the delta path assigns the requested entry's decompressed size, so the statistic is inaccurate for instrumentation."
+        },
+        {
+          "path": "gix-0.90.0/src/repository/init.rs",
+          "line": 72,
+          "finding": "Default pack cache is a fixed 64-entry LRU; configuring core.deltaBaseCacheLimit switches to a memory-capped hashmap, so the 1GB result conflates cache size and policy."
+        },
+        {
+          "path": "gix-pack-0.77.0/src/cache/lru.rs",
+          "line": 105,
+          "finding": "Fixed cache can clear all entries when its memory limit is exceeded."
+        },
+        {
+          "path": "gix-0.90.0/src/revision/walk.rs",
+          "line": 71,
+          "finding": "High-level revision walk Info omits the root tree ID that gix-commitgraph already exposes (file/commit.rs:93); obtaining it currently reads the commit object."
+        },
+        {
+          "path": "gix-0.90.0/src/object/tree/diff/for_each.rs",
+          "finding": "for_each_to_obtain_tree creates a diff resource cache per call; _with_cache variant reuses it, but measured gain was small (3.3s to 3.0s)."
+        }
+      ],
+      "workflow": [
+        "Handoff prompts for long-running goal runs need explicit stages, completion criteria, and a stated skepticism of unverified numbers; the user pushed back that the first prompt was too light.",
+        "Benchmark fairness requires identical output, same pack, and separating cache size from cache policy; noisy machine (concurrent compile) gives ~±15% error.",
+        "Research relied on reading vendored crate sources in ~/.cargo/registry plus WebSearch; the original spike source was unavailable in the workspace."
+      ]
+    },
+    "friction": [
+      "The original gix spike source and fixture were not available, so causal claims could not be verified and some earlier analysis had to be corrected mid-session (e.g., Bloom filters, per-call cache).",
+      "Benchmarks were noisy because another process was compiling on the machine.",
+      "Duplicate user message and initial handoff prompt lacking detail required a rewrite.",
+      "Case mismatch between ~/projects and ~/Projects directories required checking."
+    ],
+    "open_items": [
+      "Build a reproducible wide-tree fixture and benchmark (500/2000/4000 flat plus sharded control) comparing git and gix on the same pack.",
+      "Test the intermediate-delta-base caching hypothesis and compare no/fixed/dynamic caches at equal budgets (96MiB, 256MiB, 1GiB).",
+      "Possible small gix PR: expose root tree ID in revision walk Info; fix decoder Outcome statistics.",
+      "Bloom filter reader and path-limited history in gix as a separate longer-term contribution.",
+      "Prototype an exact commit-to-changed-paths index at the application level.",
+      "Callisto decisions pending: opt-in gix read backend pilot, ADR 13 superseding ADR 5, backend selection policy, merge handling via per-parent diff intersection tested against --cc.",
+      "Handoff note in ~/projects/gix is uncommitted; no upstream issue or PR should be posted without user authorization."
+    ]
+  },
+  "kind": "imported"
+}
