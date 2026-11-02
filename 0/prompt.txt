@@ -1,0 +1,61 @@
+Let's start the work for the follow-up to callisto-hardening session. What's next?
+
+---
+
+can you check entire for that session? We just stopped it
+
+---
+
+check that entire is logged in now
+
+---
+
+! entire auth status
+
+---
+
+Yes. Let’s start the macOS upgrade and track as a trail appropriate and with all the details
+
+---
+
+We need to ssh-add our keychain
+
+---
+
+! ssh-add --apple-use-keychain ~/.ssh/<your-key>
+
+---
+
+Give me the proper GH key
+
+---
+
+! ssh-add --apple-use-keychain ~/.ssh/gabe_techworx_dev
+
+---
+
+Added it
+
+---
+
+Can we make sure we didn't commit any unsinged anything?
+
+---
+
+Merged the macos 14 changes
+
+---
+
+Did we move to macos-latest?
+
+---
+
+Should be we on latest of 26?
+
+---
+
+I'm not so concerned, mac users move a lot faster than others no?
+
+---
+
+Let's pin latest for our OSes
