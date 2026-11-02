@@ -1,0 +1,157 @@
+Let's start the work for the follow-up to callisto-hardening session. What's next?
+
+---
+
+can you check entire for that session? We just stopped it
+
+---
+
+check that entire is logged in now
+
+---
+
+! entire auth status
+
+---
+
+Yes. Let’s start the macOS upgrade and track as a trail appropriate and with all the details
+
+---
+
+We need to ssh-add our keychain
+
+---
+
+! ssh-add --apple-use-keychain ~/.ssh/<your-key>
+
+---
+
+Give me the proper GH key
+
+---
+
+! ssh-add --apple-use-keychain ~/.ssh/gabe_techworx_dev
+
+---
+
+Added it
+
+---
+
+Can we make sure we didn't commit any unsinged anything?
+
+---
+
+Merged the macos 14 changes
+
+---
+
+Did we move to macos-latest?
+
+---
+
+Should be we on latest of 26?
+
+---
+
+I'm not so concerned, mac users move a lot faster than others no?
+
+---
+
+Let's pin latest for our OSes
+
+---
+
+What other work do we have ongoing?
+
+---
+
+Shall we cleanup any branches and worktrees that are no longer needed?
+
+---
+
+Let's fix the issues blocking release from working. What broke, how? when? who?
+
+---
+
+Cleanup and delete the safe ones
+
+---
+
+Revert the release payload first and track down what happened, plan how we fix it, etc
+
+---
+
+Should we guard specifically merges from the release branch from being stale in GH for callisto?
+
+---
+
+Let's do 5 right now?
+
+---
+
+Also, any performance improvements we can tackle as fast follow?
+
+---
+
+Yes, run the benchmark and delete the tags
+
+---
+
+<task-notification>
+<task-id>bji021v02</task-id>
+<tool-use-id>toolu_01Cj5BJWR6ojzcXDt4a2eDb6</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/6cc3e47b-8406-4c17-94fb-22313682fad8/tasks/bji021v02.output</output-file>
+<status>completed</status>
+<summary>Background command "CALLISTO_BENCH_PACKAGES=400,10000 cargo bench -p callisto-cli --bench commands &gt; /Users/gabe/.claude/jobs/6cc3e47b/tmp/bench.log 2&gt;&amp;1; echo exit=$?" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b8gg264d5</task-id>
+<tool-use-id>toolu_01SYYDCNsswGiEV6e4ecjmve</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/6cc3e47b-8406-4c17-94fb-22313682fad8/tasks/b8gg264d5.output</output-file>
+<status>completed</status>
+<summary>Background command "CALLISTO_BENCH_PACKAGES=400,10000 cargo bench -p callisto-cli --bench commands" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Yes, run the A/B
+
+---
+
+<task-notification>
+<task-id>bai8k3swz</task-id>
+<tool-use-id>toolu_01RFw5fh7sjsuDGyk3Pin7AN</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/6cc3e47b-8406-4c17-94fb-22313682fad8/tasks/bai8k3swz.output</output-file>
+<status>completed</status>
+<summary>Background command "zsh /Users/gabe/.claude/jobs/6cc3e47b/tmp/ab.sh" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+What's next in PRs?
+
+---
+
+<task-notification>
+<task-id>b1n7nyrcs</task-id>
+<tool-use-id>toolu_01USB2vqLQ2JjTb2zp9TxwCh</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-gabe-Projects-callisto/6cc3e47b-8406-4c17-94fb-22313682fad8/tasks/b1n7nyrcs.output</output-file>
+<status>completed</status>
+<summary>Background command "zsh /Users/gabe/.claude/jobs/6cc3e47b/tmp/ab.sh" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Will this release succeed now?
+
+---
+
+Should I just merge or we have other things to do? Should we start implementing the next set of owrk?
+
+---
+
+Let's tackle all of these please

@@ -1,0 +1,104 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6F7299XFMMTYTKX8H6TW7RP",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-02T22:46:37.750094Z",
+  "branch": "fix/release-pr-retry-and-freshness-guard",
+  "checkpoints_count": 15,
+  "files_touched": [
+    ".github/actions/callisto-action/scripts/create-or-update-release-pr.sh",
+    ".github/actions/callisto-action/tests/test_release_pr_contract.sh",
+    ".github/scripts/hold-release-pr.sh",
+    ".github/tests/test-hold-release-pr.sh",
+    ".github/workflows/callisto-hold-release-pr.yml",
+    "docs/releasing.md",
+    "docs/specs/release.json",
+    "justfile"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "c3af238d2931",
+  "checkpoint_transcript_start": 827,
+  "transcript_lines_at_start": 827,
+  "compact_transcript_start": 83,
+  "token_usage": {
+    "input_tokens": 240,
+    "cache_creation_tokens": 158695,
+    "cache_read_tokens": 23339843,
+    "output_tokens": 83856,
+    "api_call_count": 117
+  },
+  "redaction": {
+    "replacements": 23,
+    "layers": {
+      "betterleaks": 12,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 11,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 30
+  },
+  "summary": {
+    "intent": "Clean up stale branches/worktrees, then diagnose and fix the Release workflow failing on every push to main, harden the release-PR flow against recurrence, and check for performance regressions.",
+    "outcome": "Cleaned up 2 worktrees and 19 local branches, diagnosed the E165 wedge (stale release PR #409 merged after #420 rewrote changesets), merged the revert (#423) so Release went green and regenerated PR #424, deleted 9 stray @0 tags, and ran a benchmark A/B showing no real regression. Committed (not yet pushed or PR'd) retry logic and a draft-hold workflow for stale release PRs, with tests, spec and docs.",
+    "learnings": {
+      "repo": [
+        "The release PR branch is `callisto/version-packages`. The bot moves its head with GITHUB_TOKEN, which does not trigger workflows, so CI must be re-triggered manually before merging the release PR.",
+        "`callisto release plan` fails with E165 when the release commit consumed no changesets. Every later push to main retries the same unfinished release and fails identically. Recovery is to revert the release payload (version bumps, CHANGELOG, release-decision.json).",
+        "`create-or-update-release-pr.sh` previously had no retry on forge calls and swallowed stderr on some, so a single GitHub 5xx left the release PR stale until the next push to main.",
+        "Release-PR contract tests use a black-box harness with stubbed `gh` and `callisto` in `.github/actions/callisto-action/tests/test_release_pr_contract.sh`. It grew from 25 to 29 cases.",
+        "A required status check in a ruleset cannot be scoped by head branch, so it would block all PRs. The chosen guard is instead to draft the open release PR on every push to main and mark it ready only when built from the current tip.",
+        "Squash merges defeat `git branch -d`, so cleanup of merged branches needs `-D`.",
+        "Benchmark: `CALLISTO_BENCH_PACKAGES=400,10000 cargo bench -p callisto-cli --bench commands`. Timings at 10,000 packages are very noisy (6-10 s spread) on this machine. Git time dominates, with 7-11 git processes per command.",
+        "Stray `<crate>@0` tags came from an early August release (#16) and sat on the same commit as the real 0.5.0 tags; they made `callisto status` print SemVer placeholder warnings."
+      ],
+      "code": [
+        {
+          "path": ".github/actions/callisto-action/scripts/create-or-update-release-pr.sh",
+          "finding": "Forge calls are now wrapped in a bounded-backoff retry (4 attempts, 2/4/8 s). A bash `until`/return-code quirk made the script exit 2 instead of 1 and had to be fixed. `gh pr ready` is now only called when the PR is a draft."
+        },
+        {
+          "path": ".github/scripts/hold-release-pr.sh",
+          "finding": "New script, run by callisto-hold-release-pr.yml on every push to main, converts the open release PR to a draft so a stale one cannot be merged."
+        }
+      ],
+      "workflow": [
+        "Check the merged/unpushed/uncommitted status of each worktree and branch before deleting, and list the keep-items separately for the user to decide.",
+        "Avoid writing to live shared resources (e.g. `gh pr ready 424`) as a test. Make the script conditional instead.",
+        "Redirecting command output into the job tmp dir was blocked by the sandbox. Let the harness capture output, or write to allowed paths.",
+        "Per the user's measure-first rule, a single benchmark run on a different day is not evidence. Run alternating A/B rounds on the same machine before concluding a regression.",
+        "Sandbox blocked builds in the second worktree, so the A/B had to be rerun unsandboxed.",
+        "Running `callisto release plan --from-release-commit` on a scratch merge of the release PR is a cheap local check of the step that previously failed."
+      ]
+    },
+    "friction": [
+      "The Release workflow had failed on every push to main since 18:07Z, and the cause was buried in a sub-second script step with no obvious error line.",
+      "The log redirect to the job tmp dir was sandbox-blocked, so the first benchmark never ran and had to be redone.",
+      "The first benchmark reading (1.4-2.1x slower) was mostly machine noise, and the A/B first ran with the old-commit side blocked by the sandbox.",
+      "The exact failing `gh` call in the release PR refresh is unknown, because stderr was suppressed.",
+      "`Entire Gates` fails on #424 until the user approves auto-trail #163, which the assistant won't approve.",
+      "A classifier denial hit a read-only command and the justfile had to be read with the file reader instead.",
+      "Shellcheck complaints forced the test assertions in test-hold-release-pr.sh to be restructured."
+    ],
+    "open_items": [
+      "Push the `fix/release-pr-retry-and-freshness-guard` commit and open a PR, held back from merging until the 0.17.0 release finishes, since any merge to main triggers another Release run.",
+      "Approve trail #163, re-trigger CI on #424, check the Apple preflight jobs on macos-latest, merge #424 and watch the first release on macos-latest.",
+      "Add a guard or test so a tag with a bare `0` version cannot be created. The code path behind the August @0 tags is unverified.",
+      "Decide whether `callisto release pending` should name the E165 revert recovery.",
+      "Optionally bisect the ~20 ms (13%) slowdown at 400 packages between #365 and main. The suspects are #418 and #415.",
+      "Remove the leftover `ab-old` worktree.",
+      "Decide on the kept items: the smoke-main worktree (441 deleted tracked files), wf_cd627354-1a0-2 (2 unique commits plus an untracked test file), the callisto-homebrew-tap checkout, stack/docs-v1 (8 unique commits), and the remote branches of merged PRs.",
+      "Close trail #159 and the stale audit-batch trails (#139-#148, #151, #152), and review the stale release-PR trails #129 and #130.",
+      "Trail #162 still needs closing out once the Release workflow is verified green with the guard in place.",
+      "Read the 10-28 `gix-performance-improvements` session, which is not in NEXT-WORK.md."
+    ]
+  }
+}
