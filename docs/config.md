@@ -107,7 +107,7 @@ Both blocks share five override fields, parsed identically; `[[package]]` also a
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `match` | string | required | `[[package]]`: exact `ecosystem/name`. `[[package-set]]`: `ecosystem/glob`. A name without its ecosystem is E317. |
+| `match` | string | required | `[[package]]`: exact `ecosystem/name`. `[[package-set]]`: `ecosystem/glob`. The ecosystem is `cargo`, `npm` or `pypi`; a name without one is E317. |
 | `release-trigger` | string (`"changeset"` \| `"auto"`) | none — every field here is an `Option`; omitted means "use this package's own default", not a config-level default | What causes this package to be considered for release |
 | `publish-to` | array of strings (`"crates-io"` \| `"npm"` \| `"pypi"` \| `"nuget"` \| `"github-release"` \| `"none"`) | none | Where this package publishes |
 | `tag-template` | string | none | Git tag template, e.g. `"callisto@{version}"` |

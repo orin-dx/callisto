@@ -838,6 +838,7 @@ fn build_edges(
                         }),
                         _ => None,
                     };
+                    let diagnostics_before = diagnostics.len();
                     let to = match &spec {
                         DepSpec::WorkspaceProtocol(workspace) if workspace.relative_path().is_some() => {
                             workspace_target
@@ -864,13 +865,16 @@ fn build_edges(
 
                         out_index.entry(pkg.id.clone()).or_default().push(idx);
                         in_index.entry(to).or_default().push(idx);
-                    } else if matches!(&spec, DepSpec::WorkspaceProtocol(workspace) if workspace.relative_path().is_some())
-                    {
-                        diagnostics.push(Diagnostic {
+                    } else if let DepSpec::WorkspaceProtocol(workspace) = &spec {
+                        let relative = workspace.relative_path().is_some();
+                        // A cross-ecosystem name miss already warned; one warning per reference.
+                        if relative || diagnostics.len() == diagnostics_before {
+                            let form = if relative { "relative " } else { "" };
+                            diagnostics.push(Diagnostic {
                                 code: DiagnosticCode::UnknownPackage,
                                 severity: DiagnosticSeverity::Warning,
                                 message: format!(
-                                    "relative pnpm workspace dependency `{}` from `{}` does not identify an admitted npm workspace member",
+                                    "{form}pnpm workspace dependency `{}` from `{}` does not identify an admitted npm workspace member",
                                     entry.name,
                                     decl.path.display()
                                 ),
@@ -879,6 +883,7 @@ fn build_edges(
                                 escalated_by: None,
                                 governed_by: None,
                             });
+                        }
                     }
                 }
             }

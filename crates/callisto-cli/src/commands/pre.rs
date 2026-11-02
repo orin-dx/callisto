@@ -2,7 +2,10 @@ use std::fs;
 use std::path::Path;
 use std::process::ExitCode;
 
-use callisto_model::format::{parse_pre_json, write_pre_json, write_pre_json_preserving, PreMode, PreState};
+use callisto_graph::GraphError;
+use callisto_model::format::{
+    parse_pre_json, write_pre_json, write_pre_json_preserving, PreJsonError, PreMode, PreState,
+};
 use callisto_model::{ApplyPermit, CommandRunner, PreReport, SCHEMA_VERSION};
 
 use crate::cli::{GlobalArgs, OutputFormat, PreArgs};
@@ -24,6 +27,14 @@ fn stage_pre_json(runner: &dyn CommandRunner, root: &Path, rel_path: &Path) -> R
         .into());
     }
     Ok(())
+}
+
+/// A baseline that fits no version grammar is a malformed owned baseline (E114), as in `version`; other damage is E212.
+fn parse_existing_pre_json(text: &str) -> Result<PreState, CliError> {
+    parse_pre_json(text).map_err(|error| match error {
+        PreJsonError::InvalidInitialVersion { .. } => CliError::Graph(GraphError::PreJson(error)),
+        other => CliError::PreJson(other),
+    })
 }
 
 /// Mirrors `add`'s dry-run preview so both commands report the not-yet-written content the same way.
@@ -87,7 +98,7 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
                 path: Some(pre_path.clone()),
             })?;
             let pre_state = if let Some(existing_text) = existing_text {
-                let existing = parse_pre_json(&existing_text)?;
+                let existing = parse_existing_pre_json(&existing_text)?;
                 if existing.mode == PreMode::Pre {
                     return Err(CliError::PreAlreadyActive);
                 }
@@ -153,7 +164,7 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
                     path: Some(pre_path.clone()),
                 })?
                 .ok_or(CliError::PreNotActive)?;
-            let mut pre_state = parse_pre_json(&text)?;
+            let mut pre_state = parse_existing_pre_json(&text)?;
 
             // Reject double-exit.
             if pre_state.mode == PreMode::Exit {

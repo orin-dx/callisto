@@ -1196,7 +1196,38 @@ pub enum ConfigError {
     VersionParse(#[from] VersionParseError),
 }
 
+impl GraphError {
+    /// The one filesystem path this error is about, when it carries it as a structured field.
+    pub fn path(&self) -> Option<&std::path::Path> {
+        match self {
+            Self::Config(error) => error.path(),
+            Self::ParseChangeset { path, .. }
+            | Self::UnexpectedManifestVersion { path, .. }
+            | Self::PartialVersionRun { path, .. }
+            | Self::ApplyIo { path, .. }
+            | Self::UnsafeArtifactPath { path, .. }
+            | Self::ArtifactRead { path, .. }
+            | Self::ArtifactBytesMismatch { path }
+            | Self::ArtifactAttestation { path, .. }
+            | Self::ReleaseInputRead { path, .. }
+            | Self::ReleaseDecisionDecode { path, .. }
+            | Self::InitAlreadyInitialized { path }
+            | Self::InitIo { path, .. }
+            | Self::InitWorkflowExists { path } => Some(path),
+            _ => None,
+        }
+    }
+}
+
 impl ConfigError {
+    /// The one filesystem path this error is about, when it carries it as a structured field.
+    pub fn path(&self) -> Option<&std::path::Path> {
+        match self {
+            Self::Read { path, .. } | Self::ParseToml { path, .. } | Self::UnknownKey { path, .. } => Some(path),
+            _ => None,
+        }
+    }
+
     /// Rejects a colon-qualified package reference (`cargo:foo`); the slash form (`cargo/foo`) is the only qualified spelling.
     pub fn reject_colon_form(raw: &str, context: &str) -> Result<(), Self> {
         match PackageId::colon_form_canonical(raw) {
@@ -1211,10 +1242,21 @@ impl ConfigError {
 
     /// Requires the canonical `eco/name` form: the colon form is E316 and a name without an ecosystem is E317.
     pub fn require_qualified(raw: &str, context: &str) -> Result<(), Self> {
+        Self::require_prefixed(raw, context, |eco| eco.is_some())
+    }
+
+    /// Like [`Self::require_qualified`], but the ecosystem must be one of cargo, npm or pypi.
+    pub fn require_canonical_ecosystem(raw: &str, context: &str) -> Result<(), Self> {
+        Self::require_prefixed(raw, context, |eco| {
+            eco.is_some_and(|e| Ecosystem::CANONICAL.contains(&e))
+        })
+    }
+
+    fn require_prefixed(raw: &str, context: &str, accepts: impl Fn(Option<Ecosystem>) -> bool) -> Result<(), Self> {
         Self::reject_colon_form(raw, context)?;
         let qualified = raw
             .split_once('/')
-            .is_some_and(|(prefix, rest)| Ecosystem::from_prefix(prefix).is_some() && !rest.is_empty());
+            .is_some_and(|(prefix, rest)| accepts(Ecosystem::from_prefix(prefix)) && !rest.is_empty());
         if qualified {
             return Ok(());
         }

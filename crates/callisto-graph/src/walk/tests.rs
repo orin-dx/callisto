@@ -1513,6 +1513,32 @@ fn a_relative_pnpm_workspace_dependency_naming_no_member_is_diagnosed() {
     assert_eq!(diagnostic.package.as_ref().map(PackageId::name), Some("a"));
 }
 
+/// A `workspace:` reference by version that no admitted member satisfies makes no edge and warns once; an
+/// ordinary registry dependency on an unknown name stays silent.
+#[test]
+fn an_unresolvable_version_form_pnpm_workspace_dependency_warns_once() {
+    let dir = pnpm_workspace(&[
+        (
+            "a",
+            r#","dependencies":{"ghost":"workspace:*","left-pad":"^1.0.0","b":"workspace:^"}"#,
+        ),
+        ("b", ""),
+    ]);
+    let locator = crate::locate::IgnoreWalkLocator::new(dir.path());
+    let ws = crate::Workspace::load(dir.path().to_path_buf(), &locator, &NoopRunner).expect("load");
+    let edges: Vec<_> = ws.graph.edges().iter().map(|edge| edge.name.clone()).collect();
+    assert_eq!(edges, ["b"]);
+    let warnings: Vec<_> = ws
+        .graph
+        .diagnostics()
+        .iter()
+        .filter(|d| d.code == callisto_model::DiagnosticCode::UnknownPackage)
+        .collect();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(warnings[0].message.contains("`ghost`"), "{}", warnings[0].message);
+    assert_eq!(warnings[0].package.as_ref().map(PackageId::name), Some("a"));
+}
+
 /// `workspace = true` on a dependency the workspace root does not declare keeps the member's own spec and
 /// still links the packages.
 #[test]
