@@ -15,7 +15,7 @@ script="$action_dir/scripts/create-or-update-release-pr.sh"
 
 run_case() {
   local prs="$1" decision="$2" label_exists="${3:-true}"
-  local calls_file output_file harness verify_count_file stale_file
+  local calls_file output_file harness verify_count_file stale_file transient_file
   calls_file="$(mktemp "${TMPDIR:-/tmp}/callisto.XXXXXX")"
   output_file="$(mktemp "${TMPDIR:-/tmp}/callisto.XXXXXX")"
   verify_count_file="$(mktemp "${TMPDIR:-/tmp}/callisto.XXXXXX")"
@@ -23,6 +23,8 @@ run_case() {
   rm -f "$verify_count_file"
   stale_file="$(mktemp "${TMPDIR:-/tmp}/callisto.XXXXXX")"
   : > "$stale_file"
+  transient_file="$(mktemp "${TMPDIR:-/tmp}/callisto.XXXXXX")"
+  rm -f "$transient_file"
 
   {
     cat <<'STUBS'
@@ -73,6 +75,14 @@ callisto() {
 gh() {
   echo "gh $*" >> "$CALLS_FILE"
   local joined=" $* "
+  if [[ -n "$TRANSIENT_ON" && "$joined" == *"$TRANSIENT_ON"* ]]; then
+    local seen=$(( $(cat "$TRANSIENT_FILE" 2>/dev/null || echo 0) + 1 ))
+    echo "$seen" > "$TRANSIENT_FILE"
+    if [[ "$seen" -le "$TRANSIENT_FAILS" ]]; then
+      echo "gh: ${TRANSIENT_MESSAGE:-Something went wrong while executing your query on 2026-11-02T16:57:39Z. Please include \`ID\` when reporting this issue.}" >&2
+      return 1
+    fi
+  fi
   case "$1 $2" in
     'pr list')
       if [[ -s "$STALE_FILE" && "$(cat "$STALE_FILE")" -gt 0 ]]; then
@@ -81,7 +91,10 @@ gh() {
         return 0
       fi
       printf '%s\n' "$PR_LIST"; return 0 ;;
-    'pr view') echo 'existing body'; return 0 ;;
+    'pr view')
+      if [[ "$joined" == *' isDraft '* ]]; then echo "$IS_DRAFT"; else echo 'existing body'; fi
+      return 0 ;;
+    'pr ready') return 0 ;;
     'pr create') echo "$PR_CREATE_URL"; return 0 ;;
     'pr edit') return 0 ;;
     'label list') echo "$LABEL_EXISTS"; return 0 ;;
@@ -91,6 +104,10 @@ gh() {
     if [[ "$joined" == *' graphql '* ]]; then
       [[ "$GRAPHQL_CODE" == 0 ]] || return "$GRAPHQL_CODE"
       printf '%s\n' "$NEW_SHA"
+      return 0
+    fi
+    if [[ "$joined" == *'/git/ref/heads/'* ]]; then
+      printf '%s\n' "$BASE_TIP"
       return 0
     fi
     if [[ "$joined" == *'/git/commits/'* ]]; then
@@ -147,6 +164,9 @@ STUBS
   CALLS_FILE="$calls_file" PR_LIST="$prs" DECISION="$decision" LABEL_EXISTS="$label_exists" \
     VERIFY_FAIL_AT="${VERIFY_FAIL_AT:-0}" VERIFY_FAIL_PERSIST="${VERIFY_FAIL_PERSIST:-false}" VERIFY_COUNT_FILE="$verify_count_file" \
     STALE_READS="${STALE_READS:-0}" STALE_FILE="$stale_file" \
+    TRANSIENT_ON="${TRANSIENT_ON:-}" TRANSIENT_FAILS="${TRANSIENT_FAILS:-0}" TRANSIENT_FILE="$transient_file" \
+    TRANSIENT_MESSAGE="${TRANSIENT_MESSAGE:-}" IS_DRAFT="${IS_DRAFT:-false}" \
+    BASE_TIP="${BASE_TIP:-0123456789abcdef0123456789abcdef01234567}" \
     REQUIRE_APPLIED_HEAD="${REQUIRE_APPLIED_HEAD:-false}" \
     STAGING_PATCH_CODE="${STAGING_PATCH_CODE:-0}" GRAPHQL_CODE="${GRAPHQL_CODE:-0}" \
     MOVE_PATCH_CODE="${MOVE_PATCH_CODE:-0}" MOVE_POST_CODE="${MOVE_POST_CODE:-0}" \
@@ -171,7 +191,7 @@ STUBS
   cat "$calls_file"
   printf '%s\n' '---outputs---'
   cat "$output_file"
-  rm -f "$calls_file" "$output_file" "$harness" "$verify_count_file" "$stale_file"
+  rm -f "$calls_file" "$output_file" "$harness" "$verify_count_file" "$stale_file" "$transient_file"
 }
 
 default_new_sha='deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
@@ -406,6 +426,95 @@ if [[ "$output" != 1$'\n'* ]] \
   fail=1
 else
   echo 'PASS: staging is cleaned up even when moving the managed branch fails'
+fi
+
+# The hold workflow drafts a stale release PR; a refresh built from the current tip hands it back, one built from an older tip does not.
+IS_DRAFT=true
+output="$(run_case '[{"number":42,"headRefName":"callisto/version-packages","headRepository":{"nameWithOwner":"orin-dx/callisto"},"headRefOid":"0123456789abcdef0123456789abcdef01234567"}]' "$update")"
+unset IS_DRAFT
+if [[ "$output" != 0$'\n'* ]] \
+  || [[ "$output" != *'gh pr ready 42'* ]] \
+  || [[ "$output" == *'gh pr ready 42 --undo'* ]]; then
+  echo "FAIL: a draft release PR refreshed from the current tip must be marked ready: $output"
+  fail=1
+else
+  echo 'PASS: a refreshed draft release PR is marked ready'
+fi
+
+BASE_TIP='ffffffffffffffffffffffffffffffffffffffff'
+IS_DRAFT=true
+output="$(run_case '[{"number":42,"headRefName":"callisto/version-packages","headRepository":{"nameWithOwner":"orin-dx/callisto"},"headRefOid":"0123456789abcdef0123456789abcdef01234567"}]' "$update")"
+unset IS_DRAFT
+if [[ "$output" != 0$'\n'* ]] \
+  || [[ "$output" == *'gh pr ready'* ]]; then
+  echo "FAIL: a release PR built from an older tip must stay a draft: $output"
+  fail=1
+else
+  echo 'PASS: a release PR built from an older tip stays a draft'
+fi
+
+output="$(run_case '[{"number":42,"headRefName":"callisto/version-packages","headRepository":{"nameWithOwner":"orin-dx/callisto"},"headRefOid":"0123456789abcdef0123456789abcdef01234567"}]' "$update")"
+unset BASE_TIP
+if [[ "$output" != 0$'\n'* ]] \
+  || [[ "$output" != *'gh pr ready 42 --undo'* ]]; then
+  echo "FAIL: a ready release PR built from an older tip must be drafted: $output"
+  fail=1
+else
+  echo 'PASS: a ready release PR built from an older tip is drafted'
+fi
+
+output="$(run_case '[]' "$create")"
+if [[ "$output" != 0$'\n'* ]] \
+  || [[ "$output" == *'gh pr ready'* ]]; then
+  echo "FAIL: a new release PR built from the current tip needs no ready call: $output"
+  fail=1
+else
+  echo 'PASS: a new release PR built from the current tip needs no ready call'
+fi
+
+# A transient GitHub error on the commit mutation is retried, and each retry first puts the staging branch back on the base commit.
+TRANSIENT_ON=' api graphql '
+TRANSIENT_FAILS=2
+output="$(run_case '[]' "$create")"
+unset TRANSIENT_ON TRANSIENT_FAILS
+if [[ "$output" != 0$'\n'* ]] \
+  || [[ "$(grep -F -c 'gh api graphql' <<< "$output")" != 3 ]] \
+  || [[ "$(grep -F -c -- "-X PATCH repos/orin-dx/callisto/git/refs/heads/callisto/version-packages--staging -f sha=0123456789abcdef0123456789abcdef01234567" <<< "$output")" != 3 ]] \
+  || [[ "$output" != *'gh pr create'* ]]; then
+  echo "FAIL: a transient GitHub error on the commit mutation must be retried after resetting staging: $output"
+  fail=1
+else
+  echo 'PASS: a transient error on the commit mutation is retried after resetting staging'
+fi
+
+# A transient error that never clears stops after four attempts and writes nothing.
+TRANSIENT_ON=' pr list '
+TRANSIENT_FAILS=100
+output="$(run_case '[]' "$create")"
+unset TRANSIENT_ON TRANSIENT_FAILS
+if [[ "$output" != 1$'\n'* ]] \
+  || [[ "$(grep -F -c 'gh pr list' <<< "$output")" != 4 ]] \
+  || [[ "$output" == *'gh api'* ]] \
+  || [[ "$output" == *'gh pr create'* ]]; then
+  echo "FAIL: a persistent transient error must stop after four attempts without writes: $output"
+  fail=1
+else
+  echo 'PASS: a persistent transient error stops after four attempts'
+fi
+
+# A failure that is not transient is not retried.
+TRANSIENT_ON=' api graphql '
+TRANSIENT_FAILS=100
+TRANSIENT_MESSAGE='Validation Failed (HTTP 422)'
+output="$(run_case '[]' "$create")"
+unset TRANSIENT_ON TRANSIENT_FAILS TRANSIENT_MESSAGE
+if [[ "$output" != 1$'\n'* ]] \
+  || [[ "$(grep -F -c 'gh api graphql' <<< "$output")" != 1 ]] \
+  || [[ "$output" == *'gh pr create'* ]]; then
+  echo "FAIL: a non-transient error must not be retried: $output"
+  fail=1
+else
+  echo 'PASS: a non-transient error is not retried'
 fi
 
 action_contents="$(<"$action_dir/action.yml")"
