@@ -1,5 +1,23 @@
 # callisto-cli
 
+## 0.17.0
+
+- Release notes for a fixed-group package that has no changelog section now use generated notes instead of borrowing the other members' entries. When other members add entries, the package's own headings and paragraphs are kept, and a short entry is no longer dropped just because its text appears inside another entry.
+- - Release PR commits now fail when a Git filter such as CRLF conversion changes a staged file's bytes, and a staged symlink or submodule is rejected as an unsupported mode.
+  - The setup action now fails when it cannot list release tags to resolve its pinned version, instead of installing the latest release.
+- Two checks now report what is actually wrong:
+  - `callisto status --check --strict` now fails on the same warnings `callisto version --strict` does, such as a napi target missing from its fixed group. Without `--strict` these stay warnings.
+  - `release execute` with a manifest that seals Python files but no `--artifact-dir` now reports E233 and asks for the directory, instead of E232 telling you to drop both flags.
+- The release action no longer has a pending_pr_label input. Merged releases are now found with callisto release pending, so nothing reads or sets that label. A workflow that still passes the input gets an unused-input warning from GitHub; delete the line.
+- A duration with a non-ASCII unit, such as a confirm-timeout of 5é, now fails with a clear error instead of crashing. A Git failure while inferring versions from commits now stops the command instead of being skipped.
+- Confirming a PyPI upload now stops at the registry's confirmation window, even when the index keeps asking to retry later.
+- `callisto version --emit-decision` no longer fails when a dependent is bumped because of a package published to both crates.io and npm. The cascade reason names the distribution the dependent depends on.
+- Fixes four mismatches with the documented behaviour:
+  - `[[package]]` and `[[package-set]]` `match` now accept only `cargo/`, `npm/` or `pypi/` prefixes; any other prefix is E317.
+  - A `workspace:*`-style pnpm dependency that matches no workspace package now warns instead of staying silent.
+  - Under `--format json`, `error.path` is set for init, apply, artifact, release-input and config file errors that name a file.
+  - `pre exit` and `pre enter` report E114 for a baseline that is not a valid version, instead of E212.
+
 ## 0.16.0
 
 - Pinning a version over `version.workspace = true` keeps the comment above that line and the one after it.
