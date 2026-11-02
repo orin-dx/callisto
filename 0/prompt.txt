@@ -1,0 +1,3 @@
+We've been doing a lot of work on callisto and I want you do to a very thorough adversarial analysis of the work done in the last week through the open PRs and uncommited code. Come from the POV of a principal engineer guiding architecture, semantic models, performance, DX and maintanability. Double check your findings and look for similarities in the patterns of issues you find. Use that to look for further issues.
+
+Provide a report and guidance on how to address what you find.
