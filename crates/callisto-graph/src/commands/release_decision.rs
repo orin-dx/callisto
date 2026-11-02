@@ -75,7 +75,13 @@ pub fn derive_release_decision<R: callisto_model::CommandRunner, D: DependencyRe
             entries.push(ReleaseDecisionEntry {
                 package: id.clone(),
                 target_version: bump.to.clone(),
-                reasons: vec![reason_from_bump(bump.reason.as_ref(), &package_ids)?],
+                reasons: vec![reason_from_bump(
+                    &workspace.graph,
+                    &bump.package,
+                    id,
+                    bump.reason.as_ref(),
+                    &package_ids,
+                )?],
             });
         }
     }
@@ -910,7 +916,39 @@ fn resolve_batch_versions<R: CommandRunner>(
         .collect()
 }
 
-fn reason_from_bump(
+/// The distribution of `via` that `dependent`'s matching edges name, in `entry`'s ecosystem when they name several.
+fn cascade_source<D: DependencyResolver>(
+    graph: &D,
+    dependent: &callisto_model::PackageId,
+    via: &callisto_model::PackageId,
+    entry: &ReleasePackageId,
+    package_ids: &std::collections::BTreeMap<callisto_model::PackageId, Vec<ReleasePackageId>>,
+    edge_matches: impl Fn(&callisto_model::DepEdge) -> bool,
+) -> Option<ReleasePackageId> {
+    let ids = package_ids.get(via)?;
+    if let [only] = ids.as_slice() {
+        return Some(only.clone());
+    }
+    let ecosystems: std::collections::BTreeSet<Ecosystem> = graph
+        .dependencies_of(dependent)
+        .filter(|edge| edge.to == *via && edge_matches(edge))
+        .map(|edge| crate::cascade::manifest_ecosystem(&edge.from_manifest))
+        .collect();
+    let candidates: Vec<&ReleasePackageId> = ids.iter().filter(|id| ecosystems.contains(&id.ecosystem())).collect();
+    candidates
+        .iter()
+        .find(|id| id.ecosystem() == entry.ecosystem())
+        .or(match candidates.as_slice() {
+            [only] => Some(only),
+            _ => None,
+        })
+        .map(|id| (*id).clone())
+}
+
+fn reason_from_bump<D: DependencyResolver>(
+    graph: &D,
+    dependent: &callisto_model::PackageId,
+    entry: &ReleasePackageId,
     reason: Option<&BumpReason>,
     package_ids: &std::collections::BTreeMap<callisto_model::PackageId, Vec<ReleasePackageId>>,
 ) -> Result<ReleaseInclusionReason, GraphError> {
@@ -926,35 +964,35 @@ fn reason_from_bump(
             })
         }
         Some(BumpReason::PreRelease { tag }) => Ok(ReleaseInclusionReason::PreReleasePolicy { policy_id: tag.clone() }),
-        Some(BumpReason::Cascade { via, dep_kind, .. }) => {
-            // `package_ids` is derived from the same workspace graph `via`
-            // was resolved against, so a miss (or a non-unique release
-            // identity) here means that pairing broke, not that this is a
-            // recoverable operator condition.
-            let source = package_ids
-                .get(via)
-                .and_then(|ids| (ids.len() == 1).then(|| ids[0].clone()))
-                .ok_or_else(|| GraphError::ReleaseInvariant {
-                    detail: format!(
-                        "cascade source package `{}` has no unique release package id",
-                        via.display_name()
-                    ),
-                })?;
+        Some(BumpReason::Cascade {
+            via, dep_kind, spec, ..
+        }) => {
+            // The plan and edges share one workspace graph, so a miss is a broken pairing, not an operator error.
+            let source = cascade_source(graph, dependent, via, entry, package_ids, |edge| {
+                edge.kind == *dep_kind && edge.spec.render() == *spec
+            })
+            .ok_or_else(|| GraphError::ReleaseInvariant {
+                detail: format!(
+                    "cascade source package `{}` has no release package id that `{entry}` unambiguously depends on",
+                    via.display_name()
+                ),
+            })?;
             Ok(ReleaseInclusionReason::Cascade {
                 from: source,
                 edge_kind: format!("{dep_kind:?}"),
             })
         }
-        Some(BumpReason::PeerEscalation { via, .. }) => {
-            let source = package_ids
-                .get(via)
-                .and_then(|ids| (ids.len() == 1).then(|| ids[0].clone()))
-                .ok_or_else(|| GraphError::ReleaseInvariant {
-                    detail: format!(
-                        "peer-escalation source package `{}` has no unique release package id",
-                        via.display_name()
-                    ),
-                })?;
+        Some(BumpReason::PeerEscalation { via, spec }) => {
+            let source = cascade_source(graph, dependent, via, entry, package_ids, |edge| {
+                edge.kind == callisto_model::DepKind::Peer && edge.spec.render() == *spec
+            })
+            .ok_or_else(|| GraphError::ReleaseInvariant {
+                detail: format!(
+                    "peer-escalation source package `{}` has no release package id that `{entry}` unambiguously \
+                     depends on",
+                    via.display_name()
+                ),
+            })?;
             Ok(ReleaseInclusionReason::Cascade {
                 from: source,
                 edge_kind: "peer".to_string(),

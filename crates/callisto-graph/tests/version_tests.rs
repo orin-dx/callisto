@@ -236,6 +236,101 @@ fn apply_version_plan_succeeds_for_dual_identity_cross_ecosystem_rewrite() {
     );
 }
 
+/// A cascade or peer escalation from a Cargo+npm package names the source distribution the dependent's edge points at.
+#[test]
+fn release_decision_names_the_dual_source_distribution_each_dependent_uses() {
+    use callisto_model::{Ecosystem, ReleaseInclusionReason, ReleasePackageId};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    git_init_with_commit(root);
+    let files = [
+        (
+            "Cargo.toml",
+            "[workspace]\nmembers = [\"crates/*\"]\nresolver = \"2\"\n",
+        ),
+        (
+            "package.json",
+            r#"{"name":"workspace","private":true,"workspaces":["crates/*","packages/*"]}"#,
+        ),
+        (
+            "crates/native/Cargo.toml",
+            "[package]\nname = \"native-lib\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+        ),
+        (
+            "crates/native/package.json",
+            r#"{"name":"@scope/native-lib","version":"1.0.0"}"#,
+        ),
+        (
+            "crates/cargo-app/Cargo.toml",
+            "[package]\nname = \"cargo-app\"\nversion = \"1.0.0\"\nedition = \"2021\"\n\n[dependencies]\n\
+             native-lib = { path = \"../native\", version = \"^1.0.0\" }\n",
+        ),
+        (
+            "crates/dual-app/Cargo.toml",
+            "[package]\nname = \"dual-app\"\nversion = \"1.0.0\"\nedition = \"2021\"\n\n[dependencies]\n\
+             native-lib = { path = \"../native\", version = \"^1.0.0\" }\n",
+        ),
+        (
+            "crates/dual-app/package.json",
+            r#"{"name":"@scope/dual-app","version":"1.0.0","dependencies":{"@scope/native-lib":"^1.0.0"}}"#,
+        ),
+        (
+            "packages/npm-app/package.json",
+            r#"{"name":"npm-app","version":"1.0.0","dependencies":{"@scope/native-lib":"^1.0.0"}}"#,
+        ),
+        (
+            "packages/peer-app/package.json",
+            r#"{"name":"peer-app","version":"1.0.0","peerDependencies":{"@scope/native-lib":"^1.0.0"}}"#,
+        ),
+        (
+            ".changeset/breaking.md",
+            "---\n\"native-lib\": major\n---\n\nBreaking change.\n",
+        ),
+    ];
+    for (path, source) in files {
+        let path = root.join(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, source).unwrap();
+    }
+    commit_all(root, "workspace");
+
+    let locator = IgnoreWalkLocator::new(root);
+    let runner = callisto_fixtures::git::GitRunner;
+    let ws = Workspace::load(root.to_path_buf(), &locator, &runner).unwrap();
+    let opts = VersionOptions {
+        strict: false,
+        allow_empty_changesets: true,
+    };
+    let plan = plan_version(&ws, &NoInference, &opts).unwrap();
+    let decision = callisto_graph::commands::derive_release_decision(&ws, &plan).unwrap();
+
+    let id = |ecosystem, name| ReleasePackageId::new(ecosystem, name).unwrap();
+    let cargo_source = id(Ecosystem::Cargo, "native-lib");
+    let npm_source = id(Ecosystem::Npm, "@scope/native-lib");
+    for (dependent, from, edge_kind) in [
+        (id(Ecosystem::Cargo, "cargo-app"), &cargo_source, "Runtime"),
+        (id(Ecosystem::Cargo, "dual-app"), &cargo_source, "Runtime"),
+        (id(Ecosystem::Npm, "@scope/dual-app"), &npm_source, "Runtime"),
+        (id(Ecosystem::Npm, "npm-app"), &npm_source, "Runtime"),
+        (id(Ecosystem::Npm, "peer-app"), &npm_source, "peer"),
+    ] {
+        let entry = decision
+            .entries
+            .iter()
+            .find(|entry| entry.package == dependent)
+            .unwrap_or_else(|| panic!("{dependent} must be in the decision"));
+        assert_eq!(
+            entry.reasons,
+            vec![ReleaseInclusionReason::Cascade {
+                from: from.clone(),
+                edge_kind: edge_kind.to_string(),
+            }],
+            "{dependent}"
+        );
+    }
+}
+
 /// A fixed group with two members, each named by its OWN, separate changeset
 /// (pkg-a: minor via one changeset, pkg-b: minor via a different changeset --
 /// mirroring a real multi-package release PR) must converge on exactly ONE
