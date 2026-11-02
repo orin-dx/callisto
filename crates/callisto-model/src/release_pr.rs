@@ -528,8 +528,9 @@ pub struct StagedChangeV1 {
     /// The new Git file mode, for additions and modifications. `None` for a
     /// pure deletion.
     pub new_mode: Option<u32>,
-    /// The new file's raw bytes, for additions and modifications. `None` for
-    /// a pure deletion.
+    /// The new file's raw worktree bytes, for regular-file additions and
+    /// modifications. `None` for a deletion and for any other mode, which is
+    /// refused before any content is read.
     pub contents: Option<Vec<u8>>,
 }
 

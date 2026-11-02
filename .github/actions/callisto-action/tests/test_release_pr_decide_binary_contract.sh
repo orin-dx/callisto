@@ -27,7 +27,8 @@ fail=0
 # .changeset/ state.
 build_temp_repo() {
   local dir
-  dir=$(mktemp -d)
+  dir=$(mktemp -d "${TMPDIR:-/tmp}/callisto.XXXXXX")
+  [[ -n "$dir" && -d "$dir" ]] || { echo "mktemp -d failed" >&2; exit 1; }
   git -C "$dir" init -q -b main
   git -C "$dir" config user.name 'Contract Test'
   git -C "$dir" config user.email 'contract-test@callisto.dev'

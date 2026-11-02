@@ -22,10 +22,14 @@ fi
 # invocation is pinned to (GITHUB_ACTION_REF, github.action_ref) rather than
 # whatever is newest, so `callisto-action@<sha> # callisto@X.Y.Z` always
 # installs X.Y.Z. Falls back to true "latest" when the ref is unset (local or
-# unpinned invocation) or matches no published callisto@ tag. A named ref such
-# as the floating `v1` tag stands for the commit it points at.
+# unpinned invocation) or matches no published callisto@ tag; a failed tag
+# lookup fails the step. A named ref such as the floating `v1` tag stands for
+# the commit it points at.
 if [[ "$SOURCE" == "auto" && "$TAG_NAME" == "latest" && -n "${GITHUB_ACTION_REF:-}" ]]; then
-  remote_tags=$(git ls-remote --tags https://github.com/orin-dx/callisto.git 'callisto@*' "$GITHUB_ACTION_REF" 2>/dev/null) || true
+  if ! remote_tags=$(git ls-remote --tags https://github.com/orin-dx/callisto.git 'callisto@*' "$GITHUB_ACTION_REF"); then
+    echo "::error::could not list callisto release tags to resolve action ref $GITHUB_ACTION_REF; set the version input to install a specific release"
+    exit 1
+  fi
   ref_commit=$(printf '%s\n' "$remote_tags" \
     | awk -v ref="refs/tags/$GITHUB_ACTION_REF" '$2 == ref || $2 == ref "^{}" { sha = $1 } END { print sha }')
   resolved_tag=$(printf '%s\n' "$remote_tags" \

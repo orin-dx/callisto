@@ -16,12 +16,12 @@ script="$action_dir/scripts/create-or-update-release-pr.sh"
 run_case() {
   local prs="$1" decision="$2" label_exists="${3:-true}"
   local calls_file output_file harness verify_count_file stale_file
-  calls_file="$(mktemp)"
-  output_file="$(mktemp)"
-  verify_count_file="$(mktemp)"
-  harness="$(mktemp)"
+  calls_file="$(mktemp "${TMPDIR:-/tmp}/callisto.XXXXXX")"
+  output_file="$(mktemp "${TMPDIR:-/tmp}/callisto.XXXXXX")"
+  verify_count_file="$(mktemp "${TMPDIR:-/tmp}/callisto.XXXXXX")"
+  harness="$(mktemp "${TMPDIR:-/tmp}/callisto.XXXXXX")"
   rm -f "$verify_count_file"
-  stale_file="$(mktemp)"
+  stale_file="$(mktemp "${TMPDIR:-/tmp}/callisto.XXXXXX")"
   : > "$stale_file"
 
   {

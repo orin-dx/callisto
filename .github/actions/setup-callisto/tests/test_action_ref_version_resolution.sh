@@ -18,13 +18,13 @@ extract_snippet() {
 # and `git ls-remote` stubbed to print tag_lines; prints the resulting
 # TAG_NAME and records every git invocation.
 run_case() {
-  local input_version="$1" action_ref="$2" tag_lines="$3"
+  local input_version="$1" action_ref="$2" tag_lines="$3" ls_remote_status="${4:-0}"
   local tmp_script calls_file
-  tmp_script="$(mktemp)"
-  calls_file="$(mktemp)"
+  tmp_script="$(mktemp "${TMPDIR:-/tmp}/callisto.XXXXXX")"
+  calls_file="$(mktemp "${TMPDIR:-/tmp}/callisto.XXXXXX")"
   {
-    printf 'git() { echo "git $*" >> %q; if [[ "$1 $2" == "ls-remote --tags" ]]; then printf %%s %q; fi; }\n' \
-      "$calls_file" "$tag_lines"
+    printf 'git() { echo "git $*" >> %q; if [[ "$1 $2" == "ls-remote --tags" ]]; then printf %%s %q; return %q; fi; }\n' \
+      "$calls_file" "$tag_lines" "$ls_remote_status"
     printf 'INPUT_CALLISTO_VERSION=%q\n' "$input_version"
     [[ -n "$action_ref" ]] && printf 'GITHUB_ACTION_REF=%q\n' "$action_ref"
     printf 'INPUT_CALLISTO_SOURCE=auto\n'
@@ -32,6 +32,7 @@ run_case() {
     printf 'echo "TAG_NAME=$TAG_NAME"\n'
   } > "$tmp_script"
   bash "$tmp_script"
+  echo "EXIT=$?"
   echo "---CALLS---"
   cat "$calls_file"
   rm -f "$tmp_script" "$calls_file"
@@ -85,6 +86,15 @@ else
   echo "PASS test_unknown_named_ref_falls_back_to_latest"
 fi
 
+# 3c. A failed tag lookup fails the step instead of falling back to latest.
+out=$(run_case "latest" "abc1230000000000000000000000000000000002" "" 128)
+if [[ "$out" != *"::error::could not list callisto release tags to resolve action ref abc1230000000000000000000000000000000002"* \
+  || "$out" != *"EXIT=1"* || "$out" == *"TAG_NAME="* ]]; then
+  echo "FAIL test_failed_tag_lookup_fails_the_step: $out"; fail=1
+else
+  echo "PASS test_failed_tag_lookup_fails_the_step"
+fi
+
 # 4. Explicit version override is never touched, even with a resolvable action ref.
 out=$(run_case "callisto@0.5.0" "abc1230000000000000000000000000000000002" "$TAGS")
 if [[ "$out" != *"TAG_NAME=callisto@0.5.0"* ]] || [[ "$out" == *"git ls-remote"* ]]; then
@@ -96,8 +106,10 @@ fi
 run_installer() (
   local source="$1" version="$2" checkout="$3" action_ref="${4:-}"
   local fixture code
-  fixture=$(mktemp -d)
+  fixture=$(mktemp -d "${TMPDIR:-/tmp}/callisto-ref.XXXXXX")
+  [[ -n "$fixture" && -d "$fixture" ]] || { echo "mktemp -d failed" >&2; exit 1; }
   fixture=$(cd "$fixture" && pwd -P)
+  [[ -n "$fixture" && -d "$fixture" ]] || { echo "fixture directory missing" >&2; exit 1; }
   export GITHUB_WORKSPACE="$fixture/checkout with spaces" RUNNER_TEMP="$fixture/runner"
   export GITHUB_PATH="$fixture/github-path" GITHUB_ACTION_REF="$action_ref"
   export INPUT_CALLISTO_SOURCE="$source" INPUT_CALLISTO_VERSION="$version" INPUT_CALLISTO_VERIFICATION=skip

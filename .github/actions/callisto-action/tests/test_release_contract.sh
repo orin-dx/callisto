@@ -37,8 +37,9 @@ fi
 # and, when --receipt PATH is given, also writes $1 to PATH.
 run_release() {
   local receipt_json="$1" workdir output_file rc
-  workdir="$(mktemp -d)"
-  output_file="$(mktemp)"
+  workdir="$(mktemp -d "${TMPDIR:-/tmp}/callisto.XXXXXX")"
+  [[ -n "$workdir" && -d "$workdir" ]] || { echo "mktemp -d failed" >&2; exit 1; }
+  output_file="$(mktemp "${TMPDIR:-/tmp}/callisto.XXXXXX")"
   cat > "$workdir/callisto" <<STUB
 #!/usr/bin/env bash
 prev=''
@@ -85,7 +86,8 @@ else
 fi
 
 # The action passes publisher inputs to Callisto without mapping native tool auth process-wide.
-auth_dir="$(mktemp -d)"
+auth_dir="$(mktemp -d "${TMPDIR:-/tmp}/callisto.XXXXXX")"
+[[ -n "$auth_dir" && -d "$auth_dir" ]] || { echo "mktemp -d failed" >&2; exit 1; }
 auth_home="$auth_dir/home"
 auth_runner_temp="$auth_dir/runner-temp"
 auth_bin="$auth_dir/bin"

@@ -4,7 +4,8 @@
 # tuple allowlist and command selection on every workflow-contract change.
 set -euo pipefail
 
-root=$(mktemp -d)
+root=$(mktemp -d "${TMPDIR:-/tmp}/callisto.XXXXXX")
+[[ -n "$root" && -d "$root" ]] || { echo "mktemp -d failed" >&2; exit 1; }
 trap 'rm -rf "$root"' EXIT
 source_root="$root/source"
 bin_dir="$root/bin"
