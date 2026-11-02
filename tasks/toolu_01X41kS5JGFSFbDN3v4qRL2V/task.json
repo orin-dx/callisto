@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01X41kS5JGFSFbDN3v4qRL2V",
+  "agent_id": "a6a76901552888c79",
+  "subagent_type": "general-purpose",
+  "task_description": "Drift check REL-AUTH/ORD",
+  "token_usage": {
+    "input_tokens": 174,
+    "cache_creation_tokens": 219399,
+    "cache_read_tokens": 13011528,
+    "output_tokens": 44147,
+    "api_call_count": 87
+  },
+  "started_at": "2026-11-02T15:40:35.167428-08:00",
+  "completed_at": "2026-11-02T15:50:53.733596-08:00"
+}

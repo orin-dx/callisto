@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01E45her2ifVq5f2BM1SoEc4",
+  "agent_id": "a23bb32842d9cb99d",
+  "subagent_type": "general-purpose",
+  "task_description": "Drift check REL-RERUN/GH",
+  "token_usage": {
+    "input_tokens": 212,
+    "cache_creation_tokens": 245556,
+    "cache_read_tokens": 18759695,
+    "output_tokens": 50348,
+    "api_call_count": 106
+  },
+  "started_at": "2026-11-02T15:40:35.169453-08:00",
+  "completed_at": "2026-11-02T15:53:08.57361-08:00"
+}

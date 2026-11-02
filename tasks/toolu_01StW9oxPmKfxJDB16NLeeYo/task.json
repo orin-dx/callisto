@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01StW9oxPmKfxJDB16NLeeYo",
+  "agent_id": "a1786cdfb512d28ec",
+  "subagent_type": "scribe:drift-checker",
+  "task_description": "Spec drift: release.json",
+  "token_usage": {
+    "input_tokens": 92,
+    "cache_creation_tokens": 210399,
+    "cache_read_tokens": 3924714,
+    "output_tokens": 25911,
+    "api_call_count": 40
+  },
+  "started_at": "2026-11-02T15:38:23.613007-08:00",
+  "completed_at": "2026-11-02T15:40:39.265362-08:00"
+}

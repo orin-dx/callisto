@@ -1,0 +1,132 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6FB5NAS7E05JKS63JJSSFZ8",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-02T23:58:22.972688Z",
+  "branch": "fix/spec-drift-2026-11",
+  "checkpoints_count": 9,
+  "save_step_count": 5,
+  "files_touched": [
+    "crates/callisto-graph/src/error.rs",
+    "docs/errors.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "ef7e81101ba0",
+  "checkpoint_transcript_start": 2506,
+  "transcript_lines_at_start": 2506,
+  "compact_transcript_start": 216,
+  "token_usage": {
+    "input_tokens": 208,
+    "cache_creation_tokens": 122206,
+    "cache_read_tokens": 34631585,
+    "output_tokens": 54621,
+    "api_call_count": 100,
+    "subagent_tokens": {
+      "input_tokens": 1354,
+      "cache_creation_tokens": 2084719,
+      "cache_read_tokens": 101276084,
+      "output_tokens": 363952,
+      "api_call_count": 673
+    }
+  },
+  "redaction": {
+    "replacements": 25,
+    "layers": {
+      "betterleaks": 14,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 11,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 39
+  },
+  "summary": {
+    "intent": "Verify the 0.17.0 release and the #425 merge, clean up local and remote state, push checkpoints, then work through the unblocked next items: re-run spec-drift checks across the five specs and fix what they found, plus the E165 hint.",
+    "outcome": "callisto 0.17.0 was released and #425 merged. Five parallel agents checked the specs, and one commit on branch fix/spec-drift-2026-11 fixed the code drift, corrected the spec text, hardened the release-PR script and added changesets. The commit was made but not pushed, and the trail closing, the OIDC decisions and the VER-GRP-06 call remain open.",
+    "learnings": {
+      "repo": [
+        "Entire auto-pushes checkpoints, so `entire checkpoint list --outgoing` showed nothing waiting.",
+        "The tool's own `status --check` validates changesets before commit; user-visible fixes in the crates need a `.changeset/*.md` file.",
+        "runner.rs filters environment per tool but passes the OIDC variables to npm, pnpm, yarn and bun. run-release.sh writes the temporary npm config's NPM_TOKEN line only when the token is non-empty, so OIDC trusted publishing is not blocked.",
+        "The #290 guard gaps are already closed: version_commit.rs now compares tree content and the git log has no 100-commit cap.",
+        "Spec-drift rates fell from about 14% in the 2026-10-20 review to roughly 8% (20 of 253 criteria) in this run. Most drift was wrong spec text rather than code bugs.",
+        "The subagents ran the prebuilt target/debug/callisto (built 13:13) against throwaway git fixtures. Targeted `cargo test --lib` runs were done one at a time so that binary was not replaced.",
+        "Calls to external systems such as closing Entire trails are blocked by the permission classifier, so they must be left to the user or explicitly allowed."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/commands/completions.rs",
+          "line": 31,
+          "end_line": 35,
+          "finding": "`visible_only` rebuilds commands with `Command::new`, which drops `disable_help_subcommand`, so generated completions offered a `help` subcommand the CLI rejects (CLI-SURF-06)."
+        },
+        {
+          "path": "crates/callisto-cli/src/render/mod.rs",
+          "line": 126,
+          "end_line": 146,
+          "finding": "`render_init` never rendered `report.diagnostics`, so the `changesets-config-key-dropped` warnings appeared only in JSON output (CLI-INIT-14)."
+        },
+        {
+          "path": "crates/callisto-graph/src/locate/ignore_walk.rs",
+          "line": 204,
+          "finding": "The discovery walk reads the root package.json raw, so a leading BOM makes `npm_declares_private` fail to parse and a private, versionless root is listed as a package (E013). Membership reading strips the BOM at locate/membership.rs:10-21."
+        },
+        {
+          "path": "crates/callisto-manifests/src/cargo.rs",
+          "line": 596,
+          "end_line": 642,
+          "finding": "`write_version` deliberately writes an inherited version into the member's own [package] rather than [workspace.package], to avoid changing every other member. Only dependency spec rewrites go to the workspace manifest."
+        },
+        {
+          "path": "crates/callisto-graph/src/groups.rs",
+          "line": 110,
+          "finding": "The fixed-group regression check compares only against the released member's base (alignment base at groups.rs:132-143), so an untagged member can silently move backwards, e.g. 2.7.3 to 1.4.1 (VER-GRP-06). VER-GRP-01 contradicts VER-GRP-06 here."
+        },
+        {
+          "path": "crates/callisto-graph/src/error.rs",
+          "line": 294,
+          "end_line": 307,
+          "finding": "The E114 and E115 messages hardcoded `.changeset/pre.json`, ignoring a custom `[changesets] dir`. E115 was given a path field passed at three call sites (two in version.rs, one in release_pr.rs)."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/status.rs",
+          "line": 269,
+          "end_line": 285,
+          "finding": "A colon-form package name in a changeset makes plain `status` fail with E316 and exit 1 instead of emitting the InvalidPackageName diagnostic. status_version_selector_tests.rs:195-212 asserts this, so it is intentional and the spec was changed."
+        }
+      ],
+      "workflow": [
+        "Splitting the read-only spec-drift investigation across one parallel agent per spec worked well. Hand-backs are model output, so each was summarized and the fixes sorted into code bugs versus spec corrections.",
+        "Collecting all drift reports before fixing allowed a single PR and a consistent split between code and spec corrections.",
+        "Use `/usr/bin/git`, `python3 -I`, `shellcheck`, `cargo fmt --check` and `cargo clippy -D warnings` as final gates before committing."
+      ]
+    },
+    "friction": [
+      "The permission classifier blocked bulk-closing the 15 Entire trails because it counts as an external write.",
+      "The agents could not confirm which checkout built target/debug/callisto, so their runtime evidence was strong but not final.",
+      "The sandbox blocks github.com, so a successful workflow write in `init` could not be run live.",
+      "The spec-drift agents' counts and the transcript's tallies were inconsistent (e.g. workspace.json has 39 criteria, not 44), so totals needed care.",
+      "Several worktrees and branches could not be cleaned up without the user's say-so."
+    ],
+    "open_items": [
+      "Close the 15 merged callisto trails (#129, #139, #141-#148, #151, #152, #159, #160, #163) and #162 once the hold workflow's draft-and-restore path has run.",
+      "Decide VER-GRP-06: raise E207 against every member's on-disk version (code) or document that untagged members may move back to the released member's line (spec).",
+      "OIDC trusted publishing needs the user's decisions on the config shape (callisto.toml switch versus generated-workflow option) and on whether Callisto's own release workflow may hold `id-token: write` on `execute`.",
+      "Fix the private workspace root listed as a package; needs the user's choice of exclusion shape.",
+      "Add the missing test assertions: MX-OUT-02, MX-ERR-06, MX-ERR-07, MX-DISC-02, WS-ID-08 (E101), WS-ID-09 (E007) and VER-CS-03 (BOM and lone CR).",
+      "Push the fix/spec-drift-2026-11 commit, open its PR and wait for CI. The release.json agent's report had not arrived when the spec corrections were applied.",
+      "Leave for the user: the `smoke-main`, `wf_cd627354`, `callisto-homebrew-tap` and `entire-hooks-update` worktrees and the `stack/docs-v1` branch.",
+      "Investigate the unexplained `uses: $/.github/...` lines in the workflows.",
+      "Optional: bisect the 20 ms slowdown at 400 packages.",
+      "Verify the new Hold release PR workflow's draft-and-restore path on the next release PR refresh."
+    ]
+  }
+}

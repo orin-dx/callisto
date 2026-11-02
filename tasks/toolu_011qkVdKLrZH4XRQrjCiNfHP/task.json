@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_011qkVdKLrZH4XRQrjCiNfHP",
+  "agent_id": "aa028116bc887c47d",
+  "subagent_type": "general-purpose",
+  "task_description": "Drift check REL-PUB",
+  "token_usage": {
+    "input_tokens": 166,
+    "cache_creation_tokens": 268157,
+    "cache_read_tokens": 15951480,
+    "output_tokens": 35599,
+    "api_call_count": 83
+  },
+  "started_at": "2026-11-02T15:40:35.167433-08:00",
+  "completed_at": "2026-11-02T15:47:50.943431-08:00"
+}
