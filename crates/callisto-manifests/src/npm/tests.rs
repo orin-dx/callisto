@@ -1046,6 +1046,15 @@ fn npm_declares_private_reads_the_private_field() {
     assert!(!npm_declares_private("not json"));
 }
 
+// A root package.json that starts with a byte-order mark is still private, or discovery would list it as a package.
+#[test]
+fn a_leading_byte_order_mark_does_not_hide_the_private_field_or_the_platform_role() {
+    assert!(npm_declares_private("\u{feff}{\"name\":\"root\",\"private\":true}"));
+    let platform = "\u{feff}{\"name\":\"p\",\"os\":[\"linux\"],\"cpu\":[\"x64\"]}";
+    assert_eq!(npm_role_from_source(platform), npm_role_from_source(&platform[3..]));
+    assert!(npm_role_from_source(platform).is_some());
+}
+
 /// Tab-indented package.json files must have their indentation preserved after a
 /// version write. This catches regressions where the CST editor re-serializes with
 /// two-space indentation instead of the original tab characters.

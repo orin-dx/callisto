@@ -85,6 +85,11 @@ gh() {
   fi
   case "$1 $2" in
     'pr list')
+      if [[ -n "$PR_LIST_FAIL_AFTER" ]]; then
+        local listed=$(( $(cat "$PR_LIST_COUNT_FILE" 2>/dev/null || echo 0) + 1 ))
+        echo "$listed" > "$PR_LIST_COUNT_FILE"
+        if [[ "$listed" -gt "$PR_LIST_FAIL_AFTER" ]]; then echo 'gh: HTTP 403: forbidden' >&2; return 4; fi
+      fi
       if [[ -s "$STALE_FILE" && "$(cat "$STALE_FILE")" -gt 0 ]]; then
         echo $(( $(cat "$STALE_FILE") - 1 )) > "$STALE_FILE"
         printf '%s\n' "$STALE_PR_LIST"
@@ -166,6 +171,7 @@ STUBS
     STALE_READS="${STALE_READS:-0}" STALE_FILE="$stale_file" \
     TRANSIENT_ON="${TRANSIENT_ON:-}" TRANSIENT_FAILS="${TRANSIENT_FAILS:-0}" TRANSIENT_FILE="$transient_file" \
     TRANSIENT_MESSAGE="${TRANSIENT_MESSAGE:-}" IS_DRAFT="${IS_DRAFT:-false}" \
+    PR_LIST_FAIL_AFTER="${PR_LIST_FAIL_AFTER:-}" PR_LIST_COUNT_FILE="$transient_file.prlist" \
     BASE_TIP="${BASE_TIP:-0123456789abcdef0123456789abcdef01234567}" \
     REQUIRE_APPLIED_HEAD="${REQUIRE_APPLIED_HEAD:-false}" \
     STAGING_PATCH_CODE="${STAGING_PATCH_CODE:-0}" GRAPHQL_CODE="${GRAPHQL_CODE:-0}" \
@@ -191,7 +197,7 @@ STUBS
   cat "$calls_file"
   printf '%s\n' '---outputs---'
   cat "$output_file"
-  rm -f "$calls_file" "$output_file" "$harness" "$verify_count_file" "$stale_file" "$transient_file"
+  rm -f "$calls_file" "$output_file" "$harness" "$verify_count_file" "$stale_file" "$transient_file" "$transient_file.prlist"
 }
 
 default_new_sha='deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
@@ -236,7 +242,7 @@ if [[ "$output" != 0$'\n'* ]] \
   || [[ "$output" != *'gh api graphql'* ]] \
   || [[ "$output" != *"gh api -X POST repos/orin-dx/callisto/git/refs -f ref=refs/heads/callisto/version-packages -f sha=$default_new_sha"* ]] \
   || [[ "$output" != *"gh api -X DELETE repos/orin-dx/callisto/git/refs/heads/callisto/version-packages--staging"* ]] \
-  || [[ "$output" != *'gh pr create --head callisto/version-packages --base main'* ]] \
+  || [[ "$output" != *'gh pr create --draft --head callisto/version-packages --base main'* ]] \
   || [[ "$output" != *'--label callisto: release'* ]] \
   || [[ "$output" == *'git push'* ]] \
   || [[ "$output" == *'nativeMatrix'* ]]; then
@@ -463,13 +469,39 @@ else
   echo 'PASS: a ready release PR built from an older tip is drafted'
 fi
 
+IS_DRAFT=true
 output="$(run_case '[]' "$create")"
+unset IS_DRAFT
 if [[ "$output" != 0$'\n'* ]] \
-  || [[ "$output" == *'gh pr ready'* ]]; then
-  echo "FAIL: a new release PR built from the current tip needs no ready call: $output"
+  || [[ "$output" != *'gh pr ready 99'* ]]; then
+  echo "FAIL: a new release PR is created as a draft and marked ready once built from the current tip: $output"
   fail=1
 else
-  echo 'PASS: a new release PR built from the current tip needs no ready call'
+  echo 'PASS: a new release PR is created as a draft and marked ready from the current tip'
+fi
+
+BASE_TIP='ffffffffffffffffffffffffffffffffffffffff'
+IS_DRAFT=true
+output="$(run_case '[]' "$create")"
+unset BASE_TIP IS_DRAFT
+if [[ "$output" != 0$'\n'* ]] \
+  || [[ "$output" == *'gh pr ready'* ]]; then
+  echo "FAIL: a new release PR built from an older tip must stay a draft: $output"
+  fail=1
+else
+  echo 'PASS: a new release PR built from an older tip stays a draft'
+fi
+
+# A failed read of the open PRs stops the action with gh's own status, even where the snapshot is an argument.
+PR_LIST_FAIL_AFTER=1
+output="$(run_case '[]' "$create")"
+unset PR_LIST_FAIL_AFTER
+if [[ "$output" != 4$'\n'* ]] \
+  || [[ "$output" == *'gh api -X PATCH'*'--staging'* ]]; then
+  echo "FAIL: a failed PR read before verification must stop the action with gh's own status before any write: $output"
+  fail=1
+else
+  echo 'PASS: a failed PR read before verification fails the action'
 fi
 
 # A transient GitHub error on the commit mutation is retried, and each retry first puts the staging branch back on the base commit.

@@ -28,9 +28,11 @@ fn visible_only(cmd: &Command) -> Command {
     // The source command already carries its built-in --help/--version args
     // (cloned below via `get_arguments`); without disabling auto-injection,
     // clap's `build()` would add a second --help and panic on the duplicate.
+    // `Command::new` forgets `disable_help_subcommand`, and clap would add `help` back to every level.
     let mut out = Command::new(cmd.get_name().to_owned())
         .disable_help_flag(true)
         .disable_version_flag(true)
+        .disable_help_subcommand(true)
         .args(cmd.get_arguments().cloned());
     if let Some(about) = cmd.get_about() {
         out = out.about(about.clone());
@@ -78,6 +80,21 @@ mod tests {
         generate(clap_complete::Shell::Bash, &mut cmd, "callisto", &mut buf);
         let script = String::from_utf8(buf).unwrap();
         assert!(script.contains("callisto"), "got:\n{script}");
+    }
+
+    fn names_a_help_subcommand(cmd: &Command) -> bool {
+        cmd.get_subcommands()
+            .any(|sub| sub.get_name() == "help" || names_a_help_subcommand(sub))
+    }
+
+    /// `callisto pre help` and `callisto release help` do not parse, so completions must not offer `help` either.
+    #[test]
+    fn completions_offer_no_help_subcommand_at_any_depth() {
+        let mut source = Cli::command();
+        source.build();
+        let mut cmd = visible_only(&source);
+        cmd.build();
+        assert!(!names_a_help_subcommand(&cmd));
     }
 
     /// Completions must not offer hidden plumbing subcommands, at any nesting

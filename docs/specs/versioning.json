@@ -40,7 +40,7 @@
     },
     {
       "id": "VER-CS-04",
-      "criterion": "Parsing fails with E040 when line 1 is not `---`, E041 when the frontmatter is never closed, and E055 when there are entries but the summary is empty or whitespace-only. A changeset with no entries and no summary (the shape `@changesets/cli add --empty` writes) parses as a valid, empty changeset.",
+      "criterion": "Parsing fails with E040 when line 1 is not `---`, E041 when the frontmatter is never closed, and E055 when there are entries but the summary is empty or whitespace-only. A changeset with no entries and no summary (the shape `@changesets/cli add --empty` writes) parses as a valid, empty changeset. `callisto version` reports every parse failure as E210 naming the file and the parse error; the specific code is on the library error only.",
       "is_error_case": true
     },
     {
@@ -122,7 +122,7 @@
     },
     {
       "id": "VER-CAS-09",
-      "criterion": "A Python dependency range on a package released with its dependent is rewritten to cover the new version: `==`, `~=` and `>=` keep their operator; a two-clause `>=X,<Y` range becomes `>=NEW` with an upper bound one minor above NEW when the original spanned a single minor (`>=0.1.0,<0.2`) and the next major otherwise; and a Poetry caret or tilde becomes the equivalent PEP 440 range around NEW. A pre-release target is not written into a caret or tilde, and any other form is left unchanged with a `range-not-round-trippable` warning.",
+      "criterion": "A Python dependency range on a package released with its dependent is rewritten to cover the new version: `==`, `~=` and `>=` keep their operator; a two-clause `>=X,<Y` range becomes `>=NEW` with an upper bound one minor above NEW when the original spanned a single minor (`>=0.1.0,<0.2`) and the next major otherwise; and a Poetry caret or tilde becomes the equivalent PEP 440 range around NEW. A pre-release target is not written into a caret or tilde. A spec that still covers the new version but cannot be raised is left unchanged without a diagnostic (VER-CAS-06); a runtime, optional, build or peer spec that does not cover it fails with E319; only a development dependency spec that cannot be rewritten is left unchanged with a `range-not-round-trippable` warning.",
       "is_error_case": false
     },
     {
@@ -136,12 +136,12 @@
     },
     {
       "id": "VER-GRP-02",
-      "criterion": "A fixed group whose released members have different on-disk versions aborts the run with E106, one whose released members use different version grammars (or whose untagged members do) aborts with E107, one whose released member has no on-disk base version aborts with E205, and one with no live member carrying a base version aborts with E206. A member that is not a workspace package is dropped with a warning before alignment, so E205 and E206 are defensive checks behind that filter.",
+      "criterion": "A fixed group whose released members have different on-disk versions aborts the run with E106, one whose released members use different version grammars (or whose untagged members do) aborts with E107, one whose released member has no on-disk base version aborts with E205, and one with no live member carrying a base version aborts with E206. A group member that is not a workspace package aborts the run with E108 when the group is loaded, so E205 and E206 are defensive checks.",
       "is_error_case": true
     },
     {
       "id": "VER-GRP-06",
-      "criterion": "A computed bump — for a single package or a fixed group's shared target — that would sort behind the version it was bumped from aborts the run with E207 instead of writing the regressed version to disk.",
+      "criterion": "A computed bump — for a single package or a fixed group's shared target — that would sort behind the version it was bumped from aborts the run with E207 instead of writing the regressed version to disk. A fixed group's version is judged against its alignment base (VER-GRP-01), so an untagged member that has never been released moves onto the released member's line even when its own on-disk version is higher.",
       "is_error_case": true
     },
     {

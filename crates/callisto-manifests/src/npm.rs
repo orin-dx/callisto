@@ -240,7 +240,7 @@ pub fn napi_binary_name(val: &Value) -> String {
 /// `npm_role_from_doc` over raw `package.json` source, for callers (workspace
 /// discovery) that have not opened a manifest handle. `None` on invalid JSON.
 pub fn npm_role_from_source(source: &str) -> Option<NpmRole> {
-    match serde_json::from_str::<Value>(source).ok()? {
+    match serde_json::from_str::<Value>(without_bom(source)).ok()? {
         Value::Object(doc) => npm_role_from_doc(&doc),
         _ => None,
     }
@@ -249,10 +249,15 @@ pub fn npm_role_from_source(source: &str) -> Option<NpmRole> {
 /// True when raw `package.json` `source` sets `"private": true`. `false` on
 /// invalid JSON or an absent/non-true `private` field.
 pub fn npm_declares_private(source: &str) -> bool {
-    match serde_json::from_str::<Value>(source).ok() {
+    match serde_json::from_str::<Value>(without_bom(source)).ok() {
         Some(Value::Object(doc)) => doc.get("private").and_then(Value::as_bool).unwrap_or(false),
         _ => false,
     }
+}
+
+/// `package.json` source without a leading byte-order mark, which every other reader of the file ignores.
+fn without_bom(source: &str) -> &str {
+    source.strip_prefix('\u{feff}').unwrap_or(source)
 }
 
 fn npm_role_from_doc(doc: &Map<String, Value>) -> Option<NpmRole> {
