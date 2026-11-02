@@ -1,5 +1,6 @@
 //! The one changelog-section reader behind release notes.
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use callisto_model::Version;
@@ -75,11 +76,30 @@ fn entries(section: &str) -> Vec<String> {
     entries.iter().map(|entry| entry.trim_end().to_owned()).collect()
 }
 
+/// The section with its group boilerplate bullets removed; every other line is kept as written.
+fn without_boilerplate(section: &str) -> String {
+    let mut kept: Vec<&str> = Vec::new();
+    let mut skipping = false;
+    for line in section.lines() {
+        if is_group_boilerplate(line) {
+            skipping = true;
+        } else if skipping && line.starts_with(' ') {
+            continue;
+        } else {
+            skipping = false;
+            if !(line.is_empty() && kept.last().is_none_or(|last| last.is_empty())) {
+                kept.push(line);
+            }
+        }
+    }
+    kept.join("\n").trim().to_owned()
+}
+
 /// Release notes for a package in a fixed group: its own changelog section, then the entries that the group's other
 /// members recorded for the same version, each marked with the member it came from. The group is released as one
 /// unit, so a change recorded against a member that owns no release still belongs in the release's notes. An entry
 /// that is only the group boilerplate, or that the notes already hold, is left out. With no entry from another member
-/// the notes are exactly [`release_notes`].
+/// the notes are exactly [`release_notes`], and a package with no section of its own gets generated notes.
 ///
 /// # Errors
 ///
@@ -91,10 +111,14 @@ pub(crate) fn group_release_notes(
     version: &Version,
 ) -> Result<ReleaseNotes, GraphError> {
     let own = release_notes(root, changelog, version)?;
-    let text = match &own {
-        ReleaseNotes::Section(section) => section.clone(),
-        ReleaseNotes::Generated { .. } => String::new(),
+    let ReleaseNotes::Section(text) = &own else {
+        return Ok(own);
     };
+    let mut seen: HashSet<String> = entries(text)
+        .iter()
+        .filter_map(|entry| entry.strip_prefix("- "))
+        .map(str::to_owned)
+        .collect();
     let mut extra = Vec::new();
     for (name, member_changelog) in members {
         let Ok(section) = changelog_section(root, member_changelog, version)? else {
@@ -104,10 +128,7 @@ pub(crate) fn group_release_notes(
             let Some(body) = entry.strip_prefix("- ") else {
                 continue;
             };
-            if is_group_boilerplate(&entry)
-                || text.contains(body)
-                || extra.iter().any(|seen: &String| seen.contains(body))
-            {
+            if is_group_boilerplate(&entry) || !seen.insert(body.to_owned()) {
                 continue;
             }
             extra.push(format!("- `{name}`: {body}"));
@@ -116,12 +137,17 @@ pub(crate) fn group_release_notes(
     if extra.is_empty() {
         return Ok(own);
     }
-    let mut kept: Vec<String> = entries(&text)
-        .into_iter()
-        .filter(|entry| !is_group_boilerplate(entry))
-        .collect();
-    kept.extend(extra);
-    Ok(ReleaseNotes::Section(kept.join("\n")))
+    let kept = without_boilerplate(text);
+    let extra = extra.join("\n");
+    let ends_in_list = kept
+        .lines()
+        .last()
+        .is_none_or(|last| last.starts_with("- ") || last.starts_with(' '));
+    Ok(ReleaseNotes::Section(match (kept.is_empty(), ends_in_list) {
+        (true, _) => extra,
+        (false, true) => format!("{kept}\n{extra}"),
+        (false, false) => format!("{kept}\n\n{extra}"),
+    }))
 }
 
 #[cfg(test)]
@@ -261,16 +287,48 @@ mod tests {
         );
     }
 
-    /// An owner with no changelog section still gets the group's entries rather than generated notes.
+    /// An owner with no changelog section gets generated notes, not its mates' entries.
     #[test]
-    fn an_owner_without_a_section_takes_the_mates_entries() {
+    fn an_owner_without_a_section_gets_generated_notes() {
+        let mate = Some("## 1.0.0\n\n- B gets a feature.\n");
+        assert_eq!(
+            group_notes(&[("cargo/a", Some("## 0.9.0\n\n- old\n")), ("cargo/b", mate)]),
+            generated(NotesFallback::SectionMissing)
+        );
+        assert_eq!(
+            group_notes(&[("cargo/a", None), ("cargo/b", mate)]),
+            generated(NotesFallback::FileMissing)
+        );
+    }
+
+    #[test]
+    fn the_owners_headings_and_paragraphs_survive_a_mates_entries() {
+        let owner = "## 1.0.0\n\nIntro paragraph.\n\n### Fixes\n\n- A fix.\n- Released together with the `lockstep` \
+                     fixed group.\n\nClosing words.\n";
         let notes = group_notes(&[
-            ("cargo/a", None),
+            ("cargo/a", Some(owner)),
             ("cargo/b", Some("## 1.0.0\n\n- B gets a feature.\n")),
         ]);
         assert_eq!(
             notes,
-            ReleaseNotes::Section("- `cargo/b`: B gets a feature.".to_owned())
+            ReleaseNotes::Section(
+                "Intro paragraph.\n\n### Fixes\n\n- A fix.\n\nClosing words.\n\n- `cargo/b`: B gets a feature."
+                    .to_owned()
+            )
+        );
+    }
+
+    /// An entry that only appears inside a longer entry, or a longer one, is still its own entry.
+    #[test]
+    fn only_an_identical_entry_counts_as_already_held() {
+        let notes = group_notes(&[
+            ("cargo/a", Some("## 1.0.0\n\n- Fix the parser crash.\n")),
+            ("cargo/b", Some("## 1.0.0\n\n- Fix\n- Fix the parser crash.\n")),
+            ("cargo/c", Some("## 1.0.0\n\n- the parser\n- Fix\n")),
+        ]);
+        assert_eq!(
+            notes,
+            ReleaseNotes::Section("- Fix the parser crash.\n- `cargo/b`: Fix\n- `cargo/c`: the parser".to_owned())
         );
     }
 }
