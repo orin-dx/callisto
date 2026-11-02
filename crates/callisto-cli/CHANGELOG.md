@@ -1,5 +1,23 @@
 # callisto-cli
 
+## 0.17.0
+
+- `release execute` given a manifest that seals Python files but no `--artifact-dir` now asks for the directory (E233) instead of telling you to drop both flags (E232).
+- `release-pr commit-plan` now fails if a Git filter such as CRLF conversion changes a staged file's bytes, and rejects a staged symlink or submodule.
+- A duration such as `confirm-timeout = "5é"` now fails with a clear error instead of crashing.
+- `callisto version --emit-decision` no longer fails when a dependent is bumped because of a package published to both crates.io and npm.
+- A Git failure while inferring versions from commits now stops `version` and names the failing command, instead of being skipped.
+- A fixed-group package with no changelog section now gets generated release notes instead of borrowing the other members' entries.
+- When other group members add entries to a release's notes, the package's own headings and paragraphs are kept, and a short entry is no longer dropped because it appears inside a longer one.
+- With `--format json`, `error.path` now holds the file for init, apply, artifact, release-input and config errors that name one.
+- A `[[package]]` or `[[package-set]]` `match` with a prefix other than `cargo/`, `npm/` or `pypi/` is now an error (E317).
+- `pre exit` and `pre enter` now report E114, not E212, for a baseline that is not a valid version.
+- Confirming a PyPI upload now stops at the registry's confirmation window, even when the index keeps asking to retry later.
+- The release action's `pending_pr_label` input is removed; merged releases are found with `callisto release pending`, so nothing sets or reads that label. Delete the input from your workflow if you pass it.
+- The setup action now fails, instead of installing the latest release, when it cannot list release tags to resolve its pinned version.
+- `callisto status --check --strict` now fails on the same warnings as `callisto version --strict`, such as a napi target missing from its fixed group. Without `--strict` they stay warnings.
+- A pnpm `workspace:*` dependency that matches no workspace package now warns instead of staying silent.
+
 ## 0.16.0
 
 - Pinning a version over `version.workspace = true` keeps the comment above that line and the one after it.
