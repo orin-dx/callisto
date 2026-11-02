@@ -46,6 +46,8 @@ struct World {
     fail_upload_after: Option<usize>,
     /// Uploads whose stored digest differs from the sent bytes.
     corrupt_uploads: bool,
+    /// Reads answer 503 and ask for a five-minute wait.
+    unavailable: bool,
     calls: Vec<String>,
     uploads: Vec<Vec<String>>,
     /// The `SOURCE_DATE_EPOCH` each build ran with.
@@ -129,6 +131,9 @@ impl PypiRunner {
         match program {
             "git" => ok("1700000000\n"),
             "curl" => {
+                if world.unavailable {
+                    return ok("HTTP/2 503 Service Unavailable\r\nretry-after: 300\r\n\r\n");
+                }
                 if world.lag > 0 {
                     world.lag -= 1;
                 } else {
@@ -534,6 +539,49 @@ fn the_index_catching_up_after_an_upload_is_waited_for() {
     let confirmed = publish_and_confirm(&run, &runner).unwrap();
     assert!(confirmed.is_terminal_success(), "{confirmed:?}");
     assert!(!run.sleeper.waits().is_empty(), "the confirmation waited for the index");
+}
+
+#[test]
+fn an_index_that_keeps_asking_for_long_waits_is_given_up_on_at_the_confirmation_window() {
+    let run = Run::new();
+    let runner = PypiRunner::new(&BUILD);
+    let mut operation = operation();
+    operation.registry.confirm_timeout = Some(std::time::Duration::from_secs(90));
+    let context = run.context(&runner);
+    PypiRegistry
+        .publish(&context, &id(&operation), &operation, None)
+        .unwrap();
+    runner.0.lock().unwrap().unavailable = true;
+    let confirmed = PypiRegistry
+        .confirm(&context, &id(&operation), &operation, None)
+        .unwrap();
+    assert!(
+        matches!(confirmed, ProviderObservationV1::Indeterminate { .. }),
+        "{confirmed:?}"
+    );
+    assert_eq!(
+        run.sleeper.waits().iter().sum::<std::time::Duration>(),
+        std::time::Duration::from_secs(90)
+    );
+}
+
+#[test]
+fn a_look_with_little_patience_does_not_wait_out_a_long_retry_after() {
+    let run = Run::new();
+    let runner = PypiRunner::new(&BUILD).with(|world| world.unavailable = true);
+    let operation = operation();
+    let context = run.context(&runner).with_patience(std::time::Duration::from_secs(1));
+    let error = PypiRegistry
+        .preflight(&context, &id(&operation), &operation, None)
+        .unwrap_err();
+    assert!(
+        matches!(error, GraphError::ReleaseProviderIndeterminate { .. }),
+        "{error:?}"
+    );
+    assert_eq!(
+        run.sleeper.waits().iter().sum::<std::time::Duration>(),
+        std::time::Duration::from_secs(1)
+    );
 }
 
 #[test]

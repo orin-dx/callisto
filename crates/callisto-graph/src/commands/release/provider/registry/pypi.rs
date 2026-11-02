@@ -204,16 +204,24 @@ impl PypiRegistry {
         )
     }
 
+    /// One look at the release's files on the index.
+    fn remote_once(
+        context: &ProviderContext<'_>,
+        operation: &RegistryPublishOperation,
+    ) -> Result<Attempt<PypiRemote>, GraphError> {
+        Ok(match Self::fetch_once(context, operation)? {
+            Ok(output) => classify_pypi_files(&output, &operation.version),
+            Err(_unavailable) => Attempt::Transient {
+                value: PypiRemote::Indeterminate(ProviderIndeterminateCause::CommandFailed),
+                retry_after: None,
+            },
+        })
+    }
+
     /// The release's files on the index, retried on a transient failure.
     fn remote(context: &ProviderContext<'_>, operation: &RegistryPublishOperation) -> Result<PypiRemote, GraphError> {
-        policy::retry_observation(context.sleeper(), || {
-            Ok(match Self::fetch_once(context, operation)? {
-                Ok(output) => classify_pypi_files(&output, &operation.version),
-                Err(_unavailable) => Attempt::Transient {
-                    value: PypiRemote::Indeterminate(ProviderIndeterminateCause::CommandFailed),
-                    retry_after: None,
-                },
-            })
+        policy::retry_observation_within(context.sleeper(), context.patience(), || {
+            Self::remote_once(context, operation)
         })
     }
 
@@ -443,8 +451,8 @@ impl RegistryEcosystem for PypiRegistry {
         artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<ProviderObservationV1, GraphError> {
         let set = Self::built_set(context, id, operation, artifacts)?;
-        let observe = || -> Result<ProviderObservationV1, GraphError> {
-            Ok(match Self::remote(context, operation)? {
+        let observed = |remote: PypiRemote| -> Result<ProviderObservationV1, GraphError> {
+            Ok(match remote {
                 PypiRemote::Indeterminate(cause) => ProviderObservationV1::Indeterminate { cause },
                 PypiRemote::Absent => ProviderObservationV1::Absent,
                 PypiRemote::Files(remote) => {
@@ -465,6 +473,14 @@ impl RegistryEcosystem for PypiRegistry {
                 }
             })
         };
-        policy::observe_within_window(context.sleeper(), visibility_window(self, operation), observe)
+        policy::observe_within_window(context.sleeper(), visibility_window(self, operation), || {
+            Ok(match Self::remote_once(context, operation)? {
+                Attempt::Settled(remote) => Attempt::Settled(observed(remote)?),
+                Attempt::Transient { value, retry_after } => Attempt::Transient {
+                    value: observed(value)?,
+                    retry_after,
+                },
+            })
+        })
     }
 }
