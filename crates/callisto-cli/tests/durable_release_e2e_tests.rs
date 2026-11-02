@@ -1463,6 +1463,44 @@ done
     }
 
     #[test]
+    fn a_sealed_manifest_without_its_directory_asks_for_the_directory_and_one_sealing_nothing_is_refused() {
+        let (dir, revision) = release_fixture();
+        let external = tempfile::tempdir().unwrap();
+        let intent_path = external.path().join("intent.json");
+        let result = plan(dir.path(), &revision, &intent_path);
+        assert!(result.status.success(), "Python plan failed: {}", stderr_of(&result));
+        let rig = python_publishers(external.path(), &revision);
+        let artifacts = external.path().join("artifacts");
+        fs::create_dir(&artifacts).unwrap();
+        let manifest = external.path().join("manifest.json");
+        build_and_seal(dir.path(), &rig, &intent_path, &artifacts, &manifest);
+        let receipt = external.path().join("receipt.json");
+
+        let manifest_only = ["--artifact-manifest", manifest.to_str().unwrap()];
+        let run = execute_rig(dir.path(), &intent_path, &receipt, &rig, TAG, &manifest_only, None);
+        assert!(!run.status.success());
+        assert_eq!(diagnostic_codes(&run), ["E233"], "{}", stderr_of(&run));
+
+        let mut sealed: serde_json::Value = serde_json::from_slice(&fs::read(&manifest).unwrap()).unwrap();
+        sealed.as_object_mut().unwrap().remove("distributions");
+        let empty = external.path().join("empty-manifest.json");
+        fs::write(&empty, serde_json::to_vec(&sealed).unwrap()).unwrap();
+        let args = [
+            "--artifact-manifest",
+            empty.to_str().unwrap(),
+            "--artifact-dir",
+            artifacts.to_str().unwrap(),
+        ];
+        let run = execute_rig(dir.path(), &intent_path, &receipt, &rig, TAG, &args, None);
+        assert!(!run.status.success());
+        assert_eq!(diagnostic_codes(&run), ["E232"], "{}", stderr_of(&run));
+
+        assert!(!receipt.exists());
+        let calls = fs::read_to_string(external.path().join("pypi-calls.log")).unwrap_or_default();
+        assert_eq!(calls.lines().filter(|line| line.starts_with("twine ")).count(), 0);
+    }
+
+    #[test]
     fn a_sealed_release_resumes_with_the_same_files_after_a_partial_upload() {
         let (dir, revision) = release_fixture();
         let external = tempfile::tempdir().unwrap();

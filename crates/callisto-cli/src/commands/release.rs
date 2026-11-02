@@ -643,24 +643,15 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
     let sealed_python = manifest
         .as_ref()
         .is_some_and(|manifest| !manifest.distributions.is_empty());
-    let verified_artifacts = match (
-        intent.artifact_slots.is_empty(),
-        manifest.as_ref(),
-        args.artifact_dir.as_deref(),
-    ) {
-        (true, None, None) => None,
-        (false, Some(manifest), Some(directory)) | (true, Some(manifest), Some(directory))
-            if sealed_python || !intent.artifact_slots.is_empty() =>
-        {
+    let needs_artifacts = sealed_python || !intent.artifact_slots.is_empty();
+    let verified_artifacts = match (manifest.as_ref(), args.artifact_dir.as_deref()) {
+        (None, None) if !needs_artifacts => None,
+        (Some(manifest), Some(directory)) if needs_artifacts => {
             let runner = CliCommandRunner;
             Some(verify_artifact_manifest(&intent, manifest, directory, &runner)?)
         }
-        (true, _, _) => {
-            return Err(CliError::ReleaseUnexpectedArtifactInputs);
-        }
-        (false, _, _) => {
-            return Err(CliError::ReleaseMissingArtifactInputs);
-        }
+        _ if needs_artifacts => return Err(CliError::ReleaseMissingArtifactInputs),
+        _ => return Err(CliError::ReleaseUnexpectedArtifactInputs),
     };
     // The run envelope is minted and cross-checked here, before the first
     // effect, and is then the single authority for every fact it carries.

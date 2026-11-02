@@ -155,6 +155,72 @@ fn test_status_check_ambiguous_bare_name_reports_diagnostic_not_hard_error() {
     );
 }
 
+/// A fixed group whose package declares a napi target the group lacks: `version` warns about it.
+fn setup_napi_target_drift_git_repo() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    callisto_fixtures::git::init_repo(root);
+    callisto_fixtures::scaffold_callisto(root);
+    fs::create_dir_all(root.join("my-lib/src")).unwrap();
+    fs::write(
+        root.join("my-lib/Cargo.toml"),
+        "[package]\nname = \"my-lib\"\nversion = \"1.0.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    fs::write(root.join("my-lib/src/lib.rs"), "\n").unwrap();
+    fs::write(
+        root.join("my-lib/package.json"),
+        "{\"name\":\"my-lib\",\"napi\":{\"targets\":[\"aarch64-apple-darwin\"]}}",
+    )
+    .unwrap();
+    fs::write(
+        root.join("callisto.toml"),
+        "[[fixed-group]]\nname = \"solo\"\nmembers = [\"cargo/my-lib\"]\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join(".changeset/bump.md"),
+        "---\ncargo/my-lib: patch\n---\n\nFix it.\n",
+    )
+    .unwrap();
+    callisto_fixtures::git::run_git(root, &["add", "."]);
+    callisto_fixtures::git::run_git(root, &["commit", "-q", "-m", "initial workspace"]);
+    dir
+}
+
+#[test]
+fn test_status_check_strict_fails_on_a_napi_target_warning_that_check_alone_passes() {
+    let dir = setup_napi_target_drift_git_repo();
+    let global = global(dir.path());
+
+    assert_eq!(
+        commands::status::handle(check_args(), &global).unwrap(),
+        ExitCode::SUCCESS
+    );
+    let strict = StatusArgs {
+        strict: true,
+        check: true,
+    };
+    assert_eq!(commands::status::handle(strict, &global).unwrap(), ExitCode::FAILURE);
+
+    let runner = callisto_fixtures::git::GitRunner;
+    let locator = callisto_graph::locate::IgnoreWalkLocator::new(dir.path());
+    let ws = callisto_graph::Workspace::load(dir.path().to_path_buf(), &locator, &runner).unwrap();
+    let report = callisto_graph::commands::status(
+        &ws,
+        &callisto_graph::infer::NoInference,
+        &callisto_graph::commands::StatusOptions { strict: false },
+    )
+    .unwrap();
+    let napi: Vec<_> = report
+        .diagnostics
+        .iter()
+        .filter(|d| d.code == callisto_model::DiagnosticCode::NapiTargetAddedNotInMembers)
+        .collect();
+    assert_eq!(napi.len(), 1, "{:?}", report.diagnostics);
+    assert_eq!(napi[0].severity, callisto_model::DiagnosticSeverity::Warning);
+}
+
 /// `callisto add --packages unknown-pkg:patch` must return an error when the
 /// package name is not present in the workspace, rather than silently writing
 /// a changeset that will fail during `callisto version`.

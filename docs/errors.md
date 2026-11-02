@@ -273,7 +273,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E230 | `--artifact-repository` doesn't match `[release].forge-repository` in callisto.toml | plan with an --artifact-repository matching [release].forge-repository in callisto.toml |
 | E231 | Product release planning requires both `--orchestration-revision` and `--artifact-repository` | pass both --orchestration-revision and --artifact-repository |
 | E232 | `--artifact-manifest`/`--artifact-dir` given, but the intent declares no artifact slots and the manifest seals no Python files | drop --artifact-manifest and --artifact-dir for an intent without artifact slots or sealed Python files |
-| E233 | Intent declares artifact slots, but `--artifact-manifest`/`--artifact-dir` are missing | pass both --artifact-manifest and --artifact-dir |
+| E233 | Intent declares artifact slots or the manifest seals Python files, but `--artifact-manifest`/`--artifact-dir` are missing | pass both --artifact-manifest and --artifact-dir |
 | E234 | Release run envelope is not valid for this intent | re-check the orchestration revision and artifact manifest against the intent |
 | E235 | Cannot issue the terminal release receipt | re-run `callisto release execute`; it adopts effects that already landed |
 | E236 | Release intent file is invalid | re-run `callisto release plan` to derive a fresh intent |
