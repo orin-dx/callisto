@@ -1,0 +1,95 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6ER7JFR3G5FZQ8F8SH5RKPC",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-02T18:27:17.40125Z",
+  "branch": "worktree-macos-15-runners",
+  "checkpoints_count": 4,
+  "files_touched": [
+    ".github/workflows/callisto-ci.yml",
+    ".github/workflows/callisto-release.yml"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "fdbf43915b78",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 44,
+    "cache_creation_tokens": 53383,
+    "cache_read_tokens": 1597595,
+    "output_tokens": 7546,
+    "api_call_count": 22
+  },
+  "redaction": {
+    "replacements": 7,
+    "layers": {
+      "betterleaks": 0,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 7,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "summary": {
+    "intent": "Identify the 'callisto-hardening' session the user had just stopped and determine what follow-up work comes next in the callisto repo.",
+    "outcome": "The session was not found by name in Entire. After the user ran auth themselves, search worked and the likely match was identified as session 15c732d1 ('review next-work plan', audit-fixes worktree). The time-sensitive next step (moving macos-14 to macos-15 in CI and release workflows) was identified but no edits were started, pending user confirmation.",
+    "learnings": {
+      "repo": [
+        "`.claude/plans/NEXT-WORK.md` was stale (rewritten 2026-10-23); the repo had moved on through PRs #379-#402 including `callisto release pending`, the ecosystem file split and the jsonc-parser refactor.",
+        "`registry_endpoint.rs` rejects non-https URLs including loopback, so T12 Cargo/PyPI registry tests cannot target a local registry.",
+        "`matrix.rs` carries its own list of 18 target triples, a small cleanup candidate.",
+        "Open plan items: spec drift re-verification (about 14% of criteria false or partly true), #290 guard gaps (history capped at 100, merge-only edits missed), private workspace root `npm/monorepo` listed as a package (leaning towards `[[package]] match = \"npm/monorepo\"` with `ignore = true`), fixed group sharing one tag or release title (E194, needing a design pass on ADRs 9 and 12).",
+        "OIDC trusted publishing for npm and the `ready_by_edge` swap (waiting on the next michi release) are blocked on the user or michi.",
+        "Merging #409 builds macOS binaries on `macos-14` runners, which are reportedly retired on 2026-11-02. This date came from a search summary and is unverified.",
+        "The latest Release run on `main` failed at 'Create or update the Callisto release PR' with a GitHub-side query error that looks transient and hasn't been re-run."
+      ],
+      "code": [
+        {
+          "path": ".github/workflows/callisto-ci.yml",
+          "line": 145,
+          "end_line": 150,
+          "finding": "Darwin preflight and build jobs pin `macos-14` and need to move to `macos-15`."
+        },
+        {
+          "path": ".github/workflows/callisto-release.yml",
+          "line": 297,
+          "end_line": 302,
+          "finding": "Release darwin preflight and build jobs pin `macos-14`. This is the most urgent one because merging #409 builds macOS binaries here."
+        }
+      ],
+      "workflow": [
+        "Entire titles sessions from their first prompt, not from the Claude Code session names, so searching by a custom name finds nothing. Searching by session id works.",
+        "Local Claude transcripts in `~/.claude/projects/<project>/*.jsonl` carry `aiTitle` and `customTitle` fields and can be used to identify recent sessions when Entire is unreachable.",
+        "The sandbox proxy causes TLS certificate errors (x509 OSStatus -26276) for `entire` network calls, so the user must run `! entire ...` commands outside the sandbox.",
+        "Entire's index only held checkpoints up to 2026-10-22, so work from the day of the session was not searchable."
+      ]
+    },
+    "friction": [
+      "Entire search and Brain lookups were blocked by the sandbox TLS proxy, and the auto-mode classifier denied an unsandboxed retry.",
+      "Searching for 'callisto-hardening' and 'road-to-alpha-callisto' returned nothing useful, so identifying the session took several rounds of transcript digging.",
+      "Several shell one-liners for reading transcript titles failed or returned nothing (stat and ls format flags on macOS) before a Python approach worked.",
+      "The session match is still uncertain and rests on inference rather than confirmation from the user."
+    ],
+    "open_items": [
+      "Confirm that session 15c732d1 is the intended hardening session.",
+      "Move the four `macos-14` lines in callisto-ci.yml and callisto-release.yml to `macos-15` before #409 merges, add a workflow contract test for runner names, and create a trail first. Verify the retirement date against GitHub's changelog.",
+      "Re-run the failed Release workflow on `main` and check whether the failure was transient.",
+      "Spec drift re-verification of the 2026-10-20 review findings (E-codes, matrix JSON `command` key, VER-APPLY-14).",
+      "Re-verify #290 guard gaps since #326.",
+      "Choose the exclusion shape for the private workspace root `npm/monorepo`.",
+      "Design pass on ADRs 9 and 12 for fixed groups sharing one tag or release title (E194).",
+      "Decide an approach for T12 Cargo/PyPI registry tests or drop them.",
+      "Clean up the duplicated 18 target triples in `matrix.rs`.",
+      "The user's high-performance agentic markdown linter framework idea (modelled on eslint and oxlint, instead of `@eslint/markdown`) was floated but not scoped.",
+      "OIDC trusted publishing for npm (priority raised 2026-10-23) and the `ready_by_edge` swap awaiting the next michi release."
+    ]
+  }
+}

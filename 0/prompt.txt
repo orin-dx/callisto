@@ -1,0 +1,17 @@
+Let's start the work for the follow-up to callisto-hardening session. What's next?
+
+---
+
+can you check entire for that session? We just stopped it
+
+---
+
+check that entire is logged in now
+
+---
+
+! entire auth status
+
+---
+
+Yes. Let’s start the macOS upgrade and track as a trail appropriate and with all the details
