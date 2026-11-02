@@ -124,25 +124,32 @@ fn remove_env(command: &mut std::process::Command, names: &[&str]) {
     }
 }
 
-fn remove_unrelated_cargo_registry_tokens(command: &mut std::process::Command, program: &str) {
+fn is_named_cargo_registry_token(name: &std::ffi::OsStr) -> bool {
     const PREFIX: &[u8] = b"CARGO_REGISTRIES_";
     const SUFFIX: &[u8] = b"_TOKEN";
+    name.to_str().is_some_and(|name| {
+        let bytes = name.as_bytes();
+        bytes
+            .get(..PREFIX.len())
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(PREFIX))
+            && bytes
+                .get(bytes.len().saturating_sub(SUFFIX.len())..)
+                .is_some_and(|suffix| suffix.eq_ignore_ascii_case(SUFFIX))
+    })
+}
+
+/// Drops named registry tokens from a non-Cargo child, inherited or explicitly set; call after the child's variables.
+fn remove_unrelated_cargo_registry_tokens(command: &mut std::process::Command, program: &str) {
     if tool_name(program) == "cargo" {
         return;
     }
-    for (name, _) in std::env::vars_os() {
-        let named_token = name.to_str().is_some_and(|name| {
-            let bytes = name.as_bytes();
-            bytes
-                .get(..PREFIX.len())
-                .is_some_and(|prefix| prefix.eq_ignore_ascii_case(PREFIX))
-                && bytes
-                    .get(bytes.len().saturating_sub(SUFFIX.len())..)
-                    .is_some_and(|suffix| suffix.eq_ignore_ascii_case(SUFFIX))
-        });
-        if named_token {
-            command.env_remove(name);
-        }
+    let names: Vec<std::ffi::OsString> = std::env::vars_os()
+        .map(|(name, _)| name)
+        .chain(command.get_envs().map(|(name, _)| name.to_owned()))
+        .filter(|name| is_named_cargo_registry_token(name))
+        .collect();
+    for name in names {
+        command.env_remove(name);
     }
 }
 
@@ -717,15 +724,34 @@ mod tests {
             let publisher = runner
                 .run_with_timeout_publisher(
                     "/bin/sh",
-                    &["-c", "test -z \"$CARGO_REGISTRIES_PRIVATE_TOKEN\""],
+                    &[
+                        "-c",
+                        "test -z \"$CARGO_REGISTRIES_PRIVATE_TOKEN\" && test -z \"$Cargo_Registries_Child_Only_Token\"",
+                    ],
                     cwd,
                     timeout,
-                    &[("CARGO_REGISTRIES_PRIVATE_TOKEN", "test-registry-secret")],
+                    &[
+                        ("CARGO_REGISTRIES_PRIVATE_TOKEN", "test-registry-secret"),
+                        ("Cargo_Registries_Child_Only_Token", "test-child-secret"),
+                    ],
                 )
                 .unwrap();
             assert!(
                 publisher.success(),
-                "a non-Cargo publisher inherited a named registry token"
+                "a non-Cargo publisher was handed a named registry token"
+            );
+            let child_only = runner
+                .run_with_timeout_publisher(
+                    "/usr/bin/env",
+                    &[],
+                    cwd,
+                    timeout,
+                    &[("CARGO_REGISTRIES_CHILD_ONLY_TOKEN", "test-child-secret")],
+                )
+                .unwrap();
+            assert!(
+                !child_only.stdout.contains("CARGO_REGISTRIES_CHILD_ONLY_TOKEN"),
+                "a child-only registry token reached a non-Cargo program"
             );
 
             let dir = tempfile::tempdir().unwrap();

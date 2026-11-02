@@ -249,38 +249,24 @@ where
                 has_prior_release: last_tag.is_some(),
                 policy,
             };
-            inference.infer(pkg, git, window)
+            inference.infer(pkg, git, window)?
         } else {
-            Ok(None)
+            None
         };
 
-        match inferred {
-            Ok(Some(outcome)) => {
-                if outcome.severity > cur_sev {
-                    agg.severities.insert(pkg.id.clone(), outcome.severity);
-                    agg.reasons.insert(
-                        pkg.id.clone(),
-                        BumpReason::Inference {
-                            commits: outcome.commit_count,
-                            remapped: outcome.remapped,
-                        },
-                    );
-                    agg.named_by.insert(pkg.id.clone(), NamedBy::Inference);
-                    agg.inference_commits.insert(pkg.id.clone(), outcome.commits.clone());
-                }
-            }
-            Ok(None) => {}
-            Err(e) => {
-                agg.diagnostics.push(Diagnostic {
-                    code: callisto_model::DiagnosticCode::PreMajorInferenceInert,
-                    severity: callisto_model::DiagnosticSeverity::Warning,
-                    message: format!("Commit inference failed for package `{}`: {e}", pkg.id.display_name()),
-                    package: Some(pkg.id.clone()),
-                    path: None,
-                    governed_by: None,
-                    escalated_by: None,
-                });
-            }
+        if let Some(outcome) = inferred
+            && outcome.severity > cur_sev
+        {
+            agg.severities.insert(pkg.id.clone(), outcome.severity);
+            agg.reasons.insert(
+                pkg.id.clone(),
+                BumpReason::Inference {
+                    commits: outcome.commit_count,
+                    remapped: outcome.remapped,
+                },
+            );
+            agg.named_by.insert(pkg.id.clone(), NamedBy::Inference);
+            agg.inference_commits.insert(pkg.id.clone(), outcome.commits.clone());
         }
     }
 

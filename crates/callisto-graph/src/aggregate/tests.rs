@@ -1114,11 +1114,9 @@ fn test_union_linked_noop_when_no_member_named() {
     assert!(agg.severities.is_empty());
 }
 
-/// Spec: when `SeverityInference::infer` returns `Err`, `aggregate()` must emit a
-/// diagnostic (warning level) describing the failure rather than silently discarding
-/// the error and leaving the package with no inferred severity bump.
+/// A Git failure while inferring severity fails `aggregate()` instead of leaving the package with no bump.
 #[test]
-fn test_aggregate_inference_error_emits_diagnostic() {
+fn test_aggregate_inference_error_fails_the_command() {
     let ws_dir = tempfile::tempdir().unwrap();
     let root = ws_dir.path();
 
@@ -1152,7 +1150,7 @@ fn test_aggregate_inference_error_emits_diagnostic() {
         }
     }
 
-    let agg = aggregate(
+    let result = aggregate(
         &graph,
         &identity_for(&graph.pkg),
         &cfg,
@@ -1161,13 +1159,86 @@ fn test_aggregate_inference_error_emits_diagnostic() {
         &base_versions,
         None,
         &AlwaysErrorInference,
+    );
+
+    assert!(
+        matches!(&result, Err(GraphError::Vcs(_))),
+        "aggregate() must fail when SeverityInference::infer returns Err; got {:?}",
+        result.as_ref().map(|_| ())
+    );
+}
+
+#[test]
+fn test_aggregate_broken_repository_fails_naming_git_log() {
+    let ws_dir = tempfile::tempdir().unwrap();
+    let root = ws_dir.path();
+
+    init_repo(root);
+    std::fs::write(root.join("README.md"), "hello\n").unwrap();
+    run_git(root, &["add", "."]);
+    run_git(root, &["commit", "-q", "-m", "feat: initial commit"]);
+
+    let pkg_id = PackageId::parse("pkg-a").unwrap();
+    let graph = SinglePackageGraph {
+        pkg: make_pkg(pkg_id.clone()),
+    };
+    let cfg = crate::config::load(root).unwrap();
+    let runner = RealGitRunner;
+    let git = GitAccess::new(root, &runner);
+    let tags = crate::tags::TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
+    let mut base_versions = BTreeMap::new();
+    base_versions.insert(pkg_id.clone(), Version::semver(1, 0, 0));
+
+    let sha = git.resolve_commit("HEAD").unwrap().unwrap();
+    let sha = sha.as_str();
+    let object = root.join(".git/objects").join(&sha[..2]).join(&sha[2..]);
+    std::fs::remove_file(&object).unwrap();
+
+    let result = aggregate(
+        &graph,
+        &identity_for(&graph.pkg),
+        &cfg,
+        &git,
+        &tags,
+        &base_versions,
+        None,
+        &crate::infer::CommitInference,
+    );
+
+    let message = result.err().map(|e| e.to_string()).unwrap_or_default();
+    assert!(message.contains("git log"), "{message}");
+}
+
+#[test]
+fn test_aggregate_repository_with_no_commits_infers_nothing() {
+    let ws_dir = tempfile::tempdir().unwrap();
+    let root = ws_dir.path();
+    init_repo(root);
+
+    let pkg_id = PackageId::parse("pkg-a").unwrap();
+    let graph = SinglePackageGraph {
+        pkg: make_pkg(pkg_id.clone()),
+    };
+    let cfg = crate::config::load(root).unwrap();
+    let runner = RealGitRunner;
+    let git = GitAccess::new(root, &runner);
+    let tags = crate::tags::TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
+    let mut base_versions = BTreeMap::new();
+    base_versions.insert(pkg_id.clone(), Version::semver(1, 0, 0));
+
+    let agg = aggregate(
+        &graph,
+        &identity_for(&graph.pkg),
+        &cfg,
+        &git,
+        &tags,
+        &base_versions,
+        None,
+        &crate::infer::CommitInference,
     )
     .unwrap();
 
-    assert!(
-        !agg.diagnostics.is_empty(),
-        "aggregate() must emit a diagnostic when SeverityInference::infer returns Err; got none"
-    );
+    assert!(agg.severities.is_empty());
 }
 
 /// Spec: a bare-name `[[package]]` rule in callisto.toml must match a workspace

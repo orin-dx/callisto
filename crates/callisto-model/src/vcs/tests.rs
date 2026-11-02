@@ -158,6 +158,36 @@ fn commits_since_unresolvable_bound_is_ref_not_found() {
     );
 }
 
+#[test]
+fn commits_since_a_repository_with_no_commits_is_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init_repo(root);
+
+    assert!(summaries(root, None, &[]).is_empty());
+}
+
+#[test]
+fn commits_since_a_missing_head_object_fails_naming_git_log() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    init_repo(root);
+    commit_file(root, "a.txt", b"1\n", "feat: c1");
+    let sha = head(root);
+    let object = root
+        .join(".git/objects")
+        .join(&sha.as_str()[..2])
+        .join(&sha.as_str()[2..]);
+    std::fs::remove_file(&object).unwrap();
+
+    let result = GitAccess::new(root, &SystemGit).commits_since(None, &[]);
+
+    assert!(
+        matches!(&result, Err(VcsError::Git(message)) if message.contains("`git log` failed")),
+        "got {result:?}"
+    );
+}
+
 /// Merge commits are excluded; commits on both sides of the merge are kept.
 #[test]
 fn commits_since_excludes_merge_commits() {
