@@ -390,6 +390,14 @@
       "criterion": "`--format json` output of `release-pr verify`, `release-pr decide` and `release-pr commit-plan` (without `--out`) goes through the same envelope every other command's JSON report uses: a top-level `schemaVersion`, `command` and `dryRun`, alongside that subcommand's own payload fields unchanged. `release-pr verify --decision` accepts `release-pr decide --format json` output as-is."
     },
     {
+      "id": "REL-PR-08",
+      "criterion": "The release-PR action retries a forge call that fails with a transient GitHub error (`Something went wrong`, an HTTP 5xx, a gateway or timeout error, a reset or truncated connection) up to 4 attempts, waiting 2, 4 and 8 seconds, and prints every failed attempt's stderr. A failure of any other kind is not retried. Every call is retried except `gh pr create`, and cleanup of the staging branch. Before each retry of the `createCommitOnBranch` mutation, the staging branch is put back on the base commit. A failed read of the open pull requests stops the action with the failing `gh` call's own error and status."
+    },
+    {
+      "id": "REL-PR-09",
+      "criterion": "On every push to `main`, the hold workflow converts each open, non-draft release PR (head `<release-branch>` or `<release-branch>--<anything>` in this repository) to a draft. The release-PR action marks the PR ready only after the update or creation succeeded and the base branch still points at the commit the PR was built from; if the branch moved during the run, a ready PR is converted back to a draft and the action warns. A release PR whose refresh failed or never ran therefore stays a draft, and a draft cannot be merged."
+    },
+    {
       "id": "REL-ERR-01",
       "criterion": "Every release failure after the command line is parsed exits 1 with a diagnostic carrying an `E####` code. A command-line usage error exits 2 with no code."
     },
