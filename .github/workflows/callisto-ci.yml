@@ -142,12 +142,12 @@ jobs:
       matrix:
         include:
           - id: macos-arm64
-            runner: macos-15
+            runner: macos-latest
             target: aarch64-apple-darwin
             asset: callisto-aarch64-apple-darwin.tar.gz
             kind: cli
           - id: macos-x64
-            runner: macos-15
+            runner: macos-latest
             target: x86_64-apple-darwin
             asset: callisto-x86_64-apple-darwin.tar.gz
             kind: cli
