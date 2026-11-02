@@ -1,0 +1,116 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6F7BT8GSM6EHNX6XXJ2S5VT",
+  "session_id": "01a14ae8-7d4b-7c72-bb7e-26221b207205",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-02T22:51:47.07757Z",
+  "checkpoints_count": 1,
+  "save_step_count": 8,
+  "files_touched": null,
+  "agent": "Codex",
+  "model": "",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 831069,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 13051392,
+    "output_tokens": 57681,
+    "api_call_count": 125,
+    "subagent_tokens_complete": false
+  },
+  "redaction": {
+    "replacements": 3,
+    "layers": {
+      "betterleaks": 1,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 3,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "summary": {
+    "intent": "Perform principal-engineer level adversarial reviews of the Callisto repo's PRs (PyPI sealed file sets, then fixes for swallowed-error patterns, then a nested-workspace PR stack #241/#242/#244/#245), hunt for systemic issues, and validate another agent's findings.",
+    "outcome": "Delivered severity-graded findings across several rounds: PyPI hashless confirmation and stale docs, swallowed-error and symlink/atomic-write issues, architectural gaps, and for the final stack two confirmed high-severity npm nested-workspace bugs (wrong publish directory, observe/publish registry mismatch). Recommended holding the stack, and gave a release-notes policy recommendation. No repository changes were made.",
+    "learnings": {
+      "repo": [
+        "Release pipeline has explicit Absent/Exact/Conflict/Indeterminate states, but earlier stages (discovery, graph build) historically treated failed reads as absence; fixes introduced strict_fs, complete-workspace checks, and apply preflight.",
+        "Workspace spec (docs/specs/workspace.json ~line 77) and release spec (docs/specs/release.json ~line 284) explicitly mandate some fallbacks (admit-all on malformed membership, generate-notes fallback), so changing them is a product-policy change needing spec and test updates.",
+        "Workspace ownership is inferred independently by membership, lockfile refresh, npm publishing and registry observation, which is the root cause of nested-workspace mismatches.",
+        "Repo uses AGENTS.md rules (fix sibling bugs together), .agents/skills (bug-hunter, ranger audit, entire-search), and `just ci`; GitHub checks total 12 per PR.",
+        "PyPI sealed set: unsealed builds accept hashless index responses as a documented recovery tradeoff; sealed file sets require matching hashes.",
+        "Git refuses to stage paths through directory symlinks (exit 128) and ignored files (exit 1), so discovery and preflight must match what Git can stage."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/pypi_files.rs",
+          "line": 243,
+          "finding": "Digest comparison only flags a mismatch if the index supplies a SHA-256, so hashless responses are accepted for same-run uploads."
+        },
+        {
+          "path": "crates/callisto-graph/src/walk.rs",
+          "line": 488,
+          "finding": "`if let Ok(editor) = open_cached(...)` silently dropped publish targets and dependency edges (also near 727) before the strict graph-completeness fix."
+        },
+        {
+          "path": "crates/callisto-graph/src/locate/ignore_walk.rs",
+          "line": 109,
+          "finding": "Manifest read errors were treated as 'no manifest here' during discovery."
+        },
+        {
+          "path": "crates/callisto-model/src/atomic.rs",
+          "line": 111,
+          "finding": "sync_directory returns success for any directory-open error after rename, so the durability guarantee still has an exception."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/registry_argv.rs",
+          "line": 195,
+          "end_line": 205,
+          "finding": "npm_workspace_dir recognizes only lockfiles and pnpm-workspace.yaml, not a package.json `workspaces` declaration, so a lockfile-free nested workspace resolves to the repo root."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/registry.rs",
+          "line": 516,
+          "finding": "npm view observation runs from repo root while publish (line ~562) runs from the nested workspace, so nested .npmrc can make them hit different registries."
+        },
+        {
+          "path": "crates/callisto-manifests/src/cargo.rs",
+          "line": 240,
+          "finding": "workspace_manifest_candidates uses the current manifest's package.workspace path for both parent and release commits, which can break release-commit verification when the path changes."
+        },
+        {
+          "path": "crates/callisto-graph/src/templates/simple_workflow.tmpl",
+          "line": 21,
+          "finding": "Generated Python-only release job has contents: write with persisted checkout credentials while running the build backend."
+        }
+      ],
+      "workflow": [
+        "Verify another agent's findings against current source and callers; separate confirmed defects from conditional leads and note overreaching severity claims.",
+        "Reproduce suspected behaviors with isolated temp-dir experiments (git add through symlink, ignored file, npm --workspace from different directories, npm config registry) before assigning severity.",
+        "Review stacked PRs at each boundary and at combined head, and fetch origin to avoid reviewing stale cached refs.",
+        "Use a detached worktree off origin/main to review merged code without disturbing the user's dirty working tree."
+      ]
+    },
+    "friction": [
+      "gh CLI was initially blocked by network restrictions, forcing local-branch review first.",
+      "Local origin/main was stale; remote had moved and required a fetch and detached worktree.",
+      "Saved Entire session history was inaccessible, so the assistant could not attribute what Claude had or had not noticed.",
+      "Line numbers cited by the other agent were off, requiring re-verification.",
+      "Green CI did not cover cross-layer scenarios like lockfile-free nested npm workspaces or nested .npmrc."
+    ],
+    "open_items": [
+      "Fix npm nested workspace directory resolution and unify observe/publish directory and registry endpoint; add cross-layer tests.",
+      "Add a fixture for Cargo package.workspace path migration across release-commit verification.",
+      "Close sync_directory error swallowing in atomic.rs.",
+      "Decide release-notes policy: recommended generate when no changelog configured, fail when a configured changelog is missing/unreadable/empty, with release.json spec update.",
+      "Python-only generated releases still build inside the write-capable job with persisted Git credentials; isolate the build or defer credentials.",
+      "Run a hosted end-to-end exercise of the sealed matrix workflow (build, partial upload, rerun).",
+      "Consider trusted publishing (OIDC) for npm and PyPI and streaming hashing for large wheels.",
+      "Further triage of `.exists()` sites, Git probe three-state handling, and changeset/tag diagnostics remains for follow-up PRs."
+    ]
+  },
+  "kind": "imported"
+}
