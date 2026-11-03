@@ -473,6 +473,11 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
     let runner = CliCommandRunner;
     let source_global = source_global(global, args.source_root.as_deref());
     let workspace = load_workspace(&source_global, &runner)?;
+    // Before any commit is read: a shallow or SHA-256 repository must report E266 or E265, not a lower-level git error.
+    workspace
+        .git_access()
+        .require_trustable_repository()
+        .map_err(callisto_graph::GraphError::from)?;
     let decision = match args.from_release_commit.as_deref() {
         Some(raw) => {
             let commit = callisto_model::CommitSha::parse(raw).map_err(|error| CliError::ReleaseCommitInvalid {
