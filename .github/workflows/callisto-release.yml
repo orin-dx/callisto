@@ -215,6 +215,15 @@ jobs:
           version_command: 'callisto version --refresh-lockfiles'
         env:
           GH_TOKEN: ${{ github.token }}
+      # The hold workflow drafts the release PR and says why; say how the rebuild ended on the same comment.
+      - name: Say how the release PR rebuild ended
+        if: success() || failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REBUILD_OUTCOME: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: bash .github/scripts/note-release-pr-rebuild.sh callisto/version-packages "$REBUILD_OUTCOME" "$RUN_URL"
 
   plan:
     name: Derive ephemeral intent from the merged release commit

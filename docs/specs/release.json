@@ -395,7 +395,7 @@
     },
     {
       "id": "REL-PR-09",
-      "criterion": "On every push to `main`, the hold workflow converts each open, non-draft release PR (head `<release-branch>` or `<release-branch>--<anything>` in this repository) to a draft. The release-PR action marks the PR ready only after the update or creation succeeded and the base branch still points at the commit the PR was built from; if the branch moved during the run, a ready PR is converted back to a draft and the action warns. A release PR whose refresh failed or never ran therefore stays a draft, and a draft cannot be merged."
+      "criterion": "On every push to `main`, the hold workflow converts each open, non-draft release PR (head `<release-branch>` or `<release-branch>--<anything>` in this repository) to a draft. The release-PR action marks the PR ready only after the update or creation succeeded and the base branch still points at the commit the PR was built from; if the branch moved during the run, a ready PR is converted back to a draft and the action warns. A release PR whose refresh failed or never ran therefore stays a draft, and a draft cannot be merged. One comment on the PR, marked `<!-- callisto-release-pr-state -->` and edited in place, says why: the hold workflow writes that it is held, the release workflow writes that it is ready after a successful rebuild, and writes the failed run's link after a failed one. A rebuild that left the PR a draft because `main` moved again leaves the hold comment."
     },
     {
       "id": "REL-ERR-01",
