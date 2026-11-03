@@ -1,0 +1,87 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6FCND3PTD0HFMF0BJ9VH5SF",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-03T00:24:20.610971Z",
+  "branch": "test/spec-assertion-gaps",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/tests/cli_tests.rs",
+    "crates/callisto-cli/tests/workspace_identity_errors_tests.rs",
+    "crates/callisto-graph/src/matrix.rs",
+    "crates/callisto-model/src/format/changeset/tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "2025e63cc074",
+  "checkpoint_transcript_start": 5226,
+  "transcript_lines_at_start": 5226,
+  "compact_transcript_start": 425,
+  "token_usage": {
+    "input_tokens": 44,
+    "cache_creation_tokens": 25660,
+    "cache_read_tokens": 12043772,
+    "output_tokens": 13600,
+    "api_call_count": 22
+  },
+  "redaction": {
+    "replacements": 27,
+    "layers": {
+      "betterleaks": 16,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 11,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 42
+  },
+  "summary": {
+    "intent": "Finish and publish the fix for trail #177 (failing command's JSON error envelope should carry the report's command name and dryRun), then start trail #178: add tests for seven spec criteria that had no asserting test.",
+    "outcome": "Committed and pushed the #177 fix and opened/edited PR #429. Wrote passing tests for all seven #178 gaps (MX-OUT-02, MX-ERR-06, MX-ERR-07, MX-DISC-02, WS-ID-08, WS-ID-09, VER-CS-03), passed fmt and clippy, committed, pushed test/spec-assertion-gaps, and linked trail 178.",
+    "learnings": {
+      "repo": [
+        "Branch workflow: fetch origin main, branch from origin/main, commit with conventional-commit messages, push with -u, then link the branch to an Entire trail via `entire trail link <n> --repo=gh/orin-dx/callisto ...`.",
+        "Specs live in docs/specs/*.json with IDs like WS-ID-09, MX-ERR-06, REL-CMD-12; error codes are documented in docs/errors.md (E007, E101, E102, E012). Behavior changes require updating the corresponding spec entries.",
+        "Commits touching behavior need a changeset (.changeset); the test-only commit in #178 required no code, spec, or changeset change.",
+        "Quality gate before commit: `cargo fmt --all` and `cargo clippy --offline -p <crates> --all-targets -- -D warnings`.",
+        "Tests run with `--offline`; the polyglot lifecycle test needs network so it only passes outside the sandbox.",
+        "Failure JSON can be preceded by stderr echoed from other tools (e.g. a failed lookup), so error-envelope tests parse from the first `{`."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/tests/error_envelope_tests.rs",
+          "finding": "New integration test file that fails `release plan`, `release-pr verify`, `release-pr commit-plan` and `--dry-run version` and checks the error envelope has the right command and dryRun."
+        },
+        {
+          "path": "crates/callisto-graph/src/matrix.rs",
+          "finding": "Matrix report builder sorts cargo artifacts by artifact name when two share a triple; a unit test was added beside build_matrix_report_same_triple_two_packages_have_distinct_artifact_names."
+        },
+        {
+          "path": "crates/callisto-cli/tests/workspace_identity_errors_tests.rs",
+          "finding": "New end-to-end file covering E101 (two packages resolving to the same tag) and E007 (static and dynamic Python version, before anything is written)."
+        }
+      ],
+      "workflow": [
+        "PR number was looked up via `gh pr list --head <branch> --state all` and the PR then edited with gh pr edit.",
+        "Anchor edit targets carefully: an Edit matched three locations and was re-anchored to a unique neighboring test (the engines test)."
+      ]
+    },
+    "friction": [
+      "The first `gh pr edit` compound command printed the number but evidently did not complete, so the number was fetched again and the edit rerun with a corrected body.",
+      "An Edit hit three matches and had to be redone with a more specific anchor.",
+      "The sort test for two artifacts needed a second edit after the first run before it passed.",
+      "The sandbox blocks network, so the polyglot lifecycle test cannot be verified there."
+    ],
+    "open_items": [
+      "A message another tool echoes to stderr (e.g. a failed lookup) can still precede the JSON error output; this noise bug is left unfixed.",
+      "No PR was opened yet for test/spec-assertion-gaps (trail #178); only the branch was pushed and trail linked."
+    ]
+  }
+}
