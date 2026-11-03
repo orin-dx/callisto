@@ -456,6 +456,7 @@ fn matrix_package_filter_and_unknown_package_via_binary() {
         stderr.contains("does-not-exist"),
         "stderr must name the unknown package: {stderr}"
     );
+    assert!(stderr.contains("E102"), "an unknown --package is E102: {stderr}");
     assert!(
         serde_json::from_slice::<serde_json::Value>(&unknown.stdout).is_err() || unknown.stdout.is_empty(),
         "no valid MatrixReport JSON must be printed to stdout on error"
@@ -952,4 +953,54 @@ fn matrix_engines_node_wrong_type_exits_1() {
 
     let output = run_matrix_json(tmp.path());
     assert_error_exit_no_report(&output);
+}
+
+/// MX-ERR-06: every wrong-typed declaration exits exactly 1 with E012 naming the manifest, and prints no report.
+/// A non-string entry inside an otherwise valid target list is wrong-typed too.
+#[test]
+fn matrix_wrong_typed_declarations_exit_1_with_e012_naming_the_manifest() {
+    let cases: [(&str, &str); 5] = [
+        ("package.json", r#"{"name":"w","napi":{"targets":[1]}}"#),
+        ("package.json", r#"{"name":"w","engines":{"node":20}}"#),
+        (
+            "pyproject.toml",
+            "[project]\nname = \"w\"\nversion = \"0.1.0\"\nrequires-python = 3\n",
+        ),
+        (
+            "pyproject.toml",
+            "[project]\nname = \"w\"\nversion = \"0.1.0\"\n\n[tool.maturin]\ntargets = [1]\n",
+        ),
+        (
+            "pyproject.toml",
+            "[project]\nname = \"w\"\nversion = \"0.1.0\"\n\n[tool.maturin]\ntargets = \"x86_64-unknown-linux-gnu\"\n",
+        ),
+    ];
+    for (file, content) in cases {
+        let tmp = base_workspace();
+        let dir = tmp.path().join("w");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(file), content).unwrap();
+
+        let output = run_matrix_json(tmp.path());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(1), "{content}: {stderr}");
+        assert!(stderr.contains("E012"), "{content}: {stderr}");
+        assert!(stderr.contains(file), "{content}: {stderr}");
+        assert!(output.stdout.is_empty(), "{content}: stdout must stay empty on error");
+    }
+}
+
+/// MX-DISC-02: a package declaring neither platform targets nor a runtime range has no entry in either map.
+#[test]
+fn matrix_package_declaring_nothing_has_no_entry() {
+    let tmp = base_workspace();
+    let dir = tmp.path().join("plain");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("package.json"), r#"{"name":"plain","version":"1.0.0"}"#).unwrap();
+
+    let output = run_matrix_json(tmp.path());
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(report["platformTargets"].get("npm/plain").is_none(), "{report}");
+    assert!(report["runtimeVersions"].get("npm/plain").is_none(), "{report}");
 }

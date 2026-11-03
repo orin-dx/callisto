@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Writes how the release PR rebuild ended on the PR's state comment (see hold-release-pr.sh for how it got held).
-# Usage: note-release-pr-rebuild.sh <release-branch> <success|failure> <run-url>
+# Usage: note-release-pr-rebuild.sh <release-branch> <success|failure|skipped> <run-url>
 # Needs GH_TOKEN, GITHUB_REPOSITORY and GITHUB_SHA. A rebuild that ended with the PR still a draft, because main moved
 # again, leaves the hold note: a newer run is already on its way.
 set -euo pipefail
@@ -26,5 +26,10 @@ case "$outcome" in
     ;;
   failure)
     release_pr_note failed "$number" "$run_url"
+    ;;
+  skipped) ;;
+  *)
+    echo "unknown rebuild outcome: $outcome" >&2
+    exit 2
     ;;
 esac

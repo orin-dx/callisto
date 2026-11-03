@@ -120,7 +120,8 @@ impl OriginTagProbe {
         let references: Vec<String> = self.tags.iter().map(|name| format!("refs/tags/{name}")).collect();
         let mut args = vec!["ls-remote", self.endpoint.as_str()];
         args.extend(references.iter().map(String::as_str));
-        let Ok(output) = runner.run_with_timeout(
+        // Quiet: an unreachable remote reports nothing, so git's own "unable to access" must not reach the terminal.
+        let Ok(output) = runner.run_quiet(
             super::provider::policy::programs::GIT,
             &args,
             &self.cwd,
@@ -454,6 +455,67 @@ mod tests {
     use super::*;
     use crate::commands::release::tests::{fixture, RealGitRunner};
     use crate::error::{ReleasePreconditionRequirement, ReleaseSelectionInvalidReason};
+
+    /// A runner whose `run_with_timeout` echoes live and whose `run_quiet` does not; both fail like an unreachable remote.
+    struct UnreachableRemote {
+        used_live_echo: std::sync::atomic::AtomicBool,
+    }
+    impl UnreachableRemote {
+        fn failure() -> callisto_model::CommandOutput {
+            callisto_model::CommandOutput {
+                exit_code: Some(128),
+                stdout: String::new(),
+                stderr: "fatal: unable to access 'https://example.invalid/r.git/'".to_owned(),
+            }
+        }
+    }
+    impl callisto_model::CommandRunner for UnreachableRemote {
+        fn run(
+            &self,
+            _program: &str,
+            _args: &[&str],
+            _cwd: &Path,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            Ok(Self::failure())
+        }
+        fn run_with_timeout(
+            &self,
+            _program: &str,
+            _args: &[&str],
+            _cwd: &Path,
+            _timeout: std::time::Duration,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            self.used_live_echo.store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(Self::failure())
+        }
+        fn run_quiet(
+            &self,
+            _program: &str,
+            _args: &[&str],
+            _cwd: &Path,
+            _timeout: std::time::Duration,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            Ok(Self::failure())
+        }
+    }
+
+    // REL-RERUN-08: an unreadable remote reports nothing, and git's own error never reaches the terminal.
+    #[test]
+    fn the_origin_tag_probe_is_quiet_when_the_remote_cannot_be_read() {
+        let probe = OriginTagProbe {
+            endpoint: "https://example.invalid/r.git".to_owned(),
+            cwd: std::path::PathBuf::from("."),
+            tags: std::collections::BTreeSet::from(["a@1.0.0".to_owned()]),
+        };
+        let runner = UnreachableRemote {
+            used_live_echo: std::sync::atomic::AtomicBool::new(false),
+        };
+        assert!(probe.missing(&runner).is_empty());
+        assert!(
+            !runner.used_live_echo.load(std::sync::atomic::Ordering::SeqCst),
+            "the probe must use run_quiet, not the live-echoing run_with_timeout"
+        );
+    }
 
     fn git(root: &Path, args: &[&str]) {
         assert!(std::process::Command::new("git")

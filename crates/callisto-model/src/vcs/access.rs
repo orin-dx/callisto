@@ -196,11 +196,9 @@ impl<'r> GitAccess<'r> {
         Ok(())
     }
 
-    /// Returns explicit, fresh Git trust evidence for a durable release.
-    /// Errors omit raw stderr; ignored paths (build output) are allowed.
-    pub fn observe_git_commit_trust(&self) -> Result<GitCommitTrustEvidence, VcsError> {
-        let canonical_root = self.resolved_toplevel("for release trust")?;
-
+    /// The two repository-wide conditions release trust needs: the SHA-1 object format (E265) and the whole history
+    /// (E266). Every release route checks them before it reads a commit, so none reports a lower-level git failure instead.
+    pub fn require_trustable_repository(&self) -> Result<(), VcsError> {
         let object_format = self
             .runner
             .run("git", &["rev-parse", "--show-object-format"], &self.root)?;
@@ -212,6 +210,14 @@ impl<'r> GitAccess<'r> {
         if !self.has_full_history()? {
             return Err(VcsError::ShallowRepository);
         }
+        Ok(())
+    }
+
+    /// Returns explicit, fresh Git trust evidence for a durable release.
+    /// Errors omit raw stderr; ignored paths (build output) are allowed.
+    pub fn observe_git_commit_trust(&self) -> Result<GitCommitTrustEvidence, VcsError> {
+        let canonical_root = self.resolved_toplevel("for release trust")?;
+        self.require_trustable_repository()?;
 
         let head = self
             .runner

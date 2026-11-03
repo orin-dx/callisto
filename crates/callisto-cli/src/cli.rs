@@ -357,7 +357,7 @@ pub struct ReleasePlanArgs {
     pub orchestration_revision: Option<String>,
     /// GitHub repository receiving the product release assets, for example
     /// `orin-dx/callisto`. Required when the workspace declares product assets.
-    #[arg(long, value_name = "OWNER/REPOSITORY", requires = "orchestration_revision")]
+    #[arg(long, value_name = "OWNER/REPOSITORY")]
     pub artifact_repository: Option<String>,
     /// Exact qualified package identity, for example `cargo/callisto-cli`. Repeat this flag to select multiple packages. This local/manual mode cannot be combined with --from-release-commit.
     #[arg(
@@ -832,6 +832,10 @@ mod tests {
         assert!(Cli::try_parse_from(["callisto", "schema"]).is_ok());
         assert!(Cli::try_parse_from(["callisto", "compose-pr-body"]).is_ok());
         assert!(Cli::try_parse_from(["callisto", "help"]).is_ok());
+        // The one hidden `help` is at the root: no command has its own, and completions must not offer one.
+        assert!(Cli::try_parse_from(["callisto", "help", "release", "plan"]).is_ok());
+        assert!(Cli::try_parse_from(["callisto", "pre", "help"]).is_err());
+        assert!(Cli::try_parse_from(["callisto", "release", "help"]).is_err());
         assert!(Cli::try_parse_from([
             "callisto",
             "release",

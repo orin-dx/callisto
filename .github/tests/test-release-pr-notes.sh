@@ -17,12 +17,23 @@ gh() {
     pr) printf '%s\n' "$PR_LIST" ;;
     api)
       if [[ " $* " == *'/comments '* && " $* " != *' -X '* ]]; then
-        printf '%s' "$COMMENT_IDS"
+        [[ -z "$LOOKUP_FAILS" ]] || return 1
+        local filter='' previous='' argument
+        for argument in "$@"; do
+          [[ "$previous" == --jq ]] && filter="$argument"
+          previous="$argument"
+        done
+        jq -r "$filter" <<< "$COMMENTS_JSON"
       fi ;;
   esac
 }
 STUBS
-  CALLS_FILE="$calls" PR_LIST="$pr_list" COMMENT_IDS="$comment_ids" GITHUB_REPOSITORY='orin-dx/callisto' \
+  # The comments the PR already has: someone else's, plus the state comment when an id is given.
+  local comments='[{"id":9,"body":"an unrelated comment"}]'
+  if [[ -n "$comment_ids" ]]; then
+    comments="[{\"id\":9,\"body\":\"an unrelated comment\"},{\"id\":$comment_ids,\"body\":\"<!-- callisto-release-pr-state -->\\nold\"}]"
+  fi
+  CALLS_FILE="$calls" PR_LIST="$pr_list" COMMENTS_JSON="$comments" LOOKUP_FAILS="${LOOKUP_FAILS:-}" GITHUB_REPOSITORY='orin-dx/callisto' \
     GITHUB_SHA='0123456789abcdef0123456789abcdef01234567' \
     bash -c 'source "$1"; script=$2; shift 2; source "$script" "$@"; if [[ "$script" == */release-pr-note.sh ]]; then release_pr_note "$@"; fi' \
     -- "$harness" "$scripts/$script" "$@" > /dev/null 2>&1
@@ -71,5 +82,24 @@ verdict 'a failed rebuild says so and links the run' "$ok"
 output="$(run_case note-release-pr-rebuild.sh '[]' '' callisto/version-packages failure https://example.test/run/9)"
 if [[ "$output" == 0$'\n'* && "$output" != *'POST'* ]]; then ok=0; else ok=1; fi
 verdict 'no release PR means no note' "$ok"
+
+# The lookup finds the state comment by its marker and ignores other people's comments.
+output="$(run_case release-pr-note.sh '[]' '555' held 7)"
+if [[ "$output" == 0$'\n'* && "$output" == *'issues/comments/555'* && "$output" != *'issues/comments/9'* ]]; then ok=0; else ok=1; fi
+verdict 'the state comment is found by its marker, not by position' "$ok"
+
+# A failed lookup must not read as "no comment yet": no second comment, and the failure is returned.
+output="$(LOOKUP_FAILS=1 run_case release-pr-note.sh '[]' '555' held 7)"
+if [[ "$output" == 1$'\n'* && "$output" != *'-X POST'* && "$output" != *'-X PATCH'* ]]; then ok=0; else ok=1; fi
+verdict 'a failed comment lookup writes nothing and fails' "$ok"
+
+# A rebuild that was skipped upstream (nothing ran) writes nothing; an outcome nobody defined is an error.
+output="$(run_case note-release-pr-rebuild.sh "$(pr 7 callisto/version-packages true)" '' callisto/version-packages skipped https://example.test/run/9)"
+if [[ "$output" == 0$'\n'* && "$output" != *'POST'* && "$output" != *'PATCH'* ]]; then ok=0; else ok=1; fi
+verdict 'a skipped rebuild writes nothing' "$ok"
+
+output="$(run_case note-release-pr-rebuild.sh "$(pr 7 callisto/version-packages true)" '' callisto/version-packages bogus https://example.test/run/9)"
+if [[ "$output" == 2$'\n'* && "$output" != *'POST'* ]]; then ok=0; else ok=1; fi
+verdict 'an unknown outcome fails instead of being ignored' "$ok"
 
 exit "$fail"

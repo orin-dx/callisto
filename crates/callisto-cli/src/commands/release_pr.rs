@@ -139,6 +139,7 @@ fn decide(args: ReleasePrDecideArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
 fn reject_pre_mode(workspace: &Workspace<'_, CliCommandRunner, ManifestWalkResolver>) -> Result<(), CliError> {
     let path = workspace.root.join(workspace.config.pre_json_path());
     let text = callisto_model::strict_fs::read_optional(&path).map_err(|error| GraphError::PreJsonRead {
+        path: path.clone(),
         message: error.to_string(),
     })?;
     let Some(text) = text else { return Ok(()) };

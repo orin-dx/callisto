@@ -23,6 +23,21 @@ fn parses_a_single_entry_changeset() {
     );
 }
 
+// VER-CS-03: a leading byte-order mark and CRLF or lone-CR line endings are normalized before parsing.
+#[test]
+fn a_byte_order_mark_and_every_line_ending_style_parse_the_same() {
+    let expected = cs(vec![("cargo/foo", Severity::Minor)], "Bumps the widget API.");
+    for source in [
+        "---\ncargo/foo: minor\n---\n\nBumps the widget API.\n",
+        "\u{feff}---\ncargo/foo: minor\n---\n\nBumps the widget API.\n",
+        "---\r\ncargo/foo: minor\r\n---\r\n\r\nBumps the widget API.\r\n",
+        "---\rcargo/foo: minor\r---\r\rBumps the widget API.\r",
+        "\u{feff}---\r\ncargo/foo: minor\r\n---\r\n\r\nBumps the widget API.\r\n",
+    ] {
+        assert_eq!(parse_changeset(source).unwrap(), expected, "source: {source:?}");
+    }
+}
+
 #[test]
 fn parses_multiple_entries_mixed_quoted_and_bare() {
     let source = "---\ncargo/foo: patch\n\"@myorg/bar\": major\n---\n\nSummary text.\n";

@@ -67,6 +67,13 @@ release_pr_snapshot() {
     }'
 }
 
+# Reads the open PRs first, so a failed read stops with `gh`'s own status instead of becoming an empty --snapshot.
+verify_current() {
+  local current
+  current=$(release_pr_snapshot) || return $?
+  callisto release-pr verify --decision "$decision" --snapshot "$current" "$@"
+}
+
 snapshot=$(release_pr_snapshot)
 decision=$(callisto --format json release-pr decide \
   --snapshot "$snapshot" \
@@ -125,7 +132,7 @@ trap cleanup_staging EXIT
 # A local diff does not authorize a stale forge write. Re-observe immediately
 # before mutating the remote branch, then again before moving the managed
 # ref, then again before GitHub label/PR writes.
-callisto release-pr verify --decision "$decision" --snapshot "$(release_pr_snapshot)" > /dev/null
+verify_current > /dev/null
 
 reset_staging() {
   gh_retry api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/$staging_branch" -f sha="$base_commit" -F force=true > /dev/null 2>&1
@@ -167,7 +174,7 @@ if [[ "$remote_tree" != "$local_tree" ]]; then
   exit 1
 fi
 
-callisto release-pr verify --decision "$decision" --snapshot "$(release_pr_snapshot)" > /dev/null
+verify_current > /dev/null
 
 if [[ "$decision_kind" == update ]]; then
   gh_retry api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/$release_branch" -f sha="$new_sha" -F force=true > /dev/null
@@ -187,19 +194,17 @@ if [[ "$decision_kind" == update ]]; then
   # A real concurrent change stays visible, so the last attempt still fails.
   verified=false
   for _ in 1 2 3 4 5 6 7 8 9; do
-    if callisto release-pr verify --decision "$decision" --snapshot "$(release_pr_snapshot)" \
-      --applied-head "$new_sha" > /dev/null 2>&1; then
+    if verify_current --applied-head "$new_sha" > /dev/null 2>&1; then
       verified=true
       break
     fi
     sleep 3
   done
   if [[ "$verified" != true ]]; then
-    callisto release-pr verify --decision "$decision" --snapshot "$(release_pr_snapshot)" \
-      --applied-head "$new_sha" > /dev/null
+    verify_current --applied-head "$new_sha" > /dev/null
   fi
 else
-  callisto release-pr verify --decision "$decision" --snapshot "$(release_pr_snapshot)" > /dev/null
+  verify_current > /dev/null
 fi
 
 label_exists=$(gh_retry label list --limit 1000 --json name --jq 'any(.[]; .name == env.INPUT_PR_LABEL)')
@@ -209,7 +214,8 @@ fi
 
 case "$decision_kind" in
   create)
-    create_args=(--head "$release_branch" --base "$INPUT_BRANCH" --title "$INPUT_TITLE" --body "$body" --label "$INPUT_PR_LABEL")
+    # Born a draft, so a failed tip check below leaves it unmergeable rather than ready on a stale base.
+    create_args=(--draft --head "$release_branch" --base "$INPUT_BRANCH" --title "$INPUT_TITLE" --body "$body" --label "$INPUT_PR_LABEL")
     pr_url=$(gh pr create "${create_args[@]}")
     echo "$pr_url"
     pr_number=${pr_url##*/}

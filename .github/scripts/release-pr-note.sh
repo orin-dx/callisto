@@ -25,12 +25,17 @@ release_pr_note() {
       ;;
   esac
   body="$marker"$'\n'"$body"
+  # Callers run this on the left of `||`, where errexit is off, so each step returns its own failure. A failed
+  # lookup must not read as "no comment yet", or the POST below would add a second one.
   existing=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$pr/comments" \
-    --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | sed -n 1p)
+    --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | sed -n 1p) || {
+    echo "::warning::could not read the comments on #$pr, so its note is left as it is" >&2
+    return 1
+  }
   if [[ -n "$existing" ]]; then
-    gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -f body="$body" > /dev/null
+    gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -f body="$body" > /dev/null || return 1
   else
-    gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$pr/comments" -f body="$body" > /dev/null
+    gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$pr/comments" -f body="$body" > /dev/null || return 1
   fi
 }
 
