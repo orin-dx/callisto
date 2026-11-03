@@ -82,6 +82,11 @@ decision=$(callisto --format json release-pr decide \
   --release-branch "$INPUT_RELEASE_BRANCH")
 decision_kind=$(jq -r '.action.kind' <<< "$decision")
 
+# A missing key must stop the run: `jq -r` would print `null`, and the script would then move a branch named null.
+decision_field() {
+  jq -er "$1" <<< "$decision" || { echo "::error::Callisto's release PR decision has no $1; refusing to guess" >&2; return 1; }
+}
+
 case "$decision_kind" in
   noop)
     echo 'hasChangesets=false' >> "$GITHUB_OUTPUT"
@@ -89,14 +94,14 @@ case "$decision_kind" in
     exit 0
     ;;
   create)
-    release_branch=$(jq -r '.action.branch' <<< "$decision")
-    staging_branch=$(jq -r '.action.stagingBranch' <<< "$decision")
+    release_branch=$(decision_field '.action.branch')
+    staging_branch=$(decision_field '.action.stagingBranch')
     existing_pr=''
     ;;
   update)
-    existing_pr=$(jq -r '.action.pullRequestNumber' <<< "$decision")
-    release_branch=$(jq -r '.action.branch' <<< "$decision")
-    staging_branch=$(jq -r '.action.stagingBranch' <<< "$decision")
+    existing_pr=$(decision_field '.action.pullRequestNumber')
+    release_branch=$(decision_field '.action.branch')
+    staging_branch=$(decision_field '.action.stagingBranch')
     ;;
   *) echo "::error::Callisto returned unsupported release PR decision kind: $decision_kind"; exit 1 ;;
 esac

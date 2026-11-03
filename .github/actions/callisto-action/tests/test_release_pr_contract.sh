@@ -326,6 +326,23 @@ else
   echo 'PASS: update still fails when the applied head never appears'
 fi
 
+# A decision without its branch must stop the run: `jq -r` would print null and the script would move a branch named null.
+nobranch_create='{"schemaVersion":2,"action":{"kind":"create","stagingBranch":"callisto/version-packages--staging"}}'
+nobranch_update='{"schemaVersion":2,"action":{"kind":"update","pullRequestNumber":42,"expectedHeadCommit":"0123456789abcdef0123456789abcdef01234567","stagingBranch":"callisto/version-packages--staging"}}'
+for missing in "$nobranch_create" "$nobranch_update"; do
+  output="$(run_case '[{"number":42,"headRefName":"callisto/version-packages","headRepository":{"nameWithOwner":"orin-dx/callisto"},"headRefOid":"0123456789abcdef0123456789abcdef01234567"}]' "$missing")"
+  if [[ "$output" != 1$'\n'* ]] \
+    || [[ "$output" == *'refs/heads/null'* ]] \
+    || [[ "$output" == *'gh api'* ]] \
+    || [[ "$output" == *'gh pr create'* ]] \
+    || [[ "$output" == *'gh pr edit'* ]]; then
+    echo "FAIL: a decision with no branch must fail before any write: $output"
+    fail=1
+  else
+    echo 'PASS: a decision with no branch fails before any write'
+  fi
+done
+
 output="$(run_case '[]' "$noop")"
 if [[ "$output" != 0$'\n'* ]] \
   || [[ "$output" == *'git push'* ]] \
