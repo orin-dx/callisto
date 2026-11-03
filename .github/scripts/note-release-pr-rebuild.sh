@@ -2,10 +2,11 @@
 # Writes how the release PR rebuild ended on the PR's state comment (see hold-release-pr.sh for how it got held).
 # Usage: note-release-pr-rebuild.sh <release-branch> <success|failure|skipped> <run-url>
 # Needs GH_TOKEN, GITHUB_REPOSITORY and GITHUB_SHA. A rebuild that ended with the PR still a draft, because main moved
-# again, leaves the hold note: a newer run is already on its way.
+# again, leaves the hold note: a newer run is already on its way. So does a rebuild of a commit that is no longer the
+# tip of main.
 set -euo pipefail
 
-release_branch="${1:?usage: note-release-pr-rebuild.sh <release-branch> <success|failure> <run-url>}"
+release_branch="${1:?usage: note-release-pr-rebuild.sh <release-branch> <success|failure|skipped> <run-url>}"
 outcome="${2:?outcome}"
 run_url="${3:?run url}"
 
@@ -20,12 +21,22 @@ found=$(jq -r --arg repo "$GITHUB_REPOSITORY" --arg branch "$release_branch" '
 [[ -n "$found" ]] || exit 0
 read -r number is_draft <<< "$found"
 
+# A newer push has re-held the PR and owns its note, so a rebuild that finishes after it must not overwrite it.
+run_is_newest() {
+  local tip
+  tip=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha) || {
+    echo "::warning::could not read the tip of main, so the rebuild note is left as it is" >&2
+    return 1
+  }
+  [[ "$tip" == "$GITHUB_SHA" ]]
+}
+
 case "$outcome" in
   success)
-    if [[ "$is_draft" == false ]]; then release_pr_note ready "$number"; fi
+    if [[ "$is_draft" == false ]] && run_is_newest; then release_pr_note ready "$number"; fi
     ;;
   failure)
-    release_pr_note failed "$number" "$run_url"
+    if run_is_newest; then release_pr_note failed "$number" "$run_url"; fi
     ;;
   skipped) ;;
   *)

@@ -16,7 +16,10 @@ gh() {
   case "$1" in
     pr) printf '%s\n' "$PR_LIST" ;;
     api)
-      if [[ " $* " == *'/comments '* && " $* " != *' -X '* ]]; then
+      if [[ " $* " == *'/commits/main '* ]]; then
+        [[ -z "$MAIN_TIP_FAILS" ]] || return 1
+        printf '%s\n' "$MAIN_TIP"
+      elif [[ " $* " == *'/comments '* && " $* " != *' -X '* ]]; then
         [[ -z "$LOOKUP_FAILS" ]] || return 1
         local filter='' previous='' argument
         for argument in "$@"; do
@@ -34,6 +37,7 @@ STUBS
     comments="[{\"id\":9,\"body\":\"an unrelated comment\"},{\"id\":$comment_ids,\"body\":\"<!-- callisto-release-pr-state -->\\nold\"}]"
   fi
   CALLS_FILE="$calls" PR_LIST="$pr_list" COMMENTS_JSON="$comments" LOOKUP_FAILS="${LOOKUP_FAILS:-}" GITHUB_REPOSITORY='orin-dx/callisto' \
+    MAIN_TIP="${MAIN_TIP:-0123456789abcdef0123456789abcdef01234567}" MAIN_TIP_FAILS="${MAIN_TIP_FAILS:-}" \
     GITHUB_SHA='0123456789abcdef0123456789abcdef01234567' \
     bash -c 'source "$1"; script=$2; shift 2; source "$script" "$@"; if [[ "$script" == */release-pr-note.sh ]]; then release_pr_note "$@"; fi' \
     -- "$harness" "$scripts/$script" "$@" > /dev/null 2>&1
@@ -82,6 +86,19 @@ verdict 'a failed rebuild says so and links the run' "$ok"
 output="$(run_case note-release-pr-rebuild.sh '[]' '' callisto/version-packages failure https://example.test/run/9)"
 if [[ "$output" == 0$'\n'* && "$output" != *'POST'* ]]; then ok=0; else ok=1; fi
 verdict 'no release PR means no note' "$ok"
+
+# A rebuild of a commit that is no longer the tip of main leaves the newer push's note alone; an unreadable tip writes nothing.
+output="$(MAIN_TIP=fedcba9876543210fedcba9876543210fedcba98 run_case note-release-pr-rebuild.sh "$(pr 7 callisto/version-packages true)" '' callisto/version-packages failure https://example.test/run/9)"
+if [[ "$output" == 0$'\n'* && "$output" != *'POST'* && "$output" != *'PATCH'* ]]; then ok=0; else ok=1; fi
+verdict 'a failed rebuild of a superseded commit leaves the note alone' "$ok"
+
+output="$(MAIN_TIP=fedcba9876543210fedcba9876543210fedcba98 run_case note-release-pr-rebuild.sh "$(pr 7 callisto/version-packages false)" '' callisto/version-packages success https://example.test/run/9)"
+if [[ "$output" == 0$'\n'* && "$output" != *'POST'* && "$output" != *'PATCH'* ]]; then ok=0; else ok=1; fi
+verdict 'a successful rebuild of a superseded commit leaves the note alone' "$ok"
+
+output="$(MAIN_TIP_FAILS=1 run_case note-release-pr-rebuild.sh "$(pr 7 callisto/version-packages true)" '' callisto/version-packages failure https://example.test/run/9)"
+if [[ "$output" == 0$'\n'* && "$output" != *'POST'* && "$output" != *'PATCH'* ]]; then ok=0; else ok=1; fi
+verdict 'an unreadable main tip writes nothing and only warns' "$ok"
 
 # The lookup finds the state comment by its marker and ignores other people's comments.
 output="$(run_case release-pr-note.sh '[]' '555' held 7)"
