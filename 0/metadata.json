@@ -1,0 +1,91 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6FGVFMQA5G77FZ727RKYSBX",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-03T01:37:34.588109Z",
+  "branch": "test/review-followups",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/tests/release_artifact_owner_tests.rs",
+    "crates/callisto-cli/tests/workspace_identity_errors_tests.rs",
+    "crates/callisto-graph/src/matrix.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "b062f6592efd",
+  "checkpoint_transcript_start": 8742,
+  "transcript_lines_at_start": 8742,
+  "compact_transcript_start": 657,
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 25241,
+    "cache_read_tokens": 11230580,
+    "output_tokens": 9436,
+    "api_call_count": 12
+  },
+  "redaction": {
+    "replacements": 27,
+    "layers": {
+      "betterleaks": 16,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 11,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 65
+  },
+  "summary": {
+    "intent": "Update PR #431's description to match its new design (a dedicated always-run release-pr-note job), then open a small follow-up PR closing the leftover low-severity review findings from the merged PRs #428 and #430.",
+    "outcome": "PR #431's description was rewritten and it is mergeable again. A new branch test/review-followups was committed and pushed with test fixes: E239 asserted for the no-origin run, a new unreachable-origin end-to-end test, a matrix sort test moved to use module helpers, and the E007 test using the harness stderr_of. Tests and clippy passed; the PR number and trail link output were not shown.",
+    "learnings": {
+      "repo": [
+        "Release PR state is a single comment marked `<!-- callisto-release-pr-state -->`, edited in place. It is written by hold-release-pr.sh (held) and note-release-pr-rebuild.sh (ready or draft), both via release-pr-note.sh.",
+        "The release-pr-note job must be its own always-run job. When verify or release-candidate fails, version-pr is skipped, so a step inside version-pr would never run.",
+        "The release workflow policy needed to allow that one job to write pull requests.",
+        "A release preview run without an origin fails with E239 (a workspace with artifact slots cannot release locally), not E132 as the reviewer suspected.",
+        "Tests can simulate an unreachable git remote deterministically with GIT_SSH_COMMAND=false.",
+        "The CLI integration tests have a shared harness helper `stderr_of` in crates/callisto-cli/tests/common/release_harness.rs, so local stderr copies are redundant.",
+        "Local verification for CI changes covers shellcheck -x, actionlint, zizmor, and the release policy and contract checks. Release-notes behavior is covered by .github/tests/test-release-pr-notes.sh (12 cases) and test-hold-release-pr.sh.",
+        "Trails are linked to branches with `entire trail link <n> --repo --project --branch --base`."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/tests/release_artifact_owner_tests.rs",
+          "finding": "The no-origin preview test now asserts E239, and a new test makes origin unreachable via GIT_SSH_COMMAND=false and asserts the preview still plans with no git error output."
+        },
+        {
+          "path": "crates/callisto-cli/tests/workspace_identity_errors_tests.rs",
+          "finding": "The local `stderr` helper was removed in favor of the harness `stderr_of`, and the E007 test now also asserts that `init` exits 1, matching `version`."
+        },
+        {
+          "path": "crates/callisto-graph/src/matrix.rs",
+          "finding": "The two_release_artifacts matrix sort test was rewritten to use the module's own helpers and moved next to the other add_release_artifact_groups tests."
+        }
+      ],
+      "workflow": [
+        "Run the real code path to see what a test actually reports before asserting on it. This showed the reviewer's expected E132 was wrong and the real code is E239.",
+        "Use a bulk sed substitution, then grep to check the result. The first sed left residual `stderr(&` calls and needed a second pass.",
+        "Group leftover low-severity review findings from several merged PRs into one small follow-up PR.",
+        "Run cargo fmt, the targeted tests, and clippy with -D warnings before committing."
+      ]
+    },
+    "friction": [
+      "The reviewer's expectation of E132 for the no-origin run was wrong, so the first test run failed and had to be investigated.",
+      "The first sed to replace the stderr helper did not catch every call site, so a second sed pass was needed.",
+      "The work ran in a Claude worktree directory named macos-15-runners, not a dedicated one.",
+      "The new PR number and trail link output were not visible in the transcript."
+    ],
+    "open_items": [
+      "The release-pr-note comment has not been verified on a real held release PR. The first push to main with an open release PR will be the first real run.",
+      "PR #431 is still blocked on the Entire approval and checks.",
+      "The PR for test/review-followups still needs its number confirmed and its trail 176 link checked."
+    ]
+  }
+}
