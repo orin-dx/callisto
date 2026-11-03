@@ -1,0 +1,93 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6FCFRNNR8TVQX19RJF06VSY",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-03T00:21:16.194636Z",
+  "branch": "fix/error-envelope",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/error-envelope-command.md",
+    "crates/callisto-cli/src/cli.rs",
+    "crates/callisto-cli/src/error.rs",
+    "crates/callisto-cli/src/lib.rs",
+    "crates/callisto-cli/src/main.rs",
+    "crates/callisto-cli/tests/error_envelope_tests.rs",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "2025e63cc074",
+  "checkpoint_transcript_start": 4728,
+  "transcript_lines_at_start": 4728,
+  "compact_transcript_start": 390,
+  "token_usage": {
+    "input_tokens": 68,
+    "cache_creation_tokens": 45165,
+    "cache_read_tokens": 17357399,
+    "output_tokens": 16720,
+    "api_call_count": 34
+  },
+  "redaction": {
+    "replacements": 27,
+    "layers": {
+      "betterleaks": 16,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 11,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 42
+  },
+  "summary": {
+    "intent": "Finish trail #176 (release-command precondition fixes) by committing, pushing and linking it to a PR, then start trail #177 so that CLI error envelopes carry the subcommand path and `dryRun`, as the success reports do.",
+    "outcome": "Trail #176 was committed, pushed, linked, and PR #428 was updated. For trail #177, the error envelope now includes the command path and `dryRun`, with new unit and e2e tests and extended REL-CMD-12 and REL-PR-07 spec criteria. A changeset was added and clippy passes. `cargo fmt` was run, but its final check result is not shown, and the work is not yet committed or pushed.",
+    "learnings": {
+      "repo": [
+        "Commits and PRs follow conventional-commit style (`fix(release): ...`). Each change gets a `.changeset` entry, and behavior changes are tied to spec IDs in `docs/specs/release.json` (e.g. REL-CMD-04, REL-AUTH-05).",
+        "Pre-push checks are `cargo clippy --offline -- -D warnings` and `cargo fmt --check`, plus per-crate tests run with `--offline`.",
+        "Trails are linked with `entire trail link <n> --repo --project --branch --base`, and the PR body references the trail URL.",
+        "Git operations use `/usr/bin/git` explicitly. Work happens in the worktree `.claude/worktrees/macos-15-runners`.",
+        "Integration tests build the CLI via `tests/common/release_harness.rs` (`callisto` helper).",
+        "The origin tag probe must use the quiet runner and not the live-echoing one, and a unit test enforces this."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/error.rs",
+          "finding": "`format_error_json` builds the JSON error envelope. It now takes the command path and `dryRun`, and its doc comment and shape test were updated to match."
+        },
+        {
+          "path": "crates/callisto-cli/src/cli.rs",
+          "finding": "Report names are derived from the parsed CLI. A new unit test checks the command-path naming across release subcommands, using `try_parse_from` so a clap usage error is reported instead of exiting the process."
+        },
+        {
+          "path": "docs/specs/release.json",
+          "finding": "REL-CMD-12 and REL-PR-07 were extended so the spec covers error envelopes as well as success reports."
+        }
+      ],
+      "workflow": [
+        "Use `try_parse_from` rather than `parse_from` in clap tests, because `parse_from` exits the process on a usage error and hides which invocation was wrong.",
+        "Dry-run tests probe registries and fail inside the sandbox, which blocks the network. Re-run those tests outside the sandbox before treating a failure as a regression.",
+        "After a change to a shared output shape such as the error envelope, run the full integration suite to catch exact-match assertions elsewhere.",
+        "Filtering test output too aggressively can hide the panic message. Fall back to `tail` when the grep shows nothing useful."
+      ]
+    },
+    "friction": [
+      "Several test runs needed repeated grep and tail variations to surface failure details, because the filters dropped the panic message.",
+      "`test_full_polyglot` failed in the sandbox because of blocked network access, which looked like a regression until it was re-run outside the sandbox.",
+      "A clap usage error in the new unit test exited the test binary and took several iterations to locate.",
+      "The e2e test file `error_envelope_tests.rs` needed multiple edit and re-run cycles before it passed."
+    ],
+    "open_items": [
+      "Trail #177 changes are not yet committed, pushed, or opened as a PR, and the trail has not been linked.",
+      "The result of the final `cargo fmt --all -- --check` after formatting was not confirmed in the transcript.",
+      "The full `callisto-cli` suite, including `test_full_polyglot`, should be re-checked outside the sandbox before the PR."
+    ]
+  }
+}
