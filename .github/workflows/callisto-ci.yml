@@ -132,6 +132,8 @@ jobs:
       - run: just release-workflow-behavior
       - name: Verify Release-PR action against the real callisto binary
         run: bash .github/actions/callisto-action/tests/test_release_pr_decide_binary_contract.sh
+      - name: Verify the problem matcher against the real callisto error
+        run: bash .github/tests/test-problem-matcher.sh
 
   release-artifact-preflight:
     name: Release Artifact Preflight (${{ matrix.id }})

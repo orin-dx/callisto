@@ -23,9 +23,8 @@ fn publish_npm_config() -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-/// `npm view` arguments for one package version. Auth comes from the same place it does for the publish: the
-/// environment and the user's own `.npmrc` reach both children alike, and that temporary config, which only the
-/// publish child would otherwise see, is passed here too, because a restricted package answers an anonymous `view` with 404.
+/// `npm view` arguments for one package version. `userconfig` is the publish's temporary npm config: a restricted
+/// package answers an anonymous `view` with 404.
 pub(super) fn npm_view_args(
     spec: &str,
     repository_only: bool,
