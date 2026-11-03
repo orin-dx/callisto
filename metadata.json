@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6FGZ4JVJP2VE1ZSK0ESN1SS",
+  "strategy": "manual-commit",
+  "branch": "fix/publish-classifier-success-first",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/publish-outcome-success-first.md",
+    "crates/callisto-graph/src/commands/registry_argv.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 11424,
+    "cache_read_tokens": 6694374,
+    "output_tokens": 5692,
+    "api_call_count": 7
+  },
+  "redaction": {
+    "replacements": 27,
+    "layers": {
+      "betterleaks": 16,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 11,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
