@@ -1,0 +1,49 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6FBGESKB51GF6YABGDGQHDM",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-03T00:04:06.350918Z",
+  "branch": "fix/spec-drift-2026-11",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "crates/callisto-cli/src/cli.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "6b0c53102e7d",
+  "checkpoint_transcript_start": 3987,
+  "transcript_lines_at_start": 3987,
+  "compact_transcript_start": 337,
+  "token_usage": {
+    "input_tokens": 26,
+    "cache_creation_tokens": 9806,
+    "cache_read_tokens": 5451698,
+    "output_tokens": 7323,
+    "api_call_count": 13,
+    "subagent_tokens": {
+      "input_tokens": 50,
+      "cache_creation_tokens": 35900,
+      "cache_read_tokens": 3890272,
+      "output_tokens": 30070,
+      "api_call_count": 23
+    }
+  },
+  "redaction": {
+    "replacements": 25,
+    "layers": {
+      "betterleaks": 14,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 11,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 41
+  }
+}

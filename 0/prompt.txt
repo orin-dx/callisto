@@ -1,0 +1,9 @@
+Should we always offer help subcommands?
+
+---
+
+sure
+
+---
+
+What's next for bug fixes, performance improvements, DX/UX improvements? Feature work?
