@@ -1,0 +1,56 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6FC3ETT2A1C4H4WK4ME6VMH",
+  "strategy": "manual-commit",
+  "branch": "fix/release-preview-preconditions",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/artifact-repository-alone.md",
+    ".changeset/dry-run-without-origin.md",
+    ".changeset/plan-trust-check-first.md",
+    ".changeset/quiet-origin-tag-probe.md",
+    "crates/callisto-cli/src/cli.rs",
+    "crates/callisto-cli/src/commands/release.rs",
+    "crates/callisto-cli/tests/release_artifact_owner_tests.rs",
+    "crates/callisto-graph/src/commands/release/derive.rs",
+    "crates/callisto-graph/src/commands/release/local.rs",
+    "crates/callisto-model/src/vcs/access.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 78,
+    "cache_creation_tokens": 65822,
+    "cache_read_tokens": 17773859,
+    "output_tokens": 24286,
+    "api_call_count": 39,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 25,
+    "layers": {
+      "betterleaks": 14,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 11,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
