@@ -326,7 +326,7 @@ else
   echo 'PASS: update still fails when the applied head never appears'
 fi
 
-# A decision without its branch must stop the run: `jq -r` would print null and the script would move a branch named null.
+# A create or update decision with no branch fails before any write.
 nobranch_create='{"schemaVersion":2,"action":{"kind":"create","stagingBranch":"callisto/version-packages--staging"}}'
 nobranch_update='{"schemaVersion":2,"action":{"kind":"update","pullRequestNumber":42,"expectedHeadCommit":"0123456789abcdef0123456789abcdef01234567","stagingBranch":"callisto/version-packages--staging"}}'
 for missing in "$nobranch_create" "$nobranch_update"; do
