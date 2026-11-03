@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_0176nXskipCf17W6GstTaVLp",
+  "agent_id": "a3d06990f8df498b3",
+  "subagent_type": "general-purpose",
+  "task_description": "Soft-failure triage: other crates",
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 79497,
+    "cache_read_tokens": 626491,
+    "output_tokens": 8351,
+    "api_call_count": 10
+  },
+  "started_at": "2026-11-02T16:46:28.44034-08:00",
+  "completed_at": "2026-11-02T16:47:41.052579-08:00"
+}
