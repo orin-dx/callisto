@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6FGGJFPPBWSR6AATY6KKX6V",
+  "strategy": "manual-commit",
+  "branch": "fix/npm-observation-credentials",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/npm-confirm-sees-publish-config.md",
+    "crates/callisto-graph/src/commands/release/provider/registry/npm.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/tests.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 32,
+    "cache_creation_tokens": 25338,
+    "cache_read_tokens": 14191690,
+    "output_tokens": 16817,
+    "api_call_count": 16
+  },
+  "redaction": {
+    "replacements": 27,
+    "layers": {
+      "betterleaks": 16,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 11,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
