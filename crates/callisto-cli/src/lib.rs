@@ -13,6 +13,6 @@ pub mod tty;
 pub mod workspace;
 
 pub use cli::{Cli, Command, GlobalArgs, OutputFormat};
-pub use error::{format_error_json, CliError};
+pub use error::{format_error_json, format_error_json_for, CliError};
 pub use output::{log_line, write_json};
 pub use runner::CliCommandRunner;

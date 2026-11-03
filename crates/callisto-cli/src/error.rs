@@ -9,6 +9,7 @@ use miette::Diagnostic;
 /// {
 ///   "schemaVersion": 1,
 ///   "command": "add",
+///   "dryRun": false,
 ///   "error": {
 ///     "code": "E211",
 ///     "message": "human-readable error text",
@@ -18,8 +19,9 @@ use miette::Diagnostic;
 /// }
 /// ```
 ///
-/// `command` is the subcommand that was parsed before the error occurred
-/// (see [`crate::cli::Command::name`]), not derived from the error itself --
+/// `command` is the one the command's success report carries, with the subcommand for `release plan`,
+/// `release-pr verify` and the like (see [`crate::cli::Command::report_name`]), and `dryRun` is `--dry-run`.
+/// Both come from the parsed arguments, not derived from the error itself --
 /// an error can occur before enough context exists to reconstruct it any
 /// other way (e.g. an argument-parsing failure).
 ///
@@ -28,12 +30,18 @@ use miette::Diagnostic;
 /// guarantees a stable shape regardless of which [`CliError`] variant is
 /// serialized.
 pub fn format_error_json(command: &str, err: &CliError) -> serde_json::Value {
+    format_error_json_for(command, false, err)
+}
+
+/// The error envelope with the same `schemaVersion`, `command` and `dryRun` keys the command's success report carries.
+pub fn format_error_json_for(command: &str, dry_run: bool, err: &CliError) -> serde_json::Value {
     let code = err.code().map(|c| c.to_string()).unwrap_or_else(|| "E000".to_string());
     let help = err.help().map(|h| h.to_string());
     let path = err.path().map(|p| p.display().to_string());
     serde_json::json!({
         "schemaVersion": callisto_model::SCHEMA_VERSION,
         "command": command,
+        "dryRun": dry_run,
         "error": {
             "code": code,
             "message": err.to_string(),
@@ -429,6 +437,7 @@ mod tests {
             serde_json::json!(command),
             "command must be present and match"
         );
+        assert!(json["dryRun"].is_boolean(), "dryRun must be present, got: {json}");
         let error = &json["error"];
         assert!(
             error.is_object(),

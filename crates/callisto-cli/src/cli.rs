@@ -76,9 +76,25 @@ pub enum Command {
 }
 
 impl Command {
-    /// This subcommand's name exactly as clap parses it, for the JSON error
-    /// envelope's `"command"` field -- computed from the parsed subcommand
-    /// rather than duplicated as a literal at each error call site.
+    /// The `"command"` value of this invocation's JSON report, success or error: the name below plus, for the
+    /// subcommands whose reports carry one (`release plan`, `release-pr verify`), the subcommand.
+    pub fn report_name(&self) -> &'static str {
+        match self {
+            Command::Release(ReleaseCommandArgs { command: Some(sub), .. }) => match sub {
+                ReleaseArgs::Plan(_) => "release plan",
+                ReleaseArgs::ArtifactManifest(_) => "release artifact-manifest",
+                ReleaseArgs::Execute(_) => "release execute",
+                ReleaseArgs::Pending(_) | ReleaseArgs::Inspect(_) | ReleaseArgs::BuildPython(_) => "release",
+            },
+            Command::ReleasePr(ReleasePrArgs::Decide(_)) => "release-pr decide",
+            Command::ReleasePr(ReleasePrArgs::Verify(_)) => "release-pr verify",
+            Command::ReleasePr(ReleasePrArgs::CommitPlan(_)) => "release-pr commit-plan",
+            other => other.name(),
+        }
+    }
+
+    /// This subcommand's name exactly as clap parses it, computed from the parsed subcommand rather than duplicated
+    /// as a literal at each call site.
     pub fn name(&self) -> &'static str {
         match self {
             Command::Add(_) => "add",
@@ -906,5 +922,40 @@ mod tests {
             panic!("expected Schema command");
         };
         assert_eq!(args.target_type, Some(SchemaReportType::PreState));
+    }
+
+    /// The error envelope names the same `command` as the success report: the subcommand where the report has one.
+    #[test]
+    fn report_name_includes_the_subcommand_where_its_report_does() {
+        use clap::Parser;
+        let name = |args: &[&str]| {
+            Cli::try_parse_from(args)
+                .unwrap_or_else(|error| panic!("{args:?}: {error}"))
+                .command
+                .report_name()
+        };
+        assert_eq!(name(&["callisto", "status"]), "status");
+        assert_eq!(name(&["callisto", "release", "--dry-run"]), "release");
+        assert_eq!(name(&["callisto", "release", "pending"]), "release");
+        assert_eq!(
+            name(&["callisto", "release", "plan", "--package", "cargo/a", "--out", "o.json"]),
+            "release plan"
+        );
+        assert_eq!(
+            name(&["callisto", "release-pr", "verify", "--decision", "d", "--snapshot", "s"]),
+            "release-pr verify"
+        );
+        assert_eq!(
+            name(&[
+                "callisto",
+                "release-pr",
+                "commit-plan",
+                "--base-commit",
+                "b",
+                "--message",
+                "m"
+            ]),
+            "release-pr commit-plan"
+        );
     }
 }
