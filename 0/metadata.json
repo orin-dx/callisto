@@ -1,0 +1,88 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6FN66VHB0NMCD03D4VSGTNM",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-03T02:53:19.777429Z",
+  "branch": "fix/tag-push-explicit-refspec",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/tag-push-full-refspec.md",
+    "crates/callisto-graph/src/commands/release/provider/tag.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "368862301261",
+  "checkpoint_transcript_start": 9081,
+  "transcript_lines_at_start": 9081,
+  "compact_transcript_start": 679,
+  "token_usage": {
+    "input_tokens": 32,
+    "cache_creation_tokens": 61213,
+    "cache_read_tokens": 3058826,
+    "output_tokens": 6353,
+    "api_call_count": 16
+  },
+  "redaction": {
+    "replacements": 37,
+    "layers": {
+      "betterleaks": 16,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 21,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 66
+  },
+  "summary": {
+    "intent": "Fix all outstanding confirmed review findings in the Callisto release tool, each on its own branch/PR linked to Entire trails, so the trail branches can be merged. This segment began with the tag push refspec fix.",
+    "outcome": "Created branch fix/tag-push-explicit-refspec, changed the release tag push to use the full refs/tags/X:refs/tags/X refspec in provider/tag.rs, added a changeset, and ran tests, clippy, and fmt. The commit and push were retried after a session-trailer rejection and a signing failure, and their final success is not confirmed in the transcript.",
+    "learnings": {
+      "repo": [
+        "Each fix goes on its own branch from origin/main with a targeted test, a changeset when user-visible, and a link to trail #198, with PR text set via gh pr edit on the PR Entire opens.",
+        "Commits must not include a Claude-Session trailer, per the user's memory rule.",
+        "Commit signing (GPG) must run outside the sandbox.",
+        "Changesets live in .changeset/*.md, with front matter like `callisto-cli: patch`.",
+        "A branch named fix/tag-push-explicit-refspec already existed as an empty branch at origin/main, so it was switched to rather than recreated."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/tag.rs",
+          "line": 108,
+          "finding": "The tag push used a bare `push <endpoint> <name>`. It is now an explicit `refs/tags/<name>:refs/tags/<name>` refspec, so a branch with the same name as the tag cannot make the push ambiguous."
+        },
+        {
+          "path": "crates/callisto-cli/tests/common/release_harness.rs",
+          "line": 790,
+          "finding": "The release harness contains push invocations that were checked for compatibility with the refspec change."
+        }
+      ],
+      "workflow": [
+        "Use /usr/bin/git explicitly, and avoid heredocs and complex substitutions because the worktree guard refuses them.",
+        "Run cargo clippy --all-targets -D warnings and cargo fmt --check before committing.",
+        "Commands that need signing or network access must be run unsandboxed after a sandbox-caused failure."
+      ]
+    },
+    "friction": [
+      "The first commit attempt failed because of the session trailer rule, and the retry failed because signing needs to run outside the sandbox.",
+      "The branch name already existed, so `git switch -c` failed and the branch had to be inspected and switched to.",
+      "The worktree guard and sandbox restrictions kept forcing commands to be rewritten."
+    ],
+    "open_items": [
+      "Confirm that the tag-push commit and push succeeded, then open or link the PR and trail #198.",
+      "Fix the receipt that says `published` when the publish client reported already-published.",
+      "Fix the WorkspaceCargoResolver BOM/CRLF loss, the cargo registry `url` that is accepted but ignored, and yarn dropping `--registry`.",
+      "Fix the dispatched release skipping the verify gate, the attestation checks that need --source-ref/--signer-ref, and the late npm publishes that get almost no confirmation window.",
+      "Fix the pre-mode prerelease planning bug, the E320 `.all()` misalignment, the changelog indent match, the `overrides: \"$name\"` rewrite, the duplicate promoted-package changelog title, the interrupted-asset-upload E167, and the release-commit path check.",
+      "Handle slop trails #194-#199, the render_snapshot diagnostics, the soft-failure suspects, the bench fidelity fixes, and the verification pass for agent-reported findings.",
+      "User and Entire actions are still pending: approving gates, closing merged trails, resolving findings, cleaning up leftover worktrees, and the decisions on trail #179 and OIDC trusted publishing.",
+      "Tell the user once every finding is either fixed in a PR or listed as needing their decision."
+    ]
+  }
+}
