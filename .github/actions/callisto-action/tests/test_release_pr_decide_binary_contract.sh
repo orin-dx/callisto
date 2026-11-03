@@ -80,7 +80,13 @@ assert_jq_matches_real_output() {
   decision_kind=$(jq -r '.action.kind' <<< "$decision")
   existing_pr=$(jq -r '.action.pullRequestNumber' <<< "$decision")
   staging_branch=$(jq -r '.action.stagingBranch' <<< "$decision")
+  release_branch=$(jq -r '.action.branch' <<< "$decision")
 
+  if [[ "$release_branch" != "callisto/version-packages" ]]; then
+    echo "FAIL ($label): jq -r '.action.branch' resolved to '$release_branch', not the release branch -- a rename would make the script move a branch named null: $decision"
+    fail=1
+    return
+  fi
   if [[ "$decision_kind" != "$expect_kind" ]]; then
     echo "FAIL ($label): expected decision kind '$expect_kind', got '$decision_kind': $decision"
     fail=1
@@ -128,7 +134,8 @@ decision=$("$callisto_bin" --format json release-pr decide --snapshot "$snapshot
   --base-branch main --release-branch callisto/version-packages --cwd "$repo")
 decision_kind=$(jq -r '.action.kind' <<< "$decision")
 staging_branch=$(jq -r '.action.stagingBranch' <<< "$decision")
-if [[ "$decision_kind" != create || "$staging_branch" != "callisto/version-packages--staging" ]]; then
+release_branch=$(jq -r '.action.branch' <<< "$decision")
+if [[ "$decision_kind" != create || "$staging_branch" != "callisto/version-packages--staging" || "$release_branch" != "callisto/version-packages" ]]; then
   echo "FAIL (create, no existing PR): expected kind=create with the deterministic staging branch, got: $decision"
   fail=1
 elif ! verify_output=$("$callisto_bin" release-pr verify --decision "$decision" --snapshot "$snapshot" --cwd "$repo" 2>&1); then

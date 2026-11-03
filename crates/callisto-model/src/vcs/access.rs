@@ -100,7 +100,8 @@ impl<'r> GitAccess<'r> {
     pub fn staged_changes_since(&self, base: &CommitSha) -> Result<Vec<StagedChangeV1>, VcsError> {
         let root = self.repo_root()?;
 
-        let output = self.runner.run(
+        // Quiet for the same reason: a failure is returned below with git's message.
+        let output = self.runner.run_quiet(
             "git",
             &[
                 "diff",
@@ -112,6 +113,7 @@ impl<'r> GitAccess<'r> {
                 base.as_str(),
             ],
             &root,
+            crate::LOCAL_GIT_TIMEOUT,
         )?;
         if !output.success() {
             return Err(VcsError::Git(format!(
@@ -162,7 +164,13 @@ impl<'r> GitAccess<'r> {
 
     /// The `git rev-parse --show-toplevel` resolution shared by every caller; `context` names the caller on failure.
     fn resolved_toplevel(&self, context: &str) -> Result<PathBuf, VcsError> {
-        let output = self.runner.run("git", &["rev-parse", "--show-toplevel"], &self.root)?;
+        // Quiet: the failure is returned below with git's message, so echoing it as well prints it twice.
+        let output = self.runner.run_quiet(
+            "git",
+            &["rev-parse", "--show-toplevel"],
+            &self.root,
+            crate::LOCAL_GIT_TIMEOUT,
+        )?;
         if !output.success() {
             return Err(VcsError::Git(format!(
                 "could not determine the Git repository root {context}: {}",

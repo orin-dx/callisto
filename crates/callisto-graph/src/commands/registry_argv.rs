@@ -495,11 +495,13 @@ fn detect_auth_failure(text_lower: &str, raw_stderr: &CommandOutput) -> Option<R
 pub(crate) fn classify_cargo_output(output: &CommandOutput) -> Result<PublishOutcome, RegistryError> {
     let combined = combined_lower(output);
 
-    if combined.contains("already exists") || combined.contains("already uploaded") {
-        return Ok(PublishOutcome::AlreadyPublished);
-    }
+    // Success first: only a failed publish can mean the version is already there, and a successful one may print
+    // anything, including those words.
     if output.success() {
         return Ok(PublishOutcome::Published);
+    }
+    if combined.contains("already exists") || combined.contains("already uploaded") {
+        return Ok(PublishOutcome::AlreadyPublished);
     }
     if let Some(err) = detect_rate_limit(&combined) {
         return Err(err);
@@ -519,16 +521,23 @@ pub(crate) fn classify_cargo_output(output: &CommandOutput) -> Result<PublishOut
 pub(crate) fn classify_npm_publish_output(output: &CommandOutput) -> Result<PublishOutcome, RegistryError> {
     let combined = combined_lower(output);
 
-    if combined.contains("epublishconflict")
+    // Success first, as for cargo: a successful publish prints a 40-character `shasum` and bundle names that can
+    // contain `e409`, and none of that is a conflict. On failure the conflict codes are whole words, never substrings.
+    if output.success() {
+        return Ok(PublishOutcome::Published);
+    }
+    let has_word = |word: &str| {
+        combined
+            .split(|c: char| !c.is_ascii_alphanumeric())
+            .any(|token| token == word)
+    };
+    if has_word("epublishconflict")
+        || has_word("e409")
         || combined.contains("previously published")
         || combined.contains("cannot publish over")
-        || combined.contains("e409")
         || combined.contains("409 conflict")
     {
         return Ok(PublishOutcome::AlreadyPublished);
-    }
-    if output.success() {
-        return Ok(PublishOutcome::Published);
     }
     if let Some(err) = detect_rate_limit(&combined) {
         return Err(err);
@@ -1129,6 +1138,49 @@ mod tests {
         let out = output(1, "", "npm ERR! code E409\nnpm ERR! 409 Conflict");
         assert!(matches!(
             classify_npm_publish_output(&out),
+            Ok(PublishOutcome::AlreadyPublished)
+        ));
+    }
+
+    // A successful publish prints a shasum and bundle names; none of that is a conflict.
+    #[test]
+    fn a_successful_publish_is_published_whatever_it_prints() {
+        let npm = output(
+            0,
+            "",
+            "npm notice shasum: 3f2e409a1b2c3d4e5f60718293a4b5c6d7e8f901\nnpm notice chunk-e409.js\n+ pkg@1.0.0",
+        );
+        assert!(matches!(
+            classify_npm_publish_output(&npm),
+            Ok(PublishOutcome::Published)
+        ));
+        let cargo = output(
+            0,
+            "",
+            "warning: file `notes.md` already exists in the package\nUploaded demo v1.0.0",
+        );
+        assert!(matches!(classify_cargo_output(&cargo), Ok(PublishOutcome::Published)));
+    }
+
+    // On failure, `e409` inside a hash or a bundle name is not the conflict code, so the real error is reported.
+    #[test]
+    fn a_failed_publish_that_merely_contains_e409_is_not_already_published() {
+        let out = output(
+            1,
+            "",
+            "npm error code E401\nnpm error 401 authentication required for chunk-3e409f.js",
+        );
+        assert!(matches!(
+            classify_npm_publish_output(&out),
+            Err(RegistryError::AuthFailed(_))
+        ));
+        let conflict = output(
+            1,
+            "",
+            "npm error code EPUBLISHCONFLICT\nnpm error cannot publish over the previously published versions",
+        );
+        assert!(matches!(
+            classify_npm_publish_output(&conflict),
             Ok(PublishOutcome::AlreadyPublished)
         ));
     }

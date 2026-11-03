@@ -78,7 +78,7 @@ gh() {
   if [[ -n "$TRANSIENT_ON" && "$joined" == *"$TRANSIENT_ON"* ]]; then
     local seen=$(( $(cat "$TRANSIENT_FILE" 2>/dev/null || echo 0) + 1 ))
     echo "$seen" > "$TRANSIENT_FILE"
-    if [[ "$seen" -le "$TRANSIENT_FAILS" ]]; then
+    if [[ "$seen" -gt "$TRANSIENT_SKIP" && "$seen" -le $(( TRANSIENT_SKIP + TRANSIENT_FAILS )) ]]; then
       echo "gh: ${TRANSIENT_MESSAGE:-Something went wrong while executing your query on 2026-11-02T16:57:39Z. Please include \`ID\` when reporting this issue.}" >&2
       return 1
     fi
@@ -170,7 +170,7 @@ STUBS
     VERIFY_FAIL_AT="${VERIFY_FAIL_AT:-0}" VERIFY_FAIL_PERSIST="${VERIFY_FAIL_PERSIST:-false}" VERIFY_COUNT_FILE="$verify_count_file" \
     STALE_READS="${STALE_READS:-0}" STALE_FILE="$stale_file" \
     TRANSIENT_ON="${TRANSIENT_ON:-}" TRANSIENT_FAILS="${TRANSIENT_FAILS:-0}" TRANSIENT_FILE="$transient_file" \
-    TRANSIENT_MESSAGE="${TRANSIENT_MESSAGE:-}" IS_DRAFT="${IS_DRAFT:-false}" \
+    TRANSIENT_MESSAGE="${TRANSIENT_MESSAGE:-}" TRANSIENT_SKIP="${TRANSIENT_SKIP:-0}" IS_DRAFT="${IS_DRAFT:-false}" \
     PR_LIST_FAIL_AFTER="${PR_LIST_FAIL_AFTER:-}" PR_LIST_COUNT_FILE="$transient_file.prlist" \
     BASE_TIP="${BASE_TIP:-0123456789abcdef0123456789abcdef01234567}" \
     REQUIRE_APPLIED_HEAD="${REQUIRE_APPLIED_HEAD:-false}" \
@@ -325,6 +325,23 @@ if [[ "$output" != 1$'\n'* ]] \
 else
   echo 'PASS: update still fails when the applied head never appears'
 fi
+
+# A decision without its branch must stop the run: `jq -r` would print null and the script would move a branch named null.
+nobranch_create='{"schemaVersion":2,"action":{"kind":"create","stagingBranch":"callisto/version-packages--staging"}}'
+nobranch_update='{"schemaVersion":2,"action":{"kind":"update","pullRequestNumber":42,"expectedHeadCommit":"0123456789abcdef0123456789abcdef01234567","stagingBranch":"callisto/version-packages--staging"}}'
+for missing in "$nobranch_create" "$nobranch_update"; do
+  output="$(run_case '[{"number":42,"headRefName":"callisto/version-packages","headRepository":{"nameWithOwner":"orin-dx/callisto"},"headRefOid":"0123456789abcdef0123456789abcdef01234567"}]' "$missing")"
+  if [[ "$output" != 1$'\n'* ]] \
+    || [[ "$output" == *'refs/heads/null'* ]] \
+    || [[ "$output" == *'gh api'* ]] \
+    || [[ "$output" == *'gh pr create'* ]] \
+    || [[ "$output" == *'gh pr edit'* ]]; then
+    echo "FAIL: a decision with no branch must fail before any write: $output"
+    fail=1
+  else
+    echo 'PASS: a decision with no branch fails before any write'
+  fi
+done
 
 output="$(run_case '[]' "$noop")"
 if [[ "$output" != 0$'\n'* ]] \
@@ -490,6 +507,20 @@ if [[ "$output" != 0$'\n'* ]] \
   fail=1
 else
   echo 'PASS: a new release PR built from an older tip stays a draft'
+fi
+
+# An outage that starts after staging is reset must not make the reset's own retries run the reset again.
+TRANSIENT_ON=' api '
+TRANSIENT_SKIP=1
+TRANSIENT_FAILS=100000
+output="$(run_case '[]' "$create")"
+unset TRANSIENT_ON TRANSIENT_SKIP TRANSIENT_FAILS
+api_calls="$(grep -c '^gh api' <<< "$output" || true)"
+if [[ "$output" != 1$'\n'* ]] || [[ "$api_calls" -gt 30 ]]; then
+  echo "FAIL: a sustained transient outage must fail within the retry budget, not recurse ($api_calls gh api calls): $output"
+  fail=1
+else
+  echo "PASS: a sustained transient outage stays within the retry budget ($api_calls gh api calls)"
 fi
 
 # A failed read of the open PRs stops the action with gh's own status, even where the snapshot is an argument.

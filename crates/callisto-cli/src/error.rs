@@ -9,6 +9,7 @@ use miette::Diagnostic;
 /// {
 ///   "schemaVersion": 1,
 ///   "command": "add",
+///   "dryRun": false,
 ///   "error": {
 ///     "code": "E211",
 ///     "message": "human-readable error text",
@@ -18,8 +19,9 @@ use miette::Diagnostic;
 /// }
 /// ```
 ///
-/// `command` is the subcommand that was parsed before the error occurred
-/// (see [`crate::cli::Command::name`]), not derived from the error itself --
+/// `command` is the one the command's success report carries, with the subcommand for `release plan`,
+/// `release-pr verify` and the like (see [`crate::cli::Command::report_name`]), and `dryRun` is `--dry-run`.
+/// Both come from the parsed arguments, not derived from the error itself --
 /// an error can occur before enough context exists to reconstruct it any
 /// other way (e.g. an argument-parsing failure).
 ///
@@ -27,13 +29,14 @@ use miette::Diagnostic;
 /// `"help"`/`"path"` are `null` when the diagnostic provides none. This
 /// guarantees a stable shape regardless of which [`CliError`] variant is
 /// serialized.
-pub fn format_error_json(command: &str, err: &CliError) -> serde_json::Value {
+pub fn format_error_json(command: &str, dry_run: bool, err: &CliError) -> serde_json::Value {
     let code = err.code().map(|c| c.to_string()).unwrap_or_else(|| "E000".to_string());
     let help = err.help().map(|h| h.to_string());
     let path = err.path().map(|p| p.display().to_string());
     serde_json::json!({
         "schemaVersion": callisto_model::SCHEMA_VERSION,
         "command": command,
+        "dryRun": dry_run,
         "error": {
             "code": code,
             "message": err.to_string(),
@@ -429,6 +432,7 @@ mod tests {
             serde_json::json!(command),
             "command must be present and match"
         );
+        assert!(json["dryRun"].is_boolean(), "dryRun must be present, got: {json}");
         let error = &json["error"];
         assert!(
             error.is_object(),
@@ -473,7 +477,7 @@ mod tests {
     #[test]
     fn format_error_json_typed_variant_has_stable_envelope() {
         let err = CliError::AddSummaryEmpty;
-        let json = format_error_json("add", &err);
+        let json = format_error_json("add", false, &err);
         assert_envelope_shape("add", &json);
         assert_eq!(json["error"]["code"], "E275");
         assert_eq!(json["error"]["message"], "--summary cannot be empty");
@@ -484,7 +488,7 @@ mod tests {
     #[test]
     fn format_error_json_not_a_tty_includes_code_and_help() {
         let err = CliError::NotATty;
-        let json = format_error_json("add", &err);
+        let json = format_error_json("add", false, &err);
         assert_envelope_shape("add", &json);
         assert_eq!(json["error"]["code"], "E214");
         assert!(
@@ -516,7 +520,7 @@ mod tests {
             source: std::io::Error::new(std::io::ErrorKind::NotFound, "file missing"),
             path: Some(std::path::PathBuf::from("/some/path")),
         };
-        let json = format_error_json("status", &err);
+        let json = format_error_json("status", false, &err);
         assert_envelope_shape("status", &json);
         assert_eq!(json["error"]["code"], "E213");
         assert!(
@@ -540,7 +544,7 @@ mod tests {
             path: std::path::PathBuf::from("/ws/callisto.toml"),
             message: "denied".to_owned(),
         });
-        let json = format_error_json("init", &init_io);
+        let json = format_error_json("init", false, &init_io);
         assert_envelope_shape("init", &json);
         assert_eq!(json["error"]["code"], "E278");
         assert_eq!(json["error"]["path"], "/ws/callisto.toml");
@@ -548,13 +552,16 @@ mod tests {
         let exists = CliError::Graph(GraphError::InitAlreadyInitialized {
             path: std::path::PathBuf::from("/ws/callisto.toml"),
         });
-        assert_eq!(format_error_json("init", &exists)["error"]["path"], "/ws/callisto.toml");
+        assert_eq!(
+            format_error_json("init", false, &exists)["error"]["path"],
+            "/ws/callisto.toml"
+        );
 
         let workflow = CliError::Graph(GraphError::InitWorkflowExists {
             path: std::path::PathBuf::from("/ws/.github/workflows/release.yml"),
         });
         assert_eq!(
-            format_error_json("init", &workflow)["error"]["path"],
+            format_error_json("init", false, &workflow)["error"]["path"],
             "/ws/.github/workflows/release.yml"
         );
 
@@ -563,11 +570,11 @@ mod tests {
             message: "denied".to_owned(),
         });
         assert_eq!(
-            format_error_json("status", &config)["error"]["path"],
+            format_error_json("status", false, &config)["error"]["path"],
             "/ws/callisto.toml"
         );
 
-        assert!(format_error_json("add", &CliError::AddSummaryEmpty)["error"]["path"].is_null());
+        assert!(format_error_json("add", false, &CliError::AddSummaryEmpty)["error"]["path"].is_null());
     }
 
     /// Structural consistency: two different error variants must produce the same
@@ -575,7 +582,7 @@ mod tests {
     #[test]
     fn format_error_json_structure_is_consistent_across_variants() {
         let errors: &[CliError] = &[CliError::AddSummaryEmpty, CliError::NotATty];
-        let jsons: Vec<serde_json::Value> = errors.iter().map(|e| format_error_json("add", e)).collect();
+        let jsons: Vec<serde_json::Value> = errors.iter().map(|e| format_error_json("add", false, e)).collect();
         for json in &jsons {
             assert_envelope_shape("add", json);
         }
@@ -653,7 +660,7 @@ mod tests {
             },
         ];
         for error in &errors {
-            let json = format_error_json("release", error);
+            let json = format_error_json("release", false, error);
             let code = json["error"]["code"].as_str().unwrap();
             assert!(
                 code.starts_with('E') && code[1..].chars().all(|c| c.is_ascii_digit()),
@@ -663,7 +670,7 @@ mod tests {
         }
         let codes: std::collections::BTreeSet<_> = errors
             .iter()
-            .map(|e| format_error_json("release", e)["error"]["code"].to_string())
+            .map(|e| format_error_json("release", false, e)["error"]["code"].to_string())
             .collect();
         assert_eq!(codes.len(), errors.len(), "release error codes must be unique");
     }
@@ -694,7 +701,7 @@ mod tests {
             CliError::ReleasePrCommitPlanDryRun,
         ];
         for error in &errors {
-            let json = format_error_json("add", error);
+            let json = format_error_json("add", false, error);
             let code = json["error"]["code"].as_str().unwrap();
             assert!(
                 code.starts_with('E') && code[1..].chars().all(|c| c.is_ascii_digit()),
@@ -704,7 +711,7 @@ mod tests {
         }
         let codes: std::collections::BTreeSet<_> = errors
             .iter()
-            .map(|e| format_error_json("add", e)["error"]["code"].to_string())
+            .map(|e| format_error_json("add", false, e)["error"]["code"].to_string())
             .collect();
         assert_eq!(codes.len(), errors.len(), "retired-Other error codes must be unique");
     }

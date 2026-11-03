@@ -31,7 +31,7 @@ pub(crate) mod timeouts {
     /// `gh release upload`.
     pub(crate) const FORGE_ASSET_UPLOAD: Duration = Duration::from_secs(600);
     /// Purely local git reads (`rev-parse`, `for-each-ref`, `remote get-url`).
-    pub(crate) const LOCAL_GIT: Duration = Duration::from_secs(60);
+    pub(crate) const LOCAL_GIT: Duration = callisto_model::LOCAL_GIT_TIMEOUT;
 }
 
 /// External programs and the remote name the release path invokes.

@@ -216,6 +216,7 @@ workflow-contracts: release-workflow-checks
     bash .github/tests/test-move-floating-tag.sh
     bash .github/tests/test-hold-release-pr.sh
     bash .github/tests/test-release-pr-notes.sh
+    bash .github/tests/test-problem-matcher.sh
     env PATH=/usr/bin:/bin bash .github/actions/callisto-action/tests/test_release_pr_contract.sh
     env PATH=/usr/bin:/bin bash .github/actions/callisto-action/tests/test_release_contract.sh
     bash .github/actions/setup-callisto/tests/test_download_extraction_format.sh
