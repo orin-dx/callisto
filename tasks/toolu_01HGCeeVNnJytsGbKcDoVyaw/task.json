@@ -1,0 +1,14 @@
+{
+  "tool_use_id": "toolu_01HGCeeVNnJytsGbKcDoVyaw",
+  "agent_id": "ad801bb5779d7edc0",
+  "task_description": "Research Rust markdown parsers and linters",
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 62357,
+    "cache_read_tokens": 215661,
+    "output_tokens": 4694,
+    "api_call_count": 5
+  },
+  "started_at": "2026-11-02T09:01:48.20147-08:00",
+  "completed_at": "2026-11-02T09:02:50.776726-08:00"
+}

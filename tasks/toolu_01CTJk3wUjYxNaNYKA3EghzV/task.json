@@ -1,0 +1,14 @@
+{
+  "tool_use_id": "toolu_01CTJk3wUjYxNaNYKA3EghzV",
+  "agent_id": "ab6b94d507577968a",
+  "task_description": "Research agent-native linting needs",
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 65355,
+    "cache_read_tokens": 155876,
+    "output_tokens": 3938,
+    "api_call_count": 4
+  },
+  "started_at": "2026-11-02T09:01:48.202422-08:00",
+  "completed_at": "2026-11-02T09:02:35.735355-08:00"
+}

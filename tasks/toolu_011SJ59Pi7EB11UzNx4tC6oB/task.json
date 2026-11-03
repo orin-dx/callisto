@@ -1,0 +1,14 @@
+{
+  "tool_use_id": "toolu_011SJ59Pi7EB11UzNx4tC6oB",
+  "agent_id": "a02108ffd76595f2b",
+  "task_description": "Research oxlint linter architecture",
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 62765,
+    "cache_read_tokens": 156327,
+    "output_tokens": 4236,
+    "api_call_count": 4
+  },
+  "started_at": "2026-11-02T09:01:48.202789-08:00",
+  "completed_at": "2026-11-02T09:02:48.948013-08:00"
+}
