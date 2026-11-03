@@ -146,3 +146,86 @@ fn an_artifact_whose_package_is_not_released_is_a_config_error_not_a_defect() {
         "must not be reported as an internal defect: {stderr}"
     );
 }
+
+// REL-CMD-04 and REL-CMD-05: a preview needs no `origin`, even when the release builds artifacts.
+#[test]
+fn a_preview_without_origin_plans_an_artifact_release() {
+    let (dir, _) = plugin_artifact_fixture(true);
+    git(dir.path(), &["remote", "remove", "origin"]);
+    let out = callisto(dir.path(), &["release", "--dry-run"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "preview must succeed without origin: {stderr}");
+    let plan: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(plan["dryRun"], true, "{plan}");
+    assert!(plan["digest"].is_string(), "{plan}");
+    assert!(!stderr.contains("E170"), "stderr: {stderr}");
+
+    let run = callisto(dir.path(), &["release"]);
+    assert!(!run.status.success(), "the real run still needs origin");
+}
+
+// REL-AUTH-08: `--artifact-repository` alone is not a usage error; a source with `[release]` fails with E231.
+#[test]
+fn plan_with_only_the_artifact_repository_fails_with_e231_not_a_usage_error() {
+    let (dir, commit) = plugin_artifact_fixture(true);
+    let external = tempfile::tempdir().unwrap();
+    let out = callisto(
+        dir.path(),
+        &[
+            "release",
+            "plan",
+            "--from-release-commit",
+            &commit,
+            "--decision",
+            DECISION_PATH,
+            "--artifact-repository",
+            "example/core-crate",
+            "--out",
+            external.path().join("intent.json").to_str().unwrap(),
+        ],
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "stderr: {stderr}");
+    assert!(stderr.contains("E231"), "expected E231, got: {stderr}");
+}
+
+// REL-AUTH-05: every route fails with E266 for a shallow repository, not a lower-level read failure.
+#[test]
+fn plan_from_a_release_commit_in_a_shallow_clone_fails_with_e266() {
+    let (dir, commit) = plugin_artifact_fixture(true);
+    let shallow = tempfile::tempdir().unwrap();
+    git(shallow.path(), &["init", "-q"]);
+    git(
+        shallow.path(),
+        &["fetch", "-q", "--depth", "1", dir.path().to_str().unwrap(), &commit],
+    );
+    git(shallow.path(), &["checkout", "-q", "--detach", "FETCH_HEAD"]);
+    let external = tempfile::tempdir().unwrap();
+    let out = plan(shallow.path(), &external.path().join("intent.json"), &commit);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "plan must fail");
+    assert!(stderr.contains("E266"), "expected E266, got: {stderr}");
+}
+
+// REL-AUTH-05: and with E265 for a repository that is not SHA-1.
+#[test]
+fn plan_from_a_release_commit_in_a_sha256_repository_fails_with_e265() {
+    let dir = tempfile::tempdir().unwrap();
+    git(dir.path(), &["init", "-q", "--object-format=sha256"]);
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"p\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    fs::write(dir.path().join("src/lib.rs"), "").unwrap();
+    let external = tempfile::tempdir().unwrap();
+    let out = plan(
+        dir.path(),
+        &external.path().join("intent.json"),
+        "0123456789abcdef0123456789abcdef01234567",
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "plan must fail");
+    assert!(stderr.contains("E265"), "expected E265, got: {stderr}");
+}

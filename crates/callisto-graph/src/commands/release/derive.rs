@@ -315,17 +315,21 @@ fn prepare_remote<R: CommandRunner, D: DependencyResolver>(
         (true, GitRemoteRequirement::OptionalForPreview) => optional_git_remote(&workspace.root, workspace.runner)?,
     };
     if let Some(policy) = artifact_policy {
-        let remote = git_remote
-            .as_ref()
-            .and_then(|remote| remote.github_repository.as_ref())
-            .ok_or(GraphError::ReleasePreconditionUnmet {
-                requirement: ReleasePreconditionRequirement::GitHubRemote,
-            })?;
-        if remote != &policy.repository {
-            return Err(GraphError::ReleaseArtifactRepositoryMismatch {
-                configured: policy.repository.clone(),
-                remote: remote.clone(),
-            });
+        match git_remote.as_ref().and_then(|remote| remote.github_repository.as_ref()) {
+            Some(remote) if remote != &policy.repository => {
+                return Err(GraphError::ReleaseArtifactRepositoryMismatch {
+                    configured: policy.repository.clone(),
+                    remote: remote.clone(),
+                });
+            }
+            Some(_) => {}
+            // A preview has no effect to protect and `origin` is optional for it; the run itself still needs one.
+            None if git_remote.is_none() && remote == GitRemoteRequirement::OptionalForPreview => {}
+            None => {
+                return Err(GraphError::ReleasePreconditionUnmet {
+                    requirement: ReleasePreconditionRequirement::GitHubRemote,
+                });
+            }
         }
     }
     Ok(git_remote)
