@@ -1,0 +1,7 @@
+{
+  "tool_use_id": "toolu_01ML5epzKAoH67rkztCWZouN",
+  "agent_id": "a1f58fa851a8a5ccd",
+  "subagent_type": "general-purpose",
+  "task_description": "Coverage shard: CLI surface and rendering",
+  "started_at": "2026-11-02T17:07:42.601879-08:00"
+}

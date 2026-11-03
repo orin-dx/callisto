@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_012PTyo8RBQZpsG8wQwVgjCc",
+  "agent_id": "ad513e8c153f85bcd",
+  "subagent_type": "general-purpose",
+  "task_description": "Boundary contracts and harness fidelity",
+  "token_usage": {
+    "input_tokens": 64,
+    "cache_creation_tokens": 105988,
+    "cache_read_tokens": 3038523,
+    "output_tokens": 18151,
+    "api_call_count": 32
+  },
+  "started_at": "2026-11-02T16:46:28.421319-08:00",
+  "completed_at": "2026-11-02T16:50:04.028003-08:00"
+}

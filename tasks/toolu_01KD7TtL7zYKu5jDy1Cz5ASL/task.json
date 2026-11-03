@@ -1,0 +1,7 @@
+{
+  "tool_use_id": "toolu_01KD7TtL7zYKu5jDy1Cz5ASL",
+  "agent_id": "a2dc4cc507880cc6a",
+  "subagent_type": "general-purpose",
+  "task_description": "Coverage shard: graph config, locate, commands",
+  "started_at": "2026-11-02T17:07:42.60226-08:00"
+}
