@@ -1139,6 +1139,36 @@ fn python_build_removes_every_release_credential_from_its_environment() {
     );
 }
 
+// A restricted npm package answers an anonymous `npm view` with 404, so the confirmation must see the same npm config
+// the publish used: the temporary config the release action writes for `NPM_TOKEN` goes to `view` as well.
+#[test]
+fn npm_view_uses_the_publish_config_when_there_is_one() {
+    let with_config = npm_view_args(
+        "pkg@1.0.0",
+        false,
+        Some("https://registry.example/"),
+        Some("/tmp/npmrc"),
+    );
+    assert_eq!(
+        with_config,
+        [
+            "view",
+            "pkg@1.0.0",
+            "--json",
+            "--fetch-retries=0",
+            "--registry",
+            "https://registry.example/",
+            "--userconfig",
+            "/tmp/npmrc"
+        ]
+    );
+    // Without it the arguments are unchanged: the user's own `.npmrc` and environment variables reach `view` as they are.
+    assert_eq!(
+        npm_view_args("pkg@1.0.0", true, None, None),
+        ["view", "pkg@1.0.0", "repository", "--json", "--fetch-retries=0"]
+    );
+}
+
 #[test]
 fn publisher_environment_maps_only_the_selected_native_tool() {
     let npm = npm_publisher_environment("npm", Some("npm-secret"), Some("/tmp/npmrc"));

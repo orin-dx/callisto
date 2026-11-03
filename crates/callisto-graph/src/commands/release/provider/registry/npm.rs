@@ -8,14 +8,42 @@ pub(super) fn run_npm_publish_argv(
     timeout: Duration,
 ) -> Result<CommandOutput, GraphError> {
     let token = std::env::var("NPM_TOKEN").ok().filter(|value| !value.is_empty());
-    let config = std::env::var("CALLISTO_PUBLISH_NPM_CONFIG")
-        .ok()
-        .filter(|value| !value.is_empty());
+    let config = publish_npm_config();
     let env = npm_publisher_environment(&argv.program, token.as_deref(), config.as_deref());
     let args: Vec<&str> = argv.args.iter().map(String::as_str).collect();
     Ok(context
         .runner()
         .run_with_timeout_publisher(&argv.program, &args, &argv.cwd, timeout, &env)?)
+}
+
+/// The temporary npm config the release action writes when it is given `NPM_TOKEN`, if any.
+fn publish_npm_config() -> Option<String> {
+    std::env::var("CALLISTO_PUBLISH_NPM_CONFIG")
+        .ok()
+        .filter(|value| !value.is_empty())
+}
+
+/// `npm view` arguments for one package version. Auth comes from the same place it does for the publish: the
+/// environment and the user's own `.npmrc` reach both children alike, and that temporary config, which only the
+/// publish child would otherwise see, is passed here too, because a restricted package answers an anonymous `view` with 404.
+pub(super) fn npm_view_args(
+    spec: &str,
+    repository_only: bool,
+    registry: Option<&str>,
+    userconfig: Option<&str>,
+) -> Vec<String> {
+    let mut args = vec!["view".to_owned(), spec.to_owned()];
+    if repository_only {
+        args.push("repository".to_owned());
+    }
+    args.extend(["--json".to_owned(), "--fetch-retries=0".to_owned()]);
+    if let Some(registry) = registry {
+        args.extend(["--registry".to_owned(), registry.to_owned()]);
+    }
+    if let Some(userconfig) = userconfig {
+        args.extend(["--userconfig".to_owned(), userconfig.to_owned()]);
+    }
+    args
 }
 
 pub(super) fn npm_publisher_environment<'a>(
@@ -105,10 +133,13 @@ impl RegistryEcosystem for NpmRegistry {
 
     fn repository(&self, context: &ProviderContext<'_>, operation: &RegistryPublishOperation) -> Option<String> {
         let spec = format!("{}@{}", operation.package_name, operation.version.render());
-        let mut args = vec!["view", spec.as_str(), "repository", "--json", "--fetch-retries=0"];
-        if let Some(registry) = operation.registry.endpoint.as_deref() {
-            args.extend(["--registry", registry]);
-        }
+        let args = npm_view_args(
+            &spec,
+            true,
+            operation.registry.endpoint.as_deref(),
+            publish_npm_config().as_deref(),
+        );
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
         let workspace_dir = crate::workspace_owner::npm_workspace_dir(context.root(), &operation.package_dir).ok()?;
         let output = run_observation(
             context.runner(),
@@ -138,10 +169,13 @@ impl RegistryEcosystem for NpmRegistry {
         let spec = format!("{}@{}", operation.package_name, operation.version.render());
         // Callisto's bounded retry owns retrying; npm's own fetch retries made an
         // unreachable registry take ~70s per attempt.
-        let mut args = vec!["view", spec.as_str(), "--json", "--fetch-retries=0"];
-        if let Some(registry) = operation.registry.endpoint.as_deref() {
-            args.extend(["--registry", registry]);
-        }
+        let args = npm_view_args(
+            &spec,
+            false,
+            operation.registry.endpoint.as_deref(),
+            publish_npm_config().as_deref(),
+        );
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
         let workspace_dir = crate::workspace_owner::npm_workspace_dir(context.root(), &operation.package_dir)?;
         let output = match run_observation(
             context.runner(),
