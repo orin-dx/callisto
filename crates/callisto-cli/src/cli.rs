@@ -832,6 +832,10 @@ mod tests {
         assert!(Cli::try_parse_from(["callisto", "schema"]).is_ok());
         assert!(Cli::try_parse_from(["callisto", "compose-pr-body"]).is_ok());
         assert!(Cli::try_parse_from(["callisto", "help"]).is_ok());
+        // The one hidden `help` is at the root: no command has its own, and completions must not offer one.
+        assert!(Cli::try_parse_from(["callisto", "help", "release", "plan"]).is_ok());
+        assert!(Cli::try_parse_from(["callisto", "pre", "help"]).is_err());
+        assert!(Cli::try_parse_from(["callisto", "release", "help"]).is_err());
         assert!(Cli::try_parse_from([
             "callisto",
             "release",

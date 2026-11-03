@@ -142,7 +142,7 @@ pub fn render_init<W: io::Write>(report: &InitReport, w: &mut W) -> io::Result<(
     for file in report.files.iter().filter(|file| **file != report.config_path) {
         writeln!(w, "  {}", file.display())?;
     }
-    Ok(())
+    render_diagnostics(&report.diagnostics, None, w)
 }
 
 pub fn render_matrix<W: io::Write>(report: &callisto_model::MatrixReport, w: &mut W) -> io::Result<()> {
@@ -423,6 +423,34 @@ mod tests {
         let text = String::from_utf8(out).unwrap();
         assert!(text.contains(".changeset/README.md"), "got: {text}");
         assert!(text.contains(".github/workflows/callisto-release.yml"), "got: {text}");
+    }
+
+    // A dropped Changesets key must not be silent in text mode, only in the JSON report.
+    #[test]
+    fn render_init_prints_its_diagnostics() {
+        use callisto_model::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
+
+        let report = InitReport {
+            schema_version: callisto_model::SCHEMA_VERSION,
+            initialized: true,
+            config_path: std::path::PathBuf::from("callisto.toml"),
+            config: String::new(),
+            files: vec![std::path::PathBuf::from("callisto.toml")],
+            diagnostics: vec![Diagnostic {
+                code: DiagnosticCode::EmptyChangeset,
+                severity: DiagnosticSeverity::Warning,
+                message: "ignored Changesets key `fixed`".to_string(),
+                package: None,
+                path: None,
+                escalated_by: None,
+                governed_by: None,
+            }],
+        };
+        let mut out = Vec::new();
+        render_init(&report, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("Diagnostics:"), "got: {text}");
+        assert!(text.contains("[warning] ignored Changesets key `fixed`"), "got: {text}");
     }
 
     /// `render_version` must call

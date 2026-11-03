@@ -203,7 +203,7 @@
     },
     {
       "id": "REL-PUB-01",
-      "criterion": "Cargo publish runs `cargo publish --manifest-path <pkg>/Cargo.toml --locked` from the workspace root, adding `--registry <key>` for registries other than crates.io. It runs only after the on-disk version (resolving `version.workspace = true`) equals the planned version and fails with an on-disk version drift error otherwise."
+      "criterion": "Cargo publish runs `cargo publish --manifest-path <pkg>/Cargo.toml --locked` from the directory of the Cargo workspace that governs the package, adding `--registry <key>` for registries other than crates.io. It runs only after the on-disk version (resolving `version.workspace = true`) equals the planned version and fails with an on-disk version drift error otherwise."
     },
     {
       "id": "REL-PUB-02",
@@ -224,11 +224,11 @@
     },
     {
       "id": "REL-PUB-06",
-      "criterion": "Cargo observation runs `cargo --config net.retry=0 info NAME@VERSION --registry <name>` from the workspace root, passing `crates-io` for the default. Exit 0 with a matching `version:` line means present, exit 101 with ``could not find `NAME@VERSION` `` means absent, and anything else is indeterminate."
+      "criterion": "Cargo observation runs `cargo --config net.retry=0 info NAME@VERSION --registry <name>` from the directory of the Cargo workspace that governs the package, passing `crates-io` for the default. Exit 0 with a matching `version:` line means present, exit 101 with ``could not find `NAME@VERSION` `` means absent, and anything else is indeterminate."
     },
     {
       "id": "REL-PUB-07",
-      "criterion": "npm observation runs `npm view NAME@VERSION --json --fetch-retries=0`, with `--registry` when configured. Exit 0 with output means present. A failure whose npm error code is E404, read from the JSON error body on stdout or else from the `code` line on stderr, means absent. Exit 0 with no output, and any other failure, leave the observation indeterminate and are never read as absence."
+      "criterion": "npm observation runs `npm view NAME@VERSION --json --fetch-retries=0`, with `--registry` when configured. Exit 0 with output means present. A failure whose npm error code is E404, read from the JSON error body on stdout or, when stdout is empty, from the `code` line on stderr (other output is indeterminate), means absent. Exit 0 with no output, and any other failure, leave the observation indeterminate and are never read as absence."
     },
     {
       "id": "REL-PUB-08",
@@ -334,7 +334,7 @@
     },
     {
       "id": "REL-GH-03",
-      "criterion": "Release notes are the body of the package CHANGELOG section for the version, passed with `--notes-file`. For a package in a fixed group, the entries that the group's other members recorded for the same version follow, each as ``- `<ecosystem/name>`: <entry>``; the package's own section is kept whole (headings and paragraphs included) except its group boilerplate lines, an entry is left out when its text is identical to one the notes already hold, and a member without a changelog section adds nothing. With no changelog configured, a missing file, or a missing or empty section, Callisto passes `--generate-notes` and prints `notes: using generated notes (<reason>) for <package>` to stderr. A changelog that exists but cannot be read (a permission error, a directory, bytes that are not UTF-8) fails release planning with E125 naming the file, because generated notes would silently replace what the release PR reviewed."
+      "criterion": "Release notes are the body of the package CHANGELOG section for the version, passed with `--notes-file`. For a package in a fixed group, the entries that the group's other members recorded for the same version follow, each as ``- `<ecosystem/name>`: <entry>``; the package's own section is kept whole (headings and paragraphs included), and its group boilerplate lines are dropped only when another member adds entries, an entry is left out when its text is identical to one the notes already hold, and a member without a changelog section adds nothing. With no changelog configured, a missing file, or a missing or empty section, Callisto passes `--generate-notes` and prints `notes: using generated notes (<reason>) for <package>` to stderr. A changelog that exists but cannot be read (a permission error, a directory, bytes that are not UTF-8) fails release planning with E125 naming the file, because generated notes would silently replace what the release PR reviewed."
     },
     {
       "id": "REL-GH-04",
@@ -391,11 +391,11 @@
     },
     {
       "id": "REL-PR-08",
-      "criterion": "The release-PR action retries a forge call that fails with a transient GitHub error (`Something went wrong`, an HTTP 5xx, a gateway or timeout error, a reset or truncated connection) up to 4 attempts, waiting 2, 4 and 8 seconds, and prints every failed attempt's stderr. A failure of any other kind is not retried. Every call is retried except `gh pr create`, and cleanup of the staging branch. Before each retry of the `createCommitOnBranch` mutation, the staging branch is put back on the base commit. A failed read of the open pull requests stops the action with the failing `gh` call's own error and status."
+      "criterion": "The release-PR action retries a forge call that fails with a transient GitHub error (`Something went wrong`, an HTTP 5xx, a gateway or timeout error, a reset or truncated connection) up to 4 attempts, waiting 2, 4 and 8 seconds, and prints a failed attempt's stderr, except for the two probes whose failure is an expected branch (resetting the staging branch and creating a ref that may already exist). A failure of any other kind is not retried. Every call is retried except `gh pr create`, and cleanup of the staging branch. Before each retry of the `createCommitOnBranch` mutation, the staging branch is put back on the base commit. A failed read of the open pull requests, including the one before each verification, stops the action with the failing `gh` call's own error and status."
     },
     {
       "id": "REL-PR-09",
-      "criterion": "On every push to `main`, the hold workflow converts each open, non-draft release PR (head `<release-branch>` or `<release-branch>--<anything>` in this repository) to a draft. The release-PR action marks the PR ready only after the update or creation succeeded and the base branch still points at the commit the PR was built from; if the branch moved during the run, a ready PR is converted back to a draft and the action warns. A release PR whose refresh failed or never ran therefore stays a draft, and a draft cannot be merged."
+      "criterion": "On every push to `main`, the hold workflow converts each open, non-draft release PR (head `<release-branch>` or `<release-branch>--<anything>` in this repository) to a draft. The release-PR action creates a new PR as a draft and marks a PR ready only after the update or creation succeeded and the base branch still points at the commit the PR was built from; if the branch moved during the run, a ready PR is converted back to a draft and the action warns. A release PR whose refresh failed or never ran therefore stays a draft, and a draft cannot be merged."
     },
     {
       "id": "REL-ERR-01",

@@ -78,8 +78,10 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     let tags = ws.tags()?;
 
     let pre_path = ws.root.join(ws.config.pre_json_path());
-    let pre_text = callisto_model::strict_fs::read_optional(&pre_path)
-        .map_err(|e| GraphError::PreJsonRead { message: e.to_string() })?;
+    let pre_text = callisto_model::strict_fs::read_optional(&pre_path).map_err(|e| GraphError::PreJsonRead {
+        path: pre_path.clone(),
+        message: e.to_string(),
+    })?;
     let (pre_state, pre_json_original_text) = if let Some(text) = pre_text {
         let state = callisto_model::format::parse_pre_json(&text).map_err(GraphError::PreJson)?;
         let state = ws.resolve_pre_state_from_json(state, &text)?;
@@ -335,8 +337,10 @@ pub fn check_partial_run<R: CommandRunner, D: DependencyResolver>(ws: &Workspace
     // A pre-release cycle legitimately reruns `version` uncommitted; the staged-manifest check is scoped past it.
     let pre_mode = {
         let path = ws.root.join(ws.config.pre_json_path());
-        let text = callisto_model::strict_fs::read_optional(&path)
-            .map_err(|e| GraphError::PreJsonRead { message: e.to_string() })?;
+        let text = callisto_model::strict_fs::read_optional(&path).map_err(|e| GraphError::PreJsonRead {
+            path: path.clone(),
+            message: e.to_string(),
+        })?;
         if let Some(text) = text {
             let state = callisto_model::format::parse_pre_json(&text).map_err(GraphError::PreJson)?;
             Some(state.mode)

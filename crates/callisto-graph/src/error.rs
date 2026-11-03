@@ -298,14 +298,12 @@ pub enum GraphError {
     )]
     PreJson(callisto_model::format::PreJsonError),
 
-    #[error("failed to read .changeset/pre.json: {message}")]
+    #[error("failed to read {}: {message}", .path.display())]
     #[diagnostic(
         code(E115),
-        help(
-            "Check that .changeset/pre.json is readable. Delete the file and re-run `callisto pre enter` to recover."
-        )
+        help("Check that the file named above is readable. Delete it and re-run `callisto pre enter` to recover.")
     )]
-    PreJsonRead { message: String },
+    PreJsonRead { path: std::path::PathBuf, message: String },
 
     #[error("package `{package}` declares platform targets via both `{napi_source}` and `{maturin_source}`; only one source is allowed")]
     #[diagnostic(
@@ -570,7 +568,9 @@ pub enum GraphError {
         help(
             "The committed release decision, changelog, or manifest diff does not match what \
              this commit claims to release. Reconcile the commit's contents with its release \
-             decision instead of regenerating the intent."
+             decision instead of regenerating the intent. If a stale release PR merged and \
+             consumed no changesets, revert its release payload; see 'A stale release PR' in \
+             docs/releasing.md."
         )
     )]
     ReleaseCommitVerificationFailed {
@@ -1007,6 +1007,18 @@ pub enum ReleasePreconditionRequirement {
 mod tests {
     use super::*;
     use callisto_model::vcs::VcsError;
+
+    /// An unreadable pre-release state file names the path it was read from, not a hardcoded `.changeset/pre.json`.
+    #[test]
+    fn pre_json_read_error_names_the_real_path() {
+        let error = GraphError::PreJsonRead {
+            path: std::path::PathBuf::from("/repo/changes/pre.json"),
+            message: "Is a directory (os error 21)".to_owned(),
+        };
+        let text = error.to_string();
+        assert!(text.contains("/repo/changes/pre.json"), "got: {text}");
+        assert!(!text.contains(".changeset/pre.json"), "got: {text}");
+    }
 
     /// Spec: GraphError::Vcs must be transparent — wrapping a VcsError must
     /// not add any prefix (e.g. "vcs error: ") to the display message.
