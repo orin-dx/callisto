@@ -79,16 +79,20 @@ impl Command {
     /// The `"command"` value of this invocation's JSON report, success or error: the name below plus, for the
     /// subcommands whose reports carry one (`release plan`, `release-pr verify`), the subcommand.
     pub fn report_name(&self) -> &'static str {
+        use callisto_model::{
+            ReleaseArtifactManifestReport, ReleaseExecuteReport, ReleasePlanReport, ReleasePrCommitPlanReport,
+            ReleasePrDecideReport, ReleasePrVerifyReport, Report,
+        };
         match self {
             Command::Release(ReleaseCommandArgs { command: Some(sub), .. }) => match sub {
-                ReleaseArgs::Plan(_) => "release plan",
-                ReleaseArgs::ArtifactManifest(_) => "release artifact-manifest",
-                ReleaseArgs::Execute(_) => "release execute",
+                ReleaseArgs::Plan(_) => ReleasePlanReport::COMMAND,
+                ReleaseArgs::ArtifactManifest(_) => ReleaseArtifactManifestReport::COMMAND,
+                ReleaseArgs::Execute(_) => ReleaseExecuteReport::COMMAND,
                 ReleaseArgs::Pending(_) | ReleaseArgs::Inspect(_) | ReleaseArgs::BuildPython(_) => "release",
             },
-            Command::ReleasePr(ReleasePrArgs::Decide(_)) => "release-pr decide",
-            Command::ReleasePr(ReleasePrArgs::Verify(_)) => "release-pr verify",
-            Command::ReleasePr(ReleasePrArgs::CommitPlan(_)) => "release-pr commit-plan",
+            Command::ReleasePr(ReleasePrArgs::Decide(_)) => ReleasePrDecideReport::COMMAND,
+            Command::ReleasePr(ReleasePrArgs::Verify(_)) => ReleasePrVerifyReport::COMMAND,
+            Command::ReleasePr(ReleasePrArgs::CommitPlan(_)) => ReleasePrCommitPlanReport::COMMAND,
             other => other.name(),
         }
     }
@@ -956,6 +960,75 @@ mod tests {
                 "m"
             ]),
             "release-pr commit-plan"
+        );
+        // Every mapping the error envelope uses is the success report's own COMMAND, so the two cannot drift.
+        use callisto_model::{
+            ReleaseArtifactManifestReport, ReleaseExecuteReport, ReleasePlanReport, ReleasePrCommitPlanReport,
+            ReleasePrDecideReport, ReleasePrVerifyReport, Report,
+        };
+        assert_eq!(
+            name(&[
+                "callisto",
+                "release",
+                "execute",
+                "--intent",
+                "i.json",
+                "--receipt",
+                "r.json",
+                "--orchestration-revision",
+                "0123456789abcdef0123456789abcdef01234567"
+            ]),
+            ReleaseExecuteReport::COMMAND
+        );
+        assert_eq!(
+            name(&[
+                "callisto",
+                "release",
+                "artifact-manifest",
+                "--intent",
+                "i.json",
+                "--artifact-dir",
+                "d",
+                "--out",
+                "o.json"
+            ]),
+            ReleaseArtifactManifestReport::COMMAND
+        );
+        assert_eq!(
+            name(&["callisto", "release", "plan", "--package", "cargo/a", "--out", "o.json"]),
+            ReleasePlanReport::COMMAND
+        );
+        assert_eq!(
+            name(&[
+                "callisto",
+                "release-pr",
+                "decide",
+                "--snapshot",
+                "s",
+                "--repository",
+                "o/r",
+                "--base-branch",
+                "main",
+                "--release-branch",
+                "r"
+            ]),
+            ReleasePrDecideReport::COMMAND
+        );
+        assert_eq!(
+            name(&["callisto", "release-pr", "verify", "--decision", "d", "--snapshot", "s"]),
+            ReleasePrVerifyReport::COMMAND
+        );
+        assert_eq!(
+            name(&[
+                "callisto",
+                "release-pr",
+                "commit-plan",
+                "--base-commit",
+                "b",
+                "--message",
+                "m"
+            ]),
+            ReleasePrCommitPlanReport::COMMAND
         );
     }
 }

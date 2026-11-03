@@ -138,7 +138,7 @@
     },
     {
       "id": "REL-CMD-12",
-      "criterion": "`--format json` output of `release`, `release --dry-run`, `release plan`, `release execute` and `release artifact-manifest` goes through the same envelope every other command's JSON report uses: a top-level `schemaVersion`, `command` (the subcommand name) and `dryRun`, alongside that subcommand's own payload fields unchanged. The intent and artifact-manifest --out files, receipt --receipt file and version --emit-decision file use their durable document shape without command or dryRun wrapper fields. A failing command's `--format json` error, printed to stderr, carries the same `schemaVersion`, `command` and `dryRun` as its success report, with the `error` object after them; a message another tool echoed first may precede it."
+      "criterion": "`--format json` output of `release`, `release --dry-run`, `release plan`, `release execute` and `release artifact-manifest` goes through the same envelope every other command's JSON report uses: a top-level `schemaVersion`, `command` (the subcommand name) and `dryRun`, alongside that subcommand's own payload fields unchanged. The intent and artifact-manifest --out files, receipt --receipt file and version --emit-decision file use their durable document shape without command or dryRun wrapper fields. A failing command's `--format json` error, printed to stderr, carries the same `schemaVersion`, `command` and `dryRun` as its success report, with the `error` object after them. Stderr holds that JSON and nothing else."
     },
     {
       "id": "REL-AUTH-01",
