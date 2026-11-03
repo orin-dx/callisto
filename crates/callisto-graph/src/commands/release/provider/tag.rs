@@ -105,7 +105,9 @@ fn push_tag(
     endpoint: &str,
     operation: &TagOperation,
 ) -> Result<(), GraphError> {
-    let push_args = ["push", endpoint, operation.name.as_str()];
+    // A bare name is ambiguous when a branch shares it.
+    let refspec = format!("refs/tags/{0}:refs/tags/{0}", operation.name.as_str());
+    let push_args = ["push", endpoint, refspec.as_str()];
     let pushed = runner.run_with_timeout(programs::GIT, &push_args, root, timeouts::GIT_PUSH)?;
     if pushed.exit_code == Some(0) {
         return Ok(());
@@ -749,6 +751,37 @@ mod tests {
     }
 
     const TARGET: &str = "caf945cc9d5a11a71c57f419d1a73d0627c1756b";
+
+    #[test]
+    fn the_push_names_the_tag_ref_in_full() {
+        struct Capture(std::sync::Mutex<Vec<String>>);
+        impl CommandRunner for Capture {
+            fn run(
+                &self,
+                _program: &str,
+                args: &[&str],
+                _cwd: &Path,
+            ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+                *self.0.lock().unwrap() = args.iter().map(ToString::to_string).collect();
+                Ok(callisto_model::CommandOutput {
+                    exit_code: Some(0),
+                    stdout: String::new(),
+                    stderr: String::new(),
+                })
+            }
+        }
+        let operation = TagOperation {
+            name: TagName::new_unchecked("v1".to_owned()),
+            target: CommitSha::parse(TARGET).unwrap(),
+            annotation: "v1".to_owned(),
+        };
+        let runner = Capture(Default::default());
+        push_tag(&runner, &std::env::temp_dir(), "origin", &operation).unwrap();
+        assert_eq!(
+            *runner.0.lock().unwrap(),
+            ["push", "origin", "refs/tags/v1:refs/tags/v1"]
+        );
+    }
 
     fn push(stderr: &'static str) -> GraphError {
         let operation = TagOperation {
