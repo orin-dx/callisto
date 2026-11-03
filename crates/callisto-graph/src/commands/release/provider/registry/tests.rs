@@ -1139,10 +1139,8 @@ fn python_build_removes_every_release_credential_from_its_environment() {
     );
 }
 
-// A restricted npm package answers an anonymous `npm view` with 404, so the confirmation must see the same npm config
-// the publish used: the temporary config the release action writes for `NPM_TOKEN` goes to `view` as well.
 #[test]
-fn npm_view_uses_the_publish_config_when_there_is_one() {
+fn npm_view_args_carry_the_userconfig_only_when_there_is_one() {
     let with_config = npm_view_args(
         "pkg@1.0.0",
         false,
@@ -1162,11 +1160,40 @@ fn npm_view_uses_the_publish_config_when_there_is_one() {
             "/tmp/npmrc"
         ]
     );
-    // Without it the arguments are unchanged: the user's own `.npmrc` and environment variables reach `view` as they are.
     assert_eq!(
         npm_view_args("pkg@1.0.0", true, None, None),
         ["view", "pkg@1.0.0", "repository", "--json", "--fetch-retries=0"]
     );
+}
+
+// The variable is process-wide: the npm tests that publish clear it through `temp_env` so this one cannot leak into them.
+#[test]
+fn the_confirmation_and_repository_lookups_pass_the_publish_config_to_npm_view() {
+    let root = tempfile::tempdir().unwrap();
+    let adapter = adapter_for(Ecosystem::Npm).unwrap();
+    let operation = operation("npm", "pkg", "1.0.0");
+    let view_calls = |config: Option<&str>| {
+        temp_env::with_var("CALLISTO_PUBLISH_NPM_CONFIG", config, || {
+            let runner = RecordingRunner(std::sync::Mutex::new(Vec::new()));
+            let context = ProviderContext::new(root.path(), &runner, None);
+            adapter.observe_once(&context, &operation).unwrap();
+            adapter.repository(&context, &operation);
+            let calls = runner.0.lock().unwrap().clone();
+            calls.into_iter().map(|(_, args, _)| args).collect::<Vec<_>>()
+        })
+    };
+
+    let with_config = view_calls(Some("/tmp/npmrc"));
+    assert_eq!(with_config.len(), 2, "{with_config:?}");
+    for args in &with_config {
+        assert!(
+            args.windows(2).any(|pair| pair == ["--userconfig", "/tmp/npmrc"]),
+            "{args:?}"
+        );
+    }
+    for args in view_calls(None) {
+        assert!(!args.contains(&"--userconfig".to_owned()), "{args:?}");
+    }
 }
 
 #[test]
@@ -1198,92 +1225,96 @@ fn publisher_environment_maps_only_the_selected_native_tool() {
 /// with npm, even in a pnpm workspace.
 #[test]
 fn a_platform_package_is_published_by_directory_with_npm() {
-    let root = tempfile::tempdir().unwrap();
-    std::fs::write(root.path().join("pnpm-lock.yaml"), "").unwrap();
-    let runner = RecordingRunner(std::sync::Mutex::new(Vec::new()));
-    let context = ProviderContext::new(root.path(), &runner, None);
-    let mut platform = operation("npm", "@s/cli-linux-x64-gnu", "1.0.0");
-    platform.package_dir = PathBuf::from("packages/cli/npm/linux-x64-gnu");
-    platform.npm_access = Some(callisto_model::NpmAccess::Public);
-    platform.by_directory = true;
+    temp_env::with_var_unset("CALLISTO_PUBLISH_NPM_CONFIG", || {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("pnpm-lock.yaml"), "").unwrap();
+        let runner = RecordingRunner(std::sync::Mutex::new(Vec::new()));
+        let context = ProviderContext::new(root.path(), &runner, None);
+        let mut platform = operation("npm", "@s/cli-linux-x64-gnu", "1.0.0");
+        platform.package_dir = PathBuf::from("packages/cli/npm/linux-x64-gnu");
+        platform.npm_access = Some(callisto_model::NpmAccess::Public);
+        platform.by_directory = true;
 
-    adapter_for(Ecosystem::Npm)
-        .unwrap()
-        .publish(&context, &operation_id(Ecosystem::Npm, &platform), &platform, None)
-        .unwrap();
-    let dir = root.path().join("packages/cli/npm/linux-x64-gnu");
-    assert_eq!(
-        runner.0.lock().unwrap().as_slice(),
-        [(
-            "npm".to_owned(),
-            vec![
-                "publish".to_owned(),
-                dir.to_string_lossy().into_owned(),
-                "--access".to_owned(),
-                "public".to_owned()
-            ],
-            root.path().to_path_buf(),
-        )]
-    );
+        adapter_for(Ecosystem::Npm)
+            .unwrap()
+            .publish(&context, &operation_id(Ecosystem::Npm, &platform), &platform, None)
+            .unwrap();
+        let dir = root.path().join("packages/cli/npm/linux-x64-gnu");
+        assert_eq!(
+            runner.0.lock().unwrap().as_slice(),
+            [(
+                "npm".to_owned(),
+                vec![
+                    "publish".to_owned(),
+                    dir.to_string_lossy().into_owned(),
+                    "--access".to_owned(),
+                    "public".to_owned()
+                ],
+                root.path().to_path_buf(),
+            )]
+        );
 
-    // The owner is a workspace member and keeps its package manager's by-name form.
-    runner.0.lock().unwrap().clear();
-    let owner = operation("npm", "@s/cli", "1.0.0");
-    adapter_for(Ecosystem::Npm)
-        .unwrap()
-        .publish(&context, &operation_id(Ecosystem::Npm, &owner), &owner, None)
-        .unwrap();
-    assert_eq!(runner.0.lock().unwrap()[0].0, "pnpm");
-    assert!(runner.0.lock().unwrap()[0].1.contains(&"--filter=@s/cli".to_owned()));
+        // The owner is a workspace member and keeps its package manager's by-name form.
+        runner.0.lock().unwrap().clear();
+        let owner = operation("npm", "@s/cli", "1.0.0");
+        adapter_for(Ecosystem::Npm)
+            .unwrap()
+            .publish(&context, &operation_id(Ecosystem::Npm, &owner), &owner, None)
+            .unwrap();
+        assert_eq!(runner.0.lock().unwrap()[0].0, "pnpm");
+        assert!(runner.0.lock().unwrap()[0].1.contains(&"--filter=@s/cli".to_owned()));
+    });
 }
 
 /// Observing and publishing must read one `.npmrc`, or the version looked for and the version published could be on
 /// different registries. Both resolve the workspace that owns the package, by its declaration and not by a lockfile.
 #[test]
 fn observing_and_publishing_a_nested_npm_package_all_run_in_the_workspace_that_owns_it() {
-    let root = tempfile::tempdir().unwrap();
-    let write = |path: &str, text: &str| {
-        let path = root.path().join(path);
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(path, text).unwrap();
-    };
-    write("package.json", r#"{"name":"marker","private":true}"#);
-    write(
-        "web/package.json",
-        r#"{"name":"web","private":true,"workspaces":["packages/*"]}"#,
-    );
-    write("web/.npmrc", "registry=https://nested.example.test/\n");
-    write("web/packages/a/package.json", r#"{"name":"a","version":"1.0.0"}"#);
-    let runner = RecordingRunner(std::sync::Mutex::new(Vec::new()));
-    let context = ProviderContext::new(root.path(), &runner, None);
-    let adapter = adapter_for(Ecosystem::Npm).unwrap();
+    temp_env::with_var_unset("CALLISTO_PUBLISH_NPM_CONFIG", || {
+        let root = tempfile::tempdir().unwrap();
+        let write = |path: &str, text: &str| {
+            let path = root.path().join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        write("package.json", r#"{"name":"marker","private":true}"#);
+        write(
+            "web/package.json",
+            r#"{"name":"web","private":true,"workspaces":["packages/*"]}"#,
+        );
+        write("web/.npmrc", "registry=https://nested.example.test/\n");
+        write("web/packages/a/package.json", r#"{"name":"a","version":"1.0.0"}"#);
+        let runner = RecordingRunner(std::sync::Mutex::new(Vec::new()));
+        let context = ProviderContext::new(root.path(), &runner, None);
+        let adapter = adapter_for(Ecosystem::Npm).unwrap();
 
-    let mut by_name = operation("npm", "a", "1.0.0");
-    by_name.package_dir = PathBuf::from("web/packages/a");
-    adapter.observe_once(&context, &by_name).unwrap();
-    adapter
-        .publish(&context, &operation_id(Ecosystem::Npm, &by_name), &by_name, None)
-        .unwrap();
-    let mut by_directory = operation("npm", "a", "1.0.0");
-    by_directory.package_dir = PathBuf::from("web/packages/a");
-    by_directory.by_directory = true;
-    adapter
-        .publish(
-            &context,
-            &operation_id(Ecosystem::Npm, &by_directory),
-            &by_directory,
-            None,
-        )
-        .unwrap();
+        let mut by_name = operation("npm", "a", "1.0.0");
+        by_name.package_dir = PathBuf::from("web/packages/a");
+        adapter.observe_once(&context, &by_name).unwrap();
+        adapter
+            .publish(&context, &operation_id(Ecosystem::Npm, &by_name), &by_name, None)
+            .unwrap();
+        let mut by_directory = operation("npm", "a", "1.0.0");
+        by_directory.package_dir = PathBuf::from("web/packages/a");
+        by_directory.by_directory = true;
+        adapter
+            .publish(
+                &context,
+                &operation_id(Ecosystem::Npm, &by_directory),
+                &by_directory,
+                None,
+            )
+            .unwrap();
 
-    let calls = runner.0.lock().unwrap().clone();
-    let programs: Vec<&str> = calls.iter().map(|(program, ..)| program.as_str()).collect();
-    assert_eq!(programs, ["npm", "npm", "npm"], "{calls:?}");
-    assert!(calls[0].1.contains(&"view".to_owned()), "{calls:?}");
-    assert!(calls[1].1.contains(&"--workspace=a".to_owned()), "{calls:?}");
-    for (_, _, cwd) in &calls {
-        assert_eq!(cwd, &root.path().join("web"), "{calls:?}");
-    }
+        let calls = runner.0.lock().unwrap().clone();
+        let programs: Vec<&str> = calls.iter().map(|(program, ..)| program.as_str()).collect();
+        assert_eq!(programs, ["npm", "npm", "npm"], "{calls:?}");
+        assert!(calls[0].1.contains(&"view".to_owned()), "{calls:?}");
+        assert!(calls[1].1.contains(&"--workspace=a".to_owned()), "{calls:?}");
+        for (_, _, cwd) in &calls {
+            assert_eq!(cwd, &root.path().join("web"), "{calls:?}");
+        }
+    });
 }
 
 /// A credential withheld from a build backend is either a secret the redactor knows or a name known to carry
