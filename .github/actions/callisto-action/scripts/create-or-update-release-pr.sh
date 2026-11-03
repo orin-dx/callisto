@@ -140,7 +140,8 @@ trap cleanup_staging EXIT
 verify_current > /dev/null
 
 reset_staging() {
-  gh_retry api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/$staging_branch" -f sha="$base_commit" -F force=true > /dev/null 2>&1
+  # Cleared so the reset's own retries do not run the reset again, which would recurse for as long as GitHub errs.
+  RETRY_RESET='' gh_retry api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/$staging_branch" -f sha="$base_commit" -F force=true > /dev/null 2>&1
 }
 
 if reset_staging; then
