@@ -12,10 +12,6 @@ fn repo() -> tempfile::TempDir {
     dir
 }
 
-fn stderr(output: &std::process::Output) -> String {
-    String::from_utf8_lossy(&output.stderr).into_owned()
-}
-
 fn write(root: &std::path::Path, path: &str, content: &str) {
     let path = root.join(path);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -49,9 +45,9 @@ fn an_explicit_tag_template_equal_to_another_packages_default_fails_with_e101() 
     git(root, &["commit", "-m", "workspace"]);
 
     let out = callisto(root, &["status"]);
-    assert_eq!(out.status.code(), Some(1), "stderr: {}", stderr(&out));
-    assert!(stderr(&out).contains("E101"), "stderr: {}", stderr(&out));
-    assert!(stderr(&out).contains("b@{version}"), "stderr: {}", stderr(&out));
+    assert_eq!(out.status.code(), Some(1), "stderr: {}", stderr_of(&out));
+    assert!(stderr_of(&out).contains("E101"), "stderr: {}", stderr_of(&out));
+    assert!(stderr_of(&out).contains("b@{version}"), "stderr: {}", stderr_of(&out));
 }
 
 // WS-ID-09: co-located Cargo.toml and pyproject.toml disagree on version grammar, static or dynamic.
@@ -81,11 +77,16 @@ fn colocated_cargo_and_python_manifests_fail_with_e007_for_a_static_and_a_dynami
 
         let before = fs::read_to_string(root.join("Cargo.toml")).unwrap();
         let version = callisto(root, &["version"]);
-        assert_eq!(version.status.code(), Some(1), "{python_version}: {}", stderr(&version));
-        assert!(
-            stderr(&version).contains("E007"),
+        assert_eq!(
+            version.status.code(),
+            Some(1),
             "{python_version}: {}",
-            stderr(&version)
+            stderr_of(&version)
+        );
+        assert!(
+            stderr_of(&version).contains("E007"),
+            "{python_version}: {}",
+            stderr_of(&version)
         );
         assert_eq!(
             fs::read_to_string(root.join("Cargo.toml")).unwrap(),
@@ -94,7 +95,12 @@ fn colocated_cargo_and_python_manifests_fail_with_e007_for_a_static_and_a_dynami
         );
 
         let init = callisto(root, &["init", "--yes"]);
-        assert!(stderr(&init).contains("E007"), "{python_version}: {}", stderr(&init));
+        assert_eq!(init.status.code(), Some(1), "{python_version}: {}", stderr_of(&init));
+        assert!(
+            stderr_of(&init).contains("E007"),
+            "{python_version}: {}",
+            stderr_of(&init)
+        );
         assert!(!root.join("callisto.toml").exists(), "init must fail before writing");
     }
 }

@@ -162,6 +162,40 @@ fn a_preview_without_origin_plans_an_artifact_release() {
 
     let run = callisto(dir.path(), &["release"]);
     assert!(!run.status.success(), "the real run still needs origin");
+    // A workspace that declares artifact slots cannot release locally at all (E239), whatever `origin` says.
+    assert!(
+        String::from_utf8_lossy(&run.stderr).contains("E239"),
+        "stderr: {}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+}
+
+// REL-RERUN-08: an origin that cannot be read prints nothing, not git's own error, while the preview still plans.
+#[test]
+fn a_preview_with_an_unreachable_origin_prints_no_git_error() {
+    let (dir, _) = plugin_artifact_fixture(true);
+    git(
+        dir.path(),
+        &["remote", "set-url", "origin", "git@github.com:example/core-crate.git"],
+    );
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_callisto"))
+        .args([
+            "--format",
+            "json",
+            "--cwd",
+            dir.path().to_str().unwrap(),
+            "release",
+            "--dry-run",
+        ])
+        .env("GIT_SSH_COMMAND", "false")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "the preview must still plan: {stderr}");
+    assert!(
+        !stderr.contains("fatal:") && !stderr.contains("Could not read from remote repository"),
+        "the origin probe must stay quiet: {stderr}"
+    );
 }
 
 // REL-AUTH-08: `--artifact-repository` alone is not a usage error; a source with `[release]` fails with E231.

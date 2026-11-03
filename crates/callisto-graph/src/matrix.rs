@@ -589,31 +589,6 @@ mod tests {
         }
     }
 
-    // MX-OUT-02: a package's targets are sorted by triple, then by artifact name when two share a triple.
-    #[test]
-    fn two_release_artifacts_on_one_triple_sort_by_artifact_name() {
-        let mut report = MatrixReport {
-            schema_version: callisto_model::PACKAGE_REPORT_SCHEMA_VERSION,
-            platform_targets: Default::default(),
-            runtime_versions: Default::default(),
-            diagnostics: Vec::new(),
-        };
-        let artifact = |asset: &str| ReleaseArtifactInput {
-            id: pkg_id("core"),
-            name: "core".to_owned(),
-            dir_rel: "core".to_owned(),
-            target: "x86_64-unknown-linux-gnu".to_owned(),
-            asset_name: asset.to_owned(),
-        };
-        add_release_artifact_groups(&mut report, &[artifact("zz.tar.gz"), artifact("aa.tar.gz")]).unwrap();
-        let names: Vec<&str> = report.platform_targets["core"]
-            .targets
-            .iter()
-            .map(|target| target.artifact_name.as_str())
-            .collect();
-        assert_eq!(names, ["aa.tar.gz", "zz.tar.gz"]);
-    }
-
     fn napi_crate(lib_name: &str, manifest_path: &str) -> NapiCrate {
         NapiCrate {
             lib_name: lib_name.to_owned(),
@@ -1269,6 +1244,26 @@ mod tests {
             target: target.to_string(),
             asset_name: asset.to_string(),
         }
+    }
+
+    // MX-OUT-02: a package's targets are sorted by triple, then by artifact name when two share a triple.
+    #[test]
+    fn two_release_artifacts_on_one_triple_sort_by_artifact_name() {
+        let mut report = build_matrix_report(&[], None).unwrap();
+        add_release_artifact_groups(
+            &mut report,
+            &[
+                release_artifact("core", "x86_64-unknown-linux-gnu", "zz.tar.gz"),
+                release_artifact("core", "x86_64-unknown-linux-gnu", "aa.tar.gz"),
+            ],
+        )
+        .unwrap();
+        let names: Vec<&str> = report.platform_targets["core"]
+            .targets
+            .iter()
+            .map(|target| target.artifact_name.as_str())
+            .collect();
+        assert_eq!(names, ["aa.tar.gz", "zz.tar.gz"]);
     }
 
     /// An unrecognised artifact triple is
