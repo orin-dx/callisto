@@ -98,7 +98,7 @@ CI (`.github/workflows/callisto-ci.yml`) gates on:
 
 - **`fmt`** — `just fmt-check`
 - **`clippy`** — `just lint` + `just doc-check`
-- **`test`** — `just test`, `just release-workflow-behavior`, and the Release-PR action's binary contract test, on Linux and macOS
+- **`test`** — `just test`, `just release-workflow-behavior`, the Release-PR action's binary contract test, and the problem matcher test, on Linux and macOS
 - **`release-artifact-preflight`** — builds the release binary for each configured target (macOS arm64 and x64, Linux x64 gnu, arm64 gnu and x64 musl)
 - **`coverage`** — `just coverage 90` (workspace line coverage must not regress below 90%) and `just coverage-per-crate 90` (each crate too)
 - **`hygiene`** — `just machete`, `just features-boundary`, and on the release PR `just check-api`
