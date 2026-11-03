@@ -7,6 +7,11 @@ on:
 
 permissions: {}
 
+# One hold at a time, so concurrent runs never both create the state comment; a newer push replaces a queued run.
+concurrency:
+  group: hold-release-pr
+  cancel-in-progress: false
+
 jobs:
   hold:
     name: Hold the release PR until it is refreshed

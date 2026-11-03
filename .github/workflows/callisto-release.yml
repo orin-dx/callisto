@@ -220,7 +220,7 @@ jobs:
     # Its own job, because the usual reason a rebuild fails is that verification or candidate selection failed, which
     # skips version-pr and everything inside it.
     needs: [verify, release-candidate, version-pr]
-    if: always() && github.event_name == 'push'
+    if: always() && (github.event_name == 'push' || needs.version-pr.result != 'skipped')
     timeout-minutes: 5
     runs-on: ubuntu-latest
     permissions:
