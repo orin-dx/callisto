@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01ML5epzKAoH67rkztCWZouN",
+  "agent_id": "a1f58fa851a8a5ccd",
+  "subagent_type": "general-purpose",
+  "task_description": "Coverage shard: CLI surface and rendering",
+  "token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 185960,
+    "cache_read_tokens": 2037230,
+    "output_tokens": 20108,
+    "api_call_count": 17
+  },
+  "started_at": "2026-11-02T17:07:42.601879-08:00",
+  "completed_at": "2026-11-02T17:10:34.236837-08:00"
+}

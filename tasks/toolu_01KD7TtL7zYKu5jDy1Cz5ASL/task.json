@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01KD7TtL7zYKu5jDy1Cz5ASL",
+  "agent_id": "a2dc4cc507880cc6a",
+  "subagent_type": "general-purpose",
+  "task_description": "Coverage shard: graph config, locate, commands",
+  "token_usage": {
+    "input_tokens": 100,
+    "cache_creation_tokens": 268835,
+    "cache_read_tokens": 8575112,
+    "output_tokens": 32487,
+    "api_call_count": 50
+  },
+  "started_at": "2026-11-02T17:07:42.60226-08:00",
+  "completed_at": "2026-11-02T17:13:13.033893-08:00"
+}

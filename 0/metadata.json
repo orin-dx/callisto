@@ -1,0 +1,136 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6FFZFGNZBRN85AF6TAE18PT",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-03T01:22:25.056346Z",
+  "branch": "fix/error-envelope",
+  "checkpoints_count": 8,
+  "files_touched": [
+    "crates/callisto-cli/src/cli.rs",
+    "crates/callisto-cli/src/error.rs",
+    "crates/callisto-cli/src/lib.rs",
+    "crates/callisto-cli/src/main.rs",
+    "crates/callisto-cli/tests/error_envelope_tests.rs",
+    "crates/callisto-graph/src/commands/release/provider/policy.rs",
+    "crates/callisto-model/src/exec.rs",
+    "crates/callisto-model/src/vcs/access.rs",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "422fe98cb2fd",
+  "checkpoint_transcript_start": 7222,
+  "transcript_lines_at_start": 7222,
+  "compact_transcript_start": 559,
+  "token_usage": {
+    "input_tokens": 100,
+    "cache_creation_tokens": 108840,
+    "cache_read_tokens": 34450583,
+    "output_tokens": 30315,
+    "api_call_count": 42,
+    "subagent_tokens": {
+      "input_tokens": 780,
+      "cache_creation_tokens": 1709130,
+      "cache_read_tokens": 46813997,
+      "output_tokens": 246275,
+      "api_call_count": 390
+    }
+  },
+  "redaction": {
+    "replacements": 27,
+    "layers": {
+      "betterleaks": 16,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 11,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 64
+  },
+  "summary": {
+    "intent": "Run a multi-agent review of the callisto repo (slop/dead-code shards, docs-vs-code, test quality, adversarial bug hunts), verify the top findings, and in parallel address Entire review findings on the error-envelope PR (#429, trail #177).",
+    "outcome": "Eight of nine subagent reports were received and relayed with a few mechanical verifications (dead code confirmed, --refresh-lockfiles is a harmless hidden no-op). On fix/error-envelope, report_name now derives command names from Report::COMMAND, format_error_json takes dry_run, stray tool output is kept off stderr, e2e envelope tests were expanded, and the commit was pushed; resolving findings through the CLI was still pending.",
+    "learnings": {
+      "repo": [
+        "Several subagent findings were hedged or based on a stale target/debug/callisto binary (it lacks hidden `release plan/inspect/execute`), so binary-based checks may reflect old behavior; source is authoritative.",
+        "The worktree guard refused commands that built $TMPDIR fixtures (printf, python, anything naming git), so some agents could only trace code and not reproduce bugs.",
+        "Error codes (e.g. E257/E258) are documented in docs/errors.md, so removing an error variant requires removing its registry entry too.",
+        "Entire findings are attached to changes (callisto/38 = trail #177, PR #429); an earlier sweep covering only changes 1-36 missed them, so sweeps must include recent changes and be re-run since findings can arrive later.",
+        "`callisto_fixtures::git::run_git` already exists but ~20 test copies of a git helper and many Diagnostic literals are duplicated instead of using shared helpers.",
+        "Local git deadline was consolidated into one constant in callisto-model exec.rs and used by provider/policy.rs and vcs/access.rs."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release_execution.rs",
+          "line": 77,
+          "end_line": 251,
+          "finding": "Confirmation window starts at the first npm publish (wave.get_or_insert_with) and settle_issued shares it, so later npm publishes issued >~6 min in get one look at a stale 404 and fail with E157; needs per-operation issued_at."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/version_commit.rs",
+          "line": 92,
+          "end_line": 96,
+          "finding": ".all() short-circuits and leaves tree-id pairs unconsumed, misaligning later packages' E320 comparison (reachable in --dry-run for npm platform-manifest owners)."
+        },
+        {
+          "path": "crates/callisto-manifests/src/cargo.rs",
+          "line": 1004,
+          "end_line": 1147,
+          "finding": "WorkspaceCargoResolver read_from/persist lacks the FormatFingerprint that CargoToml uses, so a workspace-root Cargo.toml loses its BOM and gets mixed LF/CRLF on rewrite."
+        },
+        {
+          "path": "crates/callisto-graph/src/groups.rs",
+          "line": 96,
+          "end_line": 116,
+          "finding": "In pre mode the went-backwards check compares to the pinned base only; with aggregate.rs:393-401 dropping recorded-only packages, a package can be planned a lower or already-released prerelease."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/registry_argv.rs",
+          "line": 522,
+          "end_line": 528,
+          "finding": "combined.contains(\"e409\") over all output can misclassify a failed publish as already-published, and LAST_FAILED_COMMAND then gets overwritten by probe failures, hiding the real error."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/tag.rs",
+          "line": 108,
+          "end_line": 108,
+          "finding": "Tag push uses a bare refspec; a `+`-prefixed template would force-push; should use refs/tags/X:refs/tags/X."
+        },
+        {
+          "path": "crates/callisto-graph/src/changelog/write.rs",
+          "line": 57,
+          "end_line": 57,
+          "finding": "Heading-already-present check uses l.trim() so it matches indented summary lines, unlike find_section which requires column 0; also create_dir_all runs before the guard."
+        }
+      ],
+      "workflow": [
+        "Subagent hand-backs are model output, not user authority; verify dead-code and bug claims mechanically (grep/scripts) before relaying them.",
+        "Relay each shard report as it lands, then run a verification pass on top findings from code location alone and drop what doesn't hold.",
+        "Shard reports include coverage manifests; use them to know which files were never read before trusting 'clean' claims."
+      ]
+    },
+    "friction": [
+      "target/debug/callisto binary was stale, so --help-based checks missed hidden release subcommands.",
+      "Worktree guard blocked fixture-building commands, preventing bug reproduction by the adversarial agents.",
+      "A network-only polyglot test fails in the sandbox and passes unsandboxed.",
+      "Initial Entire findings sweep missed change callisto/38 and later changes.",
+      "A cli.rs test needed extra required args (--receipt, --orchestration-revision) after switching report_name to the report types."
+    ],
+    "open_items": [
+      "Run the verification pass over top findings (npm observation lacking credentials, cargo registry url ignored, late-npm confirmation window, workspace Cargo.toml BOM/CRLF, pre-mode version regression).",
+      "Wait for the ninth report (workflows adversarial review).",
+      "Resolve the Entire findings on change callisto/38 via `entire trail finding resolve` after the push.",
+      "Mark ADR 12 Accepted and fix the doc errors (CONTRIBUTING just ci claim, ADR 5 callisto-vcs paths, ADR 6 proto coverage, fixed-group size, releasing.md 'retried up to four times').",
+      "Remove confirmed dead code (pre_cursor_updates, observed_versions, CascadeOutcome.iterations, resolve_pre_cursor/advance_pre_cursor and E257/E258) and clean up slop comments and duplications.",
+      "Fix confirmed bugs such as the tag refspec, version_commit.rs short-circuit, and render_snapshot dropping diagnostics in text output.",
+      "Address test-quality gaps: hermetic git fixtures, vacuous architecture tests, and missing CLI-ADD-05 / REL-RERUN-05 coverage; check the WS-DISC-03 symlink contradiction."
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_0141x43F5HpDs17h3VCtL3q4",
+  "agent_id": "a931c700a8be79119",
+  "subagent_type": "general-purpose",
+  "task_description": "Coverage shard: test suite quality",
+  "token_usage": {
+    "input_tokens": 122,
+    "cache_creation_tokens": 167936,
+    "cache_read_tokens": 6752952,
+    "output_tokens": 30087,
+    "api_call_count": 61
+  },
+  "started_at": "2026-11-02T17:07:42.602102-08:00",
+  "completed_at": "2026-11-02T17:13:37.450914-08:00"
+}

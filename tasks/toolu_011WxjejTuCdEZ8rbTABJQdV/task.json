@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_011WxjejTuCdEZ8rbTABJQdV",
+  "agent_id": "aaf16a14ce9e71130",
+  "subagent_type": "general-purpose",
+  "task_description": "Coverage shard: docs and prose versus code",
+  "token_usage": {
+    "input_tokens": 68,
+    "cache_creation_tokens": 153897,
+    "cache_read_tokens": 3650754,
+    "output_tokens": 18410,
+    "api_call_count": 34
+  },
+  "started_at": "2026-11-02T17:07:42.603238-08:00",
+  "completed_at": "2026-11-02T17:11:30.775028-08:00"
+}

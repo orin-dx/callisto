@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01W9xQCkoVwmaZYApE7Piu56",
+  "agent_id": "a6a0df82579de8ac7",
+  "subagent_type": "general-purpose",
+  "task_description": "Coverage shard: graph core logic",
+  "token_usage": {
+    "input_tokens": 22,
+    "cache_creation_tokens": 152071,
+    "cache_read_tokens": 1125386,
+    "output_tokens": 14331,
+    "api_call_count": 11
+  },
+  "started_at": "2026-11-02T17:07:42.602624-08:00",
+  "completed_at": "2026-11-02T17:09:39.228992-08:00"
+}
