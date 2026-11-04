@@ -19,7 +19,7 @@ pep440_rs = "0.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"
-michi-graph = "0.6"
+michi-graph = "0.9"
 indexmap = { version = "2", features = ["serde"] }
 jsonc-parser = { version = "0.34", features = ["cst"] }
 toml_edit = "0.25"
