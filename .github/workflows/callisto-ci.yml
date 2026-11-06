@@ -298,9 +298,15 @@ jobs:
             gh attestation verify "$1" \
               --repo orin-dx/callisto \
               --signer-workflow orin-dx/callisto/.github/workflows/callisto-release.yml \
-              --deny-self-hosted-runners
+              --deny-self-hosted-runners \
+              --source-ref "${2:-refs/heads/main}"
           }
           verify "$RUNNER_TEMP/$ASSET"
+          # The ref pin is real: an attestation built from main must fail against another ref.
+          if verify "$RUNNER_TEMP/$ASSET" refs/heads/not-main; then
+            echo "::error::negative control failed: attestation verification ignored --source-ref"
+            exit 1
+          fi
           # Negative control: a modified copy must fail, so the pass above is not vacuous.
           cp "$RUNNER_TEMP/$ASSET" "$RUNNER_TEMP/tampered.tar.gz"
           printf 'x' >> "$RUNNER_TEMP/tampered.tar.gz"
