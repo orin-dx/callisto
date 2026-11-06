@@ -1219,6 +1219,8 @@ no_flags_allowed() {
   done
 }
 record_pushed_tag() {
+  set -- "${1#refs/tags/}"
+  set -- "${1%%:*}"
   obj=$("$CALLISTO_TEST_REAL_GIT" rev-parse "refs/tags/$1" 2>/dev/null) || return 0
   commit=$("$CALLISTO_TEST_REAL_GIT" rev-parse "refs/tags/$1^{commit}" 2>/dev/null) || return 0
   printf '%s%srefs/tags/%s\n' "$obj" "$tab" "$1" >> "$store"
