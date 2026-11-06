@@ -752,35 +752,35 @@ mod tests {
 
     const TARGET: &str = "caf945cc9d5a11a71c57f419d1a73d0627c1756b";
 
+    /// A branch named like the tag makes a bare `git push origin v1` ambiguous.
     #[test]
-    fn the_push_names_the_tag_ref_in_full() {
-        struct Capture(std::sync::Mutex<Vec<String>>);
-        impl CommandRunner for Capture {
-            fn run(
-                &self,
-                _program: &str,
-                args: &[&str],
-                _cwd: &Path,
-            ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
-                *self.0.lock().unwrap() = args.iter().map(ToString::to_string).collect();
-                Ok(callisto_model::CommandOutput {
-                    exit_code: Some(0),
-                    stdout: String::new(),
-                    stderr: String::new(),
-                })
-            }
-        }
+    fn a_tag_pushes_when_a_branch_has_the_same_name() {
+        let remote = tempfile::tempdir().unwrap();
+        callisto_fixtures::git::run_git(remote.path(), &["init", "-q", "--bare"]);
+        let dir = tempfile::tempdir().unwrap();
+        callisto_fixtures::git::init_repo(dir.path());
+        callisto_fixtures::git::run_git(dir.path(), &["commit", "--allow-empty", "-q", "-m", "root"]);
+        callisto_fixtures::git::run_git(dir.path(), &["branch", "v1"]);
+        callisto_fixtures::git::run_git(dir.path(), &["tag", "-a", "-m", "v1", "--no-sign", "v1"]);
+        let head = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
         let operation = TagOperation {
             name: TagName::new_unchecked("v1".to_owned()),
-            target: CommitSha::parse(TARGET).unwrap(),
+            target: CommitSha::parse(String::from_utf8(head.stdout).unwrap().trim()).unwrap(),
             annotation: "v1".to_owned(),
         };
-        let runner = Capture(Default::default());
-        push_tag(&runner, &std::env::temp_dir(), "origin", &operation).unwrap();
-        assert_eq!(
-            *runner.0.lock().unwrap(),
-            ["push", "origin", "refs/tags/v1:refs/tags/v1"]
-        );
+        let endpoint = remote.path().to_str().unwrap();
+        push_tag(&callisto_fixtures::git::GitRunner, dir.path(), endpoint, &operation).unwrap();
+
+        let refs = std::process::Command::new("git")
+            .args(["for-each-ref", "--format=%(refname)"])
+            .current_dir(remote.path())
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&refs.stdout).trim(), "refs/tags/v1");
     }
 
     fn push(stderr: &'static str) -> GraphError {
