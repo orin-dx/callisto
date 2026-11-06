@@ -4,7 +4,7 @@ description: 'Installs zizmor and actionlint for the tests that lint generated w
 runs:
   using: 'composite'
   steps:
-    - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2
+    - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2
       with:
         tool: zizmor@1.30.0
     - name: Install actionlint
