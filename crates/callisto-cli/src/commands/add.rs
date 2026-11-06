@@ -535,9 +535,7 @@ mod tests {
         assert_eq!(result.unwrap(), "important fix");
     }
 
-    /// Bug 3: the invalid-severity error message must list every value
-    /// `Severity::from_str` actually accepts, including `none` -- not just
-    /// patch/minor/major.
+    /// The invalid-severity error message lists every value `Severity::from_str` accepts, including `none`.
     #[test]
     fn parse_severity_rejects_invalid_value_with_accurate_message() {
         let err = parse_severity("bogus").unwrap_err();
@@ -552,18 +550,12 @@ mod tests {
         assert_eq!(parse_severity("none").unwrap(), Severity::None);
     }
 
-    /// Regression test for Bug 1: non-interactive `add --package cargo/foo:patch`
-    /// must produce `Entry { name: "cargo/foo", ... }`, not `Entry { name: "foo", ... }`.
-    ///
-    /// Before the fix, line 43 used `id.name()` which strips the ecosystem prefix.
-    /// After the fix, it uses `id.display_name()` which preserves `"cargo/foo"`.
-    /// In a polyglot workspace, the bare name `"foo"` is ambiguous and causes
-    /// `AmbiguousName` errors during `callisto version`.
+    /// Non-interactive `add --package cargo/foo:patch` produces `Entry { name: "cargo/foo", .. }`, not `"foo"`:
+    /// in a polyglot workspace the bare name is ambiguous and fails `callisto version` with `AmbiguousName`.
     #[test]
     fn non_interactive_add_entry_preserves_ecosystem_qualifier() {
         let id = PackageId::parse("cargo/foo").unwrap();
-        // display_name() returns ecosystem-qualified form; name() returns bare name.
-        // The fix ensures the Entry built in the non-interactive handler uses display_name().
+        // display_name() is the ecosystem-qualified form; name() is the bare name.
         let entry = Entry {
             name: id.display_name(),
             severity: Severity::Patch,

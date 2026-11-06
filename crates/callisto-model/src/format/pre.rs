@@ -400,8 +400,7 @@ mod tests {
     }
 
     /// `PreState::exiting()` is the only public way out of pre-release mode
-    /// -- previously untested end to end. Proves the mode flips to `Exit`
-    /// and that this survives a real write -> parse round trip, matching
+    /// The mode flips to `Exit` and survives a real write -> parse round trip, matching
     /// `pre_json_round_trips`'s style for the "pre" mode above.
     #[test]
     fn pre_state_exiting_flips_mode_and_round_trips_as_exit() {

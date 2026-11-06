@@ -101,12 +101,8 @@ mod tests {
         assert_eq!(p, PathBuf::from("crates/callisto-cli/src/lib.rs"));
     }
 
-    /// Regression: on POSIX, `\` is a legal filename character, not a path
-    /// separator. The previous unconditional `.replace('\\', "/")` treated
-    /// every backslash as a separator regardless of platform, silently
-    /// corrupting a real POSIX filename containing one (e.g. splitting
-    /// `weird\file.txt` into two path components). `path_slash::to_slash`
-    /// is a no-op on POSIX, so the literal backslash must survive intact.
+    /// On POSIX, `\` is a legal filename character, not a path separator: `path_slash::to_slash` is a no-op
+    /// there, so a literal backslash in a filename (e.g. `weird\file.txt`) survives.
     #[cfg(not(target_os = "windows"))]
     #[test]
     fn preserves_literal_backslash_in_posix_filename() {

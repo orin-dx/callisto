@@ -905,14 +905,9 @@ mod tests {
         assert_eq!(unrelated_credentials("/usr/bin/env"), unrelated_credentials("env"));
     }
 
-    /// Regression test for a hung-descendant deadlock: killing the direct
-    /// child does not close pipe fds inherited by a grandchild process that
-    /// outlives it. The direct child (`sh`) exits almost immediately, but a
-    /// backgrounded grandchild (`sleep 30`) keeps stderr open well past
-    /// that. If the reader threads are joined unconditionally, this call
-    /// hangs for ~30s regardless of the requested timeout. The wait on the
-    /// reader threads is bounded so the call always returns promptly, and
-    /// reports the incomplete output as an error rather than an empty success.
+    /// The direct child (`sh`) exits at once, but a backgrounded grandchild (`sleep 30`) keeps stderr open. The
+    /// reader-thread wait is bounded, so the call returns promptly and reports the incomplete output as an error
+    /// instead of an empty success.
     #[test]
     fn run_with_timeout_bounds_reader_join_when_descendant_holds_pipe_open() {
         let runner = CliCommandRunner;
@@ -965,20 +960,9 @@ mod tests {
         );
     }
 
-    /// Regression test for the timeout-KILL branch's grace-period logic
-    /// (runner.rs:124-146), structurally similar to but independently
-    /// written from the normal-exit branch's (runner.rs:153-163, covered
-    /// by `run_with_timeout_bounds_reader_join_when_descendant_holds_pipe_open`).
-    /// That test's child (`sh`) exits almost immediately, only exercising
-    /// the exit branch. Here the child (`sh -c "sleep 30 >&2 & sleep 10"`)
-    /// outlives the timeout, so `run_with_timeout` must actually kill it,
-    /// while a backgrounded grandchild (`sleep 30 >&2`) keeps stderr open
-    /// independently of the kill.
-    ///
-    /// The warning is emitted via `eprintln!` inside `run_with_timeout`
-    /// (not captured in `CommandOutput`), so this test re-execs the binary
-    /// as a child with `--nocapture` to capture real OS-level stderr
-    /// instead of having it swallowed by the outer harness.
+    /// The timeout-kill branch: the child (`sh -c "sleep 30 >&2 & sleep 10"`) outlives the timeout and a
+    /// backgrounded grandchild keeps stderr open, so `run_with_timeout` must kill the child and warn. The warning
+    /// goes to real stderr via `eprintln!`, so the test re-execs the binary with `--nocapture` to capture it.
     #[test]
     fn run_with_timeout_warns_on_timeout_branch_when_descendant_holds_pipe_open() {
         const CHILD_ENV: &str = "CALLISTO_RUN_TIMEOUT_KILL_CHILD";

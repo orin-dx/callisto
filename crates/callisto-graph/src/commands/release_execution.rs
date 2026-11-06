@@ -404,9 +404,8 @@ mod tests {
         .unwrap()
     }
 
-    /// Regression coverage for the confirmed bug: an intent declaring
-    /// artifact slots but given no manifest at all must fail with a real,
-    /// specific precondition -- not the unrelated `ReleaseIntentStale`.
+    /// An intent declaring artifact slots but given no manifest at all fails with a specific precondition, not
+    /// `ReleaseIntentStale`.
     #[test]
     fn require_artifact_manifest_matches_intent_rejects_missing_manifest_for_slotted_intent() {
         let (intent, _slot) = intent_with_artifact_slot();
@@ -422,8 +421,7 @@ mod tests {
         );
     }
 
-    /// Regression coverage: a manifest that fails validation (here, bound to
-    /// a different intent) must surface the real `ArtifactManifestError`
+    /// A manifest that fails validation (here, bound to a different intent) surfaces its `ArtifactManifestError`
     /// cause via `GraphError::ArtifactManifest`, not `ReleaseIntentStale`.
     #[test]
     fn require_artifact_manifest_matches_intent_rejects_a_manifest_that_fails_validation() {

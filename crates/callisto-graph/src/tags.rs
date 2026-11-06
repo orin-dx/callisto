@@ -91,7 +91,7 @@ pub fn glob_compile_count() -> usize {
 }
 
 /// Selects the highest-versioned tag matching `template` out of a full tag
-/// list previously obtained via [`fetch_all_tags`], reusing a `cache` of
+/// list obtained via [`fetch_all_tags`], reusing a `cache` of
 /// already-compiled/already-scanned candidates keyed by `template.glob()`
 /// -- a `[[package-set]]` rule with a fixed (non-`{name}`) `tag-template`
 /// string applies the identical template to every matching package, so
@@ -250,11 +250,8 @@ impl TagIndex {
             // package's default tag template -- matches `release.rs`'s own
             // `unwrap_or_else(|| callisto_model::TagTemplate::default_for(&package.id))`.
             // Deliberately not `TagTemplate::parse(&format!("{name}@{{version}}"))`:
-            // `parse` additionally validates git-ref-name legality, which
-            // `default_for` does not, so the two could previously reject/accept a
-            // package name differently. Using `default_for` here removes that
-            // extra validation from this call site to align with the
-            // already-shipped `release.rs` behavior.
+            // `parse` additionally validates git-ref-name legality, which `default_for` does not, and `release.rs`
+            // uses `default_for`, so the two agree on which package names are accepted.
             let tmpl = pkg
                 .tag_template
                 .clone()
@@ -624,11 +621,7 @@ mod tests {
 
     /// Spec: the malformed-glob error must propagate all the way up through
     /// `TagIndex::build`, not just the internal `matching_tags` helper.
-    /// Previously covered via `last_tag_for`'s own test (deleted alongside
-    /// `last_tag_for` as dead production code) -- that test exercised this
-    /// exact `select_from_tags_cached`/`matching_tags` path from the other
-    /// (now-removed) public entry point, so this replaces it against the
-    /// surviving one.
+    /// A malformed glob in a package's tag template propagates out of `TagIndex::build` as an error.
     #[test]
     fn test_tag_index_build_propagates_malformed_glob_error() {
         let dir = non_repo_dir();

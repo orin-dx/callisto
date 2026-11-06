@@ -1374,8 +1374,8 @@ fn deferred_registry_publishes_are_all_issued_before_the_first_tag() {
     );
 }
 
-/// A registry that shows a published version late no longer costs a run: the executor waits, together, for every
-/// issued publish, then goes on to the tags.
+/// A registry that shows a published version late is waited on within the run: the executor waits, together, for
+/// every issued publish, then goes on to the tags.
 #[test]
 fn a_registry_that_shows_a_version_late_is_waited_on_within_the_run() {
     let (intent, manifest) = simulator_intent();

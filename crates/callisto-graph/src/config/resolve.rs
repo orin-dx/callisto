@@ -1172,11 +1172,8 @@ mod tests {
         );
     }
 
-    /// repro/ws-rule: a `pypi/foo` rule must not apply to a Cargo-only `foo`.
-    /// Before the fix, `PackageId::matches` treated the Bare query id as an
-    /// ecosystem wildcard, so a Prefixed rule for any ecosystem matched by
-    /// name alone -- `package_ecosystems` (the package's real, manifest-derived
-    /// ecosystems) is what makes the rule ecosystem-exact.
+    /// A `pypi/foo` rule must not apply to a Cargo-only `foo`: `package_ecosystems` (the package's real,
+    /// manifest-derived ecosystems) makes the rule ecosystem-exact.
     #[test]
     fn resolve_package_config_prefixed_rule_does_not_apply_to_a_different_ecosystem_package() {
         let tmp = tempfile::tempdir().expect("tempdir");

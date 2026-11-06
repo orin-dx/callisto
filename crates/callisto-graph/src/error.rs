@@ -1022,7 +1022,6 @@ mod tests {
 
     /// Spec: GraphError::Vcs must be transparent — wrapping a VcsError must
     /// not add any prefix (e.g. "vcs error: ") to the display message.
-    /// Before the fix, format!("{err}") produces "vcs error: <inner>".
     #[test]
     fn graph_error_vcs_is_transparent_no_prefix() {
         let inner = VcsError::Git("some git error".to_string());

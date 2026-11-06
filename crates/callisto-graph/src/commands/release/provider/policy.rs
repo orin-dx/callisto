@@ -455,11 +455,8 @@ pub(crate) mod tests {
         assert_eq!(sleeper.waits(), vec![Duration::from_secs(2)]);
     }
 
-    /// Regression coverage for the confirmed bug: a successful npm publish
-    /// whose registry hasn't caught up yet must report `RegistryPublishUnconfirmed`
-    /// -- not the unrelated `ReleaseIntentStale`, whose "no release operation
-    /// was authorized" help text is false here (an operation WAS authorized
-    /// and did run).
+    /// A successful npm publish whose registry hasn't caught up reports `RegistryPublishUnconfirmed`, not
+    /// `ReleaseIntentStale`, whose help text says no operation was authorized.
     #[test]
     fn require_registry_confirmation_rejects_unconfirmed_publish_with_its_own_variant() {
         let version = Version::parse("1.2.3", VersionGrammar::SemVer).unwrap();

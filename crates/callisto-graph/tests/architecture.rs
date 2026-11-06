@@ -1,4 +1,4 @@
-//! Enforcement test for audit pattern B: outside `callisto-model` and
+//! Enforcement test: outside `callisto-model` and
 //! `callisto-manifests`, no crate should hand-parse `Cargo.toml`/
 //! `package.json`/`pyproject.toml` (i.e. reference one of those file names
 //! as a raw string literal *and* independently invoke a raw TOML/JSON
@@ -134,13 +134,8 @@ fn allowlist_entries_reference_files_that_still_exist() {
 
 // --- Typed release errors ------------------------------------------------
 //
-// Enforcement for the `GraphError::ReleaseIntentStale` (E124) struct-variant
-// migration: staleness carries a real `StaleReason`, constructible only
-// from the `commands/release/` module (a directory module since the
-// provider-port split; `StaleReason` itself lives in its `mod.rs`). The `StaleReason::legacy_unclassified()`
-// migration ratchet used during PR1-PR3 reached zero callers across all
-// three release-executor files in PR4 and was deleted, along with the
-// ratchet's own pinned-count test.
+// Enforcement for the `GraphError::ReleaseIntentStale` (E124) struct variant: staleness carries a real
+// `StaleReason`, constructible only from the `commands/release/` module (`StaleReason` itself lives in its `mod.rs`).
 
 /// This crate's own `src/` directory, independent of `workspace_root()`
 /// (which points at the whole-workspace root two levels up).

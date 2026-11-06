@@ -1,4 +1,4 @@
-//! REL-CMD-12 and REL-PR-07: a failing command's JSON error carries the same `command` and `dryRun` as its success report,
+//! A failing command's JSON error carries the same `command` and `dryRun` as its success report,
 //! and stderr is that JSON and nothing else.
 #[path = "common/release_harness.rs"]
 mod release_harness;
