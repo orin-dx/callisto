@@ -226,9 +226,8 @@ jobs:
       - uses: orin-dx/actions/setup-rust@2521888266780dabc7f5fd4c32b02d6ab82849db # v1.1
       - run: just machete
       - run: just features-boundary
-      # A version only moves on the release PR, so that is where the public API is compared with the published one.
-      - if: github.head_ref == 'callisto/version-packages'
-        run: just check-api
+      # The version only moves on the release PR, so the pending changesets say how far the API may change.
+      - run: just check-api
 
   security:
     name: Security & Advisory Audit (Moon & Just)

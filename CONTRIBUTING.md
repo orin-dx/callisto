@@ -45,7 +45,7 @@ just ci      # full local verification pipeline
 | `just coverage-per-crate [threshold]` | Same profile data, gated per crate instead of workspace-total; CI runs it blocking at 90 |
 | `just machete` | Unused dependencies (`cargo machete`); CI runs it |
 | `just features-boundary` | Fails if the dev-only `test-util` feature reaches the shipped `callisto-cli` build; CI runs it |
-| `just check-api` | Public API compared with the published crates (`cargo semver-checks`); CI runs it on the release PR, where versions have moved |
+| `just check-api` | Public API compared with the published crates (`cargo semver-checks`), allowing the change the pending changesets announce; CI runs it on every PR |
 | `just bench` | Wall time and process counts for `status`, `version --dry-run` and `release --dry-run` over generated workspaces |
 | `just fuzz-check` | Compiles the fuzz targets so they cannot rot; CI runs it |
 | `just zizmor` | Static security audit of workflow/action YAML (requires `zizmor`) |
@@ -101,7 +101,7 @@ CI (`.github/workflows/callisto-ci.yml`) gates on:
 - **`test`** — `just test`, `just release-workflow-behavior`, the Release-PR action's binary contract test, and the problem matcher test, on Linux and macOS
 - **`release-artifact-preflight`** — builds the release binary for each configured target (macOS arm64 and x64, Linux x64 gnu, arm64 gnu and x64 musl)
 - **`coverage`** — `just coverage 90` (workspace line coverage must not regress below 90%) and `just coverage-per-crate 90` (each crate too)
-- **`hygiene`** — `just machete`, `just features-boundary`, and on the release PR `just check-api`
+- **`hygiene`** — `just machete`, `just features-boundary` and `just check-api`
 - **`security`** — `just audit`
 - **`validate`** — changeset and workspace-status validation
 - **`release-asset-attestation`** — downloads the latest release's Linux asset with CI's read-only token and verifies its attestation (same-repo PRs and pushes to main only; skipped when no release exists)
@@ -109,7 +109,7 @@ CI (`.github/workflows/callisto-ci.yml`) gates on:
 
 Tests earn their place by covering a behavior, an edge case or an error state, not a line. A change that adds a diagnostic code also adds its row to [docs/errors.md](docs/errors.md); a test fails without it.
 
-Before opening a PR: run `just ci` locally (covers everything above except the Docker-based actionlint step and the binary-dependent artifact-preflight build) and make sure `just pre-push` is clean. Add a changeset for any user-facing change (see above). Follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages.
+Before opening a PR: run `just ci` locally (covers everything above except the Docker-based actionlint step and the binary-dependent artifact-preflight build) and make sure `just pre-push` is clean. Add a changeset for any user-facing change (see above). Before 1.0, a change that breaks a public Rust item in any crate needs a `minor` changeset, and `just check-api` fails without one; it is not part of `just ci`. Follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages.
 
 ## Merging to main
 

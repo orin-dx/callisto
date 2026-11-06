@@ -121,9 +121,9 @@ features-boundary:
 machete:
     cargo machete
 
-# Verify public Rust API SemVer breaking changes
+# Verify the public Rust API changed no more than the pending changesets allow
 check-api:
-    cargo semver-checks check-release
+    bash .github/scripts/check-api.sh
 
 # Run structure-aware fuzzing target
 fuzz target="parse_package_id":
@@ -219,6 +219,7 @@ workflow-contracts: release-workflow-checks
     bash .github/tests/test-release-artifact-build-script.sh
     bash .github/tests/test-move-floating-tag.sh
     bash .github/tests/test-hold-release-pr.sh
+    bash .github/tests/test-check-api.sh
     bash .github/tests/test-release-pr-notes.sh
     env PATH=/usr/bin:/bin bash .github/actions/callisto-action/tests/test_release_pr_contract.sh
     env PATH=/usr/bin:/bin bash .github/actions/callisto-action/tests/test_release_contract.sh
