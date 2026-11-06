@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6S3PA9Z8JGS03MWKAEJBM5G",
+  "strategy": "manual-commit",
+  "branch": "fix/release-minor-for-api-breaks",
+  "checkpoints_count": 9,
+  "files_touched": [
+    ".changeset/error-envelope-command.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 146,
+    "cache_creation_tokens": 110274,
+    "cache_read_tokens": 26803534,
+    "output_tokens": 58420,
+    "api_call_count": 72,
+    "subagent_tokens": {
+      "input_tokens": 310,
+      "cache_creation_tokens": 333553,
+      "cache_read_tokens": 15978970,
+      "output_tokens": 95604,
+      "api_call_count": 155
+    }
+  },
+  "redaction": {
+    "replacements": 49,
+    "layers": {
+      "betterleaks": 20,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 29,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}

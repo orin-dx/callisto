@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01Qt33v39atMVjo4wy1f9i5G",
+  "agent_id": "a2fa5b7eda3ec824c",
+  "subagent_type": "bug-hunter",
+  "task_description": "Find truly dead code and files",
+  "token_usage": {
+    "input_tokens": 144,
+    "cache_creation_tokens": 122328,
+    "cache_read_tokens": 5054508,
+    "output_tokens": 42563,
+    "api_call_count": 72
+  },
+  "started_at": "2026-11-06T10:24:05.452568-08:00",
+  "completed_at": "2026-11-06T10:34:05.039622-08:00"
+}
