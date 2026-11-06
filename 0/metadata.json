@@ -1,0 +1,124 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6S4VS3TWF610653JG3TR0QQ",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-06T19:20:26.422376Z",
+  "branch": "chore/remove-dead-code",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/remove-dead-code.md",
+    "assets/callisto-logo-2.png",
+    "assets/callisto-logo-2.pxd",
+    "crates/callisto-graph/src/cascade.rs",
+    "crates/callisto-graph/src/commands/mod.rs",
+    "crates/callisto-graph/src/commands/pr_body.rs",
+    "crates/callisto-graph/src/commands/release_decision.rs",
+    "crates/callisto-graph/src/commands/snapshot.rs",
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-graph/src/config/groups.rs",
+    "crates/callisto-graph/src/conventional/error.rs",
+    "crates/callisto-graph/src/conventional/mod.rs",
+    "crates/callisto-graph/src/conventional/pre_cursor.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/src/groups.rs",
+    "crates/callisto-graph/src/identity.rs",
+    "crates/callisto-graph/src/lib.rs",
+    "crates/callisto-graph/src/plan.rs",
+    "crates/callisto-graph/src/tags.rs",
+    "crates/callisto-graph/src/walk.rs",
+    "crates/callisto-graph/src/walk/tests.rs",
+    "crates/callisto-graph/tests/complete_workspace_test.rs",
+    "crates/callisto-model/src/error.rs",
+    "crates/callisto-model/src/format/changeset/mod.rs",
+    "crates/callisto-model/src/plan.rs",
+    "crates/callisto-model/src/registry.rs",
+    "crates/callisto-model/src/release_observation.rs",
+    "crates/callisto-model/src/vcs/access.rs",
+    "crates/callisto-model/src/vcs/mod.rs",
+    "docs/errors.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "4429615e5b97",
+  "checkpoint_transcript_start": 13332,
+  "transcript_lines_at_start": 13332,
+  "compact_transcript_start": 1000,
+  "token_usage": {
+    "input_tokens": 88,
+    "cache_creation_tokens": 53509,
+    "cache_read_tokens": 20923316,
+    "output_tokens": 27666,
+    "api_call_count": 44,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 53,
+    "layers": {
+      "betterleaks": 20,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 29,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 87
+  },
+  "summary": {
+    "intent": "Prepare a cleanup trail and the first PR (dead-code removal) for merging work item 451, splitting the cleanup into reviewable PRs by family.",
+    "outcome": "Removed dead code in compile-checked groups (legacy publish wire types, unused registry traits, pre-cursor family, four unused error variants, unused params, eight zero-reference public fns, unused logo files), retired five error codes with a changeset and docs note, verified with clippy, tests and doc build, then committed and ran `entire trail create`. The PR itself had not yet been opened in the transcript.",
+    "learnings": {
+      "repo": [
+        "Work is done on branch chore/remove-dead-code, reset hard to origin/main before starting; cleanup is split into PRs by family under one trail.",
+        "Error codes are never reused: docs/errors.md carries a 'Retired codes' line (E008, E050, E253, E257, E258), and an architecture test (callisto-graph error_registry_architecture) checks the registry.",
+        "Architecture docs treat serialized wire shapes as compatibility surfaces, so check whether a struct like VersionPlan is serialized before removing fields.",
+        "Removing public items from library crates makes the changeset a minor bump for callisto-cli (.changeset/*.md).",
+        "Workspace verification chain used: cargo fmt, cargo check --workspace --all-targets, cargo clippy -D warnings, cargo test --workspace, RUSTDOCFLAGS='-D warnings' cargo doc.",
+        "Tests in walk/tests.rs relied on `use super::*` for imports, so removing parent imports breaks them and they need their own imports (CommandRunner, DependencyResolver)."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "line": 186,
+          "end_line": 222,
+          "finding": "derive_unreleased_decision was a thin wrapper over derive_release_roster; removed and its doc comment merged into the surviving function, with re-export in commands/mod.rs and a doc mention in tags.rs updated."
+        },
+        {
+          "path": "crates/callisto-model/src/format/changeset/mod.rs",
+          "finding": "Removing to_markdown left an empty `impl Changeset {}` block that had to be deleted manually."
+        },
+        {
+          "path": "crates/callisto-model/src/registry.rs",
+          "finding": "PublishOutcome doc comment referenced the deleted RegistryClient and was rewritten to describe the classifier result; a leftover first line also needed removal after the trait cut."
+        }
+      ],
+      "workflow": [
+        "Cut dead code in small groups and run cargo check after each so the compiler reveals newly orphaned items (imports, test stand-ins like EmptyResolver).",
+        "Review the diff after scripted brace-matching removals, since hand-rolled matchers can over- or under-cut.",
+        "Use `python3 -I` scripts with assert-guarded substring replacement for precise multi-file edits.",
+        "Sanity-check zero counts from grep: an expected definition hit missing means the command failed silently; rg gave correct counts."
+      ]
+    },
+    "friction": [
+      "Initial grep -rwn with --include=* returned zero refs for everything, silently failing; had to redo with rg.",
+      "Test-output grep matched schema text from failure output, so the failing test names had to be extracted with a narrower pattern.",
+      "Removing parameters left cascading unused-import and test-import errors that took several check iterations to resolve."
+    ],
+    "open_items": [
+      "Open the dead-code PR (body drafted at pr-dead.md) against the created trail.",
+      "Remaining cleanup PRs in the trail: stale docs/specs fixes, replacing history-style narration comments with present-tense ones, and a CI guard to prevent regressions.",
+      "Trail creation output (number/url) was not confirmed in the transcript."
+    ]
+  }
+}
