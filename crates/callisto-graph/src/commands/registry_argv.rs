@@ -495,11 +495,13 @@ fn detect_auth_failure(text_lower: &str, raw_stderr: &CommandOutput) -> Option<R
 pub(crate) fn classify_cargo_output(output: &CommandOutput) -> Result<PublishOutcome, RegistryError> {
     let combined = combined_lower(output);
 
-    if combined.contains("already exists") || combined.contains("already uploaded") {
-        return Ok(PublishOutcome::AlreadyPublished);
-    }
+    // Success first: only a failed publish can mean the version is already there, and a successful one may print
+    // anything, including those words.
     if output.success() {
         return Ok(PublishOutcome::Published);
+    }
+    if combined.contains("already exists") || combined.contains("already uploaded") {
+        return Ok(PublishOutcome::AlreadyPublished);
     }
     if let Some(err) = detect_rate_limit(&combined) {
         return Err(err);
@@ -519,16 +521,16 @@ pub(crate) fn classify_cargo_output(output: &CommandOutput) -> Result<PublishOut
 pub(crate) fn classify_npm_publish_output(output: &CommandOutput) -> Result<PublishOutcome, RegistryError> {
     let combined = combined_lower(output);
 
-    if combined.contains("epublishconflict")
-        || combined.contains("previously published")
-        || combined.contains("cannot publish over")
-        || combined.contains("e409")
-        || combined.contains("409 conflict")
-    {
-        return Ok(PublishOutcome::AlreadyPublished);
-    }
+    // Success first, as for cargo. On failure only npm's own conflict signals count: a bare `e409` can sit in a bundle
+    // name or hash.
     if output.success() {
         return Ok(PublishOutcome::Published);
+    }
+    if combined.contains("code e409")
+        || combined.contains("code epublishconflict")
+        || combined.contains("cannot publish over the previously published versions")
+    {
+        return Ok(PublishOutcome::AlreadyPublished);
     }
     if let Some(err) = detect_rate_limit(&combined) {
         return Err(err);
@@ -1125,8 +1127,63 @@ mod tests {
     }
 
     #[test]
-    fn classify_npm_publish_output_recognizes_conflict_as_already_published() {
+    fn a_failed_publish_with_the_e409_code_is_already_published() {
         let out = output(1, "", "npm ERR! code E409\nnpm ERR! 409 Conflict");
+        assert!(matches!(
+            classify_npm_publish_output(&out),
+            Ok(PublishOutcome::AlreadyPublished)
+        ));
+    }
+
+    // A successful publish prints a shasum and bundle names; none of that is a conflict.
+    #[test]
+    fn a_successful_publish_is_published_whatever_it_prints() {
+        let npm = output(
+            0,
+            "",
+            "npm notice shasum: 3f2e409a1b2c3d4e5f60718293a4b5c6d7e8f901\nnpm notice chunk-e409.js\n+ pkg@1.0.0",
+        );
+        assert!(matches!(
+            classify_npm_publish_output(&npm),
+            Ok(PublishOutcome::Published)
+        ));
+        let cargo = output(
+            0,
+            "",
+            "warning: file `notes.md` already exists in the package\nUploaded demo v1.0.0",
+        );
+        assert!(matches!(classify_cargo_output(&cargo), Ok(PublishOutcome::Published)));
+    }
+
+    #[test]
+    fn a_failed_publish_naming_a_bundle_called_e409_is_an_auth_failure() {
+        let out = output(
+            1,
+            "",
+            "npm error code E401\nnpm error 401 authentication required for chunk-e409.js",
+        );
+        assert!(matches!(
+            classify_npm_publish_output(&out),
+            Err(RegistryError::AuthFailed(_))
+        ));
+    }
+
+    #[test]
+    fn a_failed_publish_with_the_epublishconflict_code_is_already_published() {
+        let out = output(1, "", "npm error code EPUBLISHCONFLICT\nnpm error publish fail");
+        assert!(matches!(
+            classify_npm_publish_output(&out),
+            Ok(PublishOutcome::AlreadyPublished)
+        ));
+    }
+
+    #[test]
+    fn a_failed_publish_over_a_published_version_is_already_published() {
+        let out = output(
+            1,
+            "",
+            "npm error code E403\nnpm error 403 Forbidden - You cannot publish over the previously published versions: 1.0.0.",
+        );
         assert!(matches!(
             classify_npm_publish_output(&out),
             Ok(PublishOutcome::AlreadyPublished)

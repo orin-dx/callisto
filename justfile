@@ -42,6 +42,10 @@ test-release-action:
 test-release-action-binary:
     bash .github/actions/callisto-action/tests/test_release_pr_decide_binary_contract.sh
 
+# Compiles callisto and feeds its real error output through the CI problem matcher.
+test-problem-matcher:
+    bash .github/tests/test-problem-matcher.sh
+
 # Execute the release lifecycle at the real CLI boundary with fake registry,
 # Git, forge, and attestation providers. This is deliberately separate from
 # broad workspace tests so PR CI makes the release behavior evidence visible.
@@ -222,6 +226,6 @@ workflow-contracts: release-workflow-checks
     bash .github/actions/setup-callisto/tests/test_crates_io_fallback.sh
 
 # Every check CI runs except actionlint (Docker) and the binary-dependent
-# release-PR decide contract and artifact preflight build. CI runs them as
+# release-PR decide contract, problem matcher contract and artifact preflight build. CI runs them as
 # parallel jobs (callisto-ci.yml); locally they run in sequence.
 ci: fmt-check lint fuzz-check test audit doc-check zizmor workflow-contracts release-workflow-behavior (coverage "90")
