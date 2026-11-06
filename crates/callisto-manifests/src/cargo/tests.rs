@@ -1702,3 +1702,29 @@ fn update_dependency_spec_refuses_a_python_locator() {
         "{result:?}"
     );
 }
+
+/// The workspace root manifest keeps its BOM and CRLF line endings when a workspace dependency is rewritten.
+#[test]
+fn workspace_resolver_preserves_bom_and_crlf_on_persist() {
+    let dir = tempdir().unwrap();
+    let manifest_path = dir.path().join("Cargo.toml");
+    let content =
+        "\u{FEFF}[workspace]\r\nmembers = [\"crates/*\"]\r\n\r\n[workspace.dependencies]\r\nserde = \"1.0.0\"\r\n";
+    fs::write(&manifest_path, content).unwrap();
+
+    let mut resolver = WorkspaceCargoResolver::load(&manifest_path).unwrap();
+    let new_spec = DepSpec::Range(
+        VersionReq::parse("^1.1.0", Ecosystem::Cargo).unwrap(),
+        "^1.1.0".to_string(),
+    );
+    resolver.write_dependency("serde", new_spec, &permit()).unwrap();
+    resolver.persist(&permit()).unwrap();
+
+    let written = fs::read_to_string(&manifest_path).unwrap();
+    assert!(written.starts_with('\u{FEFF}'), "BOM lost: {written:?}");
+    assert!(
+        !written.replace("\r\n", "").contains('\n'),
+        "a bare LF was written: {written:?}"
+    );
+    assert!(written.contains("1.1.0"), "dependency not rewritten: {written:?}");
+}

@@ -1432,3 +1432,37 @@ fn npm_role_from_doc_returns_none_when_os_or_cpu_missing() {
     let doc: Map<String, Value> = serde_json::from_str(r#"{"name":"plain-pkg","version":"1.0.0"}"#).unwrap();
     assert_eq!(npm_role_from_doc(&doc), None);
 }
+
+/// An override that refers to the direct dependency (`$lodash`) or points at another source stays as written.
+#[test]
+fn update_dependency_spec_leaves_reference_and_protocol_overrides_alone() {
+    let dir = tempdir().unwrap();
+    let mut manifest = open_manifest(
+        &dir,
+        r#"{
+  "name": "@myorg/pkg",
+  "version": "1.0.0",
+  "dependencies": { "lodash": "^4.17.0", "left-pad": "^1.0.0" },
+  "overrides": { "lodash": "$lodash", "left-pad": "npm:other@1" },
+  "resolutions": { "lodash": "file:../lodash" }
+}
+"#,
+    );
+
+    for name in ["lodash", "left-pad"] {
+        manifest
+            .update_dependency_spec(
+                name,
+                DepKind::Runtime,
+                &Default::default(),
+                DepSpec::Opaque("^5.0.0".to_string()),
+                &permit(),
+            )
+            .unwrap();
+    }
+
+    assert_eq!(manifest.doc["dependencies"]["lodash"], "^5.0.0");
+    assert_eq!(manifest.doc["overrides"]["lodash"], "$lodash");
+    assert_eq!(manifest.doc["overrides"]["left-pad"], "npm:other@1");
+    assert_eq!(manifest.doc["resolutions"]["lodash"], "file:../lodash");
+}
