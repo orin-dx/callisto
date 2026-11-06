@@ -1,0 +1,98 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6S9WAMA34S8VP9MFT3FRYGM",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-06T20:48:08.235825Z",
+  "branch": "fix/registry-destination-not-ignored",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/registry-destination-not-ignored.md",
+    "crates/callisto-graph/src/commands/registry_argv.rs",
+    "crates/callisto-graph/src/commands/release/binding.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/npm.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/tests.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/error.rs",
+    "docs/config.md",
+    "docs/publishing.md",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "1a15ce8a715c",
+  "checkpoint_transcript_start": 16394,
+  "transcript_lines_at_start": 16394,
+  "compact_transcript_start": 1218,
+  "token_usage": {
+    "input_tokens": 42,
+    "cache_creation_tokens": 30699,
+    "cache_read_tokens": 16181181,
+    "output_tokens": 17858,
+    "api_call_count": 21
+  },
+  "redaction": {
+    "replacements": 53,
+    "layers": {
+      "betterleaks": 20,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 29,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 100
+  },
+  "summary": {
+    "intent": "Fix a bug where a configured registry destination in callisto.toml (a cargo registry url, or an npm registry url used with yarn) was silently ignored so releases could publish to a different registry than configured; also finalize the prior E320 PR.",
+    "outcome": "Added guards that reject a cargo registry url with E254 and stop yarn npm publishing with E168 when an npm registry url is set, with tests (mutation-checked), docs, changeset and a REL-PUB-18 spec criterion. Branch was committed and pushed, and a tracking trail was created; full workspace tests and clippy passed.",
+    "learnings": {
+      "repo": [
+        "Config rejections of unsupported keys follow the existing UnknownKey (E254) pattern that explains why; unsupported release features use E168 (UnsupportedReleaseFeature).",
+        "docs/specs/release.json holds acceptance criteria grouped into id families like REL-PUB-NN; new behavior gets a new criterion (here REL-PUB-18 after REL-PUB-17).",
+        "Each change needs a .changeset/*.md file with a 'callisto-cli: patch' frontmatter, plus updates to docs/config.md and docs/publishing.md.",
+        "Cargo takes its destination only from .cargo/config.toml; yarn npm publish has no --registry flag and needs npmPublishRegistry in .yarnrc.yml.",
+        "Existing tests used a cargo registry url as sample data (config/resolve.rs line ~1425) and had to be changed to an npm registry once the guard was added.",
+        "Verification routine is cargo fmt, cargo check --workspace --all-targets, cargo clippy -D warnings, and cargo test --workspace."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/config/resolve.rs",
+          "line": 1425,
+          "finding": "A sample config in a test used kind=cargo with a url; it broke under the new E254 guard and was switched to kind=npm with url https://corp.example/."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/registry/npm.rs",
+          "line": 196,
+          "end_line": 240,
+          "finding": "The npm publish path checks package_manager == Yarn with an operation; it needed the qualified registry_argv::NpmPackageManager::Yarn path to compile after the guard was added."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/registry_argv.rs",
+          "line": 205,
+          "end_line": 280,
+          "finding": "The argv builder contains the test every_package_manager_gets_only_the_publish_flags, which covers the claim that yarn rejects --registry."
+        }
+      ],
+      "workflow": [
+        "Mutation check: temporarily break each guard with a script, confirm its test fails, then restore and rerun the full suite.",
+        "Use python3 -I scripts with exact-count assertions for multi-line doc and spec edits so replacements fail loudly if the target text shifts.",
+        "Pipe cargo test output through grep/awk to summarize suite counts instead of reading full output."
+      ]
+    },
+    "friction": [
+      "Initial cargo check failed because the yarn comparison in npm.rs needed a qualified enum path, requiring a follow-up sed fix.",
+      "An existing test using a cargo registry url as sample data failed after the new guard and had to be adjusted.",
+      "The changeset was written to a path in a different worktree (macos-15-runners) in one step and the docs update had to be redone via a script, so the first clippy/test run in that command was repeated."
+    ],
+    "open_items": [
+      "Yarn users must set npmPublishRegistry in .yarnrc.yml themselves; Callisto does not translate the configured registry url for yarn.",
+      "PR for fix/registry-destination-not-ignored was prepared (pr-registry.md) but opening it was not shown in the transcript."
+    ]
+  }
+}
