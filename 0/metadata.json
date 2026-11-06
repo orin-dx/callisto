@@ -1,0 +1,88 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6S8RG3S53WP5WJTQV74K8K8",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-06T20:28:32.348656Z",
+  "branch": "fix/version-write-fidelity",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-manifests/src/npm.rs",
+    "crates/callisto-manifests/src/npm/tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "1c38ae64c5f0",
+  "checkpoint_transcript_start": 16116,
+  "transcript_lines_at_start": 16116,
+  "compact_transcript_start": 1199,
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 5231,
+    "cache_read_tokens": 3672881,
+    "output_tokens": 2896,
+    "api_call_count": 5,
+    "subagent_tokens": {
+      "input_tokens": 4,
+      "cache_creation_tokens": 684,
+      "cache_read_tokens": 226346,
+      "output_tokens": 362,
+      "api_call_count": 2
+    }
+  },
+  "redaction": {
+    "replacements": 53,
+    "layers": {
+      "betterleaks": 20,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 29,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 100
+  },
+  "summary": {
+    "intent": "Fix the npm manifest updater in callisto-manifests so that npm overrides/resolutions entries that reference another dependency (e.g. `$pkg`) or redirect it (e.g. protocol specs like `npm:`) are not rewritten as plain version ranges.",
+    "outcome": "Updated npm.rs and its tests via a script, formatted, and ran the lib tests. A mutation check broke and restored the fix to confirm the new `leaves_reference_and_protocol` test catches the regression, then the change was committed. Test pass/fail results were not visible in the transcript.",
+    "learnings": {
+      "repo": [
+        "Unit tests for the npm manifest logic live in crates/callisto-manifests/src/npm/tests.rs, a sibling file to npm.rs.",
+        "Tests are run per crate with `cargo test -p callisto-manifests --lib`, and a test name filter such as `leaves_reference_and_protocol` can narrow the run.",
+        "The repo uses `cargo fmt` as part of the edit-test loop, and commit messages follow conventional-commit style, e.g. `fix(manifests): ...`."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-manifests/src/npm/tests.rs",
+          "line": 196,
+          "end_line": 225,
+          "finding": "Existing tests around this range cover update_dependency_spec behavior and were inspected as a template for the overrides/resolutions tests."
+        },
+        {
+          "path": "crates/callisto-manifests/src/npm/tests.rs",
+          "line": 705,
+          "end_line": 745,
+          "finding": "This range holds related overrides/resolutions tests that were inspected before adding the new cases."
+        }
+      ],
+      "workflow": [
+        "Edits were applied by writing a throwaway Python script outside the repo and running it with `python3 -I`, rather than editing files in place.",
+        "A mutation check (script with `break` and `restore` modes) was used to prove the new test fails when the fix is reverted, and the fix was then restored and the full suite re-run.",
+        "Git was invoked via /usr/bin/git with `add -A` and a quiet commit chained in the same command as the final test run, so the commit happened regardless of the test outcome."
+      ]
+    },
+    "friction": [
+      "The final command chained the restore, full test run and commit with `;`, so a failing suite would not have stopped the commit.",
+      "Test output was truncated with `tail -1`/`tail -3`, which hides failure detail."
+    ],
+    "open_items": [
+      "Confirm the full callisto-manifests suite passed after restoring the fix, since the output was not shown.",
+      "Check that `git add -A` did not stage unrelated files in the commit."
+    ]
+  }
+}
