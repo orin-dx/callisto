@@ -99,7 +99,7 @@ env:
   CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 ```
 
-Cargo reads this variable directly; no `.cargo/credentials` step is needed. In this repo, inject it only into `execute`.
+Cargo reads this variable directly; no `.cargo/credentials` step is needed. Inject it only into the job that publishes.
 
 ---
 

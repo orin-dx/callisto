@@ -115,10 +115,10 @@ pub enum DiagnosticCode {
     /// A changeset entry's package name does not parse as a valid `PackageId` at all.
     InvalidPackageName,
     /// A fixed napi group has a triple in `napi.targets` with no corresponding group member
-    /// manifest — accept it by running `callisto init`.
+    /// manifest — add it to the group's members in `callisto.toml`.
     NapiTargetAddedNotInMembers,
     /// A fixed napi group member's manifest still exists on disk after its triple was removed
-    /// from `napi.targets` — reconcile by running `callisto init`.
+    /// from `napi.targets` — remove it from the group's members in `callisto.toml`, or restore the target.
     NapiTargetRemovedStillOnDisk,
     /// Reserved for a pre-v0.3 milestone gate on napi platform coordination; not emitted by
     /// any current code path now that coordination has shipped.

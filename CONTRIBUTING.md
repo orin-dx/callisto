@@ -105,11 +105,11 @@ CI (`.github/workflows/callisto-ci.yml`) gates on:
 - **`security`** — `just audit`
 - **`validate`** — changeset and workspace-status validation
 - **`release-asset-attestation`** — downloads the latest release's Linux asset with CI's read-only token and verifies its attestation (same-repo PRs and pushes to main only; skipped when no release exists)
-- **`workflow-contracts`** — actionlint, zizmor, action pin verification, and the release-workflow contract/policy tests
+- **`workflow-contracts`** — actionlint, zizmor, action pin verification (every external action pinned to a full commit, and one commit per action across `.github` and the generated-workflow templates), and the release-workflow contract/policy tests
 
 Tests earn their place by covering a behavior, an edge case or an error state, not a line. A change that adds a diagnostic code also adds its row to [docs/errors.md](docs/errors.md); a test fails without it.
 
-Before opening a PR: run `just ci` locally (covers everything above except the Docker-based actionlint step and the binary-dependent artifact-preflight build) and make sure `just pre-push` is clean. Add a changeset for any user-facing change (see above). Follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages.
+Before opening a PR: run `just ci` locally and make sure `just pre-push` is clean. `just ci` covers the format, lint, test, security and workflow-contract jobs and the 90% workspace coverage; the `hygiene` recipes (`just machete`, `just features-boundary`, `just check-api`), per-crate coverage, the MSRV check, changeset validation and the artifact preflight run only in CI. Add a changeset for any user-facing change (see above). Before 1.0, a change that breaks a public Rust item in any crate needs a `minor` changeset, or `just check-api` fails on the release PR. Follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages.
 
 ## Merging to main
 

@@ -105,7 +105,7 @@ pub fn napi_drift(group: &GroupDef, declared: &[String], root: &Path) -> Vec<Dia
             code: DiagnosticCode::NapiTargetAddedNotInMembers,
             severity: DiagnosticSeverity::Warning,
             message: format!(
-                "`napi.targets` declares `{t}`, which is not in fixed group `{}`'s members; accept it with `callisto init`",
+                "`napi.targets` declares `{t}`, which is not in fixed group `{}`'s members; add it to the group's members in callisto.toml",
                 group.name
             ),
             package: None,
@@ -137,7 +137,7 @@ pub fn napi_drift(group: &GroupDef, declared: &[String], root: &Path) -> Vec<Dia
                     code: DiagnosticCode::NapiTargetRemovedStillOnDisk,
                     severity: DiagnosticSeverity::Warning,
                     message: format!(
-                        "fixed group `{}` member `{t}` is no longer in `napi.targets` but its manifest still exists on disk; run `callisto init` to reconcile",
+                        "fixed group `{}` member `{t}` is no longer in `napi.targets` but its manifest still exists on disk; remove it from the group's members in callisto.toml, or restore the target",
                         group.name
                     ),
                     package: None,

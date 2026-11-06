@@ -19,7 +19,7 @@ Which version each release document writes, which versions it reads, and what a 
 
 ## Rerun with an older intent
 
-A rerun never reuses an intent from another build. `release execute --intent` and `release artifact-manifest --intent` read the file first and fail with E215 when its version is not 5, before the run envelope is minted. The help says to run `release plan` again. The execution state that older builds persisted was removed; a state file from an older build is ignored, not read or migrated.
+A rerun never reuses an intent from another build. `release execute --intent` and `release artifact-manifest --intent` read the file first and fail with E215 when its version is not 5, before the run envelope is minted. The help says to run `release plan` again. A state file left by an older build is ignored, not read or migrated.
 
 ## Readers outside the model crate
 
