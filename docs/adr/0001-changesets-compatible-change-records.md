@@ -22,7 +22,7 @@ The human-written change record is a `.changeset/*.md` file in `@changesets/cli`
 - Adopting callisto is meant to be one commit; leaving it is lossless only for `changeset`-trigger packages, since `auto` packages have no changesets equivalent to roll back to (docs/00-design.md §4 P1 scope note). See the gaps below.
 - Callisto inherits `@changesets/cli`'s semantics, including the rigid `bump_version` (no 0.x remap on an explicit major; docs/00-design.md §6.2). The opt-in pre-major remap lives in inference only, never in `bump_version` (docs/00-design.md §7.1).
 - If `@changesets/cli` ships native polyglot support (its issue #665), callisto's positioning narrows (docs/00-design.md §3.2).
-- Today's code falls short of full compatibility: an empty changeset is rejected (E048), a versionless private root `package.json` fails (E013), `pre enter` after `pre exit` is rejected, and a changeset with one unknown entry is consumed (as of 0.10.2; `git show 07154021c:docs/projects/ROAD-TO-V1.md`, v1 fix plan §4).
+- Today's code falls short of full compatibility: an empty changeset was rejected (since fixed: it now parses as valid), a versionless private root `package.json` fails (E013), `pre enter` after `pre exit` is rejected, and a changeset with one unknown entry is consumed (as of 0.10.2; `git show 07154021c:docs/projects/ROAD-TO-V1.md`, v1 fix plan §4).
 
 ## Enforcement
 

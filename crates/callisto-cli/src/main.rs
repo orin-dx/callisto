@@ -7,53 +7,7 @@ use clap::Parser;
 use callisto_cli::cli::{Cli, Command};
 use callisto_cli::commands::*;
 
-// Exit code contract for every subcommand
-// =========================================
-//
-// Default rule: every `Err(CliError)` arm below maps to exit code 1 (FAILURE).
-// `Ok(code)` is returned verbatim, so each handler owns its own success codes.
-//
-//   add            0 on success (changeset written or dry-run preview)
-//                  1 on any error (NotATty, invalid package spec, I/O, etc.)
-//
-//   status         0 when --check is not set (always, regardless of diagnostics --
-//                    status without --check is informational, never a gate), or
-//                    when --check is set and there are no Error-severity diagnostics
-//                    (or Warning under --strict), regardless of pending changesets
-//                  1 when --check is set and any diagnostic is Error-severity (or
-//                    Warning under --strict), regardless of pending changesets
-//                  (pending state never affects the exit code: read `pending` from
-//                  `--format json`, or the printed count in text output)
-//
-//   matrix         0 on success (report printed, including an empty report or
-//                  one carrying UnrecognisedPlatformTriple warnings)
-//                  1 on any error (unknown --package, malformed/wrong-type
-//                  manifest, conflicting platform-target sources)
-//
-//   version        0 on success (versions bumped or dry-run preview)
-//                  1 on any error (graph error, strict violation, etc.)
-//
-//   pre            0 on success
-//                  1 on any error
-//
-//   snapshot       0 on success (snapshot versions applied or dry-run preview)
-//                  1 on any error (graph error, Error-severity graph diagnostics
-//                  under --strict, etc.)
-//
-//   init           0 on success (configuration scaffolded or dry-run preview)
-//                  1 on any error
-//
-//   compose-pr-body  0 on success
-//                    1 on any error
-//
-//   release        0 on success, including `Nothing to release.` and --dry-run
-//                  1 on any error (dirty worktree, missing credential, CI-only workspace, etc.)
-//
-//   completions    0 on success
-//                  1 on any error
-//
-//   schema         0 on success
-//                  1 on any error
+// Exit codes: 0 success, 1 failure, 2 usage error from clap (docs/stability.md). A handler's `Ok(code)` is returned as is.
 
 fn main() -> ExitCode {
     let cli = Cli::parse();

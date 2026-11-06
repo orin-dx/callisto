@@ -139,7 +139,7 @@ Example (this repo's own `callisto.toml`):
 ```toml
 [[fixed-group]]
 name = "workspace"
-members = ["cargo/callisto-model", "cargo/callisto-manifests", "cargo/callisto-graph", "cargo/callisto-cli"]
+members = ["cargo/callisto-model", "cargo/callisto-manifests", "cargo/callisto-graph", "cargo/callisto-cli", "cargo/callisto-fixtures"]
 ```
 
 ## Identity and defaults

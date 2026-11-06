@@ -509,8 +509,6 @@ mod tests {
         assert_eq!(versioning.bump(&v, Severity::Major).unwrap().render(), "0.0.0");
     }
 
-    /// A genuinely malformed PEP 440 string passed to the public parse
-    /// entry point returns a proper `Err`, never panics.
     /// Regression test: an undotted prerelease suffix such as `alpha1` (common in
     /// packages migrated from other toolchains) must have its numeric suffix
     /// carried forward rather than reset to 0.  Before the fix, the only prefix
