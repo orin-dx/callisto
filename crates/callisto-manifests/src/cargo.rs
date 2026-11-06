@@ -972,6 +972,7 @@ pub struct WorkspaceCargoResolver {
     root_path: PathBuf,
     absolute_path: PathBuf,
     document: toml_edit::DocumentMut,
+    fingerprint: crate::common::FormatFingerprint,
 }
 
 impl WorkspaceCargoResolver {
@@ -1008,18 +1009,23 @@ impl WorkspaceCargoResolver {
             message: e.to_string(),
         })?;
 
-        let doc: toml_edit::DocumentMut = content
-            .parse()
-            .map_err(|e: toml_edit::TomlError| ManifestError::Parse {
-                path: rel_path.clone(),
-                format: ManifestFormat::CargoToml,
-                message: e.to_string(),
-            })?;
+        let fingerprint = crate::common::FormatFingerprint::detect(&content);
+        let doc: toml_edit::DocumentMut =
+            content
+                .strip_prefix('\u{FEFF}')
+                .unwrap_or(&content)
+                .parse()
+                .map_err(|e: toml_edit::TomlError| ManifestError::Parse {
+                    path: rel_path.clone(),
+                    format: ManifestFormat::CargoToml,
+                    message: e.to_string(),
+                })?;
 
         Ok(WorkspaceCargoResolver {
             root_path: rel_path,
             absolute_path,
             document: doc,
+            fingerprint,
         })
     }
 
@@ -1137,7 +1143,7 @@ impl WorkspaceCargoResolver {
     /// mirroring the `Manifest` trait's `persist` across `CargoToml`,
     /// `PackageJson`, and `PyprojectToml`.
     pub fn persist(&mut self, permit: &ApplyPermit) -> Result<(), ManifestError> {
-        let text = self.document.to_string();
+        let text = self.fingerprint.apply(&self.document.to_string());
         crate::atomic::atomic_write(&self.absolute_path, &text, permit).map_err(|e| ManifestError::Write {
             path: self.root_path.clone(),
             message: e.to_string(),
