@@ -144,8 +144,6 @@ pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
         pre_json_path: std::path::PathBuf::new(),
         pre_json_original_text: None,
         delete_pre_json: None,
-        pre_cursor_updates: Vec::new(),
-        observed_versions: std::collections::BTreeMap::new(),
         diagnostics,
     };
 

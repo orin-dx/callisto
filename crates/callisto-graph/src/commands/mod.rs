@@ -27,10 +27,7 @@ pub use release::{
     ReleasePreflight, ReleaseProviderSet, ValidatedReleaseIntent,
 };
 pub use release_artifacts::{seal_python_distributions, verify_artifact_manifest, VerifiedArtifactManifest};
-pub use release_decision::{
-    derive_release_commit_decision, derive_release_decision, derive_selected_release_decision,
-    derive_unreleased_decision,
-};
+pub use release_decision::{derive_release_commit_decision, derive_release_decision, derive_selected_release_decision};
 pub use release_execution::execute_release;
 pub use snapshot::plan_snapshot;
 pub use status::{status, StatusOptions};

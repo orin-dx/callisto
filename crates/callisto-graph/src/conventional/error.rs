@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use callisto_model::{CommandError, CommitWalkError};
 
 #[derive(Clone, Debug, thiserror::Error, miette::Diagnostic, PartialEq, Eq)]
@@ -20,29 +18,4 @@ pub enum ConventionalError {
     #[error(transparent)]
     #[diagnostic(transparent)]
     CommitWalk(#[from] CommitWalkError),
-
-    #[error("pre-cursor ref `{ref_name}` in `{cwd}` could not be resolved: {stderr}")]
-    #[diagnostic(
-        code(E257),
-        help("Check that the pre-cursor ref exists in local or remote Git refs.")
-    )]
-    MalformedPreCursorRef {
-        cwd: PathBuf,
-        ref_name: String,
-        stderr: String,
-        #[source]
-        source: callisto_model::ModelError,
-    },
-
-    #[error("failed to advance pre-cursor ref `{ref_name}` in `{cwd}` to `{sha}`: {stderr}")]
-    #[diagnostic(
-        code(E258),
-        help("Check repository write permissions and that `{sha}` is a valid commit.")
-    )]
-    PreCursorAdvanceFailed {
-        cwd: PathBuf,
-        ref_name: String,
-        sha: String,
-        stderr: String,
-    },
 }

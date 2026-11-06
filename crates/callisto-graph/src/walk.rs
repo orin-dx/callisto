@@ -7,8 +7,8 @@ use callisto_manifests::{Manifest, OpenContext};
 #[cfg(test)]
 use callisto_model::ReleaseTrigger;
 use callisto_model::{
-    CommandRunner, DepEdge, DepSpec, Diagnostic, DiagnosticCode, DiagnosticSeverity, Ecosystem, ManifestDecl,
-    ManifestFormat, ManifestRole, Package, PackageId, PublishTarget,
+    DepEdge, DepSpec, Diagnostic, DiagnosticCode, DiagnosticSeverity, Ecosystem, ManifestDecl, ManifestFormat,
+    ManifestRole, Package, PackageId, PublishTarget,
 };
 
 use crate::config::resolve::{resolve_package_config, rule_applies};
@@ -66,8 +66,7 @@ fn relative_workspace_package<'a>(
     }
     Ok(None)
 }
-#[allow(unused_imports)]
-use crate::resolver::{DependencyResolver, ManifestWalkResolver};
+use crate::resolver::ManifestWalkResolver;
 
 /// Returns (name-scoped claiming-ecosystem set, complete unfiltered native-key list)
 /// for one path's own `list` of (ecosystem, declared-id) pairs. The first is filtered
@@ -139,10 +138,9 @@ fn unresolved(manifest: &Path, what: &str, cause: impl std::fmt::Display) -> Dia
 }
 
 impl ManifestWalkResolver {
-    pub fn build<L: ProjectLocator, R: CommandRunner>(
+    pub fn build<L: ProjectLocator>(
         root: &Path,
         locator: &L,
-        _runner: &R,
         cfg: &ResolvedConfig,
         manifest_cache: &RefCell<BTreeMap<PathBuf, Arc<dyn Manifest>>>,
     ) -> Result<Self, GraphError> {

@@ -36,13 +36,6 @@ pub struct Entry {
     pub severity: Severity,
 }
 
-impl Changeset {
-    /// Convenience wrapper around [`write_changeset`].
-    pub fn to_markdown(&self) -> Result<String, WriteError> {
-        write_changeset(self)
-    }
-}
-
 #[derive(Debug, thiserror::Error, miette::Diagnostic, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ParseError {

@@ -563,8 +563,6 @@ mod tests {
             pre_json_path: std::path::PathBuf::new(),
             pre_json_original_text: None,
             delete_pre_json: None,
-            pre_cursor_updates: vec![],
-            observed_versions: std::collections::BTreeMap::new(),
             diagnostics: vec![],
         };
 
@@ -586,8 +584,6 @@ mod tests {
             pre_json_path: std::path::PathBuf::new(),
             pre_json_original_text: None,
             delete_pre_json: None,
-            pre_cursor_updates: vec![],
-            observed_versions: std::collections::BTreeMap::new(),
             diagnostics: vec![],
         };
 
@@ -619,8 +615,6 @@ mod tests {
             pre_json_path: std::path::PathBuf::new(),
             pre_json_original_text: None,
             delete_pre_json: None,
-            pre_cursor_updates: vec![],
-            observed_versions: std::collections::BTreeMap::new(),
             diagnostics: vec![],
         }
     }
@@ -725,8 +719,6 @@ mod tests {
             pre_json_path: std::path::PathBuf::new(),
             pre_json_original_text: None,
             delete_pre_json: None,
-            pre_cursor_updates: vec![],
-            observed_versions: std::collections::BTreeMap::new(),
             diagnostics: vec![],
         };
 
@@ -819,8 +811,6 @@ mod tests {
             pre_json_path: std::path::PathBuf::new(),
             pre_json_original_text: None,
             delete_pre_json: None,
-            pre_cursor_updates: vec![],
-            observed_versions: std::collections::BTreeMap::new(),
             diagnostics: vec![],
         };
 
@@ -884,8 +874,6 @@ mod tests {
             pre_json_path: std::path::PathBuf::new(),
             pre_json_original_text: None,
             delete_pre_json: None,
-            pre_cursor_updates: vec![],
-            observed_versions: std::collections::BTreeMap::new(),
             diagnostics: vec![],
         };
 
@@ -928,8 +916,6 @@ mod tests {
             pre_json_path: std::path::PathBuf::new(),
             pre_json_original_text: None,
             delete_pre_json: None,
-            pre_cursor_updates: vec![],
-            observed_versions: std::collections::BTreeMap::new(),
             diagnostics: vec![],
         };
 
@@ -1003,8 +989,6 @@ mod tests {
             pre_json_path: std::path::PathBuf::new(),
             pre_json_original_text: None,
             delete_pre_json: None,
-            pre_cursor_updates: vec![],
-            observed_versions: std::collections::BTreeMap::new(),
             diagnostics: vec![],
         };
 
@@ -1129,8 +1113,6 @@ mod tests {
             pre_json_path: std::path::PathBuf::new(),
             pre_json_original_text: None,
             delete_pre_json: None,
-            pre_cursor_updates: vec![],
-            observed_versions: std::collections::BTreeMap::new(),
             diagnostics: vec![],
         };
 
@@ -1198,8 +1180,6 @@ mod tests {
             pre_json_path: std::path::PathBuf::new(),
             pre_json_original_text: None,
             delete_pre_json: None,
-            pre_cursor_updates: vec![],
-            observed_versions: std::collections::BTreeMap::new(),
             diagnostics: vec![],
         };
 

@@ -122,7 +122,7 @@ impl<'a, R: CommandRunner> Workspace<'a, R, ManifestWalkResolver> {
         runner: &'a R,
     ) -> Result<Self, GraphError> {
         let manifest_cache: RefCell<BTreeMap<PathBuf, Arc<dyn Manifest>>> = RefCell::new(BTreeMap::new());
-        let graph = ManifestWalkResolver::build(&root, locator, runner, &config, &manifest_cache)?;
+        let graph = ManifestWalkResolver::build(&root, locator, &config, &manifest_cache)?;
 
         config.groups = GroupTable::resolve(&config.raw_groups, graph.identity())?;
 
@@ -228,19 +228,6 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
     pub fn initial_versions(&self) -> Result<Vec<(String, Version)>, GraphError> {
         let base = self.base_versions()?;
         Ok(base.into_iter().map(|(id, v)| (pre_json_key(&id), v)).collect())
-    }
-
-    /// Resolves stored baselines to their owners before applying the owners' native version grammars.
-    pub fn resolve_pre_state(
-        &self,
-        state: callisto_model::format::PreState,
-    ) -> Result<callisto_model::format::PreState, GraphError> {
-        let raw_versions = state
-            .initial_versions
-            .iter()
-            .map(|(key, version)| (key.clone(), version.raw().to_string()))
-            .collect();
-        self.resolve_pre_state_with_raw_versions(state, &raw_versions)
     }
 
     /// Resolves stored baselines using their original JSON spellings.

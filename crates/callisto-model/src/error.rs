@@ -41,11 +41,6 @@ pub enum ModelError {
         package: String,
         grammars: Vec<VersionGrammar>,
     },
-
-    #[error("package identity `{raw}` has ecosystem prefix `{prefix}` but no name after it")]
-    #[diagnostic(code(E008), help("Include package name after ecosystem prefix."))]
-    EmptyNameAfterPrefix { raw: String, prefix: String },
-
     #[error("manifest path `{path}` has unsupported format")]
     #[diagnostic(code(E009))]
     UnknownManifestFormat { path: PathBuf },
