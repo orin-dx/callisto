@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01RLEFdqoYX5ERGM3qRBWqg1",
+  "agent_id": "aefe87baaf19f9acc",
+  "subagent_type": "bug-hunter",
+  "task_description": "Sweep shell, workflows and CI",
+  "token_usage": {
+    "input_tokens": 86,
+    "cache_creation_tokens": 162494,
+    "cache_read_tokens": 3614576,
+    "output_tokens": 40082,
+    "api_call_count": 43
+  },
+  "started_at": "2026-11-06T07:35:14.172579-08:00",
+  "completed_at": "2026-11-06T07:41:30.869828-08:00"
+}

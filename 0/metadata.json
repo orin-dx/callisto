@@ -1,0 +1,136 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6RTFWM1BSARGQEK6ZAN6AFS",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-06T16:19:20.670422Z",
+  "branch": "ci/macos-15-runners",
+  "checkpoints_count": 7,
+  "files_touched": [
+    ".github/workflows/callisto-ci.yml",
+    ".github/workflows/callisto-release.yml"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "e397e5488cd5",
+  "checkpoint_transcript_start": 10006,
+  "transcript_lines_at_start": 10006,
+  "compact_transcript_start": 747,
+  "token_usage": {
+    "input_tokens": 116,
+    "cache_creation_tokens": 114668,
+    "cache_read_tokens": 10001559,
+    "output_tokens": 41670,
+    "api_call_count": 56,
+    "subagent_tokens": {
+      "input_tokens": 202,
+      "cache_creation_tokens": 322624,
+      "cache_read_tokens": 8930814,
+      "output_tokens": 70750,
+      "api_call_count": 101
+    }
+  },
+  "redaction": {
+    "replacements": 41,
+    "layers": {
+      "betterleaks": 18,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 23,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 76
+  },
+  "summary": {
+    "intent": "Get a comprehensive analysis of what the code reviews and slop reviews revealed across Callisto (plus Caliper and monokl reports): recurring mistake patterns, whether more instances exist, whether the wisp-plugins structure is at fault, and what is generic vs repo-specific. The user then pushed for a more thorough investigation, and questioned why runners were set to macos-15 instead of macos-latest.",
+    "outcome": "Ran two read-only sweeps (Rust and shell/workflow/CI), verified key claims, reproduced E170 on the real binary, and saved a full analysis to .claude/plans/. After the user objected, the macOS runner lines were changed from macos-15 back to macos-latest, pushed, and PR #445 retitled; no other fixes were made.",
+    "learnings": {
+      "repo": [
+        "The generated matrix workflow template never detaches HEAD, so `release plan`, `execute` and `build-python` hit E170 (requires a detached HEAD) in downstream repos; Callisto's own release workflow checks out `ref: <sha>`, which hides it.",
+        "`callisto release` (local/simple route) uses ReleaseCheckout::AnyHead, while plan/execute/build-python require Detached, so monokl's E170 on the simple template may be an older binary or a different precondition (unconfirmed).",
+        "`just ci` is a strict subset of GitHub CI (CI adds machete, features-boundary, check-api, per-crate coverage, --locked, MSRV, artifact preflight and contract scripts), explaining local green / CI red.",
+        "Template pins drift from repo pins (upload-artifact v7.0.1 vs v7.0.2, download-artifact v8.0.1 vs v8.0.2) because dependabot edits only .github and verify-action-pins.sh scans only *.yml/*.yaml, never .tmpl.",
+        "`gh attestation verify` (gh 2.103.3) has --source-ref and --cert-identity but no --signer-ref; test stubs accept any flag so a wrong flag would stay green.",
+        "pypi observation uses an unauthenticated curl while publish uses TWINE_* credentials, so a private index returns 401 and settles indeterminate.",
+        "RELEASE_CREDENTIALS exists as diverging copies in the cli runner, graph registry provider and test harness.",
+        "The fake git/cargo in release_harness.rs encode old contracts: record_pushed_tag resolves refs/tags/$3, and fake `cargo publish` ignores --registry.",
+        "Entire trail list is capped at 50 and omits changes; trails must be iterated by number.",
+        "The sandbox cannot write ~/.cargo, so a build needing a new dependency required running unsandboxed.",
+        ".claude/plans is git-excluded in both the main checkout and worktrees."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release/capability.rs",
+          "line": 601,
+          "end_line": 605,
+          "finding": "Only place the DetachedHead E170 precondition is raised, when checkout==Detached but HEAD is attached."
+        },
+        {
+          "path": "crates/callisto-graph/src/templates/matrix_workflow.tmpl",
+          "line": 36,
+          "finding": "actions/checkout in plan job has no ref:, leaving HEAD attached on push; same at build-python (~188) and execute (~222)."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/registry.rs",
+          "line": 155,
+          "finding": "`adapter.classify(&output).map(|_outcome| ())` discards AlreadyPublished, so the receipt records Published instead of AlreadySatisfied."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/local.rs",
+          "line": 127,
+          "end_line": 133,
+          "finding": "ls-remote failure returns an empty Vec, indistinguishable from 'no tags missing'."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/release.rs",
+          "line": 140,
+          "end_line": 146,
+          "finding": "Summary prints 'Released N package(s)' from decision entries even when all operations were AlreadySatisfied."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/registry_argv.rs",
+          "line": 461,
+          "end_line": 485,
+          "finding": "detect_rate_limit and detect_auth_failure use loose substring matches (429, 401, 'rate', 'auth') that can misclassify errors."
+        },
+        {
+          "path": ".github/actions/install-workflow-linters/action.yml",
+          "line": 7,
+          "finding": "Uses a different taiki-e/install-action SHA (1168f681…) than the other 19 uses (86f7a0ff…)."
+        },
+        {
+          "path": ".github/actions/setup-callisto/scripts/install-callisto.sh",
+          "line": 137,
+          "finding": "Download failure falls through to unattested `cargo install` fallback, bypassing verification=require; no retry or timeout."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "The user said the first synthesis came back too fast and was not a real analysis, forcing a redo with sweeps and reproduction.",
+      "The assistant changed runners to macos-15 against the user's stated decision for macos-latest, prompting 'WTF' and a revert.",
+      "Cargo build for the E170 repro failed in the sandbox and needed an unsandboxed retry.",
+      "Entire trail listing was capped and lacked changes, requiring script rewrites.",
+      "gh pr list against the real API failed with a TLS error in the sweep sandbox, leaving some items unverified.",
+      "Caliper's #442 note was stale because the fix was already pushed."
+    ],
+    "open_items": [
+      "Fix E170 in matrix_workflow.tmpl (ref: ${{ github.sha }}), update golden snapshots in init/tests.rs, add an attached-HEAD regression test, and notify monokl.",
+      "Fix attestation checks using --source-ref and --cert-identity, verify with real gh, and make stubs reject unknown flags.",
+      "Write a CI-equal clean-room verify command and a worker report template.",
+      "Fix pypi observation auth, the discarded AlreadyPublished outcome, the Released N summary, and the ls-remote 'could not check' case.",
+      "Pin template and release-verify tool versions, unify RELEASE_CREDENTIALS lists, and extend verify-action-pins.sh to .tmpl files.",
+      "Add release rehearsal in CI, a hints contract test, a CI ratchet on unwrap_or/let _ =/|| true/.ok()?, and a scheduled runner-label check.",
+      "Unverified agent claims remain: hold-release-pr headRepository.nameWithOwner, fake cargo publish ignoring --registry, CI test matrix covering 2 of 5 targets.",
+      "Rust sweep read only ~60 of ~470 silent-fallback hits; further sweeps with separate verifiers are needed.",
+      "Open a wisp-plugins PR with shell/CI/template hazard pack, sibling-sweep step, fake-vs-real and CI-parity rules; check courier changeset format vs Callisto's flat bullets.",
+      "User decisions pending: merge #445 and update open PRs, Entire gates, trail #179, and whether to publish the analysis as a shareable page."
+    ]
+  }
+}
