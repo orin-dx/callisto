@@ -474,7 +474,7 @@ mod tests {
         let (dir, runner) = super::super::tests::fixture();
         std::fs::write(
             dir.path().join("callisto.toml"),
-            "[registries.cratesIo]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index\"\n\n[[package]]\nmatch = \"cargo/release-fixture\"\npublish-to = [\"crates-io\"]\n",
+            "[registries.cratesIo]\nkind = \"cargo\"\n\n[[package]]\nmatch = \"cargo/release-fixture\"\npublish-to = [\"crates-io\"]\n",
         )
         .unwrap();
         let locator = crate::IgnoreWalkLocator::new(dir.path());
@@ -482,7 +482,24 @@ mod tests {
         let package = PackageId::parse("release-fixture").unwrap();
         let binding = prepared_registry_binding(&workspace, &PublishTarget::CratesIo, &package).unwrap();
         assert_eq!(binding.key.as_str(), "cratesIo");
-        assert_eq!(binding.endpoint.as_deref(), Some("https://registry.example.test/index"));
+        assert_eq!(binding.endpoint, None);
+    }
+
+    /// A cargo registry has no endpoint override: cargo takes its destination from `.cargo/config.toml`, so a `url`
+    /// that nothing would route to is an error, not a silent pin.
+    #[test]
+    fn a_cargo_registry_url_is_rejected_not_ignored() {
+        let (dir, runner) = super::super::tests::fixture();
+        std::fs::write(
+            dir.path().join("callisto.toml"),
+            "[registries.cratesIo]\nkind = \"cargo\"\nurl = \"https://registry.example.test/index\"\n",
+        )
+        .unwrap();
+        let locator = crate::IgnoreWalkLocator::new(dir.path());
+        let error = Workspace::load(dir.path().to_path_buf(), &locator, &runner)
+            .err()
+            .expect("a cargo registry url must be rejected");
+        assert!(error.to_string().contains("[registries.cratesIo] url"), "{error}");
     }
 
     /// An unconfigured built-in key binds its own default.
@@ -623,7 +640,7 @@ mod tests {
                 "{untrusted}"
             );
         }
-        let cargo_kind = "[registries.corp]\nkind = \"cargo\"\nurl = \"https://npm.corp.example/\"\n";
+        let cargo_kind = "[registries.corp]\nkind = \"cargo\"\n";
         assert!(matches!(
             npm_binding(cargo_kind, "https://npm.corp.example/"),
             Err(GraphError::UntrustedNpmRegistry { .. })

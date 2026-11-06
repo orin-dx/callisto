@@ -1292,6 +1292,43 @@ fn a_cargo_publish_names_a_custom_registry_and_omits_the_default() {
     }
 }
 
+/// Yarn has no `--registry`, so a registry configured in callisto.toml would be dropped and the package published
+/// wherever yarn's own config points. The publish stops before running yarn.
+#[test]
+fn a_configured_npm_registry_with_yarn_is_refused_before_publishing() {
+    temp_env::with_var_unset("CALLISTO_PUBLISH_NPM_CONFIG", || {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("yarn.lock"), "").unwrap();
+        let runner = RecordingRunner(std::sync::Mutex::new(Vec::new()));
+        let context = ProviderContext::new(root.path(), &runner, None);
+        let mut publish = operation("npm", "@s/lib", "1.0.0");
+        publish.registry.endpoint = Some("https://npm.corp.example/".to_owned());
+
+        let error = adapter_for(Ecosystem::Npm)
+            .unwrap()
+            .publish(&context, &operation_id(Ecosystem::Npm, &publish), &publish, None)
+            .unwrap_err();
+
+        assert!(
+            matches!(
+                error,
+                GraphError::UnsupportedRelease {
+                    feature: UnsupportedReleaseFeature::YarnRegistryUrl
+                }
+            ),
+            "{error:?}"
+        );
+        assert!(runner.0.lock().unwrap().is_empty(), "yarn must not run");
+
+        publish.registry.endpoint = None;
+        adapter_for(Ecosystem::Npm)
+            .unwrap()
+            .publish(&context, &operation_id(Ecosystem::Npm, &publish), &publish, None)
+            .unwrap();
+        assert_eq!(runner.0.lock().unwrap()[0].0, "yarn");
+    });
+}
+
 /// Observing and publishing must read one `.npmrc`, or the version looked for and the version published could be on
 /// different registries. Both resolve the workspace that owns the package, by its declaration and not by a lockfile.
 #[test]

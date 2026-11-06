@@ -213,6 +213,11 @@ impl RegistryEcosystem for NpmRegistry {
         // The package manager and the directory it runs in belong to the workspace that holds the package.
         let workspace_root = context.root().join(&workspace_dir);
         let package_manager = registry_argv::detect_npm_package_manager(&workspace_root)?;
+        if package_manager == registry_argv::NpmPackageManager::Yarn && operation.registry.endpoint.is_some() {
+            return Err(GraphError::UnsupportedRelease {
+                feature: UnsupportedReleaseFeature::YarnRegistryUrl,
+            });
+        }
         let within_workspace = operation
             .package_dir
             .strip_prefix(&workspace_dir)

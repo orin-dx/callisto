@@ -955,6 +955,8 @@ pub enum UnsupportedReleaseFeature {
     BumpReason,
     #[error("publish target")]
     PublishTarget,
+    #[error("a configured npm registry url with yarn (`yarn npm publish` has no --registry; set `npmPublishRegistry` in .yarnrc.yml)")]
+    YarnRegistryUrl,
 }
 
 /// Why a `--package` release selection is invalid, carried by
