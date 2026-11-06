@@ -1,0 +1,95 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6S88J4CKPDS389YWYRDSZ6P",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-06T20:19:54.104116Z",
+  "branch": "ci/drop-release-pr-notes",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".github/scripts/hold-release-pr.sh",
+    ".github/scripts/note-release-pr-rebuild.sh",
+    ".github/scripts/release-pr-note.sh",
+    ".github/tests/test-hold-release-pr.sh",
+    ".github/tests/test-release-pr-notes.sh",
+    ".github/tests/verify-release-workflow-contract.sh",
+    ".github/tests/verify-release-workflow-policy.sh",
+    ".github/workflows/callisto-release.yml",
+    "docs/releasing.md",
+    "docs/specs/release.json",
+    "justfile"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "a42b061cb0e5",
+  "checkpoint_transcript_start": 15431,
+  "transcript_lines_at_start": 15431,
+  "compact_transcript_start": 1150,
+  "token_usage": {
+    "input_tokens": 42,
+    "cache_creation_tokens": 36768,
+    "cache_read_tokens": 14264080,
+    "output_tokens": 23277,
+    "api_call_count": 21,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 53,
+    "layers": {
+      "betterleaks": 20,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 29,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 99
+  },
+  "summary": {
+    "intent": "The user asked what to tackle next, then told the assistant to start on everything: reproduce the possible E248 silent wrong-version bug, verify the confirmed-bug backlog, and delete the release-PR notes feature.",
+    "outcome": "The assistant ran an E248 reproduction (including a fixed-group variant) and checked git history, then started two verification agents for the registry/publish and versioning/manifest bugs. It deleted the release-PR state-comment notes feature across scripts, tests, workflow, docs, spec and justfile. The deletion passed the workflow checks and was committed and pushed on branch ci/drop-release-pr-notes. The E248 conclusion and the agents' findings are not recorded in the transcript.",
+    "learnings": {
+      "repo": [
+        "docs/architecture/versioning.md says shared [workspace.package] version writes are unconditional, yet E248 (conflicting version updates on the workspace root manifest) is documented and apparently never raised. Last write may win silently when members inheriting one workspace version get different bumps.",
+        "The release-PR notes feature touched nine places: three scripts (hold-release-pr.sh, note-release-pr-rebuild.sh, release-pr-note.sh), tests, one callisto-release.yml job, two lines in verify-release-workflow-contract.sh, one justfile line, and sentences in docs/releasing.md and docs/specs/release.json.",
+        "Workflow validation suite for CI changes: .github/tests/test-hold-release-pr.sh, verify-release-workflow-contract.sh, verify-release-workflow-policy.sh, verify-action-pins.sh, plus shellcheck, actionlint and zizmor --offline --strict-collection.",
+        "actionlint emits a noisy 'invalid format because ref is missing' message that has to be filtered out of the output.",
+        "Generated workflows need `ref: ${{ github.sha }}` on the plan, build-python and execute checkouts (E170).",
+        "Fixed groups are configured in callisto.toml as [[fixed-group]] with name and members, and the assistant used one to test E248 with grouped members.",
+        "Confirmed but unfixed bugs: cargo registry `url` is accepted but ignored; yarn drops `--registry`; a dispatched release skips the verify gate; WorkspaceCargoResolver loses a BOM and mixes line endings on the root Cargo.toml; pre-mode can plan a lower or already-released prerelease; E320 misalignment; the changelog already-written check; E167 on an interrupted upload."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/apply.rs",
+          "line": 336,
+          "end_line": 350,
+          "finding": "Inspected while tracing how the CargoWorkspacePackage write target is applied during E248 investigation."
+        },
+        {
+          "path": "crates/callisto-manifests/src/cargo.rs",
+          "finding": "Holds the inherited workspace version handling (CargoWorkspacePackage and workspace = true) that the E248 investigation traced."
+        }
+      ],
+      "workflow": [
+        "Verify suspected bugs on the real binary with a throwaway repro script before deciding whether to fix them.",
+        "Delegate bug verification to separate agents and fix confirmed bugs grouped by family rather than one PR per bug.",
+        "Run the verification agents against a detached worktree of origin/main so local state does not skew the results.",
+        "Use a scripted Python edit (python3 -I) for a multi-file deletion, then a grep script to confirm no references remain before committing.",
+        "The assistant writes helper scripts to a job tmp directory and truncates output with cut -c to keep terminal output readable."
+      ]
+    },
+    "friction": null,
+    "open_items": null
+  }
+}
