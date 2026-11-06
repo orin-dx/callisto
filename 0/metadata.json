@@ -1,0 +1,49 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6S8P8QCKWNJQ64XYWJRY4YP",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-06T20:27:16.948333Z",
+  "branch": "fix/version-write-fidelity",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/changelog/write.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "1c38ae64c5f0",
+  "checkpoint_transcript_start": 16034,
+  "transcript_lines_at_start": 16034,
+  "compact_transcript_start": 1194,
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 8103,
+    "cache_read_tokens": 2911253,
+    "output_tokens": 4972,
+    "api_call_count": 4,
+    "subagent_tokens": {
+      "input_tokens": 66,
+      "cache_creation_tokens": 33928,
+      "cache_read_tokens": 2711662,
+      "output_tokens": 19265,
+      "api_call_count": 33
+    }
+  },
+  "redaction": {
+    "replacements": 53,
+    "layers": {
+      "betterleaks": 20,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 29,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 100
+  }
+}
