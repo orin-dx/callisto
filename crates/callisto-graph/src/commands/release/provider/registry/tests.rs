@@ -1266,6 +1266,32 @@ fn a_platform_package_is_published_by_directory_with_npm() {
     });
 }
 
+/// A cargo publish names its registry unless it is crates.io; dropping the flag would send a private crate to crates.io.
+#[test]
+fn a_cargo_publish_names_a_custom_registry_and_omits_the_default() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(
+        root.path().join("Cargo.toml"),
+        "[package]\nname = \"demo\"\nversion = \"2.0.0\"\n",
+    )
+    .unwrap();
+    for (key, expected) in [("my-registry", Some("my-registry")), (RegistryKey::CRATES_IO, None)] {
+        let runner = RecordingRunner(std::sync::Mutex::new(Vec::new()));
+        let context = ProviderContext::new(root.path(), &runner, None);
+        let publish = operation(key, "demo", "2.0.0");
+        adapter_for(Ecosystem::Cargo)
+            .unwrap()
+            .publish(&context, &operation_id(Ecosystem::Cargo, &publish), &publish, None)
+            .unwrap();
+        let args = runner.0.lock().unwrap()[0].1.clone();
+        let named = args
+            .iter()
+            .position(|arg| arg == "--registry")
+            .map(|at| args[at + 1].as_str());
+        assert_eq!(named, expected, "{key}: {args:?}");
+    }
+}
+
 /// Observing and publishing must read one `.npmrc`, or the version looked for and the version published could be on
 /// different registries. Both resolve the workspace that owns the package, by its declaration and not by a lockfile.
 #[test]
