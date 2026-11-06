@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01Bw3dSa7iszjRYCxfQTGp5r",
+  "agent_id": "a77dd21fe2f378d0e",
+  "subagent_type": "bug-hunter",
+  "task_description": "Verify registry and publish bugs",
+  "token_usage": {
+    "input_tokens": 132,
+    "cache_creation_tokens": 145171,
+    "cache_read_tokens": 6216910,
+    "output_tokens": 33610,
+    "api_call_count": 66
+  },
+  "started_at": "2026-11-06T12:18:13.616915-08:00",
+  "completed_at": "2026-11-06T12:34:06.64138-08:00"
+}
