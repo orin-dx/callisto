@@ -1,0 +1,43 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6RTVP0QWJH2AVZ0GJ974CSW",
+  "strategy": "manual-commit",
+  "branch": "fix/attestation-source-ref",
+  "checkpoints_count": 7,
+  "files_touched": [
+    ".changeset/installer-pins-attestation-source-ref.md",
+    ".github/actions/setup-callisto/scripts/install-callisto.sh",
+    ".github/actions/setup-callisto/tests/test_download_extraction_format.sh",
+    ".github/workflows/callisto-ci.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 50,
+    "cache_creation_tokens": 20282,
+    "cache_read_tokens": 6566998,
+    "output_tokens": 11012,
+    "api_call_count": 25
+  },
+  "redaction": {
+    "replacements": 43,
+    "layers": {
+      "betterleaks": 20,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 23,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
