@@ -74,7 +74,9 @@ pub fn execute_release<P: ReleaseProviderSet + ?Sized>(
                 };
                 if capability.defers_confirmation(&operation) {
                     capability.issue(permit, proof, &operation, artifacts)?;
-                    wave.get_or_insert_with(|| ConfirmationWave::open(capability.now()));
+                    let issued_at = capability.now();
+                    wave.get_or_insert_with(|| ConfirmationWave::open(issued_at))
+                        .extend_to(issued_at + capability.confirmation_window(&operation));
                     issued.insert(operation);
                 } else {
                     let evidence = capability.publish(permit, proof, &operation, artifacts)?;
@@ -190,15 +192,23 @@ pub(crate) fn operation_dag(intent: &ReleaseIntentV1) -> Result<Dag<ReleaseOpera
 
 /// The wait for issued publishes to show. It opens when the first of them is issued and stays open until none is
 /// outstanding, so a publish confirmed along the way does not start the window again, and it runs on the clock, so the
-/// time spent looking counts. The looks keep their schedule from one settle to the next.
+/// time spent looking counts. Each publish gets its own window from the moment it was issued, so the wave ends when
+/// the last one's window does, not the first one's. The looks keep their schedule from one settle to the next.
 struct ConfirmationWave {
-    opened: std::time::Instant,
+    deadline: std::time::Instant,
     looks: u32,
 }
 
 impl ConfirmationWave {
     fn open(now: std::time::Instant) -> Self {
-        ConfirmationWave { opened: now, looks: 0 }
+        ConfirmationWave {
+            deadline: now,
+            looks: 0,
+        }
+    }
+
+    fn extend_to(&mut self, deadline: std::time::Instant) {
+        self.deadline = self.deadline.max(deadline);
     }
 }
 
@@ -224,7 +234,7 @@ fn settle_issued<P: ReleaseProviderSet + ?Sized>(
         for id in issued.clone() {
             // A look waits no longer than the window has left, so a registry that asks for long waits cannot hold it
             // past, and the looks of one pass share what is left.
-            let patience = (wave.opened + window).saturating_duration_since(capability.now());
+            let patience = wave.deadline.saturating_duration_since(capability.now());
             if let Some(evidence) = capability.settle(&id, artifacts, patience)? {
                 apply(state, &id, &OperationEvent::Confirmed { evidence })?;
                 issued.remove(&id);
@@ -234,7 +244,7 @@ fn settle_issued<P: ReleaseProviderSet + ?Sized>(
         if issued.is_empty() || progressed {
             return Ok(());
         }
-        let remaining = (wave.opened + window).saturating_duration_since(capability.now());
+        let remaining = wave.deadline.saturating_duration_since(capability.now());
         if remaining.is_zero() {
             let mut unconfirmed = issued.iter();
             let Some(first) = unconfirmed.next() else {
