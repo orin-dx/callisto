@@ -119,7 +119,8 @@ verify_asset() {
   elif ! gh attestation verify "$DOWNLOAD_DEST" \
       --repo orin-dx/callisto \
       --signer-workflow orin-dx/callisto/.github/workflows/callisto-release.yml \
-      --deny-self-hosted-runners; then
+      --deny-self-hosted-runners \
+      --source-ref refs/heads/main; then
     reason="attestation verification failed"
   fi
   [[ -z "$reason" ]] && return 0

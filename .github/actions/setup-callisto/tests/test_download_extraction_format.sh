@@ -55,7 +55,9 @@ run_case() {
     printf 'cp() { echo "cp $*" >> %q; return 0; }\n' "$calls_file"
     printf 'git() { echo "unexpected git $*" >> %q; return 99; }\n' "$calls_file"
     case "$gh_mode" in
-      ok) printf 'gh() { echo "gh $*" >> %q; return 0; }\n' "$calls_file" ;;
+      # Rejects a flag the real `gh attestation verify` lacks (gh 2.103.3), so a wrong flag fails here.
+      ok) printf 'gh() { echo "gh $*" >> %q; local a; for a in "$@"; do [[ "$a" != --* ]] || [[ " %s " == *" $a "* ]] || { echo "gh: unknown flag $a" >&2; return 1; }; done; return 0; }\n' \
+        "$calls_file" "--bundle --bundle-from-oci --cert-identity --cert-identity-regex --cert-oidc-issuer --custom-trusted-root --deny-self-hosted-runners --digest-alg --format --hostname --jq --limit --no-public-good --owner --predicate-type --repo --signer-digest --signer-repo --signer-workflow --source-digest --source-ref --template" ;;
       fail) printf 'gh() { echo "gh $*" >> %q; return 1; }\n' "$calls_file" ;;
       missing) printf 'PATH=%q\n' "$isolated_path" ;;
     esac
@@ -168,6 +170,7 @@ for mode in require fallback ""; do
   out=$(run_case "Linux" "x86_64" 0 ok "$mode"); code=$?
   if [[ $code -ne 0 ]] \
     || [[ "$out" != *"gh attestation verify "*"--repo orin-dx/callisto --signer-workflow orin-dx/callisto/.github/workflows/callisto-release.yml"* ]] \
+    || [[ "$out" != *"--deny-self-hosted-runners --source-ref refs/heads/main"* ]] \
     || [[ "$out" != *"tar -xzf "*" callisto" ]] \
     || [[ "${out%%tar -xzf*}" != *"gh attestation verify"* ]] \
     || [[ "$out" == *"cargo install"* ]]; then
