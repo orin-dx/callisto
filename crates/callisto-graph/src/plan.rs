@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use crate::changelog::ChangelogInput;
 use callisto_model::format::PreState;
 use callisto_model::{
-    BumpReason, BumpRecord, CommitSha, ConfigKey, Diagnostic, LockfileRefreshResult, PackageId, Severity, Version,
-    VersionReport, PACKAGE_REPORT_SCHEMA_VERSION,
+    BumpReason, BumpRecord, ConfigKey, Diagnostic, LockfileRefreshResult, PackageId, Severity, Version, VersionReport,
+    PACKAGE_REPORT_SCHEMA_VERSION,
 };
 
 /// Each workspace package's id as reports print it: `ecosystem/name` for its primary ecosystem.
@@ -62,8 +62,6 @@ pub struct VersionPlan {
     /// endings, BOM and indent instead of the default 2-space bare-LF shape. `None` when no `pre.json` existed.
     pub pre_json_original_text: Option<String>,
     pub delete_pre_json: Option<PathBuf>,
-    pub pre_cursor_updates: Vec<(PackageId, CommitSha)>,
-    pub observed_versions: BTreeMap<PackageId, Version>,
     pub diagnostics: Vec<Diagnostic>,
 }
 

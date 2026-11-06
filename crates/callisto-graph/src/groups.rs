@@ -4,7 +4,6 @@ use std::path::Path;
 use crate::config::groups::GroupTable;
 use crate::error::GraphError;
 use crate::napi::{napi_drift, NapiTargetsIndex};
-use crate::resolver::DependencyResolver;
 use crate::tags::TagIndex;
 use callisto_model::{Diagnostic, GroupName, PackageId, Severity, Version};
 
@@ -14,8 +13,7 @@ pub struct GroupCheckOutcome {
     pub diagnostics: Vec<Diagnostic>,
 }
 
-pub fn pre_mutation_checks<D: DependencyResolver>(
-    _graph: &D,
+pub fn pre_mutation_checks(
     groups: &GroupTable,
     base: &BTreeMap<PackageId, Version>,
     tags: &TagIndex,
@@ -181,22 +179,6 @@ mod tests {
     use crate::napi::NapiTargetsIndex;
     use crate::tags::TagIndex;
 
-    struct EmptyResolver;
-    impl crate::resolver::DependencyResolver for EmptyResolver {
-        fn packages(&self) -> impl Iterator<Item = &callisto_model::Package> {
-            std::iter::empty()
-        }
-        fn dependencies_of(&self, _id: &PackageId) -> impl Iterator<Item = &callisto_model::DepEdge> {
-            std::iter::empty()
-        }
-        fn dependents_of(&self, _id: &PackageId) -> impl Iterator<Item = &callisto_model::DepEdge> {
-            std::iter::empty()
-        }
-        fn diagnostics(&self) -> &[callisto_model::Diagnostic] {
-            &[]
-        }
-    }
-
     /// A graph of fixed packages, for loading what a package's own manifest declares.
     struct Packages(Vec<callisto_model::Package>);
     impl crate::resolver::DependencyResolver for Packages {
@@ -273,9 +255,8 @@ mod tests {
 
         let base: BTreeMap<PackageId, Version> = BTreeMap::new();
         let tags = TagIndex::empty();
-        let resolver = EmptyResolver;
 
-        let outcome = pre_mutation_checks(&resolver, &groups, &base, &tags, &napi, root).expect("pre_mutation_checks");
+        let outcome = pre_mutation_checks(&groups, &base, &tags, &napi, root).expect("pre_mutation_checks");
 
         assert!(
             !outcome.diagnostics.is_empty(),

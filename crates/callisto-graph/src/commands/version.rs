@@ -134,8 +134,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
     };
 
     let napi = crate::napi::NapiTargetsIndex::load(&ws.config.groups, &ws.root, &ws.graph)?;
-    let group_check =
-        crate::groups::pre_mutation_checks(&ws.graph, &ws.config.groups, &base_versions, tags, &napi, &ws.root)?;
+    let group_check = crate::groups::pre_mutation_checks(&ws.config.groups, &base_versions, tags, &napi, &ws.root)?;
 
     let outcome = run_cascade(input)?;
 
@@ -304,8 +303,6 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
         pre_json_path: ws.config.pre_json_path(),
         pre_json_original_text,
         delete_pre_json,
-        pre_cursor_updates: Vec::new(),
-        observed_versions: base_versions,
         diagnostics,
     })
 }

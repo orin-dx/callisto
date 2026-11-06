@@ -188,10 +188,6 @@ impl ExactEvidence {
     pub fn evidence(&self) -> &ProviderEvidenceV1 {
         &self.0
     }
-
-    pub fn into_evidence(self) -> ProviderEvidenceV1 {
-        self.0
-    }
 }
 
 /// One provider observation bound to an exact operation in an immutable intent.

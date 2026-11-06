@@ -244,11 +244,6 @@ impl GroupTable {
         self.fixed.get(name)
     }
 
-    pub fn linked_group_of(&self, id: &PackageId) -> Option<&GroupDef> {
-        let name = self.linked_of.get(id)?;
-        self.linked.get(name)
-    }
-
     pub fn fixed_siblings<'a>(&'a self, id: &'a PackageId) -> impl Iterator<Item = &'a PackageId> {
         let mut sibs = Vec::new();
         if let Some(g) = self.fixed_group_of(id) {

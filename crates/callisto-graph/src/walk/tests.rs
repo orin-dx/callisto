@@ -1,4 +1,6 @@
 use super::*;
+use crate::resolver::DependencyResolver;
+use callisto_model::CommandRunner;
 
 fn write_pkg(root: &std::path::Path, rel: &str, eco: Ecosystem, name: &str) {
     std::fs::create_dir_all(root.join(rel)).unwrap();

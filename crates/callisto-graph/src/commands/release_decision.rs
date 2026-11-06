@@ -185,22 +185,12 @@ fn expand_selection<R: callisto_model::CommandRunner, D: DependencyResolver>(
         .collect()
 }
 
-/// Derives the roster of every publishable package whose current version has
-/// no tag in the canonical [`crate::TagIndex`], each with
-/// [`ReleaseInclusionReason::UnreleasedVersion`].
+/// Derives the roster of every publishable package whose current version has no tag in the canonical
+/// [`crate::TagIndex`], each with [`ReleaseInclusionReason::UnreleasedVersion`], and keeps the tagged releases in
+/// `resumable`: a tag does not prove the rest of the release was observed.
 ///
-/// A non-empty `selections` restricts the roster to exactly those identities,
-/// each of which must be unreleased and publishable. `None` means nothing is
-/// unreleased.
-pub fn derive_unreleased_decision<R: callisto_model::CommandRunner, D: DependencyResolver>(
-    workspace: &Workspace<'_, R, D>,
-    selections: &[ReleasePackageId],
-) -> Result<Option<ReleaseDecisionV1>, GraphError> {
-    derive_release_roster(workspace, selections, &std::collections::BTreeSet::new())
-}
-
-/// [`derive_unreleased_decision`] that also keeps the tagged releases in `resumable`: a tag
-/// does not prove the rest of the release was observed.
+/// A non-empty `selections` restricts the roster to exactly those identities, each of which must be unreleased and
+/// publishable. `None` means nothing is unreleased.
 pub(crate) fn derive_release_roster<R: callisto_model::CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     selections: &[ReleasePackageId],

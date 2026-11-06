@@ -189,7 +189,6 @@ fn foreign_tag_diagnostic(id: &PackageId, tag: &str) -> Diagnostic {
 pub struct TagIndex {
     last: BTreeMap<PackageId, Option<LastTag>>,
     templates: BTreeMap<PackageId, TagTemplate>,
-    pre_cursor: BTreeMap<PackageId, Option<CommitSha>>,
     /// Tags that match a package's default template by name but were made by another package.
     foreign: BTreeMap<PackageId, std::collections::BTreeSet<String>>,
     /// The full, unfiltered raw tag list fetched once during `build` (see
@@ -213,7 +212,6 @@ impl TagIndex {
         reject_shared_default_templates(graph)?;
         let mut last = BTreeMap::new();
         let mut templates = BTreeMap::new();
-        let mut pre_cursor = BTreeMap::new();
         let mut foreign: BTreeMap<PackageId, std::collections::BTreeSet<String>> = BTreeMap::new();
         let mut diagnostics = Vec::new();
 
@@ -349,13 +347,11 @@ impl TagIndex {
             }
             last.insert(pkg.id.clone(), chosen);
             templates.insert(pkg.id.clone(), tmpl);
-            pre_cursor.insert(pkg.id.clone(), None);
         }
 
         Ok(TagIndex {
             last,
             templates,
-            pre_cursor,
             foreign,
             all_tags: all_tags_set,
             commits: std::cell::OnceCell::new(),
@@ -371,13 +367,9 @@ impl TagIndex {
         &self.templates[id]
     }
 
-    pub fn pre_cursor(&self, id: &PackageId) -> Option<&CommitSha> {
-        self.pre_cursor.get(id).and_then(|opt| opt.as_ref())
-    }
-
     /// Returns whether `tag_name` is present in the raw tag list fetched
     /// during `build` -- an exact match, not a glob. Lets callers checking
-    /// tag existence once per package (e.g. `derive_unreleased_decision`)
+    /// tag existence once per package (e.g. `derive_release_roster`)
     /// consult this in-memory set instead of shelling out to `git` again
     /// for each one.
     pub fn contains_tag(&self, tag_name: &str) -> bool {
@@ -415,7 +407,6 @@ impl TagIndex {
         TagIndex {
             last: BTreeMap::new(),
             templates: BTreeMap::new(),
-            pre_cursor: BTreeMap::new(),
             foreign: BTreeMap::new(),
             all_tags: std::collections::BTreeSet::new(),
             commits: std::cell::OnceCell::new(),

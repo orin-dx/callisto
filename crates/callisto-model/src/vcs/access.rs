@@ -500,21 +500,6 @@ impl GitAccess<'_> {
         Ok(output.stdout_lines().map(str::to_owned).collect())
     }
 
-    /// Whether `pathspecs` hold identical content in the trees of `a` and `b`.
-    pub fn same_content_at(&self, a: &str, b: &str, pathspecs: &[PathBuf]) -> Result<bool, VcsError> {
-        let mut args: Vec<String> = ["diff", "--quiet", "--no-ext-diff", a, b, "--"]
-            .map(str::to_owned)
-            .into();
-        args.extend(pathspecs.iter().map(|path| path.to_string_lossy().into_owned()));
-        let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        let output = self.runner.run("git", &arg_refs, &self.root)?;
-        match output.exit_code {
-            Some(0) => Ok(true),
-            Some(1) => Ok(false),
-            _ => Err(probe_failed(&arg_refs, &self.root, &output)),
-        }
-    }
-
     /// Lists tag names, optionally filtered by `glob` (a [`globset::Glob`]
     /// pattern; `None` matches every tag).
     ///
@@ -694,27 +679,6 @@ impl GitAccess<'_> {
         }
         let shas: Option<Vec<CommitSha>> = output.stdout_lines().map(|l| CommitSha::parse(l).ok()).collect();
         Ok(shas.filter(|shas| shas.len() == refs.len()))
-    }
-
-    /// Paths, relative to the root and limited to it, that non-merge commits
-    /// in `since_ref..HEAD` touched. Selects exactly what
-    /// [`Self::commits_since`] filters on: `--full-history`, and a rename
-    /// counts for both its old and new path.
-    pub fn paths_changed_since(&self, since_ref: &str) -> Result<Vec<PathBuf>, VcsError> {
-        let range = format!("{since_ref}..HEAD");
-        self.name_only(&[
-            "log",
-            "--no-show-signature",
-            "--no-merges",
-            "--full-history",
-            "--no-renames",
-            "--relative",
-            "--name-only",
-            "-z",
-            "--format=",
-            &range,
-            "--",
-        ])
     }
 
     /// Tracked paths, relative to the root and limited to it, whose worktree

@@ -1150,14 +1150,6 @@ pub enum ConfigError {
     #[error("duplicate group name `{group}`")]
     #[diagnostic(code(E252), help("Rename one of the two groups sharing this name."))]
     DuplicateGroupName { group: GroupName },
-
-    #[error("`publish-to` names registry key `{key}`, which no [registries.*] block defines")]
-    #[diagnostic(
-        code(E253),
-        help("Add a `[registries.{key}]` block to callisto.toml, or fix the typo.")
-    )]
-    UnknownRegistry { key: String },
-
     #[error("`{path}` sets unknown callisto key `{key}`")]
     #[diagnostic(code(E254), help("Remove or fix the unrecognized key `{}` in `{}`.", key, path.display()))]
     UnknownKey { path: PathBuf, key: String },
