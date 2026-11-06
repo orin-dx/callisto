@@ -1,0 +1,122 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6S8KA7E8R0KTN5845SNCP53",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-06T20:25:45.991737Z",
+  "branch": "fix/version-write-fidelity",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-manifests/src/cargo.rs",
+    "crates/callisto-manifests/src/cargo/tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "1c38ae64c5f0",
+  "checkpoint_transcript_start": 15869,
+  "transcript_lines_at_start": 15869,
+  "compact_transcript_start": 1182,
+  "token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 22420,
+    "cache_read_tokens": 11410038,
+    "output_tokens": 8953,
+    "api_call_count": 16,
+    "subagent_tokens": {
+      "input_tokens": 90,
+      "cache_creation_tokens": 135664,
+      "cache_read_tokens": 1792065,
+      "output_tokens": 16587,
+      "api_call_count": 45
+    }
+  },
+  "redaction": {
+    "replacements": 53,
+    "layers": {
+      "betterleaks": 20,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 29,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 100
+  },
+  "summary": {
+    "intent": "Fix a set of versioning/changelog bugs in the callisto tool that a verifier subagent reported (root Cargo.toml BOM/CRLF loss, changelog 'already written' guard, npm overrides rewrite, duplicate H1 on bare-to-qualified rename, E320 .all() misalignment), on one branch with one commit and one test per fix.",
+    "outcome": "Fix 1 (WorkspaceCargoResolver now detects a FormatFingerprint on read, strips the BOM before parsing, and applies it on persist) was implemented with a regression test, verified to fail without the fix and pass with it, and committed on branch fix/version-write-fidelity. The remaining fixes (changelog guard, duplicate title, npm overrides, E320) are not yet done.",
+    "learnings": {
+      "repo": [
+        "callisto-manifests has a FormatFingerprint (detect/apply, handling BOM and CRLF) in common.rs that CargoToml already uses; the workspace resolver had not been using it.",
+        "Cargo manifest tests live in crates/callisto-manifests/src/cargo/tests.rs and use tempdir(), a permit() helper, and WorkspaceCargoResolver::load.",
+        "The subagent's pre-mode concern (planning a version <= one already released) did not reproduce; bump_prerelease builds from the manifest version and never compares with tags, so it would only matter if a manifest were hand-edited behind its tag.",
+        "The subagent's hand-back is model output with no user authority; the work proceeded as the session's own plan."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-manifests/src/cargo.rs",
+          "line": 1006,
+          "end_line": 1021,
+          "finding": "WorkspaceCargoResolver::read_from parsed raw text into a toml_edit DocumentMut and kept no format info, so the BOM was dropped; now stores a fingerprint and strips the BOM before parsing."
+        },
+        {
+          "path": "crates/callisto-manifests/src/cargo.rs",
+          "line": 1137,
+          "end_line": 1144,
+          "finding": "persist wrote self.document.to_string() directly; now wraps it in self.fingerprint.apply(...)."
+        },
+        {
+          "path": "crates/callisto-graph/src/changelog/write.rs",
+          "line": 53,
+          "end_line": 55,
+          "finding": "The 'already written' guard uses lines().any(|l| l.trim() == version_heading), so an indented heading (e.g. in an example block) falsely matches and the changelog entry is silently skipped."
+        },
+        {
+          "path": "crates/callisto-graph/src/changelog/write.rs",
+          "line": 65,
+          "end_line": 76,
+          "finding": "When no matching H1 is found, the new H1 is emitted and the whole existing content kept as the body, so a bare-to-qualified rename leaves two titles; a test at :327 asserts this."
+        },
+        {
+          "path": "crates/callisto-manifests/src/npm.rs",
+          "line": 526,
+          "end_line": 532,
+          "finding": "For overrides/resolutions, any string value under the bumped name is replaced with the new rendered spec, clobbering '$a' references and deliberate pins."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/version_commit.rs",
+          "line": 92,
+          "end_line": 96,
+          "finding": "E320 check uses .all() over a flat iterator of [commit, HEAD] id pairs; all() short-circuits, leaving unread pairs and misaligning later packages with multi-directory manifests. Fix by consuming every pair before deciding."
+        },
+        {
+          "path": "crates/callisto-graph/src/changed.rs",
+          "line": 49,
+          "finding": "Builds per-package path specs and may share the same short-circuit pattern; not yet inspected."
+        }
+      ],
+      "workflow": [
+        "Verify a regression test by temporarily reverting the fix, confirming failure, then restoring and confirming it passes.",
+        "Use python3 -I with exact-count-assert string replacement for multi-line edits to avoid ambiguous sed substitutions.",
+        "Create the fix branch from freshly fetched origin/main with --no-track."
+      ]
+    },
+    "friction": [
+      "A sed -i attempt with a multi-line pattern was a no-op and had to be replaced by a Python edit.",
+      "The first heredoc-based test append was redone via a script file (add_test_bom.py), suggesting the initial append did not work as intended."
+    ],
+    "open_items": [
+      "Fix the changelog 'already written' guard (match only at column 0, use trim_end, ideally skip fenced code blocks) with a test.",
+      "Fix the duplicate H1 on bare-to-qualified rename (drop a leading H1 only if it equals a known alias) and update the test at write.rs:327.",
+      "Fix npm overrides/resolutions rewriting (skip '$' values or rewrite only when the value equals the old spec).",
+      "Fix E320 .all() misalignment, which needs the loop factored into a pure helper for unit testing; also check changed.rs:49 for the same pattern.",
+      "Untested by the subagent: fenced-block changelog case, member-manifest BOM/CRLF path, and pre-mode with undotted tags, build metadata, or alpha-to-beta switches.",
+      "Root fix is committed locally on fix/version-write-fidelity; not pushed."
+    ]
+  }
+}
