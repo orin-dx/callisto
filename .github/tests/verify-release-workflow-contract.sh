@@ -24,9 +24,6 @@ require_line "$version_pr" '      contents: write' 'version-pr must write the ma
 require_line "$version_pr" '      pull-requests: write' 'version-pr must create or update the release PR'
 require_line "$version_pr" "          version_command: 'callisto version --refresh-lockfiles'" 'version-pr must refresh Cargo.lock for coupled Cargo version bumps; the action appends its single authoritative --emit-decision argument'
 
-release_pr_note="$(job_block release-pr-note plan)"
-require_line "$release_pr_note" "    if: always() && (github.event_name == 'push' || needs.version-pr.result != 'skipped')" 'release-pr-note must report every push and any manual run that refreshed the release PR'
-
 if ! rg -Fqx '  group: hold-release-pr' .github/workflows/callisto-hold-release-pr.yml; then
   printf 'release workflow contract failed: hold runs must be serialized in one concurrency group\n' >&2
   exit 1

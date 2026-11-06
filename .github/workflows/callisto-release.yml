@@ -215,38 +215,6 @@ jobs:
           version_command: 'callisto version --refresh-lockfiles'
         env:
           GH_TOKEN: ${{ github.token }}
-  release-pr-note:
-    name: Say how the release PR rebuild ended
-    # Its own job, because the usual reason a rebuild fails is that verification or candidate selection failed, which
-    # skips version-pr and everything inside it.
-    needs: [verify, release-candidate, version-pr]
-    if: always() && (github.event_name == 'push' || needs.version-pr.result != 'skipped')
-    timeout-minutes: 5
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Write the outcome on the release PR
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERIFY_RESULT: ${{ needs.verify.result }}
-          CANDIDATE_RESULT: ${{ needs.release-candidate.result }}
-          REFRESH_RESULT: ${{ needs.version-pr.result }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          outcome=skipped
-          if [[ "$VERIFY_RESULT" == failure || "$CANDIDATE_RESULT" == failure || "$REFRESH_RESULT" == failure ]]; then
-            outcome=failure
-          elif [[ "$REFRESH_RESULT" == success ]]; then
-            outcome=success
-          fi
-          bash .github/scripts/note-release-pr-rebuild.sh callisto/version-packages "$outcome" "$RUN_URL"
-
   plan:
     name: Derive ephemeral intent from the merged release commit
     needs: release-candidate
