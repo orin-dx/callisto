@@ -1,0 +1,121 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6S79W68XYWHJG5MMB7ZEYKP",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-06T20:03:05.80511Z",
+  "branch": "docs/comments-present-tense",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/cli.rs",
+    "crates/callisto-cli/src/commands/add.rs",
+    "crates/callisto-cli/src/commands/pre.rs",
+    "crates/callisto-cli/src/render/mod.rs",
+    "crates/callisto-cli/src/runner.rs",
+    "crates/callisto-cli/tests/error_envelope_tests.rs",
+    "crates/callisto-cli/tests/release_artifact_owner_tests.rs",
+    "crates/callisto-cli/tests/workspace_identity_errors_tests.rs",
+    "crates/callisto-fixtures/src/dry_run.rs",
+    "crates/callisto-fixtures/src/git.rs",
+    "crates/callisto-graph/src/changelog/write.rs",
+    "crates/callisto-graph/src/commands/registry_argv.rs",
+    "crates/callisto-graph/src/commands/release/github.rs",
+    "crates/callisto-graph/src/commands/release/local.rs",
+    "crates/callisto-graph/src/commands/release/mod.rs",
+    "crates/callisto-graph/src/commands/release/provider/policy.rs",
+    "crates/callisto-graph/src/commands/release_decision.rs",
+    "crates/callisto-graph/src/commands/release_execution.rs",
+    "crates/callisto-graph/src/commands/release_simulator.rs",
+    "crates/callisto-graph/src/commands/status.rs",
+    "crates/callisto-graph/src/config/groups.rs",
+    "crates/callisto-graph/src/config/pattern.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/src/locate/ignore_walk.rs",
+    "crates/callisto-graph/src/locate/membership.rs",
+    "crates/callisto-graph/src/matrix.rs",
+    "crates/callisto-graph/src/tags.rs",
+    "crates/callisto-graph/tests/architecture.rs",
+    "crates/callisto-manifests/src/common.rs",
+    "crates/callisto-manifests/src/lib.rs",
+    "crates/callisto-manifests/src/python.rs",
+    "crates/callisto-model/src/ecosystem.rs",
+    "crates/callisto-model/src/exec.rs",
+    "crates/callisto-model/src/format/changeset/tests.rs",
+    "crates/callisto-model/src/format/pre.rs",
+    "crates/callisto-model/src/path.rs",
+    "crates/callisto-model/src/report.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "7eb81aa3f520",
+  "checkpoint_transcript_start": 15023,
+  "transcript_lines_at_start": 15023,
+  "compact_transcript_start": 1122,
+  "token_usage": {
+    "input_tokens": 40,
+    "cache_creation_tokens": 60099,
+    "cache_read_tokens": 12550650,
+    "output_tokens": 29321,
+    "api_call_count": 20,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 53,
+    "layers": {
+      "betterleaks": 20,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 29,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 97
+  },
+  "summary": {
+    "intent": "Continue a series of cleanup PRs by rewriting history-style comments in production Rust code (e.g. 'previously', 'formerly', 'no longer', audit/bug IDs, spec IDs) into present-tense statements of what the code guarantees.",
+    "outcome": "Created branch docs/comments-present-tense off origin/main, hand-rewrote about 50 comments across ~38 files, removed all spec IDs from code, and verified with cargo check, clippy -D warnings, rustdoc -D warnings and the full test suite. Committed and pushed the branch, and ran a merge-tree check against #454 and an `entire trail link 237` call; their results are not shown in the transcript.",
+    "learnings": {
+      "repo": [
+        "AGENTS.md has a rule that code never cites spec IDs (patterns like WS-*, VER-*, REL-*, CLI-*, MAT-*); the cleanup removed all such references from .rs files.",
+        "Many history-style comment hits in crates/**/src are test docs inside src files, so a filter that excludes tests/ directories still catches them.",
+        "Only PR #454 (branch docs/align-with-code) and the release PR were open, so this comment-wide PR was held for last to minimize merge conflicts.",
+        "The repo is a Rust workspace of crates: callisto-cli, callisto-graph, callisto-manifests, callisto-model and callisto-fixtures."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-manifests/src/common.rs",
+          "line": 76,
+          "end_line": 92,
+          "finding": "A comment claimed CargoToml did not use FormatFingerprint, but it does (cargo.rs:21,34). The comment was actively wrong and was rewritten, not just reworded."
+        }
+      ],
+      "workflow": [
+        "Comment edits can't be caught by the compiler, so the transcript used a regex search for history words, read each hit in context via helper scripts (ctx.py, ranges.py), applied exact-replacement scripts, and skimmed `git diff -U0` added lines at the end.",
+        "Batching the rewrites (3 batches) with `cargo fmt` and `cargo check --workspace --all-targets` after each caught problems early.",
+        "Used `git merge-tree --write-tree` to test merge compatibility with another open PR branch without touching the working tree.",
+        "Ran Python helper scripts with `-I` and kept them in a separate tmp directory, per the environment guidance."
+      ]
+    },
+    "friction": [
+      "Context windows from the grep output were often shorter than the full comment blocks, so extra range-reading passes were needed before rewriting.",
+      "The first regex produced about 50 hits, including many in test docs, which required manual triage rather than automated replacement."
+    ],
+    "open_items": [
+      "The merge-tree result against #454 and the `entire trail link 237` output were not visible in the transcript and need to be confirmed.",
+      "The PR for docs/comments-present-tense was pushed but its creation or review status isn't shown.",
+      "Some files with history-style comments were edited (e.g. crates/callisto-model/src/format/changeset/tests.rs and integration tests under crates/callisto-cli/tests), and the search excluded tests directories, so other test-file comments may remain."
+    ]
+  }
+}
