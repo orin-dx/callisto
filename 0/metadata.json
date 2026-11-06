@@ -1,0 +1,118 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6S6HNDVP953BV0VXT0PC3WE",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-06T19:50:01.811121Z",
+  "branch": "docs/align-with-code",
+  "checkpoints_count": 7,
+  "files_touched": [
+    ".changeset/napi-drift-advice.md",
+    ".github/actions/setup-callisto/action.yml",
+    "CONTRIBUTING.md",
+    "crates/callisto-cli/src/cli.rs",
+    "crates/callisto-cli/src/main.rs",
+    "crates/callisto-graph/src/napi.rs",
+    "crates/callisto-model/src/diagnostic.rs",
+    "crates/callisto-model/src/format/bump.rs",
+    "docs/adr/0001-changesets-compatible-change-records.md",
+    "docs/architecture/release.md",
+    "docs/architecture/wire-compat.md",
+    "docs/config.md",
+    "docs/publishing.md",
+    "docs/releasing.md",
+    "docs/specs/cli.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "c2a9d0dd04bb",
+  "checkpoint_transcript_start": 14348,
+  "transcript_lines_at_start": 14348,
+  "compact_transcript_start": 1072,
+  "token_usage": {
+    "input_tokens": 76,
+    "cache_creation_tokens": 71903,
+    "cache_read_tokens": 21536119,
+    "output_tokens": 40274,
+    "api_call_count": 38,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 53,
+    "layers": {
+      "betterleaks": 20,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 29,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 96
+  },
+  "summary": {
+    "intent": "Cut over-engineering in the Callisto release/CI tooling: decide what to do about the check-api-on-every-pr guard and brittle shell scripts, plan a Rust `release-pr apply` command to replace shell, then start the docs and specs alignment PR.",
+    "outcome": "Closed PR #453 and deleted its branch, wrote a design doc for `callisto release-pr apply`/`hold`, and committed and pushed a docs/specs/messages alignment branch (docs/align-with-code) with a changeset. Tests, clippy, rustdoc and workflow checks passed; the PR itself was not opened in the transcript.",
+    "learnings": {
+      "repo": [
+        "Architecture doc docs/architecture/release.md says workflow shell must not reimplement Callisto semantics; policy lives in Rust (`release-pr verify`, `decide`, `commit-plan`) and the shell only does forge I/O.",
+        "Shell is about 3,600 lines vs 117k lines of Rust; shell tests are about 2,650 lines (3.5x the code they test), including a 615-line stub-based contract test. Stub/fake-tool tests previously hid the 0.10.1 gh regression.",
+        "Rust already calls `gh` via the `CommandRunner` seam in callisto-graph (`forge.rs`, `artifact.rs`), so a Rust release-pr apply can reuse it with no new dependencies.",
+        "`callisto init` fails with E190 when callisto.toml already exists, so advice to run it to reconcile napi group drift was wrong; fixed to say edit callisto.toml.",
+        "Before 1.0, breaking a public Rust item needs a `minor` changeset or `just check-api` fails on the release PR; `check-api` runs only on the release PR.",
+        "Several checks run only in CI: hygiene recipes (machete, features-boundary, check-api), per-crate coverage, MSRV, changeset validation, artifact preflight.",
+        "Release-workflow plan/build-python/execute jobs check out `github.sha` (detached HEAD) because the release commands require it (E170).",
+        "The release-PR flow in the shell script hard-codes `schemaVersion: 2` in jq when building the snapshot (noted in wire-compat.md:27); a wire shape owned by the wrong layer."
+      ],
+      "code": [
+        {
+          "path": "docs/architecture/wire-compat.md",
+          "line": 27,
+          "finding": "Notes that the shell builds the release-PR snapshot with a hard-coded schemaVersion: 2; it would go away once the snapshot is a Rust type."
+        },
+        {
+          "path": "crates/callisto-cli/src/main.rs",
+          "finding": "The exit-code table comment was wrong (omitted clap's exit 2) and duplicated CLI-OUT-08 and docs/stability.md; replaced with a one-line pointer."
+        },
+        {
+          "path": "crates/callisto-model/src/format/bump.rs",
+          "finding": "Orphaned doc lines about malformed PEP 440 parsing belonged to version.rs and were removed from a regression-test doc comment."
+        }
+      ],
+      "workflow": [
+        "Verify sweep claims against the real binary and code before editing docs; earlier sweep claims have been wrong.",
+        "Apply the 'silent or costly failure' test before adding guards; loud, cheap, caught-before-shipping failures don't justify new CI machinery.",
+        "`gh pr close` has no comment-file option; post the comment with `gh pr comment --body-file`, then close.",
+        "Use `python3 -I` scripts with assert-on-anchor string substitution for safe multi-file doc edits.",
+        "Confirm before destructive or outward-facing actions (closing the PR and deleting the remote branch were done only after explicit user approval)."
+      ]
+    },
+    "friction": [
+      "The earlier #453 guard was built and then judged over-engineered, wasting effort and a PR.",
+      "Remote close/delete was previously blocked by the permission classifier, so the assistant had to be ready to hand over commands.",
+      "`gh pr close --comment-file` does not exist; first two attempts failed.",
+      "The sweep's claims were unreliable and each had to be verified individually.",
+      "Shell brittleness (gh_retry recursion, jq -e vs -r, set -e through command substitution, bash 3.2 vs 5, BSD vs GNU sed) consumed much of the session."
+    ],
+    "open_items": [
+      "Open the docs-alignment PR (branch docs/align-with-code is pushed; PR body drafted in pr-docs.md) and link it to trail #237.",
+      "Delete the release-PR note feature from #431 (about 300 lines) as step 1 of the apply plan.",
+      "Implement `callisto release-pr apply` and `release-pr hold` in Rust per .claude/plans/DESIGN-release-pr-apply.md, starting with a read-only snapshot port and dry-run comparison against the shell output.",
+      "Then delete create-or-update-release-pr.sh, hold-release-pr.sh, gh_retry and the 615-line stub contract test once the Rust path is live.",
+      "Prune the remaining stub-only shell tests and trim install-callisto.sh (Windows .zip handling, crates.io fallback bypassing verification=require).",
+      "Remove the `--refresh-lockfiles` flag only after the workflow stops passing it.",
+      "Decide on the design questions: a callisto.toml [release-pr] table (recommended later), always draft a stale PR first (recommended yes), and ship the command and the switch in the same release (recommended yes).",
+      "Decide whether to keep the narration-cleanup grep guard (suggested only zero-false-positive patterns, or none) and investigate E248 as a possible silent wrong-version bug."
+    ]
+  }
+}

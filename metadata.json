@@ -1,0 +1,61 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6S6HNDVP953BV0VXT0PC3WE",
+  "strategy": "manual-commit",
+  "branch": "docs/align-with-code",
+  "checkpoints_count": 7,
+  "files_touched": [
+    ".changeset/napi-drift-advice.md",
+    ".github/actions/setup-callisto/action.yml",
+    "CONTRIBUTING.md",
+    "crates/callisto-cli/src/cli.rs",
+    "crates/callisto-cli/src/main.rs",
+    "crates/callisto-graph/src/napi.rs",
+    "crates/callisto-model/src/diagnostic.rs",
+    "crates/callisto-model/src/format/bump.rs",
+    "docs/adr/0001-changesets-compatible-change-records.md",
+    "docs/architecture/release.md",
+    "docs/architecture/wire-compat.md",
+    "docs/config.md",
+    "docs/publishing.md",
+    "docs/releasing.md",
+    "docs/specs/cli.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 76,
+    "cache_creation_tokens": 71903,
+    "cache_read_tokens": 21536119,
+    "output_tokens": 40274,
+    "api_call_count": 38,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 53,
+    "layers": {
+      "betterleaks": 20,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 29,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
