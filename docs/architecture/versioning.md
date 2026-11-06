@@ -21,7 +21,7 @@ A crash can stop apply after some files are written. Applying the same in-memory
 - Each `PlannedBump` carries `from` and `to`. Before writing a manifest (or a platform manifest), apply reads its current version: `from` means write, `to` means already done, anything else is `UnexpectedManifestVersion`.
 - A manifest already at `to` is still staged: the crashed run may have written it without `git add`.
 - Apply refreshes affected lockfiles and stages generated version state before consuming changesets or exiting `pre.json`. It stages input deletions with `git rm --cached --ignore-unmatch` before removing the files from disk, so a failed index update leaves the inputs available for recovery. A fresh command does not retain the in-memory plan and can refuse already-stable staged outputs; E121 directs the user to inspect both diffs and finish consuming retained inputs only when the staged outputs are verified. Automatic replay is not guaranteed.
-- `[workspace.package]` version writes (`VersionWriteTarget::CargoWorkspacePackage`) have no `from`/`to` precondition; they are written unconditionally.
+- A Cargo member that inherits its version (`version.workspace = true`) is pinned to a literal version when it is bumped, and `[workspace.package]` is never written, so a member that still inherits keeps the shared version. A bump of every member of a fixed group pins each of them.
 - `ApplyOutcome::staged` lists every path apply staged.
 
 ## Command boundary and known gaps
