@@ -1,0 +1,81 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6RVAP6QM2K9M84V2VJY605M",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-06T16:33:50.706513Z",
+  "branch": "test/fake-cargo-publish-requires-registry",
+  "checkpoints_count": 7,
+  "files_touched": [
+    "crates/callisto-cli/tests/common/release_harness.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "e397e5488cd5",
+  "checkpoint_transcript_start": 11634,
+  "transcript_lines_at_start": 11634,
+  "compact_transcript_start": 871,
+  "token_usage": {
+    "input_tokens": 54,
+    "cache_creation_tokens": 32145,
+    "cache_read_tokens": 8262852,
+    "output_tokens": 12177,
+    "api_call_count": 27
+  },
+  "redaction": {
+    "replacements": 43,
+    "layers": {
+      "betterleaks": 20,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 0,
+      "entropy": 23,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 76
+  },
+  "summary": {
+    "intent": "Continue a series of CI/release hardening PRs in the callisto repo: finish the action-pin PR (#448), then tighten the fake `cargo publish` in the release e2e harness so it requires `--registry` for custom registries, and ensure a test actually guards that behavior.",
+    "outcome": "PR #448 was retitled/updated. A stricter fake cargo publish was added to the release harness, and since a mutation check showed no e2e test exercised custom registries, a provider-level unit test (`a_cargo_publish_names...`) was added that fails when the registry flag is dropped. Both were committed and pushed on `test/fake-cargo-publish-requires-registry`; clippy was run.",
+    "learnings": {
+      "repo": [
+        "Release e2e suites live in crates/callisto-cli/tests (durable_release_e2e, release_command_e2e, release_forge_publish_e2e, release_hardening, provider_flag_contract, stageable_targets_e2e, shallow_clone_e2e, nested_cargo_workspace_e2e); 105 tests passed with the stricter fake.",
+        "No e2e fixture configures a custom cargo registry, so e2e tests cannot detect a dropped `--registry` flag on publish.",
+        "Provider tests in callisto-graph's registry/tests.rs already have a RecordingRunner and an `operation` helper, making them the right place to assert argv for a custom registry key.",
+        "Production argv is built in callisto-graph/src/commands/registry_argv.rs (`cargo_publish_argv`), and the provider passes `registry_key` at cargo.rs:103.",
+        "The 'Released N package(s)' summary overclaiming on reruns is a known pending fix (OperationOutcome / ReleaseReceiptV1 in callisto-model/src/release)."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release/provider/registry/cargo.rs",
+          "line": 103,
+          "finding": "The publish call passes `registry_key`; replacing it with `None` is the mutation that the new provider-level test catches."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/registry_argv.rs",
+          "finding": "`cargo_publish_argv` appends `--registry` only when `registry_key` is Some; forcing the filter to false did not fail any e2e test, revealing the coverage gap."
+        }
+      ],
+      "workflow": [
+        "Run a mutation check (temporarily break production code) after tightening a test fake to confirm the test actually discriminates; here it exposed a guard that guarded nothing.",
+        "Revert mutations with `git checkout -- <file>` and re-run the test to confirm restoration.",
+        "Work is being done in a worktree with each fix on its own branch off origin/main (`--no-track`), one PR per concern."
+      ]
+    },
+    "friction": [
+      "The initial mutation (dropping `--registry` from production argv) survived all 105 e2e tests, so the stricter fake alone provided no protection and required a different test layer.",
+      "Started a branch for the release-summary fix, then deleted it and switched away to do the fake-cargo work first, leaving that task unstarted."
+    ],
+    "open_items": [
+      "Fix the 'Released N package(s)' summary so it counts only actually published packages rather than overclaiming on reruns (branch fix/release-summary-counts-published was created and discarded without changes).",
+      "No e2e fixture exercises a custom cargo registry; consider adding one so the stricter fake guards real end-to-end behavior.",
+      "PR for test/fake-cargo-publish-requires-registry was pushed with a body drafted in pr-cargo-registry.md but the PR itself was not shown as opened; clippy result was not displayed."
+    ]
+  }
+}
