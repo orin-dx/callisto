@@ -904,7 +904,8 @@ fn flag_patterns(tool: &str) -> String {
 /// Invoked without `--registry` it does what real cargo does -- answers from
 /// the local manifest, the D01 defect -- rather than refusing, so dropping
 /// `--registry` from the production argv breaks the end-to-end suite instead of
-/// being absorbed by a lenient fake.
+/// being absorbed by a lenient fake. `publish` likewise records the registry it
+/// landed in (crates.io when `--registry` is absent), and `info` serves only that one.
 ///
 /// `$CALLISTO_TEST_CARGO_MARKER`'s directory also holds the two knobs the
 /// fakes cannot receive in memory: `unreachable` forces the transport-failure
@@ -961,8 +962,9 @@ if [ "$key" = info ]; then
     exit 101
   fi
   published=$(cat "$CALLISTO_TEST_CARGO_MARKER.$crate" 2>/dev/null)
+  landed=$(cat "$CALLISTO_TEST_CARGO_MARKER.$crate.registry" 2>/dev/null)
   serve=0
-  if [ "$published" = "$want" ]; then serve=1; fi
+  if [ "$published" = "$want" ] && [ "${{landed:-$registry}}" = "$registry" ]; then serve=1; fi
   if [ "$serve" = 1 ] && [ -f "$state/flap" ]; then
     read -r honest absent < "$state/flap"
     if [ "${{honest:-0}}" -gt 0 ]; then
@@ -1002,6 +1004,8 @@ if [ -n "$CALLISTO_TEST_CARGO_PUBLISH_SLEEP" ]; then
   sleep "$CALLISTO_TEST_CARGO_PUBLISH_SLEEP"
 fi
 printf '%s\n' "$version" > "$CALLISTO_TEST_CARGO_MARKER.$name"
+# Without `--registry` real cargo publishes to crates.io, so a dropped flag lands there, not where `info` looks.
+printf '%s\n' "${{registry:-crates-io}}" > "$CALLISTO_TEST_CARGO_MARKER.$name.registry"
 exit 0
 "#
     )
