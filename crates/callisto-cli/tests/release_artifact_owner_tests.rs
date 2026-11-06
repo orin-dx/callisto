@@ -133,6 +133,19 @@ fn a_plugin_artifact_is_owned_by_the_package_that_builds_it() {
     );
 }
 
+// A push checkout leaves HEAD on the branch; generated workflows check out the commit so `plan` can run.
+#[test]
+fn plan_from_an_attached_head_fails_with_e170() {
+    let (dir, commit) = plugin_artifact_fixture(true);
+    git(dir.path(), &["switch", "-C", "main"]);
+    let external = tempfile::tempdir().unwrap();
+    let out = plan(dir.path(), &external.path().join("intent.json"), &commit);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "stderr: {stderr}");
+    assert!(stderr.contains("E170"), "expected E170, got: {stderr}");
+    assert!(stderr.contains("detached HEAD"), "{stderr}");
+}
+
 #[test]
 fn an_artifact_whose_package_is_not_released_is_a_config_error_not_a_defect() {
     let (dir, commit) = plugin_artifact_fixture(false);

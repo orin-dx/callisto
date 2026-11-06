@@ -1005,11 +1005,18 @@ fn matrix_workflow_has_no_recovery_or_sha_gating() {
         "release_source_sha",
         "workflow_dispatch",
         "gh api",
-        "github.sha",
         "is_release_pr",
     ] {
         assert!(!workflow.contains(absent), "`{absent}` present:\n{workflow}");
     }
+    // `release plan`, `build-python` and `execute` require a detached HEAD (E170), and a push checkout is attached.
+    for name in ["plan", "build-python", "execute"] {
+        assert!(
+            job(&workflow, name).contains("ref: \"${{ github.sha }}\""),
+            "`{name}` must check out the commit, not the branch:\n{workflow}"
+        );
+    }
+    assert_eq!(workflow.matches("github.sha").count(), 3, "{workflow}");
     assert!(
             workflow.contains("git diff-tree --no-commit-id --name-only --diff-filter=AM -r HEAD^ HEAD | grep -qxF .callisto/release-decision.json"),
             "{workflow}"
