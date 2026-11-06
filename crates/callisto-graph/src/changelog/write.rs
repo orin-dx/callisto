@@ -50,9 +50,8 @@ pub fn prepend(
         existing.to_owned()
     };
 
-    // Bug 8 guard: if the version heading we are about to insert already exists
-    // in the file, skip the write entirely (idempotent behaviour). The heading
-    // is the first line of `rendered` (e.g. "## 1.0.0").
+    // A rerun must not duplicate a version heading: skip the write when it already exists. The heading is the
+    // first line of `rendered` (e.g. "## 1.0.0").
     let version_heading = rendered.lines().next().unwrap_or("").trim();
     if !version_heading.is_empty() && normalised.lines().any(|l| l.trim() == version_heading) {
         return Ok(());
@@ -221,18 +220,9 @@ mod tests {
         assert_eq!(find_section(changelog, &v2), None);
     }
 
-    /// Regression test for the drifted local `atomic_write` that only synced the
-    /// parent directory. `prepend()` unconditionally calls `create_dir_all` for
-    /// the changelog's parent, so when both the parent *and* grandparent
-    /// directories are freshly created as part of the same operation, durability
-    /// requires fsyncing both new directory entries — exactly what the canonical
-    /// `callisto_model::atomic::atomic_write` does and the local copy did not.
-    ///
-    /// This test doesn't simulate a crash (that would require fault injection at
-    /// the syscall level), but it does exercise `prepend()` through a freshly
-    /// created two-level-deep directory tree end-to-end, proving the write path
-    /// now routes through the shared implementation rather than a local
-    /// duplicate that silently drops the grandparent sync.
+    /// `prepend()` creates the changelog's parent directories, so a freshly created two-level tree needs both new
+    /// directory entries fsynced, as `callisto_model::atomic::atomic_write` does. This writes through such a tree
+    /// end to end; it does not simulate a crash.
     #[test]
     fn prepend_does_not_displace_header_in_crlf_changelog() {
         let workspace = tempfile::tempdir().unwrap();
@@ -325,10 +315,8 @@ mod tests {
 
     #[test]
     fn prepend_else_branch_inserts_h1_header_before_new_entry_when_display_name_mismatches() {
-        // The existing changelog uses "old-name" as the H1. prepend() is called
-        // with display_name = "new-name", so neither strip_prefix pattern matches
-        // and the else branch fires. Before the fix, the else branch emits the
-        // rendered entry (an H2) first, leaving the H1 buried below it.
+        // The existing changelog uses "old-name" as the H1. prepend() is called with display_name = "new-name",
+        // so neither strip_prefix pattern matches and the else branch fires, which must keep the H1 first.
         let workspace = tempfile::tempdir().unwrap();
         let root = workspace.path();
         let changelog_path = std::path::Path::new("CHANGELOG.md");

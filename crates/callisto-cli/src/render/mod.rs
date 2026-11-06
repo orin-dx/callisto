@@ -45,9 +45,7 @@ pub fn render_status<W: io::Write>(report: &StatusReport, use_color: bool, w: &m
             )?;
         }
     }
-    // `status --check`'s exit code no longer signals
-    // pending state (0/1 gate on errors only), so the summary line and the
-    // JSON `pending` count are how a reader sees it now.
+    // The exit code gates on errors only, so the summary line and the JSON `pending` count show pending state.
     writeln!(w, "{} package(s) pending", report.pending)?;
     render_diagnostics(&report.diagnostics, None, w)
 }

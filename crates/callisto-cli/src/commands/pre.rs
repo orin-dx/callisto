@@ -80,7 +80,7 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
 
     match args {
         PreArgs::Enter { tag } => {
-            // Bug 3: reject empty tags before any workspace I/O.
+            // Reject an empty tag before any workspace I/O.
             if tag.trim().is_empty() {
                 return Err(CliError::PreTagEmpty);
             }
@@ -128,7 +128,7 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             fs::create_dir_all(&pre_dir)?;
             callisto_manifests::atomic::atomic_write(&pre_path, &text, &permit)?;
 
-            // Bug 4: stage pre.json so it is included in the next commit.
+            // Stage pre.json so it is included in the next commit.
             stage_pre_json(&runner, &ws.root, &rel_pre_path)?;
 
             match global.format {

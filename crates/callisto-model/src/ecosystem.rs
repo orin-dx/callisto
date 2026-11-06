@@ -37,7 +37,7 @@ impl Ecosystem {
     /// name and (usually) version. Deliberately excludes the other,
     /// demand-gated ecosystems in this enum (Go, Maven, NuGet, ...), which
     /// either have no canonical-identity manifest wired up yet or aren't
-    /// part of this duplication (see audit pattern B).
+    /// part of that discovery.
     pub const CANONICAL: [Ecosystem; 3] = [Ecosystem::Cargo, Ecosystem::Npm, Ecosystem::Pypi];
 
     /// The manifest format that carries this ecosystem's package identity

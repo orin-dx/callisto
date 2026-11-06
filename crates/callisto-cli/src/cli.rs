@@ -645,7 +645,7 @@ mod tests {
         .is_ok());
     }
 
-    /// The legacy publish commands no longer parse.
+    /// The removed publish commands are rejected as unknown.
     #[test]
     fn legacy_publish_commands_are_unrecognized() {
         use clap::Parser;

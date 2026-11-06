@@ -78,11 +78,7 @@ pub(crate) enum LineEnding {
 /// what was originally on disk: whether the file opened with a UTF-8 BOM,
 /// and its line-ending style.
 ///
-/// Previously reimplemented independently -- byte-for-byte identically --
-/// as a private `has_bom`/`line_ending` pair (plus a duplicate local
-/// `LineEnding` enum) in both `npm::PackageJson` and
-/// `python::PyprojectToml`, and entirely absent from `cargo::CargoToml`
-/// (F4: a CRLF `Cargo.toml` was silently rewritten to LF on any write).
+/// Shared by `cargo::CargoToml`, `npm::PackageJson` and `python::PyprojectToml`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct FormatFingerprint {
     pub(crate) has_bom: bool,

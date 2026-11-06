@@ -439,13 +439,8 @@ mod tests {
         );
     }
 
-    /// Regression: before routing name extraction through the shared
-    /// `callisto_manifests::read_identity` (which falls back through PEP
-    /// 621 -> Poetry -> Flit, matching `python_package_name`), this walker's
-    /// own hand-rolled pyproject.toml parsing only checked `project.name`
-    /// and `tool.poetry.name`, silently failing to discover a Flit-based
-    /// Python package. Closing this gap is a side effect of removing the
-    /// duplication (audit pattern B).
+    /// A Flit-based Python package is discovered, because name extraction goes through the shared
+    /// `callisto_manifests::read_identity` (PEP 621, then Poetry, then Flit).
     #[test]
     fn discovers_flit_based_python_package_via_shared_identity_reader() {
         let tmp = tempfile::tempdir().unwrap();

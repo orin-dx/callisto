@@ -180,10 +180,8 @@ pub enum NpmPackageManager {
 /// Detection priority: pnpm > yarn > bun > npm (default). A `pnpm-workspace.yaml` is pnpm even where the lockfile is not
 /// committed, and a file that cannot be inspected is an error, not a reason to fall back to `npm`.
 ///
-/// This is real, live-today correctness content: the durable release
-/// executor's `dispatch_registry` used to hardcode plain `npm publish`
-/// regardless of which package manager a workspace actually uses, so a pnpm
-/// or yarn workspace published with the wrong tool.
+/// The package manager comes from the workspace, so a pnpm or yarn workspace publishes with its own tool, not
+/// plain `npm publish`.
 ///
 /// # Errors
 ///

@@ -223,17 +223,9 @@ pub(crate) mod tests {
         .unwrap()
     }
 
-    /// Regression coverage for the callisto-graph derivation-drift finding:
-    /// `derive_release_decision` and this module's `derive_release_inputs`
-    /// each independently mapped a package's canonical manifests to
-    /// `ReleasePackageId`s -- one via a plain per-manifest map, the other via
-    /// a `BTreeSet<Ecosystem>` dedup step -- before both were migrated onto
-    /// `release_decision::release_package_ids`. A dual-manifest package (one
-    /// directory, a Cargo manifest and an npm manifest) is exactly
-    /// the shape that would have silently diverged had the two derivations
-    /// disagreed: this proves the roster `derive_release_decision` computes
-    /// and the snapshot `build_release_intent` derives from it agree on the
-    /// exact same two `ReleasePackageId`s.
+    /// A dual-manifest package (one directory with a Cargo and an npm manifest) gets the same two
+    /// `ReleasePackageId`s from the roster `derive_release_decision` computes and from the snapshot
+    /// `build_release_intent` derives from it.
     #[test]
     fn dual_identity_package_release_ids_agree_between_decision_and_intent_derivation() {
         let dir = tempfile::tempdir().unwrap();

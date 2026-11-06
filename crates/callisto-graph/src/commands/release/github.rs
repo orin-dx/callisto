@@ -227,7 +227,7 @@ fn github_api_get_once(
 mod tests {
     use super::*;
 
-    /// Regression: a timed-out `gh api` call must retry, not hand `CommandError::TimedOut` straight to `?`.
+    /// A timed-out `gh api` call retries instead of handing `CommandError::TimedOut` straight to `?`.
     #[test]
     fn a_timed_out_gh_api_call_retries_and_settles() {
         struct FlakyGh(

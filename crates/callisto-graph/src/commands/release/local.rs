@@ -499,7 +499,7 @@ mod tests {
         }
     }
 
-    // REL-RERUN-08: an unreadable remote reports nothing, and git's own error never reaches the terminal.
+    // An unreadable remote reports nothing, and git's own error never reaches the terminal.
     #[test]
     fn the_origin_tag_probe_is_quiet_when_the_remote_cannot_be_read() {
         let probe = OriginTagProbe {

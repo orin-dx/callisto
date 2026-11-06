@@ -510,9 +510,8 @@ impl Manifest for PyprojectToml {
                 // (`foo = { version = "^1.2" }`) and dotted-table syntax
                 // (`[tool.poetry.dependencies.foo]` / `version = "^1.2"`),
                 // which parse to different `toml_edit::Item` variants but
-                // must both be recognized -- previously only the inline-table
-                // variant was handled, so a dotted-table Poetry dependency
-                // silently vanished from the graph entirely.
+                // must both be recognized, or a dotted-table Poetry
+                // dependency vanishes from the graph.
                 let raw_req = match item {
                     toml_edit::Item::Value(toml_edit::Value::String(s)) => Some(s.value().as_str()),
                     _ => item

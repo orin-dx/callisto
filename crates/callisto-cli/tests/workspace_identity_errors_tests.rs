@@ -1,4 +1,4 @@
-//! WS-ID-08 (E101) and WS-ID-09 (E007): two identity errors that behaved correctly but had no test.
+//! E101 and E007: two identity errors that behaved correctly but had no test.
 #[path = "common/release_harness.rs"]
 mod release_harness;
 
@@ -18,7 +18,7 @@ fn write(root: &std::path::Path, path: &str, content: &str) {
     fs::write(path, content).unwrap();
 }
 
-// WS-ID-08: a package's explicit `tag-template` that equals another package's default tags is E101.
+// A package's explicit `tag-template` that equals another package's default tags is E101.
 #[test]
 fn an_explicit_tag_template_equal_to_another_packages_default_fails_with_e101() {
     let dir = repo();
@@ -50,7 +50,7 @@ fn an_explicit_tag_template_equal_to_another_packages_default_fails_with_e101() 
     assert!(stderr_of(&out).contains("b@{version}"), "stderr: {}", stderr_of(&out));
 }
 
-// WS-ID-09: co-located Cargo.toml and pyproject.toml disagree on version grammar, static or dynamic.
+// Co-located Cargo.toml and pyproject.toml disagree on version grammar, static or dynamic.
 fn colocated(root: &std::path::Path, python_version: &str) {
     write(
         root,

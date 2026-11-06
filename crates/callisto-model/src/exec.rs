@@ -266,12 +266,9 @@ mod tests {
         assert!(check_git_version("git version 1.99.99").is_err());
     }
 
-    /// Regression: `semver::VersionReq`'s `>=2.20` never matches a
-    /// pre-release version unless the requirement itself carries a matching
-    /// pre-release tag, which would make a hyphenated git build tag like
-    /// `-rc1` falsely reject an otherwise-satisfying version if passed
-    /// through to `semver::Version::parse` unstripped. A pre-release build
-    /// well above the floor must still be accepted.
+    /// `semver::VersionReq`'s `>=2.20` never matches a pre-release version unless the requirement carries a
+    /// matching pre-release tag, so a hyphenated git build tag like `-rc1` must be stripped before
+    /// `semver::Version::parse`. A pre-release build well above the floor is accepted.
     #[test]
     fn accepts_hyphenated_prerelease_suffix_above_the_floor() {
         assert!(check_git_version("git version 2.39.5-rc1").is_ok());
