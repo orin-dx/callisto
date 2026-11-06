@@ -1955,3 +1955,7 @@ This came back too fast, doesn't feel like you did a thorough analysis and think
 ---
 
 I thought we were going with macos-latest and not 15. WTF
+
+---
+
+Also, can we address the findings you have above?
