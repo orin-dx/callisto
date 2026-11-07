@@ -737,13 +737,8 @@ mod tests {
         assert_eq!(entries[1].range, ">=3.9");
     }
 
-    /// Regression: `package.json` is parsed at most once per package (see
-    /// `build_matrix_report`'s doc comment) and the resulting value is
-    /// shared between the platformTargets and runtimeVersions extraction
-    /// paths. A package.json declaring BOTH `napi.targets` and
-    /// `engines.node` -- fields consumed by the two different paths -- must
-    /// still populate both report sections correctly from that one shared
-    /// parse, not just one or the other.
+    /// `package.json` is parsed at most once per package and shared by the platformTargets and runtimeVersions
+    /// paths, so one declaring both `napi.targets` and `engines.node` populates both report sections.
     #[test]
     fn build_matrix_report_single_file_serves_both_platform_and_runtime_extraction() {
         let tmp = tempfile::tempdir().unwrap();

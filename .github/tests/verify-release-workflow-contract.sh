@@ -20,12 +20,13 @@ require_line() {
 }
 
 version_pr="$(job_block version-pr plan)"
+require_line "$version_pr" '    needs: [release-candidate, gate, drain]' 'version-pr must wait for the verification gate before it refreshes the release PR'
 require_line "$version_pr" '      contents: write' 'version-pr must write the managed branch'
 require_line "$version_pr" '      pull-requests: write' 'version-pr must create or update the release PR'
-require_line "$version_pr" "          version_command: 'callisto version --refresh-lockfiles'" 'version-pr must refresh Cargo.lock for coupled Cargo version bumps; the action appends its single authoritative --emit-decision argument'
-
-release_pr_note="$(job_block release-pr-note plan)"
-require_line "$release_pr_note" "    if: always() && (github.event_name == 'push' || needs.version-pr.result != 'skipped')" 'release-pr-note must report every push and any manual run that refreshed the release PR'
+if grep -Fq -- "--no-refresh-lockfiles" <<< "$version_pr"; then
+  printf 'release workflow contract failed: version-pr must refresh Cargo.lock for coupled Cargo version bumps, which callisto version does by default\n' >&2
+  exit 1
+fi
 
 if ! rg -Fqx '  group: hold-release-pr' .github/workflows/callisto-hold-release-pr.yml; then
   printf 'release workflow contract failed: hold runs must be serialized in one concurrency group\n' >&2
@@ -76,7 +77,7 @@ require_line "$plan" '            --orchestration-revision "$ORCHESTRATION_SHA" 
 require_line "$plan" '            --from-release-commit "$RELEASE_SOURCE_SHA" \' 'planning must bind the exact release source checkout'
 
 execute="$(sed -n '/^  execute:$/,$p' "$workflow")"
-require_line "$execute" '    needs: [plan, build, release-candidate]' 'PR merge is the release approval; execute must depend directly on the plan and verified build, not a GitHub Environment gate'
+require_line "$execute" '    needs: [plan, build, release-candidate, gate]' 'PR merge is the release approval; execute must depend directly on the plan and verified build, not a GitHub Environment gate'
 require_line "$execute" '            cmp "$intent_dir/release-intent.json" "$build_dir/release-intent/release-intent.json"' 'execute must reject a build handoff whose immutable intent differs from planning'
 require_line "$execute" '          path: ${{ runner.temp }}/release-intent' 'execute must download release-intent outside the workspace -- callisto release execute re-checks release trust before every dispatch, which fails closed on any untracked file in the worktree'
 require_line "$execute" '          path: ${{ runner.temp }}/release-build' 'execute must download release-build outside the workspace -- callisto release execute re-checks release trust before every dispatch, which fails closed on any untracked file in the worktree'

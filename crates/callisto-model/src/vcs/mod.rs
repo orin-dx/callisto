@@ -10,10 +10,6 @@ pub use access::GitAccess;
 #[derive(Clone, Debug, Error, miette::Diagnostic, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum VcsError {
-    #[error("failed to discover Git repository at `{path}`: {message}")]
-    #[diagnostic(code(E050), help("Ensure target directory is inside a valid Git repository."))]
-    RepoNotFound { path: PathBuf, message: String },
-
     #[error("git error: {0}")]
     #[diagnostic(
         code(E051),

@@ -50,11 +50,10 @@ pub fn prepend(
         existing.to_owned()
     };
 
-    // Bug 8 guard: if the version heading we are about to insert already exists
-    // in the file, skip the write entirely (idempotent behaviour). The heading
-    // is the first line of `rendered` (e.g. "## 1.0.0").
+    // A rerun must not duplicate a version heading: skip the write when it already exists. The heading is the
+    // first line of `rendered` (e.g. "## 1.0.0").
     let version_heading = rendered.lines().next().unwrap_or("").trim();
-    if !version_heading.is_empty() && normalised.lines().any(|l| l.trim() == version_heading) {
+    if !version_heading.is_empty() && has_heading(&normalised, version_heading) {
         return Ok(());
     }
 
@@ -65,6 +64,8 @@ pub fn prepend(
     let rest: &str = if let Some(rest) = normalised.strip_prefix(&format!("# {display_name}\n\n")) {
         rest
     } else if let Some(rest) = normalised.strip_prefix(&format!("# {display_name}\n")) {
+        rest
+    } else if let Some(rest) = strip_alias_title(&normalised, display_name) {
         rest
     } else {
         // No matching H1 found: emit the correct H1 first so the output is
@@ -89,6 +90,38 @@ pub fn prepend(
         path: changelog_path.to_path_buf(),
         message: e.to_string(),
     })
+}
+
+/// Whether `heading` starts a line of `text` outside a fenced code block. An indented line or a line in a code
+/// example only mentions the heading.
+fn has_heading(text: &str, heading: &str) -> bool {
+    let mut fence: Option<&str> = None;
+    for line in text.lines() {
+        let marker = line.trim_start();
+        let opening = ["```", "~~~"]
+            .into_iter()
+            .find(|marker_text| marker.starts_with(marker_text));
+        match (fence, opening) {
+            (None, Some(open)) => fence = Some(open),
+            (Some(open), Some(close)) if open == close => fence = None,
+            (None, None) if line.trim_end() == heading => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// The text after a leading `# title` that names this package under another display form: a bare name that later
+/// gained its ecosystem prefix, or the reverse. A title for anything else is kept.
+fn strip_alias_title<'a>(text: &'a str, display_name: &str) -> Option<&'a str> {
+    const ECOSYSTEMS: [&str; 3] = ["cargo", "npm", "pypi"];
+    let (first, rest) = text.split_once('\n')?;
+    let title = first.strip_prefix("# ")?.trim_end();
+    let is_alias = ECOSYSTEMS.iter().any(|ecosystem| {
+        display_name.strip_prefix(&format!("{ecosystem}/")) == Some(title)
+            || format!("{ecosystem}/{display_name}") == title
+    });
+    is_alias.then(|| rest.strip_prefix('\n').unwrap_or(rest))
 }
 
 /// The non-empty `## {version}` section body, trimmed.
@@ -221,18 +254,9 @@ mod tests {
         assert_eq!(find_section(changelog, &v2), None);
     }
 
-    /// Regression test for the drifted local `atomic_write` that only synced the
-    /// parent directory. `prepend()` unconditionally calls `create_dir_all` for
-    /// the changelog's parent, so when both the parent *and* grandparent
-    /// directories are freshly created as part of the same operation, durability
-    /// requires fsyncing both new directory entries — exactly what the canonical
-    /// `callisto_model::atomic::atomic_write` does and the local copy did not.
-    ///
-    /// This test doesn't simulate a crash (that would require fault injection at
-    /// the syscall level), but it does exercise `prepend()` through a freshly
-    /// created two-level-deep directory tree end-to-end, proving the write path
-    /// now routes through the shared implementation rather than a local
-    /// duplicate that silently drops the grandparent sync.
+    /// `prepend()` creates the changelog's parent directories, so a freshly created two-level tree needs both new
+    /// directory entries fsynced, as `callisto_model::atomic::atomic_write` does. This writes through such a tree
+    /// end to end; it does not simulate a crash.
     #[test]
     fn prepend_does_not_displace_header_in_crlf_changelog() {
         let workspace = tempfile::tempdir().unwrap();
@@ -325,10 +349,8 @@ mod tests {
 
     #[test]
     fn prepend_else_branch_inserts_h1_header_before_new_entry_when_display_name_mismatches() {
-        // The existing changelog uses "old-name" as the H1. prepend() is called
-        // with display_name = "new-name", so neither strip_prefix pattern matches
-        // and the else branch fires. Before the fix, the else branch emits the
-        // rendered entry (an H2) first, leaving the H1 buried below it.
+        // The existing changelog uses "old-name" as the H1. prepend() is called with display_name = "new-name",
+        // so neither strip_prefix pattern matches and the else branch fires, which must keep the H1 first.
         let workspace = tempfile::tempdir().unwrap();
         let root = workspace.path();
         let changelog_path = std::path::Path::new("CHANGELOG.md");
@@ -359,6 +381,49 @@ mod tests {
         let pos_new = result.find("## 2.0.0").expect("new version heading missing");
         let pos_old = result.find("## 1.0.0").expect("old version heading missing");
         assert!(pos_new < pos_old, "new entry should precede old entry — got:\n{result}");
+    }
+
+    /// A heading that is only mentioned (indented, or inside a code block) does not count as already written.
+    #[test]
+    fn prepend_writes_the_entry_when_the_heading_is_only_quoted() {
+        let workspace = tempfile::tempdir().unwrap();
+        let root = workspace.path();
+        let changelog_path = std::path::Path::new("CHANGELOG.md");
+        let full_path = root.join(changelog_path);
+        fs::write(
+            &full_path,
+            "# my-pkg\n\nFormat:\n\n    ## 1.0.0\n\n```md\n## 1.0.0\n```\n",
+        )
+        .unwrap();
+
+        prepend(root, changelog_path, "my-pkg", "## 1.0.0\n\nNew content\n", &permit()).unwrap();
+
+        let result = fs::read_to_string(&full_path).unwrap();
+        assert!(
+            result.starts_with("# my-pkg\n\n## 1.0.0\n\nNew content\n"),
+            "entry not written:\n{result}"
+        );
+    }
+
+    /// A package that gains its ecosystem prefix keeps one title, not the old bare one below the new.
+    #[test]
+    fn prepend_replaces_the_bare_title_when_the_display_name_gains_a_prefix() {
+        let workspace = tempfile::tempdir().unwrap();
+        let root = workspace.path();
+        let changelog_path = std::path::Path::new("CHANGELOG.md");
+        let full_path = root.join(changelog_path);
+        fs::write(&full_path, "# a\n\n## 0.2.0\n\n- first\n").unwrap();
+
+        prepend(root, changelog_path, "cargo/a", "## 0.3.0\n\n- second\n", &permit()).unwrap();
+
+        let result = fs::read_to_string(&full_path).unwrap();
+        assert_eq!(
+            result.matches("\n# ").count() + usize::from(result.starts_with("# ")),
+            1,
+            "{result}"
+        );
+        assert!(result.starts_with("# cargo/a\n\n## 0.3.0"), "{result}");
+        assert!(result.contains("## 0.2.0"), "old entry lost:\n{result}");
     }
 
     #[test]

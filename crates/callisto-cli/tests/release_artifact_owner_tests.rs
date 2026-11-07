@@ -160,7 +160,7 @@ fn an_artifact_whose_package_is_not_released_is_a_config_error_not_a_defect() {
     );
 }
 
-// REL-CMD-04 and REL-CMD-05: a preview needs no `origin`, even when the release builds artifacts.
+// A preview needs no `origin`, even when the release builds artifacts.
 #[test]
 fn a_preview_without_origin_plans_an_artifact_release() {
     let (dir, _) = plugin_artifact_fixture(true);
@@ -183,7 +183,7 @@ fn a_preview_without_origin_plans_an_artifact_release() {
     );
 }
 
-// REL-RERUN-08: an origin that cannot be read prints nothing, not git's own error, while the preview still plans.
+// An origin that cannot be read prints nothing, not git's own error, while the preview still plans.
 #[test]
 fn a_preview_with_an_unreachable_origin_prints_no_git_error() {
     let (dir, _) = plugin_artifact_fixture(true);
@@ -211,7 +211,7 @@ fn a_preview_with_an_unreachable_origin_prints_no_git_error() {
     );
 }
 
-// REL-AUTH-08: `--artifact-repository` alone is not a usage error; a source with `[release]` fails with E231.
+// `--artifact-repository` alone is not a usage error; a source with `[release]` fails with E231.
 #[test]
 fn plan_with_only_the_artifact_repository_fails_with_e231_not_a_usage_error() {
     let (dir, commit) = plugin_artifact_fixture(true);
@@ -236,7 +236,7 @@ fn plan_with_only_the_artifact_repository_fails_with_e231_not_a_usage_error() {
     assert!(stderr.contains("E231"), "expected E231, got: {stderr}");
 }
 
-// REL-AUTH-05: every route fails with E266 for a shallow repository, not a lower-level read failure.
+// Every route fails with E266 for a shallow repository, not a lower-level read failure.
 #[test]
 fn plan_from_a_release_commit_in_a_shallow_clone_fails_with_e266() {
     let (dir, commit) = plugin_artifact_fixture(true);
@@ -254,7 +254,7 @@ fn plan_from_a_release_commit_in_a_shallow_clone_fails_with_e266() {
     assert!(stderr.contains("E266"), "expected E266, got: {stderr}");
 }
 
-// REL-AUTH-05: and with E265 for a repository that is not SHA-1.
+// And with E265 for a repository that is not SHA-1.
 #[test]
 fn plan_from_a_release_commit_in_a_sha256_repository_fails_with_e265() {
     let dir = tempfile::tempdir().unwrap();

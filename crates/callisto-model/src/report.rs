@@ -114,9 +114,8 @@ pub struct StatusReport {
     pub has_changesets: bool,
     /// Count of packages with a planned bump (`StatusPackageRecord.pending_severity.is_some()`),
     /// i.e. post-cascade/fixed/linked-group -- unlike `has_changesets`, which only reflects
-    /// changeset files directly naming a package. `status --check`'s
-    /// exit code no longer signals pending state (0/1 gate on errors only), so this field is
-    /// how a script detects it. Always serialized, even when `0`.
+    /// changeset files directly naming a package. `status --check` gates on errors only, so this field is
+    /// how a script detects pending state. Always serialized, even when `0`.
     pub pending: u32,
     pub packages: Vec<StatusPackageRecord>,
 
@@ -205,10 +204,8 @@ mod status_report_tests {
         );
     }
 
-    /// `pending` (count of packages with a planned
-    /// bump) must always serialize, including when `0` -- it's the field a
-    /// script now reads to detect pending changesets, since `status --check`'s
-    /// exit code no longer signals it.
+    /// `pending` (count of packages with a planned bump) must always serialize, including when `0`: a script
+    /// reads it to detect pending changesets, since `status --check` gates on errors only.
     #[test]
     fn status_report_json_always_contains_pending() {
         let report = StatusReport {

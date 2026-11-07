@@ -15,7 +15,7 @@ inputs:
   verification:
     description: >-
       Attestation verification of the prebuilt release asset (gh attestation verify, repo
-      orin-dx/callisto, signer workflow callisto-release.yml). One of: require = a failed
+      orin-dx/callisto, signer workflow callisto-release.yml, source ref refs/heads/main). One of: require = a failed
       verification or missing gh aborts the step and the asset is never run; fallback (default) =
       on failure or missing gh, warn, delete the asset and install from crates.io instead (never
       run the unverified asset); skip = do not verify, warn, and use the asset. Releases built

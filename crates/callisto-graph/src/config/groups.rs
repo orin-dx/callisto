@@ -63,14 +63,9 @@ impl GroupDef {
     }
 
     /// Highest severity among this group's package members that have an
-    /// entry in `severities`, or `Severity::None` if none do. The single
-    /// definition of "max severity across a group" -- previously re-derived
-    /// independently in `aggregate::union_fixed`/`union_linked`, in two
-    /// inline blocks in `cascade::solve_cascade`, and again inside
-    /// `groups::fixed_group_target`. Having four independent copies let one
-    /// of them (cascade's Linked-group block) diverge and skip the
-    /// stale-member guard the others had, reaching a `MissingField` crash
-    /// for a group member removed from the workspace.
+    /// entry in `severities`, or `Severity::None` if none do. The one definition of "max severity across a
+    /// group", shared by aggregate, cascade and `fixed_group_target`, so a member removed from the workspace is
+    /// skipped the same way everywhere.
     pub fn max_severity(&self, severities: &BTreeMap<PackageId, Severity>) -> Severity {
         self.package_members()
             .filter_map(|id| severities.get(id).copied())
@@ -242,11 +237,6 @@ impl GroupTable {
     pub fn fixed_group_of(&self, id: &PackageId) -> Option<&GroupDef> {
         let name = self.fixed_of.get(id)?;
         self.fixed.get(name)
-    }
-
-    pub fn linked_group_of(&self, id: &PackageId) -> Option<&GroupDef> {
-        let name = self.linked_of.get(id)?;
-        self.linked.get(name)
     }
 
     pub fn fixed_siblings<'a>(&'a self, id: &'a PackageId) -> impl Iterator<Item = &'a PackageId> {

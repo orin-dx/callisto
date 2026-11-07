@@ -154,7 +154,6 @@ pub struct CascadeOutcome {
     pub governed_by: BTreeMap<PackageId, ConfigKey>,
     pub rewrites: BTreeMap<RewriteKey, SpecRewrite>,
     pub diagnostics: Vec<Diagnostic>,
-    pub iterations: usize,
 }
 
 pub fn run_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Result<CascadeOutcome, GraphError> {
@@ -502,7 +501,6 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
         }
     }
 
-    out.iterations = iterations;
     Ok(out)
 }
 

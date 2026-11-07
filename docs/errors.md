@@ -6,6 +6,8 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 
 "Fix" is the code's `help(...)` text verbatim. "—" means the variant has no help text in the source.
 
+Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E257, E258.
+
 ## callisto-model
 
 | Code | Meaning | Fix |
@@ -17,7 +19,6 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E005 | Manifest role is not valid for the manifest's format | — |
 | E006 | Package has no canonical manifest; at least one is required | Add a canonical manifest file for the package. |
 | E007 | Package's canonical manifests disagree on version grammar; it has no single version of record | Put the Python package in its own directory; a Cargo or npm package cannot share one with it. |
-| E008 | Package identity has an ecosystem prefix but no name after it | Include package name after ecosystem prefix. |
 | E009 | Manifest path has an unsupported format | — |
 | E010 | Failed to read a manifest file | Check file permissions and path validity. |
 | E011 | Failed to write a manifest file | Check write permissions on target directory. |
@@ -103,7 +104,6 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 
 | Code | Meaning | Fix |
 | --- | --- | --- |
-| E050 | Failed to discover Git repository at `<path>`: <message> | Ensure target directory is inside a valid Git repository. |
 | E051 | Git error: <0> | Inspect the reported Git failure and its context; no more specific fix is known. |
 | E052 | Reference `<ref_name>` was not found | Check if reference or tag exists in local or remote Git refs. |
 | E053 | Tag glob pattern `<pattern>` is not a valid glob: <message> | Fix the glob syntax (e.g. balance `{`/`}` and `[`/`]`) or use a literal tag name. |
@@ -135,8 +135,6 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 
 | Code | Meaning | Fix |
 | --- | --- | --- |
-| E257 | Pre-cursor ref could not be resolved | Check that the pre-cursor ref exists in local or remote Git refs. |
-| E258 | Failed to advance the pre-cursor ref to a commit | Check repository write permissions and that the target is a valid commit. |
 
 ## callisto-graph — config (`callisto.toml`)
 
@@ -151,7 +149,6 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E250 | One group lists the same member more than once | Remove the duplicate member from the group's member list. |
 | E251 | Group has no members | Add at least one member to the group, or remove the group. |
 | E252 | Duplicate group name | Rename one of the two groups sharing this name. |
-| E253 | `publish-to` names a registry key no `[registries.*]` block defines | Add a `[registries.<key>]` block to callisto.toml, or fix the typo. |
 | E254 | Config sets an unknown callisto key | Remove or fix the unrecognized key. |
 | E255 | `cascade.bump-severity` is invalid | Set `cascade.bump-severity` to `patch` or `minor` in callisto.toml. |
 | E256 | `pre-major-inference` is invalid | Set `pre-major-inference` to `off`, `conservative`, or `conservative-feat` in callisto.toml. |
@@ -242,7 +239,6 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 | E245 | `pre.json` records a bare name that now names several packages, and none was the only one when `pre.json` was added | In `pre.json` `initialVersions`, rename the `{key}` key to the qualified id of the package it was recorded for. |
 | E246 | Version dependency edge involves incompatible version grammars | Use the same version grammar on both sides of the dependency edge, or drop the edge. |
 | E247 | On-disk versions changed since the version plan was generated | Regenerate the version plan against the current workspace state before applying it. |
-| E248 | Workspace root manifest has conflicting version updates | Reconcile the workspace root manifest's version updates before retrying. |
 | E305 | `pre.json` records two entries for the same package (a bare or alternate key and the qualified key) with different versions | In `pre.json` `initialVersions`, keep one entry for the package: delete the key holding the wrong baseline, or give both the same version. |
 | E306 | The Python build for a package produced no sdist or no wheel for the release version | Make the build produce both for this version, then re-run the release. |
 | E307 | PyPI holds a file with different bytes than the file this release is publishing: one this run uploaded, or one the build job sealed | PyPI never reuses a filename: yank the release if it is wrong and release a new version. |

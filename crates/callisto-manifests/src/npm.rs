@@ -524,8 +524,13 @@ impl Manifest for PackageJson {
         }
 
         for extra in ["overrides", "resolutions"] {
+            // Only a plain range follows the dependency: `$name` refers to the direct dependency and a value with a
+            // protocol (`npm:`, `file:`, `catalog:`) points elsewhere.
             if let Some(tbl) = self.doc.get_mut(extra).and_then(|v| v.as_object_mut())
-                && tbl.get(name).is_some_and(|v| v.is_string())
+                && tbl
+                    .get(name)
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|v| !v.starts_with('$') && !v.contains(':'))
             {
                 tbl.insert(name.to_string(), Value::String(new.render()));
             }

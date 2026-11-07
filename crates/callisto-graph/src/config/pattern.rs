@@ -92,10 +92,7 @@ mod tests {
 
     /// An ecosystem-prefixed pattern like `"cargo/internal-*"` must match only
     /// packages in that ecosystem, not any package with a matching name
-    /// regardless of ecosystem. Before the fix, `matches()` glob-matched
-    /// against `id.name()` alone (which never contains the `cargo:` prefix
-    /// baked into the compiled glob), so an ecosystem-prefixed pattern matched
-    /// zero packages of any ecosystem.
+    /// regardless of ecosystem.
     #[test]
     fn ecosystem_prefixed_pattern_matches_only_that_ecosystem() {
         let pattern = PackagePattern::parse("cargo/internal-*").expect("valid glob");

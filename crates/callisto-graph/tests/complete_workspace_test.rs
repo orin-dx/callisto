@@ -177,7 +177,7 @@ fn a_member_whose_inheritance_cannot_be_resolved_makes_the_workspace_incomplete(
     // The walk itself records the manifest as an error-level diagnostic, once per stage that could not open it.
     let config = callisto_graph::load_config(root).unwrap();
     let cache = RefCell::new(BTreeMap::new());
-    let graph = ManifestWalkResolver::build(root, &locator, &NoopRunner, &config, &cache).unwrap();
+    let graph = ManifestWalkResolver::build(root, &locator, &config, &cache).unwrap();
     let recorded: Vec<_> = graph
         .diagnostics()
         .iter()

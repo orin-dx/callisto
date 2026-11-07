@@ -590,10 +590,6 @@ impl IdentityIndex {
         results.into_iter()
     }
 
-    pub fn display_form(&self, id: &PackageId) -> String {
-        id.display_name()
-    }
-
     /// The platform manifests attached to `owner` from their own
     /// directories, as (npm name, manifest path). Excludes a co-located platform
     /// manifest that is also one of `owner`'s canonical manifests.

@@ -329,6 +329,8 @@ struct SimWorld {
     elapsed: Cell<Duration>,
     /// What one observation costs on that clock.
     look_cost: Cell<Duration>,
+    /// What issuing one deferred publish costs on that clock.
+    issue_cost: Cell<Duration>,
 }
 
 impl SimWorld {
@@ -358,6 +360,7 @@ impl SimWorld {
             started: std::time::Instant::now(),
             elapsed: Cell::new(Duration::ZERO),
             look_cost: Cell::new(Duration::ZERO),
+            issue_cost: Cell::new(Duration::ZERO),
         }
     }
 
@@ -563,6 +566,7 @@ impl ReleaseProviderSet for SimWorld {
         id: &ReleaseOperationId,
         _artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<(), GraphError> {
+        self.elapsed.set(self.elapsed.get() + self.issue_cost.get());
         self.land_effect(id)
     }
 
@@ -1374,8 +1378,8 @@ fn deferred_registry_publishes_are_all_issued_before_the_first_tag() {
     );
 }
 
-/// A registry that shows a published version late no longer costs a run: the executor waits, together, for every
-/// issued publish, then goes on to the tags.
+/// A registry that shows a published version late is waited on within the run: the executor waits, together, for
+/// every issued publish, then goes on to the tags.
 #[test]
 fn a_registry_that_shows_a_version_late_is_waited_on_within_the_run() {
     let (intent, manifest) = simulator_intent();
@@ -1464,6 +1468,29 @@ fn a_publish_that_shows_along_the_way_does_not_restart_the_window() {
         run.world.elapsed.get(),
         Duration::from_secs(360),
         "the whole wait, across every look, should be the one window"
+    );
+}
+
+/// Each publish has its own window from the moment it was issued: when issuing takes longer than the window, a
+/// registry that shows the last publish a little late is still waited on, not given up on at once.
+#[test]
+fn a_publish_issued_late_still_gets_its_whole_window() {
+    let (intent, manifest) = simulator_intent();
+    let context = Rc::new(SimContext::default());
+    let world = deferring_world(&intent, &context, |_| 2);
+    world.issue_cost.set(Duration::from_secs(400));
+
+    let run = run_world(world, context, &manifest);
+
+    assert_eq!(
+        run.outcomes,
+        vec![RunOutcome::Receipted],
+        "{}",
+        trace_lines(&run.context)
+    );
+    assert!(
+        run.world.pauses.get() > 0,
+        "the late publish should have been waited on"
     );
 }
 

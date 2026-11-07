@@ -141,8 +141,7 @@ mod tests {
     /// `GIT_CONFIG_GLOBAL` pointed at a config that forces `commit.gpgsign =
     /// true` and an unusable `gpg.program`, must still succeed, because
     /// `init_repo`'s own local `commit.gpgsign = false` must take precedence
-    /// over the poisoned global. Before the fix, this fails with "gpg failed
-    /// to sign the data" / "cannot exec" instead of succeeding.
+    /// over the poisoned global.
     #[test]
     fn init_repo_is_hermetic_against_ambient_commit_signing_config() {
         let workdir = tempfile::tempdir().unwrap();

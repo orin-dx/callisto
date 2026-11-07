@@ -277,6 +277,10 @@
       "criterion": "Every Callisto-launched child other than Cargo has `CARGO_REGISTRIES_*_TOKEN` variables removed, matched without case sensitivity, whether inherited or supplied to a publisher subprocess. This covers ordinary, timeout, filtered, stdin, quiet and publisher routes. Cargo keeps named registry tokens for its native authentication."
     },
     {
+      "id": "REL-PUB-18",
+      "criterion": "A registry destination in `callisto.toml` is honored or refused, never ignored. A `url` on a `cargo` registry fails config loading with E254, because cargo takes its destination from `.cargo/config.toml`. Publishing an npm package with yarn while the npm registry has a `url` fails with E168 before yarn runs, because `yarn npm publish` has no `--registry`; the same configuration with npm, pnpm or bun passes `--registry <url>`."
+    },
+    {
       "id": "REL-RERUN-01",
       "criterion": "An operation whose result is already present and identical is recorded as already satisfied, and its effect is not repeated. For a registry version, stderr shows `warning: <package> <version> is already published; skipping`. During `release execute`, a Python release is satisfied only when every file its build produces is on the index, so a rerun after a partial upload uploads only the missing files. The check that finds a tagged package still to finish reads the version-level answer and does not build."
     },
@@ -395,7 +399,7 @@
     },
     {
       "id": "REL-PR-09",
-      "criterion": "On every push to `main`, the hold workflow converts each open, non-draft release PR (head `<release-branch>` or `<release-branch>--<anything>` in this repository) to a draft. The release-PR action creates a new PR as a draft and marks a PR ready only after the update or creation succeeded and the base branch still points at the commit the PR was built from; if the branch moved during the run, a ready PR is converted back to a draft and the action warns. A release PR whose refresh failed or never ran therefore stays a draft, and a draft cannot be merged. One comment on the PR, marked `<!-- callisto-release-pr-state -->` and edited in place, says why: the hold workflow writes that it is held, and a final release-workflow job that runs whatever the earlier jobs did, on every push and on a manual run that refreshed the release PR, writes that it is ready after a successful rebuild, or the failed run's link after a failure of verification, candidate selection or the rebuild itself. A rebuild that left the PR a draft because `main` moved again, or whose commit is no longer the tip of `main`, leaves the hold comment. A failed comment lookup writes nothing and only warns. Hold runs go one at a time, and a newer push replaces a queued run."
+      "criterion": "On every push to `main`, the hold workflow converts each open, non-draft release PR (head `<release-branch>` or `<release-branch>--<anything>` in this repository) to a draft. The release-PR action creates a new PR as a draft and marks a PR ready only after the update or creation succeeded and the base branch still points at the commit the PR was built from; if the branch moved during the run, a ready PR is converted back to a draft and the action warns. A release PR whose refresh failed or never ran therefore stays a draft, and a draft cannot be merged. Hold runs go one at a time, and a newer push replaces a queued run."
     },
     {
       "id": "REL-ERR-01",

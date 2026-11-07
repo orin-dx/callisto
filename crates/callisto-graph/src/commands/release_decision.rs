@@ -185,22 +185,12 @@ fn expand_selection<R: callisto_model::CommandRunner, D: DependencyResolver>(
         .collect()
 }
 
-/// Derives the roster of every publishable package whose current version has
-/// no tag in the canonical [`crate::TagIndex`], each with
-/// [`ReleaseInclusionReason::UnreleasedVersion`].
+/// Derives the roster of every publishable package whose current version has no tag in the canonical
+/// [`crate::TagIndex`], each with [`ReleaseInclusionReason::UnreleasedVersion`], and keeps the tagged releases in
+/// `resumable`: a tag does not prove the rest of the release was observed.
 ///
-/// A non-empty `selections` restricts the roster to exactly those identities,
-/// each of which must be unreleased and publishable. `None` means nothing is
-/// unreleased.
-pub fn derive_unreleased_decision<R: callisto_model::CommandRunner, D: DependencyResolver>(
-    workspace: &Workspace<'_, R, D>,
-    selections: &[ReleasePackageId],
-) -> Result<Option<ReleaseDecisionV1>, GraphError> {
-    derive_release_roster(workspace, selections, &std::collections::BTreeSet::new())
-}
-
-/// [`derive_unreleased_decision`] that also keeps the tagged releases in `resumable`: a tag
-/// does not prove the rest of the release was observed.
+/// A non-empty `selections` restricts the roster to exactly those identities, each of which must be unreleased and
+/// publishable. `None` means nothing is unreleased.
 pub(crate) fn derive_release_roster<R: callisto_model::CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     selections: &[ReleasePackageId],
@@ -376,14 +366,9 @@ fn release_groups_of<R: callisto_model::CommandRunner, D: DependencyResolver>(
 /// (via [`derive_release_decision`]) already computed that once, correctly,
 /// when the release PR was generated -- and `callisto version --emit-decision`
 /// commits its exact output alongside the manifest and changelog edits.
-/// Re-deriving that policy a second time here, from raw git diffs, is exactly
-/// the kind of duplicated logic that drifts: an earlier version of this
-/// function did just that, understood only a direct changeset match, and
-/// rejected every real release in this repository once a fixed-group cascade
-/// (a case its reimplementation never learned) touched an unnamed sibling.
-///
-/// Instead, this function reads the committed decision back and confirms the
-/// commit's actual diff matches it exactly -- no more, no less.
+/// Re-deriving that policy here from raw git diffs would duplicate logic that drifts (it would miss, for
+/// instance, a fixed-group cascade that touches an unnamed sibling), so this function reads the committed
+/// decision back and confirms the commit's actual diff matches it exactly -- no more, no less.
 /// [`ReleaseDecisionV1`]'s own deserializer already rejects a decision whose
 /// entries don't match its content digest, so a hand-edited or corrupted
 /// decision file fails before this function's own diff cross-check runs.
@@ -568,11 +553,8 @@ fn require_manifests_match_decision<R: CommandRunner, D: DependencyResolver>(
     }
     let query_paths: Vec<&str> = query_path_list.iter().map(String::as_str).collect();
 
-    // Exactly two `git cat-file --batch` subprocess invocations total (one
-    // per commit), regardless of how many canonical manifests the
-    // workspace has -- replaces what was previously 2*N separate `git
-    // show` spawns (one `manifest_version_at` call per manifest per
-    // commit).
+    // Exactly two `git cat-file --batch` invocations in all (one per commit), however many canonical manifests the
+    // workspace has.
     let before_blobs = batch_manifest_blobs_at(workspace.runner, &workspace.root, parent, &query_paths)?;
     let after_blobs =
         batch_manifest_blobs_at(workspace.runner, &workspace.root, release_commit.as_str(), &query_paths)?;
@@ -1061,10 +1043,8 @@ mod tests {
         assert!(!is_changeset_path("nested/release.md", ""));
     }
 
-    /// Regression: both malformed name-status lines must
-    /// surface as `GraphError::ReleaseCommand` (E164) with a
-    /// `CommandFailure::MalformedOutput` cause naming the real `git`
-    /// program/args, not the old fieldless `ReleaseIntentStale`.
+    /// Both malformed name-status lines surface as `GraphError::ReleaseCommand` (E164) with a
+    /// `CommandFailure::MalformedOutput` cause naming the real `git` program and args.
     #[test]
     fn release_commit_delta_parser_reports_malformed_output_not_stale_intent() {
         let args = ["diff-tree", "--name-status"];
@@ -1113,12 +1093,9 @@ mod tests {
         parse_manifest_version(&source, path, ecosystem)
     }
 
-    // toml_edit's `Index` impl panics on a missing table ("index not found")
-    // rather than returning None -- manifest_version_at previously used it
-    // directly (`document["project"]["version"]`), so a Poetry-only
-    // pyproject.toml, a PEP 621 `dynamic = ["version"]` package, or a
-    // `Cargo.toml` with no `[package]` table would abort release-commit
-    // verification with a panic instead of failing closed.
+    // toml_edit's `Index` impl panics on a missing table ("index not found") rather than returning None, so a
+    // Poetry-only pyproject.toml, a PEP 621 `dynamic = ["version"]` package, or a `Cargo.toml` with no `[package]`
+    // table must fail closed here, not panic.
     #[test]
     fn manifest_version_at_fails_closed_instead_of_panicking_on_missing_tables() {
         let cases: &[(&str, Ecosystem)] = &[
@@ -1485,8 +1462,7 @@ mod tests {
 
     /// A merged commit whose actual `HEAD` differs from the commit
     /// being verified must report `ReleaseCommitVerificationFailed{reason:
-    /// HeadMismatch}`, naming the *verified* commit -- not the fieldless
-    /// `ReleaseIntentStale` every other mismatch used to collapse into.
+    /// HeadMismatch}`, naming the *verified* commit -- not the fieldless `ReleaseIntentStale`.
     #[test]
     fn derive_release_commit_decision_reports_head_mismatch_distinctly() {
         let actual_head = "a".repeat(40);
@@ -1518,8 +1494,7 @@ mod tests {
 
     /// A committed decision file that isn't valid JSON must report
     /// `ReleaseDecisionDecode` naming the decision path -- distinct from
-    /// every `ReleaseCommitVerificationFailed` mismatch, and distinct from
-    /// the old fieldless `ReleaseIntentStale` both used to share.
+    /// every `ReleaseCommitVerificationFailed` mismatch and from the fieldless `ReleaseIntentStale`.
     #[test]
     fn derive_release_commit_decision_reports_corrupt_decision_file_distinctly() {
         let release_commit_sha = "a".repeat(40);

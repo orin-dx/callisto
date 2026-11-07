@@ -237,13 +237,6 @@ pub enum GraphError {
         found: callisto_model::Version,
     },
 
-    #[error("workspace root `{root_manifest}` has conflicting version updates: {details}")]
-    #[diagnostic(
-        code(E248),
-        help("Reconcile the workspace root manifest's version updates before retrying.")
-    )]
-    WorkspaceVersionConflict { root_manifest: PathBuf, details: String },
-
     #[error(
         "`{}` is {} on disk and {} in the Git index, but {} at HEAD while release inputs or staged version changes remain: this looks like an interrupted `version` run",
         .path.display(), .disk.render(), .index, .head.render()
@@ -955,6 +948,8 @@ pub enum UnsupportedReleaseFeature {
     BumpReason,
     #[error("publish target")]
     PublishTarget,
+    #[error("a configured npm registry url with yarn (`yarn npm publish` has no --registry; set `npmPublishRegistry` in .yarnrc.yml)")]
+    YarnRegistryUrl,
 }
 
 /// Why a `--package` release selection is invalid, carried by
@@ -1022,7 +1017,6 @@ mod tests {
 
     /// Spec: GraphError::Vcs must be transparent — wrapping a VcsError must
     /// not add any prefix (e.g. "vcs error: ") to the display message.
-    /// Before the fix, format!("{err}") produces "vcs error: <inner>".
     #[test]
     fn graph_error_vcs_is_transparent_no_prefix() {
         let inner = VcsError::Git("some git error".to_string());
@@ -1150,14 +1144,6 @@ pub enum ConfigError {
     #[error("duplicate group name `{group}`")]
     #[diagnostic(code(E252), help("Rename one of the two groups sharing this name."))]
     DuplicateGroupName { group: GroupName },
-
-    #[error("`publish-to` names registry key `{key}`, which no [registries.*] block defines")]
-    #[diagnostic(
-        code(E253),
-        help("Add a `[registries.{key}]` block to callisto.toml, or fix the typo.")
-    )]
-    UnknownRegistry { key: String },
-
     #[error("`{path}` sets unknown callisto key `{key}`")]
     #[diagnostic(code(E254), help("Remove or fix the unrecognized key `{}` in `{}`.", key, path.display()))]
     UnknownKey { path: PathBuf, key: String },

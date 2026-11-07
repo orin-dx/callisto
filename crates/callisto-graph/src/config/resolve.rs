@@ -501,6 +501,15 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
                     ),
                 });
             }
+            if reg.url.is_some() && kind == Ecosystem::Cargo {
+                return Err(ConfigError::UnknownKey {
+                    path: callisto_toml.clone(),
+                    key: format!(
+                        "[registries.{}] url (cargo takes its destination from .cargo/config.toml; Callisto does not route cargo to a url)",
+                        key.as_str()
+                    ),
+                });
+            }
             let registry_duration = |field: &str, value: Option<&str>| match value {
                 None => Ok(None),
                 Some(text) => super::duration::parse_duration(text)
@@ -1172,11 +1181,8 @@ mod tests {
         );
     }
 
-    /// repro/ws-rule: a `pypi/foo` rule must not apply to a Cargo-only `foo`.
-    /// Before the fix, `PackageId::matches` treated the Bare query id as an
-    /// ecosystem wildcard, so a Prefixed rule for any ecosystem matched by
-    /// name alone -- `package_ecosystems` (the package's real, manifest-derived
-    /// ecosystems) is what makes the rule ecosystem-exact.
+    /// A `pypi/foo` rule must not apply to a Cargo-only `foo`: `package_ecosystems` (the package's real,
+    /// manifest-derived ecosystems) makes the rule ecosystem-exact.
     #[test]
     fn resolve_package_config_prefixed_rule_does_not_apply_to_a_different_ecosystem_package() {
         let tmp = tempfile::tempdir().expect("tempdir");
@@ -1416,7 +1422,7 @@ mod tests {
     fn load_is_read_parse_then_resolve() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let content = format!(
-            "{RELEASE_HEAD}forge-repository = \"orin-dx/callisto\"\n{ARTIFACT}\n[cascade]\nmode = \"always\"\n\n[registries.corp]\nkind = \"cargo\"\nurl = \"https://corp.example/index\"\n\n[[package]]\nmatch = \"cargo/demo\"\npublish-to = [\"crates-io\"]\n"
+            "{RELEASE_HEAD}forge-repository = \"orin-dx/callisto\"\n{ARTIFACT}\n[cascade]\nmode = \"always\"\n\n[registries.corp]\nkind = \"npm\"\nurl = \"https://corp.example/\"\n\n[[package]]\nmatch = \"cargo/demo\"\npublish-to = [\"crates-io\"]\n"
         );
         fs::write(tmp.path().join("callisto.toml"), &content).expect("write callisto.toml");
         let loaded = load(tmp.path()).unwrap();

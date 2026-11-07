@@ -90,10 +90,7 @@ pub(super) fn packages_moved_past_their_version<R: callisto_model::CommandRunner
     let mut ids = git.object_ids(&objects)?.into_iter();
     let mut moved = Vec::new();
     for (package, entry, version_commit) in checked {
-        let unchanged = version_commit.is_some()
-            && package_paths(package)
-                .iter()
-                .all(|_| ids.next().flatten() == ids.next().flatten());
+        let unchanged = version_commit.is_some() && pairs_match(&mut ids, package_paths(package).len());
         if !unchanged {
             moved.push(MovedPast {
                 package: entry.package.clone(),
@@ -103,6 +100,18 @@ pub(super) fn packages_moved_past_their_version<R: callisto_model::CommandRunner
         }
     }
     Ok(moved)
+}
+
+/// Whether the next `pairs` (version commit, `HEAD`) object ids are all equal. Every pair is read even after one
+/// differs, so the ids of the packages after this one stay aligned with their own directories.
+fn pairs_match<T: PartialEq>(ids: &mut impl Iterator<Item = Option<T>>, pairs: usize) -> bool {
+    let mut all_equal = true;
+    for _ in 0..pairs {
+        let at_version_commit = ids.next().flatten();
+        let at_head = ids.next().flatten();
+        all_equal &= at_version_commit == at_head;
+    }
+    all_equal
 }
 
 /// The newest first-parent commit whose manifest holds `version` while its parent's does not.
@@ -377,5 +386,22 @@ mod tests {
         std::fs::write(&manifest, bumped).unwrap();
         // Uncommitted: no commit holds this version, so the guard cannot say it is unchanged.
         assert!(moved(root).iter().all(|(_, commit)| commit.is_none()));
+    }
+
+    /// A package whose first directory changed still consumes its second directory's pair, so the next package reads
+    /// its own ids.
+    #[test]
+    fn a_changed_directory_does_not_shift_the_next_packages_ids() {
+        // Package P has two directories (the first differs, the second is equal); package Q has one (it differs).
+        let mut ids = vec![Some(1), Some(2), Some(3), Some(3), Some(4), Some(5)].into_iter();
+        assert!(!pairs_match(&mut ids, 2));
+        assert!(!pairs_match(&mut ids, 1));
+        assert_eq!(ids.next(), None, "every id is consumed");
+    }
+
+    #[test]
+    fn equal_pairs_match_and_missing_ids_compare_equal() {
+        let mut ids = vec![Some(7), Some(7), None, None].into_iter();
+        assert!(pairs_match(&mut ids, 2));
     }
 }

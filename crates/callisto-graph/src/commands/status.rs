@@ -187,9 +187,8 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
     ids.diagnostics(&mut diagnostics);
 
     let has_changesets = packages.iter().any(|p| !p.pending_changesets.is_empty());
-    // Count of packages with a planned bump, post-cascade/fixed/linked-group --
-    // the field a script now reads to detect pending changesets, since `--check`'s
-    // exit code no longer signals it.
+    // Packages with a planned bump, after cascade and groups. A script reads this to detect pending changesets,
+    // because `--check` gates on errors only.
     let pending = packages.iter().filter(|p| p.pending_severity.is_some()).count() as u32;
 
     Ok(StatusReport {

@@ -91,7 +91,7 @@ pub fn glob_compile_count() -> usize {
 }
 
 /// Selects the highest-versioned tag matching `template` out of a full tag
-/// list previously obtained via [`fetch_all_tags`], reusing a `cache` of
+/// list obtained via [`fetch_all_tags`], reusing a `cache` of
 /// already-compiled/already-scanned candidates keyed by `template.glob()`
 /// -- a `[[package-set]]` rule with a fixed (non-`{name}`) `tag-template`
 /// string applies the identical template to every matching package, so
@@ -189,7 +189,6 @@ fn foreign_tag_diagnostic(id: &PackageId, tag: &str) -> Diagnostic {
 pub struct TagIndex {
     last: BTreeMap<PackageId, Option<LastTag>>,
     templates: BTreeMap<PackageId, TagTemplate>,
-    pre_cursor: BTreeMap<PackageId, Option<CommitSha>>,
     /// Tags that match a package's default template by name but were made by another package.
     foreign: BTreeMap<PackageId, std::collections::BTreeSet<String>>,
     /// The full, unfiltered raw tag list fetched once during `build` (see
@@ -213,7 +212,6 @@ impl TagIndex {
         reject_shared_default_templates(graph)?;
         let mut last = BTreeMap::new();
         let mut templates = BTreeMap::new();
-        let mut pre_cursor = BTreeMap::new();
         let mut foreign: BTreeMap<PackageId, std::collections::BTreeSet<String>> = BTreeMap::new();
         let mut diagnostics = Vec::new();
 
@@ -252,11 +250,8 @@ impl TagIndex {
             // package's default tag template -- matches `release.rs`'s own
             // `unwrap_or_else(|| callisto_model::TagTemplate::default_for(&package.id))`.
             // Deliberately not `TagTemplate::parse(&format!("{name}@{{version}}"))`:
-            // `parse` additionally validates git-ref-name legality, which
-            // `default_for` does not, so the two could previously reject/accept a
-            // package name differently. Using `default_for` here removes that
-            // extra validation from this call site to align with the
-            // already-shipped `release.rs` behavior.
+            // `parse` additionally validates git-ref-name legality, which `default_for` does not, and `release.rs`
+            // uses `default_for`, so the two agree on which package names are accepted.
             let tmpl = pkg
                 .tag_template
                 .clone()
@@ -349,13 +344,11 @@ impl TagIndex {
             }
             last.insert(pkg.id.clone(), chosen);
             templates.insert(pkg.id.clone(), tmpl);
-            pre_cursor.insert(pkg.id.clone(), None);
         }
 
         Ok(TagIndex {
             last,
             templates,
-            pre_cursor,
             foreign,
             all_tags: all_tags_set,
             commits: std::cell::OnceCell::new(),
@@ -371,13 +364,9 @@ impl TagIndex {
         &self.templates[id]
     }
 
-    pub fn pre_cursor(&self, id: &PackageId) -> Option<&CommitSha> {
-        self.pre_cursor.get(id).and_then(|opt| opt.as_ref())
-    }
-
     /// Returns whether `tag_name` is present in the raw tag list fetched
     /// during `build` -- an exact match, not a glob. Lets callers checking
-    /// tag existence once per package (e.g. `derive_unreleased_decision`)
+    /// tag existence once per package (e.g. `derive_release_roster`)
     /// consult this in-memory set instead of shelling out to `git` again
     /// for each one.
     pub fn contains_tag(&self, tag_name: &str) -> bool {
@@ -415,7 +404,6 @@ impl TagIndex {
         TagIndex {
             last: BTreeMap::new(),
             templates: BTreeMap::new(),
-            pre_cursor: BTreeMap::new(),
             foreign: BTreeMap::new(),
             all_tags: std::collections::BTreeSet::new(),
             commits: std::cell::OnceCell::new(),
@@ -633,11 +621,7 @@ mod tests {
 
     /// Spec: the malformed-glob error must propagate all the way up through
     /// `TagIndex::build`, not just the internal `matching_tags` helper.
-    /// Previously covered via `last_tag_for`'s own test (deleted alongside
-    /// `last_tag_for` as dead production code) -- that test exercised this
-    /// exact `select_from_tags_cached`/`matching_tags` path from the other
-    /// (now-removed) public entry point, so this replaces it against the
-    /// surviving one.
+    /// A malformed glob in a package's tag template propagates out of `TagIndex::build` as an error.
     #[test]
     fn test_tag_index_build_propagates_malformed_glob_error() {
         let dir = non_repo_dir();

@@ -108,7 +108,7 @@ pub fn read_effective_version<E: From<ManifestError>>(
 ///
 /// Replaces hand-parsing `Cargo.toml`/`package.json`/`pyproject.toml` at
 /// call sites that already hold manifest content as a string rather than a
-/// path `open()` can read from disk (audit pattern B) -- e.g. a `git show`
+/// path `open()` can read from disk -- e.g. a `git show`
 /// blob, or a directory-walker's pre-read buffer.
 ///
 /// `path` is used only to build accurate `ManifestError::Parse` locations
@@ -236,8 +236,7 @@ impl<'a> OpenContext<'a> {
     /// workspace inheritance (when `root/Cargo.toml` exists) and detecting
     /// the npm workspace kind. This is the single reusable constructor for
     /// the "check Cargo.toml exists, load workspace inheritance, detect npm
-    /// workspace kind" sequence that call sites previously reimplemented
-    /// independently (audit pattern: duplication) -- see
+    /// workspace kind" sequence, used by
     /// `callisto-graph`'s `walk`, `lib` (`Workspace::base_versions`),
     /// `apply`, and `commands::version` modules.
     ///

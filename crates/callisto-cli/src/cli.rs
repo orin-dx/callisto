@@ -368,8 +368,7 @@ pub struct ReleasePrCommitPlanArgs {
 
 #[derive(Args, Clone, Debug)]
 pub struct ReleasePlanArgs {
-    /// Read the release source from this checkout while the Callisto binary
-    /// itself may come from a separate, current orchestration checkout.
+    /// Read the release source from this checkout; the callisto binary may come from a different one.
     #[arg(long, value_name = "DIR")]
     pub source_root: Option<PathBuf>,
     /// Exact current coordinator revision whose workflow will attest product assets.
@@ -398,10 +397,8 @@ pub struct ReleasePlanArgs {
     pub from_release_commit: Option<String>,
     /// Exact release-decision JSON path committed alongside the manifest and
     /// changelog edits in the merge commit (written by `callisto version
-    /// --emit-decision`). Required with --from-release-commit: this function
-    /// verifies the committed diff matches this file exactly rather than
-    /// re-deriving changeset, fixed-group, linked-group, cascade, or
-    /// pre-release-policy inclusion from scratch.
+    /// --emit-decision`). Required with --from-release-commit; the plan verifies the
+    /// committed diff matches this file instead of re-deriving the release set.
     #[arg(long, value_name = "FILE")]
     pub decision: Option<PathBuf>,
     /// Explicit path where the immutable intent JSON will be atomically written.
@@ -648,7 +645,7 @@ mod tests {
         .is_ok());
     }
 
-    /// The legacy publish commands no longer parse.
+    /// The removed publish commands are rejected as unknown.
     #[test]
     fn legacy_publish_commands_are_unrecognized() {
         use clap::Parser;

@@ -23,7 +23,7 @@ fn parses_a_single_entry_changeset() {
     );
 }
 
-// VER-CS-03: a leading byte-order mark and CRLF or lone-CR line endings are normalized before parsing.
+// A leading byte-order mark and CRLF or lone-CR line endings are normalized before parsing.
 #[test]
 fn a_byte_order_mark_and_every_line_ending_style_parse_the_same() {
     let expected = cs(vec![("cargo/foo", Severity::Minor)], "Bumps the widget API.");

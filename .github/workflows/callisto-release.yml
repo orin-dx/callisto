@@ -98,14 +98,25 @@ jobs:
       - name: Verify release workflow contracts
         run: just release-workflow-checks
 
-  release-candidate:
-    name: Identify a merged Callisto release PR
+  gate:
+    name: The release gate passed
     needs: [verify, recovery-checks]
-    # Exactly one gate runs per event; a failed gate matches neither clause.
+    # Exactly one gate runs per event; a failed gate matches neither clause, so this job is skipped and everything that
+    # needs it is too. Planning and building do not wait for it; publishing and the release PR refresh do.
     if: >-
       always() && github.ref == 'refs/heads/main' &&
       ((needs.verify.result == 'success' && needs.recovery-checks.result == 'skipped') ||
        (needs.recovery-checks.result == 'success' && needs.verify.result == 'skipped'))
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - run: echo 'The verification gate passed.'
+
+  release-candidate:
+    name: Identify a merged Callisto release PR
+    if: github.ref == 'refs/heads/main'
     timeout-minutes: 10
     runs-on: ubuntu-latest
     permissions:
@@ -178,9 +189,9 @@ jobs:
 
   version-pr:
     name: Create or update the Callisto release PR
-    needs: [release-candidate, drain]
+    needs: [release-candidate, gate, drain]
     if: >-
-      always() && needs.release-candidate.result == 'success' &&
+      always() && needs.gate.result == 'success' && needs.release-candidate.result == 'success' &&
       ((needs.release-candidate.outputs.is_release_pr != 'true' &&
         needs.drain.result == 'skipped' && inputs.release_source_sha == '') ||
        (needs.release-candidate.outputs.is_release_pr == 'true' &&
@@ -211,50 +222,12 @@ jobs:
           setup_callisto: 'false'
           branch: main
           release_branch: callisto/version-packages
-          # Interdependent Cargo packages bump together, so Cargo.lock must be refreshed in the release PR.
-          version_command: 'callisto version --refresh-lockfiles'
         env:
           GH_TOKEN: ${{ github.token }}
-  release-pr-note:
-    name: Say how the release PR rebuild ended
-    # Its own job, because the usual reason a rebuild fails is that verification or candidate selection failed, which
-    # skips version-pr and everything inside it.
-    needs: [verify, release-candidate, version-pr]
-    if: always() && (github.event_name == 'push' || needs.version-pr.result != 'skipped')
-    timeout-minutes: 5
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Write the outcome on the release PR
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERIFY_RESULT: ${{ needs.verify.result }}
-          CANDIDATE_RESULT: ${{ needs.release-candidate.result }}
-          REFRESH_RESULT: ${{ needs.version-pr.result }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          outcome=skipped
-          if [[ "$VERIFY_RESULT" == failure || "$CANDIDATE_RESULT" == failure || "$REFRESH_RESULT" == failure ]]; then
-            outcome=failure
-          elif [[ "$REFRESH_RESULT" == success ]]; then
-            outcome=success
-          fi
-          bash .github/scripts/note-release-pr-rebuild.sh callisto/version-packages "$outcome" "$RUN_URL"
-
   plan:
     name: Derive ephemeral intent from the merged release commit
     needs: release-candidate
-    # always(): release-candidate's own ancestors include a gate that is skipped
-    # by design, and a skipped ancestor silently skips any job without a status function.
-    if: >-
-      always() && needs.release-candidate.result == 'success' &&
-      needs.release-candidate.outputs.is_release_pr == 'true'
+    if: needs.release-candidate.outputs.is_release_pr == 'true'
     timeout-minutes: 20
     runs-on: ubuntu-latest
     permissions:
@@ -449,12 +422,12 @@ jobs:
 
   execute:
     name: Execute approved release
-    needs: [plan, build, release-candidate]
+    needs: [plan, build, release-candidate, gate]
     # Artifact-less sources skip build; a failed or cancelled build must still block.
     # !cancelled() not always(): a status function still defeats the skipped-ancestor
     # rule, but cancelling the run must stop the one irreversible job.
     if: >-
-      !cancelled() && needs.plan.result == 'success' &&
+      !cancelled() && needs.gate.result == 'success' && needs.plan.result == 'success' &&
       (needs.plan.outputs.has_artifacts == 'false' || needs.build.result == 'success')
     timeout-minutes: 60
     concurrency:

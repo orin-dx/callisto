@@ -968,8 +968,7 @@ mod glob_tests {
 
     #[test]
     fn build_globset_positive_only_list_is_unaffected_by_negation_support() {
-        // Regression guard: adding negation semantics must not change
-        // behavior for a plain, no-`!` pattern list.
+        // A pattern list with no `!` entries matches exactly its globs.
         let set = build_globset(&["packages/*".to_string()]).unwrap();
         assert!(set.is_match(Path::new("packages/a")));
         assert!(!set.is_match(Path::new("tools/a")));

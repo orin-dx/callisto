@@ -1,16 +1,10 @@
 //! Shared dry-run invariant harness.
 //!
 //! Every write-capable callisto command has the same contract under
-//! `--dry-run`: compute and report what *would* happen, mutate nothing. That
-//! contract was previously asserted ad hoc, per command, against whichever
-//! specific file the test author happened to think of (`add` checked for a
-//! `.changeset/*.md`; `version` checked one manifest's version string). Bugs
-//! slipped through the gaps -- `pre enter`/`pre exit` and `init` never
-//! consulted the dry-run flag at all, and no per-command assertion was
-//! looking at the files they touched.
+//! `--dry-run`: compute and report what *would* happen, mutate nothing.
 //!
-//! [`assert_no_disk_mutation`] replaces the per-file guesswork with a whole
-//! tree comparison: every file's path and content hash before the closure,
+//! [`assert_no_disk_mutation`] checks it with a whole-tree comparison, not a
+//! guess at which file a command touches: every file's path and content hash before the closure,
 //! versus after. Content hashes rather than mtimes deliberately -- an atomic
 //! rewrite of identical bytes is not a semantic mutation, and mtime-based
 //! comparison would report it as one.
