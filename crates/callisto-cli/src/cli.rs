@@ -282,7 +282,8 @@ pub struct ComposePrBodyArgs {
     #[arg(long)]
     pub branch: Option<String>,
     /// Render from the preview `version --emit-preview` wrote, instead of
-    /// planning the pending changesets.
+    /// planning the pending changesets. A relative path is relative to the
+    /// workspace root, as it is for `version --emit-preview`.
     #[arg(long, value_name = "PATH")]
     pub preview: Option<std::path::PathBuf>,
 }

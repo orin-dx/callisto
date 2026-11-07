@@ -85,6 +85,81 @@ fn a_body_composed_from_the_emitted_preview_matches_the_body_composed_before_ver
     assert_eq!(status.unwrap(), std::process::ExitCode::SUCCESS);
 }
 
+fn init_repo(global: &GlobalArgs) {
+    assert!(Command::new("git")
+        .args(["remote", "add", "origin", "https://github.com/example/core-crate.git"])
+        .current_dir(&global.cwd)
+        .status()
+        .unwrap()
+        .success());
+    commands::init::handle(
+        InitArgs {
+            yes: true,
+            versioning: Some(InitVersioning::Independent),
+            ..Default::default()
+        },
+        global,
+    )
+    .unwrap();
+}
+
+/// `version` and `compose-pr-body` must agree on what a relative preview path means.
+#[test]
+fn a_relative_preview_path_means_the_workspace_root_for_both_commands() {
+    let dir = setup_polyglot_git_repo();
+    let global = GlobalArgs {
+        format: OutputFormat::Json,
+        cwd: dir.path().to_path_buf(),
+        dry_run: false,
+    };
+    init_repo(&global);
+    commands::add::handle(
+        AddArgs {
+            packages: vec!["cargo/core-crate:minor".to_string()],
+            summary: Some("Retry uploads.".to_string()),
+        },
+        &global,
+    )
+    .unwrap();
+
+    commands::version::handle(version_args(Some("preview.json".into())), &global).unwrap();
+    assert!(dir.path().join("preview.json").exists());
+
+    let status = commands::compose_pr_body::handle(
+        ComposePrBodyArgs {
+            existing_body: None,
+            branch: None,
+            preview: Some("preview.json".into()),
+        },
+        &global,
+    );
+    assert_eq!(status.unwrap(), std::process::ExitCode::SUCCESS);
+}
+
+#[test]
+fn a_plan_that_fails_writes_no_preview() {
+    let dir = setup_polyglot_git_repo();
+    let global = GlobalArgs {
+        format: OutputFormat::Json,
+        cwd: dir.path().to_path_buf(),
+        dry_run: false,
+    };
+    init_repo(&global);
+    let path = dir.path().join("preview.json");
+    std::fs::write(&path, "saved").unwrap();
+
+    let mut args = version_args(Some(path.clone()));
+    args.strict = true;
+    let status = commands::version::handle(args, &global).unwrap();
+
+    assert_eq!(
+        status,
+        std::process::ExitCode::FAILURE,
+        "no pending changesets is an error under --strict"
+    );
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "saved");
+}
+
 #[test]
 fn emit_preview_is_refused_with_dry_run_before_anything_is_written() {
     let dir = setup_polyglot_git_repo();
