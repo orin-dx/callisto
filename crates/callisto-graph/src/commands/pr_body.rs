@@ -1,14 +1,10 @@
-use std::collections::HashMap;
-
-use indexmap::IndexMap;
+use callisto_model::{BumpReason, CommandRunner, ComposePrBodyReport, Severity, SCHEMA_VERSION};
 
 use crate::changelog::render::indent_changeset_summary;
-use crate::changelog::ChangeSource;
-use callisto_model::{CommandRunner, ComposePrBodyReport, PackageId, Severity, SCHEMA_VERSION};
-
 use crate::commands::version::plan_version;
 use crate::error::GraphError;
 use crate::infer::SeverityInference;
+use crate::release_preview::{build_release_preview, Change, ChangeKind, Finding, ReleasePreview, FINDING_MAJOR_BUMP};
 use crate::resolver::DependencyResolver;
 use crate::Workspace;
 
@@ -27,133 +23,40 @@ fn severity_emoji(severity: Severity) -> &'static str {
     }
 }
 
-/// Identity used to merge the same underlying change across every package it
-/// bumps, instead of repeating its rendered text once per package. A shared
-/// `.changeset/*.md` file's `summary` is copied verbatim into every package
-/// it names (fan-out) -- correct and desirable for each
-/// package's own standalone `CHANGELOG.md`, but exactly the duplication that
-/// makes a multi-package PR body hard to read in one sitting.
-#[derive(Clone, PartialEq, Eq, Hash)]
-enum ChangeGroupKey {
-    Changeset(String),
-    Commit(String),
-    PeerEscalation(PackageId, String),
-    DependencyUpdate(PackageId, String),
-    /// Never merged across packages: one `ChangelogWrite` per package whose
-    /// `render_section` failed (e.g. an empty or `Severity::None` entry) or
-    /// was entirely absent, falling back to `bump.reason`-derived text --
-    /// package-specific by construction, so each gets its own slot.
-    Fallback(usize),
-}
-
-struct ChangeGroup {
-    /// Rendered once, from the first (and, for real changesets, only
-    /// possible) occurrence -- every member's copy is byte-identical by
-    /// construction for `Changeset`/`Commit` keys.
-    body: String,
-    /// `(package, this entry's own severity)` -- deliberately the entry's
-    /// severity, not the package's overall post-cascade `bump.severity`,
-    /// since one package can carry several entries at different severities.
-    members: Vec<(PackageId, Severity)>,
-    /// `Fallback` groups render like a standalone per-package block (their
-    /// one member's name becomes the heading); real changes render as
-    /// "<key> -- affects: pkg, pkg".
-    is_fallback: bool,
-}
-
-impl ChangeGroup {
-    fn has_major(&self) -> bool {
-        self.max_severity() == Severity::Major
-    }
-
-    /// Drives major-first ordering in the change list, matching the summary
-    /// table's own sort exactly rather than a coarser major-vs-not split --
-    /// otherwise a patch-only and a minor-only change could render in
-    /// declaration order relative to each other while the table (correctly)
-    /// puts the minor one first.
-    fn max_severity(&self) -> Severity {
-        self.members
-            .iter()
-            .map(|(_, severity)| *severity)
-            .max()
-            .unwrap_or(Severity::None)
-    }
-}
-
-/// Renders one changelog entry's bullet text in isolation, mirroring
-/// `crate::changelog::render_section`'s per-source formatting exactly
-/// (minus its cross-entry `DependencyUpdate` batching, which does not apply
-/// once entries are regrouped across packages by shared identity instead of
-/// by owning package). Returns `None` for a `Changeset`/`Commit`-equivalent
-/// source with nothing to say (matching `render_section`'s own
-/// empty-summary skip).
-fn render_entry_text(source: &ChangeSource) -> Option<String> {
-    match source {
-        ChangeSource::Changeset { summary, .. } => indent_changeset_summary(summary),
-        ChangeSource::Commit { subject, sha } => Some(format!("{subject} ({})", sha.short())),
-        ChangeSource::DependencyUpdate { dependency, to, .. } => {
-            Some(format!("`{}` → `{}`", dependency.display_name(), to.render()))
+/// One change's bullet text. `None` for a change with nothing to say.
+fn entry_text(kind: &ChangeKind) -> Option<String> {
+    match kind {
+        ChangeKind::Changeset { summary, .. } => indent_changeset_summary(summary),
+        ChangeKind::Commit { subject, short_sha, .. } => Some(format!("{subject} ({short_sha})")),
+        ChangeKind::DependencyUpdate { dependency, to } => Some(format!("`{dependency}` → `{to}`")),
+        ChangeKind::PeerEscalation { dependency, to } => {
+            Some(format!("Peer dependency `{dependency}` requires `{to}`"))
         }
-        ChangeSource::PeerEscalation { dependency, to } => Some(format!(
-            "Peer dependency `{}` requires `{}`",
-            dependency.display_name(),
-            to.render()
-        )),
-        // GroupUnion/NewGroupMember carry no content of their own beyond
-        // "this package moved because its group did" -- already visible in
-        // the summary table's Reason column, so they are deliberately
-        // excluded from `What's Changing` entirely rather than rendered as
-        // a redundant one-line block (see `change_group_key`'s matching arm
-        // and the bystander-note logic in `render_pr_body_from_plan`).
-        ChangeSource::GroupUnion { .. } | ChangeSource::NewGroupMember { .. } => None,
+        ChangeKind::Fallback { reason } => Some(fallback_reason_text(reason)),
     }
 }
 
-fn change_group_key(source: &ChangeSource) -> Option<ChangeGroupKey> {
-    match source {
-        ChangeSource::Changeset { filename, .. } => Some(ChangeGroupKey::Changeset(filename.clone())),
-        ChangeSource::Commit { sha, .. } => Some(ChangeGroupKey::Commit(sha.as_str().to_string())),
-        ChangeSource::PeerEscalation { dependency, to } => Some(ChangeGroupKey::PeerEscalation(
-            dependency.clone(),
-            to.render().to_string(),
-        )),
-        ChangeSource::DependencyUpdate { dependency, to, .. } => Some(ChangeGroupKey::DependencyUpdate(
-            dependency.clone(),
-            to.render().to_string(),
-        )),
-        ChangeSource::GroupUnion { .. } | ChangeSource::NewGroupMember { .. } => None,
-    }
-}
-
-/// A short, stable label for a change group's `<summary>` -- derived from
-/// its identity (a changeset filename, a commit, a dependency bump), never
-/// from sniffing the free-text body, so it stays predictable even when a
-/// changeset's summary doesn't start with a bolded headline.
-fn change_group_label(key: &ChangeGroupKey) -> String {
-    match key {
-        ChangeGroupKey::Changeset(filename) => {
+/// A short, stable label for a change's `<summary>`, from its identity and never from its free-text body.
+fn change_label(kind: &ChangeKind) -> String {
+    match kind {
+        ChangeKind::Changeset { filename, .. } => {
             format!("`{}`", filename.strip_suffix(".md").unwrap_or(filename))
         }
-        ChangeGroupKey::Commit(sha) => format!("Commit `{}`", &sha[..sha.len().min(7)]),
-        ChangeGroupKey::PeerEscalation(dep, to) => {
-            format!("Peer dependency `{}` → `{}`", dep.display_name(), to)
-        }
-        ChangeGroupKey::DependencyUpdate(dep, to) => format!("Dependency `{}` → `{}`", dep.display_name(), to),
-        ChangeGroupKey::Fallback(_) => unreachable!("Fallback groups render via their sole member, not this label"),
+        ChangeKind::Commit { sha, .. } => format!("Commit `{}`", &sha[..sha.len().min(7)]),
+        ChangeKind::PeerEscalation { dependency, to } => format!("Peer dependency `{dependency}` → `{to}`"),
+        ChangeKind::DependencyUpdate { dependency, to } => format!("Dependency `{dependency}` → `{to}`"),
+        ChangeKind::Fallback { .. } => unreachable!("Fallback changes render via their sole member, not this label"),
     }
 }
 
-/// Text for a package whose `ChangelogWrite` is absent or failed to render
-/// (e.g. an empty or `Severity::None` entry) -- derived from `bump.reason`
-/// instead. Package-specific by construction (a `BumpReason` describes one
-/// package's own severity computation), so never merged across packages.
-fn fallback_reason_text(bump: &crate::plan::PlannedBump) -> String {
-    match &bump.reason {
+/// Text for a package with no renderable changelog entries, from why it bumps.
+fn fallback_reason_text(reason: &Option<BumpReason>) -> String {
+    match reason {
         Some(reason) => match reason {
-            callisto_model::BumpReason::Changeset { changesets } => {
+            BumpReason::Changeset { changesets } => {
                 format!("- Associated changesets: `{}`\n", changesets.join("`, `"))
             }
-            callisto_model::BumpReason::Cascade {
+            BumpReason::Cascade {
                 via,
                 spec,
                 dependency_to,
@@ -166,31 +69,61 @@ fn fallback_reason_text(bump: &crate::plan::PlannedBump) -> String {
                     dependency_to.render()
                 )
             }
-            callisto_model::BumpReason::PeerEscalation { via, spec } => {
+            BumpReason::PeerEscalation { via, spec } => {
                 format!(
                     "- Peer dependency escalation triggered by `{}` (spec `{}`).\n",
                     via.display_name(),
                     spec
                 )
             }
-            callisto_model::BumpReason::FixedGroupUnion { group } => {
+            BumpReason::FixedGroupUnion { group } => {
                 format!("- Fixed group synchronization for group `{}`.\n", group.as_str())
             }
-            callisto_model::BumpReason::LinkedGroupUnion { group } => {
+            BumpReason::LinkedGroupUnion { group } => {
                 format!("- Linked group version alignment for group `{}`.\n", group.as_str())
             }
-            callisto_model::BumpReason::Inference { commits, .. } => {
+            BumpReason::Inference { commits, .. } => {
                 format!("- Inferred from {commits} commit(s) since the last release.\n")
             }
-            callisto_model::BumpReason::PreRelease { tag } => {
+            BumpReason::PreRelease { tag } => {
                 format!("- Pre-release finalization (tag `{tag}`).\n")
             }
-            callisto_model::BumpReason::NewGroupMember { group } => {
+            BumpReason::NewGroupMember { group } => {
                 format!("- New member of group `{}`.\n", group.as_str())
             }
             _ => "_No changelog entries available._\n".to_string(),
         },
         None => "_No changelog entries available._\n".to_string(),
+    }
+}
+
+fn reason_cell(reason: &Option<BumpReason>) -> String {
+    match reason {
+        Some(BumpReason::Changeset { changesets }) => {
+            format!("Changeset (`{}`)", changesets.join("`, `"))
+        }
+        Some(BumpReason::Cascade { via, .. }) => {
+            format!("Cascade from `{}`", via.display_name())
+        }
+        Some(BumpReason::PeerEscalation { via, .. }) => {
+            format!("Peer escalation from `{}`", via.display_name())
+        }
+        Some(BumpReason::FixedGroupUnion { group }) => {
+            format!("Fixed group `{}`", group.as_str())
+        }
+        Some(BumpReason::LinkedGroupUnion { group }) => {
+            format!("Linked group `{}`", group.as_str())
+        }
+        Some(BumpReason::Inference { commits, .. }) => {
+            format!("Inferred ({commits} commits)")
+        }
+        Some(BumpReason::PreRelease { tag }) => {
+            format!("Prerelease (`{tag}`)")
+        }
+        Some(BumpReason::NewGroupMember { group }) => {
+            format!("New member (`{}`)", group.as_str())
+        }
+        _ => "Package bump".to_string(),
     }
 }
 
@@ -207,6 +140,26 @@ pub fn render_pr_body_from_plan(
     plan: &crate::plan::VersionPlan,
     opts: &PrBodyOptions,
 ) -> Result<ComposePrBodyReport, GraphError> {
+    Ok(ComposePrBodyReport {
+        schema_version: SCHEMA_VERSION,
+        body: render_pr_body(&build_release_preview(plan), opts),
+        diagnostics: Vec::new(),
+    })
+}
+
+fn workflow_instructions(branch: &str) -> String {
+    let mut out = String::new();
+    out.push_str("<details>\n<summary><b>Release Workflow Instructions</b></summary>\n\n");
+    out.push_str("- **Merging this PR**: Merging into `main` will automatically publish all updated packages to their release registries.\n");
+    out.push_str("- **Adding more changesets**: If additional changesets are pushed to `main`, Callisto will automatically re-calculate and update this PR.\n");
+    out.push_str(&format!(
+        "- **Manual edits**: You can make manual adjustments directly on the `{branch}` branch if needed.\n\n"
+    ));
+    out.push_str("</details>\n");
+    out
+}
+
+fn render_pr_body(notes: &ReleasePreview, opts: &PrBodyOptions) -> String {
     let mut body = String::new();
 
     // Preserve custom user notes above ## Release Preview if an existing body was passed
@@ -223,148 +176,41 @@ pub fn render_pr_body_from_plan(
     body.push_str("## Release Preview\n\n");
     body.push_str("This automated PR was generated by [Callisto](https://github.com/orin-dx/callisto). Merging this PR will publish the updated packages to their release targets.\n\n");
 
-    if plan.bumps.is_empty() {
+    let branch = opts.branch.as_deref().unwrap_or("callisto/version-packages");
+
+    if notes.packages.is_empty() {
         body.push_str("> [!NOTE]\n");
         body.push_str("> **No pending changesets found.** Workspace packages are currently up to date.\n\n");
-        let branch = opts.branch.as_deref().unwrap_or("callisto/version-packages");
-        body.push_str("<details>\n<summary><b>Release Workflow Instructions</b></summary>\n\n");
-        body.push_str("- **Merging this PR**: Merging into `main` will automatically publish all updated packages to their release registries.\n");
-        body.push_str("- **Adding more changesets**: If additional changesets are pushed to `main`, Callisto will automatically re-calculate and update this PR.\n");
-        body.push_str(&format!(
-            "- **Manual edits**: You can make manual adjustments directly on the `{}` branch if needed.\n\n",
-            branch
-        ));
-        body.push_str("</details>\n");
-        return Ok(ComposePrBodyReport {
-            schema_version: SCHEMA_VERSION,
-            body,
-            diagnostics: Vec::new(),
-        });
+        body.push_str(&workflow_instructions(branch));
+        return body;
     }
 
-    // 1. Executive Summary Table
+    // Major-first (the order `notes.packages` already has): a reviewer's real question is "is anything breaking,"
+    // and that must be answerable from the top of the table without scanning every row.
     body.push_str("### 📊 Release Summary\n\n");
     body.push_str("| Package | Ecosystem | Current | Target | Bump | Reason |\n");
     body.push_str("| :--- | :--- | :--- | :--- | :--- | :--- |\n");
-
-    // Major-first: a reviewer's real question is "is anything breaking,"
-    // and that must be answerable from the top of the table without
-    // scanning every row for a package whose name happens to sort late.
-    // Stable, so ties keep their original (plan) relative order.
-    let mut sorted_bumps: Vec<&crate::plan::PlannedBump> = plan.bumps.iter().collect();
-    sorted_bumps.sort_by_key(|bump| std::cmp::Reverse(bump.severity));
-
-    for bump in &sorted_bumps {
-        let eco = bump.package.ecosystem().map(|e| e.prefix()).unwrap_or("core");
-
-        let reason_str = match &bump.reason {
-            Some(callisto_model::BumpReason::Changeset { changesets }) => {
-                format!("Changeset (`{}`)", changesets.join("`, `"))
-            }
-            Some(callisto_model::BumpReason::Cascade { via, .. }) => {
-                format!("Cascade from `{}`", via.display_name())
-            }
-            Some(callisto_model::BumpReason::PeerEscalation { via, .. }) => {
-                format!("Peer escalation from `{}`", via.display_name())
-            }
-            Some(callisto_model::BumpReason::FixedGroupUnion { group }) => {
-                format!("Fixed group `{}`", group.as_str())
-            }
-            Some(callisto_model::BumpReason::LinkedGroupUnion { group }) => {
-                format!("Linked group `{}`", group.as_str())
-            }
-            Some(callisto_model::BumpReason::Inference { commits, .. }) => {
-                format!("Inferred ({commits} commits)")
-            }
-            Some(callisto_model::BumpReason::PreRelease { tag }) => {
-                format!("Prerelease (`{tag}`)")
-            }
-            Some(callisto_model::BumpReason::NewGroupMember { group }) => {
-                format!("New member (`{}`)", group.as_str())
-            }
-            _ => "Package bump".to_string(),
-        };
-
+    for package in &notes.packages {
         body.push_str(&format!(
             "| `{}` | `{}` | `{}` | **`{}`** | {} `{}` | {} |\n",
-            bump.package.display_name(),
-            eco,
-            bump.from.render(),
-            bump.to.render(),
-            severity_emoji(bump.severity),
-            bump.severity,
-            reason_str
+            package.name,
+            package.ecosystem,
+            package.from,
+            package.to,
+            severity_emoji(package.severity),
+            package.severity,
+            reason_cell(&package.reason)
         ));
     }
-
     body.push('\n');
 
-    // 2. Alert Callouts
-    body.push_str(&review_callout(&plan.bumps));
+    body.push_str(&callout(&notes.findings, notes.packages.len()));
 
-    // 3. What's Changing -- grouped by underlying change, not by package, so
-    // a changeset naming several packages (fan-out) renders once
-    // instead of once per package it touches.
+    // Grouped by underlying change, not by package, so a changeset naming several packages renders once.
     body.push_str("### 📦 What's Changing\n\n");
 
-    // PERF: build a map once so each lookup inside the loop is O(1)
-    // instead of O(N) (the previous changelog_writes().find() call).
-    let changelog_write_map: HashMap<_, _> = plan.changelog_writes.iter().map(|w| (&w.input.package, w)).collect();
-
-    let mut groups: IndexMap<ChangeGroupKey, ChangeGroup> = IndexMap::new();
-    let mut bystanders: Vec<PackageId> = Vec::new();
-    let mut fallback_counter = 0usize;
-
-    for bump in &plan.bumps {
-        let matching_write = changelog_write_map.get(&bump.package).copied();
-
-        let section_ok = matching_write.is_some_and(|w| crate::changelog::render_section(&w.input).is_ok());
-
-        if section_ok {
-            let entries = &matching_write
-                .expect("section_ok implies a matching write")
-                .input
-                .entries;
-            let mut has_substantive_entry = false;
-
-            for entry in entries {
-                let Some(key) = change_group_key(&entry.source) else {
-                    continue; // GroupUnion/NewGroupMember: no content of its own, see render_entry_text
-                };
-                let Some(text) = render_entry_text(&entry.source) else {
-                    continue; // empty summary, matches render_section's own skip
-                };
-                has_substantive_entry = true;
-                groups
-                    .entry(key)
-                    .or_insert_with(|| ChangeGroup {
-                        body: text,
-                        members: Vec::new(),
-                        is_fallback: false,
-                    })
-                    .members
-                    .push((bump.package.clone(), entry.severity));
-            }
-
-            if !has_substantive_entry {
-                bystanders.push(bump.package.clone());
-            }
-        } else {
-            let fallback_body = fallback_reason_text(bump);
-            fallback_counter += 1;
-            groups.insert(
-                ChangeGroupKey::Fallback(fallback_counter),
-                ChangeGroup {
-                    body: fallback_body,
-                    members: vec![(bump.package.clone(), bump.severity)],
-                    is_fallback: true,
-                },
-            );
-        }
-    }
-
-    if !bystanders.is_empty() {
-        let names: Vec<String> = bystanders.iter().map(|p| format!("`{}`", p.display_name())).collect();
+    if !notes.bystanders.is_empty() {
+        let names: Vec<String> = notes.bystanders.iter().map(|name| format!("`{name}`")).collect();
         body.push_str(&format!(
             "_Also bumped with no direct change of their own (released together via a fixed/linked group): {}._\n\n",
             names.join(", ")
@@ -373,88 +219,72 @@ pub fn render_pr_body_from_plan(
 
     body.push_str(&format!(
         "**{} change(s) across {} package(s):**\n\n",
-        groups.len(),
-        plan.bumps.len()
+        notes.changes.len(),
+        notes.packages.len()
     ));
 
-    // Major-first, same rationale as the summary table: a change containing
-    // a breaking bump must be the first thing a reviewer sees, not wherever
-    // it happens to fall by first-encountered-package order. Stable, so
-    // ties keep their original order.
-    let mut sorted_groups: Vec<(&ChangeGroupKey, &ChangeGroup)> = groups.iter().collect();
-    sorted_groups.sort_by_key(|(_, group)| std::cmp::Reverse(group.max_severity()));
-
-    for (key, group) in sorted_groups {
-        let inner_open = if group.has_major() { " open" } else { "" };
-
-        if group.is_fallback {
-            let (package, severity) = &group.members[0];
-            body.push_str(&format!(
-                "<details{}>\n<summary><b>{}</b> ({} {})</summary>\n\n",
-                inner_open,
-                package.display_name(),
-                severity_emoji(*severity),
-                severity
-            ));
-        } else {
-            let affected: Vec<String> = group
-                .members
-                .iter()
-                .map(|(package, _)| format!("<code>{}</code>", package.display_name()))
-                .collect();
-            body.push_str(&format!(
-                "<details{}>\n<summary><b>{}</b> — affects {}</summary>\n\n",
-                inner_open,
-                change_group_label(key),
-                affected.join(", ")
-            ));
-        }
-
-        body.push_str(&group.body);
-        if !group.body.ends_with('\n') {
-            body.push('\n');
-        }
-        body.push_str("\n</details>\n\n");
+    for change in &notes.changes {
+        render_change(&mut body, change);
     }
 
-    // 4. Instructions Footer
-    let branch = opts.branch.as_deref().unwrap_or("callisto/version-packages");
-    body.push_str("<details>\n<summary><b>Release Workflow Instructions</b></summary>\n\n");
-    body.push_str("- **Merging this PR**: Merging into `main` will automatically publish all updated packages to their release registries.\n");
-    body.push_str("- **Adding more changesets**: If additional changesets are pushed to `main`, Callisto will automatically re-calculate and update this PR.\n");
-    body.push_str(&format!(
-        "- **Manual edits**: You can make manual adjustments directly on the `{}` branch if needed.\n\n",
-        branch
-    ));
-    body.push_str("</details>\n");
-
-    Ok(ComposePrBodyReport {
-        schema_version: SCHEMA_VERSION,
-        body,
-        diagnostics: Vec::new(),
-    })
+    body.push_str(&workflow_instructions(branch));
+    body
 }
 
-/// The callout that opens the release PR body. Claims backward compatibility only for stable versions: below 1.0.0 a
-/// minor bump is where breaking changes go, so it cannot be called compatible.
-fn review_callout(bumps: &[crate::plan::PlannedBump]) -> String {
-    if bumps.iter().any(|bump| bump.severity == Severity::Major) {
-        return "> [!WARNING]\n> **Major Version Bumps Detected**: This release contains major breaking changes. Review \
-                the changes below before merging.\n\n"
-            .to_owned();
-    }
-    let pre_one_minor = bumps
-        .iter()
-        .any(|bump| bump.severity == Severity::Minor && bump.from.render().starts_with("0."));
-    let verdict = if pre_one_minor {
-        "Minor bumps below 1.0.0 can include breaking changes, so read the changes below before merging."
+fn render_change(body: &mut String, change: &Change) {
+    let open = if change.max_severity() == Severity::Major {
+        " open"
     } else {
-        "All changes are backward compatible."
+        ""
     };
-    format!(
-        "> [!NOTE]\n> **{} package(s)** queued for versioning. {verdict}\n\n",
-        bumps.len()
-    )
+
+    if let ChangeKind::Fallback { .. } = change.kind {
+        let member = &change.members[0];
+        body.push_str(&format!(
+            "<details{open}>\n<summary><b>{}</b> ({} {})</summary>\n\n",
+            member.package,
+            severity_emoji(member.severity),
+            member.severity
+        ));
+    } else {
+        let affected: Vec<String> = change
+            .members
+            .iter()
+            .map(|member| format!("<code>{}</code>", member.package))
+            .collect();
+        body.push_str(&format!(
+            "<details{open}>\n<summary><b>{}</b> — affects {}</summary>\n\n",
+            change_label(&change.kind),
+            affected.join(", ")
+        ));
+    }
+
+    let text = entry_text(&change.kind).unwrap_or_default();
+    body.push_str(&text);
+    if !text.ends_with('\n') {
+        body.push('\n');
+    }
+    body.push_str("\n</details>\n\n");
+}
+
+/// The callout that opens the release PR body.
+fn callout(findings: &[Finding], package_count: usize) -> String {
+    if let Some(major) = findings.iter().find(|finding| finding.id == FINDING_MAJOR_BUMP) {
+        return format!(
+            "> [!WARNING]\n> **Major Version Bumps Detected**: {}\n\n",
+            major.message
+        );
+    }
+    let verdict = findings
+        .first()
+        .map(|finding| finding.message.as_str())
+        .unwrap_or_default();
+    format!("> [!NOTE]\n> **{package_count} package(s)** queued for versioning. {verdict}\n\n")
+}
+
+#[cfg(test)]
+fn review_callout(bumps: &[crate::plan::PlannedBump]) -> String {
+    callout(&crate::release_preview::assess(bumps), bumps.len())
 }
 
 #[cfg(test)]
@@ -465,14 +295,11 @@ mod tests {
 
     #[test]
     fn changeset_details_leave_blank_lines_empty() {
-        let source = ChangeSource::Changeset {
+        let kind = ChangeKind::Changeset {
             filename: "fix.md".to_owned(),
             summary: "First line.\n\n- A detail.".to_owned(),
         };
-        assert_eq!(
-            render_entry_text(&source).as_deref(),
-            Some("First line.\n\n  - A detail.")
-        );
+        assert_eq!(entry_text(&kind).as_deref(), Some("First line.\n\n  - A detail."));
     }
 
     fn bump(from: Version, to: Version, severity: Severity) -> PlannedBump {
@@ -537,7 +364,9 @@ mod tests {
             reason: Some(BumpReason::Changeset {
                 changesets: vec!["swift-foxes-race".to_string()],
             }),
-            writes: vec![],
+            writes: vec![crate::plan::VersionWriteTarget::Manifest(
+                "core-crate/Cargo.toml".into(),
+            )],
         };
 
         let bump_b = PlannedBump {
@@ -549,7 +378,7 @@ mod tests {
             reason: Some(BumpReason::Changeset {
                 changesets: vec!["swift-foxes-race".to_string()],
             }),
-            writes: vec![],
+            writes: vec![crate::plan::VersionWriteTarget::Manifest("web-app/package.json".into())],
         };
 
         let plan = VersionPlan {

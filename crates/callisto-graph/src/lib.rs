@@ -32,6 +32,7 @@ pub mod napi;
 mod parallel;
 pub mod plan;
 pub(crate) mod registry_endpoint;
+pub mod release_preview;
 pub mod resolver;
 pub mod tags;
 pub mod toposort;
