@@ -1,0 +1,108 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6SZMSTJYRHPJ75YWJJDZTE7",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-07T03:08:34.176014Z",
+  "branch": "feat/release-notes-model",
+  "checkpoints_count": 23,
+  "files_touched": [
+    ".changeset/pr-body-ecosystem-label.md",
+    "crates/callisto-graph/src/commands/pr_body.rs",
+    "crates/callisto-graph/src/commands/snapshots/callisto_graph__commands__pr_body__tests__compose_pr_body_snapshot.snap"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "5a00fe164a5f",
+  "checkpoint_transcript_start": 17797,
+  "transcript_lines_at_start": 17797,
+  "compact_transcript_start": 1320,
+  "token_usage": {
+    "input_tokens": 142,
+    "cache_creation_tokens": 180671,
+    "cache_read_tokens": 37914690,
+    "output_tokens": 86472,
+    "api_call_count": 69,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 60,
+    "layers": {
+      "betterleaks": 20,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 36,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 128
+  },
+  "summary": {
+    "intent": "Shipped Callisto 0.18.0 and the gate workflow change, then redesign the release PR body and changelog to world-class quality: lead with what merging releases, flag blockers and pause-worthy items, support rich Markdown, and stay ready for future templates and custom renderers.",
+    "outcome": "0.18.0 shipped (18 min vs 32) and the gate PR #462 merged and verified on a real push. The redesign was explored with competitor research, a published mock-up artifact (v2), and a three-layer architecture (facts model, findings, pure renderers). Step 1, the `core` to `cargo`/`npm`/`pypi` ecosystem label fix, was committed on `feat/release-notes-model` with a changeset and updated snapshot. No PR was opened yet.",
+    "learnings": {
+      "repo": [
+        "Release PR body is composed in crates/callisto-graph/src/commands/pr_body.rs; bare-named packages fell back to the `core` ecosystem label because the package-id prefix was missing. The fix derives the label from the manifest the bump writes to.",
+        "Changelog lookups (`find_section`, `has_heading`, `strip_alias_title`, release-notes extraction) match the exact `## X.Y.Z` heading, so date and compare link must go on a line below it.",
+        "`VersionPlan` is in-memory only with no Serialize, per docs/architecture/versioning.md. `ComposePrBodyReport` already carries `schema_version`, giving precedent for a versioned JSON model.",
+        "docs/stability.md calls library crates internal, so any renderer SDK needs its own small semver'd crate rather than exposing the internal ones.",
+        "The merged gate job lets verify and release identification start in parallel; on non-release pushes plan, builds and execute are skipped and version-pr waits on the gate.",
+        "The PR body has no handling for GitHub's ~65k char limit (unreproduced risk), and changeset Markdown is only indented under a bullet, so headings are not rebased.",
+        "Changeset files in this repo live in .changeset/ and the PR body snapshot is under crates/callisto-graph/src/commands/snapshots/.",
+        "The user has decided the emoji in the release PR body stay; saved as feedback memory."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/pr_body.rs",
+          "line": 258,
+          "finding": "Ecosystem label was `package.ecosystem().map(prefix).unwrap_or(\"core\")`, giving `core` for bare crate names. Now derived from the manifest write target."
+        },
+        {
+          "path": "crates/callisto-graph/src/changelog/render.rs",
+          "line": 25,
+          "end_line": 75,
+          "finding": "Renders `## {version}` plus flat bullets in changeset filename order via `indent_changeset_summary`; no grouping, date, compare link or heading rebasing."
+        }
+      ],
+      "workflow": [
+        "gh and git calls need dangerouslyDisableSandbox, and the worktree guard rejects heredocs and compound git, so scripts are written with the Write tool and run separately.",
+        "Back up factual claims about competitors with real fetched output rather than memory, and say what was not verified.",
+        "Check PR state before pushing to a branch; do not push to branches of already-merged PRs.",
+        "Confirm intent and avoid over-engineering; the user pushes back on shell-script and rushed one-off fixes and prefers family-level fixes with features in Rust.",
+        "Mock-ups published as artifacts let the user judge design before code is built.",
+        "Snapshot tests with insta: run with INSTA_UPDATE=always, then delete stray .snap.new files and check the snapshot diff."
+      ]
+    },
+    "friction": [
+      "Earlier mistakes the user called out: pushing to an already-merged PR's branch, choosing macos-15 over macos-latest, and over-engineering the check-api change.",
+      "Sandbox blocked Python writes under the jobs dir, requiring unsandboxed reruns.",
+      "Release PR body and changelog output was mediocre (wrong `core` label, filename-titled sections, flat unordered bullets), which prompted the redesign.",
+      "Classifier blocks remote branch deletion, stash drop, closing trails and resolving findings, leaving those to the user.",
+      "Competitor research for a release-please PR body and Nx came back empty, so those comparisons are incomplete."
+    ],
+    "open_items": [
+      "Open a PR for the label fix on `feat/release-notes-model`, then extract the serializable versioned `ReleaseNotes` model and a typed findings list from pr_body.rs with no behavior change (step 2).",
+      "Rework the PR body onto the model: changelog preview with first-sentence titles, a 'Merging will publish' block, a verdict (ready, read first, would fail) and a 'not releasing' list.",
+      "Grouped changelog (`### Major/Minor/Patch Changes`) with date and compare link below the heading, `Breaking:`/`Action:` markers, optional git-derived PR links, and block-aware Markdown with heading rebasing, image rewriting and a size cap. This changes a committed format and needs the user's decision.",
+      "Verify that the preview plan can run on the PR branch without credentials, the false-positive rate of 'changed, no changeset', and that the hold workflow has `pull-requests: write` for labels.",
+      "Decide whether to add a Markdown parser dependency such as pulldown-cmark.",
+      "Prep for renderers and templates only: custom renderers (command first, Rust SDK crate, trust levels, post-render invariants) are deferred, but the config shape should reserve `{ package, version, sha256 }`.",
+      "CLI diagnostics: `status --explain`, version preview, `callisto doctor`, API-aware `callisto add`, run summary timeline and release receipt comment.",
+      "Update the artifact with the lean-PR/CLI split, defaults, markers and block model.",
+      "User-side items: tell monokl about E170, delete merged remote branches, drop the old stash, close merged Entire trails and resolve findings.",
+      "Decisions pending: lock-step workspace `version.workspace = true` inheritance, and tightening the release-commit manifest check.",
+      "Deferred: `release-pr apply`, `bump.rs` comment cleanup, ~40 'Regression test for' headers, handing plugin learnings to the other session, E167 on a partial asset."
+    ]
+  }
+}
