@@ -402,6 +402,10 @@
       "criterion": "On every push to `main`, the hold workflow converts each open, non-draft release PR (head `<release-branch>` or `<release-branch>--<anything>` in this repository) to a draft. The release-PR action creates a new PR as a draft and marks a PR ready only after the update or creation succeeded and the base branch still points at the commit the PR was built from; if the branch moved during the run, a ready PR is converted back to a draft and the action warns. A release PR whose refresh failed or never ran therefore stays a draft, and a draft cannot be merged. Hold runs go one at a time, and a newer push replaces a queued run."
     },
     {
+      "id": "REL-PR-10",
+      "criterion": "`compose-pr-body` renders the release PR body from the same plan as `version`. It opens with a package table (highest bump first; the ecosystem comes from the package identity, or from the manifest the bump writes to when the name is bare) and a callout: a warning for any major bump, a note that minor bumps below 1.0.0 can break, or a compatibility note. Changes follow under Major, Minor and Patch headings by each change's highest bump. A change shared by several packages appears once and lists them. A changeset's first paragraph is its title, cut at 120 characters with the whole text kept as its detail. A summary that opens with a heading, list, quote, table, fence, image or HTML has no title, and the changeset name stands in. A change with no detail beyond its title is a bullet; any other is collapsible, open for a major change."
+    },
+    {
       "id": "REL-ERR-01",
       "criterion": "Every release failure after the command line is parsed exits 1 with a diagnostic carrying an `E####` code. A command-line usage error exits 2 with no code."
     },
