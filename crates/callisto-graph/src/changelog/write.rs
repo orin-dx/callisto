@@ -1,3 +1,4 @@
+use crate::changelog::fences::Fences;
 use std::fs;
 use std::path::Path;
 
@@ -95,20 +96,9 @@ pub fn prepend(
 /// Whether `heading` starts a line of `text` outside a fenced code block. An indented line or a line in a code
 /// example only mentions the heading.
 fn has_heading(text: &str, heading: &str) -> bool {
-    let mut fence: Option<&str> = None;
-    for line in text.lines() {
-        let marker = line.trim_start();
-        let opening = ["```", "~~~"]
-            .into_iter()
-            .find(|marker_text| marker.starts_with(marker_text));
-        match (fence, opening) {
-            (None, Some(open)) => fence = Some(open),
-            (Some(open), Some(close)) if open == close => fence = None,
-            (None, None) if line.trim_end() == heading => return true,
-            _ => {}
-        }
-    }
-    false
+    let mut fences = Fences::default();
+    text.lines()
+        .any(|line| !fences.is_code(line) && line.trim_end() == heading)
 }
 
 /// The text after a leading `# title` that names this package under another display form: a bare name that later
@@ -150,19 +140,13 @@ pub fn find_section<'a>(changelog: &'a str, version: &Version) -> Option<&'a str
 
     let mut end = slice_after.len();
     let mut line_offset = 0;
-    let mut fence: Option<(char, usize)> = None;
+    let mut fences = Fences::default();
 
     for line in slice_after.split_inclusive('\n') {
-        let content = line.trim_start();
-        let inside_fence = fence.is_some();
-        fence = match fence {
-            None => fence_opening(strip_list_marker(content)),
-            Some((marker, length)) if closes_fence(content, marker, length) => None,
-            open => open,
-        };
+        let in_code = fences.is_code(line);
         // The sections Callisto writes start at column 0; a heading-like line in a summary is indented under its bullet.
         let heading = line.starts_with("## ") || line.starts_with("# ");
-        if line_offset > 0 && !inside_fence && heading {
+        if line_offset > 0 && !in_code && heading {
             end = line_offset;
             break;
         }
@@ -170,33 +154,6 @@ pub fn find_section<'a>(changelog: &'a str, version: &Version) -> Option<&'a str
     }
 
     Some(slice_after[..end.min(slice_after.len())].trim())
-}
-
-/// `text` without a leading list marker (`-`, `*`, `+`, `1.` or `1)`), so a fence opened on a bullet's first line is seen.
-fn strip_list_marker(text: &str) -> &str {
-    for marker in ["- ", "* ", "+ "] {
-        if let Some(rest) = text.strip_prefix(marker) {
-            return rest.trim_start();
-        }
-    }
-    let after_digits = text.trim_start_matches(|c: char| c.is_ascii_digit());
-    if after_digits.len() < text.len() && (after_digits.starts_with(". ") || after_digits.starts_with(") ")) {
-        return after_digits[2..].trim_start();
-    }
-    text
-}
-
-/// The marker character and length of a fence that `text` opens (three or more backticks or tildes).
-fn fence_opening(text: &str) -> Option<(char, usize)> {
-    let marker = text.chars().next().filter(|c| matches!(c, '`' | '~'))?;
-    let length = text.chars().take_while(|c| *c == marker).count();
-    (length >= 3).then_some((marker, length))
-}
-
-/// Whether `text` closes a fence opened with `length` of `marker`: the same character, at least as many, nothing else.
-fn closes_fence(text: &str, marker: char, length: usize) -> bool {
-    let run = text.chars().take_while(|c| *c == marker).count();
-    run >= length && text[run..].trim().is_empty()
 }
 
 #[cfg(test)]
