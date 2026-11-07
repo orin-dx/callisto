@@ -1,5 +1,7 @@
 //! Heading levels for Markdown an author wrote without knowing where it would land.
 
+use crate::changelog::fences::Fences;
+
 /// Shifts the headings in `text` so its shallowest one sits at `first_level`, keeping their relative depth. Only the
 /// `#` run changes; every other byte passes through. Fenced code and indented code are left alone. A heading pushed
 /// past level 6 becomes a bold line, so no text is lost.
@@ -24,30 +26,19 @@ pub fn rebase_headings(text: &str, first_level: usize) -> String {
 
 /// The ATX heading level of each line, `None` for a line that is not a heading or sits inside a fence.
 fn heading_levels(lines: &[&str]) -> Vec<Option<usize>> {
-    let mut fence: Option<(char, usize)> = None;
+    let mut fences = Fences::default();
     lines
         .iter()
         .map(|line| {
             let body = line.trim_end_matches(['\n', '\r']);
-            let indent = body.len() - body.trim_start_matches(' ').len();
-            let trimmed = body.trim_start_matches(' ');
-            if let Some((marker, length)) = fence {
-                let run = trimmed.chars().take_while(|c| *c == marker).count();
-                if indent < 4 && run >= length && trimmed[run..].trim().is_empty() {
-                    fence = None;
-                }
+            if fences.is_code(body) {
                 return None;
             }
+            let indent = body.len() - body.trim_start_matches(' ').len();
             if indent >= 4 {
                 return None;
             }
-            if let Some(marker) = trimmed.chars().next().filter(|c| matches!(c, '`' | '~')) {
-                let run = trimmed.chars().take_while(|c| *c == marker).count();
-                if run >= 3 && !(marker == '`' && trimmed[run..].contains('`')) {
-                    fence = Some((marker, run));
-                    return None;
-                }
-            }
+            let trimmed = &body[indent..];
             let hashes = trimmed.chars().take_while(|c| *c == '#').count();
             let after = &trimmed[hashes..];
             ((1..=6).contains(&hashes) && (after.is_empty() || after.starts_with([' ', '\t']))).then_some(hashes)
@@ -63,11 +54,24 @@ fn retarget(line: &str, level: usize, target: usize) -> String {
     if target <= 6 {
         return format!("{}{}{after}{ending}", &body[..indent], "#".repeat(target));
     }
-    let title = after.trim().trim_end_matches('#').trim_end();
+    let title = without_closing_hashes(after.trim());
     if title.is_empty() {
         return ending.to_owned();
     }
     format!("{}**{title}**{ending}", &body[..indent])
+}
+
+/// `title` without an ATX closing sequence: trailing `#`s that follow a space. `C#` keeps its hash.
+fn without_closing_hashes(title: &str) -> &str {
+    let stripped = title.trim_end_matches('#');
+    if stripped.len() == title.len() {
+        return title;
+    }
+    if stripped.is_empty() || stripped.ends_with([' ', '\t']) {
+        stripped.trim_end()
+    } else {
+        title
+    }
 }
 
 #[cfg(test)]
@@ -120,5 +124,21 @@ mod tests {
         assert_eq!(rebase_headings("## A\r\ntext\r\n", 4), "#### A\r\ntext\r\n");
         assert_eq!(rebase_headings("## A", 3), "### A");
         assert_eq!(rebase_headings("  ## Indented\n", 3), "  ### Indented\n");
+    }
+
+    #[test]
+    fn a_fence_opened_on_a_bullet_hides_its_indented_headings() {
+        let text = "## Real\n\n- ```md\n  # Title\n  ```\n\n## Later\n";
+        assert_eq!(
+            rebase_headings(text, 4),
+            "#### Real\n\n- ```md\n  # Title\n  ```\n\n#### Later\n"
+        );
+    }
+
+    #[test]
+    fn a_literal_hash_ending_a_title_is_not_a_closing_sequence() {
+        assert_eq!(rebase_headings("# Migration\n### C#\n", 5), "##### Migration\n**C#**\n");
+        assert_eq!(rebase_headings("# A\n### C# ###\n", 5), "##### A\n**C#**\n");
+        assert_eq!(rebase_headings("# A\n### ###\n", 5), "##### A\n\n");
     }
 }
