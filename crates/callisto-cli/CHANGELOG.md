@@ -1,5 +1,29 @@
 # callisto-cli
 
+## 0.18.0
+
+- `callisto release plan --artifact-repository` without `--orchestration-revision` no longer fails as a usage error: a source with `[release]` fails with E231, and one without it ignores the flag.
+- A private root `package.json` that starts with a byte-order mark is no longer listed as an npm package, which failed `status` with E013.
+- `callisto completions` no longer offers a `help` subcommand at any depth, which `callisto pre` and `callisto release` do not accept.
+- `callisto release --dry-run` now previews a release that builds artifacts when there is no `origin`, instead of failing with E170. A real release still needs one.
+- A local `callisto release` could miss a package that changed since its version commit (E320) when an earlier package in the release spans more than one directory and had already changed. It now compares every directory of every package.
+- With `--format json`, a failing `release plan`, `release execute`, `release artifact-manifest` or `release-pr` subcommand now reports its own `command` in the error, and every JSON error carries `dryRun`, like the success reports. The library crates change their public API with it (`format_error_json` takes the command and dry-run flag, and `GraphError::PreJsonRead` carries the path), so this release is a minor bump.
+- The docs and specs now say what a bump does to a Cargo member that inherits its version (`version.workspace = true`): it gets a literal version of its own, and `[workspace.package]` is left as it is. E248, which no command emitted, is retired.
+- `callisto init` now prints its warnings in text mode, such as the Changesets config keys it dropped, not only in the JSON report.
+- The `setup-callisto` action now requires the release attestation to come from `refs/heads/main`, so an asset attested from another branch or a manually dispatched run no longer verifies.
+- The generated matrix release workflow now checks out the release commit in its `plan`, `build-python` and `execute` jobs. A branch checkout left HEAD attached, so each of those commands stopped with E170 and the release could not run. An existing workflow needs `ref: ${{ github.sha }}` on those three checkouts.
+- The napi group drift warnings now tell you to edit the group's members in `callisto.toml`. They used to say to run `callisto init`, which fails when `callisto.toml` already exists.
+- Confirming an npm publish no longer times out with E157 for a restricted scoped package when the release action is given `NPM_TOKEN`.
+- A release that publishes several npm packages no longer fails with E157 on a slow registry just because earlier publishes took long. Each publish now gets its full confirmation window from when it was issued, where before all of them shared one window that started at the first.
+- `callisto release plan --from-release-commit` now checks the repository first, so a shallow clone fails with E266 and a SHA-256 repository with E265, not a lower-level read error.
+- E115 now names the pre-release state file it could not read, including when `[changesets] dir` moves it.
+- A successful `cargo publish` or `npm publish` is no longer reported as already published, and a failed `npm publish` counts as already published only when npm reports a version conflict, such as `E409` or `EPUBLISHCONFLICT`.
+- `callisto release` no longer prints the version-control tool's error when it cannot read `origin` while checking for unpushed tags.
+- A `url` on a `cargo` registry in `callisto.toml` is now rejected with E254. Callisto never routed cargo to it, so a release went to the registry in `.cargo/config.toml` or crates.io while the configuration said otherwise. Publishing an npm package with yarn when `callisto.toml` sets an npm registry `url` now stops with E168 before yarn runs, because `yarn npm publish` has no `--registry` and would have published to yarn's own registry; set `npmPublishRegistry` in `.yarnrc.yml` instead.
+- Removes code nothing used, including five error codes no command emits any more (E008, E050, E253, E257, E258). The library crates lose the public items that went with it, which makes this a minor release.
+- The release tag push names the full `refs/tags/` ref, so a branch with the same name as the tag can no longer make the push ambiguous.
+- `callisto version` no longer drops the BOM or converts CRLF to LF in a Cargo workspace root manifest when it rewrites a workspace dependency. A changelog that only quotes a version heading (indented, or in a code block) no longer makes the release skip that version's entry. A package whose display name gains an ecosystem prefix keeps one title in its changelog. An npm `overrides` or `resolutions` value that is `$name` or has a protocol (`npm:`, `file:`, `catalog:`) is left as written.
+
 ## 0.17.0
 
 - `release execute` given a manifest that seals Python files but no `--artifact-dir` now asks for the directory (E233) instead of telling you to drop both flags (E232).
