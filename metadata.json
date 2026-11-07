@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6VZAP9FXT3ANK289DV4T6HV",
+  "strategy": "manual-commit",
+  "branch": "refactor/markdown-module",
+  "checkpoints_count": 4,
+  "files_touched": [
+    ".changeset/pr-body-headline-code-span.md",
+    "docs/architecture/versioning.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 2379,
+    "cache_read_tokens": 1655478,
+    "output_tokens": 1600,
+    "api_call_count": 4
+  },
+  "redaction": {
+    "replacements": 62,
+    "layers": {
+      "betterleaks": 22,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 36,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
