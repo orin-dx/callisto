@@ -30,18 +30,20 @@ impl Fences {
     }
 }
 
-/// `text` without a leading list marker (`-`, `*`, `+`, `1.` or `1)`), so a fence opened on a bullet's first line is seen.
+/// `text` without a leading list marker, so a fence opened on a bullet's first line is seen. A marker is `-`, `*` or
+/// `+`, or up to nine digits and a `.` or `)`, followed by a space, a tab or the end of the line. `text` itself comes back
+/// when it has none, so `1.5x`, `**bold**` and `---` are not markers.
 pub(super) fn strip_list_marker(text: &str) -> &str {
-    for marker in ["- ", "* ", "+ "] {
-        if let Some(rest) = text.strip_prefix(marker) {
-            return rest.trim_start();
-        }
+    let after_bullet = text.strip_prefix(['-', '*', '+']);
+    let rest = after_bullet.or_else(|| {
+        let digits = text.chars().take_while(char::is_ascii_digit).count();
+        let numbered = (1..=9).contains(&digits) && text[digits..].starts_with(['.', ')']);
+        numbered.then(|| &text[digits + 1..])
+    });
+    match rest {
+        Some(rest) if rest.is_empty() || rest.starts_with([' ', '\t']) => rest.trim_start(),
+        _ => text,
     }
-    let after_digits = text.trim_start_matches(|c: char| c.is_ascii_digit());
-    if after_digits.len() < text.len() && (after_digits.starts_with(". ") || after_digits.starts_with(") ")) {
-        return after_digits[2..].trim_start();
-    }
-    text
 }
 
 /// The marker character and length of a fence that `text` opens (three or more backticks or tildes). A backtick fence's
@@ -88,5 +90,39 @@ mod tests {
     #[test]
     fn inline_code_on_one_line_is_not_a_fence() {
         assert_eq!(classify("```a``` text\n# Real"), [false, false]);
+    }
+
+    #[test]
+    fn a_list_marker_is_followed_by_a_space_a_tab_or_the_end_of_the_line() {
+        use super::strip_list_marker;
+        for (text, rest) in [
+            ("- item", "item"),
+            ("* item", "item"),
+            ("+ item", "item"),
+            ("1. item", "item"),
+            ("12) item", "item"),
+            ("1.\titem", "item"),
+            ("-\titem", "item"),
+            ("1.", ""),
+            ("-", ""),
+        ] {
+            assert_eq!(strip_list_marker(text), rest, "{text:?}");
+        }
+        for text in [
+            "1.5x faster",
+            "**bold**",
+            "---",
+            "-item",
+            "1234567890. too many digits",
+            "1 . spaced",
+            "word",
+        ] {
+            assert_eq!(strip_list_marker(text), text, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn a_fence_opened_after_a_tab_separated_marker_is_a_fence() {
+        assert_eq!(classify("1.\t```sh\n   # x\n   ```\n# Real"), [true, true, true, false]);
     }
 }

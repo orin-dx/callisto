@@ -133,4 +133,55 @@ mod tests {
             }
         );
     }
+
+    #[test]
+    fn a_tab_separated_or_bare_list_marker_opens_a_block() {
+        for opening in [
+            "1.\tStop the service\n2.\tRun the migration",
+            "-\tone\n-\ttwo",
+            "1.",
+            "-",
+        ] {
+            assert_eq!(split_summary(opening).headline, None, "{opening:?}");
+        }
+        assert_eq!(
+            split_summary("1.5x faster uploads.").headline.as_deref(),
+            Some("1.5x faster uploads.")
+        );
+    }
+
+    /// The classifier this module replaced. The new one may call more lines paragraphs, but only the kinds below.
+    fn old_starts_a_block(line: &str) -> bool {
+        let digits = line.chars().take_while(char::is_ascii_digit).count();
+        let numbered = digits > 0 && matches!(line[digits..].chars().next(), Some('.' | ')'));
+        numbered
+            || line.starts_with(['#', '>', '|', '!', '<', '`', '~'])
+            || ["- ", "* ", "+ ", "---", "***"]
+                .iter()
+                .any(|marker| line.starts_with(marker))
+    }
+
+    /// What the new classifier deliberately reads as a paragraph where the old one read a block.
+    fn deliberately_a_paragraph(line: &str) -> bool {
+        let digits = line.chars().take_while(char::is_ascii_digit).count();
+        let numbered_text = digits > 0
+            && matches!(line[digits..].chars().next(), Some('.' | ')'))
+            && !line[digits + 1..].is_empty()
+            && !line[digits + 1..].starts_with([' ', '\t']);
+        numbered_text || line.starts_with(['#', '!', '`', '~'])
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn the_new_classifier_only_frees_text_the_old_one_wrongly_blocked(
+            marker in proptest::sample::select(vec!["-", "*", "+", "#", "##", ">", "|", "!", "<", "`", "``", "```", "~", "---", "1.", "12)", "1.5", ""]),
+            separator in proptest::sample::select(vec!["", " ", "\t", "  ", "x"]),
+            tail in "[a-z`# ]{0,4}",
+        ) {
+            let line = format!("{marker}{separator}{tail}");
+            if old_starts_a_block(&line) && !opens_a_block(&line) {
+                proptest::prop_assert!(deliberately_a_paragraph(&line), "{line:?} lost its block status");
+            }
+        }
+    }
 }
