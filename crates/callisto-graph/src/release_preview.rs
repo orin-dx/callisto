@@ -272,7 +272,7 @@ pub struct SplitSummary {
 }
 
 /// The headline is the summary's first paragraph. A summary opening with a heading, list, quote, table, fence, image or
-/// HTML has none, and its whole text is the detail. A paragraph past [`HEADLINE_MAX_CHARS`] is cut for the headline and
+/// HTML has none, and its whole text is the detail. A paragraph past 120 characters is cut for the headline and
 /// kept whole in the detail, so nothing the author wrote is lost.
 pub fn split_summary(summary: &str) -> SplitSummary {
     let text = summary.trim();
