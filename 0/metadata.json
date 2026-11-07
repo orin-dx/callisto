@@ -1,0 +1,92 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6VVAQPGBJSQM1T2XFA6J3QJ",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-07T20:31:33.637088Z",
+  "branch": "feat/release-pr-headlines",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/pr_body.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "53fe23f34f6a",
+  "checkpoint_transcript_start": 20549,
+  "transcript_lines_at_start": 20549,
+  "compact_transcript_start": 1512,
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 246971,
+    "cache_read_tokens": 1689368,
+    "output_tokens": 5970,
+    "api_call_count": 8,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 62,
+    "layers": {
+      "betterleaks": 22,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 36,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 136
+  },
+  "summary": {
+    "intent": "The user wanted to know what to work on next for the release-notes/PR-body work (PRs #463 and #464), then asked about any remaining issues in the setup, and finally asked to fix the bullet-title escaping and stale `ReleaseNotes` names on #464.",
+    "outcome": "Reviewed PR state (CI green, blocked only on Entire gates) and listed remaining gaps. Edited `pr_body.rs` in three places to fix the bullet escaping and stale names, then ran fmt, clippy, doc and lib tests; the results of those checks were not shown in the transcript.",
+    "learnings": {
+      "repo": [
+        "PRs #463 and #464 pass all CI checks but are blocked on the Entire gates, which need human approval.",
+        "Merge order matters: #463 first, then #464.",
+        "Work on #464 happens in the worktree `.claude/worktrees/macos-15-runners`.",
+        "Verification loop used locally: `cargo fmt`, `cargo clippy -p callisto-graph -p callisto-cli --all-targets -D warnings`, `RUSTDOCFLAGS=-D warnings cargo doc --no-deps --workspace`, and `cargo test -p callisto-graph --lib`. CI covers the full suite.",
+        "The model was renamed from `ReleaseNotes`, and stale references remain in the artifact HTML page and the trail 250 description. The docs and specs are already clean.",
+        "Monokl workflows need `ref: ${{ github.sha }}` on the `plan`, `build-python` and `execute` jobs (E170 note).",
+        "The PR body renders titles two ways: a collapsible `<summary>` form, which was already escaped, and a `- **headline**` bullet form, which was not escaped."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/pr_body.rs",
+          "finding": "`summary_html` escapes the title for the collapsible form, but the bullet form (`- **headline**`) was plain Markdown, so a raw `<T>` outside backticks would be read as an HTML tag. This was fixed in this session."
+        }
+      ],
+      "workflow": [
+        "The auto-mode classifier blocks resolving findings, deleting remote branches and similar outward-facing actions, so these are handed to the user.",
+        "Work that touches the CLI, the release-PR action script and the specs is best started from `main` after the dependent PRs merge, to avoid stacking conflicts.",
+        "Independent verification work, such as measuring the false-positive rate or the heading rebase, can proceed while PRs wait on gates."
+      ]
+    },
+    "friction": [
+      "PRs #463 and #464 are blocked on the Entire gates, so nothing could be merged without the user.",
+      "The classifier blocked resolving finding `01M6T6QNY4G4` on #464 and deleting the stale remote branches.",
+      "Only a subset of tests was run locally (callisto-graph lib tests, one CLI subprocess test, clippy, docs), so full-suite confidence relies on CI."
+    ],
+    "open_items": [
+      "The user needs to approve #463 and #464 at the Entire gates, resolve finding `01M6T6QNY4G4`, and merge #463 then #464.",
+      "Step 3b: the PR body leads with a 'Merging will publish' verdict, which needs a `callisto version` preview next to `--emit-decision` and a `compose-pr-body` change. Start it after #463 and #464 merge.",
+      "Add `Breaking:` and `Action:` paragraph markers feeding the findings list, which needs a changeset format rule and its own spec criteria.",
+      "Measure the false-positive rate of the 'not releasing' list against this repo's git history.",
+      "Heading rebase for rich changesets, the known gap in #464, whose `##` headings land at the PR heading level.",
+      "A bare package with no manifest write shows `unknown` in the ecosystem column, and this is unconfirmed for every case.",
+      "Delete 7 merged remote branches (16 in total on the remote) and drop `stash@{0}` ('Callisto v1 work before origin/main sync 2026-09-27').",
+      "Close merged trails and send the E170 note to the monokl repo.",
+      "Deferred: the hidden no-op `--refresh-lockfiles` flag, the `bump.rs` comment cleanup, about 40 'Regression test for' test headers, the unreproduced E167 partial-asset case, and the `CargoWorkspacePackage` machinery.",
+      "Fix the stale `ReleaseNotes` names in the artifact page and trail 250 description. The artifact page edit may not have been covered by the `pr_body.rs` changes."
+    ]
+  }
+}
