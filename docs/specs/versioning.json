@@ -11,7 +11,7 @@
   "api_surface": [
     {
       "name": "callisto version",
-      "signature": "callisto version [--strict] [--allow-empty-changesets] [--no-refresh-lockfiles] [--emit-decision <PATH>] [--dry-run]",
+      "signature": "callisto version [--strict] [--allow-empty-changesets] [--no-refresh-lockfiles] [--emit-decision <PATH>] [--emit-preview <PATH>] [--dry-run]",
       "description": "Computes the version plan from pending changesets, inference, cascade and groups, then applies it to disk and stages it in git."
     },
     {
@@ -271,7 +271,7 @@
     },
     {
       "id": "VER-APPLY-11",
-      "criterion": "`--emit-decision` with `--dry-run` is rejected before any work, and a plan with no bumps, or whose group members have different target versions, fails to produce a decision before any file is written.",
+      "criterion": "`--emit-decision` or `--emit-preview` with `--dry-run` is rejected before any work (E276), and a plan with no bumps, or whose group members have different target versions, fails to produce a decision before any file is written.",
       "is_error_case": true
     },
     {

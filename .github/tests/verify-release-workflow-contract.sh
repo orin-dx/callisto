@@ -34,8 +34,8 @@ if ! rg -Fqx '  group: hold-release-pr' .github/workflows/callisto-hold-release-
 fi
 
 action=.github/actions/callisto-action/scripts/create-or-update-release-pr.sh
-if ! rg -Fqx 'command+=(--emit-decision "$INPUT_DECISION_PATH")' "$action"; then
-  printf 'release workflow contract failed: release-PR action must append the exact decision path once\n' >&2
+if ! rg -Fqx 'command+=(--emit-decision "$INPUT_DECISION_PATH" --emit-preview "$preview_file")' "$action"; then
+  printf 'release workflow contract failed: release-PR action must append the exact decision path and a preview file once\n' >&2
   exit 1
 fi
 

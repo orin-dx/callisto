@@ -70,6 +70,7 @@ fn test_full_polyglot_workspace_release_lifecycle() {
             strict: false,
             allow_empty_changesets: false,
             emit_decision: None,
+            emit_preview: None,
         },
         &global,
     );
@@ -136,6 +137,7 @@ license = "MIT"
             strict: false,
             allow_empty_changesets: false,
             emit_decision: None,
+            emit_preview: None,
         },
         &global,
     )
@@ -197,6 +199,7 @@ fn test_compose_pr_body_before_version_and_subpkg_changelog() {
         callisto_cli::cli::ComposePrBodyArgs {
             existing_body: None,
             branch: None,
+            preview: None,
         },
         &global,
     );
@@ -210,6 +213,7 @@ fn test_compose_pr_body_before_version_and_subpkg_changelog() {
             strict: false,
             allow_empty_changesets: false,
             emit_decision: None,
+            emit_preview: None,
         },
         &global,
     )
@@ -260,6 +264,7 @@ fn test_dry_run_flag_preserves_disk_state() {
             strict: false,
             allow_empty_changesets: false,
             emit_decision: None,
+            emit_preview: None,
         },
         &global_dry,
     );

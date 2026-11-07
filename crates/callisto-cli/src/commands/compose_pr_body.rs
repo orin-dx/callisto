@@ -8,12 +8,9 @@ use crate::error::CliError;
 use crate::output::emit_report;
 use crate::render;
 use crate::runner::CliCommandRunner;
-use crate::workspace::{load_workspace, select_inference};
+use crate::workspace::{load_workspace, select_inference, workspace_root};
 
 pub fn handle(args: ComposePrBodyArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
-    let runner = CliCommandRunner;
-    let ws = load_workspace(global, &runner)?;
-
     let existing_body = match args.existing_body {
         Some(ref s) if s == "-" => {
             let mut stdin_buf = String::new();
@@ -24,13 +21,33 @@ pub fn handle(args: ComposePrBodyArgs, global: &GlobalArgs) -> Result<ExitCode, 
         other => other,
     };
 
-    let inference = select_inference();
     let opts = PrBodyOptions {
         existing_body,
         branch: args.branch,
     };
 
-    let report = callisto_graph::commands::compose_pr_body(&ws, &inference, &opts)?;
+    let report = match args.preview {
+        Some(path) => {
+            // The workspace root, as `version --emit-preview` resolves it, not the process directory.
+            let path = workspace_root(global, &CliCommandRunner)?.join(path);
+            let text = std::fs::read_to_string(&path).map_err(|source| CliError::Io {
+                source,
+                path: Some(path.clone()),
+            })?;
+            let preview = callisto_graph::release_preview::ReleasePreview::from_json(&text).map_err(|detail| {
+                CliError::ReleasePrArgJsonInvalid {
+                    flag: "preview",
+                    detail,
+                }
+            })?;
+            callisto_graph::commands::render_pr_body_from_preview(&preview, &opts)
+        }
+        None => {
+            let runner = CliCommandRunner;
+            let ws = load_workspace(global, &runner)?;
+            callisto_graph::commands::compose_pr_body(&ws, &select_inference(), &opts)?
+        }
+    };
 
     match global.format {
         OutputFormat::Json => emit_report(&mut std::io::stdout(), &report, global.dry_run)?,
@@ -83,6 +100,7 @@ mod tests {
             ComposePrBodyArgs {
                 existing_body: None,
                 branch: None,
+                preview: None,
             },
             &global,
         );

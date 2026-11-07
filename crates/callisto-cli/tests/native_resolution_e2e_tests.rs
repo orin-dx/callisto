@@ -201,6 +201,7 @@ fn workspace_resolves_natively_after_version() {
             strict: false,
             allow_empty_changesets: false,
             emit_decision: None,
+            emit_preview: None,
         },
         &global,
     )
@@ -423,6 +424,7 @@ fn pnpm_and_uv_workspace_resolves_natively_after_version() {
             strict: false,
             allow_empty_changesets: false,
             emit_decision: None,
+            emit_preview: None,
         },
         &global,
     )
@@ -463,6 +465,7 @@ fn pnpm_workspace_version_refreshes_lockfile_for_frozen_install() {
             strict: false,
             allow_empty_changesets: false,
             emit_decision: None,
+            emit_preview: None,
         },
         &global,
     )
@@ -705,6 +708,7 @@ fn pnpm_workspace_protocols_pack_and_install_after_version() {
             strict: false,
             allow_empty_changesets: false,
             emit_decision: None,
+            emit_preview: None,
         },
         &global,
     )
