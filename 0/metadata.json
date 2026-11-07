@@ -1,0 +1,122 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6STWKQKCX8QY513KFYK00R8",
+  "session_id": "15c732d1-457b-4efc-91e5-664943f21b1c",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-07T01:45:10.945732Z",
+  "branch": "stack/docs-v1",
+  "checkpoints_count": 16,
+  "save_step_count": 1,
+  "files_touched": [
+    ".changeset/keen-tigers-race.md",
+    ".changeset/lively-leopards-pounce.md",
+    ".github/actions/callisto-action/tests/test_release_contract.sh",
+    ".github/actions/callisto-action/tests/test_release_pr_decide_binary_contract.sh",
+    ".github/actions/setup-callisto/scripts/install-callisto.sh",
+    ".github/actions/setup-callisto/tests/test_action_ref_version_resolution.sh",
+    ".github/actions/setup-callisto/tests/test_crates_io_fallback.sh",
+    ".github/actions/setup-callisto/tests/test_download_extraction_format.sh",
+    ".github/tests/test-move-floating-tag.sh",
+    ".github/tests/test-release-artifact-build-script.sh",
+    ".github/tests/test_release_candidate_recovery.sh",
+    ".scratch_git.py",
+    "crates/callisto-cli/src/commands/release.rs",
+    "crates/callisto-cli/src/error.rs",
+    "crates/callisto-cli/src/runner.rs",
+    "crates/callisto-cli/tests/common/release_harness.rs",
+    "crates/callisto-cli/tests/durable_release_e2e_tests.rs",
+    "crates/callisto-cli/tests/identity_promotion_tests.rs",
+    "crates/callisto-cli/tests/release_artifact_manifest_tests.rs",
+    "crates/callisto-cli/tests/release_command_e2e_tests.rs",
+    "crates/callisto-cli/tests/release_pr_commit_plan_tests.rs",
+    "crates/callisto-cli/tests/status_check_tests.rs",
+    "crates/callisto-graph/scratch_edit.py",
+    "crates/callisto-graph/src/aggregate.rs",
+    "crates/callisto-graph/src/aggregate/tests.rs",
+    "crates/callisto-graph/src/commands/release/provider/policy.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/pypi.rs",
+    "crates/callisto-graph/src/commands/release/provider/registry/pypi_file_set_tests.rs",
+    "crates/callisto-graph/src/commands/release_decision.rs",
+    "crates/callisto-graph/src/commands/status.rs",
+    "crates/callisto-graph/src/config/duration.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/tests/version_tests.rs",
+    "crates/callisto-model/src/diagnostic.rs",
+    "crates/callisto-model/src/release_pr.rs",
+    "crates/callisto-model/src/vcs/access.rs",
+    "crates/callisto-model/src/vcs/tests.rs",
+    "docs/config.md",
+    "docs/errors.md",
+    "docs/specs/release.json",
+    "docs/specs/versioning.json",
+    "pr_body_scratch.md",
+    "scratch_emit_decision.py",
+    "scratch_patch.py",
+    "spec_edit_scratch.py",
+    "testing/refresh-provider-fixtures.sh"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "795dbd59be8f",
+  "checkpoint_transcript_start": 90852,
+  "transcript_lines_at_start": 90852,
+  "compact_transcript_start": 6564,
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  },
+  "redaction": {
+    "replacements": 238,
+    "layers": {
+      "betterleaks": 58,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 31,
+      "credentialed_uri": 31,
+      "entropy": 138,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_0159oxmR3xwSNu3MBKFK1oJa",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "workflow-authoring"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "a657d5985f19",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 5201,
+        "end": 5202,
+        "entry_ids": [
+          "e55ee6df-ce17-471b-ac8b-ea32c44ffd6f"
+        ],
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_0159oxmR3xwSNu3MBKFK1oJa"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: workflow-authoring",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 454
+  }
+}
