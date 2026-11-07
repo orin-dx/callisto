@@ -1,0 +1,90 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6SS49QWEWKRE66ZGRJSPA5N",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-07T01:14:37.975627Z",
+  "branch": "ci/release-gate-parallel",
+  "checkpoints_count": 5,
+  "files_touched": [
+    ".github/tests/verify-release-workflow-contract.sh",
+    ".github/workflows/callisto-release.yml",
+    "docs/architecture/release.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "fb61357ba485",
+  "checkpoint_transcript_start": 17281,
+  "transcript_lines_at_start": 17281,
+  "compact_transcript_start": 1280,
+  "token_usage": {
+    "input_tokens": 62,
+    "cache_creation_tokens": 874995,
+    "cache_read_tokens": 25031627,
+    "output_tokens": 28980,
+    "api_call_count": 31,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 53,
+    "layers": {
+      "betterleaks": 20,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 29,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 105
+  },
+  "summary": {
+    "intent": "Ship the 0.18.0 release by merging release PR #432 and watching the release run, then find ways to speed up the release pipeline and draft a PR for the best one without merging it.",
+    "outcome": "Release PR #432 was merged and its run was being watched. The release timing was profiled from the 0.17.0 run (32 min), and a draft PR was committed and pushed on branch ci/release-gate-parallel. It splits a `gate` job out of `release-candidate` so plan and build run alongside verify, saving about 6-7 min. The PR was not merged, and the policy, contract, actionlint and zizmor checks passed locally.",
+    "learnings": {
+      "repo": [
+        "The release workflow (.github/workflows/callisto-release.yml) chains plan -> release-candidate -> verify, so the 5.8 min test run blocks plan and builds even though only publishing needs verification.",
+        "release-candidate bundles 'identify the merged release PR' with 'verify or recovery-checks succeeded'. Parallelising requires splitting the gate into its own job; execute and version-pr must keep waiting on it.",
+        "Two scripts encode the release job graph: .github/tests/verify-release-workflow-policy.sh and .github/tests/verify-release-workflow-contract.sh. Docs live in docs/architecture/release.md. All must be updated together when the graph changes.",
+        "Profile of the 0.17.0 release (32 min wall clock): verify 5.8 min (tests 191 s), builds 3-4.6 min across 5 targets, assemble 1.2 min, execute 2.7 min. The release effectively finishes around minute 28; the remaining jobs are follow-up.",
+        "The macOS builds started 5-7.5 min late waiting on runner capacity. That is a GitHub runner queue issue, not something code changes can fix.",
+        "The release-pr create/update logic is a 245-line shell script (create-or-update-release-pr.sh). A Rust `release-pr apply` replacement is designed in .claude/plans/DESIGN-release-pr-apply.md but deferred as a maintainability call.",
+        "Generated workflows for downstream users such as monokl need `ref: ${{ github.sha }}` on the plan, build-python and execute checkouts (E170)."
+      ],
+      "code": [],
+      "workflow": [
+        "The monitor tool cannot run `gh` outside the sandbox, so a background polling script that exits when the run finishes and then prints per-job results was used instead.",
+        "Profiling a real release run (0.17.0) rather than an ordinary push run gave the correct baseline for the timing analysis.",
+        "Mapping every file that encodes a structure, such as the job graph, before editing helps keep the workflow, policy scripts and docs consistent. Run all checks (policy, contract, behavior suite, actionlint, zizmor) after the edit.",
+        "Adding a contract assertion that version-pr needs the gate caught a second path that must not run without verification."
+      ]
+    },
+    "friction": [
+      "The monitor tool could not run `gh` in the sandbox, forcing a custom polling script.",
+      "The first timing script profiled a push run instead of a release run, and timings2.sh had to be written twice.",
+      "The auto-mode classifier blocked remote-branch and stash cleanup, leaving it for the user.",
+      "shellcheck reports pre-existing info-level notes on the contract script's quoting style, which adds noise when verifying changes."
+    ],
+    "open_items": [
+      "Draft PR on ci/release-gate-parallel is open and unmerged. Compare the 0.18.0 release timings against the 0.17.0 table before deciding to merge.",
+      "Confirm the 0.18.0 release run finished successfully; it is the first live test of the macos-latest build, attestation --source-ref, single-commit pins, draft-hold and per-publish confirmation window.",
+      "`release-pr apply` Rust command is deferred until after the release; its three open design questions are unanswered.",
+      "Clean up the bump.rs comments that waited on #454.",
+      "Open a wisp-plugins PR with the shell/CI hazard pack, fake-vs-real rule and sibling-sweep step.",
+      "E167 (partial forge asset) is unreproduced and fail-closed, so it is left unhandled.",
+      "Tell monokl about E170.",
+      "User needs to run the remote branch deletions and `git stash drop stash@{0}`.",
+      "Open decisions: whether lock-step workspaces keep `version.workspace = true`, the emoji in the release PR body, and whether to tighten the release-commit manifest check beyond filenames."
+    ]
+  }
+}
