@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use callisto_model::{BumpReason, ManifestFormat, PackageId, Severity};
 use indexmap::IndexMap;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::changelog::ChangeSource;
 use crate::plan::{PlannedBump, VersionPlan, VersionWriteTarget};
@@ -13,7 +13,7 @@ use crate::plan::{PlannedBump, VersionPlan, VersionWriteTarget};
 pub const RELEASE_PREVIEW_SCHEMA_VERSION: u32 = 1;
 pub const FINDING_MAJOR_BUMP: &str = "major-bump";
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReleasePreview {
     pub schema_version: u32,
@@ -26,7 +26,7 @@ pub struct ReleasePreview {
     pub findings: Vec<Finding>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PackageRelease {
     pub name: String,
@@ -38,7 +38,7 @@ pub struct PackageRelease {
 }
 
 /// One underlying change, merged across every package it bumps.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Change {
     pub kind: ChangeKind,
@@ -46,14 +46,14 @@ pub struct Change {
     pub members: Vec<ChangeMember>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChangeMember {
     pub package: String,
     pub severity: Severity,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ChangeKind {
     Changeset {
@@ -79,7 +79,7 @@ pub enum ChangeKind {
     },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum FindingLevel {
     /// The reviewer should read this before merging.
@@ -87,12 +87,26 @@ pub enum FindingLevel {
     Info,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Finding {
     pub id: String,
     pub level: FindingLevel,
     pub message: String,
+}
+
+impl ReleasePreview {
+    /// Reads a preview written by [`ReleasePreview`]'s `Serialize`, refusing one from another schema version.
+    pub fn from_json(text: &str) -> Result<Self, String> {
+        let preview: Self = serde_json::from_str(text).map_err(|error| error.to_string())?;
+        if preview.schema_version != RELEASE_PREVIEW_SCHEMA_VERSION {
+            return Err(format!(
+                "schemaVersion {} is not the supported {RELEASE_PREVIEW_SCHEMA_VERSION}",
+                preview.schema_version
+            ));
+        }
+        Ok(preview)
+    }
 }
 
 pub fn build_release_preview(plan: &VersionPlan) -> ReleasePreview {

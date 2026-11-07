@@ -211,6 +211,12 @@ pub struct VersionArgs {
     /// command already decided, once, here.
     #[arg(long, value_name = "PATH")]
     pub emit_decision: Option<std::path::PathBuf>,
+    /// Writes the facts a release PR body is built from -- packages, merged
+    /// changes and findings -- to the given path, so `compose-pr-body
+    /// --preview` can render them after this command has consumed the
+    /// changesets they came from.
+    #[arg(long, value_name = "PATH")]
+    pub emit_preview: Option<std::path::PathBuf>,
 }
 
 /// Subcommands for managing prerelease mode.
@@ -275,6 +281,10 @@ pub struct ComposePrBodyArgs {
     /// Branch name to reference in the generated PR body.
     #[arg(long)]
     pub branch: Option<String>,
+    /// Render from the preview `version --emit-preview` wrote, instead of
+    /// planning the pending changesets.
+    #[arg(long, value_name = "PATH")]
+    pub preview: Option<std::path::PathBuf>,
 }
 
 /// Arguments for the `release` command.
@@ -520,6 +530,7 @@ mod tests {
                 strict: false,
                 allow_empty_changesets: false,
                 emit_decision: None,
+                emit_preview: None,
             }),
             Command::Pre(PreArgs::Exit),
             Command::Snapshot(SnapshotArgs {
@@ -530,6 +541,7 @@ mod tests {
             Command::ComposePrBody(ComposePrBodyArgs {
                 existing_body: None,
                 branch: None,
+                preview: None,
             }),
             Command::Release(ReleaseCommandArgs {
                 command: None,

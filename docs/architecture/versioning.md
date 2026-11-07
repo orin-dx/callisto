@@ -11,7 +11,7 @@ How `callisto version` turns changesets into file edits, and where interrupted-c
 
 - `VersionPlan` (`crates/callisto-graph/src/plan.rs`) is the whole change: bumps, dependency spec rewrites, platform manifest writes, owner `optionalDependencies` pins, changelog sections, consumed changesets, `pre.json` updates and diagnostics. It is in memory only (no `Serialize`).
 - `plan_version` is shared: `version`, `status`, `compose-pr-body` and `release plan --package` all compute the same plan.
-- `ReleasePreview` (`crates/callisto-graph/src/release_preview.rs`) is the serializable, versioned view of a plan for people: packages, merged changes, bystanders and findings. Surfaces such as the PR body render it; they do not recompute from the plan.
+- `ReleasePreview` (`crates/callisto-graph/src/release_preview.rs`) is the serializable, versioned view of a plan for people: packages, merged changes, bystanders and findings. Surfaces such as the PR body render it; they do not recompute from the plan. `version --emit-preview` writes it before apply consumes the changesets, and `compose-pr-body --preview` renders from that file.
 - A dry run never gets a permit, so it reports the plan and never calls apply.
 - `snapshot` applies with `ApplyOptions::transient`: manifests are written, while changelogs, changeset deletion and git staging are skipped.
 
