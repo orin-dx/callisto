@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01HM2fPY9XYBxwkrnydzGpZm",
+  "agent_id": "a37703661347bcd0a",
+  "subagent_type": "general-purpose",
+  "task_description": "CLI io consolidation PR",
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 39809,
+    "cache_read_tokens": 244497,
+    "output_tokens": 1045,
+    "api_call_count": 5
+  },
+  "started_at": "2026-11-07T15:37:06.957399-08:00",
+  "completed_at": "2026-11-07T15:37:29.192044-08:00"
+}
