@@ -32,7 +32,7 @@ Callisto builds the version plan from the changeset, manifests, and `callisto.to
 - Fixed and linked groups can add packages through explicit policy.
 - Unrelated npm and Python packages do not join solely because they share the repo.
 
-After reviewing the plan, `callisto version` updates affected manifests, lockfiles, and changelogs. It stages the versioned state for a commit. `callisto release --dry-run` then previews the release operations.
+After reviewing the plan, `callisto version` updates affected manifests, lockfiles, and changelogs. A Cargo package that inherits its version from `[workspace.package]` (`version.workspace = true`) gets a literal version of its own when it is bumped; the shared value is left as it is. It stages the versioned state for a commit. `callisto release --dry-run` then previews the release operations.
 
 ## The model
 

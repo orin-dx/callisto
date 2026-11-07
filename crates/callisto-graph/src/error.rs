@@ -237,13 +237,6 @@ pub enum GraphError {
         found: callisto_model::Version,
     },
 
-    #[error("workspace root `{root_manifest}` has conflicting version updates: {details}")]
-    #[diagnostic(
-        code(E248),
-        help("Reconcile the workspace root manifest's version updates before retrying.")
-    )]
-    WorkspaceVersionConflict { root_manifest: PathBuf, details: String },
-
     #[error(
         "`{}` is {} on disk and {} in the Git index, but {} at HEAD while release inputs or staged version changes remain: this looks like an interrupted `version` run",
         .path.display(), .disk.render(), .index, .head.render()

@@ -297,6 +297,10 @@
       "id": "VER-APPLY-16",
       "criterion": "When E121 checks a staged canonical manifest outside prerelease mode, `version` compares its effective version in the Git index as well as the working tree against `HEAD`. It refuses if either copy contains an uncommitted version change, even when the other copy matches `HEAD`; staged metadata-only changes with the same effective version remain allowed.",
       "is_error_case": true
+    },
+    {
+      "id": "VER-APPLY-17",
+      "criterion": "A bumped Cargo member whose version is inherited (`version.workspace = true` or `version = { workspace = true }`) gets a literal `version = \"<new>\"` in its own `[package]` table, in the position and with the comments of the line it replaces. `[workspace.package].version` is never written, so a member that still inherits keeps the shared version. Bumping every member of a fixed group pins each of them."
     }
   ],
   "spec_file_path": "docs/specs/versioning.json"
