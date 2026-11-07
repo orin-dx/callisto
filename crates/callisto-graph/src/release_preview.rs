@@ -274,61 +274,6 @@ impl Change {
     }
 }
 
-const HEADLINE_MAX_CHARS: usize = 120;
-
-/// A changeset summary split into a one-line headline and the rest.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SplitSummary {
-    /// The first paragraph, on one line. `None` when the summary does not open with a plain paragraph.
-    pub headline: Option<String>,
-    /// What the headline does not already say. Empty for a one-paragraph summary.
-    pub detail: String,
-}
-
-/// The headline is the summary's first paragraph. A summary opening with a heading, list, quote, table, fence, image or
-/// HTML has none, and its whole text is the detail. A paragraph past 120 characters is cut for the headline and
-/// kept whole in the detail, so nothing the author wrote is lost.
-pub fn split_summary(summary: &str) -> SplitSummary {
-    let text = summary.trim();
-    let paragraph: Vec<&str> = text.lines().take_while(|line| !line.trim().is_empty()).collect();
-    let opens_a_block = paragraph.first().is_none_or(|line| starts_a_block(line.trim_start()));
-    if opens_a_block {
-        return SplitSummary {
-            headline: None,
-            detail: text.to_owned(),
-        };
-    }
-    let headline = paragraph.iter().map(|line| line.trim()).collect::<Vec<_>>().join(" ");
-    if headline.chars().count() > HEADLINE_MAX_CHARS {
-        let cut: String = headline.chars().take(HEADLINE_MAX_CHARS - 1).collect();
-        return SplitSummary {
-            headline: Some(format!("{}…", cut.trim_end())),
-            detail: text.to_owned(),
-        };
-    }
-    let rest = text
-        .lines()
-        .skip(paragraph.len())
-        .collect::<Vec<_>>()
-        .join("\n")
-        .trim()
-        .to_owned();
-    SplitSummary {
-        headline: Some(headline),
-        detail: rest,
-    }
-}
-
-fn starts_a_block(line: &str) -> bool {
-    let digits = line.chars().take_while(char::is_ascii_digit).count();
-    let numbered = digits > 0 && matches!(line[digits..].chars().next(), Some('.' | ')'));
-    numbered
-        || line.starts_with(['#', '>', '|', '!', '<', '`', '~'])
-        || ["- ", "* ", "+ ", "---", "***"]
-            .iter()
-            .any(|marker| line.starts_with(marker))
-}
-
 /// What a reviewer should know before merging. Below 1.0.0 a minor bump is where breaking changes go, so it is
 /// never called compatible.
 pub fn assess(bumps: &[PlannedBump]) -> Vec<Finding> {
@@ -385,58 +330,6 @@ mod tests {
         assert_eq!(ecosystem_label(&with_write("web/package.json")), "npm");
         assert_eq!(ecosystem_label(&with_write("py/pyproject.toml")), "pypi");
         assert_eq!(ecosystem_label(&bump(Severity::Patch)), "unknown");
-    }
-
-    #[test]
-    fn a_one_paragraph_summary_is_all_headline() {
-        let split = split_summary("Uploads now retry.\n");
-        assert_eq!(split.headline.as_deref(), Some("Uploads now retry."));
-        assert_eq!(split.detail, "");
-    }
-
-    #[test]
-    fn later_paragraphs_become_the_detail() {
-        let split = split_summary("Uploads now retry\nwith backoff.\n\n## Migration\n\nSet `retries = 3`.");
-        assert_eq!(split.headline.as_deref(), Some("Uploads now retry with backoff."));
-        assert_eq!(split.detail, "## Migration\n\nSet `retries = 3`.");
-    }
-
-    #[test]
-    fn a_long_headline_is_cut_and_the_detail_keeps_the_whole_text() {
-        let long = "word ".repeat(40);
-        let split = split_summary(&long);
-        let headline = split.headline.unwrap();
-        assert!(headline.ends_with('…') && headline.chars().count() <= HEADLINE_MAX_CHARS);
-        assert_eq!(split.detail, long.trim());
-    }
-
-    #[test]
-    fn a_summary_opening_with_a_block_has_no_headline() {
-        for opening in [
-            "## Migration\n\nText.",
-            "- one\n- two",
-            "1. first",
-            "> quoted",
-            "| a | b |\n| - | - |",
-            "```sh\nx\n```",
-            "![alt](img.png)",
-            "<details>",
-        ] {
-            let split = split_summary(opening);
-            assert_eq!(split.headline, None, "{opening}");
-            assert_eq!(split.detail, opening.trim());
-        }
-    }
-
-    #[test]
-    fn an_empty_summary_has_no_headline() {
-        assert_eq!(
-            split_summary("  \n"),
-            SplitSummary {
-                headline: None,
-                detail: String::new()
-            }
-        );
     }
 
     #[test]

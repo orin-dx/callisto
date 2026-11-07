@@ -1,4 +1,4 @@
-use crate::changelog::fences::Fences;
+use crate::changelog::markdown::Fences;
 use std::fs;
 use std::path::Path;
 
@@ -95,7 +95,7 @@ pub fn prepend(
 
 /// Whether `heading` starts a line of `text` outside a fenced code block. An indented line or a line in a code
 /// example only mentions the heading.
-fn has_heading(text: &str, heading: &str) -> bool {
+pub(in crate::changelog) fn has_heading(text: &str, heading: &str) -> bool {
     let mut fences = Fences::default();
     text.lines()
         .any(|line| !fences.is_code(line) && line.trim_end() == heading)
