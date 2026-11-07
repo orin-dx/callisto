@@ -303,7 +303,11 @@ fn render_change(body: &mut String, change: &Change, after_bullet: bool) -> bool
         .collect();
 
     if detail.is_empty() {
-        body.push_str(&format!("- **{title}** — affects {}\n", affected.join(", ")));
+        body.push_str(&format!(
+            "- **{}** — affects {}\n",
+            bullet_markdown(&title),
+            affected.join(", ")
+        ));
         return true;
     }
     if after_bullet {
@@ -324,17 +328,27 @@ fn summary_html(text: &str) -> String {
     fn escape(text: &str) -> String {
         text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
     }
+    map_code_spans(text, escape, |code| format!("<code>{}</code>", escape(code)))
+}
+
+/// A bullet is Markdown, so code spans stay as written and a `<` outside one is escaped rather than read as a tag.
+fn bullet_markdown(text: &str) -> String {
+    map_code_spans(text, |plain| plain.replace('<', "\\<"), |code| format!("`{code}`"))
+}
+
+/// Rewrites the text outside single-backtick code spans with `plain` and each span's contents with `code`.
+fn map_code_spans(text: &str, plain: impl Fn(&str) -> String, code: impl Fn(&str) -> String) -> String {
     let mut out = String::new();
     let mut rest = text;
     while let Some(open) = rest.find('`') {
         let Some(len) = rest[open + 1..].find('`') else {
             break;
         };
-        out.push_str(&escape(&rest[..open]));
-        out.push_str(&format!("<code>{}</code>", escape(&rest[open + 1..open + 1 + len])));
+        out.push_str(&plain(&rest[..open]));
+        out.push_str(&code(&rest[open + 1..open + 1 + len]));
         rest = &rest[open + len + 2..];
     }
-    out.push_str(&escape(rest));
+    out.push_str(&plain(rest));
     out
 }
 
@@ -380,6 +394,12 @@ mod tests {
         );
         assert_eq!(summary_html("a < b `unclosed"), "a &lt; b `unclosed");
         assert_eq!(summary_html("`a` and `b`"), "<code>a</code> and <code>b</code>");
+    }
+
+    #[test]
+    fn a_bullet_title_keeps_code_spans_and_escapes_a_stray_tag() {
+        assert_eq!(bullet_markdown("Fix `<T>` and <b>"), "Fix `<T>` and \\<b>");
+        assert_eq!(bullet_markdown("plain"), "plain");
     }
 
     #[test]
