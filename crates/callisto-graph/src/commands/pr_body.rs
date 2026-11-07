@@ -310,11 +310,32 @@ fn render_change(body: &mut String, change: &Change, after_bullet: bool) -> bool
         body.push('\n');
     }
     body.push_str(&format!(
-        "<details{open}>\n<summary><b>{title}</b> — affects {}</summary>\n\n",
+        "<details{open}>\n<summary><b>{}</b> — affects {}</summary>\n\n",
+        summary_html(&title),
         affected.join(", ")
     ));
     push_detail(body, &detail);
     false
+}
+
+/// Markdown is not interpreted inside a raw-HTML `<summary>`, so code spans become `<code>` and everything else is
+/// escaped; otherwise a title such as ``Fix `<T>` `` would lose its `<T>` as an unknown tag.
+fn summary_html(text: &str) -> String {
+    fn escape(text: &str) -> String {
+        text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    }
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(open) = rest.find('`') {
+        let Some(len) = rest[open + 1..].find('`') else {
+            break;
+        };
+        out.push_str(&escape(&rest[..open]));
+        out.push_str(&format!("<code>{}</code>", escape(&rest[open + 1..open + 1 + len])));
+        rest = &rest[open + len + 2..];
+    }
+    out.push_str(&escape(rest));
+    out
 }
 
 fn push_detail(body: &mut String, text: &str) {
@@ -350,6 +371,16 @@ mod tests {
     use super::*;
     use crate::plan::{PlannedBump, VersionPlan};
     use callisto_model::{BumpReason, PackageId, Severity, Version};
+
+    #[test]
+    fn a_summary_title_keeps_code_spans_and_escapes_the_rest() {
+        assert_eq!(
+            summary_html("Fix `<T>` & more"),
+            "Fix <code>&lt;T&gt;</code> &amp; more"
+        );
+        assert_eq!(summary_html("a < b `unclosed"), "a &lt; b `unclosed");
+        assert_eq!(summary_html("`a` and `b`"), "<code>a</code> and <code>b</code>");
+    }
 
     #[test]
     fn changes_are_grouped_by_bump_and_titled_by_headline() {
