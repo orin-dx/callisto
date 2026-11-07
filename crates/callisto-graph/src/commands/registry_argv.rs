@@ -234,8 +234,8 @@ pub fn npm_publish_argv(
     access: Option<NpmAccess>,
     registry: Option<&str>,
 ) -> Argv {
-    // `yarn npm publish` has no `--registry` option (it rejects one) and reads `publishConfig.registry` from the
-    // manifest itself, which is where this value came from.
+    // `yarn npm publish` has no `--registry` option (it rejects one); the publish step refuses a configured registry
+    // for yarn before it gets here, so nothing is dropped silently.
     let registry = registry.filter(|_| !matches!(package_manager, NpmPackageManager::Yarn));
     let extra = npm_publish_flags(package_name, tag, access, registry);
 
