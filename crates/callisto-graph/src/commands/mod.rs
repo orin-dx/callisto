@@ -19,7 +19,7 @@ pub mod version;
 
 pub use callisto_model::{ReleaseDecisionEntry, ReleaseDecisionError, ReleaseDecisionV1, ReleaseInclusionReason};
 pub use matrix::{matrix, MatrixOptions};
-pub use pr_body::{compose_pr_body, PrBodyOptions};
+pub use pr_body::{compose_pr_body, render_pr_body_from_preview, PrBodyOptions};
 pub use release::{
     build_release_intent, build_release_intent_with_artifacts, ci_release_route, origin_tag_probe, pending_releases,
     plan_loaded_release, plan_local_release, plan_workspace_release, validate_local_release_intent,

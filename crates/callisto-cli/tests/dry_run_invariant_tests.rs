@@ -113,6 +113,7 @@ fn version_dry_run_writes_nothing() {
                 strict: false,
                 allow_empty_changesets: false,
                 emit_decision: None,
+                emit_preview: None,
             },
             &global(root, true),
         )

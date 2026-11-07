@@ -12,7 +12,7 @@ How `callisto version` turns changesets into file edits, and where interrupted-c
 - `VersionPlan` (`crates/callisto-graph/src/plan.rs`) is the whole change: bumps, dependency spec rewrites, platform manifest writes, owner `optionalDependencies` pins, changelog sections, consumed changesets, `pre.json` updates and diagnostics. It is in memory only (no `Serialize`).
 - `plan_version` is shared: `version`, `status`, `compose-pr-body` and `release plan --package` all compute the same plan.
 - `crates/callisto-graph/src/changelog/markdown/` is the only place Markdown is scanned: fenced code, ATX headings, heading rebase and the headline split. A new pass asks those questions there and joins `corpus.rs`; it does not write its own line scanner.
-- `ReleasePreview` (`crates/callisto-graph/src/release_preview.rs`) is the serializable, versioned view of a plan for people: packages, merged changes, bystanders and findings. Surfaces such as the PR body render it; they do not recompute from the plan.
+- `ReleasePreview` (`crates/callisto-graph/src/release_preview.rs`) is the serializable, versioned view of a plan for people: packages, merged changes, bystanders and findings. Surfaces such as the PR body render it; they do not recompute from the plan. `version --emit-preview` writes it before apply consumes the changesets, and `compose-pr-body --preview` renders from that file.
 - A dry run never gets a permit, so it reports the plan and never calls apply.
 - `snapshot` applies with `ApplyOptions::transient`: manifests are written, while changelogs, changeset deletion and git staging are skipped.
 
@@ -28,7 +28,7 @@ A crash can stop apply after some files are written. Applying the same in-memory
 
 ## Command boundary and known gaps
 
-`version --emit-decision` derives and validates the decision before writes, applies the plan, and writes the decision only after apply succeeds. The decision file is not wrapped in the stdout report envelope.
+`version --emit-decision` derives and validates the decision before writes, applies the plan, and writes the decision only after apply succeeds. The decision file is not wrapped in the stdout report envelope. `--emit-preview` follows the same rules: it is refused with `--dry-run`, built only from a plan without errors, and written after apply succeeds. A relative path for `--emit-decision`, `--emit-preview` and `compose-pr-body --preview` is relative to the workspace root; the file flags of the hidden `release` subcommands (`--intent`, `--receipt`, `--out`, `--artifact-dir`) are relative to the process directory.
 
 Outside `mode: pre`, `check_partial_run` refuses with E121 when a canonical manifest's effective version differs from `HEAD` while a changeset remains in `HEAD` or in the working tree (including untracked files), or when a canonical manifest with an effective staged version change is present in the index. Staged metadata-only edits are allowed. During `mode: exit`, prerelease versions awaiting stable finalization remain eligible, but changed stable versions are not exempt from the retry guard. It does not restore a lost plan. Apply retains changesets and pre-state deletion inputs until lock refresh and staging of generated state succeed, then stages their removal before unlinking them from disk. A late `--emit-decision` write failure is actionable refusal, not automatic replay of an in-memory plan that no longer exists.
 

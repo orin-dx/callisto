@@ -362,9 +362,9 @@ pub enum CliError {
     #[diagnostic(code(E275), help("provide a non-empty description of the change"))]
     AddSummaryEmpty,
 
-    #[error("--emit-decision writes a file; remove --dry-run or drop --emit-decision")]
-    #[diagnostic(code(E276), help("remove --dry-run, or drop --emit-decision"))]
-    VersionEmitDecisionDryRun,
+    #[error("--{flag} writes a file; remove --dry-run or drop --{flag}")]
+    #[diagnostic(code(E276), help("remove --dry-run, or drop --{flag}"))]
+    VersionEmitDryRun { flag: &'static str },
 
     #[error("--strict: workspace graph has error diagnostics:\n{}", .messages.join("\n"))]
     #[diagnostic(
@@ -687,7 +687,7 @@ mod tests {
             CliError::AddNoPackagesSelected,
             CliError::AddSummaryRequired,
             CliError::AddSummaryEmpty,
-            CliError::VersionEmitDecisionDryRun,
+            CliError::VersionEmitDryRun { flag: "emit-decision" },
             CliError::StrictDiagnosticsPresent {
                 messages: vec!["x".to_owned()],
             },

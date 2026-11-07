@@ -298,6 +298,7 @@ fn test_version_twice_without_commit_is_refused_as_partial_run() {
             strict: false,
             allow_empty_changesets: false,
             emit_decision: None,
+            emit_preview: None,
         },
         &global,
     )
@@ -310,6 +311,7 @@ fn test_version_twice_without_commit_is_refused_as_partial_run() {
             strict: false,
             allow_empty_changesets: false,
             emit_decision: None,
+            emit_preview: None,
         },
         &global,
     );
@@ -353,6 +355,7 @@ fn decision_write_failure_leaves_staged_evidence_for_a_safe_retry_refusal() {
             strict: false,
             allow_empty_changesets: false,
             emit_decision: Some("decision-parent/release-decision.json".into()),
+            emit_preview: None,
         },
         &global,
     );
@@ -375,6 +378,7 @@ fn decision_write_failure_leaves_staged_evidence_for_a_safe_retry_refusal() {
             strict: false,
             allow_empty_changesets: false,
             emit_decision: None,
+            emit_preview: None,
         },
         &global,
     );

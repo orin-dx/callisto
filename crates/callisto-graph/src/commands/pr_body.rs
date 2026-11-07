@@ -147,6 +147,15 @@ pub fn render_pr_body_from_plan(
     })
 }
 
+/// The same body as [`render_pr_body_from_plan`], from a preview written earlier by `version --emit-preview`.
+pub fn render_pr_body_from_preview(preview: &ReleasePreview, opts: &PrBodyOptions) -> ComposePrBodyReport {
+    ComposePrBodyReport {
+        schema_version: SCHEMA_VERSION,
+        body: render_pr_body(preview, opts),
+        diagnostics: Vec::new(),
+    }
+}
+
 fn workflow_instructions(branch: &str) -> String {
     let mut out = String::new();
     out.push_str("<details>\n<summary><b>Release Workflow Instructions</b></summary>\n\n");
