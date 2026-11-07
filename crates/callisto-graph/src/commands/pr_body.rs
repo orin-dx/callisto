@@ -1,10 +1,11 @@
 use callisto_model::{BumpReason, CommandRunner, ComposePrBodyReport, Severity, SCHEMA_VERSION};
 
-use crate::changelog::render::indent_changeset_summary;
 use crate::commands::version::plan_version;
 use crate::error::GraphError;
 use crate::infer::SeverityInference;
-use crate::release_preview::{build_release_preview, Change, ChangeKind, Finding, ReleasePreview, FINDING_MAJOR_BUMP};
+use crate::release_preview::{
+    build_release_preview, split_summary, Change, ChangeKind, Finding, ReleasePreview, FINDING_MAJOR_BUMP,
+};
 use crate::resolver::DependencyResolver;
 use crate::Workspace;
 
@@ -26,7 +27,7 @@ fn severity_emoji(severity: Severity) -> &'static str {
 /// One change's bullet text. `None` for a change with nothing to say.
 fn entry_text(kind: &ChangeKind) -> Option<String> {
     match kind {
-        ChangeKind::Changeset { summary, .. } => indent_changeset_summary(summary),
+        ChangeKind::Changeset { summary, .. } => Some(summary.trim().to_owned()),
         ChangeKind::Commit { subject, short_sha, .. } => Some(format!("{subject} ({short_sha})")),
         ChangeKind::DependencyUpdate { dependency, to } => Some(format!("`{dependency}` → `{to}`")),
         ChangeKind::PeerEscalation { dependency, to } => {
@@ -223,15 +224,47 @@ fn render_pr_body(notes: &ReleasePreview, opts: &PrBodyOptions) -> String {
         notes.packages.len()
     ));
 
-    for change in &notes.changes {
-        render_change(&mut body, change);
+    for level in [Severity::Major, Severity::Minor, Severity::Patch] {
+        let in_level: Vec<&Change> = notes
+            .changes
+            .iter()
+            .filter(|change| change_level(change) == level)
+            .collect();
+        if in_level.is_empty() {
+            continue;
+        }
+        body.push_str(&format!("#### {} {}\n\n", severity_emoji(level), level_title(level)));
+        let mut after_bullet = false;
+        for change in in_level {
+            after_bullet = render_change(&mut body, change, after_bullet);
+        }
+        if after_bullet {
+            body.push('\n');
+        }
     }
 
     body.push_str(&workflow_instructions(branch));
     body
 }
 
-fn render_change(body: &mut String, change: &Change) {
+/// Changes are grouped by their highest bump; a bump of `none` reads as a patch.
+fn change_level(change: &Change) -> Severity {
+    match change.max_severity() {
+        Severity::None => Severity::Patch,
+        level => level,
+    }
+}
+
+fn level_title(level: Severity) -> &'static str {
+    match level {
+        Severity::Major => "Major",
+        Severity::Minor => "Minor",
+        _ => "Patch",
+    }
+}
+
+/// Appends one change and returns whether it was a bullet, so the caller can keep consecutive bullets in one list.
+fn render_change(body: &mut String, change: &Change, after_bullet: bool) -> bool {
     let open = if change.max_severity() == Severity::Major {
         " open"
     } else {
@@ -239,6 +272,9 @@ fn render_change(body: &mut String, change: &Change) {
     };
 
     if let ChangeKind::Fallback { .. } = change.kind {
+        if after_bullet {
+            body.push('\n');
+        }
         let member = &change.members[0];
         body.push_str(&format!(
             "<details{open}>\n<summary><b>{}</b> ({} {})</summary>\n\n",
@@ -246,21 +282,78 @@ fn render_change(body: &mut String, change: &Change) {
             severity_emoji(member.severity),
             member.severity
         ));
-    } else {
-        let affected: Vec<String> = change
-            .members
-            .iter()
-            .map(|member| format!("<code>{}</code>", member.package))
-            .collect();
-        body.push_str(&format!(
-            "<details{open}>\n<summary><b>{}</b> — affects {}</summary>\n\n",
-            change_label(&change.kind),
-            affected.join(", ")
-        ));
+        push_detail(body, &entry_text(&change.kind).unwrap_or_default());
+        return false;
     }
 
-    let text = entry_text(&change.kind).unwrap_or_default();
-    body.push_str(&text);
+    let (title, detail) = match &change.kind {
+        ChangeKind::Changeset { summary, .. } => {
+            let split = split_summary(summary);
+            match split.headline {
+                Some(headline) => (headline, split.detail),
+                None => (change_label(&change.kind), split.detail),
+            }
+        }
+        kind => (change_label(kind), entry_text(kind).unwrap_or_default()),
+    };
+    let affected: Vec<String> = change
+        .members
+        .iter()
+        .map(|member| format!("<code>{}</code>", member.package))
+        .collect();
+
+    if detail.is_empty() {
+        body.push_str(&format!(
+            "- **{}** — affects {}\n",
+            bullet_markdown(&title),
+            affected.join(", ")
+        ));
+        return true;
+    }
+    if after_bullet {
+        body.push('\n');
+    }
+    body.push_str(&format!(
+        "<details{open}>\n<summary><b>{}</b> — affects {}</summary>\n\n",
+        summary_html(&title),
+        affected.join(", ")
+    ));
+    push_detail(body, &detail);
+    false
+}
+
+/// Markdown is not interpreted inside a raw-HTML `<summary>`, so code spans become `<code>` and everything else is
+/// escaped; otherwise a title such as ``Fix `<T>` `` would lose its `<T>` as an unknown tag.
+fn summary_html(text: &str) -> String {
+    fn escape(text: &str) -> String {
+        text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    }
+    map_code_spans(text, escape, |code| format!("<code>{}</code>", escape(code)))
+}
+
+/// A bullet is Markdown, so code spans stay as written and a `<` outside one is escaped rather than read as a tag.
+fn bullet_markdown(text: &str) -> String {
+    map_code_spans(text, |plain| plain.replace('<', "\\<"), |code| format!("`{code}`"))
+}
+
+/// Rewrites the text outside single-backtick code spans with `plain` and each span's contents with `code`.
+fn map_code_spans(text: &str, plain: impl Fn(&str) -> String, code: impl Fn(&str) -> String) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(open) = rest.find('`') {
+        let Some(len) = rest[open + 1..].find('`') else {
+            break;
+        };
+        out.push_str(&plain(&rest[..open]));
+        out.push_str(&code(&rest[open + 1..open + 1 + len]));
+        rest = &rest[open + len + 2..];
+    }
+    out.push_str(&plain(rest));
+    out
+}
+
+fn push_detail(body: &mut String, text: &str) {
+    body.push_str(text);
     if !text.ends_with('\n') {
         body.push('\n');
     }
@@ -294,12 +387,92 @@ mod tests {
     use callisto_model::{BumpReason, PackageId, Severity, Version};
 
     #[test]
-    fn changeset_details_leave_blank_lines_empty() {
-        let kind = ChangeKind::Changeset {
-            filename: "fix.md".to_owned(),
-            summary: "First line.\n\n- A detail.".to_owned(),
+    fn a_summary_title_keeps_code_spans_and_escapes_the_rest() {
+        assert_eq!(
+            summary_html("Fix `<T>` & more"),
+            "Fix <code>&lt;T&gt;</code> &amp; more"
+        );
+        assert_eq!(summary_html("a < b `unclosed"), "a &lt; b `unclosed");
+        assert_eq!(summary_html("`a` and `b`"), "<code>a</code> and <code>b</code>");
+    }
+
+    #[test]
+    fn a_bullet_title_keeps_code_spans_and_escapes_a_stray_tag() {
+        assert_eq!(bullet_markdown("Fix `<T>` and <b>"), "Fix `<T>` and \\<b>");
+        assert_eq!(bullet_markdown("plain"), "plain");
+    }
+
+    #[test]
+    fn changes_are_grouped_by_bump_and_titled_by_headline() {
+        let write = |package: &str, severity: Severity, filename: &str, summary: &str| {
+            let package = PackageId::parse(package).unwrap();
+            let bump = PlannedBump {
+                package: package.clone(),
+                from: Version::semver(1, 0, 0),
+                to: Version::semver(2, 0, 0),
+                severity,
+                governed_by: None,
+                reason: None,
+                writes: vec![],
+            };
+            let write = crate::plan::ChangelogWrite {
+                changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
+                input: crate::changelog::ChangelogInput {
+                    package,
+                    from: Version::semver(1, 0, 0),
+                    to: Some(Version::semver(2, 0, 0)),
+                    entries: vec![crate::changelog::ChangelogEntry {
+                        severity,
+                        source: crate::changelog::ChangeSource::Changeset {
+                            filename: filename.to_owned(),
+                            summary: summary.to_owned(),
+                        },
+                    }],
+                },
+            };
+            (bump, write)
         };
-        assert_eq!(entry_text(&kind).as_deref(), Some("First line.\n\n  - A detail."));
+        let (minor_bump, minor_write) = write("pkg-b", Severity::Minor, "b.md", "Adds a flag.");
+        let (major_bump, major_write) = write(
+            "pkg-a",
+            Severity::Major,
+            "a.md",
+            "Drops the old API.\n\nCallers must now pass a config.",
+        );
+        let plan = VersionPlan {
+            bumps: vec![minor_bump, major_bump],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: vec![minor_write, major_write],
+            consumed_changesets: vec![],
+            pre_state_update: None,
+            pre_json_path: std::path::PathBuf::new(),
+            pre_json_original_text: None,
+            delete_pre_json: None,
+            diagnostics: vec![],
+        };
+
+        let body = render_pr_body_from_plan(&plan, &PrBodyOptions::default()).unwrap().body;
+
+        let major = body.find("#### 🔴 Major").expect("major heading");
+        let minor = body.find("#### 🟡 Minor").expect("minor heading");
+        assert!(major < minor, "{body}");
+        assert!(!body.contains("#### 🟢 Patch"), "{body}");
+        assert!(
+            body.contains(
+                "<details open>\n<summary><b>Drops the old API.</b> — affects <code>pkg-a</code></summary>\n\nCallers must now pass a config.\n\n</details>"
+            ),
+            "{body}"
+        );
+        assert!(
+            body.contains("- **Adds a flag.** — affects <code>pkg-b</code>\n\n"),
+            "{body}"
+        );
+        assert!(
+            !body.contains("`a`") && !body.contains("`b`"),
+            "titles are headlines, not filenames: {body}"
+        );
     }
 
     fn bump(from: Version, to: Version, severity: Severity) -> PlannedBump {
