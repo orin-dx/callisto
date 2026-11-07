@@ -1,5 +1,6 @@
 use callisto_model::{BumpReason, CommandRunner, ComposePrBodyReport, Severity, SCHEMA_VERSION};
 
+use crate::changelog::headings::rebase_headings;
 use crate::commands::version::plan_version;
 use crate::error::GraphError;
 use crate::infer::SeverityInference;
@@ -247,6 +248,9 @@ fn render_pr_body(notes: &ReleasePreview, opts: &PrBodyOptions) -> String {
     body
 }
 
+/// A change sits under a level-4 bump heading, so an author's own headings start one level below it.
+const DETAIL_FIRST_HEADING_LEVEL: usize = 5;
+
 /// Changes are grouped by their highest bump; a bump of `none` reads as a patch.
 fn change_level(change: &Change) -> Severity {
     match change.max_severity() {
@@ -289,9 +293,10 @@ fn render_change(body: &mut String, change: &Change, after_bullet: bool) -> bool
     let (title, detail) = match &change.kind {
         ChangeKind::Changeset { summary, .. } => {
             let split = split_summary(summary);
+            let detail = rebase_headings(&split.detail, DETAIL_FIRST_HEADING_LEVEL);
             match split.headline {
-                Some(headline) => (headline, split.detail),
-                None => (change_label(&change.kind), split.detail),
+                Some(headline) => (headline, detail),
+                None => (change_label(&change.kind), detail),
             }
         }
         kind => (change_label(kind), entry_text(kind).unwrap_or_default()),
@@ -437,7 +442,7 @@ mod tests {
             "pkg-a",
             Severity::Major,
             "a.md",
-            "Drops the old API.\n\nCallers must now pass a config.",
+            "Drops the old API.\n\n## Migration\n\nCallers must now pass a config.",
         );
         let plan = VersionPlan {
             bumps: vec![minor_bump, major_bump],
@@ -461,7 +466,7 @@ mod tests {
         assert!(!body.contains("#### 🟢 Patch"), "{body}");
         assert!(
             body.contains(
-                "<details open>\n<summary><b>Drops the old API.</b> — affects <code>pkg-a</code></summary>\n\nCallers must now pass a config.\n\n</details>"
+                "<details open>\n<summary><b>Drops the old API.</b> — affects <code>pkg-a</code></summary>\n\n##### Migration\n\nCallers must now pass a config.\n\n</details>"
             ),
             "{body}"
         );
