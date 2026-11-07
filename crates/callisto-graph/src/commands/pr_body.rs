@@ -1,12 +1,10 @@
 use callisto_model::{BumpReason, CommandRunner, ComposePrBodyReport, Severity, SCHEMA_VERSION};
 
-use crate::changelog::headings::rebase_headings;
+use crate::changelog::markdown::{rebase_headings, split_summary};
 use crate::commands::version::plan_version;
 use crate::error::GraphError;
 use crate::infer::SeverityInference;
-use crate::release_preview::{
-    build_release_preview, split_summary, Change, ChangeKind, Finding, ReleasePreview, FINDING_MAJOR_BUMP,
-};
+use crate::release_preview::{build_release_preview, Change, ChangeKind, Finding, ReleasePreview, FINDING_MAJOR_BUMP};
 use crate::resolver::DependencyResolver;
 use crate::Workspace;
 

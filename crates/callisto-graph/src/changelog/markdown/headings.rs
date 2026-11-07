@@ -1,6 +1,6 @@
 //! Heading levels for Markdown an author wrote without knowing where it would land.
 
-use crate::changelog::fences::Fences;
+use super::fences::Fences;
 
 /// Shifts the headings in `text` so its shallowest one sits at `first_level`, keeping their relative depth. Only the
 /// `#` run changes; every other byte passes through. Fenced code and indented code are left alone. A heading pushed
@@ -25,7 +25,7 @@ pub fn rebase_headings(text: &str, first_level: usize) -> String {
 }
 
 /// The ATX heading level of each line, `None` for a line that is not a heading or sits inside a fence.
-fn heading_levels(lines: &[&str]) -> Vec<Option<usize>> {
+pub(super) fn heading_levels(lines: &[&str]) -> Vec<Option<usize>> {
     let mut fences = Fences::default();
     lines
         .iter()
@@ -34,16 +34,22 @@ fn heading_levels(lines: &[&str]) -> Vec<Option<usize>> {
             if fences.is_code(body) {
                 return None;
             }
-            let indent = body.len() - body.trim_start_matches(' ').len();
-            if indent >= 4 {
-                return None;
-            }
-            let trimmed = &body[indent..];
-            let hashes = trimmed.chars().take_while(|c| *c == '#').count();
-            let after = &trimmed[hashes..];
-            ((1..=6).contains(&hashes) && (after.is_empty() || after.starts_with([' ', '\t']))).then_some(hashes)
+            atx_level(body)
         })
         .collect()
+}
+
+/// The level of `line` as an ATX heading: one to six `#` after at most three spaces, then a space, a tab or the end of
+/// the line. `#hashtag` is text.
+pub(super) fn atx_level(line: &str) -> Option<usize> {
+    let indent = line.len() - line.trim_start_matches(' ').len();
+    if indent >= 4 {
+        return None;
+    }
+    let trimmed = &line[indent..];
+    let hashes = trimmed.chars().take_while(|c| *c == '#').count();
+    let after = &trimmed[hashes..];
+    ((1..=6).contains(&hashes) && (after.is_empty() || after.starts_with([' ', '\t']))).then_some(hashes)
 }
 
 fn retarget(line: &str, level: usize, target: usize) -> String {

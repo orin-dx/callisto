@@ -31,7 +31,7 @@ impl Fences {
 }
 
 /// `text` without a leading list marker (`-`, `*`, `+`, `1.` or `1)`), so a fence opened on a bullet's first line is seen.
-fn strip_list_marker(text: &str) -> &str {
+pub(super) fn strip_list_marker(text: &str) -> &str {
     for marker in ["- ", "* ", "+ "] {
         if let Some(rest) = text.strip_prefix(marker) {
             return rest.trim_start();
@@ -46,7 +46,7 @@ fn strip_list_marker(text: &str) -> &str {
 
 /// The marker character and length of a fence that `text` opens (three or more backticks or tildes). A backtick fence's
 /// info string cannot hold a backtick, which tells it from inline code such as ```` ```a``` ````.
-fn fence_opening(text: &str) -> Option<(char, usize)> {
+pub(super) fn fence_opening(text: &str) -> Option<(char, usize)> {
     let marker = text.chars().next().filter(|c| matches!(c, '`' | '~'))?;
     let length = text.chars().take_while(|c| *c == marker).count();
     (length >= 3 && !(marker == '`' && text[length..].contains('`'))).then_some((marker, length))
