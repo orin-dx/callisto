@@ -288,7 +288,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E257,
 | E273 | `add`'s interactive wizard ended with no packages selected | select at least one package, or pass `--package` flags instead of running interactively |
 | E274 | `add --package` was given with no `--summary` in non-interactive mode | pass `--summary "description"` alongside `--package` |
 | E275 | `add --summary` is empty or whitespace-only | provide a non-empty description of the change |
-| E276 | `version --emit-decision` was run with `--dry-run`, but emitting the decision writes a file | remove --dry-run, or drop --emit-decision |
+| E276 | `version --emit-decision` or `--emit-preview` was run with `--dry-run`, but emitting the file writes it | remove --dry-run, or drop the flag |
 | E277 | `--strict` escalated one or more workspace graph diagnostics to errors | resolve each listed diagnostic, or drop --strict if it is expected |
 | E279 | `pre enter` was given an empty or whitespace-only tag | pass a non-empty tag, for example `callisto pre enter beta` |
 | E280 | `pre exit` was run after prerelease mode was already exited | run `callisto version` to finalize the release |

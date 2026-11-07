@@ -47,6 +47,7 @@ fn test_pre_mode_blackbox_lifecycle() {
             strict: false,
             allow_empty_changesets: false,
             emit_decision: None,
+            emit_preview: None,
         },
         &global,
     );
@@ -67,6 +68,7 @@ fn test_pre_mode_blackbox_lifecycle() {
             strict: false,
             allow_empty_changesets: true,
             emit_decision: None,
+            emit_preview: None,
         },
         &global,
     );
@@ -279,6 +281,7 @@ fn test_malformed_pre_json_returns_error_not_silent_normal_release() {
             strict: false,
             allow_empty_changesets: false,
             emit_decision: None,
+            emit_preview: None,
         },
         &global,
     );
@@ -576,6 +579,7 @@ fn test_pre_mode_rerun_does_not_duplicate_changelog_entry() {
                 strict: false,
                 allow_empty_changesets: false,
                 emit_decision: None,
+                emit_preview: None,
             },
             &global,
         )

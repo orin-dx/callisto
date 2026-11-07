@@ -12,8 +12,15 @@ use crate::runner::CliCommandRunner;
 use crate::workspace::{load_workspace, select_inference};
 
 pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
-    if global.dry_run && args.emit_decision.is_some() {
-        return Err(CliError::VersionEmitDecisionDryRun);
+    if global.dry_run {
+        for (flag, set) in [
+            ("emit-decision", args.emit_decision.is_some()),
+            ("emit-preview", args.emit_preview.is_some()),
+        ] {
+            if set {
+                return Err(CliError::VersionEmitDryRun { flag });
+            }
+        }
     }
 
     let runner = CliCommandRunner;
@@ -49,6 +56,14 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
         None
     };
 
+    // Built from the plan before apply consumes the changesets it describes.
+    let pending_preview = args.emit_preview.as_deref().map(|path| {
+        (
+            ws.root.join(path),
+            callisto_graph::release_preview::build_release_preview(&plan),
+        )
+    });
+
     let apply_opts = ApplyOptions {
         refresh_lockfiles: !args.no_refresh_lockfiles,
         transient: false,
@@ -65,6 +80,14 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
 
     if let (Some((full_path, decision)), Some(permit)) = (pending_decision.as_ref(), permit.as_ref()) {
         let content = serde_json::to_string_pretty(decision).expect("release decision serializes") + "\n";
+        callisto_model::atomic::atomic_write(full_path, &content, permit).map_err(|source| CliError::Io {
+            source,
+            path: Some(full_path.clone()),
+        })?;
+    }
+
+    if let (Some((full_path, preview)), Some(permit)) = (pending_preview.as_ref(), permit.as_ref()) {
+        let content = serde_json::to_string_pretty(preview).expect("release preview serializes") + "\n";
         callisto_model::atomic::atomic_write(full_path, &content, permit).map_err(|source| CliError::Io {
             source,
             path: Some(full_path.clone()),
@@ -468,6 +491,7 @@ mod tests {
             refresh_lockfiles: false,
             no_refresh_lockfiles: true,
             emit_decision: None,
+            emit_preview: None,
         };
         let result = super::handle(args, &global);
         assert!(result.is_ok(), "expected Ok, got: {result:?}");

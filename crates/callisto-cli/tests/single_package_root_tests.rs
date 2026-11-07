@@ -76,6 +76,7 @@ fn lifecycle(dir: &tempfile::TempDir, package: &str, manifest: &str, bumped: &st
         strict: false,
         allow_empty_changesets: false,
         emit_decision: None,
+        emit_preview: None,
     };
     commands::version::handle(version, &global(root, false)).unwrap();
     assert!(fs::read_to_string(root.join(manifest)).unwrap().contains(bumped));
@@ -190,6 +191,7 @@ fn root_package_release_commit_accepts_default_and_configured_changelog_paths() 
                     strict: false,
                     allow_empty_changesets: false,
                     emit_decision: Some(decision_path.into()),
+                    emit_preview: None,
                 },
                 &global(root, false),
             )

@@ -107,16 +107,20 @@ case "$decision_kind" in
 esac
 
 echo 'hasChangesets=true' >> "$GITHUB_OUTPUT"
+
+# The version command consumes the changesets the body describes, so it also writes the facts the body is built from.
+preview_file=$(mktemp)
+read -ra command <<< "$INPUT_VERSION_COMMAND"
+command+=(--emit-decision "$INPUT_DECISION_PATH" --emit-preview "$preview_file")
+"${command[@]}"
+
 if [[ -n "$existing_pr" ]]; then
   existing_body=$(gh_retry pr view "$existing_pr" --json body --jq '.body')
-  body=$(printf '%s' "$existing_body" | callisto compose-pr-body --existing-body - --branch "$INPUT_BRANCH" --format text)
+  body=$(printf '%s' "$existing_body" | callisto compose-pr-body --preview "$preview_file" --existing-body - --branch "$INPUT_BRANCH" --format text)
 else
-  body=$(callisto compose-pr-body --branch "$INPUT_BRANCH" --format text)
+  body=$(callisto compose-pr-body --preview "$preview_file" --branch "$INPUT_BRANCH" --format text)
 fi
-
-read -ra command <<< "$INPUT_VERSION_COMMAND"
-command+=(--emit-decision "$INPUT_DECISION_PATH")
-"${command[@]}"
+rm -f "$preview_file"
 git add -A
 test -n "$(git status --porcelain)" || { echo '::error::pending changesets produced no release-PR delta'; exit 1; }
 
