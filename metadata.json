@@ -1,0 +1,71 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6VX4KHWTDVJFCZK6S9BEY1A",
+  "strategy": "manual-commit",
+  "branch": "feat/emit-release-preview",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".changeset/version-emit-preview.md",
+    ".github/actions/callisto-action/scripts/create-or-update-release-pr.sh",
+    ".github/actions/callisto-action/tests/test_release_pr_contract.sh",
+    ".github/tests/verify-release-workflow-contract.sh",
+    "crates/callisto-cli/src/cli.rs",
+    "crates/callisto-cli/src/commands/compose_pr_body.rs",
+    "crates/callisto-cli/src/commands/version.rs",
+    "crates/callisto-cli/src/error.rs",
+    "crates/callisto-cli/tests/changelog_tests.rs",
+    "crates/callisto-cli/tests/dry_run_invariant_tests.rs",
+    "crates/callisto-cli/tests/emit_preview_tests.rs",
+    "crates/callisto-cli/tests/lifecycle_e2e_tests.rs",
+    "crates/callisto-cli/tests/native_resolution_e2e_tests.rs",
+    "crates/callisto-cli/tests/partial_run_tests.rs",
+    "crates/callisto-cli/tests/pre_mode_tests.rs",
+    "crates/callisto-cli/tests/single_package_root_tests.rs",
+    "crates/callisto-cli/tests/strict_flag_tests.rs",
+    "crates/callisto-graph/src/commands/mod.rs",
+    "crates/callisto-graph/src/commands/pr_body.rs",
+    "crates/callisto-graph/src/release_preview.rs",
+    "docs/architecture/versioning.md",
+    "docs/errors.md",
+    "docs/specs/cli.json",
+    "docs/specs/release.json",
+    "docs/specs/versioning.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 88,
+    "cache_creation_tokens": 52192,
+    "cache_read_tokens": 12828214,
+    "output_tokens": 28801,
+    "api_call_count": 44,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 62,
+    "layers": {
+      "betterleaks": 22,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 36,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}

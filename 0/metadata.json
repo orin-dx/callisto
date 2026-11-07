@@ -1,0 +1,123 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6VX4KHWTDVJFCZK6S9BEY1A",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-07T21:03:14.562349Z",
+  "branch": "feat/emit-release-preview",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".changeset/version-emit-preview.md",
+    ".github/actions/callisto-action/scripts/create-or-update-release-pr.sh",
+    ".github/actions/callisto-action/tests/test_release_pr_contract.sh",
+    ".github/tests/verify-release-workflow-contract.sh",
+    "crates/callisto-cli/src/cli.rs",
+    "crates/callisto-cli/src/commands/compose_pr_body.rs",
+    "crates/callisto-cli/src/commands/version.rs",
+    "crates/callisto-cli/src/error.rs",
+    "crates/callisto-cli/tests/changelog_tests.rs",
+    "crates/callisto-cli/tests/dry_run_invariant_tests.rs",
+    "crates/callisto-cli/tests/emit_preview_tests.rs",
+    "crates/callisto-cli/tests/lifecycle_e2e_tests.rs",
+    "crates/callisto-cli/tests/native_resolution_e2e_tests.rs",
+    "crates/callisto-cli/tests/partial_run_tests.rs",
+    "crates/callisto-cli/tests/pre_mode_tests.rs",
+    "crates/callisto-cli/tests/single_package_root_tests.rs",
+    "crates/callisto-cli/tests/strict_flag_tests.rs",
+    "crates/callisto-graph/src/commands/mod.rs",
+    "crates/callisto-graph/src/commands/pr_body.rs",
+    "crates/callisto-graph/src/release_preview.rs",
+    "docs/architecture/versioning.md",
+    "docs/errors.md",
+    "docs/specs/cli.json",
+    "docs/specs/release.json",
+    "docs/specs/versioning.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "b50f90ab64a9",
+  "checkpoint_transcript_start": 21035,
+  "transcript_lines_at_start": 21035,
+  "compact_transcript_start": 1542,
+  "token_usage": {
+    "input_tokens": 88,
+    "cache_creation_tokens": 52192,
+    "cache_read_tokens": 12828214,
+    "output_tokens": 28801,
+    "api_call_count": 44,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 62,
+    "layers": {
+      "betterleaks": 22,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 36,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 140
+  },
+  "summary": {
+    "intent": "Fix unsigned commits across a stacked PR chain by re-signing and force-pushing, then continue the release-notes work by adding a `version --emit-preview` flag and composing the release PR body from it, with all commits signed so PRs can merge.",
+    "outcome": "Re-signed eight commits across three branches (#463, #464, #466) and force-pushed with lease after verifying identical trees; GitHub reported the two sampled commits as verified. Implemented `version --emit-preview`, `compose-pr-body --preview`, the action script reorder, tests, docs/specs and a changeset on branch feat/emit-release-preview, then made a commit whose signature status was checked via `git log %G?` but whose result isn't shown in the transcript.",
+    "learnings": {
+      "repo": [
+        "Stacked PRs: #463 -> main, #464 -> #463, #466 -> #464. Re-signing the stack was done with `git rebase --update-refs --exec 'git commit --amend --no-edit -S'` onto origin/main, which rewrites all branches in the chain at once.",
+        "Signed commits are required for PRs to merge in this repo; after pushing, check `commit.verification.verified` and `.reason` via `gh api repos/orin-dx/callisto/commits/<sha>`.",
+        "Adding a field to CLI arg structs such as `VersionArgs` and `ComposePrBodyArgs` breaks many struct-literal initializers in `crates/callisto-cli/tests/*.rs` and in cli.rs (`emit_decision: None` sites), so each needs `emit_preview: None`.",
+        "`.github/tests/verify-release-workflow-contract.sh` pins the exact `command+=` line of the release workflow, so changing the action script requires updating this contract. The action script also has its own test, `.github/actions/callisto-action/tests/test_release_pr_contract.sh`.",
+        "New CLI behaviors need coordinated updates across the model (`callisto-graph/src/release_preview.rs`), graph commands (`commands/mod.rs`, `pr_body.rs`), the CLI (`cli.rs`, `commands/version.rs`, `commands/compose_pr_body.rs`), the error code (`error.rs` and `docs/errors.md`), specs (`docs/specs/cli.json`, `release.json`, `versioning.json`), `docs/architecture/versioning.md`, and a `.changeset` file.",
+        "The plan file `.claude/plans/PLAN-release-notes.md` tracks the stacked work and was updated with the in-progress status of feat/emit-release-preview.",
+        "Local verification gate used: `cargo fmt --check`, `cargo clippy -p callisto-graph -p callisto-cli --all-targets -- -D warnings`, `RUSTDOCFLAGS=\"-D warnings\" cargo doc --no-deps --workspace`, and `cargo test -p callisto-graph -p callisto-cli`."
+      ],
+      "code": [
+        {
+          "path": ".github/tests/verify-release-workflow-contract.sh",
+          "line": 33,
+          "end_line": 42,
+          "finding": "Pins the exact `command+=` line for the release workflow; it had to be edited when the action script's compose-pr-body invocation changed."
+        },
+        {
+          "path": ".github/actions/callisto-action/scripts/create-or-update-release-pr.sh",
+          "line": 108,
+          "end_line": 130,
+          "finding": "Release PR body composition lives here; it was reordered so the body is composed after the version step using the emitted preview."
+        },
+        {
+          "path": "crates/callisto-cli/src/error.rs",
+          "line": 686,
+          "end_line": 694,
+          "finding": "Error code definitions were inspected here when adding a new error code for the emit-preview feature; the matching docs entry goes in docs/errors.md."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "The earlier commits were unsigned, which forced a rewrite of history and force-pushes of three branches; this resets CI, gates and possibly approvals on the PRs.",
+      "Adding `emit_preview` to the args structs required several rounds of fixing test initializers (partial_run_tests, lifecycle_e2e_tests, single_package_root_tests) before clippy passed.",
+      "The first run of the new emit_preview_tests failed and needed two edits before the key equality test passed.",
+      "The release-pr contract test and the workflow contract test failed after the action script change and had to be updated.",
+      "Only two of the eight re-signed commits were spot-checked through the GitHub API, so verification of the rest remains unconfirmed."
+    ],
+    "open_items": [
+      "The signature status of the new feat/emit-release-preview commit still needs confirming (`%G?` output was not shown), and it must be pushed with a verified signature and opened as a PR stacked appropriately.",
+      "Remaining plan item: the 'Merging will publish' section and verdict in the PR body, which should read `release --dry-run --format json` run after version.",
+      "Finding `01M6T6QNY4G4` still needs to be resolved by the user.",
+      "PR approvals may need to be re-obtained after the force-push, and CI and gates must re-run on #463, #464 and #466.",
+      "The remaining six re-signed commits have not been verified on GitHub."
+    ]
+  }
+}
