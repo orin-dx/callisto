@@ -253,11 +253,11 @@ else
 fi
 assert_verify_flags create "$output" ''
 
-if [[ "$output" != *'--emit-preview '*'callisto compose-pr-body --preview '* ]]; then
+if [[ "$output" != *'--emit-preview '*'callisto compose-pr-body --preview '*' --publish-plan '* ]]; then
   echo "FAIL: the version command writes the preview before compose-pr-body reads it: $output"
   fail=1
 else
-  echo 'PASS: composes the body from the preview the version command wrote'
+  echo 'PASS: composes the body, with the publish plan, from the preview the version command wrote'
 fi
 
 output="$(run_case '[{"number":42,"headRefName":"callisto/version-packages","headRepository":{"nameWithOwner":"orin-dx/callisto"},"headRefOid":"0123456789abcdef0123456789abcdef01234567"}]' "$update" false)"

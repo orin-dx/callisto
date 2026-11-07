@@ -8,10 +8,13 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::changelog::ChangeSource;
+use crate::commands::LocalReleasePlan;
+use crate::error::GraphError;
 use crate::plan::{PlannedBump, VersionPlan, VersionWriteTarget};
 
 pub const RELEASE_PREVIEW_SCHEMA_VERSION: u32 = 1;
 pub const FINDING_MAJOR_BUMP: &str = "major-bump";
+pub const FINDING_RELEASE_BLOCKED: &str = "release-blocked";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -24,6 +27,35 @@ pub struct ReleasePreview {
     /// Packages released only because their group moved, with no entry of their own.
     pub bystanders: Vec<String>,
     pub findings: Vec<Finding>,
+    /// Where merging will publish each package. Filled in after versioning, from the versioned tree, so a preview
+    /// written by `version --emit-preview` has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publish: Option<PublishOutlook>,
+}
+
+/// What planning the release of the versioned tree says, without publishing anything.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum PublishOutlook {
+    Planned {
+        releases: Vec<PublishTargets>,
+        /// Conditions that do not stop the release but change what it does, such as unbound tags.
+        notes: Vec<String>,
+    },
+    /// The same planning step the release workflow runs refused; merging would fail the same way.
+    Blocked { code: Option<String>, message: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublishTargets {
+    pub package: String,
+    pub version: String,
+    /// User-facing registry names, in publish order.
+    pub registries: Vec<String>,
+    pub tag: bool,
+    pub github_release: bool,
+    pub artifacts: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -82,6 +114,8 @@ pub enum ChangeKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum FindingLevel {
+    /// Merging would fail the release.
+    Stop,
     /// The reviewer should read this before merging.
     Pause,
     Info,
@@ -132,6 +166,91 @@ pub fn build_release_preview(plan: &VersionPlan) -> ReleasePreview {
         changes,
         bystanders,
         findings: assess(&plan.bumps),
+        publish: None,
+    }
+}
+
+impl ReleasePreview {
+    /// Adds what planning the versioned tree's release said. A plan that refused is a finding that stops the release.
+    pub fn with_publish(mut self, outlook: PublishOutlook) -> Self {
+        if let PublishOutlook::Blocked { code, message } = &outlook {
+            let message = match code {
+                Some(code) => format!("{code}: {message}"),
+                None => message.clone(),
+            };
+            self.findings.push(Finding {
+                id: FINDING_RELEASE_BLOCKED.to_owned(),
+                level: FindingLevel::Stop,
+                message,
+            });
+        }
+        self.publish = Some(outlook);
+        self
+    }
+}
+
+/// Reads the outcome of planning a release into what the PR body shows. Nothing is looked up on a registry or
+/// published: a refusal here is one the release itself would hit.
+pub fn publish_outlook(planned: Result<Option<LocalReleasePlan>, GraphError>) -> PublishOutlook {
+    use callisto_model::ReleaseOperationRole;
+
+    let plan = match planned {
+        Ok(Some(plan)) => plan,
+        Ok(None) => {
+            return PublishOutlook::Planned {
+                releases: Vec::new(),
+                notes: Vec::new(),
+            }
+        }
+        Err(error) => {
+            let code = miette::Diagnostic::code(&error).map(|code| code.to_string());
+            return PublishOutlook::Blocked {
+                code,
+                message: error.to_string(),
+            };
+        }
+    };
+
+    let mut releases: IndexMap<String, PublishTargets> = IndexMap::new();
+    for operation in &plan.intent.operations {
+        let id = operation.id();
+        let release = releases
+            .entry(id.package.name().to_owned())
+            .or_insert_with(|| PublishTargets {
+                package: id.package.name().to_owned(),
+                version: id.version.render().to_owned(),
+                registries: Vec::new(),
+                tag: false,
+                github_release: false,
+                artifacts: 0,
+            });
+        match &id.role {
+            ReleaseOperationRole::RegistryPublish { registry } => {
+                release
+                    .registries
+                    .push(registry.registry_key().display_name().to_owned());
+            }
+            ReleaseOperationRole::PlatformPublish { registry, .. } => {
+                let name = format!("{} (platform packages)", registry.registry_key().display_name());
+                if !release.registries.contains(&name) {
+                    release.registries.push(name);
+                }
+            }
+            ReleaseOperationRole::Tag => release.tag = true,
+            ReleaseOperationRole::ForgeRelease => release.github_release = true,
+            ReleaseOperationRole::ArtifactUpload { .. } => release.artifacts += 1,
+            ReleaseOperationRole::ForgePublish => {}
+        }
+    }
+
+    let mut notes: Vec<String> = Vec::new();
+    if plan.tags_unbound {
+        notes.push("`origin` has no push URL, so tags cannot be pushed until one is set.".to_owned());
+    }
+    notes.extend(plan.diagnostics.iter().map(|diagnostic| diagnostic.message.clone()));
+    PublishOutlook::Planned {
+        releases: releases.into_values().collect(),
+        notes,
     }
 }
 
@@ -330,6 +449,66 @@ mod tests {
         assert_eq!(ecosystem_label(&with_write("web/package.json")), "npm");
         assert_eq!(ecosystem_label(&with_write("py/pyproject.toml")), "pypi");
         assert_eq!(ecosystem_label(&bump(Severity::Patch)), "unknown");
+    }
+
+    #[test]
+    fn a_plan_that_refused_becomes_a_finding_that_stops_the_release() {
+        let plan = VersionPlan {
+            bumps: vec![bump(Severity::Patch)],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: vec![],
+            consumed_changesets: vec![],
+            pre_state_update: None,
+            pre_json_path: std::path::PathBuf::new(),
+            pre_json_original_text: None,
+            delete_pre_json: None,
+            diagnostics: vec![],
+        };
+        let preview = build_release_preview(&plan).with_publish(PublishOutlook::Blocked {
+            code: Some("E320".to_owned()),
+            message: "no".to_owned(),
+        });
+
+        let stop: Vec<&Finding> = preview
+            .findings
+            .iter()
+            .filter(|f| f.level == FindingLevel::Stop)
+            .collect();
+        assert_eq!(stop.len(), 1);
+        assert_eq!(stop[0].id, FINDING_RELEASE_BLOCKED);
+        assert_eq!(stop[0].message, "E320: no");
+    }
+
+    #[test]
+    fn the_publish_outlook_is_left_out_of_a_preview_that_has_none_and_round_trips_when_present() {
+        let plan = VersionPlan {
+            bumps: vec![bump(Severity::Patch)],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: vec![],
+            consumed_changesets: vec![],
+            pre_state_update: None,
+            pre_json_path: std::path::PathBuf::new(),
+            pre_json_original_text: None,
+            delete_pre_json: None,
+            diagnostics: vec![],
+        };
+        let bare = build_release_preview(&plan);
+        let json = serde_json::to_string(&bare).unwrap();
+        assert!(!json.contains("publish"), "{json}");
+        assert_eq!(ReleasePreview::from_json(&json).unwrap(), bare);
+
+        let with = bare.with_publish(PublishOutlook::Planned {
+            releases: vec![],
+            notes: vec!["n".to_owned()],
+        });
+        assert_eq!(
+            ReleasePreview::from_json(&serde_json::to_string(&with).unwrap()).unwrap(),
+            with
+        );
     }
 
     #[test]

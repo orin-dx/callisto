@@ -200,6 +200,7 @@ fn test_compose_pr_body_before_version_and_subpkg_changelog() {
             existing_body: None,
             branch: None,
             preview: None,
+            publish_plan: false,
         },
         &global,
     );

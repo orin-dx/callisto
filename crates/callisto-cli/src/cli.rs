@@ -286,6 +286,10 @@ pub struct ComposePrBodyArgs {
     /// workspace root, as it is for `version --emit-preview`.
     #[arg(long, value_name = "PATH")]
     pub preview: Option<std::path::PathBuf>,
+    /// Also plan the release of the versioned working tree, without a registry lookup or a publish, and list where
+    /// each package goes. A plan that refuses leads the body with a caution naming the error. Run after `version`.
+    #[arg(long, requires = "preview")]
+    pub publish_plan: bool,
 }
 
 /// Arguments for the `release` command.
@@ -543,6 +547,7 @@ mod tests {
                 existing_body: None,
                 branch: None,
                 preview: None,
+                publish_plan: false,
             }),
             Command::Release(ReleaseCommandArgs {
                 command: None,
