@@ -10,12 +10,12 @@ use serde::Serialize;
 use crate::changelog::ChangeSource;
 use crate::plan::{PlannedBump, VersionPlan, VersionWriteTarget};
 
-pub const RELEASE_NOTES_SCHEMA_VERSION: u32 = 1;
+pub const RELEASE_PREVIEW_SCHEMA_VERSION: u32 = 1;
 pub const FINDING_MAJOR_BUMP: &str = "major-bump";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ReleaseNotes {
+pub struct ReleasePreview {
     pub schema_version: u32,
     /// Highest severity first, ties in plan order.
     pub packages: Vec<PackageRelease>,
@@ -95,7 +95,7 @@ pub struct Finding {
     pub message: String,
 }
 
-pub fn build_release_notes(plan: &VersionPlan) -> ReleaseNotes {
+pub fn build_release_preview(plan: &VersionPlan) -> ReleasePreview {
     let mut sorted: Vec<&PlannedBump> = plan.bumps.iter().collect();
     sorted.sort_by_key(|bump| std::cmp::Reverse(bump.severity));
     let packages = sorted
@@ -112,8 +112,8 @@ pub fn build_release_notes(plan: &VersionPlan) -> ReleaseNotes {
 
     let (changes, bystanders) = collect_changes(plan);
 
-    ReleaseNotes {
-        schema_version: RELEASE_NOTES_SCHEMA_VERSION,
+    ReleasePreview {
+        schema_version: RELEASE_PREVIEW_SCHEMA_VERSION,
         packages,
         changes,
         bystanders,
@@ -319,7 +319,7 @@ mod tests {
     }
 
     #[test]
-    fn notes_serialize_with_a_schema_version_and_tagged_change_kinds() {
+    fn preview_serializes_with_a_schema_version_and_tagged_change_kinds() {
         let plan = VersionPlan {
             bumps: vec![bump(Severity::Patch)],
             rewrites: vec![],
@@ -333,8 +333,8 @@ mod tests {
             delete_pre_json: None,
             diagnostics: vec![],
         };
-        let json = serde_json::to_value(build_release_notes(&plan)).unwrap();
-        assert_eq!(json["schemaVersion"], RELEASE_NOTES_SCHEMA_VERSION);
+        let json = serde_json::to_value(build_release_preview(&plan)).unwrap();
+        assert_eq!(json["schemaVersion"], RELEASE_PREVIEW_SCHEMA_VERSION);
         assert_eq!(json["changes"][0]["kind"]["kind"], "fallback");
         assert_eq!(json["findings"][0]["id"], "compatible");
     }

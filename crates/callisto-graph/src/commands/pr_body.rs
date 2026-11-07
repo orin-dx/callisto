@@ -4,7 +4,7 @@ use crate::changelog::render::indent_changeset_summary;
 use crate::commands::version::plan_version;
 use crate::error::GraphError;
 use crate::infer::SeverityInference;
-use crate::release_notes::{build_release_notes, Change, ChangeKind, Finding, ReleaseNotes, FINDING_MAJOR_BUMP};
+use crate::release_preview::{build_release_preview, Change, ChangeKind, Finding, ReleasePreview, FINDING_MAJOR_BUMP};
 use crate::resolver::DependencyResolver;
 use crate::Workspace;
 
@@ -142,7 +142,7 @@ pub fn render_pr_body_from_plan(
 ) -> Result<ComposePrBodyReport, GraphError> {
     Ok(ComposePrBodyReport {
         schema_version: SCHEMA_VERSION,
-        body: render_pr_body(&build_release_notes(plan), opts),
+        body: render_pr_body(&build_release_preview(plan), opts),
         diagnostics: Vec::new(),
     })
 }
@@ -159,7 +159,7 @@ fn workflow_instructions(branch: &str) -> String {
     out
 }
 
-fn render_pr_body(notes: &ReleaseNotes, opts: &PrBodyOptions) -> String {
+fn render_pr_body(notes: &ReleasePreview, opts: &PrBodyOptions) -> String {
     let mut body = String::new();
 
     // Preserve custom user notes above ## Release Preview if an existing body was passed
@@ -284,7 +284,7 @@ fn callout(findings: &[Finding], package_count: usize) -> String {
 
 #[cfg(test)]
 fn review_callout(bumps: &[crate::plan::PlannedBump]) -> String {
-    callout(&crate::release_notes::assess(bumps), bumps.len())
+    callout(&crate::release_preview::assess(bumps), bumps.len())
 }
 
 #[cfg(test)]
