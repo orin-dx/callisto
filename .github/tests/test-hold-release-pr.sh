@@ -12,7 +12,6 @@ run_case() { # <pr list json> [failing ready attempts]
   cat > "$harness" <<'STUBS'
 gh() {
   echo "gh $*" >> "$CALLS_FILE"
-  [[ "$1" == api && -n "${NOTE_FAILS:-}" ]] && return 1
   case "$1 $2" in
     'pr list') printf '%s\n' "$PR_LIST" ;;
     'pr ready')
@@ -23,7 +22,7 @@ gh() {
 }
 sleep() { echo "sleep $*" >> "$CALLS_FILE"; }
 STUBS
-  CALLS_FILE="$calls" PR_LIST="$1" READY_FAILS="${2:-0}" READY_COUNT_FILE="$count" NOTE_FAILS="${NOTE_FAILS:-}" GITHUB_REPOSITORY='orin-dx/callisto' \
+  CALLS_FILE="$calls" PR_LIST="$1" READY_FAILS="${2:-0}" READY_COUNT_FILE="$count" GITHUB_REPOSITORY='orin-dx/callisto' \
     bash -c 'source "$1"; source "$2" callisto/version-packages' -- "$harness" "$script" > /dev/null 2>&1
   local code=$?
   printf '%s\n---calls---\n' "$code"
@@ -68,14 +67,5 @@ verdict 'a failed draft call is retried' "$ok"
 output="$(run_case "[$(pr 7 callisto/version-packages false)]" 100)"
 if [[ "$output" == 1$'\n'* && "$(grep -c 'gh pr ready' <<< "$output")" == 3 ]]; then ok=0; else ok=1; fi
 verdict 'a draft call that never succeeds fails the job after three attempts' "$ok"
-
-# Drafting a PR also writes the hold note on it; a note that cannot be written only warns.
-output="$(run_case "[$(pr 7 callisto/version-packages false)]")"
-if [[ "$output" == 0$'\n'* && "$output" == *'-X POST repos/orin-dx/callisto/issues/7/comments'* ]]; then ok=0; else ok=1; fi
-verdict 'a drafted release PR gets the hold note' "$ok"
-
-output="$(NOTE_FAILS=1 run_case "[$(pr 7 callisto/version-packages false)]")"
-if [[ "$output" == 0$'\n'* && "$output" == *'gh pr ready 7'* && "$output" != *'-X POST'* ]]; then ok=0; else ok=1; fi
-verdict 'a hold note that cannot be written leaves the draft in place and the job green' "$ok"
 
 exit "$fail"

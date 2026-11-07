@@ -16,7 +16,6 @@ COORDINATOR_CONST_SRC = "crates/callisto-model/src/release/github.rs"
 # unnoticed.
 ALLOWED_WRITES = {
     "version-pr": {"contents", "pull-requests"},
-    "release-pr-note": {"pull-requests"},
     "build-artifact": {"attestations", "id-token"},
     "execute": {"contents"},
     "drain": {"actions"},
