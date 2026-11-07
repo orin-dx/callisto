@@ -255,7 +255,7 @@ pub fn render_pr_body_from_plan(
     sorted_bumps.sort_by_key(|bump| std::cmp::Reverse(bump.severity));
 
     for bump in &sorted_bumps {
-        let eco = bump.package.ecosystem().map(|e| e.prefix()).unwrap_or("core");
+        let eco = ecosystem_label(bump);
 
         let reason_str = match &bump.reason {
             Some(callisto_model::BumpReason::Changeset { changesets }) => {
@@ -435,6 +435,22 @@ pub fn render_pr_body_from_plan(
     })
 }
 
+/// A bare package name carries no ecosystem prefix, so fall back to the manifest it is written to.
+fn ecosystem_label(bump: &crate::plan::PlannedBump) -> &'static str {
+    if let Some(ecosystem) = bump.package.ecosystem() {
+        return ecosystem.prefix();
+    }
+    bump.writes
+        .iter()
+        .find_map(|target| match target {
+            crate::plan::VersionWriteTarget::CargoWorkspacePackage { .. } => Some("cargo"),
+            crate::plan::VersionWriteTarget::Manifest(path) => callisto_model::ManifestFormat::from_path(path)
+                .ok()
+                .map(|format| format.ecosystem().prefix()),
+        })
+        .unwrap_or("unknown")
+}
+
 /// The callout that opens the release PR body. Claims backward compatibility only for stable versions: below 1.0.0 a
 /// minor bump is where breaking changes go, so it cannot be called compatible.
 fn review_callout(bumps: &[crate::plan::PlannedBump]) -> String {
@@ -488,6 +504,25 @@ mod tests {
     }
 
     #[test]
+    fn a_bare_package_takes_its_ecosystem_from_its_manifest() {
+        let with_write = |path: &str| PlannedBump {
+            writes: vec![crate::plan::VersionWriteTarget::Manifest(path.into())],
+            ..bump(Version::semver(1, 0, 0), Version::semver(1, 0, 1), Severity::Patch)
+        };
+        assert_eq!(ecosystem_label(&with_write("crates/a/Cargo.toml")), "cargo");
+        assert_eq!(ecosystem_label(&with_write("web/package.json")), "npm");
+        assert_eq!(ecosystem_label(&with_write("py/pyproject.toml")), "pypi");
+        assert_eq!(
+            ecosystem_label(&bump(
+                Version::semver(1, 0, 0),
+                Version::semver(1, 0, 1),
+                Severity::Patch
+            )),
+            "unknown"
+        );
+    }
+
+    #[test]
     fn a_pre_one_minor_bump_is_not_called_backward_compatible() {
         let callout = review_callout(&[bump(
             Version::semver(0, 11, 0),
@@ -537,7 +572,9 @@ mod tests {
             reason: Some(BumpReason::Changeset {
                 changesets: vec!["swift-foxes-race".to_string()],
             }),
-            writes: vec![],
+            writes: vec![crate::plan::VersionWriteTarget::Manifest(
+                "core-crate/Cargo.toml".into(),
+            )],
         };
 
         let bump_b = PlannedBump {
@@ -549,7 +586,7 @@ mod tests {
             reason: Some(BumpReason::Changeset {
                 changesets: vec!["swift-foxes-race".to_string()],
             }),
-            writes: vec![],
+            writes: vec![crate::plan::VersionWriteTarget::Manifest("web-app/package.json".into())],
         };
 
         let plan = VersionPlan {
