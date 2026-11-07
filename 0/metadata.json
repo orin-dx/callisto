@@ -1,0 +1,83 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6VXPB36S460FM0TXBM3R116",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-07T21:12:50.389236Z",
+  "branch": "feat/emit-release-preview",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/architecture/versioning.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "2e42eafeffa1",
+  "checkpoint_transcript_start": 22102,
+  "transcript_lines_at_start": 22102,
+  "compact_transcript_start": 1618,
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 9952,
+    "cache_read_tokens": 3224090,
+    "output_tokens": 5064,
+    "api_call_count": 9
+  },
+  "redaction": {
+    "replacements": 62,
+    "layers": {
+      "betterleaks": 22,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 36,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 140
+  },
+  "summary": {
+    "intent": "Resolve the remaining review findings on PR #75 (emit-release-preview), then audit the codebase for the same classes of bugs (path-flag resolution, error gating, fence scanning, HTML interpolation, unconditional trims) and record the conventions.",
+    "outcome": "Both #75 findings were marked resolved with references to commit 66e86f752. The audit found only one convention gap, a documentation one: which path flags are workspace-root-relative and which are process-directory-relative. That was documented in architecture/versioning.md, review-finding patterns were appended to the local plan, and the change was committed and pushed to feat/emit-release-preview.",
+    "learnings": {
+      "repo": [
+        "Emit/preview flags (version --emit-preview, compose-pr-body --preview) resolve relative paths from the workspace root; the hidden release subcommand file flags resolve relative to the process directory. This is now documented in docs/architecture/versioning.md.",
+        "Markdown fence scanning is centralized in crates/callisto-graph/src/changelog/fences.rs. Earlier, has_heading, find_section and headings.rs each had their own scanner and disagreed. New Markdown passes should reuse it.",
+        "Only crates/callisto-graph/src/commands/pr_body.rs interpolates into raw HTML. Summary titles there are escaped HTML while bullet titles are Markdown, and package names cannot contain markup.",
+        "find_section ends a section at any column-0 '## ' or '# ', so rich entries rendered into the committed changelog must be rebased to heading level 4 or deeper, or indented.",
+        "version --emit-decision gates on !has_errors, and --emit-preview originally lacked the same guard. Sibling emitters must copy each other's guards.",
+        "snapshot aborts on graph errors before writing anything, and release --receipt probes its path before doing work.",
+        "Unconditional char trims such as trim_end_matches('#') eat data like 'C#'. Strip only the syntactic form; an ATX closing sequence needs a preceding space."
+      ],
+      "code": [
+        {
+          "path": "docs/architecture/versioning.md",
+          "line": 30,
+          "finding": "This is the line next to the 'version --emit-decision derives' description. A sentence was added here saying which path flags are workspace-root-relative and which are process-relative."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/snapshot.rs",
+          "line": 15,
+          "end_line": 50,
+          "finding": "snapshot checks for graph errors and aborts before writing output. This is the correct error-gating pattern that the preview emitter was missing."
+        }
+      ],
+      "workflow": [
+        "The trail CLI marks findings resolved with `entire trail finding resolve <id> --branch <branch> -m <msg>`. Each message cites the fix commit and the regression test name.",
+        "After fixing a review finding, grep sibling code for the same bug class (path resolution, gates, scanners, HTML interpolation, trims) rather than fixing only the reported instance.",
+        "Review learnings are kept in .claude/plans/PLAN-release-notes.md so later work can check them before writing similar code."
+      ]
+    },
+    "friction": [
+      "The path-flag convention was inconsistent and undocumented, so a flag and its reader could resolve the same path differently until the audit.",
+      "Output was piped through `tail -1` and `head` throughout, which hides most command output and makes the commit and push results hard to verify."
+    ],
+    "open_items": [
+      "The changelog rebase rule (rich entries rendered into the committed changelog must be level 4 or deeper, or indented) is noted as 'later' and is not yet implemented.",
+      "The hidden release subcommands still use process-directory-relative paths; this was documented but not unified with the workspace-root convention."
+    ]
+  }
+}
