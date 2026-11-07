@@ -1,0 +1,83 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6T4PJPPMRP5RYX4KX6V1XAK",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-07T04:36:48.211913Z",
+  "branch": "feat/release-pr-headlines",
+  "checkpoints_count": 3,
+  "files_touched": [
+    ".changeset/pr-body-headlines.md",
+    "crates/callisto-graph/src/commands/pr_body.rs",
+    "crates/callisto-graph/src/commands/snapshots/callisto_graph__commands__pr_body__tests__compose_pr_body_snapshot.snap",
+    "crates/callisto-graph/src/release_preview.rs",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "35597d8453f7",
+  "checkpoint_transcript_start": 19890,
+  "transcript_lines_at_start": 19890,
+  "compact_transcript_start": 1470,
+  "token_usage": {
+    "input_tokens": 40,
+    "cache_creation_tokens": 29417,
+    "cache_read_tokens": 4075083,
+    "output_tokens": 18256,
+    "api_call_count": 20
+  },
+  "redaction": {
+    "replacements": 60,
+    "layers": {
+      "betterleaks": 20,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 36,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 132
+  },
+  "summary": {
+    "intent": "Change the release PR body composer so changes are grouped by bump level (Major/Minor/Patch), titled by a changeset's headline, and rendered as bullets when there is no extra detail; also document it in specs and the changelog.",
+    "outcome": "Implemented grouping, headline titles and bullet rendering in pr_body.rs and release_preview.rs, accepted the updated snapshot, ran clippy and unit tests, added spec REL-PR-10, a changeset and a plan doc, then committed and pushed branch feat/release-pr-headlines.",
+    "learnings": {
+      "repo": [
+        "Release PR body composition lives in crates/callisto-graph/src/commands/pr_body.rs and is snapshot-tested with insta; the snapshot is accepted via INSTA_UPDATE=always, then stray *.snap.new files must be removed.",
+        "Release PR behavior is specified in docs/specs/release.json under acceptance_criteria with ids like REL-PR-NN; the new criterion was added as REL-PR-10.",
+        "Changes need a .changeset/*.md file; the PR body renderer uses split_summary (release_preview.rs) to separate a changeset's headline from its detail.",
+        "Verification flow used: cargo fmt, cargo clippy -p callisto-graph -p callisto-cli --all-targets -D warnings, cargo test -p callisto-graph --lib, cargo build -p callisto-cli.",
+        "A change with bump level 'none' is treated as a patch when grouping."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/pr_body.rs",
+          "finding": "render_change now takes an after_bullet flag and returns whether it emitted a bullet, so consecutive bullets stay in one list and blank lines are inserted before <details> blocks; Major changes get <details open>."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/pr_body.rs",
+          "finding": "Changeset entry text now uses summary.trim() instead of indent_changeset_summary, removing that import dependency from this file."
+        }
+      ],
+      "workflow": [
+        "A worktree guard refuses shell heredocs that write files; write scripts with the Write tool and run them with python3 -I instead.",
+        "Grepping cargo test output for 'failed' matches passing test names; filter on '^test .*FAILED' or 'panicked' to see real failures.",
+        "Before starting a feature, check open PRs for file conflicts and grep docs/specs for areas that cover the change."
+      ]
+    },
+    "friction": [
+      "Heredoc-based edit script was blocked by the worktree guard and had to be redone via the Write tool.",
+      "Initial test grep pattern was too broad and matched passing test names, requiring a rerun with a stricter filter."
+    ],
+    "open_items": [
+      "The PLAN-release-notes.md plan doc was added and may need follow-up steps beyond 3a.",
+      "Other renderers or docs referencing the PR body format were searched for but the transcript doesn't confirm all were updated.",
+      "The open PR for the pushed branch is not shown as created in this segment."
+    ]
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6T4PJPPMRP5RYX4KX6V1XAK",
+  "strategy": "manual-commit",
+  "branch": "feat/release-pr-headlines",
+  "checkpoints_count": 3,
+  "files_touched": [
+    ".changeset/pr-body-headlines.md",
+    "crates/callisto-graph/src/commands/pr_body.rs",
+    "crates/callisto-graph/src/commands/snapshots/callisto_graph__commands__pr_body__tests__compose_pr_body_snapshot.snap",
+    "crates/callisto-graph/src/release_preview.rs",
+    "docs/specs/release.json"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 40,
+    "cache_creation_tokens": 29417,
+    "cache_read_tokens": 4075083,
+    "output_tokens": 18256,
+    "api_call_count": 20
+  },
+  "redaction": {
+    "replacements": 60,
+    "layers": {
+      "betterleaks": 20,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 36,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
