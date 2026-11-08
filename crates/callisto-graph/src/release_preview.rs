@@ -212,6 +212,68 @@ impl ReleasePreview {
         self
     }
 
+    /// The labels Callisto manages on the release PR, each marked with whether it applies. One list of the whole
+    /// catalog, so a caller that only adds and removes by the `applied` flag never needs the names.
+    pub fn pr_labels(&self) -> Vec<callisto_model::PrLabel> {
+        let has = |id: &str| self.findings.iter().any(|finding| finding.id == id);
+        let blocked = self.findings.iter().any(|finding| finding.level == FindingLevel::Stop);
+        let breaking = has(FINDING_BREAKING_MARKER) || has(FINDING_MAJOR_BUMP);
+        let action = has(FINDING_ACTION_REQUIRED);
+        let unreleased = has(FINDING_UNRELEASED_CHANGES);
+        let highest = self.packages.iter().map(|package| package.severity).max();
+        let label = |name: &str, color: &str, description: &str, applied: bool| callisto_model::PrLabel {
+            name: name.to_owned(),
+            color: color.to_owned(),
+            description: description.to_owned(),
+            applied,
+        };
+        vec![
+            label(
+                "callisto: ready",
+                "0e8a16",
+                "Nothing in this release needs a second look",
+                !(blocked || breaking || action || unreleased),
+            ),
+            label("callisto: blocked", "b60205", "Merging would fail the release", blocked),
+            label(
+                "callisto: breaking",
+                "d93f0b",
+                "A major bump or a Breaking: note",
+                breaking,
+            ),
+            label(
+                "callisto: action-required",
+                "d93f0b",
+                "A changeset asks users to act",
+                action,
+            ),
+            label(
+                "callisto: unreleased-changes",
+                "fbca04",
+                "A package changed but is not in this release",
+                unreleased,
+            ),
+            label(
+                "bump: major",
+                "b60205",
+                "Highest bump in this release",
+                highest == Some(Severity::Major),
+            ),
+            label(
+                "bump: minor",
+                "fbca04",
+                "Highest bump in this release",
+                highest == Some(Severity::Minor),
+            ),
+            label(
+                "bump: patch",
+                "0e8a16",
+                "Highest bump in this release",
+                highest == Some(Severity::Patch),
+            ),
+        ]
+    }
+
     /// The packages this release bumps, as `release --package` names them, or `None` if any could not be named. These
     /// are the packages the committed decision will hold, so planning with exactly them cannot pick up an unrelated
     /// unreleased package.
@@ -701,6 +763,64 @@ mod tests {
 
     fn ids(preview: &ReleasePreview) -> Vec<&str> {
         preview.findings.iter().map(|finding| finding.id.as_str()).collect()
+    }
+
+    fn applied(preview: &ReleasePreview) -> Vec<String> {
+        preview
+            .pr_labels()
+            .into_iter()
+            .filter(|label| label.applied)
+            .map(|label| label.name)
+            .collect()
+    }
+
+    #[test]
+    fn a_clean_release_is_ready_with_its_bump_label() {
+        let plan = plan_with_summary(Severity::Minor, Version::semver(1, 0, 0), "Add a flag.");
+        assert_eq!(
+            applied(&build_release_preview(&plan)),
+            ["callisto: ready", "bump: minor"]
+        );
+    }
+
+    #[test]
+    fn a_breaking_marker_and_an_action_marker_label_the_release_and_it_is_not_ready() {
+        let plan = plan_with_summary(
+            Severity::Minor,
+            Version::semver(1, 0, 0),
+            "Drops a flag.\n\nBreaking: `--old` is gone.\n\nAction: switch to `--new`.",
+        );
+        assert_eq!(
+            applied(&build_release_preview(&plan)),
+            ["callisto: breaking", "callisto: action-required", "bump: minor"]
+        );
+    }
+
+    #[test]
+    fn a_major_bump_is_breaking_and_a_refused_plan_is_blocked() {
+        let plan = plan_with_summary(Severity::Major, Version::semver(1, 0, 0), "Rewrite.");
+        let preview = build_release_preview(&plan).with_publish(PublishOutlook::Blocked {
+            code: Some("E320".to_owned()),
+            message: "no".to_owned(),
+        });
+        assert_eq!(
+            applied(&preview),
+            ["callisto: blocked", "callisto: breaking", "bump: major"]
+        );
+    }
+
+    #[test]
+    fn unreleased_changes_label_the_release_and_the_whole_catalog_is_always_listed() {
+        let plan = plan_with_summary(Severity::Patch, Version::semver(1, 0, 0), "Fix.");
+        let preview = build_release_preview(&plan).with_unreleased(vec![UnreleasedChange {
+            package: "other".to_owned(),
+            files: 1,
+        }]);
+        assert_eq!(applied(&preview), ["callisto: unreleased-changes", "bump: patch"]);
+        // Every label is present with its flag, so a caller can remove the ones that stopped applying.
+        let names: Vec<String> = preview.pr_labels().into_iter().map(|label| label.name).collect();
+        assert_eq!(names.len(), 8);
+        assert!(names.contains(&"callisto: ready".to_owned()));
     }
 
     #[test]

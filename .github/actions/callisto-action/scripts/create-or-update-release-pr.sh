@@ -116,11 +116,17 @@ command+=(--emit-decision "$INPUT_DECISION_PATH" --emit-preview "$preview_file")
 
 if [[ -n "$existing_pr" ]]; then
   existing_body=$(gh_retry pr view "$existing_pr" --json body --jq '.body')
-  body=$(printf '%s' "$existing_body" | callisto compose-pr-body --preview "$preview_file" --publish-plan --existing-body - --branch "$INPUT_BRANCH" --format text)
+  report=$(printf '%s' "$existing_body" | callisto compose-pr-body --preview "$preview_file" --publish-plan --existing-body - --branch "$INPUT_BRANCH" --format json)
 else
-  body=$(callisto compose-pr-body --preview "$preview_file" --publish-plan --branch "$INPUT_BRANCH" --format text)
+  report=$(callisto compose-pr-body --preview "$preview_file" --publish-plan --branch "$INPUT_BRANCH" --format json)
 fi
 rm -f "$preview_file"
+body=$(jq -r '.body' <<< "$report")
+# Callisto owns the label catalog: each entry says whether it belongs on the PR now, so nothing here names a label.
+applied_labels=()
+while IFS= read -r name; do applied_labels+=("$name"); done < <(jq -r '.labels[]? | select(.applied) | .name' <<< "$report")
+unapplied_labels=()
+while IFS= read -r name; do unapplied_labels+=("$name"); done < <(jq -r '.labels[]? | select(.applied | not) | .name' <<< "$report")
 git add -A
 test -n "$(git status --porcelain)" || { echo '::error::pending changesets produced no release-PR delta'; exit 1; }
 
@@ -221,17 +227,30 @@ label_exists=$(gh_retry label list --limit 1000 --json name --jq 'any(.[]; .name
 if [[ "$label_exists" != true ]]; then
   gh_retry label create "$INPUT_PR_LABEL" --color 0e8a16 --description 'Callisto release packages'
 fi
+while IFS= read -r label; do
+  name=$(jq -r '.name' <<< "$label")
+  label_present=$(NAME="$name" gh_retry label list --limit 1000 --json name --jq 'any(.[]; .name == env.NAME)')
+  if [[ "$label_present" != true ]]; then
+    gh_retry label create "$name" --color "$(jq -r '.color' <<< "$label")" --description "$(jq -r '.description' <<< "$label")"
+  fi
+done < <(jq -c '.labels[]? | select(.applied)' <<< "$report")
 
 case "$decision_kind" in
   create)
     # Born a draft, so a failed tip check below leaves it unmergeable rather than ready on a stale base.
     create_args=(--draft --head "$release_branch" --base "$INPUT_BRANCH" --title "$INPUT_TITLE" --body "$body" --label "$INPUT_PR_LABEL")
+    for name in "${applied_labels[@]}"; do create_args+=(--label "$name"); done
     pr_url=$(gh pr create "${create_args[@]}")
     echo "$pr_url"
     pr_number=${pr_url##*/}
     ;;
   update)
     edit_args=(--title "$INPUT_TITLE" --body "$body" --add-label "$INPUT_PR_LABEL")
+    for name in "${applied_labels[@]}"; do edit_args+=(--add-label "$name"); done
+    current_labels=$(gh_retry pr view "$existing_pr" --json labels --jq '.labels[].name')
+    for name in "${unapplied_labels[@]}"; do
+      if grep -Fxq -- "$name" <<< "$current_labels"; then edit_args+=(--remove-label "$name"); fi
+    done
     gh_retry pr edit "$existing_pr" "${edit_args[@]}"
     pr_number=$existing_pr
     ;;

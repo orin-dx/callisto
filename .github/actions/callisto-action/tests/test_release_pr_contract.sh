@@ -67,7 +67,8 @@ callisto() {
   fi
   case "$1" in
     matrix) printf '%s\n' '{"platformTargets":[]}' ;;
-    compose-pr-body) echo 'composed release body' ;;
+    compose-pr-body)
+      printf '%s\n' '{"schemaVersion":1,"body":"composed release body","labels":[{"name":"callisto: breaking","color":"d93f0b","description":"A major bump or a Breaking: note","applied":true},{"name":"callisto: ready","color":"0e8a16","description":"Nothing needs a second look","applied":false},{"name":"callisto: blocked","color":"b60205","description":"Merging would fail the release","applied":false}],"command":"compose-pr-body","dryRun":false}' ;;
     version) return 0 ;;
     *) echo "unexpected callisto invocation: $*" >&2; return 97 ;;
   esac
@@ -97,7 +98,7 @@ gh() {
       fi
       printf '%s\n' "$PR_LIST"; return 0 ;;
     'pr view')
-      if [[ "$joined" == *' isDraft '* ]]; then echo "$IS_DRAFT"; else echo 'existing body'; fi
+      if [[ "$joined" == *' isDraft '* ]]; then echo "$IS_DRAFT"; elif [[ "$joined" == *' labels '* ]]; then printf 'callisto: release\ncallisto: ready\nbump: minor\n'; else echo 'existing body'; fi
       return 0 ;;
     'pr ready') return 0 ;;
     'pr create') echo "$PR_CREATE_URL"; return 0 ;;
@@ -260,12 +261,26 @@ else
   echo 'PASS: composes the body, with the publish plan, from the preview the version command wrote'
 fi
 
+# Callisto's catalog decides the labels; the script creates and adds the applied ones and removes only applied-off ones on the PR.
+if [[ "$output" != *'--label callisto: breaking'* ]] \
+  || [[ "$output" == *'--label callisto: ready'* ]]; then
+  echo "FAIL: a new release PR carries the labels Callisto marks applied and only those: $output"
+  fail=1
+else
+  echo 'PASS: a new release PR carries the applied labels'
+fi
+
 output="$(run_case '[{"number":42,"headRefName":"callisto/version-packages","headRepository":{"nameWithOwner":"orin-dx/callisto"},"headRefOid":"0123456789abcdef0123456789abcdef01234567"}]' "$update" false)"
 if [[ "$output" != 0$'\n'* ]] \
   || [[ "$output" != *'gh label create callisto: release'* ]] \
   || [[ "$output" != *"gh api -X PATCH repos/orin-dx/callisto/git/refs/heads/callisto/version-packages -f sha=$default_new_sha -F force=true"* ]] \
   || [[ "$output" != *'gh pr edit 42'* ]] \
   || [[ "$output" != *'--add-label callisto: release'* ]] \
+  || [[ "$output" != *'gh label create callisto: breaking --color d93f0b --description A major bump or a Breaking: note'* ]] \
+  || [[ "$output" == *'gh label create callisto: ready'* ]] \
+  || [[ "$output" != *'--add-label callisto: breaking'* ]] \
+  || [[ "$output" != *'--remove-label callisto: ready'* ]] \
+  || [[ "$output" == *'--remove-label callisto: blocked'* ]] \
   || [[ "$output" == *'gh pr create'* ]] \
   || [[ "$output" == *'git push'* ]] \
   || [[ "$output" == *'nativeMatrix'* ]]; then
