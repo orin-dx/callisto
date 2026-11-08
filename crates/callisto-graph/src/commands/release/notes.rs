@@ -60,20 +60,89 @@ fn is_group_boilerplate(entry: &str) -> bool {
     entry.starts_with("- Released together with the `") || entry.starts_with("- Joined the `")
 }
 
-/// The changelog entries of a section: each `- ` bullet with its indented continuation lines.
-fn entries(section: &str) -> Vec<String> {
-    let mut entries: Vec<String> = Vec::new();
+/// The bump groups a grouped changelog section is split into, highest first.
+const GROUP_HEADINGS: [&str; 3] = ["### Major Changes", "### Minor Changes", "### Patch Changes"];
+
+fn group_of(line: &str) -> Option<usize> {
+    GROUP_HEADINGS.iter().position(|heading| *heading == line)
+}
+
+/// For each line of `text`, the bump group it opens. A group heading inside fenced code is an example, not a boundary,
+/// so the shared fence tracker decides which lines count.
+fn group_openers(text: &str) -> Vec<Option<usize>> {
+    let mut fences = crate::changelog::markdown::Fences::default();
+    text.lines()
+        .map(|line| if fences.is_code(line) { None } else { group_of(line) })
+        .collect()
+}
+
+/// The changelog entries of a section: each `- ` bullet with its indented continuation lines, and the index of the
+/// bump group it sits under (`None` in a flat section).
+fn entries(section: &str) -> Vec<(Option<usize>, String)> {
+    let mut entries: Vec<(Option<usize>, String)> = Vec::new();
+    let mut group = None;
+    let mut fences = crate::changelog::markdown::Fences::default();
     for line in section.lines() {
+        let in_code = fences.is_code(line);
+        if let Some(index) = group_of(line).filter(|_| !in_code) {
+            group = Some(index);
+            continue;
+        }
         match entries.last_mut() {
-            Some(last) if line.starts_with(' ') || line.is_empty() => {
+            Some((_, last)) if line.starts_with(' ') || line.is_empty() => {
                 last.push('\n');
                 last.push_str(line);
             }
-            _ if line.starts_with("- ") => entries.push(line.to_owned()),
+            _ if !in_code && line.starts_with("- ") => entries.push((group, line.to_owned())),
             _ => {}
         }
     }
-    entries.iter().map(|entry| entry.trim_end().to_owned()).collect()
+    entries
+        .into_iter()
+        .map(|(group, entry)| (group, entry.trim_end().to_owned()))
+        .collect()
+}
+
+/// `kept` (a grouped section) with each extra entry added to the bump group it came from. A group the section lacks is
+/// created in order, an entry from a flat mate goes under Patch, and a group left with no entry is dropped.
+fn merge_into_groups(kept: &str, extra: &[(Option<usize>, String)]) -> String {
+    let mut preamble: Vec<&str> = Vec::new();
+    let mut groups: [Vec<String>; 3] = Default::default();
+    let mut current: Option<usize> = None;
+    for (line, opens) in kept.lines().zip(group_openers(kept)) {
+        match opens {
+            Some(index) => current = Some(index),
+            None => match current {
+                Some(index) => groups[index].push(line.to_owned()),
+                None => preamble.push(line),
+            },
+        }
+    }
+    for (group, entry) in extra {
+        let body = &mut groups[group.unwrap_or(2)];
+        while body.last().is_some_and(String::is_empty) {
+            body.pop();
+        }
+        if body
+            .last()
+            .is_some_and(|last| !last.starts_with("- ") && !last.starts_with(' '))
+        {
+            body.push(String::new());
+        }
+        body.extend(entry.lines().map(str::to_owned));
+    }
+    let mut blocks: Vec<String> = Vec::new();
+    let preamble = preamble.join("\n").trim().to_owned();
+    if !preamble.is_empty() {
+        blocks.push(preamble);
+    }
+    for (heading, body) in GROUP_HEADINGS.iter().zip(&groups) {
+        let body = body.join("\n").trim().to_owned();
+        if !body.is_empty() {
+            blocks.push(format!("{heading}\n\n{body}"));
+        }
+    }
+    blocks.join("\n\n")
 }
 
 /// The section with its group boilerplate bullets removed; every other line is kept as written.
@@ -116,29 +185,32 @@ pub(crate) fn group_release_notes(
     };
     let mut seen: HashSet<String> = entries(text)
         .iter()
-        .filter_map(|entry| entry.strip_prefix("- "))
+        .filter_map(|(_, entry)| entry.strip_prefix("- "))
         .map(str::to_owned)
         .collect();
-    let mut extra = Vec::new();
+    let mut extra: Vec<(Option<usize>, String)> = Vec::new();
     for (name, member_changelog) in members {
         let Ok(section) = changelog_section(root, member_changelog, version)? else {
             continue;
         };
-        for entry in entries(&section) {
+        for (group, entry) in entries(&section) {
             let Some(body) = entry.strip_prefix("- ") else {
                 continue;
             };
             if is_group_boilerplate(&entry) || !seen.insert(body.to_owned()) {
                 continue;
             }
-            extra.push(format!("- `{name}`: {body}"));
+            extra.push((group, format!("- `{name}`: {body}")));
         }
     }
     if extra.is_empty() {
         return Ok(own);
     }
     let kept = without_boilerplate(text);
-    let extra = extra.join("\n");
+    if group_openers(&kept).iter().any(Option::is_some) {
+        return Ok(ReleaseNotes::Section(merge_into_groups(&kept, &extra)));
+    }
+    let extra = extra.into_iter().map(|(_, entry)| entry).collect::<Vec<_>>().join("\n");
     let ends_in_list = kept
         .lines()
         .last()
@@ -330,5 +402,99 @@ mod tests {
             notes,
             ReleaseNotes::Section("- Fix the parser crash.\n- `cargo/b`: Fix\n- `cargo/c`: the parser".to_owned())
         );
+    }
+
+    const GROUPED_OWNER: &str =
+        "## 1.0.0\n\n_2026-11-08_\n\n### Minor Changes\n\n- Owner feature.\n\n### Patch Changes\n\n- Owner fix.\n";
+
+    fn section(notes: ReleaseNotes) -> String {
+        match notes {
+            ReleaseNotes::Section(text) => text,
+            other => panic!("expected a section, got {other:?}"),
+        }
+    }
+
+    /// A mate's entry keeps the bump group it was recorded under: appending it to the owner's last group would file a
+    /// minor change under Patch.
+    #[test]
+    fn a_mates_minor_entry_joins_the_owners_minor_group_not_the_last_group() {
+        let mate = Some("## 1.0.0\n\n### Minor Changes\n\n- Mate feature.\n");
+        let text = section(group_notes(&[("owner", Some(GROUPED_OWNER)), ("mate", mate)]));
+        assert_eq!(
+            text,
+            "_2026-11-08_\n\n### Minor Changes\n\n- Owner feature.\n- `mate`: Mate feature.\n\n### Patch Changes\n\n- Owner fix."
+        );
+    }
+
+    #[test]
+    fn a_group_the_owner_lacks_is_created_in_order() {
+        let owner = Some("## 1.0.0\n\n### Patch Changes\n\n- Owner fix.\n");
+        let mate = Some("## 1.0.0\n\n### Major Changes\n\n- Big change.\n");
+        let text = section(group_notes(&[("owner", owner), ("mate", mate)]));
+        assert_eq!(
+            text,
+            "### Major Changes\n\n- `mate`: Big change.\n\n### Patch Changes\n\n- Owner fix."
+        );
+    }
+
+    /// The owner's Patch group held only the group boilerplate; with the boilerplate gone and nothing added to it, the
+    /// heading goes too.
+    #[test]
+    fn a_group_left_empty_by_the_boilerplate_is_dropped() {
+        let owner = Some(
+            "## 1.0.0\n\n### Minor Changes\n\n- Owner feature.\n\n### Patch Changes\n\n- Released together with the `lockstep` fixed group.\n",
+        );
+        let mate = Some("## 1.0.0\n\n### Minor Changes\n\n- Mate feature.\n");
+        let text = section(group_notes(&[("owner", owner), ("mate", mate)]));
+        assert_eq!(text, "### Minor Changes\n\n- Owner feature.\n- `mate`: Mate feature.");
+    }
+
+    #[test]
+    fn an_entry_from_a_flat_mate_goes_under_patch() {
+        let mate = Some("## 1.0.0\n\n- Flat mate entry.\n");
+        let text = section(group_notes(&[("owner", Some(GROUPED_OWNER)), ("mate", mate)]));
+        assert_eq!(
+            text,
+            "_2026-11-08_\n\n### Minor Changes\n\n- Owner feature.\n\n### Patch Changes\n\n- Owner fix.\n- `mate`: Flat mate entry."
+        );
+    }
+
+    #[test]
+    fn a_mate_entry_with_continuation_lines_keeps_them_inside_its_group() {
+        let mate = Some("## 1.0.0\n\n### Minor Changes\n\n- Mate feature.\n\n  More detail.\n");
+        let text = section(group_notes(&[("owner", Some(GROUPED_OWNER)), ("mate", mate)]));
+        assert!(
+            text.contains(
+                "### Minor Changes\n\n- Owner feature.\n- `mate`: Mate feature.\n\n  More detail.\n\n### Patch Changes"
+            ),
+            "{text}"
+        );
+    }
+
+    /// A group heading shown inside a fenced example is text, not a boundary: treating it as one would split the fence.
+    #[test]
+    fn a_group_heading_inside_a_fence_is_not_a_boundary() {
+        let owner = Some(
+            "## 1.0.0\n\n_2026-11-08_\n\n```md\n### Major Changes\n- example\n```\n\n### Minor Changes\n\n- Owner feature.\n",
+        );
+        let mate = Some("## 1.0.0\n\n### Minor Changes\n\n- Mate feature.\n");
+        let text = section(group_notes(&[("owner", owner), ("mate", mate)]));
+        assert_eq!(
+            text,
+            "_2026-11-08_\n\n```md\n### Major Changes\n- example\n```\n\n### Minor Changes\n\n- Owner feature.\n- `mate`: Mate feature."
+        );
+    }
+
+    #[test]
+    fn a_fence_inside_a_group_stays_whole_and_its_bullets_are_not_entries() {
+        let owner = Some(
+            "## 1.0.0\n\n### Minor Changes\n\n- Owner feature.\n\n```md\n### Patch Changes\n- not an entry\n```\n",
+        );
+        let mate = Some("## 1.0.0\n\n### Minor Changes\n\n- not an entry\n");
+        let text = section(group_notes(&[("owner", owner), ("mate", mate)]));
+        // The mate's entry shares text with the example bullet; only real entries make "seen", so it is added.
+        assert!(text.contains("```md\n### Patch Changes\n- not an entry\n```"), "{text}");
+        assert!(text.contains("- `mate`: not an entry"), "{text}");
+        assert!(!text.contains("### Patch Changes\n\n- `mate`"), "{text}");
     }
 }

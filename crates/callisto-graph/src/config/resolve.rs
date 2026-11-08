@@ -7,6 +7,7 @@ use callisto_model::{
     TagTemplate,
 };
 
+use crate::changelog::ChangelogLayout;
 use crate::config::groups::{GroupTable, RawGroupTable};
 use crate::config::pattern::PackagePattern;
 use crate::config::raw::{RawConfig, RawProductReleaseConfig};
@@ -18,6 +19,7 @@ pub struct ResolvedConfig {
     pub changesets_dir: PathBuf,
     pub cascade: CascadeConfig,
     pub validation: ValidationConfig,
+    pub changelog_layout: ChangelogLayout,
     pub product_release: Option<ProductReleaseConfig>,
     pub registries: BTreeMap<RegistryKey, RegistryConfig>,
     /// Per-package override rules from `[[package]]` blocks, in TOML declaration order. Every rule is
@@ -447,6 +449,17 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
         provenance.insert(ConfigKey::VALIDATION_ALLOW_EMPTY_CHANGESETS, ConfigProvenance::Explicit);
     }
 
+    let changelog_layout = match raw.changelog.unwrap_or_default().layout.as_deref() {
+        Some("grouped") | None => ChangelogLayout::Grouped,
+        Some("flat") => ChangelogLayout::Flat,
+        Some(other) => {
+            return Err(ConfigError::UnknownKey {
+                path: callisto_toml,
+                key: format!("changelog.layout = {other}"),
+            })
+        }
+    };
+
     let mut registries = BTreeMap::new();
     registries.insert(
         RegistryKey(RegistryKey::CRATES_IO.to_string()),
@@ -631,6 +644,7 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
             preserve_npm_ranges,
         },
         validation: ValidationConfig { allow_empty_changesets },
+        changelog_layout,
         product_release,
         registries,
         packages,
@@ -1435,6 +1449,28 @@ mod tests {
     fn bare_resolve(body: &str) -> ResolvedConfig {
         let raw = toml::from_str::<RawConfig>(body).expect("parse");
         resolve(Path::new("/workspace"), raw).expect("resolve")
+    }
+
+    #[test]
+    fn changelog_layout_defaults_to_grouped_and_accepts_flat() {
+        assert_eq!(bare_resolve("").changelog_layout, ChangelogLayout::Grouped);
+        assert_eq!(bare_resolve("[changelog]\n").changelog_layout, ChangelogLayout::Grouped);
+        assert_eq!(
+            bare_resolve("[changelog]\nlayout = \"grouped\"\n").changelog_layout,
+            ChangelogLayout::Grouped
+        );
+        assert_eq!(
+            bare_resolve("[changelog]\nlayout = \"flat\"\n").changelog_layout,
+            ChangelogLayout::Flat
+        );
+    }
+
+    #[test]
+    fn an_unknown_changelog_layout_or_key_is_rejected() {
+        let raw = toml::from_str::<RawConfig>("[changelog]\nlayout = \"fancy\"\n").expect("parse");
+        let error = resolve(Path::new("/workspace"), raw).unwrap_err();
+        assert!(error.to_string().contains("changelog.layout = fancy"), "{error}");
+        assert!(toml::from_str::<RawConfig>("[changelog]\ndate = true\n").is_err());
     }
 
     #[test]

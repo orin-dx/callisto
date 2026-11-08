@@ -11,6 +11,7 @@ This reference describes current keys, not the unimplemented parts of the [polyg
 | `[changesets]` | table | no | Where changesets live |
 | `[cascade]` | table | no | Dependency-bump cascade policy |
 | `[validation]` | table | no | Status/version validation policy |
+| `[changelog]` | table | no | Layout of the changelog sections `callisto version` writes |
 | `[release]` | table | no | Product binary release declaration |
 | `[registries]` | table of tables | no | Registry endpoint overrides |
 | `[[package]]` | array of tables | no | Per-package exact-match overrides |
@@ -49,6 +50,14 @@ preserve-npm-ranges = true
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `allow-empty-changesets` | bool | `false` | Allow `callisto version` to run with zero pending changesets (also settable per-invocation via `--allow-empty-changesets`) |
+
+## `[changelog]`
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `layout` | string (`"grouped"` \| `"flat"`) | `"grouped"` | `grouped` writes a date line (with a compare link when the repository is known, from `[release] forge-repository` or else the GitHub `origin` remote, and the previous version has a tag), then `### Major Changes`, `### Minor Changes` and `### Patch Changes` groups, omitting empty ones; dependency updates sit under Patch Changes. `flat` writes one bullet list under the version heading, as before layouts existed. Sections already in a changelog are never rewritten. |
+
+Example: `layout = "flat"`.
 
 ## `[release]`
 

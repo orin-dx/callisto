@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use crate::changelog::{ChangeSource, ChangelogEntry, ChangelogInput};
+use crate::changelog::{ChangeSource, ChangelogEntry, ChangelogInput, ChangelogStyle};
 use callisto_manifests::{open, OpenContext};
 use callisto_model::{BumpReason, CommandRunner, GroupKind, ManifestRole, Severity};
 
@@ -69,13 +69,82 @@ fn map_reason_to_change_source(
     }
 }
 
+/// The GitHub repository compare links point to: the configured `[release] forge-repository`, else `origin`'s. No remote
+/// or a remote that is not on github.com means no link, not an error.
+fn changelog_repository<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+) -> Option<callisto_model::GitHubRepository> {
+    ws.config
+        .product_release
+        .as_ref()
+        .and_then(|release| release.forge_repository.clone())
+        .or_else(|| {
+            crate::commands::release::optional_git_remote(&ws.root, ws.runner)
+                .ok()
+                .flatten()
+                .and_then(|remote| remote.github_repository)
+        })
+}
+
+/// `reference` as a URL path segment. A tag template may use `#`, `?` or `%`, which would turn the rest of the compare
+/// range into a fragment or a query; `/`, `@`, `+` and `:` are fine in a path and git refs use them.
+fn encode_ref(reference: &str) -> String {
+    reference.bytes().fold(String::new(), |mut out, byte| {
+        if byte.is_ascii_alphanumeric() || b"-._~/@+:".contains(&byte) {
+            out.push(char::from(byte));
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+        out
+    })
+}
+
+/// The header facts for `id`'s section. A compare link needs a known repository and a tag on the previous version.
+fn changelog_style<R: CommandRunner, D: DependencyResolver>(
+    ws: &Workspace<'_, R, D>,
+    repository: Option<&callisto_model::GitHubRepository>,
+    tags: &crate::TagIndex,
+    id: &callisto_model::PackageId,
+    from: &callisto_model::Version,
+    to: &callisto_model::Version,
+    date: Option<&str>,
+) -> ChangelogStyle {
+    let compare_url = repository
+        .zip(crate::commands::release_decision::tag_of_version(tags, id, from))
+        .map(|(repository, previous)| {
+            let next = tags.template(id).render(to);
+            format!(
+                "https://github.com/{}/compare/{}...{}",
+                repository.as_slug(),
+                encode_ref(&previous.to_string()),
+                encode_ref(&next.to_string())
+            )
+        });
+    ChangelogStyle {
+        layout: ws.config.changelog_layout,
+        date: date.map(str::to_owned),
+        compare_url,
+    }
+}
+
+/// `plan_version` with changelog sections dated `date` (`YYYY-MM-DD`); `None` leaves the date off.
 pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
     ws: &Workspace<'_, R, D>,
     inference: &I,
     opts: &VersionOptions,
 ) -> Result<VersionPlan, GraphError> {
+    plan_version_dated(ws, inference, opts, None)
+}
+
+pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
+    ws: &Workspace<'_, R, D>,
+    inference: &I,
+    opts: &VersionOptions,
+    date: Option<&str>,
+) -> Result<VersionPlan, GraphError> {
     let base_versions = ws.base_versions()?;
     let tags = ws.tags()?;
+    let repository = changelog_repository(ws);
 
     let pre_path = ws.root.join(ws.config.pre_json_path());
     let pre_text = callisto_model::strict_fs::read_optional(&pre_path).map_err(|e| GraphError::PreJsonRead {
@@ -217,6 +286,7 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
                             ),
                         });
                     ChangelogInput {
+                        style: ChangelogStyle::default(),
                         package: id.clone(),
                         from: from.clone(),
                         to: Some(to.clone()),
@@ -224,6 +294,8 @@ pub fn plan_version<R: CommandRunner, D: DependencyResolver, I: SeverityInferenc
                     }
                 }
             };
+
+            input.style = changelog_style(ws, repository.as_ref(), tags, id, &from, &to, date);
 
             if let Some(group_name) = group_check
                 .new_members

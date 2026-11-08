@@ -480,4 +480,58 @@ mod tests {
             .collect();
         assert_eq!(parent_entries, vec![std::ffi::OsString::from("CHANGELOG.md")]);
     }
+
+    const GROUPED_NEW: &str = "## 1.2.0\n\n_2026-11-08 · [compare](https://github.com/o/r/compare/a...b)_\n\n### Major Changes\n\n- Break it.\n\n### Patch Changes\n\n- Fix it.\n";
+    const FLAT_OLD: &str = "## 1.1.0\n\n- Old flat entry.\n\n## 1.0.0\n\n- First.\n";
+
+    fn read_after_prepend(existing: Option<&str>, rendered: &str) -> String {
+        let workspace = tempfile::tempdir().unwrap();
+        let root = workspace.path();
+        let path = std::path::Path::new("CHANGELOG.md");
+        if let Some(existing) = existing {
+            fs::write(root.join(path), existing).unwrap();
+        }
+        prepend(root, path, "my-pkg", rendered, &permit()).unwrap();
+        fs::read_to_string(root.join(path)).unwrap()
+    }
+
+    #[test]
+    fn prepend_puts_a_grouped_section_above_an_existing_flat_changelog() {
+        let result = read_after_prepend(Some(&format!("# my-pkg\n\n{FLAT_OLD}")), GROUPED_NEW);
+        assert_eq!(result, format!("# my-pkg\n\n{GROUPED_NEW}\n{FLAT_OLD}"));
+    }
+
+    #[test]
+    fn prepend_puts_a_flat_section_above_an_existing_grouped_changelog() {
+        let flat_new = "## 1.3.0\n\n- Flat again.\n";
+        let result = read_after_prepend(Some(&format!("# my-pkg\n\n{GROUPED_NEW}")), flat_new);
+        assert_eq!(result, format!("# my-pkg\n\n{flat_new}\n{GROUPED_NEW}"));
+    }
+
+    /// A rerun of an already-written version is skipped in both layouts; the `###` lines are never mistaken for it.
+    #[test]
+    fn prepend_skips_a_version_already_present_in_either_layout() {
+        let grouped = format!("# my-pkg\n\n{GROUPED_NEW}\n{FLAT_OLD}");
+        assert_eq!(read_after_prepend(Some(&grouped), GROUPED_NEW), grouped);
+        let dup_of_flat = "## 1.1.0\n\n_2026-11-08_\n\n### Patch Changes\n\n- Again.\n";
+        assert_eq!(read_after_prepend(Some(&grouped), dup_of_flat), grouped);
+    }
+
+    #[test]
+    fn prepend_creates_a_changelog_from_a_grouped_section() {
+        let result = read_after_prepend(None, GROUPED_NEW);
+        assert_eq!(result, format!("# my-pkg\n\n{GROUPED_NEW}\n"));
+    }
+
+    #[test]
+    fn find_section_returns_a_whole_grouped_section_and_stops_at_the_next_version() {
+        let changelog = format!("# my-pkg\n\n{GROUPED_NEW}\n{FLAT_OLD}");
+        let v = |s: &str| Version::parse(s, VersionGrammar::SemVer).unwrap();
+        let section = find_section(&changelog, &v("1.2.0")).unwrap();
+        assert_eq!(section, GROUPED_NEW.strip_prefix("## 1.2.0\n\n").unwrap().trim());
+        assert!(section.starts_with("_2026-11-08"));
+        assert!(section.contains("### Major Changes") && section.contains("### Patch Changes"));
+        assert_eq!(extract_section(&changelog, &v("1.2.0")), Some(section));
+        assert_eq!(find_section(&changelog, &v("1.1.0")), Some("- Old flat entry."));
+    }
 }

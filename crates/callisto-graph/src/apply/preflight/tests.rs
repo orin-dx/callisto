@@ -122,6 +122,7 @@ fn a_changelog_may_be_created_but_a_changeset_removal_only_needs_a_clean_path() 
         changelog_writes: vec![crate::plan::ChangelogWrite {
             changelog_path: PathBuf::from("docs/CHANGELOG.md"),
             input: crate::changelog::ChangelogInput {
+                style: Default::default(),
                 package: PackageId::parse("cargo:demo").unwrap(),
                 from: version("1.0.0"),
                 to: Some(version("1.1.0")),

@@ -1805,3 +1805,132 @@ fn plan_version_new_group_member_entry_is_additive_after_cascade_union() {
         crate::changelog::ChangeSource::NewGroupMember { .. }
     ));
 }
+
+/// Commits a `pkg-a` at 1.0.0 with one minor changeset, an optional `callisto.toml` and an optional tag on 1.0.0.
+fn style_repo(root: &Path, config: Option<&str>, tag_name: Option<&str>) {
+    git_init_with_commit(root);
+    write_pkg_a(root, "1.0.0");
+    if let Some(config) = config {
+        std::fs::write(root.join("callisto.toml"), config).unwrap();
+    }
+    commit_all(root, "add pkg-a");
+    if let Some(tag_name) = tag_name {
+        tag(root, tag_name);
+    }
+    write_changeset(root, "a.md");
+    commit_all(root, "cs");
+}
+
+fn planned_style(root: &Path, date: Option<&str>) -> crate::changelog::ChangelogStyle {
+    let locator = IgnoreWalkLocator::new(root);
+    let runner = GitRunner;
+    let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+    let opts = VersionOptions {
+        strict: false,
+        allow_empty_changesets: false,
+    };
+    let plan = super::plan_version_dated(&ws, &NoInference, &opts, date).expect("plan must succeed");
+    plan.changelog_writes
+        .into_iter()
+        .next()
+        .expect("pkg-a has a changelog write")
+        .input
+        .style
+}
+
+const RELEASE_CONFIG: &str = "[release]\nproduct-package = \"cargo/pkg-a\"\nforge-repository = \"acme/widgets\"\n\
+                                  [[release.artifact]]\npackage = \"cargo/pkg-a\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"pkg-a\"\n";
+
+#[test]
+fn plan_version_links_the_compare_range_when_repository_and_previous_tag_are_known() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    style_repo(root, Some(RELEASE_CONFIG), Some("pkg-a@1.0.0"));
+    let style = planned_style(root, Some("2026-11-08"));
+    assert_eq!(style.layout, crate::changelog::ChangelogLayout::Grouped);
+    assert_eq!(style.date.as_deref(), Some("2026-11-08"));
+    assert_eq!(
+        style.compare_url.as_deref(),
+        Some("https://github.com/acme/widgets/compare/pkg-a@1.0.0...pkg-a@1.1.0")
+    );
+}
+
+/// The first release of a package has no previous tag, so there is nothing to compare against.
+#[test]
+fn plan_version_omits_the_compare_link_without_a_previous_tag() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    style_repo(root, Some(RELEASE_CONFIG), None);
+    assert_eq!(planned_style(root, Some("2026-11-08")).compare_url, None);
+}
+
+#[test]
+fn plan_version_omits_the_compare_link_without_a_known_repository() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    style_repo(root, None, Some("pkg-a@1.0.0"));
+    let style = planned_style(root, Some("2026-11-08"));
+    assert_eq!(style.compare_url, None);
+    assert_eq!(style.date.as_deref(), Some("2026-11-08"));
+}
+
+/// Without a `[release]` table the compare link points at `origin`, so a repository need not declare artifacts for it.
+#[test]
+fn plan_version_links_the_compare_range_to_origin_when_no_repository_is_configured() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    style_repo(root, None, Some("pkg-a@1.0.0"));
+    let status = std::process::Command::new("git")
+        .args(["remote", "add", "origin", "https://github.com/acme/widgets.git"])
+        .current_dir(root)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    assert_eq!(
+        planned_style(root, Some("2026-11-08")).compare_url.as_deref(),
+        Some("https://github.com/acme/widgets/compare/pkg-a@1.0.0...pkg-a@1.1.0")
+    );
+}
+
+#[test]
+fn a_tag_ref_is_percent_encoded_in_the_compare_url() {
+    use super::encode_ref;
+    assert_eq!(encode_ref("pkg-a@1.0.0"), "pkg-a@1.0.0");
+    assert_eq!(encode_ref("release/v1+build:2"), "release/v1+build:2");
+    assert_eq!(encode_ref("release#1.0.0"), "release%231.0.0");
+    assert_eq!(encode_ref("a?b c%d"), "a%3Fb%20c%25d");
+    assert_eq!(encode_ref("café"), "caf%C3%A9");
+}
+
+/// A tag template containing `#` must not turn the compare range into a URL fragment.
+#[test]
+fn plan_version_links_a_hash_in_a_tag_template_as_an_encoded_ref() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let config =
+        format!("{RELEASE_CONFIG}[[package]]\nmatch = \"cargo/pkg-a\"\ntag-template = \"release#{{version}}\"\n");
+    style_repo(root, Some(&config), Some("release#1.0.0"));
+    assert_eq!(
+        planned_style(root, Some("2026-11-08")).compare_url.as_deref(),
+        Some("https://github.com/acme/widgets/compare/release%231.0.0...release%231.1.0")
+    );
+}
+
+#[test]
+fn plan_version_without_a_date_leaves_the_date_off() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    style_repo(root, None, None);
+    assert_eq!(planned_style(root, None).date, None);
+}
+
+#[test]
+fn plan_version_takes_the_flat_layout_from_config() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    style_repo(root, Some("[changelog]\nlayout = \"flat\"\n"), None);
+    assert_eq!(
+        planned_style(root, Some("2026-11-08")).layout,
+        crate::changelog::ChangelogLayout::Flat
+    );
+}

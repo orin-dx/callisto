@@ -364,6 +364,7 @@ where
                     .changelog_inputs
                     .entry(canonical_id.clone())
                     .or_insert_with(|| ChangelogInput {
+                        style: Default::default(),
                         package: canonical_id.clone(),
                         from: pkg_ver,
                         to: None,

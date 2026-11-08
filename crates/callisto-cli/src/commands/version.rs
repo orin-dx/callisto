@@ -32,7 +32,7 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
         allow_empty_changesets: args.allow_empty_changesets,
     };
 
-    let plan = callisto_graph::commands::plan_version(&ws, &inference, &opts)?;
+    let plan = callisto_graph::commands::plan_version_dated(&ws, &inference, &opts, Some(&today_utc()))?;
 
     // Refuses when disk already shows a bump HEAD lacks while release inputs or staged version state remain.
     callisto_graph::commands::check_partial_run(&ws)?;
@@ -115,9 +115,43 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
     }
 }
 
+/// Today's UTC date as `YYYY-MM-DD`.
+fn today_utc() -> String {
+    let seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs());
+    utc_date(i64::try_from(seconds / 86_400).unwrap_or(0))
+}
+
+/// Howard Hinnant's civil-from-days: the proleptic Gregorian date of a day count since 1970-01-01.
+fn utc_date(days: i64) -> String {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let day_of_era = z - era * 146_097;
+    let year_of_era = (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let shifted_month = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * shifted_month + 2) / 5 + 1;
+    let month = if shifted_month < 10 {
+        shifted_month + 3
+    } else {
+        shifted_month - 9
+    };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+
+    #[test]
+    fn utc_date_matches_known_days() {
+        assert_eq!(super::utc_date(0), "1970-01-01");
+        assert_eq!(super::utc_date(59), "1970-03-01");
+        assert_eq!(super::utc_date(11_016), "2000-02-29");
+        assert_eq!(super::utc_date(20_765), "2026-11-08");
+    }
 
     use callisto_graph::commands::{plan_version, VersionOptions};
     use callisto_graph::infer::NoInference;
