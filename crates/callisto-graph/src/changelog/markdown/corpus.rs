@@ -98,6 +98,13 @@ const CASES: &[Case] = &[
         markers: &[],
     },
     Case {
+        name: "a marker right under a heading",
+        text: "## Migration\nBreaking: removes the old API.",
+        code: &[],
+        headings: &[(0, 2)],
+        markers: &[(MarkerKind::Breaking, "removes the old API.")],
+    },
+    Case {
         name: "CRLF line endings",
         text: "```\r\n# x\r\n```\r\n## Real",
         code: &[0, 1, 2],

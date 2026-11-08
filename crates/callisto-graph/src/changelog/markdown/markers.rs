@@ -31,7 +31,7 @@ pub(crate) fn extract_markers(summary: &str) -> Vec<Marker> {
     let mut fences = Fences::default();
     let mut paragraph: Vec<&str> = Vec::new();
     for line in summary.lines() {
-        let skipped = fences.is_code(line) || line.trim().is_empty();
+        let skipped = fences.is_code(line) || line.trim().is_empty() || atx_level(line).is_some();
         if skipped || ends_paragraph(&paragraph, line) {
             markers.extend(marker_of(&paragraph));
             paragraph.clear();
@@ -78,6 +78,20 @@ mod tests {
 
     fn one(kind: MarkerKind, text: &str) -> Vec<(MarkerKind, String)> {
         vec![(kind, text.to_owned())]
+    }
+
+    #[test]
+    fn a_marker_right_under_a_heading_is_found() {
+        assert_eq!(
+            found("## Migration\nBreaking: removes the old API."),
+            one(Breaking, "removes the old API.")
+        );
+        assert_eq!(found("# Notes\nAction: re-run init.\n"), one(Action, "re-run init."));
+        assert_eq!(
+            found("Breaking: a\n## Heading\nAction: b"),
+            [(Breaking, "a".to_owned()), (Action, "b".to_owned())]
+        );
+        assert_eq!(found("## Migration\nJust text."), []);
     }
 
     #[test]

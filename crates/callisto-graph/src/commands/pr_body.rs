@@ -193,7 +193,8 @@ fn render_pr_body(notes: &ReleasePreview, opts: &PrBodyOptions) -> String {
 
     if notes.packages.is_empty() {
         body.push_str("> [!NOTE]\n");
-        body.push_str("> **No pending changesets found.** Workspace packages are currently up to date.\n\n");
+        body.push_str("> **No pending changesets found.** No package is queued for versioning.\n\n");
+        body.push_str(&attention(&notes.findings));
         body.push_str(&workflow_instructions(branch));
         return body;
     }
@@ -487,6 +488,37 @@ mod tests {
             diagnostics: vec![],
         };
         build_release_preview(&plan)
+    }
+
+    #[test]
+    fn an_empty_plan_still_says_which_packages_changed_without_a_release() {
+        use crate::release_preview::UnreleasedChange;
+        let plan = VersionPlan {
+            bumps: vec![],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: vec![],
+            consumed_changesets: vec![],
+            pre_state_update: None,
+            pre_json_path: std::path::PathBuf::new(),
+            pre_json_original_text: None,
+            delete_pre_json: None,
+            diagnostics: vec![],
+        };
+        let preview = build_release_preview(&plan).with_unreleased(vec![UnreleasedChange {
+            package: "other".to_owned(),
+            files: 2,
+        }]);
+
+        let body = render_pr_body_from_preview(&preview, &PrBodyOptions::default()).body;
+
+        assert!(body.contains("**No pending changesets found.**"), "{body}");
+        assert!(
+            !body.contains("up to date"),
+            "it must not claim there is nothing to release: {body}"
+        );
+        assert!(body.contains("> - **Changed, not releasing** (`other`)"), "{body}");
     }
 
     #[test]

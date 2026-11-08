@@ -158,24 +158,51 @@ fn exclude_pathspec(pattern: &str) -> String {
     }
 }
 
-/// Packages with a changed source file that nothing releases: no pending changeset names them (`covered`), and no member
-/// of their fixed or linked group is covered, since a group moves together.
+/// Whether `id` is released with `covered`: it is covered itself, or a member of its fixed or linked group is, since a
+/// group moves together.
+pub fn is_covered(id: &PackageId, covered: &BTreeSet<PackageId>, groups: &GroupTable) -> bool {
+    covered.contains(id)
+        || [(&groups.fixed_of, &groups.fixed), (&groups.linked_of, &groups.linked)]
+            .into_iter()
+            .filter_map(|(of, defs)| of.get(id).and_then(|name| defs.get(name)))
+            .any(|group| group.package_members().any(|member| covered.contains(member)))
+}
+
+/// Packages with a changed source file that nothing releases: not [covered](is_covered).
 pub fn uncovered_changes(
     changed: &BTreeMap<PackageId, Vec<PathBuf>>,
     covered: &BTreeSet<PackageId>,
     groups: &GroupTable,
 ) -> Vec<PackageId> {
-    let group_covered = |id: &PackageId| {
-        [(&groups.fixed_of, &groups.fixed), (&groups.linked_of, &groups.linked)]
-            .into_iter()
-            .filter_map(|(of, defs)| of.get(id).and_then(|name| defs.get(name)))
-            .any(|group| group.package_members().any(|member| covered.contains(member)))
-    };
     changed
         .iter()
-        .filter(|(id, files)| !files.is_empty() && !covered.contains(*id) && !group_covered(id))
+        .filter(|(id, files)| !files.is_empty() && !is_covered(id, covered, groups))
         .map(|(id, _)| id.clone())
         .collect()
+}
+
+/// The changed source files of the packages in `packages` that nothing releases, without a git process per package.
+/// Covered packages are skipped outright, whether or not they changed; the rest are told apart by tree id in a fixed
+/// number of processes, and only a package that really changed pays for its own file listing.
+pub fn changed_source_files_of_uncovered(
+    packages: &[&Package],
+    tags: &TagIndex,
+    git: &GitAccess<'_>,
+    covered: &BTreeSet<PackageId>,
+    groups: &GroupTable,
+    ignore: &[&str],
+) -> Result<BTreeMap<PackageId, Vec<PathBuf>>, GraphError> {
+    let candidates: Vec<&Package> = packages
+        .iter()
+        .copied()
+        .filter(|package| !is_covered(&package.id, covered, groups))
+        .collect();
+    let touched = changed_since_last_tag(&candidates, tags, git)?;
+    let changed: Vec<&Package> = candidates
+        .into_iter()
+        .filter(|package| touched.get(&package.id).copied().unwrap_or(false))
+        .collect();
+    changed_source_files_since_last_tag(&changed, tags, git, ignore)
 }
 
 /// Which packages a path belongs to: those with a spec that is an ancestor directory of it, and those with the `.`
@@ -536,6 +563,79 @@ mod tests {
             .iter()
             .map(|p| p.to_string_lossy().into_owned())
             .collect()
+    }
+
+    /// A repo whose `count` packages `pkg-0`.. are each tagged `<pkg>@1.0.0`, plus the packages themselves.
+    fn tagged_repo_of(count: usize) -> (tempfile::TempDir, Vec<Package>) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        init_repo(root);
+        let names: Vec<String> = (0..count).map(|index| format!("pkg-{index}")).collect();
+        for name in &names {
+            write(root, &format!("{name}/Cargo.toml"), "[package]\n");
+            write(root, &format!("{name}/src/lib.rs"), "\n");
+        }
+        commit(root, "README.md", "r\n", "chore: init");
+        for name in &names {
+            run_git(root, &["tag", "-a", "-m", "release", &format!("{name}@1.0.0")]);
+        }
+        let packages = names.iter().map(|name| make_pkg(name)).collect();
+        (dir, packages)
+    }
+
+    /// The uncovered changed files of `pkgs` and how many git processes finding them started.
+    fn uncovered_files(
+        root: &Path,
+        pkgs: &[Package],
+        covered: &BTreeSet<PackageId>,
+    ) -> (BTreeMap<PackageId, Vec<PathBuf>>, usize) {
+        let graph = FixedGraph { pkgs: pkgs.to_vec() };
+        let cfg = crate::config::load(root).unwrap();
+        let runner = RecordingGit {
+            calls: Mutex::new(Vec::new()),
+        };
+        let git = GitAccess::new(root, &runner);
+        let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
+        let before = runner.calls.lock().unwrap().len();
+        let refs: Vec<&Package> = pkgs.iter().collect();
+        let files =
+            changed_source_files_of_uncovered(&refs, &tags, &git, covered, &Default::default(), DEFAULT_IGNORED_PATHS)
+                .unwrap();
+        let used = runner.calls.lock().unwrap().len() - before;
+        (files, used)
+    }
+
+    /// AGENTS.md: a change that adds a git process per package fails review. Unchanged packages must cost nothing extra.
+    #[test]
+    fn unchanged_packages_add_no_git_processes() {
+        let (small_dir, small) = tagged_repo_of(3);
+        let (large_dir, large) = tagged_repo_of(24);
+
+        let (small_files, small_calls) = uncovered_files(small_dir.path(), &small, &BTreeSet::new());
+        let (large_files, large_calls) = uncovered_files(large_dir.path(), &large, &BTreeSet::new());
+
+        assert!(small_files.is_empty() && large_files.is_empty());
+        assert_eq!(small_calls, large_calls, "the cost grew with the package count");
+    }
+
+    #[test]
+    fn only_an_uncovered_package_that_changed_pays_for_a_file_listing() {
+        let (dir, pkgs) = tagged_repo_of(6);
+        let root = dir.path();
+        commit(root, "pkg-2/src/lib.rs", "changed\n", "feat: two");
+        commit(root, "pkg-4/src/lib.rs", "changed\n", "feat: four");
+        let covered: BTreeSet<PackageId> = [id("pkg-4")].into_iter().collect();
+
+        let (files, calls) = uncovered_files(root, &pkgs, &covered);
+        let (none, base_calls) = uncovered_files(tagged_repo_of(6).0.path(), &pkgs, &covered);
+
+        assert_eq!(files.keys().collect::<Vec<_>>(), [&id("pkg-2")]);
+        assert!(none.is_empty());
+        assert_eq!(
+            calls,
+            base_calls + 1,
+            "one more process, for the one changed uncovered package"
+        );
     }
 
     #[test]

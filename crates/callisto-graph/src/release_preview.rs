@@ -7,7 +7,7 @@ use callisto_model::{BumpReason, ManifestFormat, PackageId, Severity};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::changed::{changed_source_files_since_last_tag, uncovered_changes, DEFAULT_IGNORED_PATHS};
+use crate::changed::{changed_source_files_of_uncovered, uncovered_changes, DEFAULT_IGNORED_PATHS};
 use crate::changelog::markdown::{extract_markers, MarkerKind};
 use crate::changelog::ChangeSource;
 use crate::commands::LocalReleasePlan;
@@ -468,9 +468,15 @@ pub fn unreleased_changes<R: callisto_model::CommandRunner, D: crate::resolver::
         .packages()
         .filter(|package| crate::commands::release_decision::has_dispatchable_target(package))
         .collect();
-    let changed =
-        changed_source_files_since_last_tag(&publishable, ws.tags()?, ws.git_access(), DEFAULT_IGNORED_PATHS)?;
     let bumped: std::collections::BTreeSet<PackageId> = plan.bumps.iter().map(|bump| bump.package.clone()).collect();
+    let changed = changed_source_files_of_uncovered(
+        &publishable,
+        ws.tags()?,
+        ws.git_access(),
+        &bumped,
+        &ws.config.groups,
+        DEFAULT_IGNORED_PATHS,
+    )?;
     Ok(uncovered_changes(&changed, &bumped, &ws.config.groups)
         .into_iter()
         .map(|id| UnreleasedChange {
