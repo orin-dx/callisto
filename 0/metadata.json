@@ -1,0 +1,95 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6WRJAQ8481CHMJTBMYQHS8Y",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-08T05:02:29.511053Z",
+  "branch": "feat/pr-body-attention",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/changed.rs",
+    "crates/callisto-graph/src/changelog/markdown/markers.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "a1388f5067fc",
+  "checkpoint_transcript_start": 26012,
+  "transcript_lines_at_start": 26012,
+  "compact_transcript_start": 1901,
+  "token_usage": {
+    "input_tokens": 72,
+    "cache_creation_tokens": 69613,
+    "cache_read_tokens": 25753460,
+    "output_tokens": 31602,
+    "api_call_count": 35,
+    "subagent_tokens": {
+      "input_tokens": 14,
+      "cache_creation_tokens": 15359,
+      "cache_read_tokens": 1280897,
+      "output_tokens": 4403,
+      "api_call_count": 7
+    }
+  },
+  "redaction": {
+    "replacements": 62,
+    "layers": {
+      "betterleaks": 22,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 36,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 163
+  },
+  "summary": {
+    "intent": "Review and ship the work of two delegated subagents (grouped changelog layout and CLI I/O consolidation) as clean, signed, independent PRs off main, alongside an existing marker/unreleased-callout PR.",
+    "outcome": "Opened three signed, pairwise conflict-free PRs (#473, #474, #475) after reviewing the agents' diffs, fixing a release-notes grouping bug and the compare-link repository fallback, and running full verification by exit code; CI and GitHub reviews are pending.",
+    "learnings": {
+      "repo": [
+        "Changes ship via clean worktrees off origin/main with one branch per PR; agent worktrees are copied in file-by-file, then verified with a verify.sh (pre-push, lint, doc-check, test, workflow contract scripts).",
+        "The repo uses a fixed release group, so release/notes.rs merging mates' entries affects the project's own releases.",
+        "Docs, the versioning spec (docs/specs/versioning.json, criterion VER-APPLY-07A), docs/architecture/versioning.md, docs/config.md and the changeset all state the compare-link rule and must be kept in sync with code.",
+        "ChangelogStyle defaults to flat (Default::default()) so older ChangelogInput literals compile, while the configured default is grouped; new code building a ChangelogInput must set style explicitly.",
+        "Commits must be signed; signature validity is checked via gh api commits/<sha> verification.reason.",
+        "Network-dependent tests (native_resolution_e2e_tests uv lock, lifecycle_e2e polyglot) fail in the agent sandbox but pass in the normal environment."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release/notes.rs",
+          "finding": "Fixed-group mates' entries were appended flat under the owner's last heading, putting a Minor entry under Patch; fixed by merging per bump group, trimming trailing blanks and only inserting a blank line after non-bullet lines."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/version.rs",
+          "finding": "plan_version delegates to plan_version_dated(.., date: Option<&str>) to avoid adding a field to ~15 VersionOptions literals; the repository for the compare link now falls back to the origin remote via optional_git_remote, computed once per plan next to tags."
+        }
+      ],
+      "workflow": [
+        "Subagent hand-back reports should be re-verified in a clean worktree; their sandbox limits (no network) hide failures and their claimed deviations need diff review.",
+        "Mutation checks (reverting logic and confirming the right tests fail) are a useful confirmation that new tests are meaningful.",
+        "Run pairwise merge-conflict tests across independent PRs before they all land.",
+        "Python helper scripts run with -I from a separate tmp dir to apply multi-line edits; cargo fmt can reflow inserted blocks, so re-read the code before patching again."
+      ]
+    },
+    "friction": [
+      "The subagent's sandbox denied github.com, crates.io and npm, so 3 network tests could not run and were not confirmed on main.",
+      "notes.rs was off-limits to the subagent, so the release-notes bug had no permanent test until the reviewer added one.",
+      "The script patching notes.rs broke after cargo fmt reflowed the block, requiring a re-read and a re-patch.",
+      "The compare link originally appeared only with a [release] table plus an artifact, so docs and changeset were stale after the fallback fix and needed correcting in several places.",
+      "The classifier refused cleanup of remote branches and old worktree directories, leaving them to the user."
+    ],
+    "open_items": [
+      "Labels work needs #473 merged first because it reads its findings.",
+      "The preview path rule (--emit-preview and --preview relative to --cwd) waits for #475.",
+      "Ten remote branches with unmerged commits (tips recorded in plans/archive/remote-branch-tips-2026-11-08.txt) need user cleanup.",
+      "About 14 old directories under .claude/worktrees/ that git no longer lists need removal, and the user's main checkout needs pulling.",
+      "Unverified: a real release run with a real tag and repository, and tags needing percent-encoding in the compare URL.",
+      "CI and GitHub reviews are pending on all three PRs; worktrees agents-verify, changelog-layout and cli-io should be removed as each PR merges; suggested merge order is #473, #474, #475."
+    ]
+  }
+}
