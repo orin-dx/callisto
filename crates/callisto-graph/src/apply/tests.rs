@@ -2097,6 +2097,7 @@ fn snapshot_transient_mode_mutates_manifests_but_suppresses_changelogs_changeset
         changelog_writes: vec![crate::plan::ChangelogWrite {
             changelog_path: PathBuf::from("CHANGELOG.md"),
             input: crate::changelog::ChangelogInput {
+                style: Default::default(),
                 package: pkg,
                 from: cargo_version("1.0.0"),
                 to: Some(cargo_version("0.0.0-snapshot-abc1234")),

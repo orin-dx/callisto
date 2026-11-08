@@ -258,6 +258,10 @@
       "criterion": "A changelog section lists each changeset summary as a bullet (nonblank continuation lines indented and blank lines empty), an inferred bump as a commit subject with its short sha, a group bump as \"Released together with the `{group}` {fixed|linked} group.\", a new fixed-group member as \"Joined the `{group}` group at this version.\", a peer escalation as \"Peer dependency `{dep}` requires `{version}`\", and cascaded bumps as \"`{dep}` → `{version}`\" lines under a \"Dependency updates\" bullet."
     },
     {
+      "id": "VER-APPLY-07A",
+      "criterion": "With `[changelog] layout = \"grouped\"` (the default) a section is the `## {version}` heading, a line `_{YYYY-MM-DD}_` (UTC date of the run) that gains ` · [compare]({url})` only when a GitHub repository is known (`[release] forge-repository`, else the `origin` remote) and the previous version has a tag (a package's first release has no link), then `### Major Changes`, `### Minor Changes` and `### Patch Changes` groups in that order, each holding its entries in changeset order and omitted when it has none; dependency updates sit under Patch Changes. With `layout = \"flat\"` the section is the heading and one bullet list, with no date line or groups, exactly as before layouts existed. Any other `layout` value is a configuration error. A rerun, `find_section` and the release notes read both layouts through the `## {version}` heading alone, and a section is added above an existing changelog of either layout."
+    },
+    {
       "id": "VER-APPLY-08",
       "criterion": "`version` refreshes affected lockfiles and stages written manifests, changelogs, `pre.json` changes and existing lockfiles before consuming release inputs; in pre mode it consumes no changesets. It stages consumed changeset and `pre.json` deletions via `git rm --cached --ignore-unmatch` before unlinking those files from disk. If refresh, generated-state staging or input-deletion staging fails, changesets and pre-state deletion inputs remain on disk for retry."
     },

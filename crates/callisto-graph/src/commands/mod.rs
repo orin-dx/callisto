@@ -31,7 +31,7 @@ pub use release_decision::{derive_release_commit_decision, derive_release_decisi
 pub use release_execution::execute_release;
 pub use snapshot::plan_snapshot;
 pub use status::{status, StatusOptions};
-pub use version::{check_partial_run, plan_version, VersionOptions};
+pub use version::{check_partial_run, plan_version, plan_version_dated, VersionOptions};
 
 pub fn escalate(diagnostics: &mut [Diagnostic], strict: bool) {
     for d in diagnostics {

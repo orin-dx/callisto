@@ -7,6 +7,7 @@ pub struct RawConfig {
     pub changesets: Option<RawChangesetsConfig>,
     pub cascade: Option<RawCascadeConfig>,
     pub validation: Option<RawValidationConfig>,
+    pub changelog: Option<RawChangelogConfig>,
     pub release: Option<RawProductReleaseConfig>,
     pub registries: Option<BTreeMap<String, RawRegistryConfig>>,
     pub package: Option<Vec<RawPackageConfig>>,
@@ -68,6 +69,12 @@ pub struct RawCascadeConfig {
     pub peer_escalation: Option<bool>,
     #[serde(rename = "preserve-npm-ranges")]
     pub preserve_npm_ranges: Option<bool>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawChangelogConfig {
+    pub layout: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

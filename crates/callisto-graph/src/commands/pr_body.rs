@@ -549,6 +549,7 @@ mod tests {
             let write = crate::plan::ChangelogWrite {
                 changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
                 input: crate::changelog::ChangelogInput {
+                    style: Default::default(),
                     package,
                     from: Version::semver(1, 0, 0),
                     to: Some(Version::semver(2, 0, 0)),
@@ -821,6 +822,7 @@ mod tests {
         };
 
         let input = crate::changelog::ChangelogInput {
+            style: Default::default(),
             package: pkg_a.clone(),
             from: Version::semver(1, 0, 0),
             to: Some(Version::semver(1, 1, 0)),
@@ -906,6 +908,7 @@ mod tests {
         };
 
         let good_input = crate::changelog::ChangelogInput {
+            style: Default::default(),
             package: pkg_b.clone(),
             from: Version::semver(1, 0, 0),
             to: Some(Version::semver(1, 0, 1)),
@@ -928,6 +931,7 @@ mod tests {
                 crate::plan::ChangelogWrite {
                     changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
                     input: crate::changelog::ChangelogInput {
+                        style: Default::default(),
                         package: pkg_a.clone(),
                         from: Version::semver(1, 0, 0),
                         to: Some(Version::semver(1, 1, 0)),
@@ -990,6 +994,7 @@ mod tests {
             changelog_writes: vec![crate::plan::ChangelogWrite {
                 changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
                 input: crate::changelog::ChangelogInput {
+                    style: Default::default(),
                     package: pkg_a.clone(),
                     from: Version::semver(1, 0, 0),
                     to: Some(Version::semver(1, 1, 0)),
@@ -1038,6 +1043,7 @@ mod tests {
             changelog_writes: vec![crate::plan::ChangelogWrite {
                 changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
                 input: crate::changelog::ChangelogInput {
+                    style: Default::default(),
                     package: pkg_a.clone(),
                     from: Version::semver(1, 0, 0),
                     to: Some(Version::semver(1, 1, 0)),
@@ -1075,6 +1081,7 @@ mod tests {
         let make_write = |package: PackageId| crate::plan::ChangelogWrite {
             changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
             input: crate::changelog::ChangelogInput {
+                style: Default::default(),
                 package: package.clone(),
                 from: Version::semver(1, 0, 0),
                 to: Some(Version::semver(1, 1, 0)),
@@ -1229,6 +1236,7 @@ mod tests {
             changelog_writes: vec![crate::plan::ChangelogWrite {
                 changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
                 input: crate::changelog::ChangelogInput {
+                    style: Default::default(),
                     package: pkg_a.clone(),
                     from: Version::semver(1, 0, 0),
                     to: Some(Version::semver(1, 1, 0)),

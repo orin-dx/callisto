@@ -7,6 +7,6 @@ pub mod render;
 pub mod write;
 
 pub use error::ChangelogError;
-pub use input::{ChangeSource, ChangelogEntry, ChangelogInput};
+pub use input::{ChangeSource, ChangelogEntry, ChangelogInput, ChangelogLayout, ChangelogStyle};
 pub use render::render_section;
 pub use write::{extract_section, find_section, prepend};
