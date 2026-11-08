@@ -1,0 +1,108 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6WQ7B4SSW0E32CQKVPXFD26",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-08T04:39:04.204507Z",
+  "branch": "feat/pr-body-attention",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "crates/callisto-graph/src/changelog/markdown/markers.rs",
+    "crates/callisto-graph/src/changelog/markdown/mod.rs",
+    "docs/architecture/versioning.md",
+    "docs/specs/versioning.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "fbac667572d3",
+  "checkpoint_transcript_start": 25045,
+  "transcript_lines_at_start": 25045,
+  "compact_transcript_start": 1831,
+  "token_usage": {
+    "input_tokens": 90,
+    "cache_creation_tokens": 703837,
+    "cache_read_tokens": 28088196,
+    "output_tokens": 53629,
+    "api_call_count": 45,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 62,
+    "layers": {
+      "betterleaks": 22,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 36,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 160
+  },
+  "summary": {
+    "intent": "Repair the broken pre-push hook chain, land an AGENTS.md docs PR, then continue the PR-body redesign: clean up merged worktrees and branches, wire markers and the not-releasing list into the PR body, and start the CLI I/O consolidation and grouped changelog work.",
+    "outcome": "The pre-push hook chain was repaired and tested both ways, and docs PR #472 merged along with #470. Stale worktrees and merged branches were cleaned up. The `feat/pr-body-attention` wiring was built with passing tests and mutation checks, and a full verify run was started. The CLI io and changelog agents were launched, and the final verify result is not shown in the transcript.",
+    "learnings": {
+      "repo": [
+        "Entire's `pre-push.pre-entire` wrapper chains to `pre-push.pre-entire.pre-entire-brain`. That file was missing, so `just pre-push` never ran on push. Copying the original hook to that name fixed it without disabling Entire's checkpoint push.",
+        "Re-running `just hooks` would overwrite Entire's pre-push wrapper and switch off its checkpoint push, which the user wants kept.",
+        "AGENTS.md verification rules: run `just pre-push && just lint && just doc-check && just test`, run `just ci` before marking ready, judge success by exit code and never by grepping, and sign all commits without `-c commit.gpgsign=false`. After pushing, `verification.reason` must be `valid`.",
+        "The uncovered-changes detector's `covered` input must be the plan's bumped packages, not only changeset names. Otherwise cascade-bumped packages show up as false positives.",
+        "The graph crate has 1074 lib tests, and `emit_preview_tests` in callisto-cli checks that the release preview equals the plan.",
+        "Wiring the attention feature touches `release_preview.rs` and `pr_body.rs`, so these changes should land one PR at a time rather than stacked.",
+        "Branches `chore/routine-crates-update`, `docs/next-work-plan`, `docs/spec-rewrite`, `feat/read-tag-hints`, `fix/native-resolution`, `fix/operation-id-display`, `fix/publish-output-visible`, `perf/parallel-history` and `stack/docs-v1` carry commits that exist nowhere else on origin. Their tips were recorded to `.claude/plans/archive/remote-branch-tips-2026-11-08.txt`."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/release_preview.rs",
+          "line": 183,
+          "end_line": 198,
+          "finding": "In the struct initializer, `changes` was moved before the `findings` expression borrowed it. The fix was to compute `findings` first."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/version.rs",
+          "finding": "Using `?` inside a `.map` closure cannot return from the handler when building the release preview. It was restructured into an explicit `match`."
+        }
+      ],
+      "workflow": [
+        "After changing a gate, run a negative test: break formatting on purpose and confirm the chain exits non-zero, then restore the file.",
+        "Back up files before changing hooks and give a one-file undo path.",
+        "Ignored files such as `.claude/plans` live inside a worktree, so removing the worktree deletes them. Check what survives and re-create anything lost.",
+        "For multi-file edits, use an all-or-nothing script that checks every replacement before writing any file.",
+        "Mutation checks restored from a backup copy show that new tests catch regressions.",
+        "Delegated agents were given no git access, so their work is reviewed and committed by the main session by reading their worktree files directly.",
+        "The environment refused a bulk delete of remote branches holding unique commits. Recording the branch tips first keeps the choice safe either way."
+      ]
+    },
+    "friction": [
+      "The first remote branch delete failed and had to be retried. The retry succeeded.",
+      "The bulk delete of stale remote branches was refused because they hold unmerged unique commits.",
+      "The plan file and archive patches were written under a worktree that was then removed, so they had to be recreated in the main checkout.",
+      "Git could not be run inside the markers agent's worktree, so its files were read directly.",
+      "Two compile and test errors (a borrow/move ordering problem and `?` in a closure) took extra iterations.",
+      "Entire's change states for merged PRs still say `open`, which needs a fix on Entire's side."
+    ],
+    "open_items": [
+      "Delete or resolve the nine stale remote branches that hold unique commits. Only their tips have been recorded.",
+      "Check the result of the final `verify.sh` run for `feat/pr-body-attention`, then commit, sign, push and open the PR.",
+      "Review and commit the CLI io consolidation and the grouped changelog layout from the two launched agents.",
+      "The grouped changelog changes the committed changelog format, so the user needs to decide on it.",
+      "Labels (`release: ready|breaking|…`, `bump:`, `registry:`) are deferred until the findings exist.",
+      "The global `CLAUDE.md` verify rule was not applied and awaits user approval.",
+      "Reporting the Entire wrapper bug is not done.",
+      "The hook has not been seen failing on a real clippy error during a push.",
+      "The user's main checkout is 63+ commits behind and needs a pull.",
+      "Tidy the remaining `worktree-agent-*` branches."
+    ]
+  }
+}
