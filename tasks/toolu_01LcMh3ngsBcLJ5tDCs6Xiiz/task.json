@@ -1,0 +1,34 @@
+{
+  "tool_use_id": "toolu_01LcMh3ngsBcLJ5tDCs6Xiiz",
+  "agent_id": "a515a7287dc95f492",
+  "subagent_type": "general-purpose",
+  "task_description": "Grouped changelog layout (no git)",
+  "files": [
+    ".append_cli_tests.tmp",
+    ".append_version_tests.tmp",
+    ".append_write_tests.tmp",
+    ".changeset/changelog-grouped-layout.md",
+    ".fixlit.sh",
+    "crates/callisto-cli/src/commands/version.rs",
+    "crates/callisto-graph/src/changelog/input.rs",
+    "crates/callisto-graph/src/changelog/mod.rs",
+    "crates/callisto-graph/src/changelog/render.rs",
+    "crates/callisto-graph/src/changelog/render_head.rs.tmp",
+    "crates/callisto-graph/src/commands/version.rs",
+    "crates/callisto-graph/src/commands/version/tests.rs",
+    "crates/callisto-graph/src/config/raw.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "docs/architecture/versioning.md",
+    "docs/config.md",
+    "docs/specs/versioning.json"
+  ],
+  "token_usage": {
+    "input_tokens": 152,
+    "cache_creation_tokens": 176208,
+    "cache_read_tokens": 10500843,
+    "output_tokens": 50056,
+    "api_call_count": 76
+  },
+  "started_at": "2026-11-07T20:31:04.942479-08:00",
+  "completed_at": "2026-11-07T20:43:18.864366-08:00"
+}
