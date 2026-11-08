@@ -687,6 +687,7 @@ mod tests {
                             summary: summary.to_owned(),
                         },
                     }],
+                    style: Default::default(),
                 },
             }],
             consumed_changesets: vec![],
