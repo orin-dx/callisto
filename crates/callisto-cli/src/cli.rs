@@ -226,7 +226,7 @@ pub struct VersionArgs {
     /// Writes the facts a release PR body is built from -- packages, merged
     /// changes and findings -- to the given path, so `compose-pr-body
     /// --preview` can render them after this command has consumed the
-    /// changesets they came from.
+    /// changesets they came from. A relative path is relative to `--cwd`.
     #[arg(long, value_name = "PATH")]
     pub emit_preview: Option<std::path::PathBuf>,
 }
@@ -294,8 +294,8 @@ pub struct ComposePrBodyArgs {
     #[arg(long)]
     pub branch: Option<String>,
     /// Render from the preview `version --emit-preview` wrote, instead of
-    /// planning the pending changesets. A relative path is relative to the
-    /// workspace root, as it is for `version --emit-preview`.
+    /// planning the pending changesets. A relative path is relative to
+    /// `--cwd`, as it is for `version --emit-preview`.
     #[arg(long, value_name = "PATH")]
     pub preview: Option<std::path::PathBuf>,
     /// Also plan the release of the versioned working tree, without a registry lookup or a publish, and list where

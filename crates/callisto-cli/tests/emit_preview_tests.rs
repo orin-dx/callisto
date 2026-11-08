@@ -104,9 +104,9 @@ fn init_repo(global: &GlobalArgs) {
     .unwrap();
 }
 
-/// `version` and `compose-pr-body` must agree on what a relative preview path means.
+/// `version` and `compose-pr-body` must agree on what a relative preview path means: it is relative to `--cwd`.
 #[test]
-fn a_relative_preview_path_means_the_workspace_root_for_both_commands() {
+fn a_relative_preview_path_means_cwd_for_both_commands() {
     let dir = setup_polyglot_git_repo();
     let global = GlobalArgs {
         format: OutputFormat::Json,
@@ -126,6 +126,48 @@ fn a_relative_preview_path_means_the_workspace_root_for_both_commands() {
     commands::version::handle(version_args(Some("preview.json".into())), &global).unwrap();
     assert!(dir.path().join("preview.json").exists());
 
+    let status = commands::compose_pr_body::handle(
+        ComposePrBodyArgs {
+            existing_body: None,
+            branch: None,
+            preview: Some("preview.json".into()),
+            publish_plan: false,
+        },
+        &global,
+    );
+    assert_eq!(status.unwrap(), std::process::ExitCode::SUCCESS);
+}
+
+/// With `--cwd` below the repository root, a relative preview path lands under `--cwd`, not at the root, for both
+/// commands.
+#[test]
+fn a_relative_preview_path_is_under_cwd_when_cwd_is_below_the_workspace_root() {
+    let dir = setup_polyglot_git_repo();
+    let root_args = GlobalArgs {
+        format: OutputFormat::Json,
+        cwd: dir.path().to_path_buf(),
+        dry_run: false,
+    };
+    init_repo(&root_args);
+    commands::add::handle(
+        AddArgs {
+            packages: vec!["cargo/core-crate:minor".to_string()],
+            summary: Some("Retry uploads.".to_string()),
+        },
+        &root_args,
+    )
+    .unwrap();
+    let sub = dir.path().join("docs");
+    std::fs::create_dir_all(&sub).unwrap();
+    let global = GlobalArgs {
+        cwd: sub.clone(),
+        ..root_args
+    };
+
+    commands::version::handle(version_args(Some("preview.json".into())), &global).unwrap();
+
+    assert!(sub.join("preview.json").exists(), "written under --cwd");
+    assert!(!dir.path().join("preview.json").exists(), "not at the workspace root");
     let status = commands::compose_pr_body::handle(
         ComposePrBodyArgs {
             existing_body: None,
