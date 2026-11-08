@@ -259,6 +259,49 @@ impl callisto_model::CommandRunner for RecordingRunner {
     }
 }
 
+/// `version --emit-preview` records the publishable packages whose source changed and that the plan leaves out, and the
+/// body leads with them; the package the changeset bumps is not among them.
+#[test]
+fn the_preview_lists_a_publishable_package_the_plan_leaves_out() {
+    let dir = setup_polyglot_git_repo();
+    let global = GlobalArgs {
+        format: OutputFormat::Json,
+        cwd: dir.path().to_path_buf(),
+        dry_run: false,
+    };
+    init_repo(&global);
+    commands::add::handle(
+        AddArgs {
+            packages: vec!["cargo/core-crate:minor".to_string()],
+            summary: Some("Retry uploads.\n\nAction: re-run the installer.".to_string()),
+        },
+        &global,
+    )
+    .unwrap();
+
+    commands::version::handle(version_args(Some("preview.json".into())), &global).unwrap();
+
+    let preview = callisto_graph::release_preview::ReleasePreview::from_json(
+        &std::fs::read_to_string(dir.path().join("preview.json")).unwrap(),
+    )
+    .unwrap();
+    let names: Vec<&str> = preview
+        .unreleased
+        .iter()
+        .map(|change| change.package.as_str())
+        .collect();
+    assert!(names.contains(&"@myorg/web-app"), "{names:?}");
+    assert!(!names.contains(&"core-crate"), "{names:?}");
+
+    let body = callisto_graph::commands::render_pr_body_from_preview(&preview, &PrBodyOptions::default()).body;
+    assert!(body.contains("**Read before merging**"), "{body}");
+    assert!(
+        body.contains("**Action required** (`core-crate`): re-run the installer."),
+        "{body}"
+    );
+    assert!(body.contains("**Changed, not releasing** (`@myorg/web-app`"), "{body}");
+}
+
 #[test]
 fn emit_preview_is_refused_with_dry_run_before_anything_is_written() {
     let dir = setup_polyglot_git_repo();

@@ -7,6 +7,8 @@ use callisto_model::{BumpReason, ManifestFormat, PackageId, Severity};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
+use crate::changed::{changed_source_files_since_last_tag, uncovered_changes, DEFAULT_IGNORED_PATHS};
+use crate::changelog::markdown::{extract_markers, MarkerKind};
 use crate::changelog::ChangeSource;
 use crate::commands::LocalReleasePlan;
 use crate::error::GraphError;
@@ -15,6 +17,9 @@ use crate::plan::{PlannedBump, VersionPlan, VersionWriteTarget};
 pub const RELEASE_PREVIEW_SCHEMA_VERSION: u32 = 1;
 pub const FINDING_MAJOR_BUMP: &str = "major-bump";
 pub const FINDING_RELEASE_BLOCKED: &str = "release-blocked";
+pub const FINDING_BREAKING_MARKER: &str = "breaking-marker";
+pub const FINDING_ACTION_REQUIRED: &str = "action-required";
+pub const FINDING_UNRELEASED_CHANGES: &str = "changed-not-releasing";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,6 +36,9 @@ pub struct ReleasePreview {
     /// written by `version --emit-preview` has none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub publish: Option<PublishOutlook>,
+    /// Packages whose source changed since their last tag and that this release leaves out. Filled by `version`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unreleased: Vec<UnreleasedChange>,
 }
 
 /// What planning the release of the versioned tree says, without publishing anything.
@@ -131,6 +139,17 @@ pub struct Finding {
     pub id: String,
     pub level: FindingLevel,
     pub message: String,
+    /// The packages the finding is about, when it is about some.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub packages: Vec<String>,
+}
+
+/// A package with source changes since its last release tag that this release does not include.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnreleasedChange {
+    pub package: String,
+    pub files: usize,
 }
 
 impl ReleasePreview {
@@ -164,18 +183,35 @@ pub fn build_release_preview(plan: &VersionPlan) -> ReleasePreview {
         .collect();
 
     let (changes, bystanders) = collect_changes(plan);
+    let findings = assess_with_changes(&plan.bumps, &changes);
 
     ReleasePreview {
         schema_version: RELEASE_PREVIEW_SCHEMA_VERSION,
         packages,
         changes,
         bystanders,
-        findings: assess(&plan.bumps),
+        findings,
         publish: None,
+        unreleased: Vec::new(),
     }
 }
 
 impl ReleasePreview {
+    /// Adds the packages whose source changed since their last tag and that this release leaves out. They are a
+    /// finding to read, not a blocker: many such changes are rightly internal.
+    pub fn with_unreleased(mut self, unreleased: Vec<UnreleasedChange>) -> Self {
+        if !unreleased.is_empty() {
+            self.findings.push(Finding {
+                id: FINDING_UNRELEASED_CHANGES.to_owned(),
+                level: FindingLevel::Pause,
+                message: "Source changed since the last release, but this release does not include them. Add a changeset if the changes should ship.".to_owned(),
+                packages: unreleased.iter().map(|change| change.package.clone()).collect(),
+            });
+        }
+        self.unreleased = unreleased;
+        self
+    }
+
     /// The packages this release bumps, as `release --package` names them, or `None` if any could not be named. These
     /// are the packages the committed decision will hold, so planning with exactly them cannot pick up an unrelated
     /// unreleased package.
@@ -194,6 +230,7 @@ impl ReleasePreview {
                 id: FINDING_RELEASE_BLOCKED.to_owned(),
                 level: FindingLevel::Stop,
                 message,
+                packages: Vec::new(),
             });
         }
         self.publish = Some(outlook);
@@ -377,6 +414,72 @@ impl Change {
     }
 }
 
+/// The verdict from the bumps, plus a finding for each `Breaking:` and `Action:` marker in a change's summary. A
+/// breaking marker means the release cannot be called backward compatible, whatever the bump says.
+fn assess_with_changes(bumps: &[PlannedBump], changes: &[Change]) -> Vec<Finding> {
+    let mut findings = assess(bumps);
+    let markers = marker_findings(changes);
+    if markers.iter().any(|finding| finding.id == FINDING_BREAKING_MARKER) {
+        findings.retain(|finding| finding.id != "compatible");
+    }
+    findings.extend(markers);
+    findings
+}
+
+fn marker_findings(changes: &[Change]) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for change in changes {
+        let ChangeKind::Changeset { summary, .. } = &change.kind else {
+            continue;
+        };
+        for marker in extract_markers(summary) {
+            let id = match marker.kind {
+                MarkerKind::Breaking => FINDING_BREAKING_MARKER,
+                MarkerKind::Action => FINDING_ACTION_REQUIRED,
+            };
+            findings.push(Finding {
+                id: id.to_owned(),
+                level: FindingLevel::Pause,
+                message: marker.text,
+                packages: change.members.iter().map(|member| member.package.clone()).collect(),
+            });
+        }
+    }
+    findings
+}
+
+/// The preview of `plan` as `version` and `compose-pr-body` both show it: the plan's own facts plus the packages whose
+/// source changed that the plan leaves out. One function, so the two commands cannot disagree.
+pub fn build_release_preview_in<R: callisto_model::CommandRunner, D: crate::resolver::DependencyResolver>(
+    ws: &crate::Workspace<'_, R, D>,
+    plan: &VersionPlan,
+) -> Result<ReleasePreview, GraphError> {
+    Ok(build_release_preview(plan).with_unreleased(unreleased_changes(ws, plan)?))
+}
+
+/// Packages with source changes since their last tag that the plan does not bump, directly or through a group. A
+/// package is only counted if it publishes somewhere, and tests, benches, examples, snapshots and Markdown do not count.
+pub fn unreleased_changes<R: callisto_model::CommandRunner, D: crate::resolver::DependencyResolver>(
+    ws: &crate::Workspace<'_, R, D>,
+    plan: &VersionPlan,
+) -> Result<Vec<UnreleasedChange>, GraphError> {
+    let publishable: Vec<&callisto_model::Package> = ws
+        .graph
+        .packages()
+        .filter(|package| crate::commands::release_decision::has_dispatchable_target(package))
+        .collect();
+    let changed =
+        changed_source_files_since_last_tag(&publishable, ws.tags()?, ws.git_access(), DEFAULT_IGNORED_PATHS)?;
+    let bumped: std::collections::BTreeSet<PackageId> = plan.bumps.iter().map(|bump| bump.package.clone()).collect();
+    Ok(uncovered_changes(&changed, &bumped, &ws.config.groups)
+        .into_iter()
+        .map(|id| UnreleasedChange {
+            files: changed.get(&id).map_or(0, Vec::len),
+            package: id.display_name(),
+        })
+        .collect())
+}
+
 /// What a reviewer should know before merging. Below 1.0.0 a minor bump is where breaking changes go, so it is
 /// never called compatible.
 pub fn assess(bumps: &[PlannedBump]) -> Vec<Finding> {
@@ -386,6 +489,7 @@ pub fn assess(bumps: &[PlannedBump]) -> Vec<Finding> {
             level: FindingLevel::Pause,
             message: "This release contains major breaking changes. Review the changes below before merging."
                 .to_owned(),
+            packages: Vec::new(),
         }];
     }
     let pre_one_minor = bumps
@@ -397,12 +501,14 @@ pub fn assess(bumps: &[PlannedBump]) -> Vec<Finding> {
             level: FindingLevel::Pause,
             message: "Minor bumps below 1.0.0 can include breaking changes, so read the changes below before merging."
                 .to_owned(),
+            packages: Vec::new(),
         }];
     }
     vec![Finding {
         id: "compatible".to_owned(),
         level: FindingLevel::Info,
         message: "All changes are backward compatible.".to_owned(),
+        packages: Vec::new(),
     }]
 }
 
@@ -551,6 +657,113 @@ mod tests {
         };
         // No manifest write, so no ecosystem: the preview must not claim a selection it cannot name.
         assert_eq!(build_release_preview(&plan).release_selections(), None);
+    }
+
+    fn plan_with_summary(severity: Severity, from: Version, summary: &str) -> VersionPlan {
+        let mut planned = bump(severity);
+        planned.from = from.clone();
+        let package = planned.package.clone();
+        VersionPlan {
+            bumps: vec![planned],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: vec![crate::plan::ChangelogWrite {
+                changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
+                input: crate::changelog::ChangelogInput {
+                    package,
+                    from,
+                    to: Some(Version::semver(2, 0, 0)),
+                    entries: vec![crate::changelog::ChangelogEntry {
+                        severity,
+                        source: crate::changelog::ChangeSource::Changeset {
+                            filename: "x.md".to_owned(),
+                            summary: summary.to_owned(),
+                        },
+                    }],
+                },
+            }],
+            consumed_changesets: vec![],
+            pre_state_update: None,
+            pre_json_path: std::path::PathBuf::new(),
+            pre_json_original_text: None,
+            delete_pre_json: None,
+            diagnostics: vec![],
+        }
+    }
+
+    fn ids(preview: &ReleasePreview) -> Vec<&str> {
+        preview.findings.iter().map(|finding| finding.id.as_str()).collect()
+    }
+
+    #[test]
+    fn a_breaking_marker_replaces_the_compatibility_claim_and_names_the_packages() {
+        let plan = plan_with_summary(
+            Severity::Minor,
+            Version::semver(1, 0, 0),
+            "Drops a flag.\n\nBreaking: `--old` is gone.\n\nAction: switch to `--new`.",
+        );
+
+        let preview = build_release_preview(&plan);
+
+        assert_eq!(ids(&preview), [FINDING_BREAKING_MARKER, FINDING_ACTION_REQUIRED]);
+        assert_eq!(preview.findings[0].message, "`--old` is gone.");
+        assert_eq!(preview.findings[0].packages, ["core-crate"]);
+        assert!(preview
+            .findings
+            .iter()
+            .all(|finding| finding.level == FindingLevel::Pause));
+    }
+
+    #[test]
+    fn an_action_marker_alone_keeps_the_compatibility_claim() {
+        let plan = plan_with_summary(
+            Severity::Patch,
+            Version::semver(1, 0, 0),
+            "Fix.\n\nAction: re-run init.",
+        );
+
+        assert_eq!(
+            ids(&build_release_preview(&plan)),
+            ["compatible", FINDING_ACTION_REQUIRED]
+        );
+    }
+
+    #[test]
+    fn a_marker_in_code_or_a_list_is_not_a_finding() {
+        let plan = plan_with_summary(
+            Severity::Patch,
+            Version::semver(1, 0, 0),
+            "Fix.\n\n```md\nBreaking: example\n```\n\n- Action: example",
+        );
+
+        assert_eq!(ids(&build_release_preview(&plan)), ["compatible"]);
+    }
+
+    #[test]
+    fn unreleased_changes_become_one_finding_naming_the_packages() {
+        let plan = plan_with_summary(Severity::Patch, Version::semver(1, 0, 0), "Fix.");
+        let preview = build_release_preview(&plan).with_unreleased(vec![
+            UnreleasedChange {
+                package: "a".to_owned(),
+                files: 3,
+            },
+            UnreleasedChange {
+                package: "b".to_owned(),
+                files: 1,
+            },
+        ]);
+
+        let finding = preview
+            .findings
+            .iter()
+            .find(|finding| finding.id == FINDING_UNRELEASED_CHANGES)
+            .expect("a finding");
+        assert_eq!(finding.packages, ["a", "b"]);
+        assert_eq!(finding.level, FindingLevel::Pause);
+
+        let none = build_release_preview(&plan).with_unreleased(vec![]);
+        assert!(!ids(&none).contains(&FINDING_UNRELEASED_CHANGES));
     }
 
     #[test]

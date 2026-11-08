@@ -5,6 +5,7 @@ use callisto_model::Version;
 
 use super::fences::Fences;
 use super::headings::{heading_levels, rebase_headings};
+use super::markers::{extract_markers, MarkerKind};
 use crate::changelog::write::{find_section, has_heading};
 
 struct Case {
@@ -14,6 +15,8 @@ struct Case {
     code: &'static [usize],
     /// `(line, level)` of each heading outside code.
     headings: &'static [(usize, usize)],
+    /// Each marker outside code, in order.
+    markers: &'static [(MarkerKind, &'static str)],
 }
 
 const CASES: &[Case] = &[
@@ -22,72 +25,115 @@ const CASES: &[Case] = &[
         text: "Intro line.\n\n## One\n\ntext\n\n### Two\n",
         code: &[],
         headings: &[(2, 2), (6, 3)],
+        markers: &[],
     },
     Case {
         name: "backtick fence",
         text: "## A\n```sh\n# c\n## d\n```\n## B",
         code: &[1, 2, 3, 4],
         headings: &[(0, 2), (5, 2)],
+        markers: &[],
     },
     Case {
         name: "tilde fence",
         text: "~~~\n# t\n~~~\n## B",
         code: &[0, 1, 2],
         headings: &[(3, 2)],
+        markers: &[],
     },
     Case {
         name: "longer closing fence",
         text: "````\n```\n# in\n````\n## After",
         code: &[0, 1, 2, 3],
         headings: &[(4, 2)],
+        markers: &[],
     },
     Case {
         name: "fence opened on a bullet and closed indented",
         text: "- ```md\n  # Title\n  ```\n## After",
         code: &[0, 1, 2],
         headings: &[(3, 2)],
+        markers: &[],
     },
     Case {
         name: "fence opened on a numbered item",
         text: "1. ```sh\n   ## x\n   ```\n## After",
         code: &[0, 1, 2],
         headings: &[(3, 2)],
+        markers: &[],
     },
     Case {
         name: "inline triple backticks are not a fence",
         text: "```a``` text\n## Real",
         code: &[],
         headings: &[(1, 2)],
+        markers: &[],
     },
     Case {
         name: "indented code is not a heading",
         text: "    ## not\n## Real",
         code: &[],
         headings: &[(1, 2)],
+        markers: &[],
     },
     Case {
         name: "a hashtag is not a heading",
         text: "#hashtag\n## Real",
         code: &[],
         headings: &[(1, 2)],
+        markers: &[],
     },
     Case {
         name: "a title ending in a hash",
         text: "### C#\n## Real",
         code: &[],
         headings: &[(0, 3), (1, 2)],
+        markers: &[],
     },
     Case {
         name: "an unclosed fence runs to the end",
         text: "## A\n```\n## never closed\n",
         code: &[1, 2],
         headings: &[(0, 2)],
+        markers: &[],
     },
     Case {
         name: "CRLF line endings",
         text: "```\r\n# x\r\n```\r\n## Real",
         code: &[0, 1, 2],
         headings: &[(3, 2)],
+        markers: &[],
+    },
+    Case {
+        name: "markers at top level",
+        text: "Intro.\n\nBreaking: drops the flag.\n\n**Action:** run the\nmigration.\n",
+        code: &[],
+        headings: &[],
+        markers: &[
+            (MarkerKind::Breaking, "drops the flag."),
+            (MarkerKind::Action, "run the migration."),
+        ],
+    },
+    Case {
+        name: "a marker in a fence is code",
+        text: "Intro.\n\n```md\nBreaking: shown\n```\n\nAction: real\n",
+        code: &[2, 3, 4],
+        headings: &[],
+        markers: &[(MarkerKind::Action, "real")],
+    },
+    Case {
+        name: "a marker in a bullet fence or list item is not a marker",
+        text: "- ```md\n  Action: shown\n  ```\n- Breaking: item\n\nBreaking: real",
+        code: &[0, 1, 2],
+        headings: &[],
+        markers: &[(MarkerKind::Breaking, "real")],
+    },
+    Case {
+        name: "indented code is not a marker",
+        text: "    Breaking: shown\n\nAction: real",
+        code: &[],
+        headings: &[],
+        markers: &[(MarkerKind::Action, "real")],
     },
 ];
 
@@ -166,5 +212,21 @@ fn rebasing_changes_only_heading_lines_and_is_idempotent() {
                 assert_eq!(before, after, "{}: line {index} changed", case.name);
             }
         }
+    }
+}
+
+#[test]
+fn the_marker_pass_finds_the_expected_markers_and_none_in_code() {
+    for case in CASES {
+        let found: Vec<(MarkerKind, String)> = extract_markers(case.text)
+            .into_iter()
+            .map(|marker| (marker.kind, marker.text))
+            .collect();
+        let expected: Vec<(MarkerKind, String)> = case
+            .markers
+            .iter()
+            .map(|(kind, text)| (*kind, (*text).to_owned()))
+            .collect();
+        assert_eq!(found, expected, "{}", case.name);
     }
 }
