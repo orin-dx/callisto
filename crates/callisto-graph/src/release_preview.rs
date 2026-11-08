@@ -62,6 +62,10 @@ pub struct PublishTargets {
 #[serde(rename_all = "camelCase")]
 pub struct PackageRelease {
     pub name: String,
+    /// The qualified release identity (`cargo/name`), which `release --package` takes. `None` when the ecosystem
+    /// could not be determined.
+    #[serde(default)]
+    pub release_id: Option<String>,
     pub ecosystem: String,
     pub from: String,
     pub to: String,
@@ -150,6 +154,7 @@ pub fn build_release_preview(plan: &VersionPlan) -> ReleasePreview {
         .into_iter()
         .map(|bump| PackageRelease {
             name: bump.package.display_name().to_string(),
+            release_id: release_id(bump),
             ecosystem: ecosystem_label(bump).to_string(),
             from: bump.from.render().to_string(),
             to: bump.to.render().to_string(),
@@ -171,6 +176,13 @@ pub fn build_release_preview(plan: &VersionPlan) -> ReleasePreview {
 }
 
 impl ReleasePreview {
+    /// The packages this release bumps, as `release --package` names them, or `None` if any could not be named. These
+    /// are the packages the committed decision will hold, so planning with exactly them cannot pick up an unrelated
+    /// unreleased package.
+    pub fn release_selections(&self) -> Option<Vec<String>> {
+        self.packages.iter().map(|package| package.release_id.clone()).collect()
+    }
+
     /// Adds what planning the versioned tree's release said. A plan that refused is a finding that stops the release.
     pub fn with_publish(mut self, outlook: PublishOutlook) -> Self {
         if let PublishOutlook::Blocked { code, message } = &outlook {
@@ -192,8 +204,6 @@ impl ReleasePreview {
 /// Reads the outcome of planning a release into what the PR body shows. Nothing is looked up on a registry or
 /// published: a refusal here is one the release itself would hit.
 pub fn publish_outlook(planned: Result<Option<LocalReleasePlan>, GraphError>) -> PublishOutlook {
-    use callisto_model::ReleaseOperationRole;
-
     let plan = match planned {
         Ok(Some(plan)) => plan,
         Ok(None) => {
@@ -211,47 +221,21 @@ pub fn publish_outlook(planned: Result<Option<LocalReleasePlan>, GraphError>) ->
         }
     };
 
-    let mut releases: IndexMap<String, PublishTargets> = IndexMap::new();
-    for operation in &plan.intent.operations {
-        let id = operation.id();
-        let release = releases
-            .entry(id.package.name().to_owned())
-            .or_insert_with(|| PublishTargets {
-                package: id.package.name().to_owned(),
-                version: id.version.render().to_owned(),
-                registries: Vec::new(),
-                tag: false,
-                github_release: false,
-                artifacts: 0,
-            });
-        match &id.role {
-            ReleaseOperationRole::RegistryPublish { registry } => {
-                release
-                    .registries
-                    .push(registry.registry_key().display_name().to_owned());
-            }
-            ReleaseOperationRole::PlatformPublish { registry, .. } => {
-                let name = format!("{} (platform packages)", registry.registry_key().display_name());
-                if !release.registries.contains(&name) {
-                    release.registries.push(name);
-                }
-            }
-            ReleaseOperationRole::Tag => release.tag = true,
-            ReleaseOperationRole::ForgeRelease => release.github_release = true,
-            ReleaseOperationRole::ArtifactUpload { .. } => release.artifacts += 1,
-            ReleaseOperationRole::ForgePublish => {}
-        }
-    }
+    let releases = group_operations(plan.intent.operations.iter().map(|operation| operation.id()));
 
     let mut notes: Vec<String> = Vec::new();
     if plan.tags_unbound {
         notes.push("`origin` has no push URL, so tags cannot be pushed until one is set.".to_owned());
     }
     notes.extend(plan.diagnostics.iter().map(|diagnostic| diagnostic.message.clone()));
-    PublishOutlook::Planned {
-        releases: releases.into_values().collect(),
-        notes,
-    }
+    PublishOutlook::Planned { releases, notes }
+}
+
+fn release_id(bump: &PlannedBump) -> Option<String> {
+    let ecosystem = callisto_model::Ecosystem::from_prefix(ecosystem_label(bump))?;
+    callisto_model::ReleasePackageId::new(ecosystem, bump.package.name())
+        .ok()
+        .map(|id| id.to_string())
 }
 
 /// A bare package name carries no ecosystem prefix, so fall back to the manifest it is written to.
@@ -451,6 +435,71 @@ mod tests {
         assert_eq!(ecosystem_label(&bump(Severity::Patch)), "unknown");
     }
 
+    fn operations_for(
+        distributions: &[(callisto_model::Ecosystem, &str, Version, &str)],
+    ) -> Vec<callisto_model::ReleaseOperationId> {
+        use callisto_model::{RegistryBindingDigest, RegistryBindingId, ReleaseOperationId, ReleasePackageId};
+        let digest = RegistryBindingDigest::parse(&"0".repeat(64)).unwrap();
+        let mut ids = Vec::new();
+        for (ecosystem, name, version, registry) in distributions {
+            let package = ReleasePackageId::new(*ecosystem, name).unwrap();
+            let binding = RegistryBindingId::new(*registry, digest.clone()).unwrap();
+            ids.push(ReleaseOperationId::registry_publish(
+                package.clone(),
+                version.clone(),
+                binding,
+            ));
+            ids.push(ReleaseOperationId::tag(package, version.clone()));
+        }
+        ids
+    }
+
+    #[test]
+    fn two_distributions_with_one_name_stay_two_rows_with_their_own_version_and_registry() {
+        use callisto_model::Ecosystem;
+        let ids = operations_for(&[
+            (Ecosystem::Cargo, "shared", Version::semver(1, 0, 0), "cratesIo"),
+            (Ecosystem::Npm, "shared", Version::semver(2, 0, 0), "npm"),
+            (Ecosystem::Cargo, "only-cargo", Version::semver(3, 0, 0), "cratesIo"),
+        ]);
+
+        let rows = group_operations(&ids);
+
+        let summary: Vec<(&str, &str, &[String])> = rows
+            .iter()
+            .map(|row| (row.package.as_str(), row.version.as_str(), row.registries.as_slice()))
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                ("cargo/shared", "1.0.0", &["crates.io".to_owned()][..]),
+                ("npm/shared", "2.0.0", &["npm".to_owned()][..]),
+                ("only-cargo", "3.0.0", &["crates.io".to_owned()][..]),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_package_that_cannot_be_named_leaves_the_release_unselected() {
+        let mut plan_bump = bump(Severity::Patch);
+        plan_bump.writes = vec![];
+        let plan = VersionPlan {
+            bumps: vec![plan_bump],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: vec![],
+            consumed_changesets: vec![],
+            pre_state_update: None,
+            pre_json_path: std::path::PathBuf::new(),
+            pre_json_original_text: None,
+            delete_pre_json: None,
+            diagnostics: vec![],
+        };
+        // No manifest write, so no ecosystem: the preview must not claim a selection it cannot name.
+        assert_eq!(build_release_preview(&plan).release_selections(), None);
+    }
+
     #[test]
     fn a_plan_that_refused_becomes_a_finding_that_stops_the_release() {
         let plan = VersionPlan {
@@ -531,4 +580,57 @@ mod tests {
         assert_eq!(json["changes"][0]["kind"]["kind"], "fallback");
         assert_eq!(json["findings"][0]["id"], "compatible");
     }
+}
+
+/// One row per released distribution. Rows are keyed by the qualified identity, so `cargo/shared` and `npm/shared`
+/// stay apart; a row is labelled with the bare name unless two rows share it.
+fn group_operations<'a>(
+    operations: impl IntoIterator<Item = &'a callisto_model::ReleaseOperationId>,
+) -> Vec<PublishTargets> {
+    use callisto_model::ReleaseOperationRole;
+
+    let mut releases: IndexMap<String, PublishTargets> = IndexMap::new();
+    for id in operations {
+        let qualified = id.package.to_string();
+        let release = releases.entry(qualified.clone()).or_insert_with(|| PublishTargets {
+            package: qualified,
+            version: id.version.render().to_owned(),
+            registries: Vec::new(),
+            tag: false,
+            github_release: false,
+            artifacts: 0,
+        });
+        match &id.role {
+            ReleaseOperationRole::RegistryPublish { registry } => {
+                release
+                    .registries
+                    .push(registry.registry_key().display_name().to_owned());
+            }
+            ReleaseOperationRole::PlatformPublish { registry, .. } => {
+                let name = format!("{} (platform packages)", registry.registry_key().display_name());
+                if !release.registries.contains(&name) {
+                    release.registries.push(name);
+                }
+            }
+            ReleaseOperationRole::Tag => release.tag = true,
+            ReleaseOperationRole::ForgeRelease => release.github_release = true,
+            ReleaseOperationRole::ArtifactUpload { .. } => release.artifacts += 1,
+            ReleaseOperationRole::ForgePublish => {}
+        }
+    }
+
+    let mut rows: Vec<PublishTargets> = releases.into_values().collect();
+    let bare = |qualified: &str| {
+        qualified
+            .split_once('/')
+            .map_or(qualified.to_owned(), |(_, name)| name.to_owned())
+    };
+    for index in 0..rows.len() {
+        let name = bare(&rows[index].package);
+        let shared = rows.iter().filter(|row| bare(&row.package) == name).count() > 1;
+        if !shared {
+            rows[index].package = name;
+        }
+    }
+    rows
 }

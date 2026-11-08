@@ -84,7 +84,7 @@ pub(crate) use derive::is_platform_package;
 pub use derive::ArtifactBuildPolicy;
 pub use local::{
     ci_release_route, origin_tag_probe, plan_loaded_release, plan_local_release, plan_workspace_release,
-    CiReleaseRoute, LocalReleasePlan, LocalReleaseSource, OriginTagProbe,
+    plan_workspace_release_offline, CiReleaseRoute, LocalReleasePlan, LocalReleaseSource, OriginTagProbe,
 };
 pub use pending::{pending_releases, PendingRelease};
 pub(crate) use provider::policy::{programs, timeouts};

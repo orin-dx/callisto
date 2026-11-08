@@ -41,14 +41,16 @@ pub fn handle(args: ComposePrBodyArgs, global: &GlobalArgs) -> Result<ExitCode, 
                 }
             })?;
             if args.publish_plan {
-                let runner = CliCommandRunner;
-                let ws = load_workspace(global, &runner)?;
-                let planned = callisto_graph::commands::plan_workspace_release(
-                    &ws,
-                    &[],
-                    callisto_graph::commands::LocalReleaseSource::Preview,
-                );
-                preview = preview.with_publish(callisto_graph::release_preview::publish_outlook(planned));
+                // Exactly the packages the release will hold, so an unrelated unreleased package is not listed.
+                let selections: Option<Vec<callisto_model::ReleasePackageId>> = preview
+                    .release_selections()
+                    .and_then(|ids| ids.iter().map(|id| id.parse().ok()).collect());
+                if let Some(selections) = selections {
+                    let runner = CliCommandRunner;
+                    let ws = load_workspace(global, &runner)?;
+                    let planned = callisto_graph::commands::plan_workspace_release_offline(&ws, &selections);
+                    preview = preview.with_publish(callisto_graph::release_preview::publish_outlook(planned));
+                }
             }
             callisto_graph::commands::render_pr_body_from_preview(&preview, &opts)
         }

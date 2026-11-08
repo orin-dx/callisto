@@ -182,12 +182,26 @@ fn the_publish_plan_of_a_versioned_tree_lists_the_crates_io_release() {
     .unwrap();
     commands::version::handle(version_args(Some("preview.json".into())), &global).unwrap();
 
-    let runner = callisto_cli::runner::CliCommandRunner;
-    let ws = callisto_cli::workspace::load_workspace(&global, &runner).unwrap();
-    let planned = callisto_graph::commands::plan_workspace_release(
-        &ws,
-        &[],
-        callisto_graph::commands::LocalReleaseSource::Preview,
+    let stored = callisto_graph::release_preview::ReleasePreview::from_json(
+        &std::fs::read_to_string(dir.path().join("preview.json")).unwrap(),
+    )
+    .unwrap();
+    let selections: Vec<callisto_model::ReleasePackageId> = stored
+        .release_selections()
+        .expect("every bumped package is nameable")
+        .iter()
+        .map(|id| id.parse().unwrap())
+        .collect();
+    assert_eq!(selections.len(), 1);
+
+    let runner = RecordingRunner::default();
+    let locator = callisto_graph::locate::IgnoreWalkLocator::new(dir.path());
+    let ws = callisto_graph::Workspace::load(dir.path().to_path_buf(), &locator, &runner).unwrap();
+    let planned = callisto_graph::commands::plan_workspace_release_offline(&ws, &selections);
+    let programs = runner.programs.lock().unwrap().clone();
+    assert!(
+        programs.iter().all(|program| program == "git"),
+        "the offline plan ran something other than git: {programs:?}"
     );
     let outlook = callisto_graph::release_preview::publish_outlook(planned);
     let callisto_graph::release_preview::PublishOutlook::Planned { releases, .. } = &outlook else {
@@ -199,6 +213,12 @@ fn the_publish_plan_of_a_versioned_tree_lists_the_crates_io_release() {
         .expect("core-crate is released");
     assert_eq!(core.registries, ["crates.io"]);
     assert!(core.tag);
+    let listed: Vec<&str> = releases.iter().map(|r| r.package.as_str()).collect();
+    assert_eq!(
+        listed,
+        ["core-crate"],
+        "an unreleased package with no changeset is not listed"
+    );
 
     let preview = callisto_graph::release_preview::ReleasePreview::from_json(
         &std::fs::read_to_string(dir.path().join("preview.json")).unwrap(),
@@ -219,6 +239,24 @@ fn the_publish_plan_of_a_versioned_tree_lists_the_crates_io_release() {
         &global,
     );
     assert_eq!(status.unwrap(), std::process::ExitCode::SUCCESS);
+}
+
+/// Delegates to the real runner and remembers which programs were started.
+#[derive(Default)]
+struct RecordingRunner {
+    programs: std::sync::Mutex<Vec<String>>,
+}
+
+impl callisto_model::CommandRunner for RecordingRunner {
+    fn run(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: &std::path::Path,
+    ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+        self.programs.lock().unwrap().push(program.to_owned());
+        callisto_cli::runner::CliCommandRunner.run(program, args, cwd)
+    }
 }
 
 #[test]

@@ -170,7 +170,7 @@ pub fn plan_local_release<L: ProjectLocator, R: CommandRunner>(
 ) -> Result<Option<LocalReleasePlan>, GraphError> {
     let root = canonical_root(root)?;
     let workspace = Workspace::load(root, locator, runner)?;
-    plan_release(&workspace, selections, mode, true)
+    plan_release(&workspace, selections, mode, true, Observation::Registries)
 }
 
 /// The tagged releases on HEAD whose operations are not all observed satisfied: a rerun finishes them.
@@ -180,6 +180,7 @@ pub fn plan_local_release<L: ProjectLocator, R: CommandRunner>(
 fn incomplete_tagged_releases<R: CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
     mode: LocalReleaseSource,
+    observation: Observation,
 ) -> Result<std::collections::BTreeSet<ReleasePackageId>, GraphError> {
     let head = workspace.git_access().head_sha()?;
     let tagged: std::collections::BTreeSet<ReleasePackageId> =
@@ -191,7 +192,9 @@ fn incomplete_tagged_releases<R: CommandRunner, D: DependencyResolver>(
         return Ok(tagged);
     }
     // Without an `origin` push URL a preview cannot observe anything, so it cannot call a tagged release finished.
-    if mode == LocalReleaseSource::Preview && optional_git_remote(&workspace.root, workspace.runner)?.is_none() {
+    if observation == Observation::Never
+        || (mode == LocalReleaseSource::Preview && optional_git_remote(&workspace.root, workspace.runner)?.is_none())
+    {
         return Ok(tagged);
     }
     let profile = ExecutionTrustProfileV1::GitCommit;
@@ -320,7 +323,11 @@ fn refuse_a_published_version_left_behind<R: CommandRunner, D: DependencyResolve
     source: &SourceIdentity,
     profile: ExecutionTrustProfileV1,
     mode: LocalReleaseSource,
+    observation: Observation,
 ) -> Result<(), GraphError> {
+    if observation == Observation::Never {
+        return Ok(());
+    }
     let moved = super::version_commit::packages_moved_past_their_version(workspace, decision, resumable)?;
     // Without an `origin` push URL a preview cannot observe the registry either.
     if moved.is_empty()
@@ -367,7 +374,23 @@ pub fn plan_workspace_release<R: CommandRunner, D: DependencyResolver>(
     selections: &[ReleasePackageId],
     mode: LocalReleaseSource,
 ) -> Result<Option<LocalReleasePlan>, GraphError> {
-    plan_release(workspace, selections, mode, false)
+    plan_release(workspace, selections, mode, false, Observation::Registries)
+}
+
+/// [`plan_workspace_release`] that never observes a registry or the forge: a tagged release is not asked whether it
+/// finished, and a version that has moved is not asked whether it was published. For a caller that has no registry
+/// to reach, such as the release PR job. It plans exactly `selections`, with their groups.
+pub fn plan_workspace_release_offline<R: CommandRunner, D: DependencyResolver>(
+    workspace: &Workspace<'_, R, D>,
+    selections: &[ReleasePackageId],
+) -> Result<Option<LocalReleasePlan>, GraphError> {
+    plan_release(
+        workspace,
+        selections,
+        LocalReleaseSource::Preview,
+        false,
+        Observation::Never,
+    )
 }
 
 /// [`plan_local_release`] over an already-loaded workspace: the same plan, including the registry checks, without
@@ -377,7 +400,14 @@ pub fn plan_loaded_release<R: CommandRunner, D: DependencyResolver>(
     selections: &[ReleasePackageId],
     mode: LocalReleaseSource,
 ) -> Result<Option<LocalReleasePlan>, GraphError> {
-    plan_release(workspace, selections, mode, true)
+    plan_release(workspace, selections, mode, true, Observation::Registries)
+}
+
+/// Whether planning may look at a registry to settle what a previous run did.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Observation {
+    Registries,
+    Never,
 }
 
 fn plan_release<R: CommandRunner, D: DependencyResolver>(
@@ -385,8 +415,9 @@ fn plan_release<R: CommandRunner, D: DependencyResolver>(
     selections: &[ReleasePackageId],
     mode: LocalReleaseSource,
     check_taken_names: bool,
+    observation: Observation,
 ) -> Result<Option<LocalReleasePlan>, GraphError> {
-    let resumable = incomplete_tagged_releases(workspace, mode)?;
+    let resumable = incomplete_tagged_releases(workspace, mode, observation)?;
     let Some(decision) = crate::commands::release_decision::derive_release_roster(workspace, selections, &resumable)?
     else {
         return Ok(None);
@@ -402,7 +433,7 @@ fn plan_release<R: CommandRunner, D: DependencyResolver>(
         refuse_a_crate_crates_io_would_reject(workspace, &decision)?;
         refuse_a_name_another_project_owns(workspace, &decision, &source, profile, mode)?;
     }
-    refuse_a_published_version_left_behind(workspace, &decision, &resumable, &source, profile, mode)?;
+    refuse_a_published_version_left_behind(workspace, &decision, &resumable, &source, profile, mode, observation)?;
     // A local run is its own orchestration: slots bind to the source commit.
     let artifact_policy = match (&workspace.config.product_release, &source) {
         (Some(release), SourceIdentity::GitCommit { sha }) if !release.artifacts.is_empty() => {
