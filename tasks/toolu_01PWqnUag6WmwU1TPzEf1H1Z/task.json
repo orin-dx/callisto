@@ -1,0 +1,19 @@
+{
+  "tool_use_id": "toolu_01PWqnUag6WmwU1TPzEf1H1Z",
+  "agent_id": "a40cb8ca8f248b106",
+  "subagent_type": "general-purpose",
+  "task_description": "Unreleased-changes detector PR",
+  "files": [
+    "crates/callisto-graph/src/changed.rs",
+    "docs/architecture/versioning.md"
+  ],
+  "token_usage": {
+    "input_tokens": 90,
+    "cache_creation_tokens": 101400,
+    "cache_read_tokens": 4251808,
+    "output_tokens": 19450,
+    "api_call_count": 44
+  },
+  "started_at": "2026-11-07T15:37:07.032145-08:00",
+  "completed_at": "2026-11-07T15:49:06.107324-08:00"
+}

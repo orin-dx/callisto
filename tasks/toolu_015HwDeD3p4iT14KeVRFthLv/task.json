@@ -1,0 +1,22 @@
+{
+  "tool_use_id": "toolu_015HwDeD3p4iT14KeVRFthLv",
+  "agent_id": "aad8fb84dcb803c4e",
+  "subagent_type": "general-purpose",
+  "task_description": "Changeset markers module PR",
+  "files": [
+    ".p.pl",
+    "crates/callisto-graph/src/changelog/markdown/markers.rs",
+    "crates/callisto-graph/src/changelog/markdown/mod.rs",
+    "docs/architecture/versioning.md",
+    "docs/specs/versioning.json"
+  ],
+  "token_usage": {
+    "input_tokens": 52,
+    "cache_creation_tokens": 80064,
+    "cache_read_tokens": 2045473,
+    "output_tokens": 14439,
+    "api_call_count": 26
+  },
+  "started_at": "2026-11-07T15:37:05.995568-08:00",
+  "completed_at": "2026-11-07T15:47:37.698965-08:00"
+}
