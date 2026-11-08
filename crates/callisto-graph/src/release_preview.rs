@@ -406,6 +406,59 @@ pub fn assess(bumps: &[PlannedBump]) -> Vec<Finding> {
     }]
 }
 
+/// One row per released distribution. Rows are keyed by the qualified identity, so `cargo/shared` and `npm/shared`
+/// stay apart; a row is labelled with the bare name unless two rows share it.
+fn group_operations<'a>(
+    operations: impl IntoIterator<Item = &'a callisto_model::ReleaseOperationId>,
+) -> Vec<PublishTargets> {
+    use callisto_model::ReleaseOperationRole;
+
+    let mut releases: IndexMap<String, PublishTargets> = IndexMap::new();
+    for id in operations {
+        let qualified = id.package.to_string();
+        let release = releases.entry(qualified.clone()).or_insert_with(|| PublishTargets {
+            package: qualified,
+            version: id.version.render().to_owned(),
+            registries: Vec::new(),
+            tag: false,
+            github_release: false,
+            artifacts: 0,
+        });
+        match &id.role {
+            ReleaseOperationRole::RegistryPublish { registry } => {
+                release
+                    .registries
+                    .push(registry.registry_key().display_name().to_owned());
+            }
+            ReleaseOperationRole::PlatformPublish { registry, .. } => {
+                let name = format!("{} (platform packages)", registry.registry_key().display_name());
+                if !release.registries.contains(&name) {
+                    release.registries.push(name);
+                }
+            }
+            ReleaseOperationRole::Tag => release.tag = true,
+            ReleaseOperationRole::ForgeRelease => release.github_release = true,
+            ReleaseOperationRole::ArtifactUpload { .. } => release.artifacts += 1,
+            ReleaseOperationRole::ForgePublish => {}
+        }
+    }
+
+    let mut rows: Vec<PublishTargets> = releases.into_values().collect();
+    let bare = |qualified: &str| {
+        qualified
+            .split_once('/')
+            .map_or(qualified.to_owned(), |(_, name)| name.to_owned())
+    };
+    for index in 0..rows.len() {
+        let name = bare(&rows[index].package);
+        let shared = rows.iter().filter(|row| bare(&row.package) == name).count() > 1;
+        if !shared {
+            rows[index].package = name;
+        }
+    }
+    rows
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -580,57 +633,4 @@ mod tests {
         assert_eq!(json["changes"][0]["kind"]["kind"], "fallback");
         assert_eq!(json["findings"][0]["id"], "compatible");
     }
-}
-
-/// One row per released distribution. Rows are keyed by the qualified identity, so `cargo/shared` and `npm/shared`
-/// stay apart; a row is labelled with the bare name unless two rows share it.
-fn group_operations<'a>(
-    operations: impl IntoIterator<Item = &'a callisto_model::ReleaseOperationId>,
-) -> Vec<PublishTargets> {
-    use callisto_model::ReleaseOperationRole;
-
-    let mut releases: IndexMap<String, PublishTargets> = IndexMap::new();
-    for id in operations {
-        let qualified = id.package.to_string();
-        let release = releases.entry(qualified.clone()).or_insert_with(|| PublishTargets {
-            package: qualified,
-            version: id.version.render().to_owned(),
-            registries: Vec::new(),
-            tag: false,
-            github_release: false,
-            artifacts: 0,
-        });
-        match &id.role {
-            ReleaseOperationRole::RegistryPublish { registry } => {
-                release
-                    .registries
-                    .push(registry.registry_key().display_name().to_owned());
-            }
-            ReleaseOperationRole::PlatformPublish { registry, .. } => {
-                let name = format!("{} (platform packages)", registry.registry_key().display_name());
-                if !release.registries.contains(&name) {
-                    release.registries.push(name);
-                }
-            }
-            ReleaseOperationRole::Tag => release.tag = true,
-            ReleaseOperationRole::ForgeRelease => release.github_release = true,
-            ReleaseOperationRole::ArtifactUpload { .. } => release.artifacts += 1,
-            ReleaseOperationRole::ForgePublish => {}
-        }
-    }
-
-    let mut rows: Vec<PublishTargets> = releases.into_values().collect();
-    let bare = |qualified: &str| {
-        qualified
-            .split_once('/')
-            .map_or(qualified.to_owned(), |(_, name)| name.to_owned())
-    };
-    for index in 0..rows.len() {
-        let name = bare(&rows[index].package);
-        let shared = rows.iter().filter(|row| bare(&row.package) == name).count() > 1;
-        if !shared {
-            rows[index].package = name;
-        }
-    }
-    rows
 }
