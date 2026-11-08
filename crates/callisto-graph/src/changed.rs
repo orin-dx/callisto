@@ -1,9 +1,10 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use callisto_model::vcs::{GitAccess, VcsError};
 use callisto_model::{Package, PackageId};
 
+use crate::config::GroupTable;
 use crate::error::GraphError;
 use crate::tags::TagIndex;
 
@@ -90,6 +91,91 @@ pub fn changed_since_last_tag(
         changed.insert(pkg.id.clone(), differs[index] || dirty[index]);
     }
     Ok(changed)
+}
+
+/// Paths whose edits do not change what ships: tests, benches, examples, snapshots and Markdown.
+pub const DEFAULT_IGNORED_PATHS: &[&str] = &["tests/", "benches/", "examples/", "*.snap", "*.md", "CHANGELOG.md"];
+
+/// Files under each package's directories that differ between its last tag and `HEAD` or the working tree, minus the
+/// `ignore` pathspecs (a trailing `/` names a directory at any depth, anything else a file glob). An untagged package, or
+/// one whose tag is not a commit, yields all its tracked files. One git invocation per package.
+pub fn changed_source_files_since_last_tag(
+    packages: &[&Package],
+    tags: &TagIndex,
+    git: &GitAccess<'_>,
+    ignore: &[&str],
+) -> Result<BTreeMap<PackageId, Vec<PathBuf>>, GraphError> {
+    let excludes: Vec<String> = ignore.iter().map(|pattern| exclude_pathspec(pattern)).collect();
+    let mut result = BTreeMap::new();
+    for pkg in packages {
+        let base = match tags.last_tag(&pkg.id) {
+            Some(last) => tags.commit_of(git, last.name.as_str())?,
+            None => None,
+        };
+        let mut args: Vec<String> = match &base {
+            Some(commit) => [
+                "diff",
+                "--no-renames",
+                "--relative",
+                "--name-only",
+                "-z",
+                commit.as_str(),
+                "--",
+            ]
+            .map(String::from)
+            .to_vec(),
+            None => ["ls-files", "-z", "--"].map(String::from).to_vec(),
+        };
+        args.extend(package_paths(pkg).iter().map(|d| d.to_string_lossy().into_owned()));
+        args.extend(excludes.iter().cloned());
+        let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let output = git.runner().run("git", &arg_refs, git.root()).map_err(VcsError::from)?;
+        if !output.success() {
+            return Err(VcsError::Git(format!(
+                "`git {}` failed in `{}`: {}",
+                args[0],
+                git.root().display(),
+                output.redacted_stderr()
+            ))
+            .into());
+        }
+        let files: BTreeSet<PathBuf> = output
+            .stdout
+            .split('\0')
+            .map(|path| path.trim_start_matches('\n'))
+            .filter(|path| !path.is_empty())
+            .map(PathBuf::from)
+            .collect();
+        result.insert(pkg.id.clone(), files.into_iter().collect());
+    }
+    Ok(result)
+}
+
+fn exclude_pathspec(pattern: &str) -> String {
+    match pattern.strip_suffix('/') {
+        Some(directory) => format!(":(exclude,glob)**/{directory}/**"),
+        None => format!(":(exclude,glob)**/{pattern}"),
+    }
+}
+
+/// Packages with a changed source file that nothing releases: no pending changeset names them (`covered`), and no member
+/// of their fixed or linked group is covered, since a group moves together.
+pub fn uncovered_changes(
+    changed: &BTreeMap<PackageId, Vec<PathBuf>>,
+    covered: &BTreeSet<PackageId>,
+    groups: &GroupTable,
+) -> Vec<PackageId> {
+    let group_covered = |id: &PackageId| {
+        [(&groups.fixed_of, &groups.fixed), (&groups.linked_of, &groups.linked)]
+            .into_iter()
+            .filter_map(|(of, defs)| of.get(id).and_then(|name| defs.get(name)))
+            .any(|group| group.package_members().any(|member| covered.contains(member)))
+    };
+    changed
+        .iter()
+        .filter(|(id, files)| !files.is_empty() && !covered.contains(*id) && !group_covered(id))
+        .map(|(id, _)| id.clone())
+        .collect()
 }
 
 /// Which packages a path belongs to: those with a spec that is an ancestor directory of it, and those with the `.`
@@ -433,5 +519,249 @@ mod tests {
         let (result, _) = changed(root, &pkgs);
 
         assert!(result[&id("root")]);
+    }
+
+    fn sources(root: &Path, pkgs: &[Package], ignore: &[&str]) -> BTreeMap<PackageId, Vec<PathBuf>> {
+        let graph = FixedGraph { pkgs: pkgs.to_vec() };
+        let cfg = crate::config::load(root).unwrap();
+        let runner = GitRunner;
+        let git = GitAccess::new(root, &runner);
+        let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
+        let refs: Vec<&Package> = pkgs.iter().collect();
+        changed_source_files_since_last_tag(&refs, &tags, &git, ignore).unwrap()
+    }
+
+    fn files(map: &BTreeMap<PackageId, Vec<PathBuf>>, name: &str) -> Vec<String> {
+        map[&id(name)]
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn a_source_edit_is_reported() {
+        let dir = tagged_repo();
+        commit(dir.path(), "pkg-a/src/lib.rs", "a\n", "feat: a");
+
+        let result = sources(dir.path(), &[make_pkg("pkg-a")], DEFAULT_IGNORED_PATHS);
+
+        assert_eq!(files(&result, "pkg-a"), ["pkg-a/src/lib.rs"]);
+    }
+
+    #[test]
+    fn test_snapshot_and_markdown_edits_are_not_reported() {
+        let dir = tagged_repo();
+        let root = dir.path();
+        write(root, "pkg-a/tests/it.rs", "t\n");
+        write(root, "pkg-a/src/snapshots/x.snap", "s\n");
+        write(root, "pkg-a/README.md", "r\n");
+        write(root, "pkg-a/CHANGELOG.md", "c\n");
+        write(root, "pkg-a/benches/b.rs", "b\n");
+        write(root, "pkg-a/examples/e.rs", "e\n");
+        run_git(root, &["add", "-A"]);
+        run_git(root, &["commit", "-q", "-m", "test: only"]);
+
+        let result = sources(root, &[make_pkg("pkg-a")], DEFAULT_IGNORED_PATHS);
+
+        assert!(result[&id("pkg-a")].is_empty(), "{result:?}");
+    }
+
+    #[test]
+    fn each_ignore_kind_is_excluded_on_its_own_next_to_a_source_edit() {
+        let dir = tagged_repo();
+        let root = dir.path();
+        write(root, "pkg-a/src/a.rs", "a\n");
+        write(root, "pkg-a/src/tests/inner.rs", "t\n");
+        write(root, "pkg-a/src/y.snap", "s\n");
+        write(root, "pkg-a/docs/guide.md", "m\n");
+        run_git(root, &["add", "-A"]);
+        run_git(root, &["commit", "-q", "-m", "feat: mixed"]);
+
+        let result = sources(root, &[make_pkg("pkg-a")], DEFAULT_IGNORED_PATHS);
+
+        assert_eq!(files(&result, "pkg-a"), ["pkg-a/src/a.rs"]);
+    }
+
+    #[test]
+    fn a_reverted_edit_is_not_reported() {
+        let dir = tagged_repo();
+        let root = dir.path();
+        commit(root, "pkg-a/src/lib.rs", "a\n", "feat: a");
+        run_git(root, &["rm", "-q", "pkg-a/src/lib.rs"]);
+        run_git(root, &["commit", "-q", "-m", "revert: a"]);
+
+        let result = sources(root, &[make_pkg("pkg-a")], DEFAULT_IGNORED_PATHS);
+
+        assert!(result[&id("pkg-a")].is_empty());
+    }
+
+    #[test]
+    fn an_untagged_package_yields_all_its_tracked_source_files() {
+        let dir = tagged_repo();
+        let root = dir.path();
+        commit(root, "pkg-new/Cargo.toml", "[package]\n", "feat: new");
+        commit(root, "pkg-new/src/lib.rs", "l\n", "feat: lib");
+        commit(root, "pkg-new/tests/t.rs", "t\n", "test: t");
+
+        let result = sources(root, &[make_pkg("pkg-new")], DEFAULT_IGNORED_PATHS);
+
+        assert_eq!(files(&result, "pkg-new"), ["pkg-new/Cargo.toml", "pkg-new/src/lib.rs"]);
+    }
+
+    #[test]
+    fn only_the_package_that_changed_is_reported() {
+        let dir = tagged_repo();
+        commit(dir.path(), "pkg-b/src/lib.rs", "b\n", "feat: b");
+        let pkgs = [make_pkg("pkg-a"), make_pkg("pkg-b")];
+
+        let result = sources(dir.path(), &pkgs, DEFAULT_IGNORED_PATHS);
+
+        assert!(result[&id("pkg-a")].is_empty());
+        assert_eq!(files(&result, "pkg-b"), ["pkg-b/src/lib.rs"]);
+    }
+
+    #[test]
+    fn an_uncommitted_source_edit_is_reported() {
+        let dir = tagged_repo();
+        write(dir.path(), "pkg-a/Cargo.toml", "[package]\nname = \"a\"\n");
+
+        let result = sources(dir.path(), &[make_pkg("pkg-a")], DEFAULT_IGNORED_PATHS);
+
+        assert_eq!(files(&result, "pkg-a"), ["pkg-a/Cargo.toml"]);
+    }
+
+    #[test]
+    fn the_ignore_list_can_be_overridden() {
+        let dir = tagged_repo();
+        let root = dir.path();
+        write(root, "pkg-a/tests/it.rs", "t\n");
+        write(root, "pkg-a/README.md", "r\n");
+        run_git(root, &["add", "-A"]);
+        run_git(root, &["commit", "-q", "-m", "test: it"]);
+        let pkgs = [make_pkg("pkg-a")];
+
+        assert_eq!(files(&sources(root, &pkgs, &["*.md"]), "pkg-a"), ["pkg-a/tests/it.rs"]);
+        assert_eq!(
+            files(&sources(root, &pkgs, &[]), "pkg-a"),
+            ["pkg-a/README.md", "pkg-a/tests/it.rs"]
+        );
+    }
+
+    fn group_table(fixed: &[&[&str]], linked: &[&[&str]]) -> GroupTable {
+        use crate::config::groups::GroupMember;
+        use callisto_model::{GroupKind, GroupName};
+        let defs = |lists: &[&[&str]], kind: GroupKind, prefix: &str| -> Vec<crate::config::GroupDef> {
+            lists
+                .iter()
+                .enumerate()
+                .map(|(n, members)| crate::config::GroupDef {
+                    name: GroupName(format!("{prefix}{n}")),
+                    kind,
+                    members: members.iter().map(|m| GroupMember::Package(id(m))).collect(),
+                })
+                .collect()
+        };
+        GroupTable::try_from_groups(defs(fixed, GroupKind::Fixed, "f"), defs(linked, GroupKind::Linked, "l")).unwrap()
+    }
+
+    fn change_set(names: &[&str]) -> BTreeMap<PackageId, Vec<PathBuf>> {
+        names
+            .iter()
+            .map(|n| (id(n), vec![PathBuf::from("src/lib.rs")]))
+            .collect()
+    }
+
+    fn covered_set(names: &[&str]) -> BTreeSet<PackageId> {
+        names.iter().map(|n| id(n)).collect()
+    }
+
+    #[test]
+    fn a_changed_package_outside_any_group_without_a_changeset_is_reported() {
+        let out = uncovered_changes(&change_set(&["a", "b"]), &covered_set(&["a"]), &GroupTable::default());
+
+        assert_eq!(out, [id("b")]);
+    }
+
+    #[test]
+    fn a_package_with_no_changed_files_is_not_reported() {
+        let mut changed = change_set(&["a"]);
+        changed.insert(id("quiet"), Vec::new());
+
+        assert_eq!(
+            uncovered_changes(&changed, &covered_set(&[]), &GroupTable::default()),
+            [id("a")]
+        );
+    }
+
+    #[test]
+    fn a_covered_fixed_group_member_covers_its_sibling() {
+        let groups = group_table(&[&["a", "b"]], &[]);
+
+        assert!(uncovered_changes(&change_set(&["b"]), &covered_set(&["a"]), &groups).is_empty());
+        assert_eq!(
+            uncovered_changes(&change_set(&["b"]), &covered_set(&[]), &groups),
+            [id("b")]
+        );
+    }
+
+    #[test]
+    fn a_covered_linked_group_member_covers_its_sibling() {
+        let groups = group_table(&[], &[&["a", "b"]]);
+
+        assert!(uncovered_changes(&change_set(&["b"]), &covered_set(&["a"]), &groups).is_empty());
+    }
+
+    #[test]
+    fn a_covered_package_in_another_group_does_not_cover() {
+        let groups = group_table(&[&["a", "x"]], &[&["b", "y"]]);
+
+        let out = uncovered_changes(&change_set(&["b"]), &covered_set(&["a", "x"]), &groups);
+
+        assert_eq!(out, [id("b")]);
+    }
+
+    mod props {
+        use proptest::prelude::*;
+
+        use super::*;
+
+        const NAMES: [&str; 8] = ["p0", "p1", "p2", "p3", "p4", "p5", "p6", "p7"];
+
+        proptest! {
+            #[test]
+            fn uncovered_is_a_changed_subset_with_no_covered_package_or_group_mate(
+                changed_mask in prop::collection::vec(any::<bool>(), 8),
+                covered_mask in prop::collection::vec(any::<bool>(), 8),
+                fixed_cut in 0usize..=8,
+                linked_cut in 0usize..=8,
+            ) {
+                let pick = |mask: &[bool]| -> Vec<&str> {
+                    NAMES.iter().zip(mask).filter(|(_, on)| **on).map(|(n, _)| *n).collect()
+                };
+                let changed_names = pick(&changed_mask);
+                let covered_names = pick(&covered_mask);
+                let (fixed_lo, fixed_hi) = (0, fixed_cut.min(4));
+                let (linked_lo, linked_hi) = (4, linked_cut.max(4));
+                let fixed: Vec<&str> = NAMES[fixed_lo..fixed_hi].to_vec();
+                let linked: Vec<&str> = NAMES[linked_lo..linked_hi].to_vec();
+                let fixed_groups: Vec<&[&str]> = if fixed.is_empty() { vec![] } else { vec![&fixed] };
+                let linked_groups: Vec<&[&str]> = if linked.is_empty() { vec![] } else { vec![&linked] };
+                let groups = group_table(&fixed_groups, &linked_groups);
+                let changed = change_set(&changed_names);
+                let covered = covered_set(&covered_names);
+
+                let out = uncovered_changes(&changed, &covered, &groups);
+
+                for pkg in &out {
+                    prop_assert!(changed.contains_key(pkg));
+                    prop_assert!(!covered.contains(pkg));
+                    for members in [&fixed, &linked] {
+                        if members.iter().any(|m| id(m) == *pkg) {
+                            prop_assert!(!members.iter().any(|m| covered.contains(&id(m))));
+                        }
+                    }
+                }
+            }
+        }
     }
 }
