@@ -67,13 +67,24 @@ fn group_of(line: &str) -> Option<usize> {
     GROUP_HEADINGS.iter().position(|heading| *heading == line)
 }
 
+/// For each line of `text`, the bump group it opens. A group heading inside fenced code is an example, not a boundary,
+/// so the shared fence tracker decides which lines count.
+fn group_openers(text: &str) -> Vec<Option<usize>> {
+    let mut fences = crate::changelog::markdown::Fences::default();
+    text.lines()
+        .map(|line| if fences.is_code(line) { None } else { group_of(line) })
+        .collect()
+}
+
 /// The changelog entries of a section: each `- ` bullet with its indented continuation lines, and the index of the
 /// bump group it sits under (`None` in a flat section).
 fn entries(section: &str) -> Vec<(Option<usize>, String)> {
     let mut entries: Vec<(Option<usize>, String)> = Vec::new();
     let mut group = None;
+    let mut fences = crate::changelog::markdown::Fences::default();
     for line in section.lines() {
-        if let Some(index) = group_of(line) {
+        let in_code = fences.is_code(line);
+        if let Some(index) = group_of(line).filter(|_| !in_code) {
             group = Some(index);
             continue;
         }
@@ -82,7 +93,7 @@ fn entries(section: &str) -> Vec<(Option<usize>, String)> {
                 last.push('\n');
                 last.push_str(line);
             }
-            _ if line.starts_with("- ") => entries.push((group, line.to_owned())),
+            _ if !in_code && line.starts_with("- ") => entries.push((group, line.to_owned())),
             _ => {}
         }
     }
@@ -98,8 +109,8 @@ fn merge_into_groups(kept: &str, extra: &[(Option<usize>, String)]) -> String {
     let mut preamble: Vec<&str> = Vec::new();
     let mut groups: [Vec<String>; 3] = Default::default();
     let mut current: Option<usize> = None;
-    for line in kept.lines() {
-        match group_of(line) {
+    for (line, opens) in kept.lines().zip(group_openers(kept)) {
+        match opens {
             Some(index) => current = Some(index),
             None => match current {
                 Some(index) => groups[index].push(line.to_owned()),
@@ -196,7 +207,7 @@ pub(crate) fn group_release_notes(
         return Ok(own);
     }
     let kept = without_boilerplate(text);
-    if kept.lines().any(|line| group_of(line).is_some()) {
+    if group_openers(&kept).iter().any(Option::is_some) {
         return Ok(ReleaseNotes::Section(merge_into_groups(&kept, &extra)));
     }
     let extra = extra.into_iter().map(|(_, entry)| entry).collect::<Vec<_>>().join("\n");
@@ -458,5 +469,32 @@ mod tests {
             ),
             "{text}"
         );
+    }
+
+    /// A group heading shown inside a fenced example is text, not a boundary: treating it as one would split the fence.
+    #[test]
+    fn a_group_heading_inside_a_fence_is_not_a_boundary() {
+        let owner = Some(
+            "## 1.0.0\n\n_2026-11-08_\n\n```md\n### Major Changes\n- example\n```\n\n### Minor Changes\n\n- Owner feature.\n",
+        );
+        let mate = Some("## 1.0.0\n\n### Minor Changes\n\n- Mate feature.\n");
+        let text = section(group_notes(&[("owner", owner), ("mate", mate)]));
+        assert_eq!(
+            text,
+            "_2026-11-08_\n\n```md\n### Major Changes\n- example\n```\n\n### Minor Changes\n\n- Owner feature.\n- `mate`: Mate feature."
+        );
+    }
+
+    #[test]
+    fn a_fence_inside_a_group_stays_whole_and_its_bullets_are_not_entries() {
+        let owner = Some(
+            "## 1.0.0\n\n### Minor Changes\n\n- Owner feature.\n\n```md\n### Patch Changes\n- not an entry\n```\n",
+        );
+        let mate = Some("## 1.0.0\n\n### Minor Changes\n\n- not an entry\n");
+        let text = section(group_notes(&[("owner", owner), ("mate", mate)]));
+        // The mate's entry shares text with the example bullet; only real entries make "seen", so it is added.
+        assert!(text.contains("```md\n### Patch Changes\n- not an entry\n```"), "{text}");
+        assert!(text.contains("- `mate`: not an entry"), "{text}");
+        assert!(!text.contains("### Patch Changes\n\n- `mate`"), "{text}");
     }
 }

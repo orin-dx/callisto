@@ -1893,6 +1893,30 @@ fn plan_version_links_the_compare_range_to_origin_when_no_repository_is_configur
 }
 
 #[test]
+fn a_tag_ref_is_percent_encoded_in_the_compare_url() {
+    use super::encode_ref;
+    assert_eq!(encode_ref("pkg-a@1.0.0"), "pkg-a@1.0.0");
+    assert_eq!(encode_ref("release/v1+build:2"), "release/v1+build:2");
+    assert_eq!(encode_ref("release#1.0.0"), "release%231.0.0");
+    assert_eq!(encode_ref("a?b c%d"), "a%3Fb%20c%25d");
+    assert_eq!(encode_ref("café"), "caf%C3%A9");
+}
+
+/// A tag template containing `#` must not turn the compare range into a URL fragment.
+#[test]
+fn plan_version_links_a_hash_in_a_tag_template_as_an_encoded_ref() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let config =
+        format!("{RELEASE_CONFIG}[[package]]\nmatch = \"cargo/pkg-a\"\ntag-template = \"release#{{version}}\"\n");
+    style_repo(root, Some(&config), Some("release#1.0.0"));
+    assert_eq!(
+        planned_style(root, Some("2026-11-08")).compare_url.as_deref(),
+        Some("https://github.com/acme/widgets/compare/release%231.0.0...release%231.1.0")
+    );
+}
+
+#[test]
 fn plan_version_without_a_date_leaves_the_date_off() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();

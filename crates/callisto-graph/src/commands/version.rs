@@ -69,7 +69,6 @@ fn map_reason_to_change_source(
     }
 }
 
-/// The header facts for `id`'s section. A compare link needs a known repository and a tag on the previous version.
 /// The GitHub repository compare links point to: the configured `[release] forge-repository`, else `origin`'s. No remote
 /// or a remote that is not on github.com means no link, not an error.
 fn changelog_repository<R: CommandRunner, D: DependencyResolver>(
@@ -87,6 +86,19 @@ fn changelog_repository<R: CommandRunner, D: DependencyResolver>(
         })
 }
 
+/// `reference` as a URL path segment. A tag template may use `#`, `?` or `%`, which would turn the rest of the compare
+/// range into a fragment or a query; `/`, `@`, `+` and `:` are fine in a path and git refs use them.
+fn encode_ref(reference: &str) -> String {
+    reference.bytes().fold(String::new(), |mut out, byte| {
+        if byte.is_ascii_alphanumeric() || b"-._~/@+:".contains(&byte) {
+            out.push(char::from(byte));
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+        out
+    })
+}
+
 /// The header facts for `id`'s section. A compare link needs a known repository and a tag on the previous version.
 fn changelog_style<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
@@ -102,8 +114,10 @@ fn changelog_style<R: CommandRunner, D: DependencyResolver>(
         .map(|(repository, previous)| {
             let next = tags.template(id).render(to);
             format!(
-                "https://github.com/{}/compare/{previous}...{next}",
-                repository.as_slug()
+                "https://github.com/{}/compare/{}...{}",
+                repository.as_slug(),
+                encode_ref(&previous.to_string()),
+                encode_ref(&next.to_string())
             )
         });
     ChangelogStyle {
