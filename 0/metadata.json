@@ -1,0 +1,86 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M6WTA3QJE4MEN6WN8J7R7FSX",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-08T05:33:18.943362Z",
+  "branch": "fix/changelog-style-literal",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "551264ea5d04",
+  "checkpoint_transcript_start": 27400,
+  "transcript_lines_at_start": 27400,
+  "compact_transcript_start": 1997,
+  "token_usage": {
+    "input_tokens": 54,
+    "cache_creation_tokens": 31734,
+    "cache_read_tokens": 22795511,
+    "output_tokens": 14148,
+    "api_call_count": 27,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 62,
+    "layers": {
+      "betterleaks": 22,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 36,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "session_metrics": {
+    "turn_count": 165
+  },
+  "summary": {
+    "intent": "Land a stack of four related PRs (#473-#476) for release-notes/changelog improvements, verify they work together, and keep the work moving after the user said to continue.",
+    "outcome": "Combined-tree testing found a one-line semantic conflict between #473 and #474. After all four PRs merged without that fix, main failed to compile its tests and the Release workflow failed. A fix branch (fix/changelog-style-literal) was committed and pushed with a PR link attempted; the fix passes local verification.",
+    "learnings": {
+      "repo": [
+        "Each PR in the stack passed CI alone, but #473 (added a test building a ChangelogInput literal) and #474 (added a required `style` field) fail to compile together: `missing field style`.",
+        "Repo verification is run via a verify.sh covering pre-push, lint, doc-check, test and two workflow contract scripts.",
+        "The Release workflow on main fails when main's tests do not compile; it failed on the last two merges.",
+        "PR checklist template now includes a Docs line requiring updates to spec, ARCHITECTURE.md, architecture pages, docs/config.md and docs/errors.md where applicable.",
+        "Merge-order notes for the release-notes work live in .claude/plans/PLAN-release-notes.md."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/release_preview.rs",
+          "line": 676,
+          "end_line": 690,
+          "finding": "The `plan_with_summary` test builds a ChangelogInput literal that needs `style: Default::default(),` once the `style` field exists; this is the missing line that broke main."
+        }
+      ],
+      "workflow": [
+        "Octopus-merging open PR heads in a scratch worktree surfaces semantic conflicts that per-PR CI and clean textual merges miss.",
+        "Recording a known fix in a plan file does not prevent it from being skipped at merge time; the fix should be applied to the PR before merge or a stacked PR should be gated.",
+        "After a batch of merges, verify main itself in a fresh detached worktree and check CI run status on main.",
+        "Required struct fields with a Default-style fallback are a hazard when parallel PRs add literals of that struct."
+      ]
+    },
+    "friction": [
+      "Main was broken after #474 merged following #473 without the predicted one-line fix being applied.",
+      "The Release workflow failed on the last two merges to main.",
+      "Local verify and the real-run script had to be adapted per worktree path (sed on the target dir)."
+    ],
+    "open_items": [
+      "Open and merge the fix PR from fix/changelog-style-literal to restore main (PR number lookup result not shown).",
+      "Confirm the Release workflow passes on main after the fix.",
+      "Labels and the preview path rule were deferred until #473 and #475 merged.",
+      "A real GitHub release and real registry publish are still not exercised; the publish table comes from the offline plan.",
+      "Consider a safeguard (e.g. merge queue or CI on merge result) to catch cross-PR semantic conflicts."
+    ]
+  }
+}
