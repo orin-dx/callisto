@@ -334,6 +334,10 @@
       "criterion": "`callisto snapshot --tag <tag>` sets each SemVer package's manifest version to `0.0.0-<tag>-<short HEAD sha>` and each PEP 440 package's to `0.0.0.dev0+<tag>.<short HEAD sha>`, prints each `from → to`, and leaves changesets in place. A tag that is empty or has a character other than a letter, digit or `-` is rejected with E324 before anything is planned."
     },
     {
+      "id": "CLI-PATH-01",
+      "criterion": "A relative path given to the `release` and `release-pr` file flags (`--intent`, `--receipt`, `--out`, `--artifact-dir`, `--input`, `--artifact-manifest`, `--source-root`) is resolved against `--cwd`, not the process directory; an absolute path is used unchanged. Decision-file flags stay relative to the workspace root."
+    },
+    {
       "id": "CLI-COMP-01",
       "criterion": "`callisto completions <shell>` prints a completion script for bash, elvish, fish, powershell or zsh and exits 0."
     },

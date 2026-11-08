@@ -31,6 +31,18 @@ pub struct GlobalArgs {
     pub dry_run: bool,
 }
 
+impl GlobalArgs {
+    /// A relative file or directory flag value is relative to `--cwd`, like `git -C`.
+    #[must_use]
+    pub fn resolve_file_arg(&self, path: &std::path::Path) -> PathBuf {
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            self.cwd.join(path)
+        }
+    }
+}
+
 /// Output rendering mode: human-readable text or machine-readable JSON.
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OutputFormat {
@@ -301,7 +313,7 @@ pub struct ReleaseCommandArgs {
     /// Release this qualified package, for example `cargo/callisto-cli`, with every distribution of it and the members of its groups. Repeatable.
     #[arg(long = "package", value_name = "ECOSYSTEM/NAME")]
     pub packages: Vec<String>,
-    /// Also write the release receipt to this file.
+    /// Also write the release receipt to this file; a relative path is relative to `--cwd`.
     #[arg(long, value_name = "FILE")]
     pub receipt: Option<PathBuf>,
 }
@@ -376,7 +388,7 @@ pub struct ReleasePrCommitPlanArgs {
     /// Commit message to record in the plan for the forge commit API.
     #[arg(long)]
     pub message: String,
-    /// Write the plan to this file instead of stdout.
+    /// Write the plan to this file instead of stdout; a relative path is relative to `--cwd`.
     #[arg(long, value_name = "FILE")]
     pub out: Option<PathBuf>,
 }
@@ -416,7 +428,7 @@ pub struct ReleasePlanArgs {
     /// committed diff matches this file instead of re-deriving the release set.
     #[arg(long, value_name = "FILE")]
     pub decision: Option<PathBuf>,
-    /// Explicit path where the immutable intent JSON will be atomically written.
+    /// Explicit path where the immutable intent JSON will be atomically written; a relative path is relative to `--cwd`.
     #[arg(long, value_name = "FILE")]
     pub out: PathBuf,
 }
@@ -466,7 +478,7 @@ pub struct ReleaseArtifactManifestArgs {
     /// Also seal the sdist and wheel of every Python publish in the intent, found in the artifact directory.
     #[arg(long)]
     pub seal_python: bool,
-    /// Explicit path where the artifact manifest will be atomically written.
+    /// Explicit path where the artifact manifest will be atomically written; a relative path is relative to `--cwd`.
     #[arg(long, value_name = "FILE")]
     pub out: PathBuf,
 }
@@ -487,7 +499,7 @@ pub struct ReleaseExecuteArgs {
     /// Required with --artifact-manifest; it is never inferred from the checkout.
     #[arg(long, value_name = "DIR", requires = "artifact_manifest")]
     pub artifact_dir: Option<PathBuf>,
-    /// Write the terminal, provider-observed receipt to this explicit path.
+    /// Write the terminal, provider-observed receipt to this explicit path; a relative path is relative to `--cwd`.
     /// A release is not reported successful until this receipt is written.
     #[arg(long, value_name = "FILE")]
     pub receipt: PathBuf,

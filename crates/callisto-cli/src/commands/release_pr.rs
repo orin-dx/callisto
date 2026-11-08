@@ -12,7 +12,7 @@ use callisto_graph::{GraphError, Workspace};
 use callisto_model::format::{parse_pre_json, PreMode};
 use callisto_model::vcs::GitAccess;
 use callisto_model::{
-    ApplyPermit, CommitSha, GitHubRepository, ReleasePrActionV2, ReleasePrCommitPlanReport, ReleasePrCommitPlanV1,
+    CommitSha, GitHubRepository, ReleasePrActionV2, ReleasePrCommitPlanReport, ReleasePrCommitPlanV1,
     ReleasePrConfigV1, ReleasePrConfigWireV1, ReleasePrDecideReport, ReleasePrDecisionError, ReleasePrDecisionV2,
     ReleasePrDecisionWireV2, ReleasePrSnapshotV2, ReleasePrSnapshotWireV2, ReleasePrVerifyReport,
 };
@@ -20,8 +20,8 @@ use callisto_model::{
 use crate::cli::{
     GlobalArgs, OutputFormat, ReleasePrArgs, ReleasePrCommitPlanArgs, ReleasePrDecideArgs, ReleasePrVerifyArgs,
 };
-use crate::commands::read_json_arg;
 use crate::error::CliError;
+use crate::io::{read_json_input, OutputFile, OutputKind};
 use crate::output::{emit_line, emit_report};
 use crate::runner::CliCommandRunner;
 use crate::workspace::load_workspace;
@@ -32,18 +32,6 @@ pub fn handle(args: ReleasePrArgs, global: &GlobalArgs) -> Result<ExitCode, CliE
         ReleasePrArgs::Verify(args) => verify(args, global),
         ReleasePrArgs::CommitPlan(args) => commit_plan(args, global),
     }
-}
-
-/// Reads `flag`'s argument (file, inline JSON, or `-` for stdin) as an unvalidated wire
-/// value. Kept separate from the domain type's own validating constructor so a JSON parse
-/// failure (`E281`) and a domain validation failure (its own typed `E1xx` code) are never
-/// folded into one generic error.
-fn read_json_arg_as<T: serde::de::DeserializeOwned>(flag: &'static str, arg: &str) -> Result<T, CliError> {
-    let text = read_json_arg(arg)?;
-    serde_json::from_str(&text).map_err(|error| CliError::ReleasePrArgJsonInvalid {
-        flag,
-        detail: error.to_string(),
-    })
 }
 
 #[derive(serde::Deserialize)]
@@ -69,7 +57,7 @@ where
 }
 
 fn read_decision_arg(arg: &str) -> Result<ReleasePrDecisionWireV2, CliError> {
-    let input: ReleasePrDecisionInput = read_json_arg_as("decision", arg)?;
+    let input: ReleasePrDecisionInput = read_json_input("decision", arg)?;
     match (&input.command, input.dry_run) {
         (None, None) => {}
         (Some(command), Some(_)) if command == <ReleasePrDecideReport as callisto_model::Report>::COMMAND => {}
@@ -91,7 +79,7 @@ fn read_decision_arg(arg: &str) -> Result<ReleasePrDecisionWireV2, CliError> {
 fn verify(args: ReleasePrVerifyArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     let decision_wire = read_decision_arg(&args.decision)?;
     let decision = ReleasePrDecisionV2::from_wire(decision_wire)?;
-    let snapshot_wire: ReleasePrSnapshotWireV2 = read_json_arg_as("snapshot", &args.snapshot)?;
+    let snapshot_wire: ReleasePrSnapshotWireV2 = read_json_input("snapshot", &args.snapshot)?;
     let snapshot = ReleasePrSnapshotV2::from_wire(snapshot_wire)?;
     match args.applied_head {
         Some(head) => decision.verify_snapshot_after_update(&snapshot, &CommitSha::parse(&head)?)?,
@@ -109,7 +97,7 @@ fn verify(args: ReleasePrVerifyArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
 }
 
 fn decide(args: ReleasePrDecideArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
-    let snapshot_wire: ReleasePrSnapshotWireV2 = read_json_arg_as("snapshot", &args.snapshot)?;
+    let snapshot_wire: ReleasePrSnapshotWireV2 = read_json_input("snapshot", &args.snapshot)?;
     let snapshot = ReleasePrSnapshotV2::from_wire(snapshot_wire)?;
     let repository =
         GitHubRepository::parse(&args.repository).map_err(|_error| ReleasePrDecisionError::InvalidRepository {
@@ -151,6 +139,10 @@ fn reject_pre_mode(workspace: &Workspace<'_, CliCommandRunner, ManifestWalkResol
 }
 
 fn commit_plan(args: ReleasePrCommitPlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
+    let out = args
+        .out
+        .map(|path| OutputFile::new(global.resolve_file_arg(&path), global.dry_run, OutputKind::CommitPlan))
+        .transpose()?;
     let base_commit = CommitSha::parse(&args.base_commit)?;
 
     let start = dunce::canonicalize(&global.cwd).map_err(|source| CliError::Io {
@@ -162,15 +154,10 @@ fn commit_plan(args: ReleasePrCommitPlanArgs, global: &GlobalArgs) -> Result<Exi
     let changes = git.staged_changes_since(&base_commit)?;
     let plan = ReleasePrCommitPlanV1::from_changes(base_commit, args.message, changes)?;
 
-    match args.out {
-        Some(path) => {
-            let permit =
-                ApplyPermit::granted_unless_dry_run(global.dry_run).ok_or(CliError::ReleasePrCommitPlanDryRun)?;
-            let content = serde_json::to_string_pretty(&plan).expect("commit plan serializes") + "\n";
-            callisto_model::atomic::atomic_write(&path, &content, &permit).map_err(|source| CliError::Io {
-                source,
-                path: Some(path),
-            })?;
+    match out {
+        Some(out) => {
+            let permit = out.permit();
+            out.commit(&permit, &plan)?;
         }
         None => emit_report(
             &mut std::io::stdout(),
@@ -205,9 +192,10 @@ fn render_decision(decision: &ReleasePrDecisionV2) -> Result<(), CliError> {
 mod tests {
     use clap::Parser;
 
-    use super::{read_decision_arg, read_json_arg_as};
+    use super::read_decision_arg;
     use crate::cli::{Cli, Command, ReleasePrArgs};
     use crate::error::CliError;
+    use crate::io::read_json_input;
 
     fn decision_json() -> serde_json::Value {
         serde_json::json!({
@@ -296,8 +284,8 @@ mod tests {
     /// `ReleasePrArgJsonInvalid` (`E281`) naming the offending flag, not a bare `serde_json`
     /// error nor `CliError::Other`.
     #[test]
-    fn read_json_arg_as_reports_typed_error_for_malformed_json() {
-        let err = read_json_arg_as::<serde_json::Value>("snapshot", "{not json").unwrap_err();
+    fn read_json_input_reports_typed_error_for_malformed_json() {
+        let err = read_json_input::<serde_json::Value>("snapshot", "{not json").unwrap_err();
         match err {
             CliError::ReleasePrArgJsonInvalid { flag, detail } => {
                 assert_eq!(flag, "snapshot");
