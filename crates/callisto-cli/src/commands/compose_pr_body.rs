@@ -8,7 +8,7 @@ use crate::error::CliError;
 use crate::output::emit_report;
 use crate::render;
 use crate::runner::CliCommandRunner;
-use crate::workspace::{load_workspace, select_inference, workspace_root};
+use crate::workspace::{load_workspace, select_inference};
 
 pub fn handle(args: ComposePrBodyArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     let existing_body = match args.existing_body {
@@ -28,8 +28,7 @@ pub fn handle(args: ComposePrBodyArgs, global: &GlobalArgs) -> Result<ExitCode, 
 
     let report = match args.preview {
         Some(path) => {
-            // The workspace root, as `version --emit-preview` resolves it, not the process directory.
-            let path = workspace_root(global, &CliCommandRunner)?.join(path);
+            let path = global.resolve_file_arg(&path);
             let text = std::fs::read_to_string(&path).map_err(|source| CliError::Io {
                 source,
                 path: Some(path.clone()),

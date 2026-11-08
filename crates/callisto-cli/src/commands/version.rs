@@ -59,7 +59,7 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
     // Built from the plan before apply consumes the changesets it describes.
     let pending_preview = match args.emit_preview.as_deref().filter(|_| !has_errors) {
         Some(path) => Some((
-            ws.root.join(path),
+            global.resolve_file_arg(path),
             callisto_graph::release_preview::build_release_preview_in(&ws, &plan)?,
         )),
         None => None,

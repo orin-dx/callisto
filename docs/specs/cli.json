@@ -335,7 +335,7 @@
     },
     {
       "id": "CLI-PATH-01",
-      "criterion": "A relative path given to the `release` and `release-pr` file flags (`--intent`, `--receipt`, `--out`, `--artifact-dir`, `--input`, `--artifact-manifest`, `--source-root`) is resolved against `--cwd`, not the process directory; an absolute path is used unchanged. Decision-file flags stay relative to the workspace root."
+      "criterion": "A relative path given to `version --emit-preview`, `compose-pr-body --preview` and the `release` and `release-pr` file flags (`--intent`, `--receipt`, `--out`, `--artifact-dir`, `--input`, `--artifact-manifest`, `--source-root`) is resolved against `--cwd`, not the process directory; an absolute path is used unchanged. Decision-file flags stay relative to the workspace root."
     },
     {
       "id": "CLI-COMP-01",
