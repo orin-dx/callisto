@@ -26,13 +26,14 @@ use crate::cli::{
     ReleaseExecuteArgs, ReleaseInspectArgs, ReleasePendingArgs, ReleasePlanArgs,
 };
 use crate::error::CliError;
+use crate::io::{read_json_file, OutputFile, OutputKind};
 use crate::output::{emit_line, emit_report, log_line, write_json};
 use crate::runner::CliCommandRunner;
 use crate::workspace::{load_workspace, select_inference};
 
 pub fn handle(args: ReleaseCommandArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     match args.command {
-        None => release(&args.packages, args.receipt, global),
+        None => release(&args.packages, args.receipt.as_deref(), global),
         Some(ReleaseArgs::Pending(args)) => pending(args, global),
         Some(ReleaseArgs::Plan(args)) => plan(args, global),
         Some(ReleaseArgs::Inspect(args)) => inspect(args, global),
@@ -57,11 +58,7 @@ fn tag_missing_from_origin_note(tag: &str) -> String {
 /// Exact stdout when no package has an unreleased version.
 pub const NOTHING_TO_RELEASE: &str = "Nothing to release.";
 
-fn release(
-    packages: &[String],
-    receipt: Option<std::path::PathBuf>,
-    global: &GlobalArgs,
-) -> Result<ExitCode, CliError> {
+fn release(packages: &[String], receipt: Option<&std::path::Path>, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     let selections = parse_selections(packages)?;
     let runner = CliCommandRunner;
     let workspace = load_workspace(global, &runner)?;
@@ -103,11 +100,11 @@ fn release(
     let intent = plan.intent;
     let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).expect("non-dry-run permits writes");
     // A receipt records only full success; a partial run is recovered by rerunning.
-    if let Some(path) = &receipt {
-        callisto_model::atomic::probe_atomic_write(path, &permit).map_err(|source| CliError::Io {
-            source,
-            path: Some(path.clone()),
-        })?;
+    let receipt = receipt
+        .map(|path| OutputFile::new(global.resolve_file_arg(path), global.dry_run, OutputKind::Receipt))
+        .transpose()?;
+    if let Some(receipt) = &receipt {
+        receipt.probe()?;
     }
     let callisto_model::SourceIdentity::GitCommit { sha } = &intent.snapshot.source else {
         return Err(CliError::ReleaseEnvelopeInvalid {
@@ -125,8 +122,9 @@ fn release(
         ReleaseReceiptV1::from_state(capability.intent(), &state).map_err(|error| CliError::ReleaseReceiptIssue {
             detail: error.to_string(),
         })?;
-    if let Some(path) = &receipt {
-        write_receipt(path, &receipt_document, &permit)?;
+    let receipt_path = receipt.as_ref().map(|receipt| receipt.path().to_path_buf());
+    if let Some(receipt) = receipt {
+        receipt.commit(&permit, &receipt_document)?;
     }
     match global.format {
         OutputFormat::Json => emit_report(
@@ -138,7 +136,7 @@ fn release(
         )?,
         OutputFormat::Text => {
             let released = capability.intent().decision.entries.len();
-            match &receipt {
+            match &receipt_path {
                 Some(path) => emit_line(&format!(
                     "Released {released} package(s); receipt saved to {}",
                     path.display()
@@ -350,13 +348,14 @@ fn build_python(args: ReleaseBuildPythonArgs, global: &GlobalArgs) -> Result<Exi
     if global.dry_run {
         return Err(CliError::ReleaseBuildPythonDryRun);
     }
-    let intent = read_intent(&args.intent)?;
+    let intent = read_intent(&global.resolve_file_arg(&args.intent))?;
     if callisto_model::python_publishes(&intent).is_empty() {
         return Err(CliError::ReleaseNoPythonPublishes);
     }
-    let outdir = args.artifact_dir.canonicalize().map_err(|source| CliError::Io {
+    let artifact_dir = global.resolve_file_arg(&args.artifact_dir);
+    let outdir = artifact_dir.canonicalize().map_err(|source| CliError::Io {
         source,
-        path: Some(args.artifact_dir.clone()),
+        path: Some(artifact_dir.clone()),
     })?;
     let runner = CliCommandRunner;
     let source_workspace = load_workspace(&source_global(global, args.source_root.as_deref()), &runner)?;
@@ -376,19 +375,22 @@ fn build_python(args: ReleaseBuildPythonArgs, global: &GlobalArgs) -> Result<Exi
 }
 
 fn artifact_manifest(args: ReleaseArtifactManifestArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
-    if global.dry_run {
-        return Err(CliError::ReleaseArtifactManifestDryRun);
-    }
-    let intent = read_intent(&args.intent)?;
+    let out = OutputFile::new(
+        global.resolve_file_arg(&args.out),
+        global.dry_run,
+        OutputKind::ArtifactManifest,
+    )?;
+    let intent = read_intent(&global.resolve_file_arg(&args.intent))?;
     if args.seal_python && callisto_model::python_publishes(&intent).is_empty() {
         return Err(CliError::ReleaseNoPythonPublishes);
     }
     if intent.artifact_slots.is_empty() && !args.seal_python {
         return Err(CliError::ReleaseNoArtifactSlots);
     }
-    let root = args.artifact_dir.canonicalize().map_err(|source| CliError::Io {
+    let artifact_dir = global.resolve_file_arg(&args.artifact_dir);
+    let root = artifact_dir.canonicalize().map_err(|source| CliError::Io {
         source,
-        path: Some(args.artifact_dir.clone()),
+        path: Some(artifact_dir.clone()),
     })?;
     if !matches!(intent.snapshot.source, callisto_model::SourceIdentity::GitCommit { .. }) {
         return Err(CliError::ReleaseManifestSourceNotGit);
@@ -447,12 +449,9 @@ fn artifact_manifest(args: ReleaseArtifactManifestArgs, global: &GlobalArgs) -> 
             detail: error.to_string(),
         }
     })?;
-    let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).expect("non-dry-run permits writes");
-    let content = serde_json::to_string_pretty(&manifest).expect("artifact manifest serializes") + "\n";
-    callisto_model::atomic::atomic_write(&args.out, &content, &permit).map_err(|source| CliError::Io {
-        source,
-        path: Some(args.out.clone()),
-    })?;
+    let out_path = out.path().to_path_buf();
+    let permit = out.permit();
+    out.commit(&permit, &manifest)?;
     match global.format {
         OutputFormat::Json => emit_report(
             &mut std::io::stdout(),
@@ -461,15 +460,13 @@ fn artifact_manifest(args: ReleaseArtifactManifestArgs, global: &GlobalArgs) -> 
             },
             global.dry_run,
         )?,
-        OutputFormat::Text => emit_line(&format!("Artifact manifest saved to {}", args.out.display()))?,
+        OutputFormat::Text => emit_line(&format!("Artifact manifest saved to {}", out_path.display()))?,
     }
     Ok(ExitCode::SUCCESS)
 }
 
 fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
-    if global.dry_run {
-        return Err(CliError::ReleasePlanDryRun);
-    }
+    let out = OutputFile::new(global.resolve_file_arg(&args.out), global.dry_run, OutputKind::Intent)?;
     let runner = CliCommandRunner;
     let source_global = source_global(global, args.source_root.as_deref());
     let workspace = load_workspace(&source_global, &runner)?;
@@ -592,9 +589,9 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
             )
         }
     };
-    let permit = ApplyPermit::granted_unless_dry_run(global.dry_run)
-        .expect("release plan rejects --dry-run before creating its explicit output");
-    write_intent(&args.out, &intent, &permit)?;
+    let out_path = out.path().to_path_buf();
+    let permit = out.permit();
+    out.commit(&permit, &intent)?;
     for diagnostic in &diagnostics {
         eprintln!("warning: {}", diagnostic.message);
     }
@@ -610,14 +607,14 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
         OutputFormat::Text => emit_line(&format!(
             "Wrote release intent {} to {}",
             intent.digest(),
-            args.out.display()
+            out_path.display()
         ))?,
     }
     Ok(ExitCode::SUCCESS)
 }
 
 fn inspect(args: ReleaseInspectArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
-    let value = read_json_file(&args.input)?;
+    let value: serde_json::Value = read_json_file(&global.resolve_file_arg(&args.input))?;
     match global.format {
         OutputFormat::Json => write_json(&mut std::io::stdout(), &value)?,
         OutputFormat::Text => emit_line(&serde_json::to_string_pretty(&value).expect("JSON value serializes"))?,
@@ -628,28 +625,31 @@ fn inspect(args: ReleaseInspectArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
 fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     // Inputs and the receipt destination are checked before the first effect; a provider failure
     // mid-run still leaves landed effects without a receipt, and a rerun adopts them.
-    let permit = ApplyPermit::granted_unless_dry_run(global.dry_run).ok_or(CliError::ReleaseExecuteDryRun)?;
-    let intent = read_intent(&args.intent)?;
+    let receipt = OutputFile::new(
+        global.resolve_file_arg(&args.receipt),
+        global.dry_run,
+        OutputKind::Receipt,
+    )?;
+    let permit = receipt.permit();
+    let intent = read_intent(&global.resolve_file_arg(&args.intent))?;
     let orchestration_revision = callisto_model::CommitSha::parse(&args.orchestration_revision).map_err(|error| {
         CliError::ReleaseOrchestrationRevisionInvalid {
             revision: args.orchestration_revision.clone(),
             detail: error.to_string(),
         }
     })?;
-    callisto_model::atomic::probe_atomic_write(&args.receipt, &permit).map_err(|source| CliError::Io {
-        source,
-        path: Some(args.receipt.clone()),
-    })?;
+    receipt.probe()?;
     let manifest = args
         .artifact_manifest
         .as_deref()
-        .map(read_artifact_manifest)
+        .map(|path| read_artifact_manifest(&global.resolve_file_arg(path)))
         .transpose()?;
     let sealed_python = manifest
         .as_ref()
         .is_some_and(|manifest| !manifest.distributions.is_empty());
     let needs_artifacts = sealed_python || !intent.artifact_slots.is_empty();
-    let verified_artifacts = match (manifest.as_ref(), args.artifact_dir.as_deref()) {
+    let artifact_dir = args.artifact_dir.as_deref().map(|dir| global.resolve_file_arg(dir));
+    let verified_artifacts = match (manifest.as_ref(), artifact_dir.as_deref()) {
         (None, None) if !needs_artifacts => None,
         (Some(manifest), Some(directory)) if needs_artifacts => {
             let runner = CliCommandRunner;
@@ -695,20 +695,21 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
     let locator = IgnoreWalkLocator::new(&root);
     let capability = validate_release_intent(&root, &locator, &runner, intent)?;
     let state = execute_release(&capability, &permit, &envelope, verified_artifacts.as_ref())?;
-    let receipt =
+    let receipt_document =
         ReleaseReceiptV1::from_state(capability.intent(), &state).map_err(|error| CliError::ReleaseReceiptIssue {
             detail: error.to_string(),
         })?;
-    write_receipt(&args.receipt, &receipt, &permit)?;
+    let receipt_path = receipt.path().to_path_buf();
+    receipt.commit(&permit, &receipt_document)?;
     match global.format {
         OutputFormat::Json => emit_report(
             &mut std::io::stdout(),
             &ReleaseExecuteReport {
-                receipt: receipt.clone(),
+                receipt: receipt_document.clone(),
             },
             global.dry_run,
         )?,
-        OutputFormat::Text => emit_line(&format!("Release receipt saved to {}", args.receipt.display()))?,
+        OutputFormat::Text => emit_line(&format!("Release receipt saved to {}", receipt_path.display()))?,
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -716,13 +717,13 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
 fn source_global(global: &GlobalArgs, source_root: Option<&std::path::Path>) -> GlobalArgs {
     let mut source = global.clone();
     if let Some(root) = source_root {
-        source.cwd = root.to_path_buf();
+        source.cwd = global.resolve_file_arg(root);
     }
     source
 }
 
 fn read_intent(path: &std::path::Path) -> Result<ReleaseIntentV1, CliError> {
-    let value = read_json_file(path)?;
+    let value: serde_json::Value = read_json_file(path)?;
     // A stale intent is the expected failure after a schema bump; name it
     // before serde reports it as an opaque parse error.
     let found = &value["schemaVersion"];
@@ -741,37 +742,10 @@ fn read_intent(path: &std::path::Path) -> Result<ReleaseIntentV1, CliError> {
 }
 
 fn read_artifact_manifest(path: &std::path::Path) -> Result<ArtifactManifestV1, CliError> {
-    serde_json::from_value(read_json_file(path)?).map_err(|error| CliError::ArtifactManifestFileInvalid {
+    let value: serde_json::Value = read_json_file(path)?;
+    serde_json::from_value(value).map_err(|error| CliError::ArtifactManifestFileInvalid {
         path: path.display().to_string(),
         detail: error.to_string(),
-    })
-}
-
-fn read_json_file(path: &std::path::Path) -> Result<serde_json::Value, CliError> {
-    let content = std::fs::read_to_string(path).map_err(|source| CliError::Io {
-        source,
-        path: Some(path.to_path_buf()),
-    })?;
-    serde_json::from_str(&content).map_err(|error| CliError::ReleaseJsonInvalid {
-        path: path.display().to_string(),
-        detail: error.to_string(),
-    })
-}
-
-fn write_intent(path: &std::path::Path, intent: &ReleaseIntentV1, permit: &ApplyPermit) -> Result<(), CliError> {
-    let content = serde_json::to_string_pretty(intent).expect("release intent serializes") + "\n";
-    callisto_model::atomic::atomic_write(path, &content, permit).map_err(|source| CliError::Io {
-        source,
-        path: Some(path.to_path_buf()),
-    })?;
-    Ok(())
-}
-
-fn write_receipt(path: &std::path::Path, receipt: &ReleaseReceiptV1, permit: &ApplyPermit) -> Result<(), CliError> {
-    let content = serde_json::to_string_pretty(receipt).expect("release receipt serializes") + "\n";
-    callisto_model::atomic::atomic_write(path, &content, permit).map_err(|source| CliError::Io {
-        source,
-        path: Some(path.to_path_buf()),
     })
 }
 

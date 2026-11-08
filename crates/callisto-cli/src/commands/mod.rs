@@ -12,26 +12,6 @@ pub mod snapshot;
 pub mod status;
 pub mod version;
 
-/// Reads `arg` as a JSON document: a literal `-` reads from stdin, a value
-/// starting with `{` is treated as inline JSON, anything else is read as a
-/// file path. Shared by every command that accepts a report/plan as either
-/// a file, inline JSON, or piped stdin (`release-pr verify --decision`,
-/// `--snapshot`).
-pub(crate) fn read_json_arg(arg: &str) -> Result<String, crate::error::CliError> {
-    if arg == "-" {
-        let mut buf = String::new();
-        std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)?;
-        Ok(buf)
-    } else if arg.trim_start().starts_with('{') {
-        Ok(arg.to_string())
-    } else {
-        std::fs::read_to_string(arg).map_err(|source| crate::error::CliError::Io {
-            source,
-            path: Some(std::path::PathBuf::from(arg)),
-        })
-    }
-}
-
 /// Escalates workspace graph diagnostics per `strict` (via
 /// `callisto_graph::commands::escalate`) and errors out naming every
 /// diagnostic that is `Error` severity afterward.
