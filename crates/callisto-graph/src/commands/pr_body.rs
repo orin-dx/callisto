@@ -6,7 +6,7 @@ use crate::error::GraphError;
 use crate::infer::SeverityInference;
 use crate::release_preview::{
     build_release_preview, Change, ChangeKind, Finding, FindingLevel, PublishOutlook, PublishTargets, ReleasePreview,
-    FINDING_MAJOR_BUMP,
+    FINDING_ACTION_REQUIRED, FINDING_BREAKING_MARKER, FINDING_MAJOR_BUMP, FINDING_UNRELEASED_CHANGES,
 };
 use crate::resolver::DependencyResolver;
 use crate::Workspace;
@@ -136,7 +136,8 @@ pub fn compose_pr_body<R: CommandRunner, D: DependencyResolver, I: SeverityInfer
     opts: &PrBodyOptions,
 ) -> Result<ComposePrBodyReport, GraphError> {
     let plan = plan_version(ws, inference, &crate::commands::version::VersionOptions::default())?;
-    render_pr_body_from_plan(&plan, opts)
+    let preview = crate::release_preview::build_release_preview_in(ws, &plan)?;
+    Ok(render_pr_body_from_preview(&preview, opts))
 }
 
 pub fn render_pr_body_from_plan(
@@ -192,7 +193,8 @@ fn render_pr_body(notes: &ReleasePreview, opts: &PrBodyOptions) -> String {
 
     if notes.packages.is_empty() {
         body.push_str("> [!NOTE]\n");
-        body.push_str("> **No pending changesets found.** Workspace packages are currently up to date.\n\n");
+        body.push_str("> **No pending changesets found.** No package is queued for versioning.\n\n");
+        body.push_str(&attention(&notes.findings));
         body.push_str(&workflow_instructions(branch));
         return body;
     }
@@ -217,6 +219,7 @@ fn render_pr_body(notes: &ReleasePreview, opts: &PrBodyOptions) -> String {
     body.push('\n');
 
     body.push_str(&callout(&notes.findings, notes.packages.len()));
+    body.push_str(&attention(&notes.findings));
     if let Some(PublishOutlook::Planned { releases, notes }) = &notes.publish {
         body.push_str(&publish_section(releases, notes));
     }
@@ -425,10 +428,34 @@ fn callout(findings: &[Finding], package_count: usize) -> String {
         );
     }
     let verdict = findings
-        .first()
-        .map(|finding| finding.message.as_str())
-        .unwrap_or_default();
+        .iter()
+        .find(|finding| matches!(finding.id.as_str(), "pre-1.0-minor" | "compatible"))
+        .map_or("Read the items below before merging.", |finding| {
+            finding.message.as_str()
+        });
     format!("> [!NOTE]\n> **{package_count} package(s)** queued for versioning. {verdict}\n\n")
+}
+
+/// What a reader of the release should see before merging: breaking and action markers from the changesets, and
+/// packages whose changes this release leaves out.
+fn attention(findings: &[Finding]) -> String {
+    let items: String = findings
+        .iter()
+        .filter_map(|finding| {
+            let label = match finding.id.as_str() {
+                FINDING_BREAKING_MARKER => "Breaking",
+                FINDING_ACTION_REQUIRED => "Action required",
+                FINDING_UNRELEASED_CHANGES => "Changed, not releasing",
+                _ => return None,
+            };
+            let who: Vec<String> = finding.packages.iter().map(|package| format!("`{package}`")).collect();
+            Some(format!("> - **{label}** ({}): {}\n", who.join(", "), finding.message))
+        })
+        .collect();
+    if items.is_empty() {
+        return String::new();
+    }
+    format!("> [!IMPORTANT]\n> **Read before merging**\n{items}\n")
 }
 
 #[cfg(test)]
@@ -461,6 +488,77 @@ mod tests {
             diagnostics: vec![],
         };
         build_release_preview(&plan)
+    }
+
+    #[test]
+    fn an_empty_plan_still_says_which_packages_changed_without_a_release() {
+        use crate::release_preview::UnreleasedChange;
+        let plan = VersionPlan {
+            bumps: vec![],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: vec![],
+            consumed_changesets: vec![],
+            pre_state_update: None,
+            pre_json_path: std::path::PathBuf::new(),
+            pre_json_original_text: None,
+            delete_pre_json: None,
+            diagnostics: vec![],
+        };
+        let preview = build_release_preview(&plan).with_unreleased(vec![UnreleasedChange {
+            package: "other".to_owned(),
+            files: 2,
+        }]);
+
+        let body = render_pr_body_from_preview(&preview, &PrBodyOptions::default()).body;
+
+        assert!(body.contains("**No pending changesets found.**"), "{body}");
+        assert!(
+            !body.contains("up to date"),
+            "it must not claim there is nothing to release: {body}"
+        );
+        assert!(body.contains("> - **Changed, not releasing** (`other`)"), "{body}");
+    }
+
+    #[test]
+    fn markers_and_unreleased_packages_lead_the_body_in_one_callout() {
+        use crate::release_preview::UnreleasedChange;
+        let mut preview = preview_of_one_bump().with_unreleased(vec![UnreleasedChange {
+            package: "other".to_owned(),
+            files: 2,
+        }]);
+        preview.findings.push(Finding {
+            id: FINDING_BREAKING_MARKER.to_owned(),
+            level: FindingLevel::Pause,
+            message: "`--old` is gone.".to_owned(),
+            packages: vec!["core-crate".to_owned(), "cli".to_owned()],
+        });
+        preview.findings.retain(|finding| finding.id != "compatible");
+
+        let body = render_pr_body_from_preview(&preview, &PrBodyOptions::default()).body;
+
+        assert!(
+            body.contains(
+                "> [!IMPORTANT]\n> **Read before merging**\n> - **Changed, not releasing** (`other`): Source changed"
+            ),
+            "{body}"
+        );
+        assert!(
+            body.contains("> - **Breaking** (`core-crate`, `cli`): `--old` is gone.\n"),
+            "{body}"
+        );
+        assert!(
+            !body.contains("backward compatible"),
+            "a breaking marker removes the claim: {body}"
+        );
+        assert!(body.contains("Read the items below before merging."), "{body}");
+    }
+
+    #[test]
+    fn a_body_with_no_markers_or_unreleased_packages_has_no_attention_block() {
+        let body = render_pr_body_from_preview(&preview_of_one_bump(), &PrBodyOptions::default()).body;
+        assert!(!body.contains("Read before merging"), "{body}");
     }
 
     #[test]

@@ -5,6 +5,7 @@
 
 mod fences;
 mod headings;
+mod markers;
 mod summary;
 
 #[cfg(test)]
@@ -12,4 +13,5 @@ mod corpus;
 
 pub(crate) use fences::Fences;
 pub(crate) use headings::rebase_headings;
+pub(crate) use markers::{extract_markers, MarkerKind};
 pub(crate) use summary::split_summary;
