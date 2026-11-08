@@ -30,7 +30,7 @@ Dev-only           callisto-fixtures
 | :--- | :--- | :--- | :--- |
 | [`callisto-model`](crates/callisto-model) | MIT | none (external: `michi-graph`) | Domain primitives (`PackageId`, `Version`, `Severity`, `Changeset`, `PreState`), `atomic_write`, `ApplyPermit`, the `CommandRunner`/`DependencyResolver` trait seams; `format`: `.changeset/*.md` and `pre.json` parser/writer; `vcs`: `GitAccess`, every Git operation as a subprocess through `CommandRunner` |
 | [`callisto-manifests`](crates/callisto-manifests) | FSL-1.1-MIT | model | `Manifest` trait; format-preserving Cargo/npm/PyPI manifest editors |
-| [`callisto-graph`](crates/callisto-graph) | FSL-1.1-MIT | model, manifests | Dependency graph, cascade engine, version planning, release execution; `conventional`: Conventional Commit parsing and bump inference; `changelog`: Markdown changelog rendering |
+| [`callisto-graph`](crates/callisto-graph) | FSL-1.1-MIT | model, manifests | Dependency graph, cascade engine, version planning, release execution; `conventional`: Conventional Commit parsing and bump inference; `changelog`: Markdown changelog rendering, with `changelog::markdown` the only place Markdown is scanned; `release_preview`: the serializable view of a plan for the release PR |
 | [`callisto-cli`](crates/callisto-cli) | FSL-1.1-MIT | model, manifests, graph | `clap` CLI surface, `miette` diagnostic rendering |
 | [`callisto-fixtures`](crates/callisto-fixtures) | FSL-1.1-MIT | model (dev-only) | Multi-ecosystem test corpus and in-memory test doubles |
 
@@ -49,9 +49,14 @@ plan_version -> VersionPlan (in memory)
   run_cascade                                           dependents (runtime, build, optional, peer; never dev), groups, pre mode
                                                         -> target version per package, with its reasons
 version --emit-decision                                 derives and validates the decision in memory, before apply
+version --emit-preview                                  builds the ReleasePreview (packages, merged changes, findings) from the
+                                                        plan, before apply consumes the changesets it describes
 apply_version_plan (needs ApplyPermit)                  CST edits -> atomic_write, changelogs
                                                        consume changesets -> native lock refresh -> git staging
-version --emit-decision                                 writes the decision file after successful apply
+version --emit-decision / --emit-preview                writes the decision and the preview files after successful apply
+compose-pr-body --preview [--publish-plan]              renders the release PR body from the preview; --publish-plan adds the
+                                                        outcome of plan_workspace_release_offline on the versioned tree for
+                                                        exactly the packages the preview bumps (never observes a registry)
 release                                                 decision -> intent -> envelope -> execute_release -> receipt
   per operation                                         observe provider -> adopt, or perform and confirm
 ```
@@ -61,7 +66,7 @@ Package ordering, cycle reports and release-operation readiness all run on `mich
 Depth:
 
 - [`docs/architecture/identity.md`](docs/architecture/identity.md): package ids, bare-name matching, config rule specificity, workspace loading, platform packages.
-- [`docs/architecture/versioning.md`](docs/architecture/versioning.md): plan and apply, file-level idempotence and interrupted-command limits.
+- [`docs/architecture/versioning.md`](docs/architecture/versioning.md): plan and apply, file-level idempotence and interrupted-command limits, the release preview and the Markdown module.
 - [`docs/architecture/release.md`](docs/architecture/release.md): release terms, the two routes, run envelope, observation and proof tokens, the transition table, verification tiers.
 - [`docs/architecture/wire-compat.md`](docs/architecture/wire-compat.md): the version each release document writes and reads, what a reader does with another, and the known gaps.
 
