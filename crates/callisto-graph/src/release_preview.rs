@@ -238,6 +238,38 @@ impl ReleasePreview {
     }
 }
 
+/// The publish outlook of `preview` on the versioned tree: plans exactly the packages the preview bumps that publish
+/// somewhere. A bumped package with no publish target, such as a private member of a fixed group, is released with its
+/// group but cannot be selected on its own (E169), so it is left out of the selection rather than reported as a failure.
+/// `None` when a bumped package cannot be named, so nothing is claimed.
+pub fn publish_outlook_in<R: callisto_model::CommandRunner, D: crate::resolver::DependencyResolver>(
+    ws: &crate::Workspace<'_, R, D>,
+    preview: &ReleasePreview,
+) -> Option<PublishOutlook> {
+    let selections: Vec<callisto_model::ReleasePackageId> = preview
+        .release_selections()?
+        .iter()
+        .map(|id| id.parse().ok())
+        .collect::<Option<_>>()?;
+    let publishable: Vec<callisto_model::ReleasePackageId> = selections
+        .into_iter()
+        .filter(|id| {
+            crate::commands::release_decision::workspace_package(ws, id)
+                .is_some_and(crate::commands::release_decision::has_dispatchable_target)
+        })
+        .collect();
+    if publishable.is_empty() {
+        return Some(PublishOutlook::Planned {
+            releases: Vec::new(),
+            notes: Vec::new(),
+        });
+    }
+    Some(publish_outlook(crate::commands::plan_workspace_release_offline(
+        ws,
+        &publishable,
+    )))
+}
+
 /// Reads the outcome of planning a release into what the PR body shows. Nothing is looked up on a registry or
 /// published: a refusal here is one the release itself would hit.
 pub fn publish_outlook(planned: Result<Option<LocalReleasePlan>, GraphError>) -> PublishOutlook {

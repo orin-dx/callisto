@@ -302,6 +302,77 @@ fn the_preview_lists_a_publishable_package_the_plan_leaves_out() {
     assert!(body.contains("**Changed, not releasing** (`@myorg/web-app`"), "{body}");
 }
 
+/// A private member of a fixed group is bumped and released with its group but has no publish target. Selecting it
+/// for the offline plan used to fail with E169 and put a false "would fail" caution on a healthy release PR.
+#[test]
+fn a_private_fixed_group_member_does_not_make_the_publish_plan_fail() {
+    let dir = setup_polyglot_git_repo();
+    let root = dir.path();
+    let global = GlobalArgs {
+        format: OutputFormat::Json,
+        cwd: root.to_path_buf(),
+        dry_run: false,
+    };
+    init_repo(&global);
+    std::fs::create_dir_all(root.join("crates/private/src")).unwrap();
+    std::fs::write(
+        root.join("crates/private/Cargo.toml"),
+        "[package]\nname = \"private-crate\"\nversion = \"0.1.0\"\nedition = \"2021\"\npublish = false\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("crates/private/src/lib.rs"), "\n").unwrap();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/core\", \"crates/private\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    let config = std::fs::read_to_string(root.join("callisto.toml")).unwrap();
+    std::fs::write(
+        root.join("callisto.toml"),
+        format!(
+            "{config}\n[[fixed-group]]\nname = \"lockstep\"\nmembers = [\"cargo/core-crate\", \"cargo/private-crate\"]\n"
+        ),
+    )
+    .unwrap();
+    for args in [vec!["add", "."], vec!["commit", "-q", "-m", "private member"]] {
+        assert!(Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .status()
+            .unwrap()
+            .success());
+    }
+    commands::add::handle(
+        AddArgs {
+            packages: vec!["cargo/core-crate:minor".to_string()],
+            summary: Some("Retry uploads.".to_string()),
+        },
+        &global,
+    )
+    .unwrap();
+    commands::version::handle(version_args(Some("preview.json".into())), &global).unwrap();
+
+    let preview = callisto_graph::release_preview::ReleasePreview::from_json(
+        &std::fs::read_to_string(root.join("preview.json")).unwrap(),
+    )
+    .unwrap();
+    let names: Vec<&str> = preview.packages.iter().map(|p| p.name.as_str()).collect();
+    assert!(
+        names.contains(&"private-crate"),
+        "the private member is bumped with its group: {names:?}"
+    );
+
+    let runner = callisto_cli::runner::CliCommandRunner;
+    let ws = callisto_cli::workspace::load_workspace(&global, &runner).unwrap();
+    let outlook =
+        callisto_graph::release_preview::publish_outlook_in(&ws, &preview).expect("every package is nameable");
+    let callisto_graph::release_preview::PublishOutlook::Planned { releases, .. } = &outlook else {
+        panic!("a healthy release must not be blocked: {outlook:?}");
+    };
+    let listed: Vec<&str> = releases.iter().map(|r| r.package.as_str()).collect();
+    assert_eq!(listed, ["core-crate"]);
+}
+
 #[test]
 fn emit_preview_is_refused_with_dry_run_before_anything_is_written() {
     let dir = setup_polyglot_git_repo();
