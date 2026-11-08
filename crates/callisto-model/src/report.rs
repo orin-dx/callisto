@@ -295,8 +295,24 @@ pub struct ComposePrBodyReport {
     /// test doc comment for why.
     pub body: String,
 
+    /// Every label Callisto manages on the release PR, each marked with whether it belongs on the PR now. A caller adds
+    /// the applied ones and removes the others, so it needs no list of its own.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<PrLabel>,
+
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub diagnostics: Vec<Diagnostic>,
+}
+
+/// A label Callisto manages on the release PR.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PrLabel {
+    pub name: String,
+    /// Six hex digits, no `#`, used when the label has to be created.
+    pub color: String,
+    pub description: String,
+    pub applied: bool,
 }
 
 impl Report for ComposePrBodyReport {
@@ -327,10 +343,33 @@ mod compose_pr_body_report_tests {
     /// mean fabricating placeholder data -- out of scope, left for
     /// separate work.
     #[test]
+    fn labels_are_listed_with_an_applied_flag_and_omitted_when_there_are_none() {
+        let mut report = ComposePrBodyReport {
+            schema_version: SCHEMA_VERSION,
+            body: String::new(),
+            labels: vec![],
+            diagnostics: vec![],
+        };
+        assert!(!serde_json::to_string(&report).unwrap().contains("labels"));
+        report.labels.push(PrLabel {
+            name: "callisto: ready".to_owned(),
+            color: "0e8a16".to_owned(),
+            description: "d".to_owned(),
+            applied: true,
+        });
+        let json = serde_json::to_value(&report).unwrap();
+        assert_eq!(json["labels"][0]["name"], "callisto: ready");
+        assert_eq!(json["labels"][0]["applied"], true);
+        let back: ComposePrBodyReport = serde_json::from_value(json).unwrap();
+        assert_eq!(back, report);
+    }
+
+    #[test]
     fn compose_pr_body_report_json_uses_body_key_not_pr_body() {
         let report = ComposePrBodyReport {
             schema_version: SCHEMA_VERSION,
             body: "## Release Preview".to_string(),
+            labels: vec![],
             diagnostics: vec![],
         };
         let json = serde_json::to_string(&report).unwrap();

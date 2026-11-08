@@ -144,11 +144,7 @@ pub fn render_pr_body_from_plan(
     plan: &crate::plan::VersionPlan,
     opts: &PrBodyOptions,
 ) -> Result<ComposePrBodyReport, GraphError> {
-    Ok(ComposePrBodyReport {
-        schema_version: SCHEMA_VERSION,
-        body: render_pr_body(&build_release_preview(plan), opts),
-        diagnostics: Vec::new(),
-    })
+    Ok(render_pr_body_from_preview(&build_release_preview(plan), opts))
 }
 
 /// The same body as [`render_pr_body_from_plan`], from a preview written earlier by `version --emit-preview`.
@@ -156,6 +152,7 @@ pub fn render_pr_body_from_preview(preview: &ReleasePreview, opts: &PrBodyOption
     ComposePrBodyReport {
         schema_version: SCHEMA_VERSION,
         body: render_pr_body(preview, opts),
+        labels: preview.pr_labels(),
         diagnostics: Vec::new(),
     }
 }
