@@ -116,9 +116,9 @@ command+=(--emit-decision "$INPUT_DECISION_PATH" --emit-preview "$preview_file")
 
 if [[ -n "$existing_pr" ]]; then
   existing_body=$(gh_retry pr view "$existing_pr" --json body --jq '.body')
-  body=$(printf '%s' "$existing_body" | callisto compose-pr-body --preview "$preview_file" --existing-body - --branch "$INPUT_BRANCH" --format text)
+  body=$(printf '%s' "$existing_body" | callisto compose-pr-body --preview "$preview_file" --publish-plan --existing-body - --branch "$INPUT_BRANCH" --format text)
 else
-  body=$(callisto compose-pr-body --preview "$preview_file" --branch "$INPUT_BRANCH" --format text)
+  body=$(callisto compose-pr-body --preview "$preview_file" --publish-plan --branch "$INPUT_BRANCH" --format text)
 fi
 rm -f "$preview_file"
 git add -A

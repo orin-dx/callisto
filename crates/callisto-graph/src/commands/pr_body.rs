@@ -4,7 +4,10 @@ use crate::changelog::markdown::{rebase_headings, split_summary};
 use crate::commands::version::plan_version;
 use crate::error::GraphError;
 use crate::infer::SeverityInference;
-use crate::release_preview::{build_release_preview, Change, ChangeKind, Finding, ReleasePreview, FINDING_MAJOR_BUMP};
+use crate::release_preview::{
+    build_release_preview, Change, ChangeKind, Finding, FindingLevel, PublishOutlook, PublishTargets, ReleasePreview,
+    FINDING_MAJOR_BUMP,
+};
 use crate::resolver::DependencyResolver;
 use crate::Workspace;
 
@@ -214,6 +217,9 @@ fn render_pr_body(notes: &ReleasePreview, opts: &PrBodyOptions) -> String {
     body.push('\n');
 
     body.push_str(&callout(&notes.findings, notes.packages.len()));
+    if let Some(PublishOutlook::Planned { releases, notes }) = &notes.publish {
+        body.push_str(&publish_section(releases, notes));
+    }
 
     // Grouped by underlying change, not by package, so a changeset naming several packages renders once.
     body.push_str("### 📦 What's Changing\n\n");
@@ -372,8 +378,46 @@ fn push_detail(body: &mut String, text: &str) {
     body.push_str("\n</details>\n\n");
 }
 
+/// Where merging will publish each package, from planning the versioned tree's release.
+fn publish_section(releases: &[PublishTargets], notes: &[String]) -> String {
+    if releases.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from("### 🚀 Merging will publish\n\n| Package | Goes to |\n| :--- | :--- |\n");
+    for release in releases {
+        let mut targets = release.registries.clone();
+        if release.tag {
+            targets.push("git tag".to_owned());
+        }
+        if release.github_release {
+            targets.push("GitHub release".to_owned());
+        }
+        if release.artifacts > 0 {
+            let noun = if release.artifacts == 1 { "asset" } else { "assets" };
+            targets.push(format!("{} {noun}", release.artifacts));
+        }
+        out.push_str(&format!(
+            "| `{}` `{}` | {} |\n",
+            release.package,
+            release.version,
+            targets.join(" · ")
+        ));
+    }
+    out.push('\n');
+    for note in notes {
+        out.push_str(&format!("_{note}_\n\n"));
+    }
+    out
+}
+
 /// The callout that opens the release PR body.
 fn callout(findings: &[Finding], package_count: usize) -> String {
+    if let Some(stop) = findings.iter().find(|finding| finding.level == FindingLevel::Stop) {
+        return format!(
+            "> [!CAUTION]\n> **This release would fail**: {}\n> The release workflow runs the same step and would stop with this error after merge. Fix it before merging.\n\n",
+            stop.message
+        );
+    }
     if let Some(major) = findings.iter().find(|finding| finding.id == FINDING_MAJOR_BUMP) {
         return format!(
             "> [!WARNING]\n> **Major Version Bumps Detected**: {}\n\n",
@@ -397,6 +441,81 @@ mod tests {
     use super::*;
     use crate::plan::{PlannedBump, VersionPlan};
     use callisto_model::{BumpReason, PackageId, Severity, Version};
+
+    fn preview_of_one_bump() -> ReleasePreview {
+        let plan = VersionPlan {
+            bumps: vec![bump(
+                Version::semver(1, 0, 0),
+                Version::semver(1, 1, 0),
+                Severity::Minor,
+            )],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: vec![],
+            consumed_changesets: vec![],
+            pre_state_update: None,
+            pre_json_path: std::path::PathBuf::new(),
+            pre_json_original_text: None,
+            delete_pre_json: None,
+            diagnostics: vec![],
+        };
+        build_release_preview(&plan)
+    }
+
+    #[test]
+    fn a_planned_release_lists_where_each_package_goes() {
+        use crate::release_preview::{PublishOutlook, PublishTargets};
+        let preview = preview_of_one_bump().with_publish(PublishOutlook::Planned {
+            releases: vec![PublishTargets {
+                package: "core-crate".to_owned(),
+                version: "1.1.0".to_owned(),
+                registries: vec!["crates.io".to_owned()],
+                tag: true,
+                github_release: true,
+                artifacts: 5,
+            }],
+            notes: vec!["`origin` has no push URL.".to_owned()],
+        });
+
+        let body = render_pr_body_from_preview(&preview, &PrBodyOptions::default()).body;
+
+        assert!(
+            body.contains("### 🚀 Merging will publish\n\n| Package | Goes to |\n| :--- | :--- |\n| `core-crate` `1.1.0` | crates.io · git tag · GitHub release · 5 assets |\n"),
+            "{body}"
+        );
+        assert!(body.contains("_`origin` has no push URL._"), "{body}");
+        assert!(!body.contains("[!CAUTION]"), "{body}");
+    }
+
+    #[test]
+    fn a_release_that_would_fail_leads_with_a_caution_and_lists_nothing() {
+        use crate::release_preview::PublishOutlook;
+        let preview = preview_of_one_bump().with_publish(PublishOutlook::Blocked {
+            code: Some("E320".to_owned()),
+            message: "version 1.1.0 is already on the registry".to_owned(),
+        });
+
+        let body = render_pr_body_from_preview(&preview, &PrBodyOptions::default()).body;
+
+        assert!(
+            body.contains(
+                "> [!CAUTION]\n> **This release would fail**: E320: version 1.1.0 is already on the registry\n"
+            ),
+            "{body}"
+        );
+        assert!(!body.contains("Merging will publish"), "{body}");
+        assert!(
+            !body.contains("[!NOTE]"),
+            "the caution replaces the compatibility note: {body}"
+        );
+    }
+
+    #[test]
+    fn a_preview_without_a_publish_outlook_renders_no_publish_section() {
+        let body = render_pr_body_from_preview(&preview_of_one_bump(), &PrBodyOptions::default()).body;
+        assert!(!body.contains("Merging will publish"), "{body}");
+    }
 
     #[test]
     fn a_summary_title_keeps_code_spans_and_escapes_the_rest() {

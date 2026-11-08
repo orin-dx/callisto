@@ -34,12 +34,24 @@ pub fn handle(args: ComposePrBodyArgs, global: &GlobalArgs) -> Result<ExitCode, 
                 source,
                 path: Some(path.clone()),
             })?;
-            let preview = callisto_graph::release_preview::ReleasePreview::from_json(&text).map_err(|detail| {
+            let mut preview = callisto_graph::release_preview::ReleasePreview::from_json(&text).map_err(|detail| {
                 CliError::ReleasePrArgJsonInvalid {
                     flag: "preview",
                     detail,
                 }
             })?;
+            if args.publish_plan {
+                // Exactly the packages the release will hold, so an unrelated unreleased package is not listed.
+                let selections: Option<Vec<callisto_model::ReleasePackageId>> = preview
+                    .release_selections()
+                    .and_then(|ids| ids.iter().map(|id| id.parse().ok()).collect());
+                if let Some(selections) = selections {
+                    let runner = CliCommandRunner;
+                    let ws = load_workspace(global, &runner)?;
+                    let planned = callisto_graph::commands::plan_workspace_release_offline(&ws, &selections);
+                    preview = preview.with_publish(callisto_graph::release_preview::publish_outlook(planned));
+                }
+            }
             callisto_graph::commands::render_pr_body_from_preview(&preview, &opts)
         }
         None => {
@@ -101,6 +113,7 @@ mod tests {
                 existing_body: None,
                 branch: None,
                 preview: None,
+                publish_plan: false,
             },
             &global,
         );
