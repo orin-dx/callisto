@@ -690,9 +690,9 @@ mod tests {
             };
             (bump, write)
         };
-        let (a_bump, a_write) = write("pkg-a", "a.md", "Adds a flag.");
-        let (b_bump, b_write) = write("pkg-b", "b.md", "Drops it.\n\nDetails here.");
-        let (c_bump, c_write) = write("pkg-c", "c.md", "No pull request.");
+        let (a_bump, a_write) = write("pkg-a", "a", "Adds a flag.");
+        let (b_bump, b_write) = write("pkg-b", "b", "Drops it.\n\nDetails here.");
+        let (c_bump, c_write) = write("pkg-c", "c", "No pull request.");
         let plan = VersionPlan {
             bumps: vec![a_bump, b_bump, c_bump],
             rewrites: vec![],
@@ -706,7 +706,7 @@ mod tests {
             delete_pre_json: None,
             diagnostics: vec![],
         };
-        let prs = std::collections::BTreeMap::from([("a.md".to_owned(), 12), ("b.md".to_owned(), 34)]);
+        let prs = std::collections::BTreeMap::from([("a".to_owned(), 12), ("b".to_owned(), 34)]);
         let preview = build_release_preview(&plan).with_change_prs(&prs);
 
         let body = render_pr_body_from_preview(&preview, &PrBodyOptions::default()).body;

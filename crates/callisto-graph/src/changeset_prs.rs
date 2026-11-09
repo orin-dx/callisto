@@ -27,6 +27,10 @@ pub fn changeset_pull_requests(
         dir.as_ref(),
     ];
     let output = git.runner().run("git", &args, git.root()).map_err(VcsError::from)?;
+    // A repository with no commit has no history to read; every other failure stays an error.
+    if !output.success() && output.stderr.contains("does not have any commits yet") {
+        return Ok(BTreeMap::new());
+    }
     if !output.success() {
         return Err(VcsError::Git(format!(
             "`git log` failed in `{}`: {}",
@@ -55,9 +59,10 @@ fn parse_changeset_prs(log: &str) -> BTreeMap<String, u64> {
             continue;
         };
         for path in lines.filter(|line| !line.is_empty()) {
-            if let Some(name) = path.rsplit('/').next() {
-                // The log is newest first; the commit that added it first is the last one seen.
-                found.insert(name.to_owned(), pr);
+            // A changeset is known by its id, the file name without `.md`. The log is newest first, so the commit
+            // that added it first is the last one seen.
+            if let Some(id) = Path::new(path).file_stem().and_then(|stem| stem.to_str()) {
+                found.insert(id.to_owned(), pr);
             }
         }
     }
@@ -115,8 +120,21 @@ mod tests {
         let git = GitAccess::new(root, &GitRunner);
         let found = changeset_pull_requests(&git, Path::new(".changeset")).unwrap();
 
-        assert_eq!(found.get("one.md"), Some(&7));
-        assert_eq!(found.get("two.md"), None);
+        assert_eq!(found.get("one"), Some(&7));
+        assert_eq!(found.get("two"), None);
+    }
+
+    #[test]
+    fn a_repository_with_no_commit_has_no_pull_requests() {
+        use callisto_fixtures::git::{init_repo, GitRunner};
+
+        let dir = tempfile::tempdir().unwrap();
+        init_repo(dir.path());
+        let git = GitAccess::new(dir.path(), &GitRunner);
+
+        assert!(changeset_pull_requests(&git, Path::new(".changeset"))
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -125,9 +143,9 @@ mod tests {
                    \u{1}Merge pull request #480 from o/a\n\n.changeset/c.md\n\
                    \u{1}Merge branch 'main' into x\n\n.changeset/d.md\n";
         let found = parse_changeset_prs(log);
-        assert_eq!(found.get("a.md"), Some(&481));
-        assert_eq!(found.get("b.md"), Some(&481));
-        assert_eq!(found.get("c.md"), Some(&480));
-        assert_eq!(found.get("d.md"), None);
+        assert_eq!(found.get("a"), Some(&481));
+        assert_eq!(found.get("b"), Some(&481));
+        assert_eq!(found.get("c"), Some(&480));
+        assert_eq!(found.get("d"), None);
     }
 }
