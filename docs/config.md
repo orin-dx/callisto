@@ -55,7 +55,7 @@ preserve-npm-ranges = true
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `layout` | string (`"grouped"` \| `"flat"`) | `"grouped"` | `grouped` writes a date line (with a compare link when the repository is known, from `[release] forge-repository` or else the GitHub `origin` remote, and the previous version has a tag), then `### Major Changes`, `### Minor Changes` and `### Patch Changes` groups, omitting empty ones; dependency updates sit under Patch Changes. `flat` writes one bullet list under the version heading, as before layouts existed. Sections already in a changelog are never rewritten. |
+| `layout` | string (`"grouped"` \| `"flat"`) | `"grouped"` | `grouped` writes a date line (with a compare link when the repository is known, from `[release] forge-repository` or else the GitHub `origin` remote, and the previous version has a tag), then `### Major Changes`, `### Minor Changes` and `### Patch Changes` groups, omitting empty ones; dependency updates sit under Patch Changes; a package that only released with its group has no groups, just that line. `flat` writes one bullet list under the version heading, as before layouts existed. Sections already in a changelog are never rewritten. |
 
 Example: `layout = "flat"`.
 
