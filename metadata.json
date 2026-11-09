@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M713A8BWQZZ9JAXWCVED5VXS",
+  "strategy": "manual-commit",
+  "branch": "docs/changeset-set",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".changeset/changelog-grouped-layout.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 8301,
+    "cache_read_tokens": 604329,
+    "output_tokens": 2475,
+    "api_call_count": 2
+  },
+  "redaction": {
+    "replacements": 80,
+    "layers": {
+      "betterleaks": 24,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 52,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
