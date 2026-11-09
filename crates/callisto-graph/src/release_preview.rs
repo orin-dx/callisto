@@ -19,6 +19,7 @@ pub const FINDING_MAJOR_BUMP: &str = "major-bump";
 pub const FINDING_RELEASE_BLOCKED: &str = "release-blocked";
 pub const FINDING_BREAKING_MARKER: &str = "breaking-marker";
 pub const FINDING_ACTION_REQUIRED: &str = "action-required";
+pub const FINDING_BREAKING_BUMP_MISMATCH: &str = "breaking-bump-mismatch";
 pub const FINDING_UNRELEASED_CHANGES: &str = "changed-not-releasing";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -517,6 +518,46 @@ fn assess_with_changes(bumps: &[PlannedBump], changes: &[Change]) -> Vec<Finding
         findings.retain(|finding| finding.id != "compatible");
     }
     findings.extend(markers);
+    findings.extend(marker_bump_findings(bumps, changes));
+    findings
+}
+
+/// A change marked `Breaking:` whose own bump is too low for it: major from 1.0.0, minor below. The marker is the
+/// author's statement of intent and the bump is what ships, so a gap between them is worth a reviewer's second look.
+fn marker_bump_findings(bumps: &[PlannedBump], changes: &[Change]) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for change in changes {
+        let ChangeKind::Changeset { summary, .. } = &change.kind else {
+            continue;
+        };
+        if !extract_markers(summary)
+            .iter()
+            .any(|marker| marker.kind == MarkerKind::Breaking)
+        {
+            continue;
+        }
+        for member in &change.members {
+            let Some(bump) = bumps.iter().find(|bump| bump.package.display_name() == member.package) else {
+                continue;
+            };
+            let needed = if bump.from.render().starts_with("0.") {
+                Severity::Minor
+            } else {
+                Severity::Major
+            };
+            if member.severity < needed {
+                findings.push(Finding {
+                    id: FINDING_BREAKING_BUMP_MISMATCH.to_owned(),
+                    level: FindingLevel::Pause,
+                    message: format!(
+                        "Marked Breaking, but this change bumps only `{}`; a breaking change needs `{needed}`.",
+                        member.severity
+                    ),
+                    packages: vec![member.package.clone()],
+                });
+            }
+        }
+    }
     findings
 }
 
@@ -819,7 +860,7 @@ mod tests {
     fn a_breaking_marker_and_an_action_marker_label_the_release_and_it_is_not_ready() {
         let plan = plan_with_summary(
             Severity::Minor,
-            Version::semver(1, 0, 0),
+            Version::semver(0, 4, 0),
             "Drops a flag.\n\nBreaking: `--old` is gone.\n\nAction: switch to `--new`.",
         );
         assert_eq!(
@@ -859,19 +900,68 @@ mod tests {
     fn a_breaking_marker_replaces_the_compatibility_claim_and_names_the_packages() {
         let plan = plan_with_summary(
             Severity::Minor,
-            Version::semver(1, 0, 0),
+            Version::semver(0, 4, 0),
             "Drops a flag.\n\nBreaking: `--old` is gone.\n\nAction: switch to `--new`.",
         );
 
         let preview = build_release_preview(&plan);
 
-        assert_eq!(ids(&preview), [FINDING_BREAKING_MARKER, FINDING_ACTION_REQUIRED]);
-        assert_eq!(preview.findings[0].message, "`--old` is gone.");
-        assert_eq!(preview.findings[0].packages, ["core-crate"]);
-        assert!(preview
+        let markers: Vec<&Finding> = preview
             .findings
             .iter()
-            .all(|finding| finding.level == FindingLevel::Pause));
+            .filter(|finding| finding.id == FINDING_BREAKING_MARKER || finding.id == FINDING_ACTION_REQUIRED)
+            .collect();
+        assert_eq!(markers.len(), 2);
+        assert_eq!(markers[0].id, FINDING_BREAKING_MARKER);
+        assert_eq!(markers[0].message, "`--old` is gone.");
+        assert_eq!(markers[0].packages, ["core-crate"]);
+        assert!(markers.iter().all(|finding| finding.level == FindingLevel::Pause));
+        assert!(!ids(&preview).contains(&"compatible"));
+    }
+
+    #[test]
+    fn a_breaking_marker_on_too_low_a_bump_is_flagged() {
+        for (severity, from, flagged) in [
+            (Severity::Patch, Version::semver(1, 0, 0), true),
+            (Severity::Minor, Version::semver(1, 0, 0), true),
+            (Severity::Major, Version::semver(1, 0, 0), false),
+            (Severity::Minor, Version::semver(0, 4, 0), false),
+            (Severity::Patch, Version::semver(0, 4, 0), true),
+            (Severity::Major, Version::semver(0, 4, 0), false),
+        ] {
+            let plan = plan_with_summary(severity, from.clone(), "Drops it.\n\nBreaking: `--old` is gone.");
+            let preview = build_release_preview(&plan);
+            assert_eq!(
+                ids(&preview).contains(&FINDING_BREAKING_BUMP_MISMATCH),
+                flagged,
+                "{severity:?} from {}",
+                from.render()
+            );
+        }
+    }
+
+    #[test]
+    fn the_bump_mismatch_names_the_bump_and_what_is_needed_and_needs_a_breaking_marker() {
+        let plan = plan_with_summary(
+            Severity::Patch,
+            Version::semver(1, 2, 0),
+            "Drops it.\n\nBreaking: `--old` is gone.",
+        );
+        let finding = build_release_preview(&plan)
+            .findings
+            .into_iter()
+            .find(|finding| finding.id == FINDING_BREAKING_BUMP_MISMATCH)
+            .expect("flagged");
+        assert_eq!(
+            finding.message,
+            "Marked Breaking, but this change bumps only `patch`; a breaking change needs `major`."
+        );
+        assert_eq!(finding.packages, ["core-crate"]);
+        // An Action marker or no marker at all says nothing about the bump.
+        for summary in ["Fix.\n\nAction: re-run init.", "Fix."] {
+            let plan = plan_with_summary(Severity::Patch, Version::semver(1, 2, 0), summary);
+            assert!(!ids(&build_release_preview(&plan)).contains(&FINDING_BREAKING_BUMP_MISMATCH));
+        }
     }
 
     #[test]
