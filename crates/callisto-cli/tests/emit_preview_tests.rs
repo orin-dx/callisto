@@ -301,6 +301,35 @@ impl callisto_model::CommandRunner for RecordingRunner {
     }
 }
 
+/// A package that has never been released has no last release to differ from, so a new project's first release PR does
+/// not say its packages "changed since the last release".
+#[test]
+fn a_never_released_package_is_not_reported_as_changed_since_its_release() {
+    let dir = setup_polyglot_git_repo();
+    let global = GlobalArgs {
+        format: OutputFormat::Json,
+        cwd: dir.path().to_path_buf(),
+        dry_run: false,
+    };
+    init_repo(&global);
+    commands::add::handle(
+        AddArgs {
+            packages: vec!["cargo/core-crate:minor".to_string()],
+            summary: Some("First feature.".to_string()),
+        },
+        &global,
+    )
+    .unwrap();
+
+    commands::version::handle(version_args(Some("preview.json".into())), &global).unwrap();
+
+    let preview = callisto_graph::release_preview::ReleasePreview::from_json(
+        &std::fs::read_to_string(dir.path().join("preview.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(preview.unreleased.is_empty(), "{:?}", preview.unreleased);
+}
+
 /// `version --emit-preview` records the publishable packages whose source changed and that the plan leaves out, and the
 /// body leads with them; the package the changeset bumps is not among them.
 #[test]
@@ -312,6 +341,30 @@ fn the_preview_lists_a_publishable_package_the_plan_leaves_out() {
         dry_run: false,
     };
     init_repo(&global);
+    // Only a package that has been released can have changed since its last release.
+    let root = dir.path();
+    std::fs::write(root.join("packages/web/index.js"), "// released\n").unwrap();
+    for args in [
+        vec!["add", "."],
+        vec!["commit", "-q", "-m", "web app source"],
+        vec!["tag", "@myorg/web-app@1.0.0"],
+    ] {
+        assert!(Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .status()
+            .unwrap()
+            .success());
+    }
+    std::fs::write(root.join("packages/web/index.js"), "// changed after the release\n").unwrap();
+    for args in [vec!["add", "."], vec!["commit", "-q", "-m", "change web app"]] {
+        assert!(Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .status()
+            .unwrap()
+            .success());
+    }
     commands::add::handle(
         AddArgs {
             packages: vec!["cargo/core-crate:minor".to_string()],

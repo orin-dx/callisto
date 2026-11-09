@@ -598,15 +598,18 @@ pub fn unreleased_changes<R: callisto_model::CommandRunner, D: crate::resolver::
     ws: &crate::Workspace<'_, R, D>,
     plan: &VersionPlan,
 ) -> Result<Vec<UnreleasedChange>, GraphError> {
+    let tags = ws.tags()?;
+    // A package never released has no baseline, so nothing "changed since the last release".
     let publishable: Vec<&callisto_model::Package> = ws
         .graph
         .packages()
         .filter(|package| crate::commands::release_decision::has_dispatchable_target(package))
+        .filter(|package| tags.last_tag(&package.id).is_some())
         .collect();
     let bumped: std::collections::BTreeSet<PackageId> = plan.bumps.iter().map(|bump| bump.package.clone()).collect();
     let changed = changed_source_files_of_uncovered(
         &publishable,
-        ws.tags()?,
+        tags,
         ws.git_access(),
         &bumped,
         &ws.config.groups,
