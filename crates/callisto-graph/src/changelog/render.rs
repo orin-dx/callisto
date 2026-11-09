@@ -111,6 +111,16 @@ pub fn render_section(input: &ChangelogInput) -> Result<String, ChangelogError> 
                 out.push_str(&line);
                 out.push_str("\n\n");
             }
+            // A member with nothing of its own gets no bump heading: it did not make a minor or patch change.
+            if input.entries.iter().all(|entry| {
+                matches!(
+                    entry.source,
+                    ChangeSource::GroupUnion { .. } | ChangeSource::NewGroupMember { .. }
+                )
+            }) {
+                out.extend(input.entries.iter().filter_map(|entry| entry_bullet(&entry.source)));
+                return Ok(out);
+            }
             let mut groups = Vec::new();
             for (severity, title) in [
                 (Severity::Major, "Major Changes"),
@@ -568,6 +578,38 @@ mod tests {
             - Joined the `g` group at this version.\n\
             - Dependency updates\n  - `dep-a` → `2.0.0`\n  - `dep-b` → `1.5.0`\n";
         assert_eq!(render_section(&input).unwrap(), expected);
+    }
+
+    #[test]
+    fn grouped_layout_gives_a_group_only_member_no_bump_heading() {
+        let group = callisto_model::GroupName("g".to_string());
+        let input = styled(
+            vec![entry(
+                Severity::Minor,
+                ChangeSource::GroupUnion {
+                    group: group.clone(),
+                    kind: callisto_model::GroupKind::Fixed,
+                },
+            )],
+            ChangelogLayout::Grouped,
+            Some("2026-11-08"),
+            None,
+        );
+        assert_eq!(
+            render_section(&input).unwrap(),
+            "## 1.2.0\n\n_2026-11-08_\n\n- Released together with the `g` fixed group.\n"
+        );
+
+        let joined = styled(
+            vec![entry(Severity::Minor, ChangeSource::NewGroupMember { group })],
+            ChangelogLayout::Grouped,
+            None,
+            None,
+        );
+        assert_eq!(
+            render_section(&joined).unwrap(),
+            "## 1.2.0\n\n- Joined the `g` group at this version.\n"
+        );
     }
 
     #[test]

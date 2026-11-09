@@ -207,7 +207,10 @@ pub(crate) fn group_release_notes(
         return Ok(own);
     }
     let kept = without_boilerplate(text);
-    if group_openers(&kept).iter().any(Option::is_some) {
+    // An owner with nothing of its own has no group headings, yet its mates' groups still apply.
+    let grouped_owner = group_openers(&kept).iter().any(Option::is_some);
+    let owner_has_no_entries = entries(&kept).is_empty();
+    if grouped_owner || (owner_has_no_entries && extra.iter().any(|(group, _)| group.is_some())) {
         return Ok(ReleaseNotes::Section(merge_into_groups(&kept, &extra)));
     }
     let extra = extra.into_iter().map(|(_, entry)| entry).collect::<Vec<_>>().join("\n");
@@ -423,6 +426,18 @@ mod tests {
         assert_eq!(
             text,
             "_2026-11-08_\n\n### Minor Changes\n\n- Owner feature.\n- `mate`: Mate feature.\n\n### Patch Changes\n\n- Owner fix."
+        );
+    }
+
+    /// A grouped owner with nothing of its own has no group headings, but a grouped mate's entries keep their groups.
+    #[test]
+    fn a_group_only_owner_keeps_its_mates_bump_groups() {
+        let owner = Some("## 1.0.0\n\n_2026-11-08_\n\n- Released together with the `lockstep` fixed group.\n");
+        let mate = Some("## 1.0.0\n\n### Major Changes\n\n- Big change.\n\n### Patch Changes\n\n- Small fix.\n");
+        let text = section(group_notes(&[("owner", owner), ("mate", mate)]));
+        assert_eq!(
+            text,
+            "_2026-11-08_\n\n### Major Changes\n\n- `mate`: Big change.\n\n### Patch Changes\n\n- `mate`: Small fix."
         );
     }
 
