@@ -6,7 +6,8 @@ use crate::error::GraphError;
 use crate::infer::SeverityInference;
 use crate::release_preview::{
     build_release_preview, Change, ChangeKind, Finding, FindingLevel, PublishOutlook, PublishTargets, ReleasePreview,
-    FINDING_ACTION_REQUIRED, FINDING_BREAKING_MARKER, FINDING_MAJOR_BUMP, FINDING_UNRELEASED_CHANGES,
+    FINDING_ACTION_REQUIRED, FINDING_BREAKING_BUMP_MISMATCH, FINDING_BREAKING_MARKER, FINDING_MAJOR_BUMP,
+    FINDING_UNRELEASED_CHANGES,
 };
 use crate::resolver::DependencyResolver;
 use crate::Workspace;
@@ -442,6 +443,7 @@ fn attention(findings: &[Finding]) -> String {
             let label = match finding.id.as_str() {
                 FINDING_BREAKING_MARKER => "Breaking",
                 FINDING_ACTION_REQUIRED => "Action required",
+                FINDING_BREAKING_BUMP_MISMATCH => "Check the bump",
                 FINDING_UNRELEASED_CHANGES => "Changed, not releasing",
                 _ => return None,
             };
@@ -550,6 +552,24 @@ mod tests {
             "a breaking marker removes the claim: {body}"
         );
         assert!(body.contains("Read the items below before merging."), "{body}");
+    }
+
+    #[test]
+    fn a_bump_that_contradicts_a_breaking_marker_is_listed_for_the_reader() {
+        let mut preview = preview_of_one_bump();
+        preview.findings.push(Finding {
+            id: FINDING_BREAKING_BUMP_MISMATCH.to_owned(),
+            level: FindingLevel::Pause,
+            message: "Marked Breaking, but this change bumps only `patch`; a breaking change needs `major`.".to_owned(),
+            packages: vec!["core-crate".to_owned()],
+        });
+
+        let body = render_pr_body_from_preview(&preview, &PrBodyOptions::default()).body;
+
+        assert!(
+            body.contains("> - **Check the bump** (`core-crate`): Marked Breaking, but this change bumps only `patch`"),
+            "{body}"
+        );
     }
 
     #[test]
