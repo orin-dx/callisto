@@ -2,4 +2,4 @@
 callisto-cli: minor
 ---
 
-Each change in the release PR now says which pull request added it, so a reviewer can jump from a line to the discussion behind it.
+The release PR now links each change to the pull request that introduced it. The link, such as `#123`, sits next to the change, so you can open the discussion and review behind a line without searching for it.
