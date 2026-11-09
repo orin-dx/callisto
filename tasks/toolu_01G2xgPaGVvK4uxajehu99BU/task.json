@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01G2xgPaGVvK4uxajehu99BU",
+  "agent_id": "a1d87b2ce5e22dbd5",
+  "subagent_type": "courier:changeset-analyzer",
+  "task_description": "Changeset for PR 483 diff",
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 68645,
+    "cache_read_tokens": 179783,
+    "output_tokens": 2019,
+    "api_call_count": 4
+  },
+  "started_at": "2026-11-09T15:33:19.900464-08:00",
+  "completed_at": "2026-11-09T15:34:51.298811-08:00"
+}
