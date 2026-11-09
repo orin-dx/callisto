@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_015c3zvBbSP7yhzCYke6FdN4",
+  "agent_id": "a9a153af21caf8aad",
+  "subagent_type": "general-purpose",
+  "task_description": "Cold-read changelog test",
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 55191,
+    "cache_read_tokens": 30293,
+    "output_tokens": 1737,
+    "api_call_count": 2
+  },
+  "started_at": "2026-11-09T15:58:40.222889-08:00",
+  "completed_at": "2026-11-09T15:58:59.610178-08:00"
+}
