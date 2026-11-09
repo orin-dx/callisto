@@ -104,6 +104,9 @@ pub enum ChangeKind {
     Changeset {
         filename: String,
         summary: String,
+        /// The pull request that added the changeset, when the history names one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pr: Option<u64>,
     },
     Commit {
         subject: String,
@@ -198,6 +201,16 @@ pub fn build_release_preview(plan: &VersionPlan) -> ReleasePreview {
 }
 
 impl ReleasePreview {
+    /// Records, for each changeset change, the pull request that added it. A changeset not in `prs` keeps none.
+    pub fn with_change_prs(mut self, prs: &std::collections::BTreeMap<String, u64>) -> Self {
+        for change in &mut self.changes {
+            if let ChangeKind::Changeset { filename, pr, .. } = &mut change.kind {
+                *pr = prs.get(filename.as_str()).copied();
+            }
+        }
+        self
+    }
+
     /// Adds the packages whose source changed since their last tag and that this release leaves out. They are a
     /// finding to read, not a blocker: many such changes are rightly internal.
     pub fn with_unreleased(mut self, unreleased: Vec<UnreleasedChange>) -> Self {
@@ -423,6 +436,7 @@ fn change_kind(source: &ChangeSource) -> Option<ChangeKind> {
             Some(ChangeKind::Changeset {
                 filename: filename.clone(),
                 summary: summary.clone(),
+                pr: None,
             })
         }
         ChangeSource::Commit { subject, sha } => Some(ChangeKind::Commit {
@@ -589,7 +603,10 @@ pub fn build_release_preview_in<R: callisto_model::CommandRunner, D: crate::reso
     ws: &crate::Workspace<'_, R, D>,
     plan: &VersionPlan,
 ) -> Result<ReleasePreview, GraphError> {
-    Ok(build_release_preview(plan).with_unreleased(unreleased_changes(ws, plan)?))
+    let prs = crate::changeset_prs::changeset_pull_requests(ws.git_access(), &ws.config.changesets_dir)?;
+    Ok(build_release_preview(plan)
+        .with_change_prs(&prs)
+        .with_unreleased(unreleased_changes(ws, plan)?))
 }
 
 /// Packages with source changes since their last tag that the plan does not bump, directly or through a group. A

@@ -321,14 +321,25 @@ fn render_change(body: &mut String, change: &Change, after_bullet: bool) -> bool
         .map(|member| format!("<code>{}</code>", member.package))
         .collect();
 
+    let pr = match &change.kind {
+        ChangeKind::Changeset { pr: Some(pr), .. } => Some(*pr),
+        _ => None,
+    };
+
     if detail.is_empty() {
+        let link = pr.map(|pr| format!(" · #{pr}")).unwrap_or_default();
         body.push_str(&format!(
-            "- **{}** — affects {}\n",
+            "- **{}** — affects {}{link}\n",
             bullet_markdown(&title),
             affected.join(", ")
         ));
         return true;
     }
+    // A raw-HTML `<summary>` does not link `#N`, so the reference closes the detail, where Markdown applies.
+    let detail = match pr {
+        Some(pr) => format!("{}\n\nPull request #{pr}", detail.trim_end()),
+        None => detail,
+    };
     if after_bullet {
         body.push('\n');
     }
@@ -646,6 +657,72 @@ mod tests {
     fn a_bullet_title_keeps_code_spans_and_escapes_a_stray_tag() {
         assert_eq!(bullet_markdown("Fix `<T>` and <b>"), "Fix `<T>` and \\<b>");
         assert_eq!(bullet_markdown("plain"), "plain");
+    }
+
+    #[test]
+    fn a_change_names_the_pull_request_that_added_it() {
+        let write = |package: &str, filename: &str, summary: &str| {
+            let package = PackageId::parse(package).unwrap();
+            let bump = PlannedBump {
+                package: package.clone(),
+                from: Version::semver(1, 0, 0),
+                to: Version::semver(1, 1, 0),
+                severity: Severity::Minor,
+                governed_by: None,
+                reason: None,
+                writes: vec![],
+            };
+            let write = crate::plan::ChangelogWrite {
+                changelog_path: std::path::PathBuf::from("CHANGELOG.md"),
+                input: crate::changelog::ChangelogInput {
+                    style: Default::default(),
+                    package,
+                    from: Version::semver(1, 0, 0),
+                    to: Some(Version::semver(1, 1, 0)),
+                    entries: vec![crate::changelog::ChangelogEntry {
+                        severity: Severity::Minor,
+                        source: crate::changelog::ChangeSource::Changeset {
+                            filename: filename.to_owned(),
+                            summary: summary.to_owned(),
+                        },
+                    }],
+                },
+            };
+            (bump, write)
+        };
+        let (a_bump, a_write) = write("pkg-a", "a.md", "Adds a flag.");
+        let (b_bump, b_write) = write("pkg-b", "b.md", "Drops it.\n\nDetails here.");
+        let (c_bump, c_write) = write("pkg-c", "c.md", "No pull request.");
+        let plan = VersionPlan {
+            bumps: vec![a_bump, b_bump, c_bump],
+            rewrites: vec![],
+            platform_writes: vec![],
+            optional_dep_updates: vec![],
+            changelog_writes: vec![a_write, b_write, c_write],
+            consumed_changesets: vec![],
+            pre_state_update: None,
+            pre_json_path: std::path::PathBuf::new(),
+            pre_json_original_text: None,
+            delete_pre_json: None,
+            diagnostics: vec![],
+        };
+        let prs = std::collections::BTreeMap::from([("a.md".to_owned(), 12), ("b.md".to_owned(), 34)]);
+        let preview = build_release_preview(&plan).with_change_prs(&prs);
+
+        let body = render_pr_body_from_preview(&preview, &PrBodyOptions::default()).body;
+
+        assert!(
+            body.contains("- **Adds a flag.** — affects <code>pkg-a</code> · #12\n"),
+            "{body}"
+        );
+        assert!(
+            body.contains("Details here.\n\nPull request #34\n\n</details>"),
+            "{body}"
+        );
+        assert!(
+            body.contains("- **No pull request.** — affects <code>pkg-c</code>\n"),
+            "{body}"
+        );
     }
 
     #[test]

@@ -17,6 +17,7 @@ pub mod apply;
 pub mod cascade;
 pub mod changed;
 pub mod changelog;
+mod changeset_prs;
 pub mod commands;
 pub mod config;
 pub mod conventional;
