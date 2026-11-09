@@ -222,6 +222,8 @@ jobs:
           setup_callisto: 'false'
           branch: main
           release_branch: callisto/version-packages
+          # A PR opened with GITHUB_TOKEN starts no CI; a PAT or App token in this secret does.
+          github_token: ${{ secrets.RELEASE_PR_TOKEN || github.token }}
         env:
           GH_TOKEN: ${{ github.token }}
   plan:
