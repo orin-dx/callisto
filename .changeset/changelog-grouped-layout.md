@@ -2,6 +2,11 @@
 callisto-cli: minor
 ---
 
-Changelogs are easier to scan. Each release lists its changes under Major, Minor and Patch Changes, with the release date and, when the GitHub repository is known, a link to compare it with the previous version. A package that only released alongside its group says so in one line.
+Changelogs group each release's changes by bump, so they are easier to scan.
 
-To keep the old single list, set `layout = "flat"` under `[changelog]` in `callisto.toml`.
+- Major, Minor and Patch Changes headings
+- The release date, plus a link to compare with the previous version when the GitHub repository is known
+- A package that only released with its group gets one line saying so
+
+**Upgrading**
+- To keep the old single list, set `layout = "flat"` under `[changelog]` in `callisto.toml`.
