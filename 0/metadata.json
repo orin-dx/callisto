@@ -1,0 +1,109 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M7126RT46HFE1FTJBD25AMND",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-09T21:07:55.086545Z",
+  "branch": "fix/unreleased-needs-a-tag",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "docs/architecture/versioning.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "e306d919b452",
+  "checkpoint_transcript_start": 31448,
+  "transcript_lines_at_start": 31448,
+  "compact_transcript_start": 2295,
+  "token_usage": {
+    "input_tokens": 46,
+    "cache_creation_tokens": 32223,
+    "cache_read_tokens": 6197057,
+    "output_tokens": 12840,
+    "api_call_count": 23
+  },
+  "redaction": {
+    "replacements": 80,
+    "layers": {
+      "betterleaks": 24,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 52,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 189
+  },
+  "summary": {
+    "intent": "Focus on value for Callisto users by walking through the CLI as a new user would (init, add, status, version, PR body), noting rough edges, and fixing issues found, plus resolving review findings on an open PR.",
+    "outcome": "Fixed a review finding on the change-PR-links branch (a reused changeset name now keeps the newest PR, with a test and mutation check, committed, pushed and finding resolved). Also fixed never-released packages being reported as changed in the release preview, committed and pushed on fix/unreleased-needs-a-tag with docs updated and a PR link attempted.",
+    "learnings": {
+      "repo": [
+        "Callisto is a Rust workspace; relevant crates include callisto-graph (tags.rs, release_preview.rs, changeset_prs.rs), callisto-cli (integration tests in tests/emit_preview_tests.rs) and callisto-model.",
+        "`callisto init` needs `--yes` (plus e.g. `--versioning independent --no-workflow`) when run outside a terminal.",
+        "`callisto add` takes the package via `--package cargo/lib:minor --summary ...`, not a positional argument.",
+        "The changeset log is newest first, so for a reused changeset filename the first addition seen is the file that currently exists; use entry().or_insert rather than insert.",
+        "A package with no tag has no release baseline, so it should not be listed as 'Changed' in a first release PR preview.",
+        "The team uses mutation checks (scripts that revert the fix and confirm the new test fails) and a verify.sh script before committing; commits are GPG-signed (git commit -S) and verified via gh api.",
+        "Work is split across git worktrees under .claude/worktrees/ (change-pr-links, release-pr-token, unreleased-needs-tag).",
+        "Review findings are tracked with the `entire trail finding list/resolve` CLI and PRs are linked with `entire trail link`."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/changeset_prs.rs",
+          "finding": "Map building used insert, so older PRs overwrote newer ones for reused changeset names; changed to entry().or_insert to keep the newest, with test a_reused_changeset_name_keeps_the_newest_pull_request."
+        },
+        {
+          "path": "crates/callisto-graph/src/release_preview.rs",
+          "finding": "The publishable package list needed a filter on having a tag, so never-released packages are not reported as changed since release."
+        },
+        {
+          "path": "crates/callisto-cli/tests/emit_preview_tests.rs",
+          "finding": "Existing test the_preview_lists_a_publishable_package_the_plan_leaves_out failed after the tag change and was updated to create a tag in its fixture repo."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "First walkthrough pass failed because init required --yes outside a terminal and add rejected the positional argument shape.",
+      "BSD sed in-place edit failed on macOS, requiring a switch to the Edit tool.",
+      "The untagged-package change broke an existing CLI test that assumed untagged packages were reported, requiring a fixture update.",
+      "Frequent EnterWorktree switching between multiple worktrees adds context-juggling overhead."
+    ],
+    "open_items": [
+      "Check whether the new fix/unreleased-needs-a-tag branch merges cleanly with the feat/change-pr-links PR (#483); a merge-tree check was run but its result was not reported.",
+      "Confirm the entire trail link for the new branch succeeded and open or finish the PR.",
+      "The walkthrough covered status, version and PR body, but only the init/add issues and the first-release preview issue were addressed; remaining rough edges were not recorded in the transcript."
+    ]
+  }
+}
