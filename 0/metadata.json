@@ -1,0 +1,123 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M70Y9PTM8DFG21KTSY0NFFGX",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-09T19:59:37.385236Z",
+  "branch": "feat/release-pr-token",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "9a875ea9396c",
+  "checkpoint_transcript_start": 30310,
+  "transcript_lines_at_start": 30310,
+  "compact_transcript_start": 2213,
+  "token_usage": {
+    "input_tokens": 110,
+    "cache_creation_tokens": 68164,
+    "cache_read_tokens": 11405459,
+    "output_tokens": 34565,
+    "api_call_count": 55,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 80,
+    "layers": {
+      "betterleaks": 24,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 52,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 184
+  },
+  "summary": {
+    "intent": "Do two tasks in parallel on the callisto repo: (A) show the originating pull request for each change in the release PR, and (B) make CI required on main via rulesets. The user then said 'keep going', so work continued on the CI blocker.",
+    "outcome": "A shipped as draft PR #483: changeset ids are mapped to PRs from merge commits and rendered in the release PR, verified against real history (14 changes, #463-#482), with docs, spec, changeset and mutation checks. B was not applied because the release PR #468 gets no CI; a follow-up branch feat/release-pr-token was committed and pushed so the release workflow uses RELEASE_PR_TOKEN when set, but its PR number and link were not confirmed in the transcript.",
+    "learnings": {
+      "repo": [
+        "PRs opened by the bot with GITHUB_TOKEN trigger no workflows, so release PR #468 reports no CI checks; the Entire gate says 'No CI checks reported for the head commit'.",
+        "Making CI a required check in the ruleset could leave the automated release PR unmergeable, and a wrong ruleset setting blocks every PR.",
+        "Changeset ids have no .md extension in aggregate.rs; unit-test fixtures using 'a.md' passed but real keys did not match.",
+        "PR numbers for changesets are read with one `git log --first-parent -m --diff-filter=A --name-only -- .changeset`; changes added without a PR have none, and an empty repo yields none.",
+        "Docs and spec live in docs/specs/release.json (REL-PR-* entries) and docs/architecture/versioning.md and release.md; a verify.sh script runs six local checks.",
+        "Commits are signed (-S) and the GitHub verification reason is checked via the commits API."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/changeset_prs.rs",
+          "finding": "New module mapping changeset ids to PR numbers from merge commits; registered in lib.rs as a private mod after `pub mod changed`."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/pr_body.rs",
+          "line": 296,
+          "end_line": 350,
+          "finding": "Renders each change in the release PR body; PR number is shown as '· #N' on a bullet or 'Pull request #N' under a change with a body."
+        },
+        {
+          "path": ".github/workflows/callisto-release.yml",
+          "line": 198,
+          "end_line": 232,
+          "finding": "Release PR creation step; edited on feat/release-pr-token to use RELEASE_PR_TOKEN when set, otherwise behaves as before."
+        }
+      ],
+      "workflow": [
+        "Running a real binary on real history caught a bug that unit tests missed (the .md key mismatch).",
+        "Do not run destructive 'restore the tree' steps (git reset --hard) in the working worktree after real runs; they wiped uncommitted edits. Commit early and do real runs in a scratch worktree.",
+        "Parallel work was isolated in separate git worktrees per branch (feat/change-pr-links, feat/release-pr-token).",
+        "Verify the root cause (no CI on bot PR) before changing the ruleset."
+      ]
+    },
+    "friction": [
+      "Uncommitted edits were wiped by `git reset --hard HEAD` during a tree restore and had to be rebuilt from session context.",
+      "Unit tests passed with wrong key format (a.md), so the first real run showed no PR numbers and needed debugging.",
+      "verify.sh initially had a failing check that needed fixes in changeset_prs.rs before all six passed.",
+      "Several sed -i edits to test fixtures were needed to change the key format."
+    ],
+    "open_items": [
+      "Review and merge draft PR #483; CI had not yet run on it.",
+      "Decide on B: fix CI triggering (recommended), rely on the merge queue, or leave it; required CI on main is not applied.",
+      "Configure the RELEASE_PR_TOKEN secret and open or confirm the PR for feat/release-pr-token; then require CI checks on main as a separate step.",
+      "Authors are not shown in release PR links because git has no GitHub login to link.",
+      "Uncertain whether the merge queue satisfies the PR-level required check for a PR that never ran CI."
+    ]
+  }
+}
