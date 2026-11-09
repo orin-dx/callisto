@@ -59,10 +59,10 @@ fn parse_changeset_prs(log: &str) -> BTreeMap<String, u64> {
             continue;
         };
         for path in lines.filter(|line| !line.is_empty()) {
-            // A changeset is known by its id, the file name without `.md`. The log is newest first, so the commit
-            // that added it first is the last one seen.
+            // A changeset is known by its id, the file name without `.md`. The log is newest first and a released
+            // changeset's name can be reused, so the first addition seen is the file that exists now.
             if let Some(id) = Path::new(path).file_stem().and_then(|stem| stem.to_str()) {
-                found.insert(id.to_owned(), pr);
+                found.entry(id.to_owned()).or_insert(pr);
             }
         }
     }
@@ -135,6 +135,15 @@ mod tests {
         assert!(changeset_pull_requests(&git, Path::new(".changeset"))
             .unwrap()
             .is_empty());
+    }
+
+    /// Versioning deletes a released changeset and `callisto add` can reuse its name, so the file that exists now is
+    /// the newest addition, not the oldest.
+    #[test]
+    fn a_reused_changeset_name_keeps_the_newest_pull_request() {
+        let log = "\u{1}Merge pull request #90 from o/new\n\n.changeset/keen-cheetahs.md\n\
+                   \u{1}Merge pull request #12 from o/old\n\n.changeset/keen-cheetahs.md\n";
+        assert_eq!(parse_changeset_prs(log).get("keen-cheetahs"), Some(&90));
     }
 
     #[test]
