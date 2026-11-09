@@ -1,5 +1,5 @@
 ---
-callisto-cli: patch
+callisto-cli: minor
 ---
 
-The release PR body now groups changes under Major, Minor and Patch headings and titles each change with its first paragraph instead of the changeset file name. A change with nothing beyond its title is a bullet.
+The release PR is easier to review. Changes are grouped under Major, Minor and Patch and titled by the first line of each changeset instead of its file name, longer notes fold away, and each package shows its real ecosystem.

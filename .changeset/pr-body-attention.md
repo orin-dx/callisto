@@ -2,4 +2,9 @@
 callisto-cli: minor
 ---
 
-The release PR body now has a "Read before merging" callout. It lists each `Breaking:` and `Action:` paragraph from a changeset, and the packages whose source changed since their last release but that the release leaves out. A breaking paragraph removes the "backward compatible" claim.
+The release PR opens with a "Read before merging" block, so nothing important is missed at merge time. It lists:
+
+- `Breaking:` and `Action:` notes from your changesets, and a `Breaking:` note on a change whose bump is too low for it
+- packages that changed since their last release but are not part of this one
+
+Start a changeset paragraph with `Breaking:` or `Action:` to have it shown there.
