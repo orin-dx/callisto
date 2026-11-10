@@ -321,7 +321,11 @@ fn pending(args: ReleasePendingArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
                     })
                 })
                 .collect();
-            write_json(&mut std::io::stdout(), &serde_json::json!({ "pending": releases }))?;
+            emit_report(
+                &mut std::io::stdout(),
+                &callisto_model::ReleasePendingReport { pending: releases },
+                global.dry_run,
+            )?;
         }
         OutputFormat::Text if found.is_empty() => emit_line(NO_PENDING_RELEASES)?,
         OutputFormat::Text => {
@@ -364,7 +368,11 @@ fn build_python(args: ReleaseBuildPythonArgs, global: &GlobalArgs) -> Result<Exi
     let capability = validate_release_intent(&root, &locator, &runner, intent)?;
     let built = capability.build_python_distributions(&outdir)?;
     match global.format {
-        OutputFormat::Json => write_json(&mut std::io::stdout(), &serde_json::json!({ "built": built }))?,
+        OutputFormat::Json => emit_report(
+            &mut std::io::stdout(),
+            &callisto_model::ReleaseBuildPythonReport { built },
+            global.dry_run,
+        )?,
         OutputFormat::Text => emit_line(&format!(
             "Built Python distributions for {} into {}",
             built.join(", "),

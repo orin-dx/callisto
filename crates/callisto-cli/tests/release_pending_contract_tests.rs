@@ -12,6 +12,10 @@ fn release_pending_json_carries_the_keys_the_workflow_reads() {
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
 
+    assert_eq!(report["schemaVersion"], 1, "{report}");
+    assert_eq!(report["command"], "release pending", "{report}");
+    assert_eq!(report["dryRun"], false, "{report}");
+
     // `.pending[0].source` is what callisto-release.yml selects as the release to finish.
     assert_eq!(report["pending"][0]["source"], release_commit, "{report}");
     assert_eq!(
@@ -36,4 +40,6 @@ fn release_pending_json_is_an_empty_list_when_every_release_finished() {
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(report["pending"], serde_json::json!([]), "{report}");
+    assert_eq!(report["schemaVersion"], 1, "{report}");
+    assert_eq!(report["command"], "release pending", "{report}");
 }
