@@ -41,12 +41,7 @@ pub fn last_failed_command() -> Option<String> {
     LAST_FAILED_COMMAND.lock().ok().and_then(|last| last.clone())
 }
 
-/// Caps how much of a subprocess's stdout/stderr this process will retain
-/// in memory. The pipe is still drained in full past this point (bytes
-/// beyond the cap are read and discarded, never accumulated) so a chatty
-/// child can never deadlock waiting on a full OS pipe buffer -- this
-/// bounds memory, not duration (`PUBLISH_TIMEOUT_SECS` bounds that
-/// separately).
+/// Caps retained subprocess output; the pipe is still drained past the cap so a chatty child cannot block.
 const MAX_CAPTURED_OUTPUT_BYTES: usize = 10 * 1024 * 1024;
 
 const RELEASE_CREDENTIALS: &[&str] = &[
