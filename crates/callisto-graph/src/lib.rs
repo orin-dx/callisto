@@ -30,6 +30,7 @@ pub mod locate;
 mod manifest_cache;
 pub(crate) mod matrix;
 pub mod napi;
+mod note;
 mod parallel;
 pub mod plan;
 pub(crate) mod registry_endpoint;
