@@ -50,7 +50,7 @@ pub fn format_error_json(command: &str, dry_run: bool, err: &CliError) -> serde_
 /// Every other code exits 1. `tests/usage_exit_codes_tests.rs` fails when a code in docs/errors.md is in neither list.
 pub const USAGE_CODES: &[&str] = &[
     "E195", "E196", "E214", "E216", "E217", "E218", "E224", "E225", "E226", "E227", "E228", "E229", "E231", "E240",
-    "E241", "E242", "E270", "E271", "E274", "E275", "E276", "E279", "E282", "E283", "E298", "E309", "E324",
+    "E241", "E242", "E270", "E271", "E274", "E275", "E276", "E279", "E282", "E283", "E298", "E309", "E324", "E327",
 ];
 
 /// Codes that are usage errors only when the offending reference came from a flag (context `--package`).
