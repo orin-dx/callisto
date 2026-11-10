@@ -218,8 +218,13 @@ fn render_pr_body(notes: &ReleasePreview, opts: &PrBodyOptions) -> String {
 
     body.push_str(&callout(&notes.findings, notes.packages.len()));
     body.push_str(&attention(&notes.findings));
-    if let Some(PublishOutlook::Planned { releases, notes }) = &notes.publish {
-        body.push_str(&publish_section(releases, notes));
+    if let Some(PublishOutlook::Planned {
+        releases,
+        notes,
+        versioned_only,
+    }) = &notes.publish
+    {
+        body.push_str(&publish_section(releases, notes, versioned_only));
     }
 
     // Grouped by underlying change, not by package, so a changeset naming several packages renders once.
@@ -391,11 +396,11 @@ fn push_detail(body: &mut String, text: &str) {
 }
 
 /// Where merging will publish each package, from planning the versioned tree's release.
-fn publish_section(releases: &[PublishTargets], notes: &[String]) -> String {
-    if releases.is_empty() {
-        return String::new();
+fn publish_section(releases: &[PublishTargets], notes: &[String], versioned_only: &[String]) -> String {
+    let mut out = String::new();
+    if !releases.is_empty() {
+        out.push_str("### 🚀 Merging will publish\n\n| Package | Goes to |\n| :--- | :--- |\n");
     }
-    let mut out = String::from("### 🚀 Merging will publish\n\n| Package | Goes to |\n| :--- | :--- |\n");
     for release in releases {
         let mut targets = release.registries.clone();
         if release.tag {
@@ -415,9 +420,20 @@ fn publish_section(releases: &[PublishTargets], notes: &[String]) -> String {
             targets.join(" · ")
         ));
     }
-    out.push('\n');
-    for note in notes {
-        out.push_str(&format!("_{note}_\n\n"));
+    if !releases.is_empty() {
+        out.push('\n');
+    }
+    if !versioned_only.is_empty() {
+        let names: Vec<String> = versioned_only.iter().map(|name| format!("`{name}`")).collect();
+        out.push_str(&format!(
+            "Versioned, not published: {} (no publish target).\n\n",
+            names.join(", ")
+        ));
+    }
+    if !releases.is_empty() {
+        for note in notes {
+            out.push_str(&format!("_{note}_\n\n"));
+        }
     }
     out
 }
@@ -602,9 +618,11 @@ mod tests {
                 artifacts: 5,
             }],
             notes: vec!["`origin` has no push URL.".to_owned()],
+            versioned_only: Vec::new(),
         });
 
         let body = render_pr_body_from_preview(&preview, &PrBodyOptions::default()).body;
+        assert!(!body.contains("Versioned, not published"), "{body}");
 
         assert!(
             body.contains("### 🚀 Merging will publish\n\n| Package | Goes to |\n| :--- | :--- |\n| `core-crate` `1.1.0` | crates.io · git tag · GitHub release · 5 assets |\n"),
@@ -612,6 +630,48 @@ mod tests {
         );
         assert!(body.contains("_`origin` has no push URL._"), "{body}");
         assert!(!body.contains("[!CAUTION]"), "{body}");
+    }
+
+    #[test]
+    fn versioned_only_packages_get_one_line_after_the_publish_table() {
+        use crate::release_preview::{PublishOutlook, PublishTargets};
+        let planned = |releases, versioned_only| {
+            let preview = preview_of_one_bump().with_publish(PublishOutlook::Planned {
+                releases,
+                notes: Vec::new(),
+                versioned_only,
+            });
+            render_pr_body_from_preview(&preview, &PrBodyOptions::default()).body
+        };
+        let release = PublishTargets {
+            package: "core-crate".to_owned(),
+            version: "1.1.0".to_owned(),
+            registries: vec!["crates.io".to_owned()],
+            tag: true,
+            github_release: false,
+            artifacts: 0,
+        };
+
+        let body = planned(
+            vec![release],
+            vec!["callisto-fixtures".to_owned(), "other-private".to_owned()],
+        );
+        assert!(
+            body.contains(
+                "| `core-crate` `1.1.0` | crates.io · git tag |\n\nVersioned, not published: `callisto-fixtures`, `other-private` (no publish target).\n\n"
+            ),
+            "{body}"
+        );
+
+        let body = planned(Vec::new(), vec!["callisto-fixtures".to_owned()]);
+        assert!(
+            body.contains("Versioned, not published: `callisto-fixtures` (no publish target).\n"),
+            "{body}"
+        );
+        assert!(!body.contains("Merging will publish"), "{body}");
+
+        let body = planned(Vec::new(), Vec::new());
+        assert!(!body.contains("Versioned, not published"), "{body}");
     }
 
     #[test]

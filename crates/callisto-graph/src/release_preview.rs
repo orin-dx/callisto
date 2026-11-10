@@ -50,6 +50,9 @@ pub enum PublishOutlook {
         releases: Vec<PublishTargets>,
         /// Conditions that do not stop the release but change what it does, such as unbound tags.
         notes: Vec<String>,
+        /// Bumped packages with no publish target (private ones): versioned with their group, published nowhere.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        versioned_only: Vec<String>,
     },
     /// The same planning step the release workflow runs refused; merging would fail the same way.
     Blocked { code: Option<String>, message: String },
@@ -322,28 +325,31 @@ pub fn publish_outlook_in<R: callisto_model::CommandRunner, D: crate::resolver::
     ws: &crate::Workspace<'_, R, D>,
     preview: &ReleasePreview,
 ) -> Option<PublishOutlook> {
-    let selections: Vec<callisto_model::ReleasePackageId> = preview
-        .release_selections()?
-        .iter()
-        .map(|id| id.parse().ok())
-        .collect::<Option<_>>()?;
-    let publishable: Vec<callisto_model::ReleasePackageId> = selections
-        .into_iter()
-        .filter(|id| {
-            crate::commands::release_decision::workspace_package(ws, id)
-                .is_some_and(crate::commands::release_decision::has_dispatchable_target)
-        })
-        .collect();
-    if publishable.is_empty() {
-        return Some(PublishOutlook::Planned {
-            releases: Vec::new(),
-            notes: Vec::new(),
-        });
+    let mut publishable: Vec<callisto_model::ReleasePackageId> = Vec::new();
+    let mut versioned_only: Vec<String> = Vec::new();
+    for package in &preview.packages {
+        let id: callisto_model::ReleasePackageId = package.release_id.as_deref()?.parse().ok()?;
+        if crate::commands::release_decision::workspace_package(ws, &id)
+            .is_some_and(crate::commands::release_decision::has_dispatchable_target)
+        {
+            publishable.push(id);
+        } else {
+            versioned_only.push(package.name.clone());
+        }
     }
-    Some(publish_outlook(crate::commands::plan_workspace_release_offline(
-        ws,
-        &publishable,
-    )))
+    let outlook = if publishable.is_empty() {
+        publish_outlook(Ok(None))
+    } else {
+        publish_outlook(crate::commands::plan_workspace_release_offline(ws, &publishable))
+    };
+    Some(match outlook {
+        PublishOutlook::Planned { releases, notes, .. } => PublishOutlook::Planned {
+            releases,
+            notes,
+            versioned_only,
+        },
+        blocked => blocked,
+    })
 }
 
 /// Reads the outcome of planning a release into what the PR body shows. Nothing is looked up on a registry or
@@ -355,6 +361,7 @@ pub fn publish_outlook(planned: Result<Option<LocalReleasePlan>, GraphError>) ->
             return PublishOutlook::Planned {
                 releases: Vec::new(),
                 notes: Vec::new(),
+                versioned_only: Vec::new(),
             }
         }
         Err(error) => {
@@ -373,7 +380,11 @@ pub fn publish_outlook(planned: Result<Option<LocalReleasePlan>, GraphError>) ->
         notes.push("`origin` has no push URL, so tags cannot be pushed until one is set.".to_owned());
     }
     notes.extend(plan.diagnostics.iter().map(|diagnostic| diagnostic.message.clone()));
-    PublishOutlook::Planned { releases, notes }
+    PublishOutlook::Planned {
+        releases,
+        notes,
+        versioned_only: Vec::new(),
+    }
 }
 
 fn release_id(bump: &PlannedBump) -> Option<String> {
@@ -1088,10 +1099,27 @@ mod tests {
         let with = bare.with_publish(PublishOutlook::Planned {
             releases: vec![],
             notes: vec!["n".to_owned()],
+            versioned_only: vec!["p".to_owned()],
         });
         assert_eq!(
             ReleasePreview::from_json(&serde_json::to_string(&with).unwrap()).unwrap(),
             with
+        );
+    }
+
+    #[test]
+    fn a_stored_planned_outlook_without_versioned_only_still_loads() {
+        let json = format!(
+            r#"{{"schemaVersion":{RELEASE_PREVIEW_SCHEMA_VERSION},"packages":[],"changes":[],"bystanders":[],"findings":[],"publish":{{"kind":"planned","releases":[],"notes":["n"]}}}}"#
+        );
+        let preview = ReleasePreview::from_json(&json).unwrap();
+        assert_eq!(
+            preview.publish,
+            Some(PublishOutlook::Planned {
+                releases: vec![],
+                notes: vec!["n".to_owned()],
+                versioned_only: vec![],
+            })
         );
     }
 
