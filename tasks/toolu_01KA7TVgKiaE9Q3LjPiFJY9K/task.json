@@ -1,0 +1,22 @@
+{
+  "tool_use_id": "toolu_01KA7TVgKiaE9Q3LjPiFJY9K",
+  "agent_id": "adf61e5ae83f5eca7",
+  "subagent_type": "smith:implementer",
+  "task_description": "Consistent JSON error envelope",
+  "files": [
+    "crates/callisto-cli/src/cli.rs",
+    "crates/callisto-cli/src/commands/release.rs",
+    "crates/callisto-cli/tests/error_envelope_tests.rs",
+    "crates/callisto-cli/tests/release_pending_contract_tests.rs",
+    "crates/callisto-model/src/release/report.rs"
+  ],
+  "token_usage": {
+    "input_tokens": 88,
+    "cache_creation_tokens": 107978,
+    "cache_read_tokens": 3950510,
+    "output_tokens": 19413,
+    "api_call_count": 44
+  },
+  "started_at": "2026-11-10T10:52:24.441989-08:00",
+  "completed_at": "2026-11-10T11:07:28.871004-08:00"
+}

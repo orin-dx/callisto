@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M73DTTBB1B6J5FXF1SMY9WQC",
+  "strategy": "manual-commit",
+  "branch": "fix/camel-case-fields",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "crates/callisto-cli/tests/schema_guard_test.rs",
+    "crates/callisto-graph/src/release_preview.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 47985,
+    "cache_read_tokens": 9297725,
+    "output_tokens": 12100,
+    "api_call_count": 14,
+    "subagent_tokens": {
+      "input_tokens": 746,
+      "cache_creation_tokens": 568436,
+      "cache_read_tokens": 21636919,
+      "output_tokens": 108258,
+      "api_call_count": 262
+    }
+  },
+  "redaction": {
+    "replacements": 84,
+    "layers": {
+      "betterleaks": 28,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 52,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
