@@ -46,6 +46,39 @@ pub fn format_error_json(command: &str, dry_run: bool, err: &CliError) -> serde_
     })
 }
 
+/// Codes for a bad or missing flag or argument value, or a bad flag combination, caught after parsing. These exit 2.
+/// Every other code exits 1. `tests/usage_exit_codes_tests.rs` fails when a code in docs/errors.md is in neither list.
+pub const USAGE_CODES: &[&str] = &[
+    "E195", "E196", "E214", "E216", "E217", "E218", "E224", "E225", "E226", "E227", "E228", "E229", "E231", "E240",
+    "E241", "E242", "E270", "E271", "E274", "E275", "E276", "E279", "E282", "E283", "E298", "E309", "E324",
+];
+
+/// Codes that are usage errors only when the offending reference came from a flag (context `--package`).
+/// The same codes from `callisto.toml` content are runtime errors.
+pub const USAGE_WHEN_FROM_FLAG_CODES: &[&str] = &["E316", "E317"];
+
+impl CliError {
+    /// True when the command line input was wrong or incomplete, as opposed to workspace, config, git or registry state.
+    pub fn is_usage_error(&self) -> bool {
+        let Some(code) = self.code().map(|c| c.to_string()) else {
+            return false;
+        };
+        if USAGE_CODES.contains(&code.as_str()) {
+            return true;
+        }
+        let config = match self {
+            Self::Config(config) | Self::Graph(GraphError::Config(config)) => config,
+            _ => return false,
+        };
+        match config {
+            ConfigError::BareReference { context, .. } | ConfigError::ColonReference { context, .. } => {
+                context.starts_with("--")
+            }
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error, Diagnostic)]
 #[non_exhaustive]
 pub enum CliError {
@@ -168,6 +201,13 @@ pub enum CliError {
         help("drop --seal-python and `release build-python` for an intent without a Python publish")
     )]
     ReleaseNoPythonPublishes,
+
+    #[error("`--from` must be a full commit SHA: {reason}")]
+    #[diagnostic(
+        code(E327),
+        help("pass the full 40-character hexadecimal SHA, for example the `source` of an entry from `callisto release pending`")
+    )]
+    ReleasePendingFromInvalid { reason: String },
 
     #[error("release build-python writes build output; remove --dry-run")]
     #[diagnostic(code(E309), help("re-run `callisto release build-python` without --dry-run"))]

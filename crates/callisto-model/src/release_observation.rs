@@ -19,7 +19,12 @@ use crate::{ArtifactDigest, CommitSha, Ecosystem, Version, VersionParseError};
 /// demonstrate today. Fields that a provider cannot yet report are `None`
 /// rather than invented.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase", tag = "kind", deny_unknown_fields)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind",
+    deny_unknown_fields
+)]
 pub enum ProviderEvidenceV1 {
     /// The registry served this exact version.
     RegistryVersion {
@@ -219,7 +224,12 @@ enum ProviderObservationV1Wire {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase", tag = "kind", deny_unknown_fields)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind",
+    deny_unknown_fields
+)]
 enum ProviderEvidenceV1Wire {
     RegistryVersion {
         version: String,
@@ -477,7 +487,7 @@ mod tests {
             "operation": operation,
             "observation": {
                 "kind": "exact",
-                "evidence": { "kind": "gitTag", "peeled_commit": "a".repeat(40) }
+                "evidence": { "kind": "gitTag", "peeledCommit": "a".repeat(40) }
             }
         });
         let error = serde_json::from_value::<ReleaseOperationObservationV1>(mismatched).unwrap_err();

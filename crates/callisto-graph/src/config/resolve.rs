@@ -373,14 +373,27 @@ pub fn load(root: &Path) -> Result<ResolvedConfig, ConfigError> {
         message: e.to_string(),
     })?;
     let raw = if let Some(content) = content {
-        toml::from_str::<RawConfig>(&content).map_err(|e| ConfigError::ParseToml {
-            path: callisto_toml.clone(),
-            message: e.to_string(),
-        })?
+        parse_raw(&callisto_toml, &content)?
     } else {
         RawConfig::default()
     };
     resolve(root, raw)
+}
+
+/// Parses `callisto.toml` text, telling a syntax error from an unknown key and from a misfit value.
+pub fn parse_raw(path: &Path, text: &str) -> Result<RawConfig, ConfigError> {
+    let error = match toml::from_str::<RawConfig>(text) {
+        Ok(raw) => return Ok(raw),
+        Err(error) => error,
+    };
+    let (path, message) = (path.to_path_buf(), error.to_string());
+    Err(if toml::from_str::<toml::Table>(text).is_err() {
+        ConfigError::ParseToml { path, message }
+    } else if error.message().starts_with("unknown field") {
+        ConfigError::UnknownField { path, message }
+    } else {
+        ConfigError::InvalidValue { path, message }
+    })
 }
 
 /// Validates and defaults an already-parsed config for the workspace at `root`.

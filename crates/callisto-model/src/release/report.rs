@@ -129,6 +129,44 @@ impl crate::report::Report for ReleaseArtifactManifestReport {
     }
 }
 
+/// `callisto release pending --format json` report: merged release commits whose release did not finish.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReleasePendingReport {
+    pub pending: Vec<serde_json::Value>,
+}
+
+impl crate::report::Report for ReleasePendingReport {
+    const COMMAND: &'static str = "release pending";
+
+    fn schema_version(&self) -> u32 {
+        crate::SCHEMA_VERSION
+    }
+
+    fn diagnostics(&self) -> &[crate::Diagnostic] {
+        &[]
+    }
+}
+
+/// `callisto release build-python --format json` report: the distributions built.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReleaseBuildPythonReport {
+    pub built: Vec<String>,
+}
+
+impl crate::report::Report for ReleaseBuildPythonReport {
+    const COMMAND: &'static str = "release build-python";
+
+    fn schema_version(&self) -> u32 {
+        crate::SCHEMA_VERSION
+    }
+
+    fn diagnostics(&self) -> &[crate::Diagnostic] {
+        &[]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::Ecosystem;

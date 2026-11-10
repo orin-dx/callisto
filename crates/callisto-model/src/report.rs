@@ -61,7 +61,7 @@ pub struct BumpRecord {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 #[non_exhaustive]
 pub enum BumpReason {
     Changeset {

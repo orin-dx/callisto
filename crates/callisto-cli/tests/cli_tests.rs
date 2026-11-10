@@ -274,6 +274,53 @@ fn matrix_lists_release_artifact_cargo_binaries_beside_napi_targets() {
     assert_eq!(targets[1]["packageName"], "tool");
 }
 
+/// Two cargo artifacts on one triple are ordered by asset name, not by declaration order.
+#[test]
+fn matrix_orders_same_triple_cargo_artifacts_by_asset_name() {
+    use std::process::Command;
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    callisto_fixtures::git::init_repo(tmp.path());
+    let root = tmp.path();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/cli\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("crates/cli/src")).unwrap();
+    std::fs::write(
+        root.join("crates/cli/Cargo.toml"),
+        "[package]\nname = \"tool\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("crates/cli/src/main.rs"), "fn main() {}\n").unwrap();
+    std::fs::write(
+        root.join("callisto.toml"),
+        "[release]\nproduct-package = \"cargo/tool\"\nforge-repository = \"example/tool\"\n\n\
+         [[release.artifact]]\npackage = \"cargo/tool\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"tool-z.tar.gz\"\n\n\
+         [[release.artifact]]\npackage = \"cargo/tool\"\ntarget = \"x86_64-unknown-linux-gnu\"\nasset-name = \"tool-a.tar.gz\"\n",
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_callisto"))
+        .args(["--cwd", &root.to_string_lossy(), "--format", "json", "matrix"])
+        .output()
+        .expect("failed to spawn callisto binary");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let names: Vec<&str> = json["platformTargets"]["cargo/tool"]["targets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["artifactName"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["tool-a.tar.gz", "tool-z.tar.gz"], "{json}");
+}
+
 /// A cargo `[[release.artifact]]` naming no workspace package is a warning, not a silent drop.
 #[test]
 fn matrix_warns_on_a_release_artifact_with_an_unknown_package() {

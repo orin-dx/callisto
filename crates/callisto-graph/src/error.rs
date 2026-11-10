@@ -701,6 +701,13 @@ pub enum GraphError {
     )]
     ReleaseInvariant { detail: String },
 
+    #[error("`--from` commit `{commit}` is not a release commit on this branch")]
+    #[diagnostic(
+        code(E328),
+        help("Pass a release commit from `callisto release pending` run without `--from`, on this branch's first-parent history.")
+    )]
+    PendingFromNotReleaseCommit { commit: String },
+
     #[error("release execution is incomplete: {count} operation(s) lack verified terminal success")]
     #[diagnostic(
         code(E172),
@@ -1143,8 +1150,22 @@ pub enum ConfigError {
     Read { path: PathBuf, message: String },
 
     #[error("`{path}` is not valid TOML: {message}")]
-    #[diagnostic(code(E111), help("Verify callisto.toml TOML syntax formatting."))]
+    #[diagnostic(code(E111), help("Fix the TOML syntax error at the reported line in callisto.toml."))]
     ParseToml { path: PathBuf, message: String },
+
+    #[error("`{path}` sets an unknown key: {message}")]
+    #[diagnostic(
+        code(E325),
+        help("Remove or correct the key named in the message; see docs/config.md for the supported keys.")
+    )]
+    UnknownField { path: PathBuf, message: String },
+
+    #[error("`{path}` has a value that does not fit its key: {message}")]
+    #[diagnostic(
+        code(E326),
+        help("Give the key a value of the type the message names, or add the missing key; see docs/config.md.")
+    )]
+    InvalidValue { path: PathBuf, message: String },
 
     #[error("group `{group}` and group `{other}` both list `{member}`")]
     #[diagnostic(code(E249), help("List the member in only one group; remove it from all but one."))]
@@ -1270,7 +1291,11 @@ impl ConfigError {
     /// The one filesystem path this error is about, when it carries it as a structured field.
     pub fn path(&self) -> Option<&std::path::Path> {
         match self {
-            Self::Read { path, .. } | Self::ParseToml { path, .. } | Self::UnknownKey { path, .. } => Some(path),
+            Self::Read { path, .. }
+            | Self::ParseToml { path, .. }
+            | Self::UnknownField { path, .. }
+            | Self::InvalidValue { path, .. }
+            | Self::UnknownKey { path, .. } => Some(path),
             _ => None,
         }
     }

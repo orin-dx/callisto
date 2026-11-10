@@ -7,7 +7,7 @@ use clap::Parser;
 use callisto_cli::cli::{Cli, Command};
 use callisto_cli::commands::*;
 
-// Exit codes: 0 success, 1 failure, 2 usage error from clap (docs/stability.md). A handler's `Ok(code)` is returned as is.
+// Exit codes: 0 success, 1 failure, 2 usage error: from clap, or a handler error `CliError::is_usage_error` classifies (docs/stability.md). A handler's `Ok(code)` is returned as is.
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -32,6 +32,11 @@ fn main() -> ExitCode {
     match res {
         Ok(code) => code,
         Err(err) => {
+            let exit = if err.is_usage_error() {
+                ExitCode::from(2)
+            } else {
+                ExitCode::FAILURE
+            };
             if cli.global.format == callisto_cli::cli::OutputFormat::Json {
                 let report = callisto_cli::error::format_error_json(command_name, cli.global.dry_run, &err);
                 let _res = callisto_cli::output::write_json(&mut std::io::stderr(), &report);
@@ -45,7 +50,7 @@ fn main() -> ExitCode {
                     eprintln!("Most recent failed command (redacted):\n{summary}");
                 }
             }
-            ExitCode::FAILURE
+            exit
         }
     }
 }

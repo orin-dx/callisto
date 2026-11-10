@@ -142,6 +142,8 @@ Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E257,
 | --- | --- | --- |
 | E110 | Failed to read `callisto.toml` | Check that the file exists and is readable. |
 | E111 | `callisto.toml` is not valid TOML | Verify callisto.toml TOML syntax formatting. |
+| E325 | `callisto.toml` sets a key Callisto does not know | Remove or correct the key named in the message; see docs/config.md for the supported keys. |
+| E326 | `callisto.toml` has a value that does not fit its key (wrong type, or a required key missing) | Give the key a value of the type the message names, or add the missing key; see docs/config.md. |
 | E113 | A package's `changelog` path is absolute or contains `..`, and would escape the workspace root | Use a forward-slash-separated path relative to the package root that does not contain '..' components. |
 | E116 | `changesets.dir` is absolute or contains `..`, and would escape the workspace root | Use a forward-slash-separated path relative to the workspace root that is not absolute and does not contain '..' components. |
 | E197 | Invalid `[release]` product configuration | Configure one supported product package and its artifact targets. |
@@ -208,6 +210,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E257,
 | E169 | Release `--package` selection is invalid | Select each package at most once, only packages with a pending release and a publish target, never a version `callisto snapshot` wrote, and every unreleased platform package a selected npm package depends on. |
 | E170 | Release precondition is unmet (e.g. detached HEAD, missing GitHub remote) | Satisfy the reported precondition (for example a detached HEAD or a configured GitHub remote) before retrying. |
 | E171 | Internal release invariant violated | This is an internal callisto defect, not an operator action; report it along with the full error detail. |
+| E328 | `release pending --from` names a commit that is not a release commit on this branch | Pass a release commit from `callisto release pending` without `--from`, or one on the current branch's first-parent history. |
 | E172 | Release execution is incomplete: one or more operations lack verified terminal success | Rerun the release: it adopts every operation that already landed and retries the rest. Do not treat this release as successful. |
 | E175 | Configured artifact repository doesn't match the prepared GitHub push remote | Use the repository derived from the trusted Git remote; Callisto will not upload product assets to a caller-selected repository. |
 | E176 | Cannot dispatch a release operation because its provider observation is indeterminate; the message says why (an HTTP status, a failed command, an answer that could not be understood, or a timeout) | Restore provider credentials or connectivity, then retry. Callisto will not dispatch an effect while it cannot determine the remote identity. After a text-mode error, the most recent failed command and the end of its stderr (20 lines or 2 KiB, credentials redacted) are printed. |
@@ -314,3 +317,4 @@ Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E257,
 | E322 | A first release's version is already on the registry under a different repository, so the name belongs to another project | Rename the package. If it is yours (it moved repositories), tag the commit that set this version by hand and run `callisto release` again. |
 | E323 | A first crates.io release of a crate with no `description`, or neither `license` nor `license-file` | Add the missing field to the package's Cargo.toml (or inherit it from `[workspace.package]`), commit it, and run `callisto release` again. Nothing has been published. |
 | E324 | A `snapshot --tag` is empty or has a character other than a letter, digit or `-`; a `pre enter` tag has an empty `.`-separated part or such a character | Pass a tag such as `canary` or `pr-42`; it becomes part of the pre-release version. |
+| E327 | `release pending --from` is not a full 40-character hexadecimal commit SHA | Pass the full commit SHA, for example the `source` of an entry from `callisto release pending`. |
