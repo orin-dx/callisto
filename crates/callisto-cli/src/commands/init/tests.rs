@@ -1288,7 +1288,7 @@ fn unsupported_workspace_skips_workflow_generation_with_a_json_diagnostic() {
         InitArgs::default(),
         &global(dir.path(), OutputFormat::Json, false),
         true,
-        &mut Scripted::new(vec![Answer::Select(0), Answer::Confirm(true)], &out),
+        &mut Scripted::new(vec![Answer::Confirm(true)], &out),
         &mut out.clone(),
         &mut err.clone(),
         &CliCommandRunner,

@@ -120,9 +120,6 @@ pub enum DiagnosticCode {
     /// A fixed napi group member's manifest still exists on disk after its triple was removed
     /// from `napi.targets` — remove it from the group's members in `callisto.toml`, or restore the target.
     NapiTargetRemovedStillOnDisk,
-    /// Reserved for a pre-v0.3 milestone gate on napi platform coordination; not emitted by
-    /// any current code path now that coordination has shipped.
-    NapiCoordinationNotYetSupported,
     /// A dependency range spec's coverage of the new version is known (it covers or doesn't),
     /// but the mechanical rewrite of that range string toward the new version failed — e.g. a
     /// compound, wildcard, or prerelease-clause range no ecosystem's round-trip rewriter
@@ -140,29 +137,10 @@ pub enum DiagnosticCode {
     /// `init` found a `.changeset/config.json` key from `@changesets/cli` that callisto never
     /// reads; no translation happens, the key is just inert.
     ChangesetsConfigKeyDropped,
-    /// Commit-severity inference failed for a package. Not emitted since a Git failure fails the
-    /// command; kept for wire compatibility.
-    PreMajorInferenceInert,
-    /// A release's section was missing from its package's `CHANGELOG.md`. Not emitted since
-    /// `plan-publish` was removed; kept for wire compatibility.
-    ChangelogSectionNotFound,
-    /// The version plan could not be computed. Not emitted since `plan-publish` was removed;
-    /// kept for wire compatibility.
-    ChangesetReadError,
-    /// Git repository or tag discovery failed. Not emitted since `plan-publish` was removed;
-    /// kept for wire compatibility.
-    GitDiscoveryFailed,
-    /// A bare (unprefixed) `[[package]]` config rule matched packages in two or more ecosystems. Not emitted
-    /// since config rejects a rule without its ecosystem; kept for wire compatibility.
-    BareRuleMatchesMultipleEcosystems,
     /// `callisto matrix` found a platform triple in `napi.targets`/`[tool.maturin].targets`
     /// that neither the shared triple-to-role table nor matrix's own host-runner table
     /// recognizes — excluded from the report's `targets[]` rather than silently guessing.
     UnrecognisedPlatformTriple,
-    /// A package configures `publish-to` for a registry kind with no implemented dispatch.
-    /// Not emitted since `plan-publish` was removed (release planning errors instead); kept
-    /// for wire compatibility.
-    PublishTargetNotImplemented,
     /// A `[[package-set]]` config rule matched no packages after the workspace walk —
     /// advisory rather than a hard error, since a monorepo-wide rule can legitimately match
     /// nothing against a partial checkout or filtered walk.
@@ -171,11 +149,6 @@ pub enum DiagnosticCode {
     /// package's own `napi.targets`/`[tool.maturin].targets` — the duplicate is dropped
     /// (first occurrence wins) rather than treated as a hard error.
     DuplicatePlatformTriple,
-    /// A changelog file exists at the package's resolved `pkg.changelog` path but could not
-    /// be read -- invalid UTF-8, permission denied, or any I/O failure other than "file does
-    /// not exist" (that case is `ChangelogSectionNotFound` instead). Not emitted since
-    /// `plan-publish` was removed; kept for wire compatibility.
-    ChangelogReadError,
     /// A changeset entry names a bare (unprefixed) package name that matches two or more
     /// packages across different ecosystems (e.g. `cargo/foo` and `npm/foo`) -- the entry
     /// cannot be resolved to a single target without an ecosystem prefix.
@@ -220,38 +193,6 @@ pub enum DiagnosticCode {
 #[cfg(test)]
 mod tests {
     use super::DiagnosticCode;
-
-    /// DiagnosticCode::ChangelogReadError must serialize to the kebab-case string
-    /// "changelog-read-error" and deserialize back to the same variant.
-    #[test]
-    fn changelog_read_error_serializes_to_kebab_case() {
-        let code = DiagnosticCode::ChangelogReadError;
-        let json = serde_json::to_string(&code).unwrap();
-        assert_eq!(
-            json, r#""changelog-read-error""#,
-            "DiagnosticCode::ChangelogReadError must serialize to \"changelog-read-error\"",
-        );
-        let roundtrip: DiagnosticCode = serde_json::from_str(&json).unwrap();
-        assert_eq!(roundtrip, code, "deserialized value must equal the original variant",);
-    }
-
-    /// DiagnosticCode::BareRuleMatchesMultipleEcosystems must serialize
-    /// to the kebab-case string "bare-rule-matches-multiple-ecosystems" and
-    /// deserialize back to the same variant. The existing
-    /// `#[serde(rename_all = "kebab-case")]` on DiagnosticCode handles this
-    /// automatically — no per-variant annotation is needed.
-    #[test]
-    fn bare_rule_matches_multiple_ecosystems_serializes_to_kebab_case() {
-        let code = DiagnosticCode::BareRuleMatchesMultipleEcosystems;
-        let json = serde_json::to_string(&code).unwrap();
-        assert_eq!(
-            json,
-            r#""bare-rule-matches-multiple-ecosystems""#,
-            "DiagnosticCode::BareRuleMatchesMultipleEcosystems must serialize to \"bare-rule-matches-multiple-ecosystems\"",
-        );
-        let roundtrip: DiagnosticCode = serde_json::from_str(&json).unwrap();
-        assert_eq!(roundtrip, code, "deserialized value must equal the original variant",);
-    }
 
     /// DiagnosticCode::UnrecognisedPlatformTriple must serialize to
     /// the kebab-case string "unrecognised-platform-triple" and deserialize

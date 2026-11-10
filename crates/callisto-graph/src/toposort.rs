@@ -48,7 +48,10 @@ where
     let all_set: std::collections::HashSet<&PackageId> = all_packages.iter().collect();
     for id in &members {
         if !all_set.contains(id) {
-            return Err(GraphError::UnknownPackage { id: id.clone() });
+            return Err(GraphError::UnknownPackage {
+                id: id.clone(),
+                hint: String::new(),
+            });
         }
     }
 

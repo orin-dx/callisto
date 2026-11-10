@@ -52,6 +52,26 @@ mod tests {
     }
 
     #[test]
+    fn resolve_miss_suggests_only_registered_names_that_are_close() {
+        let mut index = IdentityIndex::default();
+        for name in ["lib", "lab-core", "unrelated"] {
+            let id = PackageId::Prefixed {
+                ecosystem: Ecosystem::Cargo,
+                name: name.to_string(),
+            };
+            index.native.insert((Ecosystem::Cargo, name.to_string()), id);
+        }
+        let GraphError::UnknownPackage { hint, .. } = index.resolve("cargo/lib2").unwrap_err() else {
+            panic!("expected E102");
+        };
+        assert_eq!(hint, "\ndid you mean `cargo/lib`?");
+        let GraphError::UnknownPackage { hint, .. } = index.resolve("cargo/zzzzzz").unwrap_err() else {
+            panic!("expected E102");
+        };
+        assert_eq!(hint, "");
+    }
+
+    #[test]
     fn resolve_qualified_selector_is_exact_and_misses_report_e102() {
         let mut index = IdentityIndex::default();
         let npm_only = PackageId::Bare("foo".to_string());
@@ -385,7 +405,7 @@ impl IdentityIndex {
                 .native
                 .get(&(*ecosystem, name.clone()))
                 .cloned()
-                .ok_or_else(|| GraphError::UnknownPackage { id: id.clone() }),
+                .ok_or_else(|| GraphError::unknown_package(id.clone(), self.native_ids())),
             PackageId::Bare(name) => {
                 let candidates: BTreeSet<PackageId> = self
                     .native
@@ -394,7 +414,7 @@ impl IdentityIndex {
                     .map(|(_, registered)| registered.clone())
                     .collect();
                 match candidates.len() {
-                    0 => Err(GraphError::UnknownPackage { id: id.clone() }),
+                    0 => Err(GraphError::unknown_package(id.clone(), self.native_ids())),
                     1 => Ok(candidates.into_iter().next().expect("len checked above")),
                     _ => Err(GraphError::AmbiguousName {
                         name: name.clone(),
@@ -567,6 +587,14 @@ impl IdentityIndex {
             .map(|((_, native), _)| format!("{prefix}/{native}"));
         let first = candidates.next()?;
         candidates.next().is_none().then_some(first)
+    }
+
+    /// Every registered native name as an ecosystem-qualified id, the names a selector can spell.
+    fn native_ids(&self) -> impl Iterator<Item = PackageId> + '_ {
+        self.native.keys().map(|(ecosystem, name)| PackageId::Prefixed {
+            ecosystem: *ecosystem,
+            name: name.clone(),
+        })
     }
 
     pub fn native_names(&self, id: &PackageId) -> impl Iterator<Item = (Ecosystem, &str)> + use<'_> {

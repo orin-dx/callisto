@@ -74,7 +74,7 @@
     },
     {
       "id": "WS-DISC-08",
-      "criterion": "A hybrid root (root Cargo.toml with both [package] and [workspace], root pyproject.toml with both [project] and [tool.uv.workspace], or a root package.json with a `name`) is always admitted, even when `exclude` matches `.` or the member globs do not. A root package.json that is both `private` and versionless is never discovered as an npm package (it only holds `workspaces`), regardless of admission. A Cargo crate with no `version` (an internal tool such as an xtask) is not discovered as a package and a note names it; a crate that inherits its version with `version.workspace = true` is."
+      "criterion": "A hybrid root (root Cargo.toml with both [package] and [workspace], root pyproject.toml with both [project] and [tool.uv.workspace], or a root package.json with a `name`) is always admitted, even when `exclude` matches `.` or the member globs do not. A root package.json that is both `private` and versionless is never discovered as an npm package (it only holds `workspaces`), regardless of admission. A root package.json that is `private` and declares `workspaces` (or sits beside a pnpm-workspace.yaml with `packages`) is not discovered as an npm package even when it has a version, unless a `[[package]]` block names it, and a note names the skipped root. A Cargo crate with no `version` (an internal tool such as an xtask) is not discovered as a package and a note names it; a crate that inherits its version with `version.workspace = true` is."
     },
     {
       "id": "WS-DISC-09",

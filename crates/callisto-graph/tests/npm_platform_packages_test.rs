@@ -111,7 +111,7 @@ fn platform_packages_are_manifests_of_their_owner_not_packages() {
 
     let mut names: Vec<_> = ws.graph.packages().map(|p| p.id.name().to_string()).collect();
     names.sort();
-    assert_eq!(names, ["@s/cli", "@s/napi", "workspace-root"]);
+    assert_eq!(names, ["@s/cli", "@s/napi"]);
 
     for dir in ["napi", "cli"] {
         let owner = format!("@s/{dir}");
@@ -200,7 +200,7 @@ fn workspace_member_platform_packages_attach_too() {
 
     let mut names: Vec<_> = ws.graph.packages().map(|p| p.id.name().to_string()).collect();
     names.sort();
-    assert_eq!(names, ["@s/cli", "@s/napi", "workspace-root"]);
+    assert_eq!(names, ["@s/cli", "@s/napi"]);
     assert_eq!(platform_paths(&ws, "@s/cli").len(), PLATFORMS.len());
 }
 

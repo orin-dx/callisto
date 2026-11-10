@@ -111,12 +111,14 @@ pub fn derive_selected_release_decision<R: callisto_model::CommandRunner, D: Dep
     let selected = selections.iter().collect::<std::collections::BTreeSet<_>>();
     for selection in &selected {
         let Some(package) = workspace_package(workspace, selection) else {
-            return Err(GraphError::UnknownPackage {
-                id: callisto_model::PackageId::Prefixed {
-                    ecosystem: selection.ecosystem(),
-                    name: selection.name().to_string(),
-                },
-            });
+            let missing = callisto_model::PackageId::Prefixed {
+                ecosystem: selection.ecosystem(),
+                name: selection.name().to_string(),
+            };
+            return Err(GraphError::unknown_package(
+                missing,
+                workspace.graph.packages().map(Package::canonical_id),
+            ));
         };
         let reason = if !complete.entries.iter().any(|entry| &entry.package == *selection) {
             ReleaseSelectionInvalidReason::NotARelease
@@ -225,12 +227,14 @@ pub(crate) fn derive_release_roster<R: callisto_model::CommandRunner, D: Depende
             });
         }
         let Some(package) = workspace_package(workspace, selection) else {
-            return Err(GraphError::UnknownPackage {
-                id: callisto_model::PackageId::Prefixed {
-                    ecosystem: selection.ecosystem(),
-                    name: selection.name().to_string(),
-                },
-            });
+            let missing = callisto_model::PackageId::Prefixed {
+                ecosystem: selection.ecosystem(),
+                name: selection.name().to_string(),
+            };
+            return Err(GraphError::unknown_package(
+                missing,
+                workspace.graph.packages().map(Package::canonical_id),
+            ));
         };
         if !has_dispatchable_target(package) {
             return Err(GraphError::ReleaseSelectionInvalid {
