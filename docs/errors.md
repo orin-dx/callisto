@@ -166,7 +166,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E257,
 | E210 | A `.changeset/*.md` file failed to parse: `<path>`: <source> | Fix the changeset file's frontmatter, or delete it and write a new one. |
 | E100 | Package ID is defined at more than one manifest path | Ensure package IDs are unique across workspace manifest paths. |
 | E101 | A package's explicit `tag-template` equals another package's default tags | Change that `tag-template`, or remove it so the package uses its default. |
-| E102 | Named package was not found in the workspace | Check the package's name and ecosystem, or that its directory has a manifest callisto discovers. |
+| E102 | Named package was not found in the workspace | Check the package's name and ecosystem, or that its directory has a manifest callisto discovers. When up to three workspace packages have a similar name, a second line reads ``did you mean `cargo/lib`?`` (comparison ignores case and the ecosystem prefix). |
 | E103 | A bare name matches more than one package; the message lists their qualified ids | Write the qualified id instead of `{name}`, e.g. in a changeset `cargo/{name}: minor`. |
 | E104 | Dependency cycle detected among workspace packages | Refactor workspace dependencies to break the cyclic dependency chain. |
 | E105 | Version cascade failed to converge after its iteration limit | Check for oscillating peer or linked group dependencies. |
