@@ -1,0 +1,121 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M733YAJEBX5GTBT2EJWX5EG3",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-10T16:16:44.885971Z",
+  "branch": "feat/skip-private-root",
+  "checkpoints_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "e66453d8e7ec",
+  "checkpoint_transcript_start": 33414,
+  "transcript_lines_at_start": 33414,
+  "compact_transcript_start": 2440,
+  "token_usage": {
+    "input_tokens": 70,
+    "cache_creation_tokens": 67426,
+    "cache_read_tokens": 15944304,
+    "output_tokens": 20472,
+    "api_call_count": 34,
+    "subagent_tokens": {
+      "input_tokens": 28,
+      "cache_creation_tokens": 162043,
+      "cache_read_tokens": 418059,
+      "output_tokens": 2317,
+      "api_call_count": 10
+    }
+  },
+  "redaction": {
+    "replacements": 84,
+    "layers": {
+      "betterleaks": 28,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 52,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 213
+  },
+  "summary": {
+    "intent": "Review, verify, and ship three parallel subagent implementations for the callisto repo (versioned-not-published PR line, skipping private npm workspace roots, and did-you-mean suggestions for package names), including changesets, PRs, and trail links.",
+    "outcome": "All three branches were reviewed, fixed where needed, committed signed, pushed, linked to trails, and opened as draft PRs #487, #490, #491 with local checks passing; PR-body and cold-read changeset agents were still running.",
+    "learnings": {
+      "repo": [
+        "Release PR bodies now include a 'Versioned, not published' line via PublishOutlook::Planned.versioned_only (serde default + skip_serializing_if empty, schema version unchanged so old stored previews still load).",
+        "Callisto verification uses a verify.sh script with lint/doc-check/test/pre-push steps; tests run via cargo nextest, and test logs show FAIL lines per test.",
+        "Skipping a private npm workspace root (one listing workspaces) unless a [[package]] block names it broke test fixtures that relied on the root being a package; fixtures in init tests and npm_platform_packages_test.rs had to be adjusted.",
+        "The existing Cargo 'no version' note is printed on every command that loads the workspace, so the new private-root skip note repeats similarly (e.g., multiple times during init).",
+        "Docs spec docs/specs/release.json (REL-PR-10) and docs/architecture/versioning.md document release preview behavior and must be kept in sync with changes.",
+        "Every PR in this repo needs a changeset file under .changeset/ and a trail link via `entire trail link <id> --branch ... --base main`."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/release_preview.rs",
+          "finding": "publish_outlook_in loops over preview.packages once, planning packages passing has_dispatchable_target and putting the rest in versioned_only; Blocked outlook passes through untouched."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/pr_body.rs",
+          "finding": "publish_section renders the versioned-only line directly after the publish table, before the _note_ lines, and also when nothing publishes."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/init/tests.rs",
+          "finding": "unsupported_workspace_skips_workflow_generation_with_a_json_diagnostic failed because of the private-root rule, not the sandbox; its fixture root was incidental and was edited."
+        }
+      ],
+      "workflow": [
+        "Subagent claims that failures are 'sandbox-related' should be verified by rerunning outside the sandbox and comparing to main; here one of four was actually a real regression.",
+        "Run a pairwise overlap check across parallel PR branches (and against open PRs) before opening them.",
+        "Run real-repo end-to-end scripts to confirm user-visible output rather than relying only on unit tests.",
+        "`entire trail link` right after a push can fail with 'branch does not exist'; waiting a few seconds and retrying with the same idempotency key worked.",
+        "Use a cold-read agent with only the changeset text to catch vagueness before human review."
+      ]
+    },
+    "friction": [
+      "Subagent reported four test failures as sandbox-related without confirming against main; one was a genuine regression from the new rule.",
+      "Subagent's `git switch -c` appeared to leave it on the old branch, causing confusion about the branch state.",
+      "The full cargo test run stops at the first failing binary, and the --no-fail-fast run's exit code was lost to backgrounding.",
+      "entire trail link failed for #491 with 'branch does not exist' immediately after the push.",
+      "`gh pr diff` redirect into the jobs tmp dir initially needed a rerun with absolute paths."
+    ],
+    "open_items": [
+      "Deduplicate the skip/no-version notes so they print once per command rather than every workspace load (affects the private-root note and the existing Cargo note).",
+      "Collect and apply results from the three PR-body agents and the cold-read changeset agent.",
+      "CI has not run on the three draft PRs.",
+      "Decide whether the 'Versioned, not published' line should go after the _note_ lines instead of before them.",
+      "The pr_body render test is not covered by the mutation check, and new tests were not run against pre-change code."
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_01KFaYNseSUFtsgigH5imXWU",
+  "agent_id": "ab068c042f8d08d1b",
+  "subagent_type": "general-purpose",
+  "task_description": "Cold-read of three changesets",
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 39105,
+    "cache_read_tokens": 30397,
+    "output_tokens": 803,
+    "api_call_count": 2
+  },
+  "started_at": "2026-11-10T08:15:54.536034-08:00",
+  "completed_at": "2026-11-10T08:16:04.584631-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}
