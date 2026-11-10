@@ -114,7 +114,10 @@ fn resolve_selected_package(
     if all_packages.iter().any(|p| p.id == resolved) {
         Ok(resolved)
     } else {
-        Err(GraphError::UnknownPackage { id: resolved })
+        Err(GraphError::unknown_package(
+            resolved,
+            all_packages.iter().map(|p| p.canonical_id()),
+        ))
     }
 }
 
