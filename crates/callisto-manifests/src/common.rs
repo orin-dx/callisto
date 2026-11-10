@@ -26,14 +26,14 @@ pub(crate) fn is_bare_semver(s: &str) -> bool {
 ///
 /// Recognized operators: `^`, `~`, `>=`, `>`, `<=`, `<`, `=`. If none match,
 /// the empty-string prefix is returned along with the trimmed input.
-pub(crate) fn split_single_operator_prefix(s: &str) -> Option<(&str, &str)> {
+pub(crate) fn split_single_operator_prefix(s: &str) -> (&str, &str) {
     let trimmed = s.trim();
     for op in ["^", "~", ">=", ">", "<=", "<", "="] {
         if let Some(rest) = trimmed.strip_prefix(op) {
-            return Some((op, rest.trim()));
+            return (op, rest.trim());
         }
     }
-    Some(("", trimmed))
+    ("", trimmed)
 }
 
 /// Sets `table[key]` to a scalar string value, preserving the existing
@@ -151,24 +151,24 @@ mod tests {
 
     #[test]
     fn split_single_operator_prefix_recognizes_all_operators() {
-        assert_eq!(split_single_operator_prefix("^1.2.3"), Some(("^", "1.2.3")));
-        assert_eq!(split_single_operator_prefix("~1.2.3"), Some(("~", "1.2.3")));
-        assert_eq!(split_single_operator_prefix(">=1.2.3"), Some((">=", "1.2.3")));
-        assert_eq!(split_single_operator_prefix(">1.2.3"), Some((">", "1.2.3")));
-        assert_eq!(split_single_operator_prefix("<=1.2.3"), Some(("<=", "1.2.3")));
-        assert_eq!(split_single_operator_prefix("<1.2.3"), Some(("<", "1.2.3")));
-        assert_eq!(split_single_operator_prefix("=1.2.3"), Some(("=", "1.2.3")));
+        assert_eq!(split_single_operator_prefix("^1.2.3"), ("^", "1.2.3"));
+        assert_eq!(split_single_operator_prefix("~1.2.3"), ("~", "1.2.3"));
+        assert_eq!(split_single_operator_prefix(">=1.2.3"), (">=", "1.2.3"));
+        assert_eq!(split_single_operator_prefix(">1.2.3"), (">", "1.2.3"));
+        assert_eq!(split_single_operator_prefix("<=1.2.3"), ("<=", "1.2.3"));
+        assert_eq!(split_single_operator_prefix("<1.2.3"), ("<", "1.2.3"));
+        assert_eq!(split_single_operator_prefix("=1.2.3"), ("=", "1.2.3"));
     }
 
     #[test]
     fn split_single_operator_prefix_no_operator_returns_empty_prefix() {
-        assert_eq!(split_single_operator_prefix("1.2.3"), Some(("", "1.2.3")));
+        assert_eq!(split_single_operator_prefix("1.2.3"), ("", "1.2.3"));
     }
 
     #[test]
     fn split_single_operator_prefix_trims_whitespace() {
-        assert_eq!(split_single_operator_prefix("  ^1.2.3  "), Some(("^", "1.2.3")));
-        assert_eq!(split_single_operator_prefix(">=  1.2.3"), Some((">=", "1.2.3")));
+        assert_eq!(split_single_operator_prefix("  ^1.2.3  "), ("^", "1.2.3"));
+        assert_eq!(split_single_operator_prefix(">=  1.2.3"), (">=", "1.2.3"));
     }
 
     #[test]
