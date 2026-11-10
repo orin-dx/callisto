@@ -100,7 +100,9 @@ impl Command {
                 ReleaseArgs::Plan(_) => ReleasePlanReport::COMMAND,
                 ReleaseArgs::ArtifactManifest(_) => ReleaseArtifactManifestReport::COMMAND,
                 ReleaseArgs::Execute(_) => ReleaseExecuteReport::COMMAND,
-                ReleaseArgs::Pending(_) | ReleaseArgs::Inspect(_) | ReleaseArgs::BuildPython(_) => "release",
+                ReleaseArgs::Pending(_) => callisto_model::ReleasePendingReport::COMMAND,
+                ReleaseArgs::BuildPython(_) => callisto_model::ReleaseBuildPythonReport::COMMAND,
+                ReleaseArgs::Inspect(_) => "release",
             },
             Command::ReleasePr(ReleasePrArgs::Decide(_)) => ReleasePrDecideReport::COMMAND,
             Command::ReleasePr(ReleasePrArgs::Verify(_)) => ReleasePrVerifyReport::COMMAND,
@@ -971,7 +973,7 @@ mod tests {
         };
         assert_eq!(name(&["callisto", "status"]), "status");
         assert_eq!(name(&["callisto", "release", "--dry-run"]), "release");
-        assert_eq!(name(&["callisto", "release", "pending"]), "release");
+        assert_eq!(name(&["callisto", "release", "pending"]), "release pending");
         assert_eq!(
             name(&["callisto", "release", "plan", "--package", "cargo/a", "--out", "o.json"]),
             "release plan"
