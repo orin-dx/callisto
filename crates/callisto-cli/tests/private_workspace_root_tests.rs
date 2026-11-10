@@ -53,6 +53,15 @@ fn a_private_versioned_workspace_root_is_not_a_package_and_status_says_so() {
 }
 
 #[test]
+fn init_prints_the_ignored_private_root_note_once() {
+    let dir = repo(PRIVATE_WORKSPACE, None);
+    let out = callisto(dir.path(), &["init", "--yes"]);
+    let stderr = stderr_of(&out);
+    assert!(out.status.success(), "stderr: {stderr}");
+    assert_eq!(stderr.matches(NOTE).count(), 1, "stderr: {stderr}");
+}
+
+#[test]
 fn a_private_workspace_root_named_in_a_package_block_is_a_package() {
     let dir = repo(
         PRIVATE_WORKSPACE,

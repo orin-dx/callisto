@@ -210,10 +210,10 @@ fn discover<L: ProjectLocator>(
             && resolve_package_config(&[(Ecosystem::Npm, proj.id.name())], cfg).is_none()
             && crate::locate::is_private_workspace_root(root)?
         {
-            eprintln!(
+            crate::note::note_once(format!(
                 "note: ignored private workspace root `npm/{}` (name it in [[package]] to version it)",
                 proj.id.name()
-            );
+            ));
             continue;
         }
         projects.push(proj);

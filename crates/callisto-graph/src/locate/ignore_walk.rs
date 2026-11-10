@@ -149,10 +149,10 @@ impl ProjectLocator for IgnoreWalkLocator {
                 // publish it) has nothing to version or release, so it is not a package. One that inherits its
                 // version from the workspace still is.
                 if ecosystem == Ecosystem::Cargo && identity.version.is_none() {
-                    eprintln!(
+                    crate::note::note_once(format!(
                         "note: skipping `{}`: it declares no version, so Callisto cannot version or release it",
                         rel.display()
-                    );
+                    ));
                     continue;
                 }
 
