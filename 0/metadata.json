@@ -1,0 +1,117 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M73VAQ3XE40QTH6BEN1K2TC1",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-10T23:05:25.989264Z",
+  "branch": "fix/cli-polish",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/pre.rs",
+    "crates/callisto-graph/src/commands/mod.rs",
+    "crates/callisto-graph/src/config/groups.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/error.rs",
+    "docs/errors.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "7874f316fe21",
+  "checkpoint_transcript_start": 37334,
+  "transcript_lines_at_start": 37334,
+  "compact_transcript_start": 2718,
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 650,
+    "cache_read_tokens": 821797,
+    "output_tokens": 432,
+    "api_call_count": 1,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 84,
+    "layers": {
+      "betterleaks": 28,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 52,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 241
+  },
+  "summary": {
+    "intent": "Fix CI failures on PR #501 that arose after sibling PRs #500 and #502 merged, and coordinate merging with overlapping PR #503.",
+    "outcome": "Three test fixes were committed (signed) and pushed to #501, and all five local checks pass outside the sandbox. GitHub CI was re-running and its result had not been seen yet.",
+    "learnings": {
+      "repo": [
+        "Error codes carry an implied exit code: usage-error codes map to exit 2 and all others to 1, so tests should derive the expected exit code from the error rather than hard-code 1.",
+        "Error classification (usage vs runtime) is tracked in code-classification lists: E327 is usage, while E325, E326 and E328 are runtime. #503 also adds E329 for its duplicate-package error.",
+        "#500 moved unknown config keys from a syntax-error variant to the `UnknownField` variant (E325), so tests asserting on the old variant break.",
+        "Parallel PRs (#500, #501, #502, #503) touch shared error-code and test-helper areas, so merges cause cascading test breakage and small conflicts.",
+        "Local checks need to run outside the sandbox to pass."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/error.rs",
+          "finding": "Holds the error variants and code classification (usage vs runtime); the code-classification lists here will conflict between #501 and #503."
+        },
+        {
+          "path": "docs/errors.md",
+          "finding": "Error code documentation, modified alongside the classification changes for E325-E328."
+        }
+      ],
+      "workflow": [
+        "After sibling PRs merge, re-run the full test suite on dependent PRs, since failures may stem from the merged changes rather than the PR's own diff.",
+        "When two PRs make byte-identical edits, git merges them cleanly, so conflict resolution is only needed in the divergent parts.",
+        "Verify local checks outside the sandbox and report that CI was re-triggered but not yet observed, rather than claiming success."
+      ]
+    },
+    "friction": [
+      "#501's CI broke because of changes merged in #500 and #502, not its own change.",
+      "The overlap with #503 duplicates the same two test edits, guaranteeing a conflict for whichever PR merges second.",
+      "Checks needed to be run outside the sandbox to pass."
+    ],
+    "open_items": [
+      "Confirm GitHub CI goes green on #501.",
+      "User needs to merge #501 and #503 (either order) and report which landed first.",
+      "Resolve the code-classification list conflict on the second PR to merge (#503 adds E329)."
+    ]
+  }
+}
