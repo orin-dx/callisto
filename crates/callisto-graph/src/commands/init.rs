@@ -12,8 +12,7 @@ use crate::commands::release::{
     canonical_root, is_platform_package, optional_git_remote, plan_workspace_release, programs, timeouts,
     LocalReleasePlan, LocalReleaseSource,
 };
-use crate::config::raw::RawConfig;
-use crate::error::{ConfigError, GraphError};
+use crate::error::GraphError;
 use crate::{DependencyResolver, ProjectLocator, ResolvedConfig, Workspace};
 
 /// Content of the scaffolded `.changeset/README.md`.
@@ -451,10 +450,7 @@ pub fn render_config(facts: &InitFacts, answers: &InitAnswers) -> String {
 }
 
 fn resolve_config_text(root: &Path, text: &str) -> Result<ResolvedConfig, GraphError> {
-    let raw = toml::from_str::<RawConfig>(text).map_err(|error| ConfigError::ParseToml {
-        path: root.join("callisto.toml"),
-        message: error.to_string(),
-    })?;
+    let raw = crate::config::resolve::parse_raw(&root.join("callisto.toml"), text)?;
     Ok(crate::config::resolve(root, raw)?)
 }
 

@@ -40,8 +40,8 @@ pub fn pending_releases<R: CommandRunner, D: DependencyResolver>(
         let at = commits
             .iter()
             .position(|commit| commit == from.as_str())
-            .ok_or_else(|| GraphError::ReleaseInvariant {
-                detail: format!("`{}` is not a release commit on this branch", from.as_str()),
+            .ok_or_else(|| GraphError::PendingFromNotReleaseCommit {
+                commit: from.as_str().to_owned(),
             })?;
         commits.truncate(at + 1);
     }

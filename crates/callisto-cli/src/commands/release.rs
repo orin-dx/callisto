@@ -296,8 +296,8 @@ fn pending(args: ReleasePendingArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
         .as_deref()
         .map(CommitSha::parse)
         .transpose()
-        .map_err(|error| callisto_graph::GraphError::ReleaseInvariant {
-            detail: format!("`--from` must be a full commit SHA: {error}"),
+        .map_err(|error| CliError::ReleasePendingFromInvalid {
+            reason: error.to_string(),
         })?;
     let runner = CliCommandRunner;
     let workspace = load_workspace(global, &runner)?;
