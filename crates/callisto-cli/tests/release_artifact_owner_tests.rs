@@ -211,9 +211,9 @@ fn a_preview_with_an_unreachable_origin_prints_no_git_error() {
     );
 }
 
-// `--artifact-repository` alone is not a usage error; a source with `[release]` fails with E231.
+// `--artifact-repository` alone is checked in code, not by clap: a source with `[release]` fails with E231, a usage error.
 #[test]
-fn plan_with_only_the_artifact_repository_fails_with_e231_not_a_usage_error() {
+fn plan_with_only_the_artifact_repository_fails_with_e231() {
     let (dir, commit) = plugin_artifact_fixture(true);
     let external = tempfile::tempdir().unwrap();
     let out = callisto(
@@ -232,7 +232,7 @@ fn plan_with_only_the_artifact_repository_fails_with_e231_not_a_usage_error() {
         ],
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert_eq!(out.status.code(), Some(1), "stderr: {stderr}");
+    assert_eq!(out.status.code(), Some(2), "stderr: {stderr}");
     assert!(stderr.contains("E231"), "expected E231, got: {stderr}");
 }
 
