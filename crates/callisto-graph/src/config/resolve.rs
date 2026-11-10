@@ -848,6 +848,42 @@ mod tests {
     }
 
     #[test]
+    fn every_config_table_rejects_an_unknown_key() {
+        // (table, minimal valid config ending inside that table); the typo is appended after it.
+        let tables: &[(&str, &str)] = &[
+            ("top-level", ""),
+            ("changesets", "[changesets]\n"),
+            ("cascade", "[cascade]\n"),
+            ("validation", "[validation]\n"),
+            ("changelog", "[changelog]\n"),
+            ("registries", "[registries.r]\nkind = \"npm\"\n"),
+            ("package", "[[package]]\nmatch = \"cargo/a\"\n"),
+            ("package-set", "[[package-set]]\nmatch = \"cargo/*\"\n"),
+            ("fixed-group", "[[fixed-group]]\nname = \"g\"\nmembers = [\"cargo/a\"]\n"),
+            ("linked-group", "[[linked-group]]\nname = \"g\"\nmembers = [\"cargo/a\"]\n"),
+            ("release", "[release]\nproduct-package = \"cargo/a\"\n"),
+            (
+                "release.artifact",
+                "[release]\nproduct-package = \"cargo/a\"\n[[release.artifact]]\npackage = \"cargo/a\"\ntarget = \"t\"\nasset-name = \"n\"\n",
+            ),
+        ];
+        for (table, body) in tables {
+            let toml = format!("{body}zzz = 1\n");
+            let tmp = tempfile::tempdir().expect("tempdir");
+            fs::write(tmp.path().join("callisto.toml"), &toml).expect("write callisto.toml");
+            match load(tmp.path()) {
+                Err(ConfigError::UnknownField { message, .. }) => {
+                    assert!(
+                        message.contains("unknown field") && message.contains("zzz"),
+                        "[{table}] error must name the unknown key: {message}"
+                    );
+                }
+                other => panic!("[{table}] must reject unknown key `zzz`, got {other:?}\n{toml}"),
+            }
+        }
+    }
+
+    #[test]
     fn test_package_override_publish_to_is_parsed_not_discarded() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let root = tmp.path();

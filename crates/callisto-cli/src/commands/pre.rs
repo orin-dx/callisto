@@ -84,6 +84,7 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             if tag.trim().is_empty() {
                 return Err(CliError::PreTagEmpty);
             }
+            callisto_graph::commands::validate_tag(&tag, true)?;
 
             let ws = load_workspace(global, &runner)?;
 
@@ -247,6 +248,82 @@ mod tests {
             !root.join(".changeset/pre.json").exists(),
             "dry-run must not write pre.json"
         );
+    }
+
+    /// A tag that cannot be part of a version fails at `pre enter` with E324 and leaves `pre.json` untouched.
+    #[test]
+    fn handle_enter_rejects_an_invalid_tag_and_writes_nothing() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path();
+        callisto_fixtures::git::init_repo(root);
+        std::fs::write(root.join("Cargo.toml"), "[workspace]\nmembers = []\nresolver = \"2\"\n").unwrap();
+        std::fs::write(root.join("callisto.toml"), "").unwrap();
+        let global = GlobalArgs {
+            format: OutputFormat::Text,
+            cwd: root.to_path_buf(),
+            dry_run: false,
+        };
+
+        for tag in ["bad tag!", "x/y", "a..b", ".a", "a."] {
+            let err = handle(PreArgs::Enter { tag: tag.to_string() }, &global).expect_err(tag);
+            assert!(
+                matches!(
+                    err,
+                    crate::error::CliError::Graph(callisto_graph::GraphError::TagInvalid { .. })
+                ),
+                "{tag}: {err:?}"
+            );
+            assert!(!root.join(".changeset/pre.json").exists(), "{tag}: wrote pre.json");
+        }
+        // An empty tag keeps its own earlier error.
+        let err = handle(PreArgs::Enter { tag: String::new() }, &global).expect_err("empty");
+        assert!(matches!(err, crate::error::CliError::PreTagEmpty), "{err:?}");
+        assert!(!root.join(".changeset/pre.json").exists());
+
+        for tag in ["beta.1", "rc.2"] {
+            let tmp = tempfile::TempDir::new().unwrap();
+            callisto_fixtures::git::init_repo(tmp.path());
+            std::fs::write(
+                tmp.path().join("Cargo.toml"),
+                "[workspace]\nmembers = []\nresolver = \"2\"\n",
+            )
+            .unwrap();
+            std::fs::write(tmp.path().join("callisto.toml"), "").unwrap();
+            let g = GlobalArgs {
+                format: OutputFormat::Text,
+                cwd: tmp.path().to_path_buf(),
+                dry_run: false,
+            };
+            handle(PreArgs::Enter { tag: tag.to_string() }, &g).expect(tag);
+            let written = std::fs::read_to_string(tmp.path().join(".changeset/pre.json")).unwrap();
+            assert_eq!(callisto_model::format::parse_pre_json(&written).unwrap().tag, tag);
+        }
+
+        let existing =
+            "{\n  \"mode\": \"exit\",\n  \"tag\": \"beta\",\n  \"initialVersions\": {},\n  \"changesets\": []\n}\n";
+        std::fs::create_dir_all(root.join(".changeset")).unwrap();
+        std::fs::write(root.join(".changeset/pre.json"), existing).unwrap();
+        handle(
+            PreArgs::Enter {
+                tag: "bad tag!".to_string(),
+            },
+            &global,
+        )
+        .expect_err("bad tag");
+        assert_eq!(
+            std::fs::read_to_string(root.join(".changeset/pre.json")).unwrap(),
+            existing
+        );
+
+        handle(
+            PreArgs::Enter {
+                tag: "pr-42".to_string(),
+            },
+            &global,
+        )
+        .expect("valid tag");
+        let written = std::fs::read_to_string(root.join(".changeset/pre.json")).unwrap();
+        assert_eq!(callisto_model::format::parse_pre_json(&written).unwrap().tag, "pr-42");
     }
 
     /// After `pre enter` -> `pre exit`, a second `pre enter` with a new tag must succeed (not the old

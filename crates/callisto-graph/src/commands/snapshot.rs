@@ -5,13 +5,26 @@ use crate::plan::VersionPlan;
 use crate::resolver::DependencyResolver;
 use crate::Workspace;
 
+/// The rule for a tag that becomes part of a pre-release version: one identifier of letters, digits and `-`.
+/// With `dotted` (`pre enter`, where a counter is appended) it is dot-separated non-empty identifiers.
+pub fn validate_tag(tag: &str, dotted: bool) -> Result<(), GraphError> {
+    let identifier = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+    let valid = if dotted {
+        tag.split('.').all(identifier)
+    } else {
+        identifier(tag)
+    };
+    if !valid {
+        return Err(GraphError::TagInvalid { tag: tag.to_owned() });
+    }
+    Ok(())
+}
+
 pub fn plan_snapshot<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     tag: &str,
 ) -> Result<(VersionPlan, SnapshotReport), GraphError> {
-    if tag.is_empty() || !tag.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
-        return Err(GraphError::SnapshotTagInvalid { tag: tag.to_owned() });
-    }
+    validate_tag(tag, false)?;
     // Resolve HEAD for real rather than faking it, so unrelated snapshot runs never collide.
     let sha = ws.git_access().head_sha()?;
     let sha_short = sha.short();
@@ -273,7 +286,7 @@ mod tests {
 
         for tag in ["", "bad tag", "x/y", "ünï", "a.b"] {
             let error = plan_snapshot(&ws, tag).expect_err(tag);
-            assert!(matches!(error, GraphError::SnapshotTagInvalid { .. }), "{tag}: {error}");
+            assert!(matches!(error, GraphError::TagInvalid { .. }), "{tag}: {error}");
         }
         assert!(plan_snapshot(&ws, "pr-42").is_ok());
     }

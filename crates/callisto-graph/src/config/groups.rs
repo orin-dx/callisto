@@ -81,6 +81,7 @@ pub struct RawGroupTable {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RawGroup {
     pub name: GroupName,
     pub members: Vec<String>,
