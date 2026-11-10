@@ -881,7 +881,7 @@ pub fn round_trip(spec: &DepSpec, target: &Version) -> Option<DepSpec> {
                 let mut rewritten_parts = Vec::new();
                 for part in parts {
                     let part_trimmed = part.trim();
-                    let (prefix, rest) = crate::common::split_single_operator_prefix(part_trimmed)?;
+                    let (prefix, rest) = crate::common::split_single_operator_prefix(part_trimmed);
                     if prefix.starts_with('>')
                         || prefix.starts_with('=')
                         || prefix.starts_with('^')
@@ -915,7 +915,7 @@ pub fn round_trip(spec: &DepSpec, target: &Version) -> Option<DepSpec> {
                 let req = VersionReq::parse(&rendered, Ecosystem::Cargo).ok()?;
                 return Some(DepSpec::Range(req, rendered));
             }
-            let (prefix, rest) = crate::common::split_single_operator_prefix(original)?;
+            let (prefix, rest) = crate::common::split_single_operator_prefix(original);
             if rest.contains('*') {
                 return None;
             }
