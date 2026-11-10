@@ -1,0 +1,8 @@
+{
+  "tool_use_id": "toolu_01KA7TVgKiaE9Q3LjPiFJY9K",
+  "agent_id": "adf61e5ae83f5eca7",
+  "subagent_type": "smith:implementer",
+  "task_description": "Consistent JSON error envelope",
+  "started_at": "2026-11-10T10:52:24.441989-08:00",
+  "transcript_unavailable_reason": "transcript path unresolvable"
+}

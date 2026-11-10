@@ -1,0 +1,120 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M73DCG2GAACNV41MCNF0YBP2",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-10T19:01:45.69313Z",
+  "branch": "test/spec-gaps",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "crates/callisto-cli/tests/cli_tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "f246abdf1084",
+  "checkpoint_transcript_start": 35356,
+  "transcript_lines_at_start": 35356,
+  "compact_transcript_start": 2574,
+  "token_usage": {
+    "input_tokens": 30,
+    "cache_creation_tokens": 26150,
+    "cache_read_tokens": 8129792,
+    "output_tokens": 13750,
+    "api_call_count": 13,
+    "subagent_tokens": {
+      "input_tokens": 46,
+      "cache_creation_tokens": 165461,
+      "cache_read_tokens": 604250,
+      "output_tokens": 5916,
+      "api_call_count": 12
+    }
+  },
+  "redaction": {
+    "replacements": 84,
+    "layers": {
+      "betterleaks": 28,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 52,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 226
+  },
+  "summary": {
+    "intent": "Finish the print-once fix PR (#496), then move to pre-1.0 hardening: consistent JSON error envelope (#177), tests for untested spec criteria (#178), and an audit of 1.0 stability promises including JSON field naming.",
+    "outcome": "PR #496 was opened, given an improved description, and merged along with #495. Five parallel agents were launched (error-envelope, spec-test-gaps, v1-stability-audit, json-naming-inventory, camel-case-fields); none had reported final results by the end of the transcript, and only cli_tests.rs was modified.",
+    "learnings": {
+      "repo": [
+        "Discovery notes (ignored private root, crate with no version) were printed up to three times by `callisto init` because the workspace is loaded multiple times; the fix is a process-wide dedup helper `note_once` using a static OnceLock<Mutex<BTreeSet>>, used in ignore_walk.rs and walk.rs.",
+        "The release-preview note is a different kind of note in the CLI crate and was intentionally left out of the print-once fix.",
+        "Internally-tagged serde enums need both `rename_all` (for discriminants) and `rename_all_fields` (for variant fields) set to camelCase; BumpReason::Cascade (report.rs) and ProviderEvidenceV1 variants (release_observation.rs, part of versioned ReleaseReceiptV1) have snake_case fields.",
+        "`short_sha` in crates/callisto-graph/src/release_preview.rs is snake_case in a shipped preview file; changing it is a shipped-format decision.",
+        "Failing `release plan` / `release-pr` subcommands emit a different `command` key and omit `dryRun` in JSON errors (trail #177).",
+        "docs/stability.md defines a Stable table of 1.0 promises (flags, exit codes 0/1/2, schemaVersion, unknown config keys, error-code reuse, tags/action inputs)."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/report.rs",
+          "line": 64,
+          "finding": "BumpReason::Cascade has snake_case fields dep_kind and dependency_to due to missing rename_all_fields (internal report type)."
+        },
+        {
+          "path": "crates/callisto-model/src/release_observation.rs",
+          "line": 22,
+          "finding": "ProviderEvidenceV1 variants have snake_case fields peeled_commit, tag_name, byte_length; these are in versioned receipt JSON so fixing is a format change."
+        },
+        {
+          "path": "crates/callisto-graph/src/release_preview.rs",
+          "line": 100,
+          "end_line": 125,
+          "finding": "Area containing the short_sha field that neither the agent inventory nor the manual scan detected."
+        }
+      ],
+      "workflow": null
+    },
+    "friction": [
+      "Inventory agent's result was incomplete (5 hits, missed short_sha) and the manual scan found a sixth hit but also missed short_sha, forcing a third approach.",
+      "Overlapping scope risk among five parallel agents touching report types.",
+      "CI could not be run locally, so verification relied on local checks outside the sandbox."
+    ],
+    "open_items": [
+      "Decide whether to change `short_sha` to camelCase in the shipped preview file (format decision).",
+      "Await results of the five running agents (error-envelope, spec-test-gaps, v1-stability-audit, json-naming-inventory, camel-case-fields), review each, run the pairwise conflict check, and run full checks before opening PRs.",
+      "Write changesets in the layered shape and judge whether the camelCase renames need an upgrade note since some keys are in versioned receipts.",
+      "Trail #176 (four release-command spec mismatches): first check which are already fixed.",
+      "Trails #162, #176, #177, #178, #180, #198, #250 remain open with real work.",
+      "Fold audit and inventory findings into a ranked list for the next implementation batch."
+    ]
+  }
+}
