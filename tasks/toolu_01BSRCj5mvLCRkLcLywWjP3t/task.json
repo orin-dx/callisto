@@ -1,0 +1,22 @@
+{
+  "tool_use_id": "toolu_01BSRCj5mvLCRkLcLywWjP3t",
+  "agent_id": "a24178b2c45873db7",
+  "subagent_type": "smith:implementer",
+  "task_description": "Exit 2 for usage-class errors",
+  "files": [
+    "crates/callisto-cli/src/error.rs",
+    "crates/callisto-cli/src/main.rs",
+    "crates/callisto-cli/tests/release_artifact_owner_tests.rs",
+    "crates/callisto-cli/tests/usage_exit_codes_tests.rs",
+    "docs/stability.md"
+  ],
+  "token_usage": {
+    "input_tokens": 88,
+    "cache_creation_tokens": 126726,
+    "cache_read_tokens": 4050246,
+    "output_tokens": 22374,
+    "api_call_count": 44
+  },
+  "started_at": "2026-11-10T11:27:11.312845-08:00",
+  "completed_at": "2026-11-10T11:36:39.004595-08:00"
+}

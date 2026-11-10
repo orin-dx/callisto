@@ -1,0 +1,129 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M73FG5B904XT6KRPQRB2NTYM",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-10T19:38:47.902355Z",
+  "branch": "fix/usage-exit-code",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "crates/callisto-cli/src/error.rs",
+    "crates/callisto-cli/src/main.rs",
+    "crates/callisto-cli/tests/release_artifact_owner_tests.rs",
+    "crates/callisto-cli/tests/usage_exit_codes_tests.rs",
+    "docs/stability.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "2a93752c376e",
+  "checkpoint_transcript_start": 35789,
+  "transcript_lines_at_start": 35789,
+  "compact_transcript_start": 2605,
+  "token_usage": {
+    "input_tokens": 72,
+    "cache_creation_tokens": 98068,
+    "cache_read_tokens": 23255440,
+    "output_tokens": 26537,
+    "api_call_count": 32,
+    "subagent_tokens": {
+      "input_tokens": 24,
+      "cache_creation_tokens": 303577,
+      "cache_read_tokens": 378068,
+      "output_tokens": 2774,
+      "api_call_count": 12
+    }
+  },
+  "redaction": {
+    "replacements": 84,
+    "layers": {
+      "betterleaks": 28,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 52,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 232
+  },
+  "summary": {
+    "intent": "Get the Callisto CLI ready for 1.0 by landing a series of stability fixes (camelCase JSON keys, standard error envelopes, single-meaning error codes, input validation) and then, after the user approved two recommendations, exit code 2 for usage errors and a cleanup batch.",
+    "outcome": "Four PRs (#498-#501) were reviewed, verified outside the sandbox, signed, pushed and given descriptions. The exit-2 branch (fix/usage-exit-code) was reviewed, given a changeset, verified and pushed, while the cli-polish agent was still running and no PR had merged or been reviewed yet.",
+    "learnings": {
+      "repo": [
+        "serde `rename_all` on an enum renames only variants; struct-variant fields need `rename_all_fields = \"camelCase\"`, and Deserialize-only Wire twins need the same attribute.",
+        "`docs/stability.md` freezes `--format json` report shapes, error-code meanings and exit codes from 1.0, which is why these renames and reclassifications had to land before 1.0.",
+        "Several release types use `deny_unknown_fields`, so renaming keys without aliases makes old receipts fail to load across an upgrade.",
+        "The `lifecycle_e2e_tests` and the pnpm/uv workspace tests need crates.io/npm/github network access and fail inside the sandbox; they must be re-run with the sandbox disabled.",
+        "Error codes E316/E317 are raised both for `--package` flag values and for `callisto.toml` content; exit 2 applies only when the error context starts with `--`.",
+        "Exit-code classification lives in `USAGE_CODES` and `USAGE_WHEN_FROM_FLAG_CODES` in `crates/callisto-cli/src/error.rs`; a test requires every code in docs/errors.md to be classified exactly once.",
+        "`pre enter` must allow dotted identifiers such as `beta.1`, while `snapshot --tag` stays single-identifier.",
+        "#500 and #501 both edit adjacent rows of `docs/errors.md`, and exit-2 and #499 both touch the `main.rs` error path, so merge order matters."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/error.rs",
+          "finding": "Adds USAGE_CODES, USAGE_WHEN_FROM_FLAG_CODES and CliError::is_usage_error(), the single place deciding exit 2 vs exit 1."
+        },
+        {
+          "path": "crates/callisto-cli/tests/schema_guard_test.rs",
+          "finding": "Houses assert_no_snake_case_keys, which walks every JSON key at every depth. It does not cover MatrixReport, ReleasePr* or the decision/intent types."
+        }
+      ],
+      "workflow": [
+        "Subagent and teammate reports are claims: re-run the checks, and do the mutation check per enum rather than trusting a combined one.",
+        "Review the agents' design calls, not just their diffs. Two corrections were needed: E111 meaning had been moved, and `pre enter beta.1` had been broken.",
+        "Run overlap and conflict checks between branches before opening PRs, and decide the merge order from them.",
+        "Use a dedicated verify script (pre-push, lint, doc-check, test, workflow-contracts) outside the sandbox, and run `cargo fmt` first because swapped code often fails on formatting alone.",
+        "Delegate PR description writing to parallel agents, then apply the bodies with `gh pr edit --body-file`.",
+        "Sandbox denial of `.git/config` can leave stray local branches when `git switch -c` partially fails."
+      ]
+    },
+    "friction": [
+      "The sandbox blocked network access for e2e tests, so no single full-suite exit code was obtained inside it.",
+      "The sandbox denied writes to `.git/config`, so branch creation partly failed and left a stray `camelCaseFields` branch.",
+      "`trail link` and PR number lookup needed retries and sleeps because PRs were not immediately visible.",
+      "Subagents produced wrong judgment calls (E111 meaning, dotted pre tags) that needed correction.",
+      "The exit-2 agent did not confirm that the three network-failing tests also fail on the base."
+    ],
+    "open_items": [
+      "Reviews and merges of #498-#501 are pending, with #500 needing to merge before #501 so the docs/errors.md conflict can be fixed.",
+      "The exit-2 branch needs an overlap check against #499 and a PR with a description. The user should also confirm borderline classifications (E169, E189, E230, E232, E233, E281, E299, E216-E218, E309).",
+      "Package-selector E316 errors from the identity resolver still exit 1 because the resolver does not know whether a selector came from a flag.",
+      "The cli-polish agent's results are pending: reject duplicate packages in `add`, fix the `snapshot --strict` help text, make `status` print `lastTag: null`, document that `version_command` cannot take quoted arguments, and reword the stability Changesets row.",
+      "From #500: E254 is still a catch-all, and user-reachable E171 sites in `release/binding.rs` and `release/derive.rs` are unverified.",
+      "Whether to add a `peeled_commit` serde alias on the Wire twin so receipts resume across an upgrade from 0.19 is undecided.",
+      "Remaining `ChangeKind` items are still open.",
+      "CI has not run on any of the PRs."
+    ]
+  }
+}
