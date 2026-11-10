@@ -9,10 +9,18 @@ const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
 
 fn envelope_in(dir: &std::path::Path, args: &[&str]) -> serde_json::Value {
     let out = callisto(dir, args);
-    assert_eq!(out.status.code(), Some(1), "args {args:?}");
     let stderr = String::from_utf8_lossy(&out.stderr);
-    serde_json::from_str(&stderr)
-        .unwrap_or_else(|error| panic!("stderr of {args:?} is not only JSON ({error}): {stderr}"))
+    let envelope: serde_json::Value = serde_json::from_str(&stderr)
+        .unwrap_or_else(|error| panic!("stderr of {args:?} is not only JSON ({error}): {stderr}"));
+    // A usage error exits 2 and every other failure exits 1; the classification has its own tests.
+    let code = envelope["error"]["code"].as_str().unwrap_or_default();
+    let expected = if callisto_cli::error::USAGE_CODES.contains(&code) {
+        2
+    } else {
+        1
+    };
+    assert_eq!(out.status.code(), Some(expected), "args {args:?}: {code}");
+    envelope
 }
 
 fn error_envelope(args: &[&str]) -> serde_json::Value {

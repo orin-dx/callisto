@@ -872,7 +872,7 @@ mod tests {
             let tmp = tempfile::tempdir().expect("tempdir");
             fs::write(tmp.path().join("callisto.toml"), &toml).expect("write callisto.toml");
             match load(tmp.path()) {
-                Err(ConfigError::ParseToml { message, .. }) => {
+                Err(ConfigError::UnknownField { message, .. }) => {
                     assert!(
                         message.contains("unknown field") && message.contains("zzz"),
                         "[{table}] error must name the unknown key: {message}"
