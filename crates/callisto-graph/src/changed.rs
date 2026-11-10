@@ -98,57 +98,131 @@ pub const DEFAULT_IGNORED_PATHS: &[&str] = &["tests/", "benches/", "examples/", 
 
 /// Files under each package's directories that differ between its last tag and `HEAD` or the working tree, minus the
 /// `ignore` pathspecs (a trailing `/` names a directory at any depth, anything else a file glob). An untagged package, or
-/// one whose tag is not a commit, yields all its tracked files. One git invocation per package.
+/// one whose tag is not a commit, yields all its tracked files. One git invocation per distinct tag commit, plus one per
+/// untagged package.
 pub fn changed_source_files_since_last_tag(
     packages: &[&Package],
     tags: &TagIndex,
     git: &GitAccess<'_>,
     ignore: &[&str],
 ) -> Result<BTreeMap<PackageId, Vec<PathBuf>>, GraphError> {
+    changed_source_files_in_batches(packages, tags, git, ignore, PATHSPEC_BUDGET)
+}
+
+/// The most pathspec bytes one `git diff` gets, so a very large workspace stays under a command-line length limit
+/// (32 KB on Windows) by splitting into a few diffs instead of one.
+const PATHSPEC_BUDGET: usize = 24_000;
+
+fn changed_source_files_in_batches(
+    packages: &[&Package],
+    tags: &TagIndex,
+    git: &GitAccess<'_>,
+    ignore: &[&str],
+    budget: usize,
+) -> Result<BTreeMap<PackageId, Vec<PathBuf>>, GraphError> {
     let excludes: Vec<String> = ignore.iter().map(|pattern| exclude_pathspec(pattern)).collect();
     let mut result = BTreeMap::new();
+    let mut by_base: BTreeMap<String, Vec<(&Package, Vec<PathBuf>)>> = BTreeMap::new();
     for pkg in packages {
         let base = match tags.last_tag(&pkg.id) {
             Some(last) => tags.commit_of(git, last.name.as_str())?,
             None => None,
         };
-        let mut args: Vec<String> = match &base {
-            Some(commit) => [
-                "diff",
-                "--no-renames",
-                "--relative",
-                "--name-only",
-                "-z",
-                commit.as_str(),
-                "--",
-            ]
-            .map(String::from)
-            .to_vec(),
-            None => ["ls-files", "-z", "--"].map(String::from).to_vec(),
-        };
-        args.extend(package_paths(pkg).iter().map(|d| d.to_string_lossy().into_owned()));
-        args.extend(excludes.iter().cloned());
-        let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        let output = git.runner().run("git", &arg_refs, git.root()).map_err(VcsError::from)?;
-        if !output.success() {
-            return Err(VcsError::Git(format!(
-                "`git {}` failed in `{}`: {}",
-                args[0],
-                git.root().display(),
-                output.redacted_stderr()
-            ))
-            .into());
+        let directories = package_paths(pkg);
+        match base {
+            // With no directory the pathspec would be empty and match everything, so it is not batched.
+            Some(commit) if !directories.is_empty() => {
+                by_base
+                    .entry(commit.as_str().to_owned())
+                    .or_default()
+                    .push((pkg, directories));
+            }
+            Some(commit) => {
+                let files = list_files(git, &diff_command(commit.as_str()), &directories, &excludes)?;
+                result.insert(pkg.id.clone(), files.into_iter().collect());
+            }
+            None => {
+                let files = list_files(git, &["ls-files", "-z"], &directories, &excludes)?;
+                result.insert(pkg.id.clone(), files.into_iter().collect());
+            }
         }
-        let files: BTreeSet<PathBuf> = output
-            .stdout
-            .split('\0')
-            .map(|path| path.trim_start_matches('\n'))
-            .filter(|path| !path.is_empty())
-            .map(PathBuf::from)
-            .collect();
-        result.insert(pkg.id.clone(), files.into_iter().collect());
+    }
+    for (commit, group) in &by_base {
+        let specs: Vec<Vec<PathBuf>> = group.iter().map(|(_, directories)| directories.clone()).collect();
+        let all: Vec<PathBuf> = specs.iter().flatten().cloned().collect();
+        let listed = list_in_chunks(git, &diff_command(commit), &all, &excludes, budget)?;
+        // A file belongs to every package whose directory contains it, as it did when each package had its own diff.
+        let index = SpecIndex::new(&specs);
+        let mut owned: Vec<BTreeSet<PathBuf>> = vec![BTreeSet::new(); group.len()];
+        for path in listed {
+            index.owners_of(&path, |package| {
+                owned[package].insert(path.clone());
+            });
+        }
+        for ((pkg, _), files) in group.iter().zip(owned) {
+            result.insert(pkg.id.clone(), files.into_iter().collect());
+        }
     }
     Ok(result)
+}
+
+fn diff_command(commit: &str) -> [&str; 6] {
+    ["diff", "--no-renames", "--relative", "--name-only", "-z", commit]
+}
+
+/// `list_files` over `directories`, split so no command carries more than `budget` bytes of pathspec.
+fn list_in_chunks(
+    git: &GitAccess<'_>,
+    command: &[&str],
+    directories: &[PathBuf],
+    excludes: &[String],
+    budget: usize,
+) -> Result<BTreeSet<PathBuf>, GraphError> {
+    let fixed: usize = excludes.iter().map(|exclude| exclude.len() + 1).sum();
+    let mut listed = BTreeSet::new();
+    let mut start = 0;
+    while start < directories.len() {
+        let mut end = start;
+        let mut bytes = fixed;
+        while end < directories.len() && (end == start || bytes + directories[end].as_os_str().len() < budget) {
+            bytes += directories[end].as_os_str().len() + 1;
+            end += 1;
+        }
+        listed.extend(list_files(git, command, &directories[start..end], excludes)?);
+        start = end;
+    }
+    Ok(listed)
+}
+
+/// The paths `git <command> -- <directories> <excludes>` prints, which is NUL-separated.
+fn list_files(
+    git: &GitAccess<'_>,
+    command: &[&str],
+    directories: &[PathBuf],
+    excludes: &[String],
+) -> Result<BTreeSet<PathBuf>, GraphError> {
+    let mut args: Vec<String> = command.iter().map(|arg| (*arg).to_owned()).collect();
+    args.push("--".to_owned());
+    args.extend(directories.iter().map(|d| d.to_string_lossy().into_owned()));
+    args.extend(excludes.iter().cloned());
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let output = git.runner().run("git", &arg_refs, git.root()).map_err(VcsError::from)?;
+    if !output.success() {
+        return Err(VcsError::Git(format!(
+            "`git {}` failed in `{}`: {}",
+            args[0],
+            git.root().display(),
+            output.redacted_stderr()
+        ))
+        .into());
+    }
+    Ok(output
+        .stdout
+        .split('\0')
+        .map(|path| path.trim_start_matches('\n'))
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .collect())
 }
 
 fn exclude_pathspec(pattern: &str) -> String {
@@ -636,6 +710,216 @@ mod tests {
             base_calls + 1,
             "one more process, for the one changed uncovered package"
         );
+    }
+
+    /// `changed_source_files_since_last_tag` over `pkgs`, and how many `git diff` processes it started.
+    fn sources_counting_diffs(root: &Path, pkgs: &[Package]) -> (BTreeMap<PackageId, Vec<PathBuf>>, usize) {
+        let graph = FixedGraph { pkgs: pkgs.to_vec() };
+        let cfg = crate::config::load(root).unwrap();
+        let runner = RecordingGit {
+            calls: Mutex::new(Vec::new()),
+        };
+        let git = GitAccess::new(root, &runner);
+        let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
+        let refs: Vec<&Package> = pkgs.iter().collect();
+        let result = changed_source_files_since_last_tag(&refs, &tags, &git, DEFAULT_IGNORED_PATHS).unwrap();
+        let diffs = runner
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|call| call.starts_with("diff "))
+            .count();
+        (result, diffs)
+    }
+
+    #[test]
+    fn packages_sharing_a_base_commit_are_listed_by_one_diff() {
+        let (dir, pkgs) = tagged_repo_of(5);
+        for index in 0..5 {
+            commit(dir.path(), &format!("pkg-{index}/src/lib.rs"), "x\n", "feat: x");
+        }
+
+        let (result, diffs) = sources_counting_diffs(dir.path(), &pkgs);
+
+        assert_eq!(diffs, 1);
+        assert_eq!(files(&result, "pkg-3"), ["pkg-3/src/lib.rs"]);
+    }
+
+    /// A budget too small for all the directories splits the listing across diffs without changing what is found.
+    #[test]
+    fn a_small_pathspec_budget_splits_the_listing_without_changing_it() {
+        let (dir, pkgs) = tagged_repo_of(6);
+        for index in 0..6 {
+            commit(dir.path(), &format!("pkg-{index}/src/lib.rs"), "x\n", "feat: x");
+        }
+        let graph = FixedGraph { pkgs: pkgs.to_vec() };
+        let cfg = crate::config::load(dir.path()).unwrap();
+        let run = |budget: usize| {
+            let runner = RecordingGit {
+                calls: Mutex::new(Vec::new()),
+            };
+            let git = GitAccess::new(dir.path(), &runner);
+            let tags = TagIndex::build(&git, &graph, &Default::default(), &cfg).unwrap();
+            let refs: Vec<&Package> = pkgs.iter().collect();
+            let result = changed_source_files_in_batches(&refs, &tags, &git, DEFAULT_IGNORED_PATHS, budget).unwrap();
+            let diffs = runner
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|call| call.starts_with("diff "))
+                .count();
+            (result, diffs)
+        };
+
+        let (whole, one) = run(PATHSPEC_BUDGET);
+        let (split, several) = run(1);
+
+        assert_eq!(one, 1);
+        assert_eq!(several, 6, "a budget of one byte puts each directory in its own diff");
+        assert_eq!(whole, split);
+    }
+
+    #[test]
+    fn two_base_commits_cost_two_diffs() {
+        let (dir, pkgs) = tagged_repo_of(4);
+        let root = dir.path();
+        commit(root, "pkg-0/src/lib.rs", "x\n", "feat: x");
+        for name in ["pkg-2", "pkg-3"] {
+            run_git(root, &["tag", "-a", "-m", "release", &format!("{name}@1.0.1")]);
+        }
+        for index in 0..4 {
+            commit(root, &format!("pkg-{index}/src/lib.rs"), "y\n", "feat: y");
+        }
+
+        let (result, diffs) = sources_counting_diffs(root, &pkgs);
+
+        assert_eq!(diffs, 2);
+        assert_eq!(files(&result, "pkg-0"), ["pkg-0/src/lib.rs"]);
+        assert_eq!(files(&result, "pkg-3"), ["pkg-3/src/lib.rs"]);
+    }
+
+    /// A repo with a root package, a package with a space in its directory, one nested in another and an untagged one.
+    fn nested_repo() -> (tempfile::TempDir, Vec<Package>) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        init_repo(root);
+        let dirs = [".", "pkg-a", "pkg-a/inner", "pkg b", "pkg-c"];
+        for directory in dirs {
+            let prefix = if directory == "." {
+                String::new()
+            } else {
+                format!("{directory}/")
+            };
+            write(root, &format!("{prefix}Cargo.toml"), "[package]\n");
+            write(root, &format!("{prefix}src/lib.rs"), "\n");
+        }
+        commit(root, "README.md", "r\n", "chore: init");
+        for directory in ["root", "pkg-a", "pkg-a/inner", "pkg-b"] {
+            run_git(root, &["tag", "-a", "-m", "release", &format!("{directory}@1.0.0")]);
+        }
+        commit(root, "pkg-a/src/lib.rs", "a\n", "feat: a");
+        commit(root, "pkg-a/inner/src/lib.rs", "i\n", "feat: inner");
+        commit(root, "pkg b/src/a b.rs", "b\n", "feat: spaced");
+        commit(root, "pkg-a/tests/ignored.rs", "t\n", "test: ignored");
+        commit(root, "pkg-c/src/lib.rs", "c\n", "feat: untagged");
+        commit(root, "top.rs", "t\n", "feat: top");
+        write(root, "pkg-a/inner/src/dirty.rs", "d\n");
+        run_git(root, &["add", "pkg-a/inner/src/dirty.rs"]);
+        let pkgs = dirs
+            .iter()
+            .map(|directory| {
+                let mut pkg = make_pkg(directory);
+                if *directory == "pkg b" {
+                    // A tag name cannot hold a space.
+                    pkg.id = id("pkg-b");
+                }
+                pkg
+            })
+            .collect();
+        (dir, pkgs)
+    }
+
+    /// The old behaviour: one diff (or `ls-files`, untagged) per package.
+    fn per_package_reference(root: &Path, pkgs: &[Package]) -> BTreeMap<PackageId, Vec<PathBuf>> {
+        let excludes: Vec<String> = DEFAULT_IGNORED_PATHS.iter().map(|p| exclude_pathspec(p)).collect();
+        pkgs.iter()
+            .map(|pkg| {
+                let tag = format!("{}@1.0.0", pkg.id);
+                let tagged = run_git_ok(root, &["rev-parse", "-q", "--verify", &format!("{tag}^{{commit}}")]);
+                let mut args: Vec<String> = match &tagged {
+                    Some(commit) => [
+                        "diff",
+                        "--no-renames",
+                        "--relative",
+                        "--name-only",
+                        "-z",
+                        commit.trim(),
+                        "--",
+                    ]
+                    .map(String::from)
+                    .to_vec(),
+                    None => ["ls-files", "-z", "--"].map(String::from).to_vec(),
+                };
+                args.extend(package_paths(pkg).iter().map(|d| d.to_string_lossy().into_owned()));
+                args.extend(excludes.iter().cloned());
+                let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+                let output = GitRunner.run("git", &refs, root).unwrap();
+                let files: BTreeSet<PathBuf> = output
+                    .stdout
+                    .split('\0')
+                    .filter(|path| !path.is_empty())
+                    .map(PathBuf::from)
+                    .collect();
+                (pkg.id.clone(), files.into_iter().collect())
+            })
+            .collect()
+    }
+
+    fn run_git_ok(root: &Path, args: &[&str]) -> Option<String> {
+        let output = GitRunner.run("git", args, root).unwrap();
+        output.success().then_some(output.stdout)
+    }
+
+    #[test]
+    fn batched_listing_equals_the_per_package_listing() {
+        let (dir, pkgs) = nested_repo();
+
+        let (batched, diffs) = sources_counting_diffs(dir.path(), &pkgs);
+
+        assert_eq!(batched, per_package_reference(dir.path(), &pkgs));
+        assert_eq!(diffs, 1);
+        assert!(batched[&id("root")].iter().any(|p| p == Path::new("top.rs")));
+        assert!(!batched[&id("pkg-c")].is_empty(), "untagged lists all its files");
+    }
+
+    #[test]
+    fn a_nested_package_gets_its_own_files_and_not_its_parents_other_files() {
+        let (dir, pkgs) = nested_repo();
+
+        let (result, _) = sources_counting_diffs(dir.path(), &pkgs);
+
+        assert_eq!(
+            files(&result, "pkg-a/inner"),
+            ["pkg-a/inner/src/dirty.rs", "pkg-a/inner/src/lib.rs"]
+        );
+        // As before batching, the parent's directory also contains the nested package's files.
+        assert!(files(&result, "pkg-a").contains(&"pkg-a/inner/src/lib.rs".to_owned()));
+        assert!(files(&result, "pkg-a").contains(&"pkg-a/src/lib.rs".to_owned()));
+        assert_eq!(files(&result, "pkg-b"), ["pkg b/src/a b.rs"]);
+    }
+
+    #[test]
+    fn a_package_without_changes_has_an_empty_listing() {
+        let (dir, pkgs) = tagged_repo_of(3);
+        commit(dir.path(), "pkg-1/src/lib.rs", "x\n", "feat: x");
+
+        let (result, diffs) = sources_counting_diffs(dir.path(), &pkgs);
+
+        assert_eq!(diffs, 1);
+        assert!(result[&id("pkg-0")].is_empty() && result[&id("pkg-2")].is_empty());
+        assert_eq!(files(&result, "pkg-1"), ["pkg-1/src/lib.rs"]);
     }
 
     #[test]
