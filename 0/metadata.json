@@ -1,0 +1,128 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M73JH44JATQT2V2ZVB07W8FK",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-10T20:31:40.243304Z",
+  "branch": "fix/input-validation",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "crates/callisto-cli/src/error.rs",
+    "crates/callisto-cli/tests/error_envelope_tests.rs",
+    "crates/callisto-cli/tests/usage_exit_codes_tests.rs",
+    "crates/callisto-graph/src/config/resolve.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "bc4f08341c85",
+  "checkpoint_transcript_start": 36807,
+  "transcript_lines_at_start": 36807,
+  "compact_transcript_start": 2669,
+  "token_usage": {
+    "input_tokens": 78,
+    "cache_creation_tokens": 28118,
+    "cache_read_tokens": 31476703,
+    "output_tokens": 15794,
+    "api_call_count": 39,
+    "subagent_tokens": {
+      "input_tokens": 2,
+      "cache_creation_tokens": 7376,
+      "cache_read_tokens": 62126,
+      "output_tokens": 726,
+      "api_call_count": 1
+    }
+  },
+  "redaction": {
+    "replacements": 84,
+    "layers": {
+      "betterleaks": 28,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 52,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 240
+  },
+  "summary": {
+    "intent": "Get the out-of-date, conflicting PRs fix/cli-polish (#503) and fix/input-validation (#501) merged with main and passing CI, after main turned red from a semantic collision between earlier merged PRs.",
+    "outcome": "#503 had conflicts resolved, new error codes classified, and tests fixed, and was pushed green (17 checks pass). #501 had main merged in, then was fixed directly with the same inherited-test fixes plus an UnknownField test update, and pushed. CI results for #501 after the final push were not yet confirmed.",
+    "learnings": {
+      "repo": [
+        "docs/errors.md is the recurring merge-conflict hotspot, since every PR adding error codes appends rows to it.",
+        "A test requires every documented error code to be classified exactly once as usage (exit 2) or runtime (exit 1), via RUNTIME_CODES/USAGE_CODES in crates/callisto-cli/src/error.rs and tests/usage_exit_codes_tests.rs. Any PR adding an error code must classify it.",
+        "Classification rule: bad flag input (malformed --from E327, duplicate --package E329) is a usage error with exit 2; config-content or release-state errors (E325, E326, E328) are runtime with exit 1.",
+        "Since #502, --dry-run on `release build-python` is a usage error that exits 2, so tests hard-coding exit 1 for all failing commands break.",
+        "#500 moved unknown config keys from the ParseToml variant to UnknownField (E325), which broke #501's unknown-key test that matched ParseToml.",
+        "The verify.sh script runs five checks and fails fast, so fixing one failing test can reveal another hidden behind it.",
+        "Commits are signed (git commit -S) and pushed with `git push origin HEAD:<branch>` from agent worktrees."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/tests/add_duplicate_package_tests.rs",
+          "line": 55,
+          "finding": "Duplicate-package test asserted Some(1); E329 is now a usage error, so it must assert Some(2)."
+        },
+        {
+          "path": "crates/callisto-cli/tests/error_envelope_tests.rs",
+          "finding": "The envelope helper should expect the exit code implied by the error's own code (2 for usage codes, else 1) rather than a hard-coded 1; envelope tests cover JSON shape only."
+        },
+        {
+          "path": "crates/callisto-graph/src/config/resolve.rs",
+          "line": 870,
+          "end_line": 884,
+          "finding": "every_config_table_rejects_an_unknown_key must match UnknownField rather than ParseToml after #500."
+        }
+      ],
+      "workflow": [
+        "Two PRs that each pass CI alone can break main when combined if both change observable behavior (exit codes, error codes) without touching the same files, so textual conflict checks miss it. Run the other PR's tests against the combination before merging.",
+        "Fail-fast verification hides secondary failures, so compare failing test logs against main's to separate inherited failures from a PR's own.",
+        "Reusing a fix script across worktrees via sed path substitution was a quick way to apply the same patch to a second branch.",
+        "Avoid duplicating a fix in a second PR when it touches the same lines as another open PR, as this risks new conflicts; here the user chose to fix #501 directly anyway."
+      ]
+    },
+    "friction": [
+      "Main was red from two merged PRs (#500 and #502) interacting, and the last main CI run (b00c8c03a) failed.",
+      "The envelope-test collision wasn't predicted; only the classification collision was.",
+      "#501 had been merged and pushed, but the user still saw conflict or CI failures and had to re-raise the issue.",
+      "Each fix cycle revealed another hidden failing test, requiring several verify iterations.",
+      "The user had to repeatedly be asked to merge #503 first, blocking progress."
+    ],
+    "open_items": [
+      "Confirm #501 CI is green after the final push.",
+      "#501 and #503 overlap on error.rs classification lines (E324 wording, E327 row), so a conflict will appear when one merges and the other needs another merge of main.",
+      "E329 classification does not exist on #501's branch and must be reconciled after #503 lands.",
+      "Add a process check for behavior-changing PRs: run the other open PRs' tests against the combined result before merging."
+    ]
+  }
+}
