@@ -101,10 +101,7 @@ impl ProjectLocator for IgnoreWalkLocator {
                 _ => false,
             };
 
-            // Explicit only, like `self_admitted` below -- a sibling that's merely admitted by
-            // the fallback admit-all (no restriction present for that ecosystem) doesn't make
-            // this directory a real, deliberate workspace member; only a genuine members/
-            // workspaces match does.
+            // Explicit only, like `self_admitted`: a sibling admitted by the admit-all fallback does not make this a member.
             let any_sibling_admitted = parsed
                 .iter()
                 .any(|(ecosystem, _, identity)| identity.name.is_some() && admits_explicitly(*ecosystem));

@@ -177,11 +177,7 @@ pub(crate) fn batch_blobs<R: CommandRunner + ?Sized>(
             )
         })?;
         let remainder = &after_header[size..];
-        // The protocol always emits exactly one LF right after the
-        // content, separate from the content itself. Requiring it here
-        // catches a desynced `size` (from an earlier, unexpectedly
-        // reencoded entry) as an explicit error instead of silently
-        // parsing the wrong bytes as this entry's content.
+        // The protocol emits one LF after the content; requiring it turns a desynced `size` into an error.
         if remainder.as_bytes().first() != Some(&b'\n') {
             return Err(command_malformed_output(
                 "git",
@@ -341,7 +337,7 @@ mod tests {
 
     #[test]
     fn a_desynced_size_cannot_hand_one_paths_content_to_another() {
-        // The first object declares one byte too few, so the second header is no longer where it should be.
+        // The first object declares one byte too few, so the second header is misplaced.
         let stdout = format!("{SHA} blob 4\nabcde\n{SHA} blob 1\nz\n");
 
         assert!(read(&stdout, &["HEAD:a", "HEAD:b"]).is_err());

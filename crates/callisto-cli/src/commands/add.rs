@@ -322,14 +322,8 @@ fn generate_human_slug() -> String {
         "race", "bound", "drift", "jump", "strut", "spin", "surge",
     ];
 
-    // Each word list has 20 entries; total combination space is 20^3 = 8,000.
-    // We map consecutive counter values to unique triples via integer division:
-    //   a = idx % 20, n = (idx / 20) % 20, v = (idx / 400) % 20
-    // This is a bijection on {0..7999}, so 8,000 consecutive calls all yield
-    // distinct slugs regardless of OS clock resolution.
-    //
-    // A timestamp-derived offset rotates the starting position across process
-    // restarts so repeated runs don't produce the same slug sequence.
+    // Each word list has 20 entries; consecutive counter values map to unique triples (a = idx % 20, n = (idx / 20) % 20,
+    // v = (idx / 400) % 20), a bijection on 0..7999. A timestamp-derived offset varies the start across process restarts.
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos() as u64)
@@ -642,9 +636,7 @@ mod tests {
     /// interactive wizard's package-selection list must show two distinct,
     /// ecosystem-qualified names so the user can tell them apart.
     ///
-    /// Fails before the fix (`.name()` produces two identical `"foo"` entries)
-    /// and passes after the fix (`.display_name()` produces `"cargo/foo"` and
-    /// `"npm/foo"`).
+    /// Pins `.display_name()`: `"cargo/foo"` and `"npm/foo"`, not two identical `"foo"` entries.
     #[test]
     fn polyglot_package_selection_names_are_distinct() {
         let packages = [make_package("cargo/foo"), make_package("npm/foo")];

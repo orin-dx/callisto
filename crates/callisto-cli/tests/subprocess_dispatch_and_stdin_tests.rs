@@ -230,11 +230,8 @@ fn compose_pr_body_existing_body_dash_reads_from_stdin() {
         .spawn()
         .unwrap();
 
-    // `render_pr_body_from_plan` preserves only the text preceding a prior
-    // "## Release Preview" heading (custom notes a maintainer added above
-    // Callisto's own generated section) -- it does not preserve arbitrary
-    // existing body content. The leading BOM must be stripped before that
-    // split happens, so it must not survive into the composed body either.
+    // `render_pr_body_from_plan` preserves only the text before a prior "## Release Preview" heading, so the
+    // leading BOM must be stripped before that split and must not survive into the composed body.
     child
         .stdin
         .take()

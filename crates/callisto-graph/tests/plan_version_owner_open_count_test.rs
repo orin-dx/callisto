@@ -1,16 +1,8 @@
-//! Regression test for redundant owner-manifest reads in `plan_version`'s
-//! platform-target loop (audit finding: perf).
+//! Regression test for redundant owner-manifest reads in `plan_version`'s platform-target loop.
 //!
-//! Before the fix, `plan_version` (in `commands::version`) opened the
-//! OWNER's canonical manifest via `callisto_manifests::open` once per
-//! `GroupMember::PlatformManifest` sibling under that owner, purely to check
-//! whether the owner already declares a matching optional dependency --
-//! re-reading and re-parsing the same file from disk N times for an owner
-//! with N platform targets (napi/native cross-compile packages typically
-//! have 4-8+). The fix routes that read through the workspace's existing
-//! read-only `manifest_cache` (`crate::manifest_cache::open_cached`), so the
-//! owner's manifest is opened at most once per run regardless of how many
-//! platform siblings it has.
+//! `plan_version` must open the OWNER's manifest at most once per run, through the read-only `manifest_cache`
+//! (`crate::manifest_cache::open_cached`), however many `GroupMember::PlatformManifest` siblings the owner has
+//! (napi packages typically have 4-8+).
 //!
 //! Isolated in its own integration-test binary because
 //! `callisto_manifests::open_call_count` is a process-global counter that
@@ -107,11 +99,8 @@ fn plan_version_opens_owner_manifest_once_regardless_of_platform_sibling_count()
     let runner = NoopRunner;
     let mut ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
 
-    // Fixture-inject the second (darwin) platform sibling -- walk.rs's co-located
-    // registration groups strictly by directory, so a second platform
-    // manifest under the same owner can't be disk-discovered (a directory
-    // holds at most one package.json); see the grammar-mismatch test's doc comment in
-    // commands/version.rs for the full explanation.
+    // Fixture-inject the second (darwin) platform sibling: walk.rs groups co-located registration by directory and
+    // a directory holds at most one package.json; see the grammar-mismatch test's doc in commands/version.rs.
     let owner = PackageId::Bare("hybrid".to_string());
     let group_name = GroupName("hybrid-group".to_string());
     let group = ws
@@ -133,10 +122,8 @@ fn plan_version_opens_owner_manifest_once_regardless_of_platform_sibling_count()
             name: "@myorg/hybrid-darwin-arm64".to_string(),
         });
 
-    // Discovery (Workspace::load) already opened+cached the owner's
-    // Cargo.toml (publish_targets/iter_dependencies scans) and both real
-    // platform manifests. Reset here so the count below measures only
-    // plan_version's own opens.
+    // Discovery already opened and cached the owner's Cargo.toml and both platform manifests; reset so the count
+    // below measures only plan_version's own opens.
     callisto_manifests::reset_open_call_count();
 
     let inference = NoInference;
@@ -165,13 +152,8 @@ fn plan_version_opens_owner_manifest_once_regardless_of_platform_sibling_count()
         plan.optional_dep_updates[0].updates
     );
 
-    // plan_version's own opens: each platform sibling's own manifest is
-    // opened once (2, unavoidable -- each is a distinct real file) PLUS the
-    // owner's manifest opened AT MOST ONCE total across both iterations
-    // (routed through the shared read-only manifest_cache), not once per
-    // sibling. Before the fix this would be 4 (2 platform + 2 owner
-    // re-opens); the count below proves the owner check no longer scales
-    // with the number of platform siblings.
+    // Each platform sibling's manifest is opened once (2) plus the owner's at most once total via the shared
+    // manifest_cache, so the owner check does not scale with the number of platform siblings.
     assert_eq!(
         callisto_manifests::open_call_count(),
         2,

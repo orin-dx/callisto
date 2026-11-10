@@ -830,10 +830,8 @@ fn parse_git_log_output(stdout: &str, cwd: &Path) -> Result<Vec<GitCommit>, VcsE
     let mut commits = Vec::new();
 
     for record in stdout.split(RECORD_SEP) {
-        // `tformat:`-style `--format=` output (the default when the format
-        // string doesn't start with `format:`/`tformat:`) appends a
-        // trailing newline after every entry; strip it rather than the
-        // message's own content.
+        // `--format=` output without a `format:`/`tformat:` prefix ends each entry with a newline;
+        // strip it, not the message's own content.
         let record = record.trim_end_matches('\n');
         if record.is_empty() {
             continue;

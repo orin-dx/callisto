@@ -111,12 +111,8 @@ fn test_plan_version_produces_correct_bumps_in_cascade() {
 }
 
 /// Two packages in different directories sharing the same name must NOT
-/// silently discard one of them. Before the fix, `ManifestWalkResolver::build`
-/// used `BTreeMap::insert` with the `PackageId` (name-only) as key; the
-/// second crate with the same name silently replaced the first with no error
-/// or diagnostic, making one crate permanently invisible to all operations.
-///
-/// After the fix, `Workspace::load` must return `Err(GraphError::DuplicatePackage)`.
+/// silently discard one of them. `ManifestWalkResolver::build` must not key packages by name-only `PackageId`,
+/// where the second crate replaces the first; `Workspace::load` must return `Err(GraphError::DuplicatePackage)`.
 #[test]
 fn duplicate_package_name_is_rejected_with_an_error() {
     let tmp = tempfile::tempdir().unwrap();
@@ -154,10 +150,8 @@ fn duplicate_package_name_is_rejected_with_an_error() {
 /// proceed through apply_version_plan to a successful completion for a
 /// cross-ecosystem npm dependent whose spec needs rewriting, with the
 /// dependent's package.json mutated to keep the correct, already-in-use
-/// dependency key. Before the fix, this aborts with
-/// Err(ManifestError::DependencyNotFound) because solve_cascade constructs
-/// the wrong key ("my-native-lib", the Cargo-native name) against a
-/// manifest that only has an "@scope/my-native-lib" entry.
+/// dependency key: `solve_cascade` must not build the Cargo-native name ("my-native-lib") against a manifest that
+/// only has an "@scope/my-native-lib" entry (`ManifestError::DependencyNotFound`).
 #[test]
 fn apply_version_plan_succeeds_for_dual_identity_cross_ecosystem_rewrite() {
     let tmp = tempfile::tempdir().unwrap();

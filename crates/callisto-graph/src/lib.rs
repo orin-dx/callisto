@@ -182,12 +182,7 @@ impl<'a, R: CommandRunner, D: DependencyResolver> Workspace<'a, R, D> {
             return Ok(existing);
         }
         let built = TagIndex::build(self.git_access(), &self.graph, &self.identity, &self.config)?;
-        // `OnceCell::set` only fails if another write already raced it in;
-        // `Workspace` is only ever accessed through `&self` here (never
-        // shared across threads -- `R`/`D` carry no such bound), so the
-        // `get()` check above already ruled that out. Fall back to `get()`
-        // either way rather than trusting the `set` call's own return value,
-        // so this stays correct even if that assumption ever changes.
+        // `set` can only fail on a race, which `&self` access rules out; fall back to `get()` regardless.
         self.tags.set(built).ok();
         Ok(self
             .tags

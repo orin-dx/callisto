@@ -728,8 +728,8 @@ fn release_plan_rejects_a_commit_whose_manifest_disagrees_with_its_own_decision(
     assert!(!out.exists());
 }
 
-/// A decision file whose entries were hand-edited after the fact no longer
-/// matches its own content digest. `ReleaseDecisionV1`'s custom `Deserialize`
+/// A decision file whose entries were hand-edited after the fact fails its
+/// own content digest check. `ReleaseDecisionV1`'s custom `Deserialize`
 /// rejects this before the diff cross-check ever runs -- the digest is the
 /// tamper-evidence primitive the whole persist-and-verify design rests on.
 #[test]

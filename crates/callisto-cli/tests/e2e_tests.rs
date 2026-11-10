@@ -91,10 +91,8 @@ edition = "2021"
 /// whose entry uses an ecosystem-qualified name (`cargo/my-app`) even when
 /// the package is registered under its bare name (`my-app`).
 ///
-/// Before the fix, `status.rs` compared `entry.name == pkg.id.to_string()`,
-/// which returned false for `"cargo/my-app" != "my-app"`, so the package
-/// showed no pending changesets while `callisto version` (which uses
-/// `PackageId::matches()`) correctly processed it.
+/// `status.rs` must match entries via `PackageId::matches()`, as `callisto version` does, not by comparing
+/// `"cargo/my-app"` to `"my-app"`.
 #[test]
 fn test_status_matches_ecosystem_qualified_changeset_entry() {
     use std::process::ExitCode;
@@ -135,10 +133,8 @@ fn test_status_matches_ecosystem_qualified_changeset_entry() {
     )
     .unwrap();
 
-    // status --check must still succeed (no error-level diagnostics) --
-    // Pending state never affects the exit code, so the
-    // ecosystem-qualified-match regression this test guards is now asserted
-    // via the report itself (`pending`/`pending_severity`), not the exit code.
+    // status --check must still succeed (pending state never affects the exit code); the qualified-name match
+    // is asserted via the report (`pending`/`pending_severity`).
     let code = commands::status::handle(
         StatusArgs {
             strict: false,

@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# Black-box coverage for callisto-action's mode validation and release-mode
-# script: a stubbed `callisto` proves the exact outputs derived from a
-# release receipt, without a live GitHub Actions runner. Rust tests cover
-# `callisto release`'s own receipt shape.
+# Black-box coverage of mode validation and the release-mode script, with a stubbed `callisto` and no live runner.
 set -euo pipefail
 
 action_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -142,11 +139,7 @@ else
 fi
 rm -rf "$auth_dir"
 
-# Callisto-action's own environment setup must not use `$/` or an
-# external owner/repo/path@ref for its sibling setup-callisto -- both resolve
-# against whatever ref invoked *this* action, which may not exist verbatim in
-# setup-callisto's own history. It must call the sibling script directly by
-# github.action_path instead, so it always uses its own checked-out ref.
+# The action must call the sibling setup-callisto script by github.action_path, not `$/` or owner/repo/path@ref.
 action_contents="$(<"$action_dir/action.yml")"
 if [[ "$action_contents" == *'uses: $/.github/actions/setup-callisto'* ]] \
   || [[ "$action_contents" == *'uses: orin-dx/callisto/.github/actions/setup-callisto@'* ]]; then

@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
-# Captures real provider responses (read-only GETs, no credentials for the
-# public endpoints) into testing/fixtures/providers/. Every trimming or
-# derivation rule below is restated in that directory's PROVENANCE.md.
-#
+# Captures real provider responses (read-only GETs) into testing/fixtures/providers/; rules are in its PROVENANCE.md.
 #   testing/refresh-provider-fixtures.sh           rewrite the committed fixtures
-#   testing/refresh-provider-fixtures.sh --check   re-fetch to a temp dir and
-#                                                  assert the SHAPE still matches
+#   testing/refresh-provider-fixtures.sh --check   re-fetch and assert the SHAPE still matches
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -147,11 +143,8 @@ ls_remote 'callisto-no-such-tag' >"$out/git/ls-remote-absent.txt"
 [[ $(wc -l <"$out/git/ls-remote-lightweight.txt") -eq 1 ]] || { echo "lightweight tag gained a peeled line" >&2; exit 1; }
 
 # --- shape comparison -------------------------------------------------------
-# A file's shape is its HTTP status code plus the set of JSON key paths (array
-# indices collapsed), for ls-remote the per-line ref kind, and for a captured
-# command its exit code plus the first line of each stream with every digit run
-# masked. Content is never compared: versions, digests and dates are expected
-# to drift.
+# Shape is the HTTP status plus JSON key paths (indices collapsed), ls-remote ref kinds, or a command's exit code and
+# digit-masked first stderr/stdout lines; content is never compared.
 shape_of() {
   local file=$1
   case $file in

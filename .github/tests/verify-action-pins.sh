@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# Local actions are commit-bound by the checkout. Every external GitHub action
-# must use its full immutable commit hash; Docker actions must use an immutable
-# content digest. The generated-workflow templates are checked too, and one
-# action resolves to one commit across the repository and its templates.
+# Every external action must use a full commit hash (Docker: a content digest), in templates too, and one action maps to one commit.
 set -euo pipefail
 
 status=0

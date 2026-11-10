@@ -285,10 +285,7 @@ mod tests {
 
     #[test]
     fn redacts_url_userinfo_even_when_it_matches_no_known_secret() {
-        // A private-registry URL with embedded basic-auth credentials,
-        // echoed verbatim by a registry CLI's own error diagnostics, is
-        // not necessarily one of the fixed credential env vars -- this
-        // must be caught independently of the `secrets` list.
+        // Basic-auth userinfo in a registry URL must be redacted even when it matches no known secret.
         let text = "error: failed to fetch https://alice:hunter2@registry.example.com/pkg.tgz: 401";
         let redacted = redact_known_secrets(text, &[]);
         assert!(!redacted.contains("hunter2"));
@@ -366,11 +363,8 @@ mod tests {
 
     #[test]
     fn redacts_userinfo_when_the_password_itself_contains_a_slash() {
-        // A raw '/' inside userinfo isn't RFC 3986-valid, but this is
-        // free-form CLI stderr text, not a parsed URL -- a base64-ish
-        // token/password containing '/' is realistic, and under-redacting
-        // it would defeat the whole point of this function. Bias toward
-        // over-redaction, never under-redaction.
+        // A raw '/' in a password is not RFC 3986-valid but realistic in stderr text;
+        // bias toward over-redaction.
         let text = "error: failed to fetch https://alice:p/ss@registry.example.com/index: 401";
         let redacted = redact_known_secrets(text, &[]);
         assert!(!redacted.contains("p/ss"));
@@ -393,15 +387,9 @@ mod tests {
 
     #[test]
     fn conservatively_redacts_a_bare_at_sign_after_a_path_segment_too() {
-        // An `@` appearing after a `/` (e.g. an npm scoped package name
-        // embedded in a URL path, `registry.npmjs.org/@myorg/pkg`) is
-        // usually not userinfo -- but distinguishing that from a
-        // slash-containing password with plain text scanning is not
-        // reliable, and this function's whole purpose is credential
-        // redaction, so it deliberately treats *any* `@` before the next
-        // whitespace/quote boundary as a userinfo marker. A little log
-        // noise on an unusual scoped-package error is an acceptable
-        // trade-off for never under-redacting a real credential.
+        // An `@` after a `/` is usually not userinfo, but telling it apart from a slash-containing
+        // password is unreliable, so any `@` before the next whitespace/quote is treated as userinfo:
+        // log noise beats under-redacting a credential.
         let text = "GET https://registry.npmjs.org/@myorg/pkg failed";
         let redacted = redact_known_secrets(text, &[]);
         assert_eq!(redacted, "GET https://[REDACTED]@myorg/pkg failed");

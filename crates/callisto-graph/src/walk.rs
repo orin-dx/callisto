@@ -291,17 +291,10 @@ impl<'a> IdentityAssigner<'a> {
     }
 
     fn assign(&mut self, rel_path: PathBuf, mut list: Vec<(Ecosystem, PackageId)>) -> Result<(), GraphError> {
-        // Explicit precedence: Cargo (0) > Npm (1) > Pypi (2) > others.
-        // Do NOT rely on enum discriminant order -- sort by this named
-        // priority function so the precedence survives future variant
-        // additions to `Ecosystem`.
+        // Explicit precedence Cargo > Npm > Pypi > others via `primary_priority`, not enum discriminant order.
         list.sort_by_key(|a| a.0.primary_priority());
 
-        // E100 whenever any (ecosystem, native name) this path declares -- primary
-        // or not -- is already owned by a different path; names both. Checked before
-        // any promotion bookkeeping so a dual-manifest directory's non-primary name
-        // (e.g. an npm sibling of a Cargo-primary package) is covered too, not just
-        // each path's own primary name.
+        // E100 when any (ecosystem, native name) this path declares is owned by another path; checked before promotion bookkeeping.
         if let Some((eco, id)) = list.iter().find(|(eco, id)| {
             self.native_owner
                 .get(&(*eco, id.name().to_string()))
@@ -365,14 +358,7 @@ impl<'a> IdentityAssigner<'a> {
                     None
                 }
             };
-            // For napi platform packages (os + cpu constraints in package.json),
-            // also push a Platform-role decl so release derivation can route them
-            // as platform publishes instead of main packages. Reuses
-            // the canonical decl's manifest handle via the shared
-            // `manifest_cache` (`npm_role()`) instead of a second, raw
-            // `fs::read` of the same package.json -- the handle opened here
-            // is the same one `publish_targets`/`iter_dependencies` reuse
-            // further down.
+            // Napi platform packages (os + cpu) also get a Platform-role decl, reusing the cached manifest handle via `npm_role()`.
             if *eco == Ecosystem::Npm {
                 let opened = canonical_decl
                     .as_ref()
@@ -405,12 +391,7 @@ impl<'a> IdentityAssigner<'a> {
                                 .push(unresolved(&manifest_rel, "declare its platform manifest", error))
                         }
                     }
-                    // `id` is this manifest's own npm identity, resolved from its
-                    // own `name` field -- distinct from `primary_id` whenever a
-                    // higher-priority ecosystem (Cargo) shares this directory.
-                    // Config authors reference the platform package by
-                    // its own name in `[[fixed-group]] members`, so that must be
-                    // the index key; `primary_id` is who it belongs to.
+                    // `id` is this manifest's own npm identity; config members use it as the index key, `primary_id` is the owner.
                     self.index
                         .platform
                         .insert(id.name().to_string(), (primary_id.clone(), manifest_rel, role));
@@ -453,13 +434,7 @@ impl<'a> IdentityAssigner<'a> {
         // Both paths' claiming ecosystems are guaranteed disjoint here: an
         // overlap would already have failed at the native_owner check above.
         let name = primary_id.name().to_string();
-        // STALE-KEY REWRITE location (4): re-key package_manifest_decls under
-        // each path's own newly-promoted Prefixed id, sourcing each path's own
-        // decls -- captured via the `existing_decls` returned by `insert` above
-        // and the `current_decls` clone taken before `insert` overwrote the map,
-        // never via a `.get(&primary_id)` lookup after the fact (a lookup miss
-        // there would silently substitute an empty Vec -- the
-        // manifests-bleed bug).
+        // STALE-KEY REWRITE (4): re-key `package_manifest_decls` from `existing_decls` and `current_decls`, never a post-insert `.get(&primary_id)` (a miss yields an empty Vec).
         let existing_id = PackageId::Prefixed {
             ecosystem: self.primary_ecosystems[&existing_path],
             name: name.clone(),
@@ -503,11 +478,7 @@ impl<'a> IdentityAssigner<'a> {
         for eco in self.claiming_ecosystems.get(&rel_path).cloned().unwrap_or_default() {
             self.index.prefixed.insert((eco, name.clone()), current_id.clone());
         }
-        // STALE-KEY REWRITE location (6): update index.platform's owner-id
-        // component for every platform manifest declared under either path,
-        // so a platform sibling co-located with a promoted owner keeps
-        // pointing at that owner's newly-promoted Prefixed id rather than
-        // the stale pre-promotion primary_id.
+        // STALE-KEY REWRITE (6): re-point `index.platform` owners at the promoted Prefixed id.
         if let Some(keys) = self.path_platform_keys.get(&existing_path) {
             for key in keys {
                 if let Some((_, manifest_rel, role)) = self.index.platform.get(key).cloned() {
@@ -608,11 +579,7 @@ fn resolve_packages(
 ) -> Result<BTreeMap<PackageId, Package>, GraphError> {
     prewarm_manifests(&package_manifest_decls, manifest_cache, ctx);
 
-    // Tracks, per cfg.package_sets entry (by index), whether it matched at
-    // least one real discovered package during this walk. A [[package-set]]
-    // rule that matches nothing is almost always a typo or a stale
-    // ecosystem prefix (see PackageSetMatchedNothing below) rather than
-    // intentional, so it must be surfaced instead of silently ignored.
+    // Tracks which `package_sets` entries matched a package; an unmatched rule is usually a typo and is surfaced.
     let mut package_set_matched = vec![false; cfg.package_sets.len()];
 
     // Same tracking, for `[[package]]` rules: an exact-id rule that matches zero real
@@ -646,21 +613,14 @@ fn resolve_packages(
             publish_to.push(PublishTarget::None);
         }
 
-        // The real ecosystem(s) this package's manifests were discovered
-        // in. `id` may be PackageId::Bare (unpromoted) or PackageId::Prefixed
-        // (promoted); this is the
-        // only place an ecosystem-prefixed [[package-set]] pattern has
-        // anything to match against.
+        // The ecosystems this package's manifests were found in; the only thing a prefixed [[package-set]] pattern can match.
         let package_ecosystems: Vec<Ecosystem> = decls.iter().map(|d| d.ecosystem()).collect();
 
         // The first [[package]] rule, in declaration order, whose ecosystem this package has and whose name matches.
         let native_names: Vec<(Ecosystem, &str)> = index.native_names(&id).collect();
         let pkg_override = resolve_package_config(&native_names, cfg);
 
-        // Record which [[package-set]] patterns match this package,
-        // independent of whether a [[package]] rule ends up shadowing the
-        // fallback below — a pattern that is always shadowed still
-        // "matched" for the purpose of the zero-match diagnostic.
+        // Record matching patterns even when a [[package]] rule shadows them, for the zero-match diagnostic.
         for (idx, (pattern, _)) in cfg.package_sets.iter().enumerate() {
             if pattern.matches_native(&native_names) {
                 package_set_matched[idx] = true;
@@ -699,17 +659,7 @@ fn resolve_packages(
             Some(ch_path)
         };
 
-        // Apply the resolved override's publish-to if the operator explicitly set it.
-        //
-        // A `[[package]]`/`[[package-set]]` rule has no package context at
-        // config-parse time (it's just a pattern + string list), so the
-        // only place the package's real, detected ecosystem is known is
-        // here, once `decls` (the package's actual manifests) have been
-        // walked. Reject any configured target whose `.ecosystem()` does
-        // not match one of the package's detected ecosystems — e.g.
-        // `publish-to = ["nuget"]` on a Cargo-only crate — rather than
-        // silently accepting it and having the crate vanish from every
-        // real publish downstream with zero diagnostic.
+        // Reject a configured publish target whose ecosystem matches none of the package's detected ones; only here are the real manifests known.
         if let Some(override_targets) = active_override.and_then(|o| o.publish_to.as_deref()) {
             for target in override_targets {
                 if let Some(target_ecosystem) = target.ecosystem()
@@ -723,10 +673,7 @@ fn resolve_packages(
                     });
                 }
             }
-            // The override replaces *which* targets the package publishes
-            // to, but must not silently drop manifest-derived fields
-            // (npm publishConfig.access/registry) the config itself
-            // didn't set -- config wins when explicit, manifest fills gaps.
+            // The override picks which targets publish; manifest-derived fields it leaves unset (npm access/registry) are kept.
             publish_to = override_targets
                 .iter()
                 .map(|target| {
@@ -752,16 +699,7 @@ fn resolve_packages(
         packages.insert(id, pkg);
     }
 
-    // A [[package-set]] rule that matched zero real packages is almost
-    // always a mistake (e.g. an ecosystem prefix that doesn't correspond
-    // to any discovered package, or a typo in the glob) rather than
-    // intentional, so surface it as a visible, non-fatal diagnostic
-    // instead of letting the rule silently do nothing. This is
-    // deliberately advisory rather than a hard `GraphError`: a
-    // `[[package-set]]` rule declared for a monorepo-wide callisto.toml
-    // can legitimately match nothing when only part of the workspace is
-    // present (e.g. a partial checkout or filtered walk), and a hard
-    // error would break that case.
+    // Advisory, not an error: a monorepo-wide rule can match nothing on a partial checkout.
     for (idx, (pattern, _)) in cfg.package_sets.iter().enumerate() {
         if !package_set_matched[idx] {
             diagnostics.push(Diagnostic {
@@ -776,10 +714,7 @@ fn resolve_packages(
         }
     }
 
-    // A [[package]] rule that matched zero real packages is the same kind of mistake as an
-    // empty [[package-set]] match above (e.g. `cargo/foo` when `foo` only exists in npm) --
-    // advisory for the same reason: a monorepo-wide callisto.toml against a partial checkout
-    // can legitimately match nothing.
+    // Same advisory as an empty [[package-set]] match: a [[package]] rule matching nothing is usually a typo.
     for (idx, (rule_id, _)) in cfg.packages.iter().enumerate() {
         if !package_rule_matched[idx] {
             diagnostics.push(Diagnostic {
@@ -969,10 +904,7 @@ fn platform_owners(
         if by_path.contains_key(&candidate.path) {
             continue;
         }
-        // A Cargo/Python package physically sits beside this candidate's package.json even
-        // though it wasn't discovered as a workspace member here (e.g. filtered out by that
-        // ecosystem's own membership) -- attaching it as a bare platform manifest would
-        // misattach a directory that already hosts a real, distinct package.
+        // A Cargo/Python package beside this package.json would be misattached as a bare platform manifest.
         let beside = |name: &str| callisto_model::strict_fs::exists(&root.join(&candidate.path).join(name));
         match (beside("Cargo.toml"), beside("pyproject.toml")) {
             (Ok(false), Ok(false)) => {}

@@ -136,12 +136,8 @@ pub fn parse_changeset(source: &str) -> Result<Changeset, ParseError> {
         return Err(ParseError::MissingFrontmatterStart);
     }
 
-    // Two-pass, deliberately: find the frontmatter's boundaries FIRST, then parse content
-    // within them. A single pass that tries to parse every line as an entry until it
-    // happens to hit a literal "---" cannot tell "this entry is malformed" apart from "the
-    // frontmatter was never closed at all" — the first non-entry-shaped line after a missing
-    // closing delimiter would otherwise surface as a misleading parse error on that line
-    // instead of `UnclosedFrontmatter`.
+    // Two passes: find the frontmatter boundaries first, so a missing closing delimiter reports
+    // `UnclosedFrontmatter` rather than a misleading parse error on the next non-entry line.
     let closing_index = lines[1..].iter().position(|&l| l.trim_end() == "---").map(|i| i + 1);
     let Some(closing_index) = closing_index else {
         return Err(ParseError::UnclosedFrontmatter);

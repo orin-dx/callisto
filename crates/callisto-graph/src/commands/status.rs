@@ -78,20 +78,12 @@ pub fn status<R: CommandRunner, D: DependencyResolver, I: SeverityInference>(
     let all_packages: Vec<&Package> = ws.graph.packages().collect();
     let pending = resolve_pending_changesets(all_packages.iter().copied(), &ws.identity, &loaded_changesets)?;
 
-    // Pending severity is `plan_version`'s own
-    // `PlannedBump.severity` per package -- the same cascade/fixed/linked-group
-    // computation `callisto version` uses. status computes no cascade of its
-    // own; it only reads the plan `plan_version` already derives.
+    // Pending severity is `plan_version`'s `PlannedBump.severity`; status computes no cascade of its own.
     let version_opts = VersionOptions {
         strict: opts.strict,
         allow_empty_changesets: true,
     };
-    // An ambiguous changeset entry, or an unparseable changeset file, makes `plan_version`
-    // (via `aggregate`'s own strict `load_changesets`) hard-error -- the right behavior for a
-    // real `version`/`release` run, but `status` must survive both and report
-    // `AmbiguousPackageName`/the parse failure diagnostic below instead. Severity planning is
-    // skipped for this run rather than duplicating `aggregate`'s own resolution to route
-    // around its error.
+    // `plan_version` hard-errors on an ambiguous entry or unparseable changeset; status reports the diagnostic and skips severity planning.
     let plan = match plan_version(ws, inference, &version_opts) {
         Ok(plan) => Some(plan),
         Err(GraphError::AmbiguousName { .. } | GraphError::ParseChangeset { .. }) => None,

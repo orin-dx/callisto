@@ -273,10 +273,7 @@ fn select_packages<'w, R: CommandRunner, D: DependencyResolver>(
         {
             owners.insert(package.id.clone(), owner.clone());
         }
-        // One canonical manifest per ecosystem is the expected shape, but
-        // dedup defensively -- `release_package_ids` maps every canonical
-        // manifest, and two manifests sharing an ecosystem would otherwise
-        // select/push the same identity twice.
+        // Dedup: `release_package_ids` maps every canonical manifest, so two sharing an ecosystem would repeat an identity.
         for id in ids.into_iter().collect::<BTreeSet<_>>() {
             if let Some(entry) = decision.entries.iter().find(|entry| entry.package == id) {
                 selected.insert(id.clone(), (package, entry.target_version.clone()));
@@ -411,11 +408,7 @@ fn build_publish_leaves<R: CommandRunner, D: DependencyResolver>(
                 let binding_id = RegistryBindingId::new(binding.key.as_str(), binding.identity.clone())?;
                 let operation =
                     ReleaseOperation::registry_publish(id.clone(), version.clone(), binding_id.clone(), Vec::new())?;
-                // A durable registry operation must have one exact endpoint
-                // binding. The model-level operation identity currently has
-                // only a registry key, so reject a second target that would
-                // collapse to the same operation until the typed binding
-                // identity is added there.
+                // The operation identity has only a registry key, so a second target for the same operation is rejected.
                 if prepared.contains_key(operation.id()) {
                     return Err(GraphError::ReleaseSelectionInvalid {
                         package: id.clone(),

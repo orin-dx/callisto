@@ -48,9 +48,7 @@ pub(crate) fn split_single_operator_prefix(s: &str) -> (&str, &str) {
 /// since `Table: TableLike`) or a `toml_edit::Item` that resolves to a
 /// table-like value via `Item::as_table_like_mut()` (pyproject.toml's
 /// `[project]` / `[tool.poetry]` / `[tool.flit.metadata]`, each accessed as
-/// an `Item`, not a bare `Table`). Previously duplicated as
-/// `cargo::set_scalar_preserving_decor` and a local closure inside
-/// `python::PyprojectToml::write_version`.
+/// an `Item`, not a bare `Table`).
 pub(crate) fn set_scalar_preserving_decor(table: &mut dyn toml_edit::TableLike, key: &str, new_value: &str) {
     if let Some(item) = table.get_mut(key)
         && let Some(val) = item.as_value_mut()
@@ -75,7 +73,7 @@ pub(crate) enum LineEnding {
 /// Byte-level formatting facts that a CST-preserving editor must detect on
 /// open and reapply verbatim on persist, since `toml_edit`/`serde_json`
 /// re-serialization always produces bare-LF text with no BOM regardless of
-/// what was originally on disk: whether the file opened with a UTF-8 BOM,
+/// what was on disk: whether the file opened with a UTF-8 BOM,
 /// and its line-ending style.
 ///
 /// Shared by `cargo::CargoToml`, `npm::PackageJson` and `python::PyprojectToml`.

@@ -170,12 +170,7 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
         inference,
     )?;
 
-    // For PreMode::Exit, inject a synthetic Patch severity for every package
-    // that is currently at a pre-release version. This triggers bump_target
-    // (which in Exit mode calls versioning.bump on the pre-release, stripping
-    // the tag and finalizing to stable) even when no pending changeset files
-    // exist on disk — they were consumed and deleted during the pre-release phase
-    // and their stems recorded in pre.json.
+    // PreMode::Exit: seed a Patch for every pre-release package so `bump_target` finalizes it though the changesets were consumed.
     if let Some(ref pre) = pre_state
         && pre.mode == callisto_model::format::PreMode::Exit
     {

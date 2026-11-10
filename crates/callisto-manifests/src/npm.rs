@@ -282,14 +282,8 @@ fn npm_role_from_doc(doc: &Map<String, Value>) -> Option<NpmRole> {
         .and_then(|v| v.as_str())
         .map(str::to_string)?;
 
-    // npm's standard `os`/`cpu` manifest fields have no libc/ABI concept at
-    // all, so a real disk-discovered Linux napi platform package always
-    // produces `abi: None` here -- but `napi.rs::role_to_triple`'s Linux
-    // match arms all require a concrete ABI, meaning such a package could
-    // never resolve to its triple. napi-rs's own package-generation
-    // convention encodes the ABI in the package *name*'s suffix instead
-    // (e.g. "@scope/pkg-linux-x64-gnu"), so infer it from there when the
-    // platform is linux.
+    // npm `os`/`cpu` carry no libc, but napi-rs encodes the ABI in the package name suffix
+    // (e.g. "@scope/pkg-linux-x64-gnu"); infer it from there on linux.
     let abi = if platform == "linux" {
         doc.get("name")
             .and_then(|v| v.as_str())
@@ -340,13 +334,8 @@ impl Manifest for PackageJson {
             out = out.replace("\r\n", "\n").replace('\n', "\r\n");
         }
 
-        // Trailing-newline trimming must happen strictly between the
-        // line-ending conversion (above, so a trimmed "\r\n" is measured
-        // correctly) and the BOM prepend (below, so a BOM byte is never
-        // mistaken for part of the trailing newline) -- this ordering
-        // dependency is why npm's own trailing_newline concern can't route
-        // through `common::FormatFingerprint::apply`'s single combined
-        // crlf-then-bom step the way cargo/python's simpler persist paths do.
+        // Trim the trailing newline after line-ending conversion and before the BOM prepend,
+        // so it cannot go through `common::FormatFingerprint::apply`'s combined step.
         if !self.fingerprint.trailing_newline && out.ends_with('\n') {
             if out.ends_with("\r\n") {
                 out.truncate(out.len() - 2);
@@ -382,22 +371,15 @@ impl Manifest for PackageJson {
         if !self.is_publishable() {
             return vec![callisto_model::PublishTarget::None];
         }
-        // Read `publishConfig.registry` from package.json, the standard npm
-        // mechanism for targeting a private registry. When set, `npm publish`
-        // must receive `--registry <url>`; when absent, the public registry is
-        // used (npm's built-in default).
+        // `publishConfig.registry` is npm's private-registry mechanism: `npm publish` must
+        // receive `--registry <url>` when set.
         let publish_config = self.doc.get("publishConfig");
         let registry = publish_config
             .and_then(|pc| pc.get("registry"))
             .and_then(|r| r.as_str())
             .map(|s| s.to_string());
-        // Read `publishConfig.access` to propagate the operator's explicit
-        // access intent. npm's `--access` CLI flag overrides publishConfig.access,
-        // so callisto must read it here and honour it in release planning rather than
-        // blindly passing `--access public` for all scoped packages. Any value
-        // other than the two npm recognises (including absence) is `None`,
-        // not an error -- an unrecognised value here isn't this layer's job
-        // to validate.
+        // `publishConfig.access` overrides `--access public` for scoped packages; any value
+        // npm does not recognise is `None`, not an error.
         let access = publish_config
             .and_then(|pc| pc.get("access"))
             .and_then(|a| a.as_str())
@@ -497,10 +479,8 @@ impl Manifest for PackageJson {
             DepKind::Build => unreachable!(),
         };
 
-        // Validate that the target dependency actually exists in the primary
-        // section *before* mutating anything. This guarantees that a failed
-        // update (dependency not found) leaves self.doc byte-for-byte
-        // unchanged, including the overrides/resolutions tables below.
+        // Check the dependency exists in the primary section before mutating, so a failed
+        // update leaves self.doc byte-for-byte unchanged.
         let updated_in_section = self
             .doc
             .get(section_name)

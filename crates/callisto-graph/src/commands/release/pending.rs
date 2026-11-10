@@ -97,7 +97,7 @@ fn release_gaps<R: CommandRunner, D: DependencyResolver>(
     let mut gaps = Vec::new();
     let mut seen = BTreeSet::new();
     for entry in &decision.entries {
-        // A package that is gone, or no longer published anywhere, cannot be released now.
+        // A package that is gone, or published nowhere, cannot be released now.
         let Some(package) = workspace_package(workspace, &entry.package) else {
             continue;
         };

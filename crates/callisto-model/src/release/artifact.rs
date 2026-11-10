@@ -83,10 +83,7 @@ impl PartialOrd for ArtifactSlotId {
     }
 }
 
-// `version` goes through `version_ord_key` (grammar + raw), not bare `render()` --
-// same residual-`.render()` defect as `ReleaseOperationId::cmp` above; see
-// `version_ord_key`'s doc comment for why bare `render()` breaks the
-// `a.cmp(b) == Equal` iff `a == b` invariant `BTreeSet`/`BTreeMap` require.
+// `version` goes through `version_ord_key`, not bare `render()`, to keep `a.cmp(b) == Equal` iff `a == b`.
 impl Ord for ArtifactSlotId {
     fn cmp(&self, other: &Self) -> Ordering {
         (

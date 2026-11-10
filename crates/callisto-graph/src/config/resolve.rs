@@ -395,11 +395,7 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
         .and_then(|c| c.dir.as_deref())
         .unwrap_or(".changeset");
 
-    // Reject any changesets.dir value that is absolute or contains '..'
-    // components — either would allow load_changesets / atomic_write to
-    // escape the workspace root. We check components() rather than
-    // canonicalizing because the directory may not exist yet (e.g. a fresh
-    // workspace).
+    // Reject an absolute or `..` changesets.dir; check components because the directory may not exist yet.
     let changesets_dir =
         callisto_model::workspace_relative(changesets_dir_str).map_err(|_err| ConfigError::InvalidChangesetsDir {
             dir: changesets_dir_str.to_string(),
@@ -1172,10 +1168,7 @@ mod tests {
     fn resolve_package_config_vec_declaration_order_not_alphabetical_sort() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let root = tmp.path();
-        // npm/foo FIRST in Vec: release-trigger = "auto"
-        // cargo/foo SECOND in Vec: release-trigger = "changeset"
-        // Querying Bare("foo"): pass 1 returns npm/foo (first Prefixed match) -> Some(Auto).
-        // A sorted implementation would return cargo/foo (cargo < npm) -> Some(Changeset).
+        // npm/foo first (auto), cargo/foo second (changeset): Bare("foo") must return the first Prefixed match, not the sorted one.
         fs::write(
             root.join("callisto.toml"),
             "[[package]]\nmatch = \"npm/foo\"\nrelease-trigger = \"auto\"\n\n[[package]]\nmatch = \"cargo/foo\"\nrelease-trigger = \"changeset\"\n",
@@ -1296,8 +1289,7 @@ mod tests {
 
     /// End-to-end: `[[package]] publish-to = ["npm"|"pypi"|"nuget"|"github-release"]`
     /// must actually reach `PackageConfig.publish_to` through the full TOML load path,
-    /// not just through calling `parse_publish_target` directly. Previously only
-    /// "none"/"crates-io" were ever exercised through `load()`.
+    /// not just through calling `parse_publish_target` directly.
     #[test]
     fn package_block_parses_npm_pypi_nuget_github_release_publish_targets() {
         let tmp = tempfile::tempdir().expect("tempdir");

@@ -261,10 +261,7 @@ mod tests {
 
     #[test]
     fn manifest_decl_new_rejects_platform_role_with_cargo_toml_format() {
-        // Platform-role manifests are napi/maturin platform-stub packages
-        // (package.json/pyproject.toml); Cargo.toml is never a Platform
-        // manifest, since Cargo has no equivalent platform-stub-package
-        // convention.
+        // Platform stubs are package.json/pyproject.toml; Cargo.toml is never a Platform manifest.
         let err = ManifestDecl::new(
             "Cargo.toml",
             ManifestRole::Platform {

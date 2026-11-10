@@ -59,10 +59,7 @@ pub fn derive_release_decision<R: callisto_model::CommandRunner, D: DependencyRe
 
     let mut entries = Vec::new();
     for bump in &plan.bumps {
-        // `plan` is contractually derived from this same workspace
-        // observation (see doc comment above), so every bump's package must
-        // already be a key here -- a miss means the plan/workspace pairing
-        // itself is inconsistent, not a recoverable operator condition.
+        // `plan` derives from this observation, so a missing package id means an inconsistent pairing, not an operator error.
         let ids = package_ids
             .get(&bump.package)
             .ok_or_else(|| GraphError::ReleaseInvariant {
@@ -351,10 +348,7 @@ fn release_groups_of<R: callisto_model::CommandRunner, D: DependencyResolver>(
     let groups = &workspace.config.groups;
     let fixed = groups.fixed_of.iter().map(|(member, group)| ("fixed", member, group));
     let linked = groups.linked_of.iter().map(|(member, group)| ("linked", member, group));
-    // `member` keys are already canonical (`GroupTable::resolve` resolved
-    // them through `IdentityIndex::resolve`), so exact equality is correct
-    // here -- `PackageId::matches` would treat a Bare member key as an
-    // ecosystem wildcard and could match a same-named package elsewhere.
+    // Member keys are canonical, so compare exactly; `PackageId::matches` would treat a Bare key as an ecosystem wildcard.
     fixed
         .chain(linked)
         .filter(|(_, member, _)| **member == package.id)
@@ -440,10 +434,7 @@ fn require_version_commit_shape<R: CommandRunner, D: DependencyResolver>(
 ) -> Result<(), GraphError> {
     let changeset_dir = normalized_git_path(&workspace.config.changesets_dir)?;
 
-    // The decision must be freshly authored as part of *this* commit, not a
-    // stale leftover an earlier release already committed and this one never
-    // touched -- otherwise a commit that changes nothing real could still
-    // carry forward a prior, unrelated decision's authority.
+    // The decision must be written by this commit, not left over from an earlier release.
     let decision_freshly_written = changed
         .iter()
         .any(|(status, path)| path == decision_path && matches!(status.as_str(), "A" | "M"));
@@ -454,10 +445,7 @@ fn require_version_commit_shape<R: CommandRunner, D: DependencyResolver>(
         });
     }
 
-    // A cheap, independent sanity check that this commit is a real version
-    // application and not just a hand-crafted decision file: some real
-    // changeset was actually consumed. The decision's own entries, not this
-    // changeset's content, remain the sole authority verified below.
+    // Sanity check that a changeset was consumed; the decision's own entries stay the authority.
     let consumed_a_changeset = changed
         .iter()
         .any(|(status, path)| status == "D" && is_changeset_path(path, &changeset_dir));
@@ -527,14 +515,7 @@ fn require_manifests_match_decision<R: CommandRunner, D: DependencyResolver>(
         .filter_map(|(status, path)| matches!(status.as_str(), "A" | "M").then_some(path.as_str()))
         .collect::<std::collections::BTreeSet<_>>();
 
-    // Every canonical manifest path this workspace currently declares, in
-    // the exact order `workspace.graph.packages()` and
-    // `Package::canonical_manifests()` yield -- both are backed by ordered
-    // (`BTreeMap`/`Vec`) storage with no interior mutation between calls, so
-    // the second traversal below visits the same (package, manifest) pairs
-    // in the same order. That lets it zip the batched `before`/`after`
-    // results back on by position instead of re-keying by path, which would
-    // misbehave if two packages ever declared an identical manifest path.
+    // Both traversals walk `packages()` and `canonical_manifests()` in the same ordered storage, so batched results zip back by position.
     let manifest_queries: Vec<(String, Ecosystem)> = workspace
         .graph
         .packages()
@@ -778,12 +759,7 @@ fn historical_manifest_error(error: callisto_model::ManifestError) -> GraphError
 
 #[cfg(test)]
 fn parse_manifest_version(source: &str, path: &str, ecosystem: Ecosystem) -> Result<Version, GraphError> {
-    // Every canonical manifest this module ever queries comes from
-    // `Package::canonical_manifests()`, which (per `walk.rs`) only ever
-    // constructs a `Canonical`-role declaration for Cargo.toml/package.json/
-    // pyproject.toml -- the three formats whose ecosystem always has a
-    // `canonical_manifest_format`. A miss here means that upstream
-    // invariant broke, not that this particular manifest is unsupported.
+    // `canonical_manifests()` only builds Canonical decls for formats that have a canonical format; a miss breaks that invariant.
     let format = ecosystem
         .canonical_manifest_format()
         .ok_or_else(|| GraphError::ReleaseInvariant {
@@ -1085,7 +1061,7 @@ mod tests {
     /// `batch_manifest_blobs_at`/`resolve_batch_versions`), kept only so
     /// the two tests below can exercise `parse_manifest_version`'s parsing
     /// rules through a `CommandRunner` + single `git show` fetch, matching
-    /// how they were originally written.
+    /// how a plain manifest read works.
     fn manifest_version_at<R: CommandRunner>(
         runner: &R,
         root: &std::path::Path,

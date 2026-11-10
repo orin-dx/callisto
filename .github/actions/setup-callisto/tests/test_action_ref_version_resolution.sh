@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
-# Regression test for the github.action_ref -> callisto@<version> resolution
-# in scripts/install-callisto.sh: a workflow pinned to
-# `callisto-action@<sha> # callisto@X.Y.Z` (or setup-callisto the same way)
-# must install X.Y.Z, not whatever GitHub Releases calls "latest". Extracts
-# the snippet by real text anchors so this test always exercises the
-# script's current logic.
+# A workflow pinned to `callisto-action@<sha> # callisto@X.Y.Z` must install X.Y.Z, not "latest";
+# the snippet is extracted by text anchors so the test runs the script's current logic.
 set -u
 ACTION_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALL_SCRIPT="$ACTION_DIR/scripts/install-callisto.sh"

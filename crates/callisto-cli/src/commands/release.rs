@@ -485,11 +485,8 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
                 .decision
                 .as_deref()
                 .expect("clap requires --decision alongside --from-release-commit");
-            // The workflow intentionally passes an absolute decision path
-            // from its separately checked-out release source. Git's commit
-            // diff and `git show REV:path` both require a repository-relative
-            // path, so normalize once at the CLI boundary rather than asking
-            // graph code to infer a caller's checkout layout.
+            // Git's diff and `git show REV:path` need a repository-relative path; the workflow passes an absolute one, so
+            // normalize it once here.
             let decision_path = if decision_path.is_absolute() {
                 let decision_path = dunce::canonicalize(decision_path).map_err(|source| CliError::Io {
                     source,

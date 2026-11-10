@@ -306,10 +306,7 @@ mod tests {
 
     #[test]
     fn pre_json_accepts_pep440_initial_versions() {
-        // pre.json files from Python/PyPI workspaces store PEP 440 version
-        // strings (e.g. "0.3.2a1") in initialVersions. parse_pre_json must
-        // accept them; rejecting them would make pre-mode unusable for Python
-        // packages entirely.
+        // PEP 440 strings such as "0.3.2a1" in initialVersions must parse, or pre-mode is unusable for Python.
         let json = r#"{
   "mode": "pre",
   "tag": "beta",

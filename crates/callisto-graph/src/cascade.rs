@@ -111,11 +111,7 @@ pub(crate) fn caret_covers(cur: &Version, new: &Version) -> Result<bool, Grammar
     if new == cur {
         return Ok(true);
     }
-    // Pre-release versions are never covered by a caret range: ^1.2.3 must not
-    // satisfy 1.9.0-alpha.1 even though 1.9.0-alpha.1 > 1.2.3 and they share
-    // the same major. Caret ranges cover stable releases within the allowed
-    // major/minor bounds only; a pre-release of an in-range stable version is
-    // not itself a stable release and must not be treated as covered.
+    // A pre-release is never covered by a caret range (^1.2.3 does not cover 1.9.0-alpha.1).
     if new.is_prerelease() {
         return Ok(false);
     }
@@ -312,11 +308,7 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
                 continue;
             }
 
-            // A member absent from `input.base` was removed from the
-            // workspace but is still listed in the group config. Skip it
-            // rather than let `bump_target` below hit `MissingField` --
-            // mirrors the guard `aggregate::union_fixed`/`union_linked`
-            // already apply before cascade convergence ever starts.
+            // Skip members absent from `input.base`: `bump_target` would hit `MissingField`.
             let mut live_members = Vec::new();
             for id in g.package_members() {
                 if !input.base.contains_key(id) {
@@ -380,23 +372,14 @@ pub fn solve_cascade<D: DependencyResolver>(input: CascadeInput<'_, D>) -> Resul
             }
         }
 
-        // Fixed group convergence -- mirrors the Linked-group block
-        // above but computes each group's shared target via
-        // fixed_group_target instead of taking the max of independently
-        // bumped per-member candidates.
+        // Fixed groups converge on `fixed_group_target`, not the max of per-member candidates.
         for g in input.groups.fixed.values() {
             let max_sev = g.max_severity(&out.severities);
             if max_sev == Severity::None {
                 continue;
             }
 
-            // A member absent from `input.base` was removed from the
-            // workspace but is still listed in the group config. Skip it
-            // rather than let it flow into `out.severities`/`out.targets`,
-            // which `plan_version`'s `pkg_map.get(id).copied().unwrap()`
-            // (built only from live graph packages) would later panic on --
-            // mirrors the guard `aggregate::union_fixed`/`union_linked` and
-            // the Linked-group block above already apply.
+            // Skip members absent from `input.base`: they would reach `out.severities` and panic in `plan_version`.
             let mut live_members = Vec::new();
             for id in g.package_members() {
                 if !input.base.contains_key(id) {

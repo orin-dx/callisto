@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
-# Regression test for the download/extraction format dispatch in
-# scripts/install-callisto.sh. Extracts the actual script body by a real
-# text anchor -- the "# Validate verification mode" comment through the end
-# of the file -- so this test always exercises the file's current real
-# logic; it cannot silently drift from it.
-#
+# Tests the download/extraction format dispatch in scripts/install-callisto.sh, extracted from the "# Validate verification mode" comment to EOF.
 # Version resolution is covered separately; these fixtures supply the resolved tag.
 set -u
 ACTION_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -15,11 +10,8 @@ extract_snippet() {
   sed -n '/# Validate verification mode/,$p' "$INSTALL_SCRIPT"
 }
 
-# Runs the extracted snippet with uname/curl stubbed per test case, and
-# tar/unzip/cargo/cp always stubbed to record invocations into calls_file.
-# GITHUB_WORKSPACE points at an empty temp dir (no Cargo.toml present, so the
-# local-monorepo-build branch is always skipped here) and RUNNER_TEMP /
-# CALLISTO_BIN_DIR / GITHUB_PATH point at temp paths.
+# Runs the snippet with uname/curl stubbed per case and tar/unzip/cargo/cp recording into calls_file;
+# GITHUB_WORKSPACE is an empty temp dir so the local-monorepo build branch is skipped.
 run_case() {
   local uname_s="$1"
   local uname_m="$2"
@@ -149,11 +141,7 @@ else
   echo "PASS test_unknown_os_uses_install_fallback"
 fi
 
-# 5. Download failure -> falls through to the pre-existing cargo-install
-# fallback chain untouched: neither tar nor unzip invoked, cargo install
-# callisto-cli invoked, step still exits 0. Proves the new dispatch (which
-# now runs unconditionally before the if/elif chain) has no side effect on
-# that fallback.
+# 5. Download failure falls through to the cargo-install chain: no tar or unzip, `cargo install callisto-cli` runs, exit 0.
 out=$(run_case "Linux" "x86_64" 1); code=$?
 if [[ $code -ne 0 ]] \
   || [[ "$out" == *"tar -xzf"* ]] \

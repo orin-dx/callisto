@@ -667,10 +667,7 @@ mod tests {
         let forge = intent.operations[2].id().clone();
         let mut state = pending_state(&intent);
 
-        // The model state machine deliberately does not own DAG policy. This
-        // represents a defective executor having recorded tag success before
-        // its publish prerequisite. Eligibility must still fail closed for the
-        // forge operation.
+        // The state machine does not own DAG policy; a tag recorded before its publish must still fail closed for the forge operation.
         publish_operation(&mut state, &tag);
         assert_eq!(state.operation_state(&publish), Some(OperationState::Pending));
         let eligible = eligible_operations(&intent, &state);

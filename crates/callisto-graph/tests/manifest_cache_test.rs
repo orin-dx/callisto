@@ -69,10 +69,8 @@ fn base_versions_reuses_manifests_opened_during_graph_discovery() {
     let locator = IgnoreWalkLocator::new(root);
     let runner = NoopRunner;
 
-    // This counter is process-global (see callisto_manifests::open_call_count).
-    // This test must not run concurrently with other tests in this binary
-    // that also open real manifests, so it is the sole `open()`-exercising
-    // test in this file.
+    // This counter is process-global (see callisto_manifests::open_call_count), so this must stay the sole
+    // `open()`-exercising test in this file.
     callisto_manifests::reset_open_call_count();
 
     let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace should load");

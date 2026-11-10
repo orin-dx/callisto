@@ -1199,10 +1199,7 @@ fn third_path_joins_already_promoted_group() {
 
 #[test]
 fn third_path_joins_already_promoted_group_reverse_iteration_order() {
-    // Same three ecosystems as `third_path_joins_already_promoted_group`, but
-    // path names are chosen so BTreeMap's lexicographic by-path iteration
-    // visits Pypi first, then Npm, then Cargo -- the reverse ecosystem
-    // sequence -- proving the outcome is order-independent.
+    // Same ecosystems, but path order visits Pypi, Npm, Cargo: the outcome must be order-independent.
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path();
     write_pkg(root, "path-a-pypi", Ecosystem::Pypi, "multi2");

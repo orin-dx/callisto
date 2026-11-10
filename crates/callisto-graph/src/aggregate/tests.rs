@@ -12,8 +12,7 @@ use crate::infer::{InferenceOutcome, InferenceWindowSpec, SeverityInference};
 use callisto_fixtures::git::{init_repo, run_git};
 
 /// Direct unit coverage for `apply_pre_major` across all three policy
-/// states, previously only exercised indirectly through full-config
-/// integration tests. `Off` never downgrades; `Conservative` downgrades
+/// states. `Off` never downgrades; `Conservative` downgrades
 /// Major->Minor only; `ConservativeFeat` downgrades both Major->Minor
 /// and Minor->Patch.
 #[test]
@@ -107,9 +106,8 @@ impl CommandRunner for FakeRevParseRunner {
 }
 
 /// Spec: `load_changesets` must include the filename in its error when a changeset file
-/// fails `parse_changeset`. The bare `?` propagation previously produced a
-/// `GraphError::Format(ParseError)` with no path context, making it impossible for a
-/// developer to triage which file caused the failure in a workspace with many changesets.
+/// fails `parse_changeset`. A bare `?` would yield a
+/// `GraphError::Format(ParseError)` with no path, so the failing file could not be triaged.
 #[test]
 fn test_load_changesets_error_includes_filename() {
     let ws_dir = tempfile::tempdir().unwrap();
@@ -254,10 +252,7 @@ fn test_aggregate_scopes_inference_window_to_last_tag() {
     // `tag.forceSignAnnotated` / `tag.gpgSign`).
     run_git(root, &["-c", "tag.gpgSign=false", "tag", "-m", "release", &tag_name]);
 
-    // A commit landing after the tag; a correctly-scoped inference
-    // window must never need to look past `tag_name` to find it, but a
-    // `since: None` (full history) window would happily walk right over
-    // it and beyond, all the way back to the repo root.
+    // A commit after the tag must stay outside a window scoped to `tag_name`; a `since: None` window would reach it.
     std::fs::write(root.join("CHANGES.md"), "more\n").unwrap();
     run_git(root, &["add", "."]);
     run_git(root, &["commit", "-q", "-m", "feat: add changes file"]);
@@ -675,14 +670,7 @@ fn test_aggregate_resolves_since_to_the_tag_commit() {
     );
 }
 
-// Auto so aggregate() invokes inference for callers of this fixture that
-// exercise SeverityInference; trigger itself is irrelevant to the rest.
-//
-// The manifest's format must match `id`'s own ecosystem: `identity_for_all`
-// (and, in production, `ManifestWalkResolver::build`) derives native-name
-// ecosystems from the manifest, not from the id, so a `npm/foo` id with a
-// `Cargo.toml` manifest would register as Cargo and defeat the
-// cross-ecosystem-ambiguity tests this fixture backs.
+// Auto so `aggregate()` runs inference; the manifest format must match `id`'s ecosystem or native-name identity registers the wrong one.
 fn make_pkg(id: PackageId) -> Package {
     let (filename, format) = match id.ecosystem() {
         Some(Ecosystem::Npm) => ("package.json", ManifestFormat::PackageJson),
@@ -960,7 +948,7 @@ fn test_changeset_with_one_unknown_entry_not_consumed() {
 }
 
 /// Spec: when a fixed group in callisto.toml references a package that
-/// no longer exists in the workspace, `union_fixed` must NOT insert
+/// is absent from the workspace, `union_fixed` must NOT insert
 /// the stale member into `agg.severities`. Doing so causes
 /// `bump_target` in `solve_cascade` to call
 /// `input.base.get(stale_id)` -> `None` ->

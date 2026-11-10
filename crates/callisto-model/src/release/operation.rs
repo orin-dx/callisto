@@ -342,14 +342,9 @@ impl PartialOrd for ReleaseOperationId {
     }
 }
 
-// Hand-written rather than derived: `Version` has no `Ord` impl (SemVer and PEP 440
-// aren't comparable via a single total order), so this struct can't `#[derive(Ord)]`
-// directly. `role` delegates to `ReleaseOperationRole`'s own derived `Ord`, which
-// folds in every field of every variant -- including `ArtifactSlotId::attestation_policy`
-// for `ArtifactUpload` -- instead of hand-decomposing it into a lossy sort key.
-// `version` goes through `version_ord_key` (grammar + raw), not bare `render()`: two
-// `Version`s under different grammars can render identically (e.g. `"1.2.3"` is valid
-// both as SemVer and PEP 440), which a `render()`-only key would wrongly fold together.
+// Hand-written: `Version` has no `Ord` (SemVer and PEP 440 share no total order). `role` delegates to
+// `ReleaseOperationRole`'s derived `Ord`; `version` uses `version_ord_key` because one string such as
+// `"1.2.3"` is valid under both grammars, which a `render()`-only key would fold together.
 impl Ord for ReleaseOperationId {
     fn cmp(&self, other: &Self) -> Ordering {
         (&self.package, &self.role, version_ord_key(&self.version)).cmp(&(
@@ -553,14 +548,8 @@ mod tests {
     }
 
     /// Residual instance of the same defect class fixed above for
-    /// `attestation_policy`: `ReleaseOperationId::cmp` used to key on
-    /// `version.render()` alone, dropping `version.grammar()`. The same
-    /// literal string parses under more than one grammar -- `"1.2.3"` is
-    /// valid both as SemVer and PEP 440 -- so two `ReleaseOperationId`s
-    /// that are Eq-distinct only by `Version::grammar` collapsed to
-    /// `Ordering::Equal` under the old `render()`-only `Ord`, violating
-    /// the invariant `BTreeSet`/`BTreeMap` require: `a.cmp(b) == Equal`
-    /// iff `a == b`.
+    /// Two ids differing only by `Version::grammar` (`"1.2.3"` parses under SemVer and PEP 440) must
+    /// stay distinct under `Ord`, as `BTreeSet`/`BTreeMap` require `a.cmp(b) == Equal` iff `a == b`.
     #[test]
     fn operation_ids_differing_only_by_version_grammar_stay_distinct_under_ord() {
         let package = ReleasePackageId::parse("cargo/demo").unwrap();
@@ -594,10 +583,7 @@ mod tests {
         );
         assert_eq!(ids.len(), 2, "BTreeSet must not silently collapse distinct-grammar ids");
 
-        // Sanity check the ordinary case still behaves: several distinct
-        // plain SemVer versions of the same package/role must all survive
-        // as separate BTreeSet entries too, not just the grammar-collision
-        // edge case above.
+        // Several distinct plain SemVer versions of one package/role must also stay separate entries.
         let mut ordinary_ids = BTreeSet::new();
         for raw in ["1.0.0", "1.2.3", "2.0.0", "0.9.9"] {
             let id = ReleaseOperationId::tag(

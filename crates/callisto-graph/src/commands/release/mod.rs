@@ -2,7 +2,7 @@
 //!
 //! This module intentionally takes a root, locator, and runner rather than a
 //! `Workspace`. A workspace caches parsed manifests and config for a normal
-//! command invocation; accepting one here would make a previously observed
+//! command invocation; accepting one here would make an already observed
 //! graph look current after the filesystem changed.
 //!
 //! The split is by responsibility: `derive` turns a decision into an

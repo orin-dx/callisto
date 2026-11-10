@@ -139,15 +139,9 @@ impl ReleaseDecisionV1 {
             return Err(ReleaseDecisionError::DuplicatePackage);
         }
 
-        // A fixed or linked group always converges every member to one
-        // shared target version -- `solve_cascade` guarantees this when a
-        // decision is derived from a version plan. Entries tag their own
-        // group membership via `FixedGroup`/`LinkedGroup` reasons, so this
-        // invariant is checkable from the decision's own content alone, with
-        // no `GroupTable`/workspace-config access needed. Rejecting a
-        // violation here means it also applies to a decision deserialized
-        // from a committed release-decision file (`Deserialize` calls
-        // `new()`), not just one freshly derived from a plan.
+        // A fixed or linked group converges every member to one target version; checking it here
+        // from the entries' own `FixedGroup`/`LinkedGroup` reasons also covers a decision
+        // deserialized from a committed file (`Deserialize` calls `new()`).
         let mut group_targets: BTreeMap<&str, &Version> = BTreeMap::new();
         for entry in &entries {
             for reason in &entry.reasons {

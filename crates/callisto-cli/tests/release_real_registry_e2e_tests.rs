@@ -320,10 +320,8 @@ fn npm_publish_against_a_real_verdaccio_registry_is_retrievable_afterward() {
 
     let (_verdaccio_guard, port) = start_verdaccio(external.path());
 
-    // npm's own configuration, not a callisto registry binding: no
-    // `[registries]` entry exists, so `PreparedRegistryBinding.endpoint`
-    // stays `None` and neither `npm view` nor `npm publish` ever receives a
-    // `--registry` flag from callisto -- both fall through to this file.
+    // npm's own configuration, not a callisto registry binding: no `[registries]` entry exists, so neither
+    // `npm view` nor `npm publish` receives a `--registry` flag from callisto and both fall through to this file.
     fs::write(
         root.join(".npmrc"),
         format!("registry=http://127.0.0.1:{port}/\n//127.0.0.1:{port}/:_authToken=callisto-e2e-test-token\n"),
@@ -575,12 +573,9 @@ fn pypi_publish_against_a_real_pypiserver_registry_is_retrievable_afterward() {
     let outdir = tempfile::tempdir().unwrap();
     let build = pypi_build_argv(root, Path::new(""), outdir.path(), 1_700_000_000).unwrap();
 
-    // `--no-isolation`: production `pypi_build_argv` deliberately omits it (a real release
-    // wants a clean, isolated build), but a plain `python -m build` here would pip-install
-    // `setuptools` from PyPI into a fresh isolated env -- network access CI must not depend on.
-    // The CI venv (see callisto-ci.yml) pre-installs pinned `setuptools`/`wheel`, so building
-    // against it directly, unisolated, needs nothing from the network; `PIP_NO_INDEX=1` makes
-    // that a hard failure instead of a silent fetch if isolation is ever attempted anyway.
+    // `--no-isolation`: production omits it, but an isolated `python -m build` would pip-install `setuptools` from
+    // PyPI, which CI must not depend on. The CI venv pre-installs pinned `setuptools`/`wheel`; `PIP_NO_INDEX=1`
+    // makes an isolation attempt a hard failure instead of a silent fetch.
     let offline_build = Argv {
         program: build.program.clone(),
         args: build
@@ -611,10 +606,8 @@ fn pypi_publish_against_a_real_pypiserver_registry_is_retrievable_afterward() {
         upload.args
     );
 
-    // pypiserver's `-a . -P .` disables authentication entirely, but twine's
-    // own client still refuses to run with no credentials configured at
-    // all -- the package manager's own config, same as npm's dummy
-    // `_authToken` above, not a callisto concern.
+    // pypiserver's `-a . -P .` disables authentication, but twine still refuses to run with no credentials
+    // configured; this is the package manager's own config, like npm's dummy `_authToken` above.
     let uploaded = run_argv(
         &upload,
         &[("TWINE_USERNAME", "callisto-e2e"), ("TWINE_PASSWORD", "callisto-e2e")],
@@ -689,10 +682,8 @@ fn cargo_publish_against_a_real_cargo_http_registry_is_retrievable_afterward() {
     let external = tempfile::tempdir().unwrap();
     let (_registry_guard, port) = start_cargo_http_registry(external.path(), &external.path().join("registry"));
 
-    // No callisto-side registry binding: the key resolves purely through
-    // `.cargo/config.toml`, exactly the loophole this file's module doc
-    // explains. `net.git-fetch-with-cli`: this server's index is dumb-HTTP
-    // git, which libgit2's own client refuses (content-type mismatch).
+    // No callisto-side registry binding: the key resolves through `.cargo/config.toml`. `net.git-fetch-with-cli`:
+    // this server's index is dumb-HTTP git, which libgit2's client refuses (content-type mismatch).
     fs::create_dir_all(root.join(".cargo")).unwrap();
     fs::write(
         root.join(".cargo/config.toml"),

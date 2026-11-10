@@ -247,8 +247,7 @@ fn run_callisto_cli(
 /// corrupted, etc.), `callisto version` must return `Err`, not silently fall back
 /// to normal release mode and consume changesets as if no pre-release was active.
 ///
-/// Previously, `.ok()` swallowed all parse errors and returned `None`, causing
-/// the version command to behave as if no pre.json existed at all.
+/// A swallowed parse error would return `None` and make the command behave as if no pre.json existed.
 #[test]
 fn test_malformed_pre_json_returns_error_not_silent_normal_release() {
     let dir = setup_polyglot_git_repo();

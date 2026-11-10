@@ -11,11 +11,7 @@ use crate::CommitSha;
 
 /// An exact `owner/repo` GitHub repository identity.
 ///
-/// Replaces three previously independent, inconsistent ad hoc validations of
-/// the same concept (a bare `split_once('/')` check with no character-class
-/// restriction, a stricter ASCII-alphanumeric-plus-`-_.` check, and an
-/// entirely unvalidated `format!("{owner}/{repository}")`); every caller now
-/// parses through this single charset rule instead.
+/// Every caller parses through this single charset rule.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
 #[serde(try_from = "String")]
 pub struct GitHubRepository {

@@ -1,5 +1,4 @@
-//! `status --check`'s well-formedness diagnostics -- covers what `validate`
-//! (removed) used to check.
+//! `status --check`'s well-formedness diagnostics, which cover what the removed `validate` reported.
 
 mod common;
 
@@ -106,8 +105,7 @@ fn test_status_check_malformed_changeset_exits_failure() {
 
     callisto_fixtures::scaffold_callisto(&global.cwd);
 
-    // A changeset naming an unknown package -- an Error-severity diagnostic
-    // `validate` used to catch as `UnknownPackage`.
+    // A changeset naming an unknown package: an Error-severity `UnknownPackage` diagnostic.
     let changeset_dir = root.join(".changeset");
     fs::write(
         changeset_dir.join("bad-changeset.md"),

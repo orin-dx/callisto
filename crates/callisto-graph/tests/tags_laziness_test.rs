@@ -1,11 +1,8 @@
 //! Regression test for eager `TagIndex` construction.
 //!
-//! `Workspace::load` used to build the full `TagIndex` unconditionally --
-//! even for callers (e.g. `callisto add`'s non-interactive path, `callisto
-//! init`, `callisto add`'s interactive package-selection step) that never
-//! consult tags at all. `TagIndex::build` spawns `git tag --list`; that
-//! should never happen just because a `Workspace` was loaded, only once
-//! something actually calls `Workspace::tags()`, and at most once.
+//! `Workspace::load` must not build the `TagIndex` eagerly: callers that never consult tags (e.g. `callisto add`'s
+//! non-interactive path, `callisto init`) would pay for `git tag --list`. It runs only once something calls
+//! `Workspace::tags()`, and at most once.
 //!
 //! This test counts `git tag --list` invocations to prove laziness.
 

@@ -70,12 +70,7 @@ runs:
       env:
         INPUT_MODE: ${{ inputs.mode }}
       run: bash "$GITHUB_ACTION_PATH/scripts/validate-mode.sh"
-    # setup-callisto's own steps, called directly rather than through its
-    # `uses:` (both `$/` and an external owner/repo/path@ref resolve against
-    # whichever ref invoked *this* action, not necessarily a real one -- see
-    # setup-callisto/scripts/install-callisto.sh's header). github.action_path
-    # is this action's own checked-out directory, so a sibling-relative path
-    # always uses the same ref this action itself was invoked at.
+    # Calls setup-callisto's script by github.action_path: `uses:` refs resolve against the invoking ref, which may not exist there.
     - name: Install Rust Toolchain & Cache
       if: inputs.setup_callisto == 'true'
       # orin-dx/actions/setup-rust v1.1

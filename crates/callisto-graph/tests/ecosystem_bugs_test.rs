@@ -37,9 +37,8 @@ fn git_init(root: &Path) {
 // ---------------------------------------------------------------------------
 
 /// A workspace containing only a `pyproject.toml` (PEP 621 style) must load
-/// without error. Before the fix, `IdentityResolver::resolve` fell through to
-/// `_ => Err(GraphError::AmbiguousName { name: "unsupported ecosystem", ... })`
-/// for `Ecosystem::Pypi`, crashing `ManifestWalkResolver::build`.
+/// without error: `IdentityResolver::resolve` must handle `Ecosystem::Pypi` rather than return
+/// `GraphError::AmbiguousName { name: "unsupported ecosystem", ... }`.
 #[test]
 fn python_workspace_loads_without_crashing() {
     let tmp = tempfile::tempdir().unwrap();

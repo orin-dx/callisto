@@ -1,17 +1,6 @@
 #!/usr/bin/env bash
-# test_release_pr_contract.sh stubs `callisto` with hand-written camelCase
-# JSON fixtures, so it only proves the script's control flow given already
-# correctly-shaped input -- it structurally cannot catch a mismatch between
-# what the real binary serializes and what this script's `jq` expects. That
-# gap is exactly how a snake_case regression in ReleasePrActionV1 (fields
-# inside a #[serde(rename_all = "camelCase", tag = "kind")] enum are NOT
-# renamed by rename_all -- only the tag is) shipped to production and broke
-# every release run past the first (`gh pr view null`, from `jq -r
-# '.action.pullRequestNumber'` reading a field that didn't exist).
-#
-# This test compiles and calls the real `callisto` binary and asserts the
-# exact `jq` expressions this action's script uses against its real output,
-# for both `release-pr decide` and `release-pr commit-plan`.
+# Runs the real `callisto` binary and asserts this action's `jq` expressions against its output for `release-pr decide` and `commit-plan`.
+# The stubbed contract test cannot catch a mismatch between what the binary serializes and what `jq` reads.
 set -euo pipefail
 
 action_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

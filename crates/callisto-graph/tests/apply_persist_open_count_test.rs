@@ -454,11 +454,8 @@ fn mixed_routing_root_manifest_still_persists_resolver_writes_individually() {
             ),
         })
         .collect();
-    // A plain (non-inherited) `DepWriteTarget::Manifest` rewrite targeting
-    // this SAME physical path is what actually makes this mixed-routing --
-    // `classify_manifest_writes` classifies purely on which write targets a
-    // *plan* contains for a path, not on what the file's on-disk content
-    // could theoretically support.
+    // A plain (non-inherited) `DepWriteTarget::Manifest` rewrite of this SAME path is what makes this mixed-routing:
+    // `classify_manifest_writes` classifies on the write targets a plan holds for a path, not on file content.
     rewrites.push(SpecRewrite {
         key: RewriteKey {
             locator: Default::default(),

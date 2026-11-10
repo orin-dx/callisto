@@ -246,12 +246,7 @@ impl TagIndex {
         rosters.prefetch(git, &wanted);
 
         for pkg in graph.packages() {
-            // `TagTemplate::default_for` is the single source of truth for a
-            // package's default tag template -- matches `release.rs`'s own
-            // `unwrap_or_else(|| callisto_model::TagTemplate::default_for(&package.id))`.
-            // Deliberately not `TagTemplate::parse(&format!("{name}@{{version}}"))`:
-            // `parse` additionally validates git-ref-name legality, which `default_for` does not, and `release.rs`
-            // uses `default_for`, so the two agree on which package names are accepted.
+            // `TagTemplate::default_for` is the source of truth and matches `release.rs`; `parse` adds git-ref legality checks that `default_for` skips.
             let tmpl = pkg
                 .tag_template
                 .clone()
@@ -789,13 +784,7 @@ mod tests {
         );
     }
 
-    // A `glob_compile_count()`-based regression test for this behavior lives
-    // in `tests/tag_glob_cache_count_test.rs`, not here: `GLOB_COMPILE_COUNT`
-    // is a process-global counter, and this module's `--lib` test binary
-    // runs many other, non-`#[serial]` `TagIndex::build`/`matching_tags`
-    // tests concurrently that would race an exact-count assertion (same
-    // hazard `OPEN_CALL_COUNT`/`PERSIST_CALL_COUNT` are isolated from --
-    // see `tests/apply_persist_open_count_test.rs`).
+    // The glob-compile-count test lives in `tests/tag_glob_cache_count_test.rs`: the counter is process-global and would race here.
 
     /// Spec: when the `CommandRunner` returns `Err`, `TagIndex::build` must
     /// propagate that error up

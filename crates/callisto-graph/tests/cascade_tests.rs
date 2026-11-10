@@ -418,11 +418,8 @@ fn test_linked_group_converges_shared_version() {
 
     let outcome = run_cascade(input).unwrap();
 
-    // Linked group syncs release severities across members, and
-    // members converge on a single winning target version (the max of each
-    // member's individually-computed candidate) rather than diverging by
-    // their own base version: pkg-a's candidate is 1.0.1, pkg-b's is 2.0.1,
-    // so both converge on the winner, 2.0.1.
+    // A linked group syncs release severities, and members converge on the max of each member's candidate
+    // (pkg-a 1.0.1, pkg-b 2.0.1), so both land on 2.0.1.
     assert_eq!(outcome.severities.get(&pkg_a), Some(&Severity::Patch));
     assert_eq!(outcome.severities.get(&pkg_b), Some(&Severity::Patch));
     assert_eq!(outcome.targets.get(&pkg_a), Some(&Version::semver(2, 0, 1)));
@@ -528,9 +525,7 @@ fn test_tarjan_scc_detects_cycles() {
 
 #[test]
 fn test_pep440_package_bump_succeeds() {
-    // Regression: bump_target previously always used SemVerVersioning, which
-    // returns Err(BumpError::NotSemVer) for PEP 440 versions. After the fix it
-    // dispatches to Pep440Versioning and produces Ok.
+    // bump_target must dispatch to Pep440Versioning for PEP 440 versions and return Ok.
     let pkg_py = PackageId::parse("my-python-lib").unwrap();
 
     let graph = GraphBuilder::new().package(pkg_py.clone(), |p| p).build().unwrap();
@@ -565,7 +560,7 @@ fn test_pep440_package_bump_succeeds() {
         identity: &IdentityIndex::default(),
     };
 
-    // Before the fix this returns Err because SemVerVersioning rejects PEP 440 versions.
+    // SemVerVersioning would reject PEP 440 versions here.
     let outcome = run_cascade(input).expect("cascade must succeed for a PEP 440 package");
     let target = outcome.targets.get(&pkg_py).expect("target version must be present");
     assert_eq!(

@@ -118,7 +118,7 @@ fn no_hand_rolled_manifest_parsing_outside_model_and_manifests_crates() {
     );
 }
 
-/// Keeps the allowlist honest: an entry naming a file that no longer exists
+/// Keeps the allowlist honest: an entry naming a missing file
 /// (renamed, deleted, or fully migrated) should be removed, not silently
 /// carried forward.
 #[test]
@@ -133,7 +133,6 @@ fn allowlist_entries_reference_files_that_still_exist() {
 }
 
 // --- Typed release errors ------------------------------------------------
-//
 // Enforcement for the `GraphError::ReleaseIntentStale` (E124) struct variant: staleness carries a real
 // `StaleReason`, constructible only from the `commands/release/` module (`StaleReason` itself lives in its `mod.rs`).
 

@@ -32,8 +32,7 @@ fn npm_package_name_returns_none_when_absent() {
 /// than unwrapping. The return type must be `Result<String, _>` so
 /// callers can handle failures without a panic.
 ///
-/// Before the fix the return type is `String`, so the `is_ok()` call
-/// below fails to compile (String has no `is_ok` method).
+/// Compiles only if the return type is a `Result`.
 #[test]
 fn format_json_pretty_returns_result_not_panics() {
     let k = "version".to_string();
@@ -1092,10 +1091,7 @@ fn tab_indentation_is_preserved_after_version_write() {
 
 /// Regression lock for the `npm.rs` half of F4's shared-fingerprint
 /// migration: a `package.json` with CRLF line endings must keep them
-/// across a `write_version` + `persist` round trip. `npm.rs` previously
-/// had its own private `LineEnding` detection/reapply logic (now
-/// migrated onto `crate::common::FormatFingerprint`) but no test ever
-/// exercised the CRLF branch directly.
+/// across a `write_version` + `persist` round trip.
 #[test]
 fn preserves_crlf_line_endings_on_write() {
     let dir = tempdir().unwrap();

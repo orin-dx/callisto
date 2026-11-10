@@ -1,7 +1,7 @@
 //! PyPI's own JSON simple index (PEP 691) answers a version query directly --
 //! 200 with the version present or absent, 404 for an unknown project -- so
-//! durable release observes it over `curl`, never through `pip`, and `release
-//! plan` no longer refuses a PyPI publish target at plan time.
+//! so durable release observes it over `curl`, never through `pip`, and `release plan` accepts a PyPI
+//! publish target at plan time.
 
 use std::{fs, path::Path, process::Command};
 

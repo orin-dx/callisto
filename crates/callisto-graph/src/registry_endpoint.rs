@@ -80,10 +80,7 @@ pub(crate) fn canonical_registry_url(raw: &str) -> Result<RegistryBindingV1, &'s
     if parsed.cannot_be_a_base() || parsed.host_str().is_none() {
         return Err("URL must have an authority");
     }
-    // A registry endpoint receives a credential (`npm --registry`,
-    // `twine --repository-url`, a cargo registry token), so cleartext is a
-    // credential disclosure. There is no loopback exception: a test registry
-    // is reached through the package manager's own configuration instead.
+    // A registry endpoint receives a credential, so cleartext discloses it; no loopback exception.
     if parsed.scheme() != "https" {
         return Err("registry URL scheme must be https");
     }

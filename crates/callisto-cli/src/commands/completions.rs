@@ -25,9 +25,7 @@ pub fn handle(args: CompletionsArgs, _global: &GlobalArgs) -> Result<ExitCode, C
 /// consult `is_hide_set()`, so a plumbing subcommand hidden from `--help`
 /// would otherwise still be offered in shell completions.
 fn visible_only(cmd: &Command) -> Command {
-    // The source command already carries its built-in --help/--version args
-    // (cloned below via `get_arguments`); without disabling auto-injection,
-    // clap's `build()` would add a second --help and panic on the duplicate.
+    // Auto-injected --help/--version would duplicate the cloned args and make clap's `build()` panic.
     // `Command::new` forgets `disable_help_subcommand`, and clap would add `help` back to every level.
     let mut out = Command::new(cmd.get_name().to_owned())
         .disable_help_flag(true)

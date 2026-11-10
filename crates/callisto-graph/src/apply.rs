@@ -102,10 +102,7 @@ pub(crate) fn classify_manifest_writes(plan: &VersionPlan) -> ManifestWriteClass
         }
     }
 
-    // Every path in `resolver_by_path` that isn't also mixed-routed
-    // (present in `excluded`) is safe to batch into one
-    // load/mutate*/persist cycle -- it's written exclusively through
-    // WorkspaceCargoResolver, never through the Manifest trait.
+    // Paths not mixed-routed are written only through WorkspaceCargoResolver, so they batch into one load/mutate/persist cycle.
     let resolver_batched: BTreeMap<PathBuf, ManifestWriteGroup> = resolver_by_path
         .into_iter()
         .filter(|(path, _)| !excluded.contains(path))

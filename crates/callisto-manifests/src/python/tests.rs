@@ -699,10 +699,7 @@ fn poetry_inline_table_caret_dependency_appears_in_dependency_graph() {
 
 #[test]
 fn poetry_dotted_table_dependency_appears_in_dependency_graph() {
-    // Poetry also accepts dotted-table syntax as an alternative to inline
-    // tables -- this parses to a different `toml_edit::Item` variant
-    // (`Item::Table`, not `Item::Value(Value::InlineTable)`) and was
-    // previously unhandled entirely, silently dropping the dependency.
+    // Dotted-table syntax parses to `Item::Table`, not an inline table, and must still appear.
     let dir = tempdir().unwrap();
     let pyproject_path = dir.path().join("pyproject.toml");
     let content = "[tool.poetry]\nname = \"my-app\"\nversion = \"0.1.0\"\n\n[tool.poetry.dependencies]\npython = \"^3.9\"\n\n[tool.poetry.dependencies.upstream-lib]\nversion = \"^1.5\"\n";
@@ -1454,10 +1451,7 @@ fn round_trip_range_with_lte_upper_bound_returns_none() {
 
 #[test]
 fn round_trip_returns_none_for_three_clause_spec() {
-    // A three-clause spec like ">=1.0.0,<2.0.0,!=1.5.0" must not be
-    // silently rewritten — the third clause would be dropped, producing a
-    // semantically different constraint.  round_trip must return None and
-    // leave the decision to the user.
+    // The third clause would be dropped, changing the constraint, so round_trip returns None.
     let spec = make_pypi_spec(">=1.0.0,<2.0.0,!=1.5.0");
     let target = make_pep440_version("1.2.0");
     assert!(round_trip(&spec, &target).is_none());

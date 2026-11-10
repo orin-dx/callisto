@@ -89,10 +89,8 @@ fn setup_poetry_workspace() -> TempDir {
     dir
 }
 
-/// Regression test for the confirmed silent-drop bug: before the fix,
-/// `iter_dependencies` never yielded a `DependencyEntry` for a Poetry
-/// caret/tilde/wildcard spec because the raw PEP 440 parse attempt failed,
-/// so no graph edge was ever created and `pkg-b` never saw `pkg-a`'s bump.
+/// Poetry caret/tilde/wildcard specs must yield a `DependencyEntry` from `iter_dependencies`, so the graph has
+/// an edge and `pkg-b` sees `pkg-a`'s bump.
 /// A major bump on `pkg-a` (1.0.0 -> 2.0.0) falls outside `pkg-b`'s `^1.0`
 /// range (`>=1.0.0,<2.0.0`), so a correctly-wired dependency graph must
 /// cascade a bump onto `pkg-b`.
@@ -219,10 +217,8 @@ fn poetry_dependency_with_no_version_key_does_not_break_discovery() {
     );
 }
 
-/// Regression test for the confirmed silent-mishandling bug: before the fix,
-/// `build_globset` compiled a `!`-prefixed entry as a literal positive glob
-/// that can never match any real path, so the exclusion was silently a
-/// no-op and `excluded-one` was wrongly admitted as a workspace member.
+/// `build_globset` must treat a `!`-prefixed entry as an exclusion, so `excluded-one` is not admitted as a
+/// workspace member.
 #[test]
 fn npm_workspace_negated_glob_excludes_matching_package() {
     let dir = tempfile::tempdir().unwrap();
