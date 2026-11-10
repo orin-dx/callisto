@@ -1,0 +1,107 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M73DZX2M9NM2DPN7W1YAD86M",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-10T19:12:17.773442Z",
+  "branch": "fix/error-envelope",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "crates/callisto-cli/src/cli.rs",
+    "crates/callisto-cli/src/commands/release.rs",
+    "crates/callisto-cli/tests/error_envelope_tests.rs",
+    "crates/callisto-cli/tests/release_pending_contract_tests.rs",
+    "crates/callisto-model/src/release/report.rs",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "22bfeedbd8cc",
+  "checkpoint_transcript_start": 35923,
+  "transcript_lines_at_start": 35923,
+  "compact_transcript_start": 2611,
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 20492,
+    "cache_read_tokens": 4224168,
+    "output_tokens": 4534,
+    "api_call_count": 6,
+    "subagent_tokens": {
+      "input_tokens": 184,
+      "cache_creation_tokens": 171847,
+      "cache_read_tokens": 10697075,
+      "output_tokens": 39085,
+      "api_call_count": 91
+    }
+  },
+  "redaction": {
+    "replacements": 84,
+    "layers": {
+      "betterleaks": 28,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 52,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 228
+  },
+  "summary": {
+    "intent": "Finish and publish the camelCase fields PR (fix/camel-case-fields) while reviewing the result of a parallel 'error-envelope' agent that works on the callisto CLI's release/error envelope output.",
+    "outcome": "Linked trail 177 to the camelCase branch, found PR 498, dumped its diff, and had a courier agent draft the PR body. Reviewed the error-envelope agent's worktree, added a changeset (release-pending-envelope.md) and ran verify.sh. The PASS/FAIL results and final state aren't shown in the transcript.",
+    "learnings": {
+      "repo": [
+        "Callisto is a Rust workspace with crates callisto-cli and callisto-model; CLI behavior lives in crates/callisto-cli/src and the release report model in crates/callisto-model/src/release/report.rs.",
+        "Release contract changes are reflected in docs/specs/release.json and covered by contract tests (release_pending_contract_tests.rs, error_envelope_tests.rs).",
+        "User-facing changes require a changeset file in .changeset/ (e.g. release-pending-envelope.md).",
+        "Agent worktrees live under .claude/worktrees/agent-<id>/ in the repo, and a shared verify.sh script takes a worktree path and emits PASS/FAIL lines."
+      ],
+      "code": [],
+      "workflow": [
+        "Parallel agents (SendMessage/Agent) can be used so that a PR description is written by a courier agent while the main session continues other work.",
+        "`entire trail link <id> --branch <b> --base main --json` links a trail to a branch; the PR number can then be looked up via `gh pr list --head <branch> --json number`.",
+        "Saving `gh pr diff` output to a temp file gives agents a stable artifact to base the PR body on.",
+        "The error-envelope agent found most of its work was already on main, so the review focused on a small remaining diff."
+      ]
+    },
+    "friction": [
+      "A `sleep 3` was needed between trail link and PR lookup, suggesting PR creation/linking is asynchronous.",
+      "The error-envelope task overlapped with work already on main, wasting some agent effort."
+    ],
+    "open_items": [
+      "Verify results from verify.sh on the error-envelope worktree were not captured, so the outcome needs confirmation.",
+      "The error-envelope branch still needs to be committed, pushed and turned into a PR if verification passes.",
+      "The PR 498 body drafted by the courier agent still needs to be applied/reviewed."
+    ]
+  }
+}

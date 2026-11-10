@@ -1,0 +1,18 @@
+{
+  "tool_use_id": "toolu_01365FCacSWdG1rMTvwJyZKg",
+  "agent_id": "a6e0ff37abadc9fe2",
+  "subagent_type": "smith:implementer",
+  "task_description": "Make error codes mean one condition",
+  "files": [
+    "crates/callisto-cli/tests/error_code_hygiene_tests.rs"
+  ],
+  "token_usage": {
+    "input_tokens": 106,
+    "cache_creation_tokens": 124565,
+    "cache_read_tokens": 5098758,
+    "output_tokens": 23410,
+    "api_call_count": 52
+  },
+  "started_at": "2026-11-10T10:59:23.216017-08:00",
+  "completed_at": "2026-11-10T11:09:39.621596-08:00"
+}
