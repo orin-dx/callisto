@@ -638,6 +638,15 @@ pub(crate) fn declares_npm_workspace(dir: &Path) -> Result<bool, LocateError> {
     read_npm_membership(dir).map(|membership| membership.globs.is_some())
 }
 
+/// Whether `dir`'s `package.json` is `private` and holds an npm workspace: a container for scripts and tooling, not a
+/// release unit.
+pub(crate) fn is_private_workspace_root(dir: &Path) -> Result<bool, LocateError> {
+    let Some(content) = read_root_manifest(&dir.join(ManifestFormat::PackageJson.file_name()))? else {
+        return Ok(false);
+    };
+    Ok(callisto_manifests::npm_declares_private(&content) && declares_npm_workspace(dir)?)
+}
+
 /// Whether the uv workspace in `dir` is declared (`[tool.uv.workspace]` in its `pyproject.toml`).
 pub(crate) fn declares_python_workspace(dir: &Path) -> Result<bool, LocateError> {
     read_python_membership(dir).map(|membership| membership.declared)
