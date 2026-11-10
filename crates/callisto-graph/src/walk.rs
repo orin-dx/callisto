@@ -147,7 +147,7 @@ impl ManifestWalkResolver {
         let ctx = OpenContext::for_workspace_root(root)?;
         let mut diagnostics = Vec::new();
 
-        let discovered = discover(root, locator, manifest_cache, &ctx, &mut diagnostics)?;
+        let discovered = discover(root, locator, cfg, manifest_cache, &ctx, &mut diagnostics)?;
         let Identified {
             package_manifest_decls,
             index,
@@ -195,11 +195,29 @@ struct Identified {
 fn discover<L: ProjectLocator>(
     root: &Path,
     locator: &L,
+    cfg: &ResolvedConfig,
     manifest_cache: &RefCell<BTreeMap<PathBuf, Arc<dyn Manifest>>>,
     ctx: &OpenContext<'_>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<Discovered, GraphError> {
-    let (projects, platform_candidates) = locator.projects_and_platform_candidates()?;
+    let (located, platform_candidates) = locator.projects_and_platform_candidates()?;
+
+    // A private npm workspace root only holds scripts and tooling; a `[[package]]` block makes it a package.
+    let mut projects = Vec::with_capacity(located.len());
+    for proj in located {
+        if proj.ecosystem == Ecosystem::Npm
+            && proj.path == Path::new(".")
+            && resolve_package_config(&[(Ecosystem::Npm, proj.id.name())], cfg).is_none()
+            && crate::locate::is_private_workspace_root(root)?
+        {
+            eprintln!(
+                "note: ignored private workspace root `npm/{}` (name it in [[package]] to version it)",
+                proj.id.name()
+            );
+            continue;
+        }
+        projects.push(proj);
+    }
 
     // The locator already parsed each manifest, so reuse `proj.id`.
     let mut by_path: BTreeMap<PathBuf, Vec<(Ecosystem, PackageId)>> = BTreeMap::new();

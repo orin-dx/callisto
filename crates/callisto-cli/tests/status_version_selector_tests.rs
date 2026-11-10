@@ -525,3 +525,42 @@ fn selectors_resolve_the_same_in_a_prerelease_workspace() {
     assert_eq!(status.packages, BTreeSet::from(["cargo/native-core".to_string()]));
     assert_eq!(version.packages, status.packages);
 }
+
+fn add_output(root: &Path, package: &str) -> String {
+    let (exit, stdout, stderr) = run(root, &["add", "--package", package, "--summary", "x"]);
+    assert_ne!(exit, Some(0), "{stdout}{stderr}");
+    format!("{stdout}{stderr}")
+}
+
+#[test]
+fn add_for_a_mistyped_package_suggests_the_closest_workspace_packages() {
+    let dir = workspace(&["lib", "libs", "app"]);
+    cargo_pkg(dir.path(), "lib", "lib", "1.0.0");
+    cargo_pkg(dir.path(), "libs", "libs", "1.0.0");
+    cargo_pkg(dir.path(), "app", "app", "1.0.0");
+    commit(dir.path());
+    let output = add_output(dir.path(), "cargo/LIBB:minor");
+    assert!(output.contains("E102"), "{output}");
+    assert!(output.contains("did you mean `cargo/lib`, `cargo/libs`?"), "{output}");
+    assert!(!output.contains("cargo/app`"), "{output}");
+}
+
+#[test]
+fn add_for_a_package_in_the_wrong_ecosystem_suggests_the_qualified_name() {
+    let dir = workspace(&["lib"]);
+    cargo_pkg(dir.path(), "lib", "lib", "1.0.0");
+    commit(dir.path());
+    let output = add_output(dir.path(), "npm/lib:minor");
+    assert!(output.contains("did you mean `cargo/lib`?"), "{output}");
+}
+
+#[test]
+fn add_for_a_package_nothing_is_close_to_keeps_the_plain_help() {
+    let dir = workspace(&["lib"]);
+    cargo_pkg(dir.path(), "lib", "lib", "1.0.0");
+    commit(dir.path());
+    let output = add_output(dir.path(), "cargo/zebra-crossing:minor");
+    assert!(output.contains("E102"), "{output}");
+    assert!(output.contains("has a manifest callisto discovers."), "{output}");
+    assert!(!output.contains("did you mean"), "{output}");
+}

@@ -84,9 +84,13 @@ pub enum GraphError {
     #[error("package `{id}` was not found in the workspace")]
     #[diagnostic(
         code(E102),
-        help("Check the package's name and ecosystem, or that its directory has a manifest callisto discovers.")
+        help("Check the package's name and ecosystem, or that its directory has a manifest callisto discovers.{hint}")
     )]
-    UnknownPackage { id: PackageId },
+    UnknownPackage {
+        id: PackageId,
+        /// Empty, or a newline and `did you mean ...?` naming the closest workspace packages.
+        hint: String,
+    },
 
     #[error("`{name}` names more than one package: {}", .candidates.iter().map(|c| format!("`{}`", c.display_name())).collect::<Vec<_>>().join(", "))]
     #[diagnostic(
@@ -998,6 +1002,45 @@ pub enum ReleasePreconditionRequirement {
     PythonInterpreterOnPath,
 }
 
+/// Names compare without the ecosystem prefix, so a wrong ecosystem is caught too; a same-ecosystem match ranks first.
+fn did_you_mean(missing: &PackageId, known: impl IntoIterator<Item = PackageId>) -> String {
+    let wanted = missing.name().to_lowercase();
+    let limit = (wanted.chars().count() / 3).max(1);
+    let mut close: Vec<(usize, bool, String)> = known
+        .into_iter()
+        .filter_map(|candidate| {
+            let distance = edit_distance(&wanted, &candidate.name().to_lowercase());
+            let other_ecosystem = missing.ecosystem().is_some() && missing.ecosystem() != candidate.ecosystem();
+            (distance <= limit).then(|| (distance, other_ecosystem, candidate.display_name()))
+        })
+        .collect();
+    close.sort();
+    close.dedup();
+    if close.is_empty() {
+        return String::new();
+    }
+    let names: Vec<String> = close
+        .into_iter()
+        .take(3)
+        .map(|(_, _, name)| format!("`{name}`"))
+        .collect();
+    format!("\ndid you mean {}?", names.join(", "))
+}
+
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut diagonal = std::mem::replace(&mut row[0], i + 1);
+        for (j, cb) in b.iter().enumerate() {
+            let above = row[j + 1];
+            row[j + 1] = (diagonal + usize::from(ca != *cb)).min(above + 1).min(row[j] + 1);
+            diagonal = above;
+        }
+    }
+    row[b.len()]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1195,6 +1238,12 @@ pub enum ConfigError {
 }
 
 impl GraphError {
+    /// E102 for `id`, suggesting up to three of `known` whose names are a small edit away.
+    pub fn unknown_package(id: PackageId, known: impl IntoIterator<Item = PackageId>) -> Self {
+        let hint = did_you_mean(&id, known);
+        Self::UnknownPackage { id, hint }
+    }
+
     /// The one filesystem path this error is about, when it carries it as a structured field.
     pub fn path(&self) -> Option<&std::path::Path> {
         match self {

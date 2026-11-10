@@ -7,7 +7,7 @@ mod membership;
 pub mod root;
 
 pub use ignore_walk::IgnoreWalkLocator;
-pub(crate) use membership::{declares_npm_workspace, declares_python_workspace};
+pub(crate) use membership::{declares_npm_workspace, declares_python_workspace, is_private_workspace_root};
 pub use root::find_workspace_root;
 
 pub trait ProjectLocator: Send + Sync {

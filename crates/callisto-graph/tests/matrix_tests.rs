@@ -119,7 +119,7 @@ fn matrix_unknown_package_errors() {
     };
     let err = matrix(&ws, &opts).unwrap_err();
     match err {
-        callisto_graph::GraphError::UnknownPackage { id } => {
+        callisto_graph::GraphError::UnknownPackage { id, .. } => {
             assert_eq!(id.name(), "does-not-exist");
         }
         other => panic!("expected UnknownPackage, got {other:?}"),
