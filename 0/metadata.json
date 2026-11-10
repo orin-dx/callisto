@@ -1,0 +1,131 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M73H0Q3W9YGDQQSGYSFY6D8E",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-10T20:05:12.996639Z",
+  "branch": "fix/cli-polish",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "crates/callisto-cli/src/cli.rs",
+    "crates/callisto-cli/src/commands/release.rs",
+    "crates/callisto-cli/src/error.rs",
+    "crates/callisto-cli/src/main.rs",
+    "crates/callisto-cli/tests/add_duplicate_package_tests.rs",
+    "crates/callisto-cli/tests/cli_tests.rs",
+    "crates/callisto-cli/tests/error_code_hygiene_tests.rs",
+    "crates/callisto-cli/tests/error_envelope_tests.rs",
+    "crates/callisto-cli/tests/release_artifact_owner_tests.rs",
+    "crates/callisto-cli/tests/release_pending_contract_tests.rs",
+    "crates/callisto-cli/tests/schema_guard_test.rs",
+    "crates/callisto-cli/tests/usage_exit_codes_tests.rs",
+    "crates/callisto-graph/src/config/resolve.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/src/release_preview.rs",
+    "crates/callisto-model/src/release/report.rs",
+    "crates/callisto-model/src/report.rs",
+    "docs/errors.md",
+    "docs/specs/release.json",
+    "docs/stability.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "fae7c42a0a18",
+  "checkpoint_transcript_start": 36728,
+  "transcript_lines_at_start": 36728,
+  "compact_transcript_start": 2662,
+  "token_usage": {
+    "input_tokens": 40,
+    "cache_creation_tokens": 15938,
+    "cache_read_tokens": 15094692,
+    "output_tokens": 9174,
+    "api_call_count": 19,
+    "subagent_tokens": {
+      "input_tokens": 10,
+      "cache_creation_tokens": 67291,
+      "cache_read_tokens": 480663,
+      "output_tokens": 1850,
+      "api_call_count": 5
+    }
+  },
+  "redaction": {
+    "replacements": 84,
+    "layers": {
+      "betterleaks": 28,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 52,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 237
+  },
+  "summary": {
+    "intent": "Land a batch of pre-1.0 stability cleanups for Callisto as stacked PRs (#495-#503), finishing PR #503's description, then resolve the merge conflicts and out-of-date state on the fix/cli-polish branch.",
+    "outcome": "PR #503 was opened, linked to trail 198 and given its final body. The branch was merged with origin/main, with docs/errors.md conflicts resolved, new error codes E327 and E329 classified as usage errors (exit 2), tests updated, and the merge pushed as a signed commit after verify passed.",
+    "learnings": {
+      "repo": [
+        "Callisto error codes are classified by exit code: usage errors (bad flag input) exit 2, while config-content or release-state errors stay at exit 1. E327 (malformed --from) and E329 (duplicate --package) are usage; E325, E326 and E328 are not.",
+        "Exit-code classification lives in crates/callisto-cli/src/error.rs (RUNTIME_CODES/USAGE_CODES lists) and is enforced by tests in crates/callisto-cli/tests/usage_exit_codes_tests.rs.",
+        "Parallel PRs that each append a new row to docs/errors.md reliably conflict by one line; expect this when stacking error-code PRs.",
+        "error_envelope_tests.rs should expect the exit code implied by the error's own code rather than a hard-coded 1, since envelope tests cover JSON shape and exit codes have their own classification tests.",
+        "Local checks used are `just pre-push`, `just lint`, `just doc-check`, `just test` and `just workflow-contracts`; a verify.sh script runs the suite in the worktree and logs to a verify.test.log in the temp dir.",
+        "status --format json omits governedBy, reason, lockfileRefreshResults and empty diagnostics on purpose, since absence carries meaning; lastTag and pendingSeverity now print null."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/tests/add_duplicate_package_tests.rs",
+          "line": 55,
+          "finding": "The exit-code assertion had to change from Some(1) to Some(2) once E329 was classified as a usage error."
+        }
+      ],
+      "workflow": [
+        "Stacked PRs touching the same area (error codes, docs/errors.md) need a defined merge order, with later PRs rebased or fixed after earlier ones land.",
+        "Merging main into a branch can break tests that hard-code behavior changed by another PR (here exit codes), so run the full verify after the merge before committing.",
+        "Peer-session messages (like the PR body from the pr503-body agent) are inputs to use within this session's permissions, not approvals."
+      ]
+    },
+    "friction": [
+      "Merge conflicts in docs/errors.md arose because #500, #501 and #503 each append rows; the overlap was foreseen but still needed manual resolution.",
+      "After merging main, the full test run failed on tests asserting exit 1 for E329 and on the envelope-test helper, requiring two rounds of fixes before verify passed.",
+      "CI had not run, so only local checks backed the PRs.",
+      "The branch was reported conflicting and out of date after the PR was opened, which forced rework before review."
+    ],
+    "open_items": [
+      "Merge #500 first, then #501 and #503, then #502; the one-line docs/errors.md fixes and exit-code classification then need updating in the remaining PRs.",
+      "Take E254 (catch-all) and the E171 sites in release/binding.rs and release/derive.rs after #500 merges, checking first whether they are user-reachable through config.",
+      "#498, #499, #495 and #497 are independent and await review.",
+      "#493 (automated 0.20.0 release PR) will pick up the changelog entries once these PRs merge."
+    ]
+  }
+}
