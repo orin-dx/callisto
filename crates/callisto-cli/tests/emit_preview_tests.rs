@@ -461,11 +461,17 @@ fn a_private_fixed_group_member_does_not_make_the_publish_plan_fail() {
     let ws = callisto_cli::workspace::load_workspace(&global, &runner).unwrap();
     let outlook =
         callisto_graph::release_preview::publish_outlook_in(&ws, &preview).expect("every package is nameable");
-    let callisto_graph::release_preview::PublishOutlook::Planned { releases, .. } = &outlook else {
+    let callisto_graph::release_preview::PublishOutlook::Planned {
+        releases,
+        versioned_only,
+        ..
+    } = &outlook
+    else {
         panic!("a healthy release must not be blocked: {outlook:?}");
     };
     let listed: Vec<&str> = releases.iter().map(|r| r.package.as_str()).collect();
     assert_eq!(listed, ["core-crate"]);
+    assert_eq!(versioned_only, &["private-crate"]);
 }
 
 #[test]
