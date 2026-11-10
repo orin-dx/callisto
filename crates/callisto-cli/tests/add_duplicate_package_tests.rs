@@ -52,7 +52,7 @@ fn a_package_given_twice_is_rejected_and_nothing_is_written() {
     for packages in [["cargo/a:patch", "cargo/a:patch"], ["cargo/a:patch", "cargo/a:major"]] {
         let out = add(root, &packages);
         let stderr = String::from_utf8_lossy(&out.stderr);
-        assert_eq!(out.status.code(), Some(1), "{packages:?}: {stderr}");
+        assert_eq!(out.status.code(), Some(2), "{packages:?}: {stderr}");
         assert!(
             stderr.contains("E329") && stderr.contains("cargo/a"),
             "{packages:?}: {stderr}"

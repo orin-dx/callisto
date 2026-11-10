@@ -171,7 +171,7 @@ fn version_and_snapshot_schemas_validate_nested_serialized_payloads() {
                 ("/bumps/0/to", json!(123)),
                 ("/bumps/0/package", json!({"name": "widget"})),
                 ("/bumps/0/reason/via", json!(false)),
-                ("/bumps/0/reason/dependency_to", json!(["1.3.0"])),
+                ("/bumps/0/reason/dependencyTo", json!(["1.3.0"])),
                 ("/bumps/0/reason/kind", json!("unknownReason")),
             ],
         );
@@ -388,7 +388,7 @@ fn receipt_schema_validates_durable_operations_evidence_and_digests() {
             ("/outcomes/0/outcome/kind", json!("pending")),
             ("/observations/0/observation/evidence/version", json!(130)),
             ("/observations/0/observation/evidence/checksum", json!(["digest"])),
-            ("/observations/1/observation/evidence/peeled_commit", json!(false)),
+            ("/observations/1/observation/evidence/peeledCommit", json!(false)),
         ],
     );
     let mut stdout = payload;
@@ -643,4 +643,222 @@ fn provider_observation_enums_carry_exactly_their_declared_variants() {
             "artifactManifestUnavailable",
         ])
     );
+}
+
+/// Every key at every depth of a user-facing or CI JSON document is camelCase; `serde`'s enum-level `rename_all`
+/// leaves the fields inside struct variants alone, so each key is checked rather than trusting the attribute.
+fn assert_no_snake_case_keys(label: &str, value: &Value) {
+    fn walk(value: &Value, path: &str, offenders: &mut Vec<String>) {
+        match value {
+            Value::Object(map) => {
+                for (key, child) in map {
+                    let at = format!("{path}/{key}");
+                    if key.contains('_') {
+                        offenders.push(at.clone());
+                    }
+                    walk(child, &at, offenders);
+                }
+            }
+            Value::Array(items) => {
+                for (index, child) in items.iter().enumerate() {
+                    walk(child, &format!("{path}/{index}"), offenders);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut offenders = Vec::new();
+    walk(value, "", &mut offenders);
+    assert!(
+        offenders.is_empty(),
+        "{label} has keys containing an underscore: {offenders:?}"
+    );
+}
+
+#[test]
+fn release_preview_json_has_no_snake_case_keys() {
+    use callisto_graph::release_preview::{
+        Change, ChangeKind, ChangeMember, Finding, FindingLevel, PackageRelease, PublishOutlook, PublishTargets,
+        ReleasePreview, UnreleasedChange, RELEASE_PREVIEW_SCHEMA_VERSION,
+    };
+    let member = || ChangeMember {
+        package: "widget".into(),
+        severity: Severity::Minor,
+    };
+    let kinds = [
+        ChangeKind::Changeset {
+            filename: "quiet-widget.md".into(),
+            summary: "s".into(),
+            pr: Some(7),
+        },
+        ChangeKind::Commit {
+            subject: "feat: x".into(),
+            sha: "a".repeat(40),
+            short_sha: "aaaaaaa".into(),
+        },
+        ChangeKind::PeerEscalation {
+            dependency: "core".into(),
+            to: "2.0.0".into(),
+        },
+        ChangeKind::DependencyUpdate {
+            dependency: "core".into(),
+            to: "1.3.0".into(),
+        },
+        ChangeKind::Fallback { reason: bump().reason },
+    ];
+    let planned = PublishOutlook::Planned {
+        releases: vec![PublishTargets {
+            package: "widget".into(),
+            version: "1.3.0".into(),
+            registries: vec!["npm".into()],
+            tag: true,
+            github_release: true,
+            artifacts: 2,
+        }],
+        notes: vec!["n".into()],
+        versioned_only: vec!["private-crate".into()],
+    };
+    let blocked = PublishOutlook::Blocked {
+        code: Some("E100".into()),
+        message: "m".into(),
+    };
+    for publish in [planned, blocked] {
+        let preview = ReleasePreview {
+            schema_version: RELEASE_PREVIEW_SCHEMA_VERSION,
+            packages: vec![PackageRelease {
+                name: "widget".into(),
+                release_id: Some("npm/widget".into()),
+                ecosystem: "npm".into(),
+                from: "1.2.3".into(),
+                to: "1.3.0".into(),
+                severity: Severity::Minor,
+                reason: bump().reason,
+            }],
+            changes: kinds
+                .iter()
+                .cloned()
+                .map(|kind| Change {
+                    kind,
+                    members: vec![member()],
+                })
+                .collect(),
+            bystanders: vec!["other".into()],
+            findings: vec![Finding {
+                id: "major-bump".into(),
+                level: FindingLevel::Pause,
+                message: "m".into(),
+                packages: vec!["widget".into()],
+            }],
+            publish: Some(publish),
+            unreleased: vec![UnreleasedChange {
+                package: "widget".into(),
+                files: 3,
+            }],
+        };
+        assert_no_snake_case_keys("release preview", &serde_json::to_value(&preview).unwrap());
+    }
+}
+
+#[test]
+fn bump_reason_variants_in_version_and_status_reports_have_no_snake_case_keys() {
+    let reasons = [
+        json!({"kind": "changeset", "changesets": ["quiet-widget"]}),
+        json!({"kind": "inference", "commits": 2, "remapped": false}),
+        json!({"kind": "fixedGroupUnion", "group": "core"}),
+        json!({"kind": "linkedGroupUnion", "group": "core"}),
+        json!({"kind": "peerEscalation", "via": "cargo/widget-core", "spec": "^1"}),
+        json!({"kind": "preRelease", "tag": "beta"}),
+        json!({"kind": "newGroupMember", "group": "core"}),
+    ];
+    let mut records = vec![bump()];
+    for raw in reasons {
+        let mut record = bump();
+        record.reason = Some(serde_json::from_value(raw).unwrap());
+        records.push(record);
+    }
+    let version = VersionReport {
+        schema_version: 1,
+        bumps: records.clone(),
+        lockfile_refresh_results: None,
+        diagnostics: diagnostics(),
+    };
+    let snapshot = SnapshotReport {
+        schema_version: 1,
+        snapshot_tag: "canary".into(),
+        bumps: records,
+        diagnostics: diagnostics(),
+    };
+    assert_no_snake_case_keys("version report", &serde_json::to_value(version).unwrap());
+    assert_no_snake_case_keys("snapshot report", &serde_json::to_value(snapshot).unwrap());
+}
+
+#[test]
+fn release_receipt_and_provider_evidence_have_no_snake_case_keys() {
+    assert_no_snake_case_keys("release receipt", &serde_json::to_value(receipt()).unwrap());
+    let digest = ArtifactDigest::parse(&"d".repeat(64)).unwrap();
+    for evidence in [
+        ProviderEvidenceV1::RegistryVersion {
+            version: Version::semver(1, 3, 0),
+            checksum: Some(digest.clone()),
+            yanked: Some(false),
+        },
+        ProviderEvidenceV1::GitTag {
+            peeled_commit: CommitSha::parse(&"a".repeat(40)).unwrap(),
+        },
+        ProviderEvidenceV1::ForgeRelease {
+            tag_name: TagName::parse("v1.3.0").unwrap(),
+            draft: false,
+        },
+        ProviderEvidenceV1::ArtifactUpload {
+            byte_length: 6,
+            sha256: digest,
+        },
+    ] {
+        let wire = serde_json::to_value(ProviderObservationV1::Exact { evidence }).unwrap();
+        assert_no_snake_case_keys("provider observation", &wire);
+    }
+}
+
+#[test]
+fn release_operation_roles_have_no_snake_case_keys() {
+    use callisto_model::{ArtifactSlotId, PlatformPackageV1, ReleaseOperationId};
+    let package = ReleasePackageId::parse("cargo/widget-core").unwrap();
+    let version = Version::semver(1, 3, 0);
+    let registry =
+        || RegistryBindingId::new("cratesIo", RegistryBindingDigest::parse(&"b".repeat(64)).unwrap()).unwrap();
+    let slot = ArtifactSlotId::new(
+        package.clone(),
+        version.clone(),
+        "linux-x64",
+        "widget.tar.gz",
+        GitHubRepository::parse("owner/repo").unwrap(),
+        ".github/workflows/release.yml",
+        CommitSha::parse(&"b".repeat(40)).unwrap(),
+    )
+    .unwrap();
+    let platform = PlatformPackageV1::new(
+        ReleasePackageId::parse("npm/widget-linux-x64").unwrap(),
+        "npm/linux-x64",
+    )
+    .unwrap();
+    let ids = [
+        ReleaseOperationId::registry_publish(package.clone(), version.clone(), registry()),
+        ReleaseOperationId::tag(package.clone(), version.clone()),
+        ReleaseOperationId::forge_release(package.clone(), version.clone()),
+        ReleaseOperationId::artifact_upload(slot),
+        ReleaseOperationId::forge_publish(package.clone(), version.clone()),
+        ReleaseOperationId::platform_publish(package, version, registry(), platform),
+    ];
+    for id in ids {
+        let operation = ReleaseOperation::new(id, vec![]).unwrap();
+        assert_no_snake_case_keys("release operation", &serde_json::to_value(operation).unwrap());
+    }
+}
+
+#[test]
+fn snake_case_key_guard_flags_a_nested_underscore() {
+    let caught = std::panic::catch_unwind(|| {
+        assert_no_snake_case_keys("probe", &json!({"a": [{"kind": "x", "short_sha": "y"}]}));
+    });
+    assert!(caught.is_err());
 }
