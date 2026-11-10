@@ -1,0 +1,22 @@
+{
+  "tool_use_id": "toolu_012yquefxeLk62N1y2NtbGZm",
+  "agent_id": "a68476f02ef165c79",
+  "subagent_type": "smith:implementer",
+  "task_description": "Show versioned-not-published",
+  "files": [
+    "crates/callisto-cli/tests/emit_preview_tests.rs",
+    "crates/callisto-graph/src/commands/pr_body.rs",
+    "crates/callisto-graph/src/release_preview.rs",
+    "docs/architecture/versioning.md",
+    "docs/specs/release.json"
+  ],
+  "token_usage": {
+    "input_tokens": 56,
+    "cache_creation_tokens": 96405,
+    "cache_read_tokens": 2220489,
+    "output_tokens": 15456,
+    "api_call_count": 28
+  },
+  "started_at": "2026-11-10T07:53:37.39083-08:00",
+  "completed_at": "2026-11-10T08:01:48.800944-08:00"
+}

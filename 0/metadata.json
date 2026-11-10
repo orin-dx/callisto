@@ -1,0 +1,136 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M7338TT62AFWSRCHPZC11YQT",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-10T16:05:07.834141Z",
+  "branch": "feat/versioned-not-published",
+  "checkpoints_count": 12,
+  "files_touched": [
+    "crates/callisto-cli/tests/emit_preview_tests.rs",
+    "crates/callisto-graph/src/commands/pr_body.rs",
+    "crates/callisto-graph/src/release_preview.rs",
+    "docs/architecture/versioning.md",
+    "docs/specs/release.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "f6631bf48733",
+  "checkpoint_transcript_start": 32745,
+  "transcript_lines_at_start": 32745,
+  "compact_transcript_start": 2390,
+  "token_usage": {
+    "input_tokens": 82,
+    "cache_creation_tokens": 826381,
+    "cache_read_tokens": 15391433,
+    "output_tokens": 37523,
+    "api_call_count": 40,
+    "subagent_tokens": {
+      "input_tokens": 94,
+      "cache_creation_tokens": 249679,
+      "cache_read_tokens": 3302987,
+      "output_tokens": 27649,
+      "api_call_count": 47
+    }
+  },
+  "redaction": {
+    "replacements": 80,
+    "layers": {
+      "betterleaks": 24,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 52,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 212
+  },
+  "summary": {
+    "intent": "Resolve a merge conflict on PR #485, then decide and plan the next Callisto work (did-you-mean for E102, private workspace root handling, showing versioned-but-not-published packages, stale trail cleanup), and execute it in parallel with agent teams.",
+    "outcome": "Resolved and pushed #485, confirmed 0.19.0 released, closed 26 stale trails, and settled the plan. The versioned-not-published implementer's work was reviewed, verified, committed, signed, pushed on feat/versioned-not-published and linked to trail #250; the other two implementers had not yet been reviewed.",
+    "learnings": {
+      "repo": [
+        "Private packages are versioned (bump, changelog, dependents) but never published; they are excluded from the 'Merging will publish' table. In 0.19.0 callisto-fixtures was versioned with its fixed group while only four crates published.",
+        "WS-DISC-08 already hides a private root package.json with no version that only holds workspaces; a versioned private root is still listed and publish-to=[\"none\"] doesn't hide it (trail #179).",
+        "Release preview schema: PublishOutlook::Planned gained an optional versioned_only field with serde default and skip_serializing_if, so old preview files still load and RELEASE_PREVIEW_SCHEMA_VERSION is unchanged.",
+        "publish_outlook_in uses has_dispatchable_target to split bumped packages into planned vs versioned-only.",
+        "Changesets are written in a layered shape (what changed, why it helps, what to do), routed through the courier agent when the plugin update lands, and checked by a fresh reader.",
+        "Verification chain per PR: pre-push, lint, doc-check, test and full `just workflow-contracts`, checked by exit code, plus a real run of the built binary in a scratch worktree.",
+        "Several full-suite tests (init unsupported workspace, lifecycle e2e, pnpm/uv native resolution) need network or uv cache and fail in the sandbox."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/release_preview.rs",
+          "finding": "PublishOutlook::Planned carries versioned_only: Vec<String>; publish_outlook_in loops over preview.packages once, and a Blocked outlook passes through untouched."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/pr_body.rs",
+          "finding": "publish_section renders the 'Versioned, not published' line right after the publish table, before the _note_ lines. The line also appears alone when nothing publishes."
+        },
+        {
+          "path": "docs/specs/release.json",
+          "finding": "REL-PR-10 now describes the versioned-not-published line, including the nothing-publishes case."
+        }
+      ],
+      "workflow": [
+        "Run the pairwise overlap check between parallel branches before pushing, and keep one open PR at a time while reviews are pending.",
+        "Mutation check (remove the fix, confirm the test fails, restore) gives red-then-green evidence.",
+        "Subagent reports are not trustworthy as-is: re-run verification, review the diff and re-run unconfirmed failures outside the sandbox before pushing.",
+        "Clean up merged worktrees and branches after confirming the tip is in origin/main.",
+        "Searching the web for industry practice yielded thin results; mark what is confirmed versus unconfirmed instead of claiming a default.",
+        "Closing trails is reversible via `entire trail update N --status open`."
+      ]
+    },
+    "friction": [
+      "Overlap check was run after pushing parallel PRs, which produced the conflict on #485.",
+      "Stale branches and worktrees accumulated while new PRs were opened.",
+      "Web searches did not confirm whether Changesets, Lerna or Nx skip private workspace roots by default.",
+      "Subagent's `git switch -c` appeared to create a branch but left it on the old one.",
+      "Four tests failed in the sandbox from network denial and uv cache problems, and the subagent lost the exit code of the --no-fail-fast run.",
+      "The user repeatedly had to ask for a firm recommendation instead of a survey of options."
+    ],
+    "open_items": [
+      "Review and verify the other two implementers (did-you-mean for E102, private workspace root skip) before pushing; do the pairwise overlap check across all three branches.",
+      "Run the full test suite outside the sandbox to confirm the four failing tests also fail or pass on main.",
+      "Decide whether the versioned-only line goes before or after the _note_ lines.",
+      "Check done-when on outcome trails #173, #176, #177, #178, #233, #237, #245, #246 and #198 before closing them.",
+      "Close #152 with the 'no soft changeset lint' decision recorded, and update trail #179 with the private-root decision.",
+      "Trails #180 (first real release check), #247 (0.18/0.19 timings), #162 and #250 still have follow-ups.",
+      "The private-root rule (skip unless named in [[package]], with a status note) still needs the user's explicit go.",
+      "ADR 12 (shared tag across a group) deferred pending a design decision.",
+      "Possible follow-up: mark private rows as 'not published' in the summary table if the new line reads ambiguously.",
+      "Write the plan to .claude/plans/ so it survives a context reset (offered, not confirmed).",
+      "The user needs to delete #484's remote branch and handle the unused wisp-plugins worktree."
+    ]
+  }
+}
