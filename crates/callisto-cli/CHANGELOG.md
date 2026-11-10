@@ -1,5 +1,45 @@
 # callisto-cli
 
+## 0.19.0
+
+_2026-11-10 · [compare](https://github.com/orin-dx/callisto/compare/callisto@0.18.0...callisto@0.19.0)_
+
+### Minor Changes
+
+- The release PR now links each change to the pull request that introduced it. The link, such as `#123`, sits next to the change, so you can open the discussion and review behind a line without searching for it.
+- Changelogs group each release's changes by bump, so they are easier to scan.
+
+  - Major, Minor and Patch Changes headings
+  - The release date, plus a link to compare with the previous version when the GitHub repository is known
+  - A package with no changes of its own, released only because its fixed or linked group was, gets one line saying so
+
+  **Upgrading**
+  - To keep the old single list, set `layout = "flat"` under `[changelog]` in `callisto.toml`.
+- The release PR tells you what to expect before you merge.
+
+  **What you see**
+  - Changes grouped under Major, Minor and Patch, each titled by its first line instead of its file name, with long notes collapsed into an expandable block
+  - A "Read before merging" block listing `Breaking:` and `Action:` notes, a `Breaking:` note whose bump is too low, and packages that changed but are not in this release
+  - Where merging will publish each package, with a warning up front if the release would fail, so you find out before merging
+  - Labels such as `callisto: ready`, `blocked` and `bump: minor`, so you can triage without opening the PR
+    - Missing labels are created, and labels that stop applying are removed
+
+  **Scripting**
+  - `callisto version --emit-preview <path>` writes the release as JSON
+  - `compose-pr-body --preview <path>` builds the PR body from that file
+    - Relative paths resolve against `--cwd`
+  - `compose-pr-body --publish-plan` adds the publish section; the release PR action already passes it
+
+  **Upgrading**
+  - Nothing to change. Start a changeset paragraph with `Breaking:` or `Action:` to have it listed.
+
+### Patch Changes
+
+- Relative file flags of `release` and `release-pr` now follow `--cwd`.
+
+  - Before, they resolved against the directory you ran from.
+  - If a script passes relative paths together with `--cwd`, make them relative to that directory or absolute.
+
 ## 0.18.0
 
 - `callisto release plan --artifact-repository` without `--orchestration-revision` no longer fails as a usage error: a source with `[release]` fails with E231, and one without it ignores the flag.
