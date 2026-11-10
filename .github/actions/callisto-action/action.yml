@@ -2,7 +2,7 @@ name: 'Callisto Release-PR Action'
 description: 'Creates or updates a Callisto release PR; durable execution belongs to the repository workflow'
 inputs:
   version_command:
-    description: 'Version command; defaults to callisto version, which refreshes lockfiles. Callisto appends --emit-decision <decision_path>.'
+    description: 'Version command; defaults to callisto version, which refreshes lockfiles. Callisto appends --emit-decision <decision_path>. The value is split on whitespace, so it cannot contain quoted arguments or a path with spaces.'
     required: false
     default: 'callisto version'
   decision_path:

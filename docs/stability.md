@@ -10,7 +10,7 @@ What Callisto promises to keep working from 1.0, and what it does not. A breakin
 | Exit codes | `0` success, `1` failure, `2` usage error. |
 | `--format json` reports | Every report carries `schemaVersion`. Within a version a field is not removed, renamed or retyped; fields may be added. A shape change bumps the version. |
 | `callisto.toml` | A key keeps its meaning. Unknown keys are an error, so a new key arrives in a minor release and never changes an existing file's behavior. |
-| Changesets | The `.changeset/*.md` format and `pre.json` stay compatible with `@changesets/cli` for npm names; other ecosystems use `ecosystem/name` keys. |
+| Changesets | The `.changeset/*.md` format and `pre.json` stay compatible with `@changesets/cli`. The bare package name is the key unless another ecosystem has a package of that name, in which case the key is `ecosystem/name`. |
 | Error codes | A code keeps naming the same condition and is never reused. New codes may appear. |
 | Tag names | `{name}@{version}` by default, `ecosystem/name@{version}` once another ecosystem has a package of that name. Pin a name with `tag-template` if a stable tag matters to your tooling. |
 | The GitHub Actions | The inputs of `callisto-action` and `setup-callisto`. The floating `v1` tag moves only on stable releases; pin a commit for a fixed version. |

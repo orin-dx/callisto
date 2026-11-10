@@ -358,6 +358,10 @@ pub enum CliError {
     #[diagnostic(code(E274), help("pass `--summary \"description\"` alongside `--package`"))]
     AddSummaryRequired,
 
+    #[error("package `{package}` is listed more than once in `--package`")]
+    #[diagnostic(code(E329), help("pass each package once, with the one severity the change needs"))]
+    AddDuplicatePackage { package: String },
+
     #[error("--summary cannot be empty")]
     #[diagnostic(code(E275), help("provide a non-empty description of the change"))]
     AddSummaryEmpty,
@@ -686,6 +690,9 @@ mod tests {
             CliError::AddNoPackagesInWorkspace,
             CliError::AddNoPackagesSelected,
             CliError::AddSummaryRequired,
+            CliError::AddDuplicatePackage {
+                package: "x".to_owned(),
+            },
             CliError::AddSummaryEmpty,
             CliError::VersionEmitDryRun { flag: "emit-decision" },
             CliError::StrictDiagnosticsPresent {

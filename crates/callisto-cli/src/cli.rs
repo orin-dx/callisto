@@ -205,7 +205,7 @@ pub struct VersionArgs {
     /// Skip regenerating lockfiles after applying the version bumps.
     #[arg(long)]
     pub no_refresh_lockfiles: bool,
-    /// Treat warning-level diagnostics as errors.
+    /// Treat warnings as errors, including finding no pending changesets.
     #[arg(long)]
     pub strict: bool,
     /// Allow versioning to proceed even if no changesets are pending.
@@ -246,7 +246,7 @@ pub struct SnapshotArgs {
     /// Tag to append to the snapshot version (e.g. a commit SHA or branch name).
     #[arg(long)]
     pub tag: String,
-    /// Abort if the workspace graph contains error-severity diagnostics.
+    /// Treat warnings as errors (graph errors abort with or without it)
     #[arg(long)]
     pub strict: bool,
 }
@@ -612,6 +612,30 @@ mod tests {
         assert_eq!(
             help_for("check"),
             "Exit 1 if any diagnostic is an error (pending changesets never fail it)"
+        );
+    }
+
+    /// `--strict` help says what it does on each command: escalates warnings (graph errors always abort).
+    #[test]
+    fn version_and_snapshot_strict_help_text_is_exact() {
+        let mut cmd = Cli::command();
+        cmd.build();
+        let help_for = |name: &str| {
+            cmd.get_subcommands()
+                .find(|s| s.get_name() == name)
+                .and_then(|s| s.get_arguments().find(|a| a.get_long() == Some("strict")))
+                .unwrap_or_else(|| panic!("{name} must have --strict"))
+                .get_help()
+                .map(|h| h.to_string())
+                .unwrap_or_default()
+        };
+        assert_eq!(
+            help_for("version"),
+            "Treat warnings as errors, including finding no pending changesets"
+        );
+        assert_eq!(
+            help_for("snapshot"),
+            "Treat warnings as errors (graph errors abort with or without it)"
         );
     }
 
