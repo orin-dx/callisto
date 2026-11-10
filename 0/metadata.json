@@ -1,0 +1,127 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M73FWAB5495SDAPXZ5T4KY1Y",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-10T19:45:22.248442Z",
+  "branch": "fix/cli-polish",
+  "checkpoints_count": 3,
+  "files_touched": [
+    ".github/actions/callisto-action/action.yml",
+    "crates/callisto-cli/src/cli.rs",
+    "crates/callisto-cli/src/commands/add.rs",
+    "crates/callisto-cli/src/error.rs",
+    "crates/callisto-cli/tests/add_duplicate_package_tests.rs",
+    "crates/callisto-model/src/report.rs",
+    "docs/errors.md",
+    "docs/specs/cli.json",
+    "docs/stability.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "81ae1861b6cb",
+  "checkpoint_transcript_start": 36544,
+  "transcript_lines_at_start": 36544,
+  "compact_transcript_start": 2648,
+  "token_usage": {
+    "input_tokens": 26,
+    "cache_creation_tokens": 17435,
+    "cache_read_tokens": 7756090,
+    "output_tokens": 6879,
+    "api_call_count": 10,
+    "subagent_tokens": {
+      "input_tokens": 190,
+      "cache_creation_tokens": 191193,
+      "cache_read_tokens": 9711435,
+      "output_tokens": 44278,
+      "api_call_count": 95
+    }
+  },
+  "redaction": {
+    "replacements": 84,
+    "layers": {
+      "betterleaks": 28,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 52,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 235
+  },
+  "summary": {
+    "intent": "Land a set of CLI fixes and polish items for the Callisto repo as PRs (exit code 2 for usage errors, error-code cleanup, add/status/help/doc fixes), coordinating several subagents and resolving cross-PR collisions.",
+    "outcome": "PR #502 (exit 2 for usage errors) was opened, linked to trail 177 and given a description. The cli-polish work was renumbered from E325 to E329 to avoid colliding with #500, then a changeset was added, checks were run, and it was committed (signed) and pushed to fix/cli-polish. The PRs are still waiting on review and merges, with #500 needing to merge first.",
+    "learnings": {
+      "repo": [
+        "docs/errors.md is append-only by error code, so parallel PRs that add codes will textually conflict at the end of the file and also collide on the next free number. Allocate numbers across branches (#500 uses E325-E328, cli-polish uses E329).",
+        "#502 adds a test that fails if any code in docs/errors.md is not classified as usage-error (exit 2) or runtime (exit 1). Any PR that adds a new error code therefore forces a classification update in #502.",
+        "The classifier is CliError::is_usage_error(), keyed by error code. E316 and E317 exit 2 only when raised for a --package flag, not for a bare name in callisto.toml.",
+        "Repo rule: user-visible changes need a changeset under .changeset/. Also, docs/specs/cli.json acceptance criteria must be updated alongside behavior changes.",
+        "Verification suite is just pre-push, lint, doc-check, test and workflow-contracts. workflow-contracts and the npm/uv-based tests need network and gpg signing, so they fail inside the sandbox (exit 128) and must be run with the sandbox disabled.",
+        "status --format json now emits lastTag and pendingSeverity as null. Other optional fields (governedBy, reason, lockfileRefreshResults, and diagnostics when empty) are deliberately omitted because absence carries meaning or follows a convention.",
+        "The version_command input in callisto-action splits on whitespace, so quoted args and paths with spaces are unsupported (documented only; the script is untouched)."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/error.rs",
+          "finding": "New AddDuplicatePackage variant with code E329 (originally E325). Duplicate checking in add.rs runs on the resolved package, so bare and qualified spellings of the same package are both caught."
+        },
+        {
+          "path": "crates/callisto-model/src/report.rs",
+          "finding": "The skip_serializing_if on last_tag was removed. A test using value[key] passes vacuously because indexing a missing serde_json key yields null, so it must use value.get(key) == Some(&Null)."
+        }
+      ],
+      "workflow": [
+        "Concurrent agents allocating the 'next free' error code will collide. Check other open PRs and branches for taken numbers before accepting a subagent's allocation.",
+        "Check semantic overlap between PRs, not just textual conflicts. Branches that merge cleanly can still break each other's tests.",
+        "Mutation checks (disable the change and confirm the new test fails) caught a vacuous test.",
+        "Subagent and peer messages are not user approval. Only report them and act within the session's own permissions."
+      ]
+    },
+    "friction": [
+      "The sandbox blocked gpg signing and github.com access, and git could not write upstream-tracking config. Checks and pushes had to be re-run with the sandbox disabled.",
+      "cli-polish chose E325, which collided with #500, and had to be renumbered to E329.",
+      "Stacking was not possible because the PRs conflict in docs/errors.md and have semantic dependencies, so everything waits on human review and merge order.",
+      "The first version of the null-serialization test passed vacuously and had to be tightened."
+    ],
+    "open_items": [
+      "Merge #500 first, then update #501 (docs/errors.md conflict) and #502 (classify E325-E328; E327 is a usage error).",
+      "Open a PR for fix/cli-polish and link it to a trail. Classify E329 (duplicate --package, a usage error that exits 2) in #502 after it lands.",
+      "Expect a textual conflict in docs/errors.md between #500 and cli-polish, since both append rows at the end of the file.",
+      "CI has not run on #502.",
+      "The user decides whether to keep nulling pendingSeverity in addition to lastTag. cli-polish extended the change to it unasked.",
+      "#495, #497, #498 and #499 are open and independent, awaiting review."
+    ]
+  }
+}

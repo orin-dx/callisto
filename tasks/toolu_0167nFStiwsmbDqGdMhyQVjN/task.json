@@ -1,0 +1,24 @@
+{
+  "tool_use_id": "toolu_0167nFStiwsmbDqGdMhyQVjN",
+  "agent_id": "a528198a629670004",
+  "subagent_type": "smith:implementer",
+  "task_description": "Pre-1.0 CLI consistency fixes",
+  "files": [
+    ".github/actions/callisto-action/action.yml",
+    "crates/callisto-cli/src/cli.rs",
+    "crates/callisto-cli/src/commands/add.rs",
+    "crates/callisto-cli/tests/add_duplicate_package_tests.rs",
+    "crates/callisto-model/src/report.rs",
+    "docs/specs/cli.json",
+    "docs/stability.md"
+  ],
+  "token_usage": {
+    "input_tokens": 116,
+    "cache_creation_tokens": 145593,
+    "cache_read_tokens": 6244082,
+    "output_tokens": 23302,
+    "api_call_count": 58
+  },
+  "started_at": "2026-11-10T11:27:11.281969-08:00",
+  "completed_at": "2026-11-10T11:42:52.668084-08:00"
+}
