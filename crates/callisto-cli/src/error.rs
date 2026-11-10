@@ -169,6 +169,13 @@ pub enum CliError {
     )]
     ReleaseNoPythonPublishes,
 
+    #[error("`--from` must be a full commit SHA: {reason}")]
+    #[diagnostic(
+        code(E327),
+        help("pass the full 40-character hexadecimal SHA, for example the `source` of an entry from `callisto release pending`")
+    )]
+    ReleasePendingFromInvalid { reason: String },
+
     #[error("release build-python writes build output; remove --dry-run")]
     #[diagnostic(code(E309), help("re-run `callisto release build-python` without --dry-run"))]
     ReleaseBuildPythonDryRun,
