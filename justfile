@@ -28,11 +28,7 @@ test-moon:
     moon run :test
     cargo test --doc --workspace
 
-# Exercise the Release-PR action's real shell block with Git and GitHub API
-# boundaries faked. This proves the script's control flow given a decision
-# shape; it does not call the real `callisto` binary, so it cannot catch a
-# mismatch between what Callisto actually serializes and what this script's
-# jq expressions expect. See test-release-action-binary for that check.
+# Exercise the Release-PR action's shell block with Git and GitHub faked; it never calls the real binary (see test-release-action-binary).
 test-release-action:
     bash .github/actions/callisto-action/tests/test_release_pr_contract.sh
 
@@ -63,19 +59,16 @@ provider-fixtures:
 provider-contract:
     bash testing/refresh-provider-fixtures.sh --check
 
-# Run Clippy lints (warnings treated as errors) as a single workspace invocation.
-# Moon's per-project `cargo clippy -p $project` tasks all lock the same shared
-# target/ dir, so running them one-per-project serializes on Cargo's own build
-# lock instead of parallelizing — a single --workspace invocation lets Cargo's
-# internal job scheduler parallelize across crates instead.
-lint:
+# Reject history words and plain comment blocks over three lines (`comment-block-ok` marks an exception).
+check-comments:
+    bash testing/check-comments.sh
+
+# Clippy as one workspace invocation: moon's per-project runs serialize on cargo's shared target/ lock.
+lint: check-comments
     cargo clippy --workspace --all-targets -- -D warnings
     cargo clippy --workspace --lib --bins -- -D warnings -D clippy::unwrap_used
 
-# Lint only projects affected by changes since the base branch. Uses moon's
-# project graph to find affected crates, then lints them in one cargo
-# invocation (not moon's per-project fan-out) to avoid Cargo's build-lock
-# serialization while still skipping unaffected crates entirely.
+# Lint only moon-affected projects, in one cargo invocation to avoid the build-lock serialization.
 lint-affected:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -133,14 +126,8 @@ fuzz target="parse_package_id":
 doc-check:
     RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace
 
-# Generate code coverage report via cargo-llvm-cov.
-#
-# Optional `threshold`: when set, fails if total line coverage drops below
-# it (--fail-under-lines). The human-readable summary is always emitted
-# before enforcing the threshold: LCOV output itself contains no aggregate
-# percentage, and a failed CI gate must say what developers need to improve.
-# Unset means informational only; `just ci` and CI both call `just coverage 90`,
-# so a CI coverage failure always reproduces locally with the same invocation.
+# Coverage via cargo-llvm-cov; a `threshold` fails below that line coverage, after printing the summary.
+# `just ci` and CI both call `just coverage 90`, so a CI failure reproduces locally.
 coverage threshold="":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -151,12 +138,8 @@ coverage threshold="":
       cargo llvm-cov report --summary-only --fail-under-lines "{{threshold}}"
     fi
 
-# Check per-crate line coverage against a threshold (default 90%). The
-# workspace-total --fail-under-lines gate can pass while a small crate is
-# far below threshold, since a few large crates dominate the total line
-# count -- this catches that case. Requires profile data from a prior
-# `cargo llvm-cov` run in this session (e.g. `just coverage` just ran, or
-# CI's own coverage step ran first); does not re-run tests itself.
+# Per-crate line coverage against a threshold (default 90%): the workspace total can pass while a small crate is far below.
+# Needs profile data from a prior `cargo llvm-cov` run; it does not re-run tests.
 coverage-per-crate threshold="90":
     #!/usr/bin/env bash
     set -euo pipefail

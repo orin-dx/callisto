@@ -283,16 +283,7 @@ where
 
     for cs in loaded {
         let is_already_recorded = is_pre_mode && already_recorded.contains(cs.id.as_str());
-        // Defer adding to `consumed` until after we confirm at least one entry
-        // resolved to a real workspace package. A changeset where every entry
-        // names a removed package must NOT be consumed (which would delete it
-        // on disk); instead, an UnknownPackage diagnostic is emitted and the
-        // file is left for the user to clean up manually.
-        //
-        // A changeset with a MIX of resolved and unresolved entries is ignored
-        // in full, not applied in part: it stays on disk (so it cannot lose the
-        // unresolved entry's bump), and applying its resolved entries every
-        // run would bump those packages again each time while it stays.
+        // Consume a changeset only once an entry resolves; a mixed or fully unresolved one stays on disk and is ignored whole.
         let mut has_unresolved = false;
         let mut resolved = Vec::new();
         for entry in cs.changeset.entries {
@@ -432,13 +423,7 @@ pub(crate) fn union_fixed(
         for m in g.package_members().cloned().collect::<Vec<_>>() {
             let cur = agg.severities.get(&m).copied().unwrap_or(Severity::None);
             if target > cur {
-                // Guard against stale group members: a package listed in the
-                // config group that was subsequently removed from the workspace
-                // must not be inserted into severities.  Doing so causes
-                // `bump_target` in `solve_cascade` to call
-                // `input.base.get(stale_id)` -> `None` ->
-                // `Err(GraphError::Manifest(MissingField))`, which surfaces as
-                // a misleading crash.  Emit a warning instead and skip.
+                // Skip group members absent from the workspace: inserting one would make `bump_target` fail on a missing base version.
                 if !base_versions.contains_key(&m) {
                     agg.diagnostics.push(Diagnostic {
                         code: callisto_model::DiagnosticCode::UnknownPackage,
@@ -479,10 +464,7 @@ pub(crate) fn union_linked(
             continue;
         }
 
-        // Unlike `union_fixed`'s max_severity (over every member), a linked
-        // group's target severity comes only from members a changeset or
-        // inference actually named -- an unnamed sibling's stale leftover
-        // severity from an earlier fixed-point round must not count.
+        // A linked group's target severity comes only from members a changeset or inference named, not stale sibling severities.
         let target_sev = g
             .package_members()
             .filter(|id| agg.named_by.contains_key(*id))

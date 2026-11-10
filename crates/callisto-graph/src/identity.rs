@@ -143,10 +143,7 @@ mod tests {
 
     #[test]
     fn resolve_native_with_fallback_lists_the_candidates_own_native_name_not_the_primary_name() {
-        // The Pypi candidate's stored value is a Cargo-primary package whose
-        // pyproject.toml declares a *different* name ("foo-py") -- the
-        // diagnostic must say "pypi/foo-py" (what Pypi actually calls it),
-        // not "pypi/foo" (this package's unrelated Cargo/primary name).
+        // The diagnostic must say "pypi/foo-py" (the pyproject name), not the Cargo primary name "pypi/foo".
         let mut index = IdentityIndex::default();
         let owner = PackageId::Bare("foo".to_string());
         index
@@ -487,12 +484,7 @@ impl IdentityIndex {
             }
         }
 
-        // Cross-ecosystem fallback: collect unique IDs from other ecosystems,
-        // keeping each candidate's own native name (`n`, the map key) rather
-        // than its owning package's primary name (`id.name()`) -- a
-        // dual-manifest package's manifests can declare different names, and
-        // the diagnostic must name what the *other* ecosystem actually calls
-        // it, not this package's unrelated primary/display name.
+        // Cross-ecosystem fallback: keep each candidate's own native name, since a dual-manifest package's manifests can differ.
         let mut candidates: Vec<(Ecosystem, &str, &PackageId)> = self
             .native
             .iter()
@@ -511,10 +503,7 @@ impl IdentityIndex {
                 diagnostics.push(callisto_model::Diagnostic {
                     code: callisto_model::DiagnosticCode::UnknownPackage,
                     severity: callisto_model::DiagnosticSeverity::Warning,
-                    // No ecosystem-prefix advice here: this name comes from a
-                    // manifest's own dependency field, which cannot carry an
-                    // `eco:name` prefix -- the ambiguity can only be resolved
-                    // by renaming one of the candidates.
+                    // No prefix advice: a dependency field cannot carry `eco:name`, so only renaming resolves it.
                     message: format!(
                         "dependency name `{name}` is ambiguous across ecosystems: {}",
                         candidate_names.join(", "),

@@ -122,14 +122,7 @@ pub fn parse_commit(sha: CommitSha, message: &str) -> ParsedCommit {
         blocks.push(current_block);
     }
 
-    // Collect all contiguous trailing blocks that open with a valid footer
-    // token line.  Per the git trailer specification a paragraph begins a
-    // footer section when its FIRST line matches a footer token pattern
-    // (`Token: value` or `Token #value`); all subsequent non-blank lines in
-    // that same paragraph are continuations and remain part of the footer
-    // even if they do not individually match the token pattern.  Stop as
-    // soon as a block whose first line is not a footer token is encountered
-    // and leave the remaining blocks as body text.
+    // A paragraph opens a footer when its first line matches a footer token; continuations stay in the footer, and a non-footer block ends collection.
     let mut collected_footer_blocks: Vec<Vec<&str>> = Vec::new();
     loop {
         let is_footer_block = blocks
@@ -233,10 +226,7 @@ mod tests {
 
     #[test]
     fn trailing_footer_token_blocks_are_all_parsed_as_footers() {
-        // "Note: ..." is syntactically a valid footer token per the Conventional
-        // Commits spec (token: value).  With the corrected trailing-block
-        // algorithm both the "Note" paragraph and the "Signed-off-by" paragraph
-        // are collected as footer sections; there is no plain-body text.
+        // "Note: ..." is a valid footer token, so both the Note and Signed-off-by paragraphs are footers.
         let sha = CommitSha::parse("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0").unwrap();
         let msg = "feat(api): update endpoint\n\nNote: this is a body paragraph.\n\nSigned-off-by: Developer <dev@example.com>";
         let parsed = parse_commit(sha, msg);
@@ -255,10 +245,7 @@ mod tests {
     #[test]
     fn parse_commit_detects_breaking_change_in_penultimate_block() {
         let sha = CommitSha::parse("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0").unwrap();
-        // The BREAKING CHANGE footer is in the second-to-last paragraph block.
-        // Only "Reviewed-by: someone" is in the final block; the bug causes
-        // BREAKING CHANGE to be treated as body text and the commit to be
-        // classified as non-breaking.
+        // BREAKING CHANGE is in the second-to-last block and must still mark the commit breaking.
         let msg = "feat: something\n\nBody text.\n\nBREAKING CHANGE: api removed\n\nReviewed-by: someone";
         let parsed = parse_commit(sha, msg);
         match parsed {
@@ -433,10 +420,7 @@ mod tests {
                 desc in "[\\x20-\\x7e]+",
             ) {
                 prop_assume!(!desc.is_empty());
-                // The parser calls header.trim() before splitting, so any
-                // leading/trailing ASCII whitespace (0x20) in the description
-                // would be removed.  Exclude those inputs to keep the
-                // invariant tight: what goes in must come out unchanged.
+                // The parser trims the header, so exclude descriptions with edge whitespace.
                 prop_assume!(desc == desc.trim());
                 let msg = format!("{commit_type}: {desc}");
                 let parsed = parse_commit(test_sha(), &msg);

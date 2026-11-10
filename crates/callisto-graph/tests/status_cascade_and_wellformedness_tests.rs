@@ -1,6 +1,5 @@
-//! Pending severity is `plan_version`'s own cascade/fixed-group computation,
-//! not a per-package changeset scan, and `status` covers every well-formedness diagnostic `validate` used to
-//! report.
+//! Pending severity is `plan_version`'s own cascade/fixed-group computation, not a per-package changeset scan,
+//! and `status` covers every well-formedness diagnostic of the removed `validate`.
 
 use std::fs;
 use std::path::Path;
@@ -184,8 +183,8 @@ fn status_pending_severity_is_none_with_no_planned_bump() {
 }
 
 /// A changeset naming a package outside the workspace must surface as
-/// `DiagnosticCode::UnknownPackage` on `status`, exactly as `validate` used to
-/// report it, so `status --check` can gate on it.
+/// `DiagnosticCode::UnknownPackage` on `status`, as the removed `validate` reported it, so `status --check`
+/// can gate on it.
 #[test]
 fn status_reports_unknown_package_diagnostic() {
     let tmp = tempfile::tempdir().unwrap();

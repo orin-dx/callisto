@@ -240,10 +240,8 @@ pub fn release_commit_fixture_with_product_release(product_release: bool) -> (Te
         String::from_utf8_lossy(&version.stderr)
     );
 
-    // `version` writes the reviewed manifest and changelog edits.  The release
-    // PR, rather than an intermediate local command, consumes its exact
-    // changeset when that PR is merged.  Model that merge boundary explicitly:
-    // the parent contains the authority and the merge commit deletes it.
+    // `version` writes the reviewed manifest and changelog edits; the release PR's merge consumes the changeset.
+    // Model that boundary: the parent contains the authority and the merge commit deletes it.
     for entry in fs::read_dir(root.join(".changeset")).unwrap() {
         let path = entry.unwrap().path();
         if path.file_name().is_some_and(|name| name != "README.md")
@@ -728,11 +726,8 @@ pub fn execute_product(
         .expect("product release execute should run")
 }
 
-// ---------------------------------------------------------------------
-// Rig: fake providers that model the real tools, one opt-in knob per
-// audited defect. Every knob defaults to the permissive legacy behaviour so a
-// red test isolates exactly the realism it needs.
-// ---------------------------------------------------------------------
+// Rig: fake providers that model the real tools, one opt-in knob per defect; each knob defaults to the
+// permissive behaviour so a red test isolates exactly the realism it needs.
 
 /// One external command shape the release path may emit, and the flags it may
 /// pass. Anything outside this table is rejected by the fakes, flagged by

@@ -176,7 +176,6 @@ fn write_rejects_name_containing_a_literal_quote() {
 }
 
 /// write_changeset must reject a changeset that has entries but an empty summary.
-/// Before the fix, the AND-gate guard allowed this through silently.
 #[test]
 fn write_rejects_empty_summary_with_entries() {
     let changeset = cs(vec![("cargo/foo", Severity::Patch)], "");

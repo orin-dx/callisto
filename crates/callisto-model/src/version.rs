@@ -59,14 +59,9 @@ impl Version {
                     grammar,
                     message: e.to_string(),
                 })?;
-                // PEP 440 defines multiple equivalent spellings for the same
-                // version (e.g. `1.0.0-alpha1`, `1.0.0_alpha1`, `1.0.0a1`).
-                // Normalize `raw` to pep440_rs's canonical rendering so that
-                // logically-equal inputs produce identical `raw` values, and
-                // therefore compare `==` and hash equal (derived PartialEq/Eq/
-                // Hash include `raw`). SemVer has no analogous normalization
-                // requirement (each version already has one canonical form),
-                // so the caller's literal input is preserved for that grammar.
+                // PEP 440 has many spellings of one version (`1.0.0-alpha1`, `1.0.0a1`); normalize `raw` so
+                // equal inputs compare and hash equal (derived Eq/Hash include `raw`). SemVer has one
+                // canonical form, so the literal input is kept.
                 let canonical = parsed.to_string();
                 Ok(Version {
                     grammar,
@@ -288,10 +283,8 @@ impl VersionReq {
                         grammar,
                         message: e.to_string(),
                     })?;
-                // Normalize raw to pep440_rs's canonical rendering so that
-                // logically-equal specifiers (e.g. ">=1.0.0A1" vs ">=1.0.0a1")
-                // produce identical raw values and therefore compare == and hash
-                // equal (derived PartialEq/Eq/Hash include raw).
+                // Normalize raw to pep440_rs's canonical rendering so equivalent specifiers compare
+                // and hash equal (derived Eq/Hash include raw).
                 let canonical = req.to_string();
                 Ok(VersionReq {
                     grammar,
@@ -607,10 +600,8 @@ mod tests {
 
     #[test]
     fn pep440_post_dev_version_is_not_prerelease() {
-        // PEP 440 orders 1.2.3.post1.dev1 ABOVE 1.2.3 (it is a dev build of a
-        // post-release, not a pre-release of 1.2.3). is_prerelease() returning
-        // true here causes bump() to finalize-in-place to 1.2.3, which is lower
-        // than the input — wrong direction.
+        // PEP 440 orders 1.2.3.post1.dev1 above 1.2.3, so it is not a prerelease; treating it as one
+        // would make bump() finalize down to 1.2.3.
         let v = Version::parse("1.2.3.post1.dev1", VersionGrammar::Pep440).unwrap();
         assert!(
             !v.is_prerelease(),
@@ -620,10 +611,7 @@ mod tests {
 
     #[test]
     fn pep440_version_req_non_canonical_normalizes_for_eq() {
-        // VersionReq::parse stores raw: raw.to_string() (un-normalized) in the
-        // Pep440 arm. Two equivalent specifiers written differently hash/eq
-        // differently, causing silent dedup failures in callers that use
-        // VersionReq as a map key.
+        // Equivalent specifiers written differently must compare equal, or they dedup badly as map keys.
         let upper = VersionReq::parse(">=1.0.0A1", Ecosystem::Pypi).unwrap();
         let lower = VersionReq::parse(">=1.0.0a1", Ecosystem::Pypi).unwrap();
         assert_eq!(
@@ -667,10 +655,7 @@ mod tests {
 
     #[test]
     fn version_compare_errors_on_grammar_mismatch() {
-        // Version::compare's GrammarMismatch path is reachable directly (not
-        // through select_last_tag, which always compares same-grammar
-        // values -- see tag.rs's tests): two Versions parsed under different
-        // grammars can be compared by any caller holding both.
+        // `Version::compare` errors on mixed grammars, reachable by any caller holding both.
         let semver = Version::parse("1.0.0", VersionGrammar::SemVer).unwrap();
         let pep440 = Version::parse("1.0.0", VersionGrammar::Pep440).unwrap();
 

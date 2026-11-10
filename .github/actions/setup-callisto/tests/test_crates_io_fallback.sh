@@ -1,21 +1,10 @@
 #!/usr/bin/env bash
-# Regression test for a real production incident (2026-08-27): consumer CI
-# (orin-dx/michi) failed to install callisto because setup-callisto's
-# fallback chain never tried crates.io -- only a GitHub Release binary
-# tarball (which has no assets attached to any release, always 404s) and
-# `cargo install --git` (broken on main by an unrelated yanked dependency).
-# callisto-cli@0.5.0 was already published and installable from crates.io
-# the whole time. This proves the new crates.io fallback is actually tried,
-# in the right order, with the right args. There is no git-source fallback.
+# The fallback chain must try crates.io, in order and with the right args; there is no git-source fallback.
 set -u
 INSTALL_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/install-callisto.sh"
 
 extract_snippet() {
-  # Starts after the TAG_NAME assignment line -- the caller sets TAG_NAME
-  # directly instead. Uses explicit line numbers, not a `fi`-pattern range,
-  # because the block contains a nested if/elif/fi (OS detection) before the
-  # outer if/elif/elif/else/fi this test targets -- a pattern-based range
-  # would stop at the first (inner) `fi` it finds.
+  # Starts after the TAG_NAME assignment; explicit line numbers because a nested `fi` would end a pattern range early.
   local start end
   start=$(grep -n '# Detect OS platform architecture for pre-built binaries' "$INSTALL_SCRIPT" | head -1 | cut -d: -f1)
   end=$(grep -n 'CALLISTO_BIN_DIR" >> \$GITHUB_PATH' "$INSTALL_SCRIPT" | head -1 | cut -d: -f1)

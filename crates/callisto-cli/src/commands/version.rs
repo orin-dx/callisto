@@ -411,10 +411,8 @@ mod tests {
             &["-c", "tag.gpgSign=false", "tag", "-m", "release", "pkg-alpha@1.0.0"],
         );
 
-        // A feat commit after the tag, with no changeset -- the only way this can produce a
-        // bump is via real commit inference. Inference's pathspecs are scoped to the package's
-        // source directory (aggregate.rs, via changed::package_paths); for this single-package
-        // repo that's the workspace root, so touching Cargo.toml itself is enough to be counted.
+        // A feat commit after the tag with no changeset: the only bump source is commit inference, whose pathspecs
+        // are scoped to the package source dir (the workspace root here), so touching Cargo.toml counts.
         std::fs::write(
             root.join("Cargo.toml"),
             "[package]\nname = \"pkg-alpha\"\nversion = \"1.0.0\"\nedition = \"2021\"\n\

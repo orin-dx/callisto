@@ -64,11 +64,7 @@ impl NapiTargetsIndex {
                     message: e.to_string(),
                 })?;
 
-            // Lenient policy: a malformed `napi.targets` (non-array, or an
-            // array with non-string entries) is treated the same as absent,
-            // not as a hard error -- unlike matrix::read_napi_targets, which
-            // propagates the same shared parser's error instead. See
-            // callisto_manifests::read_napi_targets's doc comment.
+            // Lenient: a malformed `napi.targets` counts as absent, unlike matrix::read_napi_targets which propagates the error.
             if let Some(triples) = callisto_manifests::read_napi_targets(&pkg_json_path, &val)
                 .ok()
                 .flatten()

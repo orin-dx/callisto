@@ -19,8 +19,7 @@ impl CommandRunner for NoopRunner {
 /// When a workspace uses a custom changeset dir (e.g., `releases/`), exiting
 /// pre-release mode must delete `releases/pre.json`, NOT `.changeset/pre.json`.
 ///
-/// Before the fix: `apply_version_plan` hardcodes `.changeset/pre.json`,
-/// so `releases/pre.json` is left on disk and the test fails.
+/// `apply_version_plan` must use the configured changeset dir, not a hardcoded `.changeset/pre.json`.
 #[test]
 fn pre_exit_deletes_pre_json_in_custom_changeset_dir() {
     let dir = tempfile::tempdir().expect("create tempdir");

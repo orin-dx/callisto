@@ -58,10 +58,7 @@ pub fn prepend(
         return Ok(());
     }
 
-    // All three header shapes (blank line after the H1, no blank line, or no
-    // matching H1 at all -- e.g. a casing change, HTML anchor, or package
-    // rename) splice the new entry in identically; only what counts as
-    // "the rest of the file to keep" differs, so compute just that here.
+    // Every header shape splices the new entry the same way; only the rest of the file to keep differs.
     let rest: &str = if let Some(rest) = normalised.strip_prefix(&format!("# {display_name}\n\n")) {
         rest
     } else if let Some(rest) = normalised.strip_prefix(&format!("# {display_name}\n")) {

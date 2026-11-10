@@ -167,11 +167,7 @@ fn workspace_root_manifest_path_normalizes_to_bare_cargo_toml() {
         .unwrap();
     assert_eq!(abs_inheritance.root_manifest, PathBuf::from("Cargo.toml"));
 
-    // Relative-input case: WorkspaceCargoResolver::load's is_absolute()==false
-    // branch delegates directly to workspace_relative(root_manifest_path) with
-    // no other transformation -- asserted directly here (rather than via a
-    // cwd-swapping call to load()) since workspace_relative is the exact,
-    // pure, cwd-independent function that branch calls.
+    // Relative input goes straight to `workspace_relative`, asserted directly since it is cwd-independent.
     assert_eq!(
         callisto_model::workspace_relative(Path::new("Cargo.toml")).unwrap(),
         PathBuf::from("Cargo.toml")
@@ -333,7 +329,7 @@ fn preserves_bom_on_write_round_trip() {
 /// rewritten to bare LF. `toml_edit::DocumentMut::to_string()` always
 /// renders bare-LF text, so `CargoToml` must detect and reapply the
 /// original line ending itself -- exactly the fingerprinting `npm.rs`
-/// and `python.rs` already had (and `cargo.rs` previously lacked).
+/// and `python.rs` do.
 #[test]
 fn preserves_crlf_line_endings_on_write() {
     let dir = tempdir().unwrap();
@@ -540,11 +536,8 @@ fn write_dependency_preserves_comments_around_plain_and_full_table_values() {
 fn write_dependency_preserves_decor_on_inline_table_version() {
     let dir = tempdir().unwrap();
     let manifest_path = dir.path().join("Cargo.toml");
-    // Custom spacing decor around the `version` key/value inside the inline table.
-    // TOML forbids `#` comments inside inline tables, so the fidelity-loss proxy
-    // here is the leading/trailing whitespace decor attached to the version value,
-    // which write_dependency must preserve just like it does for the plain-string
-    // and full-table branches.
+    // TOML forbids `#` comments in inline tables, so whitespace decor around the version
+    // value stands in for them; write_dependency must preserve it.
     let content = "[workspace]\nmembers = [\"crates/*\"]\n\n[workspace.dependencies]\nserde = { version =   \"1.0.0\"  , path = \"../serde\" }\n";
     fs::write(&manifest_path, content).unwrap();
 
@@ -738,11 +731,8 @@ fn a_workspace_version_is_read_with_or_without_a_byte_order_mark_and_bad_input_i
     );
 }
 
-/// Regression lock for F25: `CargoToml` no longer overrides
-/// `publish_targets()` -- it falls through to the `Manifest` trait's
-/// default impl, which dispatches on `ecosystem()` (`Ecosystem::Cargo`
-/// -> `CratesIo`, or `None` when not publishable). This test pins that
-/// dispatch still produces the same output the deleted override did.
+/// `CargoToml` has no `publish_targets()` override: the `Manifest` trait default dispatches on
+/// `ecosystem()` (`Ecosystem::Cargo` -> `CratesIo`, or `None` when not publishable).
 #[test]
 fn publish_targets_uses_trait_default_dispatch_for_cargo() {
     let dir = tempdir().unwrap();
@@ -1131,10 +1121,7 @@ edition = "2021"
     let new_ver = Version::parse("1.1.0", VersionGrammar::SemVer).unwrap();
     manifest.write_version(&new_ver, &permit()).unwrap();
 
-    // Regression lock for the workspace-inherited-version branch:
-    // write_version alone must not touch disk. The member file must
-    // still read exactly as it was originally written -- still
-    // `version.workspace = true`, not yet pinned.
+    // write_version alone must not touch disk: the member file still has `version.workspace = true`.
     let member_before_persist = fs::read_to_string(&member_cargo_path).unwrap();
     assert_eq!(
         member_before_persist, "[package]\nname = \"member-crate\"\nversion.workspace = true\nedition = \"2021\"\n",

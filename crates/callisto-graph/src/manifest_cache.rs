@@ -36,7 +36,7 @@ use std::sync::Arc;
 use callisto_manifests::{open, Manifest, OpenContext};
 use callisto_model::{ManifestDecl, ManifestError};
 
-/// Opens `decl`, reusing a previously opened handle for the same path from
+/// Opens `decl`, reusing an already opened handle for the same path from
 /// `cache` if one exists. Only suitable for read-only access to the
 /// returned handle.
 pub(crate) fn open_cached(

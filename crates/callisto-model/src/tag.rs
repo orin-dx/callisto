@@ -79,17 +79,9 @@ impl TagTemplate {
     }
 
     pub fn render(&self, version: &Version) -> TagName {
-        // Unchecked: `prefix`/`suffix` already passed `is_valid_git_ref_name`
-        // against a `1.0.0` stand-in at `TagTemplate::parse` time (rejecting
-        // a leading `-`, control characters, `..`, `@{`, and per-component
-        // `.lock` suffixes on that literal). `version.render()` is
-        // Callisto's own trusted SemVer/PEP 440 rendering, never
-        // attacker-controlled text, and its first character is always a
-        // digit -- never `-` or a control character. That probe cannot rule
-        // out every conceivable rendered version (for example, build
-        // metadata literally ending in `.lock`), but it does rule out the
-        // flag-injection-relevant leading-`-` and control-character cases
-        // `TagName::parse` exists to catch.
+        // Unchecked: `prefix`/`suffix` passed `is_valid_git_ref_name` at `TagTemplate::parse`, and
+        // `version.render()` is trusted output that starts with a digit, so no leading `-` or control
+        // character can reach `git`.
         TagName::new_unchecked(format!("{}{}{}", self.prefix, version.render(), self.suffix))
     }
 
@@ -134,11 +126,8 @@ fn is_valid_git_ref_name(s: &str) -> bool {
     if s.is_empty() || s.starts_with('/') || s.ends_with('/') || s.contains("//") || s == "@" {
         return false;
     }
-    // Git ref names may legally start with `-`, but every caller in this
-    // codebase passes the rendered name as a bare positional to `git tag`
-    // (or an equivalent CLI), whose argument parser treats a leading `-`
-    // as an option rather than a ref name -- reject it here so a malicious
-    // or accidental `tag-template` can never produce one.
+    // A leading `-` is a legal ref name, but callers pass it as a bare positional to `git tag`,
+    // which reads it as an option; reject it so a `tag-template` can never produce one.
     if s.starts_with('-') {
         return false;
     }
@@ -248,12 +237,8 @@ pub fn select_last_tag<'a>(
         match Version::parse(extracted, grammar) {
             Ok(ver) => {
                 let tag = LastTag {
-                    // Unchecked: `candidate` matched `template`'s
-                    // already-validated prefix/suffix (see
-                    // `TagTemplate::render`'s justification) surrounding
-                    // `extracted`, which just parsed successfully as a
-                    // `grammar` version -- the same trusted, non-`-`-leading
-                    // charset as `Version::render()`.
+                    // Unchecked: `candidate` matched the validated prefix/suffix around a parsed
+                    // version (see `TagTemplate::render`).
                     name: TagName::new_unchecked(candidate.to_string()),
                     version: ver,
                 };
@@ -362,11 +347,8 @@ mod tests {
 
     #[test]
     fn rejects_template_rendering_a_leading_hyphen() {
-        // "-f{version}" renders to "-f1.0.0" for the test-render probe --
-        // git ref names may legally start with `-`, but `git tag`'s CLI
-        // argument parser treats a leading-`-` positional as an option,
-        // so this must be rejected at template-parse time rather than
-        // surfacing as a broken/misinterpreted `git tag` invocation later.
+        // "-f{version}" renders "-f1.0.0", which `git tag` would read as an option, so reject it at
+        // template-parse time.
         let err = TagTemplate::parse("-f{version}").unwrap_err();
         assert!(
             matches!(err, TagTemplateError::InvalidGitRefName { .. }),
@@ -475,11 +457,8 @@ mod tests {
 
     #[test]
     fn tag_name_parse_rejects_leading_hyphen_and_control_characters() {
-        // A leading `-` is a legal Git ref character, but every caller in
-        // this codebase eventually passes a rendered tag name as a bare
-        // positional to `git`/`gh`, whose argument parsers read a
-        // leading-`-` positional as a flag -- reject it here so a malformed
-        // or adversarial tag name can never be read as one.
+        // A leading `-` is legal in a ref name, but callers pass tag names as bare positionals to
+        // `git`/`gh`, which read it as a flag.
         assert!(matches!(
             TagName::parse("-f1.0.0"),
             Err(TagNameError::InvalidGitRefName { .. })
@@ -501,21 +480,14 @@ mod tests {
         assert!(serde_json::from_str::<TagName>("\"-f1.0.0\"").is_err());
     }
 
-    // No test targets select_last_tag's grammar-mismatch Err branch
-    // (tag.version.compare(&prev.version)'s error path, lines 217-221):
-    // Version::compare only errors when the two operands' `.grammar` fields
-    // differ (see version.rs), and select_last_tag parses every candidate
-    // with the single `grammar` parameter passed in -- every Version it
-    // produces necessarily shares that same grammar, so this branch is
-    // unreachable through select_last_tag's own public API. Confirmed by
-    // reading Version::compare directly, not assumed.
+    // No test targets `select_last_tag`'s grammar-mismatch Err branch: `Version::compare` errors only
+    // when grammars differ, and `select_last_tag` parses every candidate with one grammar, so it is
+    // unreachable through the public API.
 
     #[test]
     fn select_last_tag_equal_version_prefers_lexicographically_higher_tag_name() {
-        // SemVer build metadata (the `+...` suffix) is excluded from version
-        // precedence/comparison per spec, so these two distinct tag strings
-        // parse to an EQUAL Version -- a real, naturally-occurring way two
-        // different tags can tie (e.g. two CI builds of the same release).
+        // SemVer build metadata (`+...`) is ignored in precedence, so two distinct tag strings parse
+        // to an equal Version, as with two CI builds of one release.
         let tmpl = TagTemplate::parse("v{version}").unwrap();
 
         // Lexicographically-lower name arrives first: tie-break must still

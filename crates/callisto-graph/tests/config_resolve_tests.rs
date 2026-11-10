@@ -64,8 +64,7 @@ fn write_dual_package(root: &Path, name: &str) {
 /// A `[[linked-group]]` defined in `callisto.toml` must appear in
 /// `ws.config.groups.linked` after `Workspace::load`.
 ///
-/// Before the fix this assertion failed because `GroupTable::resolve` was
-/// never called and `groups` was always `GroupTable::default()` (empty maps).
+/// `GroupTable::resolve` must run during load, so `groups` is not left as `GroupTable::default()`.
 #[test]
 fn linked_group_is_resolved_into_config() {
     let tmp = tempfile::tempdir().expect("tempdir");

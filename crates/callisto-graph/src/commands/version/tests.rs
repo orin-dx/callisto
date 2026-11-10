@@ -711,12 +711,7 @@ fn plan_version_platform_write_from_resolves_cargo_workspace_inherited_version()
     )
     .unwrap();
 
-    // The fixture's on-disk platform manifest target -- a maturin-style
-    // Cargo.toml inheriting its version from [workspace.package]. This is
-    // an ordinary, real, on-disk Cargo.toml; it is NOT registered as a
-    // GroupMember::PlatformManifest by walk.rs (that
-    // classification is npm-only today) -- it is wired into the group
-    // fixture manually below.
+    // Real on-disk platform Cargo.toml inheriting from [workspace.package]; walk.rs registers platform manifests for npm only, so it is wired into the group by hand.
     std::fs::create_dir_all(root.join("platform/plat")).unwrap();
     std::fs::write(
         root.join("platform/plat/Cargo.toml"),
@@ -838,10 +833,7 @@ fn plan_version_emits_platform_write_for_each_of_two_platform_siblings() {
     )
     .unwrap();
 
-    // Second sibling's on-disk manifest target -- real content, read by
-    // plan_version exactly as the first sibling's is, but fixture-wired
-    // into the group below since walk.rs cannot discover a second
-    // Co-located member under the same owner.
+    // Second sibling's manifest; wired into the group by hand since walk.rs cannot discover a second co-located member.
     std::fs::create_dir_all(root.join("crates/hybrid-darwin")).unwrap();
     std::fs::write(
         root.join("crates/hybrid-darwin/package.json"),
@@ -940,11 +932,7 @@ fn plan_version_merges_two_platform_siblings_optional_dep_updates_into_one_entry
     let root = tmp.path();
     git_init_with_commit(root);
 
-    // Real, disk-discovered co-located linux sibling: Cargo.toml and
-    // package.json sharing one directory. The owner's Cargo.toml
-    // declares matching `optional = true` dependencies on BOTH platform
-    // members' npm names, so both siblings should produce a merged
-    // OptionalDepUpdate entry rather than two separate ones.
+    // Disk-discovered co-located linux sibling; the owner's optional deps on both platform members yield one merged OptionalDepUpdate.
     std::fs::create_dir_all(root.join("crates/hybrid")).unwrap();
     std::fs::write(
             root.join("crates/hybrid/Cargo.toml"),
@@ -957,10 +945,7 @@ fn plan_version_merges_two_platform_siblings_optional_dep_updates_into_one_entry
     )
     .unwrap();
 
-    // Second sibling's on-disk manifest target -- real content, read by
-    // plan_version exactly as the first sibling's is, but fixture-wired
-    // into the group below since walk.rs cannot discover a second
-    // Co-located member under the same owner.
+    // Second sibling's manifest; wired into the group by hand since walk.rs cannot discover a second co-located member.
     std::fs::create_dir_all(root.join("crates/hybrid-darwin")).unwrap();
     std::fs::write(
         root.join("crates/hybrid-darwin/package.json"),
@@ -1653,13 +1638,7 @@ fn plan_version_skips_stale_fixed_group_member_instead_of_panicking() {
     )
     .unwrap();
 
-    // No `[[fixed-group]]` in callisto.toml -- `pkg-stale` (below) would
-    // fail `GroupTable::resolve`'s `IdentityIndex` lookup at `Workspace::load`
-    // time if declared there. Instead, the stale-referencing GroupTable is
-    // injected directly onto the loaded workspace's config below, isolating
-    // the scenario this bug is actually about: a group config (by whatever
-    // means it reached this state) naming a package absent from
-    // `ws.graph.packages()` / `base_versions()`.
+    // No `[[fixed-group]]` in callisto.toml (it would fail at load); the stale GroupTable is injected onto the loaded config below.
     std::fs::create_dir_all(root.join(".changeset")).unwrap();
     std::fs::write(
         root.join(".changeset/bump.md"),

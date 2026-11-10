@@ -436,7 +436,7 @@ fn staged_changes_since_resolves_paths_from_a_subdirectory() {
     assert_eq!(changes[0].contents.as_deref(), Some(b"added\n".as_slice()));
 }
 
-/// A worktree file edited again after `git add` no longer matches what is staged; reading it must fail, not
+/// A worktree file edited after `git add` differs from what is staged; reading it must fail, not
 /// silently emit the wrong (unstaged) bytes as staged content.
 #[test]
 fn staged_changes_since_rejects_worktree_content_edited_after_staging() {

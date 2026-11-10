@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# Installs or builds the Callisto binary. Factored out of action.yml so
-# callisto-action's own environment setup can call it directly by path
-# (github.action_path has no ref-ambiguous `uses:` to resolve), instead of
-# duplicating this logic.
+# Installs or builds the Callisto binary; callisto-action calls it directly by path.
 set -euo pipefail
 
 # Install into $RUNNER_TEMP so the binary never lands inside the workspace
@@ -18,13 +15,8 @@ if [[ "$SOURCE" != "auto" && "$SOURCE" != "local" ]]; then
   exit 1
 fi
 
-# With no explicit version override, install the release this action's own
-# invocation is pinned to (GITHUB_ACTION_REF, github.action_ref) rather than
-# whatever is newest, so `callisto-action@<sha> # callisto@X.Y.Z` always
-# installs X.Y.Z. Falls back to true "latest" when the ref is unset (local or
-# unpinned invocation) or matches no published callisto@ tag; a failed tag
-# lookup fails the step. A named ref such as the floating `v1` tag stands for
-# the commit it points at.
+# Without an override, install the release this action's ref is pinned to (`callisto@X.Y.Z`), else the latest;
+# a failed tag lookup fails the step, and a named ref such as `v1` stands for its commit.
 if [[ "$SOURCE" == "auto" && "$TAG_NAME" == "latest" && -n "${GITHUB_ACTION_REF:-}" ]]; then
   if ! remote_tags=$(git ls-remote --tags https://github.com/orin-dx/callisto.git 'callisto@*' "$GITHUB_ACTION_REF"); then
     echo "::error::could not list callisto release tags to resolve action ref $GITHUB_ACTION_REF; set the version input to install a specific release"
@@ -80,18 +72,10 @@ elif [[ -n "$ASSET_NAME" ]]; then
   DOWNLOAD_URL="https://github.com/orin-dx/callisto/releases/download/$TAG_NAME/$ASSET_NAME"
 fi
 
-# Derive a crates.io version spec from TAG_NAME: "latest" installs
-# whatever crates.io resolves as latest (no --version flag); an
-# explicit tag ("callisto@0.5.0" or legacy "callisto-cli@0.5.0")
-# strips either prefix down to the bare semver cargo install expects.
+# "latest" installs whatever crates.io resolves; a tag (`callisto@0.5.0` or `callisto-cli@0.5.0`) is stripped to bare semver.
 CRATE_VERSION="${TAG_NAME#callisto@}"; CRATE_VERSION="${CRATE_VERSION#callisto-cli@}"
 
-# Pick a download destination whose extension matches ASSET_NAME
-# (under $RUNNER_TEMP, never the workspace) so the extraction step
-# below always has an archive it can actually open -- a hardcoded
-# ".tar.gz" path here previously masked the fact that Windows assets
-# are zip files, since tar -xzf can't read a zip regardless of what
-# the file on disk is really named.
+# Download under $RUNNER_TEMP with ASSET_NAME's extension: Windows assets are zip, which tar cannot read.
 case "$ASSET_NAME" in
   *.zip)
     DOWNLOAD_DEST="${RUNNER_TEMP}/callisto.zip"
@@ -104,10 +88,8 @@ case "$ASSET_NAME" in
     ;;
 esac
 
-# A prebuilt asset runs with the job's privileges, so it must carry a
-# GitHub attestation from the Callisto release workflow before it is
-# extracted. require aborts on failure; fallback discards the asset and
-# returns 1 so the crates.io path runs; skip trusts the asset.
+# A prebuilt asset runs with job privileges, so it needs a release-workflow attestation before extraction.
+# require aborts on failure; fallback discards the asset and returns 1; skip trusts it.
 verify_asset() {
   local reason=""
   if [[ "$VERIFICATION" == "skip" ]]; then

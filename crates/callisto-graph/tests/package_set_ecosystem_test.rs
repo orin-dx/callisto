@@ -1,13 +1,9 @@
 //! Tests for ecosystem-prefixed `[[package-set]]` glob matching and the
 //! zero-match diagnostic.
 //!
-//! `PackagePattern`'s doc comment promises that `"cargo:pkg-*"` matches only
-//! Cargo packages, but before the fix `matches()` glob-matched only against
-//! `PackageId::name()`, which never carries an ecosystem prefix -- so every
-//! ecosystem-prefixed `[[package-set]]` rule matched zero packages, silently.
-//! `DiagnosticCode::PackageSetMatchedNothing`
-//! exists specifically to catch this but was never wired up at the walk-time
-//! matching call site.
+//! `PackagePattern`'s doc comment promises that `"cargo:pkg-*"` matches only Cargo packages, so `matches()` must
+//! consider the ecosystem prefix, not just `PackageId::name()`. A rule matching nothing at the walk-time call site
+//! must raise `DiagnosticCode::PackageSetMatchedNothing`.
 
 use std::fs;
 use std::path::Path;

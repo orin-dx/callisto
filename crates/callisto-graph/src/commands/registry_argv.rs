@@ -103,11 +103,7 @@ fn verify_cargo_ondisk_version(
         path: manifest_path.clone(),
         message: error.to_string(),
     })?;
-    // Parse only the [package].version field -- no need for full CST. A
-    // permissive `toml::Value` intermediate rather than a direct `String`
-    // deserialization, because `version.workspace = true` (Cargo's
-    // workspace-version-inheritance syntax) parses `version` as a table, not
-    // a string.
+    // Read `version` via `toml::Value`: `version.workspace = true` makes it a table, not a string.
     let parsed = toml::from_str::<toml::Value>(&contents).map_err(|error| GraphError::ReleaseInputRead {
         path: manifest_path.clone(),
         message: error.to_string(),
@@ -248,10 +244,7 @@ pub fn npm_publish_argv(
                 // cannot be re-read as an option even if a name slipped past
                 // `ReleasePackageId`'s charset rule.
                 format!("--filter={package_name}"),
-                // pnpm >= 7 refuses to publish from a dirty working tree by
-                // default. After `callisto version` stages manifest bumps,
-                // the tree is always dirty until the operator commits, so
-                // this bypasses the git-status check.
+                // pnpm >= 7 refuses a dirty tree, and the tree is dirty after `callisto version` stages bumps.
                 "--no-git-checks".to_string(),
             ],
             workspace_root.to_path_buf(),
@@ -452,10 +445,7 @@ fn extract_retry_after_duration(text_lower: &str) -> Option<Duration> {
 }
 
 fn detect_rate_limit(text_lower: &str) -> Option<RegistryError> {
-    // Match rate-limit signals with context, never on bare digits alone.
-    // Bare "429" in cargo's compressed-size output ("429.1KiB compressed")
-    // would otherwise trigger this. Require at least one contextual phrase
-    // alongside any "429".
+    // Match rate-limit text with context; a bare "429" appears in cargo's size output ("429.1KiB").
     let is_rate_limited = text_lower.contains("too many requests")
         || text_lower.contains("rate limit")
         || text_lower.contains("erate_limit")
@@ -470,11 +460,7 @@ fn detect_rate_limit(text_lower: &str) -> Option<RegistryError> {
 }
 
 fn detect_auth_failure(text_lower: &str, raw_stderr: &CommandOutput) -> Option<RegistryError> {
-    // Match "401"/"403" with context, never on bare digits alone -- same
-    // rationale as detect_rate_limit's guard against bare "429": a byte
-    // count or elapsed-time figure in cargo's own packaging/build output
-    // ("403129 bytes", "elapsed 4013ms") would otherwise misclassify an
-    // unrelated failure as an auth failure.
+    // Match 401/403 with context, like the 429 guard; byte counts and timings contain those digits.
     if (text_lower.contains("401") && text_lower.contains("auth"))
         || (text_lower.contains("403") && (text_lower.contains("auth") || text_lower.contains("forbidden")))
         || text_lower.contains("authentication")

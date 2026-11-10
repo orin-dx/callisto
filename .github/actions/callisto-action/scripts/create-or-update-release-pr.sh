@@ -1,24 +1,11 @@
 #!/usr/bin/env bash
-# Executes a typed Callisto release-PR decision. Forge reads stay here; all
-# create/update policy belongs to `callisto release-pr decide`.
-#
-# The managed branch is never pushed with the Git wire protocol: on a public
-# repository, GITHUB_TOKEN cannot write `.github/workflows/*` that way, nor
-# through createCommitOnBranch's own fileChanges, on any ref (confirmed
-# directly against this repository). Instead, the generated
-# version-bump changes are committed via the forge commit API onto a
-# deterministic staging branch rooted at the current base commit -- which
-# never needs to touch `.github/workflows/*`, since that path is inherited
-# unchanged from the base -- and only then is the managed branch's ref moved
-# onto that commit. A ref move is not itself a write to that path.
+# Executes a typed Callisto release-PR decision; create/update policy belongs to `callisto release-pr decide`.
+# Changes go through the forge commit API onto a staging branch, then the managed ref is moved: GITHUB_TOKEN cannot push `.github/workflows/*` over the Git wire.
 set -euo pipefail
 
 cd "$INPUT_CWD"
 
-# This checkout starts on the configured base. Preserve its exact commit for
-# both observations; the working tree changes below (git add -A) never
-# create a local commit -- the real commit is made remotely, via the forge
-# commit API, on the staging branch.
+# Keep this checkout's base commit for both observations; `git add -A` below never commits locally.
 base_commit=$(git rev-parse HEAD)
 
 # One GitHub 5xx must not strand the release PR until the next push to main: retry transient failures,

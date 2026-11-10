@@ -17,13 +17,9 @@ pub fn is_interactive() -> bool {
 mod tests {
     use super::*;
 
-    // `add` must enter the wizard whenever stdin is
-    // a TTY, regardless of stdout -- guards against a future edit growing a
-    // stdout TTY check into this function. There is no pty harness in this
-    // crate's dev-dependencies to fake a real stdin TTY in-process, so this
-    // pins the source text instead of driving a real subprocess;
-    // `cli_tests.rs`'s `test_add_non_interactive_via_pipe` covers the
-    // reachable negative case (piped stdin -> NotATty).
+    // `add` must enter the wizard whenever stdin is a TTY, regardless of stdout. No pty harness exists to fake a
+    // TTY in-process, so this pins the source text; `cli_tests.rs`'s `test_add_non_interactive_via_pipe` covers
+    // the piped-stdin case.
     #[test]
     fn is_interactive_checks_stdin_only_not_stdout() {
         let needle = ["stdout", "()", ".", "is_terminal"].concat();

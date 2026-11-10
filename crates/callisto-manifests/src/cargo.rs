@@ -340,8 +340,7 @@ pub fn missing_crates_io_metadata(
 /// function has no access to). Shared by the member-manifest
 /// ([`CargoToml::update_dependency_spec`]) and workspace-root
 /// ([`WorkspaceCargoResolver::write_dependency`]) dependency-write paths,
-/// which were previously two copies of this exact three-shape dance,
-/// differing only in which path they report on error.
+/// which share this three-shape dance and differ only in the path they report on error.
 fn set_dependency_version(item: &mut toml_edit::Item, new_str: String) -> Result<(), ()> {
     if let Some(value) = item.as_value_mut() {
         if value.is_str() {
@@ -595,11 +594,8 @@ impl Manifest for CargoToml {
 
     fn write_version(&mut self, v: &Version, _permit: &ApplyPermit) -> Result<(), ManifestError> {
         if self.inherited_version {
-            // The member uses `version.workspace = true` (or `version = { workspace = true }`).
-            // Routing the bump to [workspace.package] would silently change the version for
-            // every other workspace member. Instead, write an explicit pinned version directly
-            // to this member's [package] section, replacing the workspace-inherited entry with
-            // a standalone string value.
+            // Routing the bump to [workspace.package] would change the version of every other member,
+            // so write an explicit pinned version into this member's [package] instead.
             let pkg = self
                 .document
                 .get_mut("package")
@@ -890,12 +886,8 @@ pub fn round_trip(spec: &DepSpec, target: &Version) -> Option<DepSpec> {
                         let rendered = format!("{prefix}{}", render_at_precision(target, rest));
                         rewritten_parts.push(rendered);
                     } else if prefix.starts_with('<') {
-                        // Upper-bound clauses are never rewritten (the clause text
-                        // is preserved verbatim), but we must still check whether
-                        // the target actually falls within it. If it doesn't, the
-                        // rewrite would silently produce an impossible constraint
-                        // (e.g. ">=2.1.0, <2.0.0"), so decline with None. If it
-                        // does, the upper bound clause is passed through unchanged.
+                        // Upper-bound clauses stay verbatim, but a target outside the bound
+                        // would yield an impossible constraint, so decline with None.
                         let bound = Version::parse(rest, target.grammar()).ok()?;
                         let ordering = target.partial_compare(&bound)?;
                         let exceeds_bound = if prefix == "<=" {
@@ -1100,9 +1092,7 @@ impl WorkspaceCargoResolver {
     }
 
     /// Pure in-memory mutation of a `[workspace.dependencies]` entry -- no
-    /// disk I/O. See [`Self::write_version`]'s doc for why this no longer
-    /// persists internally; callers must call [`Self::persist`] explicitly
-    /// afterward.
+    /// disk I/O; callers must call [`Self::persist`] afterward.
     pub fn write_dependency(&mut self, name: &str, new: DepSpec, _permit: &ApplyPermit) -> Result<(), ManifestError> {
         let ws = self
             .document

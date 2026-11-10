@@ -115,11 +115,8 @@ pub(crate) fn identity_from_source(source: &str, path: &Path) -> Result<crate::M
 /// A parsed PEP 508 dependency specifier, e.g.
 /// `"requests[security,socks]>=2.0; python_version >= '3.8'"`.
 ///
-/// Previously decomposed independently at three call sites in this module
-/// (`iter_dependencies`, `update_dependency_spec`,
-/// `update_optional_dependencies`), each hand-rolling the same
-/// marker-split / operator-split / extras-split sequence -- this type is
-/// the single implementation all three now share.
+/// The single implementation shared by `iter_dependencies`, `update_dependency_spec` and
+/// `update_optional_dependencies` for the marker/operator/extras split.
 ///
 /// `render` produces a normalized textual form (no space around `[...]`,
 /// extras comma-joined with no interior space, no space between the
@@ -506,12 +503,8 @@ impl Manifest for PyprojectToml {
                 if name == "python" {
                     continue;
                 }
-                // `as_table_like()` covers both inline tables
-                // (`foo = { version = "^1.2" }`) and dotted-table syntax
-                // (`[tool.poetry.dependencies.foo]` / `version = "^1.2"`),
-                // which parse to different `toml_edit::Item` variants but
-                // must both be recognized, or a dotted-table Poetry
-                // dependency vanishes from the graph.
+                // `as_table_like()` covers inline and dotted tables, which parse to different
+                // `Item` variants; both must be recognized or the dependency vanishes.
                 let raw_req = match item {
                     toml_edit::Item::Value(toml_edit::Value::String(s)) => Some(s.value().as_str()),
                     _ => item
@@ -522,24 +515,17 @@ impl Manifest for PyprojectToml {
 
                 let spec = match raw_req {
                     Some(req_str) => {
-                        // Poetry allows caret/tilde/wildcard syntax on top of
-                        // PEP 440 (e.g. `^1.2`, `~1.2.3`, `1.*`), which
-                        // `pep440_rs` cannot parse directly -- normalize it
-                        // to an equivalent PEP 440 range first.
+                        // Normalize Poetry caret/tilde/wildcard syntax to PEP 440, which
+                        // `pep440_rs` cannot parse directly.
                         let normalized = normalize_poetry_version_spec(req_str);
                         match VersionReq::parse(&normalized, Ecosystem::Pypi) {
                             Ok(spec) => DepSpec::Range(spec, req_str.to_string()),
-                            // Genuinely unrepresentable (syntax this
-                            // normalizer doesn't cover) -- never silently
-                            // drop the dependency; keep it visible in the
-                            // graph as an opaque spec instead.
+                            // Unrepresentable syntax stays visible in the graph as an opaque spec.
                             Err(_) => DepSpec::Opaque(req_str.to_string()),
                         }
                     }
-                    // No `version` key at all -- a path/git/url dependency
-                    // (e.g. `foo = { git = "...", tag = "v1.0" }`) or an
-                    // unrecognized value shape. Still must not silently
-                    // vanish from the graph.
+                    // No `version` key: a path/git/url dependency or unrecognized shape;
+                    // it must still appear in the graph.
                     None => {
                         DepSpec::Opaque("non-versioned dependency (path/git/url or unrecognized shape)".to_string())
                     }

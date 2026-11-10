@@ -50,7 +50,7 @@ fn run_callisto_text(root: &Path, args: &[&str]) -> String {
 }
 
 /// A cascade-driven bump (upstream-crate goes major, downstream-crate's
-/// `"1.0"` requirement no longer covers it) must print a "governed by
+/// `"1.0"` requirement does not cover it) must print a "governed by
 /// [cascade].bump-severity" attribution line beneath the bump in the real
 /// text renderer a user sees -- not just in a hand-constructed
 /// `VersionReport` fed directly to `render_version` in a unit test.

@@ -1026,10 +1026,7 @@ mod tests {
                 },
             }],
         };
-        // Confirms render_section would succeed against this input (the
-        // real gate `render_pr_body_from_plan` checks) without asserting on
-        // its whole-section output, which includes a "## {version}" heading
-        // no longer meaningful once entries are regrouped across packages.
+        // Checks `render_section` succeeds without asserting its heading, which is meaningless once entries are regrouped.
         crate::changelog::render_section(&input).unwrap();
 
         let plan = VersionPlan {

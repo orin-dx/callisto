@@ -1,13 +1,6 @@
 #!/usr/bin/env bash
-# Black-box coverage for the exact release-PR action executable. The fake
-# process boundary proves the script executes only Callisto's closed decision
-# set and only the forge commit API (never `git push`); Rust tests cover
-# decision policy itself.
-#
-# This stubs `callisto` with hand-written JSON fixtures, so it cannot catch a
-# mismatch between what the real binary serializes and what this script's jq
-# expressions expect -- see test_release_pr_decide_binary_contract.sh, which
-# calls the compiled binary, for that check.
+# Black-box coverage of the release-PR script: only Callisto's closed decision set and the forge commit API, never `git push`.
+# The stub uses hand-written JSON; test_release_pr_decide_binary_contract.sh checks the real binary's output.
 set -euo pipefail
 
 action_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -120,10 +113,7 @@ gh() {
       printf '%s\n' "$REMOTE_TREE"
       return 0
     fi
-    # The bare collection endpoint (`.../git/refs`, no ref name in the URL
-    # path -- the branch only appears in the `-f ref=refs/heads/...` value)
-    # is used for ref *creation*: the staging-ref POST fallback and the
-    # create-decision's initial attempt to create the real branch.
+    # The bare collection endpoint (`.../git/refs`) serves ref creation: the staging-ref POST fallback and the first create.
     if [[ "$joined" == *' -X POST '* && "$joined" == *'/git/refs '* ]]; then
       [[ "$joined" == *'ref=refs/heads/'*'--staging'* ]] && return 0
       return "$MOVE_POST_CODE"

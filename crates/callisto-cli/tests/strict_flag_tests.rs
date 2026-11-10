@@ -67,9 +67,8 @@ fn make_git_workspace(tmp: &TempDir) -> GlobalArgs {
 /// when strict violations produce Error-severity diagnostics.
 ///
 /// A workspace with no pending changesets emits an `EmptyChangeset` warning that
-/// `--strict` escalates to `Error`. Before the fix, the CLI handler ignored the
-/// escalated diagnostics and always returned `ExitCode::SUCCESS`. After the fix,
-/// it gates on `Error`-severity diagnostics and returns `ExitCode::FAILURE`.
+/// `--strict` escalates to `Error`; the handler must gate on `Error`-severity diagnostics and return
+/// `ExitCode::FAILURE`.
 #[test]
 fn test_version_strict_no_changesets_exits_nonzero() {
     let tmp = TempDir::new().unwrap();

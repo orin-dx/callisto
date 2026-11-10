@@ -200,11 +200,8 @@ impl CommandRunner for CliCommandRunner {
         cwd: &Path,
         timeout: Duration,
     ) -> Result<CommandOutput, CommandError> {
-        // `known_credential_env_values` is scanned here, at the trait-method
-        // call site, rather than inside `run_with_timeout_impl` itself: this
-        // keeps the impl fn pure and directly unit-testable with a synthetic
-        // secrets list (no process-env mutation, which would race against
-        // other tests running in parallel in this binary).
+        // Credential values are scanned here, not in `run_with_timeout_impl`, so the impl stays pure and testable
+        // with a synthetic secrets list (no process-env mutation racing parallel tests).
         let remove = unrelated_credentials(program);
         run_with_timeout_impl(
             program,
@@ -326,32 +323,19 @@ impl CommandRunner for CliCommandRunner {
                 }
             })?;
 
-        // Write the payload on its own thread, concurrently with this
-        // thread draining stdout/stderr via `wait_with_output` below.
-        // A protocol like `git cat-file --batch` replies to each stdin
-        // line as it arrives, so writing everything up front on the same
-        // thread that also has to read the reply back could deadlock once
-        // either the stdin or the stdout pipe buffer fills -- exactly the
-        // hazard `run_with_timeout_impl` above uses dedicated reader
-        // threads to avoid, mirrored here for the write side.
+        // Write stdin on its own thread while `wait_with_output` drains stdout/stderr: a protocol like
+        // `git cat-file --batch` replies per line, so a same-thread write could deadlock once a pipe buffer fills.
         let mut stdin_pipe = child.stdin.take().expect("stdin was requested as piped");
         let payload = stdin.to_vec();
         let writer = std::thread::spawn(move || {
-            // A closed read end (the child exited early, e.g. on a bad
-            // invocation) would otherwise surface as a `BrokenPipe` write
-            // error here; the child's actual exit code/stderr, captured by
-            // `wait_with_output` below, is the caller-facing signal for
-            // that failure, so a write error on this thread is dropped
-            // rather than reported.
+            // A write error (e.g. `BrokenPipe` from an early-exiting child) is dropped; the child's exit code and stderr
+            // are the caller-facing signal.
             drop(stdin_pipe.write_all(&payload));
             drop(stdin_pipe.flush());
         });
 
         let output = child.wait_with_output();
-        // The writer thread only writes then drops its handle, so it must
-        // already be finished (or about to finish) by the time the child
-        // has exited and `wait_with_output` has drained its output --
-        // joining here can't block indefinitely.
+        // The writer only writes then drops its handle, so this join cannot block indefinitely.
         drop(writer.join());
 
         match output {
@@ -502,14 +486,8 @@ fn run_with_timeout_impl(
     let stdout_handle = child.stdout.take().expect("stdout was piped");
     let stderr_handle = child.stderr.take().expect("stderr was piped");
 
-    // The reader threads signal completion over a channel rather than
-    // being joined directly. Killing (or the natural exit of) the
-    // direct child does NOT close pipe fds held open by a descendant
-    // process that inherited them (common for npm/cargo/python publish
-    // lifecycle scripts spawning subprocesses). If that happens, the
-    // blocking `read()` inside these threads never returns. Using
-    // `recv_timeout` below lets us bound how long we wait for them
-    // without ever blocking the caller indefinitely.
+    // Reader threads signal completion over a channel, not a join: a descendant that inherited the pipe fds keeps
+    // `read()` blocked after the child exits, so `recv_timeout` bounds the wait.
     let (stdout_tx, stdout_rx) = std::sync::mpsc::channel::<String>();
     let (stderr_tx, stderr_rx) = std::sync::mpsc::channel::<String>();
 
@@ -539,13 +517,8 @@ fn run_with_timeout_impl(
                 if Instant::now() >= deadline {
                     drop(child.kill());
                     drop(child.wait());
-                    // Reader threads are intentionally not joined here:
-                    // if a descendant process is still holding a pipe
-                    // fd open, join() could block forever. We wait a
-                    // bounded grace period for output, then abandon the
-                    // threads (they leak until the descendant
-                    // eventually exits and closes the fd -- a thread
-                    // leak, not a memory-safety issue).
+                    // Reader threads are not joined: a descendant holding a pipe fd open could block `join()` forever, so they
+                    // are abandoned after a bounded grace period (a thread leak until the fd closes, not a memory-safety issue).
                     let stdout = stdout_rx.recv_timeout(READER_GRACE).ok();
                     let stderr = stderr_rx.recv_timeout(READER_GRACE).ok();
                     if stdout.is_none() || stderr.is_none() {
@@ -969,17 +942,9 @@ mod tests {
 
         if std::env::var(CHILD_ENV).is_ok() {
             let runner = CliCommandRunner;
-            // `sh` on this platform forks a separate process for the
-            // foreground `sleep 10` rather than exec-replacing itself (it
-            // must remain able to reap the backgrounded job), so killing
-            // the direct child does not kill either descendant. Both the
-            // backgrounded `sleep 30` and the foreground `sleep 10` inherit
-            // the piped stdout/stderr fds unless redirected away, so each
-            // is redirected explicitly: `sleep 30`'s stdout goes to
-            // /dev/null so only its stderr lingers (the condition under
-            // test), and `sleep 10`'s stdout/stderr both go to /dev/null so
-            // it doesn't *also* hold either pipe open, which would stack a
-            // second sequential 3s grace wait on top of the first.
+            // `sh` forks the foreground `sleep 10` rather than exec-replacing itself, so killing the child leaves both
+            // descendants alive. `sleep 30` keeps only stderr open (the condition under test); `sleep 10` goes fully to
+            // /dev/null so it does not stack a second 3s grace wait.
             drop(runner.run_with_timeout(
                 "sh",
                 &["-c", "sleep 30 >&2 1>/dev/null & sleep 10 >/dev/null 2>&1"],
@@ -1153,11 +1118,8 @@ mod tests {
                     Duration::from_secs(5),
                 )
                 .expect("run_quiet must succeed");
-            // Positive proof the call actually ran and captured correctly,
-            // not just "produced no live output" -- a crashed or no-op
-            // child would leave the negative assertion below vacuously
-            // true. Printed to the child's own real stdout, entirely
-            // separate from anything `run_quiet` itself captures or emits.
+            // Positive proof the call ran and captured: a crashed or no-op child would leave the negative assertion
+            // below vacuously true.
             assert!(
                 out.stderr.contains("should-not-appear-live"),
                 "run_quiet must still capture the text it doesn't stream live"

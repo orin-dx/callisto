@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Drafts the open managed release PR as soon as main moves, because a draft cannot be merged. The release
-# workflow marks it ready again only after a refresh built from the new tip, so a failed or skipped refresh
-# leaves a stale release PR unmergeable instead of mergeable. Usage: hold-release-pr.sh <release-branch>
-# Needs GH_TOKEN and GITHUB_REPOSITORY.
+# Drafts the open managed release PR when main moves, so a stale one cannot be merged before the release workflow refreshes it.
+# Usage: hold-release-pr.sh <release-branch>; needs GH_TOKEN and GITHUB_REPOSITORY.
 set -euo pipefail
 
 release_branch="${1:?usage: hold-release-pr.sh <release-branch>}"

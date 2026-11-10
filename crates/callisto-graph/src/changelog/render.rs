@@ -195,11 +195,7 @@ mod tests {
 
     #[test]
     fn render_section_flattens_mixed_severities_into_one_list() {
-        // A package released alongside a fixed group can carry entries of
-        // different originally-authored severities (e.g. a patch-level fix
-        // plus a group-driven minor bump). The rendered changelog must not
-        // re-surface that per-entry severity distinction -- the version
-        // heading already communicates the one, real applied bump.
+        // Entries with different authored severities must not show that distinction; the version heading carries the applied bump.
         let input = ChangelogInput {
             package: PackageId::parse("my-pkg").unwrap(),
             style: Default::default(),

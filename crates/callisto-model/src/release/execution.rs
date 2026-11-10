@@ -23,7 +23,7 @@ pub enum OperationBlockReason {
     ConflictingExistingOperation,
     /// A completed attempt could not be conclusively observed after restart.
     IndeterminateAttempt,
-    /// Fresh validation no longer agrees with the approved intent.
+    /// Fresh validation disagrees with the approved intent.
     StaleValidation,
     /// An exact prerequisite has not reached a successful terminal outcome.
     UnmetPrerequisite,

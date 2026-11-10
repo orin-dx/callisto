@@ -141,13 +141,8 @@ impl Versioning for Pep440Versioning {
         let epoch = parsed.epoch();
         let (major, minor, patch) = release_triple(&parsed);
 
-        // Pre-releases and dev-releases both precede the release they're attached
-        // to, so a bump finalizes them in place rather than continuing forward.
-        // But a post-release segment (even combined with a dev segment, e.g.
-        // `1.2.3.post1.dev1`) outranks the final release (PEP 440 ordering:
-        // dev < pre < release < post), so any version carrying a post segment
-        // must bump forward normally, same as the post-only case, never
-        // finalize in place.
+        // Pre/dev-releases finalize in place, but a post segment (even with dev, e.g. `1.2.3.post1.dev1`)
+        // outranks the final release (PEP 440), so it must bump forward.
         let finalize_in_place = !parsed.is_post() && (parsed.is_pre() || parsed.is_dev());
 
         let overflow = || BumpError::Overflow {
@@ -376,18 +371,11 @@ mod tests {
     // devN < aN < bN < rcN < final), so they finalize the same way pre-releases do.
     #[case("1.2.3.dev0", Severity::Patch, "1.2.3")]
     #[case("1.2.3.dev0", Severity::Minor, "1.3.0")]
-    // Post-releases (.postN) come *after* an already-shipped final release
-    // (PEP 440 ordering: final < .postN), so a bump treats the release as
-    // already final: it increments normally and drops the post segment,
-    // rather than finalizing in place like a pre/dev release would.
+    // A post-release outranks the final release (PEP 440), so a bump increments and drops the post segment.
     #[case("1.2.3.post1", Severity::Patch, "1.2.4")]
     #[case("1.2.3.post1", Severity::Minor, "1.3.0")]
-    // A post-release combined with a dev-release (e.g. `.post1.dev1`) still
-    // carries a post segment, which PEP 440 ranks *above* the final release
-    // even with a trailing dev segment attached (dev < pre < release < post).
-    // It must bump forward exactly like the post-only case above, never
-    // finalize in place (which would otherwise produce a version lower than
-    // the input).
+    // A post segment combined with dev still outranks the final release, so it bumps forward,
+    // never finalizing in place.
     #[case("1.2.3.post1.dev1", Severity::Patch, "1.2.4")]
     // Epoch (N!) has no SemVer analogue and carries through unchanged.
     #[case("1!2.0.0", Severity::Major, "1!3.0.0")]
@@ -509,13 +497,8 @@ mod tests {
         assert_eq!(versioning.bump(&v, Severity::Major).unwrap().render(), "0.0.0");
     }
 
-    /// Regression test: an undotted prerelease suffix such as `alpha1` (common in
-    /// packages migrated from other toolchains) must have its numeric suffix
-    /// carried forward rather than reset to 0.  Before the fix, the only prefix
-    /// pattern tested was the dotted form `"{tag}."`, so `strip_prefix("alpha.")`
-    /// on `"alpha1"` returned `None`, the counter stayed at 0, and the output was
-    /// `1.2.3-alpha.0` — meaning consecutive bumps would silently lose the
-    /// existing sequence number.
+    /// An undotted prerelease suffix such as `alpha1` (common in packages migrated from other
+    /// toolchains) must have its numeric suffix carried forward rather than reset to 0.
     ///
     /// Note on SemVer ordering: `"alpha"` < `"alpha1"` lexicographically (the
     /// dotted identifier `alpha` is a strict ASCII prefix of `alpha1`), so

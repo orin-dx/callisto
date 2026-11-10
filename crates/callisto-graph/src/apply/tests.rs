@@ -1385,11 +1385,7 @@ fn bumps_loop_write_version_error_leaves_manifest_untouched_and_skips_persist() 
     let original = "package = { name = \"my-crate\", version = \"1.0.0\", edition = \"2021\" }\n";
     std::fs::write(&cargo_toml_path, original).unwrap();
 
-    // Positive precondition: confirm this fixture opens successfully and
-    // current_version() succeeds via toml_edit's inline-table Item::get,
-    // proving that any later failure is write_version's own
-    // as_table_mut() step failing, not open()/current_version() failing
-    // upstream of it.
+    // Precondition: open and `current_version()` succeed, so a later failure is `write_version`'s own `as_table_mut()` step.
     let decl = ManifestDecl::new("Cargo.toml", ManifestRole::Canonical, ManifestFormat::CargoToml).unwrap();
     let ctx = OpenContext {
         workspace_root: root,
@@ -1488,11 +1484,7 @@ fn an_unwritable_later_bump_target_stops_the_run_before_any_manifest_is_written(
     let original_mode = std::fs::metadata(&pkg_b_dir).unwrap().permissions().mode();
     std::fs::set_permissions(&pkg_b_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
 
-    // Some environments (e.g. containers running the test process as uid 0)
-    // ignore directory write-permission bits entirely, which would make the
-    // chmod above a no-op and this test's failure-injection premise false.
-    // Probe for that before proceeding rather than assuming the chmod took
-    // effect.
+    // Probe whether directory write bits are ignored (e.g. uid 0); the chmod above would then be a no-op.
     let probe_path = pkg_b_dir.join(".rtk-write-probe");
     let probe_write_succeeded = std::fs::write(&probe_path, b"probe").is_ok();
     if probe_write_succeeded {
@@ -2309,9 +2301,9 @@ fn platform_write_idempotent_retry_when_already_at_target_succeeds_without_rewri
 
 /// A plan with `bumps` empty but a `platform_writes` entry
 /// pointing at an npm-ecosystem manifest must still stage the npm
-/// lockfile present on disk. `active_ecosystems` was previously derived
-/// solely from `plan.bumps`, so an npm lockfile went unstaged whenever
-/// only `platform_writes` touched npm. It must also refresh, since the
+/// lockfile present on disk. `active_ecosystems` must not derive
+/// solely from `plan.bumps`, or an npm lockfile goes unstaged when
+/// only `platform_writes` touch npm. It must also refresh, since the
 /// npm ecosystem is active regardless of which plan section triggered it.
 #[test]
 fn platform_writes_only_plan_stages_and_refreshes_npm_lockfile() {

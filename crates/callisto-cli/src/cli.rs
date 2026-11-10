@@ -335,7 +335,7 @@ pub enum ReleaseArgs {
     /// Create the exact artifact manifest for a completed intent-bound build.
     #[command(hide = true)]
     ArtifactManifest(ReleaseArtifactManifestArgs),
-    /// Execute a previously approved intent. This is the only durable mutation route.
+    /// Execute an approved intent. This is the only durable mutation route.
     #[command(hide = true)]
     Execute(ReleaseExecuteArgs),
 }

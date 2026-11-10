@@ -70,12 +70,7 @@ impl ReleaseProvider for TagProvider {
         // The preflight observation already proved the remote absent. It leaves
         // exactly as prepared by a run whose push failed; only the push remains.
         if observed_local_tag(context, &operation.name)? == LocalTagObservation::Absent {
-            // Delegates to `GitAccess::create_tag` rather than inlining `git
-            // tag` argv, so this inherits its `--` end-of-options separator
-            // (defends `name` against being misread as a flag) on top of the
-            // `--no-sign` this durable path has always needed (this repo's CI
-            // sets `tag.gpgSign`/`commit.gpgsign` globally in some contexts,
-            // with no tag-signing key available here).
+            // `GitAccess::create_tag` supplies the `--` separator and `--no-sign`, which CI's global gpgSign settings require.
             let git = GitAccess::new(context.root(), context.runner());
             git.create_tag(
                 operation.name.as_str(),

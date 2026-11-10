@@ -112,14 +112,7 @@ impl GroupTable {
             }
         }
 
-        // One map, populated fixed-then-linked (declaration order, not file
-        // order): a fixed group's members are checked only against other
-        // fixed groups seen so far (linked hasn't been touched yet at that
-        // point), while a linked group's members are checked against BOTH
-        // linked-so-far AND the now-fully-populated fixed map -- exactly the
-        // asymmetric cross-check the two-separate-maps version encoded, but
-        // as a natural consequence of processing order instead of a second
-        // explicit lookup.
+        // One map, filled fixed then linked: fixed members check against fixed so far, linked against linked and all fixed.
         let mut claimed: BTreeMap<&str, &GroupName> = BTreeMap::new();
         for group_list in [fixed, linked] {
             for (name, members) in group_list {
@@ -151,11 +144,7 @@ impl GroupTable {
         let mut linked_of = BTreeMap::new();
         let mut claimed_by: BTreeMap<PackageId, GroupName> = BTreeMap::new();
 
-        // One resolution loop parameterized on `GroupKind`, writing into
-        // whichever kind's own output maps -- `claimed_by` is shared across
-        // both passes exactly as before, so a package claimed by a fixed
-        // group still conflicts if a linked group (or a second fixed group)
-        // also claims it.
+        // One resolution loop per `GroupKind`; `claimed_by` is shared so a package claimed twice still conflicts.
         for (kind, raw_groups, groups, membership) in [
             (GroupKind::Fixed, &raw.fixed, &mut fixed, &mut fixed_of),
             (GroupKind::Linked, &raw.linked, &mut linked, &mut linked_of),
@@ -163,12 +152,7 @@ impl GroupTable {
             for rg in raw_groups {
                 let mut members = Vec::new();
                 for name in &rg.members {
-                    // Platform manifests take priority: their own native name
-                    // is also registered in `index.native` (pointing at their
-                    // owner), so `index.resolve` would otherwise resolve them
-                    // to `GroupMember::Package(owner)` and silently drop the
-                    // platform-manifest membership version.rs's platform-write
-                    // derivation depends on.
+                    // Platform manifests win: their native name also indexes to the owner, which would drop the platform membership.
                     if let Some((owner, path, role)) = index.platform.get(name) {
                         members.push(GroupMember::PlatformManifest {
                             owner: owner.clone(),

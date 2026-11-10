@@ -1,15 +1,10 @@
-//! End-to-end coverage for the severity-validation message fix: before it,
-//! `callisto add --package name:severity` claimed the allowed values were
-//! "patch, minor, or major", omitting `none` even though `Severity` has
-//! always accepted it. The unit tests next to the fix (`add.rs`) call
-//! `parse_severity` directly; these prove the corrected wording -- and the
-//! previously-undocumented `none` acceptance -- reach the real CLI's actual
-//! stderr/stdout, exactly what an operator sees when they mistype a
-//! severity.
+//! End-to-end coverage for the severity-validation message: `callisto add --package name:severity` must list
+//! `none` among the allowed values, since `Severity` accepts it. The unit tests in `add.rs` call `parse_severity`
+//! directly; these prove the wording reaches the real CLI's stderr/stdout, exactly what an operator sees when
+//! they mistype a severity.
 //!
-//! The lock-contention fix in the same PR is not covered here: it is
-//! exercised against a real `fs2` file lock in its unit tests, and reproducing
-//! real lock contention at the CLI level requires a second concurrent process.
+//! Lock contention is covered by unit tests against a real `fs2` file lock; reproducing it at the CLI level
+//! needs a second concurrent process.
 
 use std::path::Path;
 use std::process::Command;
@@ -81,7 +76,7 @@ fn add_rejects_invalid_severity_with_the_full_accepted_value_list() {
 
 /// Happy/corner-case path: `none` has always been a valid severity value at
 /// the parser level; this proves it still round-trips end to end through
-/// the real CLI (not just through the previously-inaccurate error message).
+/// the real CLI.
 #[test]
 fn add_accepts_none_severity() {
     let dir = setup_minimal_workspace();

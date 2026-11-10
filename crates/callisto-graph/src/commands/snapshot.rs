@@ -498,10 +498,7 @@ mod tests {
     #[test]
     fn plan_snapshot_source_never_calls_pre_mutation_checks() {
         let source = include_str!("snapshot.rs");
-        // Only the production code above the `#[cfg(test)]` boundary is
-        // checked -- this test module's own name and doc comments
-        // necessarily mention `pre_mutation_checks` and must not cause a
-        // self-match false failure.
+        // Check only the code above `#[cfg(test)]`; this module's own text mentions `pre_mutation_checks`.
         let production_source = source
             .split_once("#[cfg(test)]")
             .map(|(before, _)| before)

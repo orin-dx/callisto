@@ -164,11 +164,7 @@ fn cascade_action_peer_escalation_only_fires_for_non_patch_source() {
     assert_eq!(major_decision.severity, Severity::Major);
     assert!(major_decision.escalated);
 
-    // None-severity source: provably unreachable through run_cascade (every
-    // write site into the severities map gates on `sev > Severity::None`
-    // before inserting), but the match arm falls through to row 4 exactly
-    // like Patch if it ever were reached -- exhaustive over the enum
-    // rather than relying on that untested cross-function invariant.
+    // Unreachable via run_cascade; falls through to row 4 like Patch, kept so the match is exhaustive.
     let none_decision = cascade_action(DepKind::Peer, Coverage::DoesNotCover, Severity::None, &cfg);
     assert_eq!(none_decision.severity, Severity::Patch);
     assert!(!none_decision.escalated);
@@ -739,13 +735,7 @@ fn test_diamond_dependency_a_appears_exactly_once_in_cascade_result() {
     let pkg_c = PackageId::parse("pkg-c").unwrap();
     let pkg_d = PackageId::parse("pkg-d").unwrap();
 
-    // Edges: B→D, C→D, A→B, A→C
-    // B and C use "^1.0.0" for D; A uses exact "=1.0.0" for B and C.
-    // With CascadeBumpSeverity::Patch, when D is seeded Major (→ 2.0.0):
-    //   - B and C cascade with Patch (^1.0.0 doesn't cover 2.0.0) → both become 1.0.1
-    //   - A's "=1.0.0" on B (now 1.0.1) is out of range → A cascades from B
-    //   - A's "=1.0.0" on C (now 1.0.1) is out of range → A cascades from C
-    // Both paths reach A; the dedup invariant is that A appears exactly once.
+    // Edges B->D, C->D, A->B, A->C; Major on D makes B and C cascade at Patch and A cascades from both, yet appears once.
     let eco = callisto_model::Ecosystem::Cargo;
     let edges = vec![
         make_dep_edge(&pkg_b, &pkg_d, "^1.0.0", eco),
@@ -774,10 +764,7 @@ fn test_diamond_dependency_a_appears_exactly_once_in_cascade_result() {
     let mut seed = BTreeMap::new();
     seed.insert(pkg_d.clone(), Severity::Major);
 
-    // Patch cascade severity. When D is seeded Major (→ 2.0.0), B and C's
-    // "^1.0.0" specs don't cover 2.0.0, so they cascade at Patch (→ 1.0.1).
-    // A's exact "=1.0.0" specs on B and C don't cover 1.0.1, so A cascades
-    // from both paths. The dedup invariant ensures A appears exactly once.
+    // Patch cascade: D Major makes B and C go to 1.0.1, which A's exact `=1.0.0` specs do not cover.
     let cfg = CascadeConfig {
         mode: CascadeMode::OutOfRange,
         bump_severity: CascadeBumpSeverity::Patch,
@@ -812,10 +799,7 @@ fn test_diamond_dependency_a_appears_exactly_once_in_cascade_result() {
         "A must cascade from B and C (both bumped to 2.0.0, out of ^1.0.0)"
     );
 
-    // The critical deduplication check: A must appear exactly ONCE even
-    // though two separate cascade paths (via B and via C) both reach A.
-    // BTreeMap guarantees at most one entry per key; iterating and
-    // filtering by key yields exactly 1.
+    // A must appear exactly once although two cascade paths reach it.
     let a_severity_count = outcome.severities.keys().filter(|k| *k == &pkg_a).count();
     assert_eq!(
         a_severity_count, 1,
@@ -962,12 +946,7 @@ fn test_bump_target_uses_pinned_pre_baseline_not_current_prerelease() {
         packages: vec![bare_package(&pkg_a)],
     };
 
-    // On-disk is already one prerelease bump into a MAJOR cycle
-    // (2.0.0-next.0), while the pinned baseline from `pre enter` is
-    // still 1.0.0. Requesting a Minor bump now must be computed from
-    // the pinned baseline (-> release 1.1.0), not by re-deriving from
-    // the already-major-bumped on-disk value (which would incorrectly
-    // treat 2.0.0-next.0 as still-in-progress and yield 2.0.0-next.1).
+    // On disk is 2.0.0-next.0 but the pinned baseline is 1.0.0, so a Minor bump must yield 1.1.0, not 2.0.0-next.1.
     let mut base = BTreeMap::new();
     base.insert(
         pkg_a.clone(),
@@ -1324,7 +1303,7 @@ fn test_fixed_group_skips_stale_member_and_emits_diagnostic() {
 }
 
 /// Regression: `fixed_group_target` must ignore a stale group member (a
-/// package no longer present in `input.base`) even when that stale
+/// package absent from `input.base`) even when that stale
 /// member carries a real release tag from before it was removed from
 /// the workspace. Fixed-group convergence once passed the raw `GroupDef`
 /// into `fixed_group_target`, which iterated ALL declared members --
