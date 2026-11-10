@@ -1,0 +1,122 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M73BKPQVDVHVNRE1PS44YVZ8",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-10T18:30:43.850936Z",
+  "branch": "fix/note-once",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "crates/callisto-cli/tests/private_workspace_root_tests.rs",
+    "crates/callisto-graph/src/lib.rs",
+    "crates/callisto-graph/src/locate/ignore_walk.rs",
+    "crates/callisto-graph/src/note.rs",
+    "crates/callisto-graph/src/walk.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "a6d0cd2ecfcd",
+  "checkpoint_transcript_start": 34968,
+  "transcript_lines_at_start": 34968,
+  "compact_transcript_start": 2546,
+  "token_usage": {
+    "input_tokens": 46,
+    "cache_creation_tokens": 39210,
+    "cache_read_tokens": 12574433,
+    "output_tokens": 13366,
+    "api_call_count": 21,
+    "subagent_tokens": {
+      "input_tokens": 54,
+      "cache_creation_tokens": 126946,
+      "cache_read_tokens": 1246285,
+      "output_tokens": 11310,
+      "api_call_count": 20
+    }
+  },
+  "redaction": {
+    "replacements": 84,
+    "layers": {
+      "betterleaks": 28,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 52,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 222
+  },
+  "summary": {
+    "intent": "Speed up and finish a batch of cleanup and follow-up work on the callisto repo: close stale trails, clean up merged worktrees, document the changeset process in AGENTS.md and the PR template, and fix duplicated discovery notes.",
+    "outcome": "Worktrees and 11 trails were cleaned up, docs PR #495 was opened, linked to trail 152 and given its description. The note-once fix (process-wide `note_once` guard) was reviewed, a changeset added, all five local checks passed, and it was committed and pushed on `fix/note-once`; the PR itself had not yet been opened.",
+    "learnings": {
+      "repo": [
+        "AGENTS.md and .github/PULL_REQUEST_TEMPLATE.md carry the changeset process: one changeset per user-visible outcome, written in the PR that makes it visible; multi-PR features get one from the last PR; fixes to unreleased features, internal, test-only or docs-only changes get none.",
+        "Local verification is a set of five checks: just pre-push, lint, doc-check, test, workflow-contracts, run via a verify.sh script.",
+        "Discovery notes are emitted via eprintln!(\"note: ...\") in callisto-graph walk.rs and locate/ignore_walk.rs; TAGS_UNBOUND_NOTE in callisto-cli release.rs is a separate release-preview note and was intentionally left alone.",
+        "native_resolution_e2e_tests (pnpm_and_uv workspace tests) need `uv lock` and network access, so they fail inside the sandbox but pass outside it.",
+        "The sandbox locks the shared .git/config, so `git switch -c <branch> origin/main` errors when writing upstream config; the branch is still created but has no upstream tracking."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/note.rs",
+          "finding": "New pub(crate) note_once(message: String) -> bool uses OnceLock<Mutex<BTreeSet<String>>> to print each message to stderr once per process, recovering from a poisoned lock."
+        },
+        {
+          "path": "crates/callisto-cli/tests/private_workspace_root_tests.rs",
+          "finding": "New test init_prints_the_ignored_private_root_note_once runs `callisto init --yes` and asserts the note appears exactly once on stderr; a mutation check showed 3 copies without the guard."
+        }
+      ],
+      "workflow": [
+        "Entire blocks `entire trail comment` from Claude sessions because comments are for people; decisions were recorded in the trail descriptions instead of working around the block.",
+        "`entire trail comment add` needs `--trail <id>` and `--project`; guessing positional syntax failed.",
+        "Subagent reports were verified by re-running the checks outside the sandbox before committing, and a subagent's suggested Verify text was trimmed because it described a check that was not run.",
+        "Worktree cleanup removed only worktrees whose tip was in origin/main."
+      ]
+    },
+    "friction": [
+      "User felt the assistant was slowing things down and asked for a faster pace.",
+      "Both trail comments failed first on a wrong syntax guess, then were blocked by Entire for Claude sessions.",
+      "Sandbox network and git config restrictions caused spurious test failures and a branch upstream error in the subagent run.",
+      "The subagent did not run the two failing e2e tests on a clean baseline, so it could not prove they fail independently of its change."
+    ],
+    "open_items": [
+      "Open the PR for fix/note-once (pushed, not yet opened) and link it appropriately.",
+      "Review PR #495, which awaits user review.",
+      "Trails #162, #176, #177, #178, #180, #198 and #250 remain open with real work or unconfirmed done-when.",
+      "`short_sha` rename left unchanged for the user to decide.",
+      "Decide whether TAGS_UNBOUND_NOTE in release.rs should also get a once-guard.",
+      "Courier changeset guidance is still being updated, per the #152 decision.",
+      "CI has not yet run on #495."
+    ]
+  }
+}
