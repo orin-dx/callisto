@@ -51,7 +51,7 @@ pub enum PublishOutlook {
         /// Conditions that do not stop the release but change what it does, such as unbound tags.
         notes: Vec<String>,
         /// Bumped packages with no publish target (private ones): versioned with their group, published nowhere.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[serde(rename = "versionedOnly", default, skip_serializing_if = "Vec::is_empty")]
         versioned_only: Vec<String>,
     },
     /// The same planning step the release workflow runs refused; merging would fail the same way.
@@ -1105,6 +1105,22 @@ mod tests {
             ReleasePreview::from_json(&serde_json::to_string(&with).unwrap()).unwrap(),
             with
         );
+    }
+
+    /// `rename_all` on the enum renames variants, not the fields inside them, so the key is renamed on the field.
+    #[test]
+    fn versioned_only_is_stored_as_the_documented_camel_case_key() {
+        let outlook = PublishOutlook::Planned {
+            releases: vec![],
+            notes: vec![],
+            versioned_only: vec!["private-crate".to_owned()],
+        };
+        let json = serde_json::to_value(&outlook).unwrap();
+        assert_eq!(json["versionedOnly"], serde_json::json!(["private-crate"]), "{json}");
+        assert!(json.get("versioned_only").is_none(), "{json}");
+
+        let loaded: PublishOutlook = serde_json::from_value(json).unwrap();
+        assert_eq!(loaded, outlook);
     }
 
     #[test]
