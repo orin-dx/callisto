@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_01YG4FBMBpUMvtDsEGA1K4td",
+  "agent_id": "a444090653d1cbe25",
+  "subagent_type": "general-purpose",
+  "task_description": "Uniform exit 2 for bad flag values",
+  "token_usage": {
+    "input_tokens": 120,
+    "cache_creation_tokens": 159770,
+    "cache_read_tokens": 7476193,
+    "output_tokens": 33572,
+    "api_call_count": 60
+  },
+  "started_at": "2026-11-11T14:49:46.847406-08:00",
+  "completed_at": "2026-11-11T15:08:52.973316-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}

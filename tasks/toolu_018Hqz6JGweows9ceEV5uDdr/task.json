@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_018Hqz6JGweows9ceEV5uDdr",
+  "agent_id": "af9c27de6f014f85e",
+  "subagent_type": "courier:changeset-analyzer",
+  "task_description": "Changeset for flag-value exit 2",
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 34148,
+    "cache_read_tokens": 118920,
+    "output_tokens": 2314,
+    "api_call_count": 3
+  },
+  "started_at": "2026-11-11T15:09:12.127737-08:00",
+  "completed_at": "2026-11-11T15:09:29.255755-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}

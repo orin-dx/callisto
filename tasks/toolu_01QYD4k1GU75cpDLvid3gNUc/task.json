@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01QYD4k1GU75cpDLvid3gNUc",
+  "agent_id": "a029ab4a6ba248eeb",
+  "subagent_type": "courier:pr-narrator",
+  "task_description": "PR text for atomic alias removal",
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 33342,
+    "cache_read_tokens": 66003,
+    "output_tokens": 1300,
+    "api_call_count": 2
+  },
+  "started_at": "2026-11-11T15:09:36.224113-08:00",
+  "completed_at": "2026-11-11T15:09:49.489492-08:00"
+}

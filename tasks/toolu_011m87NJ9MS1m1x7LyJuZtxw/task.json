@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_011m87NJ9MS1m1x7LyJuZtxw",
+  "agent_id": "ad906bfe476ce392b",
+  "subagent_type": "general-purpose",
+  "task_description": "Delete manifests atomic alias",
+  "token_usage": {
+    "input_tokens": 46,
+    "cache_creation_tokens": 72776,
+    "cache_read_tokens": 1582198,
+    "output_tokens": 6517,
+    "api_call_count": 23
+  },
+  "started_at": "2026-11-11T14:53:57.683024-08:00",
+  "completed_at": "2026-11-11T15:09:19.203129-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}

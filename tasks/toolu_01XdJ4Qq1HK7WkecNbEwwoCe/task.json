@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_01XdJ4Qq1HK7WkecNbEwwoCe",
+  "agent_id": "a8cad7cae3253408a",
+  "subagent_type": "courier:pr-narrator",
+  "task_description": "PR text for dependabot composite actions",
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 30191,
+    "cache_read_tokens": 66069,
+    "output_tokens": 923,
+    "api_call_count": 2
+  },
+  "started_at": "2026-11-11T15:04:40.247033-08:00",
+  "completed_at": "2026-11-11T15:04:50.657752-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}

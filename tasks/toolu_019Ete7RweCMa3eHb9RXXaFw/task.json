@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_019Ete7RweCMa3eHb9RXXaFw",
+  "agent_id": "a46ba28b1acc56522",
+  "subagent_type": "courier:pr-narrator",
+  "task_description": "PR text for Python parser fix",
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 34314,
+    "cache_read_tokens": 121300,
+    "output_tokens": 1320,
+    "api_call_count": 3
+  },
+  "started_at": "2026-11-11T15:04:18.245019-08:00",
+  "completed_at": "2026-11-11T15:04:33.897834-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}

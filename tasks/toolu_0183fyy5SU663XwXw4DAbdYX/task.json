@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_0183fyy5SU663XwXw4DAbdYX",
+  "agent_id": "a01758451c8c73938",
+  "subagent_type": "courier:pr-narrator",
+  "task_description": "PR text for flags-to-enums branch",
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 29904,
+    "cache_read_tokens": 65982,
+    "output_tokens": 1362,
+    "api_call_count": 2
+  },
+  "started_at": "2026-11-11T15:09:36.028244-08:00",
+  "completed_at": "2026-11-11T15:09:49.505179-08:00"
+}
