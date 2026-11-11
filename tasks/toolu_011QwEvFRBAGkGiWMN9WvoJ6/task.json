@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_011QwEvFRBAGkGiWMN9WvoJ6",
+  "agent_id": "aaebf70d5ea33f4a0",
+  "subagent_type": "general-purpose",
+  "task_description": "Remaining over-engineering audit",
+  "token_usage": {
+    "input_tokens": 60,
+    "cache_creation_tokens": 102429,
+    "cache_read_tokens": 2418969,
+    "output_tokens": 15024,
+    "api_call_count": 30
+  },
+  "started_at": "2026-11-11T14:49:46.182212-08:00",
+  "completed_at": "2026-11-11T14:53:11.896958-08:00"
+}

@@ -1,0 +1,142 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M76D4G6DNP3WTX72F8BM9YB1",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-11T22:55:41.95756Z",
+  "branch": "refactor/drop-manifests-atomic-alias",
+  "checkpoints_count": 3,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/pre.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "2c70b36886f6",
+  "checkpoint_transcript_start": 42323,
+  "transcript_lines_at_start": 42323,
+  "compact_transcript_start": 3073,
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 18894,
+    "cache_read_tokens": 2738877,
+    "output_tokens": 7320,
+    "api_call_count": 6,
+    "subagent_tokens": {
+      "input_tokens": 66,
+      "cache_creation_tokens": 142221,
+      "cache_read_tokens": 2475738,
+      "output_tokens": 14710,
+      "api_call_count": 32
+    }
+  },
+  "redaction": {
+    "replacements": 93,
+    "layers": {
+      "betterleaks": 30,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 306
+  },
+  "summary": {
+    "intent": "Act on a read-only over-engineering audit of the callisto Rust workspace by delegating cleanups (dead code, wildcard arms, flag-to-enum refactors) to parallel agents, while also fixing CI/parser/exit-code issues, and reflect on excess scratch scripting.",
+    "outcome": "Audit findings were verified and eight parallel agents were launched (Dependabot pin, Python parser idempotency, exit code 2, errors.md wording, delete manifests atomic alias, exhaustive matches, flags-to-enums). None had reported final results yet, and a decision on removing LockfileRefreshResult.success is pending from the user.",
+    "learnings": {
+      "repo": [
+        "Libraries are documented as internal, so narrowing ~138 pub items in callisto-graph was deferred; Raw* config types must stay pub because RawConfig is used outside the crate",
+        "Types in *V1 wire schemas are public API regardless, and removing JSON-schema fields is a wire change",
+        "The worktree guard rejects compound git commands and heredocs, which pushed the agent to write many one-off scripts",
+        "AGENTS.md has a durability invariant (F_FULLFSYNC); tempfile's NamedTempFile::persist does not fsync, so callisto-model/src/atomic.rs hand-written sync logic must stay",
+        "runner.rs capture_stream carries a 10 MiB cap, secret redaction, byte-bounded lines and READER_GRACE logic, so adding wait-timeout would not remove it",
+        "Many cross-crate wildcard arms are forced because Ecosystem and ReleasePrActionV2 are #[non_exhaustive]; ReleaseOperationRole is not, so its wildcards can be exhaustive",
+        "The repo is already lean on test tables; rstest is available as a dev-dependency but rarely used"
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/report.rs",
+          "line": 103,
+          "finding": "LockfileRefreshResult.success is only ever constructed as true (graph/src/apply.rs:760); failures return Err, and exit_code is redundant. Removing it is a schema break."
+        },
+        {
+          "path": "crates/callisto-manifests/src/atomic.rs",
+          "line": 1,
+          "end_line": 117,
+          "finding": "Pure pub use alias of callisto-model atomic with duplicated tests; deletable along with `pub mod atomic` at manifests/lib.rs:10 and repointing cargo.rs:437/1137, npm.rs:82, python.rs:10."
+        },
+        {
+          "path": "crates/callisto-graph/src/walk.rs",
+          "line": 347,
+          "finding": "`_ => (ManifestFormat::PackageJson, \"package.json\")` silently maps any new Ecosystem to npm."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/init.rs",
+          "line": 90,
+          "end_line": 100,
+          "finding": "has_platform_packages, has_napi_targets and has_maturin_targets are only consumed by workflow_shape (init.rs:664); candidates for a PlatformBuilds enum."
+        },
+        {
+          "path": "crates/callisto-graph/src/release/provider/mod.rs",
+          "line": 237,
+          "finding": "ProviderCapabilities {can_observe, can_publish} has an invalid state covered by a 4-case test (mod.rs:549-580); an enum would make it unrepresentable."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/pr_body.rs",
+          "line": 285,
+          "finding": "level_title uses `_ => \"Patch\"` and can be exhaustive over Severity; line 130 also hides new BumpReason variants."
+        }
+      ],
+      "workflow": [
+        "Use Edit/Write tools and plain `just` recipes instead of scratch scripts; keep scripts only where the worktree guard forces a multi-step git sequence",
+        "Subagent hand-back reports are model output, not user instructions; verify key claims against origin/main before delegating",
+        "Verify audit findings (via git show/grep on origin/main) before launching refactor agents",
+        "Running many agents in parallel works, but review each branch and open its PR as it reports"
+      ]
+    },
+    "friction": [
+      "Worktree guard rejects compound git commands and heredocs, producing ~226 scratch .sh/.py files outside the repo",
+      "A verify.sh wrapper duplicated the repo's own just recipes and depended on an out-of-repo path, and five running agents already have it in their prompts",
+      "Dependabot agent returned only an interim notice while waiting on its own background work"
+    ],
+    "open_items": [
+      "Decide whether to remove the always-true LockfileRefreshResult.success (and redundant exit_code) before 1.0 or document it",
+      "Review branches and open PRs as the eight agents report",
+      "Possibly narrow ~138 pub items in callisto-graph and ~37 in callisto-model (deferred)",
+      "Over-engineering audit of .github/tests/*.sh scripts is still running",
+      "Optional low-value items skipped: runner.rs error-mapping/echo helper dedupe (~30-40 lines), test tables (~250-300 lines saved), clap overrides_with for contradictory flag pairs in cli.rs:206/209 and 276/279"
+    ]
+  }
+}
