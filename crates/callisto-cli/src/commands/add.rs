@@ -36,10 +36,17 @@ pub fn handle(args: AddArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
                 .map_err(callisto_graph::GraphError::Config)?;
             let resolved = ws.identity.resolve(name)?;
 
+            let package = resolved.display_name();
+            if entries.iter().any(|e: &Entry| e.name == package) {
+                return Err(CliError::AddDuplicatePackage {
+                    package: name.to_owned(),
+                });
+            }
+
             entries.push(Entry {
                 // Use display_name() so "cargo/foo" is preserved, not just "foo".
                 // In a polyglot workspace, the bare name is ambiguous across ecosystems.
-                name: resolved.display_name(),
+                name: package,
                 severity,
             });
         }

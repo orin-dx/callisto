@@ -51,6 +51,7 @@ pub fn format_error_json(command: &str, dry_run: bool, err: &CliError) -> serde_
 pub const USAGE_CODES: &[&str] = &[
     "E195", "E196", "E214", "E216", "E217", "E218", "E224", "E225", "E226", "E227", "E228", "E229", "E231", "E240",
     "E241", "E242", "E270", "E271", "E274", "E275", "E276", "E279", "E282", "E283", "E298", "E309", "E324", "E327",
+    "E329",
 ];
 
 /// Codes that are usage errors only when the offending reference came from a flag (context `--package`).
@@ -398,6 +399,10 @@ pub enum CliError {
     #[diagnostic(code(E274), help("pass `--summary \"description\"` alongside `--package`"))]
     AddSummaryRequired,
 
+    #[error("package `{package}` is listed more than once in `--package`")]
+    #[diagnostic(code(E329), help("pass each package once, with the one severity the change needs"))]
+    AddDuplicatePackage { package: String },
+
     #[error("--summary cannot be empty")]
     #[diagnostic(code(E275), help("provide a non-empty description of the change"))]
     AddSummaryEmpty,
@@ -726,6 +731,9 @@ mod tests {
             CliError::AddNoPackagesInWorkspace,
             CliError::AddNoPackagesSelected,
             CliError::AddSummaryRequired,
+            CliError::AddDuplicatePackage {
+                package: "x".to_owned(),
+            },
             CliError::AddSummaryEmpty,
             CliError::VersionEmitDryRun { flag: "emit-decision" },
             CliError::StrictDiagnosticsPresent {

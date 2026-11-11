@@ -141,12 +141,10 @@ pub struct StatusPackageRecord {
     pub package: PackageId,
     pub current_version: Version,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_tag: Option<TagName>,
 
     pub last_released_version: Option<Version>,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_severity: Option<Severity>,
 
     /// Mandatory, always serialized — empty-changeset validation and
@@ -234,6 +232,19 @@ mod status_report_tests {
             "StatusPackageRecord JSON must always contain changedSinceLastTag, even when \
              false; got: {json}"
         );
+    }
+
+    /// The optional fields serialize as `null` rather than being omitted, so every record has the same keys.
+    #[test]
+    fn status_package_record_json_serializes_absent_options_as_null() {
+        let value = serde_json::to_value(record()).unwrap();
+        for key in ["lastTag", "lastReleasedVersion", "pendingSeverity"] {
+            assert_eq!(
+                value.get(key),
+                Some(&serde_json::Value::Null),
+                "{key} must be present as null: {value}"
+            );
+        }
     }
 
     /// `StatusEntry` carries `lastReleasedVersion`

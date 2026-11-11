@@ -50,7 +50,7 @@
       "description": "Sets every package's manifest version to a native-grammar snapshot without consuming changesets: 0.0.0-<TAG>-<short HEAD sha> for SemVer, 0.0.0.dev0+<TAG>.<short HEAD sha> for PEP 440.",
       "error_conditions": [
         "--tag missing (usage error, exit 2).",
-        "With --strict, error-level workspace graph diagnostics."
+        "Error-level workspace graph diagnostics, which abort with or without --strict; --strict also escalates warnings to errors."
       ]
     },
     {
@@ -170,7 +170,7 @@
     },
     {
       "id": "CLI-STATUS-03",
-      "criterion": "`status --format json` reports `hasChangesets`, `pending` (count of packages with a planned bump), and per package `package`, `currentVersion`, `lastReleasedVersion`, `lastTag` (omitted when the package has no tag), `pendingSeverity` (omitted when no bump is planned), `changedSinceLastTag`, `releaseTrigger` and `pendingChangesets`. `changedSinceLastTag` is true for a package with no tag, when any directory of the package holds different files than at its last tag, or when its tracked files have uncommitted changes; a change that was later reverted does not count."
+      "criterion": "`status --format json` reports `hasChangesets`, `pending` (count of packages with a planned bump), and per package `package`, `currentVersion`, `lastReleasedVersion`, `lastTag` (null when the package has no tag), `pendingSeverity` (null when no bump is planned), `changedSinceLastTag`, `releaseTrigger` and `pendingChangesets`. `changedSinceLastTag` is true for a package with no tag, when any directory of the package holds different files than at its last tag, or when its tracked files have uncommitted changes; a change that was later reverted does not count."
     },
     {
       "id": "CLI-STATUS-04",
@@ -193,7 +193,7 @@
     },
     {
       "id": "CLI-ADD-01",
-      "criterion": "`callisto add --package <name>:<severity> --summary <text>` (--package repeatable, each name ecosystem-qualified such as `cargo/app`; a name without its ecosystem is E317; severity none, patch, minor or major) writes `.changeset/<adjective>-<noun>-<verb>.md`, choosing a name no file in `.changeset` already has and never replacing one, even if another `callisto add` created it a moment earlier, with front matter mapping each package to its severity and the trimmed summary as body, prints `Added changeset: <path>`, and never prompts."
+      "criterion": "`callisto add --package <name>:<severity> --summary <text>` (--package repeatable, each name ecosystem-qualified such as `cargo/app`; a name without its ecosystem is E317; severity none, patch, minor or major) writes `.changeset/<adjective>-<noun>-<verb>.md`, choosing a name no file in `.changeset` already has and never replacing one, even if another `callisto add` created it a moment earlier, with front matter mapping each package to its severity and the trimmed summary as body, prints `Added changeset: <path>`, and never prompts. A package given more than once, with the same or different severities, is rejected with E329 naming it, and nothing is written."
     },
     {
       "id": "CLI-ADD-02",

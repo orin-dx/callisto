@@ -318,3 +318,4 @@ Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E257,
 | E323 | A first crates.io release of a crate with no `description`, or neither `license` nor `license-file` | Add the missing field to the package's Cargo.toml (or inherit it from `[workspace.package]`), commit it, and run `callisto release` again. Nothing has been published. |
 | E324 | A `snapshot --tag` is empty or has a character other than a letter, digit or `-`; a `pre enter` tag has an empty `.`-separated part or such a character | Pass a tag such as `canary` or `pr-42`; it becomes part of the pre-release version. |
 | E327 | `release pending --from` is not a full 40-character hexadecimal commit SHA | Pass the full commit SHA, for example the `source` of an entry from `callisto release pending`. |
+| E329 | `add --package` names the same package more than once (even with different severities) | Pass each package once, with the one severity the change needs. |
