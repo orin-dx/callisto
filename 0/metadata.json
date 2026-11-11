@@ -1,0 +1,128 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M76CWKR5B70HCAZ894MSW89T",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-11T22:50:51.832975Z",
+  "branch": "fix-pin",
+  "checkpoints_count": 8,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "e195830f1bca",
+  "checkpoint_transcript_start": 41533,
+  "transcript_lines_at_start": 41533,
+  "compact_transcript_start": 3012,
+  "token_usage": {
+    "input_tokens": 102,
+    "cache_creation_tokens": 60745,
+    "cache_read_tokens": 20833069,
+    "output_tokens": 32867,
+    "api_call_count": 51,
+    "subagent_tokens": {
+      "input_tokens": 32,
+      "cache_creation_tokens": 218438,
+      "cache_read_tokens": 609381,
+      "output_tokens": 4441,
+      "api_call_count": 16
+    }
+  },
+  "redaction": {
+    "replacements": 93,
+    "layers": {
+      "betterleaks": 30,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 303
+  },
+  "summary": {
+    "intent": "Wrap up outstanding Callisto v1 stability work (open PRs, cleanup of worktrees/branches), diagnose why Dependabot PR #516 failed, verify a pasted Caliper finding for change #224, and then tackle all remaining planned work items.",
+    "outcome": "Opened PR #515 (drop undocumented pre-major-inference \"false\" alias), cleaned up 15 merged agent worktrees and 32 local branches, diagnosed #516's failures, confirmed the Caliper #224 finding on origin/feat/checker-supplies-facts without fixing it, and launched five parallel agents for the remaining work.",
+    "learnings": {
+      "repo": [
+        "Callisto repo is squash-merge only, so `git branch --merged` can't identify merged branches; check PR merge state via `gh pr list --state all --head <branch>` before deleting local branches.",
+        "Dependabot bumps of taiki-e/install-action update the four workflow files but skip the composite action `.github/actions/install-workflow-linters/action.yml`, leaving two pinned commits that `verify-action-pins.sh` (Workflow Contracts check) rejects; Dependabot config likely lacks `/.github/actions/`.",
+        "Python requirement parse/render is not idempotent: proptest found input `¡[\\u{b}[` where first parse yields extras `[]` but re-parsing the rendered form yields `[\"[\"]`; regression seed belongs in `crates/callisto-manifests/proptest-regressions/python/tests.txt`.",
+        "Invalid pre-major-inference values produce error E256; docs/config.md lists only off, conservative and conservative-feat.",
+        "Exit codes freeze at 1.0: unknown `--package` exits 1 (E102) while E227 exits 2; exit classification lives in `exit_kind()` per error type.",
+        "Release PR #493 (0.20.0) showed DIRTY (merge conflicts) though recently regenerated; generated branch, expected to be rebuilt by the release workflow after pushes to main.",
+        "Caliper change numbers like #224 are Entire trail change numbers, not GitHub PR numbers (Caliper PR #224 is an unrelated CI change).",
+        "Local Caliper main was 437 commits behind origin; the `states_bases` code lives on origin/main and origin/feat/checker-supplies-facts."
+      ],
+      "code": [
+        {
+          "path": "crates/semantic/src/convert.rs",
+          "line": 400,
+          "finding": "Name-only traversal calls `base_types` only when `states_bases(&info)` is true, otherwise returns an empty Vec. `states_bases` checks OBJECT_CLASS|OBJECT_INTERFACE, so an instantiated generic like `Props<string>` (Reference flag only) is rejected and loses HTMLAttributes from `composes`. Fix: resolve the Reference's generic target and follow it."
+        },
+        {
+          "path": "crates/callisto-graph/src/config/resolve.rs",
+          "finding": "Removed the `\"false\"` arm of pre-major-inference parsing and its test assertion in PR #515."
+        }
+      ],
+      "workflow": [
+        "Verify audit/review claims against the actual code and correct repo checkout before acting; the first Caliper check failed only because the local checkout was stale.",
+        "Before force-removing locked worktrees, run a read-only safety report (uncommitted changes, commits ahead of remote) and confirm PR merged state.",
+        "Fetch refs without switching branches to avoid touching the user's working tree.",
+        "Split parallel agents by file ownership to avoid conflicts; flag unilateral decisions (e.g. exit-2 call) in the PR for user confirmation.",
+        "Session write access limited to Callisto worktrees, so cross-repo fixes (Caliper) need a separate session."
+      ]
+    },
+    "friction": [
+      "Pasted finding referenced files not in Callisto, and the stale local Caliper main made the code appear missing, costing several rounds.",
+      "\"Change #224\" was ambiguous (GitHub PR vs Entire trail change number).",
+      "Four worktrees were locked and required `--force --force` after safety checks.",
+      "Entire Gates failure on #516 was not investigated.",
+      "Release PR #493 shows merge conflicts that can't be resolved by hand on a generated branch.",
+      "Session cannot write to Caliper, blocking the #224 fix."
+    ],
+    "open_items": [
+      "Caliper #224 fix on feat/checker-supplies-facts: add a `Props<string>` regression fixture, then resolve generic target for Reference types (check whether RPC already has a target-resolution call); needs a Caliper session.",
+      "Confirm the exit-2 decision for bad flag values (made unilaterally by the assistant, flagged in its PR).",
+      "Merge #512–#515 and #495, then refresh and re-read release PR #493 (0.20.0) as a user.",
+      "Land the Dependabot pin fix and `.github/actions/` config so #516 (and likely #517) can pass.",
+      "Fix the Python requirement idempotency bug with a regression seed in a separate PR.",
+      "Review results of the five launched agents (pin fix, Python parser, exit 2, errors.md wording, over-engineering audit).",
+      "Rewrite stale NEXT-WORK.md from verified state; open decisions: private workspace root listed as package, fixed-group tag and title (E194), OIDC publishing.",
+      "Lower-value audit items: errors.md help wording, two workflow-grep scripts, rstest collapse of near-identical tests, `has_*` bools in init.rs.",
+      "Delete merged remote branches on origin (#501, #503–#514) or enable GitHub auto-delete on merge.",
+      "Four ~/Projects/callisto-fixtures worktrees (wt-cleanup-1/2/3, clean-cleanup) and chore/callisto-* branches left unchecked.",
+      "Entire Gates failure on #516 not investigated."
+    ]
+  }
+}

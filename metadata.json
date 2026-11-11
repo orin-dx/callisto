@@ -1,0 +1,45 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M76CWKR5B70HCAZ894MSW89T",
+  "strategy": "manual-commit",
+  "branch": "fix-pin",
+  "checkpoints_count": 8,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 102,
+    "cache_creation_tokens": 60745,
+    "cache_read_tokens": 20833069,
+    "output_tokens": 32867,
+    "api_call_count": 51,
+    "subagent_tokens": {
+      "input_tokens": 32,
+      "cache_creation_tokens": 218438,
+      "cache_read_tokens": 609381,
+      "output_tokens": 4441,
+      "api_call_count": 16
+    }
+  },
+  "redaction": {
+    "replacements": 93,
+    "layers": {
+      "betterleaks": 30,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
