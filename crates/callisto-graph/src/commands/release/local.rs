@@ -223,11 +223,13 @@ fn first_release_packages<R: CommandRunner, D: DependencyResolver>(
     decision: &callisto_model::ReleaseDecisionV1,
 ) -> Result<std::collections::BTreeSet<ReleasePackageId>, GraphError> {
     let tags = workspace.tags()?;
+    let owners = crate::commands::release_decision::ReleaseOwners::of(workspace);
     Ok(decision
         .entries
         .iter()
         .filter(|entry| {
-            crate::commands::release_decision::workspace_package(workspace, &entry.package)
+            owners
+                .get(&entry.package)
                 .is_some_and(|package| tags.last_tag(&package.id).is_none())
         })
         .map(|entry| entry.package.clone())
@@ -241,8 +243,9 @@ fn refuse_a_crate_crates_io_would_reject<R: CommandRunner, D: DependencyResolver
     workspace: &Workspace<'_, R, D>,
     decision: &callisto_model::ReleaseDecisionV1,
 ) -> Result<(), GraphError> {
+    let owners = crate::commands::release_decision::ReleaseOwners::of(workspace);
     for id in first_release_packages(workspace, decision)? {
-        let Some(package) = crate::commands::release_decision::workspace_package(workspace, &id) else {
+        let Some(package) = owners.get(&id) else {
             continue;
         };
         if !package.publish_to.contains(&PublishTarget::CratesIo) {

@@ -33,35 +33,72 @@ pub(super) fn packages_moved_past_their_version<R: callisto_model::CommandRunner
     resumable: &BTreeSet<ReleasePackageId>,
 ) -> Result<Vec<MovedPast>, GraphError> {
     let git = workspace.git_access();
+    let mut first_entry = BTreeMap::new();
+    for (position, entry) in decision.entries.iter().enumerate() {
+        if !resumable.contains(&entry.package) {
+            first_entry.entry(&entry.package).or_insert(position);
+        }
+    }
     let mut candidates = Vec::new();
     for package in workspace.graph.packages() {
         let ids = crate::commands::release_decision::release_package_ids(&workspace.identity, package)?;
-        let Some(entry) = decision
-            .entries
-            .iter()
-            .find(|entry| ids.contains(&entry.package) && !resumable.contains(&entry.package))
-        else {
+        let Some(position) = ids.iter().filter_map(|id| first_entry.get(id)).min() else {
             continue;
         };
+        let entry = &decision.entries[*position];
         // A package with no manifest has no version to have been set.
         if let Some(manifest) = package.canonical_manifests().next() {
             candidates.push((package, entry, manifest));
         }
     }
 
-    // Every manifest at `HEAD` in one read; each package's own history is then read side by side.
+    // Every manifest at `HEAD` in one read, every package's history in one log, and each package's newest candidate
+    // commit with its parent in one more read; a package whose newest candidate is not the answer reads on its own.
     let reads = RevReads::new(git);
     let at_head: Vec<(String, PathBuf)> = candidates
         .iter()
         .map(|(_, _, manifest)| ("HEAD".to_owned(), manifest.path.clone()))
         .collect();
     reads.preload(&at_head)?;
-    let version_commits = super::capability::in_parallel(&candidates, |(_, entry, manifest)| {
+    let mut heads = Vec::with_capacity(candidates.len());
+    for (_, _, manifest) in &candidates {
+        heads.push(effective_version_at(&reads, "HEAD", manifest)?);
+    }
+    let paths: Vec<Vec<PathBuf>> = candidates
+        .iter()
+        .zip(&heads)
+        .map(|((_, _, manifest), head)| {
+            head.as_ref()
+                .map_or_else(Vec::new, |head| version_paths(manifest, head))
+        })
+        .collect();
+    let all_paths: Vec<PathBuf> = paths
+        .iter()
+        .flatten()
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let touches = git.first_parent_commits_by_path(&all_paths)?;
+    let histories: Vec<Vec<&str>> = paths.iter().map(|paths| touches.touching(paths)).collect();
+    let newest: Vec<(String, PathBuf)> = histories
+        .iter()
+        .zip(&paths)
+        .filter_map(|(history, paths)| Some((*history.first()?, paths)))
+        .flat_map(|(commit, paths)| {
+            [commit.to_owned(), format!("{commit}^")]
+                .into_iter()
+                .flat_map(move |rev| paths.iter().map(move |path| (rev.clone(), path.clone())))
+        })
+        .collect();
+    reads.preload(&newest)?;
+    let work: Vec<_> = candidates.iter().zip(&heads).zip(&histories).collect();
+    let version_commits = super::capability::in_parallel(&work, |(((_, entry, manifest), head), history)| {
         // A manifest that is not committed has no history to compare; the clean-tree rule covers it.
-        let Some(head) = effective_version_at(&reads, "HEAD", manifest)? else {
+        let Some(head) = head else {
             return Ok(None);
         };
-        commit_setting_version(&reads, git, manifest, &head, &entry.target_version).map(Some)
+        commit_setting_version(&reads, history, manifest, head, &entry.target_version).map(Some)
     });
     let mut checked = Vec::new();
     for ((package, entry, _), version_commit) in candidates.into_iter().zip(version_commits) {
@@ -120,24 +157,21 @@ fn pairs_match<T: PartialEq>(ids: &mut impl Iterator<Item = Option<T>>, pairs: u
 /// those are the only paths walked. A history with no such commit gives `None`, never a guess.
 fn commit_setting_version(
     reads: &RevReads<'_, '_>,
-    git: &GitAccess<'_>,
+    history: &[&str],
     manifest: &ManifestDecl,
     head: &callisto_manifests::EffectiveManifestVersion,
     version: &Version,
 ) -> Result<Option<String>, GraphError> {
-    let mut paths = vec![manifest.path.clone()];
-    if head.authority != manifest.path {
-        paths.push(head.authority.clone());
-    }
-    for commit in git.first_parent_commits_touching(&paths)? {
+    let paths = version_paths(manifest, head);
+    for commit in history {
         // A root commit has no parent, so the version was set there.
         let parent = format!("{commit}^");
-        let wanted: Vec<(String, PathBuf)> = [&commit, &parent]
+        let wanted: Vec<(String, PathBuf)> = [*commit, parent.as_str()]
             .into_iter()
-            .flat_map(|rev| paths.iter().map(move |path| (rev.clone(), path.clone())))
+            .flat_map(|rev| paths.iter().map(move |path| (rev.to_owned(), path.clone())))
             .collect();
         reads.preload(&wanted)?;
-        if effective_version_at(reads, &commit, manifest)?
+        if effective_version_at(reads, commit, manifest)?
             .map(|found| found.version)
             .as_ref()
             != Some(version)
@@ -146,10 +180,19 @@ fn commit_setting_version(
         }
         let before = effective_version_at(reads, &parent, manifest)?;
         if before.map(|found| found.version).as_ref() != Some(version) {
-            return Ok(Some(commit));
+            return Ok(Some((*commit).to_owned()));
         }
     }
     Ok(None)
+}
+
+/// The paths whose history can set `manifest`'s version: the manifest and the file that declares an inherited one.
+fn version_paths(manifest: &ManifestDecl, head: &callisto_manifests::EffectiveManifestVersion) -> Vec<PathBuf> {
+    let mut paths = vec![manifest.path.clone()];
+    if head.authority != manifest.path {
+        paths.push(head.authority.clone());
+    }
+    paths
 }
 
 /// Manifest text by revision and path, fetched in batches and kept: the same file is wanted by many packages (an
@@ -296,6 +339,98 @@ mod tests {
         commit_all(root, "workspace")
     }
 
+    /// Real git that records the subcommand of every call.
+    struct Counting(std::sync::Mutex<Vec<String>>);
+
+    impl callisto_model::CommandRunner for Counting {
+        fn run(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            self.0
+                .lock()
+                .unwrap()
+                .push(args.first().copied().unwrap_or_default().to_owned());
+            RealGitRunner.run(program, args, cwd)
+        }
+
+        fn run_with_stdin(
+            &self,
+            program: &str,
+            args: &[&str],
+            cwd: &Path,
+            stdin: &[u8],
+        ) -> Result<callisto_model::CommandOutput, callisto_model::CommandError> {
+            self.0
+                .lock()
+                .unwrap()
+                .push(args.first().copied().unwrap_or_default().to_owned());
+            RealGitRunner.run_with_stdin(program, args, cwd, stdin)
+        }
+    }
+
+    /// `count` crates that each set their own version in one commit, then one commit in the last crate.
+    fn crates_with_one_late_change(root: &Path, count: usize) {
+        let members: Vec<String> = (0..count).map(|index| format!("\"crates/m{index}\"")).collect();
+        std::fs::write(
+            root.join("Cargo.toml"),
+            format!("[workspace]\nmembers = [{}]\nresolver = \"3\"\n", members.join(", ")),
+        )
+        .unwrap();
+        for index in 0..count {
+            std::fs::create_dir_all(root.join(format!("crates/m{index}/src"))).unwrap();
+            std::fs::write(
+                root.join(format!("crates/m{index}/Cargo.toml")),
+                format!("[package]\nname = \"m{index}\"\nversion = \"1.0.0\"\nedition = \"2024\"\n"),
+            )
+            .unwrap();
+            std::fs::write(root.join(format!("crates/m{index}/src/lib.rs")), "\n").unwrap();
+        }
+        std::fs::write(root.join("callisto.toml"), "").unwrap();
+        commit_all(root, "crates");
+        std::fs::write(
+            root.join(format!("crates/m{}/src/lib.rs", count - 1)),
+            "pub fn late() {}\n",
+        )
+        .unwrap();
+        commit_all(root, "late change");
+    }
+
+    /// Calls made by the version-commit check, by subcommand, and the packages it reports.
+    fn calls_for(count: usize) -> (Vec<String>, Vec<String>) {
+        let (dir, _) = fixture();
+        let root = dir.path();
+        crates_with_one_late_change(root, count);
+        let runner = Counting(std::sync::Mutex::new(Vec::new()));
+        let workspace = Workspace::load(root.to_path_buf(), &IgnoreWalkLocator::new(root), &runner).unwrap();
+        let decision = crate::commands::release_decision::derive_release_roster(&workspace, &[], &BTreeSet::new())
+            .unwrap()
+            .expect("unreleased packages");
+        runner.0.lock().unwrap().clear();
+        let reported = packages_moved_past_their_version(&workspace, &decision, &BTreeSet::new())
+            .unwrap()
+            .into_iter()
+            .map(|moved| moved.package.to_string())
+            .collect();
+        let calls = runner.0.lock().unwrap().clone();
+        (calls, reported)
+    }
+
+    /// The commit history is read once and the commits' manifests in a fixed number of reads, however many packages
+    /// release, and only the package that changed is reported.
+    #[test]
+    fn the_check_spawns_a_fixed_number_of_git_processes_for_any_package_count() {
+        for count in [3, 12] {
+            let (calls, reported) = calls_for(count);
+            let count_of = |subcommand: &str| calls.iter().filter(|call| *call == subcommand).count();
+            assert_eq!(count_of("log"), 1, "{count} packages: {calls:?}");
+            assert!(count_of("cat-file") <= 3, "{count} packages: {calls:?}");
+            assert_eq!(reported, [format!("cargo/m{}", count - 1)], "{count} packages");
+        }
+    }
+
     #[test]
     fn a_package_untouched_since_its_version_commit_is_not_reported() {
         let (dir, _) = fixture();
@@ -353,6 +488,23 @@ mod tests {
             moved(root),
             vec![("cargo/release-fixture".to_owned(), Some(version_commit))],
             "more than a hundred manifest edits above the version commit must not hide it"
+        );
+    }
+
+    #[test]
+    fn a_version_set_in_the_root_commit_is_found_when_git_hides_root_diffs() {
+        let (dir, _) = fixture();
+        let root = dir.path();
+        git(root, &["config", "log.showRoot", "false"]);
+        let version_commit = git(root, &["rev-parse", "HEAD"]);
+        assert_eq!(git(root, &["rev-list", "--max-parents=0", "HEAD"]), version_commit);
+        let manifest = root.join("Cargo.toml");
+        let original = std::fs::read_to_string(&manifest).unwrap();
+        std::fs::write(&manifest, format!("{original}\n# edit\n")).unwrap();
+        commit_all(root, "touch the manifest");
+        assert_eq!(
+            moved(root),
+            vec![("cargo/release-fixture".to_owned(), Some(version_commit))]
         );
     }
 

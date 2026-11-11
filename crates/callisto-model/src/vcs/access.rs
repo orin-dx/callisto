@@ -24,6 +24,31 @@ pub struct GitAccess<'r> {
     root: PathBuf,
 }
 
+/// The first-parent commits that changed each of a set of paths, from one `git log`.
+#[derive(Debug, Default)]
+pub struct FirstParentTouches {
+    /// Every commit that changed any of the paths, newest first.
+    commits: Vec<String>,
+    /// For each path, the positions in `commits` of the commits that changed it, ascending.
+    by_path: std::collections::BTreeMap<PathBuf, Vec<usize>>,
+}
+
+impl FirstParentTouches {
+    /// The commits that changed any of `paths`, newest first.
+    pub fn touching(&self, paths: &[PathBuf]) -> Vec<&str> {
+        let positions: std::collections::BTreeSet<usize> = paths
+            .iter()
+            .filter_map(|path| self.by_path.get(path))
+            .flatten()
+            .copied()
+            .collect();
+        positions
+            .into_iter()
+            .map(|index| self.commits[index].as_str())
+            .collect()
+    }
+}
+
 /// Fresh Git checkout facts used to bind a durable release intent to the
 /// exact repository it was validated against.
 ///
@@ -498,6 +523,51 @@ impl GitAccess<'_> {
             return Err(probe_failed(&arg_refs, &self.root, &output));
         }
         Ok(output.stdout_lines().map(str::to_owned).collect())
+    }
+
+    /// [`Self::first_parent_commits_touching`] for many paths in one `git log`, so each path's commits cost no process
+    /// of their own.
+    pub fn first_parent_commits_by_path(&self, paths: &[PathBuf]) -> Result<FirstParentTouches, VcsError> {
+        let mut touches = FirstParentTouches::default();
+        if paths.is_empty() {
+            return Ok(touches);
+        }
+        // `-z` keeps odd file names unquoted; `\x01` opens each commit's record, whose files follow NUL-separated.
+        let mut args: Vec<String> = [
+            "log",
+            "--no-show-signature",
+            "--first-parent",
+            "-m",
+            "--root",
+            "-z",
+            "--name-only",
+            "--relative",
+            "--format=%x01%H",
+            "--",
+        ]
+        .map(str::to_owned)
+        .into();
+        args.extend(paths.iter().map(|path| format!(":(literal){}", path.to_string_lossy())));
+        let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let output = self.runner.run("git", &arg_refs, &self.root)?;
+        if !output.success() {
+            return Err(probe_failed(&arg_refs, &self.root, &output));
+        }
+        for record in output.stdout.split('\u{1}').skip(1) {
+            let mut fields = record.split('\0');
+            let Some(commit) = fields.next() else {
+                continue;
+            };
+            let index = touches.commits.len();
+            touches.commits.push(commit.to_owned());
+            for file in fields
+                .map(|file| file.trim_start_matches('\n'))
+                .filter(|file| !file.is_empty())
+            {
+                touches.by_path.entry(PathBuf::from(file)).or_default().push(index);
+            }
+        }
+        Ok(touches)
     }
 
     /// Lists tag names, optionally filtered by `glob` (a [`globset::Glob`]
@@ -1728,5 +1798,47 @@ mod tests {
             ),
             "got {result:?}"
         );
+    }
+
+    /// Many paths cost one `git log`, and each path's commits come back newest first, merged across paths.
+    #[test]
+    fn first_parent_commits_by_path_reads_every_path_in_one_log() {
+        let temp = tempfile::tempdir().unwrap();
+        let runner = FakeRunner {
+            calls: Mutex::new(Vec::new()),
+            response: Box::new(|_| {
+                Ok(ok("\u{1}c3\0\na/Cargo.toml\0Cargo.toml\0\u{1}c2\0\nb/Cargo.toml\0\u{1}c1\0\nCargo.toml\0a/Cargo.toml\0"))
+            }),
+        };
+        let git = GitAccess::new(temp.path(), &runner);
+        let paths = ["a/Cargo.toml", "b/Cargo.toml", "Cargo.toml"].map(PathBuf::from);
+
+        let touches = git.first_parent_commits_by_path(&paths).unwrap();
+
+        assert_eq!(touches.touching(&paths[..1]), ["c3", "c1"]);
+        assert_eq!(touches.touching(&paths[1..2]), ["c2"]);
+        assert_eq!(
+            touches.touching(&[paths[1].clone(), paths[2].clone()]),
+            ["c3", "c2", "c1"]
+        );
+        assert!(touches.touching(&[PathBuf::from("none/Cargo.toml")]).is_empty());
+        let calls = runner.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1, "{calls:?}");
+        assert!(calls[0].starts_with(&["log".to_owned()]), "{calls:?}");
+    }
+
+    #[test]
+    fn first_parent_commits_by_path_without_paths_runs_nothing() {
+        let temp = tempfile::tempdir().unwrap();
+        let runner = FakeRunner {
+            calls: Mutex::new(Vec::new()),
+            response: Box::new(|args| panic!("unexpected command: {args:?}")),
+        };
+
+        let touches = GitAccess::new(temp.path(), &runner)
+            .first_parent_commits_by_path(&[])
+            .unwrap();
+
+        assert!(touches.touching(&[PathBuf::from("Cargo.toml")]).is_empty());
     }
 }

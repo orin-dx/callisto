@@ -109,8 +109,14 @@ pub fn derive_selected_release_decision<R: callisto_model::CommandRunner, D: Dep
     }
 
     let selected = selections.iter().collect::<std::collections::BTreeSet<_>>();
+    let owners = ReleaseOwners::of(workspace);
+    let released = complete
+        .entries
+        .iter()
+        .map(|entry| &entry.package)
+        .collect::<std::collections::BTreeSet<_>>();
     for selection in &selected {
-        let Some(package) = workspace_package(workspace, selection) else {
+        let Some(package) = owners.get(selection) else {
             let missing = callisto_model::PackageId::Prefixed {
                 ecosystem: selection.ecosystem(),
                 name: selection.name().to_string(),
@@ -120,7 +126,7 @@ pub fn derive_selected_release_decision<R: callisto_model::CommandRunner, D: Dep
                 workspace.graph.packages().map(Package::canonical_id),
             ));
         };
-        let reason = if !complete.entries.iter().any(|entry| &entry.package == *selection) {
+        let reason = if !released.contains(*selection) {
             ReleaseSelectionInvalidReason::NotARelease
         } else if package
             .publish_to
@@ -137,7 +143,7 @@ pub fn derive_selected_release_decision<R: callisto_model::CommandRunner, D: Dep
         });
     }
 
-    let entries = expand_selection(workspace, complete.entries, &selected);
+    let entries = expand_selection(workspace, &owners, complete.entries, &selected);
     ReleaseDecisionV1::new(entries).map_err(GraphError::from)
 }
 
@@ -145,6 +151,7 @@ pub fn derive_selected_release_decision<R: callisto_model::CommandRunner, D: Dep
 /// with a selection. Both release routes narrow `--package` through this.
 fn expand_selection<R: callisto_model::CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
+    owners: &ReleaseOwners<'_>,
     entries: Vec<ReleaseDecisionEntry>,
     selected: &std::collections::BTreeSet<&ReleasePackageId>,
 ) -> Vec<ReleaseDecisionEntry> {
@@ -161,23 +168,23 @@ fn expand_selection<R: callisto_model::CommandRunner, D: DependencyResolver>(
     // Config membership: a selected member's own reason is often `Changeset` or `UnreleasedVersion`.
     let config_groups = selected
         .iter()
-        .flat_map(|selection| release_groups_of(workspace, selection))
+        .flat_map(|selection| release_groups_of(workspace, owners, selection))
         .collect::<std::collections::BTreeSet<_>>();
     // Selecting one distribution of a package releases all of them, so the shared tag waits for every publish.
     let selected_packages = selected
         .iter()
-        .filter_map(|selection| workspace_package(workspace, selection))
+        .filter_map(|selection| owners.get(selection))
         .map(|package| package.id.clone())
         .collect::<std::collections::BTreeSet<_>>();
     entries
         .into_iter()
         .filter(|entry| {
             selected.contains(&entry.package)
-                || workspace_package(workspace, &entry.package).is_some_and(|package| selected_packages.contains(&package.id))
+                || owners.get(&entry.package).is_some_and(|package| selected_packages.contains(&package.id))
                 || entry.reasons.iter().any(|reason| {
                     matches!(reason, ReleaseInclusionReason::LinkedGroup { group_id } if reason_groups.contains(group_id))
                 })
-                || release_groups_of(workspace, &entry.package)
+                || release_groups_of(workspace, owners, &entry.package)
                     .iter()
                     .any(|group| config_groups.contains(group))
         })
@@ -219,6 +226,11 @@ pub(crate) fn derive_release_roster<R: callisto_model::CommandRunner, D: Depende
     }
 
     let mut seen = std::collections::BTreeSet::new();
+    let owners = ReleaseOwners::of(workspace);
+    let unreleased = entries
+        .iter()
+        .map(|entry| entry.package.clone())
+        .collect::<std::collections::BTreeSet<_>>();
     for selection in selections {
         if !seen.insert(selection) {
             return Err(GraphError::ReleaseSelectionInvalid {
@@ -226,7 +238,7 @@ pub(crate) fn derive_release_roster<R: callisto_model::CommandRunner, D: Depende
                 reason: ReleaseSelectionInvalidReason::Duplicate,
             });
         }
-        let Some(package) = workspace_package(workspace, selection) else {
+        let Some(package) = owners.get(selection) else {
             let missing = callisto_model::PackageId::Prefixed {
                 ecosystem: selection.ecosystem(),
                 name: selection.name().to_string(),
@@ -242,7 +254,7 @@ pub(crate) fn derive_release_roster<R: callisto_model::CommandRunner, D: Depende
                 reason: ReleaseSelectionInvalidReason::NoDispatchableTarget,
             });
         }
-        if !entries.iter().any(|entry| &entry.package == selection) {
+        if !unreleased.contains(selection) {
             return Err(GraphError::ReleaseSelectionInvalid {
                 package: selection.clone(),
                 reason: ReleaseSelectionInvalidReason::NotARelease,
@@ -250,7 +262,7 @@ pub(crate) fn derive_release_roster<R: callisto_model::CommandRunner, D: Depende
         }
     }
     if !selections.is_empty() {
-        entries = expand_selection(workspace, entries, &seen);
+        entries = expand_selection(workspace, &owners, entries, &seen);
     }
     if entries.is_empty() {
         return Ok(None);
@@ -325,24 +337,36 @@ pub(crate) fn has_dispatchable_target(package: &Package) -> bool {
         .any(|target| !matches!(target, callisto_model::PublishTarget::None))
 }
 
-/// The workspace package with this exact release identity.
-pub(crate) fn workspace_package<'w, R: callisto_model::CommandRunner, D: DependencyResolver>(
-    workspace: &'w Workspace<'_, R, D>,
-    id: &ReleasePackageId,
-) -> Option<&'w Package> {
-    // By release identity, not name: a dual-manifest package's npm name can differ from its id.
-    workspace
-        .graph
-        .packages()
-        .find(|package| release_package_ids(&workspace.identity, package).is_ok_and(|ids| ids.contains(id)))
+/// Each release identity's workspace package, built once so a lookup per entry does not rescan every package.
+pub(crate) struct ReleaseOwners<'w>(std::collections::BTreeMap<ReleasePackageId, &'w Package>);
+
+impl<'w> ReleaseOwners<'w> {
+    pub(crate) fn of<R: callisto_model::CommandRunner, D: DependencyResolver>(
+        workspace: &'w Workspace<'_, R, D>,
+    ) -> Self {
+        let mut owners = std::collections::BTreeMap::new();
+        // By release identity, not name: a dual-manifest package's npm name can differ from its id.
+        for package in workspace.graph.packages() {
+            for id in release_package_ids(&workspace.identity, package).unwrap_or_default() {
+                owners.entry(id).or_insert(package);
+            }
+        }
+        Self(owners)
+    }
+
+    /// The workspace package with this exact release identity.
+    pub(crate) fn get(&self, id: &ReleasePackageId) -> Option<&'w Package> {
+        self.0.get(id).copied()
+    }
 }
 
 /// The fixed and linked groups a release package belongs to, per config.
 fn release_groups_of<R: callisto_model::CommandRunner, D: DependencyResolver>(
     workspace: &Workspace<'_, R, D>,
+    owners: &ReleaseOwners<'_>,
     id: &ReleasePackageId,
 ) -> Vec<(&'static str, callisto_model::GroupName)> {
-    let Some(package) = workspace_package(workspace, id) else {
+    let Some(package) = owners.get(id) else {
         return Vec::new();
     };
     let groups = &workspace.config.groups;
