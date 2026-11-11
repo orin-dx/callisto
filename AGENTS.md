@@ -37,6 +37,22 @@ Rules for AI agents working in this repo.
 6. No cargo features in shipped crates; behaviour is chosen at runtime (#143). The dev-only `callisto-model/test-util` feature is the exception.
 7. No `unwrap()` outside tests (`just lint` denies it). An `expect` names the invariant that makes it unreachable.
 
+## Enforcing an invariant
+
+Use the first rung that works:
+
+1. A type, or a private constructor or field, so the wrong thing cannot compile.
+2. An exhaustive `match` with no `_` arm on our own enums.
+3. A clippy or rustc lint already in the workspace lints.
+4. One small test that drives the real binary or function and checks observable behavior.
+5. Nothing.
+
+- No tests that scan source text, or grep docs or workflows for strings that code can expose directly.
+- No hand-maintained lists that mirror code (error codes, command names, env names): derive them from the type.
+- Prefer a crate already in `Cargo.lock` over a hand-written grammar: `semver` for versions, `miette` and `thiserror` for errors, `clap` derive for args, `serde` for formats, `insta` for snapshots.
+- Every new error code, JSON key or flag is permanent after 1.0: prefer fewer, broader ones.
+- Before adding a check, delete one that a type now covers.
+
 ## Fixing bugs
 
 - Grep for structurally identical code (same algorithm, other file, ecosystem or mode). A sibling with the same defect is in scope now.
