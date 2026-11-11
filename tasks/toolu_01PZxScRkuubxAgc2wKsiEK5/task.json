@@ -1,0 +1,24 @@
+{
+  "tool_use_id": "toolu_01PZxScRkuubxAgc2wKsiEK5",
+  "agent_id": "a5e465e9b44611fbd",
+  "subagent_type": "smith:implementer",
+  "task_description": "Pin tag names and Action inputs",
+  "files": [
+    ".github/tests/action-inputs/callisto-action.txt",
+    ".github/tests/action-inputs/setup-callisto.txt",
+    ".github/tests/verify-action-inputs.sh",
+    "crates/callisto-cli/tests/tag_name_contract_tests.rs",
+    "crates/callisto-cli/tests/usage_exit_codes_tests.rs",
+    "crates/callisto-graph/tests/config_deny_unknown_fields_guard_tests.rs",
+    "justfile"
+  ],
+  "token_usage": {
+    "input_tokens": 164,
+    "cache_creation_tokens": 163370,
+    "cache_read_tokens": 9308270,
+    "output_tokens": 31570,
+    "api_call_count": 82
+  },
+  "started_at": "2026-11-11T08:20:00.988598-08:00",
+  "completed_at": "2026-11-11T08:36:26.952795-08:00"
+}
