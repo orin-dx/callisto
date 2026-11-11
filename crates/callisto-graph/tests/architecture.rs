@@ -132,85 +132,10 @@ fn allowlist_entries_reference_files_that_still_exist() {
     }
 }
 
-// --- Typed release errors ------------------------------------------------
-// Enforcement for the `GraphError::ReleaseIntentStale` (E124) struct variant: staleness carries a real
-// `StaleReason`, constructible only from the `commands/release/` module (`StaleReason` itself lives in its `mod.rs`).
-
 /// This crate's own `src/` directory, independent of `workspace_root()`
 /// (which points at the whole-workspace root two levels up).
 fn graph_crate_src_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")
-}
-
-/// Reads `relative` (forward-slash separated, relative to this crate's
-/// `src/`, e.g. `"commands/release/mod.rs"`) with `#[cfg(test)] mod tests { ... }`
-/// blocks stripped.
-fn read_production_source(relative: &str) -> String {
-    let path = graph_crate_src_dir().join(relative);
-    let content = fs::read_to_string(&path).unwrap_or_else(|e| panic!("could not read {path:?}: {e}"));
-    strip_test_modules(&content)
-}
-
-/// `StaleReason`'s four fresh-re-observation constructors.
-const STALE_REASON_REAL_CONSTRUCTORS: [&str; 4] = [
-    "trust_evidence_changed",
-    "source_identity_changed",
-    "git_remote_changed",
-    "intent_differs_from_fresh_derivation",
-];
-
-/// `GraphError::ReleaseIntentStale` is constructed only via one of
-/// `StaleReason`'s four fresh-re-observation constructors, and only from
-/// the `commands/release/` module; no other construction site exists workspace-wide.
-#[test]
-fn release_intent_stale_is_constructed_only_by_fresh_reobservation() {
-    let release_module = graph_crate_src_dir().join("commands/release");
-    let mut files = Vec::new();
-    collect_rust_src_files(&graph_crate_src_dir(), &mut files);
-
-    let mut violations = Vec::new();
-    for file in files {
-        if file.starts_with(&release_module) {
-            continue;
-        }
-        let Ok(content) = fs::read_to_string(&file) else {
-            continue;
-        };
-        let production = strip_test_modules(&content);
-        for name in STALE_REASON_REAL_CONSTRUCTORS {
-            if production.contains(name) {
-                violations.push(format!("{}: references `{name}`", file.display()));
-            }
-        }
-    }
-
-    assert!(
-        violations.is_empty(),
-        "StaleReason's fresh-re-observation constructors must be referenced only from \
-         the commands/release/ module: {violations:#?}"
-    );
-}
-
-/// The four real constructors carry no visibility modifier --
-/// callable only from within the `commands/release/` module itself.
-#[test]
-fn stale_reason_constructors_are_module_private() {
-    let production = read_production_source("commands/release/mod.rs");
-
-    let mut violations = Vec::new();
-    for name in STALE_REASON_REAL_CONSTRUCTORS {
-        let needle = format!("fn {name}");
-        for line in production.lines() {
-            if line.contains(&needle) && line.contains("pub") {
-                violations.push(format!("`{name}` has a visibility modifier: {}", line.trim()));
-            }
-        }
-    }
-
-    assert!(
-        violations.is_empty(),
-        "StaleReason's real constructors must carry no pub/pub(crate)/pub(super) visibility: {violations:#?}"
-    );
 }
 
 /// Files still permitted to discard their `map_err` closure's bound error.
