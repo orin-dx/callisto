@@ -1,5 +1,5 @@
 use callisto_graph::locate::LocateError;
-use callisto_graph::{ConfigError, GraphError};
+use callisto_graph::{ConfigError, ExitKind, GraphError};
 use callisto_model::CommandError;
 use miette::Diagnostic;
 
@@ -46,36 +46,38 @@ pub fn format_error_json(command: &str, dry_run: bool, err: &CliError) -> serde_
     })
 }
 
-/// Codes for a bad or missing flag or argument value, or a bad flag combination, caught after parsing. These exit 2.
-/// Every other code exits 1. `tests/usage_exit_codes_tests.rs` fails when a code in docs/errors.md is in neither list.
-pub const USAGE_CODES: &[&str] = &[
-    "E195", "E196", "E214", "E216", "E217", "E218", "E224", "E225", "E226", "E227", "E228", "E229", "E231", "E240",
-    "E241", "E242", "E270", "E271", "E274", "E275", "E276", "E279", "E282", "E283", "E298", "E309", "E324", "E327",
-    "E329",
-];
-
-/// Codes that are usage errors only when the offending reference came from a flag (context `--package`).
-/// The same codes from `callisto.toml` content are runtime errors.
-pub const USAGE_WHEN_FROM_FLAG_CODES: &[&str] = &["E316", "E317"];
-
 impl CliError {
-    /// True when the command line input was wrong or incomplete, as opposed to workspace, config, git or registry state.
-    pub fn is_usage_error(&self) -> bool {
-        let Some(code) = self.code().map(|c| c.to_string()) else {
-            return false;
-        };
-        if USAGE_CODES.contains(&code.as_str()) {
-            return true;
-        }
-        let config = match self {
-            Self::Config(config) | Self::Graph(GraphError::Config(config)) => config,
-            _ => return false,
-        };
-        match config {
-            ConfigError::BareReference { context, .. } | ConfigError::ColonReference { context, .. } => {
-                context.starts_with("--")
-            }
-            _ => false,
+    pub fn exit_kind(&self) -> ExitKind {
+        match self {
+            Self::Graph(error) => error.exit_kind(),
+            Self::Config(error) => error.exit_kind(),
+            Self::NotATty
+            | Self::ReleaseArtifactManifestDryRun
+            | Self::ReleasePlanDryRun
+            | Self::ReleaseExecuteDryRun
+            | Self::ReleasePendingFromInvalid { .. }
+            | Self::ReleaseBuildPythonDryRun
+            | Self::ReleaseCommitInvalid { .. }
+            | Self::ReleaseDecisionOutsideSource { .. }
+            | Self::ReleaseDecisionPathInvalid { .. }
+            | Self::ReleasePackageInvalid { .. }
+            | Self::ReleaseOrchestrationRevisionInvalid { .. }
+            | Self::ReleaseArtifactRepositoryInvalid { .. }
+            | Self::ReleaseOrchestrationFlagsRequired
+            | Self::InitRequiresYes { .. }
+            | Self::InitMissingFlags { .. }
+            | Self::InitWorkflowFlagsConflict
+            | Self::InitFlagRequiresArtifactTarget { .. }
+            | Self::AddInvalidPackageSpec { .. }
+            | Self::InvalidSeverity { .. }
+            | Self::AddSummaryRequired
+            | Self::AddDuplicatePackage { .. }
+            | Self::AddSummaryEmpty
+            | Self::VersionEmitDryRun { .. }
+            | Self::PreTagEmpty
+            | Self::ReleasePrCommitPlanDryRun
+            | Self::HelpUnknownCommand { .. } => ExitKind::Usage,
+            _ => ExitKind::Runtime,
         }
     }
 }
@@ -504,6 +506,17 @@ mod tests {
             "error.path must be a string or null, got: {:?}",
             error["path"]
         );
+    }
+
+    #[test]
+    fn exit_kind_is_usage_only_for_flag_input_errors() {
+        assert_eq!(CliError::AddSummaryEmpty.exit_kind(), ExitKind::Usage);
+        assert_eq!(CliError::PreNotActive.exit_kind(), ExitKind::Runtime);
+        let bare = ConfigError::BareReference {
+            context: "--package".to_owned(),
+            given: "a".to_owned(),
+        };
+        assert_eq!(CliError::Graph(GraphError::Config(bare)).exit_kind(), ExitKind::Usage);
     }
 
     #[test]
