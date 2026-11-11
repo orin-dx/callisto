@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01BeAq8NhLQ3BwjedNm7Y5aW",
+  "agent_id": "aca1afeff7f8ec7a9",
+  "subagent_type": "general-purpose",
+  "task_description": "AGENTS.md invariant ladder section",
+  "token_usage": {
+    "input_tokens": 22,
+    "cache_creation_tokens": 61831,
+    "cache_read_tokens": 565924,
+    "output_tokens": 2211,
+    "api_call_count": 11
+  },
+  "started_at": "2026-11-11T12:19:16.19312-08:00",
+  "completed_at": "2026-11-11T12:20:26.329744-08:00"
+}
