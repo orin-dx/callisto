@@ -327,9 +327,11 @@ pub fn publish_outlook_in<R: callisto_model::CommandRunner, D: crate::resolver::
 ) -> Option<PublishOutlook> {
     let mut publishable: Vec<callisto_model::ReleasePackageId> = Vec::new();
     let mut versioned_only: Vec<String> = Vec::new();
+    let owners = crate::commands::release_decision::ReleaseOwners::of(ws);
     for package in &preview.packages {
         let id: callisto_model::ReleasePackageId = package.release_id.as_deref()?.parse().ok()?;
-        if crate::commands::release_decision::workspace_package(ws, &id)
+        if owners
+            .get(&id)
             .is_some_and(crate::commands::release_decision::has_dispatchable_target)
         {
             publishable.push(id);
