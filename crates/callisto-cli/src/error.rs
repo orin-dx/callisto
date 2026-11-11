@@ -64,6 +64,10 @@ impl CliError {
             | Self::ReleaseOrchestrationRevisionInvalid { .. }
             | Self::ReleaseArtifactRepositoryInvalid { .. }
             | Self::ReleaseOrchestrationFlagsRequired
+            | Self::ReleaseUnexpectedArtifactInputs
+            | Self::ReleaseMissingArtifactInputs
+            | Self::ReleasePrArgJsonInvalid { .. }
+            | Self::ReleaseForgeRepositoryMismatch { from_flag: true, .. }
             | Self::InitRequiresYes { .. }
             | Self::InitMissingFlags { .. }
             | Self::InitWorkflowFlagsConflict
@@ -276,7 +280,12 @@ pub enum CliError {
         code(E230),
         help("plan with an --artifact-repository matching [release].forge-repository in callisto.toml")
     )]
-    ReleaseForgeRepositoryMismatch { configured: String, requested: String },
+    ReleaseForgeRepositoryMismatch {
+        configured: String,
+        requested: String,
+        /// The requested repository is `--artifact-repository`, not read from a release intent.
+        from_flag: bool,
+    },
 
     #[error("product release planning requires --orchestration-revision and --artifact-repository")]
     #[diagnostic(code(E231), help("pass both --orchestration-revision and --artifact-repository"))]
@@ -698,6 +707,7 @@ mod tests {
             CliError::ReleaseForgeRepositoryMismatch {
                 configured: "x".to_owned(),
                 requested: "x".to_owned(),
+                from_flag: true,
             },
             CliError::ReleaseOrchestrationFlagsRequired,
             CliError::ReleaseUnexpectedArtifactInputs,

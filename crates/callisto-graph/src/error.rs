@@ -1390,6 +1390,14 @@ impl GraphError {
             Self::Config(error) => error.exit_kind(),
             Self::InitInvalidForgeRepository { .. }
             | Self::InitInvalidTargetTriple { .. }
+            | Self::InitForgeRepositoryMismatch { .. }
+            | Self::InitInvalidProductPackage { .. }
+            | Self::UnknownPackage { .. }
+            | Self::PendingFromNotReleaseCommit { .. }
+            | Self::ReleaseSelectionInvalid {
+                reason: ReleaseSelectionInvalidReason::Duplicate,
+                ..
+            }
             | Self::TagInvalid { .. } => ExitKind::Usage,
             _ => ExitKind::Runtime,
         }

@@ -407,7 +407,7 @@
     },
     {
       "id": "REL-ERR-01",
-      "criterion": "Every release failure after the command line is parsed exits 1 with a diagnostic carrying an `E####` code. A command-line usage error exits 2 with no code."
+      "criterion": "A release failure caused by a flag value or flag combination exits 2, and any other failure after the command line is parsed exits 1, each with a diagnostic carrying an `E####` code. clap's own usage error exits 2 with no code."
     },
     {
       "id": "REL-ERR-02",

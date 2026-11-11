@@ -120,7 +120,7 @@
     },
     {
       "id": "MX-ERR-07",
-      "criterion": "`--package` naming no registered package exits 1 with E102 naming it, and a name without its ecosystem exits 1 with E317.",
+      "criterion": "`--package` naming no registered package exits 2 with E102 naming it, and a name without its ecosystem exits 2 with E317.",
       "is_error_case": true
     },
     {
