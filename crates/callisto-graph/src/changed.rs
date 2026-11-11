@@ -59,10 +59,11 @@ pub fn changed_since_last_tag(
             continue;
         };
         for directory in directories {
+            // `./` anchors the path at the working directory; a bare `rev:path` resolves from the repository top.
             let directory = if directory.as_path() == Path::new(".") {
-                String::new()
+                "./".to_owned()
             } else {
-                directory.to_string_lossy().into_owned()
+                format!("./{}", directory.to_string_lossy())
             };
             objects.push(format!("{}:{directory}", commit.as_str()));
             objects.push(format!("HEAD:{directory}"));
@@ -469,6 +470,23 @@ mod tests {
         assert_eq!(count("diff"), 1, "{calls:?}");
         assert_eq!(count("log"), 0, "{calls:?}");
         assert_eq!(count("rev-parse"), 0, "{calls:?}");
+    }
+
+    /// Object specs resolve from the repository top level, so a workspace below it must still see its own packages.
+    #[test]
+    fn a_workspace_below_the_repository_root_sees_committed_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path();
+        let ws = repo.join("ws");
+        init_repo(repo);
+        write(&ws, "pkg-a/Cargo.toml", "[package]\n");
+        commit(repo, "README.md", "r\n", "chore: init");
+        run_git(repo, &["tag", "-a", "-m", "release", "pkg-a@0.1.0"]);
+        commit(repo, "ws/pkg-a/src/lib.rs", "a\n", "feat: a");
+
+        let (result, _) = changed(&ws, &[make_pkg("pkg-a")]);
+
+        assert!(result[&id("pkg-a")]);
     }
 
     #[test]

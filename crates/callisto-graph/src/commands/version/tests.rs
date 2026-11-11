@@ -101,6 +101,31 @@ fn check_partial_run_refuses_when_disk_is_ahead_of_head_with_a_pending_changeset
         );
 }
 
+/// The workspace may be a subdirectory of the repository; its paths at `HEAD` are still its own.
+#[test]
+fn check_partial_run_refuses_in_a_workspace_below_the_repository_root() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    let root = repo.join("ws");
+    git_init_with_commit(repo);
+
+    write_pkg_a(&root, "1.0.0");
+    commit_all(repo, "add pkg-a");
+    write_changeset(&root, "a.md");
+    commit_all(repo, "cs");
+    write_pkg_a(&root, "1.1.0");
+
+    let locator = IgnoreWalkLocator::new(&root);
+    let runner = GitRunner;
+    let ws = Workspace::load(root.clone(), &locator, &runner).expect("workspace must load");
+
+    let result = check_partial_run(&ws);
+    assert!(
+        matches!(result, Err(GraphError::PartialVersionRun { .. })),
+        "{result:?}"
+    );
+}
+
 /// A changeset pending at `HEAD` with disk exactly matching `HEAD` must never be refused.
 #[test]
 fn check_partial_run_allows_an_ordinary_pending_changeset() {
@@ -188,7 +213,7 @@ fn check_partial_run_propagates_fatal_historical_git_read_errors() {
             let ws = Workspace::load(root.to_path_buf(), &locator, &GitRunner).expect("workspace must load");
             crate::commands::release_decision::normalized_git_path(&ws.config.changesets_dir).unwrap()
         };
-        let changeset_spec = format!("HEAD:{changeset_dir}");
+        let changeset_spec = format!("HEAD:./{changeset_dir}");
         let failed_args = match failed_command {
             "rev-parse" => vec![
                 "rev-parse".to_string(),
@@ -197,7 +222,7 @@ fn check_partial_run_propagates_fatal_historical_git_read_errors() {
                 changeset_spec.clone(),
             ],
             "ls-tree" => vec!["ls-tree".to_string(), "--name-only".to_string(), changeset_spec.clone()],
-            _ => vec!["show".to_string(), "HEAD:pkg-a/Cargo.toml".to_string()],
+            _ => vec!["show".to_string(), "HEAD:./pkg-a/Cargo.toml".to_string()],
         };
         let runner = IndexInspectionFailureRunner {
             failed_args: failed_args.clone(),

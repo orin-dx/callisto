@@ -496,7 +496,10 @@ fn prefetch_head_manifests<R: CommandRunner, D: DependencyResolver>(
     for decl in ws.graph.packages().flat_map(|pkg| pkg.canonical_manifests()) {
         paths.insert(super::release_decision::normalized_git_path(&decl.path)?);
     }
-    let objects: Vec<String> = paths.iter().map(|path| format!("{head}:{path}")).collect();
+    let objects: Vec<String> = paths
+        .iter()
+        .map(|path| super::release_decision::object_at(head, path))
+        .collect();
     let Ok(blobs) = batch_blobs(ws.runner, &ws.root, &objects) else {
         return Ok(());
     };
@@ -566,7 +569,7 @@ fn head_has_pending_changeset<R: CommandRunner, D: DependencyResolver>(
     head: &str,
 ) -> Result<bool, GraphError> {
     let dir = super::release_decision::normalized_git_path(&ws.config.changesets_dir)?;
-    let spec = format!("{head}:{dir}");
+    let spec = super::release_decision::object_at(head, &dir);
     if !head_object_exists(ws, &spec)? {
         // The changesets directory didn't exist at HEAD (e.g. the first `version` run); nothing left pending.
         return Ok(false);
@@ -593,7 +596,7 @@ fn manifest_blob_at<R: CommandRunner, D: DependencyResolver>(
     head: &str,
     path: &str,
 ) -> Result<Option<String>, GraphError> {
-    let spec = format!("{head}:{path}");
+    let spec = super::release_decision::object_at(head, path);
     if !head_object_exists(ws, &spec)? {
         return Ok(None);
     }
