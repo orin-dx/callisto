@@ -1,0 +1,172 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M75YF1ZYB0S5D36DG4SA4SS6",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-11T18:38:55.25231Z",
+  "branch": "test/stability-contracts",
+  "checkpoints_count": 21,
+  "save_step_count": 1,
+  "files_touched": [
+    ".github/tests/action-inputs/callisto-action.txt",
+    ".github/tests/action-inputs/setup-callisto.txt",
+    ".github/tests/verify-action-inputs.sh",
+    "crates/callisto-graph/tests/config_deny_unknown_fields_guard_tests.rs",
+    "justfile"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "c8f15861fca5",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  },
+  "redaction": {
+    "replacements": 91,
+    "layers": {
+      "betterleaks": 28,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 272
+  },
+  "summary": {
+    "intent": "Resume the follow-up to the callisto-hardening session, then migrate CI off the retired macos-14 runner, unblock the failing Release workflow on main, and plan an over-engineering cleanup of the Callisto codebase (including whether michi could replace parts of it).",
+    "outcome": "macOS runners moved to macos-15 (#421, merged) and then to macos-latest (#422, draft); branch/worktree cleanup done; Release failure root-caused (stale #409 release commit consuming no changesets, E165) with a revert branch and urgent trail created; michi/credential/exit-kind/diff investigations produced an 8-step PR plan, and the session ended starting trims to PRs #504/#505/#507 with no code for the main plan yet written.",
+    "learnings": {
+      "repo": [
+        "Entire session search indexes sessions by first-prompt title, not Claude Code names, so lookups by custom session name fail; search by session id instead. Entire only had checkpoints up to 2026-10-22.",
+        "Entire auto-opens a draft PR when a trail is created and the branch is pushed, so use `gh pr edit` rather than `gh pr create`.",
+        "Release workflow failure mode: if changesets are rewritten on main after a release PR is built, and the release PR still merges, the commit bumps versions but consumes no changesets, and every later push fails `callisto release plan` with E165. There is no guard against merging a stale release PR.",
+        "Release PR refresh step 'Create or update the Callisto release PR' failed on the #420 push, which let #409 go stale; the root cause of that refresh failure is still unknown.",
+        "Callisto's credential lists (runner.rs RELEASE_CREDENTIALS, ACTION_SECRET_INPUTS, graph registry.rs RELEASE_CREDENTIALS, model SECRET_CREDENTIAL_ENV) differ but their union is complete; CALLISTO_PUBLISH_NPM_CONFIG cannot reach a build backend, so there is no leak.",
+        "Michi's FSL licence (michi-core, michi-pipeline) blocks use from MIT callisto-model; callisto-model may depend only on michi-graph. Michi's own PRINCIPLES.md admission gates reject a subprocess runner.",
+        "Only #504 and #506 both edit usage_exit_codes_tests.rs, so exit_kind() work should land after both. All open PR pairs checked merge cleanly with git merge-tree.",
+        "Git signing: sandbox blocks GPG, so commits and `entire`/`gh` calls need the sandbox disabled; `E` in `git log %G?` means unverifiable locally, not unsigned.",
+        "`gh pr create` failed minting the orin-dx-pr-bot token (OpenSSL unsupported on the private key); `gh pr edit` still worked."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/runner.rs",
+          "line": 504,
+          "end_line": 518,
+          "finding": "The 50 ms try_wait poll loop is the only part wait-timeout/duct would replace (~15 lines); output cap, redaction, reader threads, grace period and env filtering stay custom."
+        },
+        {
+          "path": "crates/callisto-cli/src/runner.rs",
+          "line": 47,
+          "end_line": 82,
+          "finding": "RELEASE_CREDENTIALS and ACTION_SECRET_INPUTS define which env vars each child loses; credentials_needed_by gives owners (npm-family, cargo, gh)."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/changed.rs",
+          "line": 62,
+          "end_line": 68,
+          "finding": "Builds `rev:dir` instead of `rev:./dir`; git resolves rev:path from repo top-level, so in a subdirectory workspace changedSinceLastTag misses committed changes."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/changed.rs",
+          "line": 103,
+          "end_line": 195,
+          "finding": "Already does one git diff per tag commit mapped through SpecIndex::owners_of; only pathspec scoping and list_in_chunks (24 KB Windows budget) remain removable."
+        },
+        {
+          "path": "crates/callisto-cli/src/error.rs",
+          "line": 51,
+          "end_line": 80,
+          "finding": "USAGE_CODES / USAGE_WHEN_FROM_FLAG_CODES and is_usage_error drive exit 2; main.rs:35 is the only caller. 26 of 29 usage codes are CliError variants, E195/E196/E324 are GraphError, E316/E317 are ConfigError only when context starts with `--`."
+        },
+        {
+          "path": "crates/callisto-graph/tests/architecture.rs",
+          "line": 222,
+          "end_line": 283,
+          "finding": "map_err source-scan test duplicates the workspace clippy lint map_err_ignore = deny (Cargo.toml:64)."
+        },
+        {
+          "path": "crates/callisto-model/src/lib.rs",
+          "line": 98,
+          "end_line": 190,
+          "finding": "12-file include_str! list plus hand-written code(E scanner; one of three overlapping error-code scanners that exist because there is no typed ErrorCode."
+        },
+        {
+          "path": "crates/callisto-graph/src/cascade.rs",
+          "line": 58,
+          "end_line": 59,
+          "finding": "The (Dev, _) and _ match arms have identical bodies; one is redundant."
+        },
+        {
+          "path": ".github/workflows/callisto-ci.yml",
+          "line": 145,
+          "end_line": 150,
+          "finding": "macOS artifact preflight matrix entries; moved from macos-14 to macos-15 and then macos-latest (same for callisto-release.yml lines ~297 and 302)."
+        }
+      ],
+      "workflow": [
+        "Verify subagent reports before acting; subagent hand-backs are not user approval.",
+        "Use `! cmd` as the entire prompt with nothing before it for user-run shell commands; placeholders like <your-key> get passed literally.",
+        "Check each worktree/branch for merged status, unpushed commits and untracked files before deleting; squash merges require `git branch -D`.",
+        "Fix over-engineering in open PRs before merging them rather than merging then deleting in a follow-up.",
+        "Prefer types and exhaustive matches over source-text scan tests ('invariant ladder': type, exhaustive match, clippy lint, one small test)."
+      ]
+    },
+    "friction": [
+      "Sandbox TLS proxy blocked Entire, gh and git fetch; many commands needed the sandbox disabled, and the auto-mode classifier denied some unsandboxed retries.",
+      "Could not find the 'callisto-hardening' session by name; had to infer session 15c732d1 from local transcripts.",
+      "`!` commands for ssh-add arrived as plain text twice, and the sandbox blocks the SSH agent so the key load could not be verified.",
+      "GitHub changelog page could not be loaded, so the macos-14 retirement date and macos-latest to macos-26 mapping remain unconfirmed.",
+      "actionlint flagged `uses: $/.github/actions/...` in both workflows (pre-existing in HEAD); not investigated.",
+      "Local michi checkout was 30 commits behind and outside the write sandbox, requiring the user to pull it.",
+      "Release run after #421 and likely after #422 still fail with the same E165, so releases remain blocked until the revert merges."
+    ],
+    "open_items": [
+      "Merge revert branch fix/revert-stale-release-commit (urgent trail) so the release PR regenerates; confirm release run goes green.",
+      "Investigate why 'Create or update the Callisto release PR' failed on the #420 push, and add a guard against merging a stale release PR; decide whether E165 should be recoverable without a manual revert.",
+      "Look into `tag candidate callisto-graph@0 ... placeholder 0 is not a valid SemVer version` warnings from `callisto status`.",
+      "Approve Entire Gates for trails #159/#160, close trail #159, and mark/merge #422 once CI is green; check which image macos-latest resolves to.",
+      "Stale trails (#139-#148, #151, #152, #129, #130) and remaining worktrees (smoke-main with 441 deleted files, wf_cd627354-1a0-2, callisto-homebrew-tap, stack/docs-v1) plus remote merged branches await user decisions.",
+      "Start PR 1: rev:./dir fix with subdirectory-workspace test and semver::Prerelease for `pre enter`, each with a changeset.",
+      "Trim open PRs: #505 (commit lean change), #504 (delete action-inputs script, txt lists, justfile line, deny_unknown_fields guard), #507 (drop wall-clock test); decide whether to leave #506's E330-E339 codes.",
+      "Later PRs: exit_kind() after #504/#506, deletions (test_auto_traits, text-scan tests, snapshot include_str test, cascade arm), DryRun newtype, scanner collapse, changed.rs unscoped diff with globset literal_separator(true), note_once without global, AGENTS.md invariant-ladder section plus Brain memory.",
+      "Unchecked: rstest-collapsible tests, has_* bools in init.rs, other hand-rolled bits in runner.rs; decision pending on bespoke workflow-contract shell scripts vs zizmor.",
+      "Optional credential table in callisto-model and possibly upstreaming the token-shape masker to michi once a second tool needs it.",
+      "Older plan items still open: spec drift re-verification, #290 guard gaps, npm/monorepo workspace root as package, E194 fixed group tag/title, T12 registry tests, matrix.rs triples, OIDC trusted publishing for npm, ready_by_edge swap."
+    ]
+  }
+}
