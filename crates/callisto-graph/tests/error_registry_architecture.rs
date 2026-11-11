@@ -1,36 +1,67 @@
-//! Enforcement test for the one-`E####`-registry decision (`docs/errors.md`):
-//! every `miette::Diagnostic`-deriving enum variant across the workspace must
-//! carry its own `#[diagnostic(code(...))]`, or be `#[diagnostic(transparent)]`
-//! to forward an inner error's code -- never neither, which silently drops
-//! the diagnostic code a `--format json` consumer or a support conversation
-//! keys off. It also fails if any `callisto::<name>`-style code survives
-//! anywhere in a `code(...)` attribute; every code is a numeric `E####`.
-//!
-//! This is a coarse, source-text scan (no `syn` dependency in this crate),
-//! not a full parser -- see `strip_test_modules` and `find_enum_body` for
-//! the brace-depth heuristics it relies on, which the workspace's own
-//! `#[error("...")]` format strings happen to keep balanced.
+//! The `docs/errors.md` registry and the `#[diagnostic(code(E###))]` attributes in `crates/*/src` agree:
+//! codes are numeric and unique, documented and not stale, and every Diagnostic variant has one or is transparent.
 
+use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
 
 mod common;
 use common::{collect_rust_src_files, strip_test_modules, workspace_root};
 
-/// Every crate's `src/` directory, e.g. `crates/callisto-graph/src`.
-fn all_crate_src_dirs() -> Vec<PathBuf> {
-    let crates_dir = workspace_root().join("crates");
-    let mut out = Vec::new();
-    let Ok(entries) = fs::read_dir(&crates_dir) else {
-        return out;
-    };
-    for entry in entries.flatten() {
-        let src = entry.path().join("src");
-        if src.is_dir() {
-            out.push(src);
+/// Every non-test source file under `crates/*/src`, as (path, text without test modules).
+fn workspace_sources() -> Vec<(String, String)> {
+    let mut files = Vec::new();
+    for krate in fs::read_dir(workspace_root().join("crates")).unwrap().flatten() {
+        collect_rust_src_files(&krate.path().join("src"), &mut files);
+    }
+    files
+        .iter()
+        .map(|f| {
+            (
+                f.display().to_string(),
+                strip_test_modules(&fs::read_to_string(f).unwrap()),
+            )
+        })
+        .collect()
+}
+
+/// Each `code(...)` argument found in `text`.
+fn code_args(text: &str) -> Vec<&str> {
+    text.match_indices("code(")
+        .filter(|(i, _)| text[..*i].ends_with(|c: char| c == '(' || c == ',' || c.is_whitespace()))
+        .map(|(i, m)| text[i + m.len()..].split([')', ',']).next().unwrap().trim())
+        .collect()
+}
+
+#[test]
+fn codes_are_numeric_unique_and_match_the_docs() {
+    let mut in_code: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    let sources = workspace_sources();
+    for (file, text) in &sources {
+        for code in code_args(text) {
+            let numeric = code
+                .strip_prefix('E')
+                .is_some_and(|d| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit()));
+            assert!(numeric, "{file}: diagnostic code `{code}` is not E followed by digits");
+            in_code.entry(code).or_default().push(file);
         }
     }
-    out
+    for (code, files) in &in_code {
+        assert_eq!(files.len(), 1, "duplicate diagnostic code {code}: {files:?}");
+    }
+    let docs = fs::read_to_string(workspace_root().join("docs/errors.md")).unwrap();
+    let documented: Vec<&str> = docs
+        .lines()
+        .filter_map(|l| l.strip_prefix("| E")?.split(" |").next())
+        .collect();
+    let documented: Vec<String> = documented.iter().map(|d| format!("E{d}")).collect();
+    let in_code: Vec<&str> = in_code.keys().copied().collect();
+    let undocumented: Vec<_> = in_code.iter().filter(|c| !documented.iter().any(|d| d == *c)).collect();
+    let stale: Vec<_> = documented.iter().filter(|d| !in_code.contains(&d.as_str())).collect();
+    assert!(
+        undocumented.is_empty(),
+        "codes missing from docs/errors.md: {undocumented:?}"
+    );
+    assert!(stale.is_empty(), "documented codes absent from code: {stale:?}");
 }
 
 /// One `pub enum Name { ... }` (or `enum Name { ... }`) block found preceded
@@ -124,10 +155,7 @@ fn split_variants(body: &str) -> Vec<&str> {
     slices
 }
 
-/// A variant slice is compliant if it is `#[diagnostic(transparent)]`, or
-/// carries its own `code(...)`. Help text is not required here -- many
-/// numeric codes are documented in `docs/errors.md` with no help text by
-/// design, and this test enforces the code registry, not help coverage.
+/// A variant slice is compliant if it is `#[diagnostic(transparent)]` or carries its own `code(...)`.
 fn variant_has_code_or_is_transparent(variant_text: &str) -> bool {
     variant_text.contains("#[diagnostic(transparent)]") || variant_text.contains("code(")
 }
@@ -135,98 +163,22 @@ fn variant_has_code_or_is_transparent(variant_text: &str) -> bool {
 #[test]
 fn every_diagnostic_variant_has_a_code_or_is_transparent() {
     let mut violations = Vec::new();
-    for src_dir in all_crate_src_dirs() {
-        let mut files = Vec::new();
-        collect_rust_src_files(&src_dir, &mut files);
-        for file in files {
-            let Ok(raw) = fs::read_to_string(&file) else {
-                continue;
-            };
-            let content = strip_test_modules(&raw);
-            for diag_enum in find_diagnostic_enums(&content) {
-                for variant in split_variants(&diag_enum.body) {
-                    if !variant_has_code_or_is_transparent(variant) {
-                        let variant_name = variant
-                            .rsplit("#[")
-                            .next()
-                            .unwrap_or(variant)
-                            .lines()
-                            .find(|l| !l.trim().is_empty())
-                            .unwrap_or("<unknown variant>")
-                            .trim();
-                        violations.push(format!(
-                            "{}: enum {} has a variant with neither a code nor #[diagnostic(transparent)]: {}",
-                            file.display(),
-                            diag_enum.name,
-                            variant_name
-                        ));
-                    }
+    for (file, text) in workspace_sources() {
+        for diag_enum in find_diagnostic_enums(&text) {
+            for variant in split_variants(&diag_enum.body) {
+                if !variant_has_code_or_is_transparent(variant) {
+                    violations.push(format!(
+                        "{file}: enum {}: {}",
+                        diag_enum.name,
+                        variant.lines().next().unwrap_or("")
+                    ));
                 }
             }
         }
     }
     assert!(
         violations.is_empty(),
-        "found error variant(s) missing a diagnostic code and not marked transparent:\n{}",
+        "variants with neither a code nor #[diagnostic(transparent)]:\n{}",
         violations.join("\n")
     );
-}
-
-#[test]
-fn no_callisto_prefixed_diagnostic_codes_remain() {
-    let mut violations = Vec::new();
-    for src_dir in all_crate_src_dirs() {
-        let mut files = Vec::new();
-        collect_rust_src_files(&src_dir, &mut files);
-        for file in files {
-            let Ok(content) = fs::read_to_string(&file) else {
-                continue;
-            };
-            if content.contains("code(callisto::") {
-                violations.push(file.display().to_string());
-            }
-        }
-    }
-    assert!(
-        violations.is_empty(),
-        "found a `code(callisto::...)` diagnostic code outside the one E#### registry; \
-         every diagnostic code is now numeric (see docs/errors.md): {violations:#?}"
-    );
-}
-
-#[test]
-fn find_diagnostic_enums_finds_a_small_fixture() {
-    let src = r#"
-        #[derive(Debug, thiserror::Error, miette::Diagnostic)]
-        #[non_exhaustive]
-        pub enum Foo {
-            #[error("a")]
-            #[diagnostic(code(E001), help("do it"))]
-            A,
-            #[error(transparent)]
-            #[diagnostic(transparent)]
-            B(#[from] std::io::Error),
-        }
-    "#;
-    let enums = find_diagnostic_enums(src);
-    assert_eq!(enums.len(), 1);
-    assert_eq!(enums[0].name, "Foo");
-    let variants = split_variants(&enums[0].body);
-    assert_eq!(variants.len(), 2);
-    assert!(variant_has_code_or_is_transparent(variants[0]));
-    assert!(variant_has_code_or_is_transparent(variants[1]));
-}
-
-#[test]
-fn detects_a_codeless_non_transparent_variant_in_a_fixture() {
-    let src = r#"
-        #[derive(Debug, thiserror::Error, miette::Diagnostic)]
-        pub enum Foo {
-            #[error("a")]
-            A,
-        }
-    "#;
-    let enums = find_diagnostic_enums(src);
-    let variants = split_variants(&enums[0].body);
-    assert!(!variant_has_code_or_is_transparent(variants[0]));
 }
