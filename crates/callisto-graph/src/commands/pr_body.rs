@@ -282,7 +282,7 @@ fn level_title(level: Severity) -> &'static str {
     match level {
         Severity::Major => "Major",
         Severity::Minor => "Minor",
-        _ => "Patch",
+        Severity::Patch | Severity::None => "Patch",
     }
 }
 
