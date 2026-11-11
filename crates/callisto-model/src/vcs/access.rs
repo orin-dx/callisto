@@ -538,6 +538,7 @@ impl GitAccess<'_> {
             "--no-show-signature",
             "--first-parent",
             "-m",
+            "--root",
             "-z",
             "--name-only",
             "--relative",

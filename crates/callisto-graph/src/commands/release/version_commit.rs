@@ -492,6 +492,23 @@ mod tests {
     }
 
     #[test]
+    fn a_version_set_in_the_root_commit_is_found_when_git_hides_root_diffs() {
+        let (dir, _) = fixture();
+        let root = dir.path();
+        git(root, &["config", "log.showRoot", "false"]);
+        let version_commit = git(root, &["rev-parse", "HEAD"]);
+        assert_eq!(git(root, &["rev-list", "--max-parents=0", "HEAD"]), version_commit);
+        let manifest = root.join("Cargo.toml");
+        let original = std::fs::read_to_string(&manifest).unwrap();
+        std::fs::write(&manifest, format!("{original}\n# edit\n")).unwrap();
+        commit_all(root, "touch the manifest");
+        assert_eq!(
+            moved(root),
+            vec![("cargo/release-fixture".to_owned(), Some(version_commit))]
+        );
+    }
+
+    #[test]
     fn a_release_branch_merged_after_unrelated_trunk_commits_is_not_a_move() {
         let (dir, _) = fixture();
         let root = dir.path();
