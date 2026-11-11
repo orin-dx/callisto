@@ -7,8 +7,6 @@ use callisto_model::{
     ApplyPermit, DepSpec, Ecosystem, ManifestDecl, ManifestError, ManifestFormat, ManifestRole, Version, WorkspaceKind,
 };
 
-pub mod atomic;
-
 pub mod cargo;
 mod common;
 mod json_text;

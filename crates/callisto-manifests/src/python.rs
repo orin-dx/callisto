@@ -7,8 +7,8 @@ use callisto_model::{
 };
 use toml_edit::value;
 
-use crate::atomic::atomic_write;
 use crate::{Manifest, OpenContext};
+use callisto_model::atomic::atomic_write;
 
 /// A `pyproject.toml` manifest editor supporting PEP 621, Poetry, and Flit schemas with 100% CST comment preservation.
 pub struct PyprojectToml {

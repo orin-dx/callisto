@@ -127,7 +127,7 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
             };
 
             fs::create_dir_all(&pre_dir)?;
-            callisto_manifests::atomic::atomic_write(&pre_path, &text, &permit)?;
+            callisto_model::atomic::atomic_write(&pre_path, &text, &permit)?;
 
             // Stage pre.json so it is included in the next commit.
             stage_pre_json(&runner, &ws.root, &rel_pre_path)?;
@@ -183,7 +183,7 @@ pub fn handle(args: PreArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> 
                 return Ok(ExitCode::SUCCESS);
             };
 
-            callisto_manifests::atomic::atomic_write(&pre_path, &updated, &permit)?;
+            callisto_model::atomic::atomic_write(&pre_path, &updated, &permit)?;
 
             // Mutates the same tracked file `pre enter` created, so it must be staged the same way.
             stage_pre_json(&runner, &root, &rel_pre_path)?;
