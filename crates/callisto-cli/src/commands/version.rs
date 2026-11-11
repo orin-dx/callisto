@@ -320,7 +320,7 @@ mod tests {
         );
     }
 
-    /// Spec: the JSON output of `write_json(&report)` for a `VersionReport`
+    /// Spec: the JSON output of `write_document(&report)` for a `VersionReport`
     /// must be valid JSON. It must include the top-level keys `schemaVersion`
     /// and `bumps`. The `diagnostics` key is omitted when empty
     /// (`skip_serializing_if = "Vec::is_empty"`), so its presence is optional.
@@ -346,7 +346,7 @@ mod tests {
 
         // Serialize to JSON via the same function the CLI uses.
         let mut json_out = Vec::new();
-        crate::output::write_json(&mut json_out, &report).unwrap();
+        crate::output::write_document(&mut json_out, &report).unwrap();
         let json_str = String::from_utf8(json_out).unwrap();
 
         // Must be parseable as valid JSON.

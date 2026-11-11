@@ -4,9 +4,17 @@ use serde::Serialize;
 
 use crate::cli::OutputFormat;
 
-pub fn write_json<W: io::Write, S: Serialize + ?Sized>(w: &mut W, val: &S) -> io::Result<()> {
+/// Writes a JSON document that is not a report, such as the intent `release inspect` echoes, which carries its own
+/// version. A report goes through [`emit_report`], the only way to get the envelope and `schemaVersion`; this is
+/// crate-private so a command cannot bypass it.
+pub(crate) fn write_document<W: io::Write, S: Serialize + ?Sized>(w: &mut W, val: &S) -> io::Result<()> {
     let text = serde_json::to_string_pretty(val)?;
     writeln!(w, "{text}")
+}
+
+/// Writes the JSON error envelope that `format_error_json` builds.
+pub fn write_error_json<W: io::Write>(w: &mut W, envelope: &serde_json::Value) -> io::Result<()> {
+    write_document(w, envelope)
 }
 
 /// Serializes any `Report` value to the one JSON success envelope every
@@ -93,9 +101,9 @@ mod tests {
     }
 
     #[test]
-    fn write_json_serializes_pretty_with_trailing_newline() {
+    fn write_document_serializes_pretty_with_trailing_newline() {
         let mut buf = Vec::new();
-        write_json(&mut buf, &FakeReport { value: 42 }).unwrap();
+        write_document(&mut buf, &FakeReport { value: 42 }).unwrap();
         let text = String::from_utf8(buf).unwrap();
         assert!(text.contains("\"value\": 42"), "got:\n{text}");
         assert!(text.ends_with('\n'));

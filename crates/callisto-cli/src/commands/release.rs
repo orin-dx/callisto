@@ -27,7 +27,7 @@ use crate::cli::{
 };
 use crate::error::CliError;
 use crate::io::{read_json_file, OutputFile, OutputKind};
-use crate::output::{emit_line, emit_report, log_line, write_json};
+use crate::output::{emit_line, emit_report, log_line, write_document};
 use crate::runner::CliCommandRunner;
 use crate::workspace::{load_workspace, select_inference};
 
@@ -621,7 +621,7 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
 fn inspect(args: ReleaseInspectArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     let value: serde_json::Value = read_json_file(&global.resolve_file_arg(&args.input))?;
     match global.format {
-        OutputFormat::Json => write_json(&mut std::io::stdout(), &value)?,
+        OutputFormat::Json => write_document(&mut std::io::stdout(), &value)?,
         OutputFormat::Text => emit_line(&serde_json::to_string_pretty(&value).expect("JSON value serializes"))?,
     }
     Ok(ExitCode::SUCCESS)
