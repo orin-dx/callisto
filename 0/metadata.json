@@ -1,0 +1,134 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M75QCA0K5Y8MCHTDJ29EB09G",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-11T16:34:59.320609Z",
+  "branch": "fix/json-contract-complete",
+  "checkpoints_count": 7,
+  "files_touched": [
+    "crates/callisto-cli/tests/json_contract_tests.rs",
+    "docs/stability.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "bec866c89d79",
+  "checkpoint_transcript_start": 37354,
+  "transcript_lines_at_start": 37354,
+  "compact_transcript_start": 2719,
+  "token_usage": {
+    "input_tokens": 60,
+    "cache_creation_tokens": 3358412,
+    "cache_read_tokens": 19506294,
+    "output_tokens": 23375,
+    "api_call_count": 27,
+    "subagent_tokens": {
+      "input_tokens": 78,
+      "cache_creation_tokens": 1083155,
+      "cache_read_tokens": 546881,
+      "output_tokens": 3895,
+      "api_call_count": 26
+    }
+  },
+  "redaction": {
+    "replacements": 84,
+    "layers": {
+      "betterleaks": 28,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 52,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 248
+  },
+  "summary": {
+    "intent": "Resolve merge conflicts on PR #503, then drive the Callisto 1.0 stability work forward and fold more stability, performance and release-safety improvements into the next release (0.20.0).",
+    "outcome": "Resolved and pushed the #503 conflict (a one-line E327/E329 overlap in the usage-error list). Closed idle helper agents, launched five parallel stability/perf/release-safety agents, recorded the release-safety audit on trail #162, and committed and pushed a schemaVersion contract test on `fix/json-contract-complete`.",
+    "learnings": {
+      "repo": [
+        "Error codes must each be classified as exit 1 or exit 2 in the usage-error list in `crates/callisto-cli/src/error.rs`; a classification test enforces this, and its absence is what turned main red earlier.",
+        "Every `--format json` success output already carries `schemaVersion`. Exceptions: `schema` (prints a JSON Schema document), `release inspect` (prints raw documents that carry their own versions, with no `command`/`dryRun`), `completions` and `help` (not JSON).",
+        "The release PR safety design is a hold, not a check. `.github/workflows/callisto-hold-release-pr.yml` drafts the open release PR on every push to main (REL-PR-09), and the release action marks it ready only if main's tip still equals its build base. `gh_retry` provides 4 attempts with backoff (REL-PR-08).",
+        "A stale release PR can still be merged by manually clicking 'Ready for review' on a held draft. Nothing is published in that case; the post-merge Release run fails with E165 and keeps failing until the release payload is reverted (docs/releasing.md:114-118).",
+        "Required status checks are not enabled on main, and PRs opened with GITHUB_TOKEN start no workflows, so a PR-level check would not stop a manual merge of the bot-created release PR.",
+        "callisto-action inputs are snake_case and outputs are camelCase. No doc lists the inputs, though stability.md calls them stable. `callisto-action` hardcodes `source: auto` and `verification: fallback`.",
+        "`.github/actions/callisto-validate/action.yml` contains what looks like an unresolved placeholder: `uses: $/.github/actions/setup-callisto`.",
+        "Project rule: features go in Rust, not shell scripts."
+      ],
+      "code": [
+        {
+          "path": ".github/actions/callisto-action/scripts/create-or-update-release-pr.sh",
+          "line": 13,
+          "end_line": 33,
+          "finding": "`gh_retry` makes 4 attempts with 2/4/8s backoff and prints each failed attempt's stderr. `gh pr create` is deliberately not wrapped."
+        },
+        {
+          "path": ".github/actions/callisto-action/scripts/create-or-update-release-pr.sh",
+          "line": 207,
+          "end_line": 216,
+          "finding": "The action marks the PR ready only if main's tip still equals its base commit; otherwise it drafts it again. A one-call race exists between the tip read at line 208 and `gh pr ready`."
+        },
+        {
+          "path": "crates/callisto-cli/tests/json_contract_tests.rs",
+          "finding": "Table-driven test `every_json_success_output_carries_a_schema_version` runs the real binary for 21 invocations and walks the clap tree, so a new command must be added to the table or to the EXEMPT list with a reason."
+        }
+      ],
+      "workflow": [
+        "Subagents of type 'subagent' are not addressable by name via SendMessage and cannot be closed by message. Their session entries are cleaned up via `/agents`.",
+        "Agent worktrees locked by the harness need a double force to remove, so they were left for the user to release.",
+        "Subagent reports are model output without user authority, so claims in them (such as the test touching the network) should be verified, not accepted.",
+        "Run the full verify script outside the sandbox before pushing. Sandbox test failures (network, pnpm, uv) can mask real results.",
+        "Commits are GPG-signed (`git commit -S`), and merged results are checked for duplicated entries (E327 appearing once).",
+        "Mutation checks (breaking the code and confirming the test fails) validate new guard tests."
+      ]
+    },
+    "friction": [
+      "Merged PR #501 conflicted with #503 because both touched the usage-error classification list.",
+      "Closing the finished `error-envelope` agent was impossible by message. Its entry is a leftover record, and three merged worktrees (`error-envelope`, `input-validation`, `note-once`) stay locked by the harness.",
+      "About 15 SendMessage attempts failed before the assistant worked out that subagents can't be addressed by name.",
+      "The json-contract-complete agent's test appeared to contact github.com and crates.io in the sandbox, and the assistant had to track down which invocation did it. Three e2e tests also failed in the sandbox for lack of network/tools (`test_full_polyglot_workspace_release_lifecycle` and the two `pnpm_and_uv_workspace_resolves_natively_*` tests), and the agent never confirmed they pass on clean main.",
+      "The release-safety audit result was truncated by the harness."
+    ],
+    "open_items": [
+      "Review and merge #493 (the automated 0.20.0 release PR) after the five agents land, and read the rendered release notes as a user (rule from #495).",
+      "Pending agents: `error-code-reach` (E254 catch-all split, E171 user-reachability), `perf-scale`, `stability-contract-tests` (tag names, Action inputs, `deny_unknown_fields` guard), and the push of `fix/json-contract-complete`, which still needs a changeset and a PR.",
+      "Awaiting the user's yes on two small E165 changes: help text pointing to the recovery section, and optionally `release pending` naming it. Then close trail #162 with the decision recorded (no new `release-pr check` command, stricter guard only if the user wants it).",
+      "Trail #162 item 5 (a status warning for stray tags like `callisto-graph@0`) is not built.",
+      "#495 (changeset process docs) is still open. Trail #198 stays open until #503 merges.",
+      "Release the three locked agent worktrees via `/agents`, or the user says 'force it'.",
+      "Decide whether `schema` output should ever carry a version, and document the Action's inputs and outputs (and the snake_case vs camelCase inconsistency).",
+      "Check the `callisto-validate` `$/` placeholder. `release build-python` and non-dry-run `release` have no success-path coverage in the JSON contract test."
+    ]
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M75QCA0K5Y8MCHTDJ29EB09G",
+  "strategy": "manual-commit",
+  "branch": "fix/json-contract-complete",
+  "checkpoints_count": 7,
+  "files_touched": [
+    "crates/callisto-cli/tests/json_contract_tests.rs",
+    "docs/stability.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 60,
+    "cache_creation_tokens": 3358412,
+    "cache_read_tokens": 19506294,
+    "output_tokens": 23375,
+    "api_call_count": 27,
+    "subagent_tokens": {
+      "input_tokens": 78,
+      "cache_creation_tokens": 1083155,
+      "cache_read_tokens": 546881,
+      "output_tokens": 3895,
+      "api_call_count": 26
+    }
+  },
+  "redaction": {
+    "replacements": 84,
+    "layers": {
+      "betterleaks": 28,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 52,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
