@@ -107,6 +107,35 @@ fn bad_or_missing_flag_values_checked_after_parsing_exit_2() {
 }
 
 #[test]
+fn arguments_rejected_while_parsing_exit_2_and_help_and_version_exit_0() {
+    let dir = workspace();
+    let root = dir.path();
+    for args in [
+        vec!["status", "--no-such-flag"],
+        vec!["no-such-command"],
+        vec!["--format", "yaml", "status"],
+        vec!["pre", "enter"],
+        vec!["--no-such-flag"],
+    ] {
+        for format in ["json", "text"] {
+            let out = Command::new(env!("CARGO_BIN_EXE_callisto"))
+                .args(["--format", format, "--cwd", root.to_str().unwrap()])
+                .args(&args)
+                .output()
+                .unwrap();
+            assert_eq!(out.status.code(), Some(2), "{format} {args:?}: {}", stderr_of(&out));
+        }
+    }
+    for args in [vec!["--help"], vec!["status", "--help"], vec!["--version"]] {
+        let out = Command::new(env!("CARGO_BIN_EXE_callisto"))
+            .args(&args)
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(0), "{args:?}: {}", stderr_of(&out));
+    }
+}
+
+#[test]
 fn runtime_failures_still_exit_1() {
     let dir = workspace();
     let root = dir.path();

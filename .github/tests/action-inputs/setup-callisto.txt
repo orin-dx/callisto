@@ -1,0 +1,3 @@
+source|false|auto
+version|false|latest
+verification|false|fallback
