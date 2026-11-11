@@ -1,0 +1,45 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M76D0DR6B6E3S205X856PWZA",
+  "strategy": "manual-commit",
+  "branch": "fix/python-requirement-idempotency",
+  "checkpoints_count": 8,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 1185,
+    "cache_read_tokens": 449387,
+    "output_tokens": 691,
+    "api_call_count": 1,
+    "subagent_tokens": {
+      "input_tokens": 42,
+      "cache_creation_tokens": 25070,
+      "cache_read_tokens": 1878036,
+      "output_tokens": 11450,
+      "api_call_count": 21
+    }
+  },
+  "redaction": {
+    "replacements": 93,
+    "layers": {
+      "betterleaks": 30,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
