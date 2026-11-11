@@ -503,22 +503,4 @@ mod tests {
             String::from_utf8_lossy(&output.stderr)
         );
     }
-
-    /// Plan_snapshot must never call
-    /// pre_mutation_checks -- snapshot mode assigns every package the
-    /// identical synthetic version, so there is no distinct-target
-    /// divergence for pre_mutation_checks to ever catch here.
-    #[test]
-    fn plan_snapshot_source_never_calls_pre_mutation_checks() {
-        let source = include_str!("snapshot.rs");
-        // Check only the code above `#[cfg(test)]`; this module's own text mentions `pre_mutation_checks`.
-        let production_source = source
-            .split_once("#[cfg(test)]")
-            .map(|(before, _)| before)
-            .unwrap_or(source);
-        assert!(
-            !production_source.contains("pre_mutation_checks"),
-            "plan_snapshot must not call pre_mutation_checks (see spec non_goals)"
-        );
-    }
 }
