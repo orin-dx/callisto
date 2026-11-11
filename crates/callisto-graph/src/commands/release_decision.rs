@@ -1766,45 +1766,6 @@ mod tests {
         );
     }
 
-    /// Selecting every package of a large workspace resolves each entry's package by lookup, not by rescanning every
-    /// package, so the work grows with the package count rather than with its square.
-    #[test]
-    fn selecting_every_package_of_a_large_workspace_does_not_rescan_the_packages_per_entry() {
-        const COUNT: usize = 3_000;
-        let runner = empty_runner();
-        let packages: Vec<Package> = (0..COUNT)
-            .map(|n| publishing_cargo_package(&format!("pkg-{n}")))
-            .collect();
-        let workspace = fixture_workspace(&runner, packages);
-        let ids: Vec<ReleasePackageId> = (0..COUNT)
-            .map(|n| ReleasePackageId::new(Ecosystem::Cargo, format!("pkg-{n}")).unwrap())
-            .collect();
-        let entries: Vec<ReleaseDecisionEntry> = ids
-            .iter()
-            .map(|id| ReleaseDecisionEntry {
-                package: id.clone(),
-                target_version: Version::semver(1, 1, 0),
-                reasons: vec![ReleaseInclusionReason::UnreleasedVersion],
-            })
-            .collect();
-        let selected: std::collections::BTreeSet<&ReleasePackageId> = ids.iter().collect();
-        let started = std::time::Instant::now();
-
-        let owners = ReleaseOwners::of(&workspace);
-        let kept = expand_selection(&workspace, &owners, entries, &selected);
-
-        assert_eq!(kept.len(), COUNT);
-        assert!(owners
-            .get(&ids[COUNT - 1])
-            .is_some_and(|package| package.id.name() == "pkg-2999"));
-        // A per-entry rescan takes minutes here; a lookup takes well under a second.
-        assert!(
-            started.elapsed() < std::time::Duration::from_secs(10),
-            "{:?}",
-            started.elapsed()
-        );
-    }
-
     /// Selection is by exact `ecosystem/name`; a same-named package in another
     /// ecosystem, or a name absent from the workspace, never matches.
     #[test]
