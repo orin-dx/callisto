@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01GVd2hZbSHdWGHPGSMNXqdC",
+  "agent_id": "a55946410f1490f50",
+  "subagent_type": "general-purpose",
+  "task_description": "Remove note_once global state",
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 72325,
+    "cache_read_tokens": 664101,
+    "output_tokens": 4209,
+    "api_call_count": 12
+  },
+  "started_at": "2026-11-11T12:19:16.212479-08:00",
+  "completed_at": "2026-11-11T12:20:14.193349-08:00"
+}
