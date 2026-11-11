@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01MVbFgga5BgqUZ6JfqqUv3T",
+  "agent_id": "acde3e4f4ea9fa347",
+  "subagent_type": "courier:pr-narrator",
+  "task_description": "PR text for CLI spec alignment",
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 37813,
+    "cache_read_tokens": 119001,
+    "output_tokens": 1243,
+    "api_call_count": 3
+  },
+  "started_at": "2026-11-11T13:14:37.955718-08:00",
+  "completed_at": "2026-11-11T13:14:50.541522-08:00"
+}

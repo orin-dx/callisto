@@ -1,0 +1,115 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M767GSBZYZXGHV2G5XT3HNQX",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-11T21:16:56.028583Z",
+  "branch": "refactor/one-error-code-scan",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/tests/error_code_hygiene_tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "ff9f294191b7",
+  "checkpoint_transcript_start": 41153,
+  "transcript_lines_at_start": 41153,
+  "compact_transcript_start": 2986,
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 20173,
+    "cache_read_tokens": 2409220,
+    "output_tokens": 7033,
+    "api_call_count": 7,
+    "subagent_tokens": {
+      "input_tokens": 62,
+      "cache_creation_tokens": 156842,
+      "cache_read_tokens": 1721492,
+      "output_tokens": 13601,
+      "api_call_count": 31
+    }
+  },
+  "redaction": {
+    "replacements": 93,
+    "layers": {
+      "betterleaks": 30,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 292
+  },
+  "summary": {
+    "intent": "Coordinate a multi-agent workflow on the callisto repo: align the CLI spec's documented exit codes with the binary's real behavior, open a PR for it, and launch a second wave of refactors (changed.rs rewrite, error-code scanner collapse).",
+    "outcome": "Opened PR #512 aligning docs/specs/cli.json exit codes with the binary and fixing the `snapshot --tag` help text. Wave 2 refactors (changed.rs without pathspecs, one error-code scan) were launched and are still running; two design decisions await the user.",
+    "learnings": {
+      "repo": [
+        "docs/stability.md defines exit code 2 as bad or missing argument or flag, including values validated after parsing; docs/specs/cli.json had drifted from it by documenting exit 1.",
+        "Exit codes are inconsistent for bad flag values: unknown `--package` exits 1 (E102) while E227 exits 2. CLI-INIT-12 splits by outcome: E195, E196, E298 exit 2; E187, E188, E189 exit 1.",
+        "`snapshot --tag` accepts only letters, digits and `-` (`feature/x` fails with E324), so the old help text 'commit SHA or branch name' was wrong.",
+        "The JSON error envelope already emits a `dryRun` key that the spec did not document.",
+        "The PR template has Summary, Type of change, Changeset, Docs and Test Plan sections; doc-only changes can opt out of a changeset.",
+        "Repo checks are pre-push, lint, doc-check, test and workflow-contracts; `just ci` is the full suite.",
+        "Commits on the branch are signed (-S); signature verification on GitHub was not checked."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/tests/error_code_hygiene_tests.rs",
+          "finding": "Modified as part of the error-code scanner collapse, which merges overlapping scanner tests into one that discovers source files itself, with no hand-kept file list."
+        }
+      ],
+      "workflow": [
+        "Verify the docs branch merges cleanly into the updated main with `git merge-tree --write-tree` before opening a PR.",
+        "Wave-based delegation: run independent refactors in isolated worktrees in parallel, and have a subagent draft PR text that the coordinator then files.",
+        "Subagent hand-backs are treated as reports, not user approval; the PR was opened from drafted text only after review of the diff.",
+        "Before deleting old tests in the scanner collapse, require the new test to fail on a duplicate code, a code removed from the docs, and a variant without a code."
+      ]
+    },
+    "friction": [
+      "CI had not run on the docs branch, so the PR relies on locally run checks.",
+      "GitHub signature verification was not checked on the pushed commit.",
+      "Progress is gated on two unresolved user decisions about exit-code policy."
+    ],
+    "open_items": [
+      "Decide whether bad flag values should uniformly exit 2 (unknown `--package` currently exits 1 with E102).",
+      "Decide whether `pre-major-inference = \"false\"` should be documented as an alias or removed.",
+      "Wait for the changed.rs rewrite and error-code scanner collapse agents to finish, then review them.",
+      "Refresh release PR #493 (0.20.0) so the rendered changelog can be reviewed.",
+      "Write the Brain memory for the invariant ladder.",
+      "Clean up leftover `worktree-agent-*` branches once the user's review is done."
+    ]
+  }
+}
