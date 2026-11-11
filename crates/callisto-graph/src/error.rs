@@ -1064,6 +1064,33 @@ mod tests {
     use super::*;
     use callisto_model::vcs::VcsError;
 
+    #[test]
+    fn exit_kind_is_usage_only_for_flag_input_errors() {
+        let tag = GraphError::TagInvalid { tag: "a b".to_owned() };
+        assert_eq!(tag.exit_kind(), ExitKind::Usage);
+        let exists = GraphError::InitAlreadyInitialized {
+            path: PathBuf::from("callisto.toml"),
+        };
+        assert_eq!(exists.exit_kind(), ExitKind::Runtime);
+    }
+
+    #[test]
+    fn a_package_reference_is_usage_only_when_it_came_from_a_flag() {
+        let bare = |context: &str| ConfigError::BareReference {
+            context: context.to_owned(),
+            given: "a".to_owned(),
+        };
+        let colon = |context: &str| ConfigError::ColonReference {
+            context: context.to_owned(),
+            given: "cargo:a".to_owned(),
+            canonical: "cargo/a".to_owned(),
+        };
+        assert_eq!(bare("--package").exit_kind(), ExitKind::Usage);
+        assert_eq!(colon("--package").exit_kind(), ExitKind::Usage);
+        assert_eq!(bare("callisto.toml [[package]]").exit_kind(), ExitKind::Runtime);
+        assert_eq!(colon("callisto.toml [[package]]").exit_kind(), ExitKind::Runtime);
+    }
+
     /// An unreadable pre-release state file names the path it was read from, not a hardcoded `.changeset/pre.json`.
     #[test]
     fn pre_json_read_error_names_the_real_path() {
@@ -1348,7 +1375,26 @@ pub enum ConfigError {
     VersionParse(#[from] VersionParseError),
 }
 
+/// Whether a failure is bad command-line input (exit 2) or anything else (exit 1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExitKind {
+    /// A bad or missing flag or argument value, or a bad flag combination, caught after parsing.
+    Usage,
+    /// Workspace, config, git, registry or release state.
+    Runtime,
+}
+
 impl GraphError {
+    pub fn exit_kind(&self) -> ExitKind {
+        match self {
+            Self::Config(error) => error.exit_kind(),
+            Self::InitInvalidForgeRepository { .. }
+            | Self::InitInvalidTargetTriple { .. }
+            | Self::TagInvalid { .. } => ExitKind::Usage,
+            _ => ExitKind::Runtime,
+        }
+    }
+
     /// E102 for `id`, suggesting up to three of `known` whose names are a small edit away.
     pub fn unknown_package(id: PackageId, known: impl IntoIterator<Item = PackageId>) -> Self {
         let hint = did_you_mean(&id, known);
@@ -1378,6 +1424,16 @@ impl GraphError {
 }
 
 impl ConfigError {
+    pub fn exit_kind(&self) -> ExitKind {
+        match self {
+            // The same reference read from callisto.toml is a config error, not usage.
+            Self::ColonReference { context, .. } | Self::BareReference { context, .. } if context.starts_with("--") => {
+                ExitKind::Usage
+            }
+            _ => ExitKind::Runtime,
+        }
+    }
+
     /// The one filesystem path this error is about, when it carries it as a structured field.
     pub fn path(&self) -> Option<&std::path::Path> {
         match self {

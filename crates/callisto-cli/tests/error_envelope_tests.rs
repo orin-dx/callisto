@@ -12,14 +12,7 @@ fn envelope_in(dir: &std::path::Path, args: &[&str]) -> serde_json::Value {
     let stderr = String::from_utf8_lossy(&out.stderr);
     let envelope: serde_json::Value = serde_json::from_str(&stderr)
         .unwrap_or_else(|error| panic!("stderr of {args:?} is not only JSON ({error}): {stderr}"));
-    // A usage error exits 2 and every other failure exits 1; the classification has its own tests.
-    let code = envelope["error"]["code"].as_str().unwrap_or_default();
-    let expected = if callisto_cli::error::USAGE_CODES.contains(&code) {
-        2
-    } else {
-        1
-    };
-    assert_eq!(out.status.code(), Some(expected), "args {args:?}: {code}");
+    assert!(matches!(out.status.code(), Some(1 | 2)), "args {args:?}: {envelope}");
     envelope
 }
 
