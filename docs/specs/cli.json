@@ -111,7 +111,7 @@
     },
     {
       "id": "CLI-SURF-06",
-      "criterion": "`callisto help` prints the root help; `callisto help <command>` (nested names accepted as multiple words) prints that subcommand's help; an unknown command name exits 1 naming it. `callisto completions <shell>` never offers a hidden subcommand, at any nesting depth."
+      "criterion": "`callisto help` prints the root help; `callisto help <command>` (nested names accepted as multiple words) prints that subcommand's help; an unknown command name exits 2 with `E283` naming it. `callisto completions <shell>` never offers a hidden subcommand, at any nesting depth."
     },
     {
       "id": "CLI-SURF-04",
@@ -143,12 +143,12 @@
     },
     {
       "id": "CLI-OUT-06",
-      "criterion": "When a command fails under `--format json`, stderr ends with a JSON object `{\"schemaVersion\", \"command\", \"error\": {\"code\", \"message\", \"help\", \"path\"}}` and the exit code is 1; `command` is the subcommand that was parsed and `path` is `null` unless the error carries a structured filesystem path.",
+      "criterion": "When a command fails under `--format json`, stderr ends with a JSON object `{\"schemaVersion\", \"command\", \"dryRun\", \"error\": {\"code\", \"message\", \"help\", \"path\"}}` and the exit code is 1, or 2 for a usage error as defined in docs/stability.md; `command` is the subcommand that was parsed and `path` is `null` unless the error carries a structured filesystem path.",
       "is_error_case": true
     },
     {
       "id": "CLI-OUT-07",
-      "criterion": "When a command fails under text format, stderr shows a diagnostic with an error code and a message, and the exit code is 1.",
+      "criterion": "When a command fails under text format, stderr shows a diagnostic with an error code and a message, and the exit code is 1, or 2 for a usage error as defined in docs/stability.md.",
       "is_error_case": true
     },
     {
@@ -205,17 +205,17 @@
     },
     {
       "id": "CLI-ADD-04",
-      "criterion": "`callisto add` with no --package and a non-terminal stdin exits 1 with error `E214` whose help names `callisto add --package <name>:<severity>`.",
+      "criterion": "`callisto add` with no --package and a non-terminal stdin exits 2 with error `E214` whose help names `callisto add --package <name>:<severity>`.",
       "is_error_case": true
     },
     {
       "id": "CLI-ADD-05",
-      "criterion": "`add --package` without --summary, or with a whitespace-only summary, exits 1 naming --summary and writes nothing.",
+      "criterion": "`add --package` without --summary, or with a whitespace-only summary, exits 2 naming --summary (`E274` when missing, `E275` when empty) and writes nothing.",
       "is_error_case": true
     },
     {
       "id": "CLI-ADD-06",
-      "criterion": "A --package value missing `:severity`, with an unknown severity, or naming a package not in the workspace exits 1 and writes nothing; an unknown package name reports E102, a name without its ecosystem reports E317, and the colon form reports E316.",
+      "criterion": "A --package value missing `:severity`, with an unknown severity, or naming a package not in the workspace writes nothing; a missing `:severity` exits 2 with `E270`, an unknown severity exits 2 with `E271`, an unknown package name exits 1 with `E102`, a name without its ecosystem reports E317, and the colon form reports E316 (both exit 2 when the reference came from a flag).",
       "is_error_case": true
     },
     {
@@ -258,17 +258,17 @@
     },
     {
       "id": "CLI-INIT-10",
-      "criterion": "With a non-terminal stdin and no --yes, init exits 1 with `E240` naming --yes and every other missing flag; with --yes it exits 1 with `E241` naming each missing flag: --forge-repository when --artifact-target is given, and --product-package when --artifact-target is given and more than one supported Cargo package produces a binary.",
+      "criterion": "With a non-terminal stdin and no --yes, init exits 2 with `E240` naming --yes and every other missing flag; with --yes it exits 2 with `E241` naming each missing flag: --forge-repository when --artifact-target is given, and --product-package when --artifact-target is given and more than one supported Cargo package produces a binary.",
       "is_error_case": true
     },
     {
       "id": "CLI-INIT-11",
-      "criterion": "With --yes, omitting --artifact-target writes no `[release]` table; --artifact-target is repeatable and comma-separated, and --workflow with --no-workflow exits 1 with `E242` before writing.",
+      "criterion": "With --yes, omitting --artifact-target writes no `[release]` table; --artifact-target is repeatable and comma-separated, and --workflow with --no-workflow exits 2 with `E242` before writing.",
       "is_error_case": true
     },
     {
       "id": "CLI-INIT-12",
-      "criterion": "init exits 1 without writing for an empty or repeated target triple, --artifact-target when no supported Cargo package produces a binary, a --product-package that is absent or not a supported Cargo binary producer, a --forge-repository that is not `owner/repo` or differs from origin's GitHub repository, or --forge-repository or --product-package given without --artifact-target. An npm `bin` or Python `[project.scripts]` product selected for an artifact fails with a typed unsupported-builder diagnostic; registry-only npm and PyPI releases remain valid.",
+      "criterion": "init exits without writing: 2 for an empty or repeated target triple (`E196`), a --forge-repository that is not `owner/repo` (`E195`), or --forge-repository or --product-package given without --artifact-target (`E298`); 1 for --artifact-target when no supported Cargo package produces a binary (`E188`), a --product-package that is absent or not a supported Cargo binary producer (`E189`), or a --forge-repository that differs from origin's GitHub repository (`E187`). An npm `bin` or Python `[project.scripts]` product selected for an artifact fails with a typed unsupported-builder diagnostic; registry-only npm and PyPI releases remain valid.",
       "is_error_case": true
     },
     {
