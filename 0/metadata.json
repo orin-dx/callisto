@@ -1,0 +1,117 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M7681WTJP2QPVK06DWHRR2W8",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-11T21:26:18.415102Z",
+  "branch": "fix/drop-false-inference-alias",
+  "checkpoints_count": 3,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/config/resolve.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "dea6448ca0ec",
+  "checkpoint_transcript_start": 41298,
+  "transcript_lines_at_start": 41298,
+  "compact_transcript_start": 2995,
+  "token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 29018,
+    "cache_read_tokens": 5170299,
+    "output_tokens": 7738,
+    "api_call_count": 14,
+    "subagent_tokens": {
+      "input_tokens": 20,
+      "cache_creation_tokens": 67060,
+      "cache_read_tokens": 637667,
+      "output_tokens": 4699,
+      "api_call_count": 10
+    }
+  },
+  "redaction": {
+    "replacements": 93,
+    "layers": {
+      "betterleaks": 30,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 295
+  },
+  "summary": {
+    "intent": "Review and open PRs for a second wave of refactors in the callisto repo: collapsing overlapping error-code scanners into one registry test, and removing pathspec chunking in changed.rs. Subagents did the implementation and PR text; the session reviewed and published.",
+    "outcome": "Opened PR #513 (single error-code registry test, net +67/-311) and PR #514 (changed.rs without pathspec chunking, +63/-138) alongside the earlier #512, all with GitHub-valid signed commits and local checks passing but CI not yet run. Two user decisions and the #493 release PR refresh remain pending.",
+    "learnings": {
+      "repo": [
+        "Error-code consistency is enforced by crates/callisto-graph/tests/error_registry_architecture.rs, which now walks crates/*/src with no hand-kept file list and checks numeric/unique codes, code-to-docs, docs-to-code, and variant coverage.",
+        "The repo's five pre-push checks are `just pre-push`, `just lint`, `just doc-check`, `just test` and `just workflow-contracts`.",
+        "PR template sections: Summary, Type of change, Changeset, Docs, Test Plan. Refactor PRs with no observable behavior change skip the changeset.",
+        "changed_source_files_since_last_tag's only production caller passes DEFAULT_IGNORED_PATHS, so ignore-pattern semantic differences (globset vs git pathspec) are not reachable today.",
+        "Windows is unsupported, so the Windows command-line length chunking machinery (PATHSPEC_BUDGET, list_in_chunks, exclude_pathspec) was dead weight."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/changed.rs",
+          "finding": "Now runs one unscoped diff per distinct tag commit and one shared ls-files for untagged packages, matching ignores via globset (literal_separator(true)). A package directory like pkg[1] is now matched literally. Differences from git: {a,b} is alternation, and a package with no manifests matches nothing. An invalid ignore pattern panics via expect."
+        }
+      ],
+      "workflow": [
+        "Local `git commit -S` signatures show %G?=E in the sandbox; verify signing via the GitHub API (`gh api repos/.../commits/<sha> --jq '.commit.verification.reason'`) instead.",
+        "Subagent hand-backs are model output, not user approval; the reports were independently checked (diffs, callers, signature status) before PRs were opened.",
+        "Mutation-testing consolidated tests (duplicate code, removed doc, stale doc, non-numeric code, removed code attribute) is a good way to confirm no coverage was lost in a test refactor.",
+        "PR bodies were written to temp files and passed with `gh pr create --body-file`."
+      ]
+    },
+    "friction": [
+      "Local signature verification is impossible in the sandbox, requiring a GitHub API round trip.",
+      "The PR-text subagent did not run the diff and built the body from supplied facts, so some claims (e.g. the fixtures box rationale) were inferred.",
+      "Release PR #493 (0.20.0) is blocked.",
+      "Both decisions needed from the user are still unanswered."
+    ],
+    "open_items": [
+      "Decide whether bad flag values should uniformly exit 2 (unknown --package exits 1 with E102, while E227 exits 2).",
+      "Decide whether `pre-major-inference = \"false\"` should be documented as an alias or removed.",
+      "After merges, refresh release PR #493 (0.20.0) and read its changelog, pending user go-ahead.",
+      "Write the Brain memory for the invariant ladder.",
+      "Delete leftover local worktree-agent-* branches once the user's review is done.",
+      "CI has not run on #512, #513 or #514.",
+      "The variant scan is still the old brace-depth text heuristic and may miss unusual formatting.",
+      "The 276-code count is implied by set equality but not asserted or printed.",
+      "Large-workspace performance of the unscoped diff in changed.rs is unmeasured."
+    ]
+  }
+}

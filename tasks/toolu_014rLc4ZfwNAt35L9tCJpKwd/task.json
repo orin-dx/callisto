@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_014rLc4ZfwNAt35L9tCJpKwd",
+  "agent_id": "aa1335c8970c67a54",
+  "subagent_type": "general-purpose",
+  "task_description": "changed.rs unscoped diff rewrite",
+  "token_usage": {
+    "input_tokens": 54,
+    "cache_creation_tokens": 82841,
+    "cache_read_tokens": 2230570,
+    "output_tokens": 14693,
+    "api_call_count": 27
+  },
+  "started_at": "2026-11-11T13:14:38.180708-08:00",
+  "completed_at": "2026-11-11T13:20:52.826209-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}

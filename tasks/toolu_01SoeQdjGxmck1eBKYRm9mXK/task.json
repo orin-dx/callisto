@@ -1,0 +1,19 @@
+{
+  "tool_use_id": "toolu_01SoeQdjGxmck1eBKYRm9mXK",
+  "agent_id": "a062b7dd650f28157",
+  "subagent_type": "general-purpose",
+  "task_description": "Collapse error-code scanners",
+  "files": [
+    "mut.sh"
+  ],
+  "token_usage": {
+    "input_tokens": 46,
+    "cache_creation_tokens": 56425,
+    "cache_read_tokens": 1547551,
+    "output_tokens": 9600,
+    "api_call_count": 23
+  },
+  "started_at": "2026-11-11T13:14:38.180715-08:00",
+  "completed_at": "2026-11-11T13:20:18.419174-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}

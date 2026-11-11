@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_01A1WksosioYy6bavgW2esqd",
+  "agent_id": "a10680be6001d6842",
+  "subagent_type": "courier:pr-narrator",
+  "task_description": "PR text for scanner collapse",
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 31840,
+    "cache_read_tokens": 64187,
+    "output_tokens": 1307,
+    "api_call_count": 2
+  },
+  "started_at": "2026-11-11T13:20:38.742238-08:00",
+  "completed_at": "2026-11-11T13:20:51.176093-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}

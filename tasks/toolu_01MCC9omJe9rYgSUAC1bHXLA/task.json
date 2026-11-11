@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_01MCC9omJe9rYgSUAC1bHXLA",
+  "agent_id": "a6f287c10c4aac566",
+  "subagent_type": "courier:pr-narrator",
+  "task_description": "PR text for changed.rs rewrite",
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 30419,
+    "cache_read_tokens": 118003,
+    "output_tokens": 1403,
+    "api_call_count": 3
+  },
+  "started_at": "2026-11-11T13:21:26.516422-08:00",
+  "completed_at": "2026-11-11T13:21:39.2761-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}
