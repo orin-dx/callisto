@@ -278,7 +278,7 @@
     },
     {
       "id": "REL-PUB-18",
-      "criterion": "A registry destination in `callisto.toml` is honored or refused, never ignored. A `url` on a `cargo` registry fails config loading with E254, because cargo takes its destination from `.cargo/config.toml`. Publishing an npm package with yarn while the npm registry has a `url` fails with E168 before yarn runs, because `yarn npm publish` has no `--registry`; the same configuration with npm, pnpm or bun passes `--registry <url>`."
+      "criterion": "A registry destination in `callisto.toml` is honored or refused, never ignored. A `url` on a `cargo` registry fails config loading with E336, because cargo takes its destination from `.cargo/config.toml`. Publishing an npm package with yarn while the npm registry has a `url` fails with E168 before yarn runs, because `yarn npm publish` has no `--registry`; the same configuration with npm, pnpm or bun passes `--registry <url>`."
     },
     {
       "id": "REL-RERUN-01",

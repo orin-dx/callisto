@@ -701,6 +701,17 @@ pub enum GraphError {
     )]
     ReleaseInvariant { detail: String },
 
+    #[error("`[registries.{registry}]` is a `{configured}` registry, but a `{expected}` package publishes to it")]
+    #[diagnostic(
+        code(E339),
+        help("Set `kind = \"{expected}\"` on `[registries.{registry}]`, or remove the entry to use the built-in registry. No registry was contacted.")
+    )]
+    RegistryKindMismatch {
+        registry: String,
+        configured: String,
+        expected: String,
+    },
+
     #[error("`--from` commit `{commit}` is not a release commit on this branch")]
     #[diagnostic(
         code(E328),
@@ -1208,9 +1219,88 @@ pub enum ConfigError {
     #[error("duplicate group name `{group}`")]
     #[diagnostic(code(E252), help("Rename one of the two groups sharing this name."))]
     DuplicateGroupName { group: GroupName },
-    #[error("`{path}` sets unknown callisto key `{key}`")]
-    #[diagnostic(code(E254), help("Remove or fix the unrecognized key `{}` in `{}`.", key, path.display()))]
-    UnknownKey { path: PathBuf, key: String },
+    #[error("`{path}`: `{location}` is `{value}`, which is not a publish target")]
+    #[diagnostic(
+        code(E330),
+        help("Set `{location}` to a list of `crates-io`, `npm`, `pypi`, `nuget`, `github-release` or `none` in callisto.toml.")
+    )]
+    InvalidPublishTarget {
+        path: PathBuf,
+        location: String,
+        value: String,
+    },
+
+    #[error("`{path}`: `{location}` is `{value}`; expected `changeset` or `auto`")]
+    #[diagnostic(code(E331), help("Set `{location}` to `changeset` or `auto` in callisto.toml."))]
+    InvalidReleaseTrigger {
+        path: PathBuf,
+        location: String,
+        value: String,
+    },
+
+    #[error("`{path}`: `cascade.mode` is `{found}`; expected `always` or `out-of-range`")]
+    #[diagnostic(
+        code(E332),
+        help("Set `cascade.mode` to `always` or `out-of-range` in callisto.toml.")
+    )]
+    InvalidCascadeMode { path: PathBuf, found: String },
+
+    #[error("`{path}`: `changelog.layout` is `{found}`; expected `grouped` or `flat`")]
+    #[diagnostic(code(E333), help("Set `changelog.layout` to `grouped` or `flat` in callisto.toml."))]
+    InvalidChangelogLayout { path: PathBuf, found: String },
+
+    #[error("`{path}`: `[registries.{registry}]` has `kind = \"{found}\"`; expected `cargo`, `npm` or `pypi`")]
+    #[diagnostic(
+        code(E334),
+        help("Set `kind` on `[registries.{registry}]` to `cargo`, `npm` or `pypi` in callisto.toml.")
+    )]
+    InvalidRegistryKind {
+        path: PathBuf,
+        registry: String,
+        found: String,
+    },
+
+    #[error("`{path}`: `[registries.{registry}]` is a `{kind}` registry but sets `publish-url`, which only a `pypi` registry has")]
+    #[diagnostic(
+        code(E335),
+        help("Remove `publish-url` from `[registries.{registry}]`, or set `kind = \"pypi\"`. Only a `pypi` registry has a separate upload route.")
+    )]
+    RegistryPublishUrlNotPypi {
+        path: PathBuf,
+        registry: String,
+        kind: String,
+    },
+
+    #[error("`{path}`: `[registries.{registry}]` is a `cargo` registry but sets `url`, which Callisto does not route cargo to")]
+    #[diagnostic(
+        code(E336),
+        help("Remove `url` from `[registries.{registry}]`; cargo takes its destination from `.cargo/config.toml`.")
+    )]
+    CargoRegistryUrl { path: PathBuf, registry: String },
+
+    #[error("`{path}`: `[registries.{registry}] {field}` is `{value}`, which is not a duration from 1s to 1h")]
+    #[diagnostic(
+        code(E337),
+        help("Set `{field}` to a whole number followed by `s`, `m` or `h`, from `1s` to `1h`, such as `\"90s\"` or `\"15m\"`.")
+    )]
+    InvalidRegistryTimeout {
+        path: PathBuf,
+        registry: String,
+        field: String,
+        value: String,
+    },
+
+    #[error("`{path}`: `{location}` is `{pattern}`, which is not a valid package pattern: {reason}")]
+    #[diagnostic(
+        code(E338),
+        help("Fix `{location}` in callisto.toml; see docs/config.md for the supported forms.")
+    )]
+    InvalidPackageMatch {
+        path: PathBuf,
+        location: String,
+        pattern: String,
+        reason: String,
+    },
 
     #[error("`cascade.bump-severity` is `{found}`; expected `patch` or `minor`")]
     #[diagnostic(
@@ -1295,7 +1385,15 @@ impl ConfigError {
             | Self::ParseToml { path, .. }
             | Self::UnknownField { path, .. }
             | Self::InvalidValue { path, .. }
-            | Self::UnknownKey { path, .. } => Some(path),
+            | Self::InvalidPublishTarget { path, .. }
+            | Self::InvalidReleaseTrigger { path, .. }
+            | Self::InvalidCascadeMode { path, .. }
+            | Self::InvalidChangelogLayout { path, .. }
+            | Self::InvalidRegistryKind { path, .. }
+            | Self::RegistryPublishUrlNotPypi { path, .. }
+            | Self::CargoRegistryUrl { path, .. }
+            | Self::InvalidRegistryTimeout { path, .. }
+            | Self::InvalidPackageMatch { path, .. } => Some(path),
             _ => None,
         }
     }
