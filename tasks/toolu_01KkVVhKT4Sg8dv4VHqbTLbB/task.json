@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_01KkVVhKT4Sg8dv4VHqbTLbB",
+  "agent_id": "a3f9fa9a8ff6bf64f",
+  "subagent_type": "courier:pr-narrator",
+  "task_description": "PR text for deletions branch",
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 33046,
+    "cache_read_tokens": 116358,
+    "output_tokens": 1461,
+    "api_call_count": 3
+  },
+  "started_at": "2026-11-11T12:30:33.06849-08:00",
+  "completed_at": "2026-11-11T12:30:49.76428-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}

@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_019vU6axpoa6YJQciAuY2ceD",
+  "agent_id": "a4a81d74b2a00d769",
+  "subagent_type": "courier:pr-narrator",
+  "task_description": "PR text for exit-kind branch",
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 24376,
+    "cache_read_tokens": 19804,
+    "output_tokens": 961,
+    "api_call_count": 1
+  },
+  "started_at": "2026-11-11T12:30:33.065366-08:00",
+  "completed_at": "2026-11-11T12:30:41.567182-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}

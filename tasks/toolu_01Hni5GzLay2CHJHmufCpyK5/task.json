@@ -1,0 +1,19 @@
+{
+  "tool_use_id": "toolu_01Hni5GzLay2CHJHmufCpyK5",
+  "agent_id": "aee5b559fb0687d8c",
+  "subagent_type": "general-purpose",
+  "task_description": "exit_kind replaces code lists",
+  "files": [
+    "crates/callisto-cli/tests/zz_scratch_exit_kind.rs"
+  ],
+  "token_usage": {
+    "input_tokens": 84,
+    "cache_creation_tokens": 145830,
+    "cache_read_tokens": 4203858,
+    "output_tokens": 23325,
+    "api_call_count": 42
+  },
+  "started_at": "2026-11-11T12:19:16.357907-08:00",
+  "completed_at": "2026-11-11T12:30:00.32428-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}

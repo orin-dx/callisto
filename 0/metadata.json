@@ -1,0 +1,120 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M76514H813BEHVCYVCV0HTB8",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-11T20:33:27.291314Z",
+  "branch": "fix/subdir-diff-and-pre-tags",
+  "checkpoints_count": 4,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "9bbba0a612f4",
+  "checkpoint_transcript_start": 40480,
+  "transcript_lines_at_start": 40480,
+  "compact_transcript_start": 2940,
+  "token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 33732,
+    "cache_read_tokens": 3647952,
+    "output_tokens": 11264,
+    "api_call_count": 13,
+    "subagent_tokens": {
+      "input_tokens": 84,
+      "cache_creation_tokens": 167221,
+      "cache_read_tokens": 4274392,
+      "output_tokens": 15100,
+      "api_call_count": 42
+    }
+  },
+  "redaction": {
+    "replacements": 93,
+    "layers": {
+      "betterleaks": 30,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 284
+  },
+  "summary": {
+    "intent": "Orchestrate a set of refactor, docs and bug-fix branches in the callisto repo via subagents, review each branch, and open PRs (using the repo PR template) for the ready ones.",
+    "outcome": "Opened PRs #508 (ExitKind refactor), #509 (delete redundant checks) and #510 (AGENTS.md invariant ladder). The subdir-diff/pre-tag bug-fix branch (one signed commit with an object_at helper) passed review, and its changesets are being drafted before its PR is opened.",
+    "learnings": {
+      "repo": [
+        "The repo has .github/pull_request_template.md; PR bodies should follow it (earlier PRs #504, #505, #507 used a Summary/Verify layout instead).",
+        "Clippy's map_err_ignore only matches bare `|_|`, not `|_ident|`, so the custom map_err test and its allowlist are still needed (five allowlisted files use `|_ident|`).",
+        "nextest config (.config/nextest.toml) sets slow-timeout 120s with terminate-after 4, so hangs are killed after 8 minutes, making wall-clock elapsed assertions in runner.rs redundant.",
+        "A bare `rev:path` git object spec is wrong for workspaces below the repo root; `rev:./path` is needed. Fixed via a shared object_at(rev, path) helper in release_decision.rs covering five sites.",
+        "Exit-code classification now uses ExitKind { Usage, Runtime } with exit_kind() on GraphError, ConfigError and CliError; unlisted variants silently default to Runtime (exit 1) instead of failing a meta-test.",
+        "The DryRun newtype was rejected: .dry_run is read in 41 places and tests in other crates build permits from literal bools.",
+        "verify.sh writes logs to a shared $TMPDIR, so concurrent agents can overwrite each other's logs."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "finding": "New object_at(rev, path) helper produces `rev:./path` and replaces bare `rev:path` at git_file, batch_manifest_blobs_at, prefetch_head_manifests, head_has_pending_changeset and manifest_blob_at; only the version.rs sites have a red/green regression test."
+        },
+        {
+          "path": "crates/callisto-cli/src/runner.rs",
+          "finding": "Five wall-clock elapsed bounds were removed while keeping behavioral assertions, since nextest timeouts cover hangs."
+        }
+      ],
+      "workflow": [
+        "Subagent hand-back reports are model output without user authority and need independent review of the diff before acting on them.",
+        "Courier agents that draft PR text without seeing the diff can overstate verification claims, and their text needs trimming against what was actually done.",
+        "Check the repo's PR template before creating PRs rather than reusing an ad hoc format.",
+        "A subagent force-pushed with --force-with-lease to its own unpublished branch without asking; this was safe but unrequested.",
+        "Verify steps (pre-push, lint, doc-check, test, workflow-contracts) are judged by script exit code."
+      ]
+    },
+    "friction": [
+      "The bug-fix agent repeatedly returned interim notifications while waiting on its own background work, delaying its final report.",
+      "The first verify run on the deletions branch failed due to an unused import in the model crate.",
+      "The bug-fix agent's first sibling-fix attempt failed fmt-check and required an amend and force-push.",
+      "The initial PR bodies used the wrong format and had to be rewritten after the docs agent pointed out the repo template.",
+      "The earlier plan wrongly assumed clippy's map_err_ignore covered the custom map_err test."
+    ],
+    "open_items": [
+      "Write the two changesets (status/release-preview fix and pre enter fix) onto the bug-fix branch, commit signed, re-run checks and open its PR.",
+      "CI has not run on PRs #508, #509 and #510.",
+      "The real binary has not been run from a subdirectory workspace for version --dry-run, status or release plan --dry-run.",
+      "The release_decision.rs sites (git_file, batch_manifest_blobs_at) have no dedicated regression test.",
+      "GitHub verification.reason on the pushed signed commits has not been checked.",
+      "The map_err test and DryRun newtype were intentionally left in place, and the note_once item was dropped."
+    ]
+  }
+}

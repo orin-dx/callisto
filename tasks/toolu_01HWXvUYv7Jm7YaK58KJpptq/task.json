@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_01HWXvUYv7Jm7YaK58KJpptq",
+  "agent_id": "ad50cc31a8389a2d7",
+  "subagent_type": "courier:changeset-analyzer",
+  "task_description": "Changesets for subdir and pre tag fixes",
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 35452,
+    "cache_read_tokens": 173504,
+    "output_tokens": 3375,
+    "api_call_count": 4
+  },
+  "started_at": "2026-11-11T12:32:29.324771-08:00",
+  "completed_at": "2026-11-11T12:32:58.641956-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}

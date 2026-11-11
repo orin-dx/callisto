@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_01GP6je4AsHF9tLmSzvXWgvj",
+  "agent_id": "aa22887ea5a66d7bc",
+  "subagent_type": "courier:pr-narrator",
+  "task_description": "PR text for AGENTS.md branch",
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 33354,
+    "cache_read_tokens": 115437,
+    "output_tokens": 1324,
+    "api_call_count": 3
+  },
+  "started_at": "2026-11-11T12:30:33.233845-08:00",
+  "completed_at": "2026-11-11T12:30:48.881427-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}
