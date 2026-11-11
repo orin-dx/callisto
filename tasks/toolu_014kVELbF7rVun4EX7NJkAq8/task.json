@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_014kVELbF7rVun4EX7NJkAq8",
+  "agent_id": "a88279d0f6b9addf4",
+  "subagent_type": "bug-hunter",
+  "task_description": "Credentials, diff, PR overlap",
+  "token_usage": {
+    "input_tokens": 44,
+    "cache_creation_tokens": 94740,
+    "cache_read_tokens": 1364239,
+    "output_tokens": 17250,
+    "api_call_count": 22
+  },
+  "started_at": "2026-11-11T10:05:15.91639-08:00",
+  "completed_at": "2026-11-11T10:08:21.570123-08:00"
+}

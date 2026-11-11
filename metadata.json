@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M75Y9RZEQPKKYCV0CA8VGADV",
+  "strategy": "manual-commit",
+  "branch": "fix/json-contract-complete",
+  "checkpoints_count": 21,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/release.rs",
+    "crates/callisto-cli/src/commands/version.rs",
+    "crates/callisto-cli/src/lib.rs",
+    "crates/callisto-cli/src/main.rs",
+    "crates/callisto-cli/src/output.rs",
+    "crates/callisto-cli/tests/json_contract_tests.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 128,
+    "cache_creation_tokens": 163572,
+    "cache_read_tokens": 27749638,
+    "output_tokens": 57010,
+    "api_call_count": 59,
+    "subagent_tokens": {
+      "input_tokens": 248,
+      "cache_creation_tokens": 402116,
+      "cache_read_tokens": 12781455,
+      "output_tokens": 68869,
+      "api_call_count": 124
+    }
+  },
+  "redaction": {
+    "replacements": 93,
+    "layers": {
+      "betterleaks": 30,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_011hUPSkVWUxRj5PRemvZ6v2",
+  "agent_id": "afb2f279e0be8f76d",
+  "subagent_type": "bug-hunter",
+  "task_description": "Bug hunt 0.20 batch",
+  "token_usage": {
+    "input_tokens": 56,
+    "cache_creation_tokens": 56061,
+    "cache_read_tokens": 1054585,
+    "output_tokens": 10280,
+    "api_call_count": 28
+  },
+  "started_at": "2026-11-11T09:54:18.441897-08:00",
+  "completed_at": "2026-11-11T09:56:37.710945-08:00"
+}

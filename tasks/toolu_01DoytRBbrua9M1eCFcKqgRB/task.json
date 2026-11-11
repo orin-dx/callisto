@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01DoytRBbrua9M1eCFcKqgRB",
+  "agent_id": "af8f5847da3bfae5b",
+  "subagent_type": "Explore",
+  "task_description": "Michi vs Callisto overlap",
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 68381,
+    "cache_read_tokens": 352366,
+    "output_tokens": 6731,
+    "api_call_count": 9
+  },
+  "started_at": "2026-11-11T10:05:15.795323-08:00",
+  "completed_at": "2026-11-11T10:06:32.428586-08:00"
+}

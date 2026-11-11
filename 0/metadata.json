@@ -1,0 +1,80 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M75Y9RZEQPKKYCV0CA8VGADV",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-11T18:36:01.650606Z",
+  "branch": "fix/json-contract-complete",
+  "checkpoints_count": 21,
+  "save_step_count": 17,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/release.rs",
+    "crates/callisto-cli/src/commands/version.rs",
+    "crates/callisto-cli/src/lib.rs",
+    "crates/callisto-cli/src/main.rs",
+    "crates/callisto-cli/src/output.rs",
+    "crates/callisto-cli/tests/json_contract_tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "c8f15861fca5",
+  "checkpoint_transcript_start": 38445,
+  "transcript_lines_at_start": 38445,
+  "compact_transcript_start": 2787,
+  "token_usage": {
+    "input_tokens": 128,
+    "cache_creation_tokens": 163572,
+    "cache_read_tokens": 27749638,
+    "output_tokens": 57010,
+    "api_call_count": 59,
+    "subagent_tokens": {
+      "input_tokens": 248,
+      "cache_creation_tokens": 402116,
+      "cache_read_tokens": 12781455,
+      "output_tokens": 68869,
+      "api_call_count": 124
+    }
+  },
+  "redaction": {
+    "replacements": 93,
+    "layers": {
+      "betterleaks": 30,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 272
+  }
+}

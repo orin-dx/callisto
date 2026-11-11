@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01HPUihTetMbTzvrU6G9JhCv",
+  "agent_id": "a84cbea4ce07ea1ea",
+  "subagent_type": "bug-hunter",
+  "task_description": "Over-engineering audit",
+  "token_usage": {
+    "input_tokens": 36,
+    "cache_creation_tokens": 62353,
+    "cache_read_tokens": 702520,
+    "output_tokens": 10931,
+    "api_call_count": 18
+  },
+  "started_at": "2026-11-11T09:54:18.441445-08:00",
+  "completed_at": "2026-11-11T09:56:48.474571-08:00"
+}
