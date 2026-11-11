@@ -1,0 +1,45 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M7648J1SJCP90QQZJ8EWKT3V",
+  "strategy": "manual-commit",
+  "branch": "docs/invariant-ladder",
+  "checkpoints_count": 3,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 25582,
+    "cache_read_tokens": 1284237,
+    "output_tokens": 12225,
+    "api_call_count": 6,
+    "subagent_tokens": {
+      "input_tokens": 10,
+      "cache_creation_tokens": 219373,
+      "cache_read_tokens": 0,
+      "output_tokens": 1137,
+      "api_call_count": 5
+    }
+  },
+  "redaction": {
+    "replacements": 93,
+    "layers": {
+      "betterleaks": 30,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
