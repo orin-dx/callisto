@@ -10,7 +10,7 @@ use crate::Workspace;
 pub fn validate_tag(tag: &str, dotted: bool) -> Result<(), GraphError> {
     let identifier = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
     let valid = if dotted {
-        tag.split('.').all(identifier)
+        !tag.is_empty() && semver::Prerelease::new(tag).is_ok()
     } else {
         identifier(tag)
     };
@@ -211,7 +211,7 @@ mod tests {
     use crate::{GraphError, Workspace};
     use callisto_model::{CommandError, CommandOutput, CommandRunner};
 
-    use super::plan_snapshot;
+    use super::{plan_snapshot, validate_tag};
 
     struct FailingTagsRunner;
 
@@ -289,6 +289,19 @@ mod tests {
             assert!(matches!(error, GraphError::TagInvalid { .. }), "{tag}: {error}");
         }
         assert!(plan_snapshot(&ws, "pr-42").is_ok());
+    }
+
+    #[rstest::rstest]
+    #[case("beta.1", true)]
+    #[case("rc.2", true)]
+    #[case("alpha", true)]
+    #[case("01", false)]
+    #[case("beta.01", false)]
+    #[case("", false)]
+    #[case("a..b", false)]
+    #[case("a b", false)]
+    fn a_dotted_tag_must_be_a_valid_prerelease(#[case] tag: &str, #[case] valid: bool) {
+        assert_eq!(validate_tag(tag, true).is_ok(), valid, "{tag}");
     }
 
     /// Plan_snapshot's synthetic snapshot version overwrites every

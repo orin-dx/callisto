@@ -298,6 +298,7 @@ dependencies = [
  "miette",
  "proptest",
  "rstest",
+ "semver",
  "serde",
  "serde_json",
  "serial_test",

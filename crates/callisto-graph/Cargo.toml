@@ -33,6 +33,7 @@ thiserror = { workspace = true }
 miette = { workspace = true }
 indexmap = { workspace = true }
 url = { workspace = true }
+semver.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

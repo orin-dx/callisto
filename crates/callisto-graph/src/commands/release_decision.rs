@@ -757,8 +757,13 @@ fn git_file<R: CommandRunner>(
     commit: &str,
     path: &str,
 ) -> Result<String, GraphError> {
-    let object = format!("{commit}:{path}");
+    let object = object_at(commit, path);
     git_stdout(runner, root, &["show", &object])
+}
+
+/// `rev:./path`: git resolves a bare `rev:path` from the repository top, not the workspace directory.
+pub(super) fn object_at(rev: &str, path: &str) -> String {
+    format!("{rev}:./{path}")
 }
 
 pub(super) fn normalized_git_path(path: &std::path::Path) -> Result<String, GraphError> {
@@ -817,7 +822,7 @@ fn batch_manifest_blobs_at<R: CommandRunner>(
     commit: &str,
     paths: &[&str],
 ) -> Result<Vec<BatchBlob>, GraphError> {
-    let objects: Vec<String> = paths.iter().map(|path| format!("{commit}:{path}")).collect();
+    let objects: Vec<String> = paths.iter().map(|path| object_at(commit, path)).collect();
     batch_blobs(runner, root, &objects)
 }
 
@@ -1239,7 +1244,7 @@ mod tests {
                 })
             };
             let rev_parse_parent = format!("{}^", self.release_commit);
-            let decision_object = format!("{}:.callisto/release-decision.json", self.release_commit);
+            let decision_object = format!("{}:./.callisto/release-decision.json", self.release_commit);
             if args.first().copied() == Some("rev-parse") && args.get(1).copied() == Some("HEAD") {
                 return ok(self.release_commit.clone());
             }
@@ -1273,7 +1278,9 @@ mod tests {
             let requested = std::str::from_utf8(stdin).expect("test stdin is always valid UTF-8");
             let mut stdout = String::new();
             for object in requested.lines() {
-                let (commit, path) = object.split_once(':').expect("object identifier must be commit:path");
+                let (commit, path) = object
+                    .split_once(":./")
+                    .expect("object identifier must be commit:./path");
                 match self.blobs.get(&(commit.to_string(), path.to_string())) {
                     Some(content) => {
                         stdout.push_str(&format!("{} blob {}\n{}\n", "0".repeat(40), content.len(), content));
