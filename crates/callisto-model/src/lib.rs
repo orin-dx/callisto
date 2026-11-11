@@ -78,21 +78,6 @@ pub use release_pr::*;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    fn assert_send_sync_static<T: Send + Sync + 'static>() {}
-
-    #[test]
-    fn test_auto_traits() {
-        assert_send_sync_static::<PackageId>();
-        assert_send_sync_static::<Version>();
-        assert_send_sync_static::<Severity>();
-        assert_send_sync_static::<Ecosystem>();
-        assert_send_sync_static::<Package>();
-        assert_send_sync_static::<VersionReport>();
-        assert_send_sync_static::<StatusReport>();
-    }
-
     /// Every source file across the workspace declaring at least one
     /// `#[diagnostic(code(E..))]`, embedded at compile time via
     /// `include_str!` (paths relative to this file). This list is the

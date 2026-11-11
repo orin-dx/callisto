@@ -55,7 +55,6 @@ pub fn cascade_action(kind: DepKind, coverage: Coverage, source: Severity, cfg: 
             Some(ConfigKey::CASCADE_BUMP_SEVERITY),
             false,
         ),
-        (Dev, _) => (Severity::None, None, false),
         _ => (Severity::None, None, false),
     };
 

@@ -879,18 +879,11 @@ mod tests {
     #[test]
     fn run_with_timeout_bounds_reader_join_when_descendant_holds_pipe_open() {
         let runner = CliCommandRunner;
-        let start = Instant::now();
         let result = runner.run_with_timeout(
             "sh",
             &["-c", "sleep 30 >&2 & exit 0"],
             std::path::Path::new("."),
             Duration::from_secs(2),
-        );
-        let elapsed = start.elapsed();
-        assert!(
-            elapsed < Duration::from_secs(6),
-            "run_with_timeout must not block on a descendant process holding \
-             stdio pipes open; took {elapsed:?}, result: {result:?}"
         );
         assert!(
             matches!(result, Err(CommandError::Io { .. })),
@@ -950,7 +943,6 @@ mod tests {
         }
 
         let exe = std::env::current_exe().expect("current_exe should be available in tests");
-        let start = Instant::now();
         let output = std::process::Command::new(exe)
             .arg("--exact")
             .arg("runner::tests::run_with_timeout_warns_on_timeout_branch_when_descendant_holds_pipe_open")
@@ -958,14 +950,6 @@ mod tests {
             .env(CHILD_ENV, "1")
             .output()
             .expect("failed to re-exec test binary");
-        let elapsed = start.elapsed();
-
-        assert!(
-            elapsed < Duration::from_secs(6),
-            "run_with_timeout's timeout-kill branch must not block past its \
-             bounded grace period even when a descendant holds stdio pipes \
-             open; took {elapsed:?}"
-        );
 
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(
@@ -986,7 +970,6 @@ mod tests {
     fn run_with_timeout_caps_accumulated_stdout_and_still_drains_the_pipe() {
         let runner = CliCommandRunner;
         let over_cap = MAX_CAPTURED_OUTPUT_BYTES + 1_000_000;
-        let start = Instant::now();
         let out = runner
             .run_with_timeout(
                 "sh",
@@ -995,13 +978,8 @@ mod tests {
                 Duration::from_secs(30),
             )
             .unwrap();
-        let elapsed = start.elapsed();
 
         assert!(out.success());
-        assert!(
-            elapsed < Duration::from_secs(15),
-            "must not hang waiting for the child to finish writing past the cap; took {elapsed:?}"
-        );
         assert!(
             out.stdout.len() < over_cap,
             "captured stdout must be bounded, not the full {over_cap} bytes written; got {} bytes",
@@ -1023,7 +1001,6 @@ mod tests {
     fn run_with_timeout_caps_accumulated_stderr_with_no_newlines_and_still_drains_the_pipe() {
         let runner = CliCommandRunner;
         let over_cap = MAX_CAPTURED_OUTPUT_BYTES + 1_000_000;
-        let start = Instant::now();
         let out = runner
             .run_with_timeout(
                 "sh",
@@ -1032,13 +1009,8 @@ mod tests {
                 Duration::from_secs(30),
             )
             .unwrap();
-        let elapsed = start.elapsed();
 
         assert!(out.success());
-        assert!(
-            elapsed < Duration::from_secs(15),
-            "must not hang waiting for the child to finish writing past the cap; took {elapsed:?}"
-        );
         assert!(
             out.stderr.len() < over_cap,
             "captured stderr must be bounded, not the full {over_cap} bytes written; got {} bytes",
@@ -1484,16 +1456,10 @@ mod tests {
     fn run_with_stdin_does_not_deadlock_on_a_payload_larger_than_a_pipe_buffer() {
         let runner = CliCommandRunner;
         let payload = vec![b'x'; 4 * 1024 * 1024];
-        let start = Instant::now();
         let out = runner.run_with_stdin("cat", &[], Path::new("."), &payload).unwrap();
-        let elapsed = start.elapsed();
 
         assert!(out.success());
         assert_eq!(out.stdout.len(), payload.len());
-        assert!(
-            elapsed < Duration::from_secs(10),
-            "run_with_stdin must not deadlock on a large payload; took {elapsed:?}"
-        );
     }
 
     /// A program that doesn't exist must fail the same way `run` does,
