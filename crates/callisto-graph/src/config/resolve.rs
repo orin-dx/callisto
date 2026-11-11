@@ -284,7 +284,7 @@ pub(crate) fn resolve_package_config<'a>(
 
 pub fn parse_pre_major_policy(s: &str) -> Result<PreMajorInferencePolicy, ConfigError> {
     match s {
-        "off" | "false" => Ok(PreMajorInferencePolicy::Off),
+        "off" => Ok(PreMajorInferencePolicy::Off),
         "conservative" => Ok(PreMajorInferencePolicy::Conservative),
         "conservative-feat" => Ok(PreMajorInferencePolicy::ConservativeFeat),
         _ => Err(ConfigError::InvalidPreMajorInference { found: s.to_string() }),
@@ -1307,7 +1307,7 @@ mod tests {
     #[test]
     fn parse_pre_major_policy_parses_all_known_variants() {
         assert_eq!(parse_pre_major_policy("off").unwrap(), PreMajorInferencePolicy::Off);
-        assert_eq!(parse_pre_major_policy("false").unwrap(), PreMajorInferencePolicy::Off);
+        assert!(parse_pre_major_policy("false").is_err());
         assert_eq!(
             parse_pre_major_policy("conservative").unwrap(),
             PreMajorInferencePolicy::Conservative
