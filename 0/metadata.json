@@ -1,0 +1,75 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M76DKB64W3Y0Q62F8SGHSQR0",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-11T23:03:29.023273Z",
+  "branch": "ci/dependabot-composite-actions",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    ".github/dependabot.yml"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "5c10178ee91f",
+  "checkpoint_transcript_start": 42619,
+  "transcript_lines_at_start": 42619,
+  "compact_transcript_start": 3093,
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 4391,
+    "cache_read_tokens": 1468711,
+    "output_tokens": 1157,
+    "api_call_count": 3,
+    "subagent_tokens": {
+      "input_tokens": 22,
+      "cache_creation_tokens": 48224,
+      "cache_read_tokens": 830790,
+      "output_tokens": 2532,
+      "api_call_count": 11
+    }
+  },
+  "redaction": {
+    "replacements": 93,
+    "layers": {
+      "betterleaks": 30,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 310
+  }
+}
