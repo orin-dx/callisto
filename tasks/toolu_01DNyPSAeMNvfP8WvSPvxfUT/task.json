@@ -1,0 +1,7 @@
+{
+  "tool_use_id": "toolu_01DNyPSAeMNvfP8WvSPvxfUT",
+  "agent_id": "ada94700137762e4a",
+  "subagent_type": "general-purpose",
+  "task_description": "Reproduce flaky release PR contract test",
+  "started_at": "2026-11-11T15:04:19.487011-08:00"
+}

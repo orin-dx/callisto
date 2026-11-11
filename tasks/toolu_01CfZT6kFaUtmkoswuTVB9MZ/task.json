@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01CfZT6kFaUtmkoswuTVB9MZ",
+  "agent_id": "abd53c1858d83136a",
+  "subagent_type": "general-purpose",
+  "task_description": "Harden wildcard match arms",
+  "token_usage": {
+    "input_tokens": 82,
+    "cache_creation_tokens": 92665,
+    "cache_read_tokens": 3512509,
+    "output_tokens": 10009,
+    "api_call_count": 41
+  },
+  "started_at": "2026-11-11T14:53:57.191758-08:00",
+  "completed_at": "2026-11-11T15:10:04.392977-08:00"
+}

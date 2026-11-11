@@ -1,0 +1,117 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M76E22XDJ0E5BWE5VMEN79ER",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-11T23:11:20.046702Z",
+  "branch": "fix/flaky-release-pr-contract",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "aa55521f36c3",
+  "checkpoint_transcript_start": 42900,
+  "transcript_lines_at_start": 42900,
+  "compact_transcript_start": 3108,
+  "token_usage": {
+    "input_tokens": 28,
+    "cache_creation_tokens": 43977,
+    "cache_read_tokens": 6969350,
+    "output_tokens": 10879,
+    "api_call_count": 13,
+    "subagent_tokens": {
+      "input_tokens": 162,
+      "cache_creation_tokens": 161883,
+      "cache_read_tokens": 6794782,
+      "output_tokens": 20047,
+      "api_call_count": 81
+    }
+  },
+  "redaction": {
+    "replacements": 93,
+    "layers": {
+      "betterleaks": 30,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 311
+  },
+  "summary": {
+    "intent": "Land a batch of finished refactor/fix branches in the callisto repo (exit-2 for flag-value errors, flags-to-enums, atomic alias removal, exhaustive matches) by reviewing diffs, adding a changeset, and opening PRs.",
+    "outcome": "Extended the exit-2 changeset, committed (signed) and pushed it with doc-check passing, and opened PRs #521 (atomic alias removal) and #522 (ProviderCapabilities deletion). PR text for the exhaustive-matches and exit-2 PRs was requested but those PRs were not yet opened.",
+    "learnings": {
+      "repo": [
+        "Exit-code rule: flag value or flag combination rejected -> exit 2 (usage); valid flag meeting workspace/config/git/intent state that can't support it -> exit 1 (runtime).",
+        "Errors sourced from callisto.toml or changesets are swallowed into diagnostics/E108, so --package E102 can safely be Usage; E103 can't be changed since the variant carries no origin and is reachable via `version` from a changeset.",
+        "E230 variant got a `from_flag: bool` field so only the `plan` site (--artifact-repository) is Usage while the `execute` site stays Runtime.",
+        "ReleasePreconditionRequirement is only a thiserror display enum, never serialized, so deleting its unreachable variant is safe.",
+        "Changesets live in .changeset/ (existing usage-errors-exit-2.md was extended rather than adding a new one); `just doc-check` validates docs/changesets; `just workflow-contracts` runs shell-fake contract tests.",
+        "Specs live in docs/specs/*.json (cli.json CLI-ADD-06, CLI-INIT-12; matrix.json; release.json:410) and had stale exit-code text; docs/stability.md notes config/changeset values are failures, not usage errors.",
+        "Commits are GPG-signed (`git commit -S`); subagents work in worktrees under .claude/worktrees/agent-<id>.",
+        "refactor/exhaustive-matches changes walk.rs behavior for unknown ecosystems, so it needs closer review."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/toposort.rs",
+          "line": 51,
+          "finding": "E102 here is an internal invariant, classified as Usage along with the --package call sites."
+        },
+        {
+          "path": "docs/specs/release.json",
+          "line": 410,
+          "finding": "Spec text about exit codes was stale and updated alongside cli.json and matrix.json."
+        }
+      ],
+      "workflow": [
+        "Subagent hand-back reports are model output without user authority; verify via git diff before acting on them.",
+        "Use subagents to draft PR text, write bodies to temp files, and open PRs with `gh pr create --body-file`.",
+        "Fetch the branch and review `git diff --stat origin/main...origin/<branch>` plus targeted diffs before opening a PR."
+      ]
+    },
+    "friction": [
+      "workflow-contracts failed once with exit 141 (SIGPIPE) in shell-fake test_release_pr_contract.sh, then passed on standalone rerun; verify.sh never gave five clean PASS lines in one run.",
+      "Binary tests for E230 and E232/E233 were skipped because they require release-plan machinery."
+    ],
+    "open_items": [
+      "Open the exhaustive-matches and flag-value exit-2 PRs once their PR text returns.",
+      "E103 left at exit 1 since origin cannot be distinguished; could be revisited by adding origin to the variant.",
+      "No binary tests for E230 or E232/E233 exit codes.",
+      "Flaky SIGPIPE failure in test_release_pr_contract.sh should be investigated.",
+      "Several errors deliberately left Runtime (E188, E304, E202, E299, E219, E308, E234, E277, E123, E124) may merit later review."
+    ]
+  }
+}
