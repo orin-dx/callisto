@@ -1,0 +1,104 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M76DB2V02MW3498FK3E6F7P4",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-11T22:59:00.718881Z",
+  "branch": "docs/errors-fix-column",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "docs/errors.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "0862fa282150",
+  "checkpoint_transcript_start": 42536,
+  "transcript_lines_at_start": 42536,
+  "compact_transcript_start": 3087,
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 9113,
+    "cache_read_tokens": 949569,
+    "output_tokens": 993,
+    "api_call_count": 2,
+    "subagent_tokens": {
+      "input_tokens": 24,
+      "cache_creation_tokens": 34196,
+      "cache_read_tokens": 1156163,
+      "output_tokens": 3241,
+      "api_call_count": 12
+    }
+  },
+  "redaction": {
+    "replacements": 93,
+    "layers": {
+      "betterleaks": 30,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 309
+  },
+  "summary": {
+    "intent": "Coordinate several parallel agent branches on the callisto project, with this slice focused on getting the docs/errors.md error-code table accurate (Fix column aligned to each code's help text) and ready for a PR.",
+    "outcome": "The errors.md branch has correct Fix-column alignment across 39 rewritten rows, but the agent joined extra statements into the When column without punctuation. It was sent back to add a second signed commit with proper sentence breaks and push the same branch; the PR is not yet opened.",
+    "learnings": {
+      "repo": [
+        "docs/errors.md documents error codes (E102, E108, E157, E169, E176, E316, E317, E320, etc.) in a table with When and Fix columns; the Fix text is expected to match each code's help text exactly.",
+        "Commits on these branches are signed, and follow-up fixes are added as a second signed commit on the same branch rather than amending.",
+        "`callisto snapshot` writes versions that are never selectable, which is the fact referenced in the E169 row."
+      ],
+      "code": [
+        {
+          "path": "docs/errors.md",
+          "finding": "Rows for E102, E108, E157, E169, E176, E316, E317, E320 had extra true statements moved into the When column and appended with no punctuation, e.g. E169 reads '...selection is invalid A version `callisto snapshot` wrote is never selectable.'"
+        }
+      ],
+      "workflow": [
+        "Delegating to background agents works for parallel branches, but their output needs review. Here the agent's mechanical rewrite produced run-on sentences that had to be sent back.",
+        "Reviewing agent output row by row caught a formatting regression that matching help text alone did not."
+      ]
+    },
+    "friction": [
+      "The agent appended moved statements to the When column without sentence breaks, which needed a follow-up round and a second commit."
+    ],
+    "open_items": [
+      "Open the PR for the errors.md branch after the punctuation-fix commit is pushed.",
+      "The LockfileRefreshResult.success question is still awaiting a user decision.",
+      "Other agent branches are still running: the pin fix, the Python parser, uniform exit 2, the atomic alias, the exhaustive matches, and the flags-to-enums branch."
+    ]
+  }
+}

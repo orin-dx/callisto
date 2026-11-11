@@ -1,0 +1,7 @@
+{
+  "tool_use_id": "toolu_01YG4FBMBpUMvtDsEGA1K4td",
+  "agent_id": "a444090653d1cbe25",
+  "subagent_type": "general-purpose",
+  "task_description": "Uniform exit 2 for bad flag values",
+  "started_at": "2026-11-11T14:49:46.847406-08:00"
+}
