@@ -765,6 +765,11 @@ impl GitAccess<'_> {
         ])
     }
 
+    /// Tracked paths, relative to the root and limited to it.
+    pub fn tracked_paths(&self) -> Result<Vec<PathBuf>, VcsError> {
+        self.name_only(&["ls-files", "-z"])
+    }
+
     /// The object id each `<revision>:<path>` names, `None` for one that names nothing, from one `git cat-file
     /// --batch-check`. An empty path names the revision's root tree. Two specs name the same content exactly when their
     /// ids are equal, so this compares directories at two commits without reading either.
