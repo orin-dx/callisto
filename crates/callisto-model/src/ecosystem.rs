@@ -27,7 +27,7 @@ impl Ecosystem {
             Ecosystem::Cargo => 0,
             Ecosystem::Npm => 1,
             Ecosystem::Pypi => 2,
-            _ => u8::MAX,
+            Ecosystem::Go | Ecosystem::Maven | Ecosystem::NuGet | Ecosystem::Deno | Ecosystem::Jsr => u8::MAX,
         }
     }
 
@@ -48,7 +48,7 @@ impl Ecosystem {
             Ecosystem::Cargo => Some(ManifestFormat::CargoToml),
             Ecosystem::Npm => Some(ManifestFormat::PackageJson),
             Ecosystem::Pypi => Some(ManifestFormat::PyprojectToml),
-            _ => None,
+            Ecosystem::Go | Ecosystem::Maven | Ecosystem::NuGet | Ecosystem::Deno | Ecosystem::Jsr => None,
         }
     }
 

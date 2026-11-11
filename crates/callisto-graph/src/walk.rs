@@ -340,13 +340,10 @@ impl<'a> IdentityAssigner<'a> {
 
         let mut decls = Vec::new();
         for (eco, id) in &list {
-            let (fmt, filename) = match eco {
-                Ecosystem::Cargo => (ManifestFormat::CargoToml, "Cargo.toml"),
-                Ecosystem::Npm => (ManifestFormat::PackageJson, "package.json"),
-                Ecosystem::Pypi => (ManifestFormat::PyprojectToml, "pyproject.toml"),
-                _ => (ManifestFormat::PackageJson, "package.json"),
+            let Some(fmt) = eco.canonical_manifest_format() else {
+                continue;
             };
-            let manifest_rel = rel_path.join(filename);
+            let manifest_rel = rel_path.join(fmt.file_name());
             let canonical_decl = match ManifestDecl::new(manifest_rel.clone(), ManifestRole::Canonical, fmt) {
                 Ok(decl) => {
                     decls.push(decl.clone());
