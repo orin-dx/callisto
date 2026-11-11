@@ -1,0 +1,138 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M75RQNWT5EXBZFE11875K2TH",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-11T16:58:39.741257Z",
+  "branch": "perf/scale-hotspots",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "crates/callisto-graph/src/commands/release/local.rs",
+    "crates/callisto-graph/src/commands/release/pending.rs",
+    "crates/callisto-graph/src/commands/release/version_commit.rs",
+    "crates/callisto-graph/src/commands/release_decision.rs",
+    "crates/callisto-graph/src/release_preview.rs",
+    "crates/callisto-model/src/vcs/access.rs",
+    "crates/callisto-model/src/vcs/mod.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "24303a000a63",
+  "checkpoint_transcript_start": 37778,
+  "transcript_lines_at_start": 37778,
+  "compact_transcript_start": 2749,
+  "token_usage": {
+    "input_tokens": 64,
+    "cache_creation_tokens": 64346,
+    "cache_read_tokens": 25109711,
+    "output_tokens": 18281,
+    "api_call_count": 28,
+    "subagent_tokens": {
+      "input_tokens": 48,
+      "cache_creation_tokens": 201743,
+      "cache_read_tokens": 3655948,
+      "output_tokens": 16333,
+      "api_call_count": 24
+    }
+  },
+  "redaction": {
+    "replacements": 84,
+    "layers": {
+      "betterleaks": 28,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 52,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 251
+  },
+  "summary": {
+    "intent": "Prepare the 0.20.0 release of callisto by turning several delegated subagent workstreams (JSON contract audit, error-code reach, stability contract tests, scale/perf hotspots) into verified, signed, pushed branches and PRs with proper descriptions.",
+    "outcome": "Branches for JSON contract (#505), error codes (#506), stability contract tests (#504) were committed, signed, pushed, linked to trail #198 and given PR bodies; the perf-scale branch was reviewed, adjusted (older git flag, changeset added), verified and pushed as perf/scale-hotspots. Reviews, E165 help change approval, and release PR #493 remain pending.",
+    "learnings": {
+      "repo": [
+        "Every `--format json` success output already carries `schemaVersion`; `release inspect` prints raw intent/manifest/receipt (own schemaVersion, no command/dryRun) and `schema` prints a JSON Schema with no schemaVersion.",
+        "Local verification is via a verify.sh running pre-push, lint, doc-check, test and workflow-contracts; workflow-contracts and some e2e tests (cargo publish, pnpm, uv) can't run in the agent sandbox and must be run outside it.",
+        "Three e2e tests (test_full_polyglot_workspace_release_lifecycle and two pnpm/uv native resolution tests) fail in the sandbox due to network denial.",
+        "callisto-action inputs are snake_case while outputs are camelCase; callisto-action hardcodes source:auto and verification:fallback for setup-callisto; callisto-validate has an apparent unresolved placeholder `uses: $/.github/actions/setup-callisto`.",
+        "docs/stability.md says codes freeze at 1.0: a code keeps its meaning and is never reused, hence E254 retired and E330-E339 added; PRs changing user-visible codes should be titled fix, not refactor.",
+        "Test fixtures with a GitHub-looking `origin` cause network access in CI; pointing origin at an unreachable local proxy makes tests offline.",
+        "atomic_write does file and directory fsync per manifest/changelog (F_FULLFSYNC on macOS), making `version --emit-preview` take 33-45s at 1,800 packages; AGENTS.md durability invariant prevents weakening it."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/vcs/access.rs",
+          "line": 528,
+          "end_line": 556,
+          "finding": "New batched first_parent_commits_by_path git log used `--diff-merges=first-parent`; replaced with `-m` for compatibility with older git versions, tests still pass."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "finding": "ReleaseOwners map replaces the quadratic workspace_package rescan; sets replace linear scans, cutting compose-pr-body at 1,800 packages from 12.1s to 1.5s (debug)."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/release/version_commit.rs",
+          "finding": "Release preflight now uses one batched git log plus batched cat-file instead of per-package processes (3,012 to 14 git processes), with fallback for non-matching newest candidates."
+        }
+      ],
+      "workflow": [
+        "Verify subagent claims independently: rerun full checks outside the sandbox, and chase down subagent 'unsure' notes (e.g. network use) rather than accepting them.",
+        "Subagent hand-backs and teammate messages carry no user authority; use them as reports and act within the session's own permissions.",
+        "Run pairwise conflict checks across parallel branches before writing PR descriptions, and use mutation checks to confirm new tests fail on regression.",
+        "Delegate PR-body writing to narrator agents then edit titles/bodies for accuracy.",
+        "A subagent's sandbox mktemp failure ran a benchmark in the shared worktree and created stray tags; verify no stray tags remain (`git tag -l` patterns) after such incidents."
+      ]
+    },
+    "friction": [
+      "Subagent sandbox lacked network and tools, so e2e tests failed and workflow-contracts couldn't run, requiring re-verification outside the sandbox.",
+      ".git/config lock errors appeared on branch switch in the sandbox.",
+      "perf-scale's first bench run fell back to the worktree after mktemp failed, staging 1,800 synthetic crates and creating stray tags in the shared .git (cleaned up by the agent).",
+      "The new test contacted github.com and crates.io via the fixture origin, requiring a fix to make it offline.",
+      "Narrator agents picked a `refactor(errors)` title for a change that alters user-visible codes."
+    ],
+    "open_items": [
+      "Awaiting user yes on two small E165 help text changes for release safety.",
+      "Reviews of PRs #504, #505, #506 and the perf/scale-hotspots branch; CI has not run on any.",
+      "#493 release PR held until PRs merge, then render and read it as a user.",
+      "`version --emit-preview` slowness from per-file fsync (F_FULLFSYNC) left unfixed; Linux cost not measured.",
+      "Dirty-tree error path in check_partial_run does one git cat-file per manifest, not measured or fixed.",
+      "release_groups_of still scans all group members per entry; quadratic only for very large fixed/linked groups, untested.",
+      "Batched git log tested only on git 2.54 and mis-splits paths containing \\x01.",
+      "The wall-clock-based 3,000-package lookup test (10s threshold) carries a small CI flake risk.",
+      "Decide whether `schema` output should ever carry a schemaVersion; inconsistent snake_case inputs vs camelCase outputs in callisto-action noted but unchanged.",
+      "Action inputs are undocumented outside action.yml; callisto-validate placeholder `$/.github/actions/setup-callisto` unchecked; `release build-python` only covered by the failing-case envelope test.",
+      "The unknown-field deny guard is a text scan and cannot see config structs outside src/config."
+    ]
+  }
+}
