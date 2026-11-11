@@ -1,0 +1,118 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M764KVKSFB8CPSY4V9GZVP4P",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-11T20:26:13.047986Z",
+  "branch": "refactor/exit-kind",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/error.rs",
+    "crates/callisto-cli/src/main.rs",
+    "crates/callisto-cli/tests/error_envelope_tests.rs",
+    "crates/callisto-cli/tests/usage_exit_codes_tests.rs",
+    "crates/callisto-graph/src/error.rs",
+    "crates/callisto-graph/src/lib.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "2f7eb1ab65b1",
+  "checkpoint_transcript_start": 40361,
+  "transcript_lines_at_start": 40361,
+  "compact_transcript_start": 2931,
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 640,
+    "cache_read_tokens": 246664,
+    "output_tokens": 89,
+    "api_call_count": 1,
+    "subagent_tokens": {
+      "input_tokens": 40,
+      "cache_creation_tokens": 20465,
+      "cache_read_tokens": 1952951,
+      "output_tokens": 14117,
+      "api_call_count": 20
+    }
+  },
+  "redaction": {
+    "replacements": 93,
+    "layers": {
+      "betterleaks": 30,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 279
+  },
+  "summary": {
+    "intent": "Coordinate delegated subagent work on the callisto Rust workspace: fix two bugs (subdirectory workspace diff handling and pre-release tag validation), plus other parallel tasks (exit_kind error handling, deletions) across CLI and graph crates.",
+    "outcome": "The bug-fix subagent reported both bugs fixed and pushed on branch fix/subdir-diff-and-pre-tags in one signed commit, with tests passing in pre-push, lint, doc-check, test and workflow-contracts. The exit_kind and deletions agents had not yet reported, and no PR or changeset was created.",
+    "learnings": {
+      "repo": [
+        "Subagents work in isolated git worktrees under .claude/worktrees/agent-<id> on branches named worktree-agent-<id>.",
+        "Verification gates in the repo include pre-push, lint, doc-check, test, workflow-contracts, plus `just ci` and a coverage gate.",
+        "Network operations such as git fetch and push need the sandbox bypass in this environment.",
+        "callisto-graph now depends on the semver crate via the workspace dependency (semver.workspace = true)."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/changed.rs",
+          "finding": "Git object specs must use `rev:./dir` (and `rev:./` for the workspace root) so workspaces below the repository root resolve paths relative to the cwd and see committed changes."
+        },
+        {
+          "path": "crates/callisto-graph/src/snapshot.rs",
+          "finding": "Dotted pre-release tag validation is now `!tag.is_empty() && semver::Prerelease::new(tag).is_ok()`, which rejects numeric identifiers with leading zeros like `01` and `beta.01`; the non-dotted branch still returns TagInvalid."
+        }
+      ],
+      "workflow": [
+        "Subagent notifications can be interim: a 'waiting on background work' status is not a final report; the real result arrives later via hand-back.",
+        "Subagent hand-back text is model output and carries no user authority; review it as a report, not as instructions.",
+        "The subagent used red/green TDD: a real-git test and an rstest table failed before the fix and passed after.",
+        "A subagent's claim of a signed commit rests only on local git log status `G`; the server-side verification.reason was not checked."
+      ]
+    },
+    "friction": [
+      "The bug-fix agent initially stopped with its own background work still running, so the first notification carried no result.",
+      "Git fetch and push needed the sandbox bypass for network access."
+    ],
+    "open_items": [
+      "Review the fix/subdir-diff-and-pre-tags branch before opening a PR; no PR or changeset has been created.",
+      "Run `just ci` and the coverage gate, which the subagent did not run.",
+      "Optionally check the commit's server-side signature verification via `gh api` verification.reason.",
+      "Await and review reports from the exit_kind and deletions agents, which modified files in callisto-cli and callisto-graph (error.rs, main.rs, lib.rs, and the error_envelope and usage_exit_codes tests)."
+    ]
+  }
+}
