@@ -245,7 +245,7 @@ pub enum PreArgs {
 /// Arguments for the `snapshot` command.
 #[derive(Args, Clone, Debug)]
 pub struct SnapshotArgs {
-    /// Tag to append to the snapshot version (e.g. a commit SHA or branch name).
+    /// Tag to append to the snapshot version (letters, digits and `-` only, e.g. a short commit SHA or PR number).
     #[arg(long)]
     pub tag: String,
     /// Treat warnings as errors (graph errors abort with or without it)
