@@ -163,7 +163,9 @@ impl Requirement {
         let (name, extras) = match pkg_part.find('[') {
             Some(idx) => {
                 let name = pkg_part[..idx].trim().to_string();
-                let extras_str = pkg_part[idx..].trim_start_matches('[').trim_end_matches(']');
+                // Strip exactly the one bracket pair `render` writes, so a stray `[` or `]` inside survives a round trip.
+                let extras_str = &pkg_part[idx + 1..];
+                let extras_str = extras_str.strip_suffix(']').unwrap_or(extras_str);
                 let extras = extras_str
                     .split(',')
                     .map(str::trim)
