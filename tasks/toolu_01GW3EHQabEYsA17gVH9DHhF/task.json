@@ -1,0 +1,7 @@
+{
+  "tool_use_id": "toolu_01GW3EHQabEYsA17gVH9DHhF",
+  "agent_id": "add12cf6749343e59",
+  "subagent_type": "general-purpose",
+  "task_description": "Align CLI spec and help with 1.0 contract",
+  "started_at": "2026-11-11T13:08:58.404182-08:00"
+}

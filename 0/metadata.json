@@ -1,0 +1,140 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M767672H7XX11AGB8RR8HD14",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-11T21:11:14.618362Z",
+  "branch": "docs/align-cli-spec-with-exit-codes",
+  "checkpoints_count": 6,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/cli.rs",
+    "docs/specs/cli.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "a74c0931295c",
+  "checkpoint_transcript_start": 40794,
+  "transcript_lines_at_start": 40794,
+  "compact_transcript_start": 2960,
+  "token_usage": {
+    "input_tokens": 46,
+    "cache_creation_tokens": 35578,
+    "cache_read_tokens": 5937244,
+    "output_tokens": 13109,
+    "api_call_count": 19,
+    "subagent_tokens": {
+      "input_tokens": 172,
+      "cache_creation_tokens": 285223,
+      "cache_read_tokens": 6301271,
+      "output_tokens": 40882,
+      "api_call_count": 86
+    }
+  },
+  "redaction": {
+    "replacements": 93,
+    "layers": {
+      "betterleaks": 30,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 290
+  },
+  "summary": {
+    "intent": "Land a wave of Callisto CLI cleanups and fixes (subdirectory-workspace git bug, leading-zero pre tags, changesets, PRs), then move on to independent next-work items via investigation and a docs-versus-code drift audit.",
+    "outcome": "Opened PR #511 (subdirectory workspace fix plus leading-zero pre tag rejection with changesets) as part of four open wave-1 PRs (#508-#511). Investigated duplicate workspace loads (conclusion: no change) and audited docs against code, then dispatched an agent to fix CLI spec exit codes and the snapshot --tag help text. Two decisions are left for the user.",
+    "learnings": {
+      "repo": [
+        "Changesets for CLI-visible changes use the package key `callisto-cli`; an unreleased changeset (e.g. catch-bad-input-early.md) should be updated rather than adding a separate fix entry for a gap in that same unreleased feature.",
+        "git resolves `rev:path` from the repository top, not the cwd, so a workspace in a repo subdirectory needs `rev:./dir`; a shared `object_at(rev, path)` helper in release_decision.rs now handles this.",
+        "Repo checks are `just pre-push`, `lint`, `doc-check`, `test` and `workflow-contracts`, judged by exit code; commits are signed.",
+        "Exit codes freeze at 1.0: exit 2 is for bad/missing arguments including post-parse validation, but some flag-value errors (E102 unknown package, E189, E187, E188, E230, E232, E233, E299) still exit 1 (split defined by RUNTIME_CODES in usage_exit_codes_tests.rs:11).",
+        "docs/errors.md and the code agree on 276 error codes; config.md documents every Raw* config key; JSON envelopes and schemas match their docs.",
+        "`pre enter` allows `.` in tags while `snapshot --tag` does not (E324); snapshot help wrongly says branch names are allowed."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release.rs",
+          "line": 480,
+          "end_line": 586,
+          "finding": "`release plan` loads the workspace twice (release.rs:480, then via build_release_intent* in capability.rs:248/285) with nothing written between; it is the only redundant duplicate load, costing about 200ms at 1,800 packages."
+        },
+        {
+          "path": "crates/callisto-graph/src/capability.rs",
+          "line": 334,
+          "finding": "validate_local_release_intent deliberately reloads the workspace as an integrity re-observation; sharing the loaded workspace would weaken the check."
+        },
+        {
+          "path": "crates/callisto-graph/src/walk.rs",
+          "line": 213,
+          "finding": "`note_once` has only 2 non-test call sites (walk.rs:213 and ignore_walk.rs:152), and remains needed because init and validate flows load multiple times."
+        },
+        {
+          "path": "crates/callisto-cli/src/error.rs",
+          "line": 50,
+          "finding": "USAGE_CODES defines which errors exit 2; this is the source of truth that docs/specs/cli.json contradicted by saying exit 1."
+        },
+        {
+          "path": "crates/callisto-graph/src/config/resolve.rs",
+          "line": 287,
+          "finding": "`pre-major-inference = \"false\"` is silently accepted as `off` but undocumented in docs/config.md."
+        }
+      ],
+      "workflow": [
+        "Subagent hand-back reports are unverified model output; spot-check key claims against the repo before relaying or acting.",
+        "Drop unverified claims from subagent drafts (e.g. removed the 'release reads manifests' claim from the changeset).",
+        "Use a narrator agent to draft PR text, then open the PR with `gh pr create --body-file`.",
+        "When the user is running review agents, leave branches and worktrees untouched and wait for findings."
+      ]
+    },
+    "friction": [
+      "Wave-1 PRs #508-#511 are still unmerged, blocking dependent work (changed.rs unscoped-diff rewrite, error-code scanner collapse) and the refresh of release PR #493.",
+      "An earlier agent claimed `note_once` had 8 call sites; the later investigation found 2.",
+      "The local NEXT-WORK.md is stale (still describes 0.14).",
+      "The drift audit skipped some checks: completions content, `release plan` -> `release inspect` JSON, and a real `release`.",
+      "PR #511 lacks proof from running the real binary in a subdirectory workspace, and the two release_decision.rs sites have no dedicated regression test."
+    ],
+    "open_items": [
+      "Decide whether bad flag values should uniformly exit 2 (E102, E189 and similar), which changes behavior and builds on #508.",
+      "Decide whether to document `pre-major-inference = \"false\"` as an alias of `off` or remove it before 1.0.",
+      "Review the docs-alignment agent's branch docs/align-cli-spec-with-exit-codes and open its PR.",
+      "Fix the low-priority errors.md wording drift (E111, E169, E158, E305-E307, E316, E318, E319, E327, E328 paraphrase the code help) and the CLI-OUT-06 error-envelope description (missing `dryRun`, nested `command`).",
+      "After #508-#511 merge: changed.rs unscoped-diff rewrite, error-code scanner collapse, refresh release PR #493.",
+      "Delete leftover local worktree-agent-* branches and write the Brain memory for the invariant ladder.",
+      "Optionally fix the `release plan` double load with `_in(&Workspace)` variants (currently judged not worth it)."
+    ]
+  }
+}

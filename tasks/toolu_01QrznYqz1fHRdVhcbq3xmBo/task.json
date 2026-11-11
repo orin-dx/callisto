@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01QrznYqz1fHRdVhcbq3xmBo",
+  "agent_id": "a4e547dfc60a0d238",
+  "subagent_type": "bug-hunter",
+  "task_description": "Docs versus code drift audit",
+  "token_usage": {
+    "input_tokens": 132,
+    "cache_creation_tokens": 130739,
+    "cache_read_tokens": 5069246,
+    "output_tokens": 28693,
+    "api_call_count": 66
+  },
+  "started_at": "2026-11-11T13:02:37.002702-08:00",
+  "completed_at": "2026-11-11T13:08:31.046028-08:00"
+}

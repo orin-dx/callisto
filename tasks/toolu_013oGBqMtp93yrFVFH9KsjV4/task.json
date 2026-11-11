@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_013oGBqMtp93yrFVFH9KsjV4",
+  "agent_id": "a85dbd6870bf15492",
+  "subagent_type": "general-purpose",
+  "task_description": "Duplicate workspace load investigation",
+  "token_usage": {
+    "input_tokens": 28,
+    "cache_creation_tokens": 91135,
+    "cache_read_tokens": 991579,
+    "output_tokens": 7257,
+    "api_call_count": 14
+  },
+  "started_at": "2026-11-11T13:02:37.002575-08:00",
+  "completed_at": "2026-11-11T13:05:35.955808-08:00"
+}

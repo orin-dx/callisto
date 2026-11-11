@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01LDpzJS8tyGvwXaWhhZJENw",
+  "agent_id": "a04f02c3de81a802d",
+  "subagent_type": "courier:pr-narrator",
+  "task_description": "PR text for bug-fix branch",
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 30402,
+    "cache_read_tokens": 66144,
+    "output_tokens": 1511,
+    "api_call_count": 2
+  },
+  "started_at": "2026-11-11T12:35:19.117927-08:00",
+  "completed_at": "2026-11-11T12:35:31.615982-08:00"
+}
