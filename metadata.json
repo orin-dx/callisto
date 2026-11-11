@@ -1,0 +1,46 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M75QM96EWZ0MP1P4J2HWV17T",
+  "strategy": "manual-commit",
+  "branch": "test/stability-contracts",
+  "checkpoints_count": 7,
+  "files_touched": [
+    ".github/tests/action-inputs/callisto-action.txt",
+    ".github/tests/action-inputs/setup-callisto.txt",
+    ".github/tests/verify-action-inputs.sh",
+    "crates/callisto-cli/tests/tag_name_contract_tests.rs",
+    "crates/callisto-cli/tests/usage_exit_codes_tests.rs",
+    "crates/callisto-graph/tests/config_deny_unknown_fields_guard_tests.rs",
+    "justfile"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  },
+  "redaction": {
+    "replacements": 84,
+    "layers": {
+      "betterleaks": 28,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 52,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
