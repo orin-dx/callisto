@@ -1,0 +1,104 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M76D6EJ40FRJGDGD6XW0XTBP",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-11T22:56:26.554649Z",
+  "branch": "refactor/exhaustive-matches",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-graph/src/walk.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "9523ff4da370",
+  "checkpoint_transcript_start": 42451,
+  "transcript_lines_at_start": 42451,
+  "compact_transcript_start": 3081,
+  "token_usage": {
+    "input_tokens": 4,
+    "cache_creation_tokens": 737,
+    "cache_read_tokens": 470086,
+    "output_tokens": 119,
+    "api_call_count": 1,
+    "subagent_tokens": {
+      "input_tokens": 70,
+      "cache_creation_tokens": 42645,
+      "cache_read_tokens": 2969077,
+      "output_tokens": 15153,
+      "api_call_count": 35
+    }
+  },
+  "redaction": {
+    "replacements": 93,
+    "layers": {
+      "betterleaks": 30,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 307
+  },
+  "summary": {
+    "intent": "Coordinate several parallel background agents making fixes across the callisto repo (pin fix, Python parser, uniform exit 2, errors.md wording, atomic alias, exhaustive matches, flags-to-enums branch) and review each as its final report arrives.",
+    "outcome": "Session was mid-flight: the errors.md wording agent only returned an interim notice because it was waiting on its own verification run, with no row count or commit reported yet. The only file modification recorded is crates/callisto-graph/src/walk.rs.",
+    "learnings": {
+      "repo": [
+        "Parallel sub-agents in callisto each work in their own git worktree (e.g. .claude/worktrees/agent-a20e20f9f7f14f165 on branch worktree-agent-a20e20f9f7f14f165).",
+        "errors.md contains a help-wording table whose rows are meant to match the wording in the code; the agent's verification includes a row count."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/walk.rs",
+          "finding": "File was modified during the session, but the transcript gives no detail on the change or line numbers."
+        }
+      ],
+      "workflow": [
+        "Subagents can stop with their own background work still running and send interim task notifications; the result may be incomplete and a later notification with the same task-id delivers the final report.",
+        "With many concurrent agents, wait for each final report before reviewing rather than acting on interim notices."
+      ]
+    },
+    "friction": [
+      "Repeated interim notifications from the errors.md agent, which stopped while waiting on its own verification run, give no usable result yet.",
+      "Seven agents running at once make it hard to tell which have actually finished."
+    ],
+    "open_items": [
+      "Review final reports from the pin fix, Python parser, uniform exit 2, errors.md wording, atomic alias, exhaustive matches, and flags-to-enums agents.",
+      "Confirm the errors.md agent's row count and commit once it reports.",
+      "Merge or integrate the worktree branches after review."
+    ]
+  }
+}
