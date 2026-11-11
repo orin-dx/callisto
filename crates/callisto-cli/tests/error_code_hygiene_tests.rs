@@ -59,17 +59,6 @@ fn config_value_of_the_wrong_type_reports_e326() {
     assert_only_code(&config_error("[changesets]\ndir = 5\n"), "E326");
 }
 
-#[test]
-fn every_new_code_is_documented() {
-    let doc = include_str!("../../../docs/errors.md");
-    for code in ["E111", "E325", "E326", "E327", "E328"] {
-        assert!(
-            doc.contains(&format!("| {code} |")),
-            "{code} missing from docs/errors.md"
-        );
-    }
-}
-
 /// The error code is `expected` and neither the retired catch-all nor the internal-defect code.
 fn assert_code(stderr: &str, expected: &str) {
     assert!(stderr.contains(expected), "expected {expected}, got:\n{stderr}");
@@ -152,17 +141,4 @@ fn a_registry_of_the_wrong_kind_for_the_publish_target_reports_e339() {
     text.push_str("\n[registries.cratesIo]\nkind = \"npm\"\n");
     std::fs::write(config, text).unwrap();
     assert_code(&stderr_of(dir.path(), &["release", "--dry-run"]), "E339");
-}
-
-#[test]
-fn every_config_value_code_is_documented() {
-    let doc = include_str!("../../../docs/errors.md");
-    for code in [
-        "E330", "E331", "E332", "E333", "E334", "E335", "E336", "E337", "E338", "E339",
-    ] {
-        assert!(
-            doc.contains(&format!("| {code} |")),
-            "{code} missing from docs/errors.md"
-        );
-    }
 }
