@@ -6,7 +6,7 @@ One registry: every diagnostic code is a numeric `E####`, across every crate (`c
 
 "Fix" is the code's `help(...)` text verbatim. "—" means the variant has no help text in the source.
 
-Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E257, E258.
+Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E254, E257, E258. E254 once covered every invalid `callisto.toml` value, under the name "unknown key"; an unknown key is E325, and each value condition now has its own code (E330 to E338).
 
 ## callisto-model
 
@@ -151,9 +151,17 @@ Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E257,
 | E250 | One group lists the same member more than once | Remove the duplicate member from the group's member list. |
 | E251 | Group has no members | Add at least one member to the group, or remove the group. |
 | E252 | Duplicate group name | Rename one of the two groups sharing this name. |
-| E254 | Config sets an unknown callisto key | Remove or fix the unrecognized key. |
 | E255 | `cascade.bump-severity` is invalid | Set `cascade.bump-severity` to `patch` or `minor` in callisto.toml. |
 | E256 | `pre-major-inference` is invalid | Set `pre-major-inference` to `off`, `conservative`, or `conservative-feat` in callisto.toml. |
+| E330 | A `publish-to` entry in a `[[package]]` or `[[package-set]]` block is not a publish target | Set `<location>` to a list of `crates-io`, `npm`, `pypi`, `nuget`, `github-release` or `none` in callisto.toml. |
+| E331 | A `release-trigger` in a `[[package]]` or `[[package-set]]` block is not `changeset` or `auto` | Set `<location>` to `changeset` or `auto` in callisto.toml. |
+| E332 | `cascade.mode` is not `always` or `out-of-range` | Set `cascade.mode` to `always` or `out-of-range` in callisto.toml. |
+| E333 | `changelog.layout` is not `grouped` or `flat` | Set `changelog.layout` to `grouped` or `flat` in callisto.toml. |
+| E334 | A `[registries.<name>]` entry has a `kind` that is not `cargo`, `npm` or `pypi` | Set `kind` on `[registries.<name>]` to `cargo`, `npm` or `pypi` in callisto.toml. |
+| E335 | A `[registries.<name>]` entry that is not `pypi` sets `publish-url` | Remove `publish-url` from `[registries.<name>]`, or set `kind = "pypi"`. Only a `pypi` registry has a separate upload route. |
+| E336 | A `[registries.<name>]` entry of kind `cargo` sets `url` | Remove `url` from `[registries.<name>]`; cargo takes its destination from `.cargo/config.toml`. |
+| E337 | A registry's `confirm-timeout` or `publish-timeout` is not a duration from 1s to 1h | Set `<field>` to a whole number followed by `s`, `m` or `h`, from `1s` to `1h`, such as `"90s"` or `"15m"`. |
+| E338 | The `match` of a `[[package]]` or `[[package-set]]` block is not a valid package pattern (a `..` or leading `-` in a name, or an invalid glob) | Fix `<location>` in callisto.toml; see docs/config.md for the supported forms. |
 
 ## callisto-graph — workspace graph
 
@@ -210,6 +218,7 @@ Retired codes, no longer emitted and never reused: E008, E050, E248, E253, E257,
 | E169 | Release `--package` selection is invalid | Select each package at most once, only packages with a pending release and a publish target, never a version `callisto snapshot` wrote, and every unreleased platform package a selected npm package depends on. |
 | E170 | Release precondition is unmet (e.g. detached HEAD, missing GitHub remote) | Satisfy the reported precondition (for example a detached HEAD or a configured GitHub remote) before retrying. |
 | E171 | Internal release invariant violated | This is an internal callisto defect, not an operator action; report it along with the full error detail. |
+| E339 | A `[registries.<name>]` entry's `kind` does not match the ecosystem of a package that publishes to it (for example `[registries.cratesIo]` with `kind = "npm"`) | Set `kind = "<expected>"` on `[registries.<name>]`, or remove the entry to use the built-in registry. No registry was contacted. |
 | E328 | `release pending --from` names a commit that is not a release commit on this branch | Pass a release commit from `callisto release pending` without `--from`, or one on the current branch's first-parent history. |
 | E172 | Release execution is incomplete: one or more operations lack verified terminal success | Rerun the release: it adopts every operation that already landed and retries the rest. Do not treat this release as successful. |
 | E175 | Configured artifact repository doesn't match the prepared GitHub push remote | Use the repository derived from the trusted Git remote; Callisto will not upload product assets to a caller-selected repository. |

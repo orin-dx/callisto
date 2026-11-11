@@ -232,32 +232,26 @@ pub enum PreMajorInferencePolicy {
     ConservativeFeat,
 }
 
-pub fn parse_publish_target(s: &str) -> Result<PublishTarget, ConfigError> {
+pub fn parse_publish_target(s: &str) -> Option<PublishTarget> {
     match s {
-        "crates-io" => Ok(PublishTarget::CratesIo),
-        "npm" => Ok(PublishTarget::Npm {
+        "crates-io" => Some(PublishTarget::CratesIo),
+        "npm" => Some(PublishTarget::Npm {
             registry: None,
             access: None,
         }),
-        "pypi" => Ok(PublishTarget::Pypi { index: None }),
-        "nuget" => Ok(PublishTarget::NuGet { source: None }),
-        "github-release" => Ok(PublishTarget::GitHubRelease),
-        "none" => Ok(PublishTarget::None),
-        other => Err(ConfigError::UnknownKey {
-            path: PathBuf::new(),
-            key: format!("publish-to = {other:?}"),
-        }),
+        "pypi" => Some(PublishTarget::Pypi { index: None }),
+        "nuget" => Some(PublishTarget::NuGet { source: None }),
+        "github-release" => Some(PublishTarget::GitHubRelease),
+        "none" => Some(PublishTarget::None),
+        _ => None,
     }
 }
 
-pub fn parse_release_trigger(s: &str) -> Result<ReleaseTrigger, ConfigError> {
+pub fn parse_release_trigger(s: &str) -> Option<ReleaseTrigger> {
     match s {
-        "changeset" => Ok(ReleaseTrigger::Changeset),
-        "auto" => Ok(ReleaseTrigger::Auto),
-        other => Err(ConfigError::UnknownKey {
-            path: PathBuf::new(),
-            key: format!("release-trigger = {other}"),
-        }),
+        "changeset" => Some(ReleaseTrigger::Changeset),
+        "auto" => Some(ReleaseTrigger::Auto),
+        _ => None,
     }
 }
 
@@ -314,7 +308,15 @@ fn parse_package_config_fields(
     pre_major_inference: Option<&str>,
     publish_to: Option<&[String]>,
 ) -> Result<PackageConfig, ConfigError> {
-    let release_trigger = release_trigger.map(parse_release_trigger).transpose()?;
+    let release_trigger = release_trigger
+        .map(|value| {
+            parse_release_trigger(value).ok_or_else(|| ConfigError::InvalidReleaseTrigger {
+                path: callisto_toml.to_path_buf(),
+                location: format!("{error_prefix} release-trigger"),
+                value: value.to_owned(),
+            })
+        })
+        .transpose()?;
 
     let tag_template = tag_template
         .map(TagTemplate::parse)
@@ -343,17 +345,16 @@ fn parse_package_config_fields(
         .map(|targets| {
             targets
                 .iter()
-                .map(|s| parse_publish_target(s))
+                .map(|value| {
+                    parse_publish_target(value).ok_or_else(|| ConfigError::InvalidPublishTarget {
+                        path: callisto_toml.to_path_buf(),
+                        location: format!("{error_prefix} publish-to"),
+                        value: value.clone(),
+                    })
+                })
                 .collect::<Result<Vec<_>, _>>()
         })
-        .transpose()
-        .map_err(|e| match e {
-            ConfigError::UnknownKey { key, .. } => ConfigError::UnknownKey {
-                path: callisto_toml.to_path_buf(),
-                key: format!("{error_prefix} publish-to: {key}"),
-            },
-            other => other,
-        })?;
+        .transpose()?;
 
     Ok(PackageConfig {
         release_trigger,
@@ -422,9 +423,9 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
         }
         Some("out-of-range") | None => CascadeMode::OutOfRange,
         Some(other) => {
-            return Err(ConfigError::UnknownKey {
+            return Err(ConfigError::InvalidCascadeMode {
                 path: callisto_toml,
-                key: format!("cascade.mode = {other}"),
+                found: other.to_string(),
             })
         }
     };
@@ -462,9 +463,9 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
         Some("grouped") | None => ChangelogLayout::Grouped,
         Some("flat") => ChangelogLayout::Flat,
         Some(other) => {
-            return Err(ConfigError::UnknownKey {
+            return Err(ConfigError::InvalidChangelogLayout {
                 path: callisto_toml,
-                key: format!("changelog.layout = {other}"),
+                found: other.to_string(),
             })
         }
     };
@@ -508,42 +509,38 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
                     registry: key.as_str().to_owned(),
                 })?,
                 Some(other) => {
-                    return Err(ConfigError::UnknownKey {
+                    return Err(ConfigError::InvalidRegistryKind {
                         path: callisto_toml.clone(),
-                        key: format!("[registries] kind = {other:?}"),
+                        registry: key.as_str().to_owned(),
+                        found: other.to_owned(),
                     })
                 }
             };
             if reg.publish_url.is_some() && kind != Ecosystem::Pypi {
-                return Err(ConfigError::UnknownKey {
+                return Err(ConfigError::RegistryPublishUrlNotPypi {
                     path: callisto_toml.clone(),
-                    key: format!(
-                        "[registries.{}] publish-url (only a `pypi` registry has a separate upload route)",
-                        key.as_str()
-                    ),
+                    registry: key.as_str().to_owned(),
+                    kind: kind.prefix().to_owned(),
                 });
             }
             if reg.url.is_some() && kind == Ecosystem::Cargo {
-                return Err(ConfigError::UnknownKey {
+                return Err(ConfigError::CargoRegistryUrl {
                     path: callisto_toml.clone(),
-                    key: format!(
-                        "[registries.{}] url (cargo takes its destination from .cargo/config.toml; Callisto does not route cargo to a url)",
-                        key.as_str()
-                    ),
+                    registry: key.as_str().to_owned(),
                 });
             }
-            let registry_duration = |field: &str, value: Option<&str>| match value {
-                None => Ok(None),
-                Some(text) => super::duration::parse_duration(text)
-                    .map(Some)
-                    .ok_or_else(|| ConfigError::UnknownKey {
-                        path: callisto_toml.clone(),
-                        key: format!(
-                            "[registries.{}] {field} = {text:?} (use a whole number with s, m or h, from 1s to 1h)",
-                            key.as_str()
-                        ),
+            let registry_duration =
+                |field: &str, value: Option<&str>| match value {
+                    None => Ok(None),
+                    Some(text) => super::duration::parse_duration(text).map(Some).ok_or_else(|| {
+                        ConfigError::InvalidRegistryTimeout {
+                            path: callisto_toml.clone(),
+                            registry: key.as_str().to_owned(),
+                            field: field.to_owned(),
+                            value: text.to_owned(),
+                        }
                     }),
-            };
+                };
             let confirm_timeout = registry_duration("confirm-timeout", reg.confirm_timeout.as_deref())?;
             let publish_timeout = registry_duration("publish-timeout", reg.publish_timeout.as_deref())?;
             registries.insert(
@@ -577,9 +574,11 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
     let mut packages: Vec<(PackageId, PackageConfig)> = Vec::new();
     for raw_pkg in raw.package.unwrap_or_default() {
         ConfigError::require_canonical_ecosystem(&raw_pkg.pattern, "[[package]] match")?;
-        let pattern = PackageId::parse(&raw_pkg.pattern).map_err(|e| ConfigError::UnknownKey {
+        let pattern = PackageId::parse(&raw_pkg.pattern).map_err(|e| ConfigError::InvalidPackageMatch {
             path: callisto_toml.clone(),
-            key: format!("[[package]] match = {:?}: {e}", raw_pkg.pattern),
+            location: "[[package]] match".to_owned(),
+            pattern: raw_pkg.pattern.clone(),
+            reason: e.to_string(),
         })?;
 
         if raw_pkg.release_trigger.is_some() {
@@ -613,9 +612,11 @@ pub fn resolve(root: &Path, raw: RawConfig) -> Result<ResolvedConfig, ConfigErro
     let mut package_sets: Vec<(PackagePattern, PackageConfig)> = Vec::new();
     for raw_pkg in raw.package_set.unwrap_or_default() {
         ConfigError::require_canonical_ecosystem(&raw_pkg.pattern, "[[package-set]] match")?;
-        let pattern = PackagePattern::parse(&raw_pkg.pattern).map_err(|e| ConfigError::UnknownKey {
+        let pattern = PackagePattern::parse(&raw_pkg.pattern).map_err(|e| ConfigError::InvalidPackageMatch {
             path: callisto_toml.clone(),
-            key: format!("[[package-set]] match = {:?}: {e}", raw_pkg.pattern),
+            location: "[[package-set]] match".to_owned(),
+            pattern: raw_pkg.pattern.clone(),
+            reason: e.to_string(),
         })?;
 
         if raw_pkg.release_trigger.is_some() {
@@ -1058,7 +1059,10 @@ mod tests {
             )
             .expect("write callisto.toml");
             let error = load(tmp.path()).expect_err("publish-url is Python-only");
-            assert!(matches!(error, ConfigError::UnknownKey { .. }), "{kind}: {error:?}");
+            assert!(
+                matches!(error, ConfigError::RegistryPublishUrlNotPypi { .. }),
+                "{kind}: {error:?}"
+            );
         }
     }
 
@@ -1075,8 +1079,8 @@ mod tests {
         let result = load(root);
         assert!(result.is_err(), "load() should fail for unknown registry kind, got Ok");
         assert!(
-            matches!(result.unwrap_err(), ConfigError::UnknownKey { .. }),
-            "expected UnknownKey error for unknown registry kind"
+            matches!(result.unwrap_err(), ConfigError::InvalidRegistryKind { .. }),
+            "expected InvalidRegistryKind error for unknown registry kind"
         );
     }
 
@@ -1286,12 +1290,7 @@ mod tests {
 
     #[test]
     fn parse_publish_target_rejects_unknown_string() {
-        let result = parse_publish_target("bogus-registry");
-        assert!(result.is_err(), "expected Err for unknown publish-to value, got Ok");
-        assert!(
-            matches!(result.unwrap_err(), ConfigError::UnknownKey { .. }),
-            "expected UnknownKey error variant"
-        );
+        assert!(parse_publish_target("bogus-registry").is_none());
     }
 
     #[test]
@@ -1302,15 +1301,7 @@ mod tests {
 
     #[test]
     fn parse_release_trigger_rejects_unknown_string() {
-        let result = parse_release_trigger("sometimes");
-        assert!(
-            result.is_err(),
-            "expected Err for unknown release-trigger value, got Ok"
-        );
-        assert!(
-            matches!(result.unwrap_err(), ConfigError::UnknownKey { .. }),
-            "expected UnknownKey error variant"
-        );
+        assert!(parse_release_trigger("sometimes").is_none());
     }
 
     #[test]
@@ -1399,8 +1390,8 @@ mod tests {
         );
         let err = result.unwrap_err();
         assert!(
-            matches!(&err, ConfigError::UnknownKey { key, .. } if key.contains("[[package]] publish-to")),
-            "expected UnknownKey error mentioning '[[package]] publish-to', got: {err:?}"
+            matches!(&err, ConfigError::InvalidPublishTarget { location, .. } if location == "[[package]] publish-to"),
+            "expected InvalidPublishTarget for '[[package]] publish-to', got: {err:?}"
         );
     }
 
@@ -1422,8 +1413,8 @@ mod tests {
             "expected load() to reject unknown release-trigger value in [[package]] block, got Ok"
         );
         assert!(
-            matches!(result.unwrap_err(), ConfigError::UnknownKey { .. }),
-            "expected UnknownKey error variant"
+            matches!(result.unwrap_err(), ConfigError::InvalidReleaseTrigger { .. }),
+            "expected InvalidReleaseTrigger error variant"
         );
     }
 
@@ -1510,7 +1501,10 @@ mod tests {
     fn an_unknown_changelog_layout_or_key_is_rejected() {
         let raw = toml::from_str::<RawConfig>("[changelog]\nlayout = \"fancy\"\n").expect("parse");
         let error = resolve(Path::new("/workspace"), raw).unwrap_err();
-        assert!(error.to_string().contains("changelog.layout = fancy"), "{error}");
+        assert!(
+            matches!(&error, ConfigError::InvalidChangelogLayout { found, .. } if found == "fancy"),
+            "{error}"
+        );
         assert!(toml::from_str::<RawConfig>("[changelog]\ndate = true\n").is_err());
     }
 

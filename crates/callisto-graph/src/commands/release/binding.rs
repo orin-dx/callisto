@@ -74,13 +74,13 @@ pub(crate) fn prepared_registry_binding<R: CommandRunner, D: DependencyResolver>
         }
     };
     if let Some(registry) = configured_registry.filter(|registry| Some(registry.kind) != target.ecosystem()) {
-        return Err(GraphError::ReleaseInvariant {
-            detail: format!(
-                "registry `{}` is configured for ecosystem `{}`, not `{}`",
-                key.as_str(),
-                registry.kind.prefix(),
-                target.ecosystem().map_or("none", |ecosystem| ecosystem.prefix())
-            ),
+        return Err(GraphError::RegistryKindMismatch {
+            registry: key.as_str().to_owned(),
+            configured: registry.kind.prefix().to_owned(),
+            expected: target
+                .ecosystem()
+                .map_or("none", |ecosystem| ecosystem.prefix())
+                .to_owned(),
         });
     }
     let explicit = target.registry_override();
@@ -499,7 +499,10 @@ mod tests {
         let error = Workspace::load(dir.path().to_path_buf(), &locator, &runner)
             .err()
             .expect("a cargo registry url must be rejected");
-        assert!(error.to_string().contains("[registries.cratesIo] url"), "{error}");
+        assert!(
+            matches!(&error, GraphError::Config(crate::error::ConfigError::CargoRegistryUrl { registry, .. }) if registry == "cratesIo"),
+            "{error}"
+        );
     }
 
     /// An unconfigured built-in key binds its own default.
@@ -599,12 +602,16 @@ mod tests {
         let locator = crate::IgnoreWalkLocator::new(dir.path());
         let workspace = Workspace::load(dir.path().to_path_buf(), &locator, &runner).unwrap();
         let package = PackageId::parse("release-fixture").unwrap();
-        let Err(GraphError::ReleaseInvariant { detail }) =
+        let Err(error @ GraphError::RegistryKindMismatch { .. }) =
             prepared_registry_binding(&workspace, &PublishTarget::CratesIo, &package)
         else {
             panic!("an npm-kind registry must not bind a cargo target");
         };
-        assert!(detail.contains("`cratesIo`") && detail.contains("`npm`"), "{detail}");
+        let detail = error.to_string();
+        assert!(
+            detail.contains("[registries.cratesIo]") && detail.contains("`npm`"),
+            "{detail}"
+        );
         assert!(!detail.contains("profile"), "{detail}");
     }
 
