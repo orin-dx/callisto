@@ -93,7 +93,10 @@ fn warn_if_registry_version_adopted(operation: &ReleaseOperationId) {
     let package = match &operation.role {
         ReleaseOperationRole::RegistryPublish { .. } => &operation.package,
         ReleaseOperationRole::PlatformPublish { platform, .. } => platform.name(),
-        _ => return,
+        ReleaseOperationRole::Tag
+        | ReleaseOperationRole::ForgeRelease
+        | ReleaseOperationRole::ArtifactUpload { .. }
+        | ReleaseOperationRole::ForgePublish => return,
     };
     eprintln!(
         "warning: {package} {} is already published; skipping",
