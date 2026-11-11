@@ -18,7 +18,7 @@ use super::derive::{
     GitRemoteRequirement,
 };
 use super::provider::{
-    checked_provider_for, EffectAuthorization, PreparedOperation, ProviderContext, ProviderRequest, PypiFileSets,
+    provider_for, EffectAuthorization, PreparedOperation, ProviderContext, ProviderRequest, PypiFileSets,
     ReleasePreflight, ReleaseProviderSet,
 };
 use super::release_artifacts::VerifiedArtifactManifest;
@@ -128,7 +128,7 @@ impl ReleaseProviderSet for ValidatedReleaseIntent<'_> {
         artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<ReleasePreflight, GraphError> {
         let operation = self.prepared_operation(id)?;
-        checked_provider_for(operation)?.preflight(
+        provider_for(operation).preflight(
             &self.context(),
             &ProviderRequest {
                 id,
@@ -144,7 +144,7 @@ impl ReleaseProviderSet for ValidatedReleaseIntent<'_> {
         artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<ProviderObservationV1, GraphError> {
         let operation = self.prepared_operation(id)?;
-        checked_provider_for(operation)?.observe(
+        provider_for(operation).observe(
             &self.context(),
             &ProviderRequest {
                 id,
@@ -161,7 +161,7 @@ impl ReleaseProviderSet for ValidatedReleaseIntent<'_> {
         patience: std::time::Duration,
     ) -> Result<ProviderObservationV1, GraphError> {
         let operation = self.prepared_operation(id)?;
-        checked_provider_for(operation)?.observe(
+        provider_for(operation).observe(
             &self.context().with_patience(patience),
             &ProviderRequest {
                 id,
@@ -179,7 +179,7 @@ impl ReleaseProviderSet for ValidatedReleaseIntent<'_> {
         artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<ExactEvidence, GraphError> {
         let operation = self.prepared_operation(id)?;
-        checked_provider_for(operation)?.publish(
+        provider_for(operation).publish(
             &self.context(),
             &ProviderRequest {
                 id,
@@ -194,12 +194,10 @@ impl ReleaseProviderSet for ValidatedReleaseIntent<'_> {
         let Ok(operation) = self.prepared_operation(id) else {
             return false;
         };
-        checked_provider_for(operation).is_ok_and(|provider| {
-            provider.defers_confirmation(&ProviderRequest {
-                id,
-                operation,
-                artifacts: None,
-            })
+        provider_for(operation).defers_confirmation(&ProviderRequest {
+            id,
+            operation,
+            artifacts: None,
         })
     }
 
@@ -211,7 +209,7 @@ impl ReleaseProviderSet for ValidatedReleaseIntent<'_> {
         artifacts: Option<&VerifiedArtifactManifest<'_>>,
     ) -> Result<(), GraphError> {
         let operation = self.prepared_operation(id)?;
-        checked_provider_for(operation)?.issue(
+        provider_for(operation).issue(
             &self.context(),
             &ProviderRequest {
                 id,
@@ -226,12 +224,10 @@ impl ReleaseProviderSet for ValidatedReleaseIntent<'_> {
         let Ok(operation) = self.prepared_operation(id) else {
             return std::time::Duration::ZERO;
         };
-        checked_provider_for(operation).map_or(std::time::Duration::ZERO, |provider| {
-            provider.confirmation_window(&ProviderRequest {
-                id,
-                operation,
-                artifacts: None,
-            })
+        provider_for(operation).confirmation_window(&ProviderRequest {
+            id,
+            operation,
+            artifacts: None,
         })
     }
 }
@@ -352,12 +348,6 @@ fn validate_intent<'a, L: ProjectLocator, R: CommandRunner>(
         });
     }
 
-    // Plan time is the last point before any effect at which an unusable
-    // provider is still cheap to reject.
-    for operation in prepared.operations.values() {
-        checked_provider_for(operation)?;
-    }
-
     Ok(ValidatedReleaseIntent {
         prepared: PreparedReleaseInputs {
             root,
@@ -423,16 +413,14 @@ pub(crate) fn unsatisfied_packages(
         .filter(|(id, _)| among.contains(&id.package))
         .collect();
     let unsatisfied = in_parallel(&operations, |(id, operation)| {
-        let observed = checked_provider_for(operation).and_then(|provider| {
-            provider.observe(
-                &context,
-                &ProviderRequest {
-                    id,
-                    operation,
-                    artifacts: None,
-                },
-            )
-        });
+        let observed = provider_for(operation).observe(
+            &context,
+            &ProviderRequest {
+                id,
+                operation,
+                artifacts: None,
+            },
+        );
         !matches!(observed, Ok(ProviderObservationV1::Exact { .. }))
     });
     operations
@@ -462,7 +450,7 @@ pub(crate) fn published_packages(
         })
         .collect();
     let observed = in_parallel(&publishes, |(id, operation)| {
-        checked_provider_for(operation)?.observe(
+        provider_for(operation).observe(
             &context,
             &ProviderRequest {
                 id,
@@ -526,7 +514,7 @@ pub(crate) fn names_taken_by_other_projects(
         };
         // A registry that cannot be reached, or a tool that is missing, leaves this check unable to tell: the
         // publish itself reports that when it matters.
-        let observed = checked_provider_for(operation)?.observe(
+        let observed = provider_for(operation).observe(
             &context,
             &ProviderRequest {
                 id,

@@ -18,23 +18,13 @@ use super::policy::{self, programs, require_registry_confirmation, run_observati
 use super::pypi_files::{self, BuiltFile, BuiltSet, PypiSimpleFile, PypiSimpleIndex};
 use super::repository;
 use super::{
-    preflight_from_observation, wrong_role, EffectAuthorization, PreparedOperation, ProviderCapabilities,
-    ProviderContext, ProviderRequest, RegistryPublishOperation, ReleasePreflight, ReleaseProvider,
-    VerifiedArtifactManifest,
+    preflight_from_observation, wrong_role, EffectAuthorization, PreparedOperation, ProviderContext, ProviderRequest,
+    RegistryPublishOperation, ReleasePreflight, ReleaseProvider, VerifiedArtifactManifest,
 };
 
 pub(crate) struct RegistryProvider;
 
 impl ReleaseProvider for RegistryProvider {
-    fn capabilities(&self) -> ProviderCapabilities {
-        // Every registry answers an observation. Whether that answer can be
-        // exact is the adapter's `can_observe_versions`.
-        ProviderCapabilities {
-            can_observe: true,
-            can_publish: true,
-        }
-    }
-
     fn observe(
         &self,
         context: &ProviderContext<'_>,
