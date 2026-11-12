@@ -5,6 +5,7 @@
 //! exact package identities and explicit intent, receipt, and orchestration
 //! revision paths.
 
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use callisto_graph::commands::{
@@ -301,7 +302,8 @@ fn pending(args: ReleasePendingArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
         })?;
     let runner = CliCommandRunner;
     let workspace = load_workspace(global, &runner)?;
-    let found = pending_releases(&workspace, &args.decision, args.limit, from.as_ref())?;
+    let decision_path = workspace_decision_path(&args.decision, &workspace.root)?;
+    let found = pending_releases(&workspace, &decision_path, args.limit, from.as_ref())?;
     match global.format {
         OutputFormat::Json => {
             let releases: Vec<_> = found
@@ -473,6 +475,40 @@ fn artifact_manifest(args: ReleaseArtifactManifestArgs, global: &GlobalArgs) -> 
     Ok(ExitCode::SUCCESS)
 }
 
+/// Decision paths are repository-relative for the diff and show commands, but callers may pass an absolute one; contain it
+/// in `root` once here. The file itself may not exist yet, so only its parent must resolve.
+pub(crate) fn workspace_decision_path(path: &Path, root: &Path) -> Result<PathBuf, CliError> {
+    let io_error = |source| CliError::Io {
+        source,
+        path: Some(path.to_path_buf()),
+    };
+    let relative = if path.is_absolute() {
+        let canonical = match dunce::canonicalize(path) {
+            Ok(canonical) => canonical,
+            Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
+                let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
+                    return Err(io_error(source));
+                };
+                dunce::canonicalize(parent).map_err(io_error)?.join(name)
+            }
+            Err(source) => return Err(io_error(source)),
+        };
+        canonical
+            .strip_prefix(root)
+            .map_err(|_outside_source| CliError::ReleaseDecisionOutsideSource {
+                decision: canonical.display().to_string(),
+                root: root.display().to_string(),
+            })?
+            .to_path_buf()
+    } else {
+        path.to_path_buf()
+    };
+    callisto_model::workspace_relative(&relative).map_err(|error| CliError::ReleaseDecisionPathInvalid {
+        path: relative.display().to_string(),
+        detail: error.to_string(),
+    })
+}
+
 fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError> {
     let out = OutputFile::new(global.resolve_file_arg(&args.out), global.dry_run, OutputKind::Intent)?;
     let runner = CliCommandRunner;
@@ -493,29 +529,7 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
                 .decision
                 .as_deref()
                 .expect("clap requires --decision alongside --from-release-commit");
-            // Git's diff and `git show REV:path` need a repository-relative path; the workflow passes an absolute one, so
-            // normalize it once here.
-            let decision_path = if decision_path.is_absolute() {
-                let decision_path = dunce::canonicalize(decision_path).map_err(|source| CliError::Io {
-                    source,
-                    path: Some(decision_path.to_path_buf()),
-                })?;
-                decision_path
-                    .strip_prefix(&workspace.root)
-                    .map_err(|_outside_source| CliError::ReleaseDecisionOutsideSource {
-                        decision: decision_path.display().to_string(),
-                        root: workspace.root.display().to_string(),
-                    })?
-                    .to_path_buf()
-            } else {
-                decision_path.to_path_buf()
-            };
-            let decision_path = callisto_model::workspace_relative(&decision_path).map_err(|error| {
-                CliError::ReleaseDecisionPathInvalid {
-                    path: decision_path.display().to_string(),
-                    detail: error.to_string(),
-                }
-            })?;
+            let decision_path = workspace_decision_path(decision_path, &workspace.root)?;
             derive_release_commit_decision(&workspace, &commit, &decision_path)?
         }
         None => {
