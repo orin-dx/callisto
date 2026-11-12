@@ -626,7 +626,7 @@ fn manifest_blob_in_index<R: CommandRunner, D: DependencyResolver>(
     ws: &Workspace<'_, R, D>,
     path: &str,
 ) -> Result<Option<String>, GraphError> {
-    let spec = format!(":{path}");
+    let spec = format!(":./{path}");
     if !head_object_exists(ws, &spec)? {
         return Ok(None);
     }
@@ -657,8 +657,8 @@ impl SourceChanges {
     ) -> Result<Self, GraphError> {
         let mut changed = BTreeSet::new();
         let mut staged = BTreeSet::new();
-        let working_tree = vec!["diff", "--name-only", "-z", head];
-        let index = vec!["diff", "--cached", "--name-only", "-z", head];
+        let working_tree = vec!["diff", "--name-only", "-z", "--relative", head];
+        let index = vec!["diff", "--cached", "--name-only", "-z", "--relative", head];
         for (args, is_index) in [(working_tree, false), (index, true)] {
             let output = ws.runner.run("git", &args, &ws.root).map_err(GraphError::Command)?;
             if !output.success() {

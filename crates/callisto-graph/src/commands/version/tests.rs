@@ -126,6 +126,37 @@ fn check_partial_run_refuses_in_a_workspace_below_the_repository_root() {
     );
 }
 
+/// A bump left only in the index is refused for a workspace below the repository root, as it is at the root.
+#[test]
+fn check_partial_run_refuses_a_staged_only_bump_in_a_workspace_below_the_repository_root() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path();
+    let root = repo.join("ws");
+    git_init_with_commit(repo);
+
+    write_pkg_a(&root, "1.0.0");
+    commit_all(repo, "add pkg-a");
+    write_changeset(&root, "a.md");
+    commit_all(repo, "cs");
+    write_pkg_a(&root, "1.1.0");
+    std::process::Command::new("git")
+        .args(["add", "ws/pkg-a/Cargo.toml"])
+        .current_dir(repo)
+        .output()
+        .expect("git add");
+    write_pkg_a(&root, "1.0.0");
+
+    let locator = IgnoreWalkLocator::new(&root);
+    let runner = GitRunner;
+    let ws = Workspace::load(root.clone(), &locator, &runner).expect("workspace must load");
+
+    let result = check_partial_run(&ws);
+    assert!(
+        matches!(result, Err(GraphError::PartialVersionRun { .. })),
+        "{result:?}"
+    );
+}
+
 /// A changeset pending at `HEAD` with disk exactly matching `HEAD` must never be refused.
 #[test]
 fn check_partial_run_allows_an_ordinary_pending_changeset() {
