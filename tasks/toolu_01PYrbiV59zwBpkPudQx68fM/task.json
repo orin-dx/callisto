@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_01PYrbiV59zwBpkPudQx68fM",
+  "agent_id": "ac9ece27b6e55b889",
+  "subagent_type": "general-purpose",
+  "task_description": "Contain emit and decision paths",
+  "token_usage": {
+    "input_tokens": 44,
+    "cache_creation_tokens": 56110,
+    "cache_read_tokens": 1461822,
+    "output_tokens": 9472,
+    "api_call_count": 22
+  },
+  "started_at": "2026-11-11T17:09:29.370867-08:00",
+  "completed_at": "2026-11-11T17:14:54.734358-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}

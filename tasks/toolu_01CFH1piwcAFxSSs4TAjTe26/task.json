@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_01CFH1piwcAFxSSs4TAjTe26",
+  "agent_id": "aef50f10fccd509be",
+  "subagent_type": "courier:changeset-analyzer",
+  "task_description": "Changeset for contained decision paths",
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 39006,
+    "cache_read_tokens": 175893,
+    "output_tokens": 2348,
+    "api_call_count": 4
+  },
+  "started_at": "2026-11-11T17:15:56.82982-08:00",
+  "completed_at": "2026-11-11T17:16:13.480332-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}

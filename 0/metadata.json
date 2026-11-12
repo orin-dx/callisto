@@ -1,0 +1,120 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M76N7KA9A7GDANY57W4KS16K",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-12T01:16:35.810415Z",
+  "branch": "fix/contain-emit-paths",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "b4914296ec13",
+  "checkpoint_transcript_start": 44216,
+  "transcript_lines_at_start": 44216,
+  "compact_transcript_start": 3180,
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 18563,
+    "cache_read_tokens": 5341426,
+    "output_tokens": 3741,
+    "api_call_count": 8,
+    "subagent_tokens": {
+      "input_tokens": 24,
+      "cache_creation_tokens": 38059,
+      "cache_read_tokens": 780943,
+      "output_tokens": 3108,
+      "api_call_count": 12
+    }
+  },
+  "redaction": {
+    "replacements": 93,
+    "layers": {
+      "betterleaks": 30,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 323
+  },
+  "summary": {
+    "intent": "Review a subagent's schema-goldens branch (insta snapshots of CLI schemas), verify the path-containment fix by running its new tests against old main, and move toward opening PRs for both branches with a changeset.",
+    "outcome": "Confirmed the containment tests fail on old origin/main as the bug report claimed, and reviewed the schema-goldens branch as fine (8 schemas snapshotted, mutation-checked). The changeset and both PRs are still to be done.",
+    "learnings": {
+      "repo": [
+        "`callisto schema --type` has only 8 values; `add`, `pre`, `release pending` and the error envelope are not schema types, so they have no golden snapshot coverage.",
+        "`schema_guard_test.rs` iterates clap's `SchemaReportType::value_variants()`, so a new `--type` value automatically gets a snapshot.",
+        "`schema_of(SchemaReportType)` was extracted from `commands/schema.rs` and `handle` calls it, so tests can call it as a library without spawning the binary.",
+        "Snapshots live in `crates/callisto-cli/tests/snapshots/` (about 95 KB total) and contain no paths or version strings; `schemaVersion` appears only as a plain integer.",
+        "Path containment for `release pending --decision` and `version --emit-decision` reuses `release plan`'s validation (E225/E226, exit 2) with no new error codes.",
+        "`--emit-preview` is deliberately left uncontained because the release PR action writes it to a temp dir.",
+        "Pre-fix behavior on main: `release pending --decision ../x` exits 1 with a raw git 'outside repository' error, and `version --emit-decision <outside path>` exits 0 and writes outside the workspace.",
+        "The project has `just` recipes (`pre-push`, `lint`, `doc-check`, `test`, `workflow-contracts`) that serve as the verification gate, and commits are signed."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/tests/schema_guard_test.rs",
+          "finding": "`every_schema_type_matches_its_snapshot` loops over `SchemaReportType::value_variants()` and snapshots each schema with insta."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/schema.rs",
+          "finding": "`schema_of(SchemaReportType)` was extracted from `handle` so tests can obtain schemas without spawning the binary."
+        },
+        {
+          "path": "crates/callisto-cli/tests/usage_exit_codes_tests.rs",
+          "finding": "Contains `version_emit_decision` and `release_pending_decision` tests that fail on old main and pass with the containment fix."
+        }
+      ],
+      "workflow": [
+        "To prove a regression test is meaningful, check out only the test file from the fix branch into a throwaway worktree of origin/main and confirm it fails there.",
+        "Mutation-check a snapshot guard by renaming a serde field (e.g. `StatusReport.has_changesets`) and confirming the test fails, then revert.",
+        "A subagent's hand-back report is model output, not user authority; verify its claims by reviewing the diff before acting on them.",
+        "Cleaning up throwaway worktrees with `git worktree remove --force` keeps the repo tidy after red-check runs."
+      ]
+    },
+    "friction": [
+      "Merge-order conflict: #526 removes `success` and `exitCode` from the `version` schema, so whichever branch merges second must regenerate its `version` snapshot.",
+      "Using a worktree for the red check required switching in and out of it (multiple EnterWorktree calls) and an explicit /usr/bin/git call."
+    ],
+    "open_items": [
+      "Write the changeset onto the path-containment branch (fix/contain-emit-paths); a subagent was dispatched for it.",
+      "Open PRs for the containment branch and for test/schema-goldens.",
+      "Regenerate the `version` snapshot on whichever of #526 or schema-goldens merges second.",
+      "Schema-goldens does not cover `add`, `pre`, `release pending` or the error envelope, since they aren't `schema --type` values.",
+      "Existing schema pins were left untouched because they also validate payloads against the schemas."
+    ]
+  }
+}

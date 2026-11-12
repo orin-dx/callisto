@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_01S2zdEnwSa36Yreo2a7QwPs",
+  "agent_id": "a106b66f422f0809c",
+  "subagent_type": "general-purpose",
+  "task_description": "Golden snapshots of every report schema",
+  "token_usage": {
+    "input_tokens": 46,
+    "cache_creation_tokens": 49079,
+    "cache_read_tokens": 1421093,
+    "output_tokens": 7457,
+    "api_call_count": 23
+  },
+  "started_at": "2026-11-11T17:09:29.342818-08:00",
+  "completed_at": "2026-11-11T17:14:50.733945-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}
