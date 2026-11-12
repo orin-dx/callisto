@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01F41vxMQPctQLmNrKRadw8u",
+  "agent_id": "a5f116b02cb7f5a28",
+  "subagent_type": "general-purpose",
+  "task_description": "Investigate dry-run flag on read-only commands",
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 76131,
+    "cache_read_tokens": 444801,
+    "output_tokens": 3521,
+    "api_call_count": 8
+  },
+  "started_at": "2026-11-11T21:04:07.880348-08:00",
+  "completed_at": "2026-11-11T21:04:44.697891-08:00"
+}

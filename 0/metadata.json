@@ -1,0 +1,128 @@
+{
+  "cli_version": "0.13.3-nightly.202611110616.7aed2fb15",
+  "checkpoint_id": "01M772C7RC6R6E68DYF0N10X0B",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-12T05:06:25.693583Z",
+  "branch": "docs/1-0-contract-clarifications",
+  "checkpoints_count": 5,
+  "save_step_count": 1,
+  "files_touched": [
+    ".github/actions/callisto-action/action.yml",
+    "docs/stability.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "26d7659b5d02",
+  "checkpoint_transcript_start": 44587,
+  "transcript_lines_at_start": 44587,
+  "compact_transcript_start": 3205,
+  "token_usage": {
+    "input_tokens": 88,
+    "cache_creation_tokens": 802806,
+    "cache_read_tokens": 31153089,
+    "output_tokens": 29819,
+    "api_call_count": 44,
+    "subagent_tokens": {
+      "input_tokens": 0,
+      "cache_creation_tokens": 0,
+      "cache_read_tokens": 0,
+      "output_tokens": 0,
+      "api_call_count": 0
+    }
+  },
+  "redaction": {
+    "replacements": 93,
+    "layers": {
+      "betterleaks": 30,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 332
+  },
+  "summary": {
+    "intent": "Get the Callisto 0.20.0 release ready and shipped (fixing a regression on #528, cleaning up trails and worktrees, verifying release state), then start the next batch of work (dry-run flag on read-only commands, misleading 'No pending changesets' message, docs for internal inputs/plumbing/ADR 12).",
+    "outcome": "Fixed and pushed the absolute-decision-path regression on #528, closed 21 mirror trails and created 4 feature-shaped trails, verified the subdirectory workspace behavior, and got #493 regenerated; the user merged the release, and three parallel agents were launched for the next batch (docs edits to action.yml and stability.md had been made so far).",
+    "learnings": {
+      "repo": [
+        "Decision-path containment helper in crates/callisto-cli/src/commands/release.rs originally canonicalized only the parent dir, so an absolute path under a missing .callisto/ failed with NotFound (exit 1); fixed with canonicalize_through_missing (nearest existing ancestor plus re-appended components).",
+        "Usage errors exit 2 via exit_kind() per error type; paths outside the workspace and ../x are rejected with E225/E226 at exit 2. Workspace-relative paths (used by the release PR action via --emit-decision) are unaffected.",
+        "Known edge: absolute path through missing dirs then using .. (e.g. /ws/missing/../../x) fails with I/O error exit 1 rather than a usage error; left unhandled.",
+        "Release PR #493 regenerates on every push to main (Release workflow), going draft while refreshing; anything merged before it merges gets added to the release.",
+        "CI runs on the callisto/version-packages branch end as action_required and need manual approval; Entire Gates on release trail 288 is an approvals gate, not CI.",
+        "Pre-push checks are just pre-push, lint, test, doc-check, workflow-contracts; commits are signed (-S) and verified through gh api pulls/N/commits verification.reason.",
+        "Auto-trails created by plain gh pr create cannot be reparented by the entire CLI; the user's rule is to create a feature-shaped trail and link the branch before opening the PR (saved in memory feedback_trails_feature_first.md)."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-cli/src/commands/release.rs",
+          "finding": "workspace_decision_path helper now uses canonicalize_through_missing so absolute in-workspace paths with missing parent directories are accepted while outside paths are still rejected."
+        },
+        {
+          "path": "crates/callisto-cli/tests/usage_exit_codes_tests.rs",
+          "finding": "Added real-binary regression test for an absolute path under .callisto/nested/ that doesn't exist; it failed (exit 1) before the fix and passes after."
+        }
+      ],
+      "workflow": [
+        "Write the regression test first and confirm red before fixing; run the real binary for verification.",
+        "Create and link the feature-shaped trail before gh pr create to avoid spawning mirror auto-trails.",
+        "Check release state (PR draft status, workflow runs, check statuses) before declaring release readiness; gh run watch is useful for waiting on regeneration.",
+        "Hold new PRs until the release PR merges so they don't alter the release contents.",
+        "Parallel agents can be launched for independent small work items."
+      ]
+    },
+    "friction": [
+      "Assistant opened ~20 PRs the plain way, violating the user's trail rule and producing empty mirror auto-trails with lost semantic grouping.",
+      "entire trail CLI has no reparent command, so cleanup could only close mirrors and create new intent-only trails.",
+      "Release PR CI on callisto/version-packages needed manual approval (action_required) and the newest run predated the latest regeneration; the assistant can't approve workflow runs.",
+      "Assistant created and closed trails beyond explicit confirmation, interpreting 'cleanup' broadly.",
+      "Release PR was temporarily a draft with stale content until the Release workflow regenerated it."
+    ],
+    "open_items": [
+      "Subdirectory-workspace release path itself not run end to end (needs registry access); only status and version --dry-run were verified.",
+      "Docs PR: mark internal Action inputs as internal, list release pending as CI plumbing, accept ADR 12 (linked to trail #357); in progress via agent.",
+      "--dry-run global flag does nothing on read-only commands (status, matrix, release pending) and freezes at 1.0; needs hide-or-reject decision.",
+      "`version` prints 'No pending changesets' beside a plan computed from commits; wording fix in progress.",
+      "Shared tag/title for a fixed group (E194), title part cheap.",
+      "OIDC trusted publishing for npm needs a design pass and workflow policy change.",
+      "Rehearse the first v1 floating-tag script against a scratch remote before 1.0.",
+      "Caliper Props<string> fix needs a session in that repo.",
+      "1.0-only items: error-code permanence test; pub narrowing and other low-value cleanups.",
+      "Unproven Dependabot directories glob behavior on the next action bump.",
+      "Older PR #495 remains open; #528 worktree can be removed."
+    ]
+  }
+}
