@@ -5,6 +5,7 @@ use callisto_graph::commands::VersionOptions;
 use callisto_model::{ApplyPermit, DiagnosticSeverity};
 
 use crate::cli::{GlobalArgs, OutputFormat, VersionArgs};
+use crate::commands::release::workspace_decision_path;
 use crate::error::CliError;
 use crate::output::{emit_line, emit_report};
 use crate::render;
@@ -48,7 +49,8 @@ pub fn handle(args: VersionArgs, global: &GlobalArgs) -> Result<ExitCode, CliErr
             Some(path) => {
                 let decision = callisto_graph::commands::derive_release_decision(&ws, &plan)?;
                 // Workspace-root-relative, not cwd-relative, so `git add -A` and a later `--decision` `git show` agree.
-                Some((ws.root.join(path), decision))
+                let relative = workspace_decision_path(path, &ws.root)?;
+                Some((ws.root.join(relative), decision))
             }
             None => None,
         }

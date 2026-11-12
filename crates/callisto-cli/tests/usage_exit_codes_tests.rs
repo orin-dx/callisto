@@ -139,3 +139,51 @@ fn a_bare_package_in_config_exits_1_though_the_same_code_on_a_flag_exits_2() {
     fs::write(root.join("callisto.toml"), "[[package]]\nmatch = \"a\"\n").unwrap();
     assert_exit(root, &["status"], 1, "E317");
 }
+
+#[test]
+fn version_emit_decision_outside_the_workspace_exits_2_before_writing() {
+    let dir = workspace();
+    let root = dir.path();
+    let outside = tempfile::tempdir().unwrap();
+    let escaped = outside.path().join("decision.json");
+    let relative = format!(
+        "../{}/decision.json",
+        outside.path().file_name().unwrap().to_str().unwrap()
+    );
+    assert!(callisto(root, &["add", "--package", "cargo/a:patch", "--summary", "s"])
+        .status
+        .success());
+    for path in [escaped.to_str().unwrap(), relative.as_str()] {
+        let out = callisto(root, &["version", "--emit-decision", path]);
+        assert_eq!(out.status.code(), Some(2), "{path}: {}", stderr_of(&out));
+        assert!(!escaped.exists(), "{path} wrote outside the workspace");
+    }
+    assert!(fs::read_to_string(root.join("Cargo.toml")).unwrap().contains("0.1.0"));
+}
+
+#[test]
+fn version_emit_decision_to_an_absolute_path_whose_directories_do_not_exist_yet_still_writes_it() {
+    let dir = workspace();
+    let root = dir.path();
+    assert!(callisto(root, &["add", "--package", "cargo/a:patch", "--summary", "s"])
+        .status
+        .success());
+    let decision = root.join(".callisto/nested/release-decision.json");
+    let out = callisto(root, &["version", "--emit-decision", decision.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr_of(&out));
+    assert!(decision.exists());
+}
+
+#[test]
+fn release_pending_decision_outside_the_workspace_exits_2() {
+    let dir = workspace();
+    let outside = tempfile::tempdir().unwrap();
+    let escaped = outside.path().join("decision.json");
+    assert_exit(dir.path(), &["release", "pending", "--decision", "../x"], 2, "E226");
+    assert_exit(
+        dir.path(),
+        &["release", "pending", "--decision", escaped.to_str().unwrap()],
+        2,
+        "E225",
+    );
+}
