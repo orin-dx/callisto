@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_01Vkv9yyV7CtqE5p6aN2URWo",
+  "agent_id": "a48be6cd8794b45fd",
+  "subagent_type": "courier:changeset-analyzer",
+  "task_description": "Changeset for the no-pending-changesets fix",
+  "token_usage": {
+    "input_tokens": 6,
+    "cache_creation_tokens": 36199,
+    "cache_read_tokens": 120134,
+    "output_tokens": 2038,
+    "api_call_count": 3
+  },
+  "started_at": "2026-11-11T21:15:45.96783-08:00",
+  "completed_at": "2026-11-11T21:16:03.424844-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}
