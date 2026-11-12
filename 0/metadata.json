@@ -1,0 +1,125 @@
+{
+  "cli_version": "0.13.3-nightly.202611110616.7aed2fb15",
+  "checkpoint_id": "01M78EVV4P7BBDABG5690VB5N2",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-12T18:03:48.621964Z",
+  "branch": "worktree-small-batch-limit-and-preview",
+  "checkpoints_count": 3,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/cli.rs",
+    "crates/callisto-cli/src/commands/release.rs",
+    "crates/callisto-cli/tests/usage_exit_codes_tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "007da4a80aac",
+  "checkpoint_transcript_start": 47745,
+  "transcript_lines_at_start": 47745,
+  "compact_transcript_start": 3409,
+  "token_usage": {
+    "input_tokens": 28,
+    "cache_creation_tokens": 134995,
+    "cache_read_tokens": 998003,
+    "output_tokens": 3865,
+    "api_call_count": 14,
+    "subagent_tokens": {
+      "input_tokens": 24,
+      "cache_creation_tokens": 43852,
+      "cache_read_tokens": 1171010,
+      "output_tokens": 4872,
+      "api_call_count": 12
+    }
+  },
+  "redaction": {
+    "replacements": 112,
+    "layers": {
+      "betterleaks": 42,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 66,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 352
+  },
+  "summary": {
+    "intent": "Finish and publish the Callisto fix for subdirectory-workspace git paths (PR #536), then address a review finding on Caliper change #238 and work out what to do next after merging everything open.",
+    "outcome": "PR #536 was pushed with signed commits, linked to trail #357, marked ready and later merged along with the other open PRs. The #238 checker.rs finding could not be fixed from the Callisto worktree, so a handoff prompt was written for a Caliper session. Release PR #533 is now waiting on Entire Gates and CI approval.",
+    "learnings": {
+      "repo": [
+        "Callisto release PR #533 aggregates #531, #534, #535 and #536. Its only check, 'Entire Gates', shows `fail` while waiting for approval, which is the approval gate and not a code failure.",
+        "CI on the release branch also needs manual approval before it runs.",
+        "`release` requires the workspace to be at the repository root. This limit is now documented, and the subdirectory-workspace git-path bugs in the version and release-commit checks are fixed.",
+        "The test `a_version_the_registry_serves_is_exact_with_no_checksum_or_yank_claim` needs registry tools missing from the sandbox. It fails the same way on `main`.",
+        "Validation recipes are `just doc-check`, `just lint`, `just test`, `just pre-push` and `just workflow-contracts`.",
+        "The OIDC trusted publishing plan is in `docs/projects/OIDC-TRUSTED-PUBLISHING.md`."
+      ],
+      "code": [
+        {
+          "path": "crates/semantic/src/checker.rs",
+          "line": 374,
+          "finding": "Caliper change #238 (medium), unverified because the file was not in the local checkout: when createSnapshot/updateSnapshot builds a program importing an over-nested file, this branch discards the successful response with the new snapshot ID and keeps the session alive. The snapshot can never be released, so retained programs accumulate until the checker hits its memory bound."
+        },
+        {
+          "path": "crates/semantic/src/rpc.rs",
+          "line": 414,
+          "end_line": 448,
+          "finding": "Callers obtain and release snapshot IDs here, so a snapshot ID dropped in checker.rs cannot be released."
+        }
+      ],
+      "workflow": [
+        "The session's git and write access is confined to the Callisto worktree, so fixes in the separate Caliper repo need a session started there.",
+        "Commits are signed and GitHub's verification reason can be checked via `gh api repos/.../pulls/N/commits`.",
+        "Per the user's standing rule, PR bodies carry no session link.",
+        "`entire trail link` ties a branch to a trail so Entire opens the PR.",
+        "Merged worktrees and branches are cleaned up with a removal script after the user approves."
+      ]
+    },
+    "friction": [
+      "Caliper findings (#238, #224) cannot be fixed from the Callisto session because the local Caliper checkout is on a branch that predates `feat/checker-supplies-facts` and writes are confined to the Callisto worktree.",
+      "The sandbox lacks registry tools, so one test fails locally.",
+      "Merging needs manual CI and Entire Gates approvals, which block progress on the release PR.",
+      "`just pre-push` and `just workflow-contracts` were not re-run after the final docs-only commit."
+    ],
+    "open_items": [
+      "Fix Caliper change #238 (snapshot leak on over-nested import) and #224 (`Props<string>` loses `HTMLAttributes` in convert.rs) in a Caliper session on `feat/checker-supplies-facts`.",
+      "Approve Entire Gates (trail 375) and CI for release PR #533, then merge it.",
+      "Remove the worktrees and branches for #531, #534, #535 and #536 once the user approves.",
+      "Decide the OIDC trusted publishing design: a generated-workflow option or a config key, and whether to allow `id-token: write` on `execute`.",
+      "Small batch PR: the `release pending --limit 0` message and the `--emit-preview` relative-path wording against `action.yml`.",
+      "Review draft docs PR #495 for staleness."
+    ]
+  }
+}
