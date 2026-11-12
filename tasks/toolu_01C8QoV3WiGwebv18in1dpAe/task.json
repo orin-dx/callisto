@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01C8QoV3WiGwebv18in1dpAe",
+  "agent_id": "ae55a48dbafe514c8",
+  "subagent_type": "general-purpose",
+  "task_description": "Audit README and guides against current behavior",
+  "token_usage": {
+    "input_tokens": 272,
+    "cache_creation_tokens": 408200,
+    "cache_read_tokens": 21699800,
+    "output_tokens": 58057,
+    "api_call_count": 135
+  },
+  "started_at": "2026-11-11T21:38:37.346898-08:00",
+  "completed_at": "2026-11-11T21:47:42.389831-08:00"
+}

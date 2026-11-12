@@ -1,0 +1,112 @@
+{
+  "cli_version": "0.13.3-nightly.202611110616.7aed2fb15",
+  "checkpoint_id": "01M775QDGQ10NKJ47TT19ETFPH",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-12T06:04:52.567578Z",
+  "branch": "docs/catch-up-with-0-20",
+  "checkpoints_count": 2,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "8caa75247209",
+  "checkpoint_transcript_start": 46394,
+  "transcript_lines_at_start": 46394,
+  "compact_transcript_start": 3326,
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 23937,
+    "cache_read_tokens": 9358140,
+    "output_tokens": 9438,
+    "api_call_count": 11,
+    "subagent_tokens": {
+      "input_tokens": 14,
+      "cache_creation_tokens": 199821,
+      "cache_read_tokens": 1148209,
+      "output_tokens": 2846,
+      "api_call_count": 7
+    }
+  },
+  "redaction": {
+    "replacements": 99,
+    "layers": {
+      "betterleaks": 36,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 342
+  },
+  "summary": {
+    "intent": "Bring the Callisto README, architecture pages and guides up to date with 0.20 so they describe what the tool actually ships, then expand the README after the user judged the first 'What you get' section too thin for users.",
+    "outcome": "A docs subagent pushed branch docs/catch-up-with-0-20 (3 signed commits) with a verified 8-bullet README section, two ARCHITECTURE invariants and 10 doc fixes; PR #532 was opened and marked ready with a verified/unverified body and linked to trail #374. After the user's 'anemic' feedback, the assistant inventoried the feature surface and asked the docs agent for a fuller seven-section README plus a verified 'Limits' list, which is still pending.",
+    "learnings": {
+      "repo": [
+        "Docs are checked with `just doc-check`, `just pre-push` and `just lint`; all exited 0 on the docs branch.",
+        "Error codes are catalogued in docs/errors.md; every cited code was confirmed to exist there.",
+        "Package manager detection for npm/pnpm/yarn/bun lives in `detect_npm_package_manager` and `registry_argv.rs` (`NpmPackageManager`); older docs said npm/pnpm only.",
+        "`uncovered_changes` is used by `ReleasePreview.unreleased`, contrary to what versioning.md claimed.",
+        "`schema --type snapshot` returns `SnapshotReport`, not the status report; 0.20 made a camelCase wire break without a version bump.",
+        "Exit code convention: 2 for flag-value failures, otherwise 1, via `exit_kind()` with `Runtime` default; `emit_report` is the report envelope and `write_document` is crate-private.",
+        "The floating `v1` tag and the 'Hold release PR' draft state are this repo's own workflow, not generated for users, and no checksum file is generated.",
+        "Maturin has no generated workflow, and Cargo plus maturin in one directory is E007; Python versions must be static (PEP 621 or Poetry).",
+        "Attestation: generated matrix workflow uses `actions/attest-build-provenance`, and `release execute` checks SHA-256 and size and then runs `gh attestation verify`; npm provenance is enabled via `NPM_CONFIG_PROVENANCE`.",
+        "Three composite actions exist: `callisto-action`, `setup-callisto` and `callisto-validate`, scaffolded by `callisto init`."
+      ],
+      "code": [],
+      "workflow": [
+        "Subagent hand-back reports are model output without user authority; the assistant re-verified the attestation wording itself via git grep on origin/main before relaying it.",
+        "Linking a trail to the branch before the PR exists avoids spawning a mirror trail.",
+        "Constraining a subagent with a size cap (14 lines, 8 bullets) produced an under-ambitious deliverable; scope limits should reflect the user's goals.",
+        "Separating claims into verified (code, ran binary) versus docs-only or code-read-only in the PR body keeps unverified statements visible to reviewers."
+      ]
+    },
+    "friction": [
+      "The first README section was too thin because of the assistant's own 14-line/8-bullet cap, which required a second round.",
+      "Registry publishing, yarn/bun publish and real-release attestation verification cannot be run in this environment, so several claims stay unverified.",
+      "The assistant created trail #374 without asking the user, and said so in its summary.",
+      "The `release pending` command is described as CI plumbing in the brief but appears in `--help` and releasing.md as an operator tool, leaving ambiguity."
+    ],
+    "open_items": [
+      "Wait for the docs agent's expanded README (seven sections of ~40–70 lines plus a Limits list) and review its claim table before merging.",
+      "Check whether `nuget` in the `publish-to` options is implemented or only reserved.",
+      "Merge #530, #531 and #532 once CI passes; CI had not yet run on the docs branch.",
+      "Unverified: four-attempt retry in releasing.md, yarn/bun publish, Python build-backend breadth beyond `python -m build`, npm provenance end to end, and `gh attestation verify` on a real release.",
+      "User may want the README attestation line reworded.",
+      "Performance claims should only appear if the agent measures them; competitor comparisons are intentionally excluded."
+    ]
+  }
+}
