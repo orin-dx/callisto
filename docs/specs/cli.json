@@ -215,7 +215,7 @@
     },
     {
       "id": "CLI-ADD-06",
-      "criterion": "A --package value missing `:severity`, with an unknown severity, or naming a package not in the workspace writes nothing; a missing `:severity` exits 2 with `E270`, an unknown severity exits 2 with `E271`, an unknown package name exits 1 with `E102`, a name without its ecosystem reports E317, and the colon form reports E316 (both exit 2 when the reference came from a flag).",
+      "criterion": "A --package value missing `:severity`, with an unknown severity, or naming a package not in the workspace writes nothing; a missing `:severity` exits 2 with `E270`, an unknown severity exits 2 with `E271`, an unknown package name exits 2 with `E102`, a name without its ecosystem reports E317, and the colon form reports E316 (both exit 2 when the reference came from a flag).",
       "is_error_case": true
     },
     {
@@ -268,7 +268,7 @@
     },
     {
       "id": "CLI-INIT-12",
-      "criterion": "init exits without writing: 2 for an empty or repeated target triple (`E196`), a --forge-repository that is not `owner/repo` (`E195`), or --forge-repository or --product-package given without --artifact-target (`E298`); 1 for --artifact-target when no supported Cargo package produces a binary (`E188`), a --product-package that is absent or not a supported Cargo binary producer (`E189`), or a --forge-repository that differs from origin's GitHub repository (`E187`). An npm `bin` or Python `[project.scripts]` product selected for an artifact fails with a typed unsupported-builder diagnostic; registry-only npm and PyPI releases remain valid.",
+      "criterion": "init exits without writing: 2 for an empty or repeated target triple (`E196`), a --forge-repository that is not `owner/repo` (`E195`) or differs from origin's GitHub repository (`E187`), a --product-package that is absent or not a supported Cargo binary producer (`E189`), or --forge-repository or --product-package given without --artifact-target (`E298`); 1 for --artifact-target when no supported Cargo package produces a binary (`E188`). An npm `bin` or Python `[project.scripts]` product selected for an artifact fails with a typed unsupported-builder diagnostic; registry-only npm and PyPI releases remain valid.",
       "is_error_case": true
     },
     {

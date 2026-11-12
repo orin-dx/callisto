@@ -45,11 +45,22 @@ fn assert_exit(dir: &std::path::Path, args: &[&str], exit: i32, code: &str) {
 fn bad_or_missing_flag_values_checked_after_parsing_exit_2() {
     let dir = workspace();
     let root = dir.path();
+    fs::write(root.join("bad.json"), "{").unwrap();
     for (args, code) in [
         (vec!["add", "--package", "a:patch", "--summary", "s"], "E317"),
         (vec!["add", "--package", "cargo/a:bogus", "--summary", "s"], "E271"),
         (vec!["add", "--package", "cargo/a:patch"], "E274"),
         (vec!["add", "--package", "cargo/a:patch", "--summary", ""], "E275"),
+        (vec!["add", "--package", "cargo/nope:patch", "--summary", "s"], "E102"),
+        (
+            vec!["release", "--dry-run", "--package", "cargo/a", "--package", "cargo/a"],
+            "E169",
+        ),
+        (
+            vec!["release", "pending", "--decision", "d.json", "--from", &"a".repeat(40)],
+            "E328",
+        ),
+        (vec!["compose-pr-body", "--preview", "bad.json"], "E281"),
         (vec!["add"], "E214"),
         (vec!["init"], "E240"),
         (vec!["init", "--workflow", "--no-workflow"], "E242"),
@@ -58,6 +69,30 @@ fn bad_or_missing_flag_values_checked_after_parsing_exit_2() {
     ] {
         assert_exit(root, &args, 2, code);
     }
+}
+
+#[test]
+fn init_flag_values_checked_against_the_workspace_exit_2() {
+    let dir = workspace();
+    let root = dir.path();
+    git(root, &["remote", "add", "origin", "https://github.com/o/r.git"]);
+    let init = [
+        "init",
+        "--yes",
+        "--artifact-target",
+        "x86_64-unknown-linux-gnu",
+        "--forge-repository",
+    ];
+    // A library has no binary to ship: workspace state, not a flag value.
+    assert_exit(root, &[&init[..], &["o/r"]].concat(), 1, "E188");
+    fs::write(root.join("src/main.rs"), "fn main() {}\n").unwrap();
+    assert_exit(root, &[&init[..], &["o/other"]].concat(), 2, "E187");
+    assert_exit(
+        root,
+        &[&init[..], &["o/r", "--product-package", "nope"]].concat(),
+        2,
+        "E189",
+    );
 }
 
 #[test]
@@ -93,12 +128,6 @@ fn arguments_rejected_while_parsing_exit_2_and_help_and_version_exit_0() {
 fn runtime_failures_still_exit_1() {
     let dir = workspace();
     let root = dir.path();
-    assert_exit(
-        root,
-        &["add", "--package", "cargo/nope:patch", "--summary", "s"],
-        1,
-        "E102",
-    );
     fs::write(root.join("callisto.toml"), "not = [valid").unwrap();
     assert_exit(root, &["status"], 1, "E111");
 }

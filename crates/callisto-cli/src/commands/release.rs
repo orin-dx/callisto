@@ -556,6 +556,7 @@ fn plan(args: ReleasePlanArgs, global: &GlobalArgs) -> Result<ExitCode, CliError
                 return Err(CliError::ReleaseForgeRepositoryMismatch {
                     configured: configured.as_slug(),
                     requested: repository.as_slug(),
+                    from_flag: true,
                 });
             }
             build_release_intent_with_artifacts(
@@ -692,6 +693,7 @@ fn execute(args: ReleaseExecuteArgs, global: &GlobalArgs) -> Result<ExitCode, Cl
         return Err(CliError::ReleaseForgeRepositoryMismatch {
             configured: configured.as_slug(),
             requested: slot.attestation_policy.repository.as_slug(),
+            from_flag: false,
         });
     }
     // The workspace root, resolved exactly as `plan` resolves it. Executing
