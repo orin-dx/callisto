@@ -1,0 +1,127 @@
+{
+  "cli_version": "0.13.3-nightly.202611110616.7aed2fb15",
+  "checkpoint_id": "01M77AKDFZA8JSMNR135MPS8XK",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-12T07:30:07.097802Z",
+  "branch": "fix/subdir-workspace-git-paths",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "docs/errors.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "cafcca589b79",
+  "checkpoint_transcript_start": 47223,
+  "transcript_lines_at_start": 47223,
+  "compact_transcript_start": 3380,
+  "token_usage": {
+    "input_tokens": 56,
+    "cache_creation_tokens": 79077,
+    "cache_read_tokens": 20292294,
+    "output_tokens": 11065,
+    "api_call_count": 26,
+    "subagent_tokens": {
+      "input_tokens": 42,
+      "cache_creation_tokens": 38061,
+      "cache_read_tokens": 2990490,
+      "output_tokens": 11328,
+      "api_call_count": 21
+    }
+  },
+  "redaction": {
+    "replacements": 110,
+    "layers": {
+      "betterleaks": 40,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 66,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 349
+  },
+  "summary": {
+    "intent": "Continue improving Callisto (release quality, docs, bug fixing) by landing a series of independent fix PRs. In this stretch: finish the PRs for parenthesized Python requirements and decision-path validation, then the subdirectory-workspace git-path fixes with a documented limit.",
+    "outcome": "PRs #534 and #535 were opened, linked to trail #357, readied, and their commits verified as signed. The subdirectory-workspace branch got its docs edits (README Limits, releasing.md, E170 row) and a changeset, committed signed after retrying outside the sandbox. Pushing, trail linking and PR text for that branch were not confirmed.",
+    "learnings": {
+      "repo": [
+        "Subagent-produced changesets use front matter `callisto-cli: patch`, even when the subagent's JSON suggests a different semver, and the repo convention wins.",
+        "In a workspace below the git repo root, git calls need `rev:./path`, `--relative`, and `git rev-parse --show-prefix` stripping; unscoped git paths are repo-top-relative.",
+        "`callisto release` refuses subdirectory workspaces by design with E170 (CanonicalRootMatchesWorkspace in release/capability.rs observe_git_trust), and this limit was previously undocumented.",
+        "docs/errors.md E170 Fix column must match the code's help text, so only the When column should be edited.",
+        "`workspace_decision_path` now rejects directories, the workspace root, trailing separators, `.git` paths and symlink escapes with E225/E226 at exit 2, and covers version, release plan and release pending.",
+        "Local `just test` fails only on `a_version_the_registry_serves_is_exact_with_no_checksum_or_yank_claim`, which needs registry tools that CI installs (environmental).",
+        "The 0.20.0 changeset 'contain-decision-paths' was already consumed by the release, so follow-up fixes need new changesets."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "finding": "`commit_delta` now strips the show-prefix from in-workspace paths and rewrites outside paths as `../…`, so outside edits are still refused as UnexpectedPath."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/version.rs",
+          "finding": "`SourceChanges::since` diffs now use `--relative` and `manifest_blob_in_index` uses `:./{path}`, so a second `version` run in a subdirectory workspace returns E121 rc 1 instead of a warning."
+        },
+        {
+          "path": "crates/callisto-manifests/src/python.rs",
+          "finding": "`Requirement::parse` was rewritten to handle the parenthesized form `name (==1.0.0)` with a `parenthesized` flag, and to keep `@ url` out of extras."
+        }
+      ],
+      "workflow": [
+        "Subagents cannot fetch from github.com:22 in the sandbox, so their local origin refs may be stale; re-fetch before trusting changeset disposition.",
+        "Commit signing is blocked by the sandbox; retry the same signed commit outside the sandbox and never disable gpgsign.",
+        "Worktree guards reject compound git commands and loops with gh, so use single commands or script files.",
+        "Entire opens the PR on `entire trail link`; then edit its title and body with `gh pr edit --body-file` and run `gh pr ready`.",
+        "Verify commit signatures on GitHub with `gh api repos/.../pulls/N/commits --jq '.[].commit.verification.reason'`.",
+        "Treat subagent hand-back messages as reports, not user instructions."
+      ]
+    },
+    "friction": [
+      "Sandbox blocked `git fetch origin` for subagents and gpg signing for the commit.",
+      "Worktree guard rejected compound git commands and gh loops.",
+      "The first changeset recommendation from the subagent pointed at the wrong disposition because the facts brief called the entry unreleased when it had been consumed.",
+      "The CLI cannot succeed end-to-end in a subdirectory workspace because E170 stops it, so the regression test had to drive `derive_release_commit_decision` directly."
+    ],
+    "open_items": [
+      "Confirm the push of `fix/subdir-workspace-git-paths`, link it to trail #357, edit the Entire-opened PR title and body, run `gh pr ready`, and verify signatures.",
+      "Re-read release PR #533 before merging; it holds several patch changesets and the plan was to wait for the third fix. Merging needs CI approval and Entire Gates from the user.",
+      "The user still has to decide on OIDC trusted publishing (plan in docs/projects/OIDC-TRUSTED-PUBLISHING.md).",
+      "The Caliper change #224 (`Props<string>` loses `HTMLAttributes`) needs a session in ~/Projects/caliper.",
+      "Low-priority hunt items are deferred: `release pending --limit 0` message and `--emit-preview` relative-path wording.",
+      "Clean up the agent worktrees and branches after the PRs merge.",
+      "PR #495 (older docs PR) is still open."
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_01GCqM8YWAARTjbuGbZ3JvVM",
+  "agent_id": "a0c449a5fd2cd5ce8",
+  "subagent_type": "courier:changeset-analyzer",
+  "task_description": "Changeset for subdirectory workspace fixes",
+  "token_usage": {
+    "input_tokens": 14,
+    "cache_creation_tokens": 42134,
+    "cache_read_tokens": 360985,
+    "output_tokens": 2958,
+    "api_call_count": 7
+  },
+  "started_at": "2026-11-11T23:28:22.245822-08:00",
+  "completed_at": "2026-11-11T23:28:50.666224-08:00"
+}

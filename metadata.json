@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.13.3-nightly.202611110616.7aed2fb15",
+  "checkpoint_id": "01M77AKDFZA8JSMNR135MPS8XK",
+  "strategy": "manual-commit",
+  "branch": "fix/subdir-workspace-git-paths",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/errors.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 56,
+    "cache_creation_tokens": 79077,
+    "cache_read_tokens": 20292294,
+    "output_tokens": 11065,
+    "api_call_count": 26,
+    "subagent_tokens": {
+      "input_tokens": 42,
+      "cache_creation_tokens": 38061,
+      "cache_read_tokens": 2990490,
+      "output_tokens": 11328,
+      "api_call_count": 21
+    }
+  },
+  "redaction": {
+    "replacements": 110,
+    "layers": {
+      "betterleaks": 40,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 66,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  }
+}
