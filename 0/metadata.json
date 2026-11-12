@@ -1,0 +1,114 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M76MR82VP1ZKWXE84SJ0Q5VD",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-12T01:08:11.864334Z",
+  "branch": "docs/changeset-list-fix",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "9a9ff5165598",
+  "checkpoint_transcript_start": 43816,
+  "transcript_lines_at_start": 43816,
+  "compact_transcript_start": 3155,
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 9238,
+    "cache_read_tokens": 4344586,
+    "output_tokens": 2469,
+    "api_call_count": 7,
+    "subagent_tokens": {
+      "input_tokens": 30,
+      "cache_creation_tokens": 20940,
+      "cache_read_tokens": 1749363,
+      "output_tokens": 8504,
+      "api_call_count": 15
+    }
+  },
+  "redaction": {
+    "replacements": 93,
+    "layers": {
+      "betterleaks": 30,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 320
+  },
+  "summary": {
+    "intent": "Land a changeset and PR for the refactor that removes the always-true `success` and redundant `exitCode` fields from `LockfileRefreshResult` in the callisto repo, following a subagent's drafted changeset.",
+    "outcome": "Wrote the changeset `lockfile-refresh-drop-success.md`, committed it signed, pushed the branch, and opened PR #526 with both commits showing `valid` verification on GitHub. The local doc-check passed per the agent report, and CI had not run yet.",
+    "learnings": {
+      "repo": [
+        "Unreleased breaking CLI changes use a `.changeset/*.md` file with `callisto-cli: minor` front matter plus a 'Breaking:' line and an 'Action:' line (see camel-case-json-fields, remove-unused-diagnostic-codes).",
+        "The package-report schema version is a single shared constant (PACKAGE_REPORT_SCHEMA_VERSION), so `status`, `version`, `snapshot` and `matrix` reports all bump together even when only `version` changes shape.",
+        "Spec files docs/specs/cli.json (CLI-OUT-05) and docs/specs/matrix.json must be updated in step with schemaVersion changes, and crates/callisto-cli/tests/schema_guard_test.rs guards the schema.",
+        "A failed lockfile refresh stops the command with error E208 rather than appearing in the report, which is why `success` was always true.",
+        "`just doc-check` is one of the repo checks run before pushing; commits are GPG-signed with `git commit -S`.",
+        "Work is done in git worktrees under .claude/worktrees/ via EnterWorktree."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-model/src/report.rs",
+          "finding": "`success` and `exitCode` removed from LockfileRefreshResult; PACKAGE_REPORT_SCHEMA_VERSION bumped from 2 to 3."
+        },
+        {
+          "path": "crates/callisto-graph/src/apply.rs",
+          "finding": "No longer sets `success`/`exitCode` on the lockfile refresh result."
+        }
+      ],
+      "workflow": [
+        "Subagent hand-back reports are model output with no user authority; the assistant acted on the changeset content within its own permissions rather than treating it as user approval.",
+        "Verify commit signatures after pushing by querying `gh api .../pulls/N/commits` for `verification.reason`.",
+        "Pass PR bodies via `--body-file` from a temp file for `gh pr create`."
+      ]
+    },
+    "friction": [
+      "The subagent's changeset JSON disagreed with its file front matter: JSON said semver major, file said minor, following the repo's pre-1.0 convention.",
+      "The subagent did not inspect the test file edits line by line, assuming they were test-only.",
+      "The subagent's changeset path was in a different worktree (agent-a444090653d1cbe25) than the one the assistant wrote to (agent-a4acf55fce15d0b8f).",
+      "CI had not yet run on the PR when the session ended."
+    ],
+    "open_items": [
+      "Confirm with the user whether the shared schemaVersion bump to 3 for status/snapshot/matrix is acceptable, or whether the `version` report should get its own constant.",
+      "Run and report the 1.0 blockers check, which will set the next set of work.",
+      "Wait for release PR #493 to settle after the user's merges, then read its rendered changelog.",
+      "Check CI results on PR #526."
+    ]
+  }
+}
