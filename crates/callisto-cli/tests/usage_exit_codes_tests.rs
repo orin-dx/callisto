@@ -104,6 +104,7 @@ fn arguments_rejected_while_parsing_exit_2_and_help_and_version_exit_0() {
         vec!["no-such-command"],
         vec!["--format", "yaml", "status"],
         vec!["pre", "enter"],
+        vec!["release", "pending", "--limit", "0"],
         vec!["--no-such-flag"],
     ] {
         for format in ["json", "text"] {
