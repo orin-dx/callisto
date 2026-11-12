@@ -326,9 +326,12 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
     let mut diagnostics = agg.diagnostics.clone();
     diagnostics.extend(outcome.diagnostics);
     diagnostics.extend(group_check.diagnostics);
-    // A bump inferred from commits is a plan, so "no changesets" would contradict it.
+    // A bump inferred from commits that survived aggregation is a plan, so "no changesets" would contradict it.
     if nothing_pending
-        && agg.inference_commits.is_empty()
+        && !agg
+            .named_by
+            .values()
+            .any(|named_by| *named_by == crate::aggregate::NamedBy::Inference)
         && !opts.allow_empty_changesets
         && !ws.config.validation.allow_empty_changesets
     {
