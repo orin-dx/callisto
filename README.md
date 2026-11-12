@@ -65,6 +65,17 @@ flowchart LR
 
 Callisto is pre-v1. The [guide](docs/how-callisto-works.md) covers current support, known limits, and when another tool may be a better fit, and [stability](docs/stability.md) says what will and will not change.
 
+## What you get
+
+- **Ecosystems:** Cargo, npm, and Python/PyPI. npm packages publish with npm, pnpm, yarn or bun, whichever the workspace uses; Python packages need a static PEP 621 or Poetry version and are built with `python -m build` and uploaded with Twine ([support](docs/how-callisto-works.md#current-support), [credentials](docs/publishing.md)).
+- **Native-extension packages:** napi-rs platform packages take their owner's version, the generated workflow builds each `napi.targets` addon, and platform packages publish before the owner. Maturin gets no generated workflow, and Cargo plus maturin in one directory fails with E007 ([releasing](docs/releasing.md#platform-package-publish-order)).
+- **Tags:** one per package, `{name}@{version}`, or `ecosystem/name@{version}` when another ecosystem has a package of that name; `tag-template` overrides it ([stability](docs/stability.md), [config](docs/config.md)).
+- **GitHub releases:** notes come from the package's changelog section, and the product package's release carries your binary assets ([releasing](docs/releasing.md#generated-workflows)).
+- **Supply chain:** the generated build workflow attests each Cargo binary asset with GitHub build provenance, and `release execute` checks its SHA-256 and runs `gh attestation verify` before uploading it; the receipt records each asset's size and SHA-256. npm provenance is on when the publishing job sets `NPM_CONFIG_PROVENANCE` ([publishing](docs/publishing.md#provenance)).
+- **Release PR:** one PR, rebuilt on every push to the default branch, holds the versions, changelogs and a "Merging will publish" plan. Merging it is the approval ([releasing](docs/releasing.md#release-pr-and-approval)).
+- **Safe reruns:** a failed release can be rerun; versions, tags and releases that already landed are adopted, not repeated, and a receipt is written only when every operation succeeded ([publication checks](docs/releasing.md#publication-checks)).
+- **Scripting:** every command accepts `--dry-run`, `--format json` reports carry a `schemaVersion`, and a bad flag value exits 2 ([stability](docs/stability.md)).
+
 ## Install
 
 **proto** ([moonrepo/proto](https://moonrepo.dev/proto)), from a release binary:
