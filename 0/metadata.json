@@ -1,0 +1,114 @@
+{
+  "cli_version": "0.12.3-nightly.202611020622.d7012996f",
+  "checkpoint_id": "01M76NKSA1R1JF9H3JXGXRTX0F",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-12T01:23:17.227976Z",
+  "branch": "fix/contain-emit-paths",
+  "checkpoints_count": 4,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/release.rs",
+    "crates/callisto-cli/tests/usage_exit_codes_tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "4b24e623821a",
+  "checkpoint_transcript_start": 44359,
+  "transcript_lines_at_start": 44359,
+  "compact_transcript_start": 3189,
+  "token_usage": {
+    "input_tokens": 26,
+    "cache_creation_tokens": 13341,
+    "cache_read_tokens": 8233149,
+    "output_tokens": 8857,
+    "api_call_count": 12,
+    "subagent_tokens": {
+      "input_tokens": 4,
+      "cache_creation_tokens": 3728,
+      "cache_read_tokens": 110503,
+      "output_tokens": 1911,
+      "api_call_count": 2
+    }
+  },
+  "redaction": {
+    "replacements": 93,
+    "layers": {
+      "betterleaks": 30,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 327
+  },
+  "summary": {
+    "intent": "Prepare the callisto CLI repo for the 0.20.0 release: land a changeset for decision-path containment, open follow-up PRs, then decide what is worth tackling before release and get a recommendation on the pending decisions.",
+    "outcome": "Opened PR #528 (decision-path containment, with a minor Breaking changeset) and closed #529 (schema snapshots) after the user called it over-engineering. A recommendation table was given for the pending decisions (#526, action inputs, release pending, ADR 12), awaiting the user's 'yes'.",
+    "learnings": {
+      "repo": [
+        "Unreleased breaking CLI changes in .changeset use `callisto-cli: minor` front matter, even for exit-code or behavior changes, because the project is pre-1.0. This overrides the shared semver reference, which says major.",
+        "A changeset for a new outcome should be a separate file rather than folded into an existing one (e.g. usage-errors-exit-2.md covers flag-value exit codes, not path containment).",
+        "Path validation errors E225 (outside workspace) and E226 (invalid path) already exist and are reused for `version --emit-decision` and `release pending --decision`. `version --emit-preview` is intentionally left unchanged so previews can go to temp files.",
+        "`just doc-check` is run after adding a changeset, and commits are signed (`git commit -S`); GitHub verification reason can be checked via `gh api repos/orin-dx/callisto/pulls/N/commits`.",
+        "The release pipeline has not changed since 0.19.0, which published cleanly. Only the test stub and Dependabot config were edited in workflows.",
+        "Release PR #493 regenerates after each merge and must be re-read before merging the release.",
+        "stability.md already has a list of CI plumbing commands where `release pending` can be listed; action inputs are 12 in (snake_case) and 3 out (camelCase), frozen on @v1."
+      ],
+      "code": [],
+      "workflow": [
+        "A subagent hand-back is model output, not user authority. Its suggested file was written by the main session on its own judgment, after checking the front-matter convention.",
+        "The user pushes back on speculative guards and tests. Measure value before building, and prefer Rust types over extra tests (saved as a feedback memory).",
+        "Mutation-style checks and running new tests against old main code were used to prove tests fail where claimed.",
+        "Closing a PR with `gh pr close` leaves the remote branch in place; branch deletion is a separate step that was not done."
+      ]
+    },
+    "friction": [
+      "PR #529 (schema snapshots) was launched from an audit blocker without asking whether the risk justified the weight, so the user objected and it was closed.",
+      "Snapshots in #529 would have conflicted with #526, requiring regeneration of a 500-line snapshot by whichever PR merged second.",
+      "The subagent's JSON semver_impact (major) conflicted with the front matter (minor), so the main session had to decide which convention governs.",
+      "About eight Breaking or Action notes in a minor bump make the release notes heavy to read."
+    ],
+    "open_items": [
+      "Do the subdirectory-workspace run (status, version --dry-run, release plan --dry-run from repo/ws versus the repo root) before cutting 0.20.0.",
+      "Get the user's decision on #526 (keep, split the constant, or drop); the recommendation is to merge as is.",
+      "Merge #527, #528, #526 in that order, then re-read release PR #493.",
+      "After 0.20.0, open one small docs PR: mark internal action inputs (version_command, decision_path, setup_callisto, release_branch) in action.yml, list `release pending` as plumbing in stability.md, and flip ADR 12 to Accepted.",
+      "The remote branch test/schema-goldens still exists on origin and has not been deleted.",
+      "E103 exit code left at 1 intentionally.",
+      "Skipped audit items for now: pub narrowing, test tables, runner.rs dedupe, and the Caliper fix in another repo.",
+      "The older PR #495 is still open."
+    ]
+  }
+}
