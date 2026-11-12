@@ -757,8 +757,6 @@ fn run_lockfile_refresh<R: CommandRunner>(
     Ok(LockfileRefreshResult {
         filename: PathBuf::from(filename),
         refresh_command,
-        success: true,
-        exit_code: out.exit_code,
     })
 }
 

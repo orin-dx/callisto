@@ -148,8 +148,6 @@ fn version_and_snapshot_schemas_validate_nested_serialized_payloads() {
         lockfile_refresh_results: Some(vec![LockfileRefreshResult {
             filename: "package-lock.json".into(),
             refresh_command: "npm install --package-lock-only".into(),
-            success: true,
-            exit_code: Some(0),
         }]),
         diagnostics: diagnostics(),
     })
@@ -179,7 +177,7 @@ fn version_and_snapshot_schemas_validate_nested_serialized_payloads() {
     assert_nested_mutations_rejected(
         &run_schema("version"),
         &version,
-        &[("/lockfileRefreshResults/0/exitCode", json!("0"))],
+        &[("/lockfileRefreshResults/0/refreshCommand", json!(0))],
     );
 }
 

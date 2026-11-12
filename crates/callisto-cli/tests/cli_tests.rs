@@ -584,7 +584,7 @@ fn matrix_orders_keys_lexicographically_across_three_packages() {
 }
 
 /// A workspace with no relevant manifests anywhere produces exactly
-/// {"schemaVersion":2,"platformTargets":{},"runtimeVersions":{}} with no
+/// {"schemaVersion":3,"platformTargets":{},"runtimeVersions":{}} with no
 /// "diagnostics" key, and exits 0.
 #[test]
 fn matrix_empty_workspace_produces_exact_empty_report_shape() {
@@ -607,7 +607,7 @@ fn matrix_empty_workspace_produces_exact_empty_report_shape() {
     assert_eq!(
         json,
         serde_json::json!({
-            "schemaVersion": 2,
+            "schemaVersion": 3,
             "command": "matrix",
             "dryRun": false,
             "platformTargets": {},
