@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_013JzJCo5z8XFbBU6EA3Stc2",
+  "agent_id": "a4acf55fce15d0b8f",
+  "subagent_type": "general-purpose",
+  "task_description": "Remove always-true LockfileRefreshResult success",
+  "token_usage": {
+    "input_tokens": 40,
+    "cache_creation_tokens": 75493,
+    "cache_read_tokens": 1292929,
+    "output_tokens": 6006,
+    "api_call_count": 20
+  },
+  "started_at": "2026-11-11T16:54:11.650974-08:00",
+  "completed_at": "2026-11-11T16:58:19.229528-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}

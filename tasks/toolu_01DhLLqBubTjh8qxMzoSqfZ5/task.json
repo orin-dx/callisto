@@ -1,0 +1,16 @@
+{
+  "tool_use_id": "toolu_01DhLLqBubTjh8qxMzoSqfZ5",
+  "agent_id": "aee69edd3630359f9",
+  "subagent_type": "courier:changeset-analyzer",
+  "task_description": "Changeset for lockfile refresh result removal",
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 38316,
+    "cache_read_tokens": 233802,
+    "output_tokens": 2633,
+    "api_call_count": 5
+  },
+  "started_at": "2026-11-11T16:58:42.284728-08:00",
+  "completed_at": "2026-11-11T16:59:02.390538-08:00",
+  "transcript_unavailable_reason": "transcript unreadable"
+}
