@@ -168,11 +168,18 @@ pub fn product_release_commit_fixture() -> (TempDir, String) {
 }
 
 pub fn release_commit_fixture_with_product_release(product_release: bool) -> (TempDir, String) {
+    release_commit_fixture_in(product_release, "")
+}
+
+/// The release commit fixture with its workspace in `subdir` of the repository; pass `dir/subdir` as `--cwd`.
+pub fn release_commit_fixture_in(product_release: bool, subdir: &str) -> (TempDir, String) {
     let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    callisto_fixtures::git::init_repo(root);
+    let repo = dir.path();
+    let root = &repo.join(subdir);
+    fs::create_dir_all(root).unwrap();
+    callisto_fixtures::git::init_repo(repo);
     git(
-        root,
+        repo,
         &["remote", "add", "origin", "https://github.com/example/core-crate.git"],
     );
 

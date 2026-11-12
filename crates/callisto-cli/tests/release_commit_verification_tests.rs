@@ -115,6 +115,37 @@ fn an_untampered_release_commit_still_plans() {
 }
 
 #[test]
+fn a_release_commit_in_a_workspace_below_the_repository_root_plans_and_still_refuses_edits_outside_it() {
+    let (dir, release_commit) = release_commit_fixture_in(false, "ws");
+    let root = dir.path();
+    let runner = callisto_fixtures::git::GitRunner;
+    let derive = |commit: &str| {
+        let locator = callisto_graph::locate::IgnoreWalkLocator::new(&root.join("ws"));
+        let workspace = callisto_graph::Workspace::load(root.join("ws"), &locator, &runner).unwrap();
+        callisto_graph::commands::derive_release_commit_decision(
+            &workspace,
+            &callisto_model::CommitSha::parse(commit).unwrap(),
+            Path::new(DECISION_PATH),
+        )
+        .map_err(Box::new)
+    };
+    derive(&release_commit).unwrap();
+
+    fs::write(root.join("build.rs"), "fn main() {}\n").unwrap();
+    git(root, &["add", "build.rs"]);
+    git(root, &["commit", "-q", "--amend", "--no-edit"]);
+    let tampered = git(root, &["rev-parse", "HEAD"]);
+    git(root, &["checkout", "--detach", &tampered]);
+    match *derive(&tampered).unwrap_err() {
+        callisto_graph::GraphError::ReleaseCommitVerificationFailed {
+            reason: callisto_graph::error::CommitVerificationFailure::UnexpectedPath { path },
+            ..
+        } => assert_eq!(path, "../build.rs"),
+        other => panic!("expected the outside edit to be refused, got {other:?}"),
+    }
+}
+
+#[test]
 fn a_commit_that_does_not_write_the_decision_is_rejected() {
     let (dir, release_commit) = release_commit_fixture();
     let root = dir.path();

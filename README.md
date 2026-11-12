@@ -124,6 +124,7 @@ Callisto is pre-v1. The [guide](docs/how-callisto-works.md) covers current suppo
 - A bump inferred from commits shows in `status` and `version`, but the release PR reads changesets only, so add a changeset to release it ([spec](docs/specs/cli.json)).
 - A release across several registries is not atomic ([guide](docs/how-callisto-works.md#current-support)).
 - Registry credentials are tokens passed to the native tools. OIDC trusted publishing is planned, not built ([plan](docs/projects/OIDC-TRUSTED-PUBLISHING.md)).
+- `release` requires the workspace to be at the repository root; `status` and `version` also work in a subdirectory ([releasing](docs/releasing.md#local-release-callisto-release)).
 - Windows is not supported ([stability](docs/stability.md)).
 
 ## Install
