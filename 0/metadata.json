@@ -1,0 +1,104 @@
+{
+  "cli_version": "0.13.3-nightly.202611110616.7aed2fb15",
+  "checkpoint_id": "01M774MY90KVD3TPTYQEZPCEPB",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-12T05:46:02.730407Z",
+  "branch": "docs/catch-up-with-0-20",
+  "checkpoints_count": 4,
+  "save_step_count": 1,
+  "files_touched": [
+    "docs/architecture/versioning.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "e9eaef935fbe",
+  "checkpoint_transcript_start": 46022,
+  "transcript_lines_at_start": 46022,
+  "compact_transcript_start": 3302,
+  "token_usage": {
+    "input_tokens": 42,
+    "cache_creation_tokens": 25925,
+    "cache_read_tokens": 17268138,
+    "output_tokens": 13088,
+    "api_call_count": 21,
+    "subagent_tokens": {
+      "input_tokens": 10,
+      "cache_creation_tokens": 56156,
+      "cache_read_tokens": 250433,
+      "output_tokens": 1401,
+      "api_call_count": 5
+    }
+  },
+  "redaction": {
+    "replacements": 97,
+    "layers": {
+      "betterleaks": 34,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 340
+  },
+  "summary": {
+    "intent": "Finish and verify fixes for PR #531 (no-pending-changesets warning), confirm it is mergeable, and then bring the README, docs and ARCHITECTURE.md up to date with the many changes made in this session.",
+    "outcome": "Fixed the review finding on #531 with a test-first guard change, pushed it with all commits showing verified, confirmed #531 is MERGEABLE and updated its description. A docs audit was delegated to an agent to fix drift and add a verified 'What you get' README section; only docs/architecture/versioning.md had been modified so far.",
+    "learnings": {
+      "repo": [
+        "Prerelease reruns can have a recorded changeset override an inferred bump; the 'already recorded in pre.json' cleanup then removes the bump but leaves agg.inference_commits populated, so the guard must check named_by == Inference rather than whether inference records exist.",
+        "`just test` gives 2,585 passed and 1 failed; the failure is a_version_the_registry_serves_is_exact_with_no_checksum_or_yank_claim, a `cargo info` output test that fails identically on main (environment-specific, CI is the authority).",
+        "Pre-merge checks are driven by just recipes: pre-push, lint, doc-check, workflow-contracts.",
+        "PR bodies carry an `entire-shadow-pr` marker that must be preserved when editing so Entire can still close the PR with its trail; BLOCKED merge status is the Entire approval gate, not a conflict.",
+        "ARCHITECTURE.md invariant 7 (stable error codes) lacks two enforced invariants: exit classification via exit_kind() (flag-value errors exit 2, everything else exit 1) and typed JSON reports via emit_report with untyped JSON output crate-private (#505).",
+        "docs/specs/versioning.json VER-APPLY-10 describes --emit-decision as relative to the workspace root but after #528 the path must also be inside the workspace (E225/E226, exit 2).",
+        "wire-compat.md's hard-coded schemaVersion: 2 for release-pr snapshots is a different schema from the one that moved to 3, so it is correct.",
+        "README is thin: it only says 'Cargo, npm/pnpm, and PyPI monorepos' and 'tags, GitHub releases, and assets'. npm provenance is documented only in docs/publishing.md and release-artifact attestations appear in no user-facing doc."
+      ],
+      "code": [],
+      "workflow": null
+    },
+    "friction": [
+      "The initial docs check was too narrow and wrongly concluded docs were mostly current, until the user pushed back.",
+      "The sed replacement on the PR body file was followed by a separate Edit, suggesting the first attempt may not have applied cleanly.",
+      "One test fails locally on every run because of the environment, adding noise to test results."
+    ],
+    "open_items": [
+      "Merge #530 and #531 once CI passes (user action).",
+      "Review the docs agent's audit and the proposed README 'What you get' section (max 14 lines), especially the wording of attestation claims, before any PR opens.",
+      "Add the ARCHITECTURE.md invariants for exit classification and typed JSON envelope, and fix the VER-APPLY-10 wording in versioning.json; link to trail #357 first.",
+      "Choose the next work: the OIDC or E194 decision brief, or the Caliper session."
+    ]
+  }
+}
