@@ -93,7 +93,7 @@
     },
     {
       "id": "VER-AGG-06",
-      "criterion": "When no changeset is consumed, `version` warns \"No pending changesets found in workspace\" unless `--allow-empty-changesets` or `[validation] allow-empty-changesets = true` is set; with `--strict` the warning is an error and `version` exits with a failure status.",
+      "criterion": "When no changeset is consumed and no bump is inferred from commits, `version` warns \"No pending changesets found in workspace\" unless `--allow-empty-changesets` or `[validation] allow-empty-changesets = true` is set; with `--strict` the warning is an error and `version` exits with a failure status.",
       "is_error_case": true
     },
     {

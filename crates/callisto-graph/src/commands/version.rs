@@ -326,7 +326,15 @@ pub fn plan_version_dated<R: CommandRunner, D: DependencyResolver, I: SeverityIn
     let mut diagnostics = agg.diagnostics.clone();
     diagnostics.extend(outcome.diagnostics);
     diagnostics.extend(group_check.diagnostics);
-    if nothing_pending && !opts.allow_empty_changesets && !ws.config.validation.allow_empty_changesets {
+    // A bump inferred from commits that survived aggregation is a plan, so "no changesets" would contradict it.
+    if nothing_pending
+        && !agg
+            .named_by
+            .values()
+            .any(|named_by| *named_by == crate::aggregate::NamedBy::Inference)
+        && !opts.allow_empty_changesets
+        && !ws.config.validation.allow_empty_changesets
+    {
         diagnostics.push(callisto_model::Diagnostic {
             code: callisto_model::DiagnosticCode::EmptyChangeset,
             severity: callisto_model::DiagnosticSeverity::Warning,

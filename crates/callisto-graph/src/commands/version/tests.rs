@@ -1377,6 +1377,113 @@ fn plan_version_inference_reason_maps_to_most_recent_commit() {
     }
 }
 
+fn empty_changeset_warned(inference: &impl crate::infer::SeverityInference) -> bool {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    git_init_with_commit(root);
+    std::fs::create_dir_all(root.join("pkg-a")).unwrap();
+    std::fs::write(
+        root.join("pkg-a/Cargo.toml"),
+        "[package]\nname = \"pkg-a\"\nversion = \"1.0.0\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("callisto.toml"),
+        "[[package]]\nmatch = \"cargo/pkg-a\"\nrelease-trigger = \"auto\"\n",
+    )
+    .unwrap();
+    commit_all(root, "add package");
+
+    let locator = IgnoreWalkLocator::new(root);
+    let runner = GitRunner;
+    let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+    let opts = VersionOptions {
+        strict: false,
+        allow_empty_changesets: false,
+    };
+    let plan = plan_version(&ws, inference, &opts).expect("plan_version must succeed");
+    plan.diagnostics
+        .iter()
+        .any(|d| d.code == callisto_model::DiagnosticCode::EmptyChangeset)
+}
+
+/// A plan driven by commit inference must not also claim there are no changesets.
+#[test]
+fn plan_version_inferred_bump_does_not_warn_no_pending_changesets() {
+    let inference = FixedInference {
+        outcome: crate::infer::InferenceOutcome {
+            severity: callisto_model::Severity::Minor,
+            commit_count: 1,
+            remapped: false,
+            commits: vec![(
+                callisto_model::CommitSha::parse(&"a".repeat(40)).unwrap(),
+                "feat: x".to_string(),
+            )],
+        },
+    };
+    assert!(!empty_changeset_warned(&inference));
+}
+
+/// With no changeset and nothing inferred, the empty-changeset warning stays.
+#[test]
+fn plan_version_nothing_to_release_warns_no_pending_changesets() {
+    assert!(empty_changeset_warned(&crate::infer::NoInference));
+}
+
+/// A prerelease rerun drops the bump of a package whose only changeset is already recorded in `pre.json`, even when a
+/// commit inferred a smaller bump first, so nothing is left to release and the empty-changeset warning stays.
+#[test]
+fn plan_version_recorded_changeset_overriding_an_inferred_bump_still_warns_nothing_pending() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    git_init_with_commit(root);
+    std::fs::create_dir_all(root.join("pkg-a")).unwrap();
+    std::fs::write(
+        root.join("pkg-a/Cargo.toml"),
+        "[package]\nname = \"pkg-a\"\nversion = \"2.0.0-alpha.0\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("callisto.toml"),
+        "[[package]]\nmatch = \"cargo/pkg-a\"\nrelease-trigger = \"auto\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join(".changeset")).unwrap();
+    std::fs::write(root.join(".changeset/big.md"), "---\npkg-a: major\n---\n\nbig change\n").unwrap();
+    std::fs::write(
+        root.join(".changeset/pre.json"),
+        r#"{"mode":"pre","tag":"alpha","initialVersions":{"pkg-a":"1.0.0"},"changesets":["big"]}"#,
+    )
+    .unwrap();
+    commit_all(root, "add package");
+
+    let inference = FixedInference {
+        outcome: crate::infer::InferenceOutcome {
+            severity: callisto_model::Severity::Minor,
+            commit_count: 1,
+            remapped: false,
+            commits: vec![(
+                callisto_model::CommitSha::parse(&"a".repeat(40)).unwrap(),
+                "feat: x".to_string(),
+            )],
+        },
+    };
+    let locator = IgnoreWalkLocator::new(root);
+    let runner = GitRunner;
+    let ws = Workspace::load(root.to_path_buf(), &locator, &runner).expect("workspace must load");
+    let opts = VersionOptions {
+        strict: false,
+        allow_empty_changesets: false,
+    };
+    let plan = plan_version(&ws, &inference, &opts).expect("plan_version must succeed");
+
+    assert!(plan.bumps.is_empty(), "nothing new to release: {:?}", plan.bumps);
+    assert!(plan
+        .diagnostics
+        .iter()
+        .any(|d| d.code == callisto_model::DiagnosticCode::EmptyChangeset));
+}
+
 /// An InferenceOutcome with empty `commits` but
 /// nonzero `commit_count` must fall back to a ChangeSource::Changeset
 /// entry summarizing the count, mirroring the changelog fallback pattern.
