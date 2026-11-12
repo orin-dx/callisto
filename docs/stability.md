@@ -7,6 +7,7 @@ What Callisto promises to keep working from 1.0, and what it does not. A breakin
 | Surface | The promise |
 | --- | --- |
 | The eight commands (`add`, `status`, `version`, `pre`, `snapshot`, `init`, `release`, `completions`) and their flags | A flag keeps its meaning; a new flag never changes what the command did without it. |
+| `--dry-run` | Accepted by every command, before or after the command name. Commands that write write nothing under it; on read-only commands it does nothing; where it cannot apply (for example `release plan`) it is a usage error. |
 | Exit codes | `0` success, `1` failure, `2` usage error: a bad or missing argument or flag, including values the command validates after parsing; the same value read from `callisto.toml`, a changeset or another file is a failure, not a usage error. |
 | `--format json` reports | Every report carries `schemaVersion`. Within a version a field is not removed, renamed or retyped; fields may be added. A shape change bumps the version. `release inspect` prints the intent, manifest or receipt unchanged: its own `schemaVersion`, no `command` or `dryRun`. `schema` prints JSON Schema documents, not reports. |
 | `callisto.toml` | A key keeps its meaning. Unknown keys are an error, so a new key arrives in a minor release and never changes an existing file's behavior. |
