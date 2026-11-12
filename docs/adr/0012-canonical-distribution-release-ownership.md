@@ -1,14 +1,14 @@
 # 12. Canonical distribution references and explicit release ownership
 
-Status: Proposed
+Status: Accepted
 
-This proposal revises ADR 11's selector promotion when implemented. ADR 11 remains the current decision, including its default tag; it is not superseded by this documentation change.
+This revises the selector-promotion half of ADR 11; ADR 11's directory-keyed identity and default tag stand.
 
 ## Context
 
 The owner selected Rust/Cargo, npm/pnpm and Python/PyPI as the current scope, with architectural room for Go and .NET/NuGet. The system audit found that display promotion leaks into dependency rewrites, historical ownership and shared tag/forge ordering. Fresh Cargo/Maturin projects also fail because one package requires one grammar. The evidence is in `git show 07154021c:docs/projects/V1-FINDINGS.md`.
 
-## Proposed decision
+## Decision
 
 - Require canonical slash-qualified distribution references (`cargo/name`, `npm/@scope/name`, `pypi/name`) in `callisto.toml` (groups, package rules, product and artifact packages), in report and matrix keys, and in command-line arguments. Reject the colon form everywhere. A `pypi/` reference uses the declared name. Native normalization belongs to the ecosystem.
 - Changesets and `pre.json` keep native package names and resolve them when read. A changeset entry names the owner package, not a distribution, and the files stay readable by `@changesets/cli` (ADR 1).

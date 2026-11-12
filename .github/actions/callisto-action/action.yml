@@ -2,11 +2,11 @@ name: 'Callisto Release-PR Action'
 description: 'Creates or updates a Callisto release PR; durable execution belongs to the repository workflow'
 inputs:
   version_command:
-    description: 'Version command; defaults to callisto version, which refreshes lockfiles. Callisto appends --emit-decision <decision_path>. The value is split on whitespace, so it cannot contain quoted arguments or a path with spaces.'
+    description: 'Internal: may change without notice. Version command; defaults to callisto version, which refreshes lockfiles. Callisto appends --emit-decision <decision_path>. The value is split on whitespace, so it cannot contain quoted arguments or a path with spaces.'
     required: false
     default: 'callisto version'
   decision_path:
-    description: 'Path, relative to cwd, where the version command records the exact release decision this PR carries. Committed alongside the manifest and changelog edits; `callisto release plan --from-release-commit` verifies the merged commit against this file rather than re-deriving release policy.'
+    description: 'Internal: may change without notice. Path, relative to cwd, where the version command records the exact release decision this PR carries. Committed alongside the manifest and changelog edits; `callisto release plan --from-release-commit` verifies the merged commit against this file rather than re-deriving release policy.'
     required: false
     default: '.callisto/release-decision.json'
   commit_message:
@@ -26,7 +26,7 @@ inputs:
     required: false
     default: 'main'
   release_branch:
-    description: 'Branch managed for the release PR'
+    description: 'Internal: may change without notice. Branch managed for the release PR'
     required: false
     default: 'callisto/version-packages'
   github_token:
@@ -34,7 +34,7 @@ inputs:
     required: false
     default: ''
   setup_callisto:
-    description: 'Install the Callisto environment before running'
+    description: 'Internal: may change without notice. Install the Callisto environment before running'
     required: false
     default: 'true'
   version:

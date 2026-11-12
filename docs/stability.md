@@ -13,11 +13,13 @@ What Callisto promises to keep working from 1.0, and what it does not. A breakin
 | Changesets | The `.changeset/*.md` format and `pre.json` stay compatible with `@changesets/cli`. The bare package name is the key unless another ecosystem has a package of that name, in which case the key is `ecosystem/name`. |
 | Error codes | A code keeps naming the same condition and is never reused. New codes may appear. |
 | Tag names | `{name}@{version}` by default, `ecosystem/name@{version}` once another ecosystem has a package of that name. Pin a name with `tag-template` if a stable tag matters to your tooling. |
-| The GitHub Actions | The inputs of `callisto-action` and `setup-callisto`. The floating `v1` tag moves only on stable releases; pin a commit for a fixed version. |
+| The GitHub Actions | The inputs of `callisto-action` and `setup-callisto`. Only the inputs and outputs documented as supported are promised; those marked Internal are not. The floating `v1` tag moves only on stable releases; pin a commit for a fixed version. |
 
 ## CI plumbing
 
 The generated workflows use `release plan`, `release inspect`, `release execute`, `release artifact-manifest`, `release build-python`, `release-pr`, `matrix`, `compose-pr-body` and `schema`. They are hidden from `--help` and work only with the same Callisto version that generated them: the intent, decision, receipt and run envelope carry versions, and a reader rejects any other. Keep the action and the binary on one version, and regenerate with `callisto init` after an upgrade.
+
+`release pending` also appears in `release --help` and the release workflow uses it. Its JSON output follows the report envelope, but its flags are not part of the 1.0 CLI promise.
 
 ## Not covered
 
