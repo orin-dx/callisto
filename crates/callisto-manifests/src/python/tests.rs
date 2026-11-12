@@ -1623,6 +1623,7 @@ fn requirement_render_round_trips_name_extras_spec_marker() {
         name: "requests".to_string(),
         extras: vec!["security".to_string(), "socks".to_string()],
         spec: Some(">=2.28.0".to_string()),
+        parenthesized: false,
         marker: Some("os_name == 'posix'".to_string()),
     };
     assert_eq!(req.render(), "requests[security,socks]>=2.28.0;os_name == 'posix'");
@@ -1640,6 +1641,29 @@ fn requirement_parse_handles_dashed_and_dotted_names() {
 fn requirement_stray_bracket_in_extras_survives_a_round_trip() {
     let req = Requirement::parse("¡[\u{b}[").unwrap();
     assert_eq!(Requirement::parse(&req.render()), Some(req));
+}
+
+#[test]
+fn requirement_parse_reads_a_parenthesized_specifier_and_renders_it_back() {
+    let req = Requirement::parse("core[x] (>=1.0,<2.0) ; python_version >= '3.8'").unwrap();
+    assert_eq!(req.name, "core");
+    assert_eq!(req.extras, vec!["x".to_string()]);
+    assert_eq!(req.spec.as_deref(), Some(">=1.0,<2.0"));
+    assert!(req.parenthesized);
+    assert_eq!(req.render(), "core[x] (>=1.0,<2.0);python_version >= '3.8'");
+    assert_eq!(
+        rewrite_requirement("core (==1.0.0)", "core", "==2.0.0").as_deref(),
+        Some("core (==2.0.0)")
+    );
+}
+
+#[test]
+fn requirement_parse_keeps_a_direct_url_out_of_the_extras() {
+    let req = Requirement::parse("core[x] @ https://example.com/core.whl").unwrap();
+    assert_eq!(req.name, "core");
+    assert_eq!(req.extras, vec!["x".to_string()]);
+    assert_eq!(req.spec.as_deref(), Some("@ https://example.com/core.whl"));
+    assert_eq!(req.render(), "core[x] @ https://example.com/core.whl");
 }
 
 proptest! {

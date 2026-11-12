@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 2c578f3eab22d4e06dc8df1cec7f86189896e013539f00ebf5b7525954de5126 # shrinks to s = "¡[\u{b}["
+cc 4766a5dbe68a8dc1b133f28969f1a6c523e2a9f3d5505eeebd887041c28aadda # shrinks to s = "\"("

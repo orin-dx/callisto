@@ -134,6 +134,8 @@ pub struct Requirement {
     /// `"==1.2.3"`) -- `None` when the requirement carries no version
     /// constraint at all (a bare name, optionally with extras/marker).
     pub spec: Option<String>,
+    /// The clause was written in the legacy PEP 508 form `name (>=1.0)`, and renders back that way.
+    pub parenthesized: bool,
     /// The marker expression (without the leading `;` or surrounding
     /// whitespace), e.g. `"python_version >= '3.8'"` -- `None` when absent.
     pub marker: Option<String>,
@@ -154,27 +156,38 @@ impl Requirement {
             .filter(|m| !m.is_empty())
             .map(str::to_string);
 
-        let op_idx = spec_part.find(['<', '>', '=', '!', '~']);
-        let (pkg_part, spec) = match op_idx {
-            Some(idx) => (spec_part[..idx].trim(), Some(spec_part[idx..].trim().to_string())),
-            None => (spec_part, None),
-        };
+        let name_end = spec_part
+            .find(|c: char| c.is_whitespace() || "([@,<>=!~".contains(c))
+            .unwrap_or(spec_part.len());
+        let name = spec_part[..name_end].to_string();
+        let mut rest = spec_part[name_end..].trim_start();
 
-        let (name, extras) = match pkg_part.find('[') {
-            Some(idx) => {
-                let name = pkg_part[..idx].trim().to_string();
-                // Strip exactly the one bracket pair `render` writes, so a stray `[` or `]` inside survives a round trip.
-                let extras_str = &pkg_part[idx + 1..];
-                let extras_str = extras_str.strip_suffix(']').unwrap_or(extras_str);
-                let extras = extras_str
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|e| !e.is_empty())
-                    .map(str::to_string)
-                    .collect();
-                (name, extras)
-            }
-            None => (pkg_part.trim().to_string(), Vec::new()),
+        let mut extras = Vec::new();
+        if rest.starts_with('[') {
+            let end = rest.find(['<', '>', '=', '!', '~', '(', '@']).unwrap_or(rest.len());
+            // Strip exactly the one bracket pair `render` writes, so a stray `[` or `]` inside survives a round trip.
+            let inner = rest[1..end].trim_end();
+            let inner = inner.strip_suffix(']').unwrap_or(inner);
+            extras = inner
+                .split(',')
+                .map(str::trim)
+                .filter(|e| !e.is_empty())
+                .map(str::to_string)
+                .collect();
+            rest = rest[end..].trim_start();
+        }
+
+        // Text after the name that is not a clause is dropped.
+        let (spec, parenthesized) = if let Some(inner) = rest.strip_prefix('(') {
+            let inner = inner.trim_end();
+            let inner = inner.strip_suffix(')').unwrap_or(inner).trim();
+            (!inner.is_empty())
+                .then(|| inner.to_string())
+                .map_or((None, false), |s| (Some(s), true))
+        } else if rest.starts_with(['<', '>', '=', '!', '~', '@']) {
+            (Some(rest.to_string()), false)
+        } else {
+            (None, false)
         };
 
         if name.is_empty() {
@@ -185,6 +198,7 @@ impl Requirement {
             name,
             extras,
             spec,
+            parenthesized,
             marker,
         })
     }
@@ -198,8 +212,11 @@ impl Requirement {
             out.push_str(&self.extras.join(","));
             out.push(']');
         }
-        if let Some(spec) = &self.spec {
-            out.push_str(spec);
+        match (&self.spec, self.parenthesized) {
+            (Some(spec), true) => out.push_str(&format!(" ({spec})")),
+            (Some(spec), false) if spec.starts_with('@') => out.push_str(&format!(" {spec}")),
+            (Some(spec), false) => out.push_str(spec),
+            (None, _) => {}
         }
         if let Some(marker) = &self.marker {
             out.push(';');
@@ -691,6 +708,7 @@ impl Manifest for PyprojectToml {
                         name: req.name.clone(),
                         extras: req.extras.clone(),
                         spec: Some(format!(">={}", new_ver.render())),
+                        parenthesized: req.parenthesized,
                         marker: req.marker.clone(),
                     };
                     arr.replace(idx, new_req.render());
@@ -903,6 +921,7 @@ fn rewrite_requirement(full_req: &str, name: &str, new_spec_str: &str) -> Option
             name: req.name.clone(),
             extras: req.extras.clone(),
             spec: Some(formatted_spec),
+            parenthesized: req.parenthesized,
             marker: req.marker.clone(),
         }
         .render(),
