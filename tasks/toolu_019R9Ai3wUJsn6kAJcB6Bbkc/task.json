@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_019R9Ai3wUJsn6kAJcB6Bbkc",
+  "agent_id": "ae0ce98dd3388ee08",
+  "subagent_type": "bug-hunter",
+  "task_description": "Post-0.20 regression hunt",
+  "token_usage": {
+    "input_tokens": 178,
+    "cache_creation_tokens": 183542,
+    "cache_read_tokens": 9076180,
+    "output_tokens": 61134,
+    "api_call_count": 89
+  },
+  "started_at": "2026-11-11T23:03:30.858239-08:00",
+  "completed_at": "2026-11-11T23:15:19.295271-08:00"
+}

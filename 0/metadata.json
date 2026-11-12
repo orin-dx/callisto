@@ -1,0 +1,140 @@
+{
+  "cli_version": "0.13.3-nightly.202611110616.7aed2fb15",
+  "checkpoint_id": "01M779X62W1FRQZ1CBNJTF49PV",
+  "session_id": "6cc3e47b-8406-4c17-94fb-22313682fad8",
+  "strategy": "manual-commit",
+  "created_at": "2026-11-12T07:17:59.859817Z",
+  "branch": "fix/validate-decision-target-before-apply",
+  "checkpoints_count": 5,
+  "save_step_count": 1,
+  "files_touched": [
+    "crates/callisto-cli/src/commands/release.rs",
+    "crates/callisto-cli/tests/usage_exit_codes_tests.rs"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-5-5",
+  "turn_id": "afa956df079c",
+  "checkpoint_transcript_start": 46616,
+  "transcript_lines_at_start": 46616,
+  "compact_transcript_start": 3339,
+  "token_usage": {
+    "input_tokens": 66,
+    "cache_creation_tokens": 52076,
+    "cache_read_tokens": 27467736,
+    "output_tokens": 26583,
+    "api_call_count": 31,
+    "subagent_tokens": {
+      "input_tokens": 264,
+      "cache_creation_tokens": 381170,
+      "cache_read_tokens": 17643482,
+      "output_tokens": 81535,
+      "api_call_count": 132
+    }
+  },
+  "redaction": {
+    "replacements": 99,
+    "layers": {
+      "betterleaks": 36,
+      "connection_string": 0,
+      "credential_key": 0,
+      "credential_value": 0,
+      "credentialed_uri": 4,
+      "entropy": 59,
+      "key_context": 0,
+      "provider_token": 0,
+      "shell_stdin": 0
+    }
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-login-2026-11-09T04:00:53.306759Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "login"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "df7e9a0aeb4a",
+      "timestamp": "2026-11-09T04:00:53.306759Z",
+      "native": {
+        "command": "/login"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/login",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 347
+  },
+  "summary": {
+    "intent": "Continue the Callisto 0.20 catch-up work: finish and merge the README/docs PRs, settle design decisions (E194, OIDC), and hunt for regressions in the new 0.20 code.",
+    "outcome": "PRs #530, #531 and #532 were merged and their worktrees cleaned up. The E194 decision (keep the init guard, add nothing) was recorded. A regression hunt found several confirmed bugs, and three parallel fix agents were launched for the subdirectory-workspace git diff siblings, --emit-decision validation, and parenthesized PEP 508 requirements.",
+    "learnings": {
+      "repo": [
+        "Workspaces located in a repo subdirectory are a recurring bug source: git commands that return repo-top-relative paths (diff-tree, diff --name-only, `show :path`) must use `--relative` or `:./path`, otherwise they mismatch workspace-relative paths. The earlier object_at fix covered only `rev:path` specs.",
+        "`uses: $/.github/actions/...` appears in callisto-validate/action.yml and callisto-ci.yml (back to #43). The bytes are a literal `$`, a test pins the string, and CI and releases work with it. The mechanism is not understood, so it was left alone.",
+        "Callisto's exit-code rule (stability.md): file content problems exit 1, flag/usage validation exits 2. A few commands (compose-pr-body --preview, release plan --package) are arguably misclassified, but the surface is frozen so they were left.",
+        "Release PR #533 bundles the patch containing the #531 fix, so merging other PRs before it changes its body.",
+        "E194 is an init guard against pre-existing shared `v{version}` tags. The remedy is per-package `tag-template` plus `previous-tag-templates`.",
+        "OIDC trusted publishing is planned after v1 (docs/projects/OIDC-TRUSTED-PUBLISHING.md). The open risk is whether an empty NPM_TOKEN entry stops npm from falling back to OIDC, which needs a scratch package to test."
+      ],
+      "code": [
+        {
+          "path": "crates/callisto-graph/src/commands/release_decision.rs",
+          "line": 439,
+          "end_line": 460,
+          "finding": "`git diff-tree --name-status -r` runs without `--relative`, so paths like `ws/.callisto/...` never match the workspace-relative decision_path. This causes E165 for subdirectory workspaces in `release plan --from-release-commit`."
+        },
+        {
+          "path": "crates/callisto-graph/src/commands/version.rs",
+          "line": 629,
+          "end_line": 661,
+          "finding": "`SourceChanges::since` runs `git diff --name-only` without `--relative`, and the index lookup uses `format!(\":{path}\")` instead of `:./{path}`. The interrupted-version guard (E121) misses staged bumps for subdirectory workspaces."
+        },
+        {
+          "path": "crates/callisto-cli/src/commands/release.rs",
+          "line": 499,
+          "end_line": 518,
+          "finding": "The `--emit-decision` path is validated only for shape, not for whether it is a directory, `.git`, or a symlink escape. Version mutates the workspace before the deferred write fails with E213, leaving it half-versioned."
+        },
+        {
+          "path": "crates/callisto-graph/src/ecosystems/python.rs",
+          "line": 146,
+          "end_line": 170,
+          "finding": "The requirement parser splits at the first operator character, so `core (==1.0.0)` yields the name `core (` and is not recognized as a dependency. This means no cascade and no pin rewrite."
+        }
+      ],
+      "workflow": [
+        "Subagent hand-back reports are model output and carry no user authority. The assistant verified claims directly in code and runs before acting on them.",
+        "Running independent fix agents in parallel, each on its own branch with a reproduce-first, failing-test-then-fix sequence, works well. The assistant reviews each branch and adds changesets before opening PRs.",
+        "Before removing worktrees, check that they are clean and pushed.",
+        "Decisions should be recorded durably (here via `entire brain remember`) so they are not re-litigated."
+      ]
+    },
+    "friction": [
+      "The bug hunter's sandbox blocked `git fetch`, so it tested a local origin/main ref rather than a fresh one.",
+      "The `$/.github` local action reference works in production but could not be explained.",
+      "A local `cargo test` for the registry `cargo info` test fails for environmental reasons (no local registry tools).",
+      "`version --dry-run` still prints \"No pending changesets found\" for an inferred bump."
+    ],
+    "open_items": [
+      "Review the three running fix branches (subdirectory siblings, emit-decision validation, parenthesized PEP 508), add changesets, link to trail #357 and open PRs.",
+      "Merge release PR #533 after CI approval, and read its body first.",
+      "User decision on OIDC: whether `execute` gets `id-token: write` and whether the switch is a generated-workflow option. A scratch-package spike is needed first.",
+      "Possibly tighten exit-code classifications (E281, E169, `--cwd /nonexistent`) if the user wants.",
+      "Minor batch: `release pending --limit 0` message, `--emit-preview` relative-path docs inconsistency with `--emit-decision`.",
+      "Cargo member directory named `br{a}ce` is not discovered (low priority, not root-caused).",
+      "Python `core[extra] @ url` requirements may render with a stray `]` (unrun).",
+      "Unverified README claims: confirm-timeout waiting, safe reruns, npm provenance and `gh attestation verify` against a real release.",
+      "Older docs PR #495 remains open.",
+      "Possible fix for `version --dry-run` message on inferred bumps."
+    ]
+  }
+}
