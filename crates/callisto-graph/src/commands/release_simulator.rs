@@ -416,7 +416,10 @@ impl SimWorld {
                     .insert(id.clone(), Remote::Conflicting { reason });
                 ProviderObservationV1::Conflict { reason }
             }
-            _ => self.remote_observation(id, false),
+            None
+            | Some(FaultKind::EffectFailsBeforeLanding | FaultKind::EffectLandsThenErrors | FaultKind::RegistryLag) => {
+                self.remote_observation(id, false)
+            }
         };
         self.context.push(TraceEvent::Observed {
             run: self.context.run.get(),
@@ -864,7 +867,7 @@ fn check_receipt_matches_world(intent: &ReleaseIntentV1, run: &ScenarioRun) -> R
             Some(Remote::Landed { evidence }) => Some(ProviderObservationV1::Exact {
                 evidence: evidence.clone(),
             }),
-            _ => None,
+            Some(Remote::Absent | Remote::Conflicting { .. }) | None => None,
         };
         if recorded.is_none() || recorded != held {
             return Err(Violation::ReceiptEvidenceDisagreesWithWorld {
@@ -937,7 +940,11 @@ fn check_nothing_lands_after_a_conflict(intent: &ReleaseIntentV1, trace: &[Trace
                     operation: Box::new(id.clone()),
                 });
             }
-            _ => {}
+            TraceEvent::Observed { .. }
+            | TraceEvent::Effect { .. }
+            | TraceEvent::RunStart { .. }
+            | TraceEvent::Crashed { .. }
+            | TraceEvent::RunEnd { .. } => {}
         }
     }
     Ok(())
