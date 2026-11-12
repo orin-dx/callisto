@@ -1,0 +1,53 @@
+---
+source: crates/callisto-cli/tests/schema_guard_test.rs
+expression: json
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Changeset",
+  "description": "One parsed `.changeset/*.md` file: a frontmatter block of\n`name: severity` entries, followed by a free-text summary.\n\nDeliberately does not carry a filename or path — this crate is filesystem-free; a caller\nthat reads files off disk attaches the filename itself for sort ordering and error\ncontext.",
+  "type": "object",
+  "properties": {
+    "entries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Entry"
+      }
+    },
+    "summary": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "entries",
+    "summary"
+  ],
+  "$defs": {
+    "Entry": {
+      "description": "One `\"name\": severity` frontmatter line, after quote resolution.\n\n`name` is the raw string as written in the changeset — resolving it to a `PackageId`\n(bare vs. `ecosystem/name`-prefixed) is a workspace-aware operation this crate cannot\nperform and does not attempt.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        }
+      },
+      "required": [
+        "name",
+        "severity"
+      ]
+    },
+    "Severity": {
+      "description": "A changeset's declared severity for one named package, **and** the internal\ncascade outcome for an out-of-range dev-dependency (\"spec rewrite only, no version bump\").\nOnly the file-format usage is ever persisted to disk as a changeset.\n\n**Variant order is deliberate, not alphabetical.** The derived `Ord` is the\naggregation-by-max lattice aggregation relies on: `None < Patch < Minor < Major`.",
+      "type": "string",
+      "enum": [
+        "none",
+        "patch",
+        "minor",
+        "major"
+      ]
+    }
+  }
+}

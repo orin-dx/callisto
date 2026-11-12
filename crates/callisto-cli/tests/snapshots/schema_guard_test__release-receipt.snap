@@ -1,0 +1,747 @@
+---
+source: crates/callisto-cli/tests/schema_guard_test.rs
+expression: json
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReleaseReceiptV1",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "format": "uint8",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "intentDigest": {
+      "$ref": "#/$defs/IntentDigest"
+    },
+    "envelope": {
+      "$ref": "#/$defs/ReleaseRunEnvelopeV1"
+    },
+    "outcomes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/OperationOutcomeEntryV1"
+      }
+    },
+    "observations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ReleaseOperationObservationV1"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "intentDigest",
+    "envelope",
+    "outcomes",
+    "observations"
+  ],
+  "$defs": {
+    "IntentDigest": {
+      "type": "string"
+    },
+    "ReleaseRunEnvelopeV1": {
+      "description": "The immutable identity of one release run, created and validated before\nthe first effect and recorded in the receipt.\n\nEvery field is derived from the intent and the verified artifact manifest\nrather than asserted by a caller, so no fact here has a second authority.\nThe revisions are intentionally separate even when equal: a run may release\nan older merged source with the current coordinator.",
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "format": "uint8",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "orchestrationRevision": {
+          "$ref": "#/$defs/CommitSha"
+        },
+        "releaseSourceRevision": {
+          "$ref": "#/$defs/CommitSha"
+        },
+        "intentDigest": {
+          "$ref": "#/$defs/IntentDigest"
+        },
+        "artifactManifestDigest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArtifactDigest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "orchestrationRevision",
+        "releaseSourceRevision",
+        "intentDigest"
+      ]
+    },
+    "CommitSha": {
+      "type": "string"
+    },
+    "ArtifactDigest": {
+      "type": "string"
+    },
+    "OperationOutcomeEntryV1": {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "$ref": "#/$defs/ReleaseOperationId"
+        },
+        "outcome": {
+          "$ref": "#/$defs/OperationOutcome"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "outcome"
+      ]
+    },
+    "ReleaseOperationId": {
+      "description": "Exact identity for one durable release operation.",
+      "type": "object",
+      "properties": {
+        "package": {
+          "$ref": "#/$defs/ReleasePackageId"
+        },
+        "role": {
+          "$ref": "#/$defs/ReleaseOperationRole"
+        },
+        "version": {
+          "$ref": "#/$defs/Version"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "role",
+        "version"
+      ]
+    },
+    "ReleasePackageId": {
+      "type": "string"
+    },
+    "ReleaseOperationRole": {
+      "description": "A release operation's explicit role.\n\n`PartialOrd`/`Ord` are derived rather than hand-maintained: every variant's\nfield types are already `Ord` (`RegistryBindingId`, `ArtifactSlotId`), so the\nderived impl folds in every field of every variant -- including\n`ArtifactSlotId::attestation_policy` -- consistently with the derived `Eq`,\nand stays correct if a role variant ever gains a field.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "registryPublish"
+            },
+            "registryKey": {
+              "type": "string"
+            },
+            "bindingDigest": {
+              "$ref": "#/$defs/RegistryBindingDigest"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "registryKey",
+            "bindingDigest"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "tag"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "forgeRelease"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "artifactUpload"
+            },
+            "slot": {
+              "$ref": "#/$defs/ArtifactSlotId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "slot"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "forgePublish"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "platformPublish"
+            },
+            "registryKey": {
+              "type": "string"
+            },
+            "bindingDigest": {
+              "$ref": "#/$defs/RegistryBindingDigest"
+            },
+            "platform": {
+              "$ref": "#/$defs/PlatformPackageV1"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "registryKey",
+            "bindingDigest",
+            "platform"
+          ]
+        }
+      ]
+    },
+    "RegistryBindingDigest": {
+      "type": "string"
+    },
+    "ArtifactSlotId": {
+      "description": "Exact binary asset declaration authorized by a durable release intent.",
+      "type": "object",
+      "properties": {
+        "package": {
+          "$ref": "#/$defs/ReleasePackageId"
+        },
+        "version": {
+          "$ref": "#/$defs/Version"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "assetName": {
+          "type": "string"
+        },
+        "attestationPolicy": {
+          "$ref": "#/$defs/GitHubAttestationPolicyV1"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "version",
+        "platform",
+        "assetName",
+        "attestationPolicy"
+      ]
+    },
+    "Version": {
+      "type": "string"
+    },
+    "GitHubAttestationPolicyV1": {
+      "description": "Immutable GitHub provenance policy declared by a binary release slot.",
+      "type": "object",
+      "properties": {
+        "repository": {
+          "$ref": "#/$defs/GitHubRepository"
+        },
+        "workflowPath": {
+          "type": "string"
+        },
+        "workflowCommit": {
+          "$ref": "#/$defs/CommitSha"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "workflowPath",
+        "workflowCommit"
+      ]
+    },
+    "GitHubRepository": {
+      "type": "string"
+    },
+    "PlatformPackageV1": {
+      "description": "The npm platform package a [`ReleaseOperationRole::PlatformPublish`] publishes:\nits own npm name and its workspace-relative directory.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/ReleasePackageId"
+        },
+        "directory": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "directory"
+      ]
+    },
+    "OperationOutcome": {
+      "description": "A terminal outcome safe to persist in a receipt. No arbitrary error text is durable.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "published"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "alreadySatisfied"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "failed"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "blocked"
+            },
+            "reason": {
+              "$ref": "#/$defs/OperationBlockReason"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "reason"
+          ]
+        }
+      ]
+    },
+    "OperationBlockReason": {
+      "description": "A closed, credential-safe reason why an operation was blocked.\n\nThis deliberately carries no endpoint, command output, or arbitrary error\ntext: durable execution records can safely outlive the process that made\nthe observation.",
+      "oneOf": [
+        {
+          "description": "An existing remote or VCS object does not exactly match the intent.",
+          "type": "string",
+          "const": "conflictingExistingOperation"
+        },
+        {
+          "description": "A completed attempt could not be conclusively observed after restart.",
+          "type": "string",
+          "const": "indeterminateAttempt"
+        },
+        {
+          "description": "Fresh validation disagrees with the approved intent.",
+          "type": "string",
+          "const": "staleValidation"
+        },
+        {
+          "description": "An exact prerequisite has not reached a successful terminal outcome.",
+          "type": "string",
+          "const": "unmetPrerequisite"
+        }
+      ]
+    },
+    "ReleaseOperationObservationV1": {
+      "description": "One provider observation bound to an exact operation in an immutable intent.\n\nThe single constructor rejects evidence whose shape does not belong to the\noperation's role, so a forge-release proof can never satisfy a registry\npublish. Deserialization goes through the same constructor.",
+      "type": "object",
+      "properties": {
+        "operation": {
+          "$ref": "#/$defs/ReleaseOperationId"
+        },
+        "observation": {
+          "$ref": "#/$defs/ProviderObservationV1"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "observation"
+      ]
+    },
+    "ProviderObservationV1": {
+      "description": "The result of observing the exact remote identity of a release operation.\n\nNo arbitrary provider response is persisted: every variant carries only\nclosed, credential-free, action-relevant data.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "absent"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "exact"
+            },
+            "evidence": {
+              "$ref": "#/$defs/ProviderEvidenceV1"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "evidence"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "conflict"
+            },
+            "reason": {
+              "$ref": "#/$defs/ProviderConflictReason"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "reason"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "indeterminate"
+            },
+            "cause": {
+              "$ref": "#/$defs/ProviderIndeterminateCause"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "cause"
+          ]
+        }
+      ]
+    },
+    "ProviderEvidenceV1": {
+      "description": "What a provider proved about one operation's remote identity.\n\nClosed and per-role: an adapter may only report what its provider can\ndemonstrate today. Fields that a provider cannot yet report are `None`\nrather than invented.",
+      "oneOf": [
+        {
+          "description": "The registry served this exact version.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "registryVersion"
+            },
+            "version": {
+              "$ref": "#/$defs/Version"
+            },
+            "checksum": {
+              "description": "`None` until the configured client reports a package checksum.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ArtifactDigest"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "yanked": {
+              "description": "`None` until the configured client reports yank status.",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "version"
+          ]
+        },
+        {
+          "description": "An annotated tag on the release remote, resolved to its commit.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "gitTag"
+            },
+            "peeledCommit": {
+              "$ref": "#/$defs/CommitSha"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "peeledCommit"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "forgeRelease"
+            },
+            "tagName": {
+              "$ref": "#/$defs/TagName"
+            },
+            "draft": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "tagName",
+            "draft"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "artifactUpload"
+            },
+            "byteLength": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "sha256": {
+              "$ref": "#/$defs/ArtifactDigest"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "byteLength",
+            "sha256"
+          ]
+        }
+      ]
+    },
+    "TagName": {
+      "description": "Rendered Git tag name.",
+      "type": "string"
+    },
+    "ProviderConflictReason": {
+      "description": "Why an existing remote object is not the one this intent authorized.",
+      "oneOf": [
+        {
+          "description": "A local tag ref names another commit, or is lightweight.",
+          "type": "string",
+          "const": "localTagDiffers"
+        },
+        {
+          "description": "The remote tag resolves to a different commit.",
+          "type": "string",
+          "const": "remoteTagTargetDiffers"
+        },
+        {
+          "description": "The remote tag is lightweight, so it carries no release annotation.",
+          "type": "string",
+          "const": "unannotatedTag"
+        },
+        {
+          "description": "The forge release exists but names another tag.",
+          "type": "string",
+          "const": "forgeReleaseDiffers"
+        },
+        {
+          "description": "A release for this tag exists, but its `prerelease` flag disagrees with\nthe released version's semver pre-release part.",
+          "type": "string",
+          "const": "forgeReleasePrereleaseDiffers"
+        },
+        {
+          "description": "The release asset exists with different bytes or length.",
+          "type": "string",
+          "const": "artifactAssetDiffers"
+        },
+        {
+          "description": "Several assets share the slot's asset name.",
+          "type": "string",
+          "const": "duplicateArtifactAsset"
+        },
+        {
+          "description": "The registry serves this version, but it is yanked.",
+          "type": "string",
+          "const": "registryVersionYanked"
+        }
+      ]
+    },
+    "ProviderIndeterminateCause": {
+      "description": "Why remote identity could not be established at all.\n\nIndeterminate is never a conflict: an authentication, rate-limit, or\ntransport failure must not be reported as a disagreeing remote object.",
+      "oneOf": [
+        {
+          "description": "No client for this provider can prove a version present or absent.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "unsupportedProvider"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "description": "The provider answered with a status that proves neither presence nor absence.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "providerStatus"
+            },
+            "status": {
+              "type": "integer",
+              "format": "uint16",
+              "minimum": 0,
+              "maximum": 65535
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "status"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "commandFailed"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "malformedResponse"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "timeout"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "description": "The version exists but its identity was not observed.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "registryVersionUnverified"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "description": "Asset identity needs the verified artifact manifest, which was absent.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "artifactManifestUnavailable"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

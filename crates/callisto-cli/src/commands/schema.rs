@@ -8,8 +8,9 @@ use crate::cli::{GlobalArgs, SchemaArgs, SchemaReportType};
 use crate::error::CliError;
 use crate::output::write_stdout;
 
-pub fn handle(args: SchemaArgs, _global: &GlobalArgs) -> Result<ExitCode, CliError> {
-    let schema = match args.target_type.unwrap_or_default() {
+/// The JSON schema `callisto schema --type <t>` prints.
+pub fn schema_of(target: SchemaReportType) -> schemars::Schema {
+    match target {
         SchemaReportType::Status => schema_for!(StatusReport),
         SchemaReportType::Version => schema_for!(VersionReport),
         SchemaReportType::Snapshot => schema_for!(SnapshotReport),
@@ -18,7 +19,11 @@ pub fn handle(args: SchemaArgs, _global: &GlobalArgs) -> Result<ExitCode, CliErr
         SchemaReportType::PreState => schema_for!(PreState),
         SchemaReportType::Matrix => schema_for!(MatrixReport),
         SchemaReportType::ReleaseReceipt => schema_for!(ReleaseReceiptV1),
-    };
+    }
+}
+
+pub fn handle(args: SchemaArgs, _global: &GlobalArgs) -> Result<ExitCode, CliError> {
+    let schema = schema_of(args.target_type.unwrap_or_default());
 
     // A `schemars::Schema` is a plain JSON tree of strings, numbers, and nested maps;
     // it always serializes.

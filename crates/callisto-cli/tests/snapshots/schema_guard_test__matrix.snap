@@ -1,0 +1,380 @@
+---
+source: crates/callisto-cli/tests/schema_guard_test.rs
+expression: json
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MatrixReport",
+  "description": "Top-level report output from `callisto matrix --format json`.\n\n`platform_targets`/`runtime_versions` are keyed by each package's `ecosystem/name` identity, so a Cargo crate and\nan npm package sharing a name never collide on one entry. BTreeMap guarantees lexicographic key ordering by that\nid without a separate sort step.",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "platformTargets": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/PlatformTargetGroup"
+      }
+    },
+    "runtimeVersions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/RuntimeVersionEntry"
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Diagnostic"
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "platformTargets",
+    "runtimeVersions"
+  ],
+  "$defs": {
+    "PlatformTargetGroup": {
+      "description": "One package's build target group: napi, maturin, or cargo `[[release.artifact]]`\nbinaries -- never more than one (see GraphError::ConflictingPlatformTargetSources).",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/PlatformTargetKind"
+        },
+        "source": {
+          "description": "Raw manifest field name (\"napi.targets\", \"[tool.maturin].targets\", or\n\"[[release.artifact]]\"),\nused for audit output only -- not a filesystem path.",
+          "type": "string"
+        },
+        "targets": {
+          "description": "Sorted ascending by triple string before serialization.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PlatformTarget"
+          }
+        }
+      },
+      "required": [
+        "kind",
+        "source",
+        "targets"
+      ]
+    },
+    "PlatformTargetKind": {
+      "description": "Deliberately omits a DotnetAot variant; out of scope for this spec.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "napi",
+            "maturin"
+          ]
+        },
+        {
+          "description": "A cargo binary configured as a `[[release.artifact]]`.",
+          "type": "string",
+          "const": "cargo"
+        }
+      ]
+    },
+    "PlatformTarget": {
+      "description": "One platform build target within a PlatformTargetGroup. No `rid` field\n(napi/maturin only, no dotnet-aot).",
+      "type": "object",
+      "properties": {
+        "triple": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "arch": {
+          "type": "string"
+        },
+        "abi": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hostRunner": {
+          "type": "string"
+        },
+        "useCross": {
+          "type": "boolean"
+        },
+        "artifactName": {
+          "description": "For a cargo `[[release.artifact]]` entry, its configured asset name.",
+          "type": "string"
+        },
+        "packageDir": {
+          "description": "Workspace-root-relative.",
+          "type": "string"
+        },
+        "packageName": {
+          "type": "string"
+        },
+        "manifestPath": {
+          "description": "napi: the addon crate's workspace-relative `Cargo.toml` when it is not in `package_dir`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "triple",
+        "platform",
+        "arch",
+        "hostRunner",
+        "useCross",
+        "artifactName",
+        "packageDir",
+        "packageName"
+      ]
+    },
+    "RuntimeVersionEntry": {
+      "description": "One package's runtime-version constraint, sourced from engines.node (npm)\nor requires-python (python/PyPI). `range` is the raw, unvalidated manifest\nstring. No targetFrameworks field (dotnet-only, out of scope).",
+      "type": "object",
+      "properties": {
+        "ecosystem": {
+          "$ref": "#/$defs/RuntimeEcosystem"
+        },
+        "field": {
+          "type": "string"
+        },
+        "range": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ecosystem",
+        "field",
+        "range"
+      ]
+    },
+    "RuntimeEcosystem": {
+      "description": "Which manifest field a [`RuntimeVersionEntry`] was read from. Exactly two variants —\n`callisto matrix` reads `engines.node` from `package.json` or `requires-python` from\n`pyproject.toml` and nothing else; a third ecosystem (e.g. a future `.NET`\n`TargetFramework` field) is deliberately out of scope, not merely unimplemented, so\ndeserializing an unrecognized ecosystem string is a schema error rather than silently\naccepted.",
+      "type": "string",
+      "enum": [
+        "npm",
+        "python"
+      ]
+    },
+    "Diagnostic": {
+      "description": "Machine-readable diagnostic warning or error.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/DiagnosticCode"
+        },
+        "severity": {
+          "$ref": "#/$defs/DiagnosticSeverity"
+        },
+        "message": {
+          "type": "string"
+        },
+        "package": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PackageId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "escalatedBy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StrictFlag"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "governedBy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConfigKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "severity",
+        "message"
+      ]
+    },
+    "DiagnosticCode": {
+      "description": "Stable machine-readable identifier for one kind of [`Diagnostic`]. Serializes to\nkebab-case (e.g. `\"empty-changeset\"`) — the wire form every `--format json` consumer\nmatches on, so a variant's Rust name and its JSON string always move together.\n\n`#[non_exhaustive]`: a new variant is not a breaking change for a consumer that already\nhandles an unrecognized code gracefully, which any `--format json` consumer parsing this\nas an open string set should.",
+      "oneOf": [
+        {
+          "description": "A changeset file has no entries at all.",
+          "type": "string",
+          "const": "empty-changeset"
+        },
+        {
+          "description": "A changeset has one or more entries but an empty (or whitespace-only) summary.",
+          "type": "string",
+          "const": "empty-summary"
+        },
+        {
+          "description": "A changeset entry names a package that isn't in the workspace (e.g. removed since the\nchangeset was written) — the changeset stays on disk rather than being silently\nconsumed, since deleting it would erase a still-unresolved entry. `callisto matrix`\nalso emits it for a cargo `[[release.artifact]]` naming no workspace cargo package.",
+          "type": "string",
+          "const": "unknown-package"
+        },
+        {
+          "description": "A changeset entry's package name does not parse as a valid `PackageId` at all.",
+          "type": "string",
+          "const": "invalid-package-name"
+        },
+        {
+          "description": "A fixed napi group has a triple in `napi.targets` with no corresponding group member\nmanifest — add it to the group's members in `callisto.toml`.",
+          "type": "string",
+          "const": "napi-target-added-not-in-members"
+        },
+        {
+          "description": "A fixed napi group member's manifest still exists on disk after its triple was removed\nfrom `napi.targets` — remove it from the group's members in `callisto.toml`, or restore the target.",
+          "type": "string",
+          "const": "napi-target-removed-still-on-disk"
+        },
+        {
+          "description": "A dependency range spec's coverage of the new version is known (it covers or doesn't),\nbut the mechanical rewrite of that range string toward the new version failed — e.g. a\ncompound, wildcard, or prerelease-clause range no ecosystem's round-trip rewriter\nhandles. The range is left alone and warned about rather than replaced with something\nthat might not preserve the author's original intent.",
+          "type": "string",
+          "const": "range-not-round-trippable"
+        },
+        {
+          "description": "A `DepSpec::Catalog` entry's coverage of the new version is never tested at all —\ncatalog specs are never rewritten regardless of coverage — so this is\nreported under its own code rather than [`Self::RangeNotRoundTrippable`], whose\ntrigger (a failed rewrite attempt) never applies to a catalog entry in the first place.",
+          "type": "string",
+          "const": "catalog-spec-not-rewritten"
+        },
+        {
+          "description": "A tag matched a `tag_template`-derived glob, but the substring at the `{version}`\nplaceholder position did not parse as a valid version under the expected grammar.",
+          "type": "string",
+          "const": "tag-glob-non-version-match"
+        },
+        {
+          "description": "`init` found a `.changeset/config.json` key from `@changesets/cli` that callisto never\nreads; no translation happens, the key is just inert.",
+          "type": "string",
+          "const": "changesets-config-key-dropped"
+        },
+        {
+          "description": "`callisto matrix` found a platform triple in `napi.targets`/`[tool.maturin].targets`\nthat neither the shared triple-to-role table nor matrix's own host-runner table\nrecognizes — excluded from the report's `targets[]` rather than silently guessing.",
+          "type": "string",
+          "const": "unrecognised-platform-triple"
+        },
+        {
+          "description": "A `[[package-set]]` config rule matched no packages after the workspace walk —\nadvisory rather than a hard error, since a monorepo-wide rule can legitimately match\nnothing against a partial checkout or filtered walk.",
+          "type": "string",
+          "const": "package-set-matched-nothing"
+        },
+        {
+          "description": "`callisto matrix` found the same platform triple declared more than once within one\npackage's own `napi.targets`/`[tool.maturin].targets` — the duplicate is dropped\n(first occurrence wins) rather than treated as a hard error.",
+          "type": "string",
+          "const": "duplicate-platform-triple"
+        },
+        {
+          "description": "A changeset entry names a bare (unprefixed) package name that matches two or more\npackages across different ecosystems (e.g. `cargo/foo` and `npm/foo`) -- the entry\ncannot be resolved to a single target without an ecosystem prefix.",
+          "type": "string",
+          "const": "ambiguous-package-name"
+        },
+        {
+          "description": "An npm platform package (`os`+`cpu`) is not named in exactly one other npm package's\n`optionalDependencies`, so it cannot be attached to an owner and is\ntreated as its own package.",
+          "type": "string",
+          "const": "platform-package-without-owner"
+        },
+        {
+          "description": "`callisto init` skipped GitHub Actions workflow generation because it generates no\nworkflow for the workspace's shape (maturin platform builds, or platform packages\nwith no `napi.targets`).",
+          "type": "string",
+          "const": "workflow-generation-unsupported"
+        },
+        {
+          "description": "`callisto init` wrote a release workflow: a merge to the named default branch\npublishes, so that branch should require pull requests and reviews.",
+          "type": "string",
+          "const": "workflow-merge-publishes"
+        },
+        {
+          "description": "A `[[package]]` config rule matched no packages.",
+          "type": "string",
+          "const": "package-rule-matched-nothing"
+        },
+        {
+          "description": "A `.changeset/*.md` file failed to parse -- malformed frontmatter, an invalid entry\nline, or entries present with an empty summary. The file stays on disk unconsumed;\n`status` reports one of these per unparseable file instead of aborting.",
+          "type": "string",
+          "const": "changeset-parse-failed"
+        },
+        {
+          "description": "An `auto` package has a pending release inferred from commits and no changeset. The release pull\nrequest reads changesets only, so it will not release this package until one names it.",
+          "type": "string",
+          "const": "inferred-release-without-changeset"
+        },
+        {
+          "description": "Release derivation selected a `[release].product` artifact's owner package without\nselecting the product package itself, so the owner's declared asset has no release to\nupload into.",
+          "type": "string",
+          "const": "product-artifact-owner-without-product"
+        },
+        {
+          "description": "`callisto init` found no `origin` remote: it writes the config but skips the release\nworkflow and shipping-binaries questions until one is added.",
+          "type": "string",
+          "const": "init-origin-missing"
+        },
+        {
+          "description": "A discovered package's manifest could not be opened while building the graph, so its publish\ntargets, dependency edges or platform role are unknown. Loading a workspace to plan a release\nfails on it; only `status` reports it and carries on.",
+          "type": "string",
+          "const": "manifest-unresolved"
+        },
+        {
+          "description": "A tag matched a package's default template by name, but its commit held a manifest of another ecosystem\nunder that name, so the package did not make it and does not take it as its last release. A package that\nwas renamed declares its old tags with `previous-tag-templates`.",
+          "type": "string",
+          "const": "tag-owned-by-another-package"
+        }
+      ]
+    },
+    "DiagnosticSeverity": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "warning",
+            "error"
+          ]
+        },
+        {
+          "description": "Advisory only; never fails a command.",
+          "type": "string",
+          "const": "info"
+        }
+      ]
+    },
+    "PackageId": {
+      "type": "string"
+    },
+    "StrictFlag": {
+      "type": "string",
+      "enum": [
+        "strict"
+      ]
+    },
+    "ConfigKey": {
+      "description": "A configuration key in callisto.toml.",
+      "type": "string"
+    }
+  }
+}

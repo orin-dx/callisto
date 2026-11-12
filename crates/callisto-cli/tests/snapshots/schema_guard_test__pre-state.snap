@@ -1,0 +1,47 @@
+---
+source: crates/callisto-cli/tests/schema_guard_test.rs
+expression: json
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PreState",
+  "type": "object",
+  "properties": {
+    "mode": {
+      "$ref": "#/$defs/PreMode"
+    },
+    "tag": {
+      "type": "string"
+    },
+    "initialVersions": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/Version"
+      }
+    },
+    "changesets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "mode",
+    "tag",
+    "initialVersions",
+    "changesets"
+  ],
+  "$defs": {
+    "PreMode": {
+      "type": "string",
+      "enum": [
+        "pre",
+        "exit"
+      ]
+    },
+    "Version": {
+      "type": "string"
+    }
+  }
+}

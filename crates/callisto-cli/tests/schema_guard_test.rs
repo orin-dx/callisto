@@ -19,6 +19,18 @@ use callisto_model::{
 };
 use serde_json::{json, Value};
 
+/// Every `callisto schema --type` value is pinned as a snapshot, so a rename, removal or retype of any
+/// report field shows up as a reviewable diff (docs/stability.md promises none within a `schemaVersion`).
+#[test]
+fn every_schema_type_matches_its_snapshot() {
+    use clap::ValueEnum;
+    for target in callisto_cli::cli::SchemaReportType::value_variants() {
+        let name = target.to_possible_value().expect("not skipped").get_name().to_owned();
+        let json = serde_json::to_string_pretty(&callisto_cli::commands::schema::schema_of(*target)).unwrap();
+        insta::assert_snapshot!(name, json);
+    }
+}
+
 fn run_schema(target: &str) -> serde_json::Value {
     let bin = env!("CARGO_BIN_EXE_callisto");
     let out = Command::new(bin)
