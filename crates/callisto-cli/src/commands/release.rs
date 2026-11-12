@@ -475,24 +475,34 @@ fn artifact_manifest(args: ReleaseArtifactManifestArgs, global: &GlobalArgs) -> 
     Ok(ExitCode::SUCCESS)
 }
 
+/// Canonicalizes the nearest existing ancestor of `path` and re-appends the components that do not exist yet.
+fn canonicalize_through_missing(path: &Path) -> std::io::Result<PathBuf> {
+    let mut missing = Vec::new();
+    let mut current = path;
+    loop {
+        match dunce::canonicalize(current) {
+            Ok(base) => return Ok(missing.iter().rev().fold(base, |resolved, name| resolved.join(name))),
+            Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
+                let (Some(parent), Some(name)) = (current.parent(), current.file_name()) else {
+                    return Err(source);
+                };
+                missing.push(name);
+                current = parent;
+            }
+            Err(source) => return Err(source),
+        }
+    }
+}
+
 /// Decision paths are repository-relative for the diff and show commands, but callers may pass an absolute one; contain it
-/// in `root` once here. The file itself may not exist yet, so only its parent must resolve.
+/// in `root` once here. The file and its directories may not exist yet; the writer creates them.
 pub(crate) fn workspace_decision_path(path: &Path, root: &Path) -> Result<PathBuf, CliError> {
     let io_error = |source| CliError::Io {
         source,
         path: Some(path.to_path_buf()),
     };
     let relative = if path.is_absolute() {
-        let canonical = match dunce::canonicalize(path) {
-            Ok(canonical) => canonical,
-            Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
-                let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
-                    return Err(io_error(source));
-                };
-                dunce::canonicalize(parent).map_err(io_error)?.join(name)
-            }
-            Err(source) => return Err(io_error(source)),
-        };
+        let canonical = canonicalize_through_missing(path).map_err(io_error)?;
         canonical
             .strip_prefix(root)
             .map_err(|_outside_source| CliError::ReleaseDecisionOutsideSource {

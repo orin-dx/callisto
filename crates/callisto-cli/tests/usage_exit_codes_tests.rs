@@ -162,6 +162,19 @@ fn version_emit_decision_outside_the_workspace_exits_2_before_writing() {
 }
 
 #[test]
+fn version_emit_decision_to_an_absolute_path_whose_directories_do_not_exist_yet_still_writes_it() {
+    let dir = workspace();
+    let root = dir.path();
+    assert!(callisto(root, &["add", "--package", "cargo/a:patch", "--summary", "s"])
+        .status
+        .success());
+    let decision = root.join(".callisto/nested/release-decision.json");
+    let out = callisto(root, &["version", "--emit-decision", decision.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr_of(&out));
+    assert!(decision.exists());
+}
+
+#[test]
 fn release_pending_decision_outside_the_workspace_exits_2() {
     let dir = workspace();
     let outside = tempfile::tempdir().unwrap();
